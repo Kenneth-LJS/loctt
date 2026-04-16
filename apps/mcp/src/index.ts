@@ -12,6 +12,7 @@ import {
   lookupTask,
   buildShowModel,
   setField,
+  unsetField,
   linkTask,
   unlinkTask,
   archiveTask,
@@ -142,12 +143,27 @@ export function getTools(): McpTool[] {
       },
     },
     {
-      name: "delete_task",
-      description: "Permanently delete a task.",
+      name: "unset_field",
+      description: "Remove a field from a task.",
       inputSchema: {
         type: "object",
-        properties: { ref: { type: "string" } },
-        required: ["ref"],
+        properties: {
+          ref: { type: "string", description: "Task key or ID" },
+          field: { type: "string" },
+        },
+        required: ["ref", "field"],
+      },
+    },
+    {
+      name: "delete_task",
+      description: "Permanently delete a task. Requires confirm: true.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ref: { type: "string" },
+          confirm: { type: "boolean", description: "Must be true to proceed with deletion" },
+        },
+        required: ["ref", "confirm"],
       },
     },
     {
@@ -295,7 +311,16 @@ export async function executeTool(
         return text(`Unarchived ${task.frontmatter.key}.`);
       }
 
+      case "unset_field": {
+        const task = await lookupTask(locttDir, args["ref"] as string);
+        const updated = await unsetField(locttDir, task.frontmatter.id, args["field"] as string);
+        return text(`Updated ${updated.frontmatter.key}: unset ${args["field"]}`);
+      }
+
       case "delete_task": {
+        if (args["confirm"] !== true) {
+          return errorResult("delete_task requires confirm: true to proceed");
+        }
         const task = await lookupTask(locttDir, args["ref"] as string);
         await deleteTask(locttDir, task.frontmatter.id, { force: true });
         return text(`Deleted ${task.frontmatter.key}.`);
