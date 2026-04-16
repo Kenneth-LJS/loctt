@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { evaluateQuery } from "./evaluator.js";
+import type { EvalContext } from "./evaluator.js";
 import { parseQuery } from "./parser.js";
 import { tokenize } from "./tokenizer.js";
 import type { TaskFrontmatter } from "@loctt/contracts";
@@ -18,6 +19,10 @@ const task: TaskFrontmatter = {
   priority: "high",
   task_type: "task",
   archived: false,
+  relationships: [
+    { type: "parent", target: "parent_id" },
+    { type: "blocks", target: "blocked_id" },
+  ],
   fields: { sprint: "sprint_2", owner_team: "platform" },
 };
 
@@ -93,5 +98,67 @@ describe("evaluateQuery", () => {
   it("handles comparison operators for dates (string comparison)", () => {
     expect(evaluateQuery(query("updated_at > 2026-01-01"), task)).toBe(true);
     expect(evaluateQuery(query("created_at < 2027-01-01"), task)).toBe(true);
+  });
+});
+
+describe("text alias", () => {
+  it("searches title with ~", () => {
+    expect(evaluateQuery(query('text ~ "evaluation"'), task)).toBe(true);
+    expect(evaluateQuery(query('text ~ "nonexistent"'), task)).toBe(false);
+  });
+
+  it("searches key", () => {
+    expect(evaluateQuery(query('text ~ "T-1"'), task)).toBe(true);
+  });
+
+  it("searches body when context provided", () => {
+    const ctx: EvalContext = { body: "Contains important details about the feature." };
+    expect(evaluateQuery(query('text ~ "important"'), task, ctx)).toBe(true);
+    expect(evaluateQuery(query('text ~ "missing"'), task, ctx)).toBe(false);
+  });
+
+  it("searches custom fields", () => {
+    expect(evaluateQuery(query('text ~ "platform"'), task)).toBe(true);
+  });
+
+  it("is case-insensitive", () => {
+    expect(evaluateQuery(query('text ~ "EVALUATION"'), task)).toBe(true);
+  });
+});
+
+describe("parent alias", () => {
+  it("matches parent by ID when no resolveKey", () => {
+    expect(evaluateQuery(query("parent = parent_id"), task)).toBe(true);
+    expect(evaluateQuery(query("parent = other_id"), task)).toBe(false);
+  });
+
+  it("matches parent by key when resolveKey provided", () => {
+    const ctx: EvalContext = {
+      resolveKey: (id) => id === "parent_id" ? "T-5" : undefined,
+    };
+    expect(evaluateQuery(query("parent = T-5"), task, ctx)).toBe(true);
+    expect(evaluateQuery(query("parent = T-99"), task, ctx)).toBe(false);
+  });
+
+  it("handles task with no parent", () => {
+    const noParent: TaskFrontmatter = { ...task, relationships: [] };
+    expect(evaluateQuery(query("parent = T-5"), noParent)).toBe(false);
+    expect(evaluateQuery(query("parent != T-5"), noParent)).toBe(true);
+  });
+});
+
+describe("relationship-based query filtering", () => {
+  it("filters by relationship type and target", () => {
+    expect(evaluateQuery(query("relationship.blocks = blocked_id"), task)).toBe(true);
+    expect(evaluateQuery(query("relationship.blocks = other"), task)).toBe(false);
+  });
+
+  it("handles != for relationships", () => {
+    expect(evaluateQuery(query("relationship.blocks != other"), task)).toBe(true);
+  });
+
+  it("handles missing relationship type", () => {
+    expect(evaluateQuery(query("relationship.depends_on = x"), task)).toBe(false);
+    expect(evaluateQuery(query("relationship.depends_on != x"), task)).toBe(true);
   });
 });

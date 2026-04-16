@@ -50,9 +50,9 @@ Implementation language/runtime:
 
 23. ~~Implement query tokenizer/parser.~~ **DONE**
 24. ~~Implement query evaluation over task metadata.~~ **DONE**
-25. Implement `text` alias behavior.
-26. Implement `parent` alias behavior.
-27. Implement relationship-based query filtering.
+25. ~~Implement `text` alias behavior.~~ **DONE**
+26. ~~Implement `parent` alias behavior.~~ **DONE**
+27. ~~Implement relationship-based query filtering.~~ **DONE**
 28. Implement saved views from `queries.yaml`.
 29. Implement list defaults, sorting, limit, `--query`, and `--view`.
 
