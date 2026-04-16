@@ -56,6 +56,25 @@ describe("task I/O", () => {
     expect(loaded.body).toBe("Updated body.\n");
   });
 
+  it("updates updated_at when writing body", async () => {
+    const oldTask: Task = {
+      frontmatter: {
+        ...sampleTask.frontmatter,
+        updated_at: "2020-01-01T00:00:00Z",
+      },
+      body: sampleTask.body,
+    };
+    await writeTask(locttDir, "abc123", oldTask);
+
+    await writeTaskBody(locttDir, "abc123", "New body.\n");
+    const loaded = await readTask(locttDir, "abc123");
+
+    expect(loaded.frontmatter.updated_at).not.toBe("2020-01-01T00:00:00Z");
+    expect(new Date(loaded.frontmatter.updated_at).getTime()).toBeGreaterThan(
+      new Date("2020-01-01T00:00:00Z").getTime(),
+    );
+  });
+
   it("creates task directory if it does not exist", async () => {
     await writeTask(locttDir, "newid", sampleTask);
     const loaded = await readTask(locttDir, "newid");
