@@ -64,16 +64,16 @@ Implementation language/runtime:
 
 ## Git-Backed Mode
 
-33. Implement `loctt git enable` / `disable` / `status`.
-34. Implement sparse worktree setup plus `publish` / `sync` happy path.
-35. Implement reconciliation, conflict handling, and rekeying.
+33. ~~Implement `loctt git enable` / `disable` / `status`.~~ **DONE**
+34. ~~Implement sparse worktree setup plus `publish` / `sync` happy path.~~ **DONE**
+35. ~~Implement reconciliation, conflict handling, and rekeying.~~ **DONE**
 
 ## Service / Web
 
-36. Implement `packages/contracts` shapes for service/web data exchange.
-37. Implement the local service layer on top of `packages/core`.
-38. Implement the web app shell and service integration.
+36. ~~Implement `packages/contracts` shapes for service/web data exchange.~~ **DONE**
+37. ~~Implement the local service layer on top of `packages/core`.~~ **DONE**
+38. ~~Implement the web app shell and service integration.~~ **DONE**
 
 ## MCP
 
-39. Implement MCP read/write/body-edit surface plus `publish` / `sync` wrappers and guardrails.
+39. ~~Implement MCP read/write/body-edit surface plus `publish` / `sync` wrappers and guardrails.~~ **DONE**
