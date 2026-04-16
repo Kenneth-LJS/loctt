@@ -34,5 +34,5 @@ export { archiveTask, unarchiveTask, deleteTask, TaskLifecycleError } from "./li
 
 export { linkTask, unlinkTask, RelationshipError } from "./relationships.js";
 
-export { validateRelationships, getRelatedTasks, buildTree, getChildren, getParent } from "./traversal.js";
+export { validateRelationships, getRelatedTasks, buildTree, getChildren, getParents } from "./traversal.js";
 export type { RelationshipValidationError } from "./traversal.js";

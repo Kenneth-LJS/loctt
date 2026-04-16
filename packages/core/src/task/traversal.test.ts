@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Task, WorkflowConfig } from "@loctt/contracts";
 import { writeTask } from "./io.js";
-import { validateRelationships, getRelatedTasks, buildTree, getChildren, getParent } from "./traversal.js";
+import { validateRelationships, getRelatedTasks, buildTree, getChildren, getParents } from "./traversal.js";
 
 const config: WorkflowConfig = {
   key: { prefix: "T-" },
@@ -106,7 +106,7 @@ describe("buildTree", () => {
   });
 });
 
-describe("getChildren / getParent", () => {
+describe("getChildren / getParents", () => {
   const tasks = [
     makeTask("root", "T-1"),
     makeTask("child1", "T-2", [{ type: "parent", target: "root" }]),
@@ -119,13 +119,43 @@ describe("getChildren / getParent", () => {
     expect(ids).toEqual(["child1", "child2"]);
   });
 
-  it("getParent returns the parent task", () => {
-    const parent = getParent(tasks, "child1", config);
-    expect(parent?.frontmatter.id).toBe("root");
+  it("getParents returns parent tasks", () => {
+    const parents = getParents(tasks, "child1", config);
+    expect(parents.map(p => p.frontmatter.id)).toEqual(["root"]);
   });
 
-  it("getParent returns undefined for root tasks", () => {
-    const parent = getParent(tasks, "root", config);
-    expect(parent).toBeUndefined();
+  it("getParents returns empty for root tasks", () => {
+    const parents = getParents(tasks, "root", config);
+    expect(parents).toEqual([]);
+  });
+
+  it("getParents returns multiple parents for multi-parent tasks", () => {
+    const multiParentTasks = [
+      makeTask("p1", "T-1"),
+      makeTask("p2", "T-2"),
+      makeTask("child", "T-3", [
+        { type: "parent", target: "p1" },
+        { type: "parent", target: "p2" },
+      ]),
+    ];
+    const parents = getParents(multiParentTasks, "child", config);
+    expect(parents.map(p => p.frontmatter.id).sort()).toEqual(["p1", "p2"]);
+  });
+});
+
+describe("buildTree multi-parent (DAG)", () => {
+  it("places a task under each parent", () => {
+    const tasks = [
+      makeTask("p1", "T-1"),
+      makeTask("p2", "T-2"),
+      makeTask("child", "T-3", [
+        { type: "parent", target: "p1" },
+        { type: "parent", target: "p2" },
+      ]),
+    ];
+    const tree = buildTree(tasks);
+    expect(tree.get("")).toEqual(["p1", "p2"]);
+    expect(tree.get("p1")).toEqual(["child"]);
+    expect(tree.get("p2")).toEqual(["child"]);
   });
 });
