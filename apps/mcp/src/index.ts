@@ -231,17 +231,17 @@ export async function executeTool(
         const tasks = await loadAllTasks(locttDir);
         const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
 
-        const result = listTasks(
+        const result = listTasks({
           tasks,
-          {
+          options: {
             query: args["query"] as string | undefined,
             view: args["view"] as string | undefined,
             limit: args["limit"] as number | undefined,
           },
           queriesConfig,
           workflowConfig,
-          buildListContext(tasks),
-        );
+          ctx: buildListContext(tasks),
+        });
 
         const summary = result.map(t => ({
           key: t.frontmatter.key,
@@ -272,13 +272,16 @@ export async function executeTool(
       case "create_task": {
         const state = await loadState(locttDir);
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
-        const task = await createTask(locttDir, state, {
-          title: args["title"] as string,
-          status: args["status"] as string | undefined,
-          priority: args["priority"] as string | undefined,
-          task_type: args["task_type"] as string | undefined,
-          body: args["body"] as string | undefined,
-        }, workflowConfig);
+        const task = await createTask({
+          locttDir, state, workflowConfig,
+          options: {
+            title: args["title"] as string,
+            status: args["status"] as string | undefined,
+            priority: args["priority"] as string | undefined,
+            task_type: args["task_type"] as string | undefined,
+            body: args["body"] as string | undefined,
+          },
+        });
         await saveState(locttDir, state);
         return text(`Created ${task.frontmatter.key}: ${task.frontmatter.title}`);
       }
@@ -288,7 +291,7 @@ export async function executeTool(
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
         const field = args["field"] as string;
         const value = args["value"];
-        const updated = await setField(locttDir, task.frontmatter.id, field, value, workflowConfig);
+        const updated = await setField({ locttDir, taskId: task.frontmatter.id, field, value, workflowConfig });
         return text(`Updated ${updated.frontmatter.key}: set ${field} = ${JSON.stringify(value)}`);
       }
 
@@ -338,7 +341,7 @@ export async function executeTool(
         const target = await lookupTask(locttDir, args["target"] as string);
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
         const relType = args["type"] as string;
-        await linkTask(locttDir, task.frontmatter.id, relType, target.frontmatter.id, workflowConfig);
+        await linkTask({ locttDir, taskId: task.frontmatter.id, type: relType, target: target.frontmatter.id, workflowConfig });
         return text(`Linked ${task.frontmatter.key} --${relType}--> ${target.frontmatter.key}`);
       }
 
@@ -346,7 +349,7 @@ export async function executeTool(
         const task = await lookupTask(locttDir, args["ref"] as string);
         const target = await lookupTask(locttDir, args["target"] as string);
         const relType = args["type"] as string;
-        await unlinkTask(locttDir, task.frontmatter.id, relType, target.frontmatter.id);
+        await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: relType, target: target.frontmatter.id });
         return text(`Unlinked ${task.frontmatter.key} --${relType}--> ${target.frontmatter.key}`);
       }
 

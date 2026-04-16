@@ -1,4 +1,4 @@
-export type { CreateTaskOptions } from "./create.js";
+export type { CreateTaskOptions, CreateTaskParams } from "./create.js";
 export { createTask } from "./create.js";
 export {
   assembleTaskFile,
@@ -22,9 +22,11 @@ export {
   lookupTask,
   TaskNotFoundError,
 } from "./lookup.js";
+export type { LinkTaskOptions, UnlinkTaskOptions } from "./relationships.js";
 export { linkTask, RelationshipError,unlinkTask } from "./relationships.js";
 export type { AttachmentInfo, TaskShowModel } from "./show.js";
 export { buildShowModel,discoverAttachments } from "./show.js";
 export type { RelationshipValidationError } from "./traversal.js";
 export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./traversal.js";
+export type { SetFieldOptions } from "./update.js";
 export { setField, TaskUpdateError,unsetField } from "./update.js";

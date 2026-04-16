@@ -27,7 +27,7 @@ describe("createTask", () => {
 
   it("creates a task with only required fields", async () => {
     const state = makeState();
-    const task = await createTask(locttDir, state, { title: "My task" });
+    const task = await createTask({ locttDir, state, options: { title: "My task" } });
 
     expect(task.frontmatter.title).toBe("My task");
     expect(task.frontmatter.key).toBe("T-1");
@@ -42,7 +42,7 @@ describe("createTask", () => {
 
   it("creates a task with optional fields", async () => {
     const state = makeState();
-    const task = await createTask(locttDir, state, {
+    const task = await createTask({ locttDir, state, options: {
       title: "Full task",
       status: "in_progress",
       priority: "high",
@@ -50,7 +50,7 @@ describe("createTask", () => {
       labels: ["urgent"],
       fields: { sprint: "sprint_1" },
       body: "Some description.\n",
-    });
+    } });
 
     expect(task.frontmatter.status).toBe("in_progress");
     expect(task.frontmatter.priority).toBe("high");
@@ -61,7 +61,7 @@ describe("createTask", () => {
 
   it("persists the task to disk", async () => {
     const state = makeState();
-    const task = await createTask(locttDir, state, { title: "Persisted" });
+    const task = await createTask({ locttDir, state, options: { title: "Persisted" } });
 
     const loaded = await readTask(locttDir, task.frontmatter.id);
     expect(loaded.frontmatter.title).toBe("Persisted");
@@ -70,8 +70,8 @@ describe("createTask", () => {
 
   it("allocates sequential keys", async () => {
     const state = makeState();
-    const t1 = await createTask(locttDir, state, { title: "First" });
-    const t2 = await createTask(locttDir, state, { title: "Second" });
+    const t1 = await createTask({ locttDir, state, options: { title: "First" } });
+    const t2 = await createTask({ locttDir, state, options: { title: "Second" } });
 
     expect(t1.frontmatter.key).toBe("T-1");
     expect(t2.frontmatter.key).toBe("T-2");
@@ -80,8 +80,8 @@ describe("createTask", () => {
 
   it("creates unique IDs for each task", async () => {
     const state = makeState();
-    const t1 = await createTask(locttDir, state, { title: "A" });
-    const t2 = await createTask(locttDir, state, { title: "B" });
+    const t1 = await createTask({ locttDir, state, options: { title: "A" } });
+    const t2 = await createTask({ locttDir, state, options: { title: "B" } });
 
     expect(t1.frontmatter.id).not.toBe(t2.frontmatter.id);
     const ids = await listTaskIds(locttDir);

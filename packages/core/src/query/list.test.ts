@@ -68,25 +68,25 @@ describe("resolveView", () => {
 
 describe("listTasks", () => {
   it("returns all tasks with default sort (most recent first) when no query", () => {
-    const result = listTasks(tasks, {}, undefined, undefined);
+    const result = listTasks({ tasks, options: {} });
     expect(result[0]?.frontmatter.key).toBe("T-4");
   });
 
   it("filters by ad hoc query", () => {
-    const result = listTasks(tasks, { query: "status = done" }, undefined, undefined);
+    const result = listTasks({ tasks, options: { query: "status = done" } });
     expect(result).toHaveLength(1);
     expect(result[0]?.frontmatter.key).toBe("T-3");
   });
 
   it("filters using a saved view", () => {
-    const result = listTasks(tasks, { view: "recent-open" }, queriesConfig, config);
+    const result = listTasks({ tasks, options: { view: "recent-open" }, queriesConfig, workflowConfig: config });
     expect(result).toHaveLength(3);
     // Should not include done task
     expect(result.find(t => t.frontmatter.key === "T-3")).toBeUndefined();
   });
 
   it("sorts by view sort order", () => {
-    const result = listTasks(tasks, { view: "recent-open" }, queriesConfig, config);
+    const result = listTasks({ tasks, options: { view: "recent-open" }, queriesConfig, workflowConfig: config });
     // recent-open sorts by updated_at desc
     expect(result[0]?.frontmatter.key).toBe("T-4");
     expect(result[1]?.frontmatter.key).toBe("T-2");
@@ -94,7 +94,7 @@ describe("listTasks", () => {
   });
 
   it("sorts by priority using numeric values", () => {
-    const result = listTasks(tasks, { view: "by-priority" }, queriesConfig, config);
+    const result = listTasks({ tasks, options: { view: "by-priority" }, queriesConfig, workflowConfig: config });
     // by-priority sorts priority desc: high(3), medium(2), low(1)
     expect(result[0]?.frontmatter.priority).toBe("high");
     expect(result[1]?.frontmatter.priority).toBe("medium");
@@ -102,7 +102,7 @@ describe("listTasks", () => {
   });
 
   it("respects limit", () => {
-    const result = listTasks(tasks, { limit: 2 }, undefined, undefined);
+    const result = listTasks({ tasks, options: { limit: 2 } });
     expect(result).toHaveLength(2);
   });
 
@@ -110,22 +110,22 @@ describe("listTasks", () => {
     const manyTasks = Array.from({ length: 40 }, (_, i) =>
       makeTask(`T-${i}`, { updated_at: `2026-01-${String(i + 1).padStart(2, "0")}T00:00:00Z` }),
     );
-    const result = listTasks(manyTasks, {}, undefined, undefined);
+    const result = listTasks({ tasks: manyTasks, options: {} });
     expect(result).toHaveLength(30);
   });
 
   it("explicit sort overrides view sort", () => {
-    const result = listTasks(
+    const result = listTasks({
       tasks,
-      { view: "recent-open", sort: [{ field: "key", direction: "asc" }] },
+      options: { view: "recent-open", sort: [{ field: "key", direction: "asc" }] },
       queriesConfig,
-      config,
-    );
+      workflowConfig: config,
+    });
     expect(result[0]?.frontmatter.key).toBe("T-1");
   });
 
   it("throws for unknown view", () => {
-    expect(() => listTasks(tasks, { view: "bogus" }, queriesConfig, config))
+    expect(() => listTasks({ tasks, options: { view: "bogus" }, queriesConfig, workflowConfig: config }))
       .toThrow("unknown view");
   });
 });
