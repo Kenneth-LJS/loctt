@@ -1,7 +1,7 @@
 /** Default workflow.yaml content matching design-doc defaults. */
 export function defaultWorkflowYaml(prefix: string): string {
   return `key:
-  prefix: ${prefix}
+  prefix: "${prefix}"
 
 statuses:
   - key: not_started
@@ -74,7 +74,7 @@ export function defaultQueriesYaml(): string {
 export function defaultStateYaml(prefix: string): string {
   return `keys:
   task:
-    prefix: ${prefix}
+    prefix: "${prefix}"
     next_number: 1
 `;
 }
