@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { LocttState } from "@loctt/contracts";
 import { getStateFilePath } from "../paths/index.js";
+import { assertObject as _assertObject, assertString as _assertString } from "../utils/assert.js";
 
 export class StateError extends Error {
   constructor(message: string) {
@@ -12,15 +13,11 @@ export class StateError extends Error {
 }
 
 function assertObject(value: unknown, path: string): asserts value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new StateError(`${path} must be an object`);
-  }
+  _assertObject(value, path, StateError);
 }
 
 function assertString(value: unknown, path: string): asserts value is string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new StateError(`${path} must be a non-empty string`);
-  }
+  _assertString(value, path, StateError);
 }
 
 function assertPositiveInt(value: unknown, path: string): asserts value is number {

@@ -2,6 +2,11 @@ import { readFile } from "node:fs/promises";
 import { parse as parseYaml } from "yaml";
 import type { WorkflowConfig } from "@loctt/contracts";
 import { getWorkflowConfigPath } from "../paths/index.js";
+import {
+  assertString as _assertString,
+  assertArray as _assertArray,
+  assertObject as _assertObject,
+} from "../utils/assert.js";
 
 /** Errors thrown when workflow config is invalid. */
 export class WorkflowConfigError extends Error {
@@ -12,21 +17,15 @@ export class WorkflowConfigError extends Error {
 }
 
 function assertString(value: unknown, path: string): asserts value is string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new WorkflowConfigError(`${path} must be a non-empty string`);
-  }
+  _assertString(value, path, WorkflowConfigError);
 }
 
 function assertArray(value: unknown, path: string): asserts value is unknown[] {
-  if (!Array.isArray(value)) {
-    throw new WorkflowConfigError(`${path} must be an array`);
-  }
+  _assertArray(value, path, WorkflowConfigError);
 }
 
 function assertObject(value: unknown, path: string): asserts value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new WorkflowConfigError(`${path} must be an object`);
-  }
+  _assertObject(value, path, WorkflowConfigError);
 }
 
 const VALID_STATUS_CATEGORIES = new Set(["pending", "active", "completed", "discarded"]);

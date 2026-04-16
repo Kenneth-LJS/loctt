@@ -1,4 +1,3 @@
-import { access } from "node:fs/promises";
 import { resolveLocttDir, getWorkflowConfigPath, getQueriesConfigPath, getStateFilePath, getTasksDir, getConfigDir } from "../paths/index.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
 import { loadQueriesConfig } from "../config/queries.js";
@@ -6,6 +5,7 @@ import { loadState } from "../state/state.js";
 import { validateWorkflowConfig } from "../config/validation.js";
 import { loadAllTasks } from "../task/lookup.js";
 import { validateRelationships } from "../task/traversal.js";
+import { fileExists } from "../utils/fs.js";
 
 export type CheckStatus = "ok" | "warn" | "error";
 
@@ -13,15 +13,6 @@ export interface DiagnosticCheck {
   readonly name: string;
   readonly status: CheckStatus;
   readonly message: string;
-}
-
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** Runs diagnostic checks on a .loctt tracker. */

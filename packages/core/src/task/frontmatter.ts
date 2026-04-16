@@ -1,5 +1,6 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { TaskFrontmatter, TaskRelationship } from "@loctt/contracts";
+import { assertString as _assertString, assertObject as _assertObject } from "../utils/assert.js";
 
 export class TaskParseError extends Error {
   constructor(message: string) {
@@ -23,15 +24,11 @@ export function splitTaskFile(content: string): { rawYaml: string; body: string 
 }
 
 function assertString(value: unknown, path: string): asserts value is string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new TaskParseError(`${path} must be a non-empty string`);
-  }
+  _assertString(value, path, TaskParseError);
 }
 
 function assertObject(value: unknown, path: string): asserts value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new TaskParseError(`${path} must be an object`);
-  }
+  _assertObject(value, path, TaskParseError);
 }
 
 function parseRelationships(raw: unknown): TaskRelationship[] {
