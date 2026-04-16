@@ -33,7 +33,7 @@ Implementation language/runtime:
 ## Task Model / CRUD
 
 13. ~~Implement task lookup by `id` and `key`.~~ **DONE**
-14. Implement task creation with required fields and optional initial fields.
+14. ~~Implement task creation with required fields and optional initial fields.~~ **DONE**
 15. Implement task read/show model.
 16. Implement `set` / `unset` for built-in fields.
 17. Implement `set` / `unset` for custom fields.
