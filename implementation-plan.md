@@ -53,8 +53,8 @@ Implementation language/runtime:
 25. ~~Implement `text` alias behavior.~~ **DONE**
 26. ~~Implement `parent` alias behavior.~~ **DONE**
 27. ~~Implement relationship-based query filtering.~~ **DONE**
-28. Implement saved views from `queries.yaml`.
-29. Implement list defaults, sorting, limit, `--query`, and `--view`.
+28. ~~Implement saved views from `queries.yaml`.~~ **DONE**
+29. ~~Implement list defaults, sorting, limit, `--query`, and `--view`.~~ **DONE**
 
 ## CLI
 

@@ -30,6 +30,9 @@ export type { Token, TokenType } from "./query/index.js";
 export { parseQuery, ParseError } from "./query/index.js";
 export type { QueryNode, QueryValue, ComparisonOp } from "./query/index.js";
 export { evaluateQuery } from "./query/index.js";
+export type { EvalContext } from "./query/index.js";
+export { listTasks, resolveView } from "./query/index.js";
+export type { ListOptions, ListContext } from "./query/index.js";
 
 export {
   resolveLocttDir,
