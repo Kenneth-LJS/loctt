@@ -19,6 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@loctt/contracts": "*"
+    "@loctt/contracts": "*",
+    "yaml": "^2.8.3"
   }
 }
