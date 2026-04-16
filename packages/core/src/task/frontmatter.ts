@@ -1,6 +1,7 @@
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { TaskFrontmatter, TaskRelationship } from "@loctt/contracts";
-import { assertString as _assertString, assertObject as _assertObject } from "../utils/assert.js";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+
+import { assertObject as _assertObject,assertString as _assertString } from "../utils/assert.js";
 
 export class TaskParseError extends Error {
   constructor(message: string) {
@@ -17,10 +18,10 @@ const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
  */
 export function splitTaskFile(content: string): { rawYaml: string; body: string } {
   const match = FRONTMATTER_RE.exec(content);
-  if (!match) {
+  if (!match || match[1] === undefined || match[2] === undefined) {
     throw new TaskParseError("task.md must start with YAML frontmatter delimited by ---");
   }
-  return { rawYaml: match[1]!, body: match[2]! };
+  return { rawYaml: match[1], body: match[2] };
 }
 
 function assertString(value: unknown, path: string): asserts value is string {

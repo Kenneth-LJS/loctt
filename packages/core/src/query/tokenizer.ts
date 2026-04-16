@@ -69,7 +69,7 @@ export function tokenize(input: string): Token[] {
   let i = 0;
 
   while (i < input.length) {
-    const ch = input[i]!;
+    const ch = input.charAt(i);
 
     // Skip whitespace
     if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
@@ -120,10 +120,10 @@ export function tokenize(input: string): Token[] {
     }
 
     // Numbers and dates (both start with digits)
-    if (/[0-9]/.test(ch) || (ch === "-" && i + 1 < input.length && /[0-9]/.test(input[i + 1]!))) {
+    if (/[0-9]/.test(ch) || (ch === "-" && i + 1 < input.length && /[0-9]/.test(input.charAt(i + 1)))) {
       const start = i;
       if (ch === "-") i++;
-      while (i < input.length && /[0-9.\-T:Z]/.test(input[i]!)) {
+      while (i < input.length && /[0-9.\-T:Z]/.test(input.charAt(i))) {
         i++;
       }
       const raw = input.slice(start, i);
@@ -139,7 +139,7 @@ export function tokenize(input: string): Token[] {
     // Words (field names, keywords)
     if (isWordChar(ch)) {
       const start = i;
-      while (i < input.length && isWordChar(input[i]!)) {
+      while (i < input.length && isWordChar(input.charAt(i))) {
         i++;
       }
       const word = input.slice(start, i);
@@ -149,13 +149,13 @@ export function tokenize(input: string): Token[] {
       if (lower === "not") {
         // Peek ahead for "in"
         let j = i;
-        while (j < input.length && (input[j] === " " || input[j] === "\t")) {
+        while (j < input.length && (input.charAt(j) === " " || input.charAt(j) === "\t")) {
           j++;
         }
         if (j < input.length) {
           const nextStart = j;
           let nextEnd = j;
-          while (nextEnd < input.length && isWordChar(input[nextEnd]!)) {
+          while (nextEnd < input.length && isWordChar(input.charAt(nextEnd))) {
             nextEnd++;
           }
           if (input.slice(nextStart, nextEnd).toLowerCase() === "in") {

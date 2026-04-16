@@ -1,26 +1,26 @@
 #!/usr/bin/env node
 
 import {
-  initLoctt,
-  getTrackerInfo,
-  runDoctor,
-  resolveLocttDir,
-  loadOptionalConfigs,
-  loadState,
-  saveState,
-  createTask,
-  lookupTask,
-  buildShowModel,
-  setField,
-  unsetField,
   archiveTask,
-  unarchiveTask,
+  buildShowModel,
+  createTask,
   deleteTask,
+  getTrackerInfo,
+  initLoctt,
   linkTask,
-  unlinkTask,
   listTasks,
   loadAllTasks,
+  loadOptionalConfigs,
+  loadState,
+  lookupTask,
   readTaskBody,
+  resolveLocttDir,
+  runDoctor,
+  saveState,
+  setField,
+  unarchiveTask,
+  unlinkTask,
+  unsetField,
   writeTaskBody,
 } from "@loctt/core";
 
@@ -354,5 +354,8 @@ export async function main(): Promise<void> {
 import { fileURLToPath } from "node:url";
 const isDirectRun = process.argv[1] === fileURLToPath(import.meta.url);
 if (isDirectRun) {
-  main();
+  main().catch((err: unknown) => {
+    console.error(`Fatal: ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
+  });
 }

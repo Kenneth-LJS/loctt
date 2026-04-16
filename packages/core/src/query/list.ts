@@ -1,8 +1,9 @@
-import type { Task, QueriesConfig, WorkflowConfig } from "@loctt/contracts";
-import { tokenize } from "./tokenizer.js";
-import { parseQuery } from "./parser.js";
-import { evaluateQuery } from "./evaluator.js";
+import type { QueriesConfig, Task, WorkflowConfig } from "@loctt/contracts";
+
 import type { EvalContext } from "./evaluator.js";
+import { evaluateQuery } from "./evaluator.js";
+import { parseQuery } from "./parser.js";
+import { tokenize } from "./tokenizer.js";
 
 /** Options for listing/querying tasks. */
 export interface ListOptions {
@@ -80,7 +81,7 @@ export function listTasks(
     const priorityMap = buildPriorityMap(workflowConfig);
 
     filtered.sort((a, b) => {
-      for (const spec of sortSpec!) {
+      for (const spec of sortSpec) {
         const cmp = compareTasks(a, b, spec.field, spec.direction, priorityMap);
         if (cmp !== 0) return cmp;
       }
@@ -143,15 +144,17 @@ function compareTasks(
   if (aVal === undefined) return 1;
   if (bVal === undefined) return -1;
 
-  const aStr = String(aVal);
-  const bStr = String(bVal);
-
   // Try numeric comparison
   if (typeof aVal === "number" && typeof bVal === "number") {
     const cmp = aVal - bVal;
     return direction === "desc" ? -cmp : cmp;
   }
 
+  // Objects/arrays can't be meaningfully sorted as strings — treat as equal
+  if (typeof aVal === "object" || typeof bVal === "object") return 0;
+
+  const aStr = String(aVal as string | number | boolean);
+  const bStr = String(bVal as string | number | boolean);
   const cmp = aStr.localeCompare(bStr);
   return direction === "desc" ? -cmp : cmp;
 }

@@ -1,4 +1,5 @@
 import type { TaskFrontmatter } from "@loctt/contracts";
+
 import type { QueryNode, QueryValue } from "./parser.js";
 
 /** Context for query evaluation that provides access to task body and other tasks. */
@@ -10,10 +11,11 @@ export interface EvalContext {
 }
 
 /**
- * Resolves a QueryValue to a concrete JS value for comparison.
+ * Resolves a single (non-list) QueryValue to a primitive for comparison.
  * "today" resolves to today's date as YYYY-MM-DD.
+ * Returns undefined for list values — callers handle lists explicitly.
  */
-function resolveValue(qv: QueryValue): string | number | boolean | readonly QueryValue[] {
+function resolvePrimitive(qv: QueryValue): string | number | boolean | undefined {
   switch (qv.type) {
     case "string":
       return qv.value;
@@ -28,8 +30,16 @@ function resolveValue(qv: QueryValue): string | number | boolean | readonly Quer
       return now.toISOString().slice(0, 10);
     }
     case "list":
-      return qv.values;
+      return undefined;
   }
+}
+
+/**
+ * Resolves a QueryValue that must be a list, returning the list items.
+ * Returns undefined for non-list values.
+ */
+function resolveList(qv: QueryValue): readonly QueryValue[] | undefined {
+  return qv.type === "list" ? qv.values : undefined;
 }
 
 /**
@@ -48,6 +58,16 @@ function getFieldValue(fm: TaskFrontmatter, field: string): unknown {
   return undefined;
 }
 
+/**
+ * Coerces a field value to a string for comparison.
+ * Arrays and objects are not meaningfully comparable as strings — return undefined.
+ */
+function toComparableString(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return undefined;
+}
+
 function compareValues(left: unknown, op: string, right: string | number | boolean): boolean {
   // Handle undefined left — field not set
   if (left === undefined || left === null) {
@@ -55,7 +75,11 @@ function compareValues(left: unknown, op: string, right: string | number | boole
     return false;
   }
 
-  const leftStr = String(left);
+  const leftStr = toComparableString(left);
+  if (leftStr === undefined) {
+    // Objects/arrays can't be meaningfully compared as strings
+    return op === "!=";
+  }
   const rightStr = String(right);
 
   switch (op) {
@@ -111,9 +135,9 @@ function evaluateTextAlias(
 
   // Search built-in text fields
   for (const field of TEXT_SEARCH_FIELDS) {
-    const val = getFieldValue(fm, field);
-    if (val !== undefined && String(val).toLowerCase().includes(term)) {
-      return op === "~" ? true : false;
+    const val = toComparableString(getFieldValue(fm, field));
+    if (val !== undefined && val.toLowerCase().includes(term)) {
+      return op === "~";
     }
   }
 
@@ -174,13 +198,14 @@ export function evaluateQuery(
     case "comparison": {
       // Handle special aliases
       if (node.field === "text") {
-        const resolved = resolveValue(node.value);
+        const resolved = resolvePrimitive(node.value);
+        if (resolved === undefined) return false;
         return evaluateTextAlias(fm, node.op, String(resolved), ctx);
       }
 
       if (node.field === "parent") {
-        const resolved = resolveValue(node.value);
-        if (typeof resolved === "object") return false;
+        const resolved = resolvePrimitive(node.value);
+        if (resolved === undefined) return false;
         return evaluateParentAlias(fm, node.op, resolved, ctx);
       }
 
@@ -191,14 +216,18 @@ export function evaluateQuery(
         if (rels.length === 0) {
           return node.op === "!=" || node.op === "not in";
         }
-        const resolved = resolveValue(node.value);
         if (node.op === "in" || node.op === "not in") {
-          if (!Array.isArray(resolved)) return false;
-          const listValues = (resolved as readonly QueryValue[]).map(v => String(resolveValue(v)));
+          const items = resolveList(node.value);
+          if (!items) return false;
+          const listValues = items.map(v => {
+            const p = resolvePrimitive(v);
+            return p !== undefined ? String(p) : "";
+          });
           const hasMatch = rels.some(r => listValues.includes(r.target));
           return node.op === "in" ? hasMatch : !hasMatch;
         }
-        if (typeof resolved === "object") return false;
+        const resolved = resolvePrimitive(node.value);
+        if (resolved === undefined) return false;
         return rels.some(r => compareValues(r.target, node.op, resolved));
       }
 
@@ -208,18 +237,19 @@ export function evaluateQuery(
         if (fieldVal === undefined || fieldVal === null) {
           return node.op === "not in";
         }
-        const resolved = resolveValue(node.value);
-        if (!Array.isArray(resolved)) return false;
-        const fieldStr = String(fieldVal);
-        const matches = (resolved as readonly QueryValue[]).some(v => {
-          const rv = resolveValue(v);
-          return String(rv) === fieldStr;
+        const items = resolveList(node.value);
+        if (!items) return false;
+        const fieldStr = toComparableString(fieldVal);
+        if (fieldStr === undefined) return node.op === "not in";
+        const matches = items.some(v => {
+          const p = resolvePrimitive(v);
+          return p !== undefined && String(p) === fieldStr;
         });
         return node.op === "in" ? matches : !matches;
       }
 
-      const resolved = resolveValue(node.value);
-      if (typeof resolved === "object") return false;
+      const resolved = resolvePrimitive(node.value);
+      if (resolved === undefined) return false;
       return compareValues(fieldVal, node.op, resolved);
     }
 

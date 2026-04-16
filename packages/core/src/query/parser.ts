@@ -42,9 +42,9 @@ class Parser {
 
   parse(): QueryNode {
     const node = this.parseOr();
-    if (this.pos < this.tokens.length) {
-      const tok = this.tokens[this.pos]!;
-      throw new ParseError(`unexpected token "${tok.value}"`, tok.position);
+    const trailing = this.peek();
+    if (trailing) {
+      throw new ParseError(`unexpected token "${trailing.value}"`, trailing.position);
     }
     return node;
   }
@@ -53,10 +53,16 @@ class Parser {
     return this.tokens[this.pos];
   }
 
+  /** Position of the last token, for error messages at end-of-input. */
+  private endPosition(): number {
+    const last = this.tokens[this.tokens.length - 1];
+    return last ? last.position : 0;
+  }
+
   private advance(): Token {
     const tok = this.tokens[this.pos];
     if (!tok) {
-      throw new ParseError("unexpected end of query", this.tokens.length > 0 ? this.tokens[this.tokens.length - 1]!.position : 0);
+      throw new ParseError("unexpected end of query", this.endPosition());
     }
     this.pos++;
     return tok;
@@ -102,7 +108,7 @@ class Parser {
   private parsePrimary(): QueryNode {
     const tok = this.peek();
     if (!tok) {
-      throw new ParseError("unexpected end of query", this.tokens.length > 0 ? this.tokens[this.tokens.length - 1]!.position : 0);
+      throw new ParseError("unexpected end of query", this.endPosition());
     }
 
     if (tok.type === "LPAREN") {

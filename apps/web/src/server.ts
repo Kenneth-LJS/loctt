@@ -1,35 +1,36 @@
 import { createServer } from "node:http";
+
 import type {
+  ConfigResponse,
   CreateTaskRequest,
-  UpdateTaskRequest,
+  DoctorCheckResponse,
   LinkRequest,
   ListTasksRequest,
   TaskResponse,
-  ConfigResponse,
   TrackerInfoResponse,
-  DoctorCheckResponse,
+  UpdateTaskRequest,
 } from "@loctt/contracts";
 import {
-  resolveLocttDir,
+  archiveTask,
+  buildShowModel,
+  createTask,
+  deleteTask,
   getTrackerInfo,
-  runDoctor,
+  linkTask,
+  listTasks,
+  loadAllTasks,
   loadOptionalConfigs,
-  loadWorkflowConfig,
   loadQueriesConfig,
   loadState,
-  saveState,
-  createTask,
+  loadWorkflowConfig,
   lookupTask,
-  buildShowModel,
+  resolveLocttDir,
+  runDoctor,
+  saveState,
   setField,
-  unsetField,
-  linkTask,
-  unlinkTask,
-  archiveTask,
   unarchiveTask,
-  deleteTask,
-  loadAllTasks,
-  listTasks,
+  unlinkTask,
+  unsetField,
 } from "@loctt/core";
 
 const DEFAULT_PORT = 4321;
@@ -63,6 +64,12 @@ function error(res: import("node:http").ServerResponse, message: string, status 
 
 const VALID_REF_RE = /^[A-Za-z0-9_-]+$/;
 
+/** Matches a route pattern with a single capture group and returns the captured value. */
+function matchRoute(path: string, pattern: RegExp): string | undefined {
+  const m = pattern.exec(path);
+  return m?.[1];
+}
+
 export interface WebAppOptions {
   readonly root: string;
   readonly port?: number;
@@ -72,7 +79,14 @@ export function createWebApp(options: WebAppOptions) {
   const root = options.root;
   const port = options.port ?? DEFAULT_PORT;
 
-  const server = createServer(async (req, res) => {
+  const server = createServer((req, res) => {
+    void handleRequest(req, res);
+  });
+
+  async function handleRequest(
+    req: import("node:http").IncomingMessage,
+    res: import("node:http").ServerResponse,
+  ): Promise<void> {
     const url = new URL(req.url ?? "/", `http://localhost:${port}`);
     const path = url.pathname;
 
@@ -144,9 +158,9 @@ export function createWebApp(options: WebAppOptions) {
         return;
       }
 
-      const taskMatch = path.match(/^\/api\/tasks\/([^/]+)$/);
-      if (taskMatch && req.method === "GET") {
-        const ref = taskMatch[1]!;
+      const getTaskRef = matchRoute(path, /^\/api\/tasks\/([^/]+)$/);
+      if (getTaskRef !== undefined && req.method === "GET") {
+        const ref = getTaskRef;
         if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
         const task = await lookupTask(locttDir, ref);
         const model = await buildShowModel(locttDir, task);
@@ -159,9 +173,9 @@ export function createWebApp(options: WebAppOptions) {
         return;
       }
 
-      const setMatch = path.match(/^\/api\/tasks\/([^/]+)\/set$/);
-      if (setMatch && req.method === "POST") {
-        const ref = setMatch[1]!;
+      const setRef = matchRoute(path, /^\/api\/tasks\/([^/]+)\/set$/);
+      if (setRef !== undefined && req.method === "POST") {
+        const ref = setRef;
         if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
         const body = await readBody(req);
         const request = JSON.parse(body) as UpdateTaskRequest;
@@ -171,9 +185,9 @@ export function createWebApp(options: WebAppOptions) {
         return;
       }
 
-      const unsetMatch = path.match(/^\/api\/tasks\/([^/]+)\/unset$/);
-      if (unsetMatch && req.method === "POST") {
-        const ref = unsetMatch[1]!;
+      const unsetRef = matchRoute(path, /^\/api\/tasks\/([^/]+)\/unset$/);
+      if (unsetRef !== undefined && req.method === "POST") {
+        const ref = unsetRef;
         if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
         const body = await readBody(req);
         const { field } = JSON.parse(body) as { field: string };
@@ -183,9 +197,9 @@ export function createWebApp(options: WebAppOptions) {
         return;
       }
 
-      const archiveMatch = path.match(/^\/api\/tasks\/([^/]+)\/archive$/);
-      if (archiveMatch && req.method === "POST") {
-        const ref = archiveMatch[1]!;
+      const archiveRef = matchRoute(path, /^\/api\/tasks\/([^/]+)\/archive$/);
+      if (archiveRef !== undefined && req.method === "POST") {
+        const ref = archiveRef;
         if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
         const task = await lookupTask(locttDir, ref);
         const updated = await archiveTask(locttDir, task.frontmatter.id);
@@ -193,9 +207,9 @@ export function createWebApp(options: WebAppOptions) {
         return;
       }
 
-      const unarchiveMatch = path.match(/^\/api\/tasks\/([^/]+)\/unarchive$/);
-      if (unarchiveMatch && req.method === "POST") {
-        const ref = unarchiveMatch[1]!;
+      const unarchiveRef = matchRoute(path, /^\/api\/tasks\/([^/]+)\/unarchive$/);
+      if (unarchiveRef !== undefined && req.method === "POST") {
+        const ref = unarchiveRef;
         if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
         const task = await lookupTask(locttDir, ref);
         const updated = await unarchiveTask(locttDir, task.frontmatter.id);
@@ -203,9 +217,9 @@ export function createWebApp(options: WebAppOptions) {
         return;
       }
 
-      const deleteMatch = path.match(/^\/api\/tasks\/([^/]+)$/);
-      if (deleteMatch && req.method === "DELETE") {
-        const ref = deleteMatch[1]!;
+      const deleteRef = matchRoute(path, /^\/api\/tasks\/([^/]+)$/);
+      if (deleteRef !== undefined && req.method === "DELETE") {
+        const ref = deleteRef;
         if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
         const task = await lookupTask(locttDir, ref);
         await deleteTask(locttDir, task.frontmatter.id, { force: true });
@@ -213,9 +227,9 @@ export function createWebApp(options: WebAppOptions) {
         return;
       }
 
-      const linkMatch = path.match(/^\/api\/tasks\/([^/]+)\/link$/);
-      if (linkMatch && req.method === "POST") {
-        const ref = linkMatch[1]!;
+      const linkRef = matchRoute(path, /^\/api\/tasks\/([^/]+)\/link$/);
+      if (linkRef !== undefined && req.method === "POST") {
+        const ref = linkRef;
         if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
         const body = await readBody(req);
         const request = JSON.parse(body) as LinkRequest;
@@ -225,9 +239,9 @@ export function createWebApp(options: WebAppOptions) {
         return;
       }
 
-      const unlinkMatch = path.match(/^\/api\/tasks\/([^/]+)\/unlink$/);
-      if (unlinkMatch && req.method === "POST") {
-        const ref = unlinkMatch[1]!;
+      const unlinkRef = matchRoute(path, /^\/api\/tasks\/([^/]+)\/unlink$/);
+      if (unlinkRef !== undefined && req.method === "POST") {
+        const ref = unlinkRef;
         if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
         const body = await readBody(req);
         const request = JSON.parse(body) as LinkRequest;
@@ -242,7 +256,7 @@ export function createWebApp(options: WebAppOptions) {
       console.error(err);
       error(res, "Internal server error", 500);
     }
-  });
+  }
 
   return {
     start: () => new Promise<void>((resolve) => {

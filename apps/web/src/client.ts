@@ -1,12 +1,12 @@
 // Internal HTTP client for the web app's own API endpoints.
 
 import type {
+  ConfigResponse,
+  CreateTaskRequest,
+  DoctorCheckResponse,
   TaskFrontmatter,
   TaskResponse,
   TrackerInfoResponse,
-  DoctorCheckResponse,
-  CreateTaskRequest,
-  ConfigResponse,
 } from "@loctt/contracts";
 
 /** HTTP client for the co-located API. Used internally by the web UI. */
@@ -26,8 +26,8 @@ export class LocttClient {
       },
     });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+      const body: { error?: string } = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
+      throw new Error(body.error ?? `HTTP ${res.status}`);
     }
     return res.json() as Promise<T>;
   }
