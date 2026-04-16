@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.loctt/local/
+
+# Machine-specific Claude config (if created)
+.claude/agent-env.md

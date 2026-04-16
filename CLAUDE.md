@@ -1,0 +1,56 @@
+# LocTT
+
+Local task tracker — CLI tool, MCP server, and GUI for managing tasks stored as markdown files in `.loctt/`.
+
+## Tech Stack
+
+- Node.js / TypeScript
+- Task data: YAML frontmatter + markdown body in `.loctt/tasks/<id>/task.md`
+- Config: `.loctt/config/workflow.yaml`, `.loctt/config/queries.yaml`
+- State: `.loctt/state.yaml`
+
+## Key Design Decisions
+
+All confirmed decisions live in `design-doc.md`. Always cross-reference it before implementing.
+
+Key points:
+- Tasks use `id` (internal, ULID) and `key` (user-facing, e.g. `T-123`)
+- Status, priority, task_type, relationships are configurable in `.loctt/config/workflow.yaml`
+- Stored enum values use config `key`s, not human labels
+- Task body is free markdown; no schema-enforced structure
+- MCP uses structured tools for metadata — never edit frontmatter directly
+- Git-backed mode is optional, uses sparse worktree on `.loctt` branch
+
+## Commands
+
+```bash
+# Not yet implemented — intended commands:
+npm run build        # Build
+npm run test         # Run tests
+npm run dev          # Dev mode
+```
+
+## Architecture
+
+- `src/` — source code (TypeScript)
+- `.loctt/` — data directory (tasks, config, state)
+- Design doc: `design-doc.md`
+- Implementation plan: `implementation-plan.md`
+
+## Development Workflow
+
+Follow `.claude/housekeeping.md` for all work. Key principles:
+
+1. Understand intent before implementing
+2. Investigate impact on existing features
+3. Identify edge cases and complications
+4. THEN implement
+
+No quick fixes. No workarounds without discussion.
+
+## Testing Philosophy
+
+- Tests catch bugs, not coverage metrics
+- Mock only external dependencies (file system, network, timers), never business logic
+- Present test strategy before implementing
+- Each test should answer: "what regression would this catch?"
