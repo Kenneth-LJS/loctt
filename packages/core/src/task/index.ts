@@ -21,3 +21,6 @@ export {
   lookupTask,
   TaskNotFoundError,
 } from "./lookup.js";
+
+export { createTask } from "./create.js";
+export type { CreateTaskOptions } from "./create.js";
