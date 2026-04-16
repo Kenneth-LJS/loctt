@@ -49,6 +49,11 @@ npx tsc --build      # Build via project references
 - `.loctt/` — data directory (tasks, config, state)
 - Documentation: `docs/`
 
+## Git Commits
+
+- Do NOT add "Co-Authored-By" or any AI/Claude attribution to commit messages. Ever.
+- Write commit messages as if a human wrote them. No credits, no signatures.
+
 ## Development Workflow
 
 Follow `.claude/housekeeping.md` for all work. Key principles:
