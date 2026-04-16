@@ -27,7 +27,7 @@ Implementation language/runtime:
 8. ~~Implement `.loctt/local/sync.yaml` and `.loctt/local/reconcile.yaml` loading/writing.~~ **DONE**
 9. ~~Implement `task.md` frontmatter parsing and writing.~~ **DONE**
 10. ~~Implement markdown body reading/writing for tasks.~~ **DONE**
-11. Implement workflow/config validation.
+11. ~~Implement workflow/config validation.~~ **DONE**
 12. Implement key allocation, `next_number`, and `key_history`.
 
 ## Task Model / CRUD
