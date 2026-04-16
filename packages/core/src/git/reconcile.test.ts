@@ -38,7 +38,19 @@ describe("rekeyCollisions", () => {
     expect(state.keys["task"]?.next_number).toBe(6);
   });
 
-  it("preserves old key in key_history", () => {
+  it("includes old key in key_history on the result", () => {
+    const tasks = [
+      makeTask("a", "T-1", "2026-01-01T00:00:00Z"),
+      makeTask("b", "T-1", "2026-01-02T00:00:00Z"),
+    ];
+    const state: LocttState = { keys: { task: { prefix: "T-", next_number: 5 } } };
+    const results = rekeyCollisions(tasks, state);
+
+    expect(results[0]?.newKey).toBe("T-5");
+    expect(results[0]?.keyHistory).toEqual(["T-1"]);
+  });
+
+  it("does not mutate input task objects", () => {
     const tasks = [
       makeTask("a", "T-1", "2026-01-01T00:00:00Z"),
       makeTask("b", "T-1", "2026-01-02T00:00:00Z"),
@@ -46,8 +58,9 @@ describe("rekeyCollisions", () => {
     const state: LocttState = { keys: { task: { prefix: "T-", next_number: 5 } } };
     rekeyCollisions(tasks, state);
 
-    expect(tasks[1]?.frontmatter.key).toBe("T-5");
-    expect(tasks[1]?.frontmatter.key_history).toEqual(["T-1"]);
+    // Input tasks should remain unchanged
+    expect(tasks[1]?.frontmatter.key).toBe("T-1");
+    expect(tasks[1]?.frontmatter.key_history).toBeUndefined();
   });
 
   it("breaks ties by id", () => {
