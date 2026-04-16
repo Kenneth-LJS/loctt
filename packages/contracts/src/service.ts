@@ -43,7 +43,6 @@ export interface ListTasksRequest {
 /** Attachment info for API responses. */
 export interface AttachmentResponse {
   readonly name: string;
-  readonly path: string;
   readonly size: number;
 }
 
@@ -63,7 +62,6 @@ export interface ConfigResponse {
 /** Tracker info response for API. */
 export interface TrackerInfoResponse {
   readonly exists: boolean;
-  readonly locttDir: string;
   readonly taskCount: number;
   readonly keyPrefix: string | null;
   readonly nextKey: string | null;

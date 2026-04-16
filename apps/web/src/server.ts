@@ -76,6 +76,28 @@ export interface WebAppOptions {
   readonly port?: number;
 }
 
+/**
+ * CSRF guard for state-changing requests.
+ * Requires the X-Loctt-Client header on non-GET methods.
+ * Browsers cannot send custom headers on simple cross-origin requests
+ * without a CORS preflight, and since we set no Access-Control-Allow-*
+ * headers, the preflight will be denied — blocking cross-site requests.
+ */
+function requireCsrfHeader(
+  req: import("node:http").IncomingMessage,
+  res: import("node:http").ServerResponse,
+): boolean {
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+    return true;
+  }
+  if (!req.headers["x-loctt-client"]) {
+    res.writeHead(403, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Missing X-Loctt-Client header" }));
+    return false;
+  }
+  return true;
+}
+
 export function createWebApp(options: WebAppOptions) {
   const root = options.root;
   const port = options.port ?? DEFAULT_PORT;
@@ -88,6 +110,8 @@ export function createWebApp(options: WebAppOptions) {
     req: import("node:http").IncomingMessage,
     res: import("node:http").ServerResponse,
   ): Promise<void> {
+    if (!requireCsrfHeader(req, res)) return;
+
     const url = new URL(req.url ?? "/", `http://localhost:${port}`);
     const path = url.pathname;
 
@@ -98,7 +122,6 @@ export function createWebApp(options: WebAppOptions) {
         const info = await getTrackerInfo(root);
         const response: TrackerInfoResponse = {
           exists: info.exists,
-          locttDir: info.locttDir,
           taskCount: info.taskCount,
           keyPrefix: info.workflowConfig?.key.prefix ?? null,
           nextKey: info.state?.keys["task"]
@@ -169,7 +192,7 @@ export function createWebApp(options: WebAppOptions) {
         const response: TaskResponse = {
           frontmatter: model.task.frontmatter,
           body: model.task.body,
-          attachments: model.attachments,
+          attachments: model.attachments.map(a => ({ name: a.name, size: a.size })),
         };
         json(res, response);
         return;
