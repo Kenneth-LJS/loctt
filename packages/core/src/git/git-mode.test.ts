@@ -31,7 +31,7 @@ describe("git mode", () => {
       await enableGit(locttDir, root);
       const status = await getGitStatus(locttDir, root);
       expect(status.enabled).toBe(true);
-      expect(status.branch).toBe(".loctt");
+      expect(status.branch).toBe("loctt");
       expect(status.isGitRepo).toBe(true);
     });
 

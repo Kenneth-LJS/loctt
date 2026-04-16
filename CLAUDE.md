@@ -23,7 +23,7 @@ Key points:
 - Stored enum values use config `key`s, not human labels
 - Task body is free markdown; no schema-enforced structure
 - MCP uses structured tools for metadata — never edit frontmatter directly
-- Git-backed mode is optional, uses sparse worktree on `.loctt` branch
+- Git-backed mode is optional, uses sparse worktree on `loctt` branch
 
 ## Commands
 
