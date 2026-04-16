@@ -35,8 +35,8 @@ Implementation language/runtime:
 13. ~~Implement task lookup by `id` and `key`.~~ **DONE**
 14. ~~Implement task creation with required fields and optional initial fields.~~ **DONE**
 15. ~~Implement task read/show model.~~ **DONE**
-16. Implement `set` / `unset` for built-in fields.
-17. Implement `set` / `unset` for custom fields.
+16. ~~Implement `set` / `unset` for built-in fields.~~ **DONE**
+17. ~~Implement `set` / `unset` for custom fields.~~ **DONE**
 18. Implement archive / unarchive behavior.
 19. Implement hard delete with `--force`.
 20. Implement attachment discovery from task folders.

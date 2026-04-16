@@ -27,3 +27,5 @@ export type { CreateTaskOptions } from "./create.js";
 
 export { discoverAttachments, buildShowModel } from "./show.js";
 export type { AttachmentInfo, TaskShowModel } from "./show.js";
+
+export { setField, unsetField, TaskUpdateError } from "./update.js";
