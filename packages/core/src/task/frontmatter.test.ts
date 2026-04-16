@@ -130,6 +130,27 @@ archived_at: "2026-04-16T14:30:00Z"
     const yaml = `id: abc\nkey: T-1\ncreated_at: "2026-01-01T00:00:00Z"\nupdated_at: "2026-01-01T00:00:00Z"`;
     expect(() => parseFrontmatter(yaml)).toThrow("title must be a non-empty string");
   });
+
+  it("treats YAML null (~) as undefined for optional fields", () => {
+    const yaml = `
+id: abc
+key: T-1
+title: Null fields
+created_at: "2026-01-01T00:00:00Z"
+updated_at: "2026-01-01T00:00:00Z"
+assignee: ~
+milestone: null
+labels: ~
+archived: ~
+start_date: ~
+`;
+    const fm = parseFrontmatter(yaml);
+    expect(fm.assignee).toBeUndefined();
+    expect(fm.milestone).toBeUndefined();
+    expect(fm.labels).toBeUndefined();
+    expect(fm.archived).toBeUndefined();
+    expect(fm.start_date).toBeUndefined();
+  });
 });
 
 describe("serializeFrontmatter", () => {
