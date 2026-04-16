@@ -71,16 +71,6 @@ function optionalBoolean(value: unknown, path: string): boolean | undefined {
   return value;
 }
 
-// Built-in frontmatter keys that are parsed explicitly
-const BUILTIN_KEYS = new Set([
-  "id", "key", "title", "created_at", "updated_at",
-  "status", "status_updated_at", "task_type", "priority",
-  "parent", "labels", "assignee", "reporter",
-  "start_date", "due_date", "estimate", "completed_at",
-  "milestone", "archived", "archived_at",
-  "relationships", "key_history", "fields",
-]);
-
 /** Parses raw YAML frontmatter into a TaskFrontmatter. */
 export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
   const raw: unknown = parseYaml(rawYaml);
