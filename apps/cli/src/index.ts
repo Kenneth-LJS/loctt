@@ -5,8 +5,7 @@ import {
   getTrackerInfo,
   runDoctor,
   resolveLocttDir,
-  loadWorkflowConfig,
-  loadQueriesConfig,
+  loadOptionalConfigs,
   loadState,
   saveState,
   createTask,
@@ -127,10 +126,7 @@ export async function main(): Promise<void> {
       case "list": {
         const locttDir = resolveLocttDir(root);
         const tasks = await loadAllTasks(locttDir);
-        let workflowConfig = undefined;
-        let queriesConfig = undefined;
-        try { workflowConfig = await loadWorkflowConfig(locttDir); } catch { /* ok */ }
-        try { queriesConfig = await loadQueriesConfig(locttDir); } catch { /* ok */ }
+        const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
 
         const result = listTasks(
           tasks,

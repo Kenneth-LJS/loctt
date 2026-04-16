@@ -2,6 +2,8 @@
 
 export { loadWorkflowConfig, parseWorkflowConfig } from "./config/index.js";
 export { loadQueriesConfig, parseQueriesConfig } from "./config/index.js";
+export { loadOptionalConfigs } from "./config/index.js";
+export type { OptionalConfigs } from "./config/index.js";
 export { WorkflowConfigError } from "./config/workflow.js";
 export { QueriesConfigError } from "./config/queries.js";
 export { validateTaskAgainstWorkflow, validateWorkflowConfig } from "./config/index.js";

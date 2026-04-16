@@ -3,6 +3,7 @@
 
 import {
   resolveLocttDir,
+  loadOptionalConfigs,
   loadWorkflowConfig,
   loadQueriesConfig,
   loadState,
@@ -211,10 +212,7 @@ export async function executeTool(
 
       case "list_tasks": {
         const tasks = await loadAllTasks(locttDir);
-        let workflowConfig = undefined;
-        let queriesConfig = undefined;
-        try { workflowConfig = await loadWorkflowConfig(locttDir); } catch { /* ok */ }
-        try { queriesConfig = await loadQueriesConfig(locttDir); } catch { /* ok */ }
+        const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
 
         const result = listTasks(
           tasks,

@@ -42,13 +42,14 @@ export async function runDoctor(root: string): Promise<readonly DiagnosticCheck[
   }
 
   // Check workflow.yaml
+  let workflowConfig: Awaited<ReturnType<typeof loadWorkflowConfig>> | undefined;
   const workflowPath = getWorkflowConfigPath(locttDir);
   if (!(await fileExists(workflowPath))) {
     checks.push({ name: "workflow.yaml", status: "error", message: "missing" });
   } else {
     try {
-      const config = await loadWorkflowConfig(locttDir);
-      const errors = validateWorkflowConfig(config);
+      workflowConfig = await loadWorkflowConfig(locttDir);
+      const errors = validateWorkflowConfig(workflowConfig);
       if (errors.length > 0) {
         checks.push({
           name: "workflow.yaml",
@@ -89,26 +90,27 @@ export async function runDoctor(root: string): Promise<readonly DiagnosticCheck[
     }
   }
 
-  // Check relationships if workflow config loaded
-  try {
-    const config = await loadWorkflowConfig(locttDir);
-    const relErrors = await validateRelationships(locttDir, config);
-    if (relErrors.length > 0) {
-      checks.push({
-        name: "relationships",
-        status: "warn",
-        message: `${relErrors.length} issue(s) found`,
-      });
-    } else {
-      const tasks = await loadAllTasks(locttDir);
-      checks.push({
-        name: "tasks",
-        status: "ok",
-        message: `${tasks.length} task(s) found, relationships valid`,
-      });
+  // Check relationships using the already-loaded workflow config
+  if (workflowConfig) {
+    try {
+      const relErrors = await validateRelationships(locttDir, workflowConfig);
+      if (relErrors.length > 0) {
+        checks.push({
+          name: "relationships",
+          status: "warn",
+          message: `${relErrors.length} issue(s) found`,
+        });
+      } else {
+        const tasks = await loadAllTasks(locttDir);
+        checks.push({
+          name: "tasks",
+          status: "ok",
+          message: `${tasks.length} task(s) found, relationships valid`,
+        });
+      }
+    } catch {
+      // Skip relationship check on error
     }
-  } catch {
-    // Skip relationship check if config can't load
   }
 
   return checks;

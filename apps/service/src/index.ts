@@ -13,6 +13,7 @@ import {
   resolveLocttDir,
   getTrackerInfo,
   runDoctor,
+  loadOptionalConfigs,
   loadWorkflowConfig,
   loadQueriesConfig,
   loadState,
@@ -110,10 +111,7 @@ export function createService(options: ServiceOptions) {
 
       if (path === "/api/tasks" && req.method === "GET") {
         const tasks = await loadAllTasks(locttDir);
-        let workflowConfig = undefined;
-        let queriesConfig = undefined;
-        try { workflowConfig = await loadWorkflowConfig(locttDir); } catch { /* ok */ }
-        try { queriesConfig = await loadQueriesConfig(locttDir); } catch { /* ok */ }
+        const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
 
         const params: ListTasksRequest = {
           query: url.searchParams.get("query") ?? undefined,
