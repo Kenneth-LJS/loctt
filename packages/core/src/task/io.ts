@@ -1,8 +1,15 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { Task } from "@loctt/contracts";
 import { getTaskFilePath } from "../paths/index.js";
 import { splitTaskFile, parseFrontmatter, assembleTaskFile } from "./frontmatter.js";
+
+async function atomicWrite(filePath: string, content: string): Promise<void> {
+  const tmpPath = `${filePath}.${randomUUID()}.tmp`;
+  await writeFile(tmpPath, content, "utf-8");
+  await rename(tmpPath, filePath);
+}
 
 /**
  * Reads and parses a task.md file into a Task (frontmatter + body).
@@ -24,7 +31,7 @@ export async function writeTask(locttDir: string, taskId: string, task: Task): P
   const filePath = getTaskFilePath(locttDir, taskId);
   await mkdir(dirname(filePath), { recursive: true });
   const content = assembleTaskFile(task.frontmatter, task.body);
-  await writeFile(filePath, content, "utf-8");
+  await atomicWrite(filePath, content);
 }
 
 /**
@@ -39,12 +46,14 @@ export async function readTaskBody(locttDir: string, taskId: string): Promise<st
 
 /**
  * Replaces the markdown body of a task while preserving frontmatter.
+ * Updates `updated_at` to the current time.
  */
 export async function writeTaskBody(locttDir: string, taskId: string, newBody: string): Promise<void> {
   const filePath = getTaskFilePath(locttDir, taskId);
   const content = await readFile(filePath, "utf-8");
   const { rawYaml } = splitTaskFile(content);
   const frontmatter = parseFrontmatter(rawYaml);
-  const assembled = assembleTaskFile(frontmatter, newBody);
-  await writeFile(filePath, assembled, "utf-8");
+  const updated = { ...frontmatter, updated_at: new Date().toISOString() };
+  const assembled = assembleTaskFile(updated, newBody);
+  await atomicWrite(filePath, assembled);
 }
