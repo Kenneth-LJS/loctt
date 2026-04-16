@@ -5,6 +5,9 @@ export { loadQueriesConfig, parseQueriesConfig } from "./config/index.js";
 export { WorkflowConfigError } from "./config/workflow.js";
 export { QueriesConfigError } from "./config/queries.js";
 
+export { loadState, saveState, parseState, serializeState } from "./state/index.js";
+export { StateError } from "./state/state.js";
+
 export {
   resolveLocttDir,
   getTaskDir,
