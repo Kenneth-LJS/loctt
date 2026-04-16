@@ -31,6 +31,8 @@ Key points:
 npm run build        # Build all workspaces (tsc)
 npm run test         # Run tests across all workspaces (vitest)
 npm run typecheck    # Type-check all workspaces
+npm run lint         # Lint all workspaces (eslint)
+npm run lint:fix     # Lint and auto-fix
 npm run clean        # Remove dist/ from all workspaces
 npx tsc --build      # Build via project references
 ```
