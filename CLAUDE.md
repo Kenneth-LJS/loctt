@@ -24,15 +24,22 @@ Key points:
 ## Commands
 
 ```bash
-# Not yet implemented — intended commands:
-npm run build        # Build
-npm run test         # Run tests
-npm run dev          # Dev mode
+npm run build        # Build all workspaces (tsc)
+npm run test         # Run tests across all workspaces (vitest)
+npm run typecheck    # Type-check all workspaces
+npm run clean        # Remove dist/ from all workspaces
+npx tsc --build      # Build via project references
 ```
 
 ## Architecture
 
-- `src/` — source code (TypeScript)
+- Monorepo with npm workspaces
+  - `packages/contracts` — shared types and API shapes
+  - `packages/core` — shared LocTT logic
+  - `apps/cli` — CLI interface
+  - `apps/mcp` — MCP server
+  - `apps/service` — local service layer
+  - `apps/web` — web app shell
 - `.loctt/` — data directory (tasks, config, state)
 - Design doc: `design-doc.md`
 - Implementation plan: `implementation-plan.md`

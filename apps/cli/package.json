@@ -1,0 +1,20 @@
+{
+  "name": "@loctt/cli",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "loctt": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@loctt/core": "*"
+  }
+}

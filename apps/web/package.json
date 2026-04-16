@@ -1,0 +1,14 @@
+{
+  "name": "@loctt/web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "echo 'web build not yet configured'",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@loctt/contracts": "*"
+  }
+}

@@ -17,7 +17,7 @@ Implementation language/runtime:
 
 ## Core Files / Schema
 
-1. Scaffold the monorepo, workspace config, and shared TypeScript tooling.
+1. ~~Scaffold the monorepo, workspace config, and shared TypeScript tooling.~~ **DONE**
 2. Scaffold `packages/core` and `packages/contracts`.
 3. Scaffold `apps/cli`, `apps/mcp`, `apps/service`, and `apps/web`.
 4. Define `.loctt/` path layout and path helper utilities in `packages/core`.

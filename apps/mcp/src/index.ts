@@ -1,0 +1,1 @@
+// @loctt/mcp — MCP server
