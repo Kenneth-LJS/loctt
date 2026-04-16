@@ -4,8 +4,13 @@ const LOCTT_DIR = ".loctt";
 const TASKS_DIR = "tasks";
 const CONFIG_DIR = "config";
 const LOCAL_DIR = "local";
+const DOCS_DIR = "docs";
 const STATE_FILE = "state.yaml";
 const TASK_FILE = "task.md";
+const WORKFLOW_FILE = "workflow.yaml";
+const QUERIES_FILE = "queries.yaml";
+const SYNC_FILE = "sync.yaml";
+const RECONCILE_FILE = "reconcile.yaml";
 
 /**
  * Resolves the .loctt directory from a given root.
@@ -38,4 +43,34 @@ export function getStateFilePath(locttDir: string): string {
 /** Returns the path to the local directory: .loctt/local/ */
 export function getLocalDir(locttDir: string): string {
   return join(locttDir, LOCAL_DIR);
+}
+
+/** Returns the path to .loctt/config/workflow.yaml. */
+export function getWorkflowConfigPath(locttDir: string): string {
+  return join(locttDir, CONFIG_DIR, WORKFLOW_FILE);
+}
+
+/** Returns the path to .loctt/config/queries.yaml. */
+export function getQueriesConfigPath(locttDir: string): string {
+  return join(locttDir, CONFIG_DIR, QUERIES_FILE);
+}
+
+/** Returns the path to .loctt/local/sync.yaml. */
+export function getSyncStatePath(locttDir: string): string {
+  return join(locttDir, LOCAL_DIR, SYNC_FILE);
+}
+
+/** Returns the path to .loctt/local/reconcile.yaml. */
+export function getReconcileStatePath(locttDir: string): string {
+  return join(locttDir, LOCAL_DIR, RECONCILE_FILE);
+}
+
+/** Returns the path to the docs directory: .loctt/docs/ */
+export function getDocsDir(locttDir: string): string {
+  return join(locttDir, DOCS_DIR);
+}
+
+/** Returns the path to the tasks root directory: .loctt/tasks/ */
+export function getTasksDir(locttDir: string): string {
+  return join(locttDir, TASKS_DIR);
 }
