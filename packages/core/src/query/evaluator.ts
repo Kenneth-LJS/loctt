@@ -66,13 +66,29 @@ function compareValues(left: unknown, op: string, right: string | number | boole
     case "~":
       return leftStr.toLowerCase().includes(rightStr.toLowerCase());
     case "<":
-      return leftStr < rightStr;
     case "<=":
-      return leftStr <= rightStr;
     case ">":
-      return leftStr > rightStr;
-    case ">=":
-      return leftStr >= rightStr;
+    case ">=": {
+      // Use numeric comparison when both sides parse as numbers
+      const leftNum = Number(left);
+      const rightNum = Number(right);
+      if (!Number.isNaN(leftNum) && !Number.isNaN(rightNum)) {
+        switch (op) {
+          case "<": return leftNum < rightNum;
+          case "<=": return leftNum <= rightNum;
+          case ">": return leftNum > rightNum;
+          case ">=": return leftNum >= rightNum;
+        }
+      }
+      // Fall back to string comparison for non-numeric values
+      switch (op) {
+        case "<": return leftStr < rightStr;
+        case "<=": return leftStr <= rightStr;
+        case ">": return leftStr > rightStr;
+        case ">=": return leftStr >= rightStr;
+      }
+      return false;
+    }
     default:
       return false;
   }
@@ -189,6 +205,9 @@ export function evaluateQuery(
       const fieldVal = getFieldValue(fm, node.field);
 
       if (node.op === "in" || node.op === "not in") {
+        if (fieldVal === undefined || fieldVal === null) {
+          return node.op === "not in";
+        }
         const resolved = resolveValue(node.value);
         if (!Array.isArray(resolved)) return false;
         const fieldStr = String(fieldVal);
