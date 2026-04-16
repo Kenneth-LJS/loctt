@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { cp, rm, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { loadSyncState, saveSyncState } from "../state/sync.js";
@@ -12,13 +12,22 @@ export class GitSyncError extends Error {
   }
 }
 
-function git(cmd: string, cwd: string): string {
-  return execSync(`git ${cmd}`, { cwd, encoding: "utf-8", stdio: "pipe" }).trim();
+function git(args: string[], cwd: string): string {
+  const result = spawnSync("git", args, { cwd, encoding: "utf-8", stdio: "pipe" });
+  if (result.status !== 0) {
+    throw new Error(result.stderr?.trim() || `git ${args[0]} failed`);
+  }
+  return result.stdout.trim();
+}
+
+function gitSafe(args: string[], cwd: string): string {
+  const result = spawnSync("git", args, { cwd, encoding: "utf-8", stdio: "pipe" });
+  return result.stdout?.trim() ?? "";
 }
 
 function branchExists(root: string, branch: string): boolean {
   try {
-    git(`rev-parse --verify ${branch}`, root);
+    git(["rev-parse", "--verify", branch], root);
     return true;
   } catch {
     return false;
@@ -28,11 +37,15 @@ function branchExists(root: string, branch: string): boolean {
 function ensureBranch(root: string, branch: string): void {
   if (!branchExists(root, branch)) {
     // Create orphan branch with empty commit
-    git(`checkout --orphan ${branch}`, root);
-    git("rm -rf . 2>/dev/null || true", root);
-    git('commit --allow-empty -m "Initialize .loctt branch"', root);
+    git(["checkout", "--orphan", branch], root);
+    try {
+      git(["rm", "-rf", "."], root);
+    } catch {
+      // May fail if there's nothing to remove — that's fine
+    }
+    git(["commit", "--allow-empty", "-m", "Initialize .loctt branch"], root);
     // Switch back
-    git("checkout -", root);
+    git(["checkout", "-"], root);
   }
 }
 
@@ -54,7 +67,7 @@ export async function publish(locttDir: string, root: string): Promise<{ committ
   await rm(worktreeDir, { recursive: true, force: true });
 
   try {
-    git(`worktree add "${worktreeDir}" ${branch}`, root);
+    git(["worktree", "add", worktreeDir, branch], root);
 
     // Copy local .loctt contents to worktree (excluding local/)
     const entries = await readdir(locttDir);
@@ -66,15 +79,15 @@ export async function publish(locttDir: string, root: string): Promise<{ committ
     }
 
     // Stage and commit in worktree
-    git("add -A", worktreeDir);
+    git(["add", "-A"], worktreeDir);
 
-    const status = git("status --porcelain", worktreeDir);
+    const status = git(["status", "--porcelain"], worktreeDir);
     if (!status) {
       return { committed: false };
     }
 
-    git('commit -m "loctt publish"', worktreeDir);
-    const commitHash = git("rev-parse HEAD", worktreeDir);
+    git(["commit", "-m", "loctt publish"], worktreeDir);
+    const commitHash = git(["rev-parse", "HEAD"], worktreeDir);
 
     // Update sync state
     const updated: SyncState = {
@@ -88,8 +101,16 @@ export async function publish(locttDir: string, root: string): Promise<{ committ
 
     return { committed: true };
   } finally {
-    git(`worktree remove "${worktreeDir}" --force 2>/dev/null || true`, root);
-    await rm(worktreeDir, { recursive: true, force: true });
+    try {
+      gitSafe(["worktree", "remove", worktreeDir, "--force"], root);
+    } catch {
+      // cleanup failed — don't mask the original error
+    }
+    try {
+      await rm(worktreeDir, { recursive: true, force: true });
+    } catch {
+      // same
+    }
   }
 }
 
@@ -108,7 +129,7 @@ export async function sync(locttDir: string, root: string): Promise<{ updated: b
     return { updated: false };
   }
 
-  const remoteHead = git(`rev-parse ${branch}`, root);
+  const remoteHead = git(["rev-parse", branch], root);
   if (syncState.git.last_synced_commit === remoteHead) {
     return { updated: false };
   }
@@ -118,7 +139,7 @@ export async function sync(locttDir: string, root: string): Promise<{ updated: b
   await rm(worktreeDir, { recursive: true, force: true });
 
   try {
-    git(`worktree add "${worktreeDir}" ${branch}`, root);
+    git(["worktree", "add", worktreeDir, branch], root);
 
     // Copy remote state to local .loctt (excluding local/)
     const entries = await readdir(worktreeDir);
@@ -141,7 +162,15 @@ export async function sync(locttDir: string, root: string): Promise<{ updated: b
 
     return { updated: true };
   } finally {
-    git(`worktree remove "${worktreeDir}" --force 2>/dev/null || true`, root);
-    await rm(worktreeDir, { recursive: true, force: true });
+    try {
+      gitSafe(["worktree", "remove", worktreeDir, "--force"], root);
+    } catch {
+      // cleanup failed — don't mask the original error
+    }
+    try {
+      await rm(worktreeDir, { recursive: true, force: true });
+    } catch {
+      // same
+    }
   }
 }

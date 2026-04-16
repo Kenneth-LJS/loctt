@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { saveSyncState, loadSyncState } from "../state/sync.js";
 import { getSyncStatePath, getLocalDir } from "../paths/index.js";
 import { mkdir, access } from "node:fs/promises";
@@ -12,12 +12,8 @@ export interface GitStatusResult {
 }
 
 function isGitRepo(root: string): boolean {
-  try {
-    execSync("git rev-parse --is-inside-work-tree", { cwd: root, stdio: "pipe" });
-    return true;
-  } catch {
-    return false;
-  }
+  const result = spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, stdio: "pipe" });
+  return result.status === 0;
 }
 
 async function fileExists(path: string): Promise<boolean> {
