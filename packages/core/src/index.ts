@@ -25,6 +25,11 @@ export { linkTask, unlinkTask, RelationshipError } from "./task/index.js";
 export { validateRelationships, getRelatedTasks, buildTree, getChildren, getParent } from "./task/index.js";
 export type { RelationshipValidationError } from "./task/index.js";
 
+export { tokenize, TokenizeError } from "./query/index.js";
+export type { Token, TokenType } from "./query/index.js";
+export { parseQuery, ParseError } from "./query/index.js";
+export type { QueryNode, QueryValue, ComparisonOp } from "./query/index.js";
+
 export {
   resolveLocttDir,
   getTaskDir,
