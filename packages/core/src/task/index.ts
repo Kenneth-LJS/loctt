@@ -33,3 +33,6 @@ export { setField, unsetField, TaskUpdateError } from "./update.js";
 export { archiveTask, unarchiveTask, deleteTask, TaskLifecycleError } from "./lifecycle.js";
 
 export { linkTask, unlinkTask, RelationshipError } from "./relationships.js";
+
+export { validateRelationships, getRelatedTasks, buildTree, getChildren, getParent } from "./traversal.js";
+export type { RelationshipValidationError } from "./traversal.js";
