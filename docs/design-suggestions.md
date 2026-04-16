@@ -2,7 +2,7 @@
 
 This document contains unresolved LLM suggestions only.
 
-Nothing here is confirmed product direction unless it is explicitly moved into `design-doc.md`.
+Nothing here is confirmed product direction unless it is explicitly moved into the relevant doc under `docs/`.
 
 This file is the implementation-readiness checklist for remaining design decisions.
 
@@ -38,4 +38,4 @@ These should not block initial implementation.
 
 ## Working Rule
 
-Only move decisions from this file into `design-doc.md` after they are explicitly confirmed in discussion.
+Only move decisions from this file into the relevant doc under `docs/` after they are explicitly confirmed in discussion.
