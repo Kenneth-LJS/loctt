@@ -12,3 +12,12 @@ export {
   readTaskBody,
   writeTaskBody,
 } from "./io.js";
+
+export {
+  listTaskIds,
+  loadAllTasks,
+  lookupById,
+  lookupByKey,
+  lookupTask,
+  TaskNotFoundError,
+} from "./lookup.js";
