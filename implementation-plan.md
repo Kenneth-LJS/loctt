@@ -10,8 +10,7 @@ Implementation language/runtime:
 - monorepo with:
   - `apps/cli`
   - `apps/mcp`
-  - `apps/service`
-  - `apps/web`
+  - `apps/web` (includes HTTP server + API, merged from former `apps/service`)
   - `packages/core`
   - `packages/contracts`
 
@@ -73,6 +72,8 @@ Implementation language/runtime:
 36. ~~Implement `packages/contracts` shapes for service/web data exchange.~~ **DONE**
 37. ~~Implement the local service layer on top of `packages/core`.~~ **DONE**
 38. ~~Implement the web app shell and service integration.~~ **DONE**
+
+> **Post-review decision:** `apps/service` is being merged into `apps/web` to serve API and UI from the same origin (no CORS, loopback-only binding). See REVIEW-TEMP-DO-NOT-COMMIT.md #2.
 
 ## MCP
 

@@ -29,10 +29,10 @@ Confirmed decisions:
 - intended app split should be:
   - `apps/cli`
   - `apps/mcp`
-  - `apps/service`
-  - `apps/web`
-- CLI, MCP, and service should all operate on `packages/core` rather than going through each other
-- the web GUI should talk to the local service layer rather than touching tracker files directly
+  - `apps/web` (combined HTTP server + web UI — serves API and static UI from the same origin)
+- `apps/service` has been merged into `apps/web` to eliminate CORS and reduce attack surface
+- CLI, MCP, and web should all operate on `packages/core` rather than going through each other
+- the web GUI talks to its own co-located API endpoints rather than a separate service process
 - human-readable is important
 - task content should be free markdown
 - LocTT should work without Git
