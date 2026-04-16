@@ -11,7 +11,11 @@ Local task tracker — CLI tool, MCP server, and GUI for managing tasks stored a
 
 ## Key Design Decisions
 
-All confirmed decisions live in `design-doc.md`. Always cross-reference it before implementing.
+Product documentation lives in `docs/`. Cross-reference before implementing:
+- `docs/architecture.md` — monorepo layout, data model, task identity
+- `docs/schema-reference.md` — file formats (task.md, workflow.yaml, etc.)
+- `docs/cli-reference.md` — CLI commands
+- `docs/mcp-reference.md` — MCP tools and agent guidelines
 
 Key points:
 - Tasks use `id` (internal, ULID) and `key` (user-facing, e.g. `T-123`)
@@ -41,8 +45,7 @@ npx tsc --build      # Build via project references
   - `apps/web` — web app (HTTP server + API + UI, merged from former `apps/service`)
 - **Note:** `apps/service` is being merged into `apps/web`. Do not re-separate them.
 - `.loctt/` — data directory (tasks, config, state)
-- Design doc: `design-doc.md`
-- Implementation plan: `implementation-plan.md`
+- Documentation: `docs/`
 
 ## Development Workflow
 

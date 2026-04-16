@@ -53,7 +53,7 @@ If you want to suggest an alternative solution, discuss it first.
 - Only document what is explicitly confirmed or implemented
 - Mark incomplete sections as **[PLACEHOLDER - To be discussed]**
 - Never invent specifications or requirements
-- Cross-reference `design-doc.md` for confirmed decisions
+- Cross-reference `docs/` for product documentation and decisions
 
 ## Folder Structure
 
