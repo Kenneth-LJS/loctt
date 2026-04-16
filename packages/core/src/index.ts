@@ -5,8 +5,9 @@ export { loadQueriesConfig, parseQueriesConfig } from "./config/index.js";
 export { WorkflowConfigError } from "./config/workflow.js";
 export { QueriesConfigError } from "./config/queries.js";
 
-export { loadState, saveState, parseState, serializeState } from "./state/index.js";
-export { StateError } from "./state/state.js";
+export { loadState, saveState, parseState, serializeState, StateError } from "./state/index.js";
+export { loadSyncState, saveSyncState, parseSyncState, serializeSyncState, SyncStateError } from "./state/index.js";
+export { loadReconcileState, saveReconcileState, clearReconcileState, parseReconcileState, serializeReconcileState, ReconcileStateError } from "./state/index.js";
 
 export {
   resolveLocttDir,
