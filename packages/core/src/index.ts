@@ -4,6 +4,8 @@ export { loadWorkflowConfig, parseWorkflowConfig } from "./config/index.js";
 export { loadQueriesConfig, parseQueriesConfig } from "./config/index.js";
 export { WorkflowConfigError } from "./config/workflow.js";
 export { QueriesConfigError } from "./config/queries.js";
+export { validateTaskAgainstWorkflow, validateWorkflowConfig } from "./config/index.js";
+export type { ValidationError } from "./config/validation.js";
 
 export { loadState, saveState, parseState, serializeState, StateError } from "./state/index.js";
 export { loadSyncState, saveSyncState, parseSyncState, serializeSyncState, SyncStateError } from "./state/index.js";
