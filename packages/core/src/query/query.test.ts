@@ -1,7 +1,8 @@
-import { describe, it, expect } from "vitest";
-import { tokenize, TokenizeError } from "./tokenizer.js";
-import { parseQuery, ParseError } from "./parser.js";
+import { describe, expect,it } from "vitest";
+
 import type { QueryNode } from "./parser.js";
+import { ParseError,parseQuery } from "./parser.js";
+import { tokenize, TokenizeError } from "./tokenizer.js";
 
 describe("tokenizer", () => {
   it("tokenizes a simple comparison", () => {

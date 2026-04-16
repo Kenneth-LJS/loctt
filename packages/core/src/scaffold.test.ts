@@ -1,7 +1,8 @@
-import { describe, it, expect } from "vitest";
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+
+import { describe, expect,it } from "vitest";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
 

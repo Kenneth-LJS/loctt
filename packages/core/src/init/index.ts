@@ -1,3 +1,3 @@
-export { initLoctt } from "./init.js";
+export { defaultQueriesYaml, defaultStateYaml,defaultWorkflowYaml } from "./defaults.js";
 export type { InitOptions, InitResult } from "./init.js";
-export { defaultWorkflowYaml, defaultQueriesYaml, defaultStateYaml } from "./defaults.js";
+export { initLoctt } from "./init.js";

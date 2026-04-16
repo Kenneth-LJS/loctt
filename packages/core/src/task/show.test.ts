@@ -1,11 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import type { Task } from "@loctt/contracts";
-import { writeTask } from "./io.js";
-import { discoverAttachments, buildShowModel } from "./show.js";
+import { afterEach,beforeEach, describe, expect, it } from "vitest";
+
 import { getTaskDir } from "../paths/index.js";
+import { writeTask } from "./io.js";
+import { buildShowModel,discoverAttachments } from "./show.js";
 
 describe("task show model", () => {
   let locttDir: string;

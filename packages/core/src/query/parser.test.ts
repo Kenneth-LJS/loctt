@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { parseQuery, ParseError } from "./parser.js";
+import { describe, expect,it } from "vitest";
+
+import { ParseError,parseQuery } from "./parser.js";
 import { tokenize } from "./tokenizer.js";
 
 describe("parseQuery", () => {

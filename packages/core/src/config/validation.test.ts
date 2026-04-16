@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
+import type { TaskFrontmatter,WorkflowConfig } from "@loctt/contracts";
+import { describe, expect,it } from "vitest";
+
 import { validateTaskAgainstWorkflow, validateWorkflowConfig } from "./validation.js";
-import type { WorkflowConfig, TaskFrontmatter } from "@loctt/contracts";
 
 const config: WorkflowConfig = {
   key: { prefix: "T-" },

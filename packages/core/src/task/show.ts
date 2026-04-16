@@ -1,6 +1,8 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
+
 import type { Task } from "@loctt/contracts";
+
 import { getTaskDir } from "../paths/index.js";
 
 /** Attachment metadata discovered from the task folder. */

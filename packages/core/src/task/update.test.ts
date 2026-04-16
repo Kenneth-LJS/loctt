@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import type { Task } from "@loctt/contracts";
-import { writeTask, readTask } from "./io.js";
-import { setField, unsetField, TaskUpdateError } from "./update.js";
+import { afterEach,beforeEach, describe, expect, it } from "vitest";
+
+import { readTask,writeTask } from "./io.js";
+import { setField, TaskUpdateError,unsetField } from "./update.js";
 
 describe("setField / unsetField", () => {
   let locttDir: string;

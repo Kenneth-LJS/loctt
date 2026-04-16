@@ -1,5 +1,6 @@
+import type { LocttState,Task, TaskFrontmatter } from "@loctt/contracts";
 import { ulid } from "ulid";
-import type { Task, TaskFrontmatter, LocttState } from "@loctt/contracts";
+
 import { allocateKey } from "../state/keys.js";
 import { writeTask } from "./io.js";
 

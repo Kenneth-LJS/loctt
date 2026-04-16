@@ -1,4 +1,5 @@
 import type { Task, TaskFrontmatter } from "@loctt/contracts";
+
 import { readTask, writeTask } from "./io.js";
 
 export class TaskUpdateError extends Error {

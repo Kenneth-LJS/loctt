@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
-import { allocateKey, initKeyAllocation, appendKeyHistory, KeyAllocationError } from "./keys.js";
 import type { LocttState } from "@loctt/contracts";
+import { describe, expect,it } from "vitest";
+
+import { allocateKey, appendKeyHistory, initKeyAllocation, KeyAllocationError } from "./keys.js";
 
 function makeState(): LocttState {
   return {

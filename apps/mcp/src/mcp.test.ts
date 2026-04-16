@@ -1,9 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { getTools, executeTool } from "./index.js";
+import { join } from "node:path";
+
 import { initLoctt } from "@loctt/core";
+import { afterEach,beforeEach, describe, expect, it } from "vitest";
+
+import { executeTool,getTools } from "./index.js";
 
 describe("MCP tools", () => {
   it("exports getTools", () => {

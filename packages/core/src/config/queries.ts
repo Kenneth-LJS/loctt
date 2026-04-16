@@ -1,11 +1,13 @@
 import { readFile } from "node:fs/promises";
-import { parse as parseYaml } from "yaml";
+
 import type { QueriesConfig } from "@loctt/contracts";
+import { parse as parseYaml } from "yaml";
+
 import { getQueriesConfigPath } from "../paths/index.js";
 import {
-  assertString as _assertString,
   assertArray as _assertArray,
   assertObject as _assertObject,
+  assertString as _assertString,
 } from "../utils/assert.js";
 
 export class QueriesConfigError extends Error {

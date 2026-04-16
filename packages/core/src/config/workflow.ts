@@ -1,11 +1,13 @@
 import { readFile } from "node:fs/promises";
-import { parse as parseYaml } from "yaml";
+
 import type { WorkflowConfig } from "@loctt/contracts";
+import { parse as parseYaml } from "yaml";
+
 import { getWorkflowConfigPath } from "../paths/index.js";
 import {
-  assertString as _assertString,
   assertArray as _assertArray,
   assertObject as _assertObject,
+  assertString as _assertString,
 } from "../utils/assert.js";
 
 /** Errors thrown when workflow config is invalid. */
@@ -64,7 +66,7 @@ function parsePriorities(raw: unknown): WorkflowConfig["priorities"] {
     return {
       key: item["key"],
       label: item["label"],
-      ...(value !== undefined ? { value: value as number } : {}),
+      ...(value !== undefined ? { value: value } : {}),
     };
   });
 }
@@ -134,7 +136,7 @@ function parseCustomFields(raw: unknown): WorkflowConfig["custom_fields"] {
         return {
           key: v["key"],
           label: v["label"],
-          ...(val !== undefined ? { value: val as number } : {}),
+          ...(val !== undefined ? { value: val } : {}),
         };
       });
     }

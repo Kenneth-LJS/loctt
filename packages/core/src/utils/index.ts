@@ -1,2 +1,2 @@
-export { assertString, assertObject, assertArray, assertBoolean } from "./assert.js";
+export { assertArray, assertBoolean,assertObject, assertString } from "./assert.js";
 export { fileExists } from "./fs.js";

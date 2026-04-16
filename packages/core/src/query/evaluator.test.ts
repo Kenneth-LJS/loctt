@@ -1,9 +1,10 @@
-import { describe, it, expect } from "vitest";
-import { evaluateQuery } from "./evaluator.js";
+import type { TaskFrontmatter } from "@loctt/contracts";
+import { describe, expect,it } from "vitest";
+
 import type { EvalContext } from "./evaluator.js";
+import { evaluateQuery } from "./evaluator.js";
 import { parseQuery } from "./parser.js";
 import { tokenize } from "./tokenizer.js";
-import type { TaskFrontmatter } from "@loctt/contracts";
 
 function query(input: string) {
   return parseQuery(tokenize(input));
