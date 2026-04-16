@@ -15,7 +15,6 @@ export interface TaskFrontmatter {
   readonly status_updated_at?: string;
   readonly task_type?: string;
   readonly priority?: string;
-  readonly parent?: string;
   readonly labels?: readonly string[];
   readonly assignee?: string;
   readonly reporter?: string;
