@@ -20,7 +20,7 @@ Implementation language/runtime:
 1. ~~Scaffold the monorepo, workspace config, and shared TypeScript tooling.~~ **DONE**
 2. ~~Scaffold `packages/core` and `packages/contracts`.~~ **DONE**
 3. ~~Scaffold `apps/cli`, `apps/mcp`, `apps/service`, and `apps/web`.~~ **DONE**
-4. Define `.loctt/` path layout and path helper utilities in `packages/core`.
+4. ~~Define `.loctt/` path layout and path helper utilities in `packages/core`.~~ **DONE**
 5. Implement `.loctt/config/workflow.yaml` loading.
 6. Implement `.loctt/config/queries.yaml` loading.
 7. Implement `.loctt/state.yaml` loading and writing.
