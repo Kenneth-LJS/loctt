@@ -39,6 +39,12 @@ export type { TrackerInfo } from "./diagnostics/index.js";
 export { runDoctor } from "./diagnostics/index.js";
 export type { DiagnosticCheck, CheckStatus } from "./diagnostics/index.js";
 
+export { enableGit, disableGit, getGitStatus } from "./git/index.js";
+export type { GitStatusResult } from "./git/index.js";
+export { publish, sync, GitSyncError } from "./git/index.js";
+export { rekeyCollisions, mergeRelationships, mergeKeyHistory } from "./git/index.js";
+export type { RekeyResult } from "./git/index.js";
+
 export { initLoctt } from "./init/index.js";
 export type { InitOptions, InitResult } from "./init/index.js";
 

@@ -6,8 +6,10 @@ describe("Service entry point", () => {
     expect(typeof createService).toBe("function");
   });
 
-  it("returns a placeholder service object", () => {
-    const service = createService();
-    expect(service).toEqual({ started: false });
+  it("creates a service with start/stop methods", () => {
+    const service = createService({ root: "/tmp/test-loctt" });
+    expect(service).toBeDefined();
+    expect(typeof service.start).toBe("function");
+    expect(typeof service.stop).toBe("function");
   });
 });

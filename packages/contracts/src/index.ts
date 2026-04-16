@@ -30,3 +30,15 @@ export type {
   SyncState,
   ReconcileState,
 } from "./state.js";
+
+export type {
+  CreateTaskRequest,
+  UpdateTaskRequest,
+  LinkRequest,
+  ListTasksRequest,
+  AttachmentResponse,
+  TaskResponse,
+  ConfigResponse,
+  TrackerInfoResponse,
+  DoctorCheckResponse,
+} from "./service.js";
