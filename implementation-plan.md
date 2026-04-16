@@ -37,9 +37,9 @@ Implementation language/runtime:
 15. ~~Implement task read/show model.~~ **DONE**
 16. ~~Implement `set` / `unset` for built-in fields.~~ **DONE**
 17. ~~Implement `set` / `unset` for custom fields.~~ **DONE**
-18. Implement archive / unarchive behavior.
-19. Implement hard delete with `--force`.
-20. Implement attachment discovery from task folders.
+18. ~~Implement archive / unarchive behavior.~~ **DONE**
+19. ~~Implement hard delete with `--force`.~~ **DONE**
+20. ~~Implement attachment discovery from task folders.~~ **DONE** (implemented in Task 15)
 
 ## Relationships
 
