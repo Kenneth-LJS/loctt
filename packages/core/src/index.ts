@@ -21,6 +21,7 @@ export { discoverAttachments, buildShowModel } from "./task/index.js";
 export type { AttachmentInfo, TaskShowModel } from "./task/index.js";
 export { setField, unsetField, TaskUpdateError } from "./task/index.js";
 export { archiveTask, unarchiveTask, deleteTask, TaskLifecycleError } from "./task/index.js";
+export { linkTask, unlinkTask, RelationshipError } from "./task/index.js";
 
 export {
   resolveLocttDir,

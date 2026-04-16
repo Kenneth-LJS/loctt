@@ -31,3 +31,5 @@ export type { AttachmentInfo, TaskShowModel } from "./show.js";
 export { setField, unsetField, TaskUpdateError } from "./update.js";
 
 export { archiveTask, unarchiveTask, deleteTask, TaskLifecycleError } from "./lifecycle.js";
+
+export { linkTask, unlinkTask, RelationshipError } from "./relationships.js";
