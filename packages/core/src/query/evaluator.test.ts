@@ -99,6 +99,23 @@ describe("evaluateQuery", () => {
     expect(evaluateQuery(query("updated_at > 2026-01-01"), task)).toBe(true);
     expect(evaluateQuery(query("created_at < 2027-01-01"), task)).toBe(true);
   });
+
+  it("uses numeric comparison for ordering operators when both sides are numbers", () => {
+    const numTask: TaskFrontmatter = {
+      ...task,
+      fields: { estimate: 9 },
+    };
+    // String comparison would give "9" > "10" = true, but numeric gives 9 < 10
+    expect(evaluateQuery(query("estimate < 10"), numTask)).toBe(true);
+    expect(evaluateQuery(query("estimate > 10"), numTask)).toBe(false);
+    expect(evaluateQuery(query("estimate >= 9"), numTask)).toBe(true);
+    expect(evaluateQuery(query("estimate <= 9"), numTask)).toBe(true);
+  });
+
+  it("undefined field with in returns false, not in returns true", () => {
+    expect(evaluateQuery(query("milestone in (v1, v2)"), task)).toBe(false);
+    expect(evaluateQuery(query("milestone not in (v1, v2)"), task)).toBe(true);
+  });
 });
 
 describe("text alias", () => {
