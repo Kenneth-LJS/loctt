@@ -1,6 +1,6 @@
 export type { EvalContext } from "./evaluator.js";
 export { evaluateQuery } from "./evaluator.js";
-export type { ListContext,ListOptions } from "./list.js";
+export type { ListContext,ListOptions, ListTasksOptions } from "./list.js";
 export { buildListContext, listTasks, resolveView } from "./list.js";
 export type { ComparisonOp,QueryNode, QueryValue } from "./parser.js";
 export { ParseError,parseQuery } from "./parser.js";

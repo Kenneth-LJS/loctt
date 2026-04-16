@@ -167,7 +167,7 @@ export function createWebApp(options: WebAppOptions) {
           limit,
         };
 
-        const result = listTasks(tasks, params, queriesConfig, workflowConfig, buildListContext(tasks));
+        const result = listTasks({ tasks, options: params, queriesConfig, workflowConfig, ctx: buildListContext(tasks) });
         json(res, result.map(t => t.frontmatter));
         return;
       }
@@ -177,7 +177,7 @@ export function createWebApp(options: WebAppOptions) {
         const request = JSON.parse(body) as CreateTaskRequest;
         const state = await loadState(locttDir);
         const wfConfig = await loadWorkflowConfig(locttDir);
-        const task = await createTask(locttDir, state, request, wfConfig);
+        const task = await createTask({ locttDir, state, options: request, workflowConfig: wfConfig });
         await saveState(locttDir, state);
         json(res, task.frontmatter, 201);
         return;
@@ -206,7 +206,7 @@ export function createWebApp(options: WebAppOptions) {
         const request = JSON.parse(body) as UpdateTaskRequest;
         const wfConfig = await loadWorkflowConfig(locttDir);
         const task = await lookupTask(locttDir, ref);
-        const updated = await setField(locttDir, task.frontmatter.id, request.field, request.value, wfConfig);
+        const updated = await setField({ locttDir, taskId: task.frontmatter.id, field: request.field, value: request.value, workflowConfig: wfConfig });
         json(res, updated.frontmatter);
         return;
       }
@@ -262,7 +262,7 @@ export function createWebApp(options: WebAppOptions) {
         const wfConfig = await loadWorkflowConfig(locttDir);
         const task = await lookupTask(locttDir, ref);
         const target = await lookupTask(locttDir, request.target);
-        const updated = await linkTask(locttDir, task.frontmatter.id, request.type, target.frontmatter.id, wfConfig);
+        const updated = await linkTask({ locttDir, taskId: task.frontmatter.id, type: request.type, target: target.frontmatter.id, workflowConfig: wfConfig });
         json(res, updated.frontmatter);
         return;
       }
@@ -275,7 +275,7 @@ export function createWebApp(options: WebAppOptions) {
         const request = JSON.parse(body) as LinkRequest;
         const task = await lookupTask(locttDir, ref);
         const target = await lookupTask(locttDir, request.target);
-        const updated = await unlinkTask(locttDir, task.frontmatter.id, request.type, target.frontmatter.id);
+        const updated = await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: request.type, target: target.frontmatter.id });
         json(res, updated.frontmatter);
         return;
       }

@@ -5,7 +5,7 @@ import { evaluateQuery } from "./evaluator.js";
 import { parseQuery } from "./parser.js";
 import { tokenize } from "./tokenizer.js";
 
-/** Options for listing/querying tasks. */
+/** Filter/sort options within a list call. */
 export interface ListOptions {
   /** Ad hoc query string. */
   readonly query?: string;
@@ -15,6 +15,15 @@ export interface ListOptions {
   readonly sort?: readonly { field: string; direction: "asc" | "desc" }[];
   /** Maximum number of results. Defaults to 30. */
   readonly limit?: number;
+}
+
+/** Full options bag for listTasks. */
+export interface ListTasksOptions {
+  readonly tasks: readonly Task[];
+  readonly options: ListOptions;
+  readonly queriesConfig?: QueriesConfig;
+  readonly workflowConfig?: WorkflowConfig;
+  readonly ctx?: ListContext;
 }
 
 /** Context provider for building EvalContext per task. */
@@ -54,13 +63,8 @@ export function resolveView(
  * Filters and sorts tasks according to ListOptions.
  * Applies query filtering, sorting, and limit.
  */
-export function listTasks(
-  tasks: readonly Task[],
-  options: ListOptions,
-  queriesConfig: QueriesConfig | undefined,
-  workflowConfig: WorkflowConfig | undefined,
-  ctx: ListContext = {},
-): Task[] {
+export function listTasks(opts: ListTasksOptions): Task[] {
+  const { tasks, options, queriesConfig, workflowConfig, ctx = {} } = opts;
   let queryStr: string | undefined = options.query;
   let sortSpec = options.sort;
 

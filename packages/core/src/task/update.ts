@@ -21,6 +21,15 @@ const BUILTIN_OPTIONAL_FIELDS = new Set([
   "relationships", "key_history",
 ]);
 
+/** Options bag for setField. */
+export interface SetFieldOptions {
+  readonly locttDir: string;
+  readonly taskId: string;
+  readonly field: string;
+  readonly value: unknown;
+  readonly workflowConfig?: WorkflowConfig;
+}
+
 /**
  * Sets a field on a task's frontmatter.
  *
@@ -30,13 +39,8 @@ const BUILTIN_OPTIONAL_FIELDS = new Set([
  * - Always updates `updated_at` timestamp.
  * - If setting `status`, also updates `status_updated_at`.
  */
-export async function setField(
-  locttDir: string,
-  taskId: string,
-  field: string,
-  value: unknown,
-  workflowConfig?: WorkflowConfig,
-): Promise<Task> {
+export async function setField(opts: SetFieldOptions): Promise<Task> {
+  const { locttDir, taskId, field, value, workflowConfig } = opts;
   if (IMMUTABLE_FIELDS.has(field)) {
     throw new TaskUpdateError(`cannot set immutable field "${field}"`);
   }

@@ -9,17 +9,29 @@ export class RelationshipError extends Error {
   }
 }
 
+/** Options bag for linkTask. */
+export interface LinkTaskOptions {
+  readonly locttDir: string;
+  readonly taskId: string;
+  readonly type: string;
+  readonly target: string;
+  readonly workflowConfig?: WorkflowConfig;
+}
+
+/** Options bag for unlinkTask. */
+export interface UnlinkTaskOptions {
+  readonly locttDir: string;
+  readonly taskId: string;
+  readonly type: string;
+  readonly target: string;
+}
+
 /**
  * Adds a relationship to a task.
  * Throws if the relationship already exists (same type+target).
  */
-export async function linkTask(
-  locttDir: string,
-  taskId: string,
-  type: string,
-  target: string,
-  workflowConfig?: WorkflowConfig,
-): Promise<Task> {
+export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
+  const { locttDir, taskId, type, target, workflowConfig } = opts;
   if (workflowConfig) {
     const validTypes = new Set(workflowConfig.relationships.flatMap(r => [r.key, r.inverse]));
     if (!validTypes.has(type)) {
@@ -58,12 +70,8 @@ export async function linkTask(
  * Removes a relationship from a task.
  * Throws if the relationship doesn't exist.
  */
-export async function unlinkTask(
-  locttDir: string,
-  taskId: string,
-  type: string,
-  target: string,
-): Promise<Task> {
+export async function unlinkTask(opts: UnlinkTaskOptions): Promise<Task> {
+  const { locttDir, taskId, type, target } = opts;
   const task = await readTask(locttDir, taskId);
   const existing = task.frontmatter.relationships ?? [];
 

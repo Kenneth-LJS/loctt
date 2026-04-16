@@ -37,7 +37,7 @@ export {
 export type { Token, TokenType } from "./query/index.js";
 export type { ComparisonOp,QueryNode, QueryValue } from "./query/index.js";
 export type { EvalContext } from "./query/index.js";
-export type { ListContext,ListOptions } from "./query/index.js";
+export type { ListContext,ListOptions, ListTasksOptions } from "./query/index.js";
 export { tokenize, TokenizeError } from "./query/index.js";
 export { ParseError,parseQuery } from "./query/index.js";
 export { evaluateQuery } from "./query/index.js";
@@ -48,9 +48,11 @@ export { loadSyncState, parseSyncState, saveSyncState, serializeSyncState, SyncS
 export { clearReconcileState, loadReconcileState, parseReconcileState, ReconcileStateError,saveReconcileState, serializeReconcileState } from "./state/index.js";
 export { allocateKey, appendKeyHistory, initKeyAllocation, KeyAllocationError } from "./state/index.js";
 export { addToKeyIndex,loadKeyIndex, lookupKeyInIndex, rebuildKeyIndex, saveKeyIndex } from "./state/index.js";
-export type { CreateTaskOptions } from "./task/index.js";
+export type { CreateTaskOptions, CreateTaskParams } from "./task/index.js";
 export type { AttachmentInfo, TaskShowModel } from "./task/index.js";
 export type { RelationshipValidationError } from "./task/index.js";
+export type { SetFieldOptions } from "./task/index.js";
+export type { LinkTaskOptions, UnlinkTaskOptions } from "./task/index.js";
 export { assembleTaskFile, parseFrontmatter, serializeFrontmatter, splitTaskFile, TaskParseError } from "./task/index.js";
 export { readTask, readTaskBody, writeTask, writeTaskBody } from "./task/index.js";
 export { listTaskIds, loadAllTasks, lookupById, lookupByKey, lookupTask, TaskNotFoundError } from "./task/index.js";

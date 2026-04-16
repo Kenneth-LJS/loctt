@@ -114,12 +114,15 @@ export async function main(): Promise<void> {
         const locttDir = resolveLocttDir(root);
         const state = await loadState(locttDir);
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
-        const task = await createTask(locttDir, state, {
-          title,
-          status: getArg(args, "--status"),
-          priority: getArg(args, "--priority"),
-          task_type: getArg(args, "--type"),
-        }, workflowConfig);
+        const task = await createTask({
+          locttDir, state, workflowConfig,
+          options: {
+            title,
+            status: getArg(args, "--status"),
+            priority: getArg(args, "--priority"),
+            task_type: getArg(args, "--type"),
+          },
+        });
         await saveState(locttDir, state);
         console.log(`Created ${task.frontmatter.key}: ${task.frontmatter.title}`);
         break;
@@ -141,17 +144,17 @@ export async function main(): Promise<void> {
           }
         }
 
-        const result = listTasks(
+        const result = listTasks({
           tasks,
-          {
+          options: {
             query: getArg(args, "--query"),
             view: getArg(args, "--view"),
             limit,
           },
           queriesConfig,
           workflowConfig,
-          buildListContext(tasks),
-        );
+          ctx: buildListContext(tasks),
+        });
 
         if (result.length === 0) {
           console.log("No tasks found.");
@@ -213,7 +216,7 @@ export async function main(): Promise<void> {
         const locttDir = resolveLocttDir(root);
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
         const task = await lookupTask(locttDir, ref);
-        await setField(locttDir, task.frontmatter.id, field, value, workflowConfig);
+        await setField({ locttDir, taskId: task.frontmatter.id, field, value, workflowConfig });
         console.log(`Set ${field} = ${value} on ${task.frontmatter.key}`);
         break;
       }
@@ -246,7 +249,7 @@ export async function main(): Promise<void> {
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
         const task = await lookupTask(locttDir, ref);
         const targetTask = await lookupTask(locttDir, target);
-        await linkTask(locttDir, task.frontmatter.id, relType, targetTask.frontmatter.id, workflowConfig);
+        await linkTask({ locttDir, taskId: task.frontmatter.id, type: relType, target: targetTask.frontmatter.id, workflowConfig });
         console.log(`Linked ${task.frontmatter.key} --${relType}--> ${targetTask.frontmatter.key}`);
         break;
       }
@@ -263,7 +266,7 @@ export async function main(): Promise<void> {
         const locttDir = resolveLocttDir(root);
         const task = await lookupTask(locttDir, ref);
         const targetTask = await lookupTask(locttDir, target);
-        await unlinkTask(locttDir, task.frontmatter.id, relType, targetTask.frontmatter.id);
+        await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: relType, target: targetTask.frontmatter.id });
         console.log(`Unlinked ${task.frontmatter.key} --${relType}--> ${targetTask.frontmatter.key}`);
         break;
       }

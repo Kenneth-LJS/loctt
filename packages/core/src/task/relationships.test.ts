@@ -38,7 +38,7 @@ describe("relationships", () => {
   describe("linkTask", () => {
     it("adds a relationship to a task", async () => {
       await seedTask();
-      const updated = await linkTask(locttDir, "abc", "parent", "xyz");
+      const updated = await linkTask({ locttDir, taskId: "abc", type: "parent", target: "xyz" });
       expect(updated.frontmatter.relationships).toEqual([
         { type: "parent", target: "xyz" },
       ]);
@@ -52,20 +52,20 @@ describe("relationships", () => {
           relationships: [{ type: "parent", target: "xyz" }],
         },
       });
-      const updated = await linkTask(locttDir, "abc", "blocks", "def");
+      const updated = await linkTask({ locttDir, taskId: "abc", type: "blocks", target: "def" });
       expect(updated.frontmatter.relationships).toHaveLength(2);
     });
 
     it("throws on duplicate relationship", async () => {
       await seedTask();
-      await linkTask(locttDir, "abc", "parent", "xyz");
-      await expect(linkTask(locttDir, "abc", "parent", "xyz"))
+      await linkTask({ locttDir, taskId: "abc", type: "parent", target: "xyz" });
+      await expect(linkTask({ locttDir, taskId: "abc", type: "parent", target: "xyz" }))
         .rejects.toThrow(RelationshipError);
     });
 
     it("persists to disk", async () => {
       await seedTask();
-      await linkTask(locttDir, "abc", "parent", "xyz");
+      await linkTask({ locttDir, taskId: "abc", type: "parent", target: "xyz" });
       const loaded = await readTask(locttDir, "abc");
       expect(loaded.frontmatter.relationships).toHaveLength(1);
     });
@@ -83,7 +83,7 @@ describe("relationships", () => {
           ],
         },
       });
-      const updated = await unlinkTask(locttDir, "abc", "parent", "xyz");
+      const updated = await unlinkTask({ locttDir, taskId: "abc", type: "parent", target: "xyz" });
       expect(updated.frontmatter.relationships).toEqual([
         { type: "blocks", target: "def" },
       ]);
@@ -97,13 +97,13 @@ describe("relationships", () => {
           relationships: [{ type: "parent", target: "xyz" }],
         },
       });
-      const updated = await unlinkTask(locttDir, "abc", "parent", "xyz");
+      const updated = await unlinkTask({ locttDir, taskId: "abc", type: "parent", target: "xyz" });
       expect(updated.frontmatter.relationships).toBeUndefined();
     });
 
     it("throws when relationship does not exist", async () => {
       await seedTask();
-      await expect(unlinkTask(locttDir, "abc", "parent", "xyz"))
+      await expect(unlinkTask({ locttDir, taskId: "abc", type: "parent", target: "xyz" }))
         .rejects.toThrow(RelationshipError);
     });
 
@@ -115,7 +115,7 @@ describe("relationships", () => {
           relationships: [{ type: "parent", target: "xyz" }],
         },
       });
-      await unlinkTask(locttDir, "abc", "parent", "xyz");
+      await unlinkTask({ locttDir, taskId: "abc", type: "parent", target: "xyz" });
       const loaded = await readTask(locttDir, "abc");
       expect(loaded.frontmatter.relationships).toBeUndefined();
     });

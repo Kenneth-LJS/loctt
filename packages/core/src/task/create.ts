@@ -23,18 +23,22 @@ export interface CreateTaskOptions {
   readonly body?: string;
 }
 
+/** Full options bag for createTask. */
+export interface CreateTaskParams {
+  readonly locttDir: string;
+  readonly state: LocttState;
+  readonly options: CreateTaskOptions;
+  readonly workflowConfig?: WorkflowConfig;
+}
+
 /**
  * Creates a new task on disk and updates key allocation state.
  *
  * Caller is responsible for persisting the updated state afterwards.
  * Returns the created task.
  */
-export async function createTask(
-  locttDir: string,
-  state: LocttState,
-  options: CreateTaskOptions,
-  workflowConfig?: WorkflowConfig,
-): Promise<Task> {
+export async function createTask(params: CreateTaskParams): Promise<Task> {
+  const { locttDir, state, options, workflowConfig } = params;
   const id = ulid();
   const key = allocateKey(state, "task");
   const now = new Date().toISOString();
