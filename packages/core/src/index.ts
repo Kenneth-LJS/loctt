@@ -19,6 +19,7 @@ export { createTask } from "./task/index.js";
 export type { CreateTaskOptions } from "./task/index.js";
 export { discoverAttachments, buildShowModel } from "./task/index.js";
 export type { AttachmentInfo, TaskShowModel } from "./task/index.js";
+export { setField, unsetField, TaskUpdateError } from "./task/index.js";
 
 export {
   resolveLocttDir,
