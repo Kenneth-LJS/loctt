@@ -10,6 +10,7 @@ export { loadSyncState, saveSyncState, parseSyncState, serializeSyncState, SyncS
 export { loadReconcileState, saveReconcileState, clearReconcileState, parseReconcileState, serializeReconcileState, ReconcileStateError } from "./state/index.js";
 
 export { splitTaskFile, parseFrontmatter, serializeFrontmatter, assembleTaskFile, TaskParseError } from "./task/index.js";
+export { readTask, writeTask, readTaskBody, writeTaskBody } from "./task/index.js";
 
 export {
   resolveLocttDir,
