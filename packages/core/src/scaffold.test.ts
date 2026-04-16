@@ -12,7 +12,6 @@ describe("monorepo scaffold", () => {
       "packages/contracts",
       "apps/cli",
       "apps/mcp",
-      "apps/service",
       "apps/web",
     ];
     for (const dir of expected) {
@@ -31,7 +30,6 @@ describe("monorepo scaffold", () => {
     expect(deps).toContain("@loctt/contracts");
     expect(deps).toContain("@loctt/cli");
     expect(deps).toContain("@loctt/mcp");
-    expect(deps).toContain("@loctt/service");
     expect(deps).toContain("@loctt/web");
   });
 

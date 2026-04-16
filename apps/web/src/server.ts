@@ -63,12 +63,12 @@ function error(res: import("node:http").ServerResponse, message: string, status 
 
 const VALID_REF_RE = /^[A-Za-z0-9_-]+$/;
 
-export interface ServiceOptions {
+export interface WebAppOptions {
   readonly root: string;
   readonly port?: number;
 }
 
-export function createService(options: ServiceOptions) {
+export function createWebApp(options: WebAppOptions) {
   const root = options.root;
   const port = options.port ?? DEFAULT_PORT;
 

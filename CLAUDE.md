@@ -38,8 +38,8 @@ npx tsc --build      # Build via project references
   - `packages/core` — shared LocTT logic
   - `apps/cli` — CLI interface
   - `apps/mcp` — MCP server
-  - `apps/service` — local service layer
-  - `apps/web` — web app shell
+  - `apps/web` — web app (HTTP server + API + UI, merged from former `apps/service`)
+- **Note:** `apps/service` is being merged into `apps/web`. Do not re-separate them.
 - `.loctt/` — data directory (tasks, config, state)
 - Design doc: `design-doc.md`
 - Implementation plan: `implementation-plan.md`
