@@ -2,6 +2,7 @@ import { readdir } from "node:fs/promises";
 import type { Task } from "@loctt/contracts";
 import { getTasksDir } from "../paths/index.js";
 import { readTask } from "./io.js";
+import { loadKeyIndex, lookupKeyInIndex, rebuildKeyIndex } from "../state/key-index.js";
 
 export class TaskNotFoundError extends Error {
   constructor(ref: string) {
@@ -50,21 +51,30 @@ export async function lookupById(locttDir: string, id: string): Promise<Task> {
 }
 
 /**
- * Looks up a task by key (e.g. "T-123"). Scans all tasks.
+ * Looks up a task by key (e.g. "T-123").
+ * Uses the key index if available, falling back to a full scan.
  * Also checks key_history for previously rekeyed tasks.
  */
 export async function lookupByKey(locttDir: string, key: string): Promise<Task> {
-  const tasks = await loadAllTasks(locttDir);
+  // Try key index first (single file read)
+  let index = await loadKeyIndex(locttDir);
+  if (index) {
+    const id = lookupKeyInIndex(index, key);
+    if (id) {
+      try {
+        return await readTask(locttDir, id);
+      } catch {
+        // Index stale — fall through to rebuild
+      }
+    }
+  }
 
-  // First try current key
-  const byCurrentKey = tasks.find(t => t.frontmatter.key === key);
-  if (byCurrentKey) return byCurrentKey;
-
-  // Then try key_history
-  const byHistory = tasks.find(
-    t => t.frontmatter.key_history?.includes(key)
-  );
-  if (byHistory) return byHistory;
+  // Rebuild index and retry
+  index = await rebuildKeyIndex(locttDir);
+  const id = lookupKeyInIndex(index, key);
+  if (id) {
+    return await readTask(locttDir, id);
+  }
 
   throw new TaskNotFoundError(key);
 }
