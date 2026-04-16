@@ -34,7 +34,7 @@ Implementation language/runtime:
 
 13. ~~Implement task lookup by `id` and `key`.~~ **DONE**
 14. ~~Implement task creation with required fields and optional initial fields.~~ **DONE**
-15. Implement task read/show model.
+15. ~~Implement task read/show model.~~ **DONE**
 16. Implement `set` / `unset` for built-in fields.
 17. Implement `set` / `unset` for custom fields.
 18. Implement archive / unarchive behavior.
