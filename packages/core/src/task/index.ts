@@ -24,3 +24,6 @@ export {
 
 export { createTask } from "./create.js";
 export type { CreateTaskOptions } from "./create.js";
+
+export { discoverAttachments, buildShowModel } from "./show.js";
+export type { AttachmentInfo, TaskShowModel } from "./show.js";
