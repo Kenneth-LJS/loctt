@@ -22,6 +22,8 @@ export type { AttachmentInfo, TaskShowModel } from "./task/index.js";
 export { setField, unsetField, TaskUpdateError } from "./task/index.js";
 export { archiveTask, unarchiveTask, deleteTask, TaskLifecycleError } from "./task/index.js";
 export { linkTask, unlinkTask, RelationshipError } from "./task/index.js";
+export { validateRelationships, getRelatedTasks, buildTree, getChildren, getParent } from "./task/index.js";
+export type { RelationshipValidationError } from "./task/index.js";
 
 export {
   resolveLocttDir,

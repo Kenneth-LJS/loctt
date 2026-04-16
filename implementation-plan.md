@@ -44,7 +44,7 @@ Implementation language/runtime:
 ## Relationships
 
 21. ~~Implement relationship add/remove (`link` / `unlink`).~~ **DONE**
-22. Implement relationship validation and traversal helpers.
+22. ~~Implement relationship validation and traversal helpers.~~ **DONE**
 
 ## Query Engine
 
