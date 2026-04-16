@@ -1,4 +1,4 @@
-import { mkdir, writeFile, access } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   resolveLocttDir,
@@ -11,6 +11,7 @@ import {
   getStateFilePath,
 } from "../paths/index.js";
 import { defaultWorkflowYaml, defaultQueriesYaml, defaultStateYaml } from "./defaults.js";
+import { fileExists } from "../utils/fs.js";
 
 export interface InitOptions {
   /** Key prefix, defaults to "T-". */
@@ -24,15 +25,6 @@ export interface InitResult {
   readonly created: readonly string[];
 }
 
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Initializes a .loctt directory with default config, state, and structure.
  * Throws if .loctt already exists.
@@ -42,7 +34,7 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
   const prefix = options.prefix ?? "T-";
   const genDocs = options.docs ?? true;
 
-  if (await exists(locttDir)) {
+  if (await fileExists(locttDir)) {
     throw new Error(`.loctt directory already exists at ${locttDir}`);
   }
 

@@ -2,6 +2,11 @@ import { readFile } from "node:fs/promises";
 import { parse as parseYaml } from "yaml";
 import type { QueriesConfig } from "@loctt/contracts";
 import { getQueriesConfigPath } from "../paths/index.js";
+import {
+  assertString as _assertString,
+  assertArray as _assertArray,
+  assertObject as _assertObject,
+} from "../utils/assert.js";
 
 export class QueriesConfigError extends Error {
   constructor(message: string) {
@@ -11,21 +16,15 @@ export class QueriesConfigError extends Error {
 }
 
 function assertString(value: unknown, path: string): asserts value is string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new QueriesConfigError(`${path} must be a non-empty string`);
-  }
+  _assertString(value, path, QueriesConfigError);
 }
 
 function assertArray(value: unknown, path: string): asserts value is unknown[] {
-  if (!Array.isArray(value)) {
-    throw new QueriesConfigError(`${path} must be an array`);
-  }
+  _assertArray(value, path, QueriesConfigError);
 }
 
 function assertObject(value: unknown, path: string): asserts value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new QueriesConfigError(`${path} must be an object`);
-  }
+  _assertObject(value, path, QueriesConfigError);
 }
 
 const VALID_SORT_DIRECTIONS = new Set(["asc", "desc"]);

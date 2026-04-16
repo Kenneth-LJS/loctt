@@ -3,6 +3,11 @@ import { dirname } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { SyncState } from "@loctt/contracts";
 import { getSyncStatePath } from "../paths/index.js";
+import {
+  assertObject as _assertObject,
+  assertString as _assertString,
+  assertBoolean as _assertBoolean,
+} from "../utils/assert.js";
 
 export class SyncStateError extends Error {
   constructor(message: string) {
@@ -12,21 +17,15 @@ export class SyncStateError extends Error {
 }
 
 function assertObject(value: unknown, path: string): asserts value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new SyncStateError(`${path} must be an object`);
-  }
+  _assertObject(value, path, SyncStateError);
 }
 
 function assertString(value: unknown, path: string): asserts value is string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new SyncStateError(`${path} must be a non-empty string`);
-  }
+  _assertString(value, path, SyncStateError);
 }
 
 function assertBoolean(value: unknown, path: string): asserts value is boolean {
-  if (typeof value !== "boolean") {
-    throw new SyncStateError(`${path} must be a boolean`);
-  }
+  _assertBoolean(value, path, SyncStateError);
 }
 
 /** Parses and validates raw YAML content into a SyncState. */

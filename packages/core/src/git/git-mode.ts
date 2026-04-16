@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { saveSyncState, loadSyncState } from "../state/sync.js";
 import { getSyncStatePath, getLocalDir } from "../paths/index.js";
-import { mkdir, access } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import type { SyncState } from "@loctt/contracts";
+import { fileExists } from "../utils/fs.js";
 
 export interface GitStatusResult {
   readonly enabled: boolean;
@@ -14,15 +15,6 @@ export interface GitStatusResult {
 function isGitRepo(root: string): boolean {
   const result = spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, stdio: "pipe" });
   return result.status === 0;
-}
-
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
