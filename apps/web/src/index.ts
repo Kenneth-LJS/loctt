@@ -14,10 +14,14 @@ const DEFAULT_BASE = "http://localhost:4321";
 
 /** Simple HTTP client for the LocTT service. */
 export class LocttClient {
-  constructor(private readonly baseUrl: string = DEFAULT_BASE) {}
+  private readonly base: string;
+
+  constructor(baseUrl: string = DEFAULT_BASE) {
+    this.base = baseUrl.replace(/\/+$/, "");
+  }
 
   private async fetch<T>(path: string, options?: RequestInit): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
+    const res = await fetch(`${this.base}${path}`, {
       ...options,
       headers: {
         "Content-Type": "application/json",
@@ -47,7 +51,7 @@ export class LocttClient {
     const searchParams = new URLSearchParams();
     if (params?.query) searchParams.set("query", params.query);
     if (params?.view) searchParams.set("view", params.view);
-    if (params?.limit) searchParams.set("limit", String(params.limit));
+    if (params?.limit !== undefined) searchParams.set("limit", String(params.limit));
     const qs = searchParams.toString();
     return this.fetch(`/api/tasks${qs ? `?${qs}` : ""}`);
   }

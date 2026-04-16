@@ -128,12 +128,23 @@ export async function main(): Promise<void> {
         const tasks = await loadAllTasks(locttDir);
         const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
 
+        let limit: number | undefined;
+        const limitArg = getArg(args, "--limit");
+        if (limitArg !== undefined) {
+          limit = Number(limitArg);
+          if (Number.isNaN(limit) || limit < 0 || !Number.isInteger(limit)) {
+            console.error("Error: --limit must be a non-negative integer");
+            process.exitCode = 1;
+            break;
+          }
+        }
+
         const result = listTasks(
           tasks,
           {
             query: getArg(args, "--query"),
             view: getArg(args, "--view"),
-            limit: getArg(args, "--limit") ? Number(getArg(args, "--limit")) : undefined,
+            limit,
           },
           queriesConfig,
           workflowConfig,
@@ -340,7 +351,8 @@ export async function main(): Promise<void> {
 }
 
 // Only auto-run when executed directly
-const isDirectRun = process.argv[1]?.endsWith("cli/dist/index.js") ?? false;
+import { fileURLToPath } from "node:url";
+const isDirectRun = process.argv[1] === fileURLToPath(import.meta.url);
 if (isDirectRun) {
   main();
 }
