@@ -22,6 +22,17 @@ Confirmed decisions:
 - `.loctt/` is the LocTT data directory
 - one repo/workspace should map to one LocTT tracker
 - implementation should use Node/TypeScript
+- the repository should use a monorepo structure
+- shared LocTT logic should live in `packages/core`
+- shared API/contracts should live in `packages/contracts`
+- interface apps should live in `apps/`
+- intended app split should be:
+  - `apps/cli`
+  - `apps/mcp`
+  - `apps/service`
+  - `apps/web`
+- CLI, MCP, and service should all operate on `packages/core` rather than going through each other
+- the web GUI should talk to the local service layer rather than touching tracker files directly
 - human-readable is important
 - task content should be free markdown
 - LocTT should work without Git
