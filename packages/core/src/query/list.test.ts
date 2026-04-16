@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
-import type { Task, QueriesConfig, WorkflowConfig } from "@loctt/contracts";
+import type { QueriesConfig, Task, WorkflowConfig } from "@loctt/contracts";
+import { describe, expect,it } from "vitest";
+
 import { listTasks, resolveView } from "./list.js";
 
 const config: WorkflowConfig = {

@@ -1,17 +1,18 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+
 import {
-  resolveLocttDir,
   getConfigDir,
-  getTasksDir,
-  getLocalDir,
   getDocsDir,
-  getWorkflowConfigPath,
+  getLocalDir,
   getQueriesConfigPath,
   getStateFilePath,
+  getTasksDir,
+  getWorkflowConfigPath,
+  resolveLocttDir,
 } from "../paths/index.js";
-import { defaultWorkflowYaml, defaultQueriesYaml, defaultStateYaml } from "./defaults.js";
 import { fileExists } from "../utils/fs.js";
+import { defaultQueriesYaml, defaultStateYaml,defaultWorkflowYaml } from "./defaults.js";
 
 export interface InitOptions {
   /** Key prefix, defaults to "T-". */

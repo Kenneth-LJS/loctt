@@ -1,18 +1,19 @@
+export type { CreateTaskOptions } from "./create.js";
+export { createTask } from "./create.js";
 export {
-  splitTaskFile,
+  assembleTaskFile,
   parseFrontmatter,
   serializeFrontmatter,
-  assembleTaskFile,
+  splitTaskFile,
   TaskParseError,
 } from "./frontmatter.js";
-
 export {
   readTask,
-  writeTask,
   readTaskBody,
+  writeTask,
   writeTaskBody,
 } from "./io.js";
-
+export { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./lifecycle.js";
 export {
   listTaskIds,
   loadAllTasks,
@@ -21,18 +22,9 @@ export {
   lookupTask,
   TaskNotFoundError,
 } from "./lookup.js";
-
-export { createTask } from "./create.js";
-export type { CreateTaskOptions } from "./create.js";
-
-export { discoverAttachments, buildShowModel } from "./show.js";
+export { linkTask, RelationshipError,unlinkTask } from "./relationships.js";
 export type { AttachmentInfo, TaskShowModel } from "./show.js";
-
-export { setField, unsetField, TaskUpdateError } from "./update.js";
-
-export { archiveTask, unarchiveTask, deleteTask, TaskLifecycleError } from "./lifecycle.js";
-
-export { linkTask, unlinkTask, RelationshipError } from "./relationships.js";
-
-export { validateRelationships, getRelatedTasks, buildTree, getChildren, getParents } from "./traversal.js";
+export { buildShowModel,discoverAttachments } from "./show.js";
 export type { RelationshipValidationError } from "./traversal.js";
+export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./traversal.js";
+export { setField, TaskUpdateError,unsetField } from "./update.js";

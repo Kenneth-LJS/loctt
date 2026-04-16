@@ -1,9 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { readTask, writeTask, readTaskBody, writeTaskBody } from "./io.js";
+import { join } from "node:path";
+
 import type { Task } from "@loctt/contracts";
+import { afterEach,beforeEach, describe, expect, it } from "vitest";
+
+import { readTask, readTaskBody, writeTask, writeTaskBody } from "./io.js";
 
 describe("task I/O", () => {
   let locttDir: string;

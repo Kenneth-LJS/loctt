@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { getTrackerInfo } from "./info.js";
-import { runDoctor } from "./doctor.js";
+import { join } from "node:path";
+
+import { afterEach,beforeEach, describe, expect, it } from "vitest";
+
 import { initLoctt } from "../init/init.js";
+import { runDoctor } from "./doctor.js";
+import { getTrackerInfo } from "./info.js";
 
 describe("getTrackerInfo", () => {
   let root: string;

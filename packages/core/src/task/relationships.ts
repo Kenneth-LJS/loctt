@@ -1,4 +1,5 @@
 import type { Task, TaskFrontmatter, TaskRelationship } from "@loctt/contracts";
+
 import { readTask, writeTask } from "./io.js";
 
 export class RelationshipError extends Error {

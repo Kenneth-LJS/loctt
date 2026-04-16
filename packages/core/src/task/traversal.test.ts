@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import type { Task, WorkflowConfig } from "@loctt/contracts";
+import { afterEach,beforeEach, describe, expect, it } from "vitest";
+
 import { writeTask } from "./io.js";
-import { validateRelationships, getRelatedTasks, buildTree, getChildren, getParents } from "./traversal.js";
+import { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./traversal.js";
 
 const config: WorkflowConfig = {
   key: { prefix: "T-" },

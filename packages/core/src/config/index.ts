@@ -1,10 +1,11 @@
-export { loadWorkflowConfig, parseWorkflowConfig } from "./workflow.js";
 export { loadQueriesConfig, parseQueriesConfig } from "./queries.js";
 export { validateTaskAgainstWorkflow, validateWorkflowConfig } from "./validation.js";
+export { loadWorkflowConfig, parseWorkflowConfig } from "./workflow.js";
 
-import type { WorkflowConfig, QueriesConfig } from "@loctt/contracts";
-import { loadWorkflowConfig } from "./workflow.js";
+import type { QueriesConfig,WorkflowConfig } from "@loctt/contracts";
+
 import { loadQueriesConfig } from "./queries.js";
+import { loadWorkflowConfig } from "./workflow.js";
 
 export interface OptionalConfigs {
   workflowConfig?: WorkflowConfig;

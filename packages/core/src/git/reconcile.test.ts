@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
-import type { Task, LocttState } from "@loctt/contracts";
-import { rekeyCollisions, mergeRelationships, mergeKeyHistory } from "./reconcile.js";
+import type { LocttState,Task } from "@loctt/contracts";
+import { describe, expect,it } from "vitest";
+
+import { mergeKeyHistory,mergeRelationships, rekeyCollisions } from "./reconcile.js";
 
 function makeTask(id: string, key: string, createdAt: string): Task {
   return {

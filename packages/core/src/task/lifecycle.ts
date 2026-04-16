@@ -1,5 +1,7 @@
 import { rm } from "node:fs/promises";
+
 import type { Task, TaskFrontmatter } from "@loctt/contracts";
+
 import { getTaskDir } from "../paths/index.js";
 import { readTask, writeTask } from "./io.js";
 

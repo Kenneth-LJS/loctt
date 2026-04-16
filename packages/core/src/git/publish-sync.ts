@@ -1,9 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { cp, rm, readdir } from "node:fs/promises";
+import { cp, readdir,rm } from "node:fs/promises";
 import { join } from "node:path";
-import { loadSyncState, saveSyncState } from "../state/sync.js";
-import { getLocalDir } from "../paths/index.js";
+
 import type { SyncState } from "@loctt/contracts";
+
+import { getLocalDir } from "../paths/index.js";
+import { loadSyncState, saveSyncState } from "../state/sync.js";
 
 export class GitSyncError extends Error {
   constructor(message: string) {

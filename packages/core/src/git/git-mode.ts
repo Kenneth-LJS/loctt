@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { saveSyncState, loadSyncState } from "../state/sync.js";
-import { getSyncStatePath, getLocalDir } from "../paths/index.js";
 import { mkdir } from "node:fs/promises";
+
 import type { SyncState } from "@loctt/contracts";
+
+import { getLocalDir,getSyncStatePath } from "../paths/index.js";
+import { loadSyncState,saveSyncState } from "../state/sync.js";
 import { fileExists } from "../utils/fs.js";
 
 export interface GitStatusResult {

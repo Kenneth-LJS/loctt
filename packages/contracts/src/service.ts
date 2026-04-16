@@ -1,6 +1,6 @@
+import type { QueriesConfig,QuerySort } from "./query.js";
 import type { TaskFrontmatter } from "./task.js";
 import type { WorkflowConfig } from "./workflow.js";
-import type { QuerySort, QueriesConfig } from "./query.js";
 
 /** Request to create a new task. */
 export interface CreateTaskRequest {

@@ -1,12 +1,14 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdir,readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+
 import type { SyncState } from "@loctt/contracts";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+
 import { getSyncStatePath } from "../paths/index.js";
 import {
+  assertBoolean as _assertBoolean,
   assertObject as _assertObject,
   assertString as _assertString,
-  assertBoolean as _assertBoolean,
 } from "../utils/assert.js";
 
 export class SyncStateError extends Error {

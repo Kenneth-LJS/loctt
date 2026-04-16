@@ -1,11 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
 import { execSync } from "node:child_process";
-import { join } from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach,beforeEach, describe, expect, it } from "vitest";
+
 import { initLoctt } from "../init/init.js";
-import { enableGit, disableGit, getGitStatus } from "./git-mode.js";
 import { resolveLocttDir } from "../paths/index.js";
+import { disableGit, enableGit, getGitStatus } from "./git-mode.js";
 
 describe("git mode", () => {
   let root: string;

@@ -1,8 +1,10 @@
 import { readdir } from "node:fs/promises";
+
 import type { Task } from "@loctt/contracts";
+
 import { getTasksDir } from "../paths/index.js";
-import { readTask } from "./io.js";
 import { loadKeyIndex, lookupKeyInIndex, rebuildKeyIndex } from "../state/key-index.js";
+import { readTask } from "./io.js";
 
 export class TaskNotFoundError extends Error {
   constructor(ref: string) {
