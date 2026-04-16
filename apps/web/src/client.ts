@@ -22,6 +22,7 @@ export class LocttClient {
       ...options,
       headers: {
         "Content-Type": "application/json",
+        "X-Loctt-Client": "1",
         ...options?.headers,
       },
     });
