@@ -48,13 +48,13 @@ function parseRelationships(raw: unknown): TaskRelationship[] {
 }
 
 function optionalString(value: unknown, path: string): string | undefined {
-  if (value === undefined) return undefined;
+  if (value === undefined || value === null) return undefined;
   assertString(value, path);
   return value;
 }
 
 function optionalStringArray(value: unknown, path: string): string[] | undefined {
-  if (value === undefined) return undefined;
+  if (value === undefined || value === null) return undefined;
   if (!Array.isArray(value)) {
     throw new TaskParseError(`${path} must be an array`);
   }
@@ -67,7 +67,7 @@ function optionalStringArray(value: unknown, path: string): string[] | undefined
 }
 
 function optionalBoolean(value: unknown, path: string): boolean | undefined {
-  if (value === undefined) return undefined;
+  if (value === undefined || value === null) return undefined;
   if (typeof value !== "boolean") {
     throw new TaskParseError(`${path} must be a boolean`);
   }
@@ -116,18 +116,27 @@ export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
 
   // Handle optional date fields that yaml may parse as Date
   function optionalDateString(value: unknown, path: string): string | undefined {
-    if (value === undefined) return undefined;
+    if (value === undefined || value === null) return undefined;
     if (value instanceof Date) return value.toISOString();
     assertString(value, path);
     return value;
   }
 
-  // Warn about unknown top-level keys (not enforced, just tracked)
-  for (const k of Object.keys(raw)) {
-    if (!BUILTIN_KEYS.has(k)) {
-      // Unknown keys are silently ignored — could be future extensions
-    }
-  }
+  const status = optionalString(raw["status"], "status");
+  const statusUpdatedAt = optionalDateString(raw["status_updated_at"], "status_updated_at");
+  const taskType = optionalString(raw["task_type"], "task_type");
+  const priority = optionalString(raw["priority"], "priority");
+  const parent = optionalString(raw["parent"], "parent");
+  const assignee = optionalString(raw["assignee"], "assignee");
+  const reporter = optionalString(raw["reporter"], "reporter");
+  const startDate = optionalDateString(raw["start_date"], "start_date");
+  const dueDate = optionalDateString(raw["due_date"], "due_date");
+  const estimate = optionalString(raw["estimate"], "estimate");
+  const completedAt = optionalDateString(raw["completed_at"], "completed_at");
+  const milestone = optionalString(raw["milestone"], "milestone");
+  const archived = optionalBoolean(raw["archived"], "archived");
+  const archivedAt = optionalDateString(raw["archived_at"], "archived_at");
+  const labels = optionalStringArray(raw["labels"], "labels");
 
   const result: TaskFrontmatter = {
     id: raw["id"],
@@ -135,23 +144,21 @@ export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
     title: raw["title"],
     created_at: createdAtStr,
     updated_at: updatedAtStr,
-    ...(raw["status"] !== undefined ? { status: raw["status"] as string } : {}),
-    ...(optionalDateString(raw["status_updated_at"], "status_updated_at") !== undefined
-      ? { status_updated_at: optionalDateString(raw["status_updated_at"], "status_updated_at")! }
-      : {}),
-    ...(raw["task_type"] !== undefined ? { task_type: raw["task_type"] as string } : {}),
-    ...(raw["priority"] !== undefined ? { priority: raw["priority"] as string } : {}),
-    ...(raw["parent"] !== undefined ? { parent: raw["parent"] as string } : {}),
-    ...(optionalString(raw["assignee"], "assignee") !== undefined ? { assignee: optionalString(raw["assignee"], "assignee")! } : {}),
-    ...(optionalString(raw["reporter"], "reporter") !== undefined ? { reporter: optionalString(raw["reporter"], "reporter")! } : {}),
-    ...(optionalDateString(raw["start_date"], "start_date") !== undefined ? { start_date: optionalDateString(raw["start_date"], "start_date")! } : {}),
-    ...(optionalDateString(raw["due_date"], "due_date") !== undefined ? { due_date: optionalDateString(raw["due_date"], "due_date")! } : {}),
-    ...(optionalString(raw["estimate"], "estimate") !== undefined ? { estimate: optionalString(raw["estimate"], "estimate")! } : {}),
-    ...(optionalDateString(raw["completed_at"], "completed_at") !== undefined ? { completed_at: optionalDateString(raw["completed_at"], "completed_at")! } : {}),
-    ...(optionalString(raw["milestone"], "milestone") !== undefined ? { milestone: optionalString(raw["milestone"], "milestone")! } : {}),
-    ...(optionalBoolean(raw["archived"], "archived") !== undefined ? { archived: optionalBoolean(raw["archived"], "archived")! } : {}),
-    ...(optionalDateString(raw["archived_at"], "archived_at") !== undefined ? { archived_at: optionalDateString(raw["archived_at"], "archived_at")! } : {}),
-    ...(raw["labels"] !== undefined ? { labels: optionalStringArray(raw["labels"], "labels")! } : {}),
+    ...(status !== undefined ? { status } : {}),
+    ...(statusUpdatedAt !== undefined ? { status_updated_at: statusUpdatedAt } : {}),
+    ...(taskType !== undefined ? { task_type: taskType } : {}),
+    ...(priority !== undefined ? { priority } : {}),
+    ...(parent !== undefined ? { parent } : {}),
+    ...(assignee !== undefined ? { assignee } : {}),
+    ...(reporter !== undefined ? { reporter } : {}),
+    ...(startDate !== undefined ? { start_date: startDate } : {}),
+    ...(dueDate !== undefined ? { due_date: dueDate } : {}),
+    ...(estimate !== undefined ? { estimate } : {}),
+    ...(completedAt !== undefined ? { completed_at: completedAt } : {}),
+    ...(milestone !== undefined ? { milestone } : {}),
+    ...(archived !== undefined ? { archived } : {}),
+    ...(archivedAt !== undefined ? { archived_at: archivedAt } : {}),
+    ...(labels !== undefined ? { labels } : {}),
     ...(relationships.length > 0 ? { relationships } : {}),
     ...(keyHistory !== undefined ? { key_history: keyHistory } : {}),
     ...(fields !== undefined ? { fields } : {}),
