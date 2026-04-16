@@ -1,0 +1,80 @@
+/** Default workflow.yaml content matching design-doc defaults. */
+export function defaultWorkflowYaml(prefix: string): string {
+  return `key:
+  prefix: ${prefix}
+
+statuses:
+  - key: not_started
+    label: Not started
+    category: pending
+  - key: in_progress
+    label: In progress
+    category: active
+  - key: blocked
+    label: Blocked
+    category: active
+  - key: done
+    label: Done
+    category: completed
+
+priorities:
+  - key: low
+    label: Low
+    value: 1
+  - key: medium
+    label: Medium
+    value: 2
+  - key: high
+    label: High
+    value: 3
+
+task_types:
+  - key: task
+    label: Task
+
+relationships:
+  - key: parent
+    label: Parent
+    inverse: child
+    inverse_label: Child
+    structural: true
+  - key: blocks
+    label: Blocks
+    inverse: is_blocked_by
+    inverse_label: Is blocked by
+  - key: relates_to
+    label: Relates to
+    inverse: relates_to
+    inverse_label: Relates to
+
+custom_fields: []
+`;
+}
+
+/** Default queries.yaml content. */
+export function defaultQueriesYaml(): string {
+  return `queries:
+  - name: recent-open
+    query: archived != true and status != done
+    sort:
+      - field: updated_at
+        direction: desc
+
+  - name: blocked
+    query: archived != true and status = blocked
+    sort:
+      - field: priority
+        direction: desc
+      - field: updated_at
+        direction: desc
+`;
+}
+
+/** Default state.yaml content. */
+export function defaultStateYaml(prefix: string): string {
+  return `keys:
+  task:
+    prefix: ${prefix}
+    next_number: 1
+`;
+}

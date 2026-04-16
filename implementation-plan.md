@@ -58,7 +58,7 @@ Implementation language/runtime:
 
 ## CLI
 
-30. Implement `loctt init`, including sane-defaults mode and docs generation.
+30. ~~Implement `loctt init`, including sane-defaults mode and docs generation.~~ **DONE**
 31. Implement `loctt info` and `loctt doctor`.
 32. Implement the main CLI command surface on top of `packages/core`.
 

@@ -34,6 +34,9 @@ export type { EvalContext } from "./query/index.js";
 export { listTasks, resolveView } from "./query/index.js";
 export type { ListOptions, ListContext } from "./query/index.js";
 
+export { initLoctt } from "./init/index.js";
+export type { InitOptions, InitResult } from "./init/index.js";
+
 export {
   resolveLocttDir,
   getTaskDir,
