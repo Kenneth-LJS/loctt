@@ -62,9 +62,10 @@ export function getRelatedTasks(
 }
 
 /**
- * Builds a parent-child tree from all tasks.
+ * Builds a parent-child map from all tasks.
  * Returns a map of parent ID -> child IDs.
  * Tasks with no parent are roots (keyed under "").
+ * Tasks with multiple parents appear under each parent (DAG).
  */
 export function buildTree(
   tasks: readonly Task[],
@@ -75,10 +76,16 @@ export function buildTree(
 
   for (const task of tasks) {
     const parentTargets = getRelatedTasks(task, structuralType);
-    const parentId = parentTargets[0] ?? "";
-    const children = tree.get(parentId) ?? [];
-    children.push(task.frontmatter.id);
-    tree.set(parentId, children);
+    if (parentTargets.length === 0) {
+      const roots = tree.get("")!;
+      roots.push(task.frontmatter.id);
+    } else {
+      for (const parentId of parentTargets) {
+        const children = tree.get(parentId) ?? [];
+        children.push(task.frontmatter.id);
+        tree.set(parentId, children);
+      }
+    }
   }
 
   return tree;
@@ -105,23 +112,25 @@ export function getChildren(
 }
 
 /**
- * Gets the parent of a task using the structural relationship.
+ * Gets the parent(s) of a task using the structural relationship.
+ * Returns multiple parents if a task has more than one parent relationship.
  */
-export function getParent(
+export function getParents(
   tasks: readonly Task[],
   childId: string,
   config: WorkflowConfig,
-): Task | undefined {
+): readonly Task[] {
   const structuralDef = config.relationships.find(r => r.structural);
-  if (!structuralDef) return undefined;
+  if (!structuralDef) return [];
 
   const child = tasks.find(t => t.frontmatter.id === childId);
-  if (!child) return undefined;
+  if (!child) return [];
 
-  const parentRel = (child.frontmatter.relationships ?? []).find(
+  const parentRels = (child.frontmatter.relationships ?? []).filter(
     r => r.type === structuralDef.key,
   );
-  if (!parentRel) return undefined;
 
-  return tasks.find(t => t.frontmatter.id === parentRel.target);
+  return parentRels
+    .map(r => tasks.find(t => t.frontmatter.id === r.target))
+    .filter((t): t is Task => t !== undefined);
 }
