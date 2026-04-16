@@ -2,6 +2,7 @@
 
 import {
   archiveTask,
+  buildListContext,
   buildShowModel,
   createTask,
   deleteTask,
@@ -112,12 +113,13 @@ export async function main(): Promise<void> {
         }
         const locttDir = resolveLocttDir(root);
         const state = await loadState(locttDir);
+        const { workflowConfig } = await loadOptionalConfigs(locttDir);
         const task = await createTask(locttDir, state, {
           title,
           status: getArg(args, "--status"),
           priority: getArg(args, "--priority"),
           task_type: getArg(args, "--type"),
-        });
+        }, workflowConfig);
         await saveState(locttDir, state);
         console.log(`Created ${task.frontmatter.key}: ${task.frontmatter.title}`);
         break;
@@ -148,6 +150,7 @@ export async function main(): Promise<void> {
           },
           queriesConfig,
           workflowConfig,
+          buildListContext(tasks),
         );
 
         if (result.length === 0) {
@@ -208,8 +211,9 @@ export async function main(): Promise<void> {
           break;
         }
         const locttDir = resolveLocttDir(root);
+        const { workflowConfig } = await loadOptionalConfigs(locttDir);
         const task = await lookupTask(locttDir, ref);
-        await setField(locttDir, task.frontmatter.id, field, value);
+        await setField(locttDir, task.frontmatter.id, field, value, workflowConfig);
         console.log(`Set ${field} = ${value} on ${task.frontmatter.key}`);
         break;
       }
@@ -239,9 +243,10 @@ export async function main(): Promise<void> {
           break;
         }
         const locttDir = resolveLocttDir(root);
+        const { workflowConfig } = await loadOptionalConfigs(locttDir);
         const task = await lookupTask(locttDir, ref);
         const targetTask = await lookupTask(locttDir, target);
-        await linkTask(locttDir, task.frontmatter.id, relType, targetTask.frontmatter.id);
+        await linkTask(locttDir, task.frontmatter.id, relType, targetTask.frontmatter.id, workflowConfig);
         console.log(`Linked ${task.frontmatter.key} --${relType}--> ${targetTask.frontmatter.key}`);
         break;
       }

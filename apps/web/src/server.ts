@@ -12,6 +12,7 @@ import type {
 } from "@loctt/contracts";
 import {
   archiveTask,
+  buildListContext,
   buildShowModel,
   createTask,
   deleteTask,
@@ -143,7 +144,7 @@ export function createWebApp(options: WebAppOptions) {
           limit,
         };
 
-        const result = listTasks(tasks, params, queriesConfig, workflowConfig);
+        const result = listTasks(tasks, params, queriesConfig, workflowConfig, buildListContext(tasks));
         json(res, result.map(t => t.frontmatter));
         return;
       }
@@ -152,7 +153,8 @@ export function createWebApp(options: WebAppOptions) {
         const body = await readBody(req);
         const request = JSON.parse(body) as CreateTaskRequest;
         const state = await loadState(locttDir);
-        const task = await createTask(locttDir, state, request);
+        const wfConfig = await loadWorkflowConfig(locttDir);
+        const task = await createTask(locttDir, state, request, wfConfig);
         await saveState(locttDir, state);
         json(res, task.frontmatter, 201);
         return;
@@ -179,8 +181,9 @@ export function createWebApp(options: WebAppOptions) {
         if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
         const body = await readBody(req);
         const request = JSON.parse(body) as UpdateTaskRequest;
+        const wfConfig = await loadWorkflowConfig(locttDir);
         const task = await lookupTask(locttDir, ref);
-        const updated = await setField(locttDir, task.frontmatter.id, request.field, request.value);
+        const updated = await setField(locttDir, task.frontmatter.id, request.field, request.value, wfConfig);
         json(res, updated.frontmatter);
         return;
       }
@@ -233,8 +236,10 @@ export function createWebApp(options: WebAppOptions) {
         if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
         const body = await readBody(req);
         const request = JSON.parse(body) as LinkRequest;
+        const wfConfig = await loadWorkflowConfig(locttDir);
         const task = await lookupTask(locttDir, ref);
-        const updated = await linkTask(locttDir, task.frontmatter.id, request.type, request.target);
+        const target = await lookupTask(locttDir, request.target);
+        const updated = await linkTask(locttDir, task.frontmatter.id, request.type, target.frontmatter.id, wfConfig);
         json(res, updated.frontmatter);
         return;
       }
@@ -246,7 +251,8 @@ export function createWebApp(options: WebAppOptions) {
         const body = await readBody(req);
         const request = JSON.parse(body) as LinkRequest;
         const task = await lookupTask(locttDir, ref);
-        const updated = await unlinkTask(locttDir, task.frontmatter.id, request.type, request.target);
+        const target = await lookupTask(locttDir, request.target);
+        const updated = await unlinkTask(locttDir, task.frontmatter.id, request.type, target.frontmatter.id);
         json(res, updated.frontmatter);
         return;
       }

@@ -1,4 +1,4 @@
-import type { Task, TaskFrontmatter, TaskRelationship } from "@loctt/contracts";
+import type { Task, TaskFrontmatter, TaskRelationship, WorkflowConfig } from "@loctt/contracts";
 
 import { readTask, writeTask } from "./io.js";
 
@@ -18,7 +18,17 @@ export async function linkTask(
   taskId: string,
   type: string,
   target: string,
+  workflowConfig?: WorkflowConfig,
 ): Promise<Task> {
+  if (workflowConfig) {
+    const validTypes = new Set(workflowConfig.relationships.flatMap(r => [r.key, r.inverse]));
+    if (!validTypes.has(type)) {
+      throw new RelationshipError(
+        `unknown relationship type "${type}"; valid: ${[...validTypes].join(", ")}`,
+      );
+    }
+  }
+
   const task = await readTask(locttDir, taskId);
   const existing = task.frontmatter.relationships ?? [];
 

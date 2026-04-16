@@ -3,6 +3,7 @@
 
 import {
   archiveTask,
+  buildListContext,
   buildShowModel,
   createTask,
   deleteTask,
@@ -239,6 +240,7 @@ export async function executeTool(
           },
           queriesConfig,
           workflowConfig,
+          buildListContext(tasks),
         );
 
         const summary = result.map(t => ({
@@ -269,22 +271,24 @@ export async function executeTool(
 
       case "create_task": {
         const state = await loadState(locttDir);
+        const { workflowConfig } = await loadOptionalConfigs(locttDir);
         const task = await createTask(locttDir, state, {
           title: args["title"] as string,
           status: args["status"] as string | undefined,
           priority: args["priority"] as string | undefined,
           task_type: args["task_type"] as string | undefined,
           body: args["body"] as string | undefined,
-        });
+        }, workflowConfig);
         await saveState(locttDir, state);
         return text(`Created ${task.frontmatter.key}: ${task.frontmatter.title}`);
       }
 
       case "update_task": {
         const task = await lookupTask(locttDir, args["ref"] as string);
+        const { workflowConfig } = await loadOptionalConfigs(locttDir);
         const field = args["field"] as string;
         const value = args["value"];
-        const updated = await setField(locttDir, task.frontmatter.id, field, value);
+        const updated = await setField(locttDir, task.frontmatter.id, field, value, workflowConfig);
         return text(`Updated ${updated.frontmatter.key}: set ${field} = ${JSON.stringify(value)}`);
       }
 
@@ -332,8 +336,9 @@ export async function executeTool(
       case "link_tasks": {
         const task = await lookupTask(locttDir, args["ref"] as string);
         const target = await lookupTask(locttDir, args["target"] as string);
+        const { workflowConfig } = await loadOptionalConfigs(locttDir);
         const relType = args["type"] as string;
-        await linkTask(locttDir, task.frontmatter.id, relType, target.frontmatter.id);
+        await linkTask(locttDir, task.frontmatter.id, relType, target.frontmatter.id, workflowConfig);
         return text(`Linked ${task.frontmatter.key} --${relType}--> ${target.frontmatter.key}`);
       }
 
