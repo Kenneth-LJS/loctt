@@ -14,6 +14,7 @@ export { allocateKey, initKeyAllocation, appendKeyHistory, KeyAllocationError } 
 
 export { splitTaskFile, parseFrontmatter, serializeFrontmatter, assembleTaskFile, TaskParseError } from "./task/index.js";
 export { readTask, writeTask, readTaskBody, writeTaskBody } from "./task/index.js";
+export { listTaskIds, loadAllTasks, lookupById, lookupByKey, lookupTask, TaskNotFoundError } from "./task/index.js";
 
 export {
   resolveLocttDir,
