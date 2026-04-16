@@ -5,6 +5,7 @@ export interface RekeyResult {
   readonly taskId: string;
   readonly oldKey: string;
   readonly newKey: string;
+  readonly keyHistory: readonly string[];
 }
 
 /**
@@ -48,19 +49,17 @@ export function rekeyCollisions(
         next_number: taskEntry.next_number + 1,
       };
 
+      const keyHistory = appendKeyHistory(
+        task.frontmatter.key_history,
+        task.frontmatter.key,
+      );
+
       results.push({
         taskId: task.frontmatter.id,
         oldKey: task.frontmatter.key,
         newKey,
+        keyHistory,
       });
-
-      // Update the task's frontmatter (in-place mutation for caller to persist)
-      const mutableFm = task.frontmatter as unknown as Record<string, unknown>;
-      mutableFm["key_history"] = appendKeyHistory(
-        task.frontmatter.key_history,
-        task.frontmatter.key,
-      );
-      mutableFm["key"] = newKey;
     }
   }
 
