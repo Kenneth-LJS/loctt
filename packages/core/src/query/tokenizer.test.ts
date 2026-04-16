@@ -40,7 +40,7 @@ describe("tokenize", () => {
 
   it("tokenizes boolean literals", () => {
     const tokens = tokenize("archived = true");
-    expect(tokens[2]).toEqual({ type: "BOOLEAN", value: "true", position: 10 });
+    expect(tokens[2]).toEqual({ type: "BOOLEAN", value: "true", position: 11 });
   });
 
   it("tokenizes today literal", () => {
