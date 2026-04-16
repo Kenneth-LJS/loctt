@@ -41,7 +41,7 @@ export type { ListContext,ListOptions } from "./query/index.js";
 export { tokenize, TokenizeError } from "./query/index.js";
 export { ParseError,parseQuery } from "./query/index.js";
 export { evaluateQuery } from "./query/index.js";
-export { listTasks, resolveView } from "./query/index.js";
+export { buildListContext, listTasks, resolveView } from "./query/index.js";
 export type { KeyIndex } from "./state/index.js";
 export { loadState, parseState, saveState, serializeState, StateError } from "./state/index.js";
 export { loadSyncState, parseSyncState, saveSyncState, serializeSyncState, SyncStateError } from "./state/index.js";

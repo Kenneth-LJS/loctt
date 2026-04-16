@@ -26,6 +26,20 @@ export interface ListContext {
 }
 
 /**
+ * Builds a ListContext with a resolveKey function from a task array.
+ * This enables parent-key queries like `parent = T-5` in list surfaces.
+ */
+export function buildListContext(tasks: readonly Task[]): ListContext {
+  const idToKey = new Map<string, string>();
+  for (const task of tasks) {
+    idToKey.set(task.frontmatter.id, task.frontmatter.key);
+  }
+  return {
+    resolveKey: (id: string) => idToKey.get(id),
+  };
+}
+
+/**
  * Resolves a named view from queries config.
  * Returns undefined if the view name is not found.
  */
