@@ -1,4 +1,4 @@
-import type { WorkflowConfig, TaskFrontmatter } from "@loctt/contracts";
+import type { TaskFrontmatter,WorkflowConfig } from "@loctt/contracts";
 
 export interface ValidationError {
   readonly field: string;
@@ -44,8 +44,7 @@ export function validateTaskAgainstWorkflow(
   }
 
   if (fm.relationships) {
-    for (let i = 0; i < fm.relationships.length; i++) {
-      const rel = fm.relationships[i]!;
+    for (const [i, rel] of fm.relationships.entries()) {
       if (!relationshipKeys.has(rel.type)) {
         errors.push({
           field: `relationships[${i}].type`,

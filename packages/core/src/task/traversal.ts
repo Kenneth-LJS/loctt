@@ -1,4 +1,5 @@
 import type { Task, WorkflowConfig } from "@loctt/contracts";
+
 import { loadAllTasks } from "./lookup.js";
 
 /** Validates that all relationship targets exist and types are valid. */
@@ -26,8 +27,7 @@ export async function validateRelationships(
 
   for (const task of tasks) {
     const rels = task.frontmatter.relationships ?? [];
-    for (let i = 0; i < rels.length; i++) {
-      const rel = rels[i]!;
+    for (const [i, rel] of rels.entries()) {
       if (!validTypes.has(rel.type)) {
         errors.push({
           taskId: task.frontmatter.id,
@@ -72,12 +72,12 @@ export function buildTree(
   structuralType: string = "parent",
 ): Map<string, string[]> {
   const tree = new Map<string, string[]>();
-  tree.set("", []); // root level
+  const roots: string[] = [];
+  tree.set("", roots);
 
   for (const task of tasks) {
     const parentTargets = getRelatedTasks(task, structuralType);
     if (parentTargets.length === 0) {
-      const roots = tree.get("")!;
       roots.push(task.frontmatter.id);
     } else {
       for (const parentId of parentTargets) {

@@ -2,26 +2,26 @@
 // Provides structured tools for task management via Model Context Protocol.
 
 import {
-  resolveLocttDir,
+  archiveTask,
+  buildShowModel,
+  createTask,
+  deleteTask,
+  linkTask,
+  listTasks,
+  loadAllTasks,
   loadOptionalConfigs,
-  loadWorkflowConfig,
   loadQueriesConfig,
   loadState,
-  saveState,
-  createTask,
+  loadWorkflowConfig,
   lookupTask,
-  buildShowModel,
-  setField,
-  unsetField,
-  linkTask,
-  unlinkTask,
-  archiveTask,
-  unarchiveTask,
-  deleteTask,
   readTaskBody,
+  resolveLocttDir,
+  saveState,
+  setField,
+  unarchiveTask,
+  unlinkTask,
+  unsetField,
   writeTaskBody,
-  loadAllTasks,
-  listTasks,
 } from "@loctt/core";
 
 export interface McpTool {
@@ -282,8 +282,10 @@ export async function executeTool(
 
       case "update_task": {
         const task = await lookupTask(locttDir, args["ref"] as string);
-        const updated = await setField(locttDir, task.frontmatter.id, args["field"] as string, args["value"]);
-        return text(`Updated ${updated.frontmatter.key}: set ${args["field"]} = ${JSON.stringify(args["value"])}`);
+        const field = args["field"] as string;
+        const value = args["value"];
+        const updated = await setField(locttDir, task.frontmatter.id, field, value);
+        return text(`Updated ${updated.frontmatter.key}: set ${field} = ${JSON.stringify(value)}`);
       }
 
       case "append_task_body": {
@@ -313,8 +315,9 @@ export async function executeTool(
 
       case "unset_field": {
         const task = await lookupTask(locttDir, args["ref"] as string);
-        const updated = await unsetField(locttDir, task.frontmatter.id, args["field"] as string);
-        return text(`Updated ${updated.frontmatter.key}: unset ${args["field"]}`);
+        const field = args["field"] as string;
+        const updated = await unsetField(locttDir, task.frontmatter.id, field);
+        return text(`Updated ${updated.frontmatter.key}: unset ${field}`);
       }
 
       case "delete_task": {
@@ -329,15 +332,17 @@ export async function executeTool(
       case "link_tasks": {
         const task = await lookupTask(locttDir, args["ref"] as string);
         const target = await lookupTask(locttDir, args["target"] as string);
-        await linkTask(locttDir, task.frontmatter.id, args["type"] as string, target.frontmatter.id);
-        return text(`Linked ${task.frontmatter.key} --${args["type"]}--> ${target.frontmatter.key}`);
+        const relType = args["type"] as string;
+        await linkTask(locttDir, task.frontmatter.id, relType, target.frontmatter.id);
+        return text(`Linked ${task.frontmatter.key} --${relType}--> ${target.frontmatter.key}`);
       }
 
       case "unlink_tasks": {
         const task = await lookupTask(locttDir, args["ref"] as string);
         const target = await lookupTask(locttDir, args["target"] as string);
-        await unlinkTask(locttDir, task.frontmatter.id, args["type"] as string, target.frontmatter.id);
-        return text(`Unlinked ${task.frontmatter.key} --${args["type"]}--> ${target.frontmatter.key}`);
+        const relType = args["type"] as string;
+        await unlinkTask(locttDir, task.frontmatter.id, relType, target.frontmatter.id);
+        return text(`Unlinked ${task.frontmatter.key} --${relType}--> ${target.frontmatter.key}`);
       }
 
       default:

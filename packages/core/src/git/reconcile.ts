@@ -1,4 +1,5 @@
-import type { Task, LocttState } from "@loctt/contracts";
+import type { LocttState,Task } from "@loctt/contracts";
+
 import { appendKeyHistory } from "../state/keys.js";
 
 export interface RekeyResult {
@@ -38,8 +39,7 @@ export function rekeyCollisions(
     });
 
     // First task keeps the key, rest get rekeyed
-    for (let i = 1; i < group.length; i++) {
-      const task = group[i]!;
+    for (const task of group.slice(1)) {
       const taskEntry = state.keys["task"];
       if (!taskEntry) continue;
 

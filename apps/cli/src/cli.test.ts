@@ -1,9 +1,12 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { main } from "./index.js";
+import { join } from "node:path";
+
 import { initLoctt } from "@loctt/core";
+import type { MockInstance } from "vitest";
+import { afterEach,beforeEach, describe, expect, it, vi } from "vitest";
+
+import { main } from "./index.js";
 
 describe("CLI entry point", () => {
   it("exports an async main function", () => {
@@ -14,14 +17,12 @@ describe("CLI entry point", () => {
 describe("CLI commands", () => {
   let root: string;
   let originalArgv: string[];
-  let originalCwd: () => string;
-  let consoleSpy: ReturnType<typeof vi.spyOn>;
+  let consoleSpy: MockInstance;
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "loctt-cli-"));
     originalArgv = process.argv;
-    originalCwd = process.cwd;
-    process.cwd = () => root;
+    vi.spyOn(process, "cwd").mockImplementation(() => root);
     consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
     process.exitCode = undefined;
@@ -29,8 +30,6 @@ describe("CLI commands", () => {
 
   afterEach(async () => {
     process.argv = originalArgv;
-    process.cwd = originalCwd;
-    consoleSpy.mockRestore();
     vi.restoreAllMocks();
     await rm(root, { recursive: true, force: true });
   });
