@@ -34,6 +34,11 @@ export type { EvalContext } from "./query/index.js";
 export { listTasks, resolveView } from "./query/index.js";
 export type { ListOptions, ListContext } from "./query/index.js";
 
+export { getTrackerInfo } from "./diagnostics/index.js";
+export type { TrackerInfo } from "./diagnostics/index.js";
+export { runDoctor } from "./diagnostics/index.js";
+export type { DiagnosticCheck, CheckStatus } from "./diagnostics/index.js";
+
 export { initLoctt } from "./init/index.js";
 export type { InitOptions, InitResult } from "./init/index.js";
 
