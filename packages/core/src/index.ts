@@ -29,6 +29,7 @@ export { tokenize, TokenizeError } from "./query/index.js";
 export type { Token, TokenType } from "./query/index.js";
 export { parseQuery, ParseError } from "./query/index.js";
 export type { QueryNode, QueryValue, ComparisonOp } from "./query/index.js";
+export { evaluateQuery } from "./query/index.js";
 
 export {
   resolveLocttDir,
