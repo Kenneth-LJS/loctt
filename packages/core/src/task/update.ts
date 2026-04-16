@@ -1,5 +1,6 @@
-import type { Task, TaskFrontmatter } from "@loctt/contracts";
+import type { Task, TaskFrontmatter, WorkflowConfig } from "@loctt/contracts";
 
+import { validateTaskAgainstWorkflow } from "../config/validation.js";
 import { readTask, writeTask } from "./io.js";
 
 export class TaskUpdateError extends Error {
@@ -14,7 +15,7 @@ const IMMUTABLE_FIELDS = new Set(["id", "key", "created_at"]);
 
 // Built-in optional fields that live at the top level of frontmatter
 const BUILTIN_OPTIONAL_FIELDS = new Set([
-  "status", "status_updated_at", "task_type", "priority", "parent",
+  "status", "status_updated_at", "task_type", "priority",
   "labels", "assignee", "reporter", "start_date", "due_date",
   "estimate", "completed_at", "milestone", "archived", "archived_at",
   "relationships", "key_history",
@@ -34,6 +35,7 @@ export async function setField(
   taskId: string,
   field: string,
   value: unknown,
+  workflowConfig?: WorkflowConfig,
 ): Promise<Task> {
   if (IMMUTABLE_FIELDS.has(field)) {
     throw new TaskUpdateError(`cannot set immutable field "${field}"`);
@@ -72,6 +74,15 @@ export async function setField(
       fields: { ...existingFields, [field]: value },
       updated_at: now,
     };
+  }
+
+  if (workflowConfig) {
+    const errors = validateTaskAgainstWorkflow(updated, workflowConfig);
+    if (errors.length > 0) {
+      throw new TaskUpdateError(
+        `invalid value: ${errors.map(e => `${e.field}: ${e.message}`).join("; ")}`,
+      );
+    }
   }
 
   const updatedTask: Task = { frontmatter: updated, body: task.body };

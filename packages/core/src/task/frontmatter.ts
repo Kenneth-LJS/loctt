@@ -114,7 +114,6 @@ export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
   const statusUpdatedAt = optionalDateString(raw["status_updated_at"], "status_updated_at");
   const taskType = optionalString(raw["task_type"], "task_type");
   const priority = optionalString(raw["priority"], "priority");
-  const parent = optionalString(raw["parent"], "parent");
   const assignee = optionalString(raw["assignee"], "assignee");
   const reporter = optionalString(raw["reporter"], "reporter");
   const startDate = optionalDateString(raw["start_date"], "start_date");
@@ -136,7 +135,6 @@ export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
     ...(statusUpdatedAt !== undefined ? { status_updated_at: statusUpdatedAt } : {}),
     ...(taskType !== undefined ? { task_type: taskType } : {}),
     ...(priority !== undefined ? { priority } : {}),
-    ...(parent !== undefined ? { parent } : {}),
     ...(assignee !== undefined ? { assignee } : {}),
     ...(reporter !== undefined ? { reporter } : {}),
     ...(startDate !== undefined ? { start_date: startDate } : {}),
@@ -173,7 +171,6 @@ export function serializeFrontmatter(fm: TaskFrontmatter): string {
   if (fm.status_updated_at !== undefined) obj["status_updated_at"] = fm.status_updated_at;
   if (fm.task_type !== undefined) obj["task_type"] = fm.task_type;
   if (fm.priority !== undefined) obj["priority"] = fm.priority;
-  if (fm.parent !== undefined) obj["parent"] = fm.parent;
   if (fm.labels !== undefined) obj["labels"] = [...fm.labels];
   if (fm.assignee !== undefined) obj["assignee"] = fm.assignee;
   if (fm.reporter !== undefined) obj["reporter"] = fm.reporter;

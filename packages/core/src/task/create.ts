@@ -1,6 +1,7 @@
-import type { LocttState,Task, TaskFrontmatter } from "@loctt/contracts";
+import type { LocttState,Task, TaskFrontmatter, WorkflowConfig } from "@loctt/contracts";
 import { ulid } from "ulid";
 
+import { validateTaskAgainstWorkflow } from "../config/validation.js";
 import { allocateKey } from "../state/keys.js";
 import { writeTask } from "./io.js";
 
@@ -32,10 +33,17 @@ export async function createTask(
   locttDir: string,
   state: LocttState,
   options: CreateTaskOptions,
+  workflowConfig?: WorkflowConfig,
 ): Promise<Task> {
   const id = ulid();
   const key = allocateKey(state, "task");
   const now = new Date().toISOString();
+
+  // Normalize parent option into a relationship edge
+  const relationships: { type: string; target: string }[] = [];
+  if (options.parent !== undefined) {
+    relationships.push({ type: "parent", target: options.parent });
+  }
 
   const frontmatter: TaskFrontmatter = {
     id,
@@ -46,7 +54,6 @@ export async function createTask(
     ...(options.status !== undefined ? { status: options.status } : {}),
     ...(options.task_type !== undefined ? { task_type: options.task_type } : {}),
     ...(options.priority !== undefined ? { priority: options.priority } : {}),
-    ...(options.parent !== undefined ? { parent: options.parent } : {}),
     ...(options.labels !== undefined ? { labels: options.labels } : {}),
     ...(options.assignee !== undefined ? { assignee: options.assignee } : {}),
     ...(options.reporter !== undefined ? { reporter: options.reporter } : {}),
@@ -55,7 +62,15 @@ export async function createTask(
     ...(options.estimate !== undefined ? { estimate: options.estimate } : {}),
     ...(options.milestone !== undefined ? { milestone: options.milestone } : {}),
     ...(options.fields !== undefined ? { fields: options.fields } : {}),
+    ...(relationships.length > 0 ? { relationships } : {}),
   };
+
+  if (workflowConfig) {
+    const errors = validateTaskAgainstWorkflow(frontmatter, workflowConfig);
+    if (errors.length > 0) {
+      throw new Error(`invalid task: ${errors.map(e => `${e.field}: ${e.message}`).join("; ")}`);
+    }
+  }
 
   const task: Task = {
     frontmatter,
