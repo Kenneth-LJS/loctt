@@ -48,8 +48,8 @@ Implementation language/runtime:
 
 ## Query Engine
 
-23. Implement query tokenizer/parser.
-24. Implement query evaluation over task metadata.
+23. ~~Implement query tokenizer/parser.~~ **DONE**
+24. ~~Implement query evaluation over task metadata.~~ **DONE**
 25. Implement `text` alias behavior.
 26. Implement `parent` alias behavior.
 27. Implement relationship-based query filtering.
