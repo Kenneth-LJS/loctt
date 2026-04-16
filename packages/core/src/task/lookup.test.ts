@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Task } from "@loctt/contracts";
@@ -109,5 +109,16 @@ describe("task lookup", () => {
     await seedTasks();
     const found = await lookupTask(locttDir, "T-1");
     expect(found.frontmatter.id).toBe("01AAA");
+  });
+
+  it("lookupById re-throws non-ENOENT errors instead of masking them", async () => {
+    // Create a task directory with a corrupt task.md
+    const taskDir = join(locttDir, "tasks", "01CORRUPT");
+    await mkdir(taskDir, { recursive: true });
+    await writeFile(join(taskDir, "task.md"), "not valid frontmatter at all", "utf-8");
+
+    // Should throw a parse error, not TaskNotFoundError
+    await expect(lookupById(locttDir, "01CORRUPT")).rejects.not.toThrow(TaskNotFoundError);
+    await expect(lookupById(locttDir, "01CORRUPT")).rejects.toThrow();
   });
 });

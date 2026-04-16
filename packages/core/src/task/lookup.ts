@@ -32,11 +32,7 @@ export async function listTaskIds(locttDir: string): Promise<string[]> {
  */
 export async function loadAllTasks(locttDir: string): Promise<Task[]> {
   const ids = await listTaskIds(locttDir);
-  const tasks: Task[] = [];
-  for (const id of ids) {
-    tasks.push(await readTask(locttDir, id));
-  }
-  return tasks;
+  return Promise.all(ids.map(id => readTask(locttDir, id)));
 }
 
 /**
@@ -45,8 +41,11 @@ export async function loadAllTasks(locttDir: string): Promise<Task[]> {
 export async function lookupById(locttDir: string, id: string): Promise<Task> {
   try {
     return await readTask(locttDir, id);
-  } catch {
-    throw new TaskNotFoundError(id);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new TaskNotFoundError(id);
+    }
+    throw err;
   }
 }
 
