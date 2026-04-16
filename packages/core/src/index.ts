@@ -13,6 +13,8 @@ export { loadState, saveState, parseState, serializeState, StateError } from "./
 export { loadSyncState, saveSyncState, parseSyncState, serializeSyncState, SyncStateError } from "./state/index.js";
 export { loadReconcileState, saveReconcileState, clearReconcileState, parseReconcileState, serializeReconcileState, ReconcileStateError } from "./state/index.js";
 export { allocateKey, initKeyAllocation, appendKeyHistory, KeyAllocationError } from "./state/index.js";
+export { loadKeyIndex, saveKeyIndex, rebuildKeyIndex, lookupKeyInIndex, addToKeyIndex } from "./state/index.js";
+export type { KeyIndex } from "./state/index.js";
 
 export { splitTaskFile, parseFrontmatter, serializeFrontmatter, assembleTaskFile, TaskParseError } from "./task/index.js";
 export { readTask, writeTask, readTaskBody, writeTaskBody } from "./task/index.js";
@@ -63,4 +65,5 @@ export {
   getSyncStatePath,
   getReconcileStatePath,
   getDocsDir,
+  getKeyIndexPath,
 } from "./paths/index.js";

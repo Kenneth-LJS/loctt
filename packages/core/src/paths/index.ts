@@ -11,6 +11,7 @@ const WORKFLOW_FILE = "workflow.yaml";
 const QUERIES_FILE = "queries.yaml";
 const SYNC_FILE = "sync.yaml";
 const RECONCILE_FILE = "reconcile.yaml";
+const KEY_INDEX_FILE = "key-index.yaml";
 
 /**
  * Resolves the .loctt directory from a given root.
@@ -73,4 +74,9 @@ export function getDocsDir(locttDir: string): string {
 /** Returns the path to the tasks root directory: .loctt/tasks/ */
 export function getTasksDir(locttDir: string): string {
   return join(locttDir, TASKS_DIR);
+}
+
+/** Returns the path to .loctt/local/key-index.yaml. */
+export function getKeyIndexPath(locttDir: string): string {
+  return join(locttDir, LOCAL_DIR, KEY_INDEX_FILE);
 }
