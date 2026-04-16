@@ -7,6 +7,34 @@ import type { SyncState } from "@loctt/contracts";
 import { getLocalDir } from "../paths/index.js";
 import { loadSyncState, saveSyncState } from "../state/sync.js";
 
+/**
+ * Mirrors srcDir into destDir: removes entries in dest that don't exist in src,
+ * then copies all src entries into dest. Entries in `exclude` are never touched.
+ */
+async function mirrorDir(
+  srcDir: string,
+  destDir: string,
+  exclude: ReadonlySet<string>,
+): Promise<void> {
+  // Remove destination entries that no longer exist in source
+  const srcEntries = new Set(await readdir(srcDir));
+  const destEntries = await readdir(destDir).catch(() => [] as string[]);
+  for (const entry of destEntries) {
+    if (exclude.has(entry)) continue;
+    if (!srcEntries.has(entry)) {
+      await rm(join(destDir, entry), { recursive: true, force: true });
+    }
+  }
+
+  // Copy all source entries to destination (remove dest first to ensure clean mirror)
+  for (const entry of srcEntries) {
+    if (exclude.has(entry)) continue;
+    const dest = join(destDir, entry);
+    await rm(dest, { recursive: true, force: true });
+    await cp(join(srcDir, entry), dest, { recursive: true, force: true });
+  }
+}
+
 export class GitSyncError extends Error {
   constructor(message: string) {
     super(message);
@@ -38,21 +66,19 @@ function branchExists(root: string, branch: string): boolean {
 
 function ensureBranch(root: string, branch: string): void {
   if (!branchExists(root, branch)) {
-    // Create orphan branch with empty commit
-    git(["checkout", "--orphan", branch], root);
-    try {
-      git(["rm", "-rf", "."], root);
-    } catch {
-      // May fail if there's nothing to remove — that's fine
-    }
-    git(["commit", "--allow-empty", "-m", "Initialize .loctt branch"], root);
-    // Switch back
-    git(["checkout", "-"], root);
+    // Create orphan branch with an empty commit using plumbing commands.
+    // This never touches the user's working tree or index.
+    const emptyTree = git(["hash-object", "-t", "tree", "/dev/null"], root);
+    const commit = git(
+      ["commit-tree", emptyTree, "-m", "Initialize loctt branch"],
+      root,
+    );
+    git(["update-ref", `refs/heads/${branch}`, commit], root);
   }
 }
 
 /**
- * Publishes local .loctt state to the canonical .loctt branch.
+ * Publishes local .loctt state to the canonical loctt branch.
  * Creates the branch if it doesn't exist.
  */
 export async function publish(locttDir: string, root: string): Promise<{ committed: boolean }> {
@@ -71,14 +97,8 @@ export async function publish(locttDir: string, root: string): Promise<{ committ
   try {
     git(["worktree", "add", worktreeDir, branch], root);
 
-    // Copy local .loctt contents to worktree (excluding local/)
-    const entries = await readdir(locttDir);
-    for (const entry of entries) {
-      if (entry === "local") continue;
-      const src = join(locttDir, entry);
-      const dest = join(worktreeDir, entry);
-      await cp(src, dest, { recursive: true, force: true });
-    }
+    // Mirror local .loctt into worktree (excluding local/ and .git)
+    await mirrorDir(locttDir, worktreeDir, new Set(["local", ".git"]));
 
     // Stage and commit in worktree
     git(["add", "-A"], worktreeDir);
@@ -117,7 +137,7 @@ export async function publish(locttDir: string, root: string): Promise<{ committ
 }
 
 /**
- * Syncs canonical .loctt branch state into the local workspace.
+ * Syncs canonical loctt branch state into the local workspace.
  * No-ops if remote hasn't changed since last sync.
  */
 export async function sync(locttDir: string, root: string): Promise<{ updated: boolean }> {
@@ -143,14 +163,8 @@ export async function sync(locttDir: string, root: string): Promise<{ updated: b
   try {
     git(["worktree", "add", worktreeDir, branch], root);
 
-    // Copy remote state to local .loctt (excluding local/)
-    const entries = await readdir(worktreeDir);
-    for (const entry of entries) {
-      if (entry === ".git" || entry === "local") continue;
-      const src = join(worktreeDir, entry);
-      const dest = join(locttDir, entry);
-      await cp(src, dest, { recursive: true, force: true });
-    }
+    // Mirror remote state into local .loctt (excluding local/ and .git)
+    await mirrorDir(worktreeDir, locttDir, new Set(["local", ".git"]));
 
     // Update sync state
     const updated: SyncState = {

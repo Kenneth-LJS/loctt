@@ -42,7 +42,7 @@ export async function enableGit(locttDir: string, root: string): Promise<void> {
   const state: SyncState = {
     git: {
       enabled: true,
-      branch: ".loctt",
+      branch: "loctt",
     },
   };
 
@@ -84,7 +84,7 @@ export async function getGitStatus(locttDir: string, root: string): Promise<GitS
   if (!(await fileExists(syncPath))) {
     return {
       enabled: false,
-      branch: ".loctt",
+      branch: "loctt",
       isGitRepo: gitRepo,
     };
   }
@@ -100,7 +100,7 @@ export async function getGitStatus(locttDir: string, root: string): Promise<GitS
   } catch {
     return {
       enabled: false,
-      branch: ".loctt",
+      branch: "loctt",
       isGitRepo: gitRepo,
     };
   }
