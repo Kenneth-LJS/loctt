@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Task } from "@loctt/contracts";
 import { getTaskFilePath } from "../paths/index.js";
-import { splitTaskFile, parseFrontmatter, assembleTaskFile } from "./frontmatter.js";
+import { splitTaskFile, parseFrontmatter, serializeFrontmatter, assembleTaskFile } from "./frontmatter.js";
 
 async function atomicWrite(filePath: string, content: string): Promise<void> {
   const tmpPath = `${filePath}.${randomUUID()}.tmp`;
@@ -28,6 +28,9 @@ export async function readTask(locttDir: string, taskId: string): Promise<Task> 
  * Creates the task directory if it doesn't exist.
  */
 export async function writeTask(locttDir: string, taskId: string, task: Task): Promise<void> {
+  // Validate frontmatter by round-tripping through serialize+parse before writing
+  parseFrontmatter(serializeFrontmatter(task.frontmatter));
+
   const filePath = getTaskFilePath(locttDir, taskId);
   await mkdir(dirname(filePath), { recursive: true });
   const content = assembleTaskFile(task.frontmatter, task.body);
