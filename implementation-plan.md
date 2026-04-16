@@ -25,7 +25,7 @@ Implementation language/runtime:
 6. ~~Implement `.loctt/config/queries.yaml` loading.~~ **DONE**
 7. ~~Implement `.loctt/state.yaml` loading and writing.~~ **DONE**
 8. ~~Implement `.loctt/local/sync.yaml` and `.loctt/local/reconcile.yaml` loading/writing.~~ **DONE**
-9. Implement `task.md` frontmatter parsing and writing.
+9. ~~Implement `task.md` frontmatter parsing and writing.~~ **DONE**
 10. Implement markdown body reading/writing for tasks.
 11. Implement workflow/config validation.
 12. Implement key allocation, `next_number`, and `key_history`.
