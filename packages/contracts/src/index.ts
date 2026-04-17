@@ -1,3 +1,4 @@
+export type { HistoryEntry, HistoryKind } from "./history.js";
 export type {
   QueriesConfig,
   QuerySort,
