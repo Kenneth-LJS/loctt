@@ -7,6 +7,7 @@ export {
   splitTaskFile,
   TaskParseError,
 } from "./frontmatter.js";
+export { appendHistory, readHistory } from "./history.js";
 export {
   readTask,
   readTaskBody,
