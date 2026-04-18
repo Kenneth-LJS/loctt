@@ -15,6 +15,7 @@ import {
   loadState,
   loadWorkflowConfig,
   lookupTask,
+  readHistory,
   readTaskBody,
   resolveLocttDir,
   saveState,
@@ -193,6 +194,18 @@ export function getTools(): McpTool[] {
         required: ["ref", "type", "target"],
       },
     },
+    {
+      name: "task_history",
+      description: "Get the activity/history log for a task. Returns structured entries (newest first).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ref: { type: "string", description: "Task key (e.g. T-1) or ID" },
+          limit: { type: "number", description: "Max entries to return (default: all)" },
+        },
+        required: ["ref"],
+      },
+    },
   ];
 }
 
@@ -351,6 +364,15 @@ export async function executeTool(
         const relType = args["type"] as string;
         await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: relType, target: target.frontmatter.id });
         return text(`Unlinked ${task.frontmatter.key} --${relType}--> ${target.frontmatter.key}`);
+      }
+
+      case "task_history": {
+        const task = await lookupTask(locttDir, args["ref"] as string);
+        const entries = await readHistory(locttDir, task.frontmatter.id);
+        entries.reverse();
+        const limit = args["limit"] as number | undefined;
+        const display = limit !== undefined ? entries.slice(0, limit) : entries;
+        return text(JSON.stringify(display, null, 2));
       }
 
       default:
