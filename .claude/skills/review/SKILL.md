@@ -19,7 +19,7 @@ Work through each category and report findings.
 
 ### 2. Design Doc Compliance
 
-Cross-reference changes against `docs/` (architecture.md, schema-reference.md, etc.):
+Cross-reference changes against `docs/dev/` (architecture.md, schema-reference.md, etc.):
 
 - Does the data model match confirmed schema?
 - Does CLI surface match the intended commands?

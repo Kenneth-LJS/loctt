@@ -163,10 +163,10 @@ Everything is customizable in `.loctt/config/workflow.yaml`: statuses, prioritie
 For the full details, see:
 
 - [CLI reference](docs/cli-reference.md)
-- [Schema reference](docs/schema-reference.md)
+- [Schema reference](docs/dev/schema-reference.md)
 - [Query language](docs/query-language.md)
 - [Configuration guide](docs/configuration.md)
-- [Architecture](docs/architecture.md)
+- [Architecture](docs/dev/architecture.md)
 
 ## License
 

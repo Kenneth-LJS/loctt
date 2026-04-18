@@ -56,12 +56,12 @@ Workflow values (`status`, `priority`, `task_type`) use config keys (e.g., `in_p
 
 ## Interfaces
 
-- **CLI** — direct terminal access to all task operations. See [cli-reference.md](cli-reference.md).
-- **MCP** — structured tools for AI agents. Enforces that metadata changes go through validated operations, not raw file edits. See [mcp-reference.md](mcp-reference.md).
+- **CLI** — direct terminal access to all task operations. See [cli-reference.md](../cli-reference.md).
+- **MCP** — structured tools for AI agents. Enforces that metadata changes go through validated operations, not raw file edits. See [mcp-reference.md](../mcp-reference.md).
 - **Web** — HTTP API + browser UI, served from a single process bound to localhost. The API mirrors core operations; the UI talks to its own co-located endpoints.
 
 ## Git Integration
 
-Git-backed mode is optional. When enabled, LocTT uses a dedicated `.loctt` branch with a sparse worktree to publish and sync task data across machines. See [git-sync.md](git-sync.md).
+Git-backed mode is optional. When enabled, LocTT uses a dedicated `.loctt` branch with a sparse worktree to publish and sync task data across machines. See [git-sync.md](../git-sync.md).
 
 LocTT works fine without Git — it's purely local by default.

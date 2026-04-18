@@ -7,7 +7,7 @@ user-invocable: true
 Create a comprehensive implementation plan for the specified feature.
 
 Steps:
-1. Read relevant docs from `docs/` (architecture, schema-reference, etc.)
+1. Read relevant docs from `docs/` and `docs/dev/` (architecture, schema-reference, etc.)
 2. Review existing codebase for current implementation state
 3. Analyze the codebase to understand current architecture
 4. Break the feature into subtasks with dependencies

@@ -227,7 +227,7 @@ queries:
         direction: desc
 ```
 
-Each query has a `name`, a `query` string (see [query-language.md](query-language.md)), and an optional `sort` with `field` + `direction` (`asc` or `desc`).
+Each query has a `name`, a `query` string (see [query-language.md](../query-language.md)), and an optional `sort` with `field` + `direction` (`asc` or `desc`).
 
 ## state.yaml
 

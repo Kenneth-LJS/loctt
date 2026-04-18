@@ -5,29 +5,40 @@
 Requires Node.js >= 20.
 
 ```bash
-git clone <repo-url>
-cd loctt
-npm install
-npm run build
+npm install -g loctt
 ```
 
-Run CLI commands with:
-
-```bash
-npx loctt <command>
-```
+> **From source:** Clone the repo, run `npm install && npm run build`, then `npm link` to make the `loctt` command available globally.
 
 ## Initialize a Tracker
+
+In your project directory:
 
 ```bash
 loctt init
 ```
 
-This creates a `.loctt/` directory with default configuration and optional helper docs. Use `--prefix` to customize the key prefix (default: `T-`).
+This creates a `.loctt/` directory with default configuration. Use `--prefix` to customize the key prefix (default: `T-`).
 
 ```bash
 loctt init --prefix BUG-
 ```
+
+## Git and `.gitignore`
+
+Whether to commit `.loctt/` depends on your setup:
+
+**Committing `.loctt/` (shared tasks):** If your team should see the tasks, commit the directory. This works well for small teams or solo projects where tasks are part of the repo.
+
+**Using git sync instead:** If you enable [git sync](git-sync.md), task data lives on a dedicated `.loctt` branch — not in your working tree. In this case, add `.loctt/` to `.gitignore` so the local working copy doesn't get committed to your main branch:
+
+```gitignore
+.loctt/
+```
+
+**Purely local (no sharing):** If tasks are just for you and you don't need them versioned, add `.loctt/` to `.gitignore`.
+
+Pick one approach and be consistent. You can always switch later.
 
 ## Create Tasks
 
@@ -103,10 +114,87 @@ loctt info      # Task count, key prefix, next key
 loctt doctor    # Diagnostic checks
 ```
 
+## Web UI
+
+LocTT includes a browser-based interface for visual task management.
+
+```bash
+loctt web
+# Serves on http://localhost:4321
+```
+
+The web UI reads and writes the same `.loctt/` data as the CLI and MCP server — all three interfaces stay in sync.
+
+## MCP Setup (AI Agent Integration)
+
+LocTT ships an MCP server so AI coding agents (Claude Code, Cursor, etc.) can manage tasks on your behalf using structured tools instead of raw CLI commands.
+
+### Claude Desktop
+
+Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "loctt": {
+      "command": "loctt",
+      "args": ["mcp"],
+      "cwd": "/path/to/your/project"
+    }
+  }
+}
+```
+
+### VS Code (Claude Code extension)
+
+Add to your project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "loctt": {
+      "command": "loctt",
+      "args": ["mcp"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
+```
+
+### Cursor
+
+Add via Cursor Settings → MCP Servers, or add to `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "loctt": {
+      "command": "loctt",
+      "args": ["mcp"],
+      "cwd": "/path/to/your/project"
+    }
+  }
+}
+```
+
+### Verifying
+
+Once configured, your AI agent should be able to discover loctt tools automatically. Try asking it to "list my tasks" or "create a task" — it should use the MCP tools rather than shelling out to the CLI.
+
+See [mcp-reference.md](mcp-reference.md) for the full list of available tools.
+
+## Configuring Your AI Agent
+
+After setting up MCP, you may want to give your AI agent project-specific workflow instructions — things like status transition rules, task description conventions, and query patterns.
+
+See [agent-setup.md](agent-setup.md) for a guide and template.
+
 ## What's Next
 
 - [Configuration](configuration.md) — customize statuses, priorities, task types, relationships
 - [CLI Reference](cli-reference.md) — full command reference
 - [Query Language](query-language.md) — filtering and saved views
 - [Git Sync](git-sync.md) — sync tasks across machines
-- [MCP Reference](mcp-reference.md) — AI agent integration
+- [MCP Reference](mcp-reference.md) — AI agent tool reference
+- [Agent Setup](agent-setup.md) — configuring AI agent workflow instructions
+- [Uninstall](uninstall.md) — removing LocTT from a project
