@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import type { HistoryEntry } from "@loctt/contracts";
 import {
   archiveTask,
   buildListContext,
@@ -14,6 +15,7 @@ import {
   loadOptionalConfigs,
   loadState,
   lookupTask,
+  readHistory,
   readTaskBody,
   resolveLocttDir,
   runDoctor,
@@ -43,6 +45,7 @@ Commands:
   unarchive <task>
   delete <task> --force
   body <task> [--set <text>]
+  log <task> [--limit <n>]
 `);
 }
 
@@ -54,6 +57,38 @@ function getArg(args: string[], flag: string): string | undefined {
 
 function hasFlag(args: string[], flag: string): boolean {
   return args.includes(flag);
+}
+
+function formatHistoryEntry(entry: HistoryEntry): string {
+  const ts = entry.timestamp;
+  switch (entry.kind) {
+    case "created":
+      return `${ts}  created`;
+    case "field_change":
+      return `${ts}  ${entry.field}: ${String(entry.before ?? "(none)")} → ${String(entry.after ?? "(none)")}`;
+    case "custom_field_change":
+      return `${ts}  ${entry.field}: ${String(entry.before ?? "(none)")} → ${String(entry.after ?? "(none)")}`;
+    case "label_added":
+      return `${ts}  label added: ${String(entry.after)}`;
+    case "label_removed":
+      return `${ts}  label removed: ${String(entry.before)}`;
+    case "archived":
+      return `${ts}  archived`;
+    case "unarchived":
+      return `${ts}  unarchived`;
+    case "link_added": {
+      const meta = entry.meta as { type: string; target: string };
+      return `${ts}  link added: ${meta.type} → ${meta.target}`;
+    }
+    case "link_removed": {
+      const meta = entry.meta as { type: string; target: string };
+      return `${ts}  link removed: ${meta.type} → ${meta.target}`;
+    }
+    case "body_edited":
+      return `${ts}  body edited`;
+    default:
+      return `${ts}  ${entry.kind}`;
+  }
 }
 
 export async function main(): Promise<void> {
@@ -333,6 +368,41 @@ export async function main(): Promise<void> {
             console.log(body);
           } else {
             console.log("(empty body)");
+          }
+        }
+        break;
+      }
+
+      case "log": {
+        const ref = args[1];
+        if (!ref) {
+          console.error("Usage: loctt log <task> [--limit <n>]");
+          process.exitCode = 1;
+          break;
+        }
+        const locttDir = resolveLocttDir(root);
+        const task = await lookupTask(locttDir, ref);
+
+        let limit: number | undefined;
+        const limitArg = getArg(args, "--limit");
+        if (limitArg !== undefined) {
+          limit = Number(limitArg);
+          if (Number.isNaN(limit) || limit < 0 || !Number.isInteger(limit)) {
+            console.error("Error: --limit must be a non-negative integer");
+            process.exitCode = 1;
+            break;
+          }
+        }
+
+        const entries = await readHistory(locttDir, task.frontmatter.id);
+        entries.reverse();
+        const display = limit !== undefined ? entries.slice(0, limit) : entries;
+
+        if (display.length === 0) {
+          console.log("No history entries.");
+        } else {
+          for (const entry of display) {
+            console.log(formatHistoryEntry(entry));
           }
         }
         break;
