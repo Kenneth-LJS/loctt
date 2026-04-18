@@ -22,6 +22,7 @@ export { initLoctt } from "./init/index.js";
 export {
   getConfigDir,
   getDocsDir,
+  getHistoryFilePath,
   getKeyIndexPath,
   getLocalDir,
   getQueriesConfigPath,
@@ -53,6 +54,7 @@ export type { AttachmentInfo, TaskShowModel } from "./task/index.js";
 export type { RelationshipValidationError } from "./task/index.js";
 export type { SetFieldOptions } from "./task/index.js";
 export type { LinkTaskOptions, UnlinkTaskOptions } from "./task/index.js";
+export { appendHistory, readHistory } from "./task/index.js";
 export { assembleTaskFile, parseFrontmatter, serializeFrontmatter, splitTaskFile, TaskParseError } from "./task/index.js";
 export { readTask, readTaskBody, writeTask, writeTaskBody } from "./task/index.js";
 export { listTaskIds, loadAllTasks, lookupById, lookupByKey, lookupTask, TaskNotFoundError } from "./task/index.js";

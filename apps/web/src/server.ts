@@ -25,6 +25,7 @@ import {
   loadState,
   loadWorkflowConfig,
   lookupTask,
+  readHistory,
   resolveLocttDir,
   runDoctor,
   saveState,
@@ -195,6 +196,41 @@ export function createWebApp(options: WebAppOptions) {
           attachments: model.attachments.map(a => ({ name: a.name, size: a.size })),
         };
         json(res, response);
+        return;
+      }
+
+      const activityRef = matchRoute(path, /^\/api\/tasks\/([^/]+)\/activity$/);
+      if (activityRef !== undefined && req.method === "GET") {
+        const ref = activityRef;
+        if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+        const task = await lookupTask(locttDir, ref);
+        const entries = await readHistory(locttDir, task.frontmatter.id);
+
+        // Reverse chronological order
+        entries.reverse();
+
+        // Pagination
+        let limit = entries.length;
+        let offset = 0;
+        if (url.searchParams.has("limit")) {
+          const n = Number(url.searchParams.get("limit"));
+          if (Number.isNaN(n) || n < 0 || !Number.isInteger(n)) {
+            error(res, "limit must be a non-negative integer", 400);
+            return;
+          }
+          limit = n;
+        }
+        if (url.searchParams.has("offset")) {
+          const n = Number(url.searchParams.get("offset"));
+          if (Number.isNaN(n) || n < 0 || !Number.isInteger(n)) {
+            error(res, "offset must be a non-negative integer", 400);
+            return;
+          }
+          offset = n;
+        }
+
+        const page = entries.slice(offset, offset + limit);
+        json(res, { entries: page, total: entries.length });
         return;
       }
 
