@@ -1,6 +1,7 @@
-import type { Task, TaskFrontmatter, WorkflowConfig } from "@loctt/contracts";
+import type { HistoryEntry, Task, TaskFrontmatter, WorkflowConfig } from "@loctt/contracts";
 
 import { validateTaskAgainstWorkflow } from "../config/validation.js";
+import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 
 export class TaskUpdateError extends Error {
@@ -91,7 +92,51 @@ export async function setField(opts: SetFieldOptions): Promise<Task> {
 
   const updatedTask: Task = { frontmatter: updated, body: task.body };
   await writeTask(locttDir, taskId, updatedTask);
+
+  // Emit history entries
+  const historyEntries = buildSetFieldHistory(task.frontmatter, field, value, now);
+  if (historyEntries.length > 0) {
+    await appendHistory(locttDir, taskId, historyEntries);
+  }
+
   return updatedTask;
+}
+
+function buildSetFieldHistory(
+  oldFm: TaskFrontmatter,
+  field: string,
+  value: unknown,
+  timestamp: string,
+): HistoryEntry[] {
+  // Labels: diff old vs new array
+  if (field === "labels") {
+    const oldLabels = new Set(oldFm.labels ?? []);
+    const newLabels = new Set(value as readonly string[]);
+    const entries: HistoryEntry[] = [];
+    for (const label of newLabels) {
+      if (!oldLabels.has(label)) {
+        entries.push({ timestamp, kind: "label_added", after: label });
+      }
+    }
+    for (const label of oldLabels) {
+      if (!newLabels.has(label)) {
+        entries.push({ timestamp, kind: "label_removed", before: label });
+      }
+    }
+    return entries;
+  }
+
+  // Custom field
+  if (!BUILTIN_OPTIONAL_FIELDS.has(field) && field !== "title" && field !== "updated_at") {
+    const before = oldFm.fields?.[field];
+    if (before === value) return [];
+    return [{ timestamp, kind: "custom_field_change", field, before: before ?? null, after: value }];
+  }
+
+  // Built-in field
+  const before = (oldFm as unknown as Record<string, unknown>)[field];
+  if (before === value) return [];
+  return [{ timestamp, kind: "field_change", field, before: before ?? null, after: value }];
 }
 
 /**
@@ -144,5 +189,37 @@ export async function unsetField(
 
   const updatedTask: Task = { frontmatter: updated, body: task.body };
   await writeTask(locttDir, taskId, updatedTask);
+
+  // Emit history entries
+  const historyEntries = buildUnsetFieldHistory(task.frontmatter, field, now);
+  if (historyEntries.length > 0) {
+    await appendHistory(locttDir, taskId, historyEntries);
+  }
+
   return updatedTask;
+}
+
+function buildUnsetFieldHistory(
+  oldFm: TaskFrontmatter,
+  field: string,
+  timestamp: string,
+): HistoryEntry[] {
+  // Labels: emit label_removed for each existing label
+  if (field === "labels") {
+    return (oldFm.labels ?? []).map(label => ({
+      timestamp,
+      kind: "label_removed" as const,
+      before: label,
+    }));
+  }
+
+  // Custom field
+  if (!BUILTIN_OPTIONAL_FIELDS.has(field)) {
+    const before = oldFm.fields?.[field];
+    return [{ timestamp, kind: "custom_field_change", field, before: before ?? null, after: null }];
+  }
+
+  // Built-in field
+  const before = (oldFm as unknown as Record<string, unknown>)[field];
+  return [{ timestamp, kind: "field_change", field, before: before ?? null, after: null }];
 }

@@ -3,6 +3,7 @@ import { ulid } from "ulid";
 
 import { validateTaskAgainstWorkflow } from "../config/validation.js";
 import { allocateKey } from "../state/keys.js";
+import { appendHistory } from "./history.js";
 import { writeTask } from "./io.js";
 
 /** Options for creating a new task. */
@@ -82,5 +83,6 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
   };
 
   await writeTask(locttDir, id, task);
+  await appendHistory(locttDir, id, [{ timestamp: now, kind: "created" }]);
   return task;
 }
