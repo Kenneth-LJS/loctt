@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 import type { Task, TaskFrontmatter } from "@loctt/contracts";
 
 import { getTaskDir } from "../paths/index.js";
+import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 
 export class TaskLifecycleError extends Error {
@@ -29,6 +30,7 @@ export async function archiveTask(locttDir: string, taskId: string): Promise<Tas
 
   const result: Task = { frontmatter: updated, body: task.body };
   await writeTask(locttDir, taskId, result);
+  await appendHistory(locttDir, taskId, [{ timestamp: now, kind: "archived" }]);
   return result;
 }
 
@@ -48,6 +50,7 @@ export async function unarchiveTask(locttDir: string, taskId: string): Promise<T
 
   const result: Task = { frontmatter: updated, body: task.body };
   await writeTask(locttDir, taskId, result);
+  await appendHistory(locttDir, taskId, [{ timestamp: now, kind: "unarchived" }]);
   return result;
 }
 

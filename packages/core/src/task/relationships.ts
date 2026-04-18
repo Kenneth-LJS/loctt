@@ -1,5 +1,6 @@
 import type { Task, TaskFrontmatter, TaskRelationship, WorkflowConfig } from "@loctt/contracts";
 
+import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 
 export class RelationshipError extends Error {
@@ -63,6 +64,11 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
 
   const result: Task = { frontmatter: updated, body: task.body };
   await writeTask(locttDir, taskId, result);
+  await appendHistory(locttDir, taskId, [{
+    timestamp: now,
+    kind: "link_added",
+    meta: { type, target },
+  }]);
   return result;
 }
 
@@ -98,5 +104,10 @@ export async function unlinkTask(opts: UnlinkTaskOptions): Promise<Task> {
 
   const result: Task = { frontmatter: updated, body: task.body };
   await writeTask(locttDir, taskId, result);
+  await appendHistory(locttDir, taskId, [{
+    timestamp: now,
+    kind: "link_removed",
+    meta: { type, target },
+  }]);
   return result;
 }

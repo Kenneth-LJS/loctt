@@ -6,6 +6,7 @@ import type { Task } from "@loctt/contracts";
 
 import { getTaskFilePath } from "../paths/index.js";
 import { assembleTaskFile,parseFrontmatter, serializeFrontmatter, splitTaskFile } from "./frontmatter.js";
+import { appendHistory } from "./history.js";
 
 async function atomicWrite(filePath: string, content: string): Promise<void> {
   const tmpPath = `${filePath}.${randomUUID()}.tmp`;
@@ -58,7 +59,9 @@ export async function writeTaskBody(locttDir: string, taskId: string, newBody: s
   const content = await readFile(filePath, "utf-8");
   const { rawYaml } = splitTaskFile(content);
   const frontmatter = parseFrontmatter(rawYaml);
-  const updated = { ...frontmatter, updated_at: new Date().toISOString() };
+  const now = new Date().toISOString();
+  const updated = { ...frontmatter, updated_at: now };
   const assembled = assembleTaskFile(updated, newBody);
   await atomicWrite(filePath, assembled);
+  await appendHistory(locttDir, taskId, [{ timestamp: now, kind: "body_edited" }]);
 }
