@@ -11,9 +11,9 @@ Local task tracker — CLI tool, MCP server, and GUI for managing tasks stored a
 
 ## Key Design Decisions
 
-Product documentation lives in `docs/`. Cross-reference before implementing:
-- `docs/architecture.md` — monorepo layout, data model, task identity
-- `docs/schema-reference.md` — file formats (task.md, workflow.yaml, etc.)
+User-facing documentation lives in `docs/`. Developer documentation lives in `docs/dev/`. Cross-reference before implementing:
+- `docs/dev/architecture.md` — monorepo layout, data model, task identity
+- `docs/dev/schema-reference.md` — file formats (task.md, workflow.yaml, etc.)
 - `docs/cli-reference.md` — CLI commands
 - `docs/mcp-reference.md` — MCP tools and agent guidelines
 
@@ -47,7 +47,25 @@ npx tsc --build      # Build via project references
   - `apps/web` — web app (HTTP server + API + UI, merged from former `apps/service`)
 - **Note:** `apps/service` is being merged into `apps/web`. Do not re-separate them.
 - `.loctt/` — data directory (tasks, config, state)
-- Documentation: `docs/`
+- Documentation: `docs/` (user-facing), `docs/dev/` (developer)
+
+## Frontend Development (WIP — clean up before release)
+
+The loctt frontend is being developed in a separate repo (`~/Documents/PDev/task-tracker/`),
+using loctt itself to plan and track the work. This is intentional dogfooding — we use loctt's
+CLI/MCP to manage the tickets for building loctt's own frontend.
+
+- **Design doc:** `~/Documents/PDev/task-tracker/design-doc.md`
+- **Workflow:** Build the frontend in task-tracker, experiment, refine. Once happy, migrate/adapt
+  it into this repo (likely under `apps/web`).
+- **task-tracker is not a separate product** — it's a testing ground for the loctt frontend.
+  The design doc there describes what the loctt web UI should become.
+
+Key design differences to be aware of during migration:
+- task-tracker uses SQLite + Express; loctt uses markdown files + its own core library
+- task-tracker has relationship ranking (lexorank on `relationships.rank`); loctt does not yet
+- The frontend (React + Vite + Tailwind + shadcn/ui) should be largely portable once the API
+  layer is adapted
 
 ## Git Commits
 
