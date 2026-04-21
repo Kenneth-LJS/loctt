@@ -5,7 +5,7 @@
 Requires Node.js >= 20.
 
 ```bash
-npm install -g loctt
+npm install -g @loctt/cli
 ```
 
 > **From source:** Clone the repo, run `npm install && npm run build`, then `npm link` to make the `loctt` command available globally.

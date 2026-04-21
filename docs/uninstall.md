@@ -46,12 +46,12 @@ git push origin --delete .loctt   # Delete remote branch (if pushed)
 ## 6. Uninstall the CLI
 
 ```bash
-npm uninstall -g loctt
+npm uninstall -g @loctt/cli
 ```
 
 Or if you installed from source with `npm link`:
 
 ```bash
 cd /path/to/loctt
-npm unlink
+npm unlink --workspace apps/cli
 ```
