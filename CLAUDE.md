@@ -28,7 +28,7 @@ Key points:
 ## Commands
 
 ```bash
-npm run build        # Build all workspaces (tsc)
+npm run build        # Build all workspaces (tsc + tsup for CLI/MCP)
 npm run test         # Run tests across all workspaces (vitest)
 npm run typecheck    # Type-check all workspaces
 npm run lint         # Lint all workspaces (eslint)

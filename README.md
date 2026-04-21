@@ -31,26 +31,25 @@ With LocTT:
 ## Quick Start
 
 ```bash
-git clone <repo-url>
-cd loctt
-npm install
-npm run build
+npm install -g @loctt/cli
 ```
 
 Initialize a tracker in any project:
 
 ```bash
-npx loctt init
+loctt init
 ```
 
 This creates a `.loctt/` directory with default config. You're ready to go.
+
+> **From source:** Clone the repo, run `npm install && npm run build`, then `npm link` to make the `loctt` command available globally.
 
 ## Web UI
 
 Start the web server:
 
 ```bash
-node apps/web/dist/index.js
+loctt web
 ```
 
 Then open [http://localhost:4321](http://localhost:4321). You get a board and list view for browsing, creating, and updating tasks — all backed by the same `.loctt/` data on disk.
@@ -66,38 +65,38 @@ Available tools include `get_task`, `list_tasks`, `create_task`, `update_task`, 
 ### Create a task
 
 ```bash
-npx loctt create "Set up CI pipeline"
+loctt create "Set up CI pipeline"
 ```
 
 You can set fields right away:
 
 ```bash
-npx loctt create "Fix login bug" --status in_progress --priority high --type bug
+loctt create "Fix login bug" --status in_progress --priority high --type bug
 ```
 
 ### List tasks
 
 ```bash
-npx loctt list
+loctt list
 ```
 
 Filter with the query language:
 
 ```bash
-npx loctt list --query "status = in_progress and priority = high"
-npx loctt list --query "text ~ CI"
+loctt list --query "status = in_progress and priority = high"
+loctt list --query "text ~ CI"
 ```
 
 Use a saved view:
 
 ```bash
-npx loctt list --view recent-open
+loctt list --view recent-open
 ```
 
 ### View a task
 
 ```bash
-npx loctt show T-1
+loctt show T-1
 ```
 
 ### Update a task
@@ -105,28 +104,28 @@ npx loctt show T-1
 Set any field:
 
 ```bash
-npx loctt set T-1 status in_progress
-npx loctt set T-1 priority high
-npx loctt set T-1 assignee "ken"
+loctt set T-1 status in_progress
+loctt set T-1 priority high
+loctt set T-1 assignee "ken"
 ```
 
 Edit the task body (free-form markdown):
 
 ```bash
-npx loctt body T-1 --set "## Notes\nNeed to check the auth middleware first."
+loctt body T-1 --set "## Notes\nNeed to check the auth middleware first."
 ```
 
 Remove a field:
 
 ```bash
-npx loctt unset T-1 priority
+loctt unset T-1 priority
 ```
 
 ### Link tasks
 
 ```bash
-npx loctt link T-2 blocks T-1
-npx loctt link T-3 parent T-1
+loctt link T-2 blocks T-1
+loctt link T-3 parent T-1
 ```
 
 ### Archive and delete
@@ -134,14 +133,14 @@ npx loctt link T-3 parent T-1
 Archive is reversible:
 
 ```bash
-npx loctt archive T-1
-npx loctt unarchive T-1
+loctt archive T-1
+loctt unarchive T-1
 ```
 
 Delete is permanent:
 
 ```bash
-npx loctt delete T-1 --force
+loctt delete T-1 --force
 ```
 
 ## Git Sync
@@ -149,9 +148,9 @@ npx loctt delete T-1 --force
 Share tasks across clones by syncing to a dedicated branch:
 
 ```bash
-npx loctt git enable     # Turn on git-backed mode
-npx loctt publish        # Push task state to the loctt branch
-npx loctt sync           # Pull task state from the loctt branch
+loctt git enable     # Turn on git-backed mode
+loctt publish        # Push task state to the loctt branch
+loctt sync           # Pull task state from the loctt branch
 ```
 
 Conflicts are handled through a reconciliation flow — see [docs/git-sync.md](docs/git-sync.md).

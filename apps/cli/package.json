@@ -1,20 +1,39 @@
 {
   "name": "@loctt/cli",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Local-first task tracking that lives in your repo. Markdown-based, fully configurable, built for devs and AI agents.",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Kenneth-LJS/loctt",
+    "directory": "apps/cli"
+  },
   "main": "dist/index.js",
   "bin": {
     "loctt": "dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "tsc",
+    "build": "tsup",
     "clean": "rm -rf dist",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@loctt/core": "*"
+    "ulid": "^3.0.2",
+    "yaml": "^2.8.3"
+  },
+  "devDependencies": {
+    "@loctt/core": "*",
+    "@loctt/mcp": "*",
+    "@loctt/web": "*",
+    "@modelcontextprotocol/sdk": "^1.29.0"
   }
 }

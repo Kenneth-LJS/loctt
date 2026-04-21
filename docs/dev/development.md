@@ -36,7 +36,7 @@ Dependencies flow upward: `apps/*` depend on `packages/core`, which depends on `
 ## Commands
 
 ```bash
-npm run build        # Build all workspaces (tsc)
+npm run build        # Build all workspaces (tsc + tsup for CLI/MCP)
 npm run test         # Run tests across all workspaces (vitest)
 npm run typecheck    # Type-check all workspaces
 npm run clean        # Remove dist/ from all workspaces
@@ -49,7 +49,7 @@ npm run clean        # Remove dist/ from all workspaces
 After building, link the CLI globally for testing:
 
 ```bash
-npm link             # Makes `loctt` command available globally
+npm link --workspace apps/cli    # Makes `loctt` command available globally
 ```
 
 The link is a symlink to `dist/`, so after rebuilding, the global `loctt` command picks up changes immediately. No need to re-link.
@@ -73,7 +73,7 @@ See [MCP development](#mcp-development) below.
 
 ## Build System
 
-Pure TypeScript compilation via `tsc` with project references. No bundler. All workspaces inherit from `tsconfig.base.json`:
+TypeScript compilation via `tsc --build` with project references for packages, then `tsup` (esbuild) to bundle `apps/cli` and `apps/mcp` into single-file distributions for npm. All workspaces inherit from `tsconfig.base.json`:
 
 - Target: ES2022
 - Module: Node16 (ESM)

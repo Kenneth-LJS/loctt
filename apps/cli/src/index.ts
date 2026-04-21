@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import type { HistoryEntry } from "@loctt/contracts";
 import {
   archiveTask,
@@ -46,6 +44,8 @@ Commands:
   delete <task> --force
   body <task> [--set <text>]
   log <task> [--limit <n>]
+  mcp                              Start the MCP server (stdio)
+  web [--port <n>]                 Start the web UI
 `);
 }
 
@@ -405,6 +405,32 @@ export async function main(): Promise<void> {
             console.log(formatHistoryEntry(entry));
           }
         }
+        break;
+      }
+
+      case "mcp": {
+        const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+        const { StdioServerTransport } = await import("@modelcontextprotocol/sdk/server/stdio.js");
+        const { getTools, executeTool } = await import("@loctt/mcp");
+
+        const server = new McpServer({ name: "loctt", version: "0.1.0" });
+        for (const tool of getTools()) {
+          server.tool(tool.name, tool.description, tool.inputSchema as Record<string, unknown>, async (params: Record<string, unknown>) => {
+            const result = await executeTool(root, tool.name, params);
+            return { content: result.content.map(c => ({ ...c })), isError: result.isError };
+          });
+        }
+        const transport = new StdioServerTransport();
+        await server.connect(transport);
+        break;
+      }
+
+      case "web": {
+        const { createWebApp } = await import("@loctt/web");
+        const port = Number(getArg(args, "--port")) || undefined;
+        const app = createWebApp({ root, port });
+        await app.start();
+        console.log(`LocTT web UI running at http://localhost:${app.port}`);
         break;
       }
 
