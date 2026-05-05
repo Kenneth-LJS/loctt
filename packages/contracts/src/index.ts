@@ -22,6 +22,12 @@ export type {
   ReconcileState,
   SyncState,
 } from "./state.js";
+export {
+  DEFAULT_GIT_AUTO_FETCH,
+  DEFAULT_GIT_AUTO_PUSH,
+  DEFAULT_GIT_BRANCH,
+  DEFAULT_GIT_REMOTE,
+} from "./state.js";
 export type {
   Task,
   TaskFrontmatter,

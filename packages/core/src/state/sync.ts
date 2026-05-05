@@ -2,6 +2,12 @@ import { mkdir,readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import type { SyncState } from "@loctt/contracts";
+import {
+  DEFAULT_GIT_AUTO_FETCH,
+  DEFAULT_GIT_AUTO_PUSH,
+  DEFAULT_GIT_BRANCH,
+  DEFAULT_GIT_REMOTE,
+} from "@loctt/contracts";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { getSyncStatePath } from "../paths/index.js";
@@ -30,7 +36,7 @@ function assertBoolean(value: unknown, path: string): asserts value is boolean {
   _assertBoolean(value, path, SyncStateError);
 }
 
-/** Parses and validates raw YAML content into a SyncState. */
+/** Parses and validates raw YAML content into a SyncState. Migrates older formats. */
 export function parseSyncState(yamlContent: string): SyncState {
   const raw: unknown = parseYaml(yamlContent);
   assertObject(raw, "sync state");
@@ -45,10 +51,38 @@ export function parseSyncState(yamlContent: string): SyncState {
     assertString(lastSynced, "git.last_synced_commit");
   }
 
+  // Migrate-on-read: fill defaults for newer fields if missing.
+  let remote: string;
+  if (git["remote"] === undefined) {
+    remote = DEFAULT_GIT_REMOTE;
+  } else {
+    assertString(git["remote"], "git.remote");
+    remote = git["remote"];
+  }
+
+  let autoPush: boolean;
+  if (git["auto_push"] === undefined) {
+    autoPush = DEFAULT_GIT_AUTO_PUSH;
+  } else {
+    assertBoolean(git["auto_push"], "git.auto_push");
+    autoPush = git["auto_push"];
+  }
+
+  let autoFetch: boolean;
+  if (git["auto_fetch"] === undefined) {
+    autoFetch = DEFAULT_GIT_AUTO_FETCH;
+  } else {
+    assertBoolean(git["auto_fetch"], "git.auto_fetch");
+    autoFetch = git["auto_fetch"];
+  }
+
   return {
     git: {
       enabled: git["enabled"],
       branch: git["branch"],
+      remote,
+      auto_push: autoPush,
+      auto_fetch: autoFetch,
       ...(lastSynced !== undefined ? { last_synced_commit: lastSynced } : {}),
     },
   };
@@ -56,7 +90,18 @@ export function parseSyncState(yamlContent: string): SyncState {
 
 /** Serializes a SyncState to YAML string. */
 export function serializeSyncState(state: SyncState): string {
-  return stringifyYaml({ git: state.git });
+  const g = state.git;
+  const out: Record<string, unknown> = {
+    enabled: g.enabled,
+    branch: g.branch,
+    remote: g.remote,
+    auto_push: g.auto_push,
+    auto_fetch: g.auto_fetch,
+  };
+  if (g.last_synced_commit !== undefined) {
+    out["last_synced_commit"] = g.last_synced_commit;
+  }
+  return stringifyYaml({ git: out });
 }
 
 /** Loads sync.yaml from .loctt/local/. */
@@ -72,3 +117,5 @@ export async function saveSyncState(locttDir: string, state: SyncState): Promise
   await mkdir(dirname(filePath), { recursive: true });
   await writeFile(filePath, serializeSyncState(state), "utf-8");
 }
+
+export { DEFAULT_GIT_BRANCH };

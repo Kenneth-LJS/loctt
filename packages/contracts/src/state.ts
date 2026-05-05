@@ -14,9 +14,17 @@ export interface SyncState {
   readonly git: {
     readonly enabled: boolean;
     readonly branch: string;
+    readonly remote: string;
+    readonly auto_push: boolean;
+    readonly auto_fetch: boolean;
     readonly last_synced_commit?: string;
   };
 }
+
+export const DEFAULT_GIT_BRANCH = "loctt";
+export const DEFAULT_GIT_REMOTE = "origin";
+export const DEFAULT_GIT_AUTO_PUSH = true;
+export const DEFAULT_GIT_AUTO_FETCH = true;
 
 /** Reconciliation metadata from .loctt/local/reconcile.yaml. */
 export interface ReconcileState {

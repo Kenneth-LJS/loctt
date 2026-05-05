@@ -8,11 +8,31 @@ describe("parseSyncState", () => {
 git:
   enabled: true
   branch: .loctt
+  remote: origin
+  auto_push: true
+  auto_fetch: true
   last_synced_commit: abc123
 `;
     const state = parseSyncState(yaml);
     expect(state.git.enabled).toBe(true);
     expect(state.git.branch).toBe(".loctt");
+    expect(state.git.remote).toBe("origin");
+    expect(state.git.auto_push).toBe(true);
+    expect(state.git.auto_fetch).toBe(true);
+    expect(state.git.last_synced_commit).toBe("abc123");
+  });
+
+  it("migrates older format without remote/auto_push/auto_fetch by filling defaults", () => {
+    const yaml = `
+git:
+  enabled: true
+  branch: loctt
+  last_synced_commit: abc123
+`;
+    const state = parseSyncState(yaml);
+    expect(state.git.remote).toBe("origin");
+    expect(state.git.auto_push).toBe(true);
+    expect(state.git.auto_fetch).toBe(true);
     expect(state.git.last_synced_commit).toBe("abc123");
   });
 

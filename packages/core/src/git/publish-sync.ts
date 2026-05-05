@@ -7,16 +7,11 @@ import type { SyncState } from "@loctt/contracts";
 import { getLocalDir } from "../paths/index.js";
 import { loadSyncState, saveSyncState } from "../state/sync.js";
 
-/**
- * Mirrors srcDir into destDir: removes entries in dest that don't exist in src,
- * then copies all src entries into dest. Entries in `exclude` are never touched.
- */
 async function mirrorDir(
   srcDir: string,
   destDir: string,
   exclude: ReadonlySet<string>,
 ): Promise<void> {
-  // Remove destination entries that no longer exist in source
   const srcEntries = new Set(await readdir(srcDir));
   const destEntries = await readdir(destDir).catch(() => [] as string[]);
   for (const entry of destEntries) {
@@ -26,7 +21,6 @@ async function mirrorDir(
     }
   }
 
-  // Copy all source entries to destination (remove dest first to ensure clean mirror)
   for (const entry of srcEntries) {
     if (exclude.has(entry)) continue;
     const dest = join(destDir, entry);
@@ -66,8 +60,6 @@ function branchExists(root: string, branch: string): boolean {
 
 function ensureBranch(root: string, branch: string): void {
   if (!branchExists(root, branch)) {
-    // Create orphan branch with an empty commit using plumbing commands.
-    // This never touches the user's working tree or index.
     const emptyTree = git(["hash-object", "-t", "tree", "/dev/null"], root);
     const commit = git(
       ["commit-tree", emptyTree, "-m", "Initialize loctt branch"],
@@ -77,11 +69,53 @@ function ensureBranch(root: string, branch: string): void {
   }
 }
 
+function remoteExists(root: string, remote: string): boolean {
+  const out = gitSafe(["remote"], root);
+  if (!out) return false;
+  return out.split(/\r?\n/).map(s => s.trim()).includes(remote);
+}
+
+export interface PushResult {
+  readonly pushed: boolean;
+  readonly skipped?: "no-remote" | "disabled" | "no-remote-configured";
+  readonly error?: string;
+}
+
+export interface FetchResult {
+  readonly fetched: boolean;
+  readonly skipped?: "no-remote" | "disabled" | "no-remote-configured";
+  readonly error?: string;
+}
+
 /**
- * Publishes local .loctt state to the canonical loctt branch.
- * Creates the branch if it doesn't exist.
+ * Maps git stderr patterns to friendlier auth-error messages.
+ * Returns `undefined` when the stderr doesn't match a known auth pattern,
+ * letting callers fall through to the raw stderr tail.
+ *
+ * Exported for direct testing; not re-exported from the package's top-level
+ * index — treat as internal-flavored.
  */
-export async function publish(locttDir: string, root: string): Promise<{ committed: boolean }> {
+export function classifyAuthError(stderr: string): string | undefined {
+  if (/Permission denied \(publickey\)/i.test(stderr)) {
+    return "SSH key not accepted by remote (publickey)";
+  }
+  if (/could not read Username/i.test(stderr)) {
+    return "no credentials available (interactive prompts disabled)";
+  }
+  if (/Authentication failed/i.test(stderr)) {
+    return "authentication failed";
+  }
+  return undefined;
+}
+
+/**
+ * Commits the current .loctt state to the configured loctt branch (filesystem only).
+ * No remote interaction. Returns whether a commit was created.
+ */
+export async function commitToLocttBranch(
+  locttDir: string,
+  root: string,
+): Promise<{ committed: boolean; commit?: string; branch: string; syncState: SyncState }> {
   const syncState = await loadSyncState(locttDir);
   if (!syncState.git.enabled) {
     throw new GitSyncError("Git-backed mode is not enabled");
@@ -90,38 +124,33 @@ export async function publish(locttDir: string, root: string): Promise<{ committ
   const branch = syncState.git.branch;
   ensureBranch(root, branch);
 
-  // Create a temporary worktree
   const worktreeDir = join(getLocalDir(locttDir), ".worktree-publish");
   await rm(worktreeDir, { recursive: true, force: true });
 
   try {
     git(["worktree", "add", worktreeDir, branch], root);
 
-    // Mirror local .loctt into worktree (excluding local/ and .git)
     await mirrorDir(locttDir, worktreeDir, new Set(["local", ".git"]));
 
-    // Stage and commit in worktree
     git(["add", "-A"], worktreeDir);
 
     const status = git(["status", "--porcelain"], worktreeDir);
     if (!status) {
-      return { committed: false };
+      return { committed: false, branch, syncState };
     }
 
     git(["commit", "-m", "loctt publish"], worktreeDir);
     const commitHash = git(["rev-parse", "HEAD"], worktreeDir);
 
-    // Update sync state
     const updated: SyncState = {
       git: {
-        enabled: true,
-        branch,
+        ...syncState.git,
         last_synced_commit: commitHash,
       },
     };
     await saveSyncState(locttDir, updated);
 
-    return { committed: true };
+    return { committed: true, commit: commitHash, branch, syncState: updated };
   } finally {
     try {
       gitSafe(["worktree", "remove", worktreeDir, "--force"], root);
@@ -137,11 +166,115 @@ export async function publish(locttDir: string, root: string): Promise<{ committ
 }
 
 /**
- * Syncs canonical loctt branch state into the local workspace.
- * No-ops if remote hasn't changed since last sync.
+ * Pushes the loctt branch to the configured remote.
+ * Never throws — returns a result describing what happened.
  */
-export async function sync(locttDir: string, root: string): Promise<{ updated: boolean }> {
-  const syncState = await loadSyncState(locttDir);
+export function pushLocttBranch(
+  root: string,
+  opts: { remote: string; branch: string },
+): PushResult {
+  const { remote, branch } = opts;
+  if (!remoteExists(root, remote)) {
+    return { pushed: false, skipped: "no-remote" };
+  }
+  const result = spawnSync(
+    "git",
+    ["push", remote, `${branch}:${branch}`],
+    {
+      cwd: root,
+      encoding: "utf-8",
+      stdio: "pipe",
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    },
+  );
+  if (result.status === 0) {
+    return { pushed: true };
+  }
+  const stderr = (result.stderr ?? "").toString();
+  const auth = classifyAuthError(stderr);
+  const reason = auth ?? (stderr.trim().split(/\r?\n/).pop() ?? "git push failed");
+  return { pushed: false, error: reason };
+}
+
+/**
+ * Fetches the loctt branch from the configured remote into the local branch ref.
+ */
+export function fetchLocttBranch(
+  root: string,
+  opts: { remote: string; branch: string },
+): FetchResult {
+  const { remote, branch } = opts;
+  if (!remoteExists(root, remote)) {
+    return { fetched: false, skipped: "no-remote" };
+  }
+  const result = spawnSync(
+    "git",
+    ["fetch", remote, `${branch}:${branch}`],
+    {
+      cwd: root,
+      encoding: "utf-8",
+      stdio: "pipe",
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    },
+  );
+  if (result.status === 0) {
+    return { fetched: true };
+  }
+  const stderr = (result.stderr ?? "").toString();
+  const auth = classifyAuthError(stderr);
+  const reason = auth ?? (stderr.trim().split(/\r?\n/).pop() ?? "git fetch failed");
+  return { fetched: false, error: reason };
+}
+
+/**
+ * Publishes local .loctt state to the canonical loctt branch, then optionally
+ * pushes to the configured remote. Local commit is durable even if the push fails.
+ */
+export async function publish(
+  locttDir: string,
+  root: string,
+): Promise<{ committed: boolean; pushed?: boolean; pushError?: string }> {
+  const commitResult = await commitToLocttBranch(locttDir, root);
+  const syncState = commitResult.syncState;
+
+  if (!syncState.git.auto_push) {
+    return { committed: commitResult.committed };
+  }
+  if (!syncState.git.remote) {
+    return { committed: commitResult.committed };
+  }
+  if (!remoteExists(root, syncState.git.remote)) {
+    return { committed: commitResult.committed };
+  }
+
+  const pushResult = pushLocttBranch(root, {
+    remote: syncState.git.remote,
+    branch: syncState.git.branch,
+  });
+
+  if (pushResult.pushed) {
+    return { committed: commitResult.committed, pushed: true };
+  }
+
+  if (pushResult.error) {
+    const remote = syncState.git.remote;
+    const branch = syncState.git.branch;
+    process.stderr.write(
+      `warning: push to ${remote} failed: ${pushResult.error}. local commit succeeded; run 'git push ${remote} ${branch}' to retry.\n`,
+    );
+  }
+  return { committed: commitResult.committed, pushed: false, pushError: pushResult.error };
+}
+
+/**
+ * Mirrors the loctt branch state into the local .loctt workspace.
+ */
+export async function pullFromLocttBranch(
+  locttDir: string,
+  root: string,
+  preloadedState?: SyncState,
+): Promise<{ updated: boolean }> {
+  const syncState = preloadedState ?? await loadSyncState(locttDir);
   if (!syncState.git.enabled) {
     throw new GitSyncError("Git-backed mode is not enabled");
   }
@@ -156,21 +289,17 @@ export async function sync(locttDir: string, root: string): Promise<{ updated: b
     return { updated: false };
   }
 
-  // Create temporary worktree to read remote state
   const worktreeDir = join(getLocalDir(locttDir), ".worktree-sync");
   await rm(worktreeDir, { recursive: true, force: true });
 
   try {
     git(["worktree", "add", worktreeDir, branch], root);
 
-    // Mirror remote state into local .loctt (excluding local/ and .git)
     await mirrorDir(worktreeDir, locttDir, new Set(["local", ".git"]));
 
-    // Update sync state
     const updated: SyncState = {
       git: {
-        enabled: true,
-        branch,
+        ...syncState.git,
         last_synced_commit: remoteHead,
       },
     };
@@ -189,4 +318,42 @@ export async function sync(locttDir: string, root: string): Promise<{ updated: b
       // same
     }
   }
+}
+
+/**
+ * Syncs canonical loctt branch state into the local workspace.
+ * Optionally fetches from remote first.
+ */
+export async function sync(
+  locttDir: string,
+  root: string,
+): Promise<{ updated: boolean; fetched?: boolean; fetchError?: string }> {
+  const syncState = await loadSyncState(locttDir);
+  if (!syncState.git.enabled) {
+    throw new GitSyncError("Git-backed mode is not enabled");
+  }
+
+  let fetched: boolean | undefined;
+  let fetchError: string | undefined;
+
+  if (syncState.git.auto_fetch && syncState.git.remote && remoteExists(root, syncState.git.remote)) {
+    const r = fetchLocttBranch(root, {
+      remote: syncState.git.remote,
+      branch: syncState.git.branch,
+    });
+    if (r.fetched) {
+      fetched = true;
+    } else if (r.error) {
+      fetched = false;
+      fetchError = r.error;
+      const remote = syncState.git.remote;
+      const branch = syncState.git.branch;
+      process.stderr.write(
+        `warning: fetch from ${remote} failed: ${r.error}. continuing with local branch state; run 'git fetch ${remote} ${branch}' to retry.\n`,
+      );
+    }
+  }
+
+  const result = await pullFromLocttBranch(locttDir, root, syncState);
+  return { updated: result.updated, ...(fetched !== undefined ? { fetched } : {}), ...(fetchError ? { fetchError } : {}) };
 }
