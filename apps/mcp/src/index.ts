@@ -25,11 +25,12 @@ import {
   unsetField,
   writeTaskBody,
 } from "@loctt/core";
+import { z } from "zod";
 
 export interface McpTool {
   readonly name: string;
   readonly description: string;
-  readonly inputSchema: Record<string, unknown>;
+  readonly inputSchema: Record<string, z.ZodTypeAny>;
 }
 
 export interface McpToolResult {
@@ -44,166 +45,119 @@ export function getTools(): McpTool[] {
       name: "get_task",
       description: "Get a task by key or ID, optionally including the markdown body.",
       inputSchema: {
-        type: "object",
-        properties: {
-          ref: { type: "string", description: "Task key (e.g. T-1) or ID" },
-          include_body: { type: "boolean", description: "Whether to include the markdown body (default true)" },
-        },
-        required: ["ref"],
+        ref: z.string().describe("Task key (e.g. T-1) or ID"),
+        include_body: z.boolean().optional().describe("Whether to include the markdown body (default true)"),
       },
     },
     {
       name: "list_tasks",
       description: "List tasks with optional query, view, and limit.",
       inputSchema: {
-        type: "object",
-        properties: {
-          query: { type: "string", description: "Ad hoc query string" },
-          view: { type: "string", description: "Named saved view" },
-          limit: { type: "number", description: "Max results (default 30)" },
-        },
+        query: z.string().optional().describe("Ad hoc query string"),
+        view: z.string().optional().describe("Named saved view"),
+        limit: z.number().optional().describe("Max results (default 30)"),
       },
     },
     {
       name: "list_views",
       description: "List available saved views from queries.yaml.",
-      inputSchema: { type: "object", properties: {} },
+      inputSchema: {},
     },
     {
       name: "get_config",
       description: "Get the workflow configuration.",
-      inputSchema: { type: "object", properties: {} },
+      inputSchema: {},
     },
     {
       name: "create_task",
       description: "Create a new task.",
       inputSchema: {
-        type: "object",
-        properties: {
-          title: { type: "string" },
-          status: { type: "string" },
-          priority: { type: "string" },
-          task_type: { type: "string" },
-          body: { type: "string" },
-        },
-        required: ["title"],
+        title: z.string(),
+        status: z.string().optional(),
+        priority: z.string().optional(),
+        task_type: z.string().optional(),
+        body: z.string().optional(),
       },
     },
     {
       name: "update_task",
       description: "Set a field on a task.",
       inputSchema: {
-        type: "object",
-        properties: {
-          ref: { type: "string", description: "Task key or ID" },
-          field: { type: "string" },
-          value: { description: "The value to set" },
-        },
-        required: ["ref", "field", "value"],
+        ref: z.string().describe("Task key or ID"),
+        field: z.string(),
+        value: z.unknown().describe("The value to set"),
       },
     },
     {
       name: "append_task_body",
       description: "Append text to a task's markdown body.",
       inputSchema: {
-        type: "object",
-        properties: {
-          ref: { type: "string" },
-          text: { type: "string" },
-        },
-        required: ["ref", "text"],
+        ref: z.string(),
+        text: z.string(),
       },
     },
     {
       name: "replace_task_body",
       description: "Replace a task's entire markdown body.",
       inputSchema: {
-        type: "object",
-        properties: {
-          ref: { type: "string" },
-          body: { type: "string" },
-        },
-        required: ["ref", "body"],
+        ref: z.string(),
+        body: z.string(),
       },
     },
     {
       name: "archive_task",
       description: "Archive a task.",
       inputSchema: {
-        type: "object",
-        properties: { ref: { type: "string" } },
-        required: ["ref"],
+        ref: z.string(),
       },
     },
     {
       name: "unarchive_task",
       description: "Unarchive a task.",
       inputSchema: {
-        type: "object",
-        properties: { ref: { type: "string" } },
-        required: ["ref"],
+        ref: z.string(),
       },
     },
     {
       name: "unset_field",
       description: "Remove a field from a task.",
       inputSchema: {
-        type: "object",
-        properties: {
-          ref: { type: "string", description: "Task key or ID" },
-          field: { type: "string" },
-        },
-        required: ["ref", "field"],
+        ref: z.string().describe("Task key or ID"),
+        field: z.string(),
       },
     },
     {
       name: "delete_task",
       description: "Permanently delete a task. Requires confirm: true.",
       inputSchema: {
-        type: "object",
-        properties: {
-          ref: { type: "string" },
-          confirm: { type: "boolean", description: "Must be true to proceed with deletion" },
-        },
-        required: ["ref", "confirm"],
+        ref: z.string(),
+        confirm: z.boolean().describe("Must be true to proceed with deletion"),
       },
     },
     {
       name: "link_tasks",
       description: "Add a relationship between tasks.",
       inputSchema: {
-        type: "object",
-        properties: {
-          ref: { type: "string" },
-          type: { type: "string", description: "Relationship type (e.g. parent, blocks)" },
-          target: { type: "string", description: "Target task key or ID" },
-        },
-        required: ["ref", "type", "target"],
+        ref: z.string(),
+        type: z.string().describe("Relationship type (e.g. parent, blocks)"),
+        target: z.string().describe("Target task key or ID"),
       },
     },
     {
       name: "unlink_tasks",
       description: "Remove a relationship between tasks.",
       inputSchema: {
-        type: "object",
-        properties: {
-          ref: { type: "string" },
-          type: { type: "string" },
-          target: { type: "string" },
-        },
-        required: ["ref", "type", "target"],
+        ref: z.string(),
+        type: z.string(),
+        target: z.string(),
       },
     },
     {
       name: "task_history",
       description: "Get the activity/history log for a task. Returns structured entries (newest first).",
       inputSchema: {
-        type: "object",
-        properties: {
-          ref: { type: "string", description: "Task key (e.g. T-1) or ID" },
-          limit: { type: "number", description: "Max entries to return (default: all)" },
-        },
-        required: ["ref"],
+        ref: z.string().describe("Task key (e.g. T-1) or ID"),
+        limit: z.number().optional().describe("Max entries to return (default: all)"),
       },
     },
   ];

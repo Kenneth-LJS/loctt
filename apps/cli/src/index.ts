@@ -426,10 +426,17 @@ export async function main(): Promise<void> {
 
         const server = new McpServer({ name: "loctt", version: "0.1.0" });
         for (const tool of getTools()) {
-          server.tool(tool.name, tool.description, tool.inputSchema as Record<string, unknown>, async (params: Record<string, unknown>) => {
-            const result = await executeTool(root, tool.name, params);
-            return { content: result.content.map(c => ({ ...c })), isError: result.isError };
-          });
+          server.registerTool(
+            tool.name,
+            {
+              description: tool.description,
+              inputSchema: tool.inputSchema,
+            },
+            async (params: unknown) => {
+              const result = await executeTool(root, tool.name, (params ?? {}) as Record<string, unknown>);
+              return { content: result.content.map(c => ({ ...c })), isError: result.isError };
+            },
+          );
         }
         const transport = new StdioServerTransport();
         await server.connect(transport);
