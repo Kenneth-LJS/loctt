@@ -35,7 +35,8 @@
   },
   "dependencies": {
     "ulid": "^3.0.2",
-    "yaml": "^2.8.3"
+    "yaml": "^2.8.3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@loctt/core": "*"
