@@ -9,6 +9,11 @@
   "scripts": {
     "build": "tsc --build && npm run build --workspace apps/cli --workspace apps/mcp",
     "test": "npm run test --workspaces --if-present",
+    "pretest:integration": "npm run build",
+    "test:integration": "vitest run --config tests/vitest.integration.config.ts",
+    "pretest:e2e": "npm run build",
+    "test:e2e": "vitest run --config tests/vitest.e2e.config.ts",
+    "test:perf": "vitest run --config tests/vitest.perf.config.ts",
     "clean": "npm run clean --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
@@ -18,9 +23,11 @@
     "node": ">=20"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/node": "^25.6.0",
     "eslint": "^10.2.0",
     "eslint-plugin-simple-import-sort": "^13.0.0",
+    "execa": "^9.6.1",
     "tsup": "^8.5.1",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.58.2",
