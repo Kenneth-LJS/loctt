@@ -1,4 +1,14 @@
 export { loadQueriesConfig, parseQueriesConfig } from "./queries.js";
+export {
+  CONFIG_KEYS,
+  type ConfigContext,
+  type ConfigKeyDef,
+  ConfigRouterError,
+  getConfigValue,
+  listConfigKeys,
+  setConfigValue,
+  unsetConfigValue,
+} from "./router.js";
 export { validateTaskAgainstWorkflow, validateWorkflowConfig } from "./validation.js";
 export { loadWorkflowConfig, parseWorkflowConfig } from "./workflow.js";
 

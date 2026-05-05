@@ -2,6 +2,12 @@ import { spawnSync } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 
 import type { SyncState } from "@loctt/contracts";
+import {
+  DEFAULT_GIT_AUTO_FETCH,
+  DEFAULT_GIT_AUTO_PUSH,
+  DEFAULT_GIT_BRANCH,
+  DEFAULT_GIT_REMOTE,
+} from "@loctt/contracts";
 
 import { getLocalDir,getSyncStatePath } from "../paths/index.js";
 import { loadSyncState,saveSyncState } from "../state/sync.js";
@@ -42,7 +48,10 @@ export async function enableGit(locttDir: string, root: string): Promise<void> {
   const state: SyncState = {
     git: {
       enabled: true,
-      branch: "loctt",
+      branch: DEFAULT_GIT_BRANCH,
+      remote: DEFAULT_GIT_REMOTE,
+      auto_push: DEFAULT_GIT_AUTO_PUSH,
+      auto_fetch: DEFAULT_GIT_AUTO_FETCH,
     },
   };
 
@@ -67,6 +76,9 @@ export async function disableGit(locttDir: string): Promise<void> {
     git: {
       enabled: false,
       branch: current.git.branch,
+      remote: current.git.remote,
+      auto_push: current.git.auto_push,
+      auto_fetch: current.git.auto_fetch,
       ...(current.git.last_synced_commit ? { last_synced_commit: current.git.last_synced_commit } : {}),
     },
   };
@@ -84,7 +96,7 @@ export async function getGitStatus(locttDir: string, root: string): Promise<GitS
   if (!(await fileExists(syncPath))) {
     return {
       enabled: false,
-      branch: "loctt",
+      branch: DEFAULT_GIT_BRANCH,
       isGitRepo: gitRepo,
     };
   }
@@ -100,7 +112,7 @@ export async function getGitStatus(locttDir: string, root: string): Promise<GitS
   } catch {
     return {
       enabled: false,
-      branch: "loctt",
+      branch: DEFAULT_GIT_BRANCH,
       isGitRepo: gitRepo,
     };
   }

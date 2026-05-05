@@ -3,8 +3,13 @@ import {
   archiveTask,
   buildListContext,
   buildShowModel,
+  CONFIG_KEYS,
   createTask,
   deleteTask,
+  disableGit,
+  enableGit,
+  getConfigValue,
+  getGitStatus,
   getTrackerInfo,
   initLoctt,
   linkTask,
@@ -13,14 +18,18 @@ import {
   loadOptionalConfigs,
   loadState,
   lookupTask,
+  publish,
   readHistory,
   readTaskBody,
   resolveLocttDir,
   runDoctor,
   saveState,
+  setConfigValue,
   setField,
+  sync,
   unarchiveTask,
   unlinkTask,
+  unsetConfigValue,
   unsetField,
   writeTaskBody,
 } from "@loctt/core";
@@ -46,6 +55,8 @@ Commands:
   log <task> [--limit <n>]
   mcp                              Start the MCP server (stdio)
   web [--port <n>]                 Start the web UI
+  git <enable|disable|status|publish|sync>
+  config <get|set|unset|list> [key] [value]
 `);
 }
 
@@ -431,6 +442,121 @@ export async function main(): Promise<void> {
         const app = createWebApp({ root, port });
         await app.start();
         console.log(`LocTT web UI running at http://localhost:${app.port}`);
+        break;
+      }
+
+      case "git": {
+        const sub = args[1];
+        const locttDir = resolveLocttDir(root);
+        switch (sub) {
+          case "enable": {
+            await enableGit(locttDir, root);
+            console.log("Git-backed mode enabled");
+            break;
+          }
+          case "disable": {
+            await disableGit(locttDir);
+            console.log("Git-backed mode disabled");
+            break;
+          }
+          case "status": {
+            const status = await getGitStatus(locttDir, root);
+            console.log(`Enabled: ${status.enabled}`);
+            console.log(`Branch: ${status.branch}`);
+            console.log(`Inside git repo: ${status.isGitRepo}`);
+            if (status.lastSyncedCommit) {
+              console.log(`Last synced commit: ${status.lastSyncedCommit}`);
+            }
+            break;
+          }
+          case "publish": {
+            const result = await publish(locttDir, root);
+            if (result.committed) {
+              console.log("Published local state to loctt branch");
+            } else {
+              console.log("No changes to publish");
+            }
+            if (result.pushed === true) {
+              console.log("Pushed to remote");
+            }
+            break;
+          }
+          case "sync": {
+            const result = await sync(locttDir, root);
+            if (result.fetched === true) {
+              console.log("Fetched from remote");
+            }
+            if (result.updated) {
+              console.log("Synced loctt branch into local workspace");
+            } else {
+              console.log("Already up to date");
+            }
+            break;
+          }
+          default:
+            console.error("Usage: loctt git <enable|disable|status|publish|sync>");
+            process.exitCode = 1;
+            break;
+        }
+        break;
+      }
+
+      case "config": {
+        const sub = args[1];
+        const locttDir = resolveLocttDir(root);
+        switch (sub) {
+          case "get": {
+            const key = args[2];
+            if (!key) {
+              console.error("Usage: loctt config get <key>");
+              process.exitCode = 1;
+              break;
+            }
+            const value = await getConfigValue(locttDir, key);
+            if (value === undefined) {
+              // print empty line for missing
+              console.log("");
+            } else {
+              console.log(String(value));
+            }
+            break;
+          }
+          case "set": {
+            const key = args[2];
+            const value = args[3];
+            if (!key || value === undefined) {
+              console.error("Usage: loctt config set <key> <value>");
+              process.exitCode = 1;
+              break;
+            }
+            await setConfigValue({ locttDir, root }, key, value);
+            console.log(`Set ${key} = ${value}`);
+            break;
+          }
+          case "unset": {
+            const key = args[2];
+            if (!key) {
+              console.error("Usage: loctt config unset <key>");
+              process.exitCode = 1;
+              break;
+            }
+            await unsetConfigValue({ locttDir, root }, key);
+            console.log(`Unset ${key}`);
+            break;
+          }
+          case "list": {
+            for (const def of CONFIG_KEYS) {
+              const value = await getConfigValue(locttDir, def.key).catch(() => undefined);
+              const display = value === undefined ? "" : String(value);
+              console.log(`${def.key} = ${display}`);
+            }
+            break;
+          }
+          default:
+            console.error("Usage: loctt config <get|set|unset|list> [key] [value]");
+            process.exitCode = 1;
+            break;
+        }
         break;
       }
 

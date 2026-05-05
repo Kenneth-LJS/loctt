@@ -1,10 +1,19 @@
 // @loctt/core — shared LocTT logic
 
 export type { OptionalConfigs } from "./config/index.js";
+export type { ConfigKeyDef } from "./config/index.js";
 export { loadWorkflowConfig, parseWorkflowConfig } from "./config/index.js";
 export { loadQueriesConfig, parseQueriesConfig } from "./config/index.js";
 export { loadOptionalConfigs } from "./config/index.js";
 export { validateTaskAgainstWorkflow, validateWorkflowConfig } from "./config/index.js";
+export {
+  CONFIG_KEYS,
+  ConfigRouterError,
+  getConfigValue,
+  listConfigKeys,
+  setConfigValue,
+  unsetConfigValue,
+} from "./config/index.js";
 export { QueriesConfigError } from "./config/queries.js";
 export type { ValidationError } from "./config/validation.js";
 export { WorkflowConfigError } from "./config/workflow.js";
@@ -12,10 +21,20 @@ export type { TrackerInfo } from "./diagnostics/index.js";
 export type { CheckStatus,DiagnosticCheck } from "./diagnostics/index.js";
 export { getTrackerInfo } from "./diagnostics/index.js";
 export { runDoctor } from "./diagnostics/index.js";
-export type { GitStatusResult } from "./git/index.js";
+export type { FetchResult, GitStatusResult, PushResult } from "./git/index.js";
 export type { RekeyResult } from "./git/index.js";
-export { disableGit, enableGit, getGitStatus } from "./git/index.js";
-export { GitSyncError,publish, sync } from "./git/index.js";
+export {
+  commitToLocttBranch,
+  disableGit,
+  enableGit,
+  fetchLocttBranch,
+  getGitStatus,
+  GitSyncError,
+  publish,
+  pullFromLocttBranch,
+  pushLocttBranch,
+  sync,
+} from "./git/index.js";
 export { mergeKeyHistory,mergeRelationships, rekeyCollisions } from "./git/index.js";
 export type { InitOptions, InitResult } from "./init/index.js";
 export { initLoctt } from "./init/index.js";
