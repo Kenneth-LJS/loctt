@@ -20,6 +20,12 @@ describe("CLI link (spawned binary)", () => {
       expect(show.stdout).toMatch(/blocks → T-2/);
       // ULIDs are 26 chars of Crockford base32 — shouldn't appear in output.
       expect(show.stdout).not.toMatch(/[0-9A-HJKMNP-TV-Z]{26}/);
+
+      // Bilateral: the inverse edge must be visible from the target's side too.
+      const showTarget = await runCli(["show", "T-2"], { cwd: root });
+      expect(showTarget.stdout).toContain("Relationships:");
+      expect(showTarget.stdout).toMatch(/blocked_by → T-1/);
+      expect(showTarget.stdout).not.toMatch(/[0-9A-HJKMNP-TV-Z]{26}/);
     });
   });
 

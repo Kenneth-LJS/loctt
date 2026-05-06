@@ -316,9 +316,10 @@ export async function main(): Promise<void> {
           break;
         }
         const locttDir = resolveLocttDir(root);
+        const { workflowConfig } = await loadOptionalConfigs(locttDir);
         const task = await lookupTask(locttDir, ref);
         const targetTask = await lookupTask(locttDir, target);
-        await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: relType, target: targetTask.frontmatter.id });
+        await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: relType, target: targetTask.frontmatter.id, workflowConfig });
         console.log(`Unlinked ${task.frontmatter.key} --${relType}--> ${targetTask.frontmatter.key}`);
         break;
       }
