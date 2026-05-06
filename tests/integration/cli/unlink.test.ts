@@ -15,6 +15,10 @@ describe("CLI unlink (spawned binary)", () => {
 
       const show = await runCli(["show", "T-1"], { cwd: root });
       expect(show.stdout).not.toContain("Relationships:");
+
+      // Bilateral: the inverse edge on T-2 must also be gone.
+      const showTarget = await runCli(["show", "T-2"], { cwd: root });
+      expect(showTarget.stdout).not.toContain("Relationships:");
     });
   });
 });

@@ -325,8 +325,9 @@ export async function executeTool(
       case "unlink_tasks": {
         const task = await lookupTask(locttDir, args["ref"] as string);
         const target = await lookupTask(locttDir, args["target"] as string);
+        const { workflowConfig } = await loadOptionalConfigs(locttDir);
         const relType = args["type"] as string;
-        await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: relType, target: target.frontmatter.id });
+        await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: relType, target: target.frontmatter.id, workflowConfig });
         return text(`Unlinked ${task.frontmatter.key} --${relType}--> ${target.frontmatter.key}`);
       }
 
