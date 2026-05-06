@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import type { Task } from "@loctt/contracts";
 
-import { getTaskDir } from "../paths/index.js";
+import { getAttachmentsDir } from "../paths/index.js";
 import { lookupById, TaskNotFoundError } from "./lookup.js";
 
 /** Attachment metadata discovered from the task folder. */
@@ -33,25 +33,28 @@ export interface TaskShowModel {
 }
 
 /**
- * Discovers attachment files in a task's folder.
- * Any file that isn't task.md is considered an attachment.
+ * Discovers attachment files in a task's `attachments/` subdirectory.
+ *
+ * Returns `[]` if the directory doesn't exist (a task with no attachments
+ * never gets the subdir created). Dotfiles and any nested subdirectories
+ * are skipped — the v1 contract is a flat directory of regular files.
  */
 export async function discoverAttachments(
   locttDir: string,
   taskId: string,
 ): Promise<AttachmentInfo[]> {
-  const taskDir = getTaskDir(locttDir, taskId);
+  const attachmentsDir = getAttachmentsDir(locttDir, taskId);
   let entries;
   try {
-    entries = await readdir(taskDir);
+    entries = await readdir(attachmentsDir);
   } catch {
     return [];
   }
 
   const attachments: AttachmentInfo[] = [];
   for (const entry of entries) {
-    if (entry === "task.md") continue;
-    const filePath = join(taskDir, entry);
+    if (entry.startsWith(".")) continue;
+    const filePath = join(attachmentsDir, entry);
     const stats = await stat(filePath);
     if (stats.isFile()) {
       attachments.push({
@@ -60,6 +63,7 @@ export async function discoverAttachments(
         size: stats.size,
       });
     }
+    // Skip directories and other non-file entries (defense in depth).
   }
 
   return attachments;

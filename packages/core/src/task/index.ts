@@ -1,3 +1,11 @@
+export type { AttachOptions, AttachResult, DetachOptions } from "./attachments.js";
+export {
+  attachFile,
+  AttachmentExistsError,
+  AttachmentNotFoundError,
+  AttachmentSourceError,
+  detachFile,
+} from "./attachments.js";
 export type { CreateTaskOptions, CreateTaskParams } from "./create.js";
 export { createTask } from "./create.js";
 export {
