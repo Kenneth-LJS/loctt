@@ -39,10 +39,14 @@ export { mergeKeyHistory,mergeRelationships, rekeyCollisions } from "./git/index
 export type { InitOptions, InitResult } from "./init/index.js";
 export { initLoctt } from "./init/index.js";
 export {
+  assertSafeBasename,
+  getAttachmentPath,
+  getAttachmentsDir,
   getConfigDir,
   getDocsDir,
   getHistoryFilePath,
   getKeyIndexPath,
+  getLegacyHistoryFilePath,
   getLocalDir,
   getQueriesConfigPath,
   getReconcileStatePath,
@@ -68,11 +72,19 @@ export { loadSyncState, parseSyncState, saveSyncState, serializeSyncState, SyncS
 export { clearReconcileState, loadReconcileState, parseReconcileState, ReconcileStateError,saveReconcileState, serializeReconcileState } from "./state/index.js";
 export { allocateKey, appendKeyHistory, initKeyAllocation, KeyAllocationError } from "./state/index.js";
 export { addToKeyIndex,loadKeyIndex, lookupKeyInIndex, rebuildKeyIndex, saveKeyIndex } from "./state/index.js";
+export type { AttachOptions, AttachResult, DetachOptions } from "./task/index.js";
 export type { CreateTaskOptions, CreateTaskParams } from "./task/index.js";
 export type { AttachmentInfo, TaskShowModel } from "./task/index.js";
 export type { RelationshipValidationError } from "./task/index.js";
 export type { SetFieldOptions } from "./task/index.js";
 export type { LinkTaskOptions, UnlinkTaskOptions } from "./task/index.js";
+export {
+  attachFile,
+  AttachmentExistsError,
+  AttachmentNotFoundError,
+  AttachmentSourceError,
+  detachFile,
+} from "./task/index.js";
 export { appendHistory, readHistory } from "./task/index.js";
 export { assembleTaskFile, parseFrontmatter, serializeFrontmatter, splitTaskFile, TaskParseError } from "./task/index.js";
 export { readTask, readTaskBody, writeTask, writeTaskBody } from "./task/index.js";

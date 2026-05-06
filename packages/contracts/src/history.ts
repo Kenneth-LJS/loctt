@@ -8,6 +8,7 @@
  * - `archived` / `unarchived` — archive state toggled
  * - `link_added` / `link_removed` — relationship added/removed
  * - `body_edited` — body content changed (no content captured)
+ * - `attachment_added` / `attachment_removed` — file attached/detached
  */
 export type HistoryKind =
   | "created"
@@ -19,7 +20,9 @@ export type HistoryKind =
   | "unarchived"
   | "link_added"
   | "link_removed"
-  | "body_edited";
+  | "body_edited"
+  | "attachment_added"
+  | "attachment_removed";
 
 /** A single history/activity entry for a task. */
 export interface HistoryEntry {

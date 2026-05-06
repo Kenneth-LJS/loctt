@@ -1,11 +1,11 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Task } from "@loctt/contracts";
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
-import { getTaskDir } from "../paths/index.js";
+import { getAttachmentsDir, getTaskDir } from "../paths/index.js";
 import { writeTask } from "./io.js";
 import { buildShowModel,discoverAttachments } from "./show.js";
 
@@ -38,11 +38,12 @@ describe("task show model", () => {
     expect(attachments).toEqual([]);
   });
 
-  it("discovers attachment files in the task directory", async () => {
+  it("discovers attachment files in the attachments/ subdirectory", async () => {
     await writeTask(locttDir, "abc123", task);
-    const taskDir = getTaskDir(locttDir, "abc123");
-    await writeFile(join(taskDir, "screenshot.png"), "fake-image-data");
-    await writeFile(join(taskDir, "notes.txt"), "some notes");
+    const attachmentsDir = getAttachmentsDir(locttDir, "abc123");
+    await mkdir(attachmentsDir, { recursive: true });
+    await writeFile(join(attachmentsDir, "screenshot.png"), "fake-image-data");
+    await writeFile(join(attachmentsDir, "notes.txt"), "some notes");
 
     const attachments = await discoverAttachments(locttDir, "abc123");
     expect(attachments).toHaveLength(2);
@@ -56,10 +57,41 @@ describe("task show model", () => {
     expect(attachments).toEqual([]);
   });
 
-  it("builds a complete show model", async () => {
+  it("returns empty array when the task has no attachments/ directory", async () => {
+    await writeTask(locttDir, "abc123", task);
+    const attachments = await discoverAttachments(locttDir, "abc123");
+    expect(attachments).toEqual([]);
+  });
+
+  it("does not list system files at the task root as attachments", async () => {
     await writeTask(locttDir, "abc123", task);
     const taskDir = getTaskDir(locttDir, "abc123");
-    await writeFile(join(taskDir, "doc.pdf"), "pdf-data");
+    // Drop both the new and legacy history filenames at the task root —
+    // neither should be reported as an attachment.
+    await writeFile(join(taskDir, "_history.yaml"), "[]");
+    await writeFile(join(taskDir, "history.yaml"), "[]");
+
+    const attachments = await discoverAttachments(locttDir, "abc123");
+    expect(attachments).toEqual([]);
+  });
+
+  it("skips dotfiles and nested subdirectories inside attachments/", async () => {
+    await writeTask(locttDir, "abc123", task);
+    const attachmentsDir = getAttachmentsDir(locttDir, "abc123");
+    await mkdir(join(attachmentsDir, "nested"), { recursive: true });
+    await writeFile(join(attachmentsDir, ".hidden"), "x");
+    await writeFile(join(attachmentsDir, "real.txt"), "y");
+    await writeFile(join(attachmentsDir, "nested", "inner.txt"), "z");
+
+    const attachments = await discoverAttachments(locttDir, "abc123");
+    expect(attachments.map(a => a.name)).toEqual(["real.txt"]);
+  });
+
+  it("builds a complete show model", async () => {
+    await writeTask(locttDir, "abc123", task);
+    const attachmentsDir = getAttachmentsDir(locttDir, "abc123");
+    await mkdir(attachmentsDir, { recursive: true });
+    await writeFile(join(attachmentsDir, "doc.pdf"), "pdf-data");
 
     const model = await buildShowModel(locttDir, task);
     expect(model.task).toBe(task);

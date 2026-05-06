@@ -5,14 +5,43 @@ const TASKS_DIR = "tasks";
 const CONFIG_DIR = "config";
 const LOCAL_DIR = "local";
 const DOCS_DIR = "docs";
+const ATTACHMENTS_DIR = "attachments";
 const STATE_FILE = "state.yaml";
 const TASK_FILE = "task.md";
-const HISTORY_FILE = "history.yaml";
+const HISTORY_FILE = "_history.yaml";
+const LEGACY_HISTORY_FILE = "history.yaml";
 const WORKFLOW_FILE = "workflow.yaml";
 const QUERIES_FILE = "queries.yaml";
 const SYNC_FILE = "sync.yaml";
 const RECONCILE_FILE = "reconcile.yaml";
 const KEY_INDEX_FILE = "key-index.yaml";
+
+/**
+ * Validates that a string is a safe basename for a file inside a task
+ * directory: no path separators, no `..`, no null bytes. Empty strings
+ * are also rejected.
+ *
+ * Throws a generic `Error` on violation; callers that want a typed
+ * error should catch and rethrow.
+ */
+export function assertSafeBasename(name: string): void {
+  if (typeof name !== "string" || name.length === 0) {
+    throw new Error("filename must be a non-empty string");
+  }
+  if (name.includes("\0")) {
+    throw new Error("filename must not contain null bytes");
+  }
+  if (name.includes("/") || name.includes("\\")) {
+    throw new Error(`filename must not contain path separators: ${name}`);
+  }
+  if (name === "." || name === "..") {
+    throw new Error(`filename must not be "." or ".."`);
+  }
+  // Defense-in-depth: catch any embedded traversal token
+  if (name.split(/[/\\]/).some(p => p === "..")) {
+    throw new Error(`filename must not contain path traversal: ${name}`);
+  }
+}
 
 /**
  * Resolves the .loctt directory from a given root.
@@ -32,9 +61,37 @@ export function getTaskFilePath(locttDir: string, taskId: string): string {
   return join(locttDir, TASKS_DIR, taskId, TASK_FILE);
 }
 
-/** Returns the path to a task's history.yaml file. */
+/** Returns the path to a task's _history.yaml file. */
 export function getHistoryFilePath(locttDir: string, taskId: string): string {
   return join(locttDir, TASKS_DIR, taskId, HISTORY_FILE);
+}
+
+/**
+ * Returns the path to a task's legacy `history.yaml` file. Used by the
+ * dual-read fallback so old trackers keep working until their next write
+ * consolidates them onto `_history.yaml`.
+ */
+export function getLegacyHistoryFilePath(locttDir: string, taskId: string): string {
+  return join(locttDir, TASKS_DIR, taskId, LEGACY_HISTORY_FILE);
+}
+
+/** Returns the path to a task's attachments directory. */
+export function getAttachmentsDir(locttDir: string, taskId: string): string {
+  return join(locttDir, TASKS_DIR, taskId, ATTACHMENTS_DIR);
+}
+
+/**
+ * Returns the absolute path to a single attachment file. The `name`
+ * argument must be a plain basename — slashes, backslashes, `..`, and
+ * null bytes are rejected.
+ */
+export function getAttachmentPath(
+  locttDir: string,
+  taskId: string,
+  name: string,
+): string {
+  assertSafeBasename(name);
+  return join(locttDir, TASKS_DIR, taskId, ATTACHMENTS_DIR, name);
 }
 
 /** Returns the path to the config directory: .loctt/config/ */

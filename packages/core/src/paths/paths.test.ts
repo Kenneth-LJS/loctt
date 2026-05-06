@@ -3,8 +3,13 @@ import { resolve, sep } from "node:path";
 import { describe, expect,it } from "vitest";
 
 import {
+  assertSafeBasename,
+  getAttachmentPath,
+  getAttachmentsDir,
   getConfigDir,
   getDocsDir,
+  getHistoryFilePath,
+  getLegacyHistoryFilePath,
   getLocalDir,
   getQueriesConfigPath,
   getReconcileStatePath,
@@ -69,5 +74,45 @@ describe("path helpers", () => {
 
   it("resolves docs directory", () => {
     expect(getDocsDir(locttDir)).toBe(`${locttDir}${sep}docs`);
+  });
+
+  it("resolves _history.yaml path under task dir", () => {
+    expect(getHistoryFilePath(locttDir, "T1")).toBe(
+      `${locttDir}${sep}tasks${sep}T1${sep}_history.yaml`,
+    );
+  });
+
+  it("resolves legacy history.yaml path under task dir", () => {
+    expect(getLegacyHistoryFilePath(locttDir, "T1")).toBe(
+      `${locttDir}${sep}tasks${sep}T1${sep}history.yaml`,
+    );
+  });
+
+  it("resolves attachments directory under task dir", () => {
+    expect(getAttachmentsDir(locttDir, "T1")).toBe(
+      `${locttDir}${sep}tasks${sep}T1${sep}attachments`,
+    );
+  });
+
+  it("resolves a single attachment path", () => {
+    expect(getAttachmentPath(locttDir, "T1", "design.pdf")).toBe(
+      `${locttDir}${sep}tasks${sep}T1${sep}attachments${sep}design.pdf`,
+    );
+  });
+
+  it("rejects unsafe basenames in getAttachmentPath", () => {
+    expect(() => getAttachmentPath(locttDir, "T1", "../escape")).toThrow();
+    expect(() => getAttachmentPath(locttDir, "T1", "sub/file")).toThrow();
+    expect(() => getAttachmentPath(locttDir, "T1", "a\\b")).toThrow();
+    expect(() => getAttachmentPath(locttDir, "T1", "")).toThrow();
+    expect(() => getAttachmentPath(locttDir, "T1", "..")).toThrow();
+    expect(() => getAttachmentPath(locttDir, "T1", "foo\0")).toThrow();
+  });
+
+  it("assertSafeBasename accepts plain names including dotfiles", () => {
+    // assertSafeBasename only cares about traversal; the higher-level
+    // attach logic is what additionally rejects leading dots.
+    expect(() => assertSafeBasename("file.txt")).not.toThrow();
+    expect(() => assertSafeBasename(".env")).not.toThrow();
   });
 });
