@@ -43,7 +43,7 @@ export function getTools(): McpTool[] {
   return [
     {
       name: "get_task",
-      description: "Get a task by key or ID, optionally including the markdown body.",
+      description: "Get a task by key or ID, optionally including the markdown body. Relationship targets are returned as user-facing keys (e.g. T-2); deleted targets carry `missing: true` and retain the raw ID in `target`.",
       inputSchema: {
         ref: z.string().describe("Task key (e.g. T-1) or ID"),
         include_body: z.boolean().optional().describe("Whether to include the markdown body (default true)"),
@@ -51,11 +51,12 @@ export function getTools(): McpTool[] {
     },
     {
       name: "list_tasks",
-      description: "List tasks with optional query, view, and limit.",
+      description: "List tasks with optional query, view, and limit. Archived tasks are hidden by default; pass include_archived=true to include them. Saved views are respected as authored — they are not modified by this flag.",
       inputSchema: {
         query: z.string().optional().describe("Ad hoc query string"),
         view: z.string().optional().describe("Named saved view"),
         limit: z.number().optional().describe("Max results (default 30)"),
+        include_archived: z.boolean().optional().describe("If true, include archived tasks (default false). Ignored when a query already mentions `archived` or when a saved view is used."),
       },
     },
     {
@@ -188,8 +189,16 @@ export async function executeTool(
         const model = await buildShowModel(locttDir, task);
         const result: Record<string, unknown> = {
           ...model.task.frontmatter,
+          relationships: model.relationships.map(r => ({
+            type: r.type,
+            target: r.missing ? r.target : r.resolvedKey ?? r.target,
+            ...(r.missing ? { missing: true } : {}),
+          })),
           attachments: model.attachments.map(a => ({ name: a.name, size: a.size })),
         };
+        if (model.relationships.length === 0) {
+          delete result["relationships"];
+        }
         if (includeBody) result["body"] = model.task.body;
         return text(JSON.stringify(result, null, 2));
       }
@@ -204,6 +213,7 @@ export async function executeTool(
             query: args["query"] as string | undefined,
             view: args["view"] as string | undefined,
             limit: args["limit"] as number | undefined,
+            includeArchived: args["include_archived"] as boolean | undefined,
           },
           queriesConfig,
           workflowConfig,

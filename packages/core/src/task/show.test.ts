@@ -65,5 +65,56 @@ describe("task show model", () => {
     expect(model.task).toBe(task);
     expect(model.attachments).toHaveLength(1);
     expect(model.attachments[0]?.name).toBe("doc.pdf");
+    expect(model.relationships).toEqual([]);
+  });
+
+  it("resolves relationship target IDs to current keys", async () => {
+    const targetTask: Task = {
+      frontmatter: {
+        id: "target-id",
+        key: "T-2",
+        title: "Target",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      body: "",
+    };
+    const sourceTask: Task = {
+      frontmatter: {
+        ...task.frontmatter,
+        relationships: [{ type: "blocks", target: "target-id" }],
+      },
+      body: task.body,
+    };
+    await writeTask(locttDir, "abc123", sourceTask);
+    await writeTask(locttDir, "target-id", targetTask);
+
+    const model = await buildShowModel(locttDir, sourceTask);
+    expect(model.relationships).toHaveLength(1);
+    expect(model.relationships[0]).toEqual({
+      type: "blocks",
+      target: "target-id",
+      resolvedKey: "T-2",
+      missing: false,
+    });
+  });
+
+  it("marks relationship targets as missing when the task is gone", async () => {
+    const sourceTask: Task = {
+      frontmatter: {
+        ...task.frontmatter,
+        relationships: [{ type: "blocks", target: "vanished-id" }],
+      },
+      body: task.body,
+    };
+    await writeTask(locttDir, "abc123", sourceTask);
+
+    const model = await buildShowModel(locttDir, sourceTask);
+    expect(model.relationships).toHaveLength(1);
+    expect(model.relationships[0]).toEqual({
+      type: "blocks",
+      target: "vanished-id",
+      missing: true,
+    });
   });
 });

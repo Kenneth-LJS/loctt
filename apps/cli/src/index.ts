@@ -42,7 +42,9 @@ Commands:
   info
   doctor
   create <title> [--status <s>] [--priority <p>] [--type <t>]
-  list [--query <q>] [--view <v>] [--limit <n>]
+  list [--query <q>] [--view <v>] [--limit <n>] [--archived]
+                                   --archived: include archived tasks
+                                   (hidden by default; saved views are respected as authored)
   show <task>
   set <task> <field> <value>
   unset <task> <field>
@@ -196,6 +198,7 @@ export async function main(): Promise<void> {
             query: getArg(args, "--query"),
             view: getArg(args, "--view"),
             limit,
+            includeArchived: hasFlag(args, "--archived"),
           },
           queriesConfig,
           workflowConfig,
@@ -232,10 +235,13 @@ export async function main(): Promise<void> {
         if (fm.assignee) console.log(`Assignee: ${fm.assignee}`);
         if (fm.due_date) console.log(`Due: ${fm.due_date}`);
         if (fm.archived) console.log(`Archived: ${fm.archived_at}`);
-        if (fm.relationships && fm.relationships.length > 0) {
+        if (model.relationships.length > 0) {
           console.log(`Relationships:`);
-          for (const r of fm.relationships) {
-            console.log(`  ${r.type} → ${r.target}`);
+          for (const r of model.relationships) {
+            const display = r.missing
+              ? `${r.target.slice(0, 8)}… (deleted)`
+              : r.resolvedKey ?? r.target;
+            console.log(`  ${r.type} → ${display}`);
           }
         }
         if (model.attachments.length > 0) {

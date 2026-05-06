@@ -15,6 +15,14 @@ export interface ListOptions {
   readonly sort?: readonly { field: string; direction: "asc" | "desc" }[];
   /** Maximum number of results. Defaults to 30. */
   readonly limit?: number;
+  /**
+   * If true, include archived tasks in the results.
+   * If false (default), an `archived != true` filter is ANDed onto the
+   * effective query — unless the user-provided query already mentions
+   * `archived`, in which case the user's intent is preserved.
+   * Saved views (`view`) are never modified — they are respected as authored.
+   */
+  readonly includeArchived?: boolean;
 }
 
 /** Full options bag for listTasks. */
@@ -67,6 +75,7 @@ export function listTasks(opts: ListTasksOptions): Task[] {
   const { tasks, options, queriesConfig, workflowConfig, ctx = {} } = opts;
   let queryStr: string | undefined = options.query;
   let sortSpec = options.sort;
+  let usedView = false;
 
   // Resolve view if specified
   if (options.view && queriesConfig) {
@@ -76,6 +85,17 @@ export function listTasks(opts: ListTasksOptions): Task[] {
     }
     if (!queryStr) queryStr = view.query;
     if (!sortSpec && view.sort) sortSpec = view.sort;
+    usedView = true;
+  }
+
+  // Hide archived tasks by default. Saved views are respected as authored,
+  // and explicit user queries that mention `archived` are left untouched.
+  if (!options.includeArchived && !usedView) {
+    if (!queryStr) {
+      queryStr = "archived != true";
+    } else if (!queryMentionsArchived(queryStr)) {
+      queryStr = `(${queryStr}) and archived != true`;
+    }
   }
 
   // Filter by query
@@ -115,6 +135,22 @@ export function listTasks(opts: ListTasksOptions): Task[] {
   // Limit
   const limit = options.limit ?? 30;
   return filtered.slice(0, limit);
+}
+
+/**
+ * Returns true if the query string references the `archived` field.
+ * Uses the tokenizer to avoid false positives from string literals or
+ * other field names that happen to contain "archived".
+ */
+function queryMentionsArchived(queryStr: string): boolean {
+  try {
+    const tokens = tokenize(queryStr);
+    return tokens.some(t => t.type === "FIELD" && t.value === "archived");
+  } catch {
+    // If tokenization fails, fall through and let the main parser report
+    // the error with proper context.
+    return false;
+  }
 }
 
 function buildPriorityMap(
