@@ -137,7 +137,7 @@ describe("web server security", () => {
 
     it("returns 404 for unknown task ref", async () => {
       const res = await fetch(`${base}/api/tasks/NONEXISTENT/activity`);
-      expect(res.status).toBe(500); // lookupTask throws, caught as 500
+      expect(res.status).toBe(404);
     });
   });
 
