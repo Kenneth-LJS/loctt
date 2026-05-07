@@ -1,5 +1,6 @@
 import type { QueriesConfig, Task, WorkflowConfig } from "@loctt/contracts";
 
+import { QueriesConfigError } from "../config/queries.js";
 import type { EvalContext } from "./evaluator.js";
 import { evaluateQuery } from "./evaluator.js";
 import { parseQuery } from "./parser.js";
@@ -78,7 +79,12 @@ export function listTasks(opts: ListTasksOptions): Task[] {
   let usedView = false;
 
   // Resolve view if specified
-  if (options.view && queriesConfig) {
+  if (options.view) {
+    if (!queriesConfig) {
+      throw new QueriesConfigError(
+        `Cannot use --view '${options.view}': no queries.yaml found.`,
+      );
+    }
     const view = resolveView(queriesConfig, options.view);
     if (!view) {
       throw new Error(`unknown view "${options.view}"`);
