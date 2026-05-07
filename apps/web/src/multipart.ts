@@ -21,10 +21,10 @@ export interface ParsedFilePart {
 
 function getBoundary(contentType: string): string {
   const match = /boundary=("?)([^";]+)\1/i.exec(contentType);
-  if (!match) {
+  if (!match || match[2] === undefined) {
     throw new Error("missing multipart boundary");
   }
-  return match[2]!;
+  return match[2];
 }
 
 async function readAll(req: IncomingMessage, max: number): Promise<Buffer> {

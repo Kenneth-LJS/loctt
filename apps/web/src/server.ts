@@ -392,8 +392,8 @@ export function createWebApp(options: WebAppOptions) {
 
       const attachItemMatch = /^\/api\/tasks\/([^/]+)\/attachments\/([^/]+)$/.exec(path);
       if (attachItemMatch && (req.method === "GET" || req.method === "DELETE")) {
-        const ref = attachItemMatch[1]!;
-        const rawName = decodeURIComponent(attachItemMatch[2]!);
+        const ref = attachItemMatch[1] ?? "";
+        const rawName = decodeURIComponent(attachItemMatch[2] ?? "");
         if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
         if (
           rawName.length === 0
