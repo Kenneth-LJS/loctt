@@ -87,7 +87,7 @@ export {
 } from "./task/index.js";
 export { appendHistory, readHistory } from "./task/index.js";
 export { assembleTaskFile, parseFrontmatter, serializeFrontmatter, splitTaskFile, TaskParseError } from "./task/index.js";
-export { readTask, readTaskBody, writeTask, writeTaskBody } from "./task/index.js";
+export { appendTaskBody, readTask, readTaskBody, writeTask, writeTaskBody } from "./task/index.js";
 export { listTaskIds, loadAllTasks, lookupById, lookupByKey, lookupTask, TaskNotFoundError } from "./task/index.js";
 export { createTask } from "./task/index.js";
 export { buildShowModel,discoverAttachments } from "./task/index.js";
