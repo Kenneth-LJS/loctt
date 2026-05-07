@@ -1,12 +1,19 @@
 // @loctt/mcp — MCP server for LocTT
 // Provides structured tools for task management via Model Context Protocol.
 
+import { isAbsolute } from "node:path";
+
 import {
   archiveTask,
+  attachFile,
+  AttachmentExistsError,
+  AttachmentNotFoundError,
+  AttachmentSourceError,
   buildListContext,
   buildShowModel,
   createTask,
   deleteTask,
+  detachFile,
   linkTask,
   listTasks,
   loadAllTasks,
@@ -151,6 +158,23 @@ export function getTools(): McpTool[] {
         ref: z.string(),
         type: z.string(),
         target: z.string(),
+      },
+    },
+    {
+      name: "attach_file",
+      description: "Copy a local file into a task's attachments directory. Only file paths are supported in v1 (no base64 content); the file must be readable from the MCP server's filesystem.",
+      inputSchema: {
+        ref: z.string().describe("Task key (e.g. T-1) or ID"),
+        source_path: z.string().describe("Absolute path to the file to attach. Must be absolute — the MCP server's cwd is not guaranteed to match the agent's mental model."),
+        force: z.boolean().optional().describe("If true, overwrite an existing attachment with the same basename."),
+      },
+    },
+    {
+      name: "detach_file",
+      description: "Remove a file from a task's attachments directory.",
+      inputSchema: {
+        ref: z.string().describe("Task key or ID"),
+        name: z.string().describe("Basename of the attachment, no path separators"),
       },
     },
     {
@@ -329,6 +353,55 @@ export async function executeTool(
         const relType = args["type"] as string;
         await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: relType, target: target.frontmatter.id, workflowConfig });
         return text(`Unlinked ${task.frontmatter.key} --${relType}--> ${target.frontmatter.key}`);
+      }
+
+      case "attach_file": {
+        const task = await lookupTask(locttDir, args["ref"] as string);
+        const sourcePath = args["source_path"] as string;
+        if (!isAbsolute(sourcePath)) {
+          return errorResult("source_path must be absolute");
+        }
+        const force = (args["force"] as boolean | undefined) ?? false;
+        try {
+          const result = await attachFile({
+            locttDir,
+            taskId: task.frontmatter.id,
+            sourcePath,
+            force,
+          });
+          return text(JSON.stringify({
+            name: result.name,
+            size: result.size,
+            overwritten: result.overwritten,
+            task_key: task.frontmatter.key,
+          }, null, 2));
+        } catch (err) {
+          if (err instanceof AttachmentExistsError) {
+            return errorResult(`${err.message}. Pass force: true to overwrite.`);
+          }
+          if (err instanceof AttachmentSourceError) {
+            return errorResult(err.message);
+          }
+          throw err;
+        }
+      }
+
+      case "detach_file": {
+        const task = await lookupTask(locttDir, args["ref"] as string);
+        const name = args["name"] as string;
+        try {
+          await detachFile({
+            locttDir,
+            taskId: task.frontmatter.id,
+            name,
+          });
+          return text(`Detached ${name} from ${task.frontmatter.key}`);
+        } catch (err) {
+          if (err instanceof AttachmentNotFoundError) {
+            return errorResult(err.message);
+          }
+          throw err;
+        }
       }
 
       case "task_history": {
