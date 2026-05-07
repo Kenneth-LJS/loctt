@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -59,6 +59,21 @@ describe("CLI attach/detach edge cases (spawned binary)", () => {
       expect(entries).toEqual(["passwd"]);
 
       await rm(srcDir, { recursive: true, force: true });
+    });
+  });
+
+  it("rejects attaching a symlink", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "t"], { cwd: root });
+
+      const target = path.join(root, "real.txt");
+      await writeFile(target, "real content\n", "utf8");
+      const link = path.join(root, "link.txt");
+      await symlink(target, link);
+
+      const result = await runCli(["attach", "T-1", link], { cwd: root });
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toMatch(/symlink/i);
     });
   });
 
