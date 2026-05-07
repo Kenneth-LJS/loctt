@@ -13,7 +13,10 @@ export default defineConfig({
   banner: { js: "#!/usr/bin/env node" },
   // Bundle workspace packages and MCP SDK; keep yaml/ulid as runtime deps
   // (yaml is CJS-only for Node and can't be bundled into ESM)
-  external: ["yaml", "ulid"],
+  // busboy is CJS-only and uses dynamic require("stream"); tsup's ESM
+  // output can't shim that. Keep it external so the CLI loads it as a
+  // normal Node module at runtime.
+  external: ["yaml", "ulid", "busboy"],
   noExternal: ["@loctt/core", "@loctt/contracts", "@loctt/mcp", "@loctt/web", "@modelcontextprotocol/sdk"],
   esbuildOptions(options) {
     options.alias = {
