@@ -63,6 +63,47 @@ describe("MCP link_tasks relationship edge cases (stdio)", () => {
     });
   });
 
+  it("returns isError for a structural cycle", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "A"], { cwd: root });
+      await runCli(["create", "B"], { cwd: root });
+      await runCli(["create", "C"], { cwd: root });
+
+      const client = await startMcpClient(root);
+      try {
+        const ok1 = await client.callTool("link_tasks", { ref: "T-1", type: "parent", target: "T-2" });
+        expect(ok1.isError).toBeFalsy();
+        const ok2 = await client.callTool("link_tasks", { ref: "T-2", type: "parent", target: "T-3" });
+        expect(ok2.isError).toBeFalsy();
+        const bad = await client.callTool("link_tasks", { ref: "T-3", type: "parent", target: "T-1" });
+        expect(bad.isError).toBe(true);
+        expect(bad.content[0]?.text ?? "").toContain("cannot create cycle in structural relationship 'parent'");
+      } finally {
+        await client.close();
+      }
+    });
+  });
+
+  it("allows a non-structural cycle (blocks)", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "A"], { cwd: root });
+      await runCli(["create", "B"], { cwd: root });
+      await runCli(["create", "C"], { cwd: root });
+
+      const client = await startMcpClient(root);
+      try {
+        const ok1 = await client.callTool("link_tasks", { ref: "T-1", type: "blocks", target: "T-2" });
+        expect(ok1.isError).toBeFalsy();
+        const ok2 = await client.callTool("link_tasks", { ref: "T-2", type: "blocks", target: "T-3" });
+        expect(ok2.isError).toBeFalsy();
+        const ok3 = await client.callTool("link_tasks", { ref: "T-3", type: "blocks", target: "T-1" });
+        expect(ok3.isError).toBeFalsy();
+      } finally {
+        await client.close();
+      }
+    });
+  });
+
   it("returns isError for a link from a nonexistent source", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "first"], { cwd: root });

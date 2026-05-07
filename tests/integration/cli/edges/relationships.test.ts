@@ -50,4 +50,35 @@ describe("CLI link relationship edge cases (spawned binary)", () => {
       expect(result.stderr).toContain("not found");
     });
   });
+
+  it("rejects a structural cycle (parent A -> B -> C -> A)", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "A"], { cwd: root });
+      await runCli(["create", "B"], { cwd: root });
+      await runCli(["create", "C"], { cwd: root });
+
+      const r1 = await runCli(["link", "T-1", "parent", "T-2"], { cwd: root });
+      expect(r1.exitCode).toBe(0);
+      const r2 = await runCli(["link", "T-2", "parent", "T-3"], { cwd: root });
+      expect(r2.exitCode).toBe(0);
+      const r3 = await runCli(["link", "T-3", "parent", "T-1"], { cwd: root });
+      expect(r3.exitCode).not.toBe(0);
+      expect(r3.stderr).toContain("cannot create cycle in structural relationship 'parent'");
+    });
+  });
+
+  it("allows a cycle on a non-structural relationship (blocks)", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "A"], { cwd: root });
+      await runCli(["create", "B"], { cwd: root });
+      await runCli(["create", "C"], { cwd: root });
+
+      const r1 = await runCli(["link", "T-1", "blocks", "T-2"], { cwd: root });
+      expect(r1.exitCode).toBe(0);
+      const r2 = await runCli(["link", "T-2", "blocks", "T-3"], { cwd: root });
+      expect(r2.exitCode).toBe(0);
+      const r3 = await runCli(["link", "T-3", "blocks", "T-1"], { cwd: root });
+      expect(r3.exitCode).toBe(0);
+    });
+  });
 });
