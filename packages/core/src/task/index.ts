@@ -17,6 +17,7 @@ export {
 } from "./frontmatter.js";
 export { appendHistory, readHistory } from "./history.js";
 export {
+  appendTaskBody,
   readTask,
   readTaskBody,
   writeTask,

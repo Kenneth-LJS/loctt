@@ -1,9 +1,11 @@
 // @loctt/mcp — MCP server for LocTT
 // Provides structured tools for task management via Model Context Protocol.
 
+import { access } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 
 import {
+  appendTaskBody,
   archiveTask,
   attachFile,
   AttachmentExistsError,
@@ -11,9 +13,16 @@ import {
   AttachmentSourceError,
   buildListContext,
   buildShowModel,
+  CONFIG_KEYS,
   createTask,
   deleteTask,
   detachFile,
+  disableGit,
+  enableGit,
+  getConfigValue,
+  getGitStatus,
+  getTrackerInfo,
+  initLoctt,
   linkTask,
   listTasks,
   loadAllTasks,
@@ -22,13 +31,17 @@ import {
   loadState,
   loadWorkflowConfig,
   lookupTask,
+  publish,
   readHistory,
-  readTaskBody,
   resolveLocttDir,
+  runDoctor,
   saveState,
+  setConfigValue,
   setField,
+  sync,
   unarchiveTask,
   unlinkTask,
+  unsetConfigValue,
   unsetField,
   writeTaskBody,
 } from "@loctt/core";
@@ -178,6 +191,76 @@ export function getTools(): McpTool[] {
       },
     },
     {
+      name: "info",
+      description: "Returns prose summary of the tracker state (locttDir, task count, key prefix, statuses, next key). Mirrors the CLI 'info' command.",
+      inputSchema: {},
+    },
+    {
+      name: "doctor",
+      description: "Runs diagnostic checks on the tracker. Output is human-prose. Useful for surfacing problems to the user; not designed for chained tool calls.",
+      inputSchema: {},
+    },
+    {
+      name: "init",
+      description: "Bootstraps a new loctt tracker at the server's working directory if .loctt/ doesn't exist yet. Only call when explicitly asked to set up a new tracker — this is a one-time operation, not a routine task action.",
+      inputSchema: {
+        prefix: z.string().optional().describe("Key prefix for tasks (default 'T-')."),
+        no_docs: z.boolean().optional().describe("If true, skip generating helper docs."),
+      },
+    },
+    {
+      name: "git_enable",
+      description: "Enables git-backed mode for this tracker. Sets up a dedicated loctt branch for task data on a sparse worktree. Only call when the user has explicitly asked to share tasks across machines or set up sync — this is one-time infrastructure setup, not a routine task operation.",
+      inputSchema: {},
+    },
+    {
+      name: "git_disable",
+      description: "Disables git-backed mode for this tracker. Local task data is preserved.",
+      inputSchema: {},
+    },
+    {
+      name: "git_status",
+      description: "Returns structured JSON describing git-backed mode state (enabled, branch, remote, auto_push, auto_fetch, in_git_repo, last_synced_commit).",
+      inputSchema: {},
+    },
+    {
+      name: "git_publish",
+      description: "Commits the current task state to the local loctt branch and (if remote+auto_push are set) pushes to remote. Call when the user has indicated they want to share or sync tasks — not speculatively after routine task edits.",
+      inputSchema: {},
+    },
+    {
+      name: "git_sync",
+      description: "Pulls the loctt branch state into the local workspace. If a remote is configured and auto_fetch is set, fetches first. Call when the user wants to bring in changes from another machine.",
+      inputSchema: {},
+    },
+    {
+      name: "config_get",
+      description: "Reads a machine-local config value (currently git.* keys). Returns structured JSON {key, value, type} with the value preserving its native type.",
+      inputSchema: {
+        key: z.string().describe("Config key (e.g. git.enabled, git.remote)."),
+      },
+    },
+    {
+      name: "config_set",
+      description: "Changes machine-local config (currently git.* keys only). Echo the change you're making in your response so the user can see what was adjusted. Don't call speculatively — only when the user has indicated they want to change a setting.",
+      inputSchema: {
+        key: z.string(),
+        value: z.string().describe("Stringified value; booleans accept true/false/1/0/yes/no."),
+      },
+    },
+    {
+      name: "config_unset",
+      description: "Restores a machine-local config key to its default. Echo the change so the user can see what was reset. Don't call speculatively — only when the user has indicated they want to revert a setting.",
+      inputSchema: {
+        key: z.string(),
+      },
+    },
+    {
+      name: "config_list",
+      description: "Lists all known config keys with their current values, types, and descriptions. Returns structured JSON array.",
+      inputSchema: {},
+    },
+    {
       name: "task_history",
       description: "Get the activity/history log for a task. Returns structured entries (newest first).",
       inputSchema: {
@@ -298,8 +381,7 @@ export async function executeTool(
 
       case "append_task_body": {
         const task = await lookupTask(locttDir, args["ref"] as string);
-        const current = await readTaskBody(locttDir, task.frontmatter.id);
-        await writeTaskBody(locttDir, task.frontmatter.id, current + (args["text"] as string) + "\n");
+        await appendTaskBody(locttDir, task.frontmatter.id, args["text"] as string);
         return text(`Appended to ${task.frontmatter.key} body.`);
       }
 
@@ -411,6 +493,155 @@ export async function executeTool(
         const limit = args["limit"] as number | undefined;
         const display = limit !== undefined ? entries.slice(0, limit) : entries;
         return text(JSON.stringify(display, null, 2));
+      }
+
+      case "info": {
+        const info = await getTrackerInfo(root);
+        if (!info.exists) {
+          return text("No .loctt directory found. Run 'loctt init' to get started.");
+        }
+        const lines: string[] = [];
+        lines.push(`LocTT directory: ${info.locttDir}`);
+        lines.push(`Tasks: ${info.taskCount}`);
+        if (info.workflowConfig) {
+          lines.push(`Key prefix: ${info.workflowConfig.key.prefix}`);
+          lines.push(`Statuses: ${info.workflowConfig.statuses.map(s => s.key).join(", ")}`);
+        }
+        if (info.state) {
+          const taskState = info.state.keys["task"];
+          if (taskState) {
+            lines.push(`Next key: ${taskState.prefix}${taskState.next_number}`);
+          }
+        }
+        return text(lines.join("\n"));
+      }
+
+      case "doctor": {
+        const checks = await runDoctor(root);
+        const lines = checks.map(c => {
+          const icon = c.status === "ok" ? "ok" : c.status === "warn" ? "warn" : "error";
+          return `[${icon}] ${c.name}: ${c.message}`;
+        });
+        return text(lines.join("\n"));
+      }
+
+      case "init": {
+        try {
+          await access(locttDir);
+          return errorResult(`.loctt directory already exists at ${locttDir}`);
+        } catch {
+          // doesn't exist — proceed
+        }
+        const prefix = args["prefix"] as string | undefined;
+        const noDocs = (args["no_docs"] as boolean | undefined) ?? false;
+        const result = await initLoctt(root, {
+          ...(prefix !== undefined ? { prefix } : {}),
+          docs: !noDocs,
+        });
+        return text(`Initialized .loctt at ${result.locttDir}\nCreated ${result.created.length} files`);
+      }
+
+      case "git_enable": {
+        await enableGit(locttDir, root);
+        return text("Git-backed mode enabled");
+      }
+
+      case "git_disable": {
+        await disableGit(locttDir);
+        return text("Git-backed mode disabled");
+      }
+
+      case "git_status": {
+        const status = await getGitStatus(locttDir, root);
+        const result = {
+          enabled: status.enabled,
+          branch: status.branch,
+          remote: status.remote,
+          auto_push: status.autoPush,
+          auto_fetch: status.autoFetch,
+          in_git_repo: status.isGitRepo,
+          last_synced_commit: status.lastSyncedCommit ?? null,
+        };
+        return text(JSON.stringify(result, null, 2));
+      }
+
+      case "git_publish": {
+        const result = await publish(locttDir, root);
+        const lines: string[] = [];
+        if (result.committed) {
+          lines.push("Published local state to loctt branch");
+        } else {
+          lines.push("No changes to publish");
+        }
+        if (result.pushed === true) {
+          lines.push("Pushed to remote");
+        } else if (result.pushError) {
+          lines.push(`Published locally; remote push failed: ${result.pushError}`);
+        }
+        return text(lines.join("\n"));
+      }
+
+      case "git_sync": {
+        const result = await sync(locttDir, root);
+        const lines: string[] = [];
+        if (result.fetched === true) {
+          lines.push("Fetched from remote");
+        } else if (result.fetchError) {
+          lines.push(`Remote fetch failed: ${result.fetchError}`);
+        }
+        if (result.updated) {
+          lines.push("Synced loctt branch into local workspace");
+        } else {
+          lines.push("Already up to date");
+        }
+        return text(lines.join("\n"));
+      }
+
+      case "config_get": {
+        const key = args["key"] as string;
+        const def = CONFIG_KEYS.find(d => d.key === key);
+        if (!def) {
+          return errorResult(`unknown config key '${key}'`);
+        }
+        const value = await getConfigValue(locttDir, key);
+        return text(JSON.stringify({
+          key,
+          value: value ?? null,
+          type: def.type,
+        }, null, 2));
+      }
+
+      case "config_set": {
+        const key = args["key"] as string;
+        const value = args["value"] as string;
+        await setConfigValue({ locttDir, root }, key, value);
+        return text(`Set ${key} = ${value}`);
+      }
+
+      case "config_unset": {
+        const key = args["key"] as string;
+        await unsetConfigValue({ locttDir, root }, key);
+        return text(`Unset ${key}`);
+      }
+
+      case "config_list": {
+        const items = [];
+        for (const def of CONFIG_KEYS) {
+          let value: string | boolean | null = null;
+          try {
+            const v = await getConfigValue(locttDir, def.key);
+            value = v === undefined ? null : v;
+          } catch {
+            value = null;
+          }
+          items.push({
+            key: def.key,
+            value,
+            type: def.type,
+            description: def.description,
+          });
+        }
+        return text(JSON.stringify(items, null, 2));
       }
 
       default:

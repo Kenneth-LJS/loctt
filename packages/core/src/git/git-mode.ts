@@ -16,6 +16,9 @@ import { fileExists } from "../utils/fs.js";
 export interface GitStatusResult {
   readonly enabled: boolean;
   readonly branch: string;
+  readonly remote: string;
+  readonly autoPush: boolean;
+  readonly autoFetch: boolean;
   readonly lastSyncedCommit?: string;
   readonly isGitRepo: boolean;
 }
@@ -97,6 +100,9 @@ export async function getGitStatus(locttDir: string, root: string): Promise<GitS
     return {
       enabled: false,
       branch: DEFAULT_GIT_BRANCH,
+      remote: DEFAULT_GIT_REMOTE,
+      autoPush: DEFAULT_GIT_AUTO_PUSH,
+      autoFetch: DEFAULT_GIT_AUTO_FETCH,
       isGitRepo: gitRepo,
     };
   }
@@ -106,6 +112,9 @@ export async function getGitStatus(locttDir: string, root: string): Promise<GitS
     return {
       enabled: state.git.enabled,
       branch: state.git.branch,
+      remote: state.git.remote,
+      autoPush: state.git.auto_push,
+      autoFetch: state.git.auto_fetch,
       lastSyncedCommit: state.git.last_synced_commit,
       isGitRepo: gitRepo,
     };
@@ -113,6 +122,9 @@ export async function getGitStatus(locttDir: string, root: string): Promise<GitS
     return {
       enabled: false,
       branch: DEFAULT_GIT_BRANCH,
+      remote: DEFAULT_GIT_REMOTE,
+      autoPush: DEFAULT_GIT_AUTO_PUSH,
+      autoFetch: DEFAULT_GIT_AUTO_FETCH,
       isGitRepo: gitRepo,
     };
   }

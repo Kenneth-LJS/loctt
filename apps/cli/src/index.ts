@@ -2,6 +2,7 @@ import { isAbsolute, resolve as resolvePath } from "node:path";
 
 import type { HistoryEntry } from "@loctt/contracts";
 import {
+  appendTaskBody,
   archiveTask,
   attachFile,
   AttachmentExistsError,
@@ -60,7 +61,7 @@ Commands:
   archive <task>
   unarchive <task>
   delete <task> --force
-  body <task> [--set <text>]
+  body <task> [--set <text>] [--append <text>]
   log <task> [--limit <n>]
   attach <task> <file-path> [--force]
   detach <task> <name>
@@ -81,15 +82,22 @@ function hasFlag(args: string[], flag: string): boolean {
   return args.includes(flag);
 }
 
+function formatValue(v: unknown): string {
+  if (v === null || v === undefined) return "(none)";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean" || typeof v === "bigint") return String(v);
+  return JSON.stringify(v);
+}
+
 function formatHistoryEntry(entry: HistoryEntry): string {
   const ts = entry.timestamp;
   switch (entry.kind) {
     case "created":
       return `${ts}  created`;
     case "field_change":
-      return `${ts}  ${entry.field}: ${String(entry.before ?? "(none)")} → ${String(entry.after ?? "(none)")}`;
+      return `${ts}  ${entry.field}: ${formatValue(entry.before)} → ${formatValue(entry.after)}`;
     case "custom_field_change":
-      return `${ts}  ${entry.field}: ${String(entry.before ?? "(none)")} → ${String(entry.after ?? "(none)")}`;
+      return `${ts}  ${entry.field}: ${formatValue(entry.before)} → ${formatValue(entry.after)}`;
     case "label_added":
       return `${ts}  label added: ${String(entry.after)}`;
     case "label_removed":
@@ -379,16 +387,25 @@ export async function main(): Promise<void> {
       case "body": {
         const ref = args[1];
         if (!ref) {
-          console.error("Usage: loctt body <task> [--set <text>]");
+          console.error("Usage: loctt body <task> [--set <text>] [--append <text>]");
+          process.exitCode = 1;
+          break;
+        }
+        const newBody = getArg(args, "--set");
+        const appendText = getArg(args, "--append");
+        if (newBody !== undefined && appendText !== undefined) {
+          console.error("Error: --set and --append are mutually exclusive");
           process.exitCode = 1;
           break;
         }
         const locttDir = resolveLocttDir(root);
         const task = await lookupTask(locttDir, ref);
-        const newBody = getArg(args, "--set");
         if (newBody !== undefined) {
           await writeTaskBody(locttDir, task.frontmatter.id, newBody + "\n");
           console.log(`Updated body for ${task.frontmatter.key}`);
+        } else if (appendText !== undefined) {
+          await appendTaskBody(locttDir, task.frontmatter.id, appendText);
+          console.log(`Appended to body for ${task.frontmatter.key}`);
         } else {
           const body = await readTaskBody(locttDir, task.frontmatter.id);
           if (body.trim()) {
@@ -564,6 +581,9 @@ export async function main(): Promise<void> {
             const status = await getGitStatus(locttDir, root);
             console.log(`Enabled: ${status.enabled}`);
             console.log(`Branch: ${status.branch}`);
+            console.log(`Remote: ${status.remote}`);
+            console.log(`Auto-push: ${status.autoPush}`);
+            console.log(`Auto-fetch: ${status.autoFetch}`);
             console.log(`Inside git repo: ${status.isGitRepo}`);
             if (status.lastSyncedCommit) {
               console.log(`Last synced commit: ${status.lastSyncedCommit}`);

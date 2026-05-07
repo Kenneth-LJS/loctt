@@ -65,3 +65,25 @@ export async function writeTaskBody(locttDir: string, taskId: string, newBody: s
   await atomicWrite(filePath, assembled);
   await appendHistory(locttDir, taskId, [{ timestamp: now, kind: "body_edited" }]);
 }
+
+/**
+ * Appends text to a task's markdown body, separating it from the existing
+ * content with a blank line. Empty bodies just become the appended text.
+ *
+ * Single source of truth for append spacing — both CLI `body --append` and
+ * MCP `append_task_body` go through this so their behavior can't drift.
+ */
+export async function appendTaskBody(locttDir: string, taskId: string, text: string): Promise<void> {
+  const current = await readTaskBody(locttDir, taskId);
+  let next: string;
+  if (current.length === 0) {
+    next = text + "\n";
+  } else if (current.endsWith("\n\n")) {
+    next = current + text + "\n";
+  } else if (current.endsWith("\n")) {
+    next = current + "\n" + text + "\n";
+  } else {
+    next = current + "\n\n" + text + "\n";
+  }
+  await writeTaskBody(locttDir, taskId, next);
+}
