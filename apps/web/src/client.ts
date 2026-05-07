@@ -9,6 +9,26 @@ import type {
   TrackerInfoResponse,
 } from "@loctt/contracts";
 
+/** Result of a successful attach upload. */
+export interface AttachResultResponse {
+  readonly name: string;
+  readonly size: number;
+  readonly overwritten: boolean;
+  readonly task_key: string;
+}
+
+/**
+ * Thrown when an attachment upload fails because a file with the same name
+ * already exists and `force` was not set. Frontend code can catch this
+ * specifically to prompt the user to overwrite.
+ */
+export class AttachmentExistsError extends Error {
+  readonly name = "AttachmentExistsError" as const;
+  constructor(message: string) {
+    super(message);
+  }
+}
+
 /** HTTP client for the co-located API. Used internally by the web UI. */
 export class LocttClient {
   private readonly base: string;
@@ -103,5 +123,52 @@ export class LocttClient {
       method: "POST",
       body: JSON.stringify({ type, target }),
     });
+  }
+
+  async attachFile(
+    ref: string,
+    file: File | Blob,
+    opts?: { force?: boolean; filename?: string },
+  ): Promise<AttachResultResponse> {
+    const form = new FormData();
+    const filename = opts?.filename
+      ?? (file instanceof File ? file.name : "upload");
+    form.append("file", file, filename);
+    const qs = opts?.force ? "?force=true" : "";
+    const res = await fetch(
+      `${this.base}/api/tasks/${encodeURIComponent(ref)}/attachments${qs}`,
+      {
+        method: "POST",
+        headers: { "X-Loctt-Client": "1" },
+        body: form,
+      },
+    );
+    if (!res.ok) {
+      const body: { error?: string } = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
+      const message = body.error ?? `HTTP ${res.status}`;
+      if (res.status === 409) {
+        throw new AttachmentExistsError(message);
+      }
+      throw new Error(message);
+    }
+    return res.json() as Promise<AttachResultResponse>;
+  }
+
+  async detachFile(ref: string, name: string): Promise<void> {
+    const res = await fetch(
+      `${this.base}/api/tasks/${encodeURIComponent(ref)}/attachments/${encodeURIComponent(name)}`,
+      {
+        method: "DELETE",
+        headers: { "X-Loctt-Client": "1" },
+      },
+    );
+    if (!res.ok) {
+      const body: { error?: string } = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
+      throw new Error(body.error ?? `HTTP ${res.status}`);
+    }
+  }
+
+  getAttachmentUrl(ref: string, name: string): string {
+    return `${this.base}/api/tasks/${encodeURIComponent(ref)}/attachments/${encodeURIComponent(name)}`;
   }
 }

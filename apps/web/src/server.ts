@@ -1,4 +1,8 @@
+import { createReadStream } from "node:fs";
+import { mkdtemp, rm, stat as fsStat } from "node:fs/promises";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join as pathJoin } from "node:path";
 
 import type {
   ConfigResponse,
@@ -12,10 +16,16 @@ import type {
 } from "@loctt/contracts";
 import {
   archiveTask,
+  attachFile,
+  AttachmentExistsError,
+  AttachmentNotFoundError,
+  AttachmentSourceError,
   buildListContext,
   buildShowModel,
   createTask,
   deleteTask,
+  detachFile,
+  getAttachmentPath,
   getTrackerInfo,
   linkTask,
   listTasks,
@@ -30,10 +40,13 @@ import {
   runDoctor,
   saveState,
   setField,
+  TaskNotFoundError,
   unarchiveTask,
   unlinkTask,
   unsetField,
 } from "@loctt/core";
+
+import { parseMultipartFile } from "./multipart.js";
 
 const DEFAULT_PORT = 4321;
 
@@ -316,8 +329,145 @@ export function createWebApp(options: WebAppOptions) {
         return;
       }
 
+      const attachUploadRef = matchRoute(path, /^\/api\/tasks\/([^/]+)\/attachments$/);
+      if (attachUploadRef !== undefined && req.method === "POST") {
+        const ref = attachUploadRef;
+        if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+
+        const task = await lookupTask(locttDir, ref);
+
+        const contentType = req.headers["content-type"] ?? "";
+        if (!/^multipart\/form-data\s*;/i.test(contentType)) {
+          error(res, "Content-Type must be multipart/form-data", 400);
+          return;
+        }
+
+        const force = url.searchParams.get("force") === "true";
+
+        const tmpParent = await mkdtemp(pathJoin(tmpdir(), "loctt-upload-"));
+        let tmpFilePath: string | undefined;
+        try {
+          let parsed;
+          try {
+            parsed = await parseMultipartFile(req, contentType, tmpParent, "file");
+          } catch (parseErr) {
+            error(res, (parseErr as Error).message, 400);
+            return;
+          }
+          tmpFilePath = parsed.tempPath;
+
+          // Use the multipart filename as the destination basename.
+          // attachFile will derive basename from the source path, so we need
+          // a source path whose basename matches the desired filename.
+          // parseMultipartFile already wrote the file under that basename.
+          try {
+            const result = await attachFile({
+              locttDir,
+              taskId: task.frontmatter.id,
+              sourcePath: tmpFilePath,
+              force,
+            });
+            json(res, {
+              name: result.name,
+              size: result.size,
+              overwritten: result.overwritten,
+              task_key: task.frontmatter.key,
+            }, 201);
+            return;
+          } catch (err) {
+            if (err instanceof AttachmentExistsError) {
+              error(res, err.message, 409);
+              return;
+            }
+            if (err instanceof AttachmentSourceError) {
+              error(res, err.message, 400);
+              return;
+            }
+            throw err;
+          }
+        } finally {
+          await rm(tmpParent, { recursive: true, force: true }).catch(() => undefined);
+        }
+      }
+
+      const attachItemMatch = /^\/api\/tasks\/([^/]+)\/attachments\/([^/]+)$/.exec(path);
+      if (attachItemMatch && (req.method === "GET" || req.method === "DELETE")) {
+        const ref = attachItemMatch[1]!;
+        const rawName = decodeURIComponent(attachItemMatch[2]!);
+        if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+        if (
+          rawName.length === 0
+          || rawName.includes("/")
+          || rawName.includes("\\")
+          || rawName.includes("\0")
+          || rawName === "."
+          || rawName === ".."
+          || rawName.split(/[/\\]/).some(p => p === "..")
+        ) {
+          error(res, "Invalid attachment name", 400);
+          return;
+        }
+
+        const task = await lookupTask(locttDir, ref);
+
+        if (req.method === "GET") {
+          let filePath: string;
+          try {
+            filePath = getAttachmentPath(locttDir, task.frontmatter.id, rawName);
+          } catch {
+            error(res, "Invalid attachment name", 400);
+            return;
+          }
+          let fileStat;
+          try {
+            fileStat = await fsStat(filePath);
+          } catch {
+            error(res, "Attachment not found", 404);
+            return;
+          }
+          if (!fileStat.isFile()) {
+            error(res, "Attachment not found", 404);
+            return;
+          }
+          res.writeHead(200, {
+            "Content-Type": "application/octet-stream",
+            "Content-Length": String(fileStat.size),
+          });
+          const stream = createReadStream(filePath);
+          stream.on("error", () => { try { res.end(); } catch { /* ignore */ } });
+          stream.pipe(res);
+          return;
+        }
+
+        // DELETE
+        try {
+          await detachFile({
+            locttDir,
+            taskId: task.frontmatter.id,
+            name: rawName,
+          });
+          res.writeHead(204);
+          res.end();
+          return;
+        } catch (err) {
+          if (err instanceof AttachmentNotFoundError) {
+            error(res, err.message, 404);
+            return;
+          }
+          throw err;
+        }
+      }
+
       error(res, "Not found", 404);
     } catch (err) {
+      // 404-map TaskNotFoundError only for attachment endpoints, where the
+      // contract calls for it. Other endpoints have historically returned
+      // 500 for unknown refs; preserve that to avoid breaking existing
+      // clients/tests until the rest of the API is updated separately.
+      if (err instanceof TaskNotFoundError && /^\/api\/tasks\/[^/]+\/attachments(\/|$)/.test(path)) {
+        error(res, err.message, 404);
+        return;
+      }
       console.error(err);
       error(res, "Internal server error", 500);
     }
