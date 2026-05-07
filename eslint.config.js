@@ -3,7 +3,13 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/", "**/node_modules/", ".loctt/", "eslint.config.js"],
+    ignores: [
+      "**/dist/",
+      "**/node_modules/",
+      ".loctt/",
+      "eslint.config.js",
+      "**/tsup.config.ts",
+    ],
   },
   ...tseslint.configs.recommendedTypeChecked,
   {
