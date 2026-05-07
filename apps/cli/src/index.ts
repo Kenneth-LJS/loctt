@@ -1,11 +1,18 @@
+import { isAbsolute, resolve as resolvePath } from "node:path";
+
 import type { HistoryEntry } from "@loctt/contracts";
 import {
   archiveTask,
+  attachFile,
+  AttachmentExistsError,
+  AttachmentNotFoundError,
+  AttachmentSourceError,
   buildListContext,
   buildShowModel,
   CONFIG_KEYS,
   createTask,
   deleteTask,
+  detachFile,
   disableGit,
   enableGit,
   getConfigValue,
@@ -55,6 +62,8 @@ Commands:
   delete <task> --force
   body <task> [--set <text>]
   log <task> [--limit <n>]
+  attach <task> <file-path> [--force]
+  detach <task> <name>
   mcp                              Start the MCP server (stdio)
   web [--port <n>]                 Start the web UI
   git <enable|disable|status|publish|sync>
@@ -422,6 +431,84 @@ export async function main(): Promise<void> {
           for (const entry of display) {
             console.log(formatHistoryEntry(entry));
           }
+        }
+        break;
+      }
+
+      case "attach": {
+        const ref = args[1];
+        const filePath = args[2];
+        if (!ref || !filePath) {
+          console.error("Usage: loctt attach <task> <file-path> [--force]");
+          process.exitCode = 1;
+          break;
+        }
+        const force = hasFlag(args, "--force");
+        const locttDir = resolveLocttDir(root);
+        const task = await lookupTask(locttDir, ref);
+        const sourcePath = isAbsolute(filePath)
+          ? filePath
+          : resolvePath(process.cwd(), filePath);
+        try {
+          const result = await attachFile({
+            locttDir,
+            taskId: task.frontmatter.id,
+            sourcePath,
+            force,
+          });
+          const prefix = result.overwritten ? "(overwrote existing) " : "";
+          console.log(
+            `${prefix}Attached ${result.name} (${result.size} bytes) to ${task.frontmatter.key}`,
+          );
+        } catch (err) {
+          if (err instanceof AttachmentExistsError) {
+            console.error(
+              `Error: ${err.message}. Use --force to overwrite.`,
+            );
+            process.exitCode = 1;
+            break;
+          }
+          if (err instanceof AttachmentSourceError) {
+            console.error(`Error: ${err.message}`);
+            process.exitCode = 1;
+            break;
+          }
+          throw err;
+        }
+        break;
+      }
+
+      case "detach": {
+        const ref = args[1];
+        const name = args[2];
+        if (!ref || !name) {
+          console.error("Usage: loctt detach <task> <name>");
+          process.exitCode = 1;
+          break;
+        }
+        if (name.includes("/") || name.includes("\\") || name.includes("..")) {
+          console.error(
+            `Error: <name> must be a plain basename (no path separators or '..')`,
+          );
+          process.exitCode = 1;
+          break;
+        }
+        const locttDir = resolveLocttDir(root);
+        const task = await lookupTask(locttDir, ref);
+        try {
+          await detachFile({
+            locttDir,
+            taskId: task.frontmatter.id,
+            name,
+          });
+          console.log(`Detached ${name} from ${task.frontmatter.key}`);
+        } catch (err) {
+          if (err instanceof AttachmentNotFoundError) {
+            console.error(`Error: ${err.message}`);
+            process.exitCode = 1;
+            break;
+          }
+          throw err;
         }
         break;
       }
