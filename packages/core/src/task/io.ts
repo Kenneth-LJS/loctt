@@ -51,19 +51,33 @@ export async function readTaskBody(locttDir: string, taskId: string): Promise<st
 }
 
 /**
- * Replaces the markdown body of a task while preserving frontmatter.
- * Updates `updated_at` to the current time.
+ * Internal helper: reads a task once, applies `transformer` to the body,
+ * bumps `updated_at`, writes atomically, and appends a `body_edited`
+ * history entry. Single read+write — no double parse/serialize.
  */
-export async function writeTaskBody(locttDir: string, taskId: string, newBody: string): Promise<void> {
+async function updateTaskBody(
+  locttDir: string,
+  taskId: string,
+  transformer: (body: string) => string,
+): Promise<void> {
   const filePath = getTaskFilePath(locttDir, taskId);
   const content = await readFile(filePath, "utf-8");
-  const { rawYaml } = splitTaskFile(content);
+  const { rawYaml, body } = splitTaskFile(content);
   const frontmatter = parseFrontmatter(rawYaml);
+  const newBody = transformer(body);
   const now = new Date().toISOString();
   const updated = { ...frontmatter, updated_at: now };
   const assembled = assembleTaskFile(updated, newBody);
   await atomicWrite(filePath, assembled);
   await appendHistory(locttDir, taskId, [{ timestamp: now, kind: "body_edited" }]);
+}
+
+/**
+ * Replaces the markdown body of a task while preserving frontmatter.
+ * Updates `updated_at` to the current time.
+ */
+export async function writeTaskBody(locttDir: string, taskId: string, newBody: string): Promise<void> {
+  await updateTaskBody(locttDir, taskId, () => newBody);
 }
 
 /**
@@ -74,16 +88,15 @@ export async function writeTaskBody(locttDir: string, taskId: string, newBody: s
  * MCP `append_task_body` go through this so their behavior can't drift.
  */
 export async function appendTaskBody(locttDir: string, taskId: string, text: string): Promise<void> {
-  const current = await readTaskBody(locttDir, taskId);
-  let next: string;
-  if (current.length === 0) {
-    next = text + "\n";
-  } else if (current.endsWith("\n\n")) {
-    next = current + text + "\n";
-  } else if (current.endsWith("\n")) {
-    next = current + "\n" + text + "\n";
-  } else {
-    next = current + "\n\n" + text + "\n";
-  }
-  await writeTaskBody(locttDir, taskId, next);
+  await updateTaskBody(locttDir, taskId, (current) => {
+    if (current.length === 0) {
+      return text + "\n";
+    } else if (current.endsWith("\n\n")) {
+      return current + text + "\n";
+    } else if (current.endsWith("\n")) {
+      return current + "\n" + text + "\n";
+    } else {
+      return current + "\n\n" + text + "\n";
+    }
+  });
 }
