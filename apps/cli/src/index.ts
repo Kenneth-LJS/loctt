@@ -49,6 +49,8 @@ Commands:
   init [--prefix <prefix>] [--no-docs] [--yes]
   info
   doctor
+  views                            List saved views from queries.yaml
+  schema                           Show the workflow config (statuses, priorities, etc.)
   create <title> [--status <s>] [--priority <p>] [--type <t>]
   list [--query <q>] [--view <v>] [--limit <n>] [--archived]
                                    --archived: include archived tasks
@@ -166,6 +168,75 @@ export async function main(): Promise<void> {
         }
         const hasError = checks.some(c => c.status === "error");
         if (hasError) process.exitCode = 1;
+        break;
+      }
+
+      case "views": {
+        const locttDir = resolveLocttDir(root);
+        const { queriesConfig } = await loadOptionalConfigs(locttDir);
+        if (!queriesConfig || queriesConfig.queries.length === 0) {
+          console.log("No saved views.");
+          break;
+        }
+        for (const v of queriesConfig.queries) {
+          const sortPart = v.sort && v.sort.length > 0
+            ? `  [sort: ${v.sort.map(s => `${s.field} ${s.direction}`).join(", ")}]`
+            : "";
+          console.log(`${v.name}  ${v.query}${sortPart}`);
+        }
+        break;
+      }
+
+      case "schema": {
+        const locttDir = resolveLocttDir(root);
+        const { workflowConfig } = await loadOptionalConfigs(locttDir);
+        if (!workflowConfig) {
+          console.log("No workflow config found.");
+          break;
+        }
+        console.log(`Key prefix: ${workflowConfig.key.prefix}`);
+        console.log("");
+        console.log("Statuses:");
+        for (const s of workflowConfig.statuses) {
+          console.log(`  ${s.key} (${s.category}): ${s.label}`);
+        }
+        if (workflowConfig.priorities.length > 0) {
+          console.log("");
+          console.log("Priorities:");
+          for (const p of workflowConfig.priorities) {
+            const valuePart = p.value !== undefined ? ` [${p.value}]` : "";
+            console.log(`  ${p.key}: ${p.label}${valuePart}`);
+          }
+        }
+        if (workflowConfig.task_types.length > 0) {
+          console.log("");
+          console.log("Task types:");
+          for (const t of workflowConfig.task_types) {
+            console.log(`  ${t.key}: ${t.label}`);
+          }
+        }
+        if (workflowConfig.relationships.length > 0) {
+          console.log("");
+          console.log("Relationships:");
+          for (const r of workflowConfig.relationships) {
+            const structural = r.structural ? " [structural]" : "";
+            console.log(`  ${r.key} (${r.label}) ↔ ${r.inverse} (${r.inverse_label})${structural}`);
+          }
+        }
+        if (workflowConfig.custom_fields.length > 0) {
+          console.log("");
+          console.log("Custom fields:");
+          for (const f of workflowConfig.custom_fields) {
+            const multi = f.multi ? " multi" : "";
+            const searchable = f.searchable ? " searchable" : "";
+            console.log(`  ${f.key} (${f.type}${multi}${searchable}): ${f.label}`);
+            if (f.values && f.values.length > 0) {
+              for (const v of f.values) {
+                console.log(`    - ${v.key}: ${v.label}`);
+              }
+            }
+          }
+        }
         break;
       }
 
