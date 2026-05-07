@@ -30,6 +30,17 @@ describe("CLI link relationship edge cases (spawned binary)", () => {
     });
   });
 
+  it("rejects a self-link", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "first"], { cwd: root });
+
+      const result = await runCli(["link", "T-1", "blocks", "T-1"], { cwd: root });
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain("cannot link a task to itself");
+      expect(result.stderr).toContain("T-1");
+    });
+  });
+
   it("rejects a link from a nonexistent source", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "first"], { cwd: root });

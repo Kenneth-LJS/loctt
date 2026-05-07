@@ -44,6 +44,25 @@ describe("MCP link_tasks relationship edge cases (stdio)", () => {
     });
   });
 
+  it("returns isError for a self-link", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "first"], { cwd: root });
+
+      const client = await startMcpClient(root);
+      try {
+        const result = await client.callTool("link_tasks", {
+          ref: "T-1",
+          type: "blocks",
+          target: "T-1",
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text ?? "").toContain("cannot link a task to itself");
+      } finally {
+        await client.close();
+      }
+    });
+  });
+
   it("returns isError for a link from a nonexistent source", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "first"], { cwd: root });
