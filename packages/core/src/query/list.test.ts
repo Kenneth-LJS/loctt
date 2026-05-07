@@ -1,6 +1,7 @@
 import type { QueriesConfig, Task, WorkflowConfig } from "@loctt/contracts";
 import { describe, expect,it } from "vitest";
 
+import { QueriesConfigError } from "../config/queries.js";
 import { listTasks, resolveView } from "./list.js";
 
 const config: WorkflowConfig = {
@@ -127,6 +128,13 @@ describe("listTasks", () => {
   it("throws for unknown view", () => {
     expect(() => listTasks({ tasks, options: { view: "bogus" }, queriesConfig, workflowConfig: config }))
       .toThrow("unknown view");
+  });
+
+  it("throws QueriesConfigError when --view is requested but queriesConfig is missing", () => {
+    expect(() => listTasks({ tasks, options: { view: "anything" } }))
+      .toThrow(QueriesConfigError);
+    expect(() => listTasks({ tasks, options: { view: "anything" } }))
+      .toThrow(/Cannot use --view 'anything': no queries\.yaml found\./);
   });
 
   describe("archived filtering", () => {

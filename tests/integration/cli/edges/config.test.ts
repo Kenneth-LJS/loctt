@@ -55,4 +55,15 @@ describe("CLI workflow / queries config edge cases (spawned binary)", () => {
       expect(result.stderr).toMatch(/unknown view|no_such_view/);
     });
   });
+
+  it("list --view <name> errors when queries.yaml is missing (not silently ignored)", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "t"], { cwd: root });
+      await rm(path.join(root, ".loctt", "config", "queries.yaml"));
+
+      const result = await runCli(["list", "--view", "recent-open"], { cwd: root });
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain("Cannot use --view 'recent-open': no queries.yaml found.");
+    });
+  });
 });
