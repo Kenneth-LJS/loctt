@@ -184,6 +184,74 @@ describe("relationships", () => {
     });
   });
 
+  describe("structural cycle detection", () => {
+    const seedC: Task = {
+      frontmatter: {
+        id: "c",
+        key: "T-3",
+        title: "C",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      body: "",
+    };
+
+    it("rejects a direct cycle on a structural relationship", async () => {
+      await seedAB();
+      await linkTask({ locttDir, taskId: "a", type: "parent", target: "b", workflowConfig: workflow });
+      await expect(
+        linkTask({ locttDir, taskId: "b", type: "parent", target: "a", workflowConfig: workflow }),
+      ).rejects.toThrow(/cannot create cycle in structural relationship 'parent'/);
+    });
+
+    it("rejects an indirect cycle on a structural relationship", async () => {
+      await seedAB();
+      await writeTask(locttDir, "c", seedC);
+      await linkTask({ locttDir, taskId: "a", type: "parent", target: "b", workflowConfig: workflow });
+      await linkTask({ locttDir, taskId: "b", type: "parent", target: "c", workflowConfig: workflow });
+      await expect(
+        linkTask({ locttDir, taskId: "c", type: "parent", target: "a", workflowConfig: workflow }),
+      ).rejects.toThrow(/cannot create cycle in structural relationship 'parent'/);
+    });
+
+    it("allows multiple children of the same parent (no cycle)", async () => {
+      await seedAB();
+      await writeTask(locttDir, "c", seedC);
+      await linkTask({ locttDir, taskId: "b", type: "parent", target: "a", workflowConfig: workflow });
+      await linkTask({ locttDir, taskId: "c", type: "parent", target: "a", workflowConfig: workflow });
+      const a = await readTask(locttDir, "a");
+      // A has two children: B and C
+      expect(a.frontmatter.relationships).toHaveLength(2);
+    });
+
+    it("allows cycles on non-structural relationships", async () => {
+      await seedAB();
+      await writeTask(locttDir, "c", seedC);
+      await linkTask({ locttDir, taskId: "a", type: "blocks", target: "b", workflowConfig: workflow });
+      await linkTask({ locttDir, taskId: "b", type: "blocks", target: "c", workflowConfig: workflow });
+      // Closing the loop should succeed.
+      await linkTask({ locttDir, taskId: "c", type: "blocks", target: "a", workflowConfig: workflow });
+      const c = await readTask(locttDir, "c");
+      expect(c.frontmatter.relationships?.some(r => r.type === "blocks" && r.target === "a")).toBe(true);
+    });
+
+    it("does not crash when a chain points at a deleted intermediate task", async () => {
+      // Set up A with a parent edge pointing to a non-existent task ID.
+      await writeTask(locttDir, "a", {
+        ...seedA,
+        frontmatter: {
+          ...seedA.frontmatter,
+          relationships: [{ type: "parent", target: "ghost" }],
+        },
+      });
+      await writeTask(locttDir, "c", seedC);
+      // Now link C parent A; cycle DFS walks from A -> ghost (deleted), should not crash.
+      await linkTask({ locttDir, taskId: "c", type: "parent", target: "a", workflowConfig: workflow });
+      const c = await readTask(locttDir, "c");
+      expect(c.frontmatter.relationships?.some(r => r.type === "parent" && r.target === "a")).toBe(true);
+    });
+  });
+
   describe("unlinkTask (bilateral)", () => {
     it("removes the forward edge and the inverse edge", async () => {
       await seedAB();

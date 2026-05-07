@@ -2,6 +2,7 @@ import type { HistoryEntry, Task, TaskFrontmatter, TaskRelationship, WorkflowCon
 
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
+import { lookupById, TaskNotFoundError } from "./lookup.js";
 
 export class RelationshipError extends Error {
   constructor(message: string) {
@@ -71,6 +72,53 @@ function removeEdge(
   return [...existing.slice(0, idx), ...existing.slice(idx + 1)];
 }
 
+/**
+ * For a structural relationship `type`, check whether adding the edge
+ * `sourceId -[type]-> targetId` would form a cycle. Walks outgoing edges of
+ * the same `type` from `targetId` (DFS over `frontmatter.relationships[].target`
+ * filtered by type). If any path reaches `sourceId`, a cycle would form.
+ *
+ * Returns the cycle path (target...sourceId) when a cycle would form, else null.
+ * Stops walking branches that lead into deleted tasks. Bounded at 1000 visits
+ * as a safety net for absurd graphs.
+ */
+async function findStructuralCycle(
+  locttDir: string,
+  sourceId: string,
+  targetId: string,
+  type: string,
+): Promise<string[] | null> {
+  const MAX_VISITS = 1000;
+  const visited = new Set<string>();
+  // DFS stack holds [nodeId, pathFromTargetIncludingThisNode]
+  const stack: { id: string; path: string[] }[] = [{ id: targetId, path: [targetId] }];
+
+  while (stack.length > 0) {
+    if (visited.size > MAX_VISITS) return null;
+    const { id, path } = stack.pop() as { id: string; path: string[] };
+    if (id === sourceId) {
+      return path;
+    }
+    if (visited.has(id)) continue;
+    visited.add(id);
+
+    let task: Task;
+    try {
+      task = await lookupById(locttDir, id);
+    } catch (err) {
+      if (err instanceof TaskNotFoundError) continue;
+      throw err;
+    }
+
+    const rels = task.frontmatter.relationships ?? [];
+    for (const rel of rels) {
+      if (rel.type !== type) continue;
+      stack.push({ id: rel.target, path: [...path, rel.target] });
+    }
+  }
+  return null;
+}
+
 function applyRelationships(
   frontmatter: TaskFrontmatter,
   relationships: TaskRelationship[],
@@ -119,6 +167,33 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
     throw new RelationshipError(
       `cannot link a task to itself (${task.frontmatter.key})`,
     );
+  }
+
+  // Cycle detection for structural relationships only.
+  if (workflowConfig) {
+    const relDef = workflowConfig.relationships.find(r => r.key === type);
+    if (relDef?.structural) {
+      const cyclePath = await findStructuralCycle(locttDir, taskId, target, type);
+      if (cyclePath) {
+        // Build a readable arrow trail using keys where possible.
+        const keys: string[] = [task.frontmatter.key];
+        for (const id of cyclePath) {
+          if (id === taskId) {
+            keys.push(task.frontmatter.key);
+            continue;
+          }
+          try {
+            const t = await lookupById(locttDir, id);
+            keys.push(t.frontmatter.key);
+          } catch {
+            keys.push(id);
+          }
+        }
+        throw new RelationshipError(
+          `cannot create cycle in structural relationship '${type}': ${keys.join(" -> ")}`,
+        );
+      }
+    }
   }
 
   const forwardExisting = task.frontmatter.relationships ?? [];
