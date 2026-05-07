@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -127,6 +127,19 @@ describe("attachments", () => {
       const dst = getAttachmentPath(locttDir, taskId, "passwd");
       const st = await stat(dst);
       expect(st.isFile()).toBe(true);
+    });
+
+    it("rejects symlinks outright", async () => {
+      const target = await makeSource("real.txt", "real");
+      const link = join(sourceDir, "linky.txt");
+      await symlink(target, link);
+
+      await expect(
+        attachFile({ locttDir, taskId, sourcePath: link }),
+      ).rejects.toBeInstanceOf(AttachmentSourceError);
+      await expect(
+        attachFile({ locttDir, taskId, sourcePath: link }),
+      ).rejects.toThrow(/symlink/);
     });
 
     it("rejects dotfiles", async () => {

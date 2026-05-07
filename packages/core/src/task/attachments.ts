@@ -1,5 +1,5 @@
-import { copyFile, lstat, mkdir, readlink, stat, unlink } from "node:fs/promises";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { copyFile, lstat, mkdir, stat, unlink } from "node:fs/promises";
+import { basename, isAbsolute, resolve } from "node:path";
 
 import type { HistoryEntry } from "@loctt/contracts";
 
@@ -71,8 +71,8 @@ export class AttachmentSourceError extends Error {
  *   `/tmp/foo/../../etc/passwd`.
  * - The destination basename is validated as a plain basename: no path
  *   separators, no `..`, no null bytes, no leading dot.
- * - Symlinks are resolved exactly once; the resolved target is copied,
- *   but no further symlink chasing is performed during the copy itself.
+ * - Symlinks are rejected outright; callers must pass the path to the
+ *   target file directly.
  * - If the destination already exists and `force` is not true, throws
  *   `AttachmentExistsError`. If `force` is true, overwrites.
  * - On success, appends an `attachment_added` history entry with
@@ -87,8 +87,9 @@ export async function attachFile(opts: AttachOptions): Promise<AttachResult> {
     ? sourcePath
     : resolve(process.cwd(), sourcePath);
 
-  // Resolve symlink once (don't traverse arbitrarily).
-  let copySource = absSource;
+  // Reject symlinks outright. We don't want to silently copy the target
+  // contents under the link's basename — that's misleading. The caller
+  // should pass the target path directly.
   let lst;
   try {
     lst = await lstat(absSource);
@@ -96,25 +97,17 @@ export async function attachFile(opts: AttachOptions): Promise<AttachResult> {
     throw new AttachmentSourceError(`source file does not exist: ${sourcePath}`);
   }
   if (lst.isSymbolicLink()) {
-    const link = await readlink(absSource);
-    copySource = isAbsolute(link) ? link : resolve(dirname(absSource), link);
-  }
-
-  // Stat the resolved target to validate it's a regular file.
-  let st;
-  try {
-    st = await stat(copySource);
-  } catch {
     throw new AttachmentSourceError(
-      `source file does not exist: ${sourcePath}`,
+      `source path is a symlink; attach the target file directly: ${absSource}`,
     );
   }
-  if (st.isDirectory()) {
+  if (lst.isDirectory()) {
     throw new AttachmentSourceError("attachments must be regular files");
   }
-  if (!st.isFile()) {
+  if (!lst.isFile()) {
     throw new AttachmentSourceError("attachments must be regular files");
   }
+  const copySource = absSource;
 
   // Always derive the destination basename from the original source path
   // (using path.basename), then validate. This means a source like
