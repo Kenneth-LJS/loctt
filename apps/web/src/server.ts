@@ -460,11 +460,8 @@ export function createWebApp(options: WebAppOptions) {
 
       error(res, "Not found", 404);
     } catch (err) {
-      // 404-map TaskNotFoundError only for attachment endpoints, where the
-      // contract calls for it. Other endpoints have historically returned
-      // 500 for unknown refs; preserve that to avoid breaking existing
-      // clients/tests until the rest of the API is updated separately.
-      if (err instanceof TaskNotFoundError && /^\/api\/tasks\/[^/]+\/attachments(\/|$)/.test(path)) {
+      // Unknown task refs are 404 across the board.
+      if (err instanceof TaskNotFoundError) {
         error(res, err.message, 404);
         return;
       }
