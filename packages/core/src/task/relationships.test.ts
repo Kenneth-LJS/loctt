@@ -155,6 +155,19 @@ describe("relationships", () => {
       expect(b.frontmatter.relationships).toEqual([{ type: "blocked_by", target: "a" }]);
     });
 
+    it("rejects self-links and leaves the task frontmatter unchanged", async () => {
+      await seedAB();
+      const before = await readTask(locttDir, "a");
+      await expect(
+        linkTask({ locttDir, taskId: "a", type: "blocks", target: "a", workflowConfig: workflow }),
+      ).rejects.toThrow(RelationshipError);
+      await expect(
+        linkTask({ locttDir, taskId: "a", type: "blocks", target: "a", workflowConfig: workflow }),
+      ).rejects.toThrow(/cannot link a task to itself \(T-1\)/);
+      const after = await readTask(locttDir, "a");
+      expect(after.frontmatter).toEqual(before.frontmatter);
+    });
+
     it("rejects unknown relationship types", async () => {
       await seedAB();
       await expect(linkTask({ locttDir, taskId: "a", type: "bogus", target: "b", workflowConfig: workflow }))

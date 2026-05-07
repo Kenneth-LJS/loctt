@@ -110,20 +110,25 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
   }
 
   const inverseType = findInverseType(workflowConfig, type);
-  const isSelfLink = taskId === target;
   const now = new Date().toISOString();
 
   // Forward side
   const task = await readTask(locttDir, taskId);
+
+  if (task.frontmatter.id === target) {
+    throw new RelationshipError(
+      `cannot link a task to itself (${task.frontmatter.key})`,
+    );
+  }
+
   const forwardExisting = task.frontmatter.relationships ?? [];
   const forwardUpdatedRels = addEdge(forwardExisting, type, target);
 
-  // Inverse side. Skip when there's no inverse defined or it's a self-link
-  // (writing the inverse to the same task would either duplicate or be a no-op).
+  // Inverse side. Skip when there's no inverse defined.
   let inverseTask: Task | undefined;
   let inverseUpdatedRels: TaskRelationship[] | null = null;
 
-  if (inverseType && !isSelfLink) {
+  if (inverseType) {
     inverseTask = await readTask(locttDir, target);
     const inverseExisting = inverseTask.frontmatter.relationships ?? [];
     inverseUpdatedRels = addEdge(inverseExisting, inverseType, taskId);
