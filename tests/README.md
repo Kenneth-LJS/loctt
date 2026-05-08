@@ -90,28 +90,46 @@ Every operation has up to three frontends:
 
 ### CLI ↔ MCP operation parity map
 
+Loctt aims for full parity between the CLI and the MCP server: an LLM agent should be able to do anything a human user can, including bootstrapping trackers and managing git infrastructure. The only CLI commands without an MCP equivalent are server-lifecycle commands (which can't expose tools to start themselves) and `help`.
+
 | Operation | CLI | MCP |
 |---|---|---|
+| Init | `init [--prefix <p>] [--no-docs]` | `init` (server's bound root only) |
+| Tracker info | `info` | `info` |
+| Doctor | `doctor` | `doctor` |
+| List saved views | `views` | `list_views` |
+| Show workflow config | `schema` | `get_config` |
 | Create | `create <title> [--status --priority --type]` | `create_task` |
 | Read one | `show <ref>` | `get_task` |
-| List | `list [--query --view --limit]` | `list_tasks` |
-| List views | *(none)* | `list_views` |
-| Read config | *(via `info`)* | `get_config` |
+| List | `list [--query --view --limit --archived]` | `list_tasks` |
 | Set field | `set <ref> <field> <value>` | `update_task` |
 | Unset field | `unset <ref> <field>` | `unset_field` |
 | Replace body | `body <ref> --set <text>` | `replace_task_body` |
-| Append body | *(none — known gap)* | `append_task_body` |
+| Append body | `body <ref> --append <text>` | `append_task_body` |
 | Archive | `archive <ref>` | `archive_task` |
 | Unarchive | `unarchive <ref>` | `unarchive_task` |
 | Delete | `delete <ref> --force` | `delete_task` (needs `confirm: true`) |
 | Link | `link <ref> <rel> <target>` | `link_tasks` |
 | Unlink | `unlink <ref> <rel> <target>` | `unlink_tasks` |
 | History | `log <ref> [--limit]` | `task_history` |
-| Git enable/disable/status | `git enable` / `git disable` / `git status` | *(none — by design)* |
-| Git publish/sync | `git publish` / `git sync` | *(none — by design)* |
-| Config | `config <get|set|unset|list> [key] [value]` | *(read-only via `get_config`)* |
+| Attach | `attach <ref> <path> [--force]` | `attach_file` |
+| Detach | `detach <ref> <name>` | `detach_file` |
+| Git enable | `git enable` | `git_enable` |
+| Git disable | `git disable` | `git_disable` |
+| Git status | `git status` | `git_status` |
+| Git publish | `git publish` | `git_publish` |
+| Git sync | `git sync` | `git_sync` |
+| Config get | `config get <key>` | `config_get` |
+| Config set | `config set <key> <value>` | `config_set` |
+| Config unset | `config unset <key>` | `config_unset` |
+| Config list | `config list` | `config_list` |
 
-Parity tests codify the known gaps.
+**CLI-only (by definition):**
+- `mcp` — starts the MCP server itself.
+- `web` — starts the web HTTP server.
+- `help` / `--help` / `-h` — usage text. MCP equivalent is `tools/list`.
+
+The parity runner asserts byte-equal `.loctt/` state across surfaces for the operations that exist on both. The MCP-specific tool descriptions for higher-authority operations (`init`, `git_enable`, `git_publish`, `config_set`, `config_unset`) include intent guidance reminding the agent these are infrastructure changes, not routine task edits.
 
 ### Modes
 
