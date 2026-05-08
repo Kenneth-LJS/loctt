@@ -91,11 +91,39 @@ npx tsc --build --watch
 Tests use vitest. Run from the root to test everything, or from a workspace directory for focused testing:
 
 ```bash
-npm run test                           # All workspaces
+npm run test                           # Workspace unit + thin integration tests
 cd packages/core && npm run test       # Just core
 ```
 
 Mock only external dependencies (file system, network, timers), never business logic.
+
+### Test suites
+
+The repo has four levels of test, each catching a different class of regression. The integration / E2E / perf suites live under `tests/` and are documented in detail at [tests/README.md](../../tests/README.md).
+
+| Command | What it runs | Catches |
+|---|---|---|
+| `npm run test` | Per-workspace unit + in-process integration | Logic bugs in `packages/core`, `apps/*` source. |
+| `npm run test:integration` | `tests/integration/` against the bundled CLI binary and a real MCP server over stdio | Argv parsing, schema validation, transport errors, CLI ↔ MCP parity drift. |
+| `npm run test:e2e` | `tests/e2e/` user journeys (init → mutate → archive → query, etc.) | Bugs that only show up in multi-step flows. |
+| `npm run test:perf` | `tests/perf/` opt-in stress + concurrency tests | Timing regressions, key-allocation races, state-corruption under load. |
+
+`test:integration` and `test:e2e` rebuild before running (via `pretest:*` hooks). **`test:perf` does NOT rebuild** — run `npm run build` yourself first if you're iterating on CLI / MCP / core source.
+
+There's also a manual smoke script at [`tests/scripts/smoke.sh`](../../tests/scripts/smoke.sh) that mirrors E2E journey #1 against a freshly-built binary. Use it to sanity-check a `dist/` without spinning up Vitest.
+
+### Watch mode for the CLI / MCP bundle
+
+`npm run dev` in `apps/cli` or `apps/mcp` runs `tsup --watch` so the bundled binary rebuilds whenever the source changes:
+
+```bash
+npm run dev --workspace apps/cli
+npm run dev --workspace apps/mcp
+```
+
+This pairs naturally with `npm link --workspace apps/cli` (the global `loctt` binary picks up rebuilds without re-linking) and with the MCP server inside an AI host (after a rebuild you still need to restart the host to pick up the new code — see "MCP Development" below).
+
+For the TypeScript project-references graph (which `apps/*` depend on), use `npx tsc --build --watch` in a separate terminal.
 
 ## MCP Development
 
