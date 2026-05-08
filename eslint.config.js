@@ -53,4 +53,14 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "off",
     },
   },
+  {
+    // LLM runbook verify scripts share a default-export signature
+    // `(root: string) => Promise<void>` so they're awaitable from the
+    // runner. Many read-only scenarios have no await internally, which
+    // is fine — disable require-await for this directory.
+    files: ["tests/llm/verify/**/*.ts", "tests/llm/lib/runner.ts"],
+    rules: {
+      "@typescript-eslint/require-await": "off",
+    },
+  },
 );
