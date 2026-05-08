@@ -776,9 +776,14 @@ export async function main(): Promise<void> {
   }
 }
 
-// Only auto-run when executed directly
+// Only auto-run when executed directly. Resolve both sides through
+// realpath so the guard still fires when invoked via symlinks (npm link,
+// global installs that symlink the bin, nvm shims, etc.).
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-const isDirectRun = process.argv[1] === fileURLToPath(import.meta.url);
+const argv1 = process.argv[1];
+const isDirectRun = argv1 !== undefined
+  && realpathSync(argv1) === fileURLToPath(import.meta.url);
 if (isDirectRun) {
   main().catch((err: unknown) => {
     console.error(`Fatal: ${err instanceof Error ? err.message : String(err)}`);
