@@ -68,6 +68,7 @@ export { evaluateQuery } from "./query/index.js";
 export { buildListContext, listTasks, resolveView } from "./query/index.js";
 export type { KeyIndex } from "./state/index.js";
 export { loadState, parseState, saveState, serializeState, StateError } from "./state/index.js";
+export { withStateLock } from "./state/index.js";
 export { loadSyncState, parseSyncState, saveSyncState, serializeSyncState, SyncStateError } from "./state/index.js";
 export { clearReconcileState, loadReconcileState, parseReconcileState, ReconcileStateError,saveReconcileState, serializeReconcileState } from "./state/index.js";
 export { allocateKey, appendKeyHistory, initKeyAllocation, KeyAllocationError } from "./state/index.js";

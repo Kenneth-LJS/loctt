@@ -10,7 +10,7 @@ export default defineConfig({
   outDir: "dist",
   // Don't clean — tsc --build already placed .d.ts files in dist
   clean: false,
-  external: ["yaml", "ulid"],
+  external: ["yaml", "ulid", "proper-lockfile"],
   noExternal: ["@loctt/core", "@loctt/contracts"],
   esbuildOptions(options) {
     options.alias = {

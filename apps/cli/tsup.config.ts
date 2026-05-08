@@ -16,7 +16,9 @@ export default defineConfig({
   // busboy is CJS-only and uses dynamic require("stream"); tsup's ESM
   // output can't shim that. Keep it external so the CLI loads it as a
   // normal Node module at runtime.
-  external: ["yaml", "ulid", "busboy"],
+  // proper-lockfile is CJS and uses dynamic require for graceful-fs;
+  // bundling into ESM breaks at runtime. Keep external.
+  external: ["yaml", "ulid", "busboy", "proper-lockfile"],
   noExternal: ["@loctt/core", "@loctt/contracts", "@loctt/mcp", "@loctt/web", "@modelcontextprotocol/sdk"],
   esbuildOptions(options) {
     options.alias = {
