@@ -44,6 +44,7 @@ import {
   unarchiveTask,
   unlinkTask,
   unsetField,
+  withStateLock,
 } from "@loctt/core";
 
 import { parseMultipartFile } from "./multipart.js";
@@ -204,10 +205,13 @@ export function createWebApp(options: WebAppOptions) {
   const handleCreateTask: RouteHandler = async ({ req, res, locttDir }) => {
     const body = await readBody(req);
     const request = JSON.parse(body) as CreateTaskRequest;
-    const state = await loadState(locttDir);
     const wfConfig = await loadWorkflowConfig(locttDir);
-    const task = await createTask({ locttDir, state, options: request, workflowConfig: wfConfig });
-    await saveState(locttDir, state);
+    const task = await withStateLock(locttDir, async () => {
+      const state = await loadState(locttDir);
+      const created = await createTask({ locttDir, state, options: request, workflowConfig: wfConfig });
+      await saveState(locttDir, state);
+      return created;
+    });
     json(res, task.frontmatter, 201);
   };
 

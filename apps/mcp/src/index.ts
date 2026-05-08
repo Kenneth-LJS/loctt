@@ -43,6 +43,7 @@ import {
   unlinkTask,
   unsetConfigValue,
   unsetField,
+  withStateLock,
   writeTaskBody,
 } from "@loctt/core";
 import { z } from "zod";
@@ -354,19 +355,22 @@ export async function executeTool(
       }
 
       case "create_task": {
-        const state = await loadState(locttDir);
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
-        const task = await createTask({
-          locttDir, state, workflowConfig,
-          options: {
-            title: args["title"] as string,
-            status: args["status"] as string | undefined,
-            priority: args["priority"] as string | undefined,
-            task_type: args["task_type"] as string | undefined,
-            body: args["body"] as string | undefined,
-          },
+        const task = await withStateLock(locttDir, async () => {
+          const state = await loadState(locttDir);
+          const created = await createTask({
+            locttDir, state, workflowConfig,
+            options: {
+              title: args["title"] as string,
+              status: args["status"] as string | undefined,
+              priority: args["priority"] as string | undefined,
+              task_type: args["task_type"] as string | undefined,
+              body: args["body"] as string | undefined,
+            },
+          });
+          await saveState(locttDir, state);
+          return created;
         });
-        await saveState(locttDir, state);
         return text(`Created ${task.frontmatter.key}: ${task.frontmatter.title}`);
       }
 

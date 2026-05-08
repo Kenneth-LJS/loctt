@@ -1,4 +1,5 @@
-import { mkdir,readFile, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { mkdir,readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import type { LocttState } from "@loctt/contracts";
@@ -72,9 +73,15 @@ export async function loadState(locttDir: string): Promise<LocttState> {
 /**
  * Writes state.yaml to the given .loctt directory.
  * Creates parent directories if needed.
+ *
+ * Uses an atomic temp-file + rename so concurrent readers never observe
+ * a half-written state.yaml. Coordination across writers requires the
+ * caller to hold `withStateLock` around the read-modify-write pair.
  */
 export async function saveState(locttDir: string, state: LocttState): Promise<void> {
   const filePath = getStateFilePath(locttDir);
   await mkdir(dirname(filePath), { recursive: true });
-  await writeFile(filePath, serializeState(state), "utf-8");
+  const tmpPath = `${filePath}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+  await writeFile(tmpPath, serializeState(state), "utf-8");
+  await rename(tmpPath, filePath);
 }

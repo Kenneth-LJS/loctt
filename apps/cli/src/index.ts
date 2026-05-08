@@ -39,6 +39,7 @@ import {
   unlinkTask,
   unsetConfigValue,
   unsetField,
+  withStateLock,
   writeTaskBody,
 } from "@loctt/core";
 
@@ -248,18 +249,21 @@ export async function main(): Promise<void> {
           break;
         }
         const locttDir = resolveLocttDir(root);
-        const state = await loadState(locttDir);
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
-        const task = await createTask({
-          locttDir, state, workflowConfig,
-          options: {
-            title,
-            status: getArg(args, "--status"),
-            priority: getArg(args, "--priority"),
-            task_type: getArg(args, "--type"),
-          },
+        const task = await withStateLock(locttDir, async () => {
+          const state = await loadState(locttDir);
+          const created = await createTask({
+            locttDir, state, workflowConfig,
+            options: {
+              title,
+              status: getArg(args, "--status"),
+              priority: getArg(args, "--priority"),
+              task_type: getArg(args, "--type"),
+            },
+          });
+          await saveState(locttDir, state);
+          return created;
         });
-        await saveState(locttDir, state);
         console.log(`Created ${task.frontmatter.key}: ${task.frontmatter.title}`);
         break;
       }

@@ -46,6 +46,10 @@ Each task has two identifiers:
 
 Keys are allocated sequentially from `state.yaml`. If keys collide during git sync, the task with the earlier `created_at` keeps its key; the other gets rekeyed. Old keys are preserved in `key_history` and remain searchable.
 
+## Concurrency
+
+`state.yaml` is the only file two processes can race on during normal use (every `create` allocates a new key). `saveState` writes via temp-file + rename so readers always observe a complete file, and read-modify-write callers (CLI, MCP, web `create_task`) wrap their critical section in `withStateLock`, a per-tracker advisory lock backed by `proper-lockfile`. The lock is local-only — it does not work safely on NFS or sync folders such as Dropbox / iCloud Drive / OneDrive. Stale locks expire after 10 seconds, so a SIGKILL'd process won't block other writers for longer than that. Lock granularity is per-tracker (the path to `state.yaml`); concurrent mutations within one tracker serialize, while different trackers don't block each other.
+
 ## Data Model
 
 The core entity is a **task**. Tasks can nest indefinitely via `parent`/`child` relationships. There are no separate "epic" or "ticket" types — use `task_type` to distinguish if needed.
