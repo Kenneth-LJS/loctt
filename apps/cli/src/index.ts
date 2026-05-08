@@ -1,4 +1,6 @@
-import { isAbsolute, resolve as resolvePath } from "node:path";
+import { stat as fsStat } from "node:fs/promises";
+import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { HistoryEntry } from "@loctt/contracts";
 import {
@@ -43,6 +45,37 @@ import {
   writeTaskBody,
 } from "@loctt/core";
 
+async function dirExists(p: string): Promise<boolean> {
+  try {
+    const s = await fsStat(p);
+    return s.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Locate the built client SPA directory. Tries (in order):
+ *   1. LOCTT_CLIENT_DIR env override
+ *   2. <cli-bundle>/client            (production: shipped alongside CLI bundle)
+ *   3. <cli-bundle>/../../web/dist/client  (workspace dev: apps/web/dist/client)
+ * Returns undefined if no client build is available — server still works as API-only.
+ */
+async function resolveClientDir(): Promise<string | undefined> {
+  const envDir = process.env.LOCTT_CLIENT_DIR;
+  if (envDir && (await dirExists(envDir))) return envDir;
+
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    resolvePath(here, "client"),
+    resolvePath(here, "../../web/dist/client"),
+  ];
+  for (const c of candidates) {
+    if (await dirExists(c)) return c;
+  }
+  return undefined;
+}
+
 function usage(): void {
   console.log(`Usage: loctt <command> [options]
 
@@ -69,7 +102,7 @@ Commands:
   attach <task> <file-path> [--force]
   detach <task> <name>
   mcp                              Start the MCP server (stdio)
-  web [--port <n>]                 Start the web UI
+  ui [--port <n>] [--no-open]      Start the web UI (foreground)
   git <enable|disable|status|publish|sync>
   config <get|set|unset|list> [key] [value]
 `);
@@ -629,12 +662,36 @@ export async function main(): Promise<void> {
         break;
       }
 
-      case "web": {
+      case "ui": {
         const { createWebApp } = await import("@loctt/web");
         const port = Number(getArg(args, "--port")) || undefined;
-        const app = createWebApp({ root, port });
+        const noOpen = hasFlag(args, "--no-open");
+        const clientDir = await resolveClientDir();
+        const app = createWebApp({ root, port, clientDir });
         await app.start();
-        console.log(`LocTT web UI running at http://localhost:${app.port}`);
+        const url = `http://localhost:${app.port}`;
+        console.log(`LocTT UI running at ${url}`);
+        console.log(`Press Ctrl-C to stop.`);
+
+        if (!noOpen) {
+          const opener =
+            process.platform === "darwin" ? "open" :
+            process.platform === "win32" ? "start" :
+            "xdg-open";
+          const { spawn } = await import("node:child_process");
+          try {
+            spawn(opener, [url], { detached: true, stdio: "ignore", shell: process.platform === "win32" }).unref();
+          } catch {
+            // ignore — user can open the URL manually
+          }
+        }
+
+        await new Promise<void>((resolve) => {
+          const shutdown = () => { resolve(); };
+          process.once("SIGINT", shutdown);
+          process.once("SIGTERM", shutdown);
+        });
+        await app.stop();
         break;
       }
 
@@ -780,7 +837,6 @@ export async function main(): Promise<void> {
 // realpath so the guard still fires when invoked via symlinks (npm link,
 // global installs that symlink the bin, nvm shims, etc.).
 import { realpathSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 const argv1 = process.argv[1];
 const isDirectRun = argv1 !== undefined
   && realpathSync(argv1) === fileURLToPath(import.meta.url);

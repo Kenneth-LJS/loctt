@@ -134,7 +134,7 @@ Loctt aims for full parity between the CLI and the MCP server: an LLM agent shou
 
 **CLI-only (by definition):**
 - `mcp` — starts the MCP server itself.
-- `web` — starts the web HTTP server.
+- `ui` — starts the web HTTP server and UI (foreground).
 - `help` / `--help` / `-h` — usage text. MCP equivalent is `tools/list`.
 
 The parity runner asserts byte-equal `.loctt/` state across surfaces for the operations that exist on both. The MCP-specific tool descriptions for higher-authority operations (`init`, `git_enable`, `git_publish`, `config_set`, `config_unset`) include intent guidance reminding the agent these are infrastructure changes, not routine task edits.

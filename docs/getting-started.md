@@ -119,8 +119,9 @@ loctt doctor    # Diagnostic checks
 LocTT includes a browser-based interface for visual task management.
 
 ```bash
-loctt web
-# Serves on http://localhost:4321
+loctt ui
+# Serves on http://localhost:4321 and opens your browser
+# Pass --no-open to skip the browser launch; --port <n> to override the port
 ```
 
 The web UI reads and writes the same `.loctt/` data as the CLI and MCP server — all three interfaces stay in sync.

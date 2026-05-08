@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import { mkdtemp, rm, stat as fsStat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join as pathJoin } from "node:path";
+import { join as pathJoin, normalize as pathNormalize, resolve as pathResolve, sep as pathSep } from "node:path";
 
 import type {
   ConfigResponse,
@@ -120,6 +120,84 @@ function matchPattern(pattern: string | RegExp, path: string): readonly string[]
 export interface WebAppOptions {
   readonly root: string;
   readonly port?: number;
+  /**
+   * Absolute path to a directory containing the built client SPA
+   * (index.html + assets). When set, GET requests that don't match an
+   * API route are served from this directory, with `index.html` returned
+   * for any unmatched path so client-side routing works. When unset,
+   * non-API requests get a 404 — useful for headless/API-only use.
+   */
+  readonly clientDir?: string;
+}
+
+const STATIC_MIME: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".mjs": "application/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".map": "application/json; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
+};
+
+function mimeFor(filePath: string): string {
+  const dot = filePath.lastIndexOf(".");
+  if (dot === -1) return "application/octet-stream";
+  return STATIC_MIME[filePath.slice(dot).toLowerCase()] ?? "application/octet-stream";
+}
+
+async function tryServeStatic(
+  req: import("node:http").IncomingMessage,
+  res: import("node:http").ServerResponse,
+  clientDir: string,
+  urlPath: string,
+): Promise<boolean> {
+  if (req.method !== "GET" && req.method !== "HEAD") return false;
+
+  const root = pathResolve(clientDir);
+  const requested = decodeURIComponent(urlPath === "/" ? "/index.html" : urlPath);
+  const candidate = pathNormalize(pathJoin(root, requested));
+  if (!candidate.startsWith(root + pathSep) && candidate !== root) {
+    return false;
+  }
+
+  let target: string | null = null;
+  try {
+    const s = await fsStat(candidate);
+    if (s.isFile()) target = candidate;
+  } catch { /* fall through */ }
+
+  if (!target) {
+    const indexHtml = pathJoin(root, "index.html");
+    try {
+      const s = await fsStat(indexHtml);
+      if (s.isFile()) target = indexHtml;
+    } catch { /* no client built */ }
+  }
+
+  if (!target) return false;
+
+  res.writeHead(200, { "Content-Type": mimeFor(target) });
+  if (req.method === "HEAD") {
+    res.end();
+    return true;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const stream = createReadStream(target);
+    stream.on("error", reject);
+    stream.on("end", () => resolve());
+    stream.pipe(res);
+  });
+  return true;
 }
 
 /**
@@ -147,6 +225,7 @@ function requireCsrfHeader(
 export function createWebApp(options: WebAppOptions) {
   const root = options.root;
   const port = options.port ?? DEFAULT_PORT;
+  const clientDir = options.clientDir ?? null;
 
   const server = createServer((req, res) => {
     void handleRequest(req, res);
@@ -493,6 +572,11 @@ export function createWebApp(options: WebAppOptions) {
         if (!captures) continue;
         await route.handler({ req, res, url, locttDir, captures });
         return;
+      }
+
+      if (clientDir && !path.startsWith("/api/")) {
+        const served = await tryServeStatic(req, res, clientDir, path);
+        if (served) return;
       }
 
       error(res, "Not found", 404);
