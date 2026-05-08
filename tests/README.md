@@ -41,10 +41,18 @@ Test workspaces are created via `mkdtemp(repoRoot/tests/workspace/loctt-)`. They
 npm run test                 # unit + thin integration (existing)
 npm run test:integration     # builds CLI/MCP, runs tests/integration
 npm run test:e2e             # builds CLI/MCP, runs tests/e2e
-npm run test:perf            # opt-in, runs tests/perf
+npm run test:perf            # opt-in, runs tests/perf — does NOT rebuild
 ```
 
 `pretest:integration` and `pretest:e2e` run `npm run build` so the spawned CLI/MCP binaries are current.
+
+**`test:perf` does not have a pretest hook by design.** Test 03 (`concurrent-create`) spawns the bundled CLI binary, so when iterating on CLI / MCP / core source you must `npm run build` first. The other two perf tests use core APIs in-process and don't need the build.
+
+For interactive sanity checks, [`tests/scripts/smoke.sh`](./scripts/smoke.sh) runs E2E journey #1 against the bundled binary directly — useful when you want pass/fail in <1 second without Vitest startup overhead.
+
+### Watch mode
+
+`apps/cli` and `apps/mcp` each have an `npm run dev` script that runs `tsup --watch`. Use it in a separate terminal so `dist/index.js` rebuilds on source change. Pairs naturally with `npm link --workspace apps/cli` for testing the global `loctt` binary.
 
 ---
 
