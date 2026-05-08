@@ -49,10 +49,10 @@ This creates a `.loctt/` directory with default config. You're ready to go.
 Start the web server:
 
 ```bash
-loctt web
+loctt ui
 ```
 
-Then open [http://localhost:4321](http://localhost:4321). You get a board and list view for browsing, creating, and updating tasks — all backed by the same `.loctt/` data on disk.
+This starts the server in the foreground and opens your browser to [http://localhost:4321](http://localhost:4321). You get a board and list view for browsing, creating, and updating tasks — all backed by the same `.loctt/` data on disk. Press Ctrl-C to stop. Pass `--no-open` to skip the browser launch.
 
 ## MCP / AI Agent Integration
 

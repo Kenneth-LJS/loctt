@@ -41,13 +41,13 @@ async function killAndWait(child: ResultPromise): Promise<void> {
   }
 }
 
-describe("CLI web startup (spawned binary)", () => {
+describe("CLI ui startup (spawned binary)", () => {
   it(
     "starts the web server and serves /api/info",
     async () => {
       await withTmpLoctt(async ({ root }) => {
         const port = 30000 + Math.floor(Math.random() * 30000);
-        const child = execa(process.execPath, [cliEntry, "web", "--port", String(port)], {
+        const child = execa(process.execPath, [cliEntry, "ui", "--port", String(port), "--no-open"], {
           cwd: root,
           env: process.env,
           reject: false,
