@@ -30,17 +30,20 @@ import {
   createSprint,
   createTask,
   createUser,
+  createView,
   deleteLabel,
   deleteMilestone,
   deleteProject,
   deleteSprint,
   deleteTask,
   deleteUser,
+  deleteView,
   detachFile,
   editLabel,
   editMilestone,
   editProject,
   editSprint,
+  editView,
   getAttachmentPath,
   getCurrentUser,
   getTrackerInfo,
@@ -85,6 +88,7 @@ import {
   unsetField,
   updateUser,
   UserError,
+  ViewError,
   withStateLock,
 } from "@loctt/core";
 
@@ -134,6 +138,7 @@ const PROJECT_KEY_RE = /^\/api\/projects\/([^/]+)$/;
 const LABEL_KEY_RE = /^\/api\/labels\/([^/]+)$/;
 const MILESTONE_KEY_RE = /^\/api\/milestones\/([^/]+)$/;
 const SPRINT_KEY_RE = /^\/api\/sprints\/([^/]+)$/;
+const VIEW_REF_RE = /^\/api\/views\/([^/]+)$/;
 const USER_REF_RE = /^\/api\/users\/([^/]+)$/;
 const USER_ARCHIVE_RE = /^\/api\/users\/([^/]+)\/archive$/;
 const USER_UNARCHIVE_RE = /^\/api\/users\/([^/]+)\/unarchive$/;
@@ -323,6 +328,47 @@ export function createWebApp(options: WebAppOptions) {
   const handleDoctor: RouteHandler = async ({ res }) => {
     const checks = await runDoctor(root);
     json(res, checks as DoctorCheckResponse[]);
+  };
+
+  const handleListViews: RouteHandler = async ({ res, locttDir }) => {
+    const cfg = await loadQueriesConfig(locttDir);
+    json(res, cfg);
+  };
+
+  const handleCreateView: RouteHandler = async ({ req, res, locttDir }) => {
+    const body = await readBody(req);
+    const r = JSON.parse(body) as Parameters<typeof createView>[1];
+    try {
+      const created = await createView(locttDir, r);
+      json(res, created, 201);
+    } catch (err) {
+      if (err instanceof ViewError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleUpdateView: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const ref = captures[0] ?? "";
+    const body = await readBody(req);
+    const r = JSON.parse(body) as Parameters<typeof editView>[2];
+    try {
+      const updated = await editView(locttDir, ref, r);
+      json(res, updated);
+    } catch (err) {
+      if (err instanceof ViewError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleDeleteView: RouteHandler = async ({ res, locttDir, captures }) => {
+    const ref = captures[0] ?? "";
+    try {
+      await deleteView(locttDir, ref);
+      json(res, { deleted: ref });
+    } catch (err) {
+      if (err instanceof ViewError) { error(res, err.message, 400); return; }
+      throw err;
+    }
   };
 
   const handleGetWorkflow: RouteHandler = async ({ res, locttDir }) => {
@@ -1137,6 +1183,10 @@ export function createWebApp(options: WebAppOptions) {
     { method: "PUT", pattern: "/api/calendar", handler: handlePutCalendar },
     { method: "GET", pattern: "/api/workflow", handler: handleGetWorkflow },
     { method: "PUT", pattern: "/api/workflow", handler: handlePutWorkflow },
+    { method: "GET", pattern: "/api/views", handler: handleListViews },
+    { method: "POST", pattern: "/api/views", handler: handleCreateView },
+    { method: "PUT", pattern: VIEW_REF_RE, handler: handleUpdateView },
+    { method: "DELETE", pattern: VIEW_REF_RE, handler: handleDeleteView },
     { method: "GET", pattern: "/api/sprints", handler: handleListSprints },
     { method: "POST", pattern: "/api/sprints", handler: handleCreateSprint },
     { method: "PUT", pattern: SPRINT_KEY_RE, handler: handleUpdateSprint },

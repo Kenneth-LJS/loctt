@@ -34,7 +34,12 @@ export {
   saveProjectsConfig,
   serializeProjectsConfig,
 } from "./projects.js";
-export { loadQueriesConfig, parseQueriesConfig } from "./queries.js";
+export {
+  loadQueriesConfig,
+  parseQueriesConfig,
+  saveQueriesConfig,
+  serializeQueriesConfig,
+} from "./queries.js";
 export {
   CONFIG_KEYS,
   type ConfigContext,

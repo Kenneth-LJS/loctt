@@ -23,11 +23,13 @@ const config: WorkflowConfig = {
 const queriesConfig: QueriesConfig = {
   queries: [
     {
+      id: "01HSV0000000000000RECENT",
       name: "recent-open",
       query: "status != done",
       sort: [{ field: "updated_at", direction: "desc" }],
     },
     {
+      id: "01HSV0000000000000BYPRIORITY",
       name: "by-priority",
       query: "status != done",
       sort: [{ field: "priority", direction: "desc" }],
@@ -166,7 +168,7 @@ describe("listTasks", () => {
 
     it("does not inject archived filter when using a saved view", () => {
       const viewConfig: QueriesConfig = {
-        queries: [{ name: "all-not-started", query: "status = not_started" }],
+        queries: [{ id: "01HSV0000000000000VIEW", name: "all-not-started", query: "status = not_started" }],
       };
       const result = listTasks({
         tasks: archivedTasks,

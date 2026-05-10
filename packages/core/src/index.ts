@@ -10,7 +10,12 @@ export {
   validateRemapCoversDeletions,
 } from "./config/index.js";
 export { loadWorkflowConfig, parseWorkflowConfig } from "./config/index.js";
-export { loadQueriesConfig, parseQueriesConfig } from "./config/index.js";
+export {
+  loadQueriesConfig,
+  parseQueriesConfig,
+  saveQueriesConfig,
+  serializeQueriesConfig,
+} from "./config/index.js";
 export {
   getProjectsConfigPath,
   loadProjectsConfig,
@@ -241,3 +246,11 @@ export {
   UserProfileError,
   writeCurrentUserId,
 } from "./users/index.js";
+export type { CreateViewInput, EditViewInput } from "./views/index.js";
+export {
+  createView,
+  deleteView,
+  editView,
+  findView,
+  ViewError,
+} from "./views/index.js";
