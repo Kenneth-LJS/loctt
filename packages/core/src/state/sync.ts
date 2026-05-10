@@ -1,5 +1,4 @@
-import { mkdir,readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
 
 import type { SyncState } from "@loctt/contracts";
 import {
@@ -16,6 +15,7 @@ import {
   assertObject as _assertObject,
   assertString as _assertString,
 } from "../utils/assert.js";
+import { writeFileAtomically } from "../utils/atomic-yaml.js";
 
 export class SyncStateError extends Error {
   constructor(message: string) {
@@ -113,9 +113,7 @@ export async function loadSyncState(locttDir: string): Promise<SyncState> {
 
 /** Writes sync.yaml to .loctt/local/. Creates directories if needed. */
 export async function saveSyncState(locttDir: string, state: SyncState): Promise<void> {
-  const filePath = getSyncStatePath(locttDir);
-  await mkdir(dirname(filePath), { recursive: true });
-  await writeFile(filePath, serializeSyncState(state), "utf-8");
+  await writeFileAtomically(getSyncStatePath(locttDir), serializeSyncState(state));
 }
 
 export { DEFAULT_GIT_BRANCH };

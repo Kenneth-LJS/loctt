@@ -1,11 +1,11 @@
-import { mkdir,readFile, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile, rm } from "node:fs/promises";
 
 import type { ReconcileState } from "@loctt/contracts";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { getReconcileStatePath } from "../paths/index.js";
 import { assertObject as _assertObject, assertString as _assertString } from "../utils/assert.js";
+import { writeFileAtomically } from "../utils/atomic-yaml.js";
 
 export class ReconcileStateError extends Error {
   constructor(message: string) {
@@ -59,9 +59,7 @@ export async function loadReconcileState(locttDir: string): Promise<ReconcileSta
 
 /** Writes reconcile.yaml to .loctt/local/. Creates directories if needed. */
 export async function saveReconcileState(locttDir: string, state: ReconcileState): Promise<void> {
-  const filePath = getReconcileStatePath(locttDir);
-  await mkdir(dirname(filePath), { recursive: true });
-  await writeFile(filePath, serializeReconcileState(state), "utf-8");
+  await writeFileAtomically(getReconcileStatePath(locttDir), serializeReconcileState(state));
 }
 
 /** Removes reconcile.yaml (called after reconciliation completes or is aborted). */

@@ -1,10 +1,10 @@
-import { mkdir,readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
 
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { parse as parseYaml } from "yaml";
 
 import { getKeyIndexPath } from "../paths/index.js";
 import { loadAllTasks } from "../task/lookup.js";
+import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 
 /** Mapping of key (current or historical) → task ID. */
 export interface KeyIndex {
@@ -28,9 +28,7 @@ export async function loadKeyIndex(locttDir: string): Promise<KeyIndex | undefin
 
 /** Saves the key index to disk. */
 export async function saveKeyIndex(locttDir: string, index: KeyIndex): Promise<void> {
-  const path = getKeyIndexPath(locttDir);
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, stringifyYaml({ entries: index.entries }), "utf-8");
+  await writeYamlAtomically(getKeyIndexPath(locttDir), { entries: index.entries });
 }
 
 /** Rebuilds the key index by scanning all tasks. */
