@@ -88,8 +88,17 @@ describe("evenlySpacedRanks", () => {
     expect(evenlySpacedRanks(0)).toEqual([]);
   });
 
-  it("returns a single rank for count 1", () => {
-    expect(evenlySpacedRanks(1)).toHaveLength(1);
+  it("returns a single rank for count 1 that matches INITIAL", () => {
+    expect(evenlySpacedRanks(1)).toEqual([INITIAL]);
+  });
+
+  it("never produces a rank ending in '0'", () => {
+    for (const count of [2, 5, 34, 100, 500]) {
+      const r = evenlySpacedRanks(count);
+      for (const v of r) {
+        expect(v.endsWith("0")).toBe(false);
+      }
+    }
   });
 
   it("returns the requested number of strictly increasing ranks", () => {

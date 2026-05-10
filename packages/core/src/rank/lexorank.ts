@@ -66,11 +66,34 @@ export function compare(a: string, b: string): -1 | 0 | 1 {
  *  - between("a", "b") → "am"  (no integer gap; appends midpoint of next digit)
  *  - between(MIN, "a") → "0i"  (recurse from the empty prefix)
  *  - between("y", MAX) → "yi"  (avoid landing on "z" itself)
+ *
+ * Postcondition: the result is non-empty, strictly greater than
+ * `a`, strictly less than `b`, and never ends in `'0'` (a trailing
+ * zero is a "phantom min" that breaks future descents into
+ * matching zero pads).
  */
 export function between(a: string, b: string): string {
   if (compare(a, b) >= 0) {
     throw new Error(`between: lower bound must be less than upper bound (${a} >= ${b})`);
   }
+  const result = betweenInner(a, b);
+  // Defense-in-depth: the algorithm's recursive descent assumes
+  // results never trail in '0' (otherwise future between(prev, "..0")
+  // descends into matching zeros forever). Belt-and-braces assertions.
+  if (result.length === 0 || result.endsWith("0")) {
+    throw new Error(
+      `between(${a}, ${b}) produced an invalid rank "${result}"`,
+    );
+  }
+  if (compare(a, result) >= 0 || compare(result, b) >= 0) {
+    throw new Error(
+      `between(${a}, ${b}) produced "${result}" which is not strictly between the bounds`,
+    );
+  }
+  return result;
+}
+
+function betweenInner(a: string, b: string): string {
 
   // Walk both strings in lockstep, building the result digit by
   // digit. When digits diverge, take the midpoint of the gap.
@@ -154,19 +177,23 @@ export const REBALANCE_LENGTH_THRESHOLD = 24;
  */
 export function evenlySpacedRanks(count: number): string[] {
   if (count < 1) return [];
+  // Single-item case: align with INITIAL so a freshly-rebalanced
+  // singleton matches a fresh insert into an empty ordering.
+  if (count === 1) return [INITIAL];
   // Use the middle of the alphabet as the base, spread items so
   // their first-digit positions stay distinct.
   const out: string[] = [];
   if (count <= BASE - 2) {
-    // Pick digits 1..(count) so we leave room before "0" and after.
+    // Pick digits centered in the alphabet so we leave room before
+    // and after for future inserts.
     const start = Math.floor((BASE - count) / 2);
     for (let i = 0; i < count; i += 1) {
       out.push(ALPHABET.charAt(start + i));
     }
     return out;
   }
-  // Wider counts: fall back to two-digit ranks.
-  // Layout: aa, ab, ac, ... reserving aa-style spacing.
+  // Wider counts: fall back to two-digit ranks. Layout: aa, ab,
+  // ac, … reserving aa-style spacing.
   const totalSlots = BASE * BASE;
   if (count > totalSlots) {
     throw new Error(`evenlySpacedRanks: count too large (${count} > ${totalSlots})`);
@@ -175,7 +202,13 @@ export function evenlySpacedRanks(count: number): string[] {
   for (let i = 0; i < count; i += 1) {
     const slot = i * stride + Math.floor(stride / 2);
     const hi = Math.floor(slot / BASE);
-    const lo = slot % BASE;
+    let lo = slot % BASE;
+    // Avoid a trailing '0' digit. A two-digit rank ending in '0'
+    // is a phantom prefix of any longer rank starting with the
+    // same hi digit and would break `between` descents into
+    // matching zero pads. Clamp to 1 (effectively "halfway through
+    // the slot, not at its boundary").
+    if (lo === 0) lo = 1;
     out.push(ALPHABET.charAt(hi) + ALPHABET.charAt(lo));
   }
   return out;
