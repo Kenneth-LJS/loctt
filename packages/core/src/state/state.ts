@@ -51,12 +51,32 @@ export function parseState(yamlContent: string): LocttState {
     };
   }
 
-  return { keys: parsed };
+  let retired: Record<string, { prefix: string; next_number: number }> | undefined;
+  const retiredRaw = raw["retired_keys"];
+  if (retiredRaw !== undefined) {
+    assertObject(retiredRaw, "retired_keys");
+    retired = {};
+    for (const [entityType, entry] of Object.entries(retiredRaw)) {
+      assertObject(entry, `retired_keys.${entityType}`);
+      assertString(entry["prefix"], `retired_keys.${entityType}.prefix`);
+      assertPositiveInt(entry["next_number"], `retired_keys.${entityType}.next_number`);
+      retired[entityType] = {
+        prefix: entry["prefix"],
+        next_number: entry["next_number"],
+      };
+    }
+  }
+
+  return { keys: parsed, ...(retired !== undefined ? { retired_keys: retired } : {}) };
 }
 
 /** Serializes a LocttState to YAML string. */
 export function serializeState(state: LocttState): string {
-  return stringifyYaml({ keys: state.keys });
+  const out: Record<string, unknown> = { keys: state.keys };
+  if (state.retired_keys !== undefined && Object.keys(state.retired_keys).length > 0) {
+    out["retired_keys"] = state.retired_keys;
+  }
+  return stringifyYaml(out);
 }
 
 /**

@@ -66,9 +66,14 @@ export function findProject(config: ProjectsConfig, key: string): ProjectDef {
 }
 
 /**
- * Creates a new project: appends to projects.yaml and initializes a
- * key counter in state.yaml. Both writes are protected by the state
- * lock so concurrent operations serialize correctly.
+ * Creates a new project: initializes a key counter in state.yaml and
+ * appends to projects.yaml. State is written first so a crash mid-
+ * operation never leaves a project visible without a counter.
+ *
+ * If the requested key matches a previously-deleted project, its
+ * retired counter is restored — re-creating the project resumes
+ * numbering from where it left off, avoiding collisions with tasks
+ * still carrying the old keys.
  */
 export async function createProject(
   locttDir: string,
@@ -86,24 +91,43 @@ export async function createProject(
       );
     }
 
+    // 1. Write state first.
+    const state = await loadState(locttDir);
+    const retired = state.retired_keys?.[def.key];
+    if (retired !== undefined) {
+      // Restore the retired counter. Prefix may have changed between
+      // the original project and the recreation; honor the new
+      // prefix but keep the next_number so we never reuse old keys.
+      (state.keys as Record<string, { prefix: string; next_number: number }>)[def.key] = {
+        prefix: def.prefix,
+        next_number: retired.next_number,
+      };
+      const remainingRetired: Record<string, { prefix: string; next_number: number }> = {};
+      for (const [k, v] of Object.entries(state.retired_keys ?? {})) {
+        if (k !== def.key) remainingRetired[k] = v;
+      }
+      (state as { retired_keys?: Record<string, { prefix: string; next_number: number }> }).retired_keys =
+        Object.keys(remainingRetired).length > 0 ? remainingRetired : undefined;
+    } else {
+      try {
+        initKeyAllocation(state, def.key, def.prefix, 1);
+      } catch (err) {
+        if (err instanceof KeyAllocationError) {
+          // Counter already exists from a prior partial write. Treat
+          // as recoverable — the counter survives.
+        } else {
+          throw err;
+        }
+      }
+    }
+    await saveState(locttDir, state);
+
+    // 2. Then append to projects.yaml.
     const newConfig: ProjectsConfig = {
       projects: [...config.projects, def],
       ...(config.default !== undefined ? { default: config.default } : {}),
     };
     await saveProjectsConfig(locttDir, newConfig);
-
-    const state = await loadState(locttDir);
-    try {
-      initKeyAllocation(state, def.key, def.prefix, 1);
-    } catch (err) {
-      if (err instanceof KeyAllocationError) {
-        // Counter already exists from a prior partial write. Treat
-        // as recoverable — the counter survives.
-      } else {
-        throw err;
-      }
-    }
-    await saveState(locttDir, state);
   });
 }
 
@@ -238,13 +262,25 @@ export async function deleteProject(
     };
     await saveProjectsConfig(locttDir, newConfig);
 
-    // Remove the project's counter from state.yaml.
+    // Move the project's counter to retired_keys. Re-creating the
+    // same project later resumes numbering from this point so we
+    // never reuse keys that surviving tasks may still reference.
     const state = await loadState(locttDir);
     const newKeys: Record<string, { prefix: string; next_number: number }> = {};
     for (const [k, v] of Object.entries(state.keys)) {
       if (k !== key) newKeys[k] = v;
     }
-    const newState: LocttState = { keys: newKeys };
+    const retired: Record<string, { prefix: string; next_number: number }> = {
+      ...(state.retired_keys ?? {}),
+    };
+    const removed = state.keys[key];
+    if (removed !== undefined) {
+      retired[key] = { prefix: removed.prefix, next_number: removed.next_number };
+    }
+    const newState: LocttState = {
+      keys: newKeys,
+      ...(Object.keys(retired).length > 0 ? { retired_keys: retired } : {}),
+    };
     await saveState(locttDir, newState);
 
     return { remappedTaskCount: affected.length };

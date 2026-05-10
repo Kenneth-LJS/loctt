@@ -7,6 +7,16 @@ export interface KeyAllocationState {
 /** The full state.yaml shape. */
 export interface LocttState {
   readonly keys: Readonly<Record<string, KeyAllocationState>>;
+  /**
+   * Counters for projects that were deleted. Preserved so that
+   * re-creating a project with the same key resumes numbering from
+   * where it left off, avoiding key collisions with surviving tasks
+   * that still carry the old keys (e.g. via `key_history`).
+   *
+   * Keyed by the original project key. Entries are restored back
+   * into `keys` on createProject when a matching key is requested.
+   */
+  readonly retired_keys?: Readonly<Record<string, KeyAllocationState>>;
 }
 
 /** Local sync metadata from .loctt/local/sync.yaml. */
