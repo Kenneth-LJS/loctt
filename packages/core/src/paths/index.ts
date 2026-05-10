@@ -15,6 +15,7 @@ const QUERIES_FILE = "queries.yaml";
 const SYNC_FILE = "sync.yaml";
 const RECONCILE_FILE = "reconcile.yaml";
 const KEY_INDEX_FILE = "key-index.yaml";
+const SCHEMA_VERSION_FILE = ".schema-version";
 
 /**
  * Validates that a string is a safe basename for a file inside a task
@@ -142,4 +143,9 @@ export function getTasksDir(locttDir: string): string {
 /** Returns the path to .loctt/local/key-index.yaml. */
 export function getKeyIndexPath(locttDir: string): string {
   return join(locttDir, LOCAL_DIR, KEY_INDEX_FILE);
+}
+
+/** Returns the path to .loctt/.schema-version. */
+export function getSchemaVersionPath(locttDir: string): string {
+  return join(locttDir, SCHEMA_VERSION_FILE);
 }

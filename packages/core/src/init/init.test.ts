@@ -90,4 +90,15 @@ describe("initLoctt", () => {
     expect(result.created.some(f => f.includes("workflow.yaml"))).toBe(true);
     expect(result.created.some(f => f.includes("state.yaml"))).toBe(true);
   });
+
+  it("stamps the schema version at .loctt/.schema-version", async () => {
+    const result = await initLoctt(root);
+    const versionPath = join(result.locttDir, ".schema-version");
+    const raw = (await readFile(versionPath, "utf-8")).trim();
+    // Should be a positive integer matching CURRENT_SCHEMA_VERSION (≥ 1).
+    const n = Number(raw);
+    expect(Number.isInteger(n)).toBe(true);
+    expect(n).toBeGreaterThanOrEqual(1);
+    expect(result.created.some(f => f.endsWith(".schema-version"))).toBe(true);
+  });
 });

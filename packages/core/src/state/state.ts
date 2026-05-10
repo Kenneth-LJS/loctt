@@ -1,12 +1,11 @@
-import { randomBytes } from "node:crypto";
-import { mkdir,readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
 
 import type { LocttState } from "@loctt/contracts";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { getStateFilePath } from "../paths/index.js";
 import { assertObject as _assertObject, assertString as _assertString } from "../utils/assert.js";
+import { writeFileAtomically } from "../utils/atomic-yaml.js";
 
 export class StateError extends Error {
   constructor(message: string) {
@@ -79,9 +78,5 @@ export async function loadState(locttDir: string): Promise<LocttState> {
  * caller to hold `withStateLock` around the read-modify-write pair.
  */
 export async function saveState(locttDir: string, state: LocttState): Promise<void> {
-  const filePath = getStateFilePath(locttDir);
-  await mkdir(dirname(filePath), { recursive: true });
-  const tmpPath = `${filePath}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
-  await writeFile(tmpPath, serializeState(state), "utf-8");
-  await rename(tmpPath, filePath);
+  await writeFileAtomically(getStateFilePath(locttDir), serializeState(state));
 }

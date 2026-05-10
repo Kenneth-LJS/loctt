@@ -6,11 +6,13 @@ import {
   getDocsDir,
   getLocalDir,
   getQueriesConfigPath,
+  getSchemaVersionPath,
   getStateFilePath,
   getTasksDir,
   getWorkflowConfigPath,
   resolveLocttDir,
 } from "../paths/index.js";
+import { CURRENT_SCHEMA_VERSION, writeSchemaVersion } from "../schema/index.js";
 import { fileExists } from "../utils/fs.js";
 import { defaultQueriesYaml, defaultStateYaml,defaultWorkflowYaml } from "./defaults.js";
 
@@ -59,6 +61,10 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
   const statePath = getStateFilePath(locttDir);
   await writeFile(statePath, defaultStateYaml(prefix), "utf-8");
   created.push(statePath);
+
+  // Stamp the schema version. Migrations key off this on every load.
+  await writeSchemaVersion(locttDir, CURRENT_SCHEMA_VERSION);
+  created.push(getSchemaVersionPath(locttDir));
 
   // Generate helper docs if requested
   if (genDocs) {
