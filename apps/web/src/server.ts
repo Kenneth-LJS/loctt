@@ -14,11 +14,13 @@ import type {
   TrackerInfoResponse,
   UpdateTaskRequest,
 } from "@loctt/contracts";
+import { CalendarConfigSchema } from "@loctt/contracts";
 import {
   appendTaskBody,
   applyWorkflowEdit,
   archiveTask,
   archiveUser,
+  assertSafeBasename,
   attachFile,
   AttachmentExistsError,
   AttachmentNotFoundError,
@@ -143,6 +145,39 @@ function json(res: import("node:http").ServerResponse, data: unknown, status = 2
 
 function error(res: import("node:http").ServerResponse, message: string, status = 400): void {
   json(res, { error: message }, status);
+}
+
+/**
+ * Internal sentinel: a handler that throws this signals the
+ * request loop to stop processing. We've already written a 400
+ * response by the time this is thrown.
+ */
+class HandledRequestError extends Error {
+  constructor() {
+    super("__handled_request__");
+    this.name = "HandledRequestError";
+  }
+}
+
+/**
+ * Reads the request body and parses it as JSON. On parse failure
+ * writes a 400 with a clear error message and throws
+ * HandledRequestError so the surrounding handler can early-exit
+ * via try/catch. Keeps the per-route boilerplate small while
+ * mapping bad JSON to 400 instead of letting it bubble to 500.
+ */
+async function parseJsonBody<T = unknown>(
+  req: import("node:http").IncomingMessage,
+  res: import("node:http").ServerResponse,
+): Promise<T> {
+  const body = await readBody(req);
+  if (body.length === 0) return {} as T;
+  try {
+    return JSON.parse(body) as T;
+  } catch (err) {
+    error(res, `invalid JSON body: ${(err as Error).message}`, 400);
+    throw new HandledRequestError();
+  }
 }
 
 const VALID_REF_RE = /^[A-Za-z0-9_-]+$/;
@@ -495,11 +530,15 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handlePutCalendar: RouteHandler = async ({ req, res, locttDir }) => {
-    const body = await readBody(req);
-    const cfg = JSON.parse(body) as Parameters<typeof saveCalendarConfig>[1];
+    const raw = await parseJsonBody<unknown>(req, res);
+    const parsed = CalendarConfigSchema.safeParse(raw);
+    if (!parsed.success) {
+      error(res, `invalid calendar config: ${parsed.error.issues.map(i => i.message).join("; ")}`, 400);
+      return;
+    }
     try {
-      await saveCalendarConfig(locttDir, cfg);
-      json(res, cfg);
+      await saveCalendarConfig(locttDir, parsed.data);
+      json(res, parsed.data);
     } catch (err) {
       error(res, (err as Error).message, 400);
     }
@@ -814,6 +853,15 @@ export function createWebApp(options: WebAppOptions) {
     try {
       const target = await resolveUserRef(locttDir, ref);
       if (!target.avatar) { error(res, "no avatar", 404); return; }
+      // Defense-in-depth: target.avatar comes from a user-edited
+      // YAML file. Reject anything that isn't a plain basename
+      // before joining into a filesystem path.
+      try {
+        assertSafeBasename(target.avatar);
+      } catch {
+        error(res, "invalid avatar reference", 400);
+        return;
+      }
       const avatarPath = pathJoin(locttDir, "users", target.id, target.avatar);
       const stat = await fsStat(avatarPath);
       if (!stat.isFile()) { error(res, "no avatar", 404); return; }
@@ -939,8 +987,29 @@ export function createWebApp(options: WebAppOptions) {
   const handlePutUserSettings: RouteHandler = async ({ req, res, locttDir }) => {
     const current = await getCurrentUser(locttDir);
     if (!current) { error(res, "no users registered", 404); return; }
-    const body = await readBody(req);
-    const settings = JSON.parse(body) as Record<string, unknown>;
+    const raw = await parseJsonBody<unknown>(req, res);
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+      error(res, "user settings must be a JSON object", 400);
+      return;
+    }
+    // Settings are intentionally schema-less (UI-defined keys), but
+    // reject obvious shape junk. JSON.parse already rejects
+    // functions/symbols, but we still bound depth to avoid storing
+    // pathological payloads.
+    const MAX_DEPTH = 8;
+    const checkDepth = (value: unknown, depth: number): boolean => {
+      if (depth > MAX_DEPTH) return false;
+      if (Array.isArray(value)) return value.every(v => checkDepth(v, depth + 1));
+      if (value !== null && typeof value === "object") {
+        return Object.values(value).every(v => checkDepth(v, depth + 1));
+      }
+      return true;
+    };
+    if (!checkDepth(raw, 0)) {
+      error(res, `user settings nested deeper than ${MAX_DEPTH} levels`, 400);
+      return;
+    }
+    const settings = raw as Record<string, unknown>;
     await saveUserSettings(locttDir, current.id, settings);
     json(res, { user: current.id, settings });
   };
@@ -1418,6 +1487,10 @@ export function createWebApp(options: WebAppOptions) {
 
       error(res, "Not found", 404);
     } catch (err) {
+      if (err instanceof HandledRequestError) {
+        // parseJsonBody already wrote a 400 — bail silently.
+        return;
+      }
       if (err instanceof TaskNotFoundError) {
         error(res, err.message, 404);
         return;
