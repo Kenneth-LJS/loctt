@@ -36,6 +36,15 @@ export {
   setConfigValue,
   unsetConfigValue,
 } from "./router.js";
+export {
+  getSprintsConfigPath,
+  loadSprintsConfig,
+  parseSprintsConfig,
+  saveSprintsConfig,
+  serializeSprintsConfig,
+  SprintsConfigError,
+  sprintsConfigExists,
+} from "./sprints.js";
 export { validateTaskAgainstWorkflow, validateWorkflowConfig } from "./validation.js";
 export { loadWorkflowConfig, parseWorkflowConfig } from "./workflow.js";
 

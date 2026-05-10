@@ -33,7 +33,7 @@ describe("history instrumentation", () => {
       updated_at: "2026-01-01T00:00:00Z",
       status: "not_started",
       labels: ["bug"],
-      fields: { sprint: "sprint_1" },
+      fields: { sprint_field: "sprint_1" },
     },
     body: "Body.\n",
   };
@@ -69,14 +69,14 @@ describe("history instrumentation", () => {
 
     it("records custom_field_change for custom field", async () => {
       await seedTask();
-      await setField({ locttDir, taskId: "abc", field: "sprint", value: "sprint_2" });
+      await setField({ locttDir, taskId: "abc", field: "sprint_field", value: "sprint_2" });
 
       const history = await readHistory(locttDir, "abc");
       expect(history).toHaveLength(1);
       expect(history).toEqual([
         expect.objectContaining({
           kind: "custom_field_change",
-          field: "sprint",
+          field: "sprint_field",
           before: "sprint_1",
           after: "sprint_2",
         }),
@@ -142,14 +142,14 @@ describe("history instrumentation", () => {
 
     it("records custom_field_change with null after for unset custom field", async () => {
       await seedTask();
-      await unsetField(locttDir, "abc", "sprint");
+      await unsetField(locttDir, "abc", "sprint_field");
 
       const history = await readHistory(locttDir, "abc");
       expect(history).toHaveLength(1);
       expect(history).toEqual([
         expect.objectContaining({
           kind: "custom_field_change",
-          field: "sprint",
+          field: "sprint_field",
           before: "sprint_1",
           after: null,
         }),

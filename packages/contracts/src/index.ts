@@ -19,6 +19,7 @@ export type {
   TrackerInfoResponse,
   UpdateTaskRequest,
 } from "./service.js";
+export type { SprintDef, SprintsConfig, SprintState } from "./sprints.js";
 export type {
   KeyAllocationState,
   LocttState,

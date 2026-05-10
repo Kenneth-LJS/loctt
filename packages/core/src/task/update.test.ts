@@ -28,7 +28,7 @@ describe("setField / unsetField", () => {
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
       status: "not_started",
-      fields: { sprint: "sprint_1" },
+      fields: { sprint_field: "sprint_1" },
     },
     body: "Body text.\n",
   };
@@ -62,7 +62,7 @@ describe("setField / unsetField", () => {
       await seedTask();
       const updated = await setField({ locttDir, taskId: "abc", field: "owner_team", value: "platform" });
       expect(updated.frontmatter.fields).toEqual({
-        sprint: "sprint_1",
+        sprint_field: "sprint_1",
         owner_team: "platform",
       });
     });
@@ -97,7 +97,7 @@ describe("setField / unsetField", () => {
 
     it("unsets a custom field", async () => {
       await seedTask();
-      const updated = await unsetField(locttDir, "abc", "sprint");
+      const updated = await unsetField(locttDir, "abc", "sprint_field");
       expect(updated.frontmatter.fields).toBeUndefined();
     });
 
@@ -132,9 +132,9 @@ describe("setField / unsetField", () => {
       task_types: [],
       relationships: [],
       // Match the seed task's custom field so validation doesn't
-      // reject the existing `sprint` value during status updates.
+      // reject the existing `sprint_field` value during status updates.
       custom_fields: [{
-        key: "sprint",
+        key: "sprint_field",
         label: "Sprint",
         type: "string" as const,
         multi: false,

@@ -41,6 +41,15 @@ export {
   saveMilestonesConfig,
   serializeMilestonesConfig,
 } from "./config/index.js";
+export {
+  getSprintsConfigPath,
+  loadSprintsConfig,
+  parseSprintsConfig,
+  saveSprintsConfig,
+  serializeSprintsConfig,
+  SprintsConfigError,
+  sprintsConfigExists,
+} from "./config/index.js";
 export { QueriesConfigError } from "./config/queries.js";
 export type { ValidationError } from "./config/validation.js";
 export { WorkflowConfigError } from "./config/workflow.js";
@@ -154,6 +163,14 @@ export {
   withMigrationLock,
   writeSchemaVersion,
 } from "./schema/index.js";
+export type { DeleteSprintOptions, EditSprintOptions } from "./sprints/index.js";
+export {
+  createSprint,
+  deleteSprint,
+  editSprint,
+  findSprint,
+  SprintError,
+} from "./sprints/index.js";
 export type { KeyIndex } from "./state/index.js";
 export { loadState, parseState, saveState, serializeState, StateError } from "./state/index.js";
 export { withStateLock } from "./state/index.js";
