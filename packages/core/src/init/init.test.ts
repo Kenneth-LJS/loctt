@@ -51,6 +51,7 @@ describe("initLoctt", () => {
     const result = await initLoctt(root);
     const content = await readFile(join(result.locttDir, "state.yaml"), "utf-8");
     const state = parseState(content);
+    // Counter is keyed by the starting project key ("task" by default).
     expect(state.keys["task"]).toEqual({ prefix: "T-", next_number: 1 });
   });
 
@@ -63,6 +64,23 @@ describe("initLoctt", () => {
     const stateContent = await readFile(join(result.locttDir, "state.yaml"), "utf-8");
     const state = parseState(stateContent);
     expect(state.keys["task"]?.prefix).toBe("BUG-");
+  });
+
+  it("uses custom project key", async () => {
+    const result = await initLoctt(root, { projectKey: "backend", prefix: "BACKEND-" });
+    const stateContent = await readFile(join(result.locttDir, "state.yaml"), "utf-8");
+    const state = parseState(stateContent);
+    expect(state.keys["backend"]).toEqual({ prefix: "BACKEND-", next_number: 1 });
+    expect(state.keys["task"]).toBeUndefined();
+  });
+
+  it("creates projects.yaml", async () => {
+    const result = await initLoctt(root);
+    const content = await readFile(join(result.locttDir, "config", "projects.yaml"), "utf-8");
+    expect(content).toContain("projects:");
+    expect(content).toContain("key: task");
+    expect(content).toContain('prefix: "T-"');
+    expect(content).toContain("default: task");
   });
 
   it("generates docs by default", async () => {

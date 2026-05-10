@@ -13,10 +13,13 @@ import {
   buildListContext,
   buildShowModel,
   CONFIG_KEYS,
+  createProject,
   createTask,
+  deleteProject,
   deleteTask,
   detachFile,
   disableGit,
+  editProject,
   enableGit,
   getConfigValue,
   getGitStatus,
@@ -26,18 +29,22 @@ import {
   listTasks,
   loadAllTasks,
   loadOptionalConfigs,
+  loadProjectsConfig,
   loadState,
   lookupTask,
   migrateToCurrent,
   planMigration,
+  ProjectError,
   publish,
   readHistory,
   readTaskBody,
   requireSupportedSchema,
   resolveLocttDir,
+  resolveProjectKey,
   runDoctor,
   saveState,
   setConfigValue,
+  setDefaultProject,
   setField,
   sync,
   unarchiveTask,
@@ -83,12 +90,13 @@ function usage(): void {
   console.log(`Usage: loctt <command> [options]
 
 Commands:
-  init [--prefix <prefix>] [--no-docs] [--yes]
+  init [--prefix <prefix>] [--project-key <key>] [--project-label <label>] [--no-docs] [--yes]
   info
   doctor
   views                            List saved views from queries.yaml
   schema                           Show the workflow config (statuses, priorities, etc.)
-  create <title> [--status <s>] [--priority <p>] [--type <t>]
+  project <list|create|edit|delete|set-default> ...
+  create <title> [--project <key>] [--status <s>] [--priority <p>] [--type <t>]
   list [--query <q>] [--view <v>] [--limit <n>] [--archived]
                                    --archived: include archived tasks
                                    (hidden by default; saved views are respected as authored)
@@ -229,8 +237,15 @@ export async function main(): Promise<void> {
     switch (command) {
       case "init": {
         const prefix = getArg(args, "--prefix") ?? "T-";
+        const projectKey = getArg(args, "--project-key");
+        const projectLabel = getArg(args, "--project-label");
         const docs = !hasFlag(args, "--no-docs");
-        const result = await initLoctt(root, { prefix, docs });
+        const result = await initLoctt(root, {
+          prefix,
+          docs,
+          ...(projectKey ? { projectKey } : {}),
+          ...(projectLabel ? { projectLabel } : {}),
+        });
         console.log(`Initialized .loctt at ${result.locttDir}`);
         console.log(`Created ${result.created.length} files`);
         break;
@@ -245,14 +260,24 @@ export async function main(): Promise<void> {
         console.log(`LocTT directory: ${info.locttDir}`);
         console.log(`Tasks: ${info.taskCount}`);
         if (info.workflowConfig) {
-          console.log(`Key prefix: ${info.workflowConfig.key.prefix}`);
           console.log(`Statuses: ${info.workflowConfig.statuses.map(s => s.key).join(", ")}`);
         }
-        if (info.state) {
-          const taskState = info.state.keys["task"];
-          if (taskState) {
-            console.log(`Next key: ${taskState.prefix}${taskState.next_number}`);
+        // Print per-project counters. Each line: "<key> [*]  <prefix><next_number>"
+        // The asterisk marks the workspace default.
+        try {
+          const projects = await loadProjectsConfig(resolveLocttDir(root));
+          if (projects.projects.length > 0) {
+            console.log(``);
+            console.log(`Projects:`);
+            for (const p of projects.projects) {
+              const counter = info.state?.keys[p.key];
+              const star = projects.default === p.key ? " *" : "";
+              const next = counter ? `${counter.prefix}${counter.next_number}` : `(no counter)`;
+              console.log(`  ${p.key}${star}  ${p.label}  next: ${next}`);
+            }
           }
+        } catch {
+          // No projects.yaml — show nothing extra.
         }
         break;
       }
@@ -346,11 +371,27 @@ export async function main(): Promise<void> {
         }
         const locttDir = resolveLocttDir(root);
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
+
+        // Resolve target project. Walk explicit > workspace default
+        // > unique-single-project. Fail if ambiguous.
+        const projectsConfig = await loadProjectsConfig(locttDir);
+        let projectKey: string;
+        try {
+          projectKey = resolveProjectKey(projectsConfig, {
+            explicit: getArg(args, "--project"),
+          });
+        } catch (err) {
+          console.error(`Error: ${(err as Error).message}`);
+          process.exitCode = 1;
+          break;
+        }
+
         const task = await withStateLock(locttDir, async () => {
           const state = await loadState(locttDir);
           const created = await createTask({
             locttDir, state, workflowConfig,
             options: {
+              project: projectKey,
               title,
               status: getArg(args, "--status"),
               priority: getArg(args, "--priority"),
@@ -380,10 +421,21 @@ export async function main(): Promise<void> {
           }
         }
 
+        // Sugar: `--project <key>` is equivalent to a `project = <key>`
+        // clause AND-ed onto whatever query the user passed. Avoids
+        // making users construct DSL strings for the common case.
+        const projectFilter = getArg(args, "--project");
+        const baseQuery = getArg(args, "--query");
+        const composedQuery = projectFilter !== undefined
+          ? (baseQuery !== undefined && baseQuery.length > 0
+              ? `(${baseQuery}) and project = ${projectFilter}`
+              : `project = ${projectFilter}`)
+          : baseQuery;
+
         const result = listTasks({
           tasks,
           options: {
-            query: getArg(args, "--query"),
+            query: composedQuery,
             view: getArg(args, "--view"),
             limit,
             includeArchived: hasFlag(args, "--archived"),
@@ -755,6 +807,127 @@ export async function main(): Promise<void> {
           process.once("SIGTERM", shutdown);
         });
         await app.stop();
+        break;
+      }
+
+      case "project": {
+        const sub = args[1];
+        const locttDir = resolveLocttDir(root);
+        switch (sub) {
+          case "list": {
+            const cfg = await loadProjectsConfig(locttDir);
+            for (const p of cfg.projects) {
+              const star = cfg.default === p.key ? " *" : "";
+              console.log(`${p.key}${star}\t${p.label}\t${p.prefix}`);
+            }
+            if (cfg.default !== undefined) {
+              console.log(``);
+              console.log(`* = workspace default`);
+            }
+            break;
+          }
+          case "create": {
+            const key = args[2];
+            const prefix = getArg(args, "--prefix");
+            if (!key || !prefix) {
+              console.error(`Usage: loctt project create <key> --prefix <prefix> [--label <label>] [--default]`);
+              process.exitCode = 1;
+              break;
+            }
+            const label = getArg(args, "--label") ?? key;
+            try {
+              await createProject(locttDir, { key, label, prefix });
+              if (hasFlag(args, "--default")) {
+                await setDefaultProject(locttDir, key);
+              }
+              console.log(`Created project ${key} (prefix ${prefix})`);
+            } catch (err) {
+              if (err instanceof ProjectError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "edit": {
+            const key = args[2];
+            const label = getArg(args, "--label");
+            if (!key) {
+              console.error(`Usage: loctt project edit <key> [--label <label>]`);
+              process.exitCode = 1;
+              break;
+            }
+            if (label === undefined) {
+              console.error(`Nothing to update; pass --label.`);
+              process.exitCode = 1;
+              break;
+            }
+            try {
+              await editProject(locttDir, key, { label });
+              console.log(`Updated project ${key}`);
+            } catch (err) {
+              if (err instanceof ProjectError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "delete": {
+            const key = args[2];
+            const remapTo = getArg(args, "--remap-to");
+            if (!key) {
+              console.error(`Usage: loctt project delete <key> [--remap-to <other-key>]`);
+              process.exitCode = 1;
+              break;
+            }
+            try {
+              const result = await deleteProject(locttDir, key, {
+                ...(remapTo !== undefined ? { remapTo } : {}),
+              });
+              if (result.remappedTaskCount > 0) {
+                console.log(`Remapped ${result.remappedTaskCount} task(s) to ${remapTo}`);
+              }
+              console.log(`Deleted project ${key}`);
+            } catch (err) {
+              if (err instanceof ProjectError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "set-default": {
+            const key = args[2];
+            if (!key) {
+              console.error(`Usage: loctt project set-default <key|->`);
+              process.exitCode = 1;
+              break;
+            }
+            try {
+              await setDefaultProject(locttDir, key === "-" ? null : key);
+              console.log(key === "-" ? `Cleared workspace default project` : `Set workspace default to ${key}`);
+            } catch (err) {
+              if (err instanceof ProjectError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          default:
+            console.error(`Usage: loctt project <list|create|edit|delete|set-default> ...`);
+            process.exitCode = 1;
+            break;
+        }
         break;
       }
 

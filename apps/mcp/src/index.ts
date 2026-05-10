@@ -14,10 +14,13 @@ import {
   buildListContext,
   buildShowModel,
   CONFIG_KEYS,
+  createProject,
   createTask,
+  deleteProject,
   deleteTask,
   detachFile,
   disableGit,
+  editProject,
   enableGit,
   getConfigValue,
   getGitStatus,
@@ -27,17 +30,21 @@ import {
   listTasks,
   loadAllTasks,
   loadOptionalConfigs,
+  loadProjectsConfig,
   loadQueriesConfig,
   loadState,
   loadWorkflowConfig,
   lookupTask,
+  ProjectError,
   publish,
   readHistory,
   requireSupportedSchema,
   resolveLocttDir,
+  resolveProjectKey,
   runDoctor,
   saveState,
   setConfigValue,
+  setDefaultProject,
   setField,
   sync,
   unarchiveTask,
@@ -77,6 +84,7 @@ export function getTools(): McpTool[] {
       inputSchema: {
         query: z.string().optional().describe("Ad hoc query string"),
         view: z.string().optional().describe("Named saved view"),
+        project: z.string().optional().describe("Filter to a specific project. AND-merges with `query` if both are supplied."),
         limit: z.number().optional().describe("Max results (default 30)"),
         include_archived: z.boolean().optional().describe("If true, include archived tasks (default false). Ignored when a query already mentions `archived` or when a saved view is used."),
       },
@@ -93,9 +101,10 @@ export function getTools(): McpTool[] {
     },
     {
       name: "create_task",
-      description: "Create a new task.",
+      description: "Create a new task. When the tracker has multiple projects, pass `project` to disambiguate; otherwise the workspace default (or the only project) is used.",
       inputSchema: {
         title: z.string(),
+        project: z.string().optional().describe("Project key (slug). Optional when a default project is configured or only one project exists."),
         status: z.string().optional(),
         priority: z.string().optional(),
         task_type: z.string().optional(),
@@ -270,6 +279,44 @@ export function getTools(): McpTool[] {
         limit: z.number().optional().describe("Max entries to return (default: all)"),
       },
     },
+    {
+      name: "project_list",
+      description: "List projects defined in projects.yaml. Returns each project's key, label, prefix, and which (if any) is the workspace default.",
+      inputSchema: {},
+    },
+    {
+      name: "project_create",
+      description: "Create a new project. Project keys are immutable; prefixes must be unique across the tracker. Setting `make_default` true also sets the workspace default.",
+      inputSchema: {
+        key: z.string().describe("Slug identifier (lowercase letters, digits, hyphen, underscore)"),
+        label: z.string().describe("Human-readable label"),
+        prefix: z.string().describe("Task-key prefix, e.g. BACKEND-"),
+        make_default: z.boolean().optional().describe("If true, also set this project as the workspace default"),
+      },
+    },
+    {
+      name: "project_edit",
+      description: "Edit an existing project. Only `label` is mutable — `key` and `prefix` are immutable after creation.",
+      inputSchema: {
+        key: z.string(),
+        label: z.string().describe("New label"),
+      },
+    },
+    {
+      name: "project_delete",
+      description: "Delete a project. If the project has tasks, `remap_to` is required to migrate them to another project before deletion. Cannot delete the only project.",
+      inputSchema: {
+        key: z.string(),
+        remap_to: z.string().optional().describe("Target project key for tasks in the deleted project"),
+      },
+    },
+    {
+      name: "project_set_default",
+      description: "Set or clear the workspace default project. Pass `key` to set, or omit it to clear the default.",
+      inputSchema: {
+        key: z.string().optional(),
+      },
+    },
   ];
 }
 
@@ -349,10 +396,19 @@ export async function executeTool(
         const tasks = await loadAllTasks(locttDir);
         const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
 
+        // Compose ad-hoc query with optional `project` filter sugar.
+        const projectFilter = args["project"] as string | undefined;
+        const baseQuery = args["query"] as string | undefined;
+        const composedQuery = projectFilter !== undefined
+          ? (baseQuery !== undefined && baseQuery.length > 0
+              ? `(${baseQuery}) and project = ${projectFilter}`
+              : `project = ${projectFilter}`)
+          : baseQuery;
+
         const result = listTasks({
           tasks,
           options: {
-            query: args["query"] as string | undefined,
+            query: composedQuery,
             view: args["view"] as string | undefined,
             limit: args["limit"] as number | undefined,
             includeArchived: args["include_archived"] as boolean | undefined,
@@ -390,11 +446,22 @@ export async function executeTool(
 
       case "create_task": {
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
+        // Resolve target project. Mirrors CLI/HTTP semantics.
+        const projectsConfig = await loadProjectsConfig(locttDir);
+        let projectKey: string;
+        try {
+          projectKey = resolveProjectKey(projectsConfig, {
+            explicit: args["project"] as string | undefined,
+          });
+        } catch (err) {
+          return errorResult((err as Error).message);
+        }
         const task = await withStateLock(locttDir, async () => {
           const state = await loadState(locttDir);
           const created = await createTask({
             locttDir, state, workflowConfig,
             options: {
+              project: projectKey,
               title: args["title"] as string,
               status: args["status"] as string | undefined,
               priority: args["priority"] as string | undefined,
@@ -680,6 +747,78 @@ export async function executeTool(
           });
         }
         return text(JSON.stringify(items, null, 2));
+      }
+
+      case "project_list": {
+        const cfg = await loadProjectsConfig(locttDir);
+        return text(JSON.stringify({
+          projects: cfg.projects,
+          default: cfg.default ?? null,
+        }, null, 2));
+      }
+
+      case "project_create": {
+        try {
+          await createProject(locttDir, {
+            key: args["key"] as string,
+            label: args["label"] as string,
+            prefix: args["prefix"] as string,
+          });
+          if (args["make_default"] === true) {
+            await setDefaultProject(locttDir, args["key"] as string);
+          }
+          return text(`Created project ${String(args["key"])}`);
+        } catch (err) {
+          if (err instanceof ProjectError) {
+            return errorResult(err.message);
+          }
+          throw err;
+        }
+      }
+
+      case "project_edit": {
+        try {
+          await editProject(locttDir, args["key"] as string, {
+            label: args["label"] as string,
+          });
+          return text(`Updated project ${String(args["key"])}`);
+        } catch (err) {
+          if (err instanceof ProjectError) {
+            return errorResult(err.message);
+          }
+          throw err;
+        }
+      }
+
+      case "project_delete": {
+        try {
+          const remapTo = args["remap_to"] as string | undefined;
+          const result = await deleteProject(locttDir, args["key"] as string, {
+            ...(remapTo !== undefined ? { remapTo } : {}),
+          });
+          return text(JSON.stringify({
+            deleted: args["key"],
+            remappedTaskCount: result.remappedTaskCount,
+          }, null, 2));
+        } catch (err) {
+          if (err instanceof ProjectError) {
+            return errorResult(err.message);
+          }
+          throw err;
+        }
+      }
+
+      case "project_set_default": {
+        try {
+          const key = (args["key"] as string | undefined) ?? null;
+          await setDefaultProject(locttDir, key);
+          return text(key === null ? `Cleared workspace default project` : `Set workspace default to ${key}`);
+        } catch (err) {
+          if (err instanceof ProjectError) {
+            return errorResult(err.message);
+          }
+          throw err;
+        }
       }
 
       default:

@@ -5,6 +5,12 @@ import type { WorkflowConfig } from "./workflow.js";
 /** Request to create a new task. */
 export interface CreateTaskRequest {
   readonly title: string;
+  /**
+   * Optional. When omitted, the server resolves the active project
+   * via the default-project resolution order (workspace default,
+   * unique-single-project, etc.).
+   */
+  readonly project?: string;
   readonly status?: string;
   readonly task_type?: string;
   readonly priority?: string;

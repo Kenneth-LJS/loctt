@@ -110,6 +110,7 @@ export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
     return value;
   }
 
+  const project = optionalString(raw["project"], "project");
   const status = optionalString(raw["status"], "status");
   const statusUpdatedAt = optionalDateString(raw["status_updated_at"], "status_updated_at");
   const taskType = optionalString(raw["task_type"], "task_type");
@@ -131,6 +132,7 @@ export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
     title: raw["title"],
     created_at: createdAtStr,
     updated_at: updatedAtStr,
+    ...(project !== undefined ? { project } : {}),
     ...(status !== undefined ? { status } : {}),
     ...(statusUpdatedAt !== undefined ? { status_updated_at: statusUpdatedAt } : {}),
     ...(taskType !== undefined ? { task_type: taskType } : {}),
@@ -167,6 +169,7 @@ export function serializeFrontmatter(fm: TaskFrontmatter): string {
     updated_at: fm.updated_at,
   };
 
+  if (fm.project !== undefined) obj["project"] = fm.project;
   if (fm.status !== undefined) obj["status"] = fm.status;
   if (fm.status_updated_at !== undefined) obj["status_updated_at"] = fm.status_updated_at;
   if (fm.task_type !== undefined) obj["task_type"] = fm.task_type;

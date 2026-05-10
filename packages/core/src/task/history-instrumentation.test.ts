@@ -264,7 +264,7 @@ describe("history instrumentation", () => {
       const task = await createTask({
         locttDir,
         state,
-        options: { title: "New task" },
+        options: { project: "task", title: "New task" },
       });
 
       const history = await readHistory(locttDir, task.frontmatter.id);

@@ -9,6 +9,12 @@ import { writeTask } from "./io.js";
 /** Options for creating a new task. */
 export interface CreateTaskOptions {
   readonly title: string;
+  /**
+   * Project the task belongs to (matches `ProjectDef.key`).
+   * Required — caller must resolve the default-project rules
+   * before invoking createTask.
+   */
+  readonly project: string;
   readonly status?: string;
   readonly task_type?: string;
   readonly priority?: string;
@@ -41,7 +47,9 @@ export interface CreateTaskParams {
 export async function createTask(params: CreateTaskParams): Promise<Task> {
   const { locttDir, state, options, workflowConfig } = params;
   const id = ulid();
-  const key = allocateKey(state, "task");
+  // Each project owns its own counter in state.yaml. The project
+  // key doubles as the entity-type for `allocateKey`.
+  const key = allocateKey(state, options.project);
   const now = new Date().toISOString();
 
   // Normalize parent option into a relationship edge
@@ -53,6 +61,7 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
   const frontmatter: TaskFrontmatter = {
     id,
     key,
+    project: options.project,
     title: options.title,
     created_at: now,
     updated_at: now,
