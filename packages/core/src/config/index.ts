@@ -1,4 +1,13 @@
 export {
+  CalendarConfigError,
+  calendarConfigExists,
+  getCalendarConfigPath,
+  loadCalendarConfig,
+  parseCalendarConfig,
+  saveCalendarConfig,
+  serializeCalendarConfig,
+} from "./calendar.js";
+export {
   getLabelsConfigPath,
   LabelsConfigError,
   labelsConfigExists,

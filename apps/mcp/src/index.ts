@@ -44,6 +44,7 @@ import {
   listTasks,
   loadAllTasks,
   loadAllUsers,
+  loadCalendarConfig,
   loadLabelsConfig,
   loadMilestonesConfig,
   loadOptionalConfigs,
@@ -411,6 +412,11 @@ export function getTools(): McpTool[] {
     {
       name: "label_list",
       description: "List labels defined in labels.yaml.",
+      inputSchema: {},
+    },
+    {
+      name: "get_calendar",
+      description: "Returns the workspace calendar config (timezone, working days, holidays). Read-only — calendar is configured via the UI.",
       inputSchema: {},
     },
     {
@@ -1165,6 +1171,11 @@ export async function executeTool(
           if (err instanceof LabelError) return errorResult(err.message);
           throw err;
         }
+      }
+
+      case "get_calendar": {
+        const cfg = await loadCalendarConfig(locttDir);
+        return text(JSON.stringify(cfg, null, 2));
       }
 
       case "sprint_list": {
