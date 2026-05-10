@@ -75,7 +75,7 @@ Path helpers live in `packages/core/src/paths/index.ts`. Every config file has a
 
 ### Migration framework
 
-Migrations are registered in `packages/core/src/schema/migrations.ts` as edges in a directed graph. Each `Migration` has a `from`, a `to` (usually `from + 1` but skip-paths are allowed), and an idempotent `apply(locttDir)`. `findMigrationPath` runs BFS to find the shortest path between two versions, with non-deprecated edges preferred as a tiebreaker so a future "skip the buggy v7" fast-path can coexist with the original step-by-step edges.
+Migrations are registered in `packages/core/src/schema/migrations.ts` as edges in a directed graph. Each `Migration` has a `from`, a `to` (usually `from + 1` but skip-paths are allowed), and an idempotent `apply(locttDir)`. `findMigrationPath` runs BFS to find the shortest path between two versions and tiebreaks by minimizing the number of edges marked `deprecated`, so a future "skip the buggy v7" fast-path can coexist with the original step-by-step edges and the framework will prefer the non-deprecated route when both are equally short.
 
 `migrateToCurrent` takes the migration lock, snapshots the entire `.loctt/` to a sibling `.loctt.backup-v<from>-<ts>-<rand>/`, then runs each step in order — writing the sentinel before applying, calling `apply`, stamping `.schema-version`, and clearing the sentinel. A crash anywhere in that loop leaves the sentinel behind so the next boot refuses to start until the user investigates.
 
@@ -118,7 +118,7 @@ A tracker hosts one or more projects. Each `ProjectDef` has:
 
 Per-project key counters live in `state.yaml` under `keys.<project-key>`. Allocation is a simple `prefix + next_number` increment guarded by `withStateLock`.
 
-`resolveProjectKey` walks the resolution order: **explicit > user default > workspace default (`projects.yaml#default`) > unique single project > error**. Per-user defaults aren't visible to core (they live in `users/<id>/settings.yaml`); callers pass them as `userDefault`.
+`resolveProjectKey` walks the resolution order: **explicit > user default > workspace default (`projects.yaml#default`) > unique single project > error**. A user default that no longer matches any project is silently ignored — resolution falls through to the workspace default rather than erroring, so deleting a project doesn't break callers whose stored preference now references it. Per-user defaults aren't visible to core (they live in `users/<id>/settings.yaml`); callers pass them as `userDefault`.
 
 ### Retired key counters
 

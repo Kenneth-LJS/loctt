@@ -119,20 +119,22 @@ The top of every `task.md` is a YAML block delimited by `---`. The schema is `pa
 | `labels` | string[] | no | Label keys (must exist in `labels.yaml` if that file is used) |
 | `assignee` | string | no | User ID (ULID) of assignee |
 | `reporter` | string | no | User ID (ULID) of reporter |
-| `start_date` | YYYY-MM-DD | no | Planned start date |
-| `due_date` | YYYY-MM-DD | no | Due date |
-| `estimate` | string \| number | no | Effort estimate; numeric input is coerced to string on write |
-| `completed_date` | ISO 8601 | no | Auto-set when status enters a `completed`-category status; auto-cleared on exit. Not user-editable |
+| `start_date` | string | no | Planned start date. Conventionally `YYYY-MM-DD`; the schema only requires a string |
+| `due_date` | string | no | Due date. Conventionally `YYYY-MM-DD`; the schema only requires a string |
+| `estimate` | string \| number | no | Effort estimate. A number is coerced to a string at parse time |
+| `completed_date` | string | no | Auto-set to today (`YYYY-MM-DD`) when status enters a `completed`-category status; auto-cleared on exit. Not user-editable |
 | `milestone` | string | no | Milestone key |
 | `sprint` | string | no | Sprint key (zero-or-one; no carryover) |
 | `archived` | boolean | no | When `true`, the task is hidden from default lists |
-| `archived_at` | ISO 8601 | no | When `archived` flipped to `true` |
-| `board_rank` | string | no | Lexorank string for manual ordering within a board column. Cards without rank sort below ranked ones |
+| `archived_at` | string | no | ISO timestamp when `archived` was flipped to `true` |
 | `relationships` | array | no | Typed edges to other tasks (see below) |
 | `key_history` | string[] | no | Previous keys after rekeying (e.g. project rename) |
 | `fields` | object | no | Custom-field values keyed by custom-field key |
+| `board_rank` | string | no | Lexorank string for manual ordering within a board column. Cards without rank sort below ranked ones |
 
-Field write order in serialized output: required fields first (`id`, `key`, `title`, `created_at`, `updated_at`), then optional fields in the order listed above.
+Date-shaped fields (`start_date`, `due_date`, `completed_date`) are typed as plain strings in the schema rather than `IsoDate`. Tools that produce frontmatter (CLI, MCP, web) write `YYYY-MM-DD`, but the parser does not refuse hand-edited values that don't match — convention, not enforcement.
+
+Field write order in serialized output: `id`, `key`, `title`, `created_at`, `updated_at` first, then the optional fields in the order listed above. `board_rank` is written last (after `fields`), matching the table.
 
 ### Relationships
 
@@ -382,9 +384,9 @@ queries:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `id` | string | yes | Stable unique identifier (ULID). Auto-assigned on first read of older files |
+| `id` | string | yes | Stable unique identifier (ULID). Auto-assigned on first read of older files. Duplicate ids across queries are rejected |
 | `name` | string | yes | Display label |
-| `query` | string | yes | Query DSL string. See [query-language.md](../query-language.md) |
+| `query` | string | yes | Query DSL string. The parser tokenizes and parses every `query` at load time, so a malformed entry rejects the whole file. See [query-language.md](../query-language.md) |
 | `sort` | array | no | Ordered list of sort specifiers |
 | `archived` | boolean | no | Hide from default lists. Still runnable by id |
 
@@ -625,7 +627,7 @@ git:
   last_synced_commit: 4f1c2a9c83a13d6f1c0ed9e2b7a8f5d2c4e6a1b8
 ```
 
-Defaults: `branch=loctt`, `remote=origin`, `auto_push=true`, `auto_fetch=true`.
+Back-fill defaults applied at parse time when the field is missing from older `sync.yaml` files: `remote=origin`, `auto_push=true`, `auto_fetch=true`. `branch` is required and is not back-filled — `loctt git enable` writes it on first activation.
 
 ### `git`
 
@@ -689,7 +691,7 @@ id: 01HKQA8C2WV4Z9X1Y3M6N7P0Q5
 name: Ken Loh
 timezone: Asia/Singapore
 email: ken@example.com
-avatar: avatars/ken.png
+avatar: avatar.png
 ```
 
 The serializer writes fields in this order: `id`, `name`, `timezone`, then optional `email`, `avatar`, `archived`. The loader rejects a profile whose `id` does not match its containing directory.
@@ -697,10 +699,10 @@ The serializer writes fields in this order: `id`, `name`, `timezone`, then optio
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `id` | string | yes | ULID; must match the directory name |
-| `name` | string | yes | Display name (not unique; truncated id is shown when ambiguous) |
+| `name` | string | yes | Non-empty display name (not unique; truncated id is shown when ambiguous) |
 | `timezone` | IanaTimezone | yes | Per-user timezone |
 | `email` | string (email) | no | Validated as an email address |
-| `avatar` | string | no | Path or URL to an avatar image |
+| `avatar` | basename | no | Filename of the avatar inside the user's folder. The schema rejects path separators, leading slashes, and `.` / `..`, so a hand-edited `profile.yaml` cannot point the avatar at a file outside the user dir |
 | `archived` | boolean | no | Hide from default pickers; existing assignments still display the name |
 
 ---

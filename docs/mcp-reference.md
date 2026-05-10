@@ -106,7 +106,7 @@ Set a single field on a task.
 
 **Custom fields:** any field name not in the built-in list is treated as a custom field and must be declared in `workflow.yaml` under `custom_fields`. Custom fields go through `update_task` too — there is no separate tool.
 
-**Rejected (system-managed) fields:** `id`, `key`, `created_at`, `project` (immutable); `relationships` (use `link_tasks` / `unlink_tasks`); `archived`, `archived_at` (use `archive_task` / `unarchive_task` / `delete_task`); `status_updated_at` (auto-stamped on status change); `completed_date`, `board_rank` (auto-managed).
+**Rejected (system-managed) fields:** `id`, `key`, `created_at`, `project`, `key_history` (immutable); `relationships` (use `link_tasks` / `unlink_tasks`); `archived`, `archived_at` (use `archive_task` / `unarchive_task` / `delete_task`); `status_updated_at` (auto-stamped on status change); `completed_date`, `board_rank` (auto-managed).
 
 Returns: `Updated <KEY>: set <field> = <value>`.
 
@@ -431,7 +431,7 @@ No parameters. Returns the full sprints config JSON.
 
 ### `sprint_edit`
 
-State transitions may be guarded by core; pass `force: true` to override (the `force` option is supported by the underlying `editSprint` for state transitions). Pass `null` `goal` to clear.
+Edit a sprint. Re-opening a completed sprint (state `completed` → `active` or `future`) is blocked by default; pass `force: true` to override. Pass `null` `goal` to clear it.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -441,6 +441,7 @@ State transitions may be guarded by core; pass `force: true` to override (the `f
 | `end_date` | string | no | `YYYY-MM-DD` |
 | `state` | enum | no | `active` \| `completed` \| `future` |
 | `goal` | string \| null | no | Pass `null` to clear |
+| `force` | boolean | no | Override the block on re-opening a completed sprint |
 
 ### `sprint_archive` / `sprint_unarchive`
 
