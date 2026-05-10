@@ -1,11 +1,18 @@
 import type { z } from "zod";
 
 /**
- * Renders a zod ZodError into the same shape as the previous
- * hand-rolled assertion errors: a single sentence with a path and
- * a message, semicolon-separated for multi-issue errors.
+ * Renders a zod ZodError into a stable, human-readable single
+ * sentence — one issue per line, semicolon-separated for
+ * multi-issue errors:
  *
- *   labels[0].key must be a slug (...), got: 1bad; labels[1].label must be a non-empty string
+ *   labels[0].key must be a slug, got: "1bad"; labels[1].label must be a non-empty string
+ *
+ * Why translate instead of using zod's own messages?  Zod's
+ * default messages are good but they drift between minor
+ * versions ("Invalid input: expected string, received undefined"
+ * → "Required" → ...), and assertions in our test suite would
+ * break every time. We standardize the most common codes here so
+ * the parser layer's error contract is ours to evolve.
  *
  * `prefix` is what to call the root in the error if a top-level
  * issue happens (e.g. "labels config", "task frontmatter").
@@ -14,11 +21,130 @@ export function formatZodIssues(prefix: string, err: z.ZodError): string {
   if (err.issues.length === 0) return `${prefix} is invalid`;
   return err.issues
     .map(issue => {
-      const path = issue.path.length === 0 ? prefix : issue.path
-        .map(seg => (typeof seg === "number" ? `[${seg}]` : `.${String(seg)}`))
-        .join("")
-        .replace(/^\./, "");
-      return `${path} ${issue.message}`;
+      const pathSegs = issue.path.map(seg =>
+        typeof seg === "number" ? `[${seg}]` : `.${String(seg)}`,
+      );
+      const path = pathSegs.length === 0
+        ? prefix
+        : pathSegs.join("").replace(/^\./, "");
+      return `${path} ${stableMessage(issue)}`;
     })
     .join("; ");
+}
+
+interface ZodLikeIssue {
+  readonly code: string;
+  readonly message: string;
+  readonly expected?: unknown;
+  readonly received?: unknown;
+  readonly minimum?: unknown;
+  readonly maximum?: unknown;
+  readonly origin?: unknown;
+  readonly type?: unknown;
+  readonly inclusive?: unknown;
+  readonly options?: unknown;
+  readonly values?: unknown;
+  readonly keys?: unknown;
+}
+
+/**
+ * Translates the most common zod issue codes into stable
+ * human-readable messages. Uncovered codes fall back to the
+ * issue's default message.
+ */
+function stableMessage(issue: z.ZodIssue): string {
+  // Zod v4's discriminated union uses different field names per
+  // code (origin vs type, values vs options); read everything
+  // generically so the test surface stays stable.
+  const i = issue as unknown as ZodLikeIssue;
+
+  switch (i.code) {
+    case "invalid_type": {
+      const expected = asScalarString(i.expected, "value");
+      // zod v4 raises invalid_type for missing-required (received
+      // is omitted from the issue) AND for wrong-type (received
+      // present). The default message says "received undefined"
+      // for missing keys, "received <type>" for wrong type.
+      const isMissing =
+        i.received === undefined
+        && /received undefined/.test(issue.message);
+      if (isMissing) {
+        return `is required (expected ${expected})`;
+      }
+      const received = asScalarString(
+        i.received ?? extractReceived(issue.message),
+        "value",
+      );
+      const article = /^[aeiou]/i.test(expected) ? "an" : "a";
+      return `must be ${article} ${expected}, got: ${received}`;
+    }
+    case "too_small": {
+      const min = asScalarString(i.minimum, "");
+      const origin = asScalarString(i.origin ?? i.type, "");
+      if (origin === "string" && min === "1") return `must be a non-empty string`;
+      if (origin === "array" && min === "1") return `must contain at least one item`;
+      if (origin === "number") return `must be >= ${min}`;
+      return `is too small (min ${min})`;
+    }
+    case "too_big": {
+      const max = asScalarString(i.maximum, "");
+      const origin = asScalarString(i.origin ?? i.type, "");
+      if (origin === "number") return `must be <= ${max}`;
+      return `is too large (max ${max})`;
+    }
+    case "invalid_value":
+    case "invalid_enum_value": {
+      const list = (Array.isArray(i.values) ? i.values
+        : Array.isArray(i.options) ? i.options
+        : []) as readonly unknown[];
+      return list.length > 0
+        ? `must be one of: ${list.map(o => JSON.stringify(o)).join(", ")}`
+        : `is not one of the allowed values`;
+    }
+    case "invalid_format":
+    case "invalid_string": {
+      // Brand types and z.string().regex() bubble through here
+      // — our schemas attach a custom message for each, so
+      // prefer that over a generic.
+      return issue.message || `has an invalid format`;
+    }
+    case "unrecognized_keys": {
+      const keys = Array.isArray(i.keys)
+        ? (i.keys as unknown[]).map(k => JSON.stringify(k)).join(", ")
+        : "";
+      return keys.length > 0
+        ? `has unrecognized key(s): ${keys}`
+        : `has unrecognized keys`;
+    }
+    case "custom":
+      return issue.message;
+    default:
+      return issue.message;
+  }
+}
+
+/**
+ * Extracts the "received: <type>" tail from zod's default
+ * invalid_type message when the issue object doesn't expose
+ * `received` directly. Returns undefined when not found.
+ */
+function extractReceived(message: string): string | undefined {
+  const m = /received\s+([A-Za-z_][A-Za-z0-9_]*)/.exec(message);
+  return m ? m[1] : undefined;
+}
+
+/**
+ * Coerces a possibly-unknown zod field into a string suitable for
+ * error rendering. Strings/numbers/booleans pass through as-is;
+ * objects/arrays fall back to a sentinel because their default
+ * `toString()` is "[object Object]" / "1,2,3" — not useful in an
+ * error message. Returns `fallback` for null/undefined.
+ */
+function asScalarString(value: unknown, fallback: string): string {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  return fallback;
 }

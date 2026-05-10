@@ -35,12 +35,16 @@ base_commit: aaa
 remote_commit: bbb
 started_at: "2026-01-01T00:00:00Z"
 `;
-    expect(() => parseReconcileState(yaml)).toThrow(/publish|sync|Invalid option/);
+    expect(() => parseReconcileState(yaml)).toThrow(ReconcileStateError);
+    expect(() => parseReconcileState(yaml)).toThrow(
+      `mode must be one of: "publish", "sync"`,
+    );
   });
 
   it("throws on missing base_commit", () => {
     const yaml = `mode: publish\nremote_commit: x\nstarted_at: "2026-01-01T00:00:00Z"`;
-    expect(() => parseReconcileState(yaml)).toThrow(/base_commit/);
+    expect(() => parseReconcileState(yaml)).toThrow(ReconcileStateError);
+    expect(() => parseReconcileState(yaml)).toThrow("base_commit is required (expected string)");
   });
 
   it("throws on non-object root", () => {

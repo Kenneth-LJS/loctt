@@ -167,7 +167,10 @@ priorities: []
 task_types: []
 relationships: []
 `;
-    expect(() => parseWorkflowConfig(yaml)).toThrow(/Invalid option|must be one of|pending/);
+    expect(() => parseWorkflowConfig(yaml)).toThrow(WorkflowConfigError);
+    expect(() => parseWorkflowConfig(yaml)).toThrow(
+      `statuses[0].category must be one of: "pending", "active", "completed", "discarded"`,
+    );
   });
 
   it("throws on invalid custom field type", () => {
@@ -185,7 +188,10 @@ custom_fields:
     multi: false
     searchable: true
 `;
-    expect(() => parseWorkflowConfig(yaml)).toThrow(/Invalid option|must be one of|string|number|date|boolean|enum/);
+    expect(() => parseWorkflowConfig(yaml)).toThrow(WorkflowConfigError);
+    expect(() => parseWorkflowConfig(yaml)).toThrow(
+      `custom_fields[0].type must be one of: "string", "number", "date", "boolean", "enum"`,
+    );
   });
 
   it("throws on non-object root", () => {
@@ -194,7 +200,7 @@ custom_fields:
 
   it("throws on missing statuses array", () => {
     expect(() => parseWorkflowConfig(`key:\n  prefix: T-\npriorities: []\ntask_types: []\nrelationships: []`))
-      .toThrow(/statuses/);
+      .toThrow("statuses is required (expected array)");
   });
 
   it("parses estimation config (numeric)", () => {
