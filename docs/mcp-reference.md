@@ -1,59 +1,100 @@
 # MCP Reference
 
-LocTT's MCP server provides structured tools for AI agents to manage tasks via the Model Context Protocol.
+LocTT's MCP server provides structured tools for AI agents to manage tasks via the Model Context Protocol. Each tool below lists its inputs, the shape of its output, and the common error modes the server returns.
 
-## Tools
+## Agent Guidelines
 
-### Query Tools
+- **Always use structured tools.** Never edit `task.md` frontmatter or any `.loctt/` config file directly via raw filesystem writes. The body of a task is editable only via `replace_task_body` and `append_task_body`.
+- **Use `get_config` and the `*_list` tools to discover valid values.** Statuses, priorities, task types, relationship types, projects, labels, milestones, sprints, and users all live in config — read them before writing.
+- **`delete_task` defaults to soft-delete (archive).** Only pass `hard: true` together with `confirm: true` when the user has explicitly asked to permanently remove a task. The same default-soft behavior applies to `project_delete`, `label_delete`, `milestone_delete`, and `sprint_delete`. `archive_task` / `unarchive_task` (and the `*_archive` / `*_unarchive` tools) are the same operation as the soft path.
+- **Schema-version guard.** Every tool except `init` first calls `requireSupportedSchema`. If the tracker's `.schema-version` is missing or doesn't match this server, every route refuses with a clear error pointing at `loctt migrate`. There is no MCP tool that runs the migration — the user must invoke the CLI command.
+- **Archived semantics.** Archived entities (projects, labels, milestones, sprints, users, tasks) are hidden from default listings but remain valid references on existing tasks. Pass `include_archived: true` (or the equivalent flag) to surface them.
+- **Validation failures are real.** If a structured operation rejects a value, do not bypass it by editing files; surface the error and ask the user.
 
-#### `get_task`
+## Tracker Setup
 
-Get a task by key or ID.
+### `init`
 
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `ref` | string | yes | Task key (e.g., `T-1`) or ID |
-| `include_body` | boolean | no | Include the markdown body (default: `true`) |
-
-Returns frontmatter fields, attachments list, and optionally the body.
-
-#### `list_tasks`
-
-List tasks with optional filtering.
+Bootstraps a new tracker at the server's working directory. Only call when the user has explicitly asked to set up a new tracker. Exempt from the schema-version guard (it is the one tool legitimately called against a non-existent or pre-version tracker).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `query` | string | no | Ad hoc query string |
-| `view` | string | no | Named saved view |
-| `limit` | number | no | Max results (default: 30) |
+| `prefix` | string | no | Key prefix for tasks (default `T-`) |
+| `project_key` | string | no | Initial project key/slug (default `task`) |
+| `project_label` | string | no | Initial project label / display name (default `Task`) |
+| `no_docs` | boolean | no | If true, skip generating helper docs |
 
-Returns key, title, status, and priority for each matching task.
+Returns: prose summary with the resolved `.loctt` directory and the count of files written.
 
-#### `list_views`
+Errors: `.loctt directory already exists at <path>` if the directory is already present.
 
-List saved views from `queries.yaml`. No parameters.
+### `info`
 
-#### `get_config`
+Returns a prose summary of the tracker state.
 
-Get the workflow configuration. No parameters.
+No parameters. Output includes the resolved LocTT directory, total task count, configured key prefix, status keys, and the `Next keys` block — one line per project counter (sorted by project key) showing the next key that will be issued (e.g. `backend: BACKEND-7`).
 
-### Mutation Tools
+If `.loctt/` is missing, returns a hint to run `loctt init`.
 
-#### `create_task`
+### `doctor`
 
-Create a new task.
+Runs diagnostic checks on the tracker. No parameters. Output is human-prose lines of the form `[ok|warn|error] <name>: <message>`. Useful for surfacing problems to the user; not designed for chained tool calls.
+
+## Tasks
+
+### `create_task`
+
+Create a new task. When the tracker has multiple projects, pass `project` to disambiguate; otherwise the workspace default (or the only project) is used.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `title` | string | yes | Task title |
-| `status` | string | no | Status key |
+| `project` | string | no | Project key (slug). Required when there are multiple projects and no default is set |
+| `status` | string | no | Status key (must exist in workflow.yaml) |
 | `priority` | string | no | Priority key |
 | `task_type` | string | no | Task type key |
 | `body` | string | no | Initial markdown body |
 
-#### `update_task`
+Returns: `Created <KEY>: <title>`.
 
-Set a field on a task.
+Errors: project resolution failures (no project specified and no default; unknown project key); workflow validation failures from `createTask`.
+
+### `get_task`
+
+Get a task by key or ID, optionally including the markdown body.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ref` | string | yes | Task key (e.g. `T-1`) or ID |
+| `include_body` | boolean | no | Include markdown body (default `true`) |
+
+Returns JSON: all frontmatter fields, plus `relationships` (each as `{type, target, missing?}` — `target` is rendered as a user-facing key like `T-2` when resolvable; deleted targets carry `missing: true` and retain the raw ID), `attachments` (`{name, size}`), and `body` when requested. The `relationships` key is omitted when empty.
+
+### `list_tasks`
+
+List tasks with optional query, view, and limit.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | no | Ad hoc query string |
+| `view` | string | no | Named saved view from `queries.yaml` |
+| `project` | string | no | Filter to a project. AND-merged with `query` if both are supplied |
+| `limit` | number | no | Max results (default 30) |
+| `include_archived` | boolean | no | Include archived tasks (default false). Ignored when the query already mentions `archived` or when a saved view is used — saved views are respected as authored |
+
+Returns JSON array of `{key, title, status, priority}`.
+
+### `list_views`
+
+Lists saved views from `queries.yaml`. No parameters. Returns JSON `[{name, query}]`, or the prose `No saved views configured.` when the file is absent.
+
+### `get_config`
+
+Returns the workflow configuration as JSON. No parameters.
+
+### `update_task`
+
+Set a single field on a task.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -61,7 +102,15 @@ Set a field on a task.
 | `field` | string | yes | Field name |
 | `value` | any | yes | Value to set |
 
-#### `unset_field`
+**Writable built-in fields:** `title`, `status`, `task_type`, `priority`, `labels`, `assignee`, `reporter`, `start_date`, `due_date`, `estimate`, `milestone`, `sprint`.
+
+**Custom fields:** any field name not in the built-in list is treated as a custom field and must be declared in `workflow.yaml` under `custom_fields`. Custom fields go through `update_task` too — there is no separate tool.
+
+**Rejected (system-managed) fields:** `id`, `key`, `created_at`, `project` (immutable); `relationships` (use `link_tasks` / `unlink_tasks`); `archived`, `archived_at` (use `archive_task` / `unarchive_task` / `delete_task`); `status_updated_at` (auto-stamped on status change); `completed_date`, `board_rank` (auto-managed).
+
+Returns: `Updated <KEY>: set <field> = <value>`.
+
+### `unset_field`
 
 Remove a field from a task.
 
@@ -70,16 +119,37 @@ Remove a field from a task.
 | `ref` | string | yes | Task key or ID |
 | `field` | string | yes | Field to remove |
 
-#### `append_task_body`
+Allowlist matches `update_task`: writable built-ins and declared custom fields. The system-managed fields rejected by `update_task` are also rejected here. `title` and `updated_at` cannot be unset (required).
 
-Append text to a task's markdown body.
+Returns: `Updated <KEY>: unset <field>`.
+
+### `delete_task`
+
+Default behavior is **soft-delete (archive)** — sets `archived: true`; the task remains on disk and can be unarchived. Pass `hard: true` (along with `confirm: true`) to permanently remove the task directory.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `ref` | string | yes | Task key or ID |
-| `text` | string | yes | Text to append |
+| `hard` | boolean | no | If true, permanently remove the task directory |
+| `confirm` | boolean | no | Required (must be `true`) when `hard` is true |
 
-#### `replace_task_body`
+Returns: `Archived <KEY> (use hard: true to remove permanently).` for the soft path, or `Hard-deleted <KEY>.` for the hard path.
+
+Errors:
+- `hard delete requires confirm: true to proceed` when `hard: true` is passed without `confirm: true`.
+- `Task <KEY> is already archived. Pass hard: true (and confirm: true) to permanently remove it.` when soft-deleting an already-archived task.
+
+### `archive_task` / `unarchive_task`
+
+Aliases for the soft-delete path and its inverse.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ref` | string | yes | Task key or ID |
+
+Returns: `Archived <KEY>.` / `Unarchived <KEY>.`.
+
+### `replace_task_body`
 
 Replace a task's entire markdown body.
 
@@ -88,42 +158,399 @@ Replace a task's entire markdown body.
 | `ref` | string | yes | Task key or ID |
 | `body` | string | yes | New body content |
 
-#### `archive_task` / `unarchive_task`
+Returns: `Replaced <KEY> body.`.
 
-Archive or unarchive a task.
+### `append_task_body`
 
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `ref` | string | yes | Task key or ID |
-
-#### `delete_task`
-
-Permanently delete a task. Requires explicit confirmation.
+Append text to a task's markdown body.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `ref` | string | yes | Task key or ID |
-| `confirm` | boolean | yes | Must be `true` to proceed |
+| `text` | string | yes | Text to append |
 
-### Relationship Tools
+Returns: `Appended to <KEY> body.`.
 
-#### `link_tasks`
+### `task_history`
 
-Add a relationship between tasks.
+Get the activity/history log for a task. Returns structured entries (newest first).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ref` | string | yes | Task key or ID |
+| `limit` | number | no | Max entries to return (default: all) |
+
+Returns JSON array of history entries.
+
+### `attach_file`
+
+Copy a local file into a task's attachments directory. Only filesystem paths are supported in v1 — no base64 content. The file must be readable from the MCP server's filesystem.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ref` | string | yes | Task key or ID |
+| `source_path` | string | yes | **Absolute** path to the file to attach |
+| `force` | boolean | no | If true, overwrite an existing attachment with the same basename |
+
+Returns JSON `{name, size, overwritten, task_key}`.
+
+Errors: `source_path must be absolute`; `<message>. Pass force: true to overwrite.` when an attachment with that basename already exists; source-readable errors from `AttachmentSourceError`.
+
+### `detach_file`
+
+Remove a file from a task's attachments directory.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ref` | string | yes | Task key or ID |
+| `name` | string | yes | Basename of the attachment (no path separators) |
+
+Returns: `Detached <name> from <KEY>`. Errors via `AttachmentNotFoundError` when the basename isn't present.
+
+## Projects
+
+### `project_list`
+
+No parameters. Returns JSON `{projects: [...], default: <key|null>}` from `projects.yaml`.
+
+### `project_create`
+
+Create a new project. Project keys are immutable; prefixes must be unique across the tracker.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Slug (lowercase letters, digits, hyphen, underscore) |
+| `label` | string | yes | Human-readable label |
+| `prefix` | string | yes | Task-key prefix, e.g. `BACKEND-` |
+| `make_default` | boolean | no | If true, also set as workspace default |
+
+Returns: `Created project <key>`. `ProjectError` on validation failures.
+
+### `project_edit`
+
+Edit an existing project. Only `label` is mutable — `key` and `prefix` are immutable after creation.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Project key |
+| `label` | string | yes | New label |
+
+### `project_archive` / `project_unarchive`
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Project key |
+
+`project_archive` is equivalent to `project_delete` without `hard`.
+
+### `project_delete`
+
+Default soft-delete (`archived: true`); tasks still reference the project. With `hard: true`, the project is removed from `projects.yaml`; for projects with tasks, `remap_to` is **required** to migrate them to another project. Cannot hard-delete the only project. The counter is preserved in `retired_keys` so a later create with the same key resumes numbering.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Project key |
+| `hard` | boolean | no | If true, permanently remove from `projects.yaml` |
+| `remap_to` | string | no | Hard-delete only: target project key for tasks in the deleted project |
+
+Returns JSON `{mode: "soft"|"hard", key, remappedTaskCount}`.
+
+### `project_set_default`
+
+Set or clear the workspace default project.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | no | Project key to set as default; omit to clear |
+
+## Users
+
+### `user_list`
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `include_archived` | boolean | no | Include archived users (default false) |
+
+Returns JSON `{current: <id|null>, users: [...]}`.
+
+### `user_current`
+
+No parameters. Returns the active user's profile JSON, or errors with `no users registered`.
+
+### `user_switch`
+
+Switches the active user. Accepts a UUID or an exact name (when unambiguous).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ref` | string | yes | User UUID or exact name |
+
+### `user_create`
+
+Names are not unique (UUIDs disambiguate). Timezone defaults to the system timezone.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | yes | Display name |
+| `email` | string | no | Email |
+| `timezone` | string | no | IANA timezone |
+| `avatar_source_path` | string | no | Absolute path to an avatar image to copy in |
+| `switch_to_on_create` | boolean | no | Switch to this user after creation |
+
+Returns the created user as JSON.
+
+### `user_edit`
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ref` | string | yes | User UUID or name |
+| `name` | string | no | New display name |
+| `email` | string \| null | no | Pass `null` to clear |
+| `timezone` | string | no | New IANA timezone |
+| `avatar_source_path` | string | no | Absolute path to a new avatar image |
+
+### `user_archive` / `user_unarchive`
+
+Soft-deletes / restores a user. Hides them from pickers without breaking historical task references. **Blocked when the target is the active user.**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ref` | string | yes | User UUID or name |
+
+### `user_delete`
+
+Hard-deletes a user. When the user has task references (assignee/reporter), exactly one of `remap_to` or `unassign` is required — they are **mutually exclusive**. Blocked when the target is the active user.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ref` | string | yes | User UUID or name |
+| `remap_to` | string | conditional | UUID/name to migrate references onto |
+| `unassign` | boolean | conditional | Clear assignee/reporter on affected tasks |
+
+Returns JSON `{deleted: <id>, ...result}`. Errors: `remap_to and unassign are mutually exclusive`; cannot delete the active user.
+
+## Labels
+
+### `label_list`
+
+No parameters. Returns the full labels config JSON.
+
+### `label_create`
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Slug (immutable) |
+| `label` | string | yes | Display name |
+| `color` | string | no | Color value |
+
+### `label_edit`
+
+The key is immutable.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Label key |
+| `label` | string | no | New display name |
+| `color` | string \| null | no | Pass `null` to clear |
+
+### `label_archive` / `label_unarchive`
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Label key |
+
+### `label_delete`
+
+Default soft-delete. With `hard: true`, the entry is removed from `labels.yaml` and the key is dropped from every task's `labels` array (or remapped via `remap_to`).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Label key |
+| `hard` | boolean | no | Permanently remove |
+| `remap_to` | string | no | Hard-delete only: target label key |
+
+Returns JSON `{mode, key, ...result}`.
+
+## Milestones
+
+### `milestone_list`
+
+No parameters. Returns the full milestones config JSON.
+
+### `milestone_create`
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Milestone key |
+| `label` | string | yes | Display name |
+| `target_date` | string | no | `YYYY-MM-DD` |
+
+### `milestone_edit`
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Milestone key |
+| `label` | string | no | New display name |
+| `target_date` | string \| null | no | Pass `null` to clear |
+| `archived` | boolean | no | Archived flag |
+
+### `milestone_archive` / `milestone_unarchive`
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Milestone key |
+
+### `milestone_delete`
+
+Default soft-delete. With `hard: true`, the entry is removed from `milestones.yaml` and the `milestone` field on each affected task is either unset or remapped to `remap_to`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Milestone key |
+| `hard` | boolean | no | Permanently remove |
+| `remap_to` | string | no | Hard-delete only |
+
+Returns JSON `{mode, key, ...result}`.
+
+## Sprints
+
+### `sprint_list`
+
+No parameters. Returns the full sprints config JSON.
+
+### `sprint_create`
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Sprint key |
+| `label` | string | yes | Display name |
+| `start_date` | string | yes | `YYYY-MM-DD` |
+| `end_date` | string | yes | `YYYY-MM-DD` |
+| `state` | enum | yes | `active` \| `completed` \| `future` |
+| `goal` | string | no | Sprint goal |
+
+### `sprint_edit`
+
+State transitions may be guarded by core; pass `force: true` to override (the `force` option is supported by the underlying `editSprint` for state transitions). Pass `null` `goal` to clear.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Sprint key |
+| `label` | string | no | New display name |
+| `start_date` | string | no | `YYYY-MM-DD` |
+| `end_date` | string | no | `YYYY-MM-DD` |
+| `state` | enum | no | `active` \| `completed` \| `future` |
+| `goal` | string \| null | no | Pass `null` to clear |
+
+### `sprint_archive` / `sprint_unarchive`
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Sprint key |
+
+### `sprint_delete`
+
+Default soft-delete. With `hard: true`, removed from `sprints.yaml` and the `sprint` field on each affected task is unset or remapped via `remap_to`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Sprint key |
+| `hard` | boolean | no | Permanently remove |
+| `remap_to` | string | no | Hard-delete only |
+
+Returns JSON `{mode, key, ...result}`.
+
+## Calendar
+
+### `get_calendar`
+
+Returns the workspace calendar config (timezone, working days, holidays) as JSON. No parameters.
+
+**Read-only over MCP** — calendar is configured via the UI / config files; there is no MCP write tool.
+
+## Relationships and Ranks
+
+### `link_tasks`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `ref` | string | yes | Source task key or ID |
-| `type` | string | yes | Relationship type (e.g., `parent`, `blocks`) |
+| `type` | string | yes | Relationship type (e.g. `parent`, `blocks`) — must be defined in workflow config |
 | `target` | string | yes | Target task key or ID |
 
-#### `unlink_tasks`
+Returns: `Linked <SRC> --<type>--> <TGT>`.
 
-Remove a relationship between tasks. Same parameters as `link_tasks`.
+### `unlink_tasks`
 
-## Agent Guidelines
+Same parameters as `link_tasks`.
 
-- Use MCP tools for all metadata operations. Do not edit `task.md` frontmatter directly.
-- The markdown body is editable via `append_task_body` and `replace_task_body`.
-- If a structured operation fails validation, do not bypass it by editing the file directly.
-- Use `get_config` to discover available statuses, priorities, task types, and relationships before setting values.
+### `reorder_relationship`
+
+Reorder a relationship target within one source task's links of a given type. Pass exactly one of `before` or `after` to position the target relative to a sibling, or neither to move it to the end. **`before` and `after` are mutually exclusive.**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `source` | string | yes | Source task key or ID |
+| `type` | string | yes | Relationship type |
+| `target` | string | yes | Target being moved |
+| `before` | string | no | Sibling to position before |
+| `after` | string | no | Sibling to position after |
+
+Returns the result of the reorder (the new ordering of targets) as JSON. Errors via `ReorderError`; passing both `before` and `after` errors with `` `before` and `after` are mutually exclusive; pass at most one ``.
+
+## Config and Git
+
+Config tools currently target machine-local keys (`git.*`).
+
+### `config_get`
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Config key (e.g. `git.enabled`, `git.remote`) |
+
+Returns JSON `{key, value, type}` with the value preserving its native type. Errors with `unknown config key '<key>'`.
+
+### `config_set`
+
+Echo the change you're making in your response. Don't call speculatively.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Config key |
+| `value` | string | yes | Stringified value; booleans accept `true/false/1/0/yes/no` |
+
+### `config_unset`
+
+Restores a key to its default.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Config key |
+
+### `config_list`
+
+No parameters. Returns JSON array of `{key, value, type, description}` for every known config key.
+
+### `git_enable`
+
+Enables git-backed mode for this tracker. Sets up a dedicated `loctt` branch on a sparse worktree. One-time infrastructure setup — only call when explicitly asked. No parameters.
+
+### `git_disable`
+
+Disables git-backed mode. Local task data is preserved. No parameters.
+
+### `git_status`
+
+No parameters. Returns JSON `{enabled, branch, remote, auto_push, auto_fetch, in_git_repo, last_synced_commit}` (the last entry is `null` when nothing has synced yet).
+
+### `git_publish`
+
+Commits the current task state to the local `loctt` branch and (if `remote` and `auto_push` are set) pushes to the remote. Only call when the user has indicated they want to share or sync — not speculatively after routine edits. No parameters.
+
+Output is prose: which of `Published local state to loctt branch` / `No changes to publish`, and whether the push succeeded or `Published locally; remote push failed: <reason>`.
+
+### `git_sync`
+
+Pulls the `loctt` branch state into the local workspace. If a remote is configured and `auto_fetch` is set, fetches first. No parameters.
+
+Output is prose: fetch result (or `Remote fetch failed: <reason>`), then either `Synced loctt branch into local workspace` or `Already up to date`.
