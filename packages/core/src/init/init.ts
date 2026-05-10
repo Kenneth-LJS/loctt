@@ -14,6 +14,7 @@ import {
   resolveLocttDir,
 } from "../paths/index.js";
 import { CURRENT_SCHEMA_VERSION, writeSchemaVersion } from "../schema/index.js";
+import { ensureDefaultUser } from "../users/index.js";
 import { fileExists } from "../utils/fs.js";
 import {
   defaultProjectsYaml,
@@ -102,6 +103,30 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
   // Stamp the schema version. Migrations key off this on every load.
   await writeSchemaVersion(locttDir, CURRENT_SCHEMA_VERSION);
   created.push(getSchemaVersionPath(locttDir));
+
+  // Bootstrap a default user. Names come from $USER env so the
+  // first run is zero-prompt; the user can edit later.
+  await ensureDefaultUser(locttDir);
+
+  // Write the .loctt/.gitignore so per-checkout files (current user
+  // pointer, per-user UI settings) don't pollute the shared history.
+  // The committed parts of `.loctt/` (tasks, workflow, projects,
+  // user profiles) are still tracked normally.
+  const gitignorePath = join(locttDir, ".gitignore");
+  await writeFile(
+    gitignorePath,
+    [
+      "# Per-checkout pointers and per-user UI settings — do not commit.",
+      ".current-user",
+      "users/*/settings.yaml",
+      "",
+      "# Migration backups left by `loctt migrate`.",
+      "../.loctt.backup-*",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  created.push(gitignorePath);
 
   // Generate helper docs if requested
   if (genDocs) {

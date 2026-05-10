@@ -52,6 +52,7 @@ export {
   getAttachmentPath,
   getAttachmentsDir,
   getConfigDir,
+  getCurrentUserPath,
   getDocsDir,
   getHistoryFilePath,
   getKeyIndexPath,
@@ -65,6 +66,10 @@ export {
   getTaskDir,
   getTaskFilePath,
   getTasksDir,
+  getUserDir,
+  getUserProfilePath,
+  getUsersDir,
+  getUserSettingsPath,
   getWorkflowConfigPath,
   resolveLocttDir,
 } from "./paths/index.js";
@@ -132,3 +137,27 @@ export { setField, TaskUpdateError,unsetField } from "./task/index.js";
 export { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./task/index.js";
 export { linkTask, RelationshipError,unlinkTask } from "./task/index.js";
 export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./task/index.js";
+export type { CreateUserOptions, DeleteUserOptions, EditUserOptions } from "./users/index.js";
+export {
+  archiveUser,
+  createUser,
+  CurrentUserError,
+  deleteUser,
+  detectSystemTimezone,
+  ensureDefaultUser,
+  getCurrentUser,
+  loadAllUsers,
+  loadUserProfile,
+  parseUserProfile,
+  readCurrentUserId,
+  resolveUserRef,
+  saveUserProfile,
+  serializeUserProfile,
+  switchCurrentUser,
+  unarchiveUser,
+  updateUser,
+  UserError,
+  userExists,
+  UserProfileError,
+  writeCurrentUserId,
+} from "./users/index.js";

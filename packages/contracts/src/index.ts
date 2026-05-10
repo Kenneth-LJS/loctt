@@ -34,6 +34,7 @@ export type {
   TaskFrontmatter,
   TaskRelationship,
 } from "./task.js";
+export type { UserProfile, UsersList } from "./users.js";
 export type {
   CustomFieldDef,
   CustomFieldType,
