@@ -119,4 +119,98 @@ describe("setField / unsetField", () => {
       expect(loaded.frontmatter.status).toBeUndefined();
     });
   });
+
+  describe("completed_date auto-management", () => {
+    const workflowConfig = {
+      key: { prefix: "T-" },
+      statuses: [
+        { key: "not_started", label: "Not started", category: "pending" as const },
+        { key: "in_progress", label: "In progress", category: "active" as const },
+        { key: "done", label: "Done", category: "completed" as const },
+      ],
+      priorities: [],
+      task_types: [],
+      relationships: [],
+      // Match the seed task's custom field so validation doesn't
+      // reject the existing `sprint` value during status updates.
+      custom_fields: [{
+        key: "sprint",
+        label: "Sprint",
+        type: "string" as const,
+        multi: false,
+        searchable: false,
+      }],
+    };
+
+    it("sets completed_date when transitioning into a completed status", async () => {
+      await seedTask();
+      const updated = await setField({
+        locttDir,
+        taskId: "abc",
+        field: "status",
+        value: "done",
+        workflowConfig,
+      });
+      expect(updated.frontmatter.completed_date).toBeDefined();
+      expect(updated.frontmatter.completed_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    it("clears completed_date when transitioning out of a completed status", async () => {
+      await seedTask();
+      // First mark done
+      await setField({
+        locttDir, taskId: "abc", field: "status", value: "done", workflowConfig,
+      });
+      // Then move back
+      const reopened = await setField({
+        locttDir, taskId: "abc", field: "status", value: "in_progress", workflowConfig,
+      });
+      expect(reopened.frontmatter.completed_date).toBeUndefined();
+    });
+
+    it("does not touch completed_date when transitioning between non-completed statuses", async () => {
+      await seedTask();
+      const updated = await setField({
+        locttDir, taskId: "abc", field: "status", value: "in_progress", workflowConfig,
+      });
+      expect(updated.frontmatter.completed_date).toBeUndefined();
+    });
+
+    it("does not retouch completed_date when going completed → completed", async () => {
+      const cfg = {
+        ...workflowConfig,
+        statuses: [
+          ...workflowConfig.statuses,
+          { key: "wont_do", label: "Won't do", category: "completed" as const },
+        ],
+      };
+      await seedTask();
+      const first = await setField({
+        locttDir, taskId: "abc", field: "status", value: "done", workflowConfig: cfg,
+      });
+      const dateOnFirst = first.frontmatter.completed_date;
+      // Wait one tick to ensure timestamps would differ if we re-set
+      await new Promise(r => setTimeout(r, 10));
+      const second = await setField({
+        locttDir, taskId: "abc", field: "status", value: "wont_do", workflowConfig: cfg,
+      });
+      // Both completed → preserve original date
+      expect(second.frontmatter.completed_date).toBe(dateOnFirst);
+    });
+
+    it("rejects direct writes to completed_date", async () => {
+      await seedTask();
+      await expect(
+        setField({
+          locttDir, taskId: "abc", field: "completed_date", value: "2025-01-01",
+        }),
+      ).rejects.toThrow(/auto-managed/);
+    });
+
+    it("rejects unset on completed_date", async () => {
+      await seedTask();
+      await expect(unsetField(locttDir, "abc", "completed_date"))
+        .rejects.toThrow(/auto-managed/);
+    });
+  });
 });
