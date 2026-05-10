@@ -85,5 +85,8 @@ export async function loadOptionalConfigs(locttDir: string): Promise<OptionalCon
   let queriesConfig: QueriesConfig | undefined;
   try { workflowConfig = await loadWorkflowConfig(locttDir); } catch { /* ok */ }
   try { queriesConfig = await loadQueriesConfig(locttDir); } catch { /* ok */ }
-  return { workflowConfig, queriesConfig };
+  return {
+    ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+    ...(queriesConfig !== undefined ? { queriesConfig } : {}),
+  };
 }

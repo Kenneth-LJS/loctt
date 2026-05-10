@@ -115,7 +115,9 @@ export async function getGitStatus(locttDir: string, root: string): Promise<GitS
       remote: state.git.remote,
       autoPush: state.git.auto_push,
       autoFetch: state.git.auto_fetch,
-      lastSyncedCommit: state.git.last_synced_commit,
+      ...(state.git.last_synced_commit !== undefined
+        ? { lastSyncedCommit: state.git.last_synced_commit }
+        : {}),
       isGitRepo: gitRepo,
     };
   } catch {

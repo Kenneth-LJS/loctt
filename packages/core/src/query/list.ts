@@ -110,9 +110,10 @@ export function listTasks(opts: ListTasksOptions): Task[] {
     const tokens = tokenize(queryStr);
     const ast = parseQuery(tokens);
     filtered = tasks.filter(task => {
+      const body = ctx.getBody?.(task.frontmatter.id);
       const evalCtx: EvalContext = {
-        body: ctx.getBody?.(task.frontmatter.id),
-        resolveKey: ctx.resolveKey,
+        ...(body !== undefined ? { body } : {}),
+        ...(ctx.resolveKey !== undefined ? { resolveKey: ctx.resolveKey } : {}),
       };
       return evaluateQuery(ast, task.frontmatter, evalCtx);
     });
