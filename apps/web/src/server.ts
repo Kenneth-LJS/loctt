@@ -552,7 +552,7 @@ export function createWebApp(options: WebAppOptions) {
         ...(r.start_date !== undefined ? { start_date: r.start_date } : {}),
         ...(r.end_date !== undefined ? { end_date: r.end_date } : {}),
         ...(r.state !== undefined ? { state: r.state } : {}),
-        ...("goal" in r ? { goal: r.goal as string | null } : {}),
+        ...("goal" in r ? { goal: r.goal } : {}),
       });
       json(res, { key });
     } catch (err) {
@@ -608,7 +608,7 @@ export function createWebApp(options: WebAppOptions) {
     try {
       await editMilestone(locttDir, key, {
         ...(r.label !== undefined ? { label: r.label } : {}),
-        ...("target_date" in r ? { target_date: r.target_date as string | null } : {}),
+        ...("target_date" in r ? { target_date: r.target_date } : {}),
         ...(r.archived !== undefined ? { archived: r.archived } : {}),
       });
       json(res, { key });
@@ -661,7 +661,7 @@ export function createWebApp(options: WebAppOptions) {
     try {
       await editLabel(locttDir, key, {
         ...(r.label !== undefined ? { label: r.label } : {}),
-        ...("color" in r ? { color: r.color as string | null } : {}),
+        ...("color" in r ? { color: r.color } : {}),
       });
       json(res, { key });
     } catch (err) {
@@ -749,7 +749,7 @@ export function createWebApp(options: WebAppOptions) {
       const target = await resolveUserRef(locttDir, ref);
       const updated = await updateUser(locttDir, target.id, {
         ...(request.name !== undefined ? { name: request.name } : {}),
-        ...("email" in request ? { email: request.email as string | null } : {}),
+        ...("email" in request ? { email: request.email } : {}),
         ...(request.timezone !== undefined ? { timezone: request.timezone } : {}),
         ...(request.avatar_source_path !== undefined ? { avatarSourcePath: request.avatar_source_path } : {}),
       });
@@ -1009,13 +1009,20 @@ export function createWebApp(options: WebAppOptions) {
           : `project = ${projectFilter}`)
       : baseQuery;
 
+    const view = url.searchParams.get("view") ?? undefined;
     const params: ListTasksRequest = {
-      query: composedQuery,
-      view: url.searchParams.get("view") ?? undefined,
-      limit,
+      ...(composedQuery !== undefined ? { query: composedQuery } : {}),
+      ...(view !== undefined ? { view } : {}),
+      ...(limit !== undefined ? { limit } : {}),
     };
 
-    const result = listTasks({ tasks, options: params, queriesConfig, workflowConfig, ctx: buildListContext(tasks) });
+    const result = listTasks({
+      tasks,
+      options: params,
+      ...(queriesConfig !== undefined ? { queriesConfig } : {}),
+      ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+      ctx: buildListContext(tasks),
+    });
     json(res, result.map(t => t.frontmatter));
   };
 
@@ -1032,7 +1039,7 @@ export function createWebApp(options: WebAppOptions) {
     let projectKey: string;
     try {
       projectKey = resolveProjectKey(projectsConfig, {
-        explicit: request.project,
+        ...(request.project !== undefined ? { explicit: request.project } : {}),
       });
     } catch (err) {
       error(res, (err as Error).message, 400);

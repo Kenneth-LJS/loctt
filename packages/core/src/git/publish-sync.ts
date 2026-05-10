@@ -263,7 +263,11 @@ export async function publish(
       `warning: push to ${remote} failed: ${pushResult.error}. local commit succeeded; run 'git push ${remote} ${branch}' to retry.\n`,
     );
   }
-  return { committed: commitResult.committed, pushed: false, pushError: pushResult.error };
+  return {
+    committed: commitResult.committed,
+    pushed: false,
+    ...(pushResult.error !== undefined ? { pushError: pushResult.error } : {}),
+  };
 }
 
 /**

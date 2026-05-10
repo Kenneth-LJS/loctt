@@ -10,7 +10,7 @@ function mig(from: number, to: number, opts?: { deprecated?: boolean }): Migrati
     to,
     description: `${from}→${to}`,
     apply: noop,
-    deprecated: opts?.deprecated,
+    ...(opts?.deprecated !== undefined ? { deprecated: opts.deprecated } : {}),
   };
 }
 

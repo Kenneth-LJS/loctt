@@ -207,7 +207,7 @@ export async function reorderBoardRank(
     }
 
     const newRank = computeNewRank({
-      peers: peers.map(p => ({ rank: p.rank })) as readonly { rank?: string }[],
+      peers: peers.map(p => ({ rank: p.rank })) as readonly { rank?: string | undefined }[],
       mode:
         opts.before !== undefined
           ? { kind: "before", rank: beforeRank ?? null }
@@ -255,7 +255,7 @@ export async function reorderBoardRank(
 }
 
 interface ComputeNewRankOptions {
-  readonly peers: readonly { rank?: string }[];
+  readonly peers: readonly { rank?: string | undefined }[];
   readonly mode:
     | { kind: "before"; rank: string | null }
     | { kind: "after"; rank: string | null }

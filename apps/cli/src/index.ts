@@ -427,8 +427,9 @@ export async function main(): Promise<void> {
         const projectsConfig = await loadProjectsConfig(locttDir);
         let projectKey: string;
         try {
+          const explicit = getArg(args, "--project");
           projectKey = resolveProjectKey(projectsConfig, {
-            explicit: getArg(args, "--project"),
+            ...(explicit !== undefined ? { explicit } : {}),
           });
         } catch (err) {
           console.error(`Error: ${(err as Error).message}`);
@@ -438,14 +439,19 @@ export async function main(): Promise<void> {
 
         const task = await withStateLock(locttDir, async () => {
           const state = await loadState(locttDir);
+          const status = getArg(args, "--status");
+          const priority = getArg(args, "--priority");
+          const taskType = getArg(args, "--type");
           const created = await createTask({
-            locttDir, state, workflowConfig,
+            locttDir,
+            state,
+            ...(workflowConfig !== undefined ? { workflowConfig } : {}),
             options: {
               project: projectKey,
               title,
-              status: getArg(args, "--status"),
-              priority: getArg(args, "--priority"),
-              task_type: getArg(args, "--type"),
+              ...(status !== undefined ? { status } : {}),
+              ...(priority !== undefined ? { priority } : {}),
+              ...(taskType !== undefined ? { task_type: taskType } : {}),
             },
           });
           await saveState(locttDir, state);
@@ -482,16 +488,17 @@ export async function main(): Promise<void> {
               : `project = ${projectFilter}`)
           : baseQuery;
 
+        const view = getArg(args, "--view");
         const result = listTasks({
           tasks,
           options: {
-            query: composedQuery,
-            view: getArg(args, "--view"),
-            limit,
+            ...(composedQuery !== undefined ? { query: composedQuery } : {}),
+            ...(view !== undefined ? { view } : {}),
+            ...(limit !== undefined ? { limit } : {}),
             includeArchived: hasFlag(args, "--archived"),
           },
-          queriesConfig,
-          workflowConfig,
+          ...(queriesConfig !== undefined ? { queriesConfig } : {}),
+          ...(workflowConfig !== undefined ? { workflowConfig } : {}),
           ctx: buildListContext(tasks),
         });
 
@@ -558,7 +565,13 @@ export async function main(): Promise<void> {
         const locttDir = resolveLocttDir(root);
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
         const task = await lookupTask(locttDir, ref);
-        await setField({ locttDir, taskId: task.frontmatter.id, field, value, workflowConfig });
+        await setField({
+          locttDir,
+          taskId: task.frontmatter.id,
+          field,
+          value,
+          ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+        });
         console.log(`Set ${field} = ${value} on ${task.frontmatter.key}`);
         break;
       }
@@ -591,7 +604,13 @@ export async function main(): Promise<void> {
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
         const task = await lookupTask(locttDir, ref);
         const targetTask = await lookupTask(locttDir, target);
-        await linkTask({ locttDir, taskId: task.frontmatter.id, type: relType, target: targetTask.frontmatter.id, workflowConfig });
+        await linkTask({
+          locttDir,
+          taskId: task.frontmatter.id,
+          type: relType,
+          target: targetTask.frontmatter.id,
+          ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+        });
         console.log(`Linked ${task.frontmatter.key} --${relType}--> ${targetTask.frontmatter.key}`);
         break;
       }
@@ -609,7 +628,13 @@ export async function main(): Promise<void> {
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
         const task = await lookupTask(locttDir, ref);
         const targetTask = await lookupTask(locttDir, target);
-        await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: relType, target: targetTask.frontmatter.id, workflowConfig });
+        await unlinkTask({
+          locttDir,
+          taskId: task.frontmatter.id,
+          type: relType,
+          target: targetTask.frontmatter.id,
+          ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+        });
         console.log(`Unlinked ${task.frontmatter.key} --${relType}--> ${targetTask.frontmatter.key}`);
         break;
       }
@@ -845,7 +870,11 @@ export async function main(): Promise<void> {
         const port = Number(getArg(args, "--port")) || undefined;
         const noOpen = hasFlag(args, "--no-open");
         const clientDir = await resolveClientDir();
-        const app = createWebApp({ root, port, clientDir });
+        const app = createWebApp({
+          root,
+          ...(port !== undefined ? { port } : {}),
+          ...(clientDir !== undefined ? { clientDir } : {}),
+        });
         await app.start();
         const url = `http://localhost:${app.port}`;
         console.log(`LocTT UI running at ${url}`);

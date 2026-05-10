@@ -106,8 +106,12 @@ export async function createProject(
       for (const [k, v] of Object.entries(state.retired_keys ?? {})) {
         if (k !== def.key) remainingRetired[k] = v;
       }
-      (state as { retired_keys?: Record<string, { prefix: string; next_number: number }> }).retired_keys =
-        Object.keys(remainingRetired).length > 0 ? remainingRetired : undefined;
+      const stateMut = state as { retired_keys?: Record<string, { prefix: string; next_number: number }> };
+      if (Object.keys(remainingRetired).length > 0) {
+        stateMut.retired_keys = remainingRetired;
+      } else {
+        delete stateMut.retired_keys;
+      }
     } else {
       try {
         initKeyAllocation(state, def.key, def.prefix, 1);
