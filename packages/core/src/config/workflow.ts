@@ -95,6 +95,7 @@ function parseRelationships(raw: unknown): WorkflowConfig["relationships"] {
       inverse: item["inverse"],
       inverse_label: item["inverse_label"],
       ...(item["structural"] === true ? { structural: true } : {}),
+      ...(item["ranked"] === true ? { ranked: true } : {}),
     };
   });
 }
@@ -152,6 +153,74 @@ function parseCustomFields(raw: unknown): WorkflowConfig["custom_fields"] {
   });
 }
 
+const VALID_ESTIMATION_UNITS = new Set([
+  "points", "hours", "days", "custom_numeric", "custom_enum",
+]);
+const VALID_ESTIMATION_SCALES = new Set(["free", "linear", "fibonacci"]);
+
+function parseEstimation(raw: unknown): WorkflowConfig["estimation"] {
+  if (raw === undefined) return undefined;
+  assertObject(raw, "estimation");
+
+  const enabled = raw["enabled"];
+  if (typeof enabled !== "boolean") {
+    throw new WorkflowConfigError("estimation.enabled must be a boolean");
+  }
+  assertString(raw["unit"], "estimation.unit");
+  if (!VALID_ESTIMATION_UNITS.has(raw["unit"])) {
+    throw new WorkflowConfigError(
+      `estimation.unit must be one of ${[...VALID_ESTIMATION_UNITS].join(", ")}`,
+    );
+  }
+  const unit = raw["unit"] as "points" | "hours" | "days" | "custom_numeric" | "custom_enum";
+
+  const unitLabel = raw["unit_label"];
+  if (unitLabel !== undefined) assertString(unitLabel, "estimation.unit_label");
+  if ((unit === "custom_numeric" || unit === "custom_enum") && unitLabel === undefined) {
+    throw new WorkflowConfigError(
+      `estimation.unit_label is required when unit is '${String(unit)}'`,
+    );
+  }
+
+  let scale: "free" | "linear" | "fibonacci" | undefined;
+  if (raw["scale"] !== undefined) {
+    assertString(raw["scale"], "estimation.scale");
+    if (!VALID_ESTIMATION_SCALES.has(raw["scale"])) {
+      throw new WorkflowConfigError(
+        `estimation.scale must be one of ${[...VALID_ESTIMATION_SCALES].join(", ")}`,
+      );
+    }
+    scale = raw["scale"] as "free" | "linear" | "fibonacci";
+  }
+
+  let presetValues: readonly (number | string)[] | undefined;
+  if (raw["preset_values"] !== undefined) {
+    assertArray(raw["preset_values"], "estimation.preset_values");
+    presetValues = raw["preset_values"].map((v, i) => {
+      if (typeof v !== "string" && typeof v !== "number") {
+        throw new WorkflowConfigError(
+          `estimation.preset_values[${i}] must be a string or number`,
+        );
+      }
+      return v;
+    });
+  }
+
+  if (unit === "custom_enum" && (presetValues === undefined || presetValues.length === 0)) {
+    throw new WorkflowConfigError(
+      `estimation.preset_values is required (and non-empty) when unit is 'custom_enum'`,
+    );
+  }
+
+  return {
+    enabled,
+    unit,
+    ...(unitLabel !== undefined ? { unit_label: unitLabel } : {}),
+    ...(scale !== undefined ? { scale } : {}),
+    ...(presetValues !== undefined ? { preset_values: presetValues } : {}),
+  };
+}
+
 /**
  * Parses and validates raw YAML content into a WorkflowConfig.
  * Throws WorkflowConfigError for invalid data.
@@ -164,6 +233,8 @@ export function parseWorkflowConfig(yamlContent: string): WorkflowConfig {
   assertObject(keyConfig, "key");
   assertString(keyConfig["prefix"], "key.prefix");
 
+  const estimation = parseEstimation(raw["estimation"]);
+
   return {
     key: { prefix: keyConfig["prefix"] },
     statuses: parseStatuses(raw["statuses"]),
@@ -171,6 +242,7 @@ export function parseWorkflowConfig(yamlContent: string): WorkflowConfig {
     task_types: parseTaskTypes(raw["task_types"]),
     relationships: parseRelationships(raw["relationships"]),
     custom_fields: parseCustomFields(raw["custom_fields"]),
+    ...(estimation !== undefined ? { estimation } : {}),
   };
 }
 

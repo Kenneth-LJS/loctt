@@ -61,6 +61,39 @@ export interface KeyConfig {
   readonly prefix: string;
 }
 
+/**
+ * Estimation system. Two modes:
+ *  - **Numeric** (`points` / `hours` / `days` / `custom_numeric`):
+ *    estimate values are numbers; aggregate as a sum.
+ *  - **Enum** (`custom_enum`): estimate values are categorical
+ *    (e.g. XS / S / M / L); aggregate as counts per category.
+ *
+ * Only relevant when `enabled: true`. UI hides the field otherwise.
+ */
+export type EstimationUnit =
+  | "points"
+  | "hours"
+  | "days"
+  | "custom_numeric"
+  | "custom_enum";
+
+export type EstimationScale = "free" | "linear" | "fibonacci";
+
+export interface EstimationConfig {
+  readonly enabled: boolean;
+  readonly unit: EstimationUnit;
+  /** Required for `custom_numeric` and `custom_enum`. */
+  readonly unit_label?: string;
+  /** Numeric units only. */
+  readonly scale?: EstimationScale;
+  /**
+   * For numeric units: optional preset values (e.g. fibonacci).
+   * For `custom_enum`: required list of category labels in order
+   *   (e.g. `["XS", "S", "M", "L", "XL"]`).
+   */
+  readonly preset_values?: readonly (number | string)[];
+}
+
 /** The full workflow.yaml shape. */
 export interface WorkflowConfig {
   readonly key: KeyConfig;
@@ -69,4 +102,6 @@ export interface WorkflowConfig {
   readonly task_types: readonly TaskTypeDef[];
   readonly relationships: readonly RelationshipDef[];
   readonly custom_fields: readonly CustomFieldDef[];
+  /** Optional estimation config. Defaults to `{ enabled: false }`. */
+  readonly estimation?: EstimationConfig;
 }

@@ -196,4 +196,81 @@ custom_fields:
     expect(() => parseWorkflowConfig(`key:\n  prefix: T-\npriorities: []\ntask_types: []\nrelationships: []`))
       .toThrow("statuses must be an array");
   });
+
+  it("parses estimation config (numeric)", () => {
+    const yaml = `
+key:
+  prefix: T-
+statuses: []
+priorities: []
+task_types: []
+relationships: []
+custom_fields: []
+estimation:
+  enabled: true
+  unit: points
+  scale: fibonacci
+  preset_values: [1, 2, 3, 5, 8, 13]
+`;
+    const cfg = parseWorkflowConfig(yaml);
+    expect(cfg.estimation).toEqual({
+      enabled: true,
+      unit: "points",
+      scale: "fibonacci",
+      preset_values: [1, 2, 3, 5, 8, 13],
+    });
+  });
+
+  it("parses estimation config (custom_enum requires preset_values)", () => {
+    const yaml = `
+key:
+  prefix: T-
+statuses: []
+priorities: []
+task_types: []
+relationships: []
+custom_fields: []
+estimation:
+  enabled: true
+  unit: custom_enum
+  unit_label: t-shirt
+  preset_values: [XS, S, M, L, XL]
+`;
+    const cfg = parseWorkflowConfig(yaml);
+    expect(cfg.estimation?.unit).toBe("custom_enum");
+    expect(cfg.estimation?.preset_values).toEqual(["XS", "S", "M", "L", "XL"]);
+  });
+
+  it("rejects custom_enum without preset_values", () => {
+    const yaml = `
+key:
+  prefix: T-
+statuses: []
+priorities: []
+task_types: []
+relationships: []
+custom_fields: []
+estimation:
+  enabled: true
+  unit: custom_enum
+  unit_label: t-shirt
+`;
+    expect(() => parseWorkflowConfig(yaml)).toThrow(/preset_values is required/);
+  });
+
+  it("rejects custom_numeric without unit_label", () => {
+    const yaml = `
+key:
+  prefix: T-
+statuses: []
+priorities: []
+task_types: []
+relationships: []
+custom_fields: []
+estimation:
+  enabled: true
+  unit: custom_numeric
+`;
+    expect(() => parseWorkflowConfig(yaml)).toThrow(/unit_label is required/);
+  });
 });
