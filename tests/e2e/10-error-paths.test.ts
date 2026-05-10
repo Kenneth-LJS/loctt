@@ -36,9 +36,12 @@ describe("E2E journey: error paths", () => {
     });
   });
 
-  it("delete without --force exits non-zero", async () => {
+  it("delete on an already-archived task without --hard exits non-zero", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "doomed"], { cwd: root });
+      // First delete archives.
+      await runCli(["delete", "T-1"], { cwd: root });
+      // Second delete (without --hard) errors because the task is already archived.
       const result = await runCli(["delete", "T-1"], { cwd: root });
       expect(result.exitCode).not.toBe(0);
     });

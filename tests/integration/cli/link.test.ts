@@ -34,7 +34,7 @@ describe("CLI link (spawned binary)", () => {
       await runCli(["create", "first"], { cwd: root });
       await runCli(["create", "second"], { cwd: root });
       await runCli(["link", "T-1", "blocks", "T-2"], { cwd: root });
-      const del = await runCli(["delete", "T-2", "--force"], { cwd: root });
+      const del = await runCli(["delete", "T-2", "--hard"], { cwd: root });
       expect(del.exitCode).toBe(0);
 
       const show = await runCli(["show", "T-1"], { cwd: root });

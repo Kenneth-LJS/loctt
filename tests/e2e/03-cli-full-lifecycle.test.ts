@@ -51,8 +51,8 @@ describe("E2E journey: CLI-only full lifecycle", () => {
       expect((await runCli(["unarchive", "T-1"], { cwd: root })).exitCode).toBe(0);
       expect((await runCli(["show", "T-1"], { cwd: root })).stdout).not.toContain("Archived:");
 
-      // delete --force
-      expect((await runCli(["delete", "T-1", "--force"], { cwd: root })).exitCode).toBe(0);
+      // delete --hard (soft-delete is the default; --hard removes the directory)
+      expect((await runCli(["delete", "T-1", "--hard"], { cwd: root })).exitCode).toBe(0);
       const showDeleted = await runCli(["show", "T-1"], { cwd: root });
       expect(showDeleted.exitCode).not.toBe(0);
 

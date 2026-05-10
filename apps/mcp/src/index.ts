@@ -188,10 +188,14 @@ export function getTools(): McpTool[] {
     },
     {
       name: "delete_task",
-      description: "Permanently delete a task. Requires confirm: true.",
+      description:
+        "Delete a task. Default is soft-delete (archive) — sets archived=true and the task " +
+        "remains on disk and can be unarchived. Pass hard: true to permanently remove the " +
+        "task directory. Hard delete additionally requires confirm: true.",
       inputSchema: {
         ref: z.string(),
-        confirm: z.boolean().describe("Must be true to proceed with deletion"),
+        hard: z.boolean().optional().describe("If true, permanently remove the task directory"),
+        confirm: z.boolean().optional().describe("Required when hard is true"),
       },
     },
     {
@@ -724,12 +728,23 @@ export async function executeTool(
       }
 
       case "delete_task": {
-        if (args["confirm"] !== true) {
-          return errorResult("delete_task requires confirm: true to proceed");
-        }
+        const hard = args["hard"] === true;
         const task = await lookupTask(locttDir, args["ref"] as string);
-        await deleteTask(locttDir, task.frontmatter.id, { force: true });
-        return text(`Deleted ${task.frontmatter.key}.`);
+        if (hard) {
+          if (args["confirm"] !== true) {
+            return errorResult("hard delete requires confirm: true to proceed");
+          }
+          await deleteTask(locttDir, task.frontmatter.id, { force: true });
+          return text(`Hard-deleted ${task.frontmatter.key}.`);
+        }
+        if (task.frontmatter.archived) {
+          return errorResult(
+            `Task ${task.frontmatter.key} is already archived. ` +
+            `Pass hard: true (and confirm: true) to permanently remove it.`,
+          );
+        }
+        await archiveTask(locttDir, task.frontmatter.id);
+        return text(`Archived ${task.frontmatter.key} (use hard: true to remove permanently).`);
       }
 
       case "link_tasks": {
