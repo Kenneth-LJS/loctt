@@ -15,6 +15,7 @@ import type {
   UpdateTaskRequest,
 } from "@loctt/contracts";
 import {
+  appendTaskBody,
   applyWorkflowEdit,
   archiveTask,
   archiveUser,
@@ -24,6 +25,7 @@ import {
   AttachmentSourceError,
   buildListContext,
   buildShowModel,
+  ConfigRouterError,
   createLabel,
   createMilestone,
   createProject,
@@ -39,14 +41,18 @@ import {
   deleteUser,
   deleteView,
   detachFile,
+  disableGit,
   editLabel,
   editMilestone,
   editProject,
   editSprint,
   editView,
+  enableGit,
   getAttachmentPath,
   getCurrentUser,
+  getGitStatus,
   getTrackerInfo,
+  initLoctt,
   LabelError,
   linkTask,
   listTasks,
@@ -60,10 +66,12 @@ import {
   loadQueriesConfig,
   loadSprintsConfig,
   loadState,
+  loadUserSettings,
   loadWorkflowConfig,
   lookupTask,
   MilestoneError,
   ProjectError,
+  publish,
   readHistory,
   reorderBoardRank,
   ReorderError,
@@ -75,21 +83,26 @@ import {
   runDoctor,
   saveCalendarConfig,
   saveState,
+  saveUserSettings,
   SchemaTooNewError,
   SchemaVersionError,
+  setConfigValue,
   setDefaultProject,
   setField,
   SprintError,
   switchCurrentUser,
+  sync,
   TaskNotFoundError,
   unarchiveTask,
   unarchiveUser,
   unlinkTask,
+  unsetConfigValue,
   unsetField,
   updateUser,
   UserError,
   ViewError,
   withStateLock,
+  writeTaskBody,
 } from "@loctt/core";
 
 import { parseMultipartFile } from "./multipart.js";
@@ -154,6 +167,9 @@ const TASK_ATTACHMENTS_RE = /^\/api\/tasks\/([^/]+)\/attachments$/;
 const TASK_ATTACHMENT_ITEM_RE = /^\/api\/tasks\/([^/]+)\/attachments\/([^/]+)$/;
 const TASK_BOARD_RERANK_RE = /^\/api\/tasks\/([^/]+)\/board-rerank$/;
 const TASK_RELATIONSHIP_RERANK_RE = /^\/api\/tasks\/([^/]+)\/relationships\/([^/]+)\/([^/]+)\/rerank$/;
+const TASK_BODY_RE = /^\/api\/tasks\/([^/]+)\/body$/;
+const TASK_BODY_APPEND_RE = /^\/api\/tasks\/([^/]+)\/body\/append$/;
+const CONFIG_KEY_RE = /^\/api\/config\/([^/]+)$/;
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -815,6 +831,120 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
+  const handleReplaceBody: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const ref = captures[0] ?? "";
+    if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+    const task = await lookupTask(locttDir, ref);
+    const body = await readBody(req);
+    const r = JSON.parse(body) as { body: string };
+    if (typeof r.body !== "string") { error(res, "body must be a string", 400); return; }
+    await writeTaskBody(locttDir, task.frontmatter.id, r.body);
+    json(res, { ok: true });
+  };
+
+  const handleAppendBody: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const ref = captures[0] ?? "";
+    if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+    const task = await lookupTask(locttDir, ref);
+    const body = await readBody(req);
+    const r = JSON.parse(body) as { text: string };
+    if (typeof r.text !== "string") { error(res, "text must be a string", 400); return; }
+    await appendTaskBody(locttDir, task.frontmatter.id, r.text);
+    json(res, { ok: true });
+  };
+
+  const handleInit: RouteHandler = async ({ req, res }) => {
+    const body = await readBody(req);
+    const r = body.length > 0 ? JSON.parse(body) as Parameters<typeof initLoctt>[1] : undefined;
+    try {
+      const result = await initLoctt(root, r ?? {});
+      json(res, { locttDir: result.locttDir, created: result.created.length }, 201);
+    } catch (err) {
+      error(res, (err as Error).message, 400);
+    }
+  };
+
+  const handleSetConfigValue: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const key = captures[0] ?? "";
+    const body = await readBody(req);
+    const r = JSON.parse(body) as { value: unknown };
+    try {
+      await setConfigValue({ locttDir, root }, key, String(r.value));
+      json(res, { key });
+    } catch (err) {
+      if (err instanceof ConfigRouterError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleUnsetConfigValue: RouteHandler = async ({ res, locttDir, captures }) => {
+    const key = captures[0] ?? "";
+    try {
+      await unsetConfigValue({ locttDir, root }, key);
+      json(res, { key });
+    } catch (err) {
+      if (err instanceof ConfigRouterError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleGitStatus: RouteHandler = async ({ res, locttDir }) => {
+    const status = await getGitStatus(locttDir, root);
+    json(res, status);
+  };
+
+  const handleGitPublish: RouteHandler = async ({ res, locttDir }) => {
+    try {
+      const result = await publish(locttDir, root);
+      json(res, result);
+    } catch (err) {
+      error(res, (err as Error).message, 400);
+    }
+  };
+
+  const handleGitSync: RouteHandler = async ({ res, locttDir }) => {
+    try {
+      const result = await sync(locttDir, root);
+      json(res, result);
+    } catch (err) {
+      error(res, (err as Error).message, 400);
+    }
+  };
+
+  const handleGitEnable: RouteHandler = async ({ res, locttDir }) => {
+    try {
+      await enableGit(locttDir, root);
+      json(res, { enabled: true });
+    } catch (err) {
+      error(res, (err as Error).message, 400);
+    }
+  };
+
+  const handleGitDisable: RouteHandler = async ({ res, locttDir }) => {
+    try {
+      await disableGit(locttDir);
+      json(res, { enabled: false });
+    } catch (err) {
+      error(res, (err as Error).message, 400);
+    }
+  };
+
+  const handleGetUserSettings: RouteHandler = async ({ res, locttDir }) => {
+    const current = await getCurrentUser(locttDir);
+    if (!current) { error(res, "no users registered", 404); return; }
+    const settings = await loadUserSettings(locttDir, current.id);
+    json(res, { user: current.id, settings });
+  };
+
+  const handlePutUserSettings: RouteHandler = async ({ req, res, locttDir }) => {
+    const current = await getCurrentUser(locttDir);
+    if (!current) { error(res, "no users registered", 404); return; }
+    const body = await readBody(req);
+    const settings = JSON.parse(body) as Record<string, unknown>;
+    await saveUserSettings(locttDir, current.id, settings);
+    json(res, { user: current.id, settings });
+  };
+
   const handleBoardRerank: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = captures[0] ?? "";
     const body = await readBody(req);
@@ -1216,6 +1346,18 @@ export function createWebApp(options: WebAppOptions) {
     { method: "DELETE", pattern: TASK_REF_RE, handler: handleDeleteTask },
     { method: "POST", pattern: TASK_BOARD_RERANK_RE, handler: handleBoardRerank },
     { method: "POST", pattern: TASK_RELATIONSHIP_RERANK_RE, handler: handleRelationshipRerank },
+    { method: "POST", pattern: TASK_BODY_RE, handler: handleReplaceBody },
+    { method: "POST", pattern: TASK_BODY_APPEND_RE, handler: handleAppendBody },
+    { method: "POST", pattern: "/api/init", handler: handleInit },
+    { method: "POST", pattern: CONFIG_KEY_RE, handler: handleSetConfigValue },
+    { method: "DELETE", pattern: CONFIG_KEY_RE, handler: handleUnsetConfigValue },
+    { method: "GET", pattern: "/api/git/status", handler: handleGitStatus },
+    { method: "POST", pattern: "/api/git/publish", handler: handleGitPublish },
+    { method: "POST", pattern: "/api/git/sync", handler: handleGitSync },
+    { method: "POST", pattern: "/api/git/enable", handler: handleGitEnable },
+    { method: "POST", pattern: "/api/git/disable", handler: handleGitDisable },
+    { method: "GET", pattern: "/api/user-settings", handler: handleGetUserSettings },
+    { method: "PUT", pattern: "/api/user-settings", handler: handlePutUserSettings },
   ];
 
   async function handleRequest(
@@ -1235,7 +1377,14 @@ export function createWebApp(options: WebAppOptions) {
       // so we re-check on every API request rather than once at
       // boot. Static asset routes are exempt — they don't read any
       // tracker data.
-      if (path.startsWith("/api/") && (await trackerDirExists(locttDir))) {
+      // `init` is exempt — it creates the tracker and runs against a
+      // fresh directory by definition. If the tracker already exists
+      // it'll fail through its own existence check inside initLoctt.
+      if (
+        path.startsWith("/api/") &&
+        path !== "/api/init" &&
+        (await trackerDirExists(locttDir))
+      ) {
         try {
           await requireSupportedSchema(locttDir);
         } catch (err) {

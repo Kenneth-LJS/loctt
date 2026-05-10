@@ -26,3 +26,5 @@ export {
   userExists,
   UserProfileError,
 } from "./profile.js";
+export type { UserSettings } from "./settings.js";
+export { loadUserSettings, saveUserSettings } from "./settings.js";
