@@ -26,6 +26,7 @@ export interface CreateTaskOptions {
   readonly due_date?: string;
   readonly estimate?: string;
   readonly milestone?: string;
+  readonly sprint?: string;
   readonly fields?: Readonly<Record<string, unknown>>;
   readonly body?: string;
 }
@@ -75,9 +76,20 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
     ...(options.due_date !== undefined ? { due_date: options.due_date } : {}),
     ...(options.estimate !== undefined ? { estimate: options.estimate } : {}),
     ...(options.milestone !== undefined ? { milestone: options.milestone } : {}),
+    ...(options.sprint !== undefined ? { sprint: options.sprint } : {}),
     ...(options.fields !== undefined ? { fields: options.fields } : {}),
     ...(relationships.length > 0 ? { relationships } : {}),
   };
+
+  // If the task is being created directly into a completed-category
+  // status, auto-stamp completed_date so it matches the behavior of
+  // setField on a status transition. Same date format (YYYY-MM-DD).
+  if (workflowConfig && frontmatter.status !== undefined) {
+    const statusDef = workflowConfig.statuses.find(s => s.key === frontmatter.status);
+    if (statusDef?.category === "completed") {
+      (frontmatter as { completed_date?: string }).completed_date = now.slice(0, 10);
+    }
+  }
 
   if (workflowConfig) {
     const errors = validateTaskAgainstWorkflow(frontmatter, workflowConfig);
