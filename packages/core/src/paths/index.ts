@@ -16,6 +16,7 @@ const SYNC_FILE = "sync.yaml";
 const RECONCILE_FILE = "reconcile.yaml";
 const KEY_INDEX_FILE = "key-index.yaml";
 const SCHEMA_VERSION_FILE = ".schema-version";
+const SCHEMA_MIGRATION_IN_PROGRESS_FILE = ".schema-migration-in-progress";
 const USERS_DIR = "users";
 const USER_PROFILE_FILE = "profile.yaml";
 const USER_SETTINGS_FILE = "settings.yaml";
@@ -152,6 +153,11 @@ export function getKeyIndexPath(locttDir: string): string {
 /** Returns the path to .loctt/.schema-version. */
 export function getSchemaVersionPath(locttDir: string): string {
   return join(locttDir, SCHEMA_VERSION_FILE);
+}
+
+/** Returns the path to .loctt/.schema-migration-in-progress. */
+export function getSchemaMigrationInProgressPath(locttDir: string): string {
+  return join(locttDir, SCHEMA_MIGRATION_IN_PROGRESS_FILE);
 }
 
 /** Returns the path to .loctt/users/. */

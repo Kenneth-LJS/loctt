@@ -125,6 +125,7 @@ export {
   getLocalDir,
   getQueriesConfigPath,
   getReconcileStatePath,
+  getSchemaMigrationInProgressPath,
   getSchemaVersionPath,
   getStateFilePath,
   getSyncStatePath,

@@ -4,6 +4,8 @@ import { dirname } from "node:path";
 import * as lockfile from "proper-lockfile";
 
 import { getStateFilePath } from "../paths/index.js";
+import { isMigrationLocked } from "../schema/lock.js";
+import { SchemaVersionError } from "../schema/version.js";
 
 /**
  * Serializes read-modify-write operations on `state.yaml` for a single
@@ -24,6 +26,15 @@ export async function withStateLock<T>(
   locttDir: string,
   fn: () => Promise<T>,
 ): Promise<T> {
+  // Refuse to mutate while a migration is in progress. The migration
+  // framework rewrites task frontmatter and config files atomically;
+  // a concurrent state-lock holder would race those writes.
+  if (await isMigrationLocked(locttDir)) {
+    throw new SchemaVersionError(
+      `A schema migration is in progress for ${locttDir}. ` +
+      `Wait for it to complete before retrying.`,
+    );
+  }
   const target = getStateFilePath(locttDir);
   // Ensure the parent directory exists so proper-lockfile can create
   // the `.lock` directory next to state.yaml even on the first call

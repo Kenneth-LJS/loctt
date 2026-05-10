@@ -1,3 +1,7 @@
+import { rm,writeFile } from "node:fs/promises";
+
+import { getSchemaMigrationInProgressPath } from "../paths/index.js";
+import { fileExists } from "../utils/fs.js";
 import { withMigrationLock } from "./lock.js";
 import { findMigrationPath, type Migration } from "./migrations.js";
 import {
@@ -125,6 +129,7 @@ export async function migrateToCurrent(
     const backupPath = await backupLocttDir(locttDir, after);
     const applied: Migration[] = [];
     let current = after;
+    const sentinelPath = getSchemaMigrationInProgressPath(locttDir);
 
     for (const migration of path) {
       if (migration.from !== current) {
@@ -134,9 +139,24 @@ export async function migrateToCurrent(
           `next migration starts at v${migration.from}`,
         );
       }
+      // Drop a sentinel before applying so a mid-step crash leaves a
+      // marker that requireSupportedSchema can refuse to boot against.
+      // The sentinel records the from/to pair plus the backup path for
+      // recovery guidance.
+      await writeFile(
+        sentinelPath,
+        `from: ${migration.from}\nto: ${migration.to}\nbackup: ${backupPath}\n`,
+        "utf-8",
+      );
       await migration.apply(locttDir);
       current = migration.to;
       await writeSchemaVersion(locttDir, current);
+      // Clear sentinel after the version stamp lands. If we crash
+      // between writeSchemaVersion and rm, the next boot sees a
+      // version that matches a registered to-version and an orphan
+      // sentinel — requireSupportedSchema treats the sentinel as
+      // authoritative and refuses to boot.
+      await rm(sentinelPath, { force: true });
       applied.push(migration);
     }
 
@@ -158,6 +178,17 @@ export async function migrateToCurrent(
  *  - Newer than current → `SchemaTooNewError`.
  */
 export async function requireSupportedSchema(locttDir: string): Promise<void> {
+  // If a previous migration crashed mid-step, a sentinel was left
+  // behind. Refuse to boot until the user resolves it manually
+  // (typically by restoring from the backup recorded in the sentinel).
+  const sentinelPath = getSchemaMigrationInProgressPath(locttDir);
+  if (await fileExists(sentinelPath)) {
+    throw new SchemaVersionError(
+      `A schema migration was interrupted mid-run. ` +
+      `See ${sentinelPath} for the recovery instructions and ` +
+      `restore from the backup it references before retrying.`,
+    );
+  }
   const recorded = await readSchemaVersion(locttDir);
   if (recorded === null) {
     throw new SchemaVersionError(
