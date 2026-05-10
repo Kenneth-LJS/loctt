@@ -165,6 +165,46 @@ describe("parent alias", () => {
   });
 });
 
+describe("array-valued field comparison (labels)", () => {
+  const labeled: TaskFrontmatter = {
+    id: "lab",
+    key: "T-9",
+    title: "Has labels",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    status: "in_progress",
+    labels: ["bug", "ui"],
+  };
+  const unlabeled: TaskFrontmatter = { ...labeled, labels: undefined };
+
+  it("= matches when the value is in the array", () => {
+    expect(evaluateQuery(query("labels = bug"), labeled)).toBe(true);
+    expect(evaluateQuery(query("labels = backend"), labeled)).toBe(false);
+  });
+
+  it("!= matches when the value is NOT in the array", () => {
+    expect(evaluateQuery(query("labels != bug"), labeled)).toBe(false);
+    expect(evaluateQuery(query("labels != backend"), labeled)).toBe(true);
+  });
+
+  it("~ matches case-insensitive substring against any element", () => {
+    expect(evaluateQuery(query("labels ~ U"), labeled)).toBe(true); // matches 'ui'
+    expect(evaluateQuery(query("labels ~ zzz"), labeled)).toBe(false);
+  });
+
+  it("in / not in evaluate set intersection with the array", () => {
+    expect(evaluateQuery(query("labels in (bug, frontend)"), labeled)).toBe(true);
+    expect(evaluateQuery(query("labels in (frontend, backend)"), labeled)).toBe(false);
+    expect(evaluateQuery(query("labels not in (frontend, backend)"), labeled)).toBe(true);
+    expect(evaluateQuery(query("labels not in (bug)"), labeled)).toBe(false);
+  });
+
+  it("empty / unset labels behaves as no match for =, match for !=", () => {
+    expect(evaluateQuery(query("labels = bug"), unlabeled)).toBe(false);
+    expect(evaluateQuery(query("labels != bug"), unlabeled)).toBe(true);
+  });
+});
+
 describe("relationship-based query filtering", () => {
   it("filters by relationship type and target", () => {
     expect(evaluateQuery(query("relationship.blocks = blocked_id"), task)).toBe(true);

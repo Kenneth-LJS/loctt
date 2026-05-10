@@ -84,4 +84,13 @@ queries:
   it("throws on non-object root", () => {
     expect(() => parseQueriesConfig("42")).toThrow(QueriesConfigError);
   });
+
+  it("throws when a saved query string is unparseable", () => {
+    const yaml = `
+queries:
+  - name: broken
+    query: "status =="
+`;
+    expect(() => parseQueriesConfig(yaml)).toThrow(/not a valid query/);
+  });
 });

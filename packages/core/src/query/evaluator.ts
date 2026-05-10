@@ -47,12 +47,12 @@ function resolveList(qv: QueryValue): readonly QueryValue[] | undefined {
  * Supports built-in fields and custom fields under `fields:`.
  */
 function getFieldValue(fm: TaskFrontmatter, field: string): unknown {
-  // Check built-in fields first
-  if (field in fm) {
+  // Check built-in fields first. Use hasOwnProperty so we don't
+  // pick up inherited prototype keys (e.g. "toString").
+  if (Object.prototype.hasOwnProperty.call(fm, field)) {
     return (fm as unknown as Record<string, unknown>)[field];
   }
-  // Check custom fields
-  if (fm.fields && field in fm.fields) {
+  if (fm.fields && Object.prototype.hasOwnProperty.call(fm.fields, field)) {
     return fm.fields[field];
   }
   return undefined;
@@ -68,11 +68,56 @@ function toComparableString(value: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * Returns the array of comparable strings from a value if it's an
+ * array of primitive values, otherwise undefined. Used so that
+ * array-valued fields like `labels: [bug, ui]` evaluate
+ * member-wise: `labels = bug` → true if "bug" is in the array.
+ */
+function toComparableArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: string[] = [];
+  for (const v of value) {
+    const s = toComparableString(v);
+    if (s === undefined) return undefined; // mixed/object array — give up
+    out.push(s);
+  }
+  return out;
+}
+
 function compareValues(left: unknown, op: string, right: string | number | boolean): boolean {
   // Handle undefined left — field not set
   if (left === undefined || left === null) {
     if (op === "!=") return true;
     return false;
+  }
+
+  // Array-valued fields (labels, multi-valued custom fields, etc.)
+  // are compared member-wise: any element matching the comparison
+  // counts as a match. `!=` requires that no element matches.
+  const arr = toComparableArray(left);
+  if (arr !== undefined) {
+    if (arr.length === 0) return op === "!=";
+    const rightStr = String(right);
+    switch (op) {
+      case "=":
+        return arr.includes(rightStr);
+      case "!=":
+        return !arr.includes(rightStr);
+      case "~": {
+        const needle = rightStr.toLowerCase();
+        return arr.some(a => a.toLowerCase().includes(needle));
+      }
+      // Ordering operators on arrays don't really make sense; fall
+      // back to "any element matches the ordering."
+      case "<":
+      case "<=":
+      case ">":
+      case ">=":
+        return arr.some(a => compareValues(a, op, right));
+      default:
+        return false;
+    }
   }
 
   const leftStr = toComparableString(left);
@@ -239,12 +284,19 @@ export function evaluateQuery(
         }
         const items = resolveList(node.value);
         if (!items) return false;
+        const rhs = items
+          .map(v => resolvePrimitive(v))
+          .filter((p): p is string | number | boolean => p !== undefined)
+          .map(p => String(p));
+        const fieldArr = toComparableArray(fieldVal);
+        if (fieldArr !== undefined) {
+          // `labels in (bug, ui)` → any element of labels appears in rhs
+          const matches = fieldArr.some(s => rhs.includes(s));
+          return node.op === "in" ? matches : !matches;
+        }
         const fieldStr = toComparableString(fieldVal);
         if (fieldStr === undefined) return node.op === "not in";
-        const matches = items.some(v => {
-          const p = resolvePrimitive(v);
-          return p !== undefined && String(p) === fieldStr;
-        });
+        const matches = rhs.includes(fieldStr);
         return node.op === "in" ? matches : !matches;
       }
 
