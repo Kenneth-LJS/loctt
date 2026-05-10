@@ -149,7 +149,16 @@ export function getTools(): McpTool[] {
     },
     {
       name: "update_task",
-      description: "Set a field on a task.",
+      description:
+        "Set a field on a task. Writable built-in fields: title, status, " +
+        "task_type, priority, labels, assignee, reporter, start_date, due_date, " +
+        "estimate, milestone, sprint. Any other field is treated as a custom " +
+        "field (must be declared in workflow.yaml under custom_fields). " +
+        "These fields are managed elsewhere and rejected here: id, key, " +
+        "created_at, project (immutable); relationships (use link_tasks / " +
+        "unlink_tasks); archived / archived_at (use archive_task / " +
+        "unarchive_task); status_updated_at (auto-stamped on status change); " +
+        "completed_date and board_rank (auto-managed).",
       inputSchema: {
         ref: z.string().describe("Task key or ID"),
         field: z.string(),
@@ -188,7 +197,11 @@ export function getTools(): McpTool[] {
     },
     {
       name: "unset_field",
-      description: "Remove a field from a task.",
+      description:
+        "Remove a field from a task. Same allowlist as update_task: writable " +
+        "built-ins (status/priority/etc.) and declared custom fields. The " +
+        "system-managed fields rejected by update_task are also rejected here. " +
+        "title and updated_at cannot be unset (they are required).",
       inputSchema: {
         ref: z.string().describe("Task key or ID"),
         field: z.string(),
@@ -1438,6 +1451,9 @@ export async function executeTool(
         try {
           const before = args["before"] as string | undefined;
           const after = args["after"] as string | undefined;
+          if (before !== undefined && after !== undefined) {
+            return errorResult("`before` and `after` are mutually exclusive; pass at most one");
+          }
           const result = await reorderRelationship({
             locttDir,
             sourceRef: args["source"] as string,

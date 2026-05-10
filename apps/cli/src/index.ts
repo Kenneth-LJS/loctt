@@ -1386,6 +1386,11 @@ export async function main(): Promise<void> {
             const label = getArg(args, "--label");
             const td = getArg(args, "--target-date");
             const archivedArg = getArg(args, "--archived");
+            if (archivedArg !== undefined && archivedArg !== "true" && archivedArg !== "false") {
+              console.error(`Error: --archived must be exactly "true" or "false", got: ${archivedArg}`);
+              process.exitCode = 1;
+              break;
+            }
             try {
               await editMilestone(locttDir, key, {
                 ...(label !== undefined ? { label } : {}),
@@ -1655,6 +1660,11 @@ export async function main(): Promise<void> {
         }
         const before = getArg(args, "--before");
         const after = getArg(args, "--after");
+        if (before !== undefined && after !== undefined) {
+          console.error(`Error: --before and --after are mutually exclusive; pass at most one`);
+          process.exitCode = 1;
+          break;
+        }
         try {
           const result = await reorderRelationship({
             locttDir: resolveLocttDir(root),

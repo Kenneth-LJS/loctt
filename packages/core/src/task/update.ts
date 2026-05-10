@@ -11,8 +11,24 @@ export class TaskUpdateError extends Error {
   }
 }
 
-// Fields that cannot be set/unset — they are system-managed
-const IMMUTABLE_FIELDS = new Set(["id", "key", "created_at", "project"]);
+// Fields that cannot be set/unset — they are system-managed.
+// `relationships` is here because edges go through linkTask /
+// unlinkTask (which validate the workflow's rel definitions).
+// `key_history` is bookkeeping for project-key migrations.
+// `archived` / `archived_at` go through archiveTask / unarchiveTask
+// so the history entry and timestamp stay consistent.
+// `status_updated_at` is stamped automatically when status changes.
+const IMMUTABLE_FIELDS = new Set([
+  "id",
+  "key",
+  "created_at",
+  "project",
+  "relationships",
+  "key_history",
+  "archived",
+  "archived_at",
+  "status_updated_at",
+]);
 
 // Fields that are auto-managed by `setField` itself — users may not
 // write to them directly even via the generic field setter. The
@@ -22,11 +38,21 @@ const IMMUTABLE_FIELDS = new Set(["id", "key", "created_at", "project"]);
 const AUTO_MANAGED_FIELDS = new Set(["completed_date", "board_rank"]);
 
 // Built-in optional fields that live at the top level of frontmatter
+// and ARE writable through setField. Anything not in this set (and
+// not "title" / "updated_at" / immutable / auto-managed) is treated
+// as a custom field under `fields:`.
 const BUILTIN_OPTIONAL_FIELDS = new Set([
-  "status", "status_updated_at", "task_type", "priority",
-  "labels", "assignee", "reporter", "start_date", "due_date",
-  "estimate", "completed_date", "milestone", "sprint", "archived", "archived_at",
-  "relationships", "key_history", "board_rank",
+  "status",
+  "task_type",
+  "priority",
+  "labels",
+  "assignee",
+  "reporter",
+  "start_date",
+  "due_date",
+  "estimate",
+  "milestone",
+  "sprint",
 ]);
 
 /**
