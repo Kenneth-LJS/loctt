@@ -1,8 +1,27 @@
-import type { TaskFrontmatter,WorkflowConfig } from "@loctt/contracts";
+import type {
+  LabelsConfig,
+  MilestonesConfig,
+  ProjectsConfig,
+  SprintsConfig,
+  TaskFrontmatter,
+  WorkflowConfig,
+} from "@loctt/contracts";
 
 export interface ValidationError {
   readonly field: string;
   readonly message: string;
+}
+
+/**
+ * Optional sibling configs that contribute additional reference
+ * checks beyond the core workflow (statuses, priorities, etc.).
+ * Pass whichever ones the caller has loaded.
+ */
+export interface AuxConfigs {
+  readonly projects?: ProjectsConfig;
+  readonly labels?: LabelsConfig;
+  readonly milestones?: MilestonesConfig;
+  readonly sprints?: SprintsConfig;
 }
 
 /**
@@ -13,6 +32,7 @@ export interface ValidationError {
 export function validateTaskAgainstWorkflow(
   fm: TaskFrontmatter,
   config: WorkflowConfig,
+  aux: AuxConfigs = {},
 ): readonly ValidationError[] {
   const errors: ValidationError[] = [];
 
@@ -49,6 +69,48 @@ export function validateTaskAgainstWorkflow(
         errors.push({
           field: `relationships[${i}].type`,
           message: `unknown relationship type "${rel.type}"; valid: ${[...relationshipKeys].join(", ")}`,
+        });
+      }
+    }
+  }
+
+  if (aux.projects && fm.project !== undefined) {
+    const known = new Set(aux.projects.projects.map(p => p.key));
+    if (!known.has(fm.project)) {
+      errors.push({
+        field: "project",
+        message: `unknown project "${fm.project}"; valid: ${[...known].join(", ") || "(none)"}`,
+      });
+    }
+  }
+
+  if (aux.milestones && fm.milestone !== undefined) {
+    const known = new Set(aux.milestones.milestones.map(m => m.key));
+    if (!known.has(fm.milestone)) {
+      errors.push({
+        field: "milestone",
+        message: `unknown milestone "${fm.milestone}"; valid: ${[...known].join(", ") || "(none)"}`,
+      });
+    }
+  }
+
+  if (aux.sprints && fm.sprint !== undefined) {
+    const known = new Set(aux.sprints.sprints.map(s => s.key));
+    if (!known.has(fm.sprint)) {
+      errors.push({
+        field: "sprint",
+        message: `unknown sprint "${fm.sprint}"; valid: ${[...known].join(", ") || "(none)"}`,
+      });
+    }
+  }
+
+  if (aux.labels && fm.labels !== undefined) {
+    const known = new Set(aux.labels.labels.map(l => l.key));
+    for (const [i, k] of fm.labels.entries()) {
+      if (!known.has(k)) {
+        errors.push({
+          field: `labels[${i}]`,
+          message: `unknown label "${k}"; valid: ${[...known].join(", ") || "(none)"}`,
         });
       }
     }
