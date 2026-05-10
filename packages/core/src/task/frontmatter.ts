@@ -131,6 +131,7 @@ export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
   const estimate = optionalString(raw["estimate"], "estimate");
   const completedDate = optionalDateString(raw["completed_date"], "completed_date");
   const milestone = optionalString(raw["milestone"], "milestone");
+  const sprint = optionalString(raw["sprint"], "sprint");
   const archived = optionalBoolean(raw["archived"], "archived");
   const archivedAt = optionalDateString(raw["archived_at"], "archived_at");
   const labels = optionalStringArray(raw["labels"], "labels");
@@ -153,6 +154,7 @@ export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
     ...(estimate !== undefined ? { estimate } : {}),
     ...(completedDate !== undefined ? { completed_date: completedDate } : {}),
     ...(milestone !== undefined ? { milestone } : {}),
+    ...(sprint !== undefined ? { sprint } : {}),
     ...(archived !== undefined ? { archived } : {}),
     ...(archivedAt !== undefined ? { archived_at: archivedAt } : {}),
     ...(labels !== undefined ? { labels } : {}),
@@ -192,6 +194,7 @@ export function serializeFrontmatter(fm: TaskFrontmatter): string {
   if (fm.estimate !== undefined) obj["estimate"] = fm.estimate;
   if (fm.completed_date !== undefined) obj["completed_date"] = fm.completed_date;
   if (fm.milestone !== undefined) obj["milestone"] = fm.milestone;
+  if (fm.sprint !== undefined) obj["sprint"] = fm.sprint;
   if (fm.archived !== undefined) obj["archived"] = fm.archived;
   if (fm.archived_at !== undefined) obj["archived_at"] = fm.archived_at;
   if (fm.relationships !== undefined && fm.relationships.length > 0) {

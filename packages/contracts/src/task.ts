@@ -41,6 +41,7 @@ export interface TaskFrontmatter {
    */
   readonly completed_date?: string;
   readonly milestone?: string;
+  readonly sprint?: string;
   readonly archived?: boolean;
   readonly archived_at?: string;
   readonly relationships?: readonly TaskRelationship[];

@@ -17,11 +17,13 @@ import {
   createLabel,
   createMilestone,
   createProject,
+  createSprint,
   createTask,
   createUser,
   deleteLabel,
   deleteMilestone,
   deleteProject,
+  deleteSprint,
   deleteTask,
   deleteUser,
   detachFile,
@@ -29,6 +31,7 @@ import {
   editLabel,
   editMilestone,
   editProject,
+  editSprint,
   enableGit,
   getConfigValue,
   getCurrentUser,
@@ -44,6 +47,7 @@ import {
   loadMilestonesConfig,
   loadOptionalConfigs,
   loadProjectsConfig,
+  loadSprintsConfig,
   loadState,
   lookupTask,
   migrateToCurrent,
@@ -64,6 +68,7 @@ import {
   setConfigValue,
   setDefaultProject,
   setField,
+  SprintError,
   switchCurrentUser,
   sync,
   unarchiveTask,
@@ -121,6 +126,7 @@ Commands:
   user <list|current|switch|create|edit|archive|unarchive|delete> ...
   label <list|create|edit|delete> ...
   milestone <list|create|edit|delete> ...
+  sprint <list|create|edit|delete> ...
   rerank <source> <relationship> <target> [--before <task>] [--after <task>]
   create <title> [--project <key>] [--status <s>] [--priority <p>] [--type <t>]
   list [--query <q>] [--view <v>] [--limit <n>] [--archived]
@@ -1331,6 +1337,126 @@ export async function main(): Promise<void> {
           }
           default:
             console.error(`Usage: loctt milestone <list|create|edit|delete> ...`);
+            process.exitCode = 1;
+            break;
+        }
+        break;
+      }
+
+      case "sprint": {
+        const sub = args[1];
+        const locttDir = resolveLocttDir(root);
+        switch (sub) {
+          case "list": {
+            const cfg = await loadSprintsConfig(locttDir);
+            for (const s of cfg.sprints) {
+              const goal = s.goal ? `  "${s.goal}"` : "";
+              console.log(`${s.key}\t${s.label}\t[${s.state}]\t${s.start_date}..${s.end_date}${goal}`);
+            }
+            break;
+          }
+          case "create": {
+            const key = args[2];
+            const start = getArg(args, "--start");
+            const end = getArg(args, "--end");
+            const state = getArg(args, "--state") ?? "future";
+            if (!key || !start || !end) {
+              console.error(`Usage: loctt sprint create <key> --start <YYYY-MM-DD> --end <YYYY-MM-DD> [--state <active|completed|future>] [--label <l>] [--goal <g>]`);
+              process.exitCode = 1;
+              break;
+            }
+            if (state !== "active" && state !== "completed" && state !== "future") {
+              console.error(`Error: --state must be one of active|completed|future`);
+              process.exitCode = 1;
+              break;
+            }
+            const label = getArg(args, "--label") ?? key;
+            const goal = getArg(args, "--goal");
+            try {
+              await createSprint(locttDir, {
+                key,
+                label,
+                start_date: start,
+                end_date: end,
+                state,
+                ...(goal !== undefined ? { goal } : {}),
+              });
+              console.log(`Created sprint ${key}`);
+            } catch (err) {
+              if (err instanceof SprintError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "edit": {
+            const key = args[2];
+            if (!key) {
+              console.error(`Usage: loctt sprint edit <key> [--label <l>] [--start <d>] [--end <d>] [--state <s>] [--goal <g|->]`);
+              process.exitCode = 1;
+              break;
+            }
+            const label = getArg(args, "--label");
+            const start = getArg(args, "--start");
+            const end = getArg(args, "--end");
+            const state = getArg(args, "--state");
+            if (state !== undefined && state !== "active" && state !== "completed" && state !== "future") {
+              console.error(`Error: --state must be one of active|completed|future`);
+              process.exitCode = 1;
+              break;
+            }
+            const goalArg = getArg(args, "--goal");
+            try {
+              await editSprint(locttDir, key, {
+                ...(label !== undefined ? { label } : {}),
+                ...(start !== undefined ? { start_date: start } : {}),
+                ...(end !== undefined ? { end_date: end } : {}),
+                ...(state !== undefined ? { state } : {}),
+                ...(goalArg !== undefined ? { goal: goalArg === "-" ? null : goalArg } : {}),
+              });
+              console.log(`Updated sprint ${key}`);
+            } catch (err) {
+              if (err instanceof SprintError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "delete": {
+            const key = args[2];
+            if (!key) {
+              console.error(`Usage: loctt sprint delete <key> [--remap-to <other>]`);
+              process.exitCode = 1;
+              break;
+            }
+            const remapTo = getArg(args, "--remap-to");
+            try {
+              const result = await deleteSprint(locttDir, key, {
+                ...(remapTo !== undefined ? { remapTo } : {}),
+              });
+              if (result.affectedTaskCount > 0) {
+                const action = remapTo !== undefined ? `remapped to '${remapTo}'` : "cleared from";
+                console.log(`${action} ${result.affectedTaskCount} task(s)`);
+              }
+              console.log(`Deleted sprint ${key}`);
+            } catch (err) {
+              if (err instanceof SprintError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          default:
+            console.error(`Usage: loctt sprint <list|create|edit|delete> ...`);
             process.exitCode = 1;
             break;
         }

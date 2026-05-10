@@ -25,7 +25,7 @@ const AUTO_MANAGED_FIELDS = new Set(["completed_date", "board_rank"]);
 const BUILTIN_OPTIONAL_FIELDS = new Set([
   "status", "status_updated_at", "task_type", "priority",
   "labels", "assignee", "reporter", "start_date", "due_date",
-  "estimate", "completed_date", "milestone", "archived", "archived_at",
+  "estimate", "completed_date", "milestone", "sprint", "archived", "archived_at",
   "relationships", "key_history", "board_rank",
 ]);
 

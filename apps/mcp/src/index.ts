@@ -18,11 +18,13 @@ import {
   createLabel,
   createMilestone,
   createProject,
+  createSprint,
   createTask,
   createUser,
   deleteLabel,
   deleteMilestone,
   deleteProject,
+  deleteSprint,
   deleteTask,
   deleteUser,
   detachFile,
@@ -30,6 +32,7 @@ import {
   editLabel,
   editMilestone,
   editProject,
+  editSprint,
   enableGit,
   getConfigValue,
   getCurrentUser,
@@ -46,6 +49,7 @@ import {
   loadOptionalConfigs,
   loadProjectsConfig,
   loadQueriesConfig,
+  loadSprintsConfig,
   loadState,
   loadWorkflowConfig,
   lookupTask,
@@ -64,6 +68,7 @@ import {
   setConfigValue,
   setDefaultProject,
   setField,
+  SprintError,
   switchCurrentUser,
   sync,
   unarchiveTask,
@@ -407,6 +412,43 @@ export function getTools(): McpTool[] {
       name: "label_list",
       description: "List labels defined in labels.yaml.",
       inputSchema: {},
+    },
+    {
+      name: "sprint_list",
+      description: "List sprints defined in sprints.yaml.",
+      inputSchema: {},
+    },
+    {
+      name: "sprint_create",
+      description: "Register a new sprint with start/end dates and a state (active|completed|future).",
+      inputSchema: {
+        key: z.string(),
+        label: z.string(),
+        start_date: z.string().describe("YYYY-MM-DD"),
+        end_date: z.string().describe("YYYY-MM-DD"),
+        state: z.enum(["active", "completed", "future"]),
+        goal: z.string().optional(),
+      },
+    },
+    {
+      name: "sprint_edit",
+      description: "Edit a sprint. Pass null goal to clear.",
+      inputSchema: {
+        key: z.string(),
+        label: z.string().optional(),
+        start_date: z.string().optional(),
+        end_date: z.string().optional(),
+        state: z.enum(["active", "completed", "future"]).optional(),
+        goal: z.string().nullable().optional(),
+      },
+    },
+    {
+      name: "sprint_delete",
+      description: "Delete a sprint, optionally remapping affected tasks to another sprint.",
+      inputSchema: {
+        key: z.string(),
+        remap_to: z.string().optional(),
+      },
     },
     {
       name: "milestone_list",
@@ -1121,6 +1163,59 @@ export async function executeTool(
           return text(JSON.stringify({ deleted: args["key"], ...result }, null, 2));
         } catch (err) {
           if (err instanceof LabelError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "sprint_list": {
+        const cfg = await loadSprintsConfig(locttDir);
+        return text(JSON.stringify(cfg, null, 2));
+      }
+
+      case "sprint_create": {
+        try {
+          const goal = args["goal"] as string | undefined;
+          await createSprint(locttDir, {
+            key: args["key"] as string,
+            label: args["label"] as string,
+            start_date: args["start_date"] as string,
+            end_date: args["end_date"] as string,
+            state: args["state"] as "active" | "completed" | "future",
+            ...(goal !== undefined ? { goal } : {}),
+          });
+          return text(`Created sprint ${String(args["key"])}`);
+        } catch (err) {
+          if (err instanceof SprintError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "sprint_edit": {
+        try {
+          const goal = args["goal"] as string | null | undefined;
+          await editSprint(locttDir, args["key"] as string, {
+            ...(args["label"] !== undefined ? { label: args["label"] as string } : {}),
+            ...(args["start_date"] !== undefined ? { start_date: args["start_date"] as string } : {}),
+            ...(args["end_date"] !== undefined ? { end_date: args["end_date"] as string } : {}),
+            ...(args["state"] !== undefined ? { state: args["state"] as "active" | "completed" | "future" } : {}),
+            ...("goal" in args ? { goal: goal ?? null } : {}),
+          });
+          return text(`Updated sprint ${String(args["key"])}`);
+        } catch (err) {
+          if (err instanceof SprintError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "sprint_delete": {
+        try {
+          const remapTo = args["remap_to"] as string | undefined;
+          const result = await deleteSprint(locttDir, args["key"] as string, {
+            ...(remapTo !== undefined ? { remapTo } : {}),
+          });
+          return text(JSON.stringify({ deleted: args["key"], ...result }, null, 2));
+        } catch (err) {
+          if (err instanceof SprintError) return errorResult(err.message);
           throw err;
         }
       }

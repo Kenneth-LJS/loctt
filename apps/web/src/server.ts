@@ -26,17 +26,20 @@ import {
   createLabel,
   createMilestone,
   createProject,
+  createSprint,
   createTask,
   createUser,
   deleteLabel,
   deleteMilestone,
   deleteProject,
+  deleteSprint,
   deleteTask,
   deleteUser,
   detachFile,
   editLabel,
   editMilestone,
   editProject,
+  editSprint,
   getAttachmentPath,
   getCurrentUser,
   getTrackerInfo,
@@ -50,6 +53,7 @@ import {
   loadOptionalConfigs,
   loadProjectsConfig,
   loadQueriesConfig,
+  loadSprintsConfig,
   loadState,
   loadWorkflowConfig,
   lookupTask,
@@ -69,6 +73,7 @@ import {
   SchemaVersionError,
   setDefaultProject,
   setField,
+  SprintError,
   switchCurrentUser,
   TaskNotFoundError,
   unarchiveTask,
@@ -125,6 +130,7 @@ const TASK_REF_RE = /^\/api\/tasks\/([^/]+)$/;
 const PROJECT_KEY_RE = /^\/api\/projects\/([^/]+)$/;
 const LABEL_KEY_RE = /^\/api\/labels\/([^/]+)$/;
 const MILESTONE_KEY_RE = /^\/api\/milestones\/([^/]+)$/;
+const SPRINT_KEY_RE = /^\/api\/sprints\/([^/]+)$/;
 const USER_REF_RE = /^\/api\/users\/([^/]+)$/;
 const USER_ARCHIVE_RE = /^\/api\/users\/([^/]+)\/archive$/;
 const USER_UNARCHIVE_RE = /^\/api\/users\/([^/]+)\/unarchive$/;
@@ -395,6 +401,77 @@ export function createWebApp(options: WebAppOptions) {
         error(res, err.message, 400);
         return;
       }
+      throw err;
+    }
+  };
+
+  const handleListSprints: RouteHandler = async ({ res, locttDir }) => {
+    const cfg = await loadSprintsConfig(locttDir);
+    json(res, cfg);
+  };
+
+  const handleCreateSprint: RouteHandler = async ({ req, res, locttDir }) => {
+    const body = await readBody(req);
+    const r = JSON.parse(body) as {
+      key: string;
+      label: string;
+      start_date: string;
+      end_date: string;
+      state: "active" | "completed" | "future";
+      goal?: string;
+    };
+    try {
+      await createSprint(locttDir, {
+        key: r.key,
+        label: r.label,
+        start_date: r.start_date,
+        end_date: r.end_date,
+        state: r.state,
+        ...(r.goal !== undefined ? { goal: r.goal } : {}),
+      });
+      json(res, { key: r.key }, 201);
+    } catch (err) {
+      if (err instanceof SprintError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleUpdateSprint: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const key = captures[0] ?? "";
+    const body = await readBody(req);
+    const r = JSON.parse(body) as {
+      label?: string;
+      start_date?: string;
+      end_date?: string;
+      state?: "active" | "completed" | "future";
+      goal?: string | null;
+    };
+    try {
+      await editSprint(locttDir, key, {
+        ...(r.label !== undefined ? { label: r.label } : {}),
+        ...(r.start_date !== undefined ? { start_date: r.start_date } : {}),
+        ...(r.end_date !== undefined ? { end_date: r.end_date } : {}),
+        ...(r.state !== undefined ? { state: r.state } : {}),
+        ...("goal" in r ? { goal: r.goal as string | null } : {}),
+      });
+      json(res, { key });
+    } catch (err) {
+      if (err instanceof SprintError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleDeleteSprint: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const key = captures[0] ?? "";
+    const url = new URL(req.url ?? "/", `http://localhost:${port}`);
+    const remapTo = url.searchParams.get("remap_to") ?? undefined;
+    try {
+      const result = await deleteSprint(locttDir, key, {
+        ...(remapTo !== undefined ? { remapTo } : {}),
+      });
+      json(res, { deleted: key, ...result });
+    } catch (err) {
+      if (err instanceof SprintError) { error(res, err.message, 400); return; }
       throw err;
     }
   };
@@ -1018,6 +1095,10 @@ export function createWebApp(options: WebAppOptions) {
     { method: "POST", pattern: "/api/milestones", handler: handleCreateMilestone },
     { method: "PUT", pattern: MILESTONE_KEY_RE, handler: handleUpdateMilestone },
     { method: "DELETE", pattern: MILESTONE_KEY_RE, handler: handleDeleteMilestone },
+    { method: "GET", pattern: "/api/sprints", handler: handleListSprints },
+    { method: "POST", pattern: "/api/sprints", handler: handleCreateSprint },
+    { method: "PUT", pattern: SPRINT_KEY_RE, handler: handleUpdateSprint },
+    { method: "DELETE", pattern: SPRINT_KEY_RE, handler: handleDeleteSprint },
     { method: "GET", pattern: "/api/users", handler: handleListUsers },
     { method: "POST", pattern: "/api/users", handler: handleCreateUser },
     { method: "GET", pattern: "/api/user/current", handler: handleCurrentUser },
