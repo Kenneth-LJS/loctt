@@ -14,14 +14,17 @@ import {
   buildListContext,
   buildShowModel,
   CONFIG_KEYS,
+  createLabel,
   createProject,
   createTask,
   createUser,
+  deleteLabel,
   deleteProject,
   deleteTask,
   deleteUser,
   detachFile,
   disableGit,
+  editLabel,
   editProject,
   enableGit,
   getConfigValue,
@@ -29,10 +32,12 @@ import {
   getGitStatus,
   getTrackerInfo,
   initLoctt,
+  LabelError,
   linkTask,
   listTasks,
   loadAllTasks,
   loadAllUsers,
+  loadLabelsConfig,
   loadOptionalConfigs,
   loadProjectsConfig,
   loadState,
@@ -109,6 +114,7 @@ Commands:
   schema                           Show the workflow config (statuses, priorities, etc.)
   project <list|create|edit|delete|set-default> ...
   user <list|current|switch|create|edit|archive|unarchive|delete> ...
+  label <list|create|edit|delete> ...
   rerank <source> <relationship> <target> [--before <task>] [--after <task>]
   create <title> [--project <key>] [--status <s>] [--priority <p>] [--type <t>]
   list [--query <q>] [--view <v>] [--limit <n>] [--archived]
@@ -1118,6 +1124,106 @@ export async function main(): Promise<void> {
           }
           default:
             console.error(`Usage: loctt user <list|current|switch|create|edit|archive|unarchive|delete> ...`);
+            process.exitCode = 1;
+            break;
+        }
+        break;
+      }
+
+      case "label": {
+        const sub = args[1];
+        const locttDir = resolveLocttDir(root);
+        switch (sub) {
+          case "list": {
+            const cfg = await loadLabelsConfig(locttDir);
+            for (const l of cfg.labels) {
+              const color = l.color ? `  ${l.color}` : "";
+              console.log(`${l.key}\t${l.label}${color}`);
+            }
+            break;
+          }
+          case "create": {
+            const key = args[2];
+            if (!key) {
+              console.error(`Usage: loctt label create <key> [--label <label>] [--color <hex>]`);
+              process.exitCode = 1;
+              break;
+            }
+            const label = getArg(args, "--label") ?? key;
+            const color = getArg(args, "--color");
+            try {
+              await createLabel(locttDir, {
+                key,
+                label,
+                ...(color !== undefined ? { color } : {}),
+              });
+              console.log(`Created label ${key}`);
+            } catch (err) {
+              if (err instanceof LabelError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "edit": {
+            const key = args[2];
+            if (!key) {
+              console.error(`Usage: loctt label edit <key> [--label <label>] [--color <hex|->]`);
+              process.exitCode = 1;
+              break;
+            }
+            const label = getArg(args, "--label");
+            const colorArg = getArg(args, "--color");
+            try {
+              await editLabel(locttDir, key, {
+                ...(label !== undefined ? { label } : {}),
+                ...(colorArg !== undefined
+                  ? { color: colorArg === "-" ? null : colorArg }
+                  : {}),
+              });
+              console.log(`Updated label ${key}`);
+            } catch (err) {
+              if (err instanceof LabelError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "delete": {
+            const key = args[2];
+            if (!key) {
+              console.error(`Usage: loctt label delete <key> [--remap-to <other>]`);
+              process.exitCode = 1;
+              break;
+            }
+            const remapTo = getArg(args, "--remap-to");
+            try {
+              const result = await deleteLabel(locttDir, key, {
+                ...(remapTo !== undefined ? { remapTo } : {}),
+              });
+              if (result.affectedTaskCount > 0) {
+                const action = remapTo !== undefined ? `remapped to '${remapTo}'` : "removed from";
+                console.log(`${action} ${result.affectedTaskCount} task(s)`);
+              }
+              console.log(`Deleted label ${key}`);
+            } catch (err) {
+              if (err instanceof LabelError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          default:
+            console.error(`Usage: loctt label <list|create|edit|delete> ...`);
             process.exitCode = 1;
             break;
         }

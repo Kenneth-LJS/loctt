@@ -23,21 +23,26 @@ import {
   AttachmentSourceError,
   buildListContext,
   buildShowModel,
+  createLabel,
   createProject,
   createTask,
   createUser,
+  deleteLabel,
   deleteProject,
   deleteTask,
   deleteUser,
   detachFile,
+  editLabel,
   editProject,
   getAttachmentPath,
   getCurrentUser,
   getTrackerInfo,
+  LabelError,
   linkTask,
   listTasks,
   loadAllTasks,
   loadAllUsers,
+  loadLabelsConfig,
   loadOptionalConfigs,
   loadProjectsConfig,
   loadQueriesConfig,
@@ -113,6 +118,7 @@ function error(res: import("node:http").ServerResponse, message: string, status 
 const VALID_REF_RE = /^[A-Za-z0-9_-]+$/;
 const TASK_REF_RE = /^\/api\/tasks\/([^/]+)$/;
 const PROJECT_KEY_RE = /^\/api\/projects\/([^/]+)$/;
+const LABEL_KEY_RE = /^\/api\/labels\/([^/]+)$/;
 const USER_REF_RE = /^\/api\/users\/([^/]+)$/;
 const USER_ARCHIVE_RE = /^\/api\/users\/([^/]+)\/archive$/;
 const USER_UNARCHIVE_RE = /^\/api\/users\/([^/]+)\/unarchive$/;
@@ -383,6 +389,58 @@ export function createWebApp(options: WebAppOptions) {
         error(res, err.message, 400);
         return;
       }
+      throw err;
+    }
+  };
+
+  const handleListLabels: RouteHandler = async ({ res, locttDir }) => {
+    const cfg = await loadLabelsConfig(locttDir);
+    json(res, cfg);
+  };
+
+  const handleCreateLabel: RouteHandler = async ({ req, res, locttDir }) => {
+    const body = await readBody(req);
+    const r = JSON.parse(body) as { key: string; label: string; color?: string };
+    try {
+      await createLabel(locttDir, {
+        key: r.key,
+        label: r.label,
+        ...(r.color !== undefined ? { color: r.color } : {}),
+      });
+      json(res, { key: r.key }, 201);
+    } catch (err) {
+      if (err instanceof LabelError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleUpdateLabel: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const key = captures[0] ?? "";
+    const body = await readBody(req);
+    const r = JSON.parse(body) as { label?: string; color?: string | null };
+    try {
+      await editLabel(locttDir, key, {
+        ...(r.label !== undefined ? { label: r.label } : {}),
+        ...("color" in r ? { color: r.color as string | null } : {}),
+      });
+      json(res, { key });
+    } catch (err) {
+      if (err instanceof LabelError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleDeleteLabel: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const key = captures[0] ?? "";
+    const url = new URL(req.url ?? "/", `http://localhost:${port}`);
+    const remapTo = url.searchParams.get("remap_to") ?? undefined;
+    try {
+      const result = await deleteLabel(locttDir, key, {
+        ...(remapTo !== undefined ? { remapTo } : {}),
+      });
+      json(res, { deleted: key, ...result });
+    } catch (err) {
+      if (err instanceof LabelError) { error(res, err.message, 400); return; }
       throw err;
     }
   };
@@ -889,6 +947,10 @@ export function createWebApp(options: WebAppOptions) {
     { method: "POST", pattern: "/api/projects", handler: handleCreateProject },
     { method: "PUT", pattern: PROJECT_KEY_RE, handler: handleUpdateProject },
     { method: "DELETE", pattern: PROJECT_KEY_RE, handler: handleDeleteProject },
+    { method: "GET", pattern: "/api/labels", handler: handleListLabels },
+    { method: "POST", pattern: "/api/labels", handler: handleCreateLabel },
+    { method: "PUT", pattern: LABEL_KEY_RE, handler: handleUpdateLabel },
+    { method: "DELETE", pattern: LABEL_KEY_RE, handler: handleDeleteLabel },
     { method: "GET", pattern: "/api/users", handler: handleListUsers },
     { method: "POST", pattern: "/api/users", handler: handleCreateUser },
     { method: "GET", pattern: "/api/user/current", handler: handleCurrentUser },
