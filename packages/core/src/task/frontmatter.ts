@@ -120,7 +120,7 @@ export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
   const startDate = optionalDateString(raw["start_date"], "start_date");
   const dueDate = optionalDateString(raw["due_date"], "due_date");
   const estimate = optionalString(raw["estimate"], "estimate");
-  const completedAt = optionalDateString(raw["completed_at"], "completed_at");
+  const completedDate = optionalDateString(raw["completed_date"], "completed_date");
   const milestone = optionalString(raw["milestone"], "milestone");
   const archived = optionalBoolean(raw["archived"], "archived");
   const archivedAt = optionalDateString(raw["archived_at"], "archived_at");
@@ -142,7 +142,7 @@ export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
     ...(startDate !== undefined ? { start_date: startDate } : {}),
     ...(dueDate !== undefined ? { due_date: dueDate } : {}),
     ...(estimate !== undefined ? { estimate } : {}),
-    ...(completedAt !== undefined ? { completed_at: completedAt } : {}),
+    ...(completedDate !== undefined ? { completed_date: completedDate } : {}),
     ...(milestone !== undefined ? { milestone } : {}),
     ...(archived !== undefined ? { archived } : {}),
     ...(archivedAt !== undefined ? { archived_at: archivedAt } : {}),
@@ -180,7 +180,7 @@ export function serializeFrontmatter(fm: TaskFrontmatter): string {
   if (fm.start_date !== undefined) obj["start_date"] = fm.start_date;
   if (fm.due_date !== undefined) obj["due_date"] = fm.due_date;
   if (fm.estimate !== undefined) obj["estimate"] = fm.estimate;
-  if (fm.completed_at !== undefined) obj["completed_at"] = fm.completed_at;
+  if (fm.completed_date !== undefined) obj["completed_date"] = fm.completed_date;
   if (fm.milestone !== undefined) obj["milestone"] = fm.milestone;
   if (fm.archived !== undefined) obj["archived"] = fm.archived;
   if (fm.archived_at !== undefined) obj["archived_at"] = fm.archived_at;

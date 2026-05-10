@@ -28,7 +28,11 @@ export interface TaskFrontmatter {
   readonly start_date?: string;
   readonly due_date?: string;
   readonly estimate?: string;
-  readonly completed_at?: string;
+  /**
+   * Auto-managed: set when status moves into a `completed`-category
+   * status; cleared when moved out. Not user-editable.
+   */
+  readonly completed_date?: string;
   readonly milestone?: string;
   readonly archived?: boolean;
   readonly archived_at?: string;

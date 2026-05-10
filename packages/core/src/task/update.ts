@@ -12,15 +12,45 @@ export class TaskUpdateError extends Error {
 }
 
 // Fields that cannot be set/unset — they are system-managed
-const IMMUTABLE_FIELDS = new Set(["id", "key", "created_at"]);
+const IMMUTABLE_FIELDS = new Set(["id", "key", "created_at", "project"]);
+
+// Fields that are auto-managed by `setField` itself — users may not
+// write to them directly even via the generic field setter.
+const AUTO_MANAGED_FIELDS = new Set(["completed_date"]);
 
 // Built-in optional fields that live at the top level of frontmatter
 const BUILTIN_OPTIONAL_FIELDS = new Set([
   "status", "status_updated_at", "task_type", "priority",
   "labels", "assignee", "reporter", "start_date", "due_date",
-  "estimate", "completed_at", "milestone", "archived", "archived_at",
+  "estimate", "completed_date", "milestone", "archived", "archived_at",
   "relationships", "key_history",
 ]);
+
+/**
+ * Returns true when a status key falls into the `completed`
+ * category. Used by the `completed_date` auto-management hook in
+ * `setField`. Returns false when the workflow config is absent or
+ * doesn't recognise the status — the date stays unset rather than
+ * picking a wrong default.
+ */
+function isCompletedStatus(
+  statusKey: unknown,
+  workflowConfig: WorkflowConfig | undefined,
+): boolean {
+  if (typeof statusKey !== "string") return false;
+  if (!workflowConfig) return false;
+  const def = workflowConfig.statuses.find(s => s.key === statusKey);
+  return def?.category === "completed";
+}
+
+/**
+ * Returns today's date in ISO `YYYY-MM-DD` form. Used for
+ * `completed_date` so the field reads as a calendar date rather
+ * than a precise instant.
+ */
+function todayDateString(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 /** Options bag for setField. */
 export interface SetFieldOptions {
@@ -44,6 +74,12 @@ export async function setField(opts: SetFieldOptions): Promise<Task> {
   const { locttDir, taskId, field, value, workflowConfig } = opts;
   if (IMMUTABLE_FIELDS.has(field)) {
     throw new TaskUpdateError(`cannot set immutable field "${field}"`);
+  }
+  if (AUTO_MANAGED_FIELDS.has(field)) {
+    throw new TaskUpdateError(
+      `cannot set auto-managed field "${field}" directly; ` +
+      `it is updated automatically based on status changes`,
+    );
   }
 
   const task = await readTask(locttDir, taskId);
@@ -69,6 +105,16 @@ export async function setField(opts: SetFieldOptions): Promise<Task> {
     };
     if (field === "status") {
       patch["status_updated_at"] = now;
+      // Auto-manage `completed_date` based on the new status's
+      // category. Set when transitioning into a `completed` status,
+      // clear when transitioning out.
+      const wasCompleted = isCompletedStatus(task.frontmatter.status, workflowConfig);
+      const isNowCompleted = isCompletedStatus(value, workflowConfig);
+      if (isNowCompleted && !wasCompleted) {
+        patch["completed_date"] = todayDateString();
+      } else if (!isNowCompleted && wasCompleted) {
+        delete patch["completed_date"];
+      }
     }
     updated = patch as unknown as TaskFrontmatter;
   } else {
@@ -154,6 +200,12 @@ export async function unsetField(
 ): Promise<Task> {
   if (IMMUTABLE_FIELDS.has(field) || field === "title" || field === "updated_at") {
     throw new TaskUpdateError(`cannot unset required field "${field}"`);
+  }
+  if (AUTO_MANAGED_FIELDS.has(field)) {
+    throw new TaskUpdateError(
+      `cannot unset auto-managed field "${field}" directly; ` +
+      `it is updated automatically based on status changes`,
+    );
   }
 
   const task = await readTask(locttDir, taskId);
