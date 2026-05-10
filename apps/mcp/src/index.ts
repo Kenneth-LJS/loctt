@@ -481,7 +481,10 @@ export function getTools(): McpTool[] {
     },
     {
       name: "sprint_edit",
-      description: "Edit a sprint. Pass null goal to clear.",
+      description:
+        "Edit a sprint. Pass null goal to clear. Re-opening a completed sprint " +
+        "(state: 'completed' -> 'active' or 'future') is blocked by default; pass " +
+        "force: true to override.",
       inputSchema: {
         key: z.string(),
         label: z.string().optional(),
@@ -489,6 +492,7 @@ export function getTools(): McpTool[] {
         end_date: z.string().optional(),
         state: z.enum(["active", "completed", "future"]).optional(),
         goal: z.string().nullable().optional(),
+        force: z.boolean().optional(),
       },
     },
     {
@@ -1365,6 +1369,7 @@ export async function executeTool(
             ...(args["end_date"] !== undefined ? { end_date: args["end_date"] as string } : {}),
             ...(args["state"] !== undefined ? { state: args["state"] as "active" | "completed" | "future" } : {}),
             ...("goal" in args ? { goal: goal ?? null } : {}),
+            ...(args["force"] === true ? { force: true } : {}),
           });
           return text(`Updated sprint ${String(args["key"])}`);
         } catch (err) {
