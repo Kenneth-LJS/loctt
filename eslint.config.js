@@ -9,6 +9,7 @@ export default tseslint.config(
       ".loctt/",
       "eslint.config.js",
       "**/tsup.config.ts",
+      "temp-ui-mockups/",
     ],
   },
   ...tseslint.configs.recommendedTypeChecked,

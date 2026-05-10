@@ -50,6 +50,7 @@ export {
   getLocalDir,
   getQueriesConfigPath,
   getReconcileStatePath,
+  getSchemaVersionPath,
   getStateFilePath,
   getSyncStatePath,
   getTaskDir,
@@ -66,6 +67,22 @@ export { tokenize, TokenizeError } from "./query/index.js";
 export { ParseError,parseQuery } from "./query/index.js";
 export { evaluateQuery } from "./query/index.js";
 export { buildListContext, listTasks, resolveView } from "./query/index.js";
+export type { Migration, MigrationPlan, MigrationResult } from "./schema/index.js";
+export {
+  backupLocttDir,
+  CURRENT_SCHEMA_VERSION,
+  findMigrationPath,
+  isMigrationLocked,
+  listMigrations,
+  migrateToCurrent,
+  planMigration,
+  readSchemaVersion,
+  requireSupportedSchema,
+  SchemaTooNewError,
+  SchemaVersionError,
+  withMigrationLock,
+  writeSchemaVersion,
+} from "./schema/index.js";
 export type { KeyIndex } from "./state/index.js";
 export { loadState, parseState, saveState, serializeState, StateError } from "./state/index.js";
 export { withStateLock } from "./state/index.js";
