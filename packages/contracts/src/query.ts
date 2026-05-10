@@ -9,6 +9,12 @@ export interface QuerySort {
 
 /** A saved query definition from queries.yaml. */
 export interface SavedQuery {
+  /**
+   * Stable unique identifier (ulid). User-pinned filters and other
+   * surfaces reference views by this — `name` is just a display
+   * label and can be renamed without breaking references.
+   */
+  readonly id: string;
   readonly name: string;
   readonly query: string;
   readonly sort?: readonly QuerySort[];

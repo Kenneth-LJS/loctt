@@ -30,13 +30,15 @@ describe("parseQueriesConfig", () => {
     const config = parseQueriesConfig(CANONICAL_YAML);
 
     expect(config.queries).toHaveLength(3);
-    expect(config.queries[0]).toEqual({
+    // `id` is auto-assigned (ulid) when missing from the YAML.
+    expect(config.queries[0]).toMatchObject({
       name: "recent-open",
       query: 'archived != true and status != done',
       sort: [{ field: "updated_at", direction: "desc" }],
     });
+    expect(config.queries[0]?.id).toMatch(/^[0-9A-Z]{26}$/);
     expect(config.queries[1]?.sort).toHaveLength(2);
-    expect(config.queries[2]).toEqual({
+    expect(config.queries[2]).toMatchObject({
       name: "init-work",
       query: 'text ~ "init"',
       sort: [{ field: "key", direction: "asc" }],
