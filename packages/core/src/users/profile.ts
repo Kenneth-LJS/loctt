@@ -128,5 +128,9 @@ export async function loadAllUsers(locttDir: string): Promise<UserProfile[]> {
       // Skip malformed user folders silently — Doctor surfaces them.
     }
   }
+  // Sort by id (ULID = chronological) so callers that need a
+  // deterministic pick — e.g. getCurrentUser self-heal — get the
+  // same answer across machines and processes.
+  profiles.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return profiles;
 }

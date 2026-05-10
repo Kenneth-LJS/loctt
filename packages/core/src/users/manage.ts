@@ -1,6 +1,6 @@
-import { copyFile, mkdir, rm } from "node:fs/promises";
-import { basename, extname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { copyFile, mkdir, rm, stat } from "node:fs/promises";
+import { extname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { Task, UserProfile } from "@loctt/contracts";
 import { ulid } from "ulid";
@@ -9,7 +9,6 @@ import { getUserDir } from "../paths/index.js";
 import { withStateLock } from "../state/index.js";
 import { writeTask } from "../task/io.js";
 import { loadAllTasks } from "../task/lookup.js";
-import { fileExists } from "../utils/fs.js";
 import {
   readCurrentUserId,
   writeCurrentUserId,
@@ -72,57 +71,65 @@ export async function createUser(
     throw new UserError("name must be non-empty");
   }
 
-  const id = ulid();
-  const timezone = options.timezone ?? detectSystemTimezone();
-  const userDir = getUserDir(locttDir, id);
-  await mkdir(userDir, { recursive: true });
+  return withStateLock(locttDir, async () => {
+    const id = ulid();
+    const timezone = options.timezone ?? detectSystemTimezone();
+    const userDir = getUserDir(locttDir, id);
+    await mkdir(userDir, { recursive: true });
 
-  let avatar: string | undefined;
-  if (options.avatarSourcePath !== undefined) {
-    avatar = await copyAvatar(locttDir, id, options.avatarSourcePath);
-  }
+    let avatar: string | undefined;
+    if (options.avatarSourcePath !== undefined) {
+      avatar = await copyAvatar(locttDir, id, options.avatarSourcePath);
+    }
 
-  const profile: UserProfile = {
-    id,
-    name: options.name,
-    timezone,
-    ...(options.email !== undefined ? { email: options.email } : {}),
-    ...(avatar !== undefined ? { avatar } : {}),
-  };
-  await saveUserProfile(locttDir, profile);
+    const profile: UserProfile = {
+      id,
+      name: options.name,
+      timezone,
+      ...(options.email !== undefined ? { email: options.email } : {}),
+      ...(avatar !== undefined ? { avatar } : {}),
+    };
+    await saveUserProfile(locttDir, profile);
 
-  if (options.switchToOnCreate) {
-    await writeCurrentUserId(locttDir, id);
-  }
+    if (options.switchToOnCreate) {
+      await writeCurrentUserId(locttDir, id);
+    }
 
-  return profile;
+    return profile;
+  });
 }
+
+const ALLOWED_AVATAR_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 
 /**
  * Copies an avatar source file into the user's folder. Returns the
- * basename written (e.g. `avatar.png`).
+ * basename written (e.g. `avatar.png`). Rejects unsupported
+ * extensions and files larger than 2 MB.
  */
 async function copyAvatar(
   locttDir: string,
   userId: string,
   sourcePath: string,
 ): Promise<string> {
-  const ext = extname(sourcePath).toLowerCase() || ".bin";
+  const actualSource = sourcePath.startsWith("file://")
+    ? fileURLToPath(sourcePath)
+    : sourcePath;
+  const ext = extname(actualSource).toLowerCase();
+  if (!ALLOWED_AVATAR_EXTENSIONS.has(ext)) {
+    throw new UserError(
+      `unsupported avatar extension '${ext || "(none)"}'; ` +
+      `must be one of ${[...ALLOWED_AVATAR_EXTENSIONS].join(", ")}`,
+    );
+  }
+  const info = await stat(actualSource);
+  if (info.size > MAX_AVATAR_BYTES) {
+    throw new UserError(
+      `avatar is ${info.size} bytes; max is ${MAX_AVATAR_BYTES}`,
+    );
+  }
   const targetName = `avatar${ext}`;
   const targetPath = `${getUserDir(locttDir, userId)}/${targetName}`;
-  // Resolve URL-style paths if a caller passes file://...
-  let actualSource = sourcePath;
-  try {
-    if (sourcePath.startsWith("file://")) {
-      actualSource = fileURLToPath(sourcePath);
-    } else if (basename(sourcePath) !== sourcePath) {
-      // Touch pathToFileURL so ESM hosts that strip unused imports
-      // keep it; harmless at runtime.
-      pathToFileURL(sourcePath);
-    }
-  } catch {
-    // ignore — copyFile will surface a real error
-  }
   await copyFile(actualSource, targetPath);
   return targetName;
 }
@@ -140,30 +147,32 @@ export async function updateUser(
   userId: string,
   changes: EditUserOptions,
 ): Promise<UserProfile> {
-  const existing = await loadUserProfile(locttDir, userId);
+  return withStateLock(locttDir, async () => {
+    const existing = await loadUserProfile(locttDir, userId);
 
-  let avatar = existing.avatar;
-  if (changes.avatarSourcePath !== undefined) {
-    avatar = await copyAvatar(locttDir, userId, changes.avatarSourcePath);
-  }
+    let avatar = existing.avatar;
+    if (changes.avatarSourcePath !== undefined) {
+      avatar = await copyAvatar(locttDir, userId, changes.avatarSourcePath);
+    }
 
-  const updated: UserProfile = {
-    id: existing.id,
-    name: changes.name ?? existing.name,
-    timezone: changes.timezone ?? existing.timezone,
-    ...((changes.email === null
-      ? {}
-      : changes.email !== undefined
-        ? { email: changes.email }
-        : existing.email !== undefined
-          ? { email: existing.email }
-          : {})),
-    ...(avatar !== undefined ? { avatar } : {}),
-    ...(existing.archived === true ? { archived: true } : {}),
-  };
+    const updated: UserProfile = {
+      id: existing.id,
+      name: changes.name ?? existing.name,
+      timezone: changes.timezone ?? existing.timezone,
+      ...((changes.email === null
+        ? {}
+        : changes.email !== undefined
+          ? { email: changes.email }
+          : existing.email !== undefined
+            ? { email: existing.email }
+            : {})),
+      ...(avatar !== undefined ? { avatar } : {}),
+      ...(existing.archived === true ? { archived: true } : {}),
+    };
 
-  await saveUserProfile(locttDir, updated);
-  return updated;
+    await saveUserProfile(locttDir, updated);
+    return updated;
+  });
 }
 
 /**
@@ -172,23 +181,27 @@ export async function updateUser(
  */
 export async function archiveUser(locttDir: string, userId: string): Promise<void> {
   await assertNotActiveUser(locttDir, userId, "archive");
-  const profile = await loadUserProfile(locttDir, userId);
-  if (profile.archived === true) return;
-  await saveUserProfile(locttDir, { ...profile, archived: true });
+  await withStateLock(locttDir, async () => {
+    const profile = await loadUserProfile(locttDir, userId);
+    if (profile.archived === true) return;
+    await saveUserProfile(locttDir, { ...profile, archived: true });
+  });
 }
 
 /** Clears the archived flag on a user. */
 export async function unarchiveUser(locttDir: string, userId: string): Promise<void> {
-  const profile = await loadUserProfile(locttDir, userId);
-  if (profile.archived !== true) return;
-  const next: UserProfile = {
-    id: profile.id,
-    name: profile.name,
-    timezone: profile.timezone,
-    ...(profile.email !== undefined ? { email: profile.email } : {}),
-    ...(profile.avatar !== undefined ? { avatar: profile.avatar } : {}),
-  };
-  await saveUserProfile(locttDir, next);
+  await withStateLock(locttDir, async () => {
+    const profile = await loadUserProfile(locttDir, userId);
+    if (profile.archived !== true) return;
+    const next: UserProfile = {
+      id: profile.id,
+      name: profile.name,
+      timezone: profile.timezone,
+      ...(profile.email !== undefined ? { email: profile.email } : {}),
+      ...(profile.avatar !== undefined ? { avatar: profile.avatar } : {}),
+    };
+    await saveUserProfile(locttDir, next);
+  });
 }
 
 export interface DeleteUserOptions {
@@ -292,15 +305,17 @@ async function assertNotActiveUser(
 }
 
 /**
- * Resolves a user reference (UUID, exact name, or unique name
- * prefix) against the registered users. Useful for CLI/MCP commands
- * that accept either form.
+ * Resolves a user reference (ULID, exact name, or unique
+ * case-insensitive name prefix) against the registered users.
+ * Useful for CLI/MCP commands that accept either form.
+ *
+ * Resolution order: ULID match → exact name match → unique
+ * case-insensitive name prefix. Ambiguous prefixes throw.
  */
 export async function resolveUserRef(
   locttDir: string,
   ref: string,
 ): Promise<UserProfile> {
-  // Direct ID lookup first.
   if (await userExists(locttDir, ref)) {
     return loadUserProfile(locttDir, ref);
   }
@@ -313,6 +328,18 @@ export async function resolveUserRef(
   if (exact.length > 1) {
     throw new UserError(
       `multiple users named '${ref}'; refer by ID instead`,
+    );
+  }
+  const lowered = ref.toLowerCase();
+  const prefix = all.filter(u => u.name.toLowerCase().startsWith(lowered));
+  if (prefix.length === 1) {
+    const only = prefix[0];
+    if (only) return only;
+  }
+  if (prefix.length > 1) {
+    throw new UserError(
+      `'${ref}' matches ${prefix.length} users (${prefix.map(u => u.name).join(", ")}); ` +
+      `refer by ID or full name instead`,
     );
   }
   throw new UserError(`unknown user: ${ref}`);
@@ -374,12 +401,3 @@ export async function ensureDefaultUser(locttDir: string): Promise<UserProfile> 
   return createUser(locttDir, { name, switchToOnCreate: true });
 }
 
-/**
- * Touches a path lazily — used by exists()-style helpers to avoid
- * race conditions in tests that delete files between checks.
- *
- * Re-exported as a tiny convenience around `fileExists`.
- */
-export async function pathExists(path: string): Promise<boolean> {
-  return fileExists(path);
-}
