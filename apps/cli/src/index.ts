@@ -43,6 +43,7 @@ import {
   listTasks,
   loadAllTasks,
   loadAllUsers,
+  loadCalendarConfig,
   loadLabelsConfig,
   loadMilestonesConfig,
   loadOptionalConfigs,
@@ -127,6 +128,7 @@ Commands:
   label <list|create|edit|delete> ...
   milestone <list|create|edit|delete> ...
   sprint <list|create|edit|delete> ...
+  calendar show                   Print the calendar config (timezone, working days, holidays)
   rerank <source> <relationship> <target> [--before <task>] [--after <task>]
   create <title> [--project <key>] [--status <s>] [--priority <p>] [--type <t>]
   list [--query <q>] [--view <v>] [--limit <n>] [--archived]
@@ -1459,6 +1461,29 @@ export async function main(): Promise<void> {
             console.error(`Usage: loctt sprint <list|create|edit|delete> ...`);
             process.exitCode = 1;
             break;
+        }
+        break;
+      }
+
+      case "calendar": {
+        const sub = args[1];
+        const locttDir = resolveLocttDir(root);
+        if (sub === "show") {
+          const cfg = await loadCalendarConfig(locttDir);
+          console.log(`Timezone:          ${cfg.timezone}`);
+          console.log(`First day of week: ${cfg.first_day_of_week} (0=Sun)`);
+          console.log(`Working days:      ${cfg.working_days.join(", ")}`);
+          if (cfg.holidays.length === 0) {
+            console.log(`Holidays:          (none)`);
+          } else {
+            console.log(`Holidays:`);
+            for (const h of cfg.holidays) {
+              console.log(`  ${h.date}  ${h.label}`);
+            }
+          }
+        } else {
+          console.error(`Usage: loctt calendar show`);
+          process.exitCode = 1;
         }
         break;
       }

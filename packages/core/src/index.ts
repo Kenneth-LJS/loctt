@@ -24,6 +24,15 @@ export {
   unsetConfigValue,
 } from "./config/index.js";
 export {
+  CalendarConfigError,
+  calendarConfigExists,
+  getCalendarConfigPath,
+  loadCalendarConfig,
+  parseCalendarConfig,
+  saveCalendarConfig,
+  serializeCalendarConfig,
+} from "./config/index.js";
+export {
   getLabelsConfigPath,
   LabelsConfigError,
   labelsConfigExists,

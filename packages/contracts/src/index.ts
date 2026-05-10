@@ -1,3 +1,4 @@
+export type { CalendarConfig, HolidayDef } from "./calendar.js";
 export type { HistoryEntry, HistoryKind } from "./history.js";
 export type { LabelDef, LabelsConfig } from "./labels.js";
 export type { MilestoneDef, MilestonesConfig } from "./milestones.js";

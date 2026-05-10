@@ -48,6 +48,7 @@ import {
   listTasks,
   loadAllTasks,
   loadAllUsers,
+  loadCalendarConfig,
   loadLabelsConfig,
   loadMilestonesConfig,
   loadOptionalConfigs,
@@ -68,6 +69,7 @@ import {
   resolveProjectKey,
   resolveUserRef,
   runDoctor,
+  saveCalendarConfig,
   saveState,
   SchemaTooNewError,
   SchemaVersionError,
@@ -402,6 +404,22 @@ export function createWebApp(options: WebAppOptions) {
         return;
       }
       throw err;
+    }
+  };
+
+  const handleGetCalendar: RouteHandler = async ({ res, locttDir }) => {
+    const cfg = await loadCalendarConfig(locttDir);
+    json(res, cfg);
+  };
+
+  const handlePutCalendar: RouteHandler = async ({ req, res, locttDir }) => {
+    const body = await readBody(req);
+    const cfg = JSON.parse(body) as Parameters<typeof saveCalendarConfig>[1];
+    try {
+      await saveCalendarConfig(locttDir, cfg);
+      json(res, cfg);
+    } catch (err) {
+      error(res, (err as Error).message, 400);
     }
   };
 
@@ -1095,6 +1113,8 @@ export function createWebApp(options: WebAppOptions) {
     { method: "POST", pattern: "/api/milestones", handler: handleCreateMilestone },
     { method: "PUT", pattern: MILESTONE_KEY_RE, handler: handleUpdateMilestone },
     { method: "DELETE", pattern: MILESTONE_KEY_RE, handler: handleDeleteMilestone },
+    { method: "GET", pattern: "/api/calendar", handler: handleGetCalendar },
+    { method: "PUT", pattern: "/api/calendar", handler: handlePutCalendar },
     { method: "GET", pattern: "/api/sprints", handler: handleListSprints },
     { method: "POST", pattern: "/api/sprints", handler: handleCreateSprint },
     { method: "PUT", pattern: SPRINT_KEY_RE, handler: handleUpdateSprint },
