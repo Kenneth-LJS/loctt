@@ -249,4 +249,58 @@ describe("CLI config subcommands", () => {
     await main();
     expect(process.exitCode).toBe(1);
   });
+
+  it("migrate is a no-op when schema is at the current version", async () => {
+    process.argv = ["node", "loctt", "migrate"];
+    await main();
+    const lines = consoleSpy.mock.calls.map(c => String(c[0]));
+    expect(lines.some(l => /already at v/.test(l))).toBe(true);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("migrate --dry-run does not crash on a fresh tracker", async () => {
+    // With no migrations registered yet, the planner returns an
+    // empty plan and the command short-circuits with "already at v…".
+    // Dry-run still must not set exitCode.
+    process.argv = ["node", "loctt", "migrate", "--dry-run"];
+    await main();
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("info fails fast against a tracker with a too-new schema", async () => {
+    // Simulate a tracker created by a future LocTT version.
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(join(root, ".loctt", ".schema-version"), "999\n", "utf-8");
+    process.argv = ["node", "loctt", "info"];
+    await main();
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+describe("CLI schema guard exemption for init", () => {
+  let root: string;
+  let originalArgv: string[];
+
+  beforeEach(async () => {
+    // Fresh dir, no .loctt yet — the test exercises init from
+    // scratch.
+    root = await mkdtemp(join(tmpdir(), "loctt-cli-init-"));
+    originalArgv = process.argv;
+    vi.spyOn(process, "cwd").mockImplementation(() => root);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    process.exitCode = undefined;
+  });
+
+  afterEach(async () => {
+    process.argv = originalArgv;
+    vi.restoreAllMocks();
+    await rm(root, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it("init does not trigger the schema guard (works on empty cwd)", async () => {
+    process.argv = ["node", "loctt", "init"];
+    await main();
+    expect(process.exitCode).toBeUndefined();
+  });
 });

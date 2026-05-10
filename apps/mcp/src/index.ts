@@ -33,6 +33,7 @@ import {
   lookupTask,
   publish,
   readHistory,
+  requireSupportedSchema,
   resolveLocttDir,
   runDoctor,
   saveState,
@@ -280,6 +281,27 @@ function errorResult(message: string): McpToolResult {
   return { content: [{ type: "text", text: `Error: ${message}` }], isError: true };
 }
 
+/**
+ * MCP tools that are exempt from the schema-version boot guard.
+ * `init` is the only entry point legitimately called against a
+ * non-existent or pre-version tracker.
+ */
+const SCHEMA_GUARD_EXEMPT_TOOLS = new Set(["init"]);
+
+/**
+ * Returns true when the directory exists. Used as an inexpensive
+ * existence check before applying the schema guard so we don't
+ * mask "no .loctt directory" with "missing .schema-version".
+ */
+async function dirExists(p: string): Promise<boolean> {
+  try {
+    await access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Executes an MCP tool call. */
 export async function executeTool(
   root: string,
@@ -287,6 +309,18 @@ export async function executeTool(
   args: Record<string, unknown>,
 ): Promise<McpToolResult> {
   const locttDir = resolveLocttDir(root);
+
+  // Boot guard — refuse to run tools against a tracker whose
+  // schema doesn't match this MCP server's expectations. The agent
+  // sees a clear error pointing at `loctt migrate` rather than
+  // partial reads against an unfamiliar schema.
+  if (!SCHEMA_GUARD_EXEMPT_TOOLS.has(name) && (await dirExists(locttDir))) {
+    try {
+      await requireSupportedSchema(locttDir);
+    } catch (err) {
+      return errorResult((err as Error).message);
+    }
+  }
 
   try {
     switch (name) {

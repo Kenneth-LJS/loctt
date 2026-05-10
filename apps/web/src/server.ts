@@ -36,9 +36,12 @@ import {
   loadWorkflowConfig,
   lookupTask,
   readHistory,
+  requireSupportedSchema,
   resolveLocttDir,
   runDoctor,
   saveState,
+  SchemaTooNewError,
+  SchemaVersionError,
   setField,
   TaskNotFoundError,
   unarchiveTask,
@@ -50,6 +53,15 @@ import {
 import { parseMultipartFile } from "./multipart.js";
 
 const DEFAULT_PORT = 4321;
+
+async function trackerDirExists(locttDir: string): Promise<boolean> {
+  try {
+    const s = await fsStat(locttDir);
+    return s.isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 async function readBody(req: import("node:http").IncomingMessage, maxBytes = 1024 * 1024): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -565,6 +577,23 @@ export function createWebApp(options: WebAppOptions) {
 
     try {
       const locttDir = resolveLocttDir(root);
+
+      // Boot guard for API routes. The web server is long-lived and
+      // a `loctt migrate` may run mid-session in another terminal,
+      // so we re-check on every API request rather than once at
+      // boot. Static asset routes are exempt — they don't read any
+      // tracker data.
+      if (path.startsWith("/api/") && (await trackerDirExists(locttDir))) {
+        try {
+          await requireSupportedSchema(locttDir);
+        } catch (err) {
+          if (err instanceof SchemaVersionError || err instanceof SchemaTooNewError) {
+            error(res, err.message, 409);
+            return;
+          }
+          throw err;
+        }
+      }
 
       for (const route of routes) {
         if (req.method !== route.method) continue;

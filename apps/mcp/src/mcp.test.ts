@@ -47,4 +47,23 @@ describe("MCP executeTool", () => {
     const result = await executeTool(root, "nonexistent", {});
     expect(result.isError).toBe(true);
   });
+
+  it("returns a schema-guard error for tools other than init when schema is newer", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(join(root, ".loctt", ".schema-version"), "999\n", "utf-8");
+    const result = await executeTool(root, "list_tasks", {});
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/newer version/i);
+  });
+
+  it("init bypasses the schema guard so a fresh tracker can be created", async () => {
+    // Create a brand-new dir without a .loctt and run init through MCP.
+    const fresh = await mkdtemp(join(tmpdir(), "loctt-mcp-init-"));
+    try {
+      const result = await executeTool(fresh, "init", {});
+      expect(result.isError).toBeUndefined();
+    } finally {
+      await rm(fresh, { recursive: true, force: true });
+    }
+  });
 });

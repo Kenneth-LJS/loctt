@@ -28,9 +28,12 @@ import {
   loadOptionalConfigs,
   loadState,
   lookupTask,
+  migrateToCurrent,
+  planMigration,
   publish,
   readHistory,
   readTaskBody,
+  requireSupportedSchema,
   resolveLocttDir,
   runDoctor,
   saveState,
@@ -105,6 +108,7 @@ Commands:
   ui [--port <n>] [--no-open]      Start the web UI (foreground)
   git <enable|disable|status|publish|sync>
   config <get|set|unset|list> [key] [value]
+  migrate [--yes] [--dry-run]      Upgrade the tracker schema to the current version
 `);
 }
 
@@ -116,6 +120,31 @@ function getArg(args: string[], flag: string): string | undefined {
 
 function hasFlag(args: string[], flag: string): boolean {
   return args.includes(flag);
+}
+
+/**
+ * Reads a single line from stdin and resolves true on a `y`/`yes`
+ * response (case-insensitive), false on anything else (including
+ * empty input or EOF). Used for destructive-action confirmations.
+ *
+ * If stdin isn't a TTY (piped input, CI), returns false — callers
+ * should pass `--yes` to skip the prompt non-interactively.
+ */
+async function confirmInteractive(question: string): Promise<boolean> {
+  if (!process.stdin.isTTY) {
+    console.error(
+      `Refusing to prompt for confirmation in non-interactive mode. Pass --yes to skip.`,
+    );
+    return false;
+  }
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (await rl.question(`${question} [y/N] `)).trim().toLowerCase();
+    return answer === "y" || answer === "yes";
+  } finally {
+    rl.close();
+  }
 }
 
 function formatValue(v: unknown): string {
@@ -157,12 +186,46 @@ function formatHistoryEntry(entry: HistoryEntry): string {
   }
 }
 
+/**
+ * Commands that are exempt from the schema-version boot guard.
+ *  - `init` runs before any tracker exists.
+ *  - `migrate` is the path that fixes a stale schema.
+ *  - help/usage commands don't touch the tracker.
+ *  - `mcp` and `ui` are long-lived servers that run their own
+ *    per-request boot guard.
+ */
+const SCHEMA_GUARD_EXEMPT_COMMANDS = new Set([
+  "init",
+  "migrate",
+  "mcp",
+  "ui",
+  "help",
+  "--help",
+  "-h",
+  undefined,
+]);
+
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const command = args[0];
   const root = process.cwd();
 
   try {
+    // Boot guard: every command that touches an existing tracker
+    // must run against a tracker whose schema matches what this
+    // CLI knows how to read. Mismatches direct the user to
+    // `loctt migrate` rather than silently mutating data the code
+    // doesn't fully understand.
+    if (!SCHEMA_GUARD_EXEMPT_COMMANDS.has(command)) {
+      const locttDir = resolveLocttDir(root);
+      if (await dirExists(locttDir)) {
+        await requireSupportedSchema(locttDir);
+      }
+      // If the directory doesn't exist, the command will fail
+      // naturally via its own existence check (e.g. resolveLocttDir
+      // call sites that read state.yaml).
+    }
+
     switch (command) {
       case "init": {
         const prefix = getArg(args, "--prefix") ?? "T-";
@@ -809,6 +872,66 @@ export async function main(): Promise<void> {
             console.error("Usage: loctt config <get|set|unset|list> [key] [value]");
             process.exitCode = 1;
             break;
+        }
+        break;
+      }
+
+      case "migrate": {
+        const locttDir = resolveLocttDir(root);
+        const dryRun = hasFlag(args, "--dry-run");
+        const skipPrompt = hasFlag(args, "--yes");
+
+        const plan = await planMigration(locttDir);
+        if (plan.steps.length === 0) {
+          console.log(`Schema is already at v${plan.to}. Nothing to do.`);
+          break;
+        }
+
+        console.log(`LocTT schema migration`);
+        console.log(``);
+        console.log(`  Current version: ${plan.from}`);
+        console.log(`  Target version:  ${plan.to}`);
+        console.log(``);
+        console.log(`Migrations to run:`);
+        for (const step of plan.steps) {
+          const tags: string[] = [];
+          if (step.deprecated) tags.push("deprecated");
+          if (step.risky) tags.push("risky");
+          const tagStr = tags.length > 0 ? `  [${tags.join(", ")}]` : "";
+          console.log(`  v${step.from} → v${step.to}  ${step.description}${tagStr}`);
+        }
+        console.log(``);
+
+        if (dryRun) {
+          console.log(`Dry run only — no changes made.`);
+          break;
+        }
+
+        if (!skipPrompt) {
+          const ok = await confirmInteractive(
+            `This will back up .loctt/ and apply the migrations above. Proceed?`,
+          );
+          if (!ok) {
+            console.log(`Aborted.`);
+            process.exitCode = 1;
+            break;
+          }
+        }
+
+        const result = await migrateToCurrent(locttDir);
+        if (result.backupPath) {
+          console.log(`Backup written to ${result.backupPath}`);
+        }
+        console.log(``);
+        let i = 1;
+        for (const step of result.steps) {
+          console.log(`[${i}/${result.steps.length}] v${step.from} → v${step.to}  ${step.description}`);
+          i += 1;
+        }
+        console.log(``);
+        console.log(`Migration complete. Schema is now v${result.to}.`);
+        if (result.backupPath) {
+          console.log(`You can delete ${result.backupPath} once you've verified everything works.`);
         }
         break;
       }
