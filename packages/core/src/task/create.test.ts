@@ -88,4 +88,46 @@ describe("createTask", () => {
     const ids = await listTaskIds(locttDir);
     expect(ids).toHaveLength(2);
   });
+
+  it("persists sprint when supplied", async () => {
+    const state = makeState();
+    const task = await createTask({
+      locttDir,
+      state,
+      options: { project: "task", title: "with sprint", sprint: "sprint_1" },
+    });
+    expect(task.frontmatter.sprint).toBe("sprint_1");
+    const round = await readTask(locttDir, task.frontmatter.id);
+    expect(round.frontmatter.sprint).toBe("sprint_1");
+  });
+
+  it("auto-stamps completed_date when created directly into a completed-category status", async () => {
+    const state = makeState();
+    const workflowConfig = {
+      key: { prefix: "T-" },
+      statuses: [
+        { key: "todo", label: "Todo", category: "pending" as const },
+        { key: "done", label: "Done", category: "completed" as const },
+      ],
+      priorities: [],
+      task_types: [{ key: "task", label: "Task" }],
+      relationships: [],
+      custom_fields: [],
+    };
+    const task = await createTask({
+      locttDir,
+      state,
+      options: { project: "task", title: "born done", status: "done" },
+      workflowConfig,
+    });
+    expect(task.frontmatter.completed_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // No completed_date when starting in a non-completed status.
+    const t2 = await createTask({
+      locttDir,
+      state,
+      options: { project: "task", title: "in flight", status: "todo" },
+      workflowConfig,
+    });
+    expect(t2.frontmatter.completed_date).toBeUndefined();
+  });
 });
