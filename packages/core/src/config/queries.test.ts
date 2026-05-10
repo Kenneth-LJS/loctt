@@ -61,7 +61,7 @@ queries:
   });
 
   it("throws on missing queries array", () => {
-    expect(() => parseQueriesConfig("{}")).toThrow("queries must be an array");
+    expect(() => parseQueriesConfig("{}")).toThrow(/queries.*expected array|queries.*required/i);
   });
 
   it("throws on missing query name", () => {
@@ -78,7 +78,7 @@ queries:
       - field: key
         direction: sideways
 `;
-    expect(() => parseQueriesConfig(yaml)).toThrow("must be one of: asc, desc");
+    expect(() => parseQueriesConfig(yaml)).toThrow(/asc|desc|Invalid option/);
   });
 
   it("throws on non-object root", () => {

@@ -83,7 +83,7 @@ projects:
     label: X
     prefix: ""
 `;
-    expect(() => parseProjectsConfig(yaml)).toThrow(/non-empty/);
+    expect(() => parseProjectsConfig(yaml)).toThrow(/Too small|non-empty|>=1 character/);
   });
 
   it("rejects a default that doesn't reference any project", () => {

@@ -1,3 +1,7 @@
+import { z } from "zod";
+
+import { IsoDate, SprintKey } from "./brands.js";
+
 /**
  * A single sprint definition. Watered-down per the design doc:
  * tasks belong to zero or one sprint via `TaskFrontmatter.sprint`,
@@ -10,25 +14,33 @@
  *    (YYYY-MM-DD).
  *  - `state` is one of `active` / `completed` / `future`.
  *  - `goal` is an optional free-text note.
+ *  - `archived` hides from default lists; hard-delete removes
+ *    the entry entirely.
  */
-export type SprintState = "active" | "completed" | "future";
+export const SprintStateSchema = z.enum(["active", "completed", "future"]);
+export type SprintState = z.infer<typeof SprintStateSchema>;
 
-export interface SprintDef {
-  readonly key: string;
-  readonly label: string;
-  readonly start_date: string;
-  readonly end_date: string;
-  readonly state: SprintState;
-  readonly goal?: string;
-  /**
-   * Soft-delete flag. Archived sprints are hidden from default
-   * lists and pickers but remain valid references on existing
-   * tasks. Hard-delete (with explicit remap) removes the entry.
-   */
-  readonly archived?: boolean;
-}
+export const SprintDefSchema = z.object({
+  key: SprintKey,
+  label: z.string().min(1),
+  start_date: IsoDate,
+  end_date: IsoDate,
+  state: SprintStateSchema,
+  goal: z.string().optional(),
+  archived: z.boolean().optional(),
+}).strict().superRefine((s, ctx) => {
+  if (s.end_date < s.start_date) {
+    ctx.addIssue({
+      code: "custom",
+      message: `end_date (${s.end_date}) must not be before start_date (${s.start_date})`,
+      path: ["end_date"],
+    });
+  }
+});
+export type SprintDef = z.infer<typeof SprintDefSchema>;
 
 /** The full sprints.yaml shape. */
-export interface SprintsConfig {
-  readonly sprints: readonly SprintDef[];
-}
+export const SprintsConfigSchema = z.object({
+  sprints: z.array(SprintDefSchema),
+}).strict();
+export type SprintsConfig = z.infer<typeof SprintsConfigSchema>;

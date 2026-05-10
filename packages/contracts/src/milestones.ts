@@ -1,3 +1,7 @@
+import { z } from "zod";
+
+import { IsoDate, SlugKey } from "./brands.js";
+
 /**
  * A single milestone definition. Milestones are named checkpoints
  * with an optional target date — release markers, not time boxes.
@@ -8,14 +12,15 @@
  *  - `archived` hides milestones from pickers without breaking
  *    historical task references.
  */
-export interface MilestoneDef {
-  readonly key: string;
-  readonly label: string;
-  readonly target_date?: string;
-  readonly archived?: boolean;
-}
+export const MilestoneDefSchema = z.object({
+  key: SlugKey,
+  label: z.string().min(1),
+  target_date: IsoDate.optional(),
+  archived: z.boolean().optional(),
+}).strict();
+export type MilestoneDef = z.infer<typeof MilestoneDefSchema>;
 
-/** The full milestones.yaml shape. */
-export interface MilestonesConfig {
-  readonly milestones: readonly MilestoneDef[];
-}
+export const MilestonesConfigSchema = z.object({
+  milestones: z.array(MilestoneDefSchema),
+}).strict();
+export type MilestonesConfig = z.infer<typeof MilestonesConfigSchema>;

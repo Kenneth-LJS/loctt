@@ -1,18 +1,16 @@
 import { readFile } from "node:fs/promises";
 
-import type { QueriesConfig } from "@loctt/contracts";
+import type { QueriesConfig, SavedQuery } from "@loctt/contracts";
+import { QuerySortSchema } from "@loctt/contracts";
 import { ulid } from "ulid";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { z } from "zod";
 
 import { getQueriesConfigPath } from "../paths/index.js";
 import { ParseError, parseQuery } from "../query/parser.js";
 import { tokenize, TokenizeError } from "../query/tokenizer.js";
-import {
-  assertArray as _assertArray,
-  assertObject as _assertObject,
-  assertString as _assertString,
-} from "../utils/assert.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
+import { formatZodIssues } from "./zod-error.js";
 
 export class QueriesConfigError extends Error {
   constructor(message: string) {
@@ -21,105 +19,71 @@ export class QueriesConfigError extends Error {
   }
 }
 
-function assertString(value: unknown, path: string): asserts value is string {
-  _assertString(value, path, QueriesConfigError);
-}
-
-function assertArray(value: unknown, path: string): asserts value is unknown[] {
-  _assertArray(value, path, QueriesConfigError);
-}
-
-function assertObject(value: unknown, path: string): asserts value is Record<string, unknown> {
-  _assertObject(value, path, QueriesConfigError);
-}
-
-const VALID_SORT_DIRECTIONS = new Set(["asc", "desc"]);
-
 /**
- * Parses and validates raw YAML content into a QueriesConfig.
- * Throws QueriesConfigError for invalid data.
+ * Schema used while parsing on-disk YAML. Differs from the
+ * exported `SavedQuerySchema` in two ways:
+ *  - `id` is optional (older files pre-date stable ids; we
+ *    auto-assign one before returning).
+ *  - the `query` field is additionally validated via the DSL
+ *    parser so unrunnable views fail at load time.
  */
+const RawSavedQuerySchema = z.object({
+  id: z.string().min(1).optional(),
+  name: z.string().min(1),
+  query: z.string().min(1),
+  sort: z.array(QuerySortSchema).optional(),
+  archived: z.boolean().optional(),
+}).strict();
+
+const RawQueriesConfigSchema = z.object({
+  queries: z.array(RawSavedQuerySchema),
+}).strict();
+
 export function parseQueriesConfig(yamlContent: string): QueriesConfig {
   const raw: unknown = parseYaml(yamlContent);
-  assertObject(raw, "queries config");
-
-  const queries = raw["queries"];
-  assertArray(queries, "queries");
+  let parsed: z.infer<typeof RawQueriesConfigSchema>;
+  try {
+    parsed = RawQueriesConfigSchema.parse(raw);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      throw new QueriesConfigError(formatZodIssues("queries config", err));
+    }
+    throw err;
+  }
 
   const seenIds = new Set<string>();
-  return {
-    queries: queries.map((item, i) => {
-      assertObject(item, `queries[${i}]`);
-      assertString(item["name"], `queries[${i}].name`);
-      assertString(item["query"], `queries[${i}].query`);
-      // Reject queries that won't even tokenize/parse so the
-      // saved-view registry never holds entries that explode at
-      // run time.
-      try {
-        parseQuery(tokenize(item["query"]));
-      } catch (err) {
-        if (err instanceof TokenizeError || err instanceof ParseError) {
-          throw new QueriesConfigError(
-            `queries[${i}].query is not a valid query: ${err.message}`,
-          );
-        }
-        throw err;
+  const queries: SavedQuery[] = parsed.queries.map((item, i) => {
+    // DSL validation. Bad query strings are user-fixable and
+    // shouldn't crash the rest of the load.
+    try {
+      parseQuery(tokenize(item.query));
+    } catch (err) {
+      if (err instanceof TokenizeError || err instanceof ParseError) {
+        throw new QueriesConfigError(
+          `queries[${i}].query is not a valid query: ${err.message}`,
+        );
       }
+      throw err;
+    }
 
-      // Auto-assign an id when missing — old queries.yaml files
-      // pre-date Phase 11. The id won't change across reads as
-      // long as the file is rewritten back via saveQueriesConfig
-      // (which round-trips through this parser).
-      let id: string;
-      if (item["id"] !== undefined) {
-        assertString(item["id"], `queries[${i}].id`);
-        id = item["id"];
-        if (seenIds.has(id)) {
-          throw new QueriesConfigError(`duplicate query id: ${id}`);
-        }
-      } else {
-        id = ulid();
-      }
-      seenIds.add(id);
+    const id = item.id ?? ulid();
+    if (seenIds.has(id)) {
+      throw new QueriesConfigError(`duplicate query id: ${id}`);
+    }
+    seenIds.add(id);
 
-      const sort = item["sort"];
-      let parsedSort: QueriesConfig["queries"][number]["sort"];
+    return {
+      id,
+      name: item.name,
+      query: item.query,
+      ...(item.sort !== undefined ? { sort: item.sort } : {}),
+      ...(item.archived === true ? { archived: true } : {}),
+    };
+  });
 
-      if (sort !== undefined) {
-        assertArray(sort, `queries[${i}].sort`);
-        parsedSort = sort.map((s, j) => {
-          assertObject(s, `queries[${i}].sort[${j}]`);
-          assertString(s["field"], `queries[${i}].sort[${j}].field`);
-          assertString(s["direction"], `queries[${i}].sort[${j}].direction`);
-          if (!VALID_SORT_DIRECTIONS.has(s["direction"])) {
-            throw new QueriesConfigError(
-              `queries[${i}].sort[${j}].direction must be one of: asc, desc`
-            );
-          }
-          return {
-            field: s["field"],
-            direction: s["direction"] as "asc" | "desc",
-          };
-        });
-      }
-
-      const archived = item["archived"];
-      if (archived !== undefined && typeof archived !== "boolean") {
-        throw new QueriesConfigError(`queries[${i}].archived must be a boolean`);
-      }
-
-      return {
-        id,
-        name: item["name"],
-        query: item["query"],
-        ...(parsedSort ? { sort: parsedSort } : {}),
-        ...(archived === true ? { archived: true } : {}),
-      };
-    }),
-  };
+  return { queries };
 }
 
-/** Serializes a QueriesConfig to YAML with stable key order. */
 export function serializeQueriesConfig(config: QueriesConfig): string {
   return stringifyYaml({
     queries: config.queries.map(q => ({
@@ -134,12 +98,10 @@ export function serializeQueriesConfig(config: QueriesConfig): string {
   });
 }
 
-/** Atomically writes queries.yaml. */
 export async function saveQueriesConfig(
   locttDir: string,
   config: QueriesConfig,
 ): Promise<void> {
-  // Round-trip via parse for validation.
   const validated = parseQueriesConfig(serializeQueriesConfig(config));
   await writeYamlAtomically(getQueriesConfigPath(locttDir), {
     queries: validated.queries.map(q => ({
@@ -154,10 +116,6 @@ export async function saveQueriesConfig(
   });
 }
 
-/**
- * Loads and parses queries.yaml from the given .loctt directory.
- * Throws if file doesn't exist or content is invalid.
- */
 export async function loadQueriesConfig(locttDir: string): Promise<QueriesConfig> {
   const filePath = getQueriesConfigPath(locttDir);
   const content = await readFile(filePath, "utf-8");

@@ -1,17 +1,16 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { SprintsConfig, SprintState } from "@loctt/contracts";
+import type { SprintsConfig } from "@loctt/contracts";
+import { SprintsConfigSchema } from "@loctt/contracts";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { z } from "zod";
 
 import { getConfigDir } from "../paths/index.js";
-import {
-  assertArray as _assertArray,
-  assertObject as _assertObject,
-  assertString as _assertString,
-} from "../utils/assert.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
+import { coerceYaml } from "./yaml-coerce.js";
+import { formatZodIssues } from "./zod-error.js";
 
 export class SprintsConfigError extends Error {
   constructor(message: string) {
@@ -20,100 +19,31 @@ export class SprintsConfigError extends Error {
   }
 }
 
-function assertString(value: unknown, path: string): asserts value is string {
-  _assertString(value, path, SprintsConfigError);
-}
-
-function assertArray(value: unknown, path: string): asserts value is unknown[] {
-  _assertArray(value, path, SprintsConfigError);
-}
-
-function assertObject(value: unknown, path: string): asserts value is Record<string, unknown> {
-  _assertObject(value, path, SprintsConfigError);
-}
-
 const SPRINTS_FILE = "sprints.yaml";
-const KEY_PATTERN = /^[a-z0-9][a-z0-9_.-]*$/;
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const VALID_STATES: ReadonlySet<SprintState> = new Set(["active", "completed", "future"]);
 
 export function getSprintsConfigPath(locttDir: string): string {
   return join(getConfigDir(locttDir), SPRINTS_FILE);
 }
 
-function assertSprintKey(value: unknown, path: string): asserts value is string {
-  assertString(value, path);
-  if (!KEY_PATTERN.test(value)) {
-    throw new SprintsConfigError(
-      `${path} must be a slug (lowercase letters, digits, hyphen, dot, underscore), got: ${value}`,
-    );
-  }
-}
-
-function assertDateString(value: unknown, path: string): string {
-  let s: string;
-  if (value instanceof Date) {
-    s = value.toISOString().slice(0, 10);
-  } else if (typeof value === "string") {
-    s = value;
-  } else {
-    throw new SprintsConfigError(`${path} must be a YYYY-MM-DD string`);
-  }
-  if (!DATE_PATTERN.test(s)) {
-    throw new SprintsConfigError(`${path} must be YYYY-MM-DD, got: ${s}`);
-  }
-  return s;
-}
-
 export function parseSprintsConfig(yamlContent: string): SprintsConfig {
-  const raw: unknown = parseYaml(yamlContent);
-  assertObject(raw, "sprints config");
-
-  const sprints = raw["sprints"];
-  assertArray(sprints, "sprints");
-
+  const raw = coerceYaml(parseYaml(yamlContent));
+  let parsed: SprintsConfig;
+  try {
+    parsed = SprintsConfigSchema.parse(raw);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      throw new SprintsConfigError(formatZodIssues("sprints config", err));
+    }
+    throw err;
+  }
   const seen = new Set<string>();
-  const parsed = sprints.map((item, i) => {
-    assertObject(item, `sprints[${i}]`);
-    assertSprintKey(item["key"], `sprints[${i}].key`);
-    assertString(item["label"], `sprints[${i}].label`);
-    const startDate = assertDateString(item["start_date"], `sprints[${i}].start_date`);
-    const endDate = assertDateString(item["end_date"], `sprints[${i}].end_date`);
-    if (endDate < startDate) {
-      throw new SprintsConfigError(
-        `sprints[${i}]: end_date (${endDate}) must not be before start_date (${startDate})`,
-      );
+  for (const s of parsed.sprints) {
+    if (seen.has(s.key)) {
+      throw new SprintsConfigError(`duplicate sprint key: ${s.key}`);
     }
-    assertString(item["state"], `sprints[${i}].state`);
-    if (!VALID_STATES.has(item["state"] as SprintState)) {
-      throw new SprintsConfigError(
-        `sprints[${i}].state must be one of active|completed|future, got: ${item["state"]}`,
-      );
-    }
-    const goal = item["goal"];
-    if (goal !== undefined) assertString(goal, `sprints[${i}].goal`);
-    const archived = item["archived"];
-    if (archived !== undefined && typeof archived !== "boolean") {
-      throw new SprintsConfigError(`sprints[${i}].archived must be a boolean`);
-    }
-
-    if (seen.has(item["key"])) {
-      throw new SprintsConfigError(`duplicate sprint key: ${item["key"]}`);
-    }
-    seen.add(item["key"]);
-
-    return {
-      key: item["key"],
-      label: item["label"],
-      start_date: startDate,
-      end_date: endDate,
-      state: item["state"] as SprintState,
-      ...(goal !== undefined ? { goal: goal } : {}),
-      ...(archived === true ? { archived: true } : {}),
-    };
-  });
-
-  return { sprints: parsed };
+    seen.add(s.key);
+  }
+  return parsed;
 }
 
 export function serializeSprintsConfig(config: SprintsConfig): string {
