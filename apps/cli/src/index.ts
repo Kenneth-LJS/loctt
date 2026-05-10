@@ -6,6 +6,7 @@ import type { HistoryEntry } from "@loctt/contracts";
 import {
   appendTaskBody,
   archiveTask,
+  archiveUser,
   attachFile,
   AttachmentExistsError,
   AttachmentNotFoundError,
@@ -15,19 +16,23 @@ import {
   CONFIG_KEYS,
   createProject,
   createTask,
+  createUser,
   deleteProject,
   deleteTask,
+  deleteUser,
   detachFile,
   disableGit,
   editProject,
   enableGit,
   getConfigValue,
+  getCurrentUser,
   getGitStatus,
   getTrackerInfo,
   initLoctt,
   linkTask,
   listTasks,
   loadAllTasks,
+  loadAllUsers,
   loadOptionalConfigs,
   loadProjectsConfig,
   loadState,
@@ -41,16 +46,21 @@ import {
   requireSupportedSchema,
   resolveLocttDir,
   resolveProjectKey,
+  resolveUserRef,
   runDoctor,
   saveState,
   setConfigValue,
   setDefaultProject,
   setField,
+  switchCurrentUser,
   sync,
   unarchiveTask,
+  unarchiveUser,
   unlinkTask,
   unsetConfigValue,
   unsetField,
+  updateUser,
+  UserError,
   withStateLock,
   writeTaskBody,
 } from "@loctt/core";
@@ -96,6 +106,7 @@ Commands:
   views                            List saved views from queries.yaml
   schema                           Show the workflow config (statuses, priorities, etc.)
   project <list|create|edit|delete|set-default> ...
+  user <list|current|switch|create|edit|archive|unarchive|delete> ...
   create <title> [--project <key>] [--status <s>] [--priority <p>] [--type <t>]
   list [--query <q>] [--view <v>] [--limit <n>] [--archived]
                                    --archived: include archived tasks
@@ -925,6 +936,185 @@ export async function main(): Promise<void> {
           }
           default:
             console.error(`Usage: loctt project <list|create|edit|delete|set-default> ...`);
+            process.exitCode = 1;
+            break;
+        }
+        break;
+      }
+
+      case "user": {
+        const sub = args[1];
+        const locttDir = resolveLocttDir(root);
+        switch (sub) {
+          case "list": {
+            const includeArchived = hasFlag(args, "--all");
+            const users = await loadAllUsers(locttDir);
+            const current = await getCurrentUser(locttDir);
+            for (const u of users) {
+              if (!includeArchived && u.archived === true) continue;
+              const star = current?.id === u.id ? " *" : "";
+              const arch = u.archived === true ? " (archived)" : "";
+              const email = u.email ? `  <${u.email}>` : "";
+              console.log(`${u.id}${star}\t${u.name}${arch}${email}\t${u.timezone}`);
+            }
+            break;
+          }
+          case "current": {
+            const current = await getCurrentUser(locttDir);
+            if (!current) {
+              console.log("(no users registered)");
+              process.exitCode = 1;
+              break;
+            }
+            console.log(`${current.id}\t${current.name}`);
+            break;
+          }
+          case "switch": {
+            const ref = args[2];
+            if (!ref) {
+              console.error("Usage: loctt user switch <id-or-name>");
+              process.exitCode = 1;
+              break;
+            }
+            try {
+              const target = await resolveUserRef(locttDir, ref);
+              await switchCurrentUser(locttDir, target.id);
+              console.log(`Switched to ${target.name} (${target.id})`);
+            } catch (err) {
+              if (err instanceof UserError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "create": {
+            const name = args[2];
+            if (!name) {
+              console.error("Usage: loctt user create <name> [--email <e>] [--timezone <tz>] [--avatar <path>] [--switch]");
+              process.exitCode = 1;
+              break;
+            }
+            const email = getArg(args, "--email");
+            const timezone = getArg(args, "--timezone");
+            const avatarSourcePath = getArg(args, "--avatar");
+            const switchToOnCreate = hasFlag(args, "--switch");
+            try {
+              const created = await createUser(locttDir, {
+                name,
+                ...(email !== undefined ? { email } : {}),
+                ...(timezone !== undefined ? { timezone } : {}),
+                ...(avatarSourcePath !== undefined ? { avatarSourcePath } : {}),
+                switchToOnCreate,
+              });
+              console.log(`Created user ${created.name} (${created.id})`);
+            } catch (err) {
+              if (err instanceof UserError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "edit": {
+            const ref = args[2];
+            if (!ref) {
+              console.error("Usage: loctt user edit <id-or-name> [--name <n>] [--email <e>] [--timezone <tz>] [--avatar <path>]");
+              process.exitCode = 1;
+              break;
+            }
+            try {
+              const target = await resolveUserRef(locttDir, ref);
+              const name = getArg(args, "--name");
+              const email = getArg(args, "--email");
+              const timezone = getArg(args, "--timezone");
+              const avatarSourcePath = getArg(args, "--avatar");
+              await updateUser(locttDir, target.id, {
+                ...(name !== undefined ? { name } : {}),
+                ...(email !== undefined ? { email } : {}),
+                ...(timezone !== undefined ? { timezone } : {}),
+                ...(avatarSourcePath !== undefined ? { avatarSourcePath } : {}),
+              });
+              console.log(`Updated user ${target.id}`);
+            } catch (err) {
+              if (err instanceof UserError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "archive":
+          case "unarchive": {
+            const ref = args[2];
+            if (!ref) {
+              console.error(`Usage: loctt user ${sub} <id-or-name>`);
+              process.exitCode = 1;
+              break;
+            }
+            try {
+              const target = await resolveUserRef(locttDir, ref);
+              if (sub === "archive") await archiveUser(locttDir, target.id);
+              else await unarchiveUser(locttDir, target.id);
+              console.log(`${sub === "archive" ? "Archived" : "Unarchived"} user ${target.name}`);
+            } catch (err) {
+              if (err instanceof UserError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "delete": {
+            const ref = args[2];
+            if (!ref) {
+              console.error(`Usage: loctt user delete <id-or-name> [--remap-to <id-or-name> | --unassign]`);
+              process.exitCode = 1;
+              break;
+            }
+            const remapToRef = getArg(args, "--remap-to");
+            const unassign = hasFlag(args, "--unassign");
+            if (remapToRef !== undefined && unassign) {
+              console.error("Error: --remap-to and --unassign are mutually exclusive");
+              process.exitCode = 1;
+              break;
+            }
+            try {
+              const target = await resolveUserRef(locttDir, ref);
+              const remapTo = remapToRef !== undefined
+                ? (await resolveUserRef(locttDir, remapToRef)).id
+                : undefined;
+              const result = await deleteUser(locttDir, target.id, {
+                ...(remapTo !== undefined ? { remapTo } : {}),
+                ...(unassign ? { unassign: true } : {}),
+              });
+              if (result.remappedAssigneeCount + result.remappedReporterCount > 0) {
+                console.log(
+                  `Updated ${result.remappedAssigneeCount} assignee(s) and ` +
+                  `${result.remappedReporterCount} reporter(s)`,
+                );
+              }
+              console.log(`Deleted user ${target.name}`);
+            } catch (err) {
+              if (err instanceof UserError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          default:
+            console.error(`Usage: loctt user <list|current|switch|create|edit|archive|unarchive|delete> ...`);
             process.exitCode = 1;
             break;
         }

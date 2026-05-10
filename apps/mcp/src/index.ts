@@ -7,6 +7,7 @@ import { isAbsolute } from "node:path";
 import {
   appendTaskBody,
   archiveTask,
+  archiveUser,
   attachFile,
   AttachmentExistsError,
   AttachmentNotFoundError,
@@ -16,19 +17,23 @@ import {
   CONFIG_KEYS,
   createProject,
   createTask,
+  createUser,
   deleteProject,
   deleteTask,
+  deleteUser,
   detachFile,
   disableGit,
   editProject,
   enableGit,
   getConfigValue,
+  getCurrentUser,
   getGitStatus,
   getTrackerInfo,
   initLoctt,
   linkTask,
   listTasks,
   loadAllTasks,
+  loadAllUsers,
   loadOptionalConfigs,
   loadProjectsConfig,
   loadQueriesConfig,
@@ -41,16 +46,21 @@ import {
   requireSupportedSchema,
   resolveLocttDir,
   resolveProjectKey,
+  resolveUserRef,
   runDoctor,
   saveState,
   setConfigValue,
   setDefaultProject,
   setField,
+  switchCurrentUser,
   sync,
   unarchiveTask,
+  unarchiveUser,
   unlinkTask,
   unsetConfigValue,
   unsetField,
+  updateUser,
+  UserError,
   withStateLock,
   writeTaskBody,
 } from "@loctt/core";
@@ -315,6 +325,70 @@ export function getTools(): McpTool[] {
       description: "Set or clear the workspace default project. Pass `key` to set, or omit it to clear the default.",
       inputSchema: {
         key: z.string().optional(),
+      },
+    },
+    {
+      name: "user_list",
+      description: "List registered users. By default, archived users are hidden; pass include_archived=true to include them.",
+      inputSchema: {
+        include_archived: z.boolean().optional(),
+      },
+    },
+    {
+      name: "user_current",
+      description: "Returns the currently active user's profile.",
+      inputSchema: {},
+    },
+    {
+      name: "user_switch",
+      description: "Switches the active user. Accepts either a UUID or an exact name (when unambiguous).",
+      inputSchema: {
+        ref: z.string().describe("User UUID or exact name"),
+      },
+    },
+    {
+      name: "user_create",
+      description: "Creates a new user. Names are not unique (UUIDs disambiguate). Timezone defaults to the system timezone.",
+      inputSchema: {
+        name: z.string(),
+        email: z.string().optional(),
+        timezone: z.string().optional(),
+        avatar_source_path: z.string().optional().describe("Absolute path to an avatar image to copy in"),
+        switch_to_on_create: z.boolean().optional(),
+      },
+    },
+    {
+      name: "user_edit",
+      description: "Edit an existing user's profile fields.",
+      inputSchema: {
+        ref: z.string(),
+        name: z.string().optional(),
+        email: z.string().nullable().optional().describe("Pass null to clear"),
+        timezone: z.string().optional(),
+        avatar_source_path: z.string().optional(),
+      },
+    },
+    {
+      name: "user_archive",
+      description: "Archives (soft-deletes) a user. Hides them from pickers without breaking historical task references. Blocked when target is the active user.",
+      inputSchema: {
+        ref: z.string(),
+      },
+    },
+    {
+      name: "user_unarchive",
+      description: "Reverses user_archive — clears the archived flag.",
+      inputSchema: {
+        ref: z.string(),
+      },
+    },
+    {
+      name: "user_delete",
+      description: "Hard-deletes a user. When the user has task references (assignee/reporter), exactly one of `remap_to` or `unassign` is required. Mutually exclusive. Blocked when target is the active user.",
+      inputSchema: {
+        ref: z.string(),
+        remap_to: z.string().optional().describe("Target user UUID/name to migrate references onto"),
+        unassign: z.boolean().optional().describe("Clear assignee/reporter on affected tasks"),
       },
     },
   ];
@@ -817,6 +891,103 @@ export async function executeTool(
           if (err instanceof ProjectError) {
             return errorResult(err.message);
           }
+          throw err;
+        }
+      }
+
+      case "user_list": {
+        const includeArchived = args["include_archived"] === true;
+        const users = await loadAllUsers(locttDir);
+        const current = await getCurrentUser(locttDir);
+        const filtered = users.filter(u => includeArchived || u.archived !== true);
+        return text(JSON.stringify({
+          current: current?.id ?? null,
+          users: filtered,
+        }, null, 2));
+      }
+
+      case "user_current": {
+        const current = await getCurrentUser(locttDir);
+        if (!current) return errorResult("no users registered");
+        return text(JSON.stringify(current, null, 2));
+      }
+
+      case "user_switch": {
+        try {
+          const target = await resolveUserRef(locttDir, args["ref"] as string);
+          await switchCurrentUser(locttDir, target.id);
+          return text(`Switched to ${target.name} (${target.id})`);
+        } catch (err) {
+          if (err instanceof UserError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "user_create": {
+        try {
+          const created = await createUser(locttDir, {
+            name: args["name"] as string,
+            ...(args["email"] !== undefined ? { email: args["email"] as string } : {}),
+            ...(args["timezone"] !== undefined ? { timezone: args["timezone"] as string } : {}),
+            ...(args["avatar_source_path"] !== undefined ? { avatarSourcePath: args["avatar_source_path"] as string } : {}),
+            switchToOnCreate: args["switch_to_on_create"] === true,
+          });
+          return text(JSON.stringify(created, null, 2));
+        } catch (err) {
+          if (err instanceof UserError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "user_edit": {
+        try {
+          const target = await resolveUserRef(locttDir, args["ref"] as string);
+          const updated = await updateUser(locttDir, target.id, {
+            ...(args["name"] !== undefined ? { name: args["name"] as string } : {}),
+            ...("email" in args
+              ? { email: args["email"] as string | null }
+              : {}),
+            ...(args["timezone"] !== undefined ? { timezone: args["timezone"] as string } : {}),
+            ...(args["avatar_source_path"] !== undefined ? { avatarSourcePath: args["avatar_source_path"] as string } : {}),
+          });
+          return text(JSON.stringify(updated, null, 2));
+        } catch (err) {
+          if (err instanceof UserError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "user_archive":
+      case "user_unarchive": {
+        try {
+          const target = await resolveUserRef(locttDir, args["ref"] as string);
+          if (name === "user_archive") await archiveUser(locttDir, target.id);
+          else await unarchiveUser(locttDir, target.id);
+          return text(`${name === "user_archive" ? "Archived" : "Unarchived"} ${target.name}`);
+        } catch (err) {
+          if (err instanceof UserError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "user_delete": {
+        try {
+          const target = await resolveUserRef(locttDir, args["ref"] as string);
+          const remapToRef = args["remap_to"] as string | undefined;
+          const unassign = args["unassign"] === true;
+          if (remapToRef !== undefined && unassign) {
+            return errorResult("remap_to and unassign are mutually exclusive");
+          }
+          const remapTo = remapToRef !== undefined
+            ? (await resolveUserRef(locttDir, remapToRef)).id
+            : undefined;
+          const result = await deleteUser(locttDir, target.id, {
+            ...(remapTo !== undefined ? { remapTo } : {}),
+            ...(unassign ? { unassign: true } : {}),
+          });
+          return text(JSON.stringify({ deleted: target.id, ...result }, null, 2));
+        } catch (err) {
+          if (err instanceof UserError) return errorResult(err.message);
           throw err;
         }
       }

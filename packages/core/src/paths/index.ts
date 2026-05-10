@@ -16,6 +16,10 @@ const SYNC_FILE = "sync.yaml";
 const RECONCILE_FILE = "reconcile.yaml";
 const KEY_INDEX_FILE = "key-index.yaml";
 const SCHEMA_VERSION_FILE = ".schema-version";
+const USERS_DIR = "users";
+const USER_PROFILE_FILE = "profile.yaml";
+const USER_SETTINGS_FILE = "settings.yaml";
+const CURRENT_USER_FILE = ".current-user";
 
 /**
  * Validates that a string is a safe basename for a file inside a task
@@ -148,4 +152,29 @@ export function getKeyIndexPath(locttDir: string): string {
 /** Returns the path to .loctt/.schema-version. */
 export function getSchemaVersionPath(locttDir: string): string {
   return join(locttDir, SCHEMA_VERSION_FILE);
+}
+
+/** Returns the path to .loctt/users/. */
+export function getUsersDir(locttDir: string): string {
+  return join(locttDir, USERS_DIR);
+}
+
+/** Returns the path to a single user's folder: .loctt/users/<id>/. */
+export function getUserDir(locttDir: string, userId: string): string {
+  return join(locttDir, USERS_DIR, userId);
+}
+
+/** Returns the path to a user's profile.yaml. */
+export function getUserProfilePath(locttDir: string, userId: string): string {
+  return join(locttDir, USERS_DIR, userId, USER_PROFILE_FILE);
+}
+
+/** Returns the path to a user's settings.yaml (gitignored). */
+export function getUserSettingsPath(locttDir: string, userId: string): string {
+  return join(locttDir, USERS_DIR, userId, USER_SETTINGS_FILE);
+}
+
+/** Returns the path to .loctt/.current-user (gitignored). */
+export function getCurrentUserPath(locttDir: string): string {
+  return join(locttDir, CURRENT_USER_FILE);
 }

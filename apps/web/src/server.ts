@@ -16,6 +16,7 @@ import type {
 } from "@loctt/contracts";
 import {
   archiveTask,
+  archiveUser,
   attachFile,
   AttachmentExistsError,
   AttachmentNotFoundError,
@@ -24,15 +25,19 @@ import {
   buildShowModel,
   createProject,
   createTask,
+  createUser,
   deleteProject,
   deleteTask,
+  deleteUser,
   detachFile,
   editProject,
   getAttachmentPath,
+  getCurrentUser,
   getTrackerInfo,
   linkTask,
   listTasks,
   loadAllTasks,
+  loadAllUsers,
   loadOptionalConfigs,
   loadProjectsConfig,
   loadQueriesConfig,
@@ -44,16 +49,21 @@ import {
   requireSupportedSchema,
   resolveLocttDir,
   resolveProjectKey,
+  resolveUserRef,
   runDoctor,
   saveState,
   SchemaTooNewError,
   SchemaVersionError,
   setDefaultProject,
   setField,
+  switchCurrentUser,
   TaskNotFoundError,
   unarchiveTask,
+  unarchiveUser,
   unlinkTask,
   unsetField,
+  updateUser,
+  UserError,
   withStateLock,
 } from "@loctt/core";
 
@@ -100,6 +110,10 @@ function error(res: import("node:http").ServerResponse, message: string, status 
 const VALID_REF_RE = /^[A-Za-z0-9_-]+$/;
 const TASK_REF_RE = /^\/api\/tasks\/([^/]+)$/;
 const PROJECT_KEY_RE = /^\/api\/projects\/([^/]+)$/;
+const USER_REF_RE = /^\/api\/users\/([^/]+)$/;
+const USER_ARCHIVE_RE = /^\/api\/users\/([^/]+)\/archive$/;
+const USER_UNARCHIVE_RE = /^\/api\/users\/([^/]+)\/unarchive$/;
+const USER_AVATAR_RE = /^\/api\/users\/([^/]+)\/avatar$/;
 const TASK_ACTIVITY_RE = /^\/api\/tasks\/([^/]+)\/activity$/;
 const TASK_SET_RE = /^\/api\/tasks\/([^/]+)\/set$/;
 const TASK_UNSET_RE = /^\/api\/tasks\/([^/]+)\/unset$/;
@@ -364,6 +378,152 @@ export function createWebApp(options: WebAppOptions) {
         error(res, err.message, 400);
         return;
       }
+      throw err;
+    }
+  };
+
+  const handleListUsers: RouteHandler = async ({ res, url, locttDir }) => {
+    const includeArchived = url.searchParams.get("include_archived") === "true";
+    const users = await loadAllUsers(locttDir);
+    const current = await getCurrentUser(locttDir);
+    const filtered = users.filter(u => includeArchived || u.archived !== true);
+    json(res, { current: current?.id ?? null, users: filtered });
+  };
+
+  const handleCurrentUser: RouteHandler = async ({ res, locttDir }) => {
+    const current = await getCurrentUser(locttDir);
+    if (!current) { error(res, "no users registered", 404); return; }
+    json(res, current);
+  };
+
+  const handleSwitchUser: RouteHandler = async ({ req, res, locttDir }) => {
+    const body = await readBody(req);
+    const request = JSON.parse(body) as { ref: string };
+    try {
+      const target = await resolveUserRef(locttDir, request.ref);
+      await switchCurrentUser(locttDir, target.id);
+      json(res, { current: target.id });
+    } catch (err) {
+      if (err instanceof UserError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleCreateUser: RouteHandler = async ({ req, res, locttDir }) => {
+    const body = await readBody(req);
+    const request = JSON.parse(body) as {
+      name: string;
+      email?: string;
+      timezone?: string;
+      avatar_source_path?: string;
+      switch_to_on_create?: boolean;
+    };
+    try {
+      const created = await createUser(locttDir, {
+        name: request.name,
+        ...(request.email !== undefined ? { email: request.email } : {}),
+        ...(request.timezone !== undefined ? { timezone: request.timezone } : {}),
+        ...(request.avatar_source_path !== undefined ? { avatarSourcePath: request.avatar_source_path } : {}),
+        switchToOnCreate: request.switch_to_on_create === true,
+      });
+      json(res, created, 201);
+    } catch (err) {
+      if (err instanceof UserError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleUpdateUser: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const ref = captures[0] ?? "";
+    const body = await readBody(req);
+    const request = JSON.parse(body) as {
+      name?: string;
+      email?: string | null;
+      timezone?: string;
+      avatar_source_path?: string;
+    };
+    try {
+      const target = await resolveUserRef(locttDir, ref);
+      const updated = await updateUser(locttDir, target.id, {
+        ...(request.name !== undefined ? { name: request.name } : {}),
+        ...("email" in request ? { email: request.email as string | null } : {}),
+        ...(request.timezone !== undefined ? { timezone: request.timezone } : {}),
+        ...(request.avatar_source_path !== undefined ? { avatarSourcePath: request.avatar_source_path } : {}),
+      });
+      json(res, updated);
+    } catch (err) {
+      if (err instanceof UserError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleArchiveUser: RouteHandler = async ({ res, locttDir, captures }) => {
+    const ref = captures[0] ?? "";
+    try {
+      const target = await resolveUserRef(locttDir, ref);
+      await archiveUser(locttDir, target.id);
+      json(res, { archived: target.id });
+    } catch (err) {
+      if (err instanceof UserError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleUnarchiveUser: RouteHandler = async ({ res, locttDir, captures }) => {
+    const ref = captures[0] ?? "";
+    try {
+      const target = await resolveUserRef(locttDir, ref);
+      await unarchiveUser(locttDir, target.id);
+      json(res, { unarchived: target.id });
+    } catch (err) {
+      if (err instanceof UserError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleDeleteUser: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const ref = captures[0] ?? "";
+    const url = new URL(req.url ?? "/", `http://localhost:${port}`);
+    const remapToRef = url.searchParams.get("remap_to") ?? undefined;
+    const unassign = url.searchParams.get("unassign") === "true";
+    if (remapToRef !== undefined && unassign) {
+      error(res, "remap_to and unassign are mutually exclusive", 400);
+      return;
+    }
+    try {
+      const target = await resolveUserRef(locttDir, ref);
+      const remapTo = remapToRef !== undefined
+        ? (await resolveUserRef(locttDir, remapToRef)).id
+        : undefined;
+      const result = await deleteUser(locttDir, target.id, {
+        ...(remapTo !== undefined ? { remapTo } : {}),
+        ...(unassign ? { unassign: true } : {}),
+      });
+      json(res, { deleted: target.id, ...result });
+    } catch (err) {
+      if (err instanceof UserError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleGetAvatar: RouteHandler = async ({ res, locttDir, captures }) => {
+    const ref = captures[0] ?? "";
+    try {
+      const target = await resolveUserRef(locttDir, ref);
+      if (!target.avatar) { error(res, "no avatar", 404); return; }
+      const avatarPath = pathJoin(locttDir, "users", target.id, target.avatar);
+      const stat = await fsStat(avatarPath);
+      if (!stat.isFile()) { error(res, "no avatar", 404); return; }
+      // Pick a content-type from the extension.
+      res.writeHead(200, { "Content-Type": mimeFor(target.avatar) });
+      await new Promise<void>((resolve, reject) => {
+        const stream = createReadStream(avatarPath);
+        stream.on("error", reject);
+        stream.on("end", () => resolve());
+        stream.pipe(res);
+      });
+    } catch (err) {
+      if (err instanceof UserError) { error(res, err.message, 404); return; }
       throw err;
     }
   };
@@ -684,6 +844,15 @@ export function createWebApp(options: WebAppOptions) {
     { method: "POST", pattern: "/api/projects", handler: handleCreateProject },
     { method: "PUT", pattern: PROJECT_KEY_RE, handler: handleUpdateProject },
     { method: "DELETE", pattern: PROJECT_KEY_RE, handler: handleDeleteProject },
+    { method: "GET", pattern: "/api/users", handler: handleListUsers },
+    { method: "POST", pattern: "/api/users", handler: handleCreateUser },
+    { method: "GET", pattern: "/api/user/current", handler: handleCurrentUser },
+    { method: "POST", pattern: "/api/user/switch", handler: handleSwitchUser },
+    { method: "PUT", pattern: USER_REF_RE, handler: handleUpdateUser },
+    { method: "DELETE", pattern: USER_REF_RE, handler: handleDeleteUser },
+    { method: "POST", pattern: USER_ARCHIVE_RE, handler: handleArchiveUser },
+    { method: "POST", pattern: USER_UNARCHIVE_RE, handler: handleUnarchiveUser },
+    { method: "GET", pattern: USER_AVATAR_RE, handler: handleGetAvatar },
     { method: "GET", pattern: "/api/tasks", handler: handleListTasks },
     { method: "POST", pattern: "/api/tasks", handler: handleCreateTask },
     { method: "GET", pattern: TASK_ACTIVITY_RE, handler: handleTaskActivity },
