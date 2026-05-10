@@ -24,15 +24,18 @@ import {
   buildListContext,
   buildShowModel,
   createLabel,
+  createMilestone,
   createProject,
   createTask,
   createUser,
   deleteLabel,
+  deleteMilestone,
   deleteProject,
   deleteTask,
   deleteUser,
   detachFile,
   editLabel,
+  editMilestone,
   editProject,
   getAttachmentPath,
   getCurrentUser,
@@ -43,12 +46,14 @@ import {
   loadAllTasks,
   loadAllUsers,
   loadLabelsConfig,
+  loadMilestonesConfig,
   loadOptionalConfigs,
   loadProjectsConfig,
   loadQueriesConfig,
   loadState,
   loadWorkflowConfig,
   lookupTask,
+  MilestoneError,
   ProjectError,
   readHistory,
   reorderBoardRank,
@@ -119,6 +124,7 @@ const VALID_REF_RE = /^[A-Za-z0-9_-]+$/;
 const TASK_REF_RE = /^\/api\/tasks\/([^/]+)$/;
 const PROJECT_KEY_RE = /^\/api\/projects\/([^/]+)$/;
 const LABEL_KEY_RE = /^\/api\/labels\/([^/]+)$/;
+const MILESTONE_KEY_RE = /^\/api\/milestones\/([^/]+)$/;
 const USER_REF_RE = /^\/api\/users\/([^/]+)$/;
 const USER_ARCHIVE_RE = /^\/api\/users\/([^/]+)\/archive$/;
 const USER_UNARCHIVE_RE = /^\/api\/users\/([^/]+)\/unarchive$/;
@@ -389,6 +395,63 @@ export function createWebApp(options: WebAppOptions) {
         error(res, err.message, 400);
         return;
       }
+      throw err;
+    }
+  };
+
+  const handleListMilestones: RouteHandler = async ({ res, locttDir }) => {
+    const cfg = await loadMilestonesConfig(locttDir);
+    json(res, cfg);
+  };
+
+  const handleCreateMilestone: RouteHandler = async ({ req, res, locttDir }) => {
+    const body = await readBody(req);
+    const r = JSON.parse(body) as { key: string; label: string; target_date?: string };
+    try {
+      await createMilestone(locttDir, {
+        key: r.key,
+        label: r.label,
+        ...(r.target_date !== undefined ? { target_date: r.target_date } : {}),
+      });
+      json(res, { key: r.key }, 201);
+    } catch (err) {
+      if (err instanceof MilestoneError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleUpdateMilestone: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const key = captures[0] ?? "";
+    const body = await readBody(req);
+    const r = JSON.parse(body) as {
+      label?: string;
+      target_date?: string | null;
+      archived?: boolean;
+    };
+    try {
+      await editMilestone(locttDir, key, {
+        ...(r.label !== undefined ? { label: r.label } : {}),
+        ...("target_date" in r ? { target_date: r.target_date as string | null } : {}),
+        ...(r.archived !== undefined ? { archived: r.archived } : {}),
+      });
+      json(res, { key });
+    } catch (err) {
+      if (err instanceof MilestoneError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleDeleteMilestone: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const key = captures[0] ?? "";
+    const url = new URL(req.url ?? "/", `http://localhost:${port}`);
+    const remapTo = url.searchParams.get("remap_to") ?? undefined;
+    try {
+      const result = await deleteMilestone(locttDir, key, {
+        ...(remapTo !== undefined ? { remapTo } : {}),
+      });
+      json(res, { deleted: key, ...result });
+    } catch (err) {
+      if (err instanceof MilestoneError) { error(res, err.message, 400); return; }
       throw err;
     }
   };
@@ -951,6 +1014,10 @@ export function createWebApp(options: WebAppOptions) {
     { method: "POST", pattern: "/api/labels", handler: handleCreateLabel },
     { method: "PUT", pattern: LABEL_KEY_RE, handler: handleUpdateLabel },
     { method: "DELETE", pattern: LABEL_KEY_RE, handler: handleDeleteLabel },
+    { method: "GET", pattern: "/api/milestones", handler: handleListMilestones },
+    { method: "POST", pattern: "/api/milestones", handler: handleCreateMilestone },
+    { method: "PUT", pattern: MILESTONE_KEY_RE, handler: handleUpdateMilestone },
+    { method: "DELETE", pattern: MILESTONE_KEY_RE, handler: handleDeleteMilestone },
     { method: "GET", pattern: "/api/users", handler: handleListUsers },
     { method: "POST", pattern: "/api/users", handler: handleCreateUser },
     { method: "GET", pattern: "/api/user/current", handler: handleCurrentUser },

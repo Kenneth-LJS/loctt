@@ -32,6 +32,15 @@ export {
   saveLabelsConfig,
   serializeLabelsConfig,
 } from "./config/index.js";
+export {
+  getMilestonesConfigPath,
+  loadMilestonesConfig,
+  MilestonesConfigError,
+  milestonesConfigExists,
+  parseMilestonesConfig,
+  saveMilestonesConfig,
+  serializeMilestonesConfig,
+} from "./config/index.js";
 export { QueriesConfigError } from "./config/queries.js";
 export type { ValidationError } from "./config/validation.js";
 export { WorkflowConfigError } from "./config/workflow.js";
@@ -65,6 +74,14 @@ export {
   findLabel,
   LabelError,
 } from "./labels/index.js";
+export type { DeleteMilestoneOptions } from "./milestones/index.js";
+export {
+  createMilestone,
+  deleteMilestone,
+  editMilestone,
+  findMilestone,
+  MilestoneError,
+} from "./milestones/index.js";
 export {
   assertSafeBasename,
   getAttachmentPath,
