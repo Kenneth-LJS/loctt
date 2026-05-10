@@ -18,6 +18,12 @@ export interface SavedQuery {
   readonly name: string;
   readonly query: string;
   readonly sort?: readonly QuerySort[];
+  /**
+   * Soft-delete flag. Archived views are hidden from default
+   * lists and pickers but remain runnable by id. Hard-delete
+   * removes the entry entirely.
+   */
+  readonly archived?: boolean;
 }
 
 /** The full queries.yaml shape. */

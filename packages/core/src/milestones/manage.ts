@@ -70,7 +70,19 @@ export async function editMilestone(
   });
 }
 
+/** Marks a milestone as archived. No-op when already archived. */
+export async function archiveMilestone(locttDir: string, key: string): Promise<void> {
+  await editMilestone(locttDir, key, { archived: true });
+}
+
+/** Clears the archived flag on a milestone. */
+export async function unarchiveMilestone(locttDir: string, key: string): Promise<void> {
+  await editMilestone(locttDir, key, { archived: false });
+}
+
 export interface DeleteMilestoneOptions {
+  /** If true, hard-delete from milestones.yaml. Default is soft-delete (archive). */
+  readonly hard?: boolean;
   readonly remapTo?: string;
 }
 
@@ -79,6 +91,13 @@ export async function deleteMilestone(
   key: string,
   options: DeleteMilestoneOptions = {},
 ): Promise<{ affectedTaskCount: number }> {
+  if (options.hard !== true) {
+    if (options.remapTo !== undefined) {
+      throw new MilestoneError(`--remap-to only applies to --hard delete`);
+    }
+    await archiveMilestone(locttDir, key);
+    return { affectedTaskCount: 0 };
+  }
   return withStateLock(locttDir, async () => {
     const config = await loadMilestonesConfig(locttDir);
     if (!config.milestones.some(m => m.key === key)) {

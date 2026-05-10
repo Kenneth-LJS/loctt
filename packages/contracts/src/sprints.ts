@@ -20,6 +20,12 @@ export interface SprintDef {
   readonly end_date: string;
   readonly state: SprintState;
   readonly goal?: string;
+  /**
+   * Soft-delete flag. Archived sprints are hidden from default
+   * lists and pickers but remain valid references on existing
+   * tasks. Hard-delete (with explicit remap) removes the entry.
+   */
+  readonly archived?: boolean;
 }
 
 /** The full sprints.yaml shape. */

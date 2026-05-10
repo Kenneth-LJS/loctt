@@ -61,10 +61,37 @@ describe("editLabel", () => {
   });
 });
 
-describe("deleteLabel", () => {
+describe("deleteLabel (soft, default)", () => {
+  it("sets archived: true and leaves task references intact", async () => {
+    await createLabel(locttDir, { key: "x", label: "X" });
+    await withStateLock(locttDir, async () => {
+      const state = await loadState(locttDir);
+      await createTask({
+        locttDir,
+        state,
+        options: { project: "task", title: "t", labels: ["x"] },
+      });
+      await saveState(locttDir, state);
+    });
+    const result = await deleteLabel(locttDir, "x");
+    expect(result.affectedTaskCount).toBe(0);
+    const cfg = await loadLabelsConfig(locttDir);
+    expect(cfg.labels[0]).toEqual({ key: "x", label: "X", archived: true });
+    const tasks = await loadAllTasks(locttDir);
+    expect(tasks[0]?.frontmatter.labels).toEqual(["x"]);
+  });
+
+  it("rejects --remap-to without --hard", async () => {
+    await createLabel(locttDir, { key: "x", label: "X" });
+    await createLabel(locttDir, { key: "y", label: "Y" });
+    await expect(deleteLabel(locttDir, "x", { remapTo: "y" })).rejects.toThrow(LabelError);
+  });
+});
+
+describe("deleteLabel (hard)", () => {
   it("removes from labels.yaml when no tasks reference it", async () => {
     await createLabel(locttDir, { key: "extra", label: "Extra" });
-    const result = await deleteLabel(locttDir, "extra");
+    const result = await deleteLabel(locttDir, "extra", { hard: true });
     expect(result.affectedTaskCount).toBe(0);
     const cfg = await loadLabelsConfig(locttDir);
     expect(cfg.labels.find(l => l.key === "extra")).toBeUndefined();
@@ -81,7 +108,7 @@ describe("deleteLabel", () => {
       });
       await saveState(locttDir, state);
     });
-    const result = await deleteLabel(locttDir, "x");
+    const result = await deleteLabel(locttDir, "x", { hard: true });
     expect(result.affectedTaskCount).toBe(1);
     const tasks = await loadAllTasks(locttDir);
     expect(tasks[0]?.frontmatter.labels).toBeUndefined();
@@ -99,7 +126,7 @@ describe("deleteLabel", () => {
       });
       await saveState(locttDir, state);
     });
-    const result = await deleteLabel(locttDir, "old", { remapTo: "new" });
+    const result = await deleteLabel(locttDir, "old", { hard: true, remapTo: "new" });
     expect(result.affectedTaskCount).toBe(1);
     const tasks = await loadAllTasks(locttDir);
     expect(tasks[0]?.frontmatter.labels).toEqual(["new"]);
@@ -107,7 +134,7 @@ describe("deleteLabel", () => {
 
   it("rejects remap to self", async () => {
     await createLabel(locttDir, { key: "x", label: "X" });
-    await expect(deleteLabel(locttDir, "x", { remapTo: "x" })).rejects.toThrow(LabelError);
+    await expect(deleteLabel(locttDir, "x", { hard: true, remapTo: "x" })).rejects.toThrow(LabelError);
   });
 });
 

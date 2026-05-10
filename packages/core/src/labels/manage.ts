@@ -85,23 +85,75 @@ export async function editLabel(
   });
 }
 
+/**
+ * Marks a label as archived. Archived labels are hidden from
+ * default lists and pickers but remain valid references on tasks
+ * that already use them. No-op when already archived.
+ */
+export async function archiveLabel(locttDir: string, key: string): Promise<void> {
+  await withStateLock(locttDir, async () => {
+    const config = await loadLabelsConfig(locttDir);
+    const idx = config.labels.findIndex(l => l.key === key);
+    if (idx === -1) throw new LabelError(`unknown label: ${key}`);
+    const existing = config.labels[idx];
+    if (!existing) throw new LabelError(`unknown label: ${key}`);
+    if (existing.archived === true) return;
+    const next = [...config.labels];
+    next[idx] = { ...existing, archived: true };
+    await saveLabelsConfig(locttDir, { labels: next });
+  });
+}
+
+/** Clears the archived flag on a label. */
+export async function unarchiveLabel(locttDir: string, key: string): Promise<void> {
+  await withStateLock(locttDir, async () => {
+    const config = await loadLabelsConfig(locttDir);
+    const idx = config.labels.findIndex(l => l.key === key);
+    if (idx === -1) throw new LabelError(`unknown label: ${key}`);
+    const existing = config.labels[idx];
+    if (!existing) throw new LabelError(`unknown label: ${key}`);
+    if (existing.archived !== true) return;
+    const next = [...config.labels];
+    const cleared: typeof existing = { key: existing.key, label: existing.label };
+    if (existing.color !== undefined) (cleared as { color?: string }).color = existing.color;
+    next[idx] = cleared;
+    await saveLabelsConfig(locttDir, { labels: next });
+  });
+}
+
 export interface DeleteLabelOptions {
-  /** Optional remap target. When set, replaces the deleted key on
-   * every affected task. When unset, the deleted key is just
-   * removed from each task's labels array. */
+  /**
+   * If true, hard-delete the label entirely from labels.yaml and
+   * remove it from every task's labels array (or remap it via
+   * `remapTo`). The default is a soft-delete (archive) — the entry
+   * stays in labels.yaml with `archived: true`.
+   */
+  readonly hard?: boolean;
+  /** Hard-delete only: optional remap target. When set, replaces
+   * the deleted key on every affected task. When unset, the
+   * deleted key is just removed from each task's labels array. */
   readonly remapTo?: string;
 }
 
 /**
- * Deletes a label. Walks all tasks, either removing the key from
- * their labels or remapping it to another label. Returns the count
- * of affected tasks.
+ * Deletes a label. Default is soft-delete: sets `archived: true`
+ * and leaves task references intact. With `hard: true`, removes
+ * the entry from labels.yaml and either drops the key from each
+ * affected task's labels array or remaps it via `remapTo`. Returns
+ * the count of tasks touched (zero for soft-delete).
  */
 export async function deleteLabel(
   locttDir: string,
   key: string,
   options: DeleteLabelOptions = {},
 ): Promise<{ affectedTaskCount: number }> {
+  if (options.hard !== true) {
+    if (options.remapTo !== undefined) {
+      throw new LabelError(`--remap-to only applies to --hard delete`);
+    }
+    await archiveLabel(locttDir, key);
+    return { affectedTaskCount: 0 };
+  }
   return withStateLock(locttDir, async () => {
     const config = await loadLabelsConfig(locttDir);
     if (!config.labels.some(l => l.key === key)) {

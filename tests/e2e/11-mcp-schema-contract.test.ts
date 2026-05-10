@@ -104,6 +104,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "label_archive",
+            },
+            {
+              "hasDescription": true,
               "name": "label_create",
             },
             {
@@ -120,6 +124,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "label_unarchive",
+            },
+            {
+              "hasDescription": true,
               "name": "link_tasks",
             },
             {
@@ -129,6 +137,10 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "list_views",
+            },
+            {
+              "hasDescription": true,
+              "name": "milestone_archive",
             },
             {
               "hasDescription": true,
@@ -145,6 +157,14 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "milestone_list",
+            },
+            {
+              "hasDescription": true,
+              "name": "milestone_unarchive",
+            },
+            {
+              "hasDescription": true,
+              "name": "project_archive",
             },
             {
               "hasDescription": true,
@@ -168,11 +188,19 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "project_unarchive",
+            },
+            {
+              "hasDescription": true,
               "name": "reorder_relationship",
             },
             {
               "hasDescription": true,
               "name": "replace_task_body",
+            },
+            {
+              "hasDescription": true,
+              "name": "sprint_archive",
             },
             {
               "hasDescription": true,
@@ -189,6 +217,10 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "sprint_list",
+            },
+            {
+              "hasDescription": true,
+              "name": "sprint_unarchive",
             },
             {
               "hasDescription": true,

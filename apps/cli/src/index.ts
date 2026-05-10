@@ -5,6 +5,10 @@ import { fileURLToPath } from "node:url";
 import type { HistoryEntry } from "@loctt/contracts";
 import {
   appendTaskBody,
+  archiveLabel,
+  archiveMilestone,
+  archiveProject,
+  archiveSprint,
   archiveTask,
   archiveUser,
   attachFile,
@@ -72,6 +76,10 @@ import {
   SprintError,
   switchCurrentUser,
   sync,
+  unarchiveLabel,
+  unarchiveMilestone,
+  unarchiveProject,
+  unarchiveSprint,
   unarchiveTask,
   unarchiveUser,
   unlinkTask,
@@ -123,11 +131,19 @@ Commands:
   doctor
   views                            List saved views from queries.yaml
   schema                           Show the workflow config (statuses, priorities, etc.)
-  project <list|create|edit|delete|set-default> ...
+  project <list|create|edit|archive|unarchive|delete|set-default> ...
+                                   list --all: include archived projects
+                                   delete --hard: permanent (remap_to required if tasks exist)
   user <list|current|switch|create|edit|archive|unarchive|delete> ...
-  label <list|create|edit|delete> ...
-  milestone <list|create|edit|delete> ...
-  sprint <list|create|edit|delete> ...
+  label <list|create|edit|archive|unarchive|delete> ...
+                                   list --all: include archived labels
+                                   delete --hard: permanent (drops key from every task)
+  milestone <list|create|edit|archive|unarchive|delete> ...
+                                   list --all: include archived milestones
+                                   delete --hard: permanent (clears milestone field on tasks)
+  sprint <list|create|edit|archive|unarchive|delete> ...
+                                   list --all: include archived sprints
+                                   delete --hard: permanent (clears sprint field on tasks)
   calendar show                   Print the calendar config (timezone, working days, holidays)
   rerank <source> <relationship> <target> [--before <task>] [--after <task>]
   create <title> [--project <key>] [--status <s>] [--priority <p>] [--type <t>]
@@ -862,10 +878,13 @@ export async function main(): Promise<void> {
         const locttDir = resolveLocttDir(root);
         switch (sub) {
           case "list": {
+            const includeArchived = hasFlag(args, "--all");
             const cfg = await loadProjectsConfig(locttDir);
             for (const p of cfg.projects) {
+              if (!includeArchived && p.archived === true) continue;
               const star = cfg.default === p.key ? " *" : "";
-              console.log(`${p.key}${star}\t${p.label}\t${p.prefix}`);
+              const arch = p.archived === true ? " (archived)" : "";
+              console.log(`${p.key}${star}\t${p.label}\t${p.prefix}${arch}`);
             }
             if (cfg.default !== undefined) {
               console.log(``);
@@ -927,19 +946,47 @@ export async function main(): Promise<void> {
           case "delete": {
             const key = args[2];
             const remapTo = getArg(args, "--remap-to");
+            const hard = hasFlag(args, "--hard");
             if (!key) {
-              console.error(`Usage: loctt project delete <key> [--remap-to <other-key>]`);
+              console.error(`Usage: loctt project delete <key> [--hard] [--remap-to <other-key>]`);
               process.exitCode = 1;
               break;
             }
             try {
               const result = await deleteProject(locttDir, key, {
+                hard,
                 ...(remapTo !== undefined ? { remapTo } : {}),
               });
-              if (result.remappedTaskCount > 0) {
-                console.log(`Remapped ${result.remappedTaskCount} task(s) to ${remapTo}`);
+              if (hard) {
+                if (result.remappedTaskCount > 0) {
+                  console.log(`Remapped ${result.remappedTaskCount} task(s) to ${remapTo}`);
+                }
+                console.log(`Hard-deleted project ${key}`);
+              } else {
+                console.log(`Archived project ${key} (use --hard to remove permanently)`);
               }
-              console.log(`Deleted project ${key}`);
+            } catch (err) {
+              if (err instanceof ProjectError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "archive":
+          case "unarchive": {
+            const key = args[2];
+            if (!key) {
+              console.error(`Usage: loctt project ${sub} <key>`);
+              process.exitCode = 1;
+              break;
+            }
+            try {
+              if (sub === "archive") await archiveProject(locttDir, key);
+              else await unarchiveProject(locttDir, key);
+              console.log(`${sub === "archive" ? "Archived" : "Unarchived"} project ${key}`);
             } catch (err) {
               if (err instanceof ProjectError) {
                 console.error(`Error: ${err.message}`);
@@ -1162,10 +1209,13 @@ export async function main(): Promise<void> {
         const locttDir = resolveLocttDir(root);
         switch (sub) {
           case "list": {
+            const includeArchived = hasFlag(args, "--all");
             const cfg = await loadLabelsConfig(locttDir);
             for (const l of cfg.labels) {
+              if (!includeArchived && l.archived === true) continue;
               const color = l.color ? `  ${l.color}` : "";
-              console.log(`${l.key}\t${l.label}${color}`);
+              const arch = l.archived === true ? "  (archived)" : "";
+              console.log(`${l.key}\t${l.label}${color}${arch}`);
             }
             break;
           }
@@ -1225,20 +1275,48 @@ export async function main(): Promise<void> {
           case "delete": {
             const key = args[2];
             if (!key) {
-              console.error(`Usage: loctt label delete <key> [--remap-to <other>]`);
+              console.error(`Usage: loctt label delete <key> [--hard] [--remap-to <other>]`);
               process.exitCode = 1;
               break;
             }
             const remapTo = getArg(args, "--remap-to");
+            const hard = hasFlag(args, "--hard");
             try {
               const result = await deleteLabel(locttDir, key, {
+                hard,
                 ...(remapTo !== undefined ? { remapTo } : {}),
               });
-              if (result.affectedTaskCount > 0) {
-                const action = remapTo !== undefined ? `remapped to '${remapTo}'` : "removed from";
-                console.log(`${action} ${result.affectedTaskCount} task(s)`);
+              if (hard) {
+                if (result.affectedTaskCount > 0) {
+                  const action = remapTo !== undefined ? `remapped to '${remapTo}'` : "removed from";
+                  console.log(`${action} ${result.affectedTaskCount} task(s)`);
+                }
+                console.log(`Hard-deleted label ${key}`);
+              } else {
+                console.log(`Archived label ${key} (use --hard to remove permanently)`);
               }
-              console.log(`Deleted label ${key}`);
+            } catch (err) {
+              if (err instanceof LabelError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "archive":
+          case "unarchive": {
+            const key = args[2];
+            if (!key) {
+              console.error(`Usage: loctt label ${sub} <key>`);
+              process.exitCode = 1;
+              break;
+            }
+            try {
+              if (sub === "archive") await archiveLabel(locttDir, key);
+              else await unarchiveLabel(locttDir, key);
+              console.log(`${sub === "archive" ? "Archived" : "Unarchived"} label ${key}`);
             } catch (err) {
               if (err instanceof LabelError) {
                 console.error(`Error: ${err.message}`);
@@ -1250,7 +1328,7 @@ export async function main(): Promise<void> {
             break;
           }
           default:
-            console.error(`Usage: loctt label <list|create|edit|delete> ...`);
+            console.error(`Usage: loctt label <list|create|edit|archive|unarchive|delete> ...`);
             process.exitCode = 1;
             break;
         }
@@ -1262,8 +1340,10 @@ export async function main(): Promise<void> {
         const locttDir = resolveLocttDir(root);
         switch (sub) {
           case "list": {
+            const includeArchived = hasFlag(args, "--all");
             const cfg = await loadMilestonesConfig(locttDir);
             for (const m of cfg.milestones) {
+              if (!includeArchived && m.archived === true) continue;
               const arch = m.archived === true ? " (archived)" : "";
               const due = m.target_date ? `  due ${m.target_date}` : "";
               console.log(`${m.key}\t${m.label}${due}${arch}`);
@@ -1326,20 +1406,48 @@ export async function main(): Promise<void> {
           case "delete": {
             const key = args[2];
             if (!key) {
-              console.error(`Usage: loctt milestone delete <key> [--remap-to <other>]`);
+              console.error(`Usage: loctt milestone delete <key> [--hard] [--remap-to <other>]`);
               process.exitCode = 1;
               break;
             }
             const remapTo = getArg(args, "--remap-to");
+            const hard = hasFlag(args, "--hard");
             try {
               const result = await deleteMilestone(locttDir, key, {
+                hard,
                 ...(remapTo !== undefined ? { remapTo } : {}),
               });
-              if (result.affectedTaskCount > 0) {
-                const action = remapTo !== undefined ? `remapped to '${remapTo}'` : "cleared from";
-                console.log(`${action} ${result.affectedTaskCount} task(s)`);
+              if (hard) {
+                if (result.affectedTaskCount > 0) {
+                  const action = remapTo !== undefined ? `remapped to '${remapTo}'` : "cleared from";
+                  console.log(`${action} ${result.affectedTaskCount} task(s)`);
+                }
+                console.log(`Hard-deleted milestone ${key}`);
+              } else {
+                console.log(`Archived milestone ${key} (use --hard to remove permanently)`);
               }
-              console.log(`Deleted milestone ${key}`);
+            } catch (err) {
+              if (err instanceof MilestoneError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "archive":
+          case "unarchive": {
+            const key = args[2];
+            if (!key) {
+              console.error(`Usage: loctt milestone ${sub} <key>`);
+              process.exitCode = 1;
+              break;
+            }
+            try {
+              if (sub === "archive") await archiveMilestone(locttDir, key);
+              else await unarchiveMilestone(locttDir, key);
+              console.log(`${sub === "archive" ? "Archived" : "Unarchived"} milestone ${key}`);
             } catch (err) {
               if (err instanceof MilestoneError) {
                 console.error(`Error: ${err.message}`);
@@ -1351,7 +1459,7 @@ export async function main(): Promise<void> {
             break;
           }
           default:
-            console.error(`Usage: loctt milestone <list|create|edit|delete> ...`);
+            console.error(`Usage: loctt milestone <list|create|edit|archive|unarchive|delete> ...`);
             process.exitCode = 1;
             break;
         }
@@ -1363,10 +1471,13 @@ export async function main(): Promise<void> {
         const locttDir = resolveLocttDir(root);
         switch (sub) {
           case "list": {
+            const includeArchived = hasFlag(args, "--all");
             const cfg = await loadSprintsConfig(locttDir);
             for (const s of cfg.sprints) {
+              if (!includeArchived && s.archived === true) continue;
               const goal = s.goal ? `  "${s.goal}"` : "";
-              console.log(`${s.key}\t${s.label}\t[${s.state}]\t${s.start_date}..${s.end_date}${goal}`);
+              const arch = s.archived === true ? "  (archived)" : "";
+              console.log(`${s.key}\t${s.label}\t[${s.state}]\t${s.start_date}..${s.end_date}${goal}${arch}`);
             }
             break;
           }
@@ -1446,20 +1557,48 @@ export async function main(): Promise<void> {
           case "delete": {
             const key = args[2];
             if (!key) {
-              console.error(`Usage: loctt sprint delete <key> [--remap-to <other>]`);
+              console.error(`Usage: loctt sprint delete <key> [--hard] [--remap-to <other>]`);
               process.exitCode = 1;
               break;
             }
             const remapTo = getArg(args, "--remap-to");
+            const hard = hasFlag(args, "--hard");
             try {
               const result = await deleteSprint(locttDir, key, {
+                hard,
                 ...(remapTo !== undefined ? { remapTo } : {}),
               });
-              if (result.affectedTaskCount > 0) {
-                const action = remapTo !== undefined ? `remapped to '${remapTo}'` : "cleared from";
-                console.log(`${action} ${result.affectedTaskCount} task(s)`);
+              if (hard) {
+                if (result.affectedTaskCount > 0) {
+                  const action = remapTo !== undefined ? `remapped to '${remapTo}'` : "cleared from";
+                  console.log(`${action} ${result.affectedTaskCount} task(s)`);
+                }
+                console.log(`Hard-deleted sprint ${key}`);
+              } else {
+                console.log(`Archived sprint ${key} (use --hard to remove permanently)`);
               }
-              console.log(`Deleted sprint ${key}`);
+            } catch (err) {
+              if (err instanceof SprintError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "archive":
+          case "unarchive": {
+            const key = args[2];
+            if (!key) {
+              console.error(`Usage: loctt sprint ${sub} <key>`);
+              process.exitCode = 1;
+              break;
+            }
+            try {
+              if (sub === "archive") await archiveSprint(locttDir, key);
+              else await unarchiveSprint(locttDir, key);
+              console.log(`${sub === "archive" ? "Archived" : "Unarchived"} sprint ${key}`);
             } catch (err) {
               if (err instanceof SprintError) {
                 console.error(`Error: ${err.message}`);
@@ -1471,7 +1610,7 @@ export async function main(): Promise<void> {
             break;
           }
           default:
-            console.error(`Usage: loctt sprint <list|create|edit|delete> ...`);
+            console.error(`Usage: loctt sprint <list|create|edit|archive|unarchive|delete> ...`);
             process.exitCode = 1;
             break;
         }

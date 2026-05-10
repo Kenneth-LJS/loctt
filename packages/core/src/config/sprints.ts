@@ -92,6 +92,10 @@ export function parseSprintsConfig(yamlContent: string): SprintsConfig {
     }
     const goal = item["goal"];
     if (goal !== undefined) assertString(goal, `sprints[${i}].goal`);
+    const archived = item["archived"];
+    if (archived !== undefined && typeof archived !== "boolean") {
+      throw new SprintsConfigError(`sprints[${i}].archived must be a boolean`);
+    }
 
     if (seen.has(item["key"])) {
       throw new SprintsConfigError(`duplicate sprint key: ${item["key"]}`);
@@ -105,6 +109,7 @@ export function parseSprintsConfig(yamlContent: string): SprintsConfig {
       end_date: endDate,
       state: item["state"] as SprintState,
       ...(goal !== undefined ? { goal: goal } : {}),
+      ...(archived === true ? { archived: true } : {}),
     };
   });
 
@@ -120,6 +125,7 @@ export function serializeSprintsConfig(config: SprintsConfig): string {
       end_date: s.end_date,
       state: s.state,
       ...(s.goal !== undefined ? { goal: s.goal } : {}),
+      ...(s.archived === true ? { archived: true } : {}),
     })),
   });
 }
@@ -144,6 +150,7 @@ export async function saveSprintsConfig(
       end_date: s.end_date,
       state: s.state,
       ...(s.goal !== undefined ? { goal: s.goal } : {}),
+      ...(s.archived === true ? { archived: true } : {}),
     })),
   });
 }

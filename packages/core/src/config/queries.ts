@@ -88,11 +88,17 @@ export function parseQueriesConfig(yamlContent: string): QueriesConfig {
         });
       }
 
+      const archived = item["archived"];
+      if (archived !== undefined && typeof archived !== "boolean") {
+        throw new QueriesConfigError(`queries[${i}].archived must be a boolean`);
+      }
+
       return {
         id,
         name: item["name"],
         query: item["query"],
         ...(parsedSort ? { sort: parsedSort } : {}),
+        ...(archived === true ? { archived: true } : {}),
       };
     }),
   };
@@ -108,6 +114,7 @@ export function serializeQueriesConfig(config: QueriesConfig): string {
       ...(q.sort !== undefined ? {
         sort: q.sort.map(s => ({ field: s.field, direction: s.direction })),
       } : {}),
+      ...(q.archived === true ? { archived: true } : {}),
     })),
   });
 }
@@ -127,6 +134,7 @@ export async function saveQueriesConfig(
       ...(q.sort !== undefined ? {
         sort: q.sort.map(s => ({ field: s.field, direction: s.direction })),
       } : {}),
+      ...(q.archived === true ? { archived: true } : {}),
     })),
   });
 }

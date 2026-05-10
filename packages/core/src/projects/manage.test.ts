@@ -87,14 +87,42 @@ describe("setDefaultProject", () => {
   });
 });
 
-describe("deleteProject", () => {
-  it("refuses to delete the only project", async () => {
-    await expect(deleteProject(locttDir, "task")).rejects.toThrow(/only project/);
+describe("deleteProject (soft, default)", () => {
+  it("sets archived: true and leaves task references intact", async () => {
+    await createProject(locttDir, { key: "extra", label: "Extra", prefix: "X-" });
+    await withStateLock(locttDir, async () => {
+      const state = await loadState(locttDir);
+      await createTask({ locttDir, state, options: { project: "extra", title: "t" } });
+      await saveState(locttDir, state);
+    });
+    const result = await deleteProject(locttDir, "extra");
+    expect(result.remappedTaskCount).toBe(0);
+    const cfg = await loadProjectsConfig(locttDir);
+    expect(cfg.projects.find(p => p.key === "extra")?.archived).toBe(true);
+    const tasks = await loadAllTasks(locttDir);
+    expect(tasks[0]?.frontmatter.project).toBe("extra");
+    // Counter still in `keys`, not retired.
+    const state = await loadState(locttDir);
+    expect(state.keys["extra"]).toBeDefined();
+    expect(state.retired_keys?.["extra"]).toBeUndefined();
   });
 
-  it("deletes a project that has no tasks", async () => {
+  it("rejects --remap-to without --hard", async () => {
     await createProject(locttDir, { key: "extra", label: "Extra", prefix: "X-" });
-    const result = await deleteProject(locttDir, "extra");
+    await expect(
+      deleteProject(locttDir, "extra", { remapTo: "task" }),
+    ).rejects.toThrow(/only applies to --hard/);
+  });
+});
+
+describe("deleteProject (hard)", () => {
+  it("refuses to delete the only project", async () => {
+    await expect(deleteProject(locttDir, "task", { hard: true })).rejects.toThrow(/only project/);
+  });
+
+  it("hard-deletes a project that has no tasks", async () => {
+    await createProject(locttDir, { key: "extra", label: "Extra", prefix: "X-" });
+    const result = await deleteProject(locttDir, "extra", { hard: true });
     expect(result.remappedTaskCount).toBe(0);
     const cfg = await loadProjectsConfig(locttDir);
     expect(cfg.projects.map(p => p.key)).not.toContain("extra");
@@ -114,7 +142,7 @@ describe("deleteProject", () => {
       await saveState(locttDir, state);
     });
     // Counter should now be at 3.
-    await deleteProject(locttDir, "extra", { remapTo: "task" });
+    await deleteProject(locttDir, "extra", { hard: true, remapTo: "task" });
 
     const stateAfterDelete = await loadState(locttDir);
     expect(stateAfterDelete.retired_keys?.["extra"]).toEqual({ prefix: "X-", next_number: 3 });
@@ -133,7 +161,7 @@ describe("deleteProject", () => {
       await createTask({ locttDir, state, options: { project: "extra", title: "t" } });
       await saveState(locttDir, state);
     });
-    await deleteProject(locttDir, "extra", { remapTo: "task" });
+    await deleteProject(locttDir, "extra", { hard: true, remapTo: "task" });
     await createProject(locttDir, { key: "extra", label: "Extra", prefix: "Y-" });
     const state = await loadState(locttDir);
     expect(state.keys["extra"]).toEqual({ prefix: "Y-", next_number: 2 });
@@ -150,7 +178,7 @@ describe("deleteProject", () => {
       });
       await saveState(locttDir, state);
     });
-    await expect(deleteProject(locttDir, "extra")).rejects.toThrow(/pass remapTo/);
+    await expect(deleteProject(locttDir, "extra", { hard: true })).rejects.toThrow(/pass remapTo/);
   });
 
   it("remaps affected tasks when remapTo is supplied", async () => {
@@ -164,7 +192,7 @@ describe("deleteProject", () => {
       });
       await saveState(locttDir, state);
     });
-    const result = await deleteProject(locttDir, "extra", { remapTo: "task" });
+    const result = await deleteProject(locttDir, "extra", { hard: true, remapTo: "task" });
     expect(result.remappedTaskCount).toBe(1);
     const tasks = await loadAllTasks(locttDir);
     const moved = tasks.find(t => t.frontmatter.title === "to-be-moved");
@@ -186,7 +214,7 @@ describe("deleteProject", () => {
       await saveState(locttDir, state);
     });
     await expect(
-      deleteProject(locttDir, "extra", { remapTo: "extra" }),
+      deleteProject(locttDir, "extra", { hard: true, remapTo: "extra" }),
     ).rejects.toThrow(/differ/);
   });
 });

@@ -64,6 +64,10 @@ export function parseLabelsConfig(yamlContent: string): LabelsConfig {
     assertString(item["label"], `labels[${i}].label`);
     const color = item["color"];
     if (color !== undefined) assertString(color, `labels[${i}].color`);
+    const archived = item["archived"];
+    if (archived !== undefined && typeof archived !== "boolean") {
+      throw new LabelsConfigError(`labels[${i}].archived must be a boolean`);
+    }
 
     if (seen.has(item["key"])) {
       throw new LabelsConfigError(`duplicate label key: ${item["key"]}`);
@@ -74,6 +78,7 @@ export function parseLabelsConfig(yamlContent: string): LabelsConfig {
       key: item["key"],
       label: item["label"],
       ...(color !== undefined ? { color: color } : {}),
+      ...(archived === true ? { archived: true } : {}),
     };
   });
 
@@ -87,6 +92,7 @@ export function serializeLabelsConfig(config: LabelsConfig): string {
       key: l.key,
       label: l.label,
       ...(l.color !== undefined ? { color: l.color } : {}),
+      ...(l.archived === true ? { archived: true } : {}),
     })),
   });
 }
@@ -115,6 +121,7 @@ export async function saveLabelsConfig(
       key: l.key,
       label: l.label,
       ...(l.color !== undefined ? { color: l.color } : {}),
+      ...(l.archived === true ? { archived: true } : {}),
     })),
   });
 }

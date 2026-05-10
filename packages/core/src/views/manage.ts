@@ -80,6 +80,7 @@ export async function editView(
           : existing.sort !== undefined
             ? { sort: existing.sort }
             : {}),
+      ...(existing.archived === true ? { archived: true } : {}),
     };
     const next = config.queries.map(q => (q.id === existing.id ? updated : q));
     await saveQueriesConfig(locttDir, { queries: next });
@@ -87,10 +88,49 @@ export async function editView(
   });
 }
 
+/** Marks a view as archived. No-op when already archived. */
+export async function archiveView(locttDir: string, ref: string): Promise<void> {
+  await withStateLock(locttDir, async () => {
+    const config = await loadQueriesConfig(locttDir);
+    const existing = findView(config, ref);
+    if (existing.archived === true) return;
+    const updated: SavedQuery = { ...existing, archived: true };
+    const next = config.queries.map(q => (q.id === existing.id ? updated : q));
+    await saveQueriesConfig(locttDir, { queries: next });
+  });
+}
+
+/** Clears the archived flag on a view. */
+export async function unarchiveView(locttDir: string, ref: string): Promise<void> {
+  await withStateLock(locttDir, async () => {
+    const config = await loadQueriesConfig(locttDir);
+    const existing = findView(config, ref);
+    if (existing.archived !== true) return;
+    const cleared: SavedQuery = {
+      id: existing.id,
+      name: existing.name,
+      query: existing.query,
+      ...(existing.sort !== undefined ? { sort: existing.sort } : {}),
+    };
+    const next = config.queries.map(q => (q.id === existing.id ? cleared : q));
+    await saveQueriesConfig(locttDir, { queries: next });
+  });
+}
+
+export interface DeleteViewOptions {
+  /** If true, removes the view from queries.yaml. Default is soft-delete (archive). */
+  readonly hard?: boolean;
+}
+
 export async function deleteView(
   locttDir: string,
   ref: string,
+  options: DeleteViewOptions = {},
 ): Promise<void> {
+  if (options.hard !== true) {
+    await archiveView(locttDir, ref);
+    return;
+  }
   await withStateLock(locttDir, async () => {
     const config = await loadQueriesConfig(locttDir);
     const target = findView(config, ref);
