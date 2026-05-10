@@ -73,7 +73,43 @@ projects:
     label: X
     prefix: "X-"
 `;
-    expect(() => parseProjectsConfig(yaml)).toThrow(/slug/);
+    expect(() => parseProjectsConfig(yaml)).toThrow(/slug starting with a letter/);
+  });
+
+  it("rejects a leading-digit key", () => {
+    const yaml = `
+projects:
+  - key: 1bad
+    label: X
+    prefix: "X-"
+`;
+    expect(() => parseProjectsConfig(yaml)).toThrow(ProjectsConfigError);
+    expect(() => parseProjectsConfig(yaml)).toThrow(/slug starting with a letter/);
+  });
+
+  it("rejects an empty projects array", () => {
+    expect(() => parseProjectsConfig(`projects: []`)).toThrow(ProjectsConfigError);
+    expect(() => parseProjectsConfig(`projects: []`)).toThrow(/at least one/);
+  });
+
+  it("rejects unknown top-level keys", () => {
+    const yaml = `projects:
+  - key: x
+    label: X
+    prefix: "X-"
+extra: nope
+`;
+    expect(() => parseProjectsConfig(yaml)).toThrow(/unrecognized key/);
+  });
+
+  it("rejects unknown per-project keys", () => {
+    const yaml = `projects:
+  - key: x
+    label: X
+    prefix: "X-"
+    description: nope
+`;
+    expect(() => parseProjectsConfig(yaml)).toThrow(/unrecognized key/);
   });
 
   it("rejects an empty prefix", () => {
@@ -83,7 +119,8 @@ projects:
     label: X
     prefix: ""
 `;
-    expect(() => parseProjectsConfig(yaml)).toThrow(/Too small|non-empty|>=1 character/);
+    expect(() => parseProjectsConfig(yaml)).toThrow(ProjectsConfigError);
+    expect(() => parseProjectsConfig(yaml)).toThrow("projects[0].prefix must be a non-empty string");
   });
 
   it("rejects a default that doesn't reference any project", () => {

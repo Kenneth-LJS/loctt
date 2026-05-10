@@ -31,17 +31,20 @@ keys:
   });
 
   it("throws on missing keys object", () => {
-    expect(() => parseState("foo: bar")).toThrow(/keys/);
+    expect(() => parseState("foo: bar")).toThrow(StateError);
+    expect(() => parseState("foo: bar")).toThrow("keys is required (expected record)");
   });
 
   it("throws on non-positive next_number", () => {
     const yaml = `keys:\n  task:\n    prefix: T-\n    next_number: 0`;
-    expect(() => parseState(yaml)).toThrow(/Too small|>=1|positive/);
+    expect(() => parseState(yaml)).toThrow(StateError);
+    expect(() => parseState(yaml)).toThrow("keys.task.next_number must be >= 1");
   });
 
   it("throws on missing prefix", () => {
     const yaml = `keys:\n  task:\n    next_number: 1`;
-    expect(() => parseState(yaml)).toThrow(/prefix/);
+    expect(() => parseState(yaml)).toThrow(StateError);
+    expect(() => parseState(yaml)).toThrow("keys.task.prefix is required (expected string)");
   });
 
   it("throws on non-object root", () => {

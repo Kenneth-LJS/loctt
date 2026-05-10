@@ -19,7 +19,16 @@ export const UserProfileSchema = z.object({
   name: z.string().min(1),
   email: z.email().optional(),
   timezone: IanaTimezone,
-  avatar: z.string().min(1).optional(),
+  // Avatar is the basename of a file inside the user's folder
+  // (e.g. "avatar.png"). Reject path separators and traversal at
+  // the contract layer so a hand-edited profile.yaml can't point
+  // at files outside the user dir.
+  avatar: z
+    .string()
+    .min(1)
+    .regex(/^[^/\\]+$/, "must be a basename (no path separators)")
+    .refine(s => s !== "." && s !== "..", "must not be \".\" or \"..\"")
+    .optional(),
   archived: z.boolean().optional(),
 }).strict();
 export type UserProfile = z.infer<typeof UserProfileSchema>;

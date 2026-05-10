@@ -61,12 +61,14 @@ queries:
   });
 
   it("throws on missing queries array", () => {
-    expect(() => parseQueriesConfig("{}")).toThrow(/queries.*expected array|queries.*required/i);
+    expect(() => parseQueriesConfig("{}")).toThrow(QueriesConfigError);
+    expect(() => parseQueriesConfig("{}")).toThrow("queries is required (expected array)");
   });
 
   it("throws on missing query name", () => {
     const yaml = `queries:\n  - query: status = open`;
     expect(() => parseQueriesConfig(yaml)).toThrow(QueriesConfigError);
+    expect(() => parseQueriesConfig(yaml)).toThrow("queries[0].name is required (expected string)");
   });
 
   it("throws on invalid sort direction", () => {
@@ -78,7 +80,10 @@ queries:
       - field: key
         direction: sideways
 `;
-    expect(() => parseQueriesConfig(yaml)).toThrow(/asc|desc|Invalid option/);
+    expect(() => parseQueriesConfig(yaml)).toThrow(QueriesConfigError);
+    expect(() => parseQueriesConfig(yaml)).toThrow(
+      `queries[0].sort[0].direction must be one of: "asc", "desc"`,
+    );
   });
 
   it("throws on non-object root", () => {
