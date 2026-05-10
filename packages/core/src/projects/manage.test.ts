@@ -100,6 +100,43 @@ describe("deleteProject", () => {
     expect(cfg.projects.map(p => p.key)).not.toContain("extra");
     const state = await loadState(locttDir);
     expect(state.keys["extra"]).toBeUndefined();
+    // Counter is preserved in retired_keys so a re-creation resumes
+    // numbering rather than colliding with surviving key history.
+    expect(state.retired_keys?.["extra"]).toEqual({ prefix: "X-", next_number: 1 });
+  });
+
+  it("preserves the counter across delete + recreate so re-issued keys never collide", async () => {
+    await createProject(locttDir, { key: "extra", label: "Extra", prefix: "X-" });
+    await withStateLock(locttDir, async () => {
+      const state = await loadState(locttDir);
+      await createTask({ locttDir, state, options: { project: "extra", title: "first" } });
+      await createTask({ locttDir, state, options: { project: "extra", title: "second" } });
+      await saveState(locttDir, state);
+    });
+    // Counter should now be at 3.
+    await deleteProject(locttDir, "extra", { remapTo: "task" });
+
+    const stateAfterDelete = await loadState(locttDir);
+    expect(stateAfterDelete.retired_keys?.["extra"]).toEqual({ prefix: "X-", next_number: 3 });
+
+    // Recreate. Counter should resume at 3, not reset to 1.
+    await createProject(locttDir, { key: "extra", label: "Extra v2", prefix: "X-" });
+    const stateAfterRecreate = await loadState(locttDir);
+    expect(stateAfterRecreate.keys["extra"]).toEqual({ prefix: "X-", next_number: 3 });
+    expect(stateAfterRecreate.retired_keys?.["extra"]).toBeUndefined();
+  });
+
+  it("recreating with a different prefix uses the new prefix but the retired counter", async () => {
+    await createProject(locttDir, { key: "extra", label: "Extra", prefix: "X-" });
+    await withStateLock(locttDir, async () => {
+      const state = await loadState(locttDir);
+      await createTask({ locttDir, state, options: { project: "extra", title: "t" } });
+      await saveState(locttDir, state);
+    });
+    await deleteProject(locttDir, "extra", { remapTo: "task" });
+    await createProject(locttDir, { key: "extra", label: "Extra", prefix: "Y-" });
+    const state = await loadState(locttDir);
+    expect(state.keys["extra"]).toEqual({ prefix: "Y-", next_number: 2 });
   });
 
   it("requires remapTo when project has tasks", async () => {
