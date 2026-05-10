@@ -181,34 +181,90 @@ export async function setDefaultProject(
   });
 }
 
+/** Marks a project as archived. No-op when already archived. */
+export async function archiveProject(locttDir: string, key: string): Promise<void> {
+  await withStateLock(locttDir, async () => {
+    const config = await loadProjectsConfig(locttDir);
+    const idx = config.projects.findIndex(p => p.key === key);
+    if (idx === -1) throw new ProjectError(`unknown project: ${key}`);
+    const existing = config.projects[idx];
+    if (!existing) throw new ProjectError(`unknown project: ${key}`);
+    if (existing.archived === true) return;
+    const next = [...config.projects];
+    next[idx] = { ...existing, archived: true };
+    const newConfig: ProjectsConfig = {
+      projects: next,
+      // If the archived project was the default, clear the default
+      // so future creates don't land in a hidden project.
+      ...(config.default !== undefined && config.default !== key
+        ? { default: config.default }
+        : {}),
+    };
+    await saveProjectsConfig(locttDir, newConfig);
+  });
+}
+
+/** Clears the archived flag on a project. */
+export async function unarchiveProject(locttDir: string, key: string): Promise<void> {
+  await withStateLock(locttDir, async () => {
+    const config = await loadProjectsConfig(locttDir);
+    const idx = config.projects.findIndex(p => p.key === key);
+    if (idx === -1) throw new ProjectError(`unknown project: ${key}`);
+    const existing = config.projects[idx];
+    if (!existing) throw new ProjectError(`unknown project: ${key}`);
+    if (existing.archived !== true) return;
+    const cleared: ProjectDef = {
+      key: existing.key,
+      label: existing.label,
+      prefix: existing.prefix,
+    };
+    const next = [...config.projects];
+    next[idx] = cleared;
+    await saveProjectsConfig(locttDir, {
+      projects: next,
+      ...(config.default !== undefined ? { default: config.default } : {}),
+    });
+  });
+}
+
 export interface DeleteProjectOptions {
   /**
-   * Required when the project has any tasks. Either re-target the
-   * tasks at another project (`{ remapTo: <key> }`) or hard-delete
-   * the affected tasks together with the project (not implemented
-   * yet — caller should perform task deletion first).
+   * If true, hard-delete the project: rewrites task references to
+   * `remapTo` (required when tasks exist), removes the project from
+   * projects.yaml, and moves the counter to `LocttState.retired_keys`.
+   * The default is a soft-delete (archive) — the project stays in
+   * projects.yaml with `archived: true`.
+   */
+  readonly hard?: boolean;
+  /**
+   * Hard-delete only: required when the project has any tasks.
+   * Re-targets the affected tasks at another project. Note: this
+   * does not rewrite task `key` strings — moving a task across
+   * projects keeps its existing key intact.
    */
   readonly remapTo?: string;
 }
 
 /**
- * Deletes a project. Refuses if the project has tasks and no remap
- * target is supplied. With `remapTo`, rewrites all affected tasks
- * to point at the remap target, then removes the project from
- * projects.yaml and its counter from state.yaml.
- *
- * Note: this does not also rewrite task `key` strings — moving a
- * task across projects keeps its existing key intact (task keys are
- * globally unique across projects because prefixes are unique).
- * Per the design doc, tasks are conceptually immutable in their
- * project membership; this remap is only for the destructive
- * delete-project case.
+ * Deletes a project. Default is soft-delete: sets `archived: true`
+ * and clears the workspace default if the project was it. With
+ * `hard: true`, rewrites all affected tasks to `remapTo` (required
+ * when the project has tasks), then removes the project from
+ * projects.yaml and moves the counter to retired_keys so re-creation
+ * resumes numbering.
  */
 export async function deleteProject(
   locttDir: string,
   key: string,
   options: DeleteProjectOptions = {},
 ): Promise<{ remappedTaskCount: number }> {
+  if (options.hard !== true) {
+    if (options.remapTo !== undefined) {
+      throw new ProjectError(`--remap-to only applies to --hard delete`);
+    }
+    await archiveProject(locttDir, key);
+    return { remappedTaskCount: 0 };
+  }
   return withStateLock(locttDir, async () => {
     const config = await loadProjectsConfig(locttDir);
     const target = config.projects.find(p => p.key === key);

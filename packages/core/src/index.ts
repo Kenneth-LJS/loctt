@@ -97,20 +97,24 @@ export type { InitOptions, InitResult } from "./init/index.js";
 export { initLoctt } from "./init/index.js";
 export type { DeleteLabelOptions } from "./labels/index.js";
 export {
+  archiveLabel,
   assertLabelKeysRegistered,
   createLabel,
   deleteLabel,
   editLabel,
   findLabel,
   LabelError,
+  unarchiveLabel,
 } from "./labels/index.js";
 export type { DeleteMilestoneOptions } from "./milestones/index.js";
 export {
+  archiveMilestone,
   createMilestone,
   deleteMilestone,
   editMilestone,
   findMilestone,
   MilestoneError,
+  unarchiveMilestone,
 } from "./milestones/index.js";
 export {
   assertSafeBasename,
@@ -141,6 +145,7 @@ export {
 } from "./paths/index.js";
 export type { DeleteProjectOptions } from "./projects/index.js";
 export {
+  archiveProject,
   createProject,
   deleteProject,
   editProject,
@@ -148,6 +153,7 @@ export {
   ProjectError,
   resolveProjectKey,
   setDefaultProject,
+  unarchiveProject,
 } from "./projects/index.js";
 export type { Token, TokenType } from "./query/index.js";
 export type { ComparisonOp,QueryNode, QueryValue } from "./query/index.js";
@@ -187,11 +193,13 @@ export {
 } from "./schema/index.js";
 export type { DeleteSprintOptions, EditSprintOptions } from "./sprints/index.js";
 export {
+  archiveSprint,
   createSprint,
   deleteSprint,
   editSprint,
   findSprint,
   SprintError,
+  unarchiveSprint,
 } from "./sprints/index.js";
 export type { KeyIndex } from "./state/index.js";
 export { loadState, parseState, saveState, serializeState, StateError } from "./state/index.js";
@@ -249,11 +257,13 @@ export {
   UserProfileError,
   writeCurrentUserId,
 } from "./users/index.js";
-export type { CreateViewInput, EditViewInput } from "./views/index.js";
+export type { CreateViewInput, DeleteViewOptions, EditViewInput } from "./views/index.js";
 export {
+  archiveView,
   createView,
   deleteView,
   editView,
   findView,
+  unarchiveView,
   ViewError,
 } from "./views/index.js";

@@ -67,6 +67,7 @@ export async function editSprint(
           : existing.goal !== undefined
             ? { goal: existing.goal }
             : {}),
+      ...(existing.archived === true ? { archived: true } : {}),
     };
     const next = [...config.sprints];
     next[idx] = updated;
@@ -74,7 +75,51 @@ export async function editSprint(
   });
 }
 
+/** Marks a sprint as archived. No-op when already archived. */
+export async function archiveSprint(locttDir: string, key: string): Promise<void> {
+  await withStateLock(locttDir, async () => {
+    const config = await loadSprintsConfig(locttDir);
+    const idx = config.sprints.findIndex(s => s.key === key);
+    if (idx === -1) throw new SprintError(`unknown sprint: ${key}`);
+    const existing = config.sprints[idx];
+    if (!existing) throw new SprintError(`unknown sprint: ${key}`);
+    if (existing.archived === true) return;
+    const next = [...config.sprints];
+    next[idx] = { ...existing, archived: true };
+    await saveSprintsConfig(locttDir, { sprints: next });
+  });
+}
+
+/** Clears the archived flag on a sprint. */
+export async function unarchiveSprint(locttDir: string, key: string): Promise<void> {
+  await withStateLock(locttDir, async () => {
+    const config = await loadSprintsConfig(locttDir);
+    const idx = config.sprints.findIndex(s => s.key === key);
+    if (idx === -1) throw new SprintError(`unknown sprint: ${key}`);
+    const existing = config.sprints[idx];
+    if (!existing) throw new SprintError(`unknown sprint: ${key}`);
+    if (existing.archived !== true) return;
+    const cleared: SprintDef = {
+      key: existing.key,
+      label: existing.label,
+      start_date: existing.start_date,
+      end_date: existing.end_date,
+      state: existing.state,
+      ...(existing.goal !== undefined ? { goal: existing.goal } : {}),
+    };
+    const next = [...config.sprints];
+    next[idx] = cleared;
+    await saveSprintsConfig(locttDir, { sprints: next });
+  });
+}
+
 export interface DeleteSprintOptions {
+  /**
+   * If true, hard-delete the sprint from sprints.yaml and either
+   * unset or remap the `sprint` field on every affected task. The
+   * default is a soft-delete (archive).
+   */
+  readonly hard?: boolean;
   readonly remapTo?: string;
 }
 
@@ -83,6 +128,13 @@ export async function deleteSprint(
   key: string,
   options: DeleteSprintOptions = {},
 ): Promise<{ affectedTaskCount: number }> {
+  if (options.hard !== true) {
+    if (options.remapTo !== undefined) {
+      throw new SprintError(`--remap-to only applies to --hard delete`);
+    }
+    await archiveSprint(locttDir, key);
+    return { affectedTaskCount: 0 };
+  }
   return withStateLock(locttDir, async () => {
     const config = await loadSprintsConfig(locttDir);
     if (!config.sprints.some(s => s.key === key)) {

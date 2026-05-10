@@ -10,6 +10,12 @@ export interface LabelDef {
   readonly key: string;
   readonly label: string;
   readonly color?: string;
+  /**
+   * Soft-delete flag. Archived labels are hidden from default lists
+   * and pickers but remain valid references on existing tasks.
+   * Hard-delete (with explicit remap) removes the entry entirely.
+   */
+  readonly archived?: boolean;
 }
 
 /** The full labels.yaml shape. */

@@ -92,6 +92,10 @@ export function parseProjectsConfig(yamlContent: string): ProjectsConfig {
     assertProjectKey(item["key"], `projects[${i}].key`);
     assertString(item["label"], `projects[${i}].label`);
     assertProjectPrefix(item["prefix"], `projects[${i}].prefix`);
+    const archived = item["archived"];
+    if (archived !== undefined && typeof archived !== "boolean") {
+      throw new ProjectsConfigError(`projects[${i}].archived must be a boolean`);
+    }
 
     if (seenKeys.has(item["key"])) {
       throw new ProjectsConfigError(`duplicate project key: ${item["key"]}`);
@@ -108,6 +112,7 @@ export function parseProjectsConfig(yamlContent: string): ProjectsConfig {
       key: item["key"],
       label: item["label"],
       prefix: item["prefix"],
+      ...(archived === true ? { archived: true } : {}),
     };
   });
 
@@ -134,6 +139,7 @@ export function serializeProjectsConfig(config: ProjectsConfig): string {
       key: p.key,
       label: p.label,
       prefix: p.prefix,
+      ...(p.archived === true ? { archived: true } : {}),
     })),
   };
   if (config.default !== undefined) {
@@ -170,6 +176,7 @@ export async function saveProjectsConfig(
       key: p.key,
       label: p.label,
       prefix: p.prefix,
+      ...(p.archived === true ? { archived: true } : {}),
     })),
     ...(validated.default !== undefined ? { default: validated.default } : {}),
   });

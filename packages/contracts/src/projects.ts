@@ -13,6 +13,13 @@ export interface ProjectDef {
   readonly key: string;
   readonly label: string;
   readonly prefix: string;
+  /**
+   * Soft-delete flag. Archived projects are hidden from default
+   * lists and pickers but remain valid references on existing
+   * tasks. Hard-delete (with explicit remap) moves the counter to
+   * `LocttState.retired_keys` and removes the entry.
+   */
+  readonly archived?: boolean;
 }
 
 /** The full projects.yaml shape. */

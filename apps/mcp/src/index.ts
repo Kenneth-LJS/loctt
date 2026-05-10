@@ -6,6 +6,10 @@ import { isAbsolute } from "node:path";
 
 import {
   appendTaskBody,
+  archiveLabel,
+  archiveMilestone,
+  archiveProject,
+  archiveSprint,
   archiveTask,
   archiveUser,
   attachFile,
@@ -72,6 +76,10 @@ import {
   SprintError,
   switchCurrentUser,
   sync,
+  unarchiveLabel,
+  unarchiveMilestone,
+  unarchiveProject,
+  unarchiveSprint,
   unarchiveTask,
   unarchiveUser,
   unlinkTask,
@@ -336,11 +344,27 @@ export function getTools(): McpTool[] {
     },
     {
       name: "project_delete",
-      description: "Delete a project. If the project has tasks, `remap_to` is required to migrate them to another project before deletion. Cannot delete the only project.",
+      description:
+        "Delete a project. Default is soft-delete: archived: true is set on the project; tasks " +
+        "still reference it. With hard: true, the project is removed from projects.yaml and " +
+        "(for projects with tasks) `remap_to` is required to migrate them to another project. " +
+        "Cannot hard-delete the only project. The counter is preserved in retired_keys so a " +
+        "later create with the same key resumes numbering.",
       inputSchema: {
         key: z.string(),
-        remap_to: z.string().optional().describe("Target project key for tasks in the deleted project"),
+        hard: z.boolean().optional().describe("If true, permanently remove the project from projects.yaml"),
+        remap_to: z.string().optional().describe("Hard-delete only: target project key for tasks in the deleted project"),
       },
+    },
+    {
+      name: "project_archive",
+      description: "Mark a project as archived. Archived projects are hidden from default lists and pickers. Equivalent to project_delete without hard.",
+      inputSchema: { key: z.string() },
+    },
+    {
+      name: "project_unarchive",
+      description: "Clear the archived flag on a project.",
+      inputSchema: { key: z.string() },
     },
     {
       name: "project_set_default",
@@ -454,11 +478,25 @@ export function getTools(): McpTool[] {
     },
     {
       name: "sprint_delete",
-      description: "Delete a sprint, optionally remapping affected tasks to another sprint.",
+      description:
+        "Delete a sprint. Default is soft-delete (archived: true). With hard: true, the entry " +
+        "is removed from sprints.yaml and the `sprint` field on each affected task is either " +
+        "unset or remapped to `remap_to`.",
       inputSchema: {
         key: z.string(),
-        remap_to: z.string().optional(),
+        hard: z.boolean().optional(),
+        remap_to: z.string().optional().describe("Hard-delete only"),
       },
+    },
+    {
+      name: "sprint_archive",
+      description: "Mark a sprint as archived. Equivalent to sprint_delete without hard.",
+      inputSchema: { key: z.string() },
+    },
+    {
+      name: "sprint_unarchive",
+      description: "Clear the archived flag on a sprint.",
+      inputSchema: { key: z.string() },
     },
     {
       name: "milestone_list",
@@ -486,11 +524,25 @@ export function getTools(): McpTool[] {
     },
     {
       name: "milestone_delete",
-      description: "Delete a milestone, optionally remapping affected tasks to another milestone.",
+      description:
+        "Delete a milestone. Default is soft-delete (archived: true). With hard: true, the " +
+        "entry is removed from milestones.yaml and the `milestone` field on each affected task " +
+        "is either unset or remapped to `remap_to`.",
       inputSchema: {
         key: z.string(),
-        remap_to: z.string().optional(),
+        hard: z.boolean().optional(),
+        remap_to: z.string().optional().describe("Hard-delete only"),
       },
+    },
+    {
+      name: "milestone_archive",
+      description: "Mark a milestone as archived. Equivalent to milestone_delete without hard.",
+      inputSchema: { key: z.string() },
+    },
+    {
+      name: "milestone_unarchive",
+      description: "Clear the archived flag on a milestone.",
+      inputSchema: { key: z.string() },
     },
     {
       name: "label_create",
@@ -512,11 +564,25 @@ export function getTools(): McpTool[] {
     },
     {
       name: "label_delete",
-      description: "Delete a label. Walks all tasks to remove the key, optionally remapping to another label.",
+      description:
+        "Delete a label. Default is soft-delete (archived: true). With hard: true, the entry " +
+        "is removed from labels.yaml and the key is dropped from every task's labels array (or " +
+        "remapped via remap_to).",
       inputSchema: {
         key: z.string(),
-        remap_to: z.string().optional(),
+        hard: z.boolean().optional(),
+        remap_to: z.string().optional().describe("Hard-delete only"),
       },
+    },
+    {
+      name: "label_archive",
+      description: "Mark a label as archived. Equivalent to label_delete without hard.",
+      inputSchema: { key: z.string() },
+    },
+    {
+      name: "label_unarchive",
+      description: "Clear the archived flag on a label.",
+      inputSchema: { key: z.string() },
     },
     {
       name: "reorder_relationship",
@@ -1016,17 +1082,33 @@ export async function executeTool(
       case "project_delete": {
         try {
           const remapTo = args["remap_to"] as string | undefined;
+          const hard = args["hard"] === true;
           const result = await deleteProject(locttDir, args["key"] as string, {
+            hard,
             ...(remapTo !== undefined ? { remapTo } : {}),
           });
           return text(JSON.stringify({
-            deleted: args["key"],
+            mode: hard ? "hard" : "soft",
+            key: args["key"],
             remappedTaskCount: result.remappedTaskCount,
           }, null, 2));
         } catch (err) {
           if (err instanceof ProjectError) {
             return errorResult(err.message);
           }
+          throw err;
+        }
+      }
+
+      case "project_archive":
+      case "project_unarchive": {
+        try {
+          const key = args["key"] as string;
+          if (name === "project_archive") await archiveProject(locttDir, key);
+          else await unarchiveProject(locttDir, key);
+          return text(`${name === "project_archive" ? "Archived" : "Unarchived"} project ${key}`);
+        } catch (err) {
+          if (err instanceof ProjectError) return errorResult(err.message);
           throw err;
         }
       }
@@ -1178,10 +1260,16 @@ export async function executeTool(
       case "label_delete": {
         try {
           const remapTo = args["remap_to"] as string | undefined;
+          const hard = args["hard"] === true;
           const result = await deleteLabel(locttDir, args["key"] as string, {
+            hard,
             ...(remapTo !== undefined ? { remapTo } : {}),
           });
-          return text(JSON.stringify({ deleted: args["key"], ...result }, null, 2));
+          return text(JSON.stringify({
+            mode: hard ? "hard" : "soft",
+            key: args["key"],
+            ...result,
+          }, null, 2));
         } catch (err) {
           if (err instanceof LabelError) return errorResult(err.message);
           throw err;
@@ -1236,10 +1324,16 @@ export async function executeTool(
       case "sprint_delete": {
         try {
           const remapTo = args["remap_to"] as string | undefined;
+          const hard = args["hard"] === true;
           const result = await deleteSprint(locttDir, args["key"] as string, {
+            hard,
             ...(remapTo !== undefined ? { remapTo } : {}),
           });
-          return text(JSON.stringify({ deleted: args["key"], ...result }, null, 2));
+          return text(JSON.stringify({
+            mode: hard ? "hard" : "soft",
+            key: args["key"],
+            ...result,
+          }, null, 2));
         } catch (err) {
           if (err instanceof SprintError) return errorResult(err.message);
           throw err;
@@ -1285,12 +1379,57 @@ export async function executeTool(
       case "milestone_delete": {
         try {
           const remapTo = args["remap_to"] as string | undefined;
+          const hard = args["hard"] === true;
           const result = await deleteMilestone(locttDir, args["key"] as string, {
+            hard,
             ...(remapTo !== undefined ? { remapTo } : {}),
           });
-          return text(JSON.stringify({ deleted: args["key"], ...result }, null, 2));
+          return text(JSON.stringify({
+            mode: hard ? "hard" : "soft",
+            key: args["key"],
+            ...result,
+          }, null, 2));
         } catch (err) {
           if (err instanceof MilestoneError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "label_archive":
+      case "label_unarchive": {
+        try {
+          const key = args["key"] as string;
+          if (name === "label_archive") await archiveLabel(locttDir, key);
+          else await unarchiveLabel(locttDir, key);
+          return text(`${name === "label_archive" ? "Archived" : "Unarchived"} label ${key}`);
+        } catch (err) {
+          if (err instanceof LabelError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "milestone_archive":
+      case "milestone_unarchive": {
+        try {
+          const key = args["key"] as string;
+          if (name === "milestone_archive") await archiveMilestone(locttDir, key);
+          else await unarchiveMilestone(locttDir, key);
+          return text(`${name === "milestone_archive" ? "Archived" : "Unarchived"} milestone ${key}`);
+        } catch (err) {
+          if (err instanceof MilestoneError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "sprint_archive":
+      case "sprint_unarchive": {
+        try {
+          const key = args["key"] as string;
+          if (name === "sprint_archive") await archiveSprint(locttDir, key);
+          else await unarchiveSprint(locttDir, key);
+          return text(`${name === "sprint_archive" ? "Archived" : "Unarchived"} sprint ${key}`);
+        } catch (err) {
+          if (err instanceof SprintError) return errorResult(err.message);
           throw err;
         }
       }
