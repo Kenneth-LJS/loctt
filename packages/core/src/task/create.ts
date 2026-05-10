@@ -69,7 +69,7 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
     ...(options.status !== undefined ? { status: options.status } : {}),
     ...(options.task_type !== undefined ? { task_type: options.task_type } : {}),
     ...(options.priority !== undefined ? { priority: options.priority } : {}),
-    ...(options.labels !== undefined ? { labels: options.labels } : {}),
+    ...(options.labels !== undefined ? { labels: [...options.labels] } : {}),
     ...(options.assignee !== undefined ? { assignee: options.assignee } : {}),
     ...(options.reporter !== undefined ? { reporter: options.reporter } : {}),
     ...(options.start_date !== undefined ? { start_date: options.start_date } : {}),

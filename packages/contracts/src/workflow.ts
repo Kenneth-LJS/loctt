@@ -1,65 +1,71 @@
+import { z } from "zod";
+
 /** Status categories used to group statuses semantically. */
-export type StatusCategory = "pending" | "active" | "completed" | "discarded";
+export const StatusCategorySchema = z.enum(["pending", "active", "completed", "discarded"]);
+export type StatusCategory = z.infer<typeof StatusCategorySchema>;
 
 /** A single status definition from workflow.yaml. */
-export interface StatusDef {
-  readonly key: string;
-  readonly label: string;
-  readonly category: StatusCategory;
-}
+export const StatusDefSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  category: StatusCategorySchema,
+}).strict();
+export type StatusDef = z.infer<typeof StatusDefSchema>;
 
 /** A single priority definition from workflow.yaml. */
-export interface PriorityDef {
-  readonly key: string;
-  readonly label: string;
-  readonly value?: number;
-}
+export const PriorityDefSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  value: z.number().optional(),
+}).strict();
+export type PriorityDef = z.infer<typeof PriorityDefSchema>;
 
 /** A single task type definition from workflow.yaml. */
-export interface TaskTypeDef {
-  readonly key: string;
-  readonly label: string;
-}
+export const TaskTypeDefSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+}).strict();
+export type TaskTypeDef = z.infer<typeof TaskTypeDefSchema>;
 
 /** A single relationship type definition from workflow.yaml. */
-export interface RelationshipDef {
-  readonly key: string;
-  readonly label: string;
-  readonly inverse: string;
-  readonly inverse_label: string;
-  readonly structural?: boolean;
-  /**
-   * If true, links of this type carry a `rank` field used to order
-   * targets within one source task. UI surfaces drag handles for
-   * ranked relationships.
-   */
-  readonly ranked?: boolean;
-}
+export const RelationshipDefSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  inverse: z.string().min(1),
+  inverse_label: z.string().min(1),
+  structural: z.boolean().optional(),
+  ranked: z.boolean().optional(),
+}).strict();
+export type RelationshipDef = z.infer<typeof RelationshipDefSchema>;
 
 /** Supported custom field types. */
-export type CustomFieldType = "string" | "number" | "date" | "boolean" | "enum";
+export const CustomFieldTypeSchema = z.enum(["string", "number", "date", "boolean", "enum"]);
+export type CustomFieldType = z.infer<typeof CustomFieldTypeSchema>;
 
 /** A single allowed value for an enum custom field. */
-export interface CustomFieldValueDef {
-  readonly key: string;
-  readonly label: string;
-  readonly value?: number;
-}
+export const CustomFieldValueDefSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  value: z.number().optional(),
+}).strict();
+export type CustomFieldValueDef = z.infer<typeof CustomFieldValueDefSchema>;
 
 /** A custom field definition from workflow.yaml. */
-export interface CustomFieldDef {
-  readonly key: string;
-  readonly label: string;
-  readonly type: CustomFieldType;
-  readonly multi: boolean;
-  readonly searchable: boolean;
-  readonly values?: readonly CustomFieldValueDef[];
-}
+export const CustomFieldDefSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  type: CustomFieldTypeSchema,
+  multi: z.boolean(),
+  searchable: z.boolean(),
+  values: z.array(CustomFieldValueDefSchema).optional(),
+}).strict();
+export type CustomFieldDef = z.infer<typeof CustomFieldDefSchema>;
 
 /** Key prefix configuration from workflow.yaml. */
-export interface KeyConfig {
-  readonly prefix: string;
-}
+export const KeyConfigSchema = z.object({
+  prefix: z.string().min(1),
+}).strict();
+export type KeyConfig = z.infer<typeof KeyConfigSchema>;
 
 /**
  * Estimation system. Two modes:
@@ -70,38 +76,52 @@ export interface KeyConfig {
  *
  * Only relevant when `enabled: true`. UI hides the field otherwise.
  */
-export type EstimationUnit =
-  | "points"
-  | "hours"
-  | "days"
-  | "custom_numeric"
-  | "custom_enum";
+export const EstimationUnitSchema = z.enum([
+  "points",
+  "hours",
+  "days",
+  "custom_numeric",
+  "custom_enum",
+]);
+export type EstimationUnit = z.infer<typeof EstimationUnitSchema>;
 
-export type EstimationScale = "free" | "linear" | "fibonacci";
+export const EstimationScaleSchema = z.enum(["free", "linear", "fibonacci"]);
+export type EstimationScale = z.infer<typeof EstimationScaleSchema>;
 
-export interface EstimationConfig {
-  readonly enabled: boolean;
-  readonly unit: EstimationUnit;
-  /** Required for `custom_numeric` and `custom_enum`. */
-  readonly unit_label?: string;
-  /** Numeric units only. */
-  readonly scale?: EstimationScale;
-  /**
-   * For numeric units: optional preset values (e.g. fibonacci).
-   * For `custom_enum`: required list of category labels in order
-   *   (e.g. `["XS", "S", "M", "L", "XL"]`).
-   */
-  readonly preset_values?: readonly (number | string)[];
-}
+export const EstimationConfigSchema = z.object({
+  enabled: z.boolean(),
+  unit: EstimationUnitSchema,
+  unit_label: z.string().min(1).optional(),
+  scale: EstimationScaleSchema.optional(),
+  preset_values: z.array(z.union([z.number(), z.string()])).optional(),
+}).strict().superRefine((cfg, ctx) => {
+  // unit_label is required for custom_* units; preset_values is
+  // required for custom_enum.
+  if ((cfg.unit === "custom_numeric" || cfg.unit === "custom_enum") && cfg.unit_label === undefined) {
+    ctx.addIssue({
+      code: "custom",
+      message: `unit_label is required when unit is ${cfg.unit}`,
+      path: ["unit_label"],
+    });
+  }
+  if (cfg.unit === "custom_enum" && (cfg.preset_values === undefined || cfg.preset_values.length === 0)) {
+    ctx.addIssue({
+      code: "custom",
+      message: `preset_values is required (and non-empty) when unit is custom_enum`,
+      path: ["preset_values"],
+    });
+  }
+});
+export type EstimationConfig = z.infer<typeof EstimationConfigSchema>;
 
 /** The full workflow.yaml shape. */
-export interface WorkflowConfig {
-  readonly key: KeyConfig;
-  readonly statuses: readonly StatusDef[];
-  readonly priorities: readonly PriorityDef[];
-  readonly task_types: readonly TaskTypeDef[];
-  readonly relationships: readonly RelationshipDef[];
-  readonly custom_fields: readonly CustomFieldDef[];
-  /** Optional estimation config. Defaults to `{ enabled: false }`. */
-  readonly estimation?: EstimationConfig;
-}
+export const WorkflowConfigSchema = z.object({
+  key: KeyConfigSchema,
+  statuses: z.array(StatusDefSchema),
+  priorities: z.array(PriorityDefSchema),
+  task_types: z.array(TaskTypeDefSchema),
+  relationships: z.array(RelationshipDefSchema),
+  custom_fields: z.array(CustomFieldDefSchema),
+  estimation: EstimationConfigSchema.optional(),
+}).strict();
+export type WorkflowConfig = z.infer<typeof WorkflowConfigSchema>;

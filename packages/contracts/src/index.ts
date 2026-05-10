@@ -69,11 +69,19 @@ export {
   DEFAULT_GIT_AUTO_PUSH,
   DEFAULT_GIT_BRANCH,
   DEFAULT_GIT_REMOTE,
+  KeyAllocationStateSchema,
+  LocttStateSchema,
+  ReconcileStateSchema,
+  SyncStateSchema,
 } from "./state.js";
 export type {
   Task,
   TaskFrontmatter,
   TaskRelationship,
+} from "./task.js";
+export {
+  TaskFrontmatterSchema,
+  TaskRelationshipSchema,
 } from "./task.js";
 export type { UserProfile, UsersList } from "./users.js";
 export {
@@ -94,4 +102,19 @@ export type {
   StatusDef,
   TaskTypeDef,
   WorkflowConfig,
+} from "./workflow.js";
+export {
+  CustomFieldDefSchema,
+  CustomFieldTypeSchema,
+  CustomFieldValueDefSchema,
+  EstimationConfigSchema,
+  EstimationScaleSchema,
+  EstimationUnitSchema,
+  KeyConfigSchema,
+  PriorityDefSchema,
+  RelationshipDefSchema,
+  StatusCategorySchema,
+  StatusDefSchema,
+  TaskTypeDefSchema,
+  WorkflowConfigSchema,
 } from "./workflow.js";
