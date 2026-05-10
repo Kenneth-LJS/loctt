@@ -17,12 +17,13 @@ export type IsoDate = z.infer<typeof IsoDate>;
 
 /**
  * lowercase-letters/digits/hyphens/underscores slug, used for
- * project/label/milestone keys. Must start with a letter or
- * digit (no leading dash or underscore).
+ * project/label/milestone keys. Must start with a letter — keys
+ * starting with a digit can collide with auto-numbered prefixes
+ * and confuse pickers, so we forbid them at the contract layer.
  */
 export const SlugKey = z
   .string()
-  .regex(/^[a-z0-9][a-z0-9_-]*$/, "must be a slug (lowercase letters, digits, hyphen, underscore; no leading separator)");
+  .regex(/^[a-z][a-z0-9_-]*$/, "must be a slug starting with a letter, followed by lowercase letters, digits, hyphen, or underscore");
 export type SlugKey = z.infer<typeof SlugKey>;
 
 /**

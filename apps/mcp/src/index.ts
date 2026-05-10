@@ -269,6 +269,8 @@ export function getTools(): McpTool[] {
       description: "Bootstraps a new loctt tracker at the server's working directory if .loctt/ doesn't exist yet. Only call when explicitly asked to set up a new tracker — this is a one-time operation, not a routine task action.",
       inputSchema: {
         prefix: z.string().optional().describe("Key prefix for tasks (default 'T-')."),
+        project_key: z.string().optional().describe("Initial project key (slug; default 'task')."),
+        project_label: z.string().optional().describe("Initial project label (display name; default 'Task')."),
         no_docs: z.boolean().optional().describe("If true, skip generating helper docs."),
       },
     },
@@ -943,9 +945,14 @@ export async function executeTool(
           lines.push(`Statuses: ${info.workflowConfig.statuses.map(s => s.key).join(", ")}`);
         }
         if (info.state) {
-          const taskState = info.state.keys["task"];
-          if (taskState) {
-            lines.push(`Next key: ${taskState.prefix}${taskState.next_number}`);
+          // Show every project counter, not just the legacy "task"
+          // entry. Sorted by project key so output is stable.
+          const entries = Object.entries(info.state.keys).sort(([a], [b]) => a.localeCompare(b));
+          if (entries.length > 0) {
+            lines.push(`Next keys:`);
+            for (const [key, val] of entries) {
+              lines.push(`  ${key}: ${val.prefix}${val.next_number}`);
+            }
           }
         }
         return text(lines.join("\n"));
@@ -968,9 +975,13 @@ export async function executeTool(
           // doesn't exist — proceed
         }
         const prefix = args["prefix"] as string | undefined;
+        const projectKey = args["project_key"] as string | undefined;
+        const projectLabel = args["project_label"] as string | undefined;
         const noDocs = (args["no_docs"] as boolean | undefined) ?? false;
         const result = await initLoctt(root, {
           ...(prefix !== undefined ? { prefix } : {}),
+          ...(projectKey !== undefined ? { projectKey } : {}),
+          ...(projectLabel !== undefined ? { projectLabel } : {}),
           docs: !noDocs,
         });
         return text(`Initialized .loctt at ${result.locttDir}\nCreated ${result.created.length} files`);

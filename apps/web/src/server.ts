@@ -293,6 +293,19 @@ async function tryServeStatic(
   } catch { /* fall through */ }
 
   if (!target) {
+    // Asset paths (anything with a recognizable extension) should
+    // 404 cleanly instead of getting the SPA's index.html — that
+    // breaks JS module loading silently and confuses the browser
+    // dev tools. Only fall back to index.html for paths that look
+    // like client-routed pages.
+    const lastSegment = requested.slice(requested.lastIndexOf("/") + 1);
+    const dot = lastSegment.lastIndexOf(".");
+    if (dot !== -1 && dot < lastSegment.length - 1) {
+      const ext = lastSegment.slice(dot).toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(STATIC_MIME, ext)) {
+        return false;
+      }
+    }
     const indexHtml = pathJoin(root, "index.html");
     try {
       const s = await fsStat(indexHtml);
@@ -1335,8 +1348,16 @@ export function createWebApp(options: WebAppOptions) {
       error(res, "Attachment not found", 404);
       return;
     }
+    // Force download semantics: attachments are user-uploaded
+    // content, never trusted markup. Octet-stream + nosniff stops
+    // the browser from inferring a content type, and the
+    // Content-Disposition: attachment header makes browsers offer
+    // a save dialog rather than rendering inline.
+    const escaped = rawName.replace(/"/g, "\\\"");
     res.writeHead(200, {
       "Content-Type": "application/octet-stream",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Disposition": `attachment; filename="${escaped}"`,
       "Content-Length": String(fileStat.size),
     });
     const stream = createReadStream(filePath);

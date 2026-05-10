@@ -297,13 +297,16 @@ export async function deleteProject(
       }
 
       // Rewrite each affected task atomically (one file at a time).
+      // Single timestamp so every remapped task in this operation
+      // shares the same updated_at.
+      const operationNow = new Date().toISOString();
       for (const task of affected) {
         const updated: Task = {
           ...task,
           frontmatter: {
             ...task.frontmatter,
             project: options.remapTo,
-            updated_at: new Date().toISOString(),
+            updated_at: operationNow,
           },
         };
         await writeTask(locttDir, task.frontmatter.id, updated);

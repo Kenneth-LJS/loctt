@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { cp, readFile } from "node:fs/promises";
 
 import { getSchemaVersionPath } from "../paths/index.js";
@@ -83,8 +84,12 @@ export async function backupLocttDir(
   locttDir: string,
   fromVersion: number,
 ): Promise<string> {
+  // ISO timestamp has 1-second resolution; two migrations triggered
+  // within the same second would collide. Append a short random
+  // suffix so concurrent backups never clobber each other.
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupPath = `${locttDir}.backup-v${fromVersion}-${ts}`;
+  const suffix = randomBytes(2).toString("hex");
+  const backupPath = `${locttDir}.backup-v${fromVersion}-${ts}-${suffix}`;
   await cp(locttDir, backupPath, { recursive: true, errorOnExist: true, force: false });
   return backupPath;
 }

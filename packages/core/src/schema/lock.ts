@@ -53,10 +53,13 @@ export async function isMigrationLocked(locttDir: string): Promise<boolean> {
   const target = getSchemaVersionPath(locttDir);
   try {
     return await lockfile.check(target, { realpath: false, stale: 5 * 60 * 1000 });
-  } catch {
-    // If `check` itself errors (e.g. file missing), treat as unlocked.
-    // Callers that care about file presence handle that separately
-    // via `requireSupportedSchema`.
-    return false;
+  } catch (err) {
+    // ENOENT — schema-version file is absent (legacy or fresh
+    // tracker). Anything else is a real error (EACCES, EIO,
+    // ENOTDIR) that we shouldn't silently swallow as "unlocked",
+    // so re-throw.
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return false;
+    throw err;
   }
 }

@@ -185,27 +185,43 @@ export async function applyWorkflowEdit(
     const nextFieldsByKey = new Map(next.custom_fields.map(f => [f.key, f]));
 
     let rewrittenTaskCount = 0;
+    // Single timestamp for the whole logical operation so every
+    // task touched in this remap shares the same updated_at.
+    const operationNow = new Date().toISOString();
     for (const task of tasks) {
       const fm = { ...task.frontmatter } as Record<string, unknown>;
       let changed = false;
 
       if (fm["status"] && !nextStatusKeys.has(fm["status"] as string)) {
-        const target = remap.statuses?.[fm["status"] as string];
-        if (target === undefined) continue; // shouldn't happen — covered by validation
+        const oldStatus = fm["status"] as string;
+        const target = remap.statuses?.[oldStatus];
+        // Validation upstream guarantees a mapping for every
+        // in-use deleted status; an undefined here means validation
+        // was bypassed. Throw so the bug is visible rather than
+        // silently skipping the rest of this task's remaps.
+        if (target === undefined) {
+          throw new Error(`internal: missing status remap for "${oldStatus}" on task ${task.frontmatter.key}`);
+        }
         if (target === null) { delete fm["status"]; }
         else { fm["status"] = target; }
         changed = true;
       }
       if (fm["priority"] && !nextPriorityKeys.has(fm["priority"] as string)) {
-        const target = remap.priorities?.[fm["priority"] as string];
-        if (target === undefined) continue;
+        const oldPriority = fm["priority"] as string;
+        const target = remap.priorities?.[oldPriority];
+        if (target === undefined) {
+          throw new Error(`internal: missing priority remap for "${oldPriority}" on task ${task.frontmatter.key}`);
+        }
         if (target === null) { delete fm["priority"]; }
         else { fm["priority"] = target; }
         changed = true;
       }
       if (fm["task_type"] && !nextTypeKeys.has(fm["task_type"] as string)) {
-        const target = remap.task_types?.[fm["task_type"] as string];
-        if (target === undefined) continue;
+        const oldTaskType = fm["task_type"] as string;
+        const target = remap.task_types?.[oldTaskType];
+        if (target === undefined) {
+          throw new Error(`internal: missing task_type remap for "${oldTaskType}" on task ${task.frontmatter.key}`);
+        }
         if (target === null) { delete fm["task_type"]; }
         else { fm["task_type"] = target; }
         changed = true;
@@ -256,7 +272,7 @@ export async function applyWorkflowEdit(
       }
 
       if (changed) {
-        fm["updated_at"] = new Date().toISOString();
+        fm["updated_at"] = operationNow;
         const updated: Task = { ...task, frontmatter: fm as unknown as Task["frontmatter"] };
         await writeTask(locttDir, task.frontmatter.id, updated);
         rewrittenTaskCount += 1;

@@ -255,6 +255,7 @@ export async function deleteUser(
         }
       }
 
+      const operationNow = new Date().toISOString();
       for (const task of affected) {
         const newFm = { ...task.frontmatter };
         let touched = false;
@@ -277,7 +278,7 @@ export async function deleteUser(
           touched = true;
         }
         if (touched) {
-          (newFm as { updated_at: string }).updated_at = new Date().toISOString();
+          (newFm as { updated_at: string }).updated_at = operationNow;
           const updated: Task = { ...task, frontmatter: newFm };
           await writeTask(locttDir, task.frontmatter.id, updated);
         }

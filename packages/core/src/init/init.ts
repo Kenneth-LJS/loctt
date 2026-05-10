@@ -56,9 +56,9 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
 
   // Validate up front so the user sees a clean error rather than a
   // post-write parse failure on first load.
-  if (!/^[a-z0-9][a-z0-9_-]*$/.test(projectKey)) {
+  if (!/^[a-z][a-z0-9_-]*$/.test(projectKey)) {
     throw new Error(
-      `project key must be a slug (lowercase letters, digits, hyphen, underscore), got: ${projectKey}`,
+      `project key must start with a lowercase letter, followed by lowercase letters, digits, hyphen, or underscore (got: ${projectKey})`,
     );
   }
   if (prefix.length === 0) {

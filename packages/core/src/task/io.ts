@@ -1,18 +1,11 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename,writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
 
 import type { Task } from "@loctt/contracts";
 
 import { getTaskFilePath } from "../paths/index.js";
+import { writeFileAtomically } from "../utils/atomic-yaml.js";
 import { assembleTaskFile,parseFrontmatter, serializeFrontmatter, splitTaskFile } from "./frontmatter.js";
 import { appendHistory } from "./history.js";
-
-async function atomicWrite(filePath: string, content: string): Promise<void> {
-  const tmpPath = `${filePath}.${randomUUID()}.tmp`;
-  await writeFile(tmpPath, content, "utf-8");
-  await rename(tmpPath, filePath);
-}
 
 /**
  * Reads and parses a task.md file into a Task (frontmatter + body).
@@ -35,9 +28,8 @@ export async function writeTask(locttDir: string, taskId: string, task: Task): P
   parseFrontmatter(serializeFrontmatter(task.frontmatter));
 
   const filePath = getTaskFilePath(locttDir, taskId);
-  await mkdir(dirname(filePath), { recursive: true });
   const content = assembleTaskFile(task.frontmatter, task.body);
-  await atomicWrite(filePath, content);
+  await writeFileAtomically(filePath, content);
 }
 
 /**
@@ -68,7 +60,7 @@ async function updateTaskBody(
   const now = new Date().toISOString();
   const updated = { ...frontmatter, updated_at: now };
   const assembled = assembleTaskFile(updated, newBody);
-  await atomicWrite(filePath, assembled);
+  await writeFileAtomically(filePath, assembled);
   await appendHistory(locttDir, taskId, [{ timestamp: now, kind: "body_edited" }]);
 }
 
