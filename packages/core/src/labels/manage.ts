@@ -170,6 +170,7 @@ export async function deleteLabel(
 
     const tasks = await loadAllTasks(locttDir);
     let affected = 0;
+    const operationNow = new Date().toISOString();
 
     for (const task of tasks) {
       const labels = task.frontmatter.labels;
@@ -189,7 +190,7 @@ export async function deleteLabel(
         frontmatter: {
           ...task.frontmatter,
           ...(next.length > 0 ? { labels: next } : {}),
-          updated_at: new Date().toISOString(),
+          updated_at: operationNow,
         },
       };
       // Remove the labels key entirely if empty.

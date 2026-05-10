@@ -222,6 +222,7 @@ export async function deleteSprint(
 
     const tasks = await loadAllTasks(locttDir);
     let affected = 0;
+    const operationNow = new Date().toISOString();
 
     for (const task of tasks) {
       if (task.frontmatter.sprint !== key) continue;
@@ -231,7 +232,7 @@ export async function deleteSprint(
       } else {
         delete fm["sprint"];
       }
-      fm["updated_at"] = new Date().toISOString();
+      fm["updated_at"] = operationNow;
       const updated: Task = { ...task, frontmatter: fm as unknown as Task["frontmatter"] };
       await writeTask(locttDir, task.frontmatter.id, updated);
       affected += 1;
