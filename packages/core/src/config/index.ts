@@ -56,6 +56,13 @@ export {
 } from "./sprints.js";
 export { validateTaskAgainstWorkflow, validateWorkflowConfig } from "./validation.js";
 export { loadWorkflowConfig, parseWorkflowConfig } from "./workflow.js";
+export type { WorkflowRemap } from "./workflow-write.js";
+export {
+  applyWorkflowEdit,
+  computeWorkflowKeyUsage,
+  saveWorkflowConfig,
+  validateRemapCoversDeletions,
+} from "./workflow-write.js";
 
 import type { QueriesConfig,WorkflowConfig } from "@loctt/contracts";
 

@@ -15,6 +15,7 @@ import type {
   UpdateTaskRequest,
 } from "@loctt/contracts";
 import {
+  applyWorkflowEdit,
   archiveTask,
   archiveUser,
   attachFile,
@@ -322,6 +323,25 @@ export function createWebApp(options: WebAppOptions) {
   const handleDoctor: RouteHandler = async ({ res }) => {
     const checks = await runDoctor(root);
     json(res, checks as DoctorCheckResponse[]);
+  };
+
+  const handleGetWorkflow: RouteHandler = async ({ res, locttDir }) => {
+    const cfg = await loadWorkflowConfig(locttDir);
+    json(res, cfg);
+  };
+
+  const handlePutWorkflow: RouteHandler = async ({ req, res, locttDir }) => {
+    const body = await readBody(req);
+    const payload = JSON.parse(body) as {
+      workflow: Parameters<typeof applyWorkflowEdit>[1];
+      remap?: Parameters<typeof applyWorkflowEdit>[2];
+    };
+    try {
+      const result = await applyWorkflowEdit(locttDir, payload.workflow, payload.remap ?? {});
+      json(res, result);
+    } catch (err) {
+      error(res, (err as Error).message, 400);
+    }
   };
 
   const handleConfig: RouteHandler = async ({ res, locttDir }) => {
@@ -1115,6 +1135,8 @@ export function createWebApp(options: WebAppOptions) {
     { method: "DELETE", pattern: MILESTONE_KEY_RE, handler: handleDeleteMilestone },
     { method: "GET", pattern: "/api/calendar", handler: handleGetCalendar },
     { method: "PUT", pattern: "/api/calendar", handler: handlePutCalendar },
+    { method: "GET", pattern: "/api/workflow", handler: handleGetWorkflow },
+    { method: "PUT", pattern: "/api/workflow", handler: handlePutWorkflow },
     { method: "GET", pattern: "/api/sprints", handler: handleListSprints },
     { method: "POST", pattern: "/api/sprints", handler: handleCreateSprint },
     { method: "PUT", pattern: SPRINT_KEY_RE, handler: handleUpdateSprint },

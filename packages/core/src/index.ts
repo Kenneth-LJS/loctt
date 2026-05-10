@@ -1,7 +1,14 @@
 // @loctt/core — shared LocTT logic
 
 export type { OptionalConfigs } from "./config/index.js";
+export type { WorkflowRemap } from "./config/index.js";
 export type { ConfigKeyDef } from "./config/index.js";
+export {
+  applyWorkflowEdit,
+  computeWorkflowKeyUsage,
+  saveWorkflowConfig,
+  validateRemapCoversDeletions,
+} from "./config/index.js";
 export { loadWorkflowConfig, parseWorkflowConfig } from "./config/index.js";
 export { loadQueriesConfig, parseQueriesConfig } from "./config/index.js";
 export {
