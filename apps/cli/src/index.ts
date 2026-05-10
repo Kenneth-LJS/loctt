@@ -43,6 +43,8 @@ import {
   publish,
   readHistory,
   readTaskBody,
+  ReorderError,
+  reorderRelationship,
   requireSupportedSchema,
   resolveLocttDir,
   resolveProjectKey,
@@ -107,6 +109,7 @@ Commands:
   schema                           Show the workflow config (statuses, priorities, etc.)
   project <list|create|edit|delete|set-default> ...
   user <list|current|switch|create|edit|archive|unarchive|delete> ...
+  rerank <source> <relationship> <target> [--before <task>] [--after <task>]
   create <title> [--project <key>] [--status <s>] [--priority <p>] [--type <t>]
   list [--query <q>] [--view <v>] [--limit <n>] [--archived]
                                    --archived: include archived tasks
@@ -1117,6 +1120,43 @@ export async function main(): Promise<void> {
             console.error(`Usage: loctt user <list|current|switch|create|edit|archive|unarchive|delete> ...`);
             process.exitCode = 1;
             break;
+        }
+        break;
+      }
+
+      case "rerank": {
+        const source = args[1];
+        const relationship = args[2];
+        const target = args[3];
+        if (!source || !relationship || !target) {
+          console.error(
+            `Usage: loctt rerank <source> <relationship> <target> [--before <task>] [--after <task>]`,
+          );
+          process.exitCode = 1;
+          break;
+        }
+        const before = getArg(args, "--before");
+        const after = getArg(args, "--after");
+        try {
+          const result = await reorderRelationship({
+            locttDir: resolveLocttDir(root),
+            sourceRef: source,
+            relationshipType: relationship,
+            targetRef: target,
+            ...(before !== undefined ? { before } : {}),
+            ...(after !== undefined ? { after } : {}),
+          });
+          console.log(`Reranked ${target} under ${source}/${relationship} (rank=${result.rank})`);
+          if (result.rebalanced) {
+            console.log(`(also rebalanced sibling ranks)`);
+          }
+        } catch (err) {
+          if (err instanceof ReorderError) {
+            console.error(`Error: ${err.message}`);
+            process.exitCode = 1;
+            break;
+          }
+          throw err;
         }
         break;
       }

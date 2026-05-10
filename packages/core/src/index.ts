@@ -91,6 +91,18 @@ export { tokenize, TokenizeError } from "./query/index.js";
 export { ParseError,parseQuery } from "./query/index.js";
 export { evaluateQuery } from "./query/index.js";
 export { buildListContext, listTasks, resolveView } from "./query/index.js";
+export type {
+  ReorderBoardRankOptions,
+  ReorderRelationshipOptions,
+  ReorderResult,
+} from "./rank/index.js";
+export {
+  between as lexorankBetween,
+  compare as lexorankCompare,
+  reorderBoardRank,
+  ReorderError,
+  reorderRelationship,
+} from "./rank/index.js";
 export type { Migration, MigrationPlan, MigrationResult } from "./schema/index.js";
 export {
   backupLocttDir,

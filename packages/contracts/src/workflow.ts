@@ -28,6 +28,12 @@ export interface RelationshipDef {
   readonly inverse: string;
   readonly inverse_label: string;
   readonly structural?: boolean;
+  /**
+   * If true, links of this type carry a `rank` field used to order
+   * targets within one source task. UI surfaces drag handles for
+   * ranked relationships.
+   */
+  readonly ranked?: boolean;
 }
 
 /** Supported custom field types. */

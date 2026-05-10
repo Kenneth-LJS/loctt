@@ -46,6 +46,9 @@ import {
   lookupTask,
   ProjectError,
   readHistory,
+  reorderBoardRank,
+  ReorderError,
+  reorderRelationship,
   requireSupportedSchema,
   resolveLocttDir,
   resolveProjectKey,
@@ -123,6 +126,8 @@ const TASK_LINK_RE = /^\/api\/tasks\/([^/]+)\/link$/;
 const TASK_UNLINK_RE = /^\/api\/tasks\/([^/]+)\/unlink$/;
 const TASK_ATTACHMENTS_RE = /^\/api\/tasks\/([^/]+)\/attachments$/;
 const TASK_ATTACHMENT_ITEM_RE = /^\/api\/tasks\/([^/]+)\/attachments\/([^/]+)$/;
+const TASK_BOARD_RERANK_RE = /^\/api\/tasks\/([^/]+)\/board-rerank$/;
+const TASK_RELATIONSHIP_RERANK_RE = /^\/api\/tasks\/([^/]+)\/relationships\/([^/]+)\/([^/]+)\/rerank$/;
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -528,6 +533,46 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
+  const handleBoardRerank: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const ref = captures[0] ?? "";
+    const body = await readBody(req);
+    const request = JSON.parse(body) as { before?: string; after?: string };
+    try {
+      const result = await reorderBoardRank({
+        locttDir,
+        taskRef: ref,
+        ...(request.before !== undefined ? { before: request.before } : {}),
+        ...(request.after !== undefined ? { after: request.after } : {}),
+      });
+      json(res, result);
+    } catch (err) {
+      if (err instanceof ReorderError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
+  const handleRelationshipRerank: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const sourceRef = captures[0] ?? "";
+    const relationshipType = captures[1] ?? "";
+    const targetRef = captures[2] ?? "";
+    const body = await readBody(req);
+    const request = JSON.parse(body || "{}") as { before?: string; after?: string };
+    try {
+      const result = await reorderRelationship({
+        locttDir,
+        sourceRef,
+        relationshipType,
+        targetRef,
+        ...(request.before !== undefined ? { before: request.before } : {}),
+        ...(request.after !== undefined ? { after: request.after } : {}),
+      });
+      json(res, result);
+    } catch (err) {
+      if (err instanceof ReorderError) { error(res, err.message, 400); return; }
+      throw err;
+    }
+  };
+
   const handleListTasks: RouteHandler = async ({ res, url, locttDir }) => {
     const tasks = await loadAllTasks(locttDir);
     const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
@@ -867,6 +912,8 @@ export function createWebApp(options: WebAppOptions) {
     { method: "DELETE", pattern: TASK_ATTACHMENT_ITEM_RE, handler: handleDeleteAttachment },
     { method: "GET", pattern: TASK_REF_RE, handler: handleGetTask },
     { method: "DELETE", pattern: TASK_REF_RE, handler: handleDeleteTask },
+    { method: "POST", pattern: TASK_BOARD_RERANK_RE, handler: handleBoardRerank },
+    { method: "POST", pattern: TASK_RELATIONSHIP_RERANK_RE, handler: handleRelationshipRerank },
   ];
 
   async function handleRequest(
