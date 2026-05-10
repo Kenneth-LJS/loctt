@@ -31,17 +31,17 @@ keys:
   });
 
   it("throws on missing keys object", () => {
-    expect(() => parseState("foo: bar")).toThrow("keys must be an object");
+    expect(() => parseState("foo: bar")).toThrow(/keys/);
   });
 
   it("throws on non-positive next_number", () => {
     const yaml = `keys:\n  task:\n    prefix: T-\n    next_number: 0`;
-    expect(() => parseState(yaml)).toThrow("must be a positive integer");
+    expect(() => parseState(yaml)).toThrow(/Too small|>=1|positive/);
   });
 
   it("throws on missing prefix", () => {
     const yaml = `keys:\n  task:\n    next_number: 1`;
-    expect(() => parseState(yaml)).toThrow("must be a non-empty string");
+    expect(() => parseState(yaml)).toThrow(/prefix/);
   });
 
   it("throws on non-object root", () => {

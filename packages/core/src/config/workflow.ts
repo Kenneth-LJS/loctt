@@ -1,14 +1,12 @@
 import { readFile } from "node:fs/promises";
 
 import type { WorkflowConfig } from "@loctt/contracts";
+import { WorkflowConfigSchema } from "@loctt/contracts";
 import { parse as parseYaml } from "yaml";
+import { z } from "zod";
 
 import { getWorkflowConfigPath } from "../paths/index.js";
-import {
-  assertArray as _assertArray,
-  assertObject as _assertObject,
-  assertString as _assertString,
-} from "../utils/assert.js";
+import { formatZodIssues } from "./zod-error.js";
 
 /** Errors thrown when workflow config is invalid. */
 export class WorkflowConfigError extends Error {
@@ -18,238 +16,33 @@ export class WorkflowConfigError extends Error {
   }
 }
 
-function assertString(value: unknown, path: string): asserts value is string {
-  _assertString(value, path, WorkflowConfigError);
-}
-
-function assertArray(value: unknown, path: string): asserts value is unknown[] {
-  _assertArray(value, path, WorkflowConfigError);
-}
-
-function assertObject(value: unknown, path: string): asserts value is Record<string, unknown> {
-  _assertObject(value, path, WorkflowConfigError);
-}
-
-const VALID_STATUS_CATEGORIES = new Set(["pending", "active", "completed", "discarded"]);
-const VALID_FIELD_TYPES = new Set(["string", "number", "date", "boolean", "enum"]);
-
-function parseStatuses(raw: unknown): WorkflowConfig["statuses"] {
-  assertArray(raw, "statuses");
-  return raw.map((item, i) => {
-    assertObject(item, `statuses[${i}]`);
-    assertString(item["key"], `statuses[${i}].key`);
-    assertString(item["label"], `statuses[${i}].label`);
-    assertString(item["category"], `statuses[${i}].category`);
-    if (!VALID_STATUS_CATEGORIES.has(item["category"])) {
-      throw new WorkflowConfigError(
-        `statuses[${i}].category must be one of: ${[...VALID_STATUS_CATEGORIES].join(", ")}`
-      );
-    }
-    return {
-      key: item["key"],
-      label: item["label"],
-      category: item["category"] as WorkflowConfig["statuses"][number]["category"],
-    };
-  });
-}
-
-function parsePriorities(raw: unknown): WorkflowConfig["priorities"] {
-  assertArray(raw, "priorities");
-  return raw.map((item, i) => {
-    assertObject(item, `priorities[${i}]`);
-    assertString(item["key"], `priorities[${i}].key`);
-    assertString(item["label"], `priorities[${i}].label`);
-    const value = item["value"];
-    if (value !== undefined && typeof value !== "number") {
-      throw new WorkflowConfigError(`priorities[${i}].value must be a number`);
-    }
-    return {
-      key: item["key"],
-      label: item["label"],
-      ...(value !== undefined ? { value: value } : {}),
-    };
-  });
-}
-
-function parseTaskTypes(raw: unknown): WorkflowConfig["task_types"] {
-  assertArray(raw, "task_types");
-  return raw.map((item, i) => {
-    assertObject(item, `task_types[${i}]`);
-    assertString(item["key"], `task_types[${i}].key`);
-    assertString(item["label"], `task_types[${i}].label`);
-    return { key: item["key"], label: item["label"] };
-  });
-}
-
-function parseRelationships(raw: unknown): WorkflowConfig["relationships"] {
-  assertArray(raw, "relationships");
-  return raw.map((item, i) => {
-    assertObject(item, `relationships[${i}]`);
-    assertString(item["key"], `relationships[${i}].key`);
-    assertString(item["label"], `relationships[${i}].label`);
-    assertString(item["inverse"], `relationships[${i}].inverse`);
-    assertString(item["inverse_label"], `relationships[${i}].inverse_label`);
-    return {
-      key: item["key"],
-      label: item["label"],
-      inverse: item["inverse"],
-      inverse_label: item["inverse_label"],
-      ...(item["structural"] === true ? { structural: true } : {}),
-      ...(item["ranked"] === true ? { ranked: true } : {}),
-    };
-  });
-}
-
-function parseCustomFields(raw: unknown): WorkflowConfig["custom_fields"] {
-  if (raw === undefined) return [];
-  assertArray(raw, "custom_fields");
-  return raw.map((item, i) => {
-    assertObject(item, `custom_fields[${i}]`);
-    assertString(item["key"], `custom_fields[${i}].key`);
-    assertString(item["label"], `custom_fields[${i}].label`);
-    assertString(item["type"], `custom_fields[${i}].type`);
-    if (!VALID_FIELD_TYPES.has(item["type"])) {
-      throw new WorkflowConfigError(
-        `custom_fields[${i}].type must be one of: ${[...VALID_FIELD_TYPES].join(", ")}`
-      );
-    }
-    const multi = item["multi"];
-    if (typeof multi !== "boolean") {
-      throw new WorkflowConfigError(`custom_fields[${i}].multi must be a boolean`);
-    }
-    const searchable = item["searchable"];
-    if (typeof searchable !== "boolean") {
-      throw new WorkflowConfigError(`custom_fields[${i}].searchable must be a boolean`);
-    }
-
-    const values = item["values"];
-    let parsedValues: WorkflowConfig["custom_fields"][number]["values"];
-    if (values !== undefined) {
-      assertArray(values, `custom_fields[${i}].values`);
-      parsedValues = values.map((v, j) => {
-        assertObject(v, `custom_fields[${i}].values[${j}]`);
-        assertString(v["key"], `custom_fields[${i}].values[${j}].key`);
-        assertString(v["label"], `custom_fields[${i}].values[${j}].label`);
-        const val = v["value"];
-        if (val !== undefined && typeof val !== "number") {
-          throw new WorkflowConfigError(`custom_fields[${i}].values[${j}].value must be a number`);
-        }
-        return {
-          key: v["key"],
-          label: v["label"],
-          ...(val !== undefined ? { value: val } : {}),
-        };
-      });
-    }
-
-    return {
-      key: item["key"],
-      label: item["label"],
-      type: item["type"] as WorkflowConfig["custom_fields"][number]["type"],
-      multi,
-      searchable,
-      ...(parsedValues ? { values: parsedValues } : {}),
-    };
-  });
-}
-
-const VALID_ESTIMATION_UNITS = new Set([
-  "points", "hours", "days", "custom_numeric", "custom_enum",
-]);
-const VALID_ESTIMATION_SCALES = new Set(["free", "linear", "fibonacci"]);
-
-function parseEstimation(raw: unknown): WorkflowConfig["estimation"] {
-  if (raw === undefined) return undefined;
-  assertObject(raw, "estimation");
-
-  const enabled = raw["enabled"];
-  if (typeof enabled !== "boolean") {
-    throw new WorkflowConfigError("estimation.enabled must be a boolean");
-  }
-  assertString(raw["unit"], "estimation.unit");
-  if (!VALID_ESTIMATION_UNITS.has(raw["unit"])) {
-    throw new WorkflowConfigError(
-      `estimation.unit must be one of ${[...VALID_ESTIMATION_UNITS].join(", ")}`,
-    );
-  }
-  const unit = raw["unit"] as "points" | "hours" | "days" | "custom_numeric" | "custom_enum";
-
-  const unitLabel = raw["unit_label"];
-  if (unitLabel !== undefined) assertString(unitLabel, "estimation.unit_label");
-  if ((unit === "custom_numeric" || unit === "custom_enum") && unitLabel === undefined) {
-    throw new WorkflowConfigError(
-      `estimation.unit_label is required when unit is '${String(unit)}'`,
-    );
-  }
-
-  let scale: "free" | "linear" | "fibonacci" | undefined;
-  if (raw["scale"] !== undefined) {
-    assertString(raw["scale"], "estimation.scale");
-    if (!VALID_ESTIMATION_SCALES.has(raw["scale"])) {
-      throw new WorkflowConfigError(
-        `estimation.scale must be one of ${[...VALID_ESTIMATION_SCALES].join(", ")}`,
-      );
-    }
-    scale = raw["scale"] as "free" | "linear" | "fibonacci";
-  }
-
-  let presetValues: readonly (number | string)[] | undefined;
-  if (raw["preset_values"] !== undefined) {
-    assertArray(raw["preset_values"], "estimation.preset_values");
-    presetValues = raw["preset_values"].map((v, i) => {
-      if (typeof v !== "string" && typeof v !== "number") {
-        throw new WorkflowConfigError(
-          `estimation.preset_values[${i}] must be a string or number`,
-        );
-      }
-      return v;
-    });
-  }
-
-  if (unit === "custom_enum" && (presetValues === undefined || presetValues.length === 0)) {
-    throw new WorkflowConfigError(
-      `estimation.preset_values is required (and non-empty) when unit is 'custom_enum'`,
-    );
-  }
-
-  return {
-    enabled,
-    unit,
-    ...(unitLabel !== undefined ? { unit_label: unitLabel } : {}),
-    ...(scale !== undefined ? { scale } : {}),
-    ...(presetValues !== undefined ? { preset_values: presetValues } : {}),
-  };
-}
-
 /**
  * Parses and validates raw YAML content into a WorkflowConfig.
- * Throws WorkflowConfigError for invalid data.
+ * The schema validates shapes; per-collection uniqueness checks
+ * still live in `validateWorkflowConfig` (callers that want them
+ * should run the validator after parsing).
+ *
+ * `custom_fields` is filled in as an empty array if missing — old
+ * workflow.yaml files predate the field.
  */
 export function parseWorkflowConfig(yamlContent: string): WorkflowConfig {
   const raw: unknown = parseYaml(yamlContent);
-  assertObject(raw, "workflow config");
-
-  const keyConfig = raw["key"];
-  assertObject(keyConfig, "key");
-  assertString(keyConfig["prefix"], "key.prefix");
-
-  const estimation = parseEstimation(raw["estimation"]);
-
-  return {
-    key: { prefix: keyConfig["prefix"] },
-    statuses: parseStatuses(raw["statuses"]),
-    priorities: parsePriorities(raw["priorities"]),
-    task_types: parseTaskTypes(raw["task_types"]),
-    relationships: parseRelationships(raw["relationships"]),
-    custom_fields: parseCustomFields(raw["custom_fields"]),
-    ...(estimation !== undefined ? { estimation } : {}),
-  };
+  if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+    const r = raw as Record<string, unknown>;
+    if (r["custom_fields"] === undefined) r["custom_fields"] = [];
+    if (r["relationships"] === undefined) r["relationships"] = [];
+    if (r["priorities"] === undefined) r["priorities"] = [];
+  }
+  try {
+    return WorkflowConfigSchema.parse(raw);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      throw new WorkflowConfigError(formatZodIssues("workflow config", err));
+    }
+    throw err;
+  }
 }
 
-/**
- * Loads and parses workflow.yaml from the given .loctt directory.
- * Throws if file doesn't exist or content is invalid.
- */
 export async function loadWorkflowConfig(locttDir: string): Promise<WorkflowConfig> {
   const filePath = getWorkflowConfigPath(locttDir);
   const content = await readFile(filePath, "utf-8");

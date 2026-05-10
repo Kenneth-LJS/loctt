@@ -124,12 +124,12 @@ archived_at: "2026-04-16T14:30:00Z"
 
   it("throws on missing required id", () => {
     const yaml = `key: T-1\ntitle: X\ncreated_at: "2026-01-01T00:00:00Z"\nupdated_at: "2026-01-01T00:00:00Z"`;
-    expect(() => parseFrontmatter(yaml)).toThrow("id must be a non-empty string");
+    expect(() => parseFrontmatter(yaml)).toThrow(/^id /);
   });
 
   it("throws on missing required title", () => {
     const yaml = `id: abc\nkey: T-1\ncreated_at: "2026-01-01T00:00:00Z"\nupdated_at: "2026-01-01T00:00:00Z"`;
-    expect(() => parseFrontmatter(yaml)).toThrow("title must be a non-empty string");
+    expect(() => parseFrontmatter(yaml)).toThrow(/title/);
   });
 
   it("treats YAML null (~) as undefined for optional fields", () => {

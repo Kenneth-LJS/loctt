@@ -49,12 +49,12 @@ git:
 
   it("throws on missing git.enabled", () => {
     const yaml = `git:\n  branch: .loctt`;
-    expect(() => parseSyncState(yaml)).toThrow("git.enabled must be a boolean");
+    expect(() => parseSyncState(yaml)).toThrow(/git\.enabled/);
   });
 
   it("throws on missing git.branch", () => {
     const yaml = `git:\n  enabled: true`;
-    expect(() => parseSyncState(yaml)).toThrow("git.branch must be a non-empty string");
+    expect(() => parseSyncState(yaml)).toThrow(/git\.branch/);
   });
 
   it("throws on non-object root", () => {

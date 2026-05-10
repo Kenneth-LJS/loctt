@@ -1,7 +1,9 @@
-import type { TaskFrontmatter, TaskRelationship } from "@loctt/contracts";
+import type { TaskFrontmatter } from "@loctt/contracts";
+import { TaskFrontmatterSchema } from "@loctt/contracts";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { z } from "zod";
 
-import { assertObject as _assertObject,assertString as _assertString } from "../utils/assert.js";
+import { formatZodIssues } from "../config/zod-error.js";
 
 export class TaskParseError extends Error {
   constructor(message: string) {
@@ -24,147 +26,45 @@ export function splitTaskFile(content: string): { rawYaml: string; body: string 
   return { rawYaml: match[1], body: match[2] };
 }
 
-function assertString(value: unknown, path: string): asserts value is string {
-  _assertString(value, path, TaskParseError);
-}
-
-function assertObject(value: unknown, path: string): asserts value is Record<string, unknown> {
-  _assertObject(value, path, TaskParseError);
-}
-
-function parseRelationships(raw: unknown): TaskRelationship[] {
-  if (raw === undefined) return [];
-  if (!Array.isArray(raw)) {
-    throw new TaskParseError("relationships must be an array");
-  }
-  return raw.map((item, i) => {
-    assertObject(item, `relationships[${i}]`);
-    assertString(item["type"], `relationships[${i}].type`);
-    assertString(item["target"], `relationships[${i}].target`);
-    const rank = item["rank"];
-    if (rank !== undefined && typeof rank !== "string") {
-      throw new TaskParseError(`relationships[${i}].rank must be a string`);
+/**
+ * Coerces YAML's quirky parsing (Date instances, empty
+ * frontmatter, etc.) into the shape that TaskFrontmatterSchema
+ * expects. Specifically: Date → ISO string. We don't trim
+ * `created_at`/`updated_at` to YYYY-MM-DD because they're
+ * timestamps, not calendar dates.
+ */
+function coerceFrontmatter(raw: unknown): unknown {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    // YAML's `~` / explicit `null` is treated as "field absent"
+    // for optional fields — drop the key so zod's optional()
+    // accepts it.
+    if (v === null) continue;
+    if (v instanceof Date) {
+      // Date-only fields land as YYYY-MM-DD; full timestamps stay
+      // as ISO. We can't tell which from yaml alone, so produce
+      // ISO and let downstream code accept the slim form when
+      // needed (the schema uses z.string()).
+      out[k] = v.toISOString();
+    } else {
+      out[k] = v;
     }
-    return {
-      type: item["type"],
-      target: item["target"],
-      ...(rank !== undefined ? { rank: rank } : {}),
-    };
-  });
-}
-
-function optionalString(value: unknown, path: string): string | undefined {
-  if (value === undefined || value === null) return undefined;
-  assertString(value, path);
-  return value;
-}
-
-function optionalStringArray(value: unknown, path: string): string[] | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (!Array.isArray(value)) {
-    throw new TaskParseError(`${path} must be an array`);
   }
-  return value.map((item, i) => {
-    if (typeof item !== "string") {
-      throw new TaskParseError(`${path}[${i}] must be a string`);
-    }
-    return item;
-  });
-}
-
-function optionalBoolean(value: unknown, path: string): boolean | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (typeof value !== "boolean") {
-    throw new TaskParseError(`${path} must be a boolean`);
-  }
-  return value;
+  return out;
 }
 
 /** Parses raw YAML frontmatter into a TaskFrontmatter. */
 export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
-  const raw: unknown = parseYaml(rawYaml);
-  assertObject(raw, "frontmatter");
-
-  // Required fields
-  assertString(raw["id"], "id");
-  assertString(raw["key"], "key");
-  assertString(raw["title"], "title");
-
-  // created_at and updated_at may be parsed as Date objects by yaml lib
-  const createdAt = raw["created_at"];
-  const createdAtStr = createdAt instanceof Date ? createdAt.toISOString() : createdAt;
-  assertString(createdAtStr, "created_at");
-
-  const updatedAt = raw["updated_at"];
-  const updatedAtStr = updatedAt instanceof Date ? updatedAt.toISOString() : updatedAt;
-  assertString(updatedAtStr, "updated_at");
-
-  const relationships = parseRelationships(raw["relationships"]);
-  const keyHistory = optionalStringArray(raw["key_history"], "key_history");
-
-  // Parse custom fields map
-  const fieldsRaw = raw["fields"];
-  let fields: Record<string, unknown> | undefined;
-  if (fieldsRaw !== undefined) {
-    assertObject(fieldsRaw, "fields");
-    fields = { ...fieldsRaw };
+  const raw = coerceFrontmatter(parseYaml(rawYaml));
+  try {
+    return TaskFrontmatterSchema.parse(raw);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      throw new TaskParseError(formatZodIssues("frontmatter", err));
+    }
+    throw err;
   }
-
-  // Handle optional date fields that yaml may parse as Date
-  function optionalDateString(value: unknown, path: string): string | undefined {
-    if (value === undefined || value === null) return undefined;
-    if (value instanceof Date) return value.toISOString();
-    assertString(value, path);
-    return value;
-  }
-
-  const project = optionalString(raw["project"], "project");
-  const boardRank = optionalString(raw["board_rank"], "board_rank");
-  const status = optionalString(raw["status"], "status");
-  const statusUpdatedAt = optionalDateString(raw["status_updated_at"], "status_updated_at");
-  const taskType = optionalString(raw["task_type"], "task_type");
-  const priority = optionalString(raw["priority"], "priority");
-  const assignee = optionalString(raw["assignee"], "assignee");
-  const reporter = optionalString(raw["reporter"], "reporter");
-  const startDate = optionalDateString(raw["start_date"], "start_date");
-  const dueDate = optionalDateString(raw["due_date"], "due_date");
-  const estimate = optionalString(raw["estimate"], "estimate");
-  const completedDate = optionalDateString(raw["completed_date"], "completed_date");
-  const milestone = optionalString(raw["milestone"], "milestone");
-  const sprint = optionalString(raw["sprint"], "sprint");
-  const archived = optionalBoolean(raw["archived"], "archived");
-  const archivedAt = optionalDateString(raw["archived_at"], "archived_at");
-  const labels = optionalStringArray(raw["labels"], "labels");
-
-  const result: TaskFrontmatter = {
-    id: raw["id"],
-    key: raw["key"],
-    title: raw["title"],
-    created_at: createdAtStr,
-    updated_at: updatedAtStr,
-    ...(project !== undefined ? { project } : {}),
-    ...(status !== undefined ? { status } : {}),
-    ...(statusUpdatedAt !== undefined ? { status_updated_at: statusUpdatedAt } : {}),
-    ...(taskType !== undefined ? { task_type: taskType } : {}),
-    ...(priority !== undefined ? { priority } : {}),
-    ...(assignee !== undefined ? { assignee } : {}),
-    ...(reporter !== undefined ? { reporter } : {}),
-    ...(startDate !== undefined ? { start_date: startDate } : {}),
-    ...(dueDate !== undefined ? { due_date: dueDate } : {}),
-    ...(estimate !== undefined ? { estimate } : {}),
-    ...(completedDate !== undefined ? { completed_date: completedDate } : {}),
-    ...(milestone !== undefined ? { milestone } : {}),
-    ...(sprint !== undefined ? { sprint } : {}),
-    ...(archived !== undefined ? { archived } : {}),
-    ...(archivedAt !== undefined ? { archived_at: archivedAt } : {}),
-    ...(labels !== undefined ? { labels } : {}),
-    ...(relationships.length > 0 ? { relationships } : {}),
-    ...(keyHistory !== undefined ? { key_history: keyHistory } : {}),
-    ...(fields !== undefined ? { fields } : {}),
-    ...(boardRank !== undefined ? { board_rank: boardRank } : {}),
-  };
-
-  return result;
 }
 
 /**
@@ -172,7 +72,6 @@ export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
  * Fields are ordered for readability: required first, then optional.
  */
 export function serializeFrontmatter(fm: TaskFrontmatter): string {
-  // Build an ordered object for clean YAML output
   const obj: Record<string, unknown> = {
     id: fm.id,
     key: fm.key,
