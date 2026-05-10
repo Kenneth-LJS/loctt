@@ -222,7 +222,7 @@ export { setField, TaskUpdateError,unsetField } from "./task/index.js";
 export { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./task/index.js";
 export { linkTask, RelationshipError,unlinkTask } from "./task/index.js";
 export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./task/index.js";
-export type { CreateUserOptions, DeleteUserOptions, EditUserOptions } from "./users/index.js";
+export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserSettings } from "./users/index.js";
 export {
   archiveUser,
   createUser,
@@ -233,10 +233,12 @@ export {
   getCurrentUser,
   loadAllUsers,
   loadUserProfile,
+  loadUserSettings,
   parseUserProfile,
   readCurrentUserId,
   resolveUserRef,
   saveUserProfile,
+  saveUserSettings,
   serializeUserProfile,
   switchCurrentUser,
   unarchiveUser,
