@@ -152,6 +152,19 @@ start_date: ~
     expect(fm.archived).toBeUndefined();
     expect(fm.start_date).toBeUndefined();
   });
+
+  it("parses the project field", () => {
+    const yaml = `
+id: abc
+key: BACKEND-1
+project: backend
+title: Test
+created_at: "2026-01-01T00:00:00Z"
+updated_at: "2026-01-01T00:00:00Z"
+`;
+    const fm = parseFrontmatter(yaml);
+    expect(fm.project).toBe("backend");
+  });
 });
 
 describe("serializeFrontmatter", () => {

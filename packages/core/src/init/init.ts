@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { getProjectsConfigPath } from "../config/projects.js";
 import {
   getConfigDir,
   getDocsDir,
@@ -14,11 +15,26 @@ import {
 } from "../paths/index.js";
 import { CURRENT_SCHEMA_VERSION, writeSchemaVersion } from "../schema/index.js";
 import { fileExists } from "../utils/fs.js";
-import { defaultQueriesYaml, defaultStateYaml,defaultWorkflowYaml } from "./defaults.js";
+import {
+  defaultProjectsYaml,
+  defaultQueriesYaml,
+  defaultStateYaml,
+  defaultWorkflowYaml,
+} from "./defaults.js";
 
 export interface InitOptions {
   /** Key prefix, defaults to "T-". */
   readonly prefix?: string;
+  /**
+   * Starting project key (slug). Defaults to "tasks".
+   * The state.yaml counter is keyed by this and tasks created in
+   * this project carry it as their `project` frontmatter field.
+   */
+  readonly projectKey?: string;
+  /**
+   * Starting project label (display name). Defaults to "Tasks".
+   */
+  readonly projectLabel?: string;
   /** Whether to generate helper docs. Defaults to true. */
   readonly docs?: boolean;
 }
@@ -35,7 +51,20 @@ export interface InitResult {
 export async function initLoctt(root: string, options: InitOptions = {}): Promise<InitResult> {
   const locttDir = resolveLocttDir(root);
   const prefix = options.prefix ?? "T-";
+  const projectKey = options.projectKey ?? "task";
+  const projectLabel = options.projectLabel ?? "Task";
   const genDocs = options.docs ?? true;
+
+  // Validate up front so the user sees a clean error rather than a
+  // post-write parse failure on first load.
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(projectKey)) {
+    throw new Error(
+      `project key must be a slug (lowercase letters, digits, hyphen, underscore), got: ${projectKey}`,
+    );
+  }
+  if (prefix.length === 0) {
+    throw new Error(`prefix must be non-empty`);
+  }
 
   if (await fileExists(locttDir)) {
     throw new Error(`.loctt directory already exists at ${locttDir}`);
@@ -57,9 +86,17 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
   await writeFile(queriesPath, defaultQueriesYaml(), "utf-8");
   created.push(queriesPath);
 
-  // Write default state
+  // Write the starting project list. From this point on, the
+  // tracker has multi-project support: more projects can be added
+  // via `loctt project create`, but at least one always exists.
+  const projectsPath = getProjectsConfigPath(locttDir);
+  await writeFile(projectsPath, defaultProjectsYaml(projectKey, projectLabel, prefix), "utf-8");
+  created.push(projectsPath);
+
+  // Write default state. Counter is keyed by the project key, not
+  // the literal "task" — per-project counters layer cleanly on top.
   const statePath = getStateFilePath(locttDir);
-  await writeFile(statePath, defaultStateYaml(prefix), "utf-8");
+  await writeFile(statePath, defaultStateYaml(projectKey, prefix), "utf-8");
   created.push(statePath);
 
   // Stamp the schema version. Migrations key off this on every load.

@@ -1,3 +1,12 @@
+export {
+  getProjectsConfigPath,
+  loadProjectsConfig,
+  parseProjectsConfig,
+  ProjectsConfigError,
+  projectsConfigExists,
+  saveProjectsConfig,
+  serializeProjectsConfig,
+} from "./projects.js";
 export { loadQueriesConfig, parseQueriesConfig } from "./queries.js";
 export {
   CONFIG_KEYS,

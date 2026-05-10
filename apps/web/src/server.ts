@@ -22,26 +22,33 @@ import {
   AttachmentSourceError,
   buildListContext,
   buildShowModel,
+  createProject,
   createTask,
+  deleteProject,
   deleteTask,
   detachFile,
+  editProject,
   getAttachmentPath,
   getTrackerInfo,
   linkTask,
   listTasks,
   loadAllTasks,
   loadOptionalConfigs,
+  loadProjectsConfig,
   loadQueriesConfig,
   loadState,
   loadWorkflowConfig,
   lookupTask,
+  ProjectError,
   readHistory,
   requireSupportedSchema,
   resolveLocttDir,
+  resolveProjectKey,
   runDoctor,
   saveState,
   SchemaTooNewError,
   SchemaVersionError,
+  setDefaultProject,
   setField,
   TaskNotFoundError,
   unarchiveTask,
@@ -92,6 +99,7 @@ function error(res: import("node:http").ServerResponse, message: string, status 
 
 const VALID_REF_RE = /^[A-Za-z0-9_-]+$/;
 const TASK_REF_RE = /^\/api\/tasks\/([^/]+)$/;
+const PROJECT_KEY_RE = /^\/api\/projects\/([^/]+)$/;
 const TASK_ACTIVITY_RE = /^\/api\/tasks\/([^/]+)\/activity$/;
 const TASK_SET_RE = /^\/api\/tasks\/([^/]+)\/set$/;
 const TASK_UNSET_RE = /^\/api\/tasks\/([^/]+)\/unset$/;
@@ -243,14 +251,30 @@ export function createWebApp(options: WebAppOptions) {
     void handleRequest(req, res);
   });
 
-  const handleInfo: RouteHandler = async ({ res }) => {
+  const handleInfo: RouteHandler = async ({ res, locttDir }) => {
     const info = await getTrackerInfo(root);
+    // Pick the "primary" counter to summarize the tracker. If a
+    // workspace default project exists, use its counter; otherwise
+    // fall back to whatever single counter is configured (or none).
+    let primaryEntry: { prefix: string; next_number: number } | undefined;
+    if (info.exists && info.state) {
+      try {
+        const projects = await loadProjectsConfig(locttDir);
+        const primaryKey = projects.default ?? projects.projects[0]?.key;
+        if (primaryKey !== undefined) {
+          primaryEntry = info.state.keys[primaryKey];
+        }
+      } catch {
+        // No projects.yaml — pre-multi-project tracker (shouldn't happen
+        // with current init, but stay graceful).
+      }
+    }
     const response: TrackerInfoResponse = {
       exists: info.exists,
       taskCount: info.taskCount,
-      keyPrefix: info.workflowConfig?.key.prefix ?? null,
-      nextKey: info.state?.keys["task"]
-        ? `${info.state.keys["task"].prefix}${info.state.keys["task"].next_number}`
+      keyPrefix: primaryEntry?.prefix ?? info.workflowConfig?.key.prefix ?? null,
+      nextKey: primaryEntry
+        ? `${primaryEntry.prefix}${primaryEntry.next_number}`
         : null,
     };
     json(res, response);
@@ -269,6 +293,81 @@ export function createWebApp(options: WebAppOptions) {
     json(res, response);
   };
 
+  const handleListProjects: RouteHandler = async ({ res, locttDir }) => {
+    const cfg = await loadProjectsConfig(locttDir);
+    json(res, { projects: cfg.projects, default: cfg.default ?? null });
+  };
+
+  const handleCreateProject: RouteHandler = async ({ req, res, locttDir }) => {
+    const body = await readBody(req);
+    const request = JSON.parse(body) as {
+      key: string;
+      label: string;
+      prefix: string;
+      make_default?: boolean;
+    };
+    try {
+      await createProject(locttDir, {
+        key: request.key,
+        label: request.label,
+        prefix: request.prefix,
+      });
+      if (request.make_default === true) {
+        await setDefaultProject(locttDir, request.key);
+      }
+      json(res, { key: request.key }, 201);
+    } catch (err) {
+      if (err instanceof ProjectError) {
+        error(res, err.message, 400);
+        return;
+      }
+      throw err;
+    }
+  };
+
+  const handleUpdateProject: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const key = captures[0] ?? "";
+    const body = await readBody(req);
+    const request = JSON.parse(body) as { label?: string; default?: boolean };
+    try {
+      if (request.label !== undefined) {
+        await editProject(locttDir, key, { label: request.label });
+      }
+      if (request.default === true) {
+        await setDefaultProject(locttDir, key);
+      } else if (request.default === false) {
+        // Clear default only when it's currently this project.
+        const cfg = await loadProjectsConfig(locttDir);
+        if (cfg.default === key) await setDefaultProject(locttDir, null);
+      }
+      json(res, { key });
+    } catch (err) {
+      if (err instanceof ProjectError) {
+        error(res, err.message, 400);
+        return;
+      }
+      throw err;
+    }
+  };
+
+  const handleDeleteProject: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const key = captures[0] ?? "";
+    const url = new URL(req.url ?? "/", `http://localhost:${port}`);
+    const remapTo = url.searchParams.get("remap_to") ?? undefined;
+    try {
+      const result = await deleteProject(locttDir, key, {
+        ...(remapTo !== undefined ? { remapTo } : {}),
+      });
+      json(res, { deleted: key, remappedTaskCount: result.remappedTaskCount });
+    } catch (err) {
+      if (err instanceof ProjectError) {
+        error(res, err.message, 400);
+        return;
+      }
+      throw err;
+    }
+  };
+
   const handleListTasks: RouteHandler = async ({ res, url, locttDir }) => {
     const tasks = await loadAllTasks(locttDir);
     const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
@@ -283,8 +382,18 @@ export function createWebApp(options: WebAppOptions) {
       limit = n;
     }
 
+    // Sugar: `?project=<key>` AND-merges into the query, mirroring
+    // the CLI's `--project` flag.
+    const projectFilter = url.searchParams.get("project") ?? undefined;
+    const baseQuery = url.searchParams.get("query") ?? undefined;
+    const composedQuery = projectFilter !== undefined
+      ? (baseQuery !== undefined && baseQuery.length > 0
+          ? `(${baseQuery}) and project = ${projectFilter}`
+          : `project = ${projectFilter}`)
+      : baseQuery;
+
     const params: ListTasksRequest = {
-      query: url.searchParams.get("query") ?? undefined,
+      query: composedQuery,
       view: url.searchParams.get("view") ?? undefined,
       limit,
     };
@@ -297,9 +406,30 @@ export function createWebApp(options: WebAppOptions) {
     const body = await readBody(req);
     const request = JSON.parse(body) as CreateTaskRequest;
     const wfConfig = await loadWorkflowConfig(locttDir);
+
+    // Resolve target project. The HTTP API mirrors the CLI's
+    // resolution order: explicit > workspace default > unique
+    // single project. If ambiguous, return 400 so the client can
+    // surface a project picker.
+    const projectsConfig = await loadProjectsConfig(locttDir);
+    let projectKey: string;
+    try {
+      projectKey = resolveProjectKey(projectsConfig, {
+        explicit: request.project,
+      });
+    } catch (err) {
+      error(res, (err as Error).message, 400);
+      return;
+    }
+
     const task = await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);
-      const created = await createTask({ locttDir, state, options: request, workflowConfig: wfConfig });
+      const created = await createTask({
+        locttDir,
+        state,
+        options: { ...request, project: projectKey },
+        workflowConfig: wfConfig,
+      });
       await saveState(locttDir, state);
       return created;
     });
@@ -550,6 +680,10 @@ export function createWebApp(options: WebAppOptions) {
     { method: "GET", pattern: "/api/info", handler: handleInfo },
     { method: "GET", pattern: "/api/doctor", handler: handleDoctor },
     { method: "GET", pattern: "/api/config", handler: handleConfig },
+    { method: "GET", pattern: "/api/projects", handler: handleListProjects },
+    { method: "POST", pattern: "/api/projects", handler: handleCreateProject },
+    { method: "PUT", pattern: PROJECT_KEY_RE, handler: handleUpdateProject },
+    { method: "DELETE", pattern: PROJECT_KEY_RE, handler: handleDeleteProject },
     { method: "GET", pattern: "/api/tasks", handler: handleListTasks },
     { method: "POST", pattern: "/api/tasks", handler: handleCreateTask },
     { method: "GET", pattern: TASK_ACTIVITY_RE, handler: handleTaskActivity },

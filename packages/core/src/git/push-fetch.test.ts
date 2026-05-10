@@ -65,7 +65,7 @@ describe("commitToLocttBranch + pushLocttBranch", () => {
     await enableGit(locttDir, root);
 
     const state = await loadState(locttDir);
-    await createTask({ locttDir, state, options: { title: "T" } });
+    await createTask({ locttDir, state, options: { project: "task", title: "T" } });
     await saveState(locttDir, state);
   });
 
@@ -140,7 +140,7 @@ describe("publish() with remote", () => {
     await enableGit(locttDir, root);
 
     const state = await loadState(locttDir);
-    await createTask({ locttDir, state, options: { title: "T" } });
+    await createTask({ locttDir, state, options: { project: "task", title: "T" } });
     await saveState(locttDir, state);
 
     stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);

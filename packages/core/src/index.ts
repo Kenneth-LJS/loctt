@@ -4,6 +4,15 @@ export type { OptionalConfigs } from "./config/index.js";
 export type { ConfigKeyDef } from "./config/index.js";
 export { loadWorkflowConfig, parseWorkflowConfig } from "./config/index.js";
 export { loadQueriesConfig, parseQueriesConfig } from "./config/index.js";
+export {
+  getProjectsConfigPath,
+  loadProjectsConfig,
+  parseProjectsConfig,
+  ProjectsConfigError,
+  projectsConfigExists,
+  saveProjectsConfig,
+  serializeProjectsConfig,
+} from "./config/index.js";
 export { loadOptionalConfigs } from "./config/index.js";
 export { validateTaskAgainstWorkflow, validateWorkflowConfig } from "./config/index.js";
 export {
@@ -59,6 +68,16 @@ export {
   getWorkflowConfigPath,
   resolveLocttDir,
 } from "./paths/index.js";
+export type { DeleteProjectOptions } from "./projects/index.js";
+export {
+  createProject,
+  deleteProject,
+  editProject,
+  findProject,
+  ProjectError,
+  resolveProjectKey,
+  setDefaultProject,
+} from "./projects/index.js";
 export type { Token, TokenType } from "./query/index.js";
 export type { ComparisonOp,QueryNode, QueryValue } from "./query/index.js";
 export type { EvalContext } from "./query/index.js";

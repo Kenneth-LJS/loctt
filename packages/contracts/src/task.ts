@@ -8,6 +8,13 @@ export interface TaskRelationship {
 export interface TaskFrontmatter {
   readonly id: string;
   readonly key: string;
+  /**
+   * The project this task belongs to (matches `ProjectDef.key`).
+   * Required on tasks created post-projects-introduction. Optional
+   * here only because tests/fixtures may construct partial
+   * frontmatter for narrow assertions.
+   */
+  readonly project?: string;
   readonly title: string;
   readonly created_at: string;
   readonly updated_at: string;

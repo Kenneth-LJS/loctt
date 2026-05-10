@@ -1,4 +1,5 @@
 export type { HistoryEntry, HistoryKind } from "./history.js";
+export type { ProjectDef, ProjectsConfig } from "./projects.js";
 export type {
   QueriesConfig,
   QuerySort,
