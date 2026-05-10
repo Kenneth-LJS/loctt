@@ -1,19 +1,17 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { randomBytes } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import { getProjectsConfigPath } from "../config/projects.js";
 import {
-  getConfigDir,
   getDocsDir,
-  getLocalDir,
   getQueriesConfigPath,
   getSchemaVersionPath,
   getStateFilePath,
-  getTasksDir,
   getWorkflowConfigPath,
   resolveLocttDir,
 } from "../paths/index.js";
-import { CURRENT_SCHEMA_VERSION, writeSchemaVersion } from "../schema/index.js";
+import { CURRENT_SCHEMA_VERSION } from "../schema/index.js";
 import { ensureDefaultUser } from "../users/index.js";
 import { fileExists } from "../utils/fs.js";
 import {
@@ -71,86 +69,117 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
     throw new Error(`.loctt directory already exists at ${locttDir}`);
   }
 
+  // Stage everything in a sibling temp directory and atomically
+  // rename it into place at the very end. A crash mid-init leaves
+  // only the temp directory behind, which can be cleaned up
+  // manually; the user's project root never contains a half-built
+  // `.loctt/`.
+  const parent = dirname(locttDir);
+  await mkdir(parent, { recursive: true });
+  const stageDir = `${locttDir}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+
   const created: string[] = [];
+  try {
+    await mkdir(stageDir, { recursive: true });
+    await mkdir(join(stageDir, "config"), { recursive: true });
+    await mkdir(join(stageDir, "tasks"), { recursive: true });
+    await mkdir(join(stageDir, "local"), { recursive: true });
 
-  // Create directory structure
-  await mkdir(getConfigDir(locttDir), { recursive: true });
-  await mkdir(getTasksDir(locttDir), { recursive: true });
-  await mkdir(getLocalDir(locttDir), { recursive: true });
+    await writeFile(join(stageDir, "config", "workflow.yaml"), defaultWorkflowYaml(prefix), "utf-8");
+    created.push(getWorkflowConfigPath(locttDir));
 
-  // Write default config files
-  const workflowPath = getWorkflowConfigPath(locttDir);
-  await writeFile(workflowPath, defaultWorkflowYaml(prefix), "utf-8");
-  created.push(workflowPath);
+    await writeFile(join(stageDir, "config", "queries.yaml"), defaultQueriesYaml(), "utf-8");
+    created.push(getQueriesConfigPath(locttDir));
 
-  const queriesPath = getQueriesConfigPath(locttDir);
-  await writeFile(queriesPath, defaultQueriesYaml(), "utf-8");
-  created.push(queriesPath);
+    // Starting project list. From this point on the tracker has
+    // multi-project support: more projects can be added via
+    // `loctt project create`, but at least one always exists.
+    await writeFile(
+      join(stageDir, "config", "projects.yaml"),
+      defaultProjectsYaml(projectKey, projectLabel, prefix),
+      "utf-8",
+    );
+    created.push(getProjectsConfigPath(locttDir));
 
-  // Write the starting project list. From this point on, the
-  // tracker has multi-project support: more projects can be added
-  // via `loctt project create`, but at least one always exists.
-  const projectsPath = getProjectsConfigPath(locttDir);
-  await writeFile(projectsPath, defaultProjectsYaml(projectKey, projectLabel, prefix), "utf-8");
-  created.push(projectsPath);
+    // Counter is keyed by the project key, not the literal "task"
+    // — per-project counters layer cleanly on top.
+    await writeFile(join(stageDir, "state.yaml"), defaultStateYaml(projectKey, prefix), "utf-8");
+    created.push(getStateFilePath(locttDir));
 
-  // Write default state. Counter is keyed by the project key, not
-  // the literal "task" — per-project counters layer cleanly on top.
-  const statePath = getStateFilePath(locttDir);
-  await writeFile(statePath, defaultStateYaml(projectKey, prefix), "utf-8");
-  created.push(statePath);
+    // Schema version. Migrations key off this on every load.
+    await writeFile(join(stageDir, ".schema-version"), `${CURRENT_SCHEMA_VERSION}\n`, "utf-8");
+    created.push(getSchemaVersionPath(locttDir));
 
-  // Stamp the schema version. Migrations key off this on every load.
-  await writeSchemaVersion(locttDir, CURRENT_SCHEMA_VERSION);
-  created.push(getSchemaVersionPath(locttDir));
+    // Per-checkout files (current user pointer, per-user UI
+    // settings) are gitignored so they don't pollute shared
+    // history. Committed parts (tasks, workflow, projects, user
+    // profiles) are still tracked normally.
+    await writeFile(
+      join(stageDir, ".gitignore"),
+      [
+        "# Per-checkout pointers and per-user UI settings — do not commit.",
+        ".current-user",
+        "users/*/settings.yaml",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    created.push(join(locttDir, ".gitignore"));
 
-  // Bootstrap a default user. Names come from $USER env so the
-  // first run is zero-prompt; the user can edit later.
-  await ensureDefaultUser(locttDir);
+    if (genDocs) {
+      await mkdir(join(stageDir, "docs"), { recursive: true });
+      await writeFile(join(stageDir, "docs", "README.md"), DOCS_README, "utf-8");
+      created.push(join(getDocsDir(locttDir), "README.md"));
+      await writeFile(join(stageDir, "docs", "workflow.md"), DOCS_WORKFLOW, "utf-8");
+      created.push(join(getDocsDir(locttDir), "workflow.md"));
+      await writeFile(join(stageDir, "docs", "git-sync.md"), DOCS_GIT_SYNC, "utf-8");
+      created.push(join(getDocsDir(locttDir), "git-sync.md"));
+      await writeFile(join(stageDir, "docs", "agents.md"), DOCS_AGENTS, "utf-8");
+      created.push(join(getDocsDir(locttDir), "agents.md"));
+    }
 
-  // Write the .loctt/.gitignore so per-checkout files (current user
-  // pointer, per-user UI settings) don't pollute the shared history.
-  // The committed parts of `.loctt/` (tasks, workflow, projects,
-  // user profiles) are still tracked normally.
-  const gitignorePath = join(locttDir, ".gitignore");
-  await writeFile(
-    gitignorePath,
-    [
-      "# Per-checkout pointers and per-user UI settings — do not commit.",
-      ".current-user",
-      "users/*/settings.yaml",
-      "",
-      "# Migration backups left by `loctt migrate`.",
-      "../.loctt.backup-*",
-      "",
-    ].join("\n"),
-    "utf-8",
-  );
-  created.push(gitignorePath);
-
-  // Generate helper docs if requested
-  if (genDocs) {
-    const docsDir = getDocsDir(locttDir);
-    await mkdir(docsDir, { recursive: true });
-
-    const readmePath = join(docsDir, "README.md");
-    await writeFile(readmePath, DOCS_README, "utf-8");
-    created.push(readmePath);
-
-    const workflowDocPath = join(docsDir, "workflow.md");
-    await writeFile(workflowDocPath, DOCS_WORKFLOW, "utf-8");
-    created.push(workflowDocPath);
-
-    const gitSyncDocPath = join(docsDir, "git-sync.md");
-    await writeFile(gitSyncDocPath, DOCS_GIT_SYNC, "utf-8");
-    created.push(gitSyncDocPath);
-
-    const agentsDocPath = join(docsDir, "agents.md");
-    await writeFile(agentsDocPath, DOCS_AGENTS, "utf-8");
-    created.push(agentsDocPath);
+    // Atomic flip — after this point, `.loctt/` exists in its
+    // final form or not at all.
+    await rename(stageDir, locttDir);
+  } catch (err) {
+    // Clean up the staging directory; the user's project root is
+    // unchanged because we never wrote into the final path.
+    await rm(stageDir, { recursive: true, force: true }).catch(() => undefined);
+    throw err;
   }
 
+  // Migration backups land as siblings (`../.loctt.backup-*`),
+  // so the gitignore entry needs to live in the project root, not
+  // inside `.loctt/`. Append to root .gitignore (create if absent).
+  await ensureRootGitignoreEntry(parent);
+
+  // Bootstrap a default user. Names come from $USER env so the
+  // first run is zero-prompt; the user can edit later. Done
+  // post-rename so the user folder is created against the final
+  // location, and so the rest of init succeeds even if the user
+  // bootstrap fails (re-running `loctt user create` recovers).
+  await ensureDefaultUser(locttDir);
+
   return { locttDir, created };
+}
+
+async function ensureRootGitignoreEntry(rootDir: string): Promise<void> {
+  const path = join(rootDir, ".gitignore");
+  const entry = ".loctt.backup-*";
+  let existing = "";
+  try {
+    existing = await readFile(path, "utf-8");
+  } catch {
+    // Missing root .gitignore — write a fresh one with just our entry.
+  }
+  const lines = existing.split("\n");
+  if (lines.some(l => l.trim() === entry)) return;
+  const sep = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
+  await writeFile(
+    path,
+    `${existing}${sep}# LocTT migration backups\n${entry}\n`,
+    "utf-8",
+  );
 }
 
 const DOCS_README = `# LocTT
