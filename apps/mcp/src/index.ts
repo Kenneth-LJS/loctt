@@ -43,6 +43,8 @@ import {
   ProjectError,
   publish,
   readHistory,
+  ReorderError,
+  reorderRelationship,
   requireSupportedSchema,
   resolveLocttDir,
   resolveProjectKey,
@@ -389,6 +391,17 @@ export function getTools(): McpTool[] {
         ref: z.string(),
         remap_to: z.string().optional().describe("Target user UUID/name to migrate references onto"),
         unassign: z.boolean().optional().describe("Clear assignee/reporter on affected tasks"),
+      },
+    },
+    {
+      name: "reorder_relationship",
+      description: "Reorder a relationship target within one source task's links of a given type. Pass exactly one of `before` or `after` to position the target relative to a sibling, or neither to move it to the end.",
+      inputSchema: {
+        source: z.string().describe("Source task key or ID"),
+        type: z.string().describe("Relationship type (e.g. parent)"),
+        target: z.string().describe("Target task key or ID being moved"),
+        before: z.string().optional().describe("Sibling target to position before"),
+        after: z.string().optional().describe("Sibling target to position after"),
       },
     },
   ];
@@ -988,6 +1001,25 @@ export async function executeTool(
           return text(JSON.stringify({ deleted: target.id, ...result }, null, 2));
         } catch (err) {
           if (err instanceof UserError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "reorder_relationship": {
+        try {
+          const before = args["before"] as string | undefined;
+          const after = args["after"] as string | undefined;
+          const result = await reorderRelationship({
+            locttDir,
+            sourceRef: args["source"] as string,
+            relationshipType: args["type"] as string,
+            targetRef: args["target"] as string,
+            ...(before !== undefined ? { before } : {}),
+            ...(after !== undefined ? { after } : {}),
+          });
+          return text(JSON.stringify(result, null, 2));
+        } catch (err) {
+          if (err instanceof ReorderError) return errorResult(err.message);
           throw err;
         }
       }

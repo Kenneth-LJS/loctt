@@ -15,15 +15,18 @@ export class TaskUpdateError extends Error {
 const IMMUTABLE_FIELDS = new Set(["id", "key", "created_at", "project"]);
 
 // Fields that are auto-managed by `setField` itself — users may not
-// write to them directly even via the generic field setter.
-const AUTO_MANAGED_FIELDS = new Set(["completed_date"]);
+// write to them directly even via the generic field setter. The
+// `board_rank` field is auto-managed too: callers must use the
+// dedicated `reorderBoardRank` API rather than `setField` so the
+// rank-computation logic and rebalance trigger stays in one place.
+const AUTO_MANAGED_FIELDS = new Set(["completed_date", "board_rank"]);
 
 // Built-in optional fields that live at the top level of frontmatter
 const BUILTIN_OPTIONAL_FIELDS = new Set([
   "status", "status_updated_at", "task_type", "priority",
   "labels", "assignee", "reporter", "start_date", "due_date",
   "estimate", "completed_date", "milestone", "archived", "archived_at",
-  "relationships", "key_history",
+  "relationships", "key_history", "board_rank",
 ]);
 
 /**

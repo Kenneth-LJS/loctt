@@ -41,7 +41,15 @@ function parseRelationships(raw: unknown): TaskRelationship[] {
     assertObject(item, `relationships[${i}]`);
     assertString(item["type"], `relationships[${i}].type`);
     assertString(item["target"], `relationships[${i}].target`);
-    return { type: item["type"], target: item["target"] };
+    const rank = item["rank"];
+    if (rank !== undefined && typeof rank !== "string") {
+      throw new TaskParseError(`relationships[${i}].rank must be a string`);
+    }
+    return {
+      type: item["type"],
+      target: item["target"],
+      ...(rank !== undefined ? { rank: rank } : {}),
+    };
   });
 }
 
@@ -111,6 +119,7 @@ export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
   }
 
   const project = optionalString(raw["project"], "project");
+  const boardRank = optionalString(raw["board_rank"], "board_rank");
   const status = optionalString(raw["status"], "status");
   const statusUpdatedAt = optionalDateString(raw["status_updated_at"], "status_updated_at");
   const taskType = optionalString(raw["task_type"], "task_type");
@@ -150,6 +159,7 @@ export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
     ...(relationships.length > 0 ? { relationships } : {}),
     ...(keyHistory !== undefined ? { key_history: keyHistory } : {}),
     ...(fields !== undefined ? { fields } : {}),
+    ...(boardRank !== undefined ? { board_rank: boardRank } : {}),
   };
 
   return result;
@@ -185,10 +195,15 @@ export function serializeFrontmatter(fm: TaskFrontmatter): string {
   if (fm.archived !== undefined) obj["archived"] = fm.archived;
   if (fm.archived_at !== undefined) obj["archived_at"] = fm.archived_at;
   if (fm.relationships !== undefined && fm.relationships.length > 0) {
-    obj["relationships"] = fm.relationships.map(r => ({ type: r.type, target: r.target }));
+    obj["relationships"] = fm.relationships.map(r => ({
+      type: r.type,
+      target: r.target,
+      ...(r.rank !== undefined ? { rank: r.rank } : {}),
+    }));
   }
   if (fm.key_history !== undefined) obj["key_history"] = [...fm.key_history];
   if (fm.fields !== undefined) obj["fields"] = { ...fm.fields };
+  if (fm.board_rank !== undefined) obj["board_rank"] = fm.board_rank;
 
   return stringifyYaml(obj, { lineWidth: 0 });
 }
