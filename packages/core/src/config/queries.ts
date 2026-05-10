@@ -5,6 +5,8 @@ import { ulid } from "ulid";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { getQueriesConfigPath } from "../paths/index.js";
+import { ParseError, parseQuery } from "../query/parser.js";
+import { tokenize, TokenizeError } from "../query/tokenizer.js";
 import {
   assertArray as _assertArray,
   assertObject as _assertObject,
@@ -50,6 +52,19 @@ export function parseQueriesConfig(yamlContent: string): QueriesConfig {
       assertObject(item, `queries[${i}]`);
       assertString(item["name"], `queries[${i}].name`);
       assertString(item["query"], `queries[${i}].query`);
+      // Reject queries that won't even tokenize/parse so the
+      // saved-view registry never holds entries that explode at
+      // run time.
+      try {
+        parseQuery(tokenize(item["query"]));
+      } catch (err) {
+        if (err instanceof TokenizeError || err instanceof ParseError) {
+          throw new QueriesConfigError(
+            `queries[${i}].query is not a valid query: ${err.message}`,
+          );
+        }
+        throw err;
+      }
 
       // Auto-assign an id when missing — old queries.yaml files
       // pre-date Phase 11. The id won't change across reads as
