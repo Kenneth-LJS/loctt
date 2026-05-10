@@ -15,14 +15,17 @@ import {
   buildListContext,
   buildShowModel,
   CONFIG_KEYS,
+  createLabel,
   createProject,
   createTask,
   createUser,
+  deleteLabel,
   deleteProject,
   deleteTask,
   deleteUser,
   detachFile,
   disableGit,
+  editLabel,
   editProject,
   enableGit,
   getConfigValue,
@@ -30,10 +33,12 @@ import {
   getGitStatus,
   getTrackerInfo,
   initLoctt,
+  LabelError,
   linkTask,
   listTasks,
   loadAllTasks,
   loadAllUsers,
+  loadLabelsConfig,
   loadOptionalConfigs,
   loadProjectsConfig,
   loadQueriesConfig,
@@ -391,6 +396,37 @@ export function getTools(): McpTool[] {
         ref: z.string(),
         remap_to: z.string().optional().describe("Target user UUID/name to migrate references onto"),
         unassign: z.boolean().optional().describe("Clear assignee/reporter on affected tasks"),
+      },
+    },
+    {
+      name: "label_list",
+      description: "List labels defined in labels.yaml.",
+      inputSchema: {},
+    },
+    {
+      name: "label_create",
+      description: "Register a new label. Keys are immutable; pass --label and optional --color.",
+      inputSchema: {
+        key: z.string(),
+        label: z.string(),
+        color: z.string().optional(),
+      },
+    },
+    {
+      name: "label_edit",
+      description: "Edit a label's display name or color. The key is immutable.",
+      inputSchema: {
+        key: z.string(),
+        label: z.string().optional(),
+        color: z.string().nullable().optional().describe("Pass null to clear"),
+      },
+    },
+    {
+      name: "label_delete",
+      description: "Delete a label. Walks all tasks to remove the key, optionally remapping to another label.",
+      inputSchema: {
+        key: z.string(),
+        remap_to: z.string().optional(),
       },
     },
     {
@@ -1001,6 +1037,53 @@ export async function executeTool(
           return text(JSON.stringify({ deleted: target.id, ...result }, null, 2));
         } catch (err) {
           if (err instanceof UserError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "label_list": {
+        const cfg = await loadLabelsConfig(locttDir);
+        return text(JSON.stringify(cfg, null, 2));
+      }
+
+      case "label_create": {
+        try {
+          const color = args["color"] as string | undefined;
+          await createLabel(locttDir, {
+            key: args["key"] as string,
+            label: args["label"] as string,
+            ...(color !== undefined ? { color } : {}),
+          });
+          return text(`Created label ${String(args["key"])}`);
+        } catch (err) {
+          if (err instanceof LabelError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "label_edit": {
+        try {
+          const colorArg = args["color"] as string | null | undefined;
+          await editLabel(locttDir, args["key"] as string, {
+            ...(args["label"] !== undefined ? { label: args["label"] as string } : {}),
+            ...("color" in args ? { color: colorArg ?? null } : {}),
+          });
+          return text(`Updated label ${String(args["key"])}`);
+        } catch (err) {
+          if (err instanceof LabelError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "label_delete": {
+        try {
+          const remapTo = args["remap_to"] as string | undefined;
+          const result = await deleteLabel(locttDir, args["key"] as string, {
+            ...(remapTo !== undefined ? { remapTo } : {}),
+          });
+          return text(JSON.stringify({ deleted: args["key"], ...result }, null, 2));
+        } catch (err) {
+          if (err instanceof LabelError) return errorResult(err.message);
           throw err;
         }
       }

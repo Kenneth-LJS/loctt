@@ -23,6 +23,15 @@ export {
   setConfigValue,
   unsetConfigValue,
 } from "./config/index.js";
+export {
+  getLabelsConfigPath,
+  LabelsConfigError,
+  labelsConfigExists,
+  loadLabelsConfig,
+  parseLabelsConfig,
+  saveLabelsConfig,
+  serializeLabelsConfig,
+} from "./config/index.js";
 export { QueriesConfigError } from "./config/queries.js";
 export type { ValidationError } from "./config/validation.js";
 export { WorkflowConfigError } from "./config/workflow.js";
@@ -47,6 +56,15 @@ export {
 export { mergeKeyHistory,mergeRelationships, rekeyCollisions } from "./git/index.js";
 export type { InitOptions, InitResult } from "./init/index.js";
 export { initLoctt } from "./init/index.js";
+export type { DeleteLabelOptions } from "./labels/index.js";
+export {
+  assertLabelKeysRegistered,
+  createLabel,
+  deleteLabel,
+  editLabel,
+  findLabel,
+  LabelError,
+} from "./labels/index.js";
 export {
   assertSafeBasename,
   getAttachmentPath,

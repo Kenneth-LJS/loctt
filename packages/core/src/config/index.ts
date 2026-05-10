@@ -1,4 +1,13 @@
 export {
+  getLabelsConfigPath,
+  LabelsConfigError,
+  labelsConfigExists,
+  loadLabelsConfig,
+  parseLabelsConfig,
+  saveLabelsConfig,
+  serializeLabelsConfig,
+} from "./labels.js";
+export {
   getProjectsConfigPath,
   loadProjectsConfig,
   parseProjectsConfig,
