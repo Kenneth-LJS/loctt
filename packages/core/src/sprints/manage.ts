@@ -15,6 +15,33 @@ export class SprintError extends Error {
   }
 }
 
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const VALID_SPRINT_STATES: ReadonlySet<SprintState> = new Set([
+  "active",
+  "completed",
+  "future",
+]);
+
+function assertIsoDate(value: string, field: string): void {
+  if (!ISO_DATE_PATTERN.test(value)) {
+    throw new SprintError(`${field} must be YYYY-MM-DD, got: ${value}`);
+  }
+}
+
+/**
+ * Allowed sprint state transitions. `future` and `active` can move
+ * freely between themselves and to `completed`. Re-opening a
+ * `completed` sprint requires explicit edit through this layer
+ * (callers that need it pass force=true) — without that guard, a
+ * casual reopen could disrupt downstream reporting that assumes
+ * "completed" is a terminal state.
+ */
+const SPRINT_STATE_TRANSITIONS: Readonly<Record<SprintState, ReadonlySet<SprintState>>> = {
+  future: new Set<SprintState>(["future", "active", "completed"]),
+  active: new Set<SprintState>(["future", "active", "completed"]),
+  completed: new Set<SprintState>(["completed"]),
+};
+
 export function findSprint(config: SprintsConfig, key: string): SprintDef {
   const def = config.sprints.find(s => s.key === key);
   if (!def) throw new SprintError(`unknown sprint: ${key}`);
@@ -25,6 +52,18 @@ export async function createSprint(
   locttDir: string,
   def: SprintDef,
 ): Promise<void> {
+  assertIsoDate(def.start_date, "start_date");
+  assertIsoDate(def.end_date, "end_date");
+  if (def.end_date < def.start_date) {
+    throw new SprintError(
+      `end_date (${def.end_date}) must not be before start_date (${def.start_date})`,
+    );
+  }
+  if (!VALID_SPRINT_STATES.has(def.state)) {
+    throw new SprintError(
+      `state must be one of active|completed|future, got: ${def.state}`,
+    );
+  }
   await withStateLock(locttDir, async () => {
     const config = await loadSprintsConfig(locttDir);
     if (config.sprints.some(s => s.key === def.key)) {
@@ -40,6 +79,12 @@ export interface EditSprintOptions {
   readonly end_date?: string;
   readonly state?: SprintState;
   readonly goal?: string | null;
+  /**
+   * If true, allow a state transition that would otherwise be
+   * blocked (currently: re-opening a completed sprint). Defaults
+   * to false.
+   */
+  readonly force?: boolean;
 }
 
 export async function editSprint(
@@ -47,6 +92,13 @@ export async function editSprint(
   key: string,
   changes: EditSprintOptions,
 ): Promise<void> {
+  if (changes.start_date !== undefined) assertIsoDate(changes.start_date, "start_date");
+  if (changes.end_date !== undefined) assertIsoDate(changes.end_date, "end_date");
+  if (changes.state !== undefined && !VALID_SPRINT_STATES.has(changes.state)) {
+    throw new SprintError(
+      `state must be one of active|completed|future, got: ${changes.state}`,
+    );
+  }
   await withStateLock(locttDir, async () => {
     const config = await loadSprintsConfig(locttDir);
     const idx = config.sprints.findIndex(s => s.key === key);
@@ -54,12 +106,31 @@ export async function editSprint(
     const existing = config.sprints[idx];
     if (!existing) throw new SprintError(`unknown sprint: ${key}`);
 
+    const nextStart = changes.start_date ?? existing.start_date;
+    const nextEnd = changes.end_date ?? existing.end_date;
+    if (nextEnd < nextStart) {
+      throw new SprintError(
+        `end_date (${nextEnd}) must not be before start_date (${nextStart})`,
+      );
+    }
+
+    const nextState = changes.state ?? existing.state;
+    if (nextState !== existing.state && changes.force !== true) {
+      const allowed = SPRINT_STATE_TRANSITIONS[existing.state];
+      if (!allowed.has(nextState)) {
+        throw new SprintError(
+          `state transition '${existing.state}' -> '${nextState}' is not allowed; ` +
+          `pass force=true to override`,
+        );
+      }
+    }
+
     const updated: SprintDef = {
       key: existing.key,
       label: changes.label ?? existing.label,
-      start_date: changes.start_date ?? existing.start_date,
-      end_date: changes.end_date ?? existing.end_date,
-      state: changes.state ?? existing.state,
+      start_date: nextStart,
+      end_date: nextEnd,
+      state: nextState,
       ...(changes.goal === null
         ? {}
         : changes.goal !== undefined
