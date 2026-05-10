@@ -15,16 +15,19 @@ import {
   buildShowModel,
   CONFIG_KEYS,
   createLabel,
+  createMilestone,
   createProject,
   createTask,
   createUser,
   deleteLabel,
+  deleteMilestone,
   deleteProject,
   deleteTask,
   deleteUser,
   detachFile,
   disableGit,
   editLabel,
+  editMilestone,
   editProject,
   enableGit,
   getConfigValue,
@@ -38,11 +41,13 @@ import {
   loadAllTasks,
   loadAllUsers,
   loadLabelsConfig,
+  loadMilestonesConfig,
   loadOptionalConfigs,
   loadProjectsConfig,
   loadState,
   lookupTask,
   migrateToCurrent,
+  MilestoneError,
   planMigration,
   ProjectError,
   publish,
@@ -115,6 +120,7 @@ Commands:
   project <list|create|edit|delete|set-default> ...
   user <list|current|switch|create|edit|archive|unarchive|delete> ...
   label <list|create|edit|delete> ...
+  milestone <list|create|edit|delete> ...
   rerank <source> <relationship> <target> [--before <task>] [--after <task>]
   create <title> [--project <key>] [--status <s>] [--priority <p>] [--type <t>]
   list [--query <q>] [--view <v>] [--limit <n>] [--archived]
@@ -1224,6 +1230,107 @@ export async function main(): Promise<void> {
           }
           default:
             console.error(`Usage: loctt label <list|create|edit|delete> ...`);
+            process.exitCode = 1;
+            break;
+        }
+        break;
+      }
+
+      case "milestone": {
+        const sub = args[1];
+        const locttDir = resolveLocttDir(root);
+        switch (sub) {
+          case "list": {
+            const cfg = await loadMilestonesConfig(locttDir);
+            for (const m of cfg.milestones) {
+              const arch = m.archived === true ? " (archived)" : "";
+              const due = m.target_date ? `  due ${m.target_date}` : "";
+              console.log(`${m.key}\t${m.label}${due}${arch}`);
+            }
+            break;
+          }
+          case "create": {
+            const key = args[2];
+            if (!key) {
+              console.error(`Usage: loctt milestone create <key> [--label <label>] [--target-date <YYYY-MM-DD>]`);
+              process.exitCode = 1;
+              break;
+            }
+            const label = getArg(args, "--label") ?? key;
+            const targetDate = getArg(args, "--target-date");
+            try {
+              await createMilestone(locttDir, {
+                key,
+                label,
+                ...(targetDate !== undefined ? { target_date: targetDate } : {}),
+              });
+              console.log(`Created milestone ${key}`);
+            } catch (err) {
+              if (err instanceof MilestoneError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "edit": {
+            const key = args[2];
+            if (!key) {
+              console.error(`Usage: loctt milestone edit <key> [--label <l>] [--target-date <YYYY-MM-DD|->] [--archived <true|false>]`);
+              process.exitCode = 1;
+              break;
+            }
+            const label = getArg(args, "--label");
+            const td = getArg(args, "--target-date");
+            const archivedArg = getArg(args, "--archived");
+            try {
+              await editMilestone(locttDir, key, {
+                ...(label !== undefined ? { label } : {}),
+                ...(td !== undefined ? { target_date: td === "-" ? null : td } : {}),
+                ...(archivedArg !== undefined ? { archived: archivedArg === "true" } : {}),
+              });
+              console.log(`Updated milestone ${key}`);
+            } catch (err) {
+              if (err instanceof MilestoneError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          case "delete": {
+            const key = args[2];
+            if (!key) {
+              console.error(`Usage: loctt milestone delete <key> [--remap-to <other>]`);
+              process.exitCode = 1;
+              break;
+            }
+            const remapTo = getArg(args, "--remap-to");
+            try {
+              const result = await deleteMilestone(locttDir, key, {
+                ...(remapTo !== undefined ? { remapTo } : {}),
+              });
+              if (result.affectedTaskCount > 0) {
+                const action = remapTo !== undefined ? `remapped to '${remapTo}'` : "cleared from";
+                console.log(`${action} ${result.affectedTaskCount} task(s)`);
+              }
+              console.log(`Deleted milestone ${key}`);
+            } catch (err) {
+              if (err instanceof MilestoneError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = 1;
+                break;
+              }
+              throw err;
+            }
+            break;
+          }
+          default:
+            console.error(`Usage: loctt milestone <list|create|edit|delete> ...`);
             process.exitCode = 1;
             break;
         }

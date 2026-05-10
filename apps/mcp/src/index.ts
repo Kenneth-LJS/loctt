@@ -16,16 +16,19 @@ import {
   buildShowModel,
   CONFIG_KEYS,
   createLabel,
+  createMilestone,
   createProject,
   createTask,
   createUser,
   deleteLabel,
+  deleteMilestone,
   deleteProject,
   deleteTask,
   deleteUser,
   detachFile,
   disableGit,
   editLabel,
+  editMilestone,
   editProject,
   enableGit,
   getConfigValue,
@@ -39,12 +42,14 @@ import {
   loadAllTasks,
   loadAllUsers,
   loadLabelsConfig,
+  loadMilestonesConfig,
   loadOptionalConfigs,
   loadProjectsConfig,
   loadQueriesConfig,
   loadState,
   loadWorkflowConfig,
   lookupTask,
+  MilestoneError,
   ProjectError,
   publish,
   readHistory,
@@ -402,6 +407,38 @@ export function getTools(): McpTool[] {
       name: "label_list",
       description: "List labels defined in labels.yaml.",
       inputSchema: {},
+    },
+    {
+      name: "milestone_list",
+      description: "List milestones defined in milestones.yaml.",
+      inputSchema: {},
+    },
+    {
+      name: "milestone_create",
+      description: "Register a new milestone with optional target date.",
+      inputSchema: {
+        key: z.string(),
+        label: z.string(),
+        target_date: z.string().optional().describe("YYYY-MM-DD"),
+      },
+    },
+    {
+      name: "milestone_edit",
+      description: "Edit a milestone. Pass null target_date to clear.",
+      inputSchema: {
+        key: z.string(),
+        label: z.string().optional(),
+        target_date: z.string().nullable().optional(),
+        archived: z.boolean().optional(),
+      },
+    },
+    {
+      name: "milestone_delete",
+      description: "Delete a milestone, optionally remapping affected tasks to another milestone.",
+      inputSchema: {
+        key: z.string(),
+        remap_to: z.string().optional(),
+      },
     },
     {
       name: "label_create",
@@ -1084,6 +1121,55 @@ export async function executeTool(
           return text(JSON.stringify({ deleted: args["key"], ...result }, null, 2));
         } catch (err) {
           if (err instanceof LabelError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "milestone_list": {
+        const cfg = await loadMilestonesConfig(locttDir);
+        return text(JSON.stringify(cfg, null, 2));
+      }
+
+      case "milestone_create": {
+        try {
+          const td = args["target_date"] as string | undefined;
+          await createMilestone(locttDir, {
+            key: args["key"] as string,
+            label: args["label"] as string,
+            ...(td !== undefined ? { target_date: td } : {}),
+          });
+          return text(`Created milestone ${String(args["key"])}`);
+        } catch (err) {
+          if (err instanceof MilestoneError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "milestone_edit": {
+        try {
+          const td = args["target_date"] as string | null | undefined;
+          const archived = args["archived"] as boolean | undefined;
+          await editMilestone(locttDir, args["key"] as string, {
+            ...(args["label"] !== undefined ? { label: args["label"] as string } : {}),
+            ...("target_date" in args ? { target_date: td ?? null } : {}),
+            ...(archived !== undefined ? { archived } : {}),
+          });
+          return text(`Updated milestone ${String(args["key"])}`);
+        } catch (err) {
+          if (err instanceof MilestoneError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "milestone_delete": {
+        try {
+          const remapTo = args["remap_to"] as string | undefined;
+          const result = await deleteMilestone(locttDir, args["key"] as string, {
+            ...(remapTo !== undefined ? { remapTo } : {}),
+          });
+          return text(JSON.stringify({ deleted: args["key"], ...result }, null, 2));
+        } catch (err) {
+          if (err instanceof MilestoneError) return errorResult(err.message);
           throw err;
         }
       }

@@ -8,6 +8,15 @@ export {
   serializeLabelsConfig,
 } from "./labels.js";
 export {
+  getMilestonesConfigPath,
+  loadMilestonesConfig,
+  MilestonesConfigError,
+  milestonesConfigExists,
+  parseMilestonesConfig,
+  saveMilestonesConfig,
+  serializeMilestonesConfig,
+} from "./milestones.js";
+export {
   getProjectsConfigPath,
   loadProjectsConfig,
   parseProjectsConfig,
