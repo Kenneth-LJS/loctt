@@ -141,7 +141,7 @@ Commands:
   unlink <task> <relationship> <target>
   archive <task>
   unarchive <task>
-  delete <task> --force
+  delete <task> [--hard]            Soft-delete (archive) by default; --hard removes the task directory
   body <task> [--set <text>] [--append <text>]
   log <task> [--limit <n>]
   attach <task> <file-path> [--force]
@@ -629,15 +629,28 @@ export async function main(): Promise<void> {
       case "delete": {
         const ref = args[1];
         if (!ref) {
-          console.error("Usage: loctt delete <task> --force");
+          console.error("Usage: loctt delete <task> [--hard]");
           process.exitCode = 1;
           break;
         }
-        const force = hasFlag(args, "--force");
+        const hard = hasFlag(args, "--hard");
         const locttDir = resolveLocttDir(root);
         const task = await lookupTask(locttDir, ref);
-        await deleteTask(locttDir, task.frontmatter.id, { force });
-        console.log(`Deleted ${task.frontmatter.key}`);
+        if (hard) {
+          await deleteTask(locttDir, task.frontmatter.id, { force: true });
+          console.log(`Hard-deleted ${task.frontmatter.key}`);
+        } else {
+          if (task.frontmatter.archived) {
+            console.error(
+              `Task ${task.frontmatter.key} is already archived. ` +
+              `Use --hard to permanently remove it.`,
+            );
+            process.exitCode = 1;
+            break;
+          }
+          await archiveTask(locttDir, task.frontmatter.id);
+          console.log(`Archived ${task.frontmatter.key} (use --hard to remove permanently)`);
+        }
         break;
       }
 

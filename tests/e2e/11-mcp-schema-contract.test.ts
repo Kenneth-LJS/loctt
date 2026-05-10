@@ -64,6 +64,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "get_calendar",
+            },
+            {
+              "hasDescription": true,
               "name": "get_config",
             },
             {
@@ -100,6 +104,22 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "label_create",
+            },
+            {
+              "hasDescription": true,
+              "name": "label_delete",
+            },
+            {
+              "hasDescription": true,
+              "name": "label_edit",
+            },
+            {
+              "hasDescription": true,
+              "name": "label_list",
+            },
+            {
+              "hasDescription": true,
               "name": "link_tasks",
             },
             {
@@ -112,7 +132,63 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "milestone_create",
+            },
+            {
+              "hasDescription": true,
+              "name": "milestone_delete",
+            },
+            {
+              "hasDescription": true,
+              "name": "milestone_edit",
+            },
+            {
+              "hasDescription": true,
+              "name": "milestone_list",
+            },
+            {
+              "hasDescription": true,
+              "name": "project_create",
+            },
+            {
+              "hasDescription": true,
+              "name": "project_delete",
+            },
+            {
+              "hasDescription": true,
+              "name": "project_edit",
+            },
+            {
+              "hasDescription": true,
+              "name": "project_list",
+            },
+            {
+              "hasDescription": true,
+              "name": "project_set_default",
+            },
+            {
+              "hasDescription": true,
+              "name": "reorder_relationship",
+            },
+            {
+              "hasDescription": true,
               "name": "replace_task_body",
+            },
+            {
+              "hasDescription": true,
+              "name": "sprint_create",
+            },
+            {
+              "hasDescription": true,
+              "name": "sprint_delete",
+            },
+            {
+              "hasDescription": true,
+              "name": "sprint_edit",
+            },
+            {
+              "hasDescription": true,
+              "name": "sprint_list",
             },
             {
               "hasDescription": true,
@@ -133,6 +209,38 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "update_task",
+            },
+            {
+              "hasDescription": true,
+              "name": "user_archive",
+            },
+            {
+              "hasDescription": true,
+              "name": "user_create",
+            },
+            {
+              "hasDescription": true,
+              "name": "user_current",
+            },
+            {
+              "hasDescription": true,
+              "name": "user_delete",
+            },
+            {
+              "hasDescription": true,
+              "name": "user_edit",
+            },
+            {
+              "hasDescription": true,
+              "name": "user_list",
+            },
+            {
+              "hasDescription": true,
+              "name": "user_switch",
+            },
+            {
+              "hasDescription": true,
+              "name": "user_unarchive",
             },
           ]
         `);

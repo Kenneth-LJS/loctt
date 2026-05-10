@@ -51,7 +51,7 @@ export function opToToolCall(op: Op): { name: string; args: Record<string, unkno
     case "unarchive":
       return { name: "unarchive_task", args: { ref: op.ref } };
     case "delete":
-      return { name: "delete_task", args: { ref: op.ref, confirm: true } };
+      return { name: "delete_task", args: { ref: op.ref, hard: true, confirm: true } };
     case "link":
       return { name: "link_tasks", args: { ref: op.from, type: op.type, target: op.to } };
     case "unlink":

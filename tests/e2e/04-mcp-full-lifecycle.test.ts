@@ -67,7 +67,7 @@ describe("E2E journey: MCP-only full lifecycle", () => {
         const unset = await client.callTool("unset_field", { ref: "T-1", field: "priority" });
         expect(unset.isError).toBeFalsy();
 
-        const del = await client.callTool("delete_task", { ref: "T-1", confirm: true });
+        const del = await client.callTool("delete_task", { ref: "T-1", hard: true, confirm: true });
         expect(del.isError).toBeFalsy();
       } finally {
         await client.close();

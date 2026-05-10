@@ -116,7 +116,8 @@ Loctt aims for full parity between the CLI and the MCP server: an LLM agent shou
 | Append body | `body <ref> --append <text>` | `append_task_body` |
 | Archive | `archive <ref>` | `archive_task` |
 | Unarchive | `unarchive <ref>` | `unarchive_task` |
-| Delete | `delete <ref> --force` | `delete_task` (needs `confirm: true`) |
+| Delete (soft) | `delete <ref>` | `delete_task` |
+| Delete (hard) | `delete <ref> --hard` | `delete_task` with `hard: true, confirm: true` |
 | Link | `link <ref> <rel> <target>` | `link_tasks` |
 | Unlink | `unlink <ref> <rel> <target>` | `unlink_tasks` |
 | History | `log <ref> [--limit]` | `task_history` |
@@ -342,7 +343,7 @@ Under `tests/e2e/`. Same fixtures, same cleanup. Each journey exercises a full u
 7. Git-backed, no remote: enable → create → publish → sync round-trip
 8. Git-backed, with fake bare remote: enable → create → publish (auto-pushes) → mutate bare out-of-band → sync (auto-fetches)
 9. `loctt config` journey: list defaults, enable git, list shows enabled, toggle `auto_push` off, publish doesn't push, set custom branch, publish lands on custom branch
-10. Error-path journey: unknown command, bad query, missing `.loctt/`, bad ref, cycle attempt, delete without `--force`, `config set` before `git enable`
+10. Error-path journey: unknown command, bad query, missing `.loctt/`, bad ref, cycle attempt, double-delete on already-archived task without `--hard`, `config set` before `git enable`
 11. MCP schema contract: fetch `tools/list`, snapshot and compare
 
 **Exit:** all 11 E2E journeys pass locally.
