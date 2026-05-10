@@ -1,32 +1,36 @@
+import { z } from "zod";
+
 /** Sort direction for query results. */
-export type SortDirection = "asc" | "desc";
+export const SortDirectionSchema = z.enum(["asc", "desc"]);
+export type SortDirection = z.infer<typeof SortDirectionSchema>;
 
 /** A single sort specifier in a saved query. */
-export interface QuerySort {
-  readonly field: string;
-  readonly direction: SortDirection;
-}
+export const QuerySortSchema = z.object({
+  field: z.string().min(1),
+  direction: SortDirectionSchema,
+}).strict();
+export type QuerySort = z.infer<typeof QuerySortSchema>;
 
-/** A saved query definition from queries.yaml. */
-export interface SavedQuery {
-  /**
-   * Stable unique identifier (ulid). User-pinned filters and other
-   * surfaces reference views by this — `name` is just a display
-   * label and can be renamed without breaking references.
-   */
-  readonly id: string;
-  readonly name: string;
-  readonly query: string;
-  readonly sort?: readonly QuerySort[];
-  /**
-   * Soft-delete flag. Archived views are hidden from default
-   * lists and pickers but remain runnable by id. Hard-delete
-   * removes the entry entirely.
-   */
-  readonly archived?: boolean;
-}
+/**
+ * A saved query definition from queries.yaml.
+ *
+ * `id` is a stable unique identifier (ulid). User-pinned filters
+ * and other surfaces reference views by this — `name` is just a
+ * display label and can be renamed without breaking references.
+ *
+ * `archived` hides from default lists; the entry is still
+ * runnable by id. Hard-delete removes it entirely.
+ */
+export const SavedQuerySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  query: z.string().min(1),
+  sort: z.array(QuerySortSchema).optional(),
+  archived: z.boolean().optional(),
+}).strict();
+export type SavedQuery = z.infer<typeof SavedQuerySchema>;
 
-/** The full queries.yaml shape. */
-export interface QueriesConfig {
-  readonly queries: readonly SavedQuery[];
-}
+export const QueriesConfigSchema = z.object({
+  queries: z.array(SavedQuerySchema),
+}).strict();
+export type QueriesConfig = z.infer<typeof QueriesConfigSchema>;

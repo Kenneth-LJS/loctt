@@ -2,16 +2,14 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { LabelsConfig } from "@loctt/contracts";
+import { LabelsConfigSchema } from "@loctt/contracts";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { z } from "zod";
 
 import { getConfigDir } from "../paths/index.js";
-import {
-  assertArray as _assertArray,
-  assertObject as _assertObject,
-  assertString as _assertString,
-} from "../utils/assert.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
+import { formatZodIssues } from "./zod-error.js";
 
 export class LabelsConfigError extends Error {
   constructor(message: string) {
@@ -20,69 +18,33 @@ export class LabelsConfigError extends Error {
   }
 }
 
-function assertString(value: unknown, path: string): asserts value is string {
-  _assertString(value, path, LabelsConfigError);
-}
-
-function assertArray(value: unknown, path: string): asserts value is unknown[] {
-  _assertArray(value, path, LabelsConfigError);
-}
-
-function assertObject(value: unknown, path: string): asserts value is Record<string, unknown> {
-  _assertObject(value, path, LabelsConfigError);
-}
-
 const LABELS_FILE = "labels.yaml";
-const KEY_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
-/** Returns the path to .loctt/config/labels.yaml. */
 export function getLabelsConfigPath(locttDir: string): string {
   return join(getConfigDir(locttDir), LABELS_FILE);
-}
-
-function assertLabelKey(value: unknown, path: string): asserts value is string {
-  assertString(value, path);
-  if (!KEY_PATTERN.test(value)) {
-    throw new LabelsConfigError(
-      `${path} must be a slug (lowercase letters, digits, hyphen, underscore), got: ${value}`,
-    );
-  }
 }
 
 /** Parses raw YAML content into a LabelsConfig. */
 export function parseLabelsConfig(yamlContent: string): LabelsConfig {
   const raw: unknown = parseYaml(yamlContent);
-  assertObject(raw, "labels config");
-
-  const labels = raw["labels"];
-  assertArray(labels, "labels");
-
+  let parsed: LabelsConfig;
+  try {
+    parsed = LabelsConfigSchema.parse(raw);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      throw new LabelsConfigError(formatZodIssues("labels config", err));
+    }
+    throw err;
+  }
+  // Uniqueness check (zod schema doesn't enforce cross-element constraints).
   const seen = new Set<string>();
-  const parsed = labels.map((item, i) => {
-    assertObject(item, `labels[${i}]`);
-    assertLabelKey(item["key"], `labels[${i}].key`);
-    assertString(item["label"], `labels[${i}].label`);
-    const color = item["color"];
-    if (color !== undefined) assertString(color, `labels[${i}].color`);
-    const archived = item["archived"];
-    if (archived !== undefined && typeof archived !== "boolean") {
-      throw new LabelsConfigError(`labels[${i}].archived must be a boolean`);
+  for (const l of parsed.labels) {
+    if (seen.has(l.key)) {
+      throw new LabelsConfigError(`duplicate label key: ${l.key}`);
     }
-
-    if (seen.has(item["key"])) {
-      throw new LabelsConfigError(`duplicate label key: ${item["key"]}`);
-    }
-    seen.add(item["key"]);
-
-    return {
-      key: item["key"],
-      label: item["label"],
-      ...(color !== undefined ? { color: color } : {}),
-      ...(archived === true ? { archived: true } : {}),
-    };
-  });
-
-  return { labels: parsed };
+    seen.add(l.key);
+  }
+  return parsed;
 }
 
 /** Serializes a LabelsConfig to YAML with stable key order. */
@@ -97,11 +59,6 @@ export function serializeLabelsConfig(config: LabelsConfig): string {
   });
 }
 
-/**
- * Loads labels.yaml. Returns an empty config when the file is
- * absent — labels are an additive concept, so trackers without any
- * registered labels just have an empty registry.
- */
 export async function loadLabelsConfig(locttDir: string): Promise<LabelsConfig> {
   const path = getLabelsConfigPath(locttDir);
   if (!(await fileExists(path))) return { labels: [] };
@@ -109,7 +66,6 @@ export async function loadLabelsConfig(locttDir: string): Promise<LabelsConfig> 
   return parseLabelsConfig(raw);
 }
 
-/** Atomically writes labels.yaml. */
 export async function saveLabelsConfig(
   locttDir: string,
   config: LabelsConfig,

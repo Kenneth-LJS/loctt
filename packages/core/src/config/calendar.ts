@@ -2,16 +2,15 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { CalendarConfig } from "@loctt/contracts";
+import { CalendarConfigSchema } from "@loctt/contracts";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { z } from "zod";
 
 import { getConfigDir } from "../paths/index.js";
-import {
-  assertArray as _assertArray,
-  assertObject as _assertObject,
-  assertString as _assertString,
-} from "../utils/assert.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
+import { coerceYaml } from "./yaml-coerce.js";
+import { formatZodIssues } from "./zod-error.js";
 
 export class CalendarConfigError extends Error {
   constructor(message: string) {
@@ -20,74 +19,28 @@ export class CalendarConfigError extends Error {
   }
 }
 
-function assertString(value: unknown, path: string): asserts value is string {
-  _assertString(value, path, CalendarConfigError);
-}
-
-function assertArray(value: unknown, path: string): asserts value is unknown[] {
-  _assertArray(value, path, CalendarConfigError);
-}
-
-function assertObject(value: unknown, path: string): asserts value is Record<string, unknown> {
-  _assertObject(value, path, CalendarConfigError);
-}
-
 const CALENDAR_FILE = "calendar.yaml";
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export function getCalendarConfigPath(locttDir: string): string {
   return join(getConfigDir(locttDir), CALENDAR_FILE);
 }
 
-function assertWeekday(value: unknown, path: string): number {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 6) {
-    throw new CalendarConfigError(`${path} must be an integer 0..6`);
-  }
-  return value;
-}
-
-function assertDateString(value: unknown, path: string): string {
-  let s: string;
-  if (value instanceof Date) {
-    s = value.toISOString().slice(0, 10);
-  } else if (typeof value === "string") {
-    s = value;
-  } else {
-    throw new CalendarConfigError(`${path} must be a YYYY-MM-DD string`);
-  }
-  if (!DATE_PATTERN.test(s)) {
-    throw new CalendarConfigError(`${path} must be YYYY-MM-DD, got: ${s}`);
-  }
-  return s;
-}
-
 export function parseCalendarConfig(yamlContent: string): CalendarConfig {
-  const raw: unknown = parseYaml(yamlContent);
-  assertObject(raw, "calendar config");
-
-  assertString(raw["timezone"], "timezone");
-  const firstDayOfWeek = assertWeekday(raw["first_day_of_week"], "first_day_of_week");
-
-  assertArray(raw["working_days"], "working_days");
-  const workingDays = raw["working_days"].map((d, i) => assertWeekday(d, `working_days[${i}]`));
-
-  let holidays: { date: string; label: string }[] = [];
-  if (raw["holidays"] !== undefined) {
-    assertArray(raw["holidays"], "holidays");
-    holidays = raw["holidays"].map((h, i) => {
-      assertObject(h, `holidays[${i}]`);
-      const date = assertDateString(h["date"], `holidays[${i}].date`);
-      assertString(h["label"], `holidays[${i}].label`);
-      return { date, label: h["label"] };
-    });
+  const raw = coerceYaml(parseYaml(yamlContent));
+  // `holidays` was historically optional in the file but required
+  // in the type. Default to [] before the schema parses.
+  if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+    const r = raw as Record<string, unknown>;
+    if (r["holidays"] === undefined) r["holidays"] = [];
   }
-
-  return {
-    timezone: raw["timezone"],
-    first_day_of_week: firstDayOfWeek,
-    working_days: workingDays,
-    holidays,
-  };
+  try {
+    return CalendarConfigSchema.parse(raw);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      throw new CalendarConfigError(formatZodIssues("calendar config", err));
+    }
+    throw err;
+  }
 }
 
 export function serializeCalendarConfig(config: CalendarConfig): string {

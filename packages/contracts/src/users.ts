@@ -1,28 +1,31 @@
+import { z } from "zod";
+
+import { IanaTimezone } from "./brands.js";
+
 /**
  * A single user's profile. Stored as `.loctt/users/<id>/profile.yaml`.
- * `id` is a generated UUID — never user-supplied — and is the
+ * `id` is a generated ULID — never user-supplied — and is the
  * identifier referenced by `assignee` / `reporter` task fields.
  *
  * `name` and other metadata are mutable. Names are not unique
- * (UUIDs disambiguate); the UI shows truncated UUIDs alongside
+ * (ULIDs disambiguate); the UI shows truncated IDs alongside
  * names where ambiguity matters.
+ *
+ * `archived` hides the user from default pickers; tasks already
+ * assigned to them continue to display the name.
  */
-export interface UserProfile {
-  readonly id: string;
-  readonly name: string;
-  readonly email?: string;
-  /** IANA timezone (e.g. "America/Los_Angeles"). */
-  readonly timezone: string;
-  /** Filename of the avatar within the user's folder, when present. */
-  readonly avatar?: string;
-  /**
-   * Soft-delete flag. Archived users hide from pickers but tasks
-   * already assigned to them continue to display the name.
-   */
-  readonly archived?: boolean;
-}
+export const UserProfileSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  email: z.email().optional(),
+  timezone: IanaTimezone,
+  avatar: z.string().min(1).optional(),
+  archived: z.boolean().optional(),
+}).strict();
+export type UserProfile = z.infer<typeof UserProfileSchema>;
 
-/** A list of registered user profiles. Returned by enumeration APIs. */
-export interface UsersList {
-  readonly users: readonly UserProfile[];
-}
+/** A list of registered user profiles. */
+export const UsersListSchema = z.object({
+  users: z.array(UserProfileSchema),
+}).strict();
+export type UsersList = z.infer<typeof UsersListSchema>;

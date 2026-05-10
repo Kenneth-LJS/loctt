@@ -1,16 +1,15 @@
 import { readdir, readFile } from "node:fs/promises";
 
 import type { UserProfile } from "@loctt/contracts";
+import { UserProfileSchema } from "@loctt/contracts";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { z } from "zod";
 
+import { formatZodIssues } from "../config/zod-error.js";
 import {
   getUserProfilePath,
   getUsersDir,
 } from "../paths/index.js";
-import {
-  assertObject as _assertObject,
-  assertString as _assertString,
-} from "../utils/assert.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
 
@@ -21,42 +20,19 @@ export class UserProfileError extends Error {
   }
 }
 
-function assertString(value: unknown, path: string): asserts value is string {
-  _assertString(value, path, UserProfileError);
-}
-
-function assertObject(value: unknown, path: string): asserts value is Record<string, unknown> {
-  _assertObject(value, path, UserProfileError);
-}
-
 /**
- * Parses a user profile from raw YAML content. Required fields:
- * `id`, `name`, `timezone`. Optional: `email`, `avatar`, `archived`.
+ * Parses a user profile from raw YAML content.
  */
 export function parseUserProfile(yamlContent: string): UserProfile {
   const raw: unknown = parseYaml(yamlContent);
-  assertObject(raw, "user profile");
-  assertString(raw["id"], "id");
-  assertString(raw["name"], "name");
-  assertString(raw["timezone"], "timezone");
-
-  const email = raw["email"];
-  if (email !== undefined) assertString(email, "email");
-  const avatar = raw["avatar"];
-  if (avatar !== undefined) assertString(avatar, "avatar");
-  const archived = raw["archived"];
-  if (archived !== undefined && typeof archived !== "boolean") {
-    throw new UserProfileError("archived must be a boolean");
+  try {
+    return UserProfileSchema.parse(raw);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      throw new UserProfileError(formatZodIssues("user profile", err));
+    }
+    throw err;
   }
-
-  return {
-    id: raw["id"],
-    name: raw["name"],
-    timezone: raw["timezone"],
-    ...(email !== undefined ? { email: email } : {}),
-    ...(avatar !== undefined ? { avatar: avatar } : {}),
-    ...(archived === true ? { archived: true } : {}),
-  };
 }
 
 /** Serializes a profile to YAML with stable key order. */

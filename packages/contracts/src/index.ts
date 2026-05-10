@@ -1,13 +1,45 @@
-export type { CalendarConfig, HolidayDef } from "./calendar.js";
+export {
+  HexColor,
+  IanaTimezone,
+  IsoDate,
+  SlugKey,
+  SprintKey,
+} from "./brands.js";
+export type {
+  CalendarConfig,
+  HolidayDef,
+} from "./calendar.js";
+export {
+  CalendarConfigSchema,
+  HolidayDefSchema,
+} from "./calendar.js";
 export type { HistoryEntry, HistoryKind } from "./history.js";
 export type { LabelDef, LabelsConfig } from "./labels.js";
+export {
+  LabelDefSchema,
+  LabelsConfigSchema,
+} from "./labels.js";
 export type { MilestoneDef, MilestonesConfig } from "./milestones.js";
+export {
+  MilestoneDefSchema,
+  MilestonesConfigSchema,
+} from "./milestones.js";
 export type { ProjectDef, ProjectsConfig } from "./projects.js";
+export {
+  ProjectDefSchema,
+  ProjectsConfigSchema,
+} from "./projects.js";
 export type {
   QueriesConfig,
   QuerySort,
   SavedQuery,
   SortDirection,
+} from "./query.js";
+export {
+  QueriesConfigSchema,
+  QuerySortSchema,
+  SavedQuerySchema,
+  SortDirectionSchema,
 } from "./query.js";
 export type {
   AttachmentResponse,
@@ -21,6 +53,11 @@ export type {
   UpdateTaskRequest,
 } from "./service.js";
 export type { SprintDef, SprintsConfig, SprintState } from "./sprints.js";
+export {
+  SprintDefSchema,
+  SprintsConfigSchema,
+  SprintStateSchema,
+} from "./sprints.js";
 export type {
   KeyAllocationState,
   LocttState,
@@ -39,6 +76,10 @@ export type {
   TaskRelationship,
 } from "./task.js";
 export type { UserProfile, UsersList } from "./users.js";
+export {
+  UserProfileSchema,
+  UsersListSchema,
+} from "./users.js";
 export type {
   CustomFieldDef,
   CustomFieldType,
