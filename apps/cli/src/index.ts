@@ -126,7 +126,7 @@ function usage(): void {
   console.log(`Usage: loctt <command> [options]
 
 Commands:
-  init [--prefix <prefix>] [--project-key <key>] [--project-label <label>] [--no-docs] [--yes]
+  init [--prefix <prefix>] [--project-key <key>] [--project-label <label>] [--no-docs]
   info
   doctor
   views                            List saved views from queries.yaml
@@ -147,7 +147,7 @@ Commands:
   calendar show                   Print the calendar config (timezone, working days, holidays)
   rerank <source> <relationship> <target> [--before <task>] [--after <task>]
   create <title> [--project <key>] [--status <s>] [--priority <p>] [--type <t>]
-  list [--query <q>] [--view <v>] [--limit <n>] [--archived]
+  list [--query <q>] [--view <v>] [--limit <n>] [--archived] [--project <key>]
                                    --archived: include archived tasks
                                    (hidden by default; saved views are respected as authored)
   show <task>
@@ -1047,7 +1047,7 @@ export async function main(): Promise<void> {
             break;
           }
           default:
-            console.error(`Usage: loctt project <list|create|edit|delete|set-default> ...`);
+            console.error(`Usage: loctt project <list|create|edit|archive|unarchive|delete|set-default> ...`);
             process.exitCode = 1;
             break;
         }
