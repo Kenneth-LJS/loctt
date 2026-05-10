@@ -1521,7 +1521,7 @@ export async function main(): Promise<void> {
           case "edit": {
             const key = args[2];
             if (!key) {
-              console.error(`Usage: loctt sprint edit <key> [--label <l>] [--start <d>] [--end <d>] [--state <s>] [--goal <g|->]`);
+              console.error(`Usage: loctt sprint edit <key> [--label <l>] [--start <d>] [--end <d>] [--state <s>] [--goal <g|->] [--force]`);
               process.exitCode = 1;
               break;
             }
@@ -1529,6 +1529,7 @@ export async function main(): Promise<void> {
             const start = getArg(args, "--start");
             const end = getArg(args, "--end");
             const state = getArg(args, "--state");
+            const force = hasFlag(args, "--force");
             if (state !== undefined && state !== "active" && state !== "completed" && state !== "future") {
               console.error(`Error: --state must be one of active|completed|future`);
               process.exitCode = 1;
@@ -1542,6 +1543,7 @@ export async function main(): Promise<void> {
                 ...(end !== undefined ? { end_date: end } : {}),
                 ...(state !== undefined ? { state } : {}),
                 ...(goalArg !== undefined ? { goal: goalArg === "-" ? null : goalArg } : {}),
+                ...(force ? { force: true } : {}),
               });
               console.log(`Updated sprint ${key}`);
             } catch (err) {
