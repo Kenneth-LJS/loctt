@@ -788,6 +788,102 @@ describe("applyWorkflowEdit — custom field enum values", () => {
     expect(tasks[0]?.frontmatter.fields?.["tags"]).toEqual(["b"]);
   });
 
+  it("rejects a type change from number to string when existing data is incompatible", async () => {
+    // Add a number field, put 42 on a task, then try to change the
+    // type to string. The existing 42 isn't a string, so the edit
+    // must reject with a pointer to the task that's blocking it.
+    const wf0 = await loadWorkflowConfig(locttDir);
+    const withScore: WorkflowConfig = {
+      ...wf0,
+      custom_fields: [
+        ...wf0.custom_fields,
+        { key: "score", label: "Score", type: "number", multi: false, searchable: false },
+      ],
+    };
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await saveWorkflowConfig(locttDir, withScore);
+    await seedTaskWithCustomField("score", 42 as unknown as string);
+
+    const next: WorkflowConfig = {
+      ...withScore,
+      custom_fields: withScore.custom_fields.map(f =>
+        f.key === "score" ? { ...f, type: "string" as const } : f,
+      ),
+    };
+    await expect(applyWorkflowEdit(locttDir, next)).rejects.toThrow(
+      /custom_fields\.score type change to string is incompatible/,
+    );
+  });
+
+  it("allows a type change from number to string when no task carries data", async () => {
+    // Empty trackers should be able to evolve schemas freely.
+    const wf0 = await loadWorkflowConfig(locttDir);
+    const withScore: WorkflowConfig = {
+      ...wf0,
+      custom_fields: [
+        ...wf0.custom_fields,
+        { key: "score", label: "Score", type: "number", multi: false, searchable: false },
+      ],
+    };
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await saveWorkflowConfig(locttDir, withScore);
+
+    const next: WorkflowConfig = {
+      ...withScore,
+      custom_fields: withScore.custom_fields.map(f =>
+        f.key === "score" ? { ...f, type: "string" as const } : f,
+      ),
+    };
+    await expect(applyWorkflowEdit(locttDir, next)).resolves.toBeDefined();
+  });
+
+  it("rejects flipping multi:false to multi:true when existing data isn't an array", async () => {
+    const wf0 = await loadWorkflowConfig(locttDir);
+    const withTags: WorkflowConfig = {
+      ...wf0,
+      custom_fields: [
+        ...wf0.custom_fields,
+        { key: "tag", label: "Tag", type: "string", multi: false, searchable: false },
+      ],
+    };
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await saveWorkflowConfig(locttDir, withTags);
+    await seedTaskWithCustomField("tag", "hello");
+
+    const next: WorkflowConfig = {
+      ...withTags,
+      custom_fields: withTags.custom_fields.map(f =>
+        f.key === "tag" ? { ...f, multi: true } : f,
+      ),
+    };
+    await expect(applyWorkflowEdit(locttDir, next)).rejects.toThrow(/incompatible/);
+  });
+
+  it("allows flipping multi:false to multi:true when the existing scalar happens to satisfy the predicate as a length-1 wrap (still rejected — no auto-wrap)", async () => {
+    // Pin the policy: we DO NOT auto-wrap scalars into single-element
+    // arrays when the multi flag flips. The user has to decide. If
+    // this changes, update the test alongside the behavior.
+    const wf0 = await loadWorkflowConfig(locttDir);
+    const withTags: WorkflowConfig = {
+      ...wf0,
+      custom_fields: [
+        ...wf0.custom_fields,
+        { key: "tag", label: "Tag", type: "string", multi: false, searchable: false },
+      ],
+    };
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await saveWorkflowConfig(locttDir, withTags);
+    await seedTaskWithCustomField("tag", "hello");
+
+    const next: WorkflowConfig = {
+      ...withTags,
+      custom_fields: withTags.custom_fields.map(f =>
+        f.key === "tag" ? { ...f, multi: true } : f,
+      ),
+    };
+    await expect(applyWorkflowEdit(locttDir, next)).rejects.toThrow();
+  });
+
   it("drops the whole field when the only remaining multi value is dropped", async () => {
     // Edge case: a multi-enum with one value, that value gets remapped
     // to null. The field should disappear entirely (not be left as []).

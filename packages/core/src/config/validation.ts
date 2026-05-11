@@ -153,11 +153,78 @@ export function validateTaskAgainstWorkflow(
             });
           }
         }
+      } else if (def.type === "string" || def.type === "number"
+              || def.type === "date" || def.type === "boolean") {
+        // Strict per-type validation for non-enum fields.
+        //
+        // `multi: true` for any type means the value must be an
+        // array whose elements all satisfy the per-type predicate;
+        // `multi: false` means a single value satisfying the same
+        // predicate.
+        const checkItem = (v: unknown): string | undefined => {
+          switch (def.type) {
+            case "string":
+              return typeof v === "string"
+                ? undefined
+                : `expected string, got ${typeof v}`;
+            case "number":
+              return typeof v === "number" && Number.isFinite(v)
+                ? undefined
+                : `expected finite number, got ${describeType(v)}`;
+            case "boolean":
+              return typeof v === "boolean"
+                ? undefined
+                : `expected boolean, got ${typeof v}`;
+            case "date":
+              return typeof v === "string" && DATE_RE.test(v)
+                ? undefined
+                : `expected YYYY-MM-DD date string, got ${describeType(v)}`;
+            default:
+              return undefined;
+          }
+        };
+        if (def.multi) {
+          if (!Array.isArray(value)) {
+            errors.push({
+              field: `fields.${key}`,
+              message: `multi ${def.type} field must be an array`,
+            });
+          } else {
+            for (const [i, item] of value.entries()) {
+              const err = checkItem(item);
+              if (err) {
+                errors.push({
+                  field: `fields.${key}[${i}]`,
+                  message: err,
+                });
+              }
+            }
+          }
+        } else {
+          const err = checkItem(value);
+          if (err) {
+            errors.push({ field: `fields.${key}`, message: err });
+          }
+        }
       }
     }
   }
 
   return errors;
+}
+
+/** YYYY-MM-DD matcher for `date`-typed custom fields. */
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Human-readable description of a value's runtime type. `typeof null`
+ * is "object" which is misleading; this surface flags `null` and
+ * `array` distinctly so error messages are useful.
+ */
+function describeType(v: unknown): string {
+  if (v === null) return "null";
+  if (Array.isArray(v)) return "array";
+  return typeof v;
 }
 
 /**
