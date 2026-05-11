@@ -114,3 +114,114 @@ describe("task history", () => {
     expect(seenTimestamps.size).toBe(N);
   });
 });
+
+describe("history actor attribution", () => {
+  // Phase 6: appendHistory auto-stamps `actor` (current user id) on
+  // entries that don't already carry one. Switching the active user
+  // mid-flow yields entries attributed to distinct actors.
+
+  let root: string;
+  let locttDir: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-history-actor-"));
+    // Use a fully initialized tracker so users/ exists.
+    const { initLoctt } = await import("../init/init.js");
+    const { resolveLocttDir } = await import("../paths/index.js");
+    await initLoctt(root, { docs: false });
+    locttDir = resolveLocttDir(root);
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("stamps actor from the active user when one exists", async () => {
+    // initLoctt creates a default user and sets them as current.
+    const { readCurrentUserId } = await import("../users/current.js");
+    const activeId = await readCurrentUserId(locttDir);
+    expect(activeId).toBeTruthy();
+
+    await appendHistory(locttDir, "t1", [{
+      timestamp: "2026-04-16T10:00:00Z",
+      kind: "created",
+    }]);
+    const entries = await readHistory(locttDir, "t1");
+    expect(entries[0]?.actor).toBe(activeId);
+  });
+
+  it("two ops separated by a user switch attribute to different actors", async () => {
+    // The whole point of the feature: audit trails distinguish who
+    // did what across user switches.
+    const { createUser } = await import("../users/lifecycle.js");
+    const { switchCurrentUser } = await import("../users/manage.js");
+    const { readCurrentUserId } = await import("../users/current.js");
+    const aliceId = await readCurrentUserId(locttDir);
+    expect(aliceId).toBeTruthy();
+    const bob = await createUser(locttDir, { name: "Bob" });
+
+    await appendHistory(locttDir, "t1", [{
+      timestamp: "2026-04-16T10:00:00Z",
+      kind: "created",
+    }]);
+
+    await switchCurrentUser(locttDir, bob.id);
+
+    await appendHistory(locttDir, "t1", [{
+      timestamp: "2026-04-16T11:00:00Z",
+      kind: "field_change",
+      field: "status",
+      before: "not_started",
+      after: "in_progress",
+    }]);
+
+    const entries = await readHistory(locttDir, "t1");
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.actor).toBe(aliceId);
+    expect(entries[1]?.actor).toBe(bob.id);
+  });
+
+  it("preserves an explicit actor when the caller supplies one", async () => {
+    // Migration / recovery / import paths can pass actor in the
+    // entry; we don't overwrite it with the current user.
+    await appendHistory(locttDir, "t1", [{
+      timestamp: "2026-04-16T10:00:00Z",
+      kind: "created",
+      actor: "explicit-actor-id",
+    }]);
+    const entries = await readHistory(locttDir, "t1");
+    expect(entries[0]?.actor).toBe("explicit-actor-id");
+  });
+
+  it("leaves actor absent when there is no current user", async () => {
+    // Headless flow: remove the .current-user pointer so
+    // readCurrentUserId returns null. appendHistory must not stamp.
+    const { rm: rmFs } = await import("node:fs/promises");
+    const { getCurrentUserPath } = await import("../paths/index.js");
+    await rmFs(getCurrentUserPath(locttDir), { force: true });
+
+    await appendHistory(locttDir, "t1", [{
+      timestamp: "2026-04-16T10:00:00Z",
+      kind: "created",
+    }]);
+    const entries = await readHistory(locttDir, "t1");
+    expect(entries[0]).not.toHaveProperty("actor");
+  });
+
+  it("stamps each entry in a multi-entry batch with the same actor", async () => {
+    // A single setField call may emit multiple history entries (e.g.
+    // labels added + labels removed). All entries in one append must
+    // share the actor — they're a single logical operation.
+    const { readCurrentUserId } = await import("../users/current.js");
+    const activeId = await readCurrentUserId(locttDir);
+
+    await appendHistory(locttDir, "t1", [
+      { timestamp: "2026-04-16T10:00:00Z", kind: "label_added", meta: { label: "a" } },
+      { timestamp: "2026-04-16T10:00:00Z", kind: "label_added", meta: { label: "b" } },
+      { timestamp: "2026-04-16T10:00:00Z", kind: "label_removed", meta: { label: "c" } },
+    ]);
+    const entries = await readHistory(locttDir, "t1");
+    expect(entries).toHaveLength(3);
+    for (const e of entries) expect(e.actor).toBe(activeId);
+  });
+});
