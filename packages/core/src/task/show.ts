@@ -5,12 +5,20 @@ import type { Task } from "@loctt/contracts";
 
 import { getAttachmentsDir } from "../paths/index.js";
 import { lookupById, TaskNotFoundError } from "./lookup.js";
+import { mimeForFilename } from "./mime.js";
 
 /** Attachment metadata discovered from the task folder. */
 export interface AttachmentInfo {
   readonly name: string;
   readonly path: string;
   readonly size: number;
+  /**
+   * IANA MIME type derived from the filename extension. Absent when
+   * the extension is unknown — consumers should treat that as
+   * `application/octet-stream`. No file content is read to determine
+   * the type.
+   */
+  readonly mime?: string;
 }
 
 /**
@@ -57,10 +65,12 @@ export async function discoverAttachments(
     const filePath = join(attachmentsDir, entry);
     const stats = await stat(filePath);
     if (stats.isFile()) {
+      const mime = mimeForFilename(entry);
       attachments.push({
         name: entry,
         path: filePath,
         size: stats.size,
+        ...(mime !== undefined ? { mime } : {}),
       });
     }
     // Skip directories and other non-file entries (defense in depth).

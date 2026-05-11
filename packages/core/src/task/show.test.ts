@@ -52,6 +52,39 @@ describe("task show model", () => {
     expect(attachments.every(a => a.size > 0)).toBe(true);
   });
 
+  it("derives mime types from known extensions", async () => {
+    await writeTask(locttDir, "abc123", task);
+    const attachmentsDir = getAttachmentsDir(locttDir, "abc123");
+    await mkdir(attachmentsDir, { recursive: true });
+    await writeFile(join(attachmentsDir, "shot.png"), "x");
+    await writeFile(join(attachmentsDir, "clip.mp4"), "x");
+    await writeFile(join(attachmentsDir, "doc.pdf"), "x");
+
+    const attachments = await discoverAttachments(locttDir, "abc123");
+    const byName = Object.fromEntries(attachments.map(a => [a.name, a.mime]));
+    expect(byName["shot.png"]).toBe("image/png");
+    expect(byName["clip.mp4"]).toBe("video/mp4");
+    expect(byName["doc.pdf"]).toBe("application/pdf");
+  });
+
+  it("omits the mime field when the extension is unknown", async () => {
+    await writeTask(locttDir, "abc123", task);
+    const attachmentsDir = getAttachmentsDir(locttDir, "abc123");
+    await mkdir(attachmentsDir, { recursive: true });
+    await writeFile(join(attachmentsDir, "blob.xyz"), "x");
+    await writeFile(join(attachmentsDir, "README"), "x");
+
+    const attachments = await discoverAttachments(locttDir, "abc123");
+    const blob = attachments.find(a => a.name === "blob.xyz");
+    const readme = attachments.find(a => a.name === "README");
+    expect(blob?.mime).toBeUndefined();
+    expect(readme?.mime).toBeUndefined();
+    // Field is genuinely absent (not just undefined-on-property) so
+    // JSON.stringify omits it on the wire.
+    expect("mime" in (blob ?? {})).toBe(false);
+    expect("mime" in (readme ?? {})).toBe(false);
+  });
+
   it("returns empty array for nonexistent task directory", async () => {
     const attachments = await discoverAttachments(locttDir, "nonexistent");
     expect(attachments).toEqual([]);

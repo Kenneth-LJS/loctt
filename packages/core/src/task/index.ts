@@ -29,6 +29,7 @@ export { listTaskIds } from "./list-ids.js";
 export { loadAllTasks } from "./load-all.js";
 export { lookupById, lookupByKey, lookupTask, TaskNotFoundError } from "./lookup.js";
 export { clearLookupCaches } from "./lookup-cache.js";
+export { mimeForFilename } from "./mime.js";
 export type { LinkTaskOptions, UnlinkTaskOptions } from "./relationships.js";
 export { linkTask, RelationshipError,unlinkTask } from "./relationships.js";
 export type { AttachmentInfo, TaskShowModel } from "./show.js";

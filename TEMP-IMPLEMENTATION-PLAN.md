@@ -298,12 +298,26 @@ interface AttachmentResponse { name: string; size: number; mime?: string }
 
 ### Backend change
 
-- `packages/core/src/task/attachments.ts` — when listing attachments,
-  detect MIME via filename extension (small built-in table; no file
-  sniffing). Add `mime` to the returned shape.
-- `GET /api/tasks/:ref/attachments/:name` already sets `Content-Type`;
-  ensure derivation matches.
-- Surface `mime` on `get_task` MCP tool's `attachments[]` array.
+- `packages/core/src/task/mime.ts` (new) — filename-extension → MIME
+  table. No file sniffing, no external deps.
+- `packages/core/src/task/show.ts` — `discoverAttachments` populates
+  `mime` on each `AttachmentInfo` (omits the field when unknown).
+- Surface `mime` on `get_task` MCP tool's `attachments[]` array and on
+  the HTTP `TaskResponse.attachments[]`.
+
+### Download endpoint stays octet-stream (deliberate)
+
+`GET /api/tasks/:ref/attachments/:name` continues to serve every byte
+as `application/octet-stream` + `X-Content-Type-Options: nosniff` +
+`Content-Disposition: attachment`. Do NOT switch it to a derived
+Content-Type — an inline `image/svg+xml` or `text/html` upload would
+be an XSS hole even with nosniff.
+
+UI consumers dispatch by the `mime` field on `AttachmentResponse`
+(from list endpoints / `get_task`), fetching the bytes from the
+download endpoint and wrapping them in a sandboxed `<img>` / `<video>`
+/ `<audio>` blob URL. SVG and HTML specifically require a sandboxed
+render path (sanitisation or an `srcdoc` iframe).
 
 ### Migration
 

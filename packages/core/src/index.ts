@@ -227,6 +227,7 @@ export { appendTaskBody, readTask, readTaskBody, writeTask, writeTaskBody } from
 export { listTaskIds, loadAllTasks, lookupById, lookupByKey, lookupTask, TaskNotFoundError } from "./task/index.js";
 export { createTask } from "./task/index.js";
 export { buildShowModel,discoverAttachments } from "./task/index.js";
+export { mimeForFilename } from "./task/index.js";
 export {
   AUTO_MANAGED_FIELDS,
   BUILTIN_OPTIONAL_FIELDS,
