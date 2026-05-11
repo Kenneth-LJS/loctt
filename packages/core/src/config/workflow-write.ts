@@ -1,4 +1,13 @@
-import type { Task, WorkflowConfig } from "@loctt/contracts";
+import type {
+  CustomFieldDef,
+  EstimationConfig,
+  PriorityDef,
+  RelationshipDef,
+  StatusDef,
+  Task,
+  TaskTypeDef,
+  WorkflowConfig,
+} from "@loctt/contracts";
 import { stringify as stringifyYaml } from "yaml";
 
 import { getWorkflowConfigPath } from "../paths/index.js";
@@ -44,6 +53,8 @@ export async function saveWorkflowConfig(
   await writeYamlAtomically(getWorkflowConfigPath(locttDir), buildPlainObject(config));
 }
 
+type SimpleCollection = "statuses" | "priorities" | "task_types";
+
 /**
  * Validates that key-immutability is preserved between two
  * workflow configs: any key present in `prev` must still exist in
@@ -58,7 +69,7 @@ export function validateRemapCoversDeletions(
   inUse: { statuses: ReadonlySet<string>; priorities: ReadonlySet<string>; task_types: ReadonlySet<string>; custom_field_values: Readonly<Record<string, ReadonlySet<string>>> },
 ): void {
   function checkSimple(
-    name: "statuses" | "priorities" | "task_types",
+    name: SimpleCollection,
     prevKeys: readonly string[],
     nextKeys: readonly string[],
     inUseKeys: ReadonlySet<string>,
@@ -159,6 +170,105 @@ export function computeWorkflowKeyUsage(tasks: readonly Task[]): {
 }
 
 /**
+ * Applies a remap directive to a single scalar frontmatter slot
+ * (status / priority / task_type). Returns `true` when the slot
+ * changed. Mutates `fm` in place.
+ *
+ * Throws when validation upstream allowed an in-use key through
+ * without a remap — that's an internal bug, not user input, so the
+ * exception surfaces the gap loudly rather than silently leaving
+ * the task pointing at a deleted key.
+ */
+function applyScalarRemap(
+  fm: Record<string, unknown>,
+  slot: "status" | "priority" | "task_type",
+  taskKey: string,
+  nextKeys: ReadonlySet<string>,
+  remapTable: Readonly<Record<string, string | null>> | undefined,
+): boolean {
+  const current = fm[slot];
+  if (typeof current !== "string") return false;
+  if (nextKeys.has(current)) return false;
+  const target = remapTable?.[current];
+  if (target === undefined) {
+    throw new Error(`internal: missing ${slot} remap for "${current}" on task ${taskKey}`);
+  }
+  if (target === null) {
+    delete fm[slot];
+  } else {
+    fm[slot] = target;
+  }
+  return true;
+}
+
+/**
+ * Applies remaps to a single task's `fields` map. Drops fields whose
+ * defining custom_field is gone from the new config; for surviving
+ * enum fields, remaps stored values through `remap.custom_fields`.
+ * Returns `true` when anything changed. Mutates `fm` in place.
+ */
+function applyCustomFieldsRemap(
+  fm: Record<string, unknown>,
+  nextFieldsByKey: ReadonlyMap<string, CustomFieldDef>,
+  remap: WorkflowRemap,
+): boolean {
+  if (!fm["fields"] || typeof fm["fields"] !== "object") return false;
+  const fields = { ...(fm["fields"] as Record<string, unknown>) };
+  let changed = false;
+
+  for (const [fkey, fval] of Object.entries(fields)) {
+    const def = nextFieldsByKey.get(fkey);
+    if (!def) {
+      delete fields[fkey];
+      changed = true;
+      continue;
+    }
+    if (def.type !== "enum" || !def.values) continue;
+
+    const validValues = new Set(def.values.map(v => v.key));
+    const fieldRemap = remap.custom_fields?.[fkey] ?? {};
+
+    if (typeof fval === "string") {
+      if (validValues.has(fval)) continue;
+      const t = fieldRemap[fval];
+      if (t === null) {
+        delete fields[fkey];
+      } else if (typeof t === "string") {
+        fields[fkey] = t;
+      }
+      changed = true;
+    } else if (Array.isArray(fval)) {
+      const out: string[] = [];
+      let arrChanged = false;
+      for (const v of fval) {
+        if (typeof v !== "string") continue;
+        if (validValues.has(v)) { out.push(v); continue; }
+        const t = fieldRemap[v];
+        if (t === null) { arrChanged = true; continue; }
+        if (typeof t === "string") { out.push(t); arrChanged = true; continue; }
+      }
+      if (arrChanged) {
+        if (out.length === 0) {
+          delete fields[fkey];
+        } else {
+          fields[fkey] = out;
+        }
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) {
+    if (Object.keys(fields).length === 0) {
+      delete fm["fields"];
+    } else {
+      fm["fields"] = fields;
+    }
+  }
+  return changed;
+}
+
+/**
  * High-level "edit workflow" entry point. Atomically:
  *  1. Reads the current workflow + all tasks.
  *  2. Validates that the proposed `next` config is internally valid.
@@ -178,7 +288,6 @@ export async function applyWorkflowEdit(
 
     validateRemapCoversDeletions(prev, next, remap, usage);
 
-    // Walk tasks and apply remaps. Track which tasks changed.
     const nextStatusKeys = new Set(next.statuses.map(s => s.key));
     const nextPriorityKeys = new Set(next.priorities.map(p => p.key));
     const nextTypeKeys = new Set(next.task_types.map(t => t.key));
@@ -189,87 +298,14 @@ export async function applyWorkflowEdit(
     // task touched in this remap shares the same updated_at.
     const operationNow = new Date().toISOString();
     for (const task of tasks) {
-      const fm = { ...task.frontmatter } as Record<string, unknown>;
+      const fm: Record<string, unknown> = { ...task.frontmatter };
+      const taskKey = task.frontmatter.key;
       let changed = false;
 
-      if (fm["status"] && !nextStatusKeys.has(fm["status"] as string)) {
-        const oldStatus = fm["status"] as string;
-        const target = remap.statuses?.[oldStatus];
-        // Validation upstream guarantees a mapping for every
-        // in-use deleted status; an undefined here means validation
-        // was bypassed. Throw so the bug is visible rather than
-        // silently skipping the rest of this task's remaps.
-        if (target === undefined) {
-          throw new Error(`internal: missing status remap for "${oldStatus}" on task ${task.frontmatter.key}`);
-        }
-        if (target === null) { delete fm["status"]; }
-        else { fm["status"] = target; }
-        changed = true;
-      }
-      if (fm["priority"] && !nextPriorityKeys.has(fm["priority"] as string)) {
-        const oldPriority = fm["priority"] as string;
-        const target = remap.priorities?.[oldPriority];
-        if (target === undefined) {
-          throw new Error(`internal: missing priority remap for "${oldPriority}" on task ${task.frontmatter.key}`);
-        }
-        if (target === null) { delete fm["priority"]; }
-        else { fm["priority"] = target; }
-        changed = true;
-      }
-      if (fm["task_type"] && !nextTypeKeys.has(fm["task_type"] as string)) {
-        const oldTaskType = fm["task_type"] as string;
-        const target = remap.task_types?.[oldTaskType];
-        if (target === undefined) {
-          throw new Error(`internal: missing task_type remap for "${oldTaskType}" on task ${task.frontmatter.key}`);
-        }
-        if (target === null) { delete fm["task_type"]; }
-        else { fm["task_type"] = target; }
-        changed = true;
-      }
-
-      // Custom fields: drop fields entirely if the field is gone.
-      // For surviving fields, remap enum values per the field-specific
-      // remap table.
-      if (fm["fields"] && typeof fm["fields"] === "object") {
-        const fields = { ...(fm["fields"] as Record<string, unknown>) };
-        for (const [fkey, fval] of Object.entries(fields)) {
-          const def = nextFieldsByKey.get(fkey);
-          if (!def) {
-            delete fields[fkey];
-            changed = true;
-            continue;
-          }
-          if (def.type === "enum" && def.values) {
-            const validValues = new Set(def.values.map(v => v.key));
-            const fieldRemap = remap.custom_fields?.[fkey] ?? {};
-            if (typeof fval === "string" && !validValues.has(fval)) {
-              const t = fieldRemap[fval];
-              if (t === null) { delete fields[fkey]; }
-              else if (typeof t === "string") { fields[fkey] = t; }
-              changed = true;
-            } else if (Array.isArray(fval)) {
-              const out: string[] = [];
-              for (const v of fval) {
-                if (typeof v !== "string") continue;
-                if (validValues.has(v)) { out.push(v); continue; }
-                const t = fieldRemap[v];
-                if (t === null) { changed = true; continue; }
-                if (typeof t === "string") { out.push(t); changed = true; continue; }
-              }
-              if (out.length === 0) {
-                delete fields[fkey];
-              } else {
-                fields[fkey] = out;
-              }
-            }
-          }
-        }
-        if (Object.keys(fields).length === 0) {
-          delete fm["fields"];
-        } else {
-          fm["fields"] = fields;
-        }
-      }
+      if (applyScalarRemap(fm, "status", taskKey, nextStatusKeys, remap.statuses)) changed = true;
+      if (applyScalarRemap(fm, "priority", taskKey, nextPriorityKeys, remap.priorities)) changed = true;
+      if (applyScalarRemap(fm, "task_type", taskKey, nextTypeKeys, remap.task_types)) changed = true;
+      if (applyCustomFieldsRemap(fm, nextFieldsByKey, remap)) changed = true;
 
       if (changed) {
         fm["updated_at"] = operationNow;
@@ -288,47 +324,73 @@ function serializeWorkflowConfigAsYaml(config: WorkflowConfig): string {
   return stringifyYaml(buildPlainObject(config));
 }
 
-function buildPlainObject(config: WorkflowConfig): Record<string, unknown> {
-  const out: Record<string, unknown> = {
-    key: { prefix: config.key.prefix },
-    statuses: config.statuses.map(s => ({ key: s.key, label: s.label, category: s.category })),
-    priorities: config.priorities.map(p => ({
-      key: p.key,
-      label: p.label,
-      ...(p.value !== undefined ? { value: p.value } : {}),
-    })),
-    task_types: config.task_types.map(t => ({ key: t.key, label: t.label })),
-    relationships: config.relationships.map(r => ({
-      key: r.key,
-      label: r.label,
-      inverse: r.inverse,
-      inverse_label: r.inverse_label,
-      ...(r.structural === true ? { structural: true } : {}),
-      ...(r.ranked === true ? { ranked: true } : {}),
-    })),
-    custom_fields: config.custom_fields.map(f => ({
-      key: f.key,
-      label: f.label,
-      type: f.type,
-      multi: f.multi,
-      searchable: f.searchable,
-      ...(f.values !== undefined
-        ? { values: f.values.map(v => ({
+function serializeStatus(s: StatusDef): Record<string, unknown> {
+  return { key: s.key, label: s.label, category: s.category };
+}
+
+function serializePriority(p: PriorityDef): Record<string, unknown> {
+  return {
+    key: p.key,
+    label: p.label,
+    ...(p.value !== undefined ? { value: p.value } : {}),
+  };
+}
+
+function serializeTaskType(t: TaskTypeDef): Record<string, unknown> {
+  return { key: t.key, label: t.label };
+}
+
+function serializeRelationship(r: RelationshipDef): Record<string, unknown> {
+  return {
+    key: r.key,
+    label: r.label,
+    inverse: r.inverse,
+    inverse_label: r.inverse_label,
+    ...(r.structural === true ? { structural: true } : {}),
+    ...(r.ranked === true ? { ranked: true } : {}),
+  };
+}
+
+function serializeCustomField(f: CustomFieldDef): Record<string, unknown> {
+  return {
+    key: f.key,
+    label: f.label,
+    type: f.type,
+    multi: f.multi,
+    searchable: f.searchable,
+    ...(f.values !== undefined
+      ? {
+          values: f.values.map(v => ({
             key: v.key,
             label: v.label,
             ...(v.value !== undefined ? { value: v.value } : {}),
-          })) }
-        : {}),
-    })),
+          })),
+        }
+      : {}),
+  };
+}
+
+function serializeEstimation(e: EstimationConfig): Record<string, unknown> {
+  return {
+    enabled: e.enabled,
+    unit: e.unit,
+    ...(e.unit_label !== undefined ? { unit_label: e.unit_label } : {}),
+    ...(e.scale !== undefined ? { scale: e.scale } : {}),
+    ...(e.preset_values !== undefined ? { preset_values: [...e.preset_values] } : {}),
+  };
+}
+
+function buildPlainObject(config: WorkflowConfig): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    key: { prefix: config.key.prefix },
+    statuses: config.statuses.map(serializeStatus),
+    priorities: config.priorities.map(serializePriority),
+    task_types: config.task_types.map(serializeTaskType),
+    relationships: config.relationships.map(serializeRelationship),
+    custom_fields: config.custom_fields.map(serializeCustomField),
   };
   if (config.estimation !== undefined) {
-    out["estimation"] = {
-      enabled: config.estimation.enabled,
-      unit: config.estimation.unit,
-      ...(config.estimation.unit_label !== undefined ? { unit_label: config.estimation.unit_label } : {}),
-      ...(config.estimation.scale !== undefined ? { scale: config.estimation.scale } : {}),
-      ...(config.estimation.preset_values !== undefined ? { preset_values: [...config.estimation.preset_values] } : {}),
-    };
+    out["estimation"] = serializeEstimation(config.estimation);
   }
   return out;
 }
