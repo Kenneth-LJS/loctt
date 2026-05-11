@@ -170,14 +170,88 @@ Commands:
 `);
 }
 
+/**
+ * Process exit codes used across all `loctt` subcommands. Scripts and
+ * tests can switch on these to distinguish "user said no" from "the
+ * tracker is on a newer schema" from "you typed the command wrong."
+ */
+export const EXIT = {
+  /** Command succeeded, or user declined a confirm prompt. */
+  SUCCESS: 0,
+  /** Domain/runtime error (validation, IO, schema mismatch, …). */
+  RUNTIME: 1,
+  /** Usage error: missing args, bad flag, mutually-exclusive flags. */
+  USAGE: 2,
+} as const;
+
+/**
+ * Returns the string value for `--flag <value>` or `--flag=value`.
+ * Returns undefined if the flag is absent or used in boolean form
+ * (`--flag` followed by another flag), so callers can distinguish
+ * "not set" from "set to empty string".
+ *
+ * Anything after `--` is treated as positional and ignored.
+ *
+ * Notes:
+ * - Empty-string values (`--set ""`) are returned as `""` rather than
+ *   coerced to a number or treated as missing. We rolled our own
+ *   parser because off-the-shelf mri auto-coerces `""` to `0`.
+ * - Repeated flags: the last occurrence wins, matching the most
+ *   intuitive shell behavior (`--limit 1 --limit 2` → `2`).
+ * - Long-flag form `-flag` (single dash) is implicitly accepted so
+ *   `--flag` and `-flag` collide. The CLI defines no short flags so
+ *   this is harmless today; revisit if any are added.
+ */
 function getArg(args: string[], flag: string): string | undefined {
-  const idx = args.indexOf(flag);
-  if (idx === -1 || idx + 1 >= args.length) return undefined;
-  return args[idx + 1];
+  const name = flag.replace(/^--?/, "");
+  let result: string | undefined;
+  for (let i = 0; i < args.length; i += 1) {
+    const a = args[i];
+    if (a === "--") break;
+    if (a === undefined) continue;
+    // `--flag=value` form
+    if (a === `--${name}=` || a.startsWith(`--${name}=`)) {
+      result = a.slice(`--${name}=`.length);
+      continue;
+    }
+    if (a === `-${name}=` || a.startsWith(`-${name}=`)) {
+      result = a.slice(`-${name}=`.length);
+      continue;
+    }
+    // `--flag value` form. Treat the next arg as a value unless it
+    // looks like another flag — in which case --flag was bare/boolean.
+    if (a === `--${name}` || a === `-${name}`) {
+      const next = args[i + 1];
+      if (next === undefined) continue;
+      if (next.startsWith("-") && next !== "-") continue;
+      result = next;
+      i += 1;
+    }
+  }
+  return result;
 }
 
+/**
+ * Returns true when a boolean flag is present (`--archived`,
+ * `--archived=true`). `--archived=false` is treated as absent so a
+ * caller can override a default-true behaviour. Any other value
+ * after `=` (`--archived=anything`, `--archived=`) is treated as
+ * truthy, matching common shell-flag intuition. Anything after `--`
+ * is positional and ignored.
+ */
 function hasFlag(args: string[], flag: string): boolean {
-  return args.includes(flag);
+  const name = flag.replace(/^--?/, "");
+  let present = false;
+  for (let i = 0; i < args.length; i += 1) {
+    const a = args[i];
+    if (a === "--") break;
+    if (a === undefined) continue;
+    if (a === `--${name}` || a === `-${name}`) { present = true; continue; }
+    if (a === `--${name}=true` || a === `-${name}=true`) { present = true; continue; }
+    if (a === `--${name}=false` || a === `-${name}=false`) { present = false; continue; }
+    if (a.startsWith(`--${name}=`) || a.startsWith(`-${name}=`)) { present = true; continue; }
+  }
+  return present;
 }
 
 /**
@@ -213,8 +287,8 @@ type ConfirmOutcome = "yes" | "no" | "refused";
  * - Interactive TTY: prompts; user "y" → "yes", anything else → "no".
  * - Non-TTY without `--yes` → "refused" (a usage error, not a denial).
  *
- * Callers should map "no" → exit 0 (clean refusal) and "refused" →
- * exit 1 (script must pass `--yes`).
+ * Callers should map `"no"` → {@link EXIT.SUCCESS} (clean refusal)
+ * and `"refused"` → {@link EXIT.USAGE} (the script forgot `--yes`).
  */
 async function confirmHardDelete(args: string[], question: string): Promise<ConfirmOutcome> {
   if (hasFlag(args, "--yes")) return "yes";
@@ -368,7 +442,7 @@ export async function main(): Promise<void> {
           console.log(`  ${icon} ${check.name}: ${check.message}`);
         }
         const hasError = checks.some(c => c.status === "error");
-        if (hasError) process.exitCode = 1;
+        if (hasError) process.exitCode = EXIT.RUNTIME;
         break;
       }
 
@@ -445,7 +519,7 @@ export async function main(): Promise<void> {
         const title = args[1];
         if (!title) {
           console.error("Usage: loctt create <title>");
-          process.exitCode = 1;
+          process.exitCode = EXIT.USAGE;
           break;
         }
         const locttDir = resolveLocttDir(root);
@@ -462,7 +536,7 @@ export async function main(): Promise<void> {
           });
         } catch (err) {
           console.error(`Error: ${(err as Error).message}`);
-          process.exitCode = 1;
+          process.exitCode = EXIT.RUNTIME;
           break;
         }
 
@@ -501,7 +575,7 @@ export async function main(): Promise<void> {
           limit = Number(limitArg);
           if (Number.isNaN(limit) || limit < 0 || !Number.isInteger(limit)) {
             console.error("Error: --limit must be a non-negative integer");
-            process.exitCode = 1;
+            process.exitCode = EXIT.RUNTIME;
             break;
           }
         }
@@ -546,7 +620,7 @@ export async function main(): Promise<void> {
         const ref = args[1];
         if (!ref) {
           console.error("Usage: loctt show <task>");
-          process.exitCode = 1;
+          process.exitCode = EXIT.USAGE;
           break;
         }
         const locttDir = resolveLocttDir(root);
@@ -588,7 +662,7 @@ export async function main(): Promise<void> {
         const value = args[3];
         if (!ref || !field || value === undefined) {
           console.error("Usage: loctt set <task> <field> <value>");
-          process.exitCode = 1;
+          process.exitCode = EXIT.USAGE;
           break;
         }
         const locttDir = resolveLocttDir(root);
@@ -610,7 +684,7 @@ export async function main(): Promise<void> {
         const field = args[2];
         if (!ref || !field) {
           console.error("Usage: loctt unset <task> <field>");
-          process.exitCode = 1;
+          process.exitCode = EXIT.USAGE;
           break;
         }
         const locttDir = resolveLocttDir(root);
@@ -626,7 +700,7 @@ export async function main(): Promise<void> {
         const target = args[3];
         if (!ref || !relType || !target) {
           console.error("Usage: loctt link <task> <relationship> <target>");
-          process.exitCode = 1;
+          process.exitCode = EXIT.USAGE;
           break;
         }
         const locttDir = resolveLocttDir(root);
@@ -650,7 +724,7 @@ export async function main(): Promise<void> {
         const target = args[3];
         if (!ref || !relType || !target) {
           console.error("Usage: loctt unlink <task> <relationship> <target>");
-          process.exitCode = 1;
+          process.exitCode = EXIT.USAGE;
           break;
         }
         const locttDir = resolveLocttDir(root);
@@ -672,7 +746,7 @@ export async function main(): Promise<void> {
         const ref = args[1];
         if (!ref) {
           console.error("Usage: loctt archive <task>");
-          process.exitCode = 1;
+          process.exitCode = EXIT.USAGE;
           break;
         }
         const locttDir = resolveLocttDir(root);
@@ -686,7 +760,7 @@ export async function main(): Promise<void> {
         const ref = args[1];
         if (!ref) {
           console.error("Usage: loctt unarchive <task>");
-          process.exitCode = 1;
+          process.exitCode = EXIT.USAGE;
           break;
         }
         const locttDir = resolveLocttDir(root);
@@ -700,7 +774,7 @@ export async function main(): Promise<void> {
         const ref = args[1];
         if (!ref) {
           console.error("Usage: loctt delete <task> [--hard] [--yes]");
-          process.exitCode = 1;
+          process.exitCode = EXIT.USAGE;
           break;
         }
         const hard = hasFlag(args, "--hard");
@@ -711,7 +785,7 @@ export async function main(): Promise<void> {
             args,
             `Permanently delete task ${task.frontmatter.key}?`,
           );
-          if (outcome !== "yes") { process.exitCode = outcome === "refused" ? 1 : 0; break; }
+          if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
           await deleteTask(locttDir, task.frontmatter.id, { force: true });
           console.log(`Hard-deleted ${task.frontmatter.key}`);
         } else {
@@ -720,7 +794,7 @@ export async function main(): Promise<void> {
               `Task ${task.frontmatter.key} is already archived. ` +
               `Use --hard to permanently remove it.`,
             );
-            process.exitCode = 1;
+            process.exitCode = EXIT.RUNTIME;
             break;
           }
           await archiveTask(locttDir, task.frontmatter.id);
@@ -733,14 +807,14 @@ export async function main(): Promise<void> {
         const ref = args[1];
         if (!ref) {
           console.error("Usage: loctt body <task> [--set <text>] [--append <text>]");
-          process.exitCode = 1;
+          process.exitCode = EXIT.USAGE;
           break;
         }
         const newBody = getArg(args, "--set");
         const appendText = getArg(args, "--append");
         if (newBody !== undefined && appendText !== undefined) {
           console.error("Error: --set and --append are mutually exclusive");
-          process.exitCode = 1;
+          process.exitCode = EXIT.USAGE;
           break;
         }
         const locttDir = resolveLocttDir(root);
@@ -766,7 +840,7 @@ export async function main(): Promise<void> {
         const ref = args[1];
         if (!ref) {
           console.error("Usage: loctt log <task> [--limit <n>]");
-          process.exitCode = 1;
+          process.exitCode = EXIT.USAGE;
           break;
         }
         const locttDir = resolveLocttDir(root);
@@ -778,7 +852,7 @@ export async function main(): Promise<void> {
           limit = Number(limitArg);
           if (Number.isNaN(limit) || limit < 0 || !Number.isInteger(limit)) {
             console.error("Error: --limit must be a non-negative integer");
-            process.exitCode = 1;
+            process.exitCode = EXIT.RUNTIME;
             break;
           }
         }
@@ -802,7 +876,7 @@ export async function main(): Promise<void> {
         const filePath = args[2];
         if (!ref || !filePath) {
           console.error("Usage: loctt attach <task> <file-path> [--force]");
-          process.exitCode = 1;
+          process.exitCode = EXIT.USAGE;
           break;
         }
         const force = hasFlag(args, "--force");
@@ -827,12 +901,12 @@ export async function main(): Promise<void> {
             console.error(
               `Error: ${err.message}. Use --force to overwrite.`,
             );
-            process.exitCode = 1;
+            process.exitCode = EXIT.RUNTIME;
             break;
           }
           if (err instanceof AttachmentSourceError) {
             console.error(`Error: ${err.message}`);
-            process.exitCode = 1;
+            process.exitCode = EXIT.RUNTIME;
             break;
           }
           throw err;
@@ -845,14 +919,14 @@ export async function main(): Promise<void> {
         const name = args[2];
         if (!ref || !name) {
           console.error("Usage: loctt detach <task> <name>");
-          process.exitCode = 1;
+          process.exitCode = EXIT.USAGE;
           break;
         }
         if (name.includes("/") || name.includes("\\") || name.includes("..")) {
           console.error(
             `Error: <name> must be a plain basename (no path separators or '..')`,
           );
-          process.exitCode = 1;
+          process.exitCode = EXIT.RUNTIME;
           break;
         }
         const locttDir = resolveLocttDir(root);
@@ -867,7 +941,7 @@ export async function main(): Promise<void> {
         } catch (err) {
           if (err instanceof AttachmentNotFoundError) {
             console.error(`Error: ${err.message}`);
-            process.exitCode = 1;
+            process.exitCode = EXIT.RUNTIME;
             break;
           }
           throw err;
@@ -960,7 +1034,7 @@ export async function main(): Promise<void> {
             const prefix = getArg(args, "--prefix");
             if (!key || !prefix) {
               console.error(`Usage: loctt project create <key> --prefix <prefix> [--label <label>] [--default]`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             const label = getArg(args, "--label") ?? key;
@@ -973,7 +1047,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof ProjectError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -985,12 +1059,12 @@ export async function main(): Promise<void> {
             const label = getArg(args, "--label");
             if (!key) {
               console.error(`Usage: loctt project edit <key> [--label <label>]`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             if (label === undefined) {
               console.error(`Nothing to update; pass --label.`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.RUNTIME;
               break;
             }
             try {
@@ -999,7 +1073,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof ProjectError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1012,7 +1086,7 @@ export async function main(): Promise<void> {
             const hard = hasFlag(args, "--hard");
             if (!key) {
               console.error(`Usage: loctt project delete <key> [--hard] [--remap-to <other-key>] [--yes]`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             if (hard) {
@@ -1020,7 +1094,7 @@ export async function main(): Promise<void> {
                 args,
                 `Permanently delete project ${key}? This will rewrite affected tasks.`,
               );
-              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? 1 : 0; break; }
+              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
             }
             try {
               const result = await deleteProject(locttDir, key, {
@@ -1038,7 +1112,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof ProjectError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1050,7 +1124,7 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error(`Usage: loctt project ${sub} <key>`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             try {
@@ -1060,7 +1134,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof ProjectError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1071,7 +1145,7 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error(`Usage: loctt project set-default <key|->`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             try {
@@ -1080,7 +1154,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof ProjectError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1089,7 +1163,7 @@ export async function main(): Promise<void> {
           }
           default:
             console.error(`Usage: loctt project <list|create|edit|archive|unarchive|delete|set-default> ...`);
-            process.exitCode = 1;
+            process.exitCode = EXIT.USAGE;
             break;
         }
         break;
@@ -1116,7 +1190,7 @@ export async function main(): Promise<void> {
             const current = await getCurrentUser(locttDir);
             if (!current) {
               console.log("(no users registered)");
-              process.exitCode = 1;
+              process.exitCode = EXIT.RUNTIME;
               break;
             }
             console.log(`${current.id}\t${current.name}`);
@@ -1126,7 +1200,7 @@ export async function main(): Promise<void> {
             const ref = args[2];
             if (!ref) {
               console.error("Usage: loctt user switch <id-or-name>");
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             try {
@@ -1136,7 +1210,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof UserError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1147,7 +1221,7 @@ export async function main(): Promise<void> {
             const name = args[2];
             if (!name) {
               console.error("Usage: loctt user create <name> [--email <e>] [--timezone <tz>] [--avatar <path>] [--switch]");
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             const email = getArg(args, "--email");
@@ -1166,7 +1240,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof UserError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1177,7 +1251,7 @@ export async function main(): Promise<void> {
             const ref = args[2];
             if (!ref) {
               console.error("Usage: loctt user edit <id-or-name> [--name <n>] [--email <e>] [--timezone <tz>] [--avatar <path>]");
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             try {
@@ -1196,7 +1270,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof UserError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1208,7 +1282,7 @@ export async function main(): Promise<void> {
             const ref = args[2];
             if (!ref) {
               console.error(`Usage: loctt user ${sub} <id-or-name>`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             try {
@@ -1219,7 +1293,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof UserError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1230,14 +1304,14 @@ export async function main(): Promise<void> {
             const ref = args[2];
             if (!ref) {
               console.error(`Usage: loctt user delete <id-or-name> [--remap-to <id-or-name> | --unassign] [--yes]`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             const remapToRef = getArg(args, "--remap-to");
             const unassign = hasFlag(args, "--unassign");
             if (remapToRef !== undefined && unassign) {
               console.error("Error: --remap-to and --unassign are mutually exclusive");
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             try {
@@ -1247,7 +1321,7 @@ export async function main(): Promise<void> {
                 `Permanently delete user ${target.name} (${target.id})? ` +
                 `This will rewrite affected tasks.`,
               );
-              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? 1 : 0; break; }
+              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
               const remapTo = remapToRef !== undefined
                 ? (await resolveUserRef(locttDir, remapToRef)).id
                 : undefined;
@@ -1265,7 +1339,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof UserError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1274,7 +1348,7 @@ export async function main(): Promise<void> {
           }
           default:
             console.error(`Usage: loctt user <list|current|switch|create|edit|archive|unarchive|delete> ...`);
-            process.exitCode = 1;
+            process.exitCode = EXIT.USAGE;
             break;
         }
         break;
@@ -1299,7 +1373,7 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error(`Usage: loctt label create <key> [--label <label>] [--color <hex>]`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             const label = getArg(args, "--label") ?? key;
@@ -1314,7 +1388,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof LabelError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1325,7 +1399,7 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error(`Usage: loctt label edit <key> [--label <label>] [--color <hex|->]`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             const label = getArg(args, "--label");
@@ -1341,7 +1415,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof LabelError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1352,7 +1426,7 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error(`Usage: loctt label delete <key> [--hard] [--remap-to <other>] [--yes]`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             const remapTo = getArg(args, "--remap-to");
@@ -1362,7 +1436,7 @@ export async function main(): Promise<void> {
                 args,
                 `Permanently delete label ${key}? This will rewrite affected tasks.`,
               );
-              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? 1 : 0; break; }
+              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
             }
             try {
               const result = await deleteLabel(locttDir, key, {
@@ -1381,7 +1455,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof LabelError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1393,7 +1467,7 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error(`Usage: loctt label ${sub} <key>`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             try {
@@ -1403,7 +1477,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof LabelError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1412,7 +1486,7 @@ export async function main(): Promise<void> {
           }
           default:
             console.error(`Usage: loctt label <list|create|edit|archive|unarchive|delete> ...`);
-            process.exitCode = 1;
+            process.exitCode = EXIT.USAGE;
             break;
         }
         break;
@@ -1437,7 +1511,7 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error(`Usage: loctt milestone create <key> [--label <label>] [--target-date <YYYY-MM-DD>]`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             const label = getArg(args, "--label") ?? key;
@@ -1452,7 +1526,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof MilestoneError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1463,7 +1537,7 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error(`Usage: loctt milestone edit <key> [--label <l>] [--target-date <YYYY-MM-DD|->] [--archived <true|false>]`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             const label = getArg(args, "--label");
@@ -1471,7 +1545,7 @@ export async function main(): Promise<void> {
             const archivedArg = getArg(args, "--archived");
             if (archivedArg !== undefined && archivedArg !== "true" && archivedArg !== "false") {
               console.error(`Error: --archived must be exactly "true" or "false", got: ${archivedArg}`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.RUNTIME;
               break;
             }
             try {
@@ -1484,7 +1558,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof MilestoneError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1495,7 +1569,7 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error(`Usage: loctt milestone delete <key> [--hard] [--remap-to <other>] [--yes]`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             const remapTo = getArg(args, "--remap-to");
@@ -1505,7 +1579,7 @@ export async function main(): Promise<void> {
                 args,
                 `Permanently delete milestone ${key}? This will rewrite affected tasks.`,
               );
-              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? 1 : 0; break; }
+              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
             }
             try {
               const result = await deleteMilestone(locttDir, key, {
@@ -1524,7 +1598,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof MilestoneError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1536,7 +1610,7 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error(`Usage: loctt milestone ${sub} <key>`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             try {
@@ -1546,7 +1620,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof MilestoneError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1555,7 +1629,7 @@ export async function main(): Promise<void> {
           }
           default:
             console.error(`Usage: loctt milestone <list|create|edit|archive|unarchive|delete> ...`);
-            process.exitCode = 1;
+            process.exitCode = EXIT.USAGE;
             break;
         }
         break;
@@ -1583,12 +1657,12 @@ export async function main(): Promise<void> {
             const state = getArg(args, "--state") ?? "future";
             if (!key || !start || !end) {
               console.error(`Usage: loctt sprint create <key> --start <YYYY-MM-DD> --end <YYYY-MM-DD> [--state <active|completed|future>] [--label <l>] [--goal <g>]`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             if (state !== "active" && state !== "completed" && state !== "future") {
               console.error(`Error: --state must be one of active|completed|future`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.RUNTIME;
               break;
             }
             const label = getArg(args, "--label") ?? key;
@@ -1606,7 +1680,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof SprintError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1617,7 +1691,7 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error(`Usage: loctt sprint edit <key> [--label <l>] [--start <d>] [--end <d>] [--state <s>] [--goal <g|->] [--force]`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             const label = getArg(args, "--label");
@@ -1627,7 +1701,7 @@ export async function main(): Promise<void> {
             const force = hasFlag(args, "--force");
             if (state !== undefined && state !== "active" && state !== "completed" && state !== "future") {
               console.error(`Error: --state must be one of active|completed|future`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.RUNTIME;
               break;
             }
             const goalArg = getArg(args, "--goal");
@@ -1644,7 +1718,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof SprintError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1655,7 +1729,7 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error(`Usage: loctt sprint delete <key> [--hard] [--remap-to <other>] [--yes]`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             const remapTo = getArg(args, "--remap-to");
@@ -1665,7 +1739,7 @@ export async function main(): Promise<void> {
                 args,
                 `Permanently delete sprint ${key}? This will rewrite affected tasks.`,
               );
-              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? 1 : 0; break; }
+              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
             }
             try {
               const result = await deleteSprint(locttDir, key, {
@@ -1684,7 +1758,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof SprintError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1696,7 +1770,7 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error(`Usage: loctt sprint ${sub} <key>`);
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             try {
@@ -1706,7 +1780,7 @@ export async function main(): Promise<void> {
             } catch (err) {
               if (err instanceof SprintError) {
                 console.error(`Error: ${err.message}`);
-                process.exitCode = 1;
+                process.exitCode = EXIT.RUNTIME;
                 break;
               }
               throw err;
@@ -1715,7 +1789,7 @@ export async function main(): Promise<void> {
           }
           default:
             console.error(`Usage: loctt sprint <list|create|edit|archive|unarchive|delete> ...`);
-            process.exitCode = 1;
+            process.exitCode = EXIT.USAGE;
             break;
         }
         break;
@@ -1739,7 +1813,7 @@ export async function main(): Promise<void> {
           }
         } else {
           console.error(`Usage: loctt calendar show`);
-          process.exitCode = 1;
+          process.exitCode = EXIT.USAGE;
         }
         break;
       }
@@ -1752,14 +1826,14 @@ export async function main(): Promise<void> {
           console.error(
             `Usage: loctt rerank <source> <relationship> <target> [--before <task>] [--after <task>]`,
           );
-          process.exitCode = 1;
+          process.exitCode = EXIT.RUNTIME;
           break;
         }
         const before = getArg(args, "--before");
         const after = getArg(args, "--after");
         if (before !== undefined && after !== undefined) {
           console.error(`Error: --before and --after are mutually exclusive; pass at most one`);
-          process.exitCode = 1;
+          process.exitCode = EXIT.USAGE;
           break;
         }
         try {
@@ -1778,7 +1852,7 @@ export async function main(): Promise<void> {
         } catch (err) {
           if (err instanceof ReorderError) {
             console.error(`Error: ${err.message}`);
-            process.exitCode = 1;
+            process.exitCode = EXIT.RUNTIME;
             break;
           }
           throw err;
@@ -1839,7 +1913,7 @@ export async function main(): Promise<void> {
           }
           default:
             console.error("Usage: loctt git <enable|disable|status|publish|sync>");
-            process.exitCode = 1;
+            process.exitCode = EXIT.USAGE;
             break;
         }
         break;
@@ -1853,7 +1927,7 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error("Usage: loctt config get <key>");
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             const value = await getConfigValue(locttDir, key);
@@ -1870,7 +1944,7 @@ export async function main(): Promise<void> {
             const value = args[3];
             if (!key || value === undefined) {
               console.error("Usage: loctt config set <key> <value>");
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             await setConfigValue({ locttDir, root }, key, value);
@@ -1881,7 +1955,7 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error("Usage: loctt config unset <key>");
-              process.exitCode = 1;
+              process.exitCode = EXIT.USAGE;
               break;
             }
             await unsetConfigValue({ locttDir, root }, key);
@@ -1898,7 +1972,7 @@ export async function main(): Promise<void> {
           }
           default:
             console.error("Usage: loctt config <get|set|unset|list> [key] [value]");
-            process.exitCode = 1;
+            process.exitCode = EXIT.USAGE;
             break;
         }
         break;
@@ -1941,7 +2015,9 @@ export async function main(): Promise<void> {
           );
           if (!ok) {
             console.log(`Aborted.`);
-            process.exitCode = 1;
+            // User declined, not an error: exit 0 so scripts don't
+            // false-alarm on a clean refusal.
+            process.exitCode = EXIT.SUCCESS;
             break;
           }
         }
@@ -1975,12 +2051,22 @@ export async function main(): Promise<void> {
           console.error(`Unknown command: ${command}`);
         }
         usage();
-        process.exitCode = 1;
+        process.exitCode = EXIT.USAGE;
         break;
     }
   } catch (err) {
-    console.error(`Error: ${(err as Error).message}`);
-    process.exitCode = 1;
+    // Print just the message in normal mode; include the stack when
+    // LOCTT_DEBUG=1 so triage isn't blind. Non-Error throws (rare)
+    // get a defensive stringify.
+    if (err instanceof Error) {
+      console.error(`Error: ${err.message}`);
+      if (process.env["LOCTT_DEBUG"] === "1" && err.stack) {
+        console.error(err.stack);
+      }
+    } else {
+      console.error(`Error: ${String(err)}`);
+    }
+    process.exitCode = EXIT.RUNTIME;
   }
 }
 
@@ -1994,6 +2080,6 @@ const isDirectRun = argv1 !== undefined
 if (isDirectRun) {
   main().catch((err: unknown) => {
     console.error(`Fatal: ${err instanceof Error ? err.message : String(err)}`);
-    process.exitCode = 1;
+    process.exitCode = EXIT.RUNTIME;
   });
 }

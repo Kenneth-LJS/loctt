@@ -80,10 +80,53 @@ describe("CLI commands", () => {
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Usage:"));
   });
 
-  it("unknown command shows usage with error", async () => {
+  it("unknown command shows usage with usage-error exit code", async () => {
     process.argv = ["node", "loctt", "bogus"];
     await main();
-    expect(process.exitCode).toBe(1);
+    // EXIT.USAGE = 2; distinguishes "you typed it wrong" from a
+    // runtime/domain error (1).
+    expect(process.exitCode).toBe(2);
+  });
+
+  it("supports --flag=value form (project create)", async () => {
+    process.argv = ["node", "loctt", "init"];
+    await main();
+    process.exitCode = undefined;
+    // `--prefix=Z` form (=value) instead of `--prefix Z` (space-separated).
+    // The legacy parser only accepted the space form; the new parser
+    // accepts both.
+    const errSpy = vi.mocked(console.error);
+    errSpy.mockClear();
+    process.argv = ["node", "loctt", "project", "create", "zeta", "--prefix=ZE", "--label=Zeta"];
+    await main();
+    if (process.exitCode !== undefined) {
+      // Surface the CLI's own error message so a future regression
+      // is debuggable from the test output.
+      const errs = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+      throw new Error(`exit ${String(process.exitCode)}; stderr:\n${errs}`);
+    }
+  });
+
+  it("preserves an empty-string flag value (--set '')", async () => {
+    // Regression for the mri auto-coercion bug: --set "" must not
+    // become 0 or be treated as missing.
+    process.argv = ["node", "loctt", "init"];
+    await main();
+    process.exitCode = undefined;
+    process.argv = ["node", "loctt", "create", "doomed"];
+    await main();
+    process.exitCode = undefined;
+    process.argv = ["node", "loctt", "body", "T-1", "--set", ""];
+    await main();
+    expect(process.exitCode).toBeUndefined();
+    process.exitCode = undefined;
+    process.argv = ["node", "loctt", "body", "T-1"];
+    consoleSpy.mockClear();
+    await main();
+    const logged = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+    // The body was set to empty (not "0"), so the read prints the
+    // empty-body sentinel.
+    expect(logged).toContain("(empty body)");
   });
 });
 
@@ -163,10 +206,10 @@ describe("CLI git subcommands", () => {
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("up to date"));
   });
 
-  it("unknown git subcommand sets exitCode=1", async () => {
+  it("unknown git subcommand sets a usage-error exit code", async () => {
     process.argv = ["node", "loctt", "git", "bogus"];
     await main();
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(2);
   });
 });
 
