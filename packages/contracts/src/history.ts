@@ -29,6 +29,10 @@ export interface HistoryEntry {
   readonly timestamp: string;
   readonly kind: HistoryKind;
   readonly field?: string;
+  // `before`/`after` capture arbitrary field transitions — built-in
+  // and custom field types span string/number/boolean/array/object,
+  // so we surface the raw value and let the rendering layer format
+  // it. `meta` carries kind-specific extras (e.g. attachment name).
   readonly before?: unknown;
   readonly after?: unknown;
   readonly meta?: Readonly<Record<string, unknown>>;

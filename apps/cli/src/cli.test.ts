@@ -474,6 +474,198 @@ describe("CLI commands", () => {
     // empty-body sentinel.
     expect(logged).toContain("(empty body)");
   });
+
+  describe("error paths on wrapped task commands", () => {
+    // Regression tests for the runCommand-wrapping fix: domain errors
+    // from the listed commands must surface as `Error: ...` to stderr
+    // and exit EXIT.RUNTIME (1), not bubble as stack traces.
+
+    async function expectCleanRuntimeError(argv: string[], match: RegExp): Promise<void> {
+      const errSpy = vi.mocked(console.error);
+      errSpy.mockClear();
+      process.exitCode = undefined;
+      process.argv = argv;
+      await main();
+      expect(process.exitCode).toBe(1);
+      const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(stderr).toMatch(match);
+      // No raw stack trace leaked through.
+      expect(stderr).not.toMatch(/\s+at /);
+    }
+
+    it("show on missing task surfaces a clean runtime error", async () => {
+      await initLoctt(root);
+      await expectCleanRuntimeError(
+        ["node", "loctt", "show", "T-999"],
+        /Error:.*T-999/i,
+      );
+    });
+
+    it("set on missing task surfaces a clean runtime error", async () => {
+      await initLoctt(root);
+      await expectCleanRuntimeError(
+        ["node", "loctt", "set", "T-999", "priority", "high"],
+        /Error:.*T-999/i,
+      );
+    });
+
+    it("unset on missing task surfaces a clean runtime error", async () => {
+      await initLoctt(root);
+      await expectCleanRuntimeError(
+        ["node", "loctt", "unset", "T-999", "priority"],
+        /Error:.*T-999/i,
+      );
+    });
+
+    it("link on missing source task surfaces a clean runtime error", async () => {
+      await initLoctt(root);
+      process.argv = ["node", "loctt", "create", "real"];
+      await main();
+      await expectCleanRuntimeError(
+        ["node", "loctt", "link", "T-999", "blocks", "T-1"],
+        /Error:.*T-999/i,
+      );
+    });
+
+    it("unlink on missing source task surfaces a clean runtime error", async () => {
+      await initLoctt(root);
+      process.argv = ["node", "loctt", "create", "real"];
+      await main();
+      await expectCleanRuntimeError(
+        ["node", "loctt", "unlink", "T-999", "blocks", "T-1"],
+        /Error:.*T-999/i,
+      );
+    });
+
+    it("archive on missing task surfaces a clean runtime error", async () => {
+      await initLoctt(root);
+      await expectCleanRuntimeError(
+        ["node", "loctt", "archive", "T-999"],
+        /Error:.*T-999/i,
+      );
+    });
+
+    it("unarchive on missing task surfaces a clean runtime error", async () => {
+      await initLoctt(root);
+      await expectCleanRuntimeError(
+        ["node", "loctt", "unarchive", "T-999"],
+        /Error:.*T-999/i,
+      );
+    });
+
+    it("missing args on wrapped commands print Usage and exit 2", async () => {
+      // Confirms the usage-error path inside runCommand still routes
+      // through EXIT.USAGE for every wrapped command.
+      await initLoctt(root);
+      for (const argv of [
+        ["node", "loctt", "show"],
+        ["node", "loctt", "set", "T-1"],
+        ["node", "loctt", "unset"],
+        ["node", "loctt", "link", "T-1"],
+        ["node", "loctt", "unlink", "T-1"],
+        ["node", "loctt", "archive"],
+        ["node", "loctt", "unarchive"],
+        ["node", "loctt", "create"],
+      ]) {
+        const errSpy = vi.mocked(console.error);
+        errSpy.mockClear();
+        process.exitCode = undefined;
+        process.argv = argv;
+        await main();
+        expect(process.exitCode, `argv=${argv.join(" ")}`).toBe(2);
+        const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+        expect(stderr).toMatch(/^Error:/m);
+        expect(stderr).toMatch(/^Usage:/m);
+      }
+    });
+  });
+
+  describe("CLI enum pre-validation against workflow config", () => {
+    // Regression tests for the assertWorkflowEnumKey / ...Relationship
+    // helpers: unknown workflow keys fail at the CLI boundary with a
+    // friendly "Known: ..." hint instead of bubbling from core.
+
+    it("create --status with an unknown key prints a Known list and exits 2", async () => {
+      await initLoctt(root);
+      const errSpy = vi.mocked(console.error);
+      errSpy.mockClear();
+      process.exitCode = undefined;
+      process.argv = ["node", "loctt", "create", "t", "--status", "nope"];
+      await main();
+      expect(process.exitCode).toBe(2);
+      const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(stderr).toMatch(/unknown status 'nope'/);
+      expect(stderr).toMatch(/Known:/);
+    });
+
+    it("create --priority with an unknown key exits 2 with hint", async () => {
+      await initLoctt(root);
+      const errSpy = vi.mocked(console.error);
+      errSpy.mockClear();
+      process.exitCode = undefined;
+      process.argv = ["node", "loctt", "create", "t", "--priority", "nope"];
+      await main();
+      expect(process.exitCode).toBe(2);
+      const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(stderr).toMatch(/unknown priority 'nope'/);
+    });
+
+    it("create --type with an unknown key exits 2 with hint", async () => {
+      await initLoctt(root);
+      const errSpy = vi.mocked(console.error);
+      errSpy.mockClear();
+      process.exitCode = undefined;
+      process.argv = ["node", "loctt", "create", "t", "--type", "nope"];
+      await main();
+      expect(process.exitCode).toBe(2);
+      const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(stderr).toMatch(/unknown task_type 'nope'/);
+    });
+
+    it("set <task> status with an unknown key exits 2 with hint", async () => {
+      await initLoctt(root);
+      process.argv = ["node", "loctt", "create", "real"];
+      await main();
+      process.exitCode = undefined;
+      const errSpy = vi.mocked(console.error);
+      errSpy.mockClear();
+      process.argv = ["node", "loctt", "set", "T-1", "status", "nope"];
+      await main();
+      expect(process.exitCode).toBe(2);
+      const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(stderr).toMatch(/unknown status 'nope'/);
+    });
+
+    it("link with an unknown relationship key exits 2 with hint", async () => {
+      await initLoctt(root);
+      process.argv = ["node", "loctt", "create", "a"];
+      await main();
+      process.exitCode = undefined;
+      process.argv = ["node", "loctt", "create", "b"];
+      await main();
+      process.exitCode = undefined;
+      const errSpy = vi.mocked(console.error);
+      errSpy.mockClear();
+      process.argv = ["node", "loctt", "link", "T-1", "noSuchRel", "T-2"];
+      await main();
+      expect(process.exitCode).toBe(2);
+      const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(stderr).toMatch(/unknown relationship 'noSuchRel'/);
+    });
+
+    it("set <task> status with a valid key succeeds (sanity)", async () => {
+      // Guards against the pre-validation accidentally rejecting
+      // legitimate values.
+      await initLoctt(root);
+      process.argv = ["node", "loctt", "create", "real"];
+      await main();
+      process.exitCode = undefined;
+      // 'in_progress' is in the default workflow's statuses.
+      process.argv = ["node", "loctt", "set", "T-1", "status", "in_progress"];
+      await main();
+      expect(process.exitCode).toBeUndefined();
+    });
+  });
 });
 
 describe("CLI git subcommands", () => {

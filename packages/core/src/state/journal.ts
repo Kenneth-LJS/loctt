@@ -312,6 +312,10 @@ export function registerRecoveryHandler(
  * fresh journal load — every handler is required to be
  * idempotent, so partial replays are safe to repeat.
  *
+ * Each successful replay logs an info-level audit line so operators
+ * can correlate post-crash state changes with the originating
+ * interrupted operation.
+ *
  * MUST be called inside `withStateLock` so concurrent processes
  * don't race the dispatch + clear-entry steps.
  */
@@ -336,6 +340,15 @@ export async function recoverPendingJournal(locttDir: string): Promise<void> {
       continue;
     }
     await handler(locttDir, entry);
+    // Audit log: a successful replay means we recovered from a crash
+    // partway through a multi-step write. Emitting one line per entry
+    // gives operators a forensic trail (when, what kind, which id)
+    // without spamming the happy path — the loop body only runs when
+    // entries are pending.
+    console.info(
+      `[loctt] journal recovery replayed entry ${entry.id} ` +
+      `kind='${entry.kind}' started_at=${entry.started_at}`,
+    );
   }
 }
 

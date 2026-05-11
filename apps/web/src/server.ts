@@ -1439,27 +1439,10 @@ export function createWebApp(options: WebAppOptions) {
 
     entries.reverse();
 
-    let limit = entries.length;
-    let offset = 0;
-    if (url.searchParams.has("limit")) {
-      const n = Number(url.searchParams.get("limit"));
-      if (Number.isNaN(n) || n < 0 || !Number.isInteger(n)) {
-        error(res, "limit must be a non-negative integer", 400);
-        return;
-      }
-      limit = n;
-    }
-    if (url.searchParams.has("offset")) {
-      const n = Number(url.searchParams.get("offset"));
-      if (Number.isNaN(n) || n < 0 || !Number.isInteger(n)) {
-        error(res, "offset must be a non-negative integer", 400);
-        return;
-      }
-      offset = n;
-    }
-
-    const page = entries.slice(offset, offset + limit);
-    json(res, { entries: page, total: entries.length });
+    const page = parsePagination(url, res);
+    if (page === null) return;
+    const sliced = entries.slice(page.offset, page.offset + page.limit);
+    json(res, { entries: sliced, total: entries.length });
   };
 
   const handleSetField: RouteHandler = async ({ req, res, locttDir, captures }) => {

@@ -44,7 +44,14 @@ Runs diagnostic checks on the tracker. No parameters. Output is human-prose line
 
 ### `create_task`
 
-Create a new task. When the tracker has multiple projects, pass `project` to disambiguate; otherwise the workspace default (or the only project) is used.
+Create a new task. When the tracker has multiple projects, pass `project` to disambiguate; otherwise the server resolves the target project in this order:
+
+1. **Explicit** — the `project` argument, if supplied.
+2. **Per-user default** — the active user's `default_project` (set via `set_user_setting`).
+3. **Workspace default** — the project marked default in `projects.yaml`.
+4. **Sole project** — used automatically when only one project is configured.
+
+If none of these resolve to a unique project, the call fails with a project-resolution error.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -68,7 +75,7 @@ Get a task by key or ID, optionally including the markdown body.
 | `ref` | string | yes | Task key (e.g. `T-1`) or ID |
 | `include_body` | boolean | no | Include markdown body (default `true`) |
 
-Returns JSON: all frontmatter fields, plus `relationships` (each as `{type, target, missing?}` — `target` is rendered as a user-facing key like `T-2` when resolvable; deleted targets carry `missing: true` and retain the raw ID), `attachments` (`{name, size}`), and `body` when requested. The `relationships` key is omitted when empty.
+Returns JSON: all frontmatter fields, plus `relationships` (each as `{type, target, missing?}` — `target` is rendered as a user-facing key like `T-2` when resolvable; deleted targets carry `missing: true` and retain the raw ID), `attachments` (each as `{name, size, mime?}` — `mime` is derived from the filename extension and is omitted when the extension is unknown; consumers should treat its absence as `application/octet-stream`), and `body` when requested. The `relationships` key is omitted when empty.
 
 ### `list_tasks`
 

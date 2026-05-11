@@ -1,10 +1,20 @@
 # CLI Reference
 
-Every `loctt` command exits with code `0` on success and `1` on error (including
-usage errors and validation failures). Commands that touch an existing tracker
-fail if `.loctt/` is missing or its schema doesn't match this CLI's version —
-run `loctt migrate` to upgrade. The exceptions are `init`, `info`, and `doctor`,
-which work without (or before) a tracker exists.
+Every `loctt` command exits with one of three codes:
+
+| Code | Meaning |
+|---|---|
+| `0` | Success (also: user declined a confirm prompt) |
+| `1` | Runtime error — validation, IO, schema mismatch, domain failure |
+| `2` | Usage error — missing args, bad flag, mutually-exclusive flags |
+
+Scripts can distinguish "you typed it wrong" (`2`) from "the operation failed"
+(`1`) without parsing stderr.
+
+Commands that touch an existing tracker fail if `.loctt/` is missing or its
+schema doesn't match this CLI's version — run `loctt migrate` to upgrade. The
+exceptions are `init`, `info`, and `doctor`, which work without (or before) a
+tracker exists.
 
 A `<task>` argument may be either a key (e.g. `T-12`) or an internal ID (ULID).
 

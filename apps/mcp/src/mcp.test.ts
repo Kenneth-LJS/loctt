@@ -433,4 +433,77 @@ describe("MCP executeTool", () => {
       expect(result.isError).toBe(true);
     });
   });
+
+  describe("get_task response shape", () => {
+    // Regression: the attachments shape gained an optional `mime` field
+    // (commit 4472ed3). These tests pin down the contract so future
+    // changes don't accidentally promote mime to required or strip it.
+
+    async function getTaskJson(ref: string, args: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+      const result = await executeTool(root, "get_task", { ref, ...args });
+      expect(result.isError).toBeUndefined();
+      return JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
+    }
+
+    it("attachments array is empty when none are attached", async () => {
+      await executeTool(root, "create_task", { title: "no attachments" });
+      const body = await getTaskJson("T-1");
+      expect(body["attachments"]).toEqual([]);
+    });
+
+    it("attachment with known extension includes `mime`", async () => {
+      const { writeFile } = await import("node:fs/promises");
+      await executeTool(root, "create_task", { title: "with png" });
+      const src = join(root, "img.png");
+      await writeFile(src, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      const attachResult = await executeTool(root, "attach_file", {
+        ref: "T-1",
+        source_path: src,
+      });
+      expect(attachResult.isError).toBeUndefined();
+
+      const body = await getTaskJson("T-1");
+      const attachments = body["attachments"] as Array<Record<string, unknown>>;
+      expect(attachments).toHaveLength(1);
+      expect(attachments[0]?.["name"]).toBe("img.png");
+      expect(typeof attachments[0]?.["size"]).toBe("number");
+      expect(attachments[0]?.["mime"]).toBe("image/png");
+    });
+
+    it("attachment with unknown extension omits `mime`", async () => {
+      // Strict optionality: when the extension can't be mapped, `mime`
+      // is absent (not null, not empty string). Consumers treat
+      // absence as application/octet-stream.
+      const { writeFile } = await import("node:fs/promises");
+      await executeTool(root, "create_task", { title: "with weird" });
+      const src = join(root, "data.xyzunknown");
+      await writeFile(src, "raw");
+      const attachResult = await executeTool(root, "attach_file", {
+        ref: "T-1",
+        source_path: src,
+      });
+      expect(attachResult.isError).toBeUndefined();
+
+      const body = await getTaskJson("T-1");
+      const attachments = body["attachments"] as Array<Record<string, unknown>>;
+      expect(attachments).toHaveLength(1);
+      expect(attachments[0]).not.toHaveProperty("mime");
+    });
+
+    it("body is included by default, omitted when include_body=false", async () => {
+      await executeTool(root, "create_task", { title: "with body", body: "hello" });
+      const withBody = await getTaskJson("T-1");
+      expect(withBody["body"]).toBe("hello");
+      const withoutBody = await getTaskJson("T-1", { include_body: false });
+      expect(withoutBody).not.toHaveProperty("body");
+    });
+
+    it("relationships key is omitted when there are none", async () => {
+      // Stable contract for agents: empty relationships array is
+      // silenced to keep the JSON minimal.
+      await executeTool(root, "create_task", { title: "no rels" });
+      const body = await getTaskJson("T-1");
+      expect(body).not.toHaveProperty("relationships");
+    });
+  });
 });

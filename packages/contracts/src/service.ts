@@ -22,6 +22,9 @@ export interface CreateTaskRequest {
   readonly due_date?: string;
   readonly estimate?: string;
   readonly milestone?: string;
+  // Custom-field payload: shape is determined by workflow config at
+  // runtime, so the contract accepts arbitrary values and defers
+  // type-checking to core's validation pass.
   readonly fields?: Readonly<Record<string, unknown>>;
   readonly body?: string;
 }
@@ -29,6 +32,10 @@ export interface CreateTaskRequest {
 /** Request to update task fields. */
 export interface UpdateTaskRequest {
   readonly field: string;
+  // Value type varies by `field`: enums are strings, dates are
+  // strings, custom fields can be any JSON-serializable shape. The
+  // service handler validates against the field's config; the
+  // contract intentionally stays open.
   readonly value: unknown;
 }
 
