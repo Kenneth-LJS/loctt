@@ -49,24 +49,6 @@ npx tsc --build      # Build via project references
 - `.loctt/` — data directory (tasks, config, state)
 - Documentation: `docs/` (user-facing), `docs/dev/` (developer)
 
-## Frontend Development (WIP — clean up before release)
-
-The loctt frontend is being developed in a separate repo (`~/Documents/PDev/task-tracker/`),
-using loctt itself to plan and track the work. This is intentional dogfooding — we use loctt's
-CLI/MCP to manage the tickets for building loctt's own frontend.
-
-- **Design doc:** `~/Documents/PDev/task-tracker/design-doc.md`
-- **Workflow:** Build the frontend in task-tracker, experiment, refine. Once happy, migrate/adapt
-  it into this repo (likely under `apps/web`).
-- **task-tracker is not a separate product** — it's a testing ground for the loctt frontend.
-  The design doc there describes what the loctt web UI should become.
-
-Key design differences to be aware of during migration:
-- task-tracker uses SQLite + Express; loctt uses markdown files + its own core library
-- task-tracker has relationship ranking (lexorank on `relationships.rank`); loctt does not yet
-- The frontend (React + Vite + Tailwind + shadcn/ui) should be largely portable once the API
-  layer is adapted
-
 ## Git Commits
 
 - Do NOT add "Co-Authored-By" or any AI/Claude attribution to commit messages. Ever.
