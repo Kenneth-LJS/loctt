@@ -1,22 +1,24 @@
+export { MAX_AVATAR_BYTES } from "./avatar.js";
 export {
   CurrentUserError,
   readCurrentUserId,
   writeCurrentUserId,
 } from "./current.js";
-export type { CreateUserOptions, DeleteUserOptions, EditUserOptions } from "./manage.js";
+export { UserError } from "./errors.js";
+export type { CreateUserOptions, DeleteUserOptions, EditUserOptions } from "./lifecycle.js";
 export {
   archiveUser,
   createUser,
   deleteUser,
   detectSystemTimezone,
-  ensureDefaultUser,
-  getCurrentUser,
-  MAX_AVATAR_BYTES,
-  resolveUserRef,
-  switchCurrentUser,
   unarchiveUser,
   updateUser,
-  UserError,
+} from "./lifecycle.js";
+export {
+  ensureDefaultUser,
+  getCurrentUser,
+  resolveUserRef,
+  switchCurrentUser,
 } from "./manage.js";
 export {
   loadAllUsers,
