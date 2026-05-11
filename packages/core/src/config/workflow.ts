@@ -21,18 +21,9 @@ export class WorkflowConfigError extends Error {
  * The schema validates shapes; per-collection uniqueness checks
  * still live in `validateWorkflowConfig` (callers that want them
  * should run the validator after parsing).
- *
- * `custom_fields` is filled in as an empty array if missing — old
- * workflow.yaml files predate the field.
  */
 export function parseWorkflowConfig(yamlContent: string): WorkflowConfig {
   const raw: unknown = safeParseYaml(yamlContent, "workflow.yaml");
-  if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
-    const r = raw as Record<string, unknown>;
-    if (r["custom_fields"] === undefined) r["custom_fields"] = [];
-    if (r["relationships"] === undefined) r["relationships"] = [];
-    if (r["priorities"] === undefined) r["priorities"] = [];
-  }
   try {
     return WorkflowConfigSchema.parse(raw);
   } catch (err) {

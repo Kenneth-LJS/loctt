@@ -66,10 +66,7 @@ describe("task show model", () => {
   it("does not list system files at the task root as attachments", async () => {
     await writeTask(locttDir, "abc123", task);
     const taskDir = getTaskDir(locttDir, "abc123");
-    // Drop both the new and legacy history filenames at the task root —
-    // neither should be reported as an attachment.
     await writeFile(join(taskDir, "_history.yaml"), "[]");
-    await writeFile(join(taskDir, "history.yaml"), "[]");
 
     const attachments = await discoverAttachments(locttDir, "abc123");
     expect(attachments).toEqual([]);

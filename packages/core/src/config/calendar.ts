@@ -27,12 +27,6 @@ export function getCalendarConfigPath(locttDir: string): string {
 
 export function parseCalendarConfig(yamlContent: string): CalendarConfig {
   const raw = coerceYaml(safeParseYaml(yamlContent, "calendar.yaml"));
-  // `holidays` was historically optional in the file but required
-  // in the type. Default to [] before the schema parses.
-  if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
-    const r = raw as Record<string, unknown>;
-    if (r["holidays"] === undefined) r["holidays"] = [];
-  }
   try {
     return CalendarConfigSchema.parse(raw);
   } catch (err) {

@@ -5,13 +5,15 @@ import { YamlSyntaxError } from "./yaml-coerce.js";
 
 const CANONICAL_YAML = `
 queries:
-  - name: recent-open
+  - id: 01HQ000000000000000000000A
+    name: recent-open
     query: archived != true and status != done
     sort:
       - field: updated_at
         direction: desc
 
-  - name: blocked
+  - id: 01HQ000000000000000000000B
+    name: blocked
     query: archived != true and status = blocked
     sort:
       - field: priority
@@ -19,7 +21,8 @@ queries:
       - field: updated_at
         direction: desc
 
-  - name: init-work
+  - id: 01HQ000000000000000000000C
+    name: init-work
     query: text ~ "init"
     sort:
       - field: key
@@ -31,15 +34,15 @@ describe("parseQueriesConfig", () => {
     const config = parseQueriesConfig(CANONICAL_YAML);
 
     expect(config.queries).toHaveLength(3);
-    // `id` is auto-assigned (ulid) when missing from the YAML.
     expect(config.queries[0]).toMatchObject({
+      id: "01HQ000000000000000000000A",
       name: "recent-open",
       query: 'archived != true and status != done',
       sort: [{ field: "updated_at", direction: "desc" }],
     });
-    expect(config.queries[0]?.id).toMatch(/^[0-9A-Z]{26}$/);
     expect(config.queries[1]?.sort).toHaveLength(2);
     expect(config.queries[2]).toMatchObject({
+      id: "01HQ000000000000000000000C",
       name: "init-work",
       query: 'text ~ "init"',
       sort: [{ field: "key", direction: "asc" }],
@@ -49,7 +52,8 @@ describe("parseQueriesConfig", () => {
   it("allows queries without sort", () => {
     const yaml = `
 queries:
-  - name: all
+  - id: 01HQ000000000000000000000Z
+    name: all
     query: archived != true
 `;
     const config = parseQueriesConfig(yaml);
@@ -66,8 +70,13 @@ queries:
     expect(() => parseQueriesConfig("{}")).toThrow("queries is required (expected array)");
   });
 
+  it("throws on missing query id", () => {
+    const yaml = `queries:\n  - name: x\n    query: status = open`;
+    expect(() => parseQueriesConfig(yaml)).toThrow(QueriesConfigError);
+  });
+
   it("throws on missing query name", () => {
-    const yaml = `queries:\n  - query: status = open`;
+    const yaml = `queries:\n  - id: 01HQ000000000000000000000Y\n    query: status = open`;
     expect(() => parseQueriesConfig(yaml)).toThrow(QueriesConfigError);
     expect(() => parseQueriesConfig(yaml)).toThrow("queries[0].name is required (expected string)");
   });
@@ -75,7 +84,8 @@ queries:
   it("throws on invalid sort direction", () => {
     const yaml = `
 queries:
-  - name: bad
+  - id: 01HQ000000000000000000000Y
+    name: bad
     query: status = open
     sort:
       - field: key
@@ -94,7 +104,8 @@ queries:
   it("throws when a saved query string is unparseable", () => {
     const yaml = `
 queries:
-  - name: broken
+  - id: 01HQ000000000000000000000Y
+    name: broken
     query: "status =="
 `;
     expect(() => parseQueriesConfig(yaml)).toThrow(/not a valid query/);
