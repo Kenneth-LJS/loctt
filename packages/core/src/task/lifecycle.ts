@@ -5,6 +5,7 @@ import type { Task, TaskFrontmatter } from "@loctt/contracts";
 import { getTaskDir } from "../paths/index.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
+import { clearLookupCaches } from "./lookup-cache.js";
 
 export class TaskLifecycleError extends Error {
   constructor(message: string) {
@@ -72,4 +73,8 @@ export async function deleteTask(
 
   const taskDir = getTaskDir(locttDir, taskId);
   await rm(taskDir, { recursive: true, force: true });
+  // Drop any cached "key not found" verdicts — the just-deleted
+  // task's keys still resolved a moment ago and any rebuild after
+  // this point should reflect the new (smaller) population.
+  clearLookupCaches(locttDir);
 }

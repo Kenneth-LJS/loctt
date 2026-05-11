@@ -3,12 +3,27 @@ import { readFile } from "node:fs/promises";
 import { parse as parseYaml } from "yaml";
 
 import { getKeyIndexPath } from "../paths/index.js";
-import { loadAllTasks } from "../task/lookup.js";
+import { listTaskIds } from "../task/list-ids.js";
+import { loadAllTasks } from "../task/load-all.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 
-/** Mapping of key (current or historical) → task ID. */
+/**
+ * Mapping of key (current or historical) → task ID, plus a
+ * watermark recording the task count at the time of the last
+ * full rebuild. Lookup paths use the watermark to detect when
+ * the on-disk task population has changed (created/deleted out
+ * of band, e.g. via `git pull`) and a rebuild is needed.
+ *
+ * Why count rather than mtime: filesystem mtime granularity is
+ * 1 second on some filesystems, so a write+lookup within the
+ * same second could miss a real change. Integer task count is
+ * always precise; misses on hand-edited rekeys (same count, new
+ * key) are tolerated by the existing fallback rebuild on miss.
+ */
 export interface KeyIndex {
   readonly entries: Readonly<Record<string, string>>;
+  /** Task count recorded at the last rebuild. Optional for forward-compat. */
+  readonly task_count?: number;
 }
 
 /** Loads the key index from disk. Returns undefined if not found. */
@@ -18,9 +33,14 @@ export async function loadKeyIndex(locttDir: string): Promise<KeyIndex | undefin
     const content = await readFile(path, "utf-8");
     const raw: unknown = parseYaml(content);
     if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
-    const entries = (raw as Record<string, unknown>)["entries"];
+    const obj = raw as Record<string, unknown>;
+    const entries = obj["entries"];
     if (typeof entries !== "object" || entries === null || Array.isArray(entries)) return undefined;
-    return { entries: entries as Record<string, string> };
+    const taskCount = obj["task_count"];
+    return {
+      entries: entries as Record<string, string>,
+      ...(typeof taskCount === "number" ? { task_count: taskCount } : {}),
+    };
   } catch {
     return undefined;
   }
@@ -28,10 +48,16 @@ export async function loadKeyIndex(locttDir: string): Promise<KeyIndex | undefin
 
 /** Saves the key index to disk. */
 export async function saveKeyIndex(locttDir: string, index: KeyIndex): Promise<void> {
-  await writeYamlAtomically(getKeyIndexPath(locttDir), { entries: index.entries });
+  const payload: Record<string, unknown> = { entries: index.entries };
+  if (index.task_count !== undefined) payload["task_count"] = index.task_count;
+  await writeYamlAtomically(getKeyIndexPath(locttDir), payload);
 }
 
-/** Rebuilds the key index by scanning all tasks. */
+/**
+ * Rebuilds the key index by scanning all tasks. Records the task
+ * count as the watermark so subsequent lookups can detect when
+ * the population has changed and skip rebuild on stable misses.
+ */
 export async function rebuildKeyIndex(locttDir: string): Promise<KeyIndex> {
   const tasks = await loadAllTasks(locttDir);
   const entries: Record<string, string> = {};
@@ -45,9 +71,24 @@ export async function rebuildKeyIndex(locttDir: string): Promise<KeyIndex> {
     }
   }
 
-  const index: KeyIndex = { entries };
+  const index: KeyIndex = { entries, task_count: tasks.length };
   await saveKeyIndex(locttDir, index);
   return index;
+}
+
+/**
+ * Returns true when the on-disk task count matches the index's
+ * watermark — i.e. the index can be trusted as authoritative for
+ * "this key isn't here." Returns false when the watermark is
+ * absent or stale (forces a rebuild on miss).
+ */
+export async function isKeyIndexFresh(
+  locttDir: string,
+  index: KeyIndex,
+): Promise<boolean> {
+  if (index.task_count === undefined) return false;
+  const ids = await listTaskIds(locttDir);
+  return ids.length === index.task_count;
 }
 
 /** Looks up a task ID by key using the index. Returns undefined if not found. */

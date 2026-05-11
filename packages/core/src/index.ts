@@ -207,7 +207,7 @@ export { withStateLock } from "./state/index.js";
 export { loadSyncState, parseSyncState, saveSyncState, serializeSyncState, SyncStateError } from "./state/index.js";
 export { clearReconcileState, loadReconcileState, parseReconcileState, ReconcileStateError,saveReconcileState, serializeReconcileState } from "./state/index.js";
 export { allocateKey, appendKeyHistory, initKeyAllocation, KeyAllocationError } from "./state/index.js";
-export { addToKeyIndex,loadKeyIndex, lookupKeyInIndex, rebuildKeyIndex, saveKeyIndex } from "./state/index.js";
+export { addToKeyIndex, isKeyIndexFresh, loadKeyIndex, lookupKeyInIndex, rebuildKeyIndex, saveKeyIndex } from "./state/index.js";
 export type { AttachOptions, AttachResult, DetachOptions } from "./task/index.js";
 export type { CreateTaskOptions, CreateTaskParams } from "./task/index.js";
 export type { AttachmentInfo, TaskShowModel } from "./task/index.js";
