@@ -8,7 +8,7 @@ import { validateTaskAgainstWorkflow,validateWorkflowConfig } from "../config/va
 import { loadWorkflowConfig } from "../config/workflow.js";
 import { getConfigDir,getQueriesConfigPath, getStateFilePath, getTasksDir, getUsersDir, getWorkflowConfigPath, resolveLocttDir } from "../paths/index.js";
 import { loadState } from "../state/state.js";
-import { loadAllTasks } from "../task/lookup.js";
+import { loadAllTasks } from "../task/load-all.js";
 import { validateRelationships } from "../task/traversal.js";
 import { loadAllUsers } from "../users/profile.js";
 import { fileExists } from "../utils/fs.js";

@@ -22,11 +22,11 @@ import { writeYamlAtomically } from "../utils/atomic-yaml.js";
  */
 export interface KeyIndex {
   readonly entries: Readonly<Record<string, string>>;
-  /** Task count recorded at the last rebuild. Optional for forward-compat. */
-  readonly task_count?: number;
+  /** Task count recorded at the last rebuild. */
+  readonly task_count: number;
 }
 
-/** Loads the key index from disk. Returns undefined if not found. */
+/** Loads the key index from disk. Returns undefined if not found or malformed. */
 export async function loadKeyIndex(locttDir: string): Promise<KeyIndex | undefined> {
   const path = getKeyIndexPath(locttDir);
   try {
@@ -37,9 +37,10 @@ export async function loadKeyIndex(locttDir: string): Promise<KeyIndex | undefin
     const entries = obj["entries"];
     if (typeof entries !== "object" || entries === null || Array.isArray(entries)) return undefined;
     const taskCount = obj["task_count"];
+    if (typeof taskCount !== "number") return undefined;
     return {
       entries: entries as Record<string, string>,
-      ...(typeof taskCount === "number" ? { task_count: taskCount } : {}),
+      task_count: taskCount,
     };
   } catch {
     return undefined;
@@ -48,9 +49,10 @@ export async function loadKeyIndex(locttDir: string): Promise<KeyIndex | undefin
 
 /** Saves the key index to disk. */
 export async function saveKeyIndex(locttDir: string, index: KeyIndex): Promise<void> {
-  const payload: Record<string, unknown> = { entries: index.entries };
-  if (index.task_count !== undefined) payload["task_count"] = index.task_count;
-  await writeYamlAtomically(getKeyIndexPath(locttDir), payload);
+  await writeYamlAtomically(getKeyIndexPath(locttDir), {
+    entries: index.entries,
+    task_count: index.task_count,
+  });
 }
 
 /**
@@ -79,14 +81,14 @@ export async function rebuildKeyIndex(locttDir: string): Promise<KeyIndex> {
 /**
  * Returns true when the on-disk task count matches the index's
  * watermark — i.e. the index can be trusted as authoritative for
- * "this key isn't here." Returns false when the watermark is
- * absent or stale (forces a rebuild on miss).
+ * "this key isn't here." Returns false when the count drifted
+ * (creation, deletion, or a partial rebuild), forcing a rebuild
+ * on the next miss.
  */
 export async function isKeyIndexFresh(
   locttDir: string,
   index: KeyIndex,
 ): Promise<boolean> {
-  if (index.task_count === undefined) return false;
   const ids = await listTaskIds(locttDir);
   return ids.length === index.task_count;
 }
@@ -96,7 +98,15 @@ export function lookupKeyInIndex(index: KeyIndex, key: string): string | undefin
   return index.entries[key];
 }
 
-/** Adds a key→id mapping to the index (mutates and returns new index). */
+/**
+ * Adds a key→id mapping to the index. Returns a new immutable
+ * KeyIndex with the addition. Bumps the watermark by 1 so the
+ * caller's freshness check still matches the on-disk count after
+ * a write that they themselves created.
+ */
 export function addToKeyIndex(index: KeyIndex, key: string, id: string): KeyIndex {
-  return { entries: { ...index.entries, [key]: id } };
+  return {
+    entries: { ...index.entries, [key]: id },
+    task_count: index.task_count + 1,
+  };
 }

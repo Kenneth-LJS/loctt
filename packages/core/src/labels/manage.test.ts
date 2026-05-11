@@ -9,7 +9,7 @@ import { initLoctt } from "../init/init.js";
 import { resolveLocttDir } from "../paths/index.js";
 import { loadState, saveState, withStateLock } from "../state/index.js";
 import { createTask } from "../task/create.js";
-import { loadAllTasks } from "../task/lookup.js";
+import { loadAllTasks } from "../task/load-all.js";
 import {
   assertLabelKeysRegistered,
   createLabel,

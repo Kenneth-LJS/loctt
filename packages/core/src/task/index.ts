@@ -25,14 +25,10 @@ export {
   writeTaskBody,
 } from "./io.js";
 export { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./lifecycle.js";
-export {
-  listTaskIds,
-  loadAllTasks,
-  lookupById,
-  lookupByKey,
-  lookupTask,
-  TaskNotFoundError,
-} from "./lookup.js";
+export { listTaskIds } from "./list-ids.js";
+export { loadAllTasks } from "./load-all.js";
+export { lookupById, lookupByKey, lookupTask, TaskNotFoundError } from "./lookup.js";
+export { clearLookupCaches } from "./lookup-cache.js";
 export type { LinkTaskOptions, UnlinkTaskOptions } from "./relationships.js";
 export { linkTask, RelationshipError,unlinkTask } from "./relationships.js";
 export type { AttachmentInfo, TaskShowModel } from "./show.js";

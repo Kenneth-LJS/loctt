@@ -7,7 +7,7 @@ import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
 import { readTask,writeTask } from "./io.js";
 import { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./lifecycle.js";
-import { listTaskIds } from "./lookup.js";
+import { listTaskIds } from "./list-ids.js";
 
 describe("task lifecycle", () => {
   let locttDir: string;

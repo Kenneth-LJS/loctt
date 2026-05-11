@@ -785,6 +785,45 @@ built against a stable model.
 
 ---
 
+# Avatar cropper (deferred from chunk 10 — backend done)
+
+Backend status (committed in chunk 10):
+- `POST /api/users/:id/avatar` accepts a multipart upload of any
+  raster format sharp can decode (PNG, JPG, WEBP, GIF, AVIF, …).
+- The core `copyAvatar` pipeline rejects SVG by content sniff,
+  caps source size at 10 MB, resizes the longest side to 500px
+  (preserves aspect ratio), re-encodes as JPG (quality 85,
+  mozjpeg), and writes atomically to `<userDir>/avatar.jpg`.
+- `GET /api/users/:id/avatar` always returns `image/jpeg` with
+  `X-Content-Type-Options: nosniff` and a `Content-Length`. No
+  per-extension MIME guessing, no SVG XSS hazard.
+
+UI work still to do:
+- **Image cropper modal.** When a user picks a file in the
+  profile/settings page:
+  1. Read the file client-side into an object URL (no upload yet).
+  2. Open a modal showing the image with a circular crop overlay.
+     Default the crop to the largest centred square that fits the
+     image. The user can drag to reposition and pinch/scroll to
+     zoom (clamped so the crop stays inside the image bounds).
+  3. On confirm, render the cropped square to an offscreen canvas,
+     toBlob() as JPEG/PNG, and upload via the existing
+     `POST /api/users/:id/avatar` endpoint.
+- **Library suggestion.** `react-easy-crop` is the standard for
+  this; permissive MIT. Alternative: `react-image-crop`. Roll our
+  own only if we end up with weird gestures or accessibility
+  constraints those libs can't handle.
+- **Pre-upload size feedback.** Show the resulting JPG size before
+  upload (canvas.toBlob roundtrip) so the user knows when the 10 MB
+  cap is in play. Probably never relevant once they've cropped
+  down, but good UX hygiene.
+- **Server-side fallback.** If the user's browser doesn't support
+  `canvas.toBlob` (none today, but defensively), upload the raw
+  file. The backend already resizes — the only thing we'd lose is
+  the user's chosen crop.
+
+---
+
 # Open questions (do not invent answers)
 
 _None at this time._

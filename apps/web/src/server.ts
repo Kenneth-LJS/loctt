@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { mkdtemp, rm, stat as fsStat } from "node:fs/promises";
+import { lstat as fsLstat, mkdtemp, rm, stat as fsStat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join as pathJoin, normalize as pathNormalize, resolve as pathResolve, sep as pathSep } from "node:path";
@@ -1072,10 +1072,22 @@ export function createWebApp(options: WebAppOptions) {
         return;
       }
       const avatarPath = pathJoin(locttDir, "users", target.id, target.avatar);
-      const stat = await fsStat(avatarPath);
+      // lstat (not stat) so a symlink at avatar.jpg doesn't smuggle
+      // out an arbitrary file. Avatars are written atomically by
+      // copyAvatar so this can only fire on a hand-crafted symlink,
+      // but the check is cheap and the failure mode is severe.
+      const stat = await fsLstat(avatarPath);
+      if (stat.isSymbolicLink()) { error(res, "invalid avatar reference", 400); return; }
       if (!stat.isFile()) { error(res, "no avatar", 404); return; }
-      // Pick a content-type from the extension.
-      res.writeHead(200, { "Content-Type": mimeFor(target.avatar) });
+      // Avatars are always stored as JPG (sharp re-encode in core),
+      // so the content-type is fixed. nosniff prevents the browser
+      // from guessing into image/svg+xml or text/html if a
+      // hand-edited file ended up with surprising bytes.
+      res.writeHead(200, {
+        "Content-Type": "image/jpeg",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Length": String(stat.size),
+      });
       await new Promise<void>((resolve, reject) => {
         const stream = createReadStream(avatarPath);
         stream.on("error", reject);

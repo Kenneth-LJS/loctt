@@ -1,6 +1,6 @@
 import type { Task, WorkflowConfig } from "@loctt/contracts";
 
-import { loadAllTasks } from "./lookup.js";
+import { loadAllTasks } from "./load-all.js";
 
 /** Validates that all relationship targets exist and types are valid. */
 export interface RelationshipValidationError {

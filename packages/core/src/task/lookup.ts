@@ -4,22 +4,6 @@ import { isKeyIndexFresh, loadKeyIndex, lookupKeyInIndex, rebuildKeyIndex } from
 import { readTask } from "./io.js";
 import { hasNegativeLookup, rememberNegativeLookup } from "./lookup-cache.js";
 
-// Re-exported for backward compatibility — listTaskIds lives in
-// list-ids.ts (a leaf module) so callers like state/key-index.ts
-// can use it without closing an import cycle through this file.
-export { listTaskIds } from "./list-ids.js";
-
-// Re-exported for backward compatibility — clearLookupCaches lives
-// in lookup-cache.ts (a leaf module) so writers in io.ts /
-// lifecycle.ts / create.ts can invalidate without closing an import
-// cycle through this file.
-export { clearLookupCaches } from "./lookup-cache.js";
-
-// Re-exported for backward compatibility — loadAllTasks lives in
-// load-all.ts (a leaf module) so state/key-index.ts can call it
-// without closing an import cycle through this file.
-export { loadAllTasks } from "./load-all.js";
-
 export class TaskNotFoundError extends Error {
   constructor(ref: string) {
     super(`task not found: "${ref}"`);

@@ -8,7 +8,7 @@ import { initLoctt } from "../init/init.js";
 import { resolveLocttDir } from "../paths/index.js";
 import { loadState, saveState, withStateLock } from "../state/index.js";
 import { createTask } from "../task/create.js";
-import { loadAllTasks } from "../task/lookup.js";
+import { loadAllTasks } from "../task/load-all.js";
 import { readCurrentUserId, writeCurrentUserId } from "./current.js";
 import {
   archiveUser,
@@ -90,25 +90,130 @@ describe("updateUser", () => {
 });
 
 describe("avatar handling", () => {
-  // SVG attachments could carry inline <script> and execute under the
-  // app's origin. The allowlist intentionally omits svg.
-  it("rejects an SVG avatar source", async () => {
+  // SVG inputs could carry inline <script> and execute under the
+  // app's origin if served same-origin. The avatar pipeline rejects
+  // SVG bytes pre-decode regardless of source-file extension or
+  // sharp's ability to rasterise it.
+  it("rejects an SVG avatar source by content sniff (extension is irrelevant)", async () => {
     const u = await createUser(locttDir, { name: "X" });
-    const svg = join(root, "pic.svg");
-    await writeFile(svg, "<svg><script>alert(1)</script></svg>", "utf-8");
+    // Note: file extension is .png to prove the rejection is by
+    // content sniffing, not extension matching.
+    const svgWithLyingExt = join(root, "pic.png");
+    await writeFile(svgWithLyingExt, "<svg><script>alert(1)</script></svg>", "utf-8");
     await expect(
-      updateUser(locttDir, u.id, { avatarSourcePath: svg }),
-    ).rejects.toThrow(/unsupported avatar extension/i);
+      updateUser(locttDir, u.id, { avatarSourcePath: svgWithLyingExt }),
+    ).rejects.toThrow(/SVG avatars are not supported/i);
   });
 
-  it("accepts a PNG avatar source", async () => {
+  it("rejects SVG with leading whitespace and BOM", async () => {
+    const u = await createUser(locttDir, { name: "X" });
+    const svg = join(root, "weird.svg");
+    // UTF-8 BOM (EF BB BF) + whitespace + SVG opener.
+    await writeFile(svg, Buffer.concat([
+      Buffer.from([0xef, 0xbb, 0xbf, 0x0a, 0x20, 0x09]),
+      Buffer.from('<SVG width="1"><script>alert(1)</script></SVG>', "utf-8"),
+    ]));
+    await expect(
+      updateUser(locttDir, u.id, { avatarSourcePath: svg }),
+    ).rejects.toThrow(/SVG avatars are not supported/i);
+  });
+
+  it("accepts a real PNG and stores it as avatar.jpg (always-JPG output)", async () => {
     const u = await createUser(locttDir, { name: "X" });
     const png = join(root, "pic.png");
-    // Minimal 1x1 PNG (a few bytes of arbitrary content is enough — the
-    // implementation only inspects extension and size, not content).
-    await writeFile(png, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    // Generate a real 50x50 PNG via sharp itself. Using a fake
+    // 4-byte magic-only file would fail decode and never exercise
+    // the resize/re-encode path the chunk-10 pipeline cares about.
+    const sharp = (await import("sharp")).default;
+    const buf = await sharp({
+      create: { width: 50, height: 50, channels: 3, background: "#ff0000" },
+    }).png().toBuffer();
+    await writeFile(png, buf);
+
     const updated = await updateUser(locttDir, u.id, { avatarSourcePath: png });
-    expect(updated.avatar).toBe("avatar.png");
+    expect(updated.avatar).toBe("avatar.jpg");
+
+    // The stored file is JPG bytes, not the original PNG.
+    const storedPath = join(locttDir, "users", u.id, "avatar.jpg");
+    const storedBytes = await readFile(storedPath);
+    // JPG starts with FF D8 FF.
+    expect(storedBytes[0]).toBe(0xff);
+    expect(storedBytes[1]).toBe(0xd8);
+    expect(storedBytes[2]).toBe(0xff);
+    // PNG file would have started with 89 50 4e 47.
+    expect(storedBytes[0]).not.toBe(0x89);
+  });
+
+  it("resizes oversized images down to <=500px on the longest side", async () => {
+    const u = await createUser(locttDir, { name: "X" });
+    const big = join(root, "big.png");
+    const sharp = (await import("sharp")).default;
+    const buf = await sharp({
+      create: { width: 2000, height: 1000, channels: 3, background: "#0000ff" },
+    }).png().toBuffer();
+    await writeFile(big, buf);
+
+    await updateUser(locttDir, u.id, { avatarSourcePath: big });
+
+    const stored = await readFile(join(locttDir, "users", u.id, "avatar.jpg"));
+    const meta = await sharp(stored).metadata();
+    expect(meta.width).toBeLessThanOrEqual(500);
+    expect(meta.height).toBeLessThanOrEqual(500);
+    // 2000x1000 → 500x250 (preserves aspect, longest side caps).
+    expect(meta.width).toBe(500);
+    expect(meta.height).toBe(250);
+  });
+
+  it("rejects sources larger than MAX_AVATAR_BYTES before reading them", async () => {
+    const { MAX_AVATAR_BYTES } = await import("./manage.js");
+    const u = await createUser(locttDir, { name: "X" });
+    const big = join(root, "huge.png");
+    // Create a sparse file at MAX+1 bytes via a single seek-write.
+    // Cheaper than allocating a buffer that big in memory.
+    const fd = await (await import("node:fs/promises")).open(big, "w");
+    await fd.truncate(MAX_AVATAR_BYTES + 1);
+    await fd.close();
+    await expect(
+      updateUser(locttDir, u.id, { avatarSourcePath: big }),
+    ).rejects.toThrow(/max is/i);
+  });
+
+  it("rejects a missing source path", async () => {
+    const u = await createUser(locttDir, { name: "X" });
+    await expect(
+      updateUser(locttDir, u.id, { avatarSourcePath: join(root, "does-not-exist.png") }),
+    ).rejects.toThrow(/avatar source not found/i);
+  });
+
+  it("strips EXIF metadata from the stored avatar", async () => {
+    // Privacy hygiene: a phone-camera photo can carry GPS + serial
+    // number + timestamp. Sharp's default jpeg() encode drops
+    // non-orientation EXIF, but we assert it explicitly so a
+    // future sharp upgrade or a misremembered .withMetadata()
+    // call doesn't leak it back.
+    const sharp = (await import("sharp")).default;
+    const u = await createUser(locttDir, { name: "X" });
+    const src = join(root, "with-exif.jpg");
+    // Build a JPEG, then attach an EXIF block. sharp's
+    // .withExifMerge accepts an object describing tags.
+    const baseJpeg = await sharp({
+      create: { width: 100, height: 100, channels: 3, background: "#222" },
+    }).jpeg().toBuffer();
+    const withExif = await sharp(baseJpeg)
+      .withExifMerge({
+        IFD0: { Software: "loctt-test", Artist: "private-info-here" },
+      })
+      .jpeg()
+      .toBuffer();
+    await writeFile(src, withExif);
+    // Sanity: the source we just made does carry the exif.
+    const srcMeta = await sharp(withExif).metadata();
+    expect(srcMeta.exif).toBeDefined();
+
+    await updateUser(locttDir, u.id, { avatarSourcePath: src });
+    const stored = await readFile(join(locttDir, "users", u.id, "avatar.jpg"));
+    const storedMeta = await sharp(stored).metadata();
+    expect(storedMeta.exif).toBeUndefined();
   });
 });
 

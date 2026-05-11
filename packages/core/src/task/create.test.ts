@@ -7,7 +7,7 @@ import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
 import { createTask } from "./create.js";
 import { readTask } from "./io.js";
-import { listTaskIds } from "./lookup.js";
+import { listTaskIds } from "./list-ids.js";
 
 describe("createTask", () => {
   let locttDir: string;

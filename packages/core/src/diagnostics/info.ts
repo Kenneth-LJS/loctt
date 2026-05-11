@@ -6,7 +6,7 @@ import { loadQueriesConfig } from "../config/queries.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
 import { resolveLocttDir } from "../paths/index.js";
 import { loadState } from "../state/state.js";
-import { listTaskIds } from "../task/lookup.js";
+import { listTaskIds } from "../task/list-ids.js";
 
 /** Information about a .loctt tracker. */
 export interface TrackerInfo {

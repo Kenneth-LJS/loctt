@@ -425,12 +425,20 @@ describe("web server security", () => {
       expect(res.status).toBe(400);
     });
 
-    it("accepts a valid PNG via multipart POST /api/users/:id/avatar", async () => {
+    it("accepts a real PNG via multipart POST /api/users/:id/avatar and serves it as image/jpeg", async () => {
       const current = await getCurrentUser(join(root, ".loctt"));
       if (!current) throw new Error("expected default user");
-      const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      // Use a real PNG (not just the 8-byte magic) so the
+      // sharp pipeline can decode + re-encode it.
+      const sharp = (await import("sharp")).default;
+      const png = await sharp({
+        create: { width: 80, height: 80, channels: 3, background: "#00aa55" },
+      }).png().toBuffer();
+      // FormData/Blob's TS type wants a strict ArrayBuffer view, not
+      // a Node Buffer. new Uint8Array(buf) re-views the underlying
+      // bytes without a copy.
       const form = new FormData();
-      form.append("file", new Blob([png], { type: "image/png" }), "pic.png");
+      form.append("file", new Blob([new Uint8Array(png)], { type: "image/png" }), "pic.png");
       const res = await fetch(`${base}/api/users/${current.id}/avatar`, {
         method: "POST",
         headers: { "X-Loctt-Client": "1" },
@@ -438,15 +446,30 @@ describe("web server security", () => {
       });
       expect(res.status).toBe(200);
       const updated = await res.json() as { avatar?: string };
-      expect(updated.avatar).toBe("avatar.png");
+      // Always-JPG storage policy (chunk 10).
+      expect(updated.avatar).toBe("avatar.jpg");
+
+      // GET serves it back as image/jpeg with nosniff.
+      const get = await fetch(`${base}/api/users/${current.id}/avatar`);
+      expect(get.status).toBe(200);
+      expect(get.headers.get("content-type")).toBe("image/jpeg");
+      expect(get.headers.get("x-content-type-options")).toBe("nosniff");
     });
 
-    it("rejects a multipart SVG upload to /api/users/:id/avatar", async () => {
+    it("rejects an avatar upload over MAX_AVATAR_BYTES at the multipart layer", async () => {
+      // The multipart parser is capped at MAX_AVATAR_BYTES (10MB
+      // post-chunk-10) so a hostile client can't dump 100MB into
+      // the temp dir before the core size check fires. Exceeding
+      // it surfaces a 400 (not a 500/timeout).
+      const { MAX_AVATAR_BYTES } = await import("@loctt/core");
       const current = await getCurrentUser(join(root, ".loctt"));
       if (!current) throw new Error("expected default user");
-      const svg = "<svg><script>alert(1)</script></svg>";
+      const oversized = new Uint8Array(MAX_AVATAR_BYTES + 1024);
+      // Fill with a non-zero byte so it doesn't accidentally look
+      // like a valid sparse image header.
+      oversized.fill(0x42);
       const form = new FormData();
-      form.append("file", new Blob([svg], { type: "image/svg+xml" }), "evil.svg");
+      form.append("file", new Blob([oversized], { type: "image/png" }), "huge.png");
       const res = await fetch(`${base}/api/users/${current.id}/avatar`, {
         method: "POST",
         headers: { "X-Loctt-Client": "1" },
@@ -454,7 +477,24 @@ describe("web server security", () => {
       });
       expect(res.status).toBe(400);
       const body = await res.json() as { error: string };
-      expect(body.error).toMatch(/unsupported avatar extension/i);
+      expect(body.error).toMatch(/maximum size/i);
+    });
+
+    it("rejects a multipart SVG upload regardless of declared file extension", async () => {
+      const current = await getCurrentUser(join(root, ".loctt"));
+      if (!current) throw new Error("expected default user");
+      const svg = "<svg><script>alert(1)</script></svg>";
+      const form = new FormData();
+      // Lying extension — proves rejection is by content sniff.
+      form.append("file", new Blob([svg], { type: "image/png" }), "evil.png");
+      const res = await fetch(`${base}/api/users/${current.id}/avatar`, {
+        method: "POST",
+        headers: { "X-Loctt-Client": "1" },
+        body: form,
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toMatch(/SVG avatars are not supported/i);
     });
 
     it("rejects /api/users/:id without ?confirm=true", async () => {

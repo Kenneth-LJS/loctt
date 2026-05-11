@@ -4,7 +4,7 @@ import { stringify as stringifyYaml } from "yaml";
 import { getWorkflowConfigPath } from "../paths/index.js";
 import { withStateLock } from "../state/index.js";
 import { writeTask } from "../task/io.js";
-import { loadAllTasks } from "../task/lookup.js";
+import { loadAllTasks } from "../task/load-all.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import {
   loadWorkflowConfig,
