@@ -386,7 +386,7 @@ queries:
 |---|---|---|---|
 | `id` | string | yes | Stable unique identifier (ULID). Auto-assigned on first read of older files. Duplicate ids across queries are rejected |
 | `name` | string | yes | Display label |
-| `query` | string | yes | Query DSL string. The parser tokenizes and parses every `query` at load time, so a malformed entry rejects the whole file. See [query-language.md](../query-language.md) |
+| `query` | string | yes | Query DSL string. The parser tokenizes and parses every `query` at load time, so a malformed entry rejects the whole file. See [query-language.md](../user/common/query-language.md) |
 | `sort` | array | no | Ordered list of sort specifiers |
 | `archived` | boolean | no | Hide from default lists. Still runnable by id |
 

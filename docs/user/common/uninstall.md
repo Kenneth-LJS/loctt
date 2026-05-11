@@ -28,7 +28,7 @@ Search your agent instruction files for "LocTT" (case-insensitive) and remove al
 grep -ri "loctt" CLAUDE.md .cursorrules .github/copilot-instructions.md
 ```
 
-Check whichever instruction files your project uses. If you followed the [naming convention](agent-setup.md#naming-convention), all LocTT instructions should be findable with a single search.
+Check whichever instruction files your project uses. If you followed the [naming convention](../mcp/agent-setup.md#naming-convention), all LocTT instructions should be findable with a single search.
 
 ## 4. Remove from `.gitignore`
 

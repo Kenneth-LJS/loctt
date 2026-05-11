@@ -263,7 +263,7 @@ loctt list [--query <q>] [--view <v>] [--limit <n>] [--archived] [--project <key
 
 | Flag | Description |
 |---|---|
-| `--query <q>` | Ad hoc query string (see [query-language.md](query-language.md)) |
+| `--query <q>` | Ad hoc query string (see [query-language.md](../common/query-language.md)) |
 | `--view <v>` | Named saved view from `queries.yaml` |
 | `--limit <n>` | Max results — non-negative integer |
 | `--archived` | Include archived tasks (hidden by default) |
@@ -445,7 +445,7 @@ loctt delete T-12 --hard      # permanent
 ### `loctt mcp`
 
 Start the MCP (Model Context Protocol) server on stdio. Intended to be launched
-by an MCP client; runs until the client disconnects. See [mcp-reference.md](mcp-reference.md).
+by an MCP client; runs until the client disconnects. See [mcp-reference.md](../mcp/reference.md).
 
 ```
 loctt mcp
@@ -467,7 +467,7 @@ loctt ui [--port <n>] [--no-open]
 
 ## Git Sync
 
-Optional git-backed mode. See [git-sync.md](git-sync.md).
+Optional git-backed mode. See [git-sync.md](../common/git-sync.md).
 
 ```
 loctt git enable
