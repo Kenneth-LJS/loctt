@@ -38,3 +38,20 @@ export const UsersListSchema = z.object({
   users: z.array(UserProfileSchema),
 }).strict();
 export type UsersList = z.infer<typeof UsersListSchema>;
+
+/**
+ * Per-user settings stored at `.loctt/users/<id>/settings.yaml`
+ * (gitignored). Most fields are pure UI render prefs that core does
+ * not interpret — those are accepted via passthrough so they survive
+ * a load → save round trip without core needing to model them.
+ *
+ * **`default_project`** is the one cross-cutting field: `loctt create`
+ * resolves the target project as `--project` flag > this field >
+ * workspace default. Core validates the shape (non-empty string) but
+ * not existence; if the referenced project has been deleted, callers
+ * fall back gracefully and doctor reports the dangling reference.
+ */
+export const UserSettingsSchema = z.object({
+  default_project: z.string().min(1).optional(),
+}).passthrough();
+export type UserSettings = z.infer<typeof UserSettingsSchema>;
