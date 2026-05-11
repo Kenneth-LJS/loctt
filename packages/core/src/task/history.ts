@@ -35,6 +35,13 @@ export async function readHistory(
  *
  * Concurrent writers are serialized with a per-task advisory lock
  * (proper-lockfile, scoped to the task's directory).
+ *
+ * Each entry is stamped with `actor` (the active user id) when one
+ * exists and the entry doesn't already carry an explicit `actor`.
+ * Headless / first-run paths leave `actor` absent. Resolving the
+ * active user is best-effort: if it fails for any reason, the entry
+ * is written without an actor rather than rejecting the history
+ * append (history must not block the operation that triggered it).
  */
 export async function appendHistory(
   locttDir: string,
@@ -47,6 +54,24 @@ export async function appendHistory(
   const taskDir = dirname(filePath);
   await mkdir(taskDir, { recursive: true });
 
+  // Resolve the active user once per append (the same user is acting
+  // on every entry in this batch). Dynamic import keeps the
+  // task→users dependency one-way at module load: users/manage.ts
+  // pulls a recovery handler through state/journal.ts, and a static
+  // import here would close the loop. Lazy import sidesteps it.
+  let actor: string | undefined;
+  try {
+    const { readCurrentUserId } = await import("../users/current.js");
+    const id = await readCurrentUserId(locttDir);
+    if (id) actor = id;
+  } catch {
+    // Best-effort. A missing .current-user file is normal on first
+    // run; any other read failure shouldn't take history with it.
+  }
+  const stamped = actor === undefined
+    ? entries
+    : entries.map(e => (e.actor === undefined ? { ...e, actor } : e));
+
   // Higher retry count than withStateLock because history writes are
   // tight and many entries can pile up on the same task in a tight
   // loop (e.g. a script flipping status and labels in succession).
@@ -58,7 +83,7 @@ export async function appendHistory(
   });
   try {
     const existing = await readHistory(locttDir, taskId);
-    const merged = [...existing, ...entries];
+    const merged = [...existing, ...stamped];
     const tmpPath = `${filePath}.${randomUUID()}.tmp`;
     await writeFile(tmpPath, stringifyYaml(merged), "utf-8");
     await rename(tmpPath, filePath);

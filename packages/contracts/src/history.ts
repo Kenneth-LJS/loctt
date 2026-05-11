@@ -36,4 +36,11 @@ export interface HistoryEntry {
   readonly before?: unknown;
   readonly after?: unknown;
   readonly meta?: Readonly<Record<string, unknown>>;
+  /**
+   * The user (by id) who performed the action, when one was active.
+   * Absent when the action was driven by a headless/internal path
+   * with no current user (e.g. crash recovery, first-run before
+   * any user exists). Stamped by core's appendHistory.
+   */
+  readonly actor?: string;
 }
