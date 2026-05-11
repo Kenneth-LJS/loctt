@@ -123,7 +123,12 @@ async function resolveClientDir(): Promise<string | undefined> {
 }
 
 function usage(): void {
-  console.log(`Usage: loctt <command> [options]
+  console.log(`Usage: loctt [--cwd <dir>] <command> [options]
+
+Global options:
+  --cwd <dir>                      Operate against the tracker rooted
+                                   at <dir> instead of the current
+                                   working directory.
 
 Commands:
   init [--prefix <prefix>] [--project-key <key>] [--project-label <label>] [--no-docs]
@@ -232,6 +237,53 @@ function getArg(args: string[], flag: string): string | undefined {
 }
 
 /**
+ * Removes `--cwd <value>` and `--cwd=<value>` occurrences from an
+ * argv slice. Used by `main()` after extracting the cwd value so
+ * handlers never see the global flag and so the first positional
+ * after `loctt` is always the subcommand. Repeated occurrences are
+ * all stripped (last one wins for the value, consistent with
+ * `getArg`).
+ *
+ * Mirrors `getArg`'s rules so the two helpers can't disagree about
+ * what counts as the value of `--cwd`:
+ * - The value is consumed only when the next token is a positional
+ *   (does not start with `-`). Bare `--cwd --help` therefore leaves
+ *   `--help` in the output instead of swallowing it.
+ * - Anything after `--` is positional and never touched.
+ */
+function stripCwdArg(args: string[]): string[] {
+  const out: string[] = [];
+  let i = 0;
+  while (i < args.length) {
+    const a = args[i];
+    if (a === undefined) { i += 1; continue; }
+    if (a === "--") {
+      out.push(...args.slice(i));
+      return out;
+    }
+    if (a === "--cwd" || a === "-cwd") {
+      const next = args[i + 1];
+      // Same rule as getArg: only treat the next token as the value
+      // if it doesn't itself look like a flag (so `--cwd --help`
+      // leaves `--help` intact).
+      if (next !== undefined && !next.startsWith("-")) {
+        i += 2;
+      } else {
+        i += 1;
+      }
+      continue;
+    }
+    if (a.startsWith("--cwd=") || a.startsWith("-cwd=")) {
+      i += 1;
+      continue;
+    }
+    out.push(a);
+    i += 1;
+  }
+  return out;
+}
+
+/**
  * Returns true when a boolean flag is present (`--archived`,
  * `--archived=true`). `--archived=false` is treated as absent so a
  * caller can override a default-true behaviour. Any other value
@@ -308,6 +360,99 @@ async function confirmHardDelete(args: string[], question: string): Promise<Conf
   }
 }
 
+/**
+ * Thrown by command handlers for input/usage errors (missing args,
+ * mutually-exclusive flags, malformed values that the parser
+ * caught). The dispatcher prints a "Usage:" line if `usage` is
+ * provided, then exits with {@link EXIT.USAGE}.
+ *
+ * Domain errors (e.g. `ProjectError`) bubble out as themselves and
+ * are mapped to {@link EXIT.RUNTIME} by the dispatcher; only call
+ * this when the *user's input* is wrong.
+ */
+class UsageError extends Error {
+  readonly name = "UsageError" as const;
+  constructor(message: string, readonly usage?: string) {
+    super(message);
+  }
+}
+
+/**
+ * Domain-error classes that the CLI dispatcher knows how to report
+ * cleanly: print `Error: <message>` to stderr, exit
+ * {@link EXIT.RUNTIME}. Anything not in this list bubbles through
+ * the top-level catch (which still prints a clean message but
+ * cannot show a "this was a known kind of failure" hint).
+ *
+ * Listed once here so adding a new domain error class is a single
+ * import + one-line append rather than a new try/catch arm in
+ * every command.
+ */
+const KNOWN_DOMAIN_ERRORS: ReadonlyArray<new (...args: never[]) => Error> = [
+  AttachmentExistsError,
+  AttachmentNotFoundError,
+  AttachmentSourceError,
+  LabelError,
+  MilestoneError,
+  ProjectError,
+  ReorderError,
+  SprintError,
+  UserError,
+  // RelationshipError surfaces from link/unlink; not currently
+  // imported here because the existing handlers let it bubble.
+  // Add it when a future command catches it.
+];
+
+/**
+ * Runs a command handler and maps thrown errors to the right exit
+ * code + stderr message:
+ * - `UsageError` → print `Error: …` (and `Usage: …` if provided),
+ *   exit {@link EXIT.USAGE}.
+ * - Any class in {@link KNOWN_DOMAIN_ERRORS} → print `Error: …`,
+ *   exit {@link EXIT.RUNTIME}.
+ * - Anything else → re-throw so the outer `main()` catch handles it.
+ *
+ * The body owns the success path: `runCommand` only touches
+ * `process.exitCode` on a thrown error. A body that needs to
+ * report partial success can set `process.exitCode` itself before
+ * returning normally.
+ *
+ * Each command's body becomes:
+ *
+ *     case "foo": {
+ *       await runCommand(async () => {
+ *         // body that may throw UsageError, or a domain error,
+ *         // or do nothing if the command succeeds.
+ *       });
+ *       break;
+ *     }
+ *
+ * which is much shorter than the per-command try/catch pattern
+ * the file used to use.
+ */
+async function runCommand(fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    if (err instanceof UsageError) {
+      console.error(`Error: ${err.message}`);
+      if (err.usage) console.error(`Usage: ${err.usage}`);
+      process.exitCode = EXIT.USAGE;
+      return;
+    }
+    if (err instanceof Error) {
+      for (const Klass of KNOWN_DOMAIN_ERRORS) {
+        if (err instanceof Klass) {
+          console.error(`Error: ${err.message}`);
+          process.exitCode = EXIT.RUNTIME;
+          return;
+        }
+      }
+    }
+    throw err;
+  }
+}
+
 function formatValue(v: unknown): string {
   if (v === null || v === undefined) return "(none)";
   if (typeof v === "string") return v;
@@ -367,9 +512,19 @@ const SCHEMA_GUARD_EXEMPT_COMMANDS = new Set([
 ]);
 
 export async function main(): Promise<void> {
-  const args = process.argv.slice(2);
+  const rawArgs = process.argv.slice(2);
+
+  // Global `--cwd <dir>` lets callers operate on a tracker without
+  // shelling out to a subdirectory. Default is process.cwd().
+  // Strip `--cwd <dir>` (and `--cwd=<dir>`) from `args` so the
+  // first positional becomes the subcommand, regardless of where
+  // --cwd appeared on the command line.
+  const cwdOverride = getArg(rawArgs, "--cwd");
+  const root = cwdOverride !== undefined
+    ? resolvePath(process.cwd(), cwdOverride)
+    : process.cwd();
+  const args = stripCwdArg(rawArgs);
   const command = args[0];
-  const root = process.cwd();
 
   try {
     // Boot guard: every command that touches an existing tracker
@@ -575,7 +730,7 @@ export async function main(): Promise<void> {
           limit = Number(limitArg);
           if (Number.isNaN(limit) || limit < 0 || !Number.isInteger(limit)) {
             console.error("Error: --limit must be a non-negative integer");
-            process.exitCode = EXIT.RUNTIME;
+            process.exitCode = EXIT.USAGE;
             break;
           }
         }
@@ -852,7 +1007,7 @@ export async function main(): Promise<void> {
           limit = Number(limitArg);
           if (Number.isNaN(limit) || limit < 0 || !Number.isInteger(limit)) {
             console.error("Error: --limit must be a non-negative integer");
-            process.exitCode = EXIT.RUNTIME;
+            process.exitCode = EXIT.USAGE;
             break;
           }
         }
@@ -872,9 +1027,13 @@ export async function main(): Promise<void> {
       }
 
       case "attach": {
+        // Caught explicitly (rather than via runCommand) because the
+        // CLI augments `AttachmentExistsError` with a "Use --force"
+        // hint that the core error class can't carry on its own.
         const ref = args[1];
         const filePath = args[2];
         if (!ref || !filePath) {
+          console.error("Error: missing task ref or file path");
           console.error("Usage: loctt attach <task> <file-path> [--force]");
           process.exitCode = EXIT.USAGE;
           break;
@@ -898,9 +1057,7 @@ export async function main(): Promise<void> {
           );
         } catch (err) {
           if (err instanceof AttachmentExistsError) {
-            console.error(
-              `Error: ${err.message}. Use --force to overwrite.`,
-            );
+            console.error(`Error: ${err.message}. Use --force to overwrite.`);
             process.exitCode = EXIT.RUNTIME;
             break;
           }
@@ -915,37 +1072,24 @@ export async function main(): Promise<void> {
       }
 
       case "detach": {
-        const ref = args[1];
-        const name = args[2];
-        if (!ref || !name) {
-          console.error("Usage: loctt detach <task> <name>");
-          process.exitCode = EXIT.USAGE;
-          break;
-        }
-        if (name.includes("/") || name.includes("\\") || name.includes("..")) {
-          console.error(
-            `Error: <name> must be a plain basename (no path separators or '..')`,
-          );
-          process.exitCode = EXIT.RUNTIME;
-          break;
-        }
-        const locttDir = resolveLocttDir(root);
-        const task = await lookupTask(locttDir, ref);
-        try {
+        await runCommand(async () => {
+          const ref = args[1];
+          const name = args[2];
+          if (!ref || !name) {
+            throw new UsageError("missing task ref or name", "loctt detach <task> <name>");
+          }
+          if (name.includes("/") || name.includes("\\") || name.includes("..")) {
+            throw new UsageError(`<name> must be a plain basename (no path separators or '..')`);
+          }
+          const locttDir = resolveLocttDir(root);
+          const task = await lookupTask(locttDir, ref);
           await detachFile({
             locttDir,
             taskId: task.frontmatter.id,
             name,
           });
           console.log(`Detached ${name} from ${task.frontmatter.key}`);
-        } catch (err) {
-          if (err instanceof AttachmentNotFoundError) {
-            console.error(`Error: ${err.message}`);
-            process.exitCode = EXIT.RUNTIME;
-            break;
-          }
-          throw err;
-        }
+        });
         break;
       }
 
@@ -1030,54 +1174,37 @@ export async function main(): Promise<void> {
             break;
           }
           case "create": {
-            const key = args[2];
-            const prefix = getArg(args, "--prefix");
-            if (!key || !prefix) {
-              console.error(`Usage: loctt project create <key> --prefix <prefix> [--label <label>] [--default]`);
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            const label = getArg(args, "--label") ?? key;
-            try {
+            await runCommand(async () => {
+              const key = args[2];
+              const prefix = getArg(args, "--prefix");
+              if (!key || !prefix) {
+                throw new UsageError(
+                  "missing key or --prefix",
+                  "loctt project create <key> --prefix <prefix> [--label <label>] [--default]",
+                );
+              }
+              const label = getArg(args, "--label") ?? key;
               await createProject(locttDir, { key, label, prefix });
               if (hasFlag(args, "--default")) {
                 await setDefaultProject(locttDir, key);
               }
               console.log(`Created project ${key} (prefix ${prefix})`);
-            } catch (err) {
-              if (err instanceof ProjectError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "edit": {
-            const key = args[2];
-            const label = getArg(args, "--label");
-            if (!key) {
-              console.error(`Usage: loctt project edit <key> [--label <label>]`);
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            if (label === undefined) {
-              console.error(`Nothing to update; pass --label.`);
-              process.exitCode = EXIT.RUNTIME;
-              break;
-            }
-            try {
+            await runCommand(async () => {
+              const key = args[2];
+              const label = getArg(args, "--label");
+              if (!key) {
+                throw new UsageError("missing key", "loctt project edit <key> [--label <label>]");
+              }
+              if (label === undefined) {
+                throw new UsageError("nothing to update; pass --label");
+              }
               await editProject(locttDir, key, { label });
               console.log(`Updated project ${key}`);
-            } catch (err) {
-              if (err instanceof ProjectError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "delete": {
@@ -1085,18 +1212,22 @@ export async function main(): Promise<void> {
             const remapTo = getArg(args, "--remap-to");
             const hard = hasFlag(args, "--hard");
             if (!key) {
+              console.error(`Error: missing key`);
               console.error(`Usage: loctt project delete <key> [--hard] [--remap-to <other-key>] [--yes]`);
               process.exitCode = EXIT.USAGE;
               break;
             }
             if (hard) {
+              // Confirmation has its own exit-code semantics (refused
+              // = usage error, no = success), so it stays outside
+              // runCommand which would conflate the two.
               const outcome = await confirmHardDelete(
                 args,
                 `Permanently delete project ${key}? This will rewrite affected tasks.`,
               );
               if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
             }
-            try {
+            await runCommand(async () => {
               const result = await deleteProject(locttDir, key, {
                 hard,
                 ...(remapTo !== undefined ? { remapTo } : {}),
@@ -1109,56 +1240,31 @@ export async function main(): Promise<void> {
               } else {
                 console.log(`Archived project ${key} (use --hard to remove permanently)`);
               }
-            } catch (err) {
-              if (err instanceof ProjectError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "archive":
           case "unarchive": {
-            const key = args[2];
-            if (!key) {
-              console.error(`Usage: loctt project ${sub} <key>`);
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            try {
+            await runCommand(async () => {
+              const key = args[2];
+              if (!key) {
+                throw new UsageError("missing key", `loctt project ${sub} <key>`);
+              }
               if (sub === "archive") await archiveProject(locttDir, key);
               else await unarchiveProject(locttDir, key);
               console.log(`${sub === "archive" ? "Archived" : "Unarchived"} project ${key}`);
-            } catch (err) {
-              if (err instanceof ProjectError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "set-default": {
-            const key = args[2];
-            if (!key) {
-              console.error(`Usage: loctt project set-default <key|->`);
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            try {
+            await runCommand(async () => {
+              const key = args[2];
+              if (!key) {
+                throw new UsageError("missing key", "loctt project set-default <key|->");
+              }
               await setDefaultProject(locttDir, key === "-" ? null : key);
               console.log(key === "-" ? `Cleared workspace default project` : `Set workspace default to ${key}`);
-            } catch (err) {
-              if (err instanceof ProjectError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           default:
@@ -1197,38 +1303,30 @@ export async function main(): Promise<void> {
             break;
           }
           case "switch": {
-            const ref = args[2];
-            if (!ref) {
-              console.error("Usage: loctt user switch <id-or-name>");
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            try {
+            await runCommand(async () => {
+              const ref = args[2];
+              if (!ref) {
+                throw new UsageError("missing user ref", "loctt user switch <id-or-name>");
+              }
               const target = await resolveUserRef(locttDir, ref);
               await switchCurrentUser(locttDir, target.id);
               console.log(`Switched to ${target.name} (${target.id})`);
-            } catch (err) {
-              if (err instanceof UserError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "create": {
-            const name = args[2];
-            if (!name) {
-              console.error("Usage: loctt user create <name> [--email <e>] [--timezone <tz>] [--avatar <path>] [--switch]");
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            const email = getArg(args, "--email");
-            const timezone = getArg(args, "--timezone");
-            const avatarSourcePath = getArg(args, "--avatar");
-            const switchToOnCreate = hasFlag(args, "--switch");
-            try {
+            await runCommand(async () => {
+              const name = args[2];
+              if (!name) {
+                throw new UsageError(
+                  "missing name",
+                  "loctt user create <name> [--email <e>] [--timezone <tz>] [--avatar <path>] [--switch]",
+                );
+              }
+              const email = getArg(args, "--email");
+              const timezone = getArg(args, "--timezone");
+              const avatarSourcePath = getArg(args, "--avatar");
+              const switchToOnCreate = hasFlag(args, "--switch");
               const created = await createUser(locttDir, {
                 name,
                 ...(email !== undefined ? { email } : {}),
@@ -1237,24 +1335,18 @@ export async function main(): Promise<void> {
                 switchToOnCreate,
               });
               console.log(`Created user ${created.name} (${created.id})`);
-            } catch (err) {
-              if (err instanceof UserError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "edit": {
-            const ref = args[2];
-            if (!ref) {
-              console.error("Usage: loctt user edit <id-or-name> [--name <n>] [--email <e>] [--timezone <tz>] [--avatar <path>]");
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            try {
+            await runCommand(async () => {
+              const ref = args[2];
+              if (!ref) {
+                throw new UsageError(
+                  "missing user ref",
+                  "loctt user edit <id-or-name> [--name <n>] [--email <e>] [--timezone <tz>] [--avatar <path>]",
+                );
+              }
               const target = await resolveUserRef(locttDir, ref);
               const name = getArg(args, "--name");
               const email = getArg(args, "--email");
@@ -1267,42 +1359,27 @@ export async function main(): Promise<void> {
                 ...(avatarSourcePath !== undefined ? { avatarSourcePath } : {}),
               });
               console.log(`Updated user ${target.id}`);
-            } catch (err) {
-              if (err instanceof UserError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "archive":
           case "unarchive": {
-            const ref = args[2];
-            if (!ref) {
-              console.error(`Usage: loctt user ${sub} <id-or-name>`);
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            try {
+            await runCommand(async () => {
+              const ref = args[2];
+              if (!ref) {
+                throw new UsageError("missing user ref", `loctt user ${sub} <id-or-name>`);
+              }
               const target = await resolveUserRef(locttDir, ref);
               if (sub === "archive") await archiveUser(locttDir, target.id);
               else await unarchiveUser(locttDir, target.id);
               console.log(`${sub === "archive" ? "Archived" : "Unarchived"} user ${target.name}`);
-            } catch (err) {
-              if (err instanceof UserError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "delete": {
             const ref = args[2];
             if (!ref) {
+              console.error(`Error: missing user ref`);
               console.error(`Usage: loctt user delete <id-or-name> [--remap-to <id-or-name> | --unassign] [--yes]`);
               process.exitCode = EXIT.USAGE;
               break;
@@ -1314,14 +1391,28 @@ export async function main(): Promise<void> {
               process.exitCode = EXIT.USAGE;
               break;
             }
+            // Confirm prompt has its own exit-code semantics (refused
+            // = usage, no = success), so it stays outside runCommand.
+            // Resolve the user ref outside the wrapper too so we can
+            // include the human-readable name in the prompt.
+            let target;
             try {
-              const target = await resolveUserRef(locttDir, ref);
-              const outcome = await confirmHardDelete(
-                args,
-                `Permanently delete user ${target.name} (${target.id})? ` +
-                `This will rewrite affected tasks.`,
-              );
-              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
+              target = await resolveUserRef(locttDir, ref);
+            } catch (err) {
+              if (err instanceof UserError) {
+                console.error(`Error: ${err.message}`);
+                process.exitCode = EXIT.RUNTIME;
+                break;
+              }
+              throw err;
+            }
+            const outcome = await confirmHardDelete(
+              args,
+              `Permanently delete user ${target.name} (${target.id})? ` +
+              `This will rewrite affected tasks.`,
+            );
+            if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
+            await runCommand(async () => {
               const remapTo = remapToRef !== undefined
                 ? (await resolveUserRef(locttDir, remapToRef)).id
                 : undefined;
@@ -1336,14 +1427,7 @@ export async function main(): Promise<void> {
                 );
               }
               console.log(`Deleted user ${target.name}`);
-            } catch (err) {
-              if (err instanceof UserError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           default:
@@ -1370,41 +1454,36 @@ export async function main(): Promise<void> {
             break;
           }
           case "create": {
-            const key = args[2];
-            if (!key) {
-              console.error(`Usage: loctt label create <key> [--label <label>] [--color <hex>]`);
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            const label = getArg(args, "--label") ?? key;
-            const color = getArg(args, "--color");
-            try {
+            await runCommand(async () => {
+              const key = args[2];
+              if (!key) {
+                throw new UsageError(
+                  "missing key",
+                  "loctt label create <key> [--label <label>] [--color <hex>]",
+                );
+              }
+              const label = getArg(args, "--label") ?? key;
+              const color = getArg(args, "--color");
               await createLabel(locttDir, {
                 key,
                 label,
                 ...(color !== undefined ? { color } : {}),
               });
               console.log(`Created label ${key}`);
-            } catch (err) {
-              if (err instanceof LabelError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "edit": {
-            const key = args[2];
-            if (!key) {
-              console.error(`Usage: loctt label edit <key> [--label <label>] [--color <hex|->]`);
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            const label = getArg(args, "--label");
-            const colorArg = getArg(args, "--color");
-            try {
+            await runCommand(async () => {
+              const key = args[2];
+              if (!key) {
+                throw new UsageError(
+                  "missing key",
+                  "loctt label edit <key> [--label <label>] [--color <hex|->]",
+                );
+              }
+              const label = getArg(args, "--label");
+              const colorArg = getArg(args, "--color");
               await editLabel(locttDir, key, {
                 ...(label !== undefined ? { label } : {}),
                 ...(colorArg !== undefined
@@ -1412,19 +1491,13 @@ export async function main(): Promise<void> {
                   : {}),
               });
               console.log(`Updated label ${key}`);
-            } catch (err) {
-              if (err instanceof LabelError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "delete": {
             const key = args[2];
             if (!key) {
+              console.error(`Error: missing key`);
               console.error(`Usage: loctt label delete <key> [--hard] [--remap-to <other>] [--yes]`);
               process.exitCode = EXIT.USAGE;
               break;
@@ -1438,7 +1511,7 @@ export async function main(): Promise<void> {
               );
               if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
             }
-            try {
+            await runCommand(async () => {
               const result = await deleteLabel(locttDir, key, {
                 hard,
                 ...(remapTo !== undefined ? { remapTo } : {}),
@@ -1452,36 +1525,20 @@ export async function main(): Promise<void> {
               } else {
                 console.log(`Archived label ${key} (use --hard to remove permanently)`);
               }
-            } catch (err) {
-              if (err instanceof LabelError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "archive":
           case "unarchive": {
-            const key = args[2];
-            if (!key) {
-              console.error(`Usage: loctt label ${sub} <key>`);
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            try {
+            await runCommand(async () => {
+              const key = args[2];
+              if (!key) {
+                throw new UsageError("missing key", `loctt label ${sub} <key>`);
+              }
               if (sub === "archive") await archiveLabel(locttDir, key);
               else await unarchiveLabel(locttDir, key);
               console.log(`${sub === "archive" ? "Archived" : "Unarchived"} label ${key}`);
-            } catch (err) {
-              if (err instanceof LabelError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           default:
@@ -1508,66 +1565,53 @@ export async function main(): Promise<void> {
             break;
           }
           case "create": {
-            const key = args[2];
-            if (!key) {
-              console.error(`Usage: loctt milestone create <key> [--label <label>] [--target-date <YYYY-MM-DD>]`);
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            const label = getArg(args, "--label") ?? key;
-            const targetDate = getArg(args, "--target-date");
-            try {
+            await runCommand(async () => {
+              const key = args[2];
+              if (!key) {
+                throw new UsageError(
+                  "missing key",
+                  "loctt milestone create <key> [--label <label>] [--target-date <YYYY-MM-DD>]",
+                );
+              }
+              const label = getArg(args, "--label") ?? key;
+              const targetDate = getArg(args, "--target-date");
               await createMilestone(locttDir, {
                 key,
                 label,
                 ...(targetDate !== undefined ? { target_date: targetDate } : {}),
               });
               console.log(`Created milestone ${key}`);
-            } catch (err) {
-              if (err instanceof MilestoneError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "edit": {
-            const key = args[2];
-            if (!key) {
-              console.error(`Usage: loctt milestone edit <key> [--label <l>] [--target-date <YYYY-MM-DD|->] [--archived <true|false>]`);
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            const label = getArg(args, "--label");
-            const td = getArg(args, "--target-date");
-            const archivedArg = getArg(args, "--archived");
-            if (archivedArg !== undefined && archivedArg !== "true" && archivedArg !== "false") {
-              console.error(`Error: --archived must be exactly "true" or "false", got: ${archivedArg}`);
-              process.exitCode = EXIT.RUNTIME;
-              break;
-            }
-            try {
+            await runCommand(async () => {
+              const key = args[2];
+              if (!key) {
+                throw new UsageError(
+                  "missing key",
+                  "loctt milestone edit <key> [--label <l>] [--target-date <YYYY-MM-DD|->] [--archived <true|false>]",
+                );
+              }
+              const label = getArg(args, "--label");
+              const td = getArg(args, "--target-date");
+              const archivedArg = getArg(args, "--archived");
+              if (archivedArg !== undefined && archivedArg !== "true" && archivedArg !== "false") {
+                throw new UsageError(`--archived must be exactly "true" or "false", got: ${archivedArg}`);
+              }
               await editMilestone(locttDir, key, {
                 ...(label !== undefined ? { label } : {}),
                 ...(td !== undefined ? { target_date: td === "-" ? null : td } : {}),
                 ...(archivedArg !== undefined ? { archived: archivedArg === "true" } : {}),
               });
               console.log(`Updated milestone ${key}`);
-            } catch (err) {
-              if (err instanceof MilestoneError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "delete": {
             const key = args[2];
             if (!key) {
+              console.error(`Error: missing key`);
               console.error(`Usage: loctt milestone delete <key> [--hard] [--remap-to <other>] [--yes]`);
               process.exitCode = EXIT.USAGE;
               break;
@@ -1581,7 +1625,7 @@ export async function main(): Promise<void> {
               );
               if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
             }
-            try {
+            await runCommand(async () => {
               const result = await deleteMilestone(locttDir, key, {
                 hard,
                 ...(remapTo !== undefined ? { remapTo } : {}),
@@ -1595,36 +1639,20 @@ export async function main(): Promise<void> {
               } else {
                 console.log(`Archived milestone ${key} (use --hard to remove permanently)`);
               }
-            } catch (err) {
-              if (err instanceof MilestoneError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "archive":
           case "unarchive": {
-            const key = args[2];
-            if (!key) {
-              console.error(`Usage: loctt milestone ${sub} <key>`);
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            try {
+            await runCommand(async () => {
+              const key = args[2];
+              if (!key) {
+                throw new UsageError("missing key", `loctt milestone ${sub} <key>`);
+              }
               if (sub === "archive") await archiveMilestone(locttDir, key);
               else await unarchiveMilestone(locttDir, key);
               console.log(`${sub === "archive" ? "Archived" : "Unarchived"} milestone ${key}`);
-            } catch (err) {
-              if (err instanceof MilestoneError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           default:
@@ -1651,23 +1679,22 @@ export async function main(): Promise<void> {
             break;
           }
           case "create": {
-            const key = args[2];
-            const start = getArg(args, "--start");
-            const end = getArg(args, "--end");
-            const state = getArg(args, "--state") ?? "future";
-            if (!key || !start || !end) {
-              console.error(`Usage: loctt sprint create <key> --start <YYYY-MM-DD> --end <YYYY-MM-DD> [--state <active|completed|future>] [--label <l>] [--goal <g>]`);
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            if (state !== "active" && state !== "completed" && state !== "future") {
-              console.error(`Error: --state must be one of active|completed|future`);
-              process.exitCode = EXIT.RUNTIME;
-              break;
-            }
-            const label = getArg(args, "--label") ?? key;
-            const goal = getArg(args, "--goal");
-            try {
+            await runCommand(async () => {
+              const key = args[2];
+              const start = getArg(args, "--start");
+              const end = getArg(args, "--end");
+              const state = getArg(args, "--state") ?? "future";
+              if (!key || !start || !end) {
+                throw new UsageError(
+                  "missing key, --start, or --end",
+                  "loctt sprint create <key> --start <YYYY-MM-DD> --end <YYYY-MM-DD> [--state <active|completed|future>] [--label <l>] [--goal <g>]",
+                );
+              }
+              if (state !== "active" && state !== "completed" && state !== "future") {
+                throw new UsageError("--state must be one of active|completed|future");
+              }
+              const label = getArg(args, "--label") ?? key;
+              const goal = getArg(args, "--goal");
               await createSprint(locttDir, {
                 key,
                 label,
@@ -1677,35 +1704,27 @@ export async function main(): Promise<void> {
                 ...(goal !== undefined ? { goal } : {}),
               });
               console.log(`Created sprint ${key}`);
-            } catch (err) {
-              if (err instanceof SprintError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "edit": {
-            const key = args[2];
-            if (!key) {
-              console.error(`Usage: loctt sprint edit <key> [--label <l>] [--start <d>] [--end <d>] [--state <s>] [--goal <g|->] [--force]`);
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            const label = getArg(args, "--label");
-            const start = getArg(args, "--start");
-            const end = getArg(args, "--end");
-            const state = getArg(args, "--state");
-            const force = hasFlag(args, "--force");
-            if (state !== undefined && state !== "active" && state !== "completed" && state !== "future") {
-              console.error(`Error: --state must be one of active|completed|future`);
-              process.exitCode = EXIT.RUNTIME;
-              break;
-            }
-            const goalArg = getArg(args, "--goal");
-            try {
+            await runCommand(async () => {
+              const key = args[2];
+              if (!key) {
+                throw new UsageError(
+                  "missing key",
+                  "loctt sprint edit <key> [--label <l>] [--start <d>] [--end <d>] [--state <s>] [--goal <g|->] [--force]",
+                );
+              }
+              const label = getArg(args, "--label");
+              const start = getArg(args, "--start");
+              const end = getArg(args, "--end");
+              const state = getArg(args, "--state");
+              const force = hasFlag(args, "--force");
+              if (state !== undefined && state !== "active" && state !== "completed" && state !== "future") {
+                throw new UsageError("--state must be one of active|completed|future");
+              }
+              const goalArg = getArg(args, "--goal");
               await editSprint(locttDir, key, {
                 ...(label !== undefined ? { label } : {}),
                 ...(start !== undefined ? { start_date: start } : {}),
@@ -1715,19 +1734,13 @@ export async function main(): Promise<void> {
                 ...(force ? { force: true } : {}),
               });
               console.log(`Updated sprint ${key}`);
-            } catch (err) {
-              if (err instanceof SprintError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "delete": {
             const key = args[2];
             if (!key) {
+              console.error(`Error: missing key`);
               console.error(`Usage: loctt sprint delete <key> [--hard] [--remap-to <other>] [--yes]`);
               process.exitCode = EXIT.USAGE;
               break;
@@ -1741,7 +1754,7 @@ export async function main(): Promise<void> {
               );
               if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
             }
-            try {
+            await runCommand(async () => {
               const result = await deleteSprint(locttDir, key, {
                 hard,
                 ...(remapTo !== undefined ? { remapTo } : {}),
@@ -1755,36 +1768,20 @@ export async function main(): Promise<void> {
               } else {
                 console.log(`Archived sprint ${key} (use --hard to remove permanently)`);
               }
-            } catch (err) {
-              if (err instanceof SprintError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           case "archive":
           case "unarchive": {
-            const key = args[2];
-            if (!key) {
-              console.error(`Usage: loctt sprint ${sub} <key>`);
-              process.exitCode = EXIT.USAGE;
-              break;
-            }
-            try {
+            await runCommand(async () => {
+              const key = args[2];
+              if (!key) {
+                throw new UsageError("missing key", `loctt sprint ${sub} <key>`);
+              }
               if (sub === "archive") await archiveSprint(locttDir, key);
               else await unarchiveSprint(locttDir, key);
               console.log(`${sub === "archive" ? "Archived" : "Unarchived"} sprint ${key}`);
-            } catch (err) {
-              if (err instanceof SprintError) {
-                console.error(`Error: ${err.message}`);
-                process.exitCode = EXIT.RUNTIME;
-                break;
-              }
-              throw err;
-            }
+            });
             break;
           }
           default:
@@ -1819,24 +1816,21 @@ export async function main(): Promise<void> {
       }
 
       case "rerank": {
-        const source = args[1];
-        const relationship = args[2];
-        const target = args[3];
-        if (!source || !relationship || !target) {
-          console.error(
-            `Usage: loctt rerank <source> <relationship> <target> [--before <task>] [--after <task>]`,
-          );
-          process.exitCode = EXIT.RUNTIME;
-          break;
-        }
-        const before = getArg(args, "--before");
-        const after = getArg(args, "--after");
-        if (before !== undefined && after !== undefined) {
-          console.error(`Error: --before and --after are mutually exclusive; pass at most one`);
-          process.exitCode = EXIT.USAGE;
-          break;
-        }
-        try {
+        await runCommand(async () => {
+          const source = args[1];
+          const relationship = args[2];
+          const target = args[3];
+          if (!source || !relationship || !target) {
+            throw new UsageError(
+              "missing source, relationship, or target",
+              "loctt rerank <source> <relationship> <target> [--before <task>] [--after <task>]",
+            );
+          }
+          const before = getArg(args, "--before");
+          const after = getArg(args, "--after");
+          if (before !== undefined && after !== undefined) {
+            throw new UsageError("--before and --after are mutually exclusive; pass at most one");
+          }
           const result = await reorderRelationship({
             locttDir: resolveLocttDir(root),
             sourceRef: source,
@@ -1849,14 +1843,7 @@ export async function main(): Promise<void> {
           if (result.rebalanced) {
             console.log(`(also rebalanced sibling ranks)`);
           }
-        } catch (err) {
-          if (err instanceof ReorderError) {
-            console.error(`Error: ${err.message}`);
-            process.exitCode = EXIT.RUNTIME;
-            break;
-          }
-          throw err;
-        }
+        });
         break;
       }
 
