@@ -197,13 +197,23 @@ export {
   withMigrationLock,
   writeSchemaVersion,
 } from "./schema/index.js";
-export type { DeleteSprintOptions, EditSprintOptions } from "./sprints/index.js";
+export type {
+  BurndownPoint,
+  BurndownSeries,
+  BurndownUnit,
+  DeleteSprintOptions,
+  EditSprintOptions,
+  IdealPoint,
+} from "./sprints/index.js";
 export {
   archiveSprint,
+  BurndownError,
+  computeBurndown,
   createSprint,
   deleteSprint,
   editSprint,
   findSprint,
+  readBurndownSeries,
   SprintError,
   unarchiveSprint,
 } from "./sprints/index.js";

@@ -402,6 +402,27 @@ loctt rerank <source> <relationship> <target> [--before <task> | --after <task>]
 
 Example: `loctt rerank epic-1 has_subtask T-9 --after T-7`
 
+### `loctt sprint burndown`
+
+Print the burndown series for a sprint. The series is reconstructed from
+task history every time — no daily snapshots are stored on disk. Scope
+changes (tasks joining or leaving the sprint mid-run) appear as visible
+steps in the output.
+
+```
+loctt sprint burndown <key> [--format <table|json>]
+```
+
+Defaults to a text table; pass `--format json` for piping. Y-axis unit is
+chosen automatically from `workflow.yaml#estimation`:
+
+- numeric units (points / hours / days / custom_numeric) → sum of
+  `estimate` of incomplete tasks
+- `custom_enum` with `weights` → sum of weights
+- everything else → count of incomplete tasks
+
+Example: `loctt sprint burndown sprint_2026.q1 --format json`
+
 ### `loctt board-rerank`
 
 Re-order a task's position on the board (its `board_rank`). The task stays

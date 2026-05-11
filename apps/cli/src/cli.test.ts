@@ -315,6 +315,84 @@ describe("CLI commands", () => {
     expect(stderr).toMatch(/Usage:/);
   });
 
+  it("sprint burndown prints a table by default", async () => {
+    await initLoctt(root);
+    process.argv = [
+      "node", "loctt", "sprint", "create", "s1",
+      "--start", "2026-05-04", "--end", "2026-05-08", "--state", "active",
+    ];
+    await main();
+    process.exitCode = undefined;
+    consoleSpy.mockClear();
+
+    process.argv = ["node", "loctt", "sprint", "burndown", "s1"];
+    await main();
+    expect(process.exitCode).toBeUndefined();
+    const log = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(log).toContain("Sprint:");
+    expect(log).toContain("s1");
+    expect(log).toContain("2026-05-04");
+    expect(log).toContain("Remaining");
+    // Ideal column header is part of the table.
+    expect(log).toContain("Ideal");
+  });
+
+  it("sprint burndown --format json emits a parseable payload", async () => {
+    await initLoctt(root);
+    process.argv = [
+      "node", "loctt", "sprint", "create", "s1",
+      "--start", "2026-05-04", "--end", "2026-05-08", "--state", "active",
+    ];
+    await main();
+    process.exitCode = undefined;
+    consoleSpy.mockClear();
+
+    process.argv = ["node", "loctt", "sprint", "burndown", "s1", "--format", "json"];
+    await main();
+    expect(process.exitCode).toBeUndefined();
+    const log = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+    const payload = JSON.parse(log) as {
+      sprintKey: string;
+      series: { date: string; remaining: number }[];
+      ideal: unknown[];
+    };
+    expect(payload.sprintKey).toBe("s1");
+    expect(payload.series.length).toBe(5);
+    expect(payload.series[0]?.date).toBe("2026-05-04");
+    expect(payload.ideal.length).toBe(5);
+  });
+
+  it("sprint burndown exits cleanly when the key does not resolve", async () => {
+    await initLoctt(root);
+    process.exitCode = undefined;
+    const errSpy = vi.mocked(console.error);
+    errSpy.mockClear();
+
+    process.argv = ["node", "loctt", "sprint", "burndown", "nonexistent"];
+    await main();
+    expect(process.exitCode).toBe(1);
+    const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(stderr).toMatch(/unknown sprint: nonexistent/);
+  });
+
+  it("sprint burndown rejects an unknown --format", async () => {
+    await initLoctt(root);
+    process.argv = [
+      "node", "loctt", "sprint", "create", "s1",
+      "--start", "2026-05-04", "--end", "2026-05-08", "--state", "active",
+    ];
+    await main();
+    process.exitCode = undefined;
+    const errSpy = vi.mocked(console.error);
+    errSpy.mockClear();
+
+    process.argv = ["node", "loctt", "sprint", "burndown", "s1", "--format", "html"];
+    await main();
+    expect(process.exitCode).toBe(2);
+    const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(stderr).toMatch(/--format must be one of/);
+  });
+
   it("preserves an empty-string flag value (--set '')", async () => {
     // Regression for the mri auto-coercion bug: --set "" must not
     // become 0 or be treated as missing.
