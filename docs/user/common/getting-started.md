@@ -1,5 +1,7 @@
 # Getting Started
 
+New to LocTT? Read [Concepts](concepts.md) first for a quick mental model of how it works — where your data lives, how (and whether) it syncs, and what's configurable. This page covers the hands-on basics.
+
 ## Installation
 
 Requires Node.js >= 20.
@@ -182,20 +184,20 @@ Add via Cursor Settings → MCP Servers, or add to `.cursor/mcp.json`:
 
 Once configured, your AI agent should be able to discover loctt tools automatically. Try asking it to "list my tasks" or "create a task" — it should use the MCP tools rather than shelling out to the CLI.
 
-See [mcp-reference.md](mcp-reference.md) for the full list of available tools.
+See [mcp-reference.md](../mcp/reference.md) for the full list of available tools.
 
 ## Configuring Your AI Agent
 
 After setting up MCP, you may want to give your AI agent project-specific workflow instructions — things like status transition rules, task description conventions, and query patterns.
 
-See [agent-setup.md](agent-setup.md) for a guide and template.
+See [agent-setup.md](../mcp/agent-setup.md) for a guide and template.
 
 ## What's Next
 
 - [Configuration](configuration.md) — customize statuses, priorities, task types, relationships
-- [CLI Reference](cli-reference.md) — full command reference
+- [CLI Reference](../cli/reference.md) — full command reference
 - [Query Language](query-language.md) — filtering and saved views
 - [Git Sync](git-sync.md) — sync tasks across machines
-- [MCP Reference](mcp-reference.md) — AI agent tool reference
-- [Agent Setup](agent-setup.md) — configuring AI agent workflow instructions
+- [MCP Reference](../mcp/reference.md) — AI agent tool reference
+- [Agent Setup](../mcp/agent-setup.md) — configuring AI agent workflow instructions
 - [Uninstall](uninstall.md) — removing LocTT from a project

@@ -172,14 +172,14 @@ When a reorder produces a rank longer than `REBALANCE_LENGTH_THRESHOLD` (24 char
 
 ## Interfaces
 
-- **CLI** (`apps/cli`) — direct terminal access. See [cli-reference.md](../cli-reference.md).
-- **MCP** (`apps/mcp`) — structured tools for AI agents. Metadata changes go through validated operations; agents never edit frontmatter directly. See [mcp-reference.md](../mcp-reference.md).
+- **CLI** (`apps/cli`) — direct terminal access. See [cli-reference.md](../user/cli/reference.md).
+- **MCP** (`apps/mcp`) — structured tools for AI agents. Metadata changes go through validated operations; agents never edit frontmatter directly. See [mcp-reference.md](../user/mcp/reference.md).
 - **Web** (`apps/web`) — HTTP API + browser UI from a single localhost-bound process. The API mirrors core operations.
 
 All three apps call `requireSupportedSchema` at startup and individual command boundaries.
 
 ## Git Integration
 
-Git-backed mode is optional. When enabled, LocTT publishes task data to a dedicated `.loctt` branch via a sparse worktree. Local-only files (`local/`, `.current-user`, `users/<id>/settings.yaml`) are gitignored and never published. See [git-sync.md](../git-sync.md).
+Git-backed mode is optional. When enabled, LocTT publishes task data to a dedicated `.loctt` branch via a sparse worktree. Local-only files (`local/`, `.current-user`, `users/<id>/settings.yaml`) are gitignored and never published. See [git-sync.md](../user/common/git-sync.md).
 
 LocTT works fine without Git — purely local by default.
