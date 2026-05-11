@@ -13,7 +13,14 @@ import type {
 import { stringify as stringifyYaml } from "yaml";
 
 import { getWorkflowConfigPath } from "../paths/index.js";
-import { withStateLock } from "../state/index.js";
+import {
+  appendJournalEntry,
+  clearJournalEntry,
+  loadJournal,
+  registerRecoveryHandler,
+  saveJournal,
+  withStateLock,
+} from "../state/index.js";
 import { writeTask } from "../task/io.js";
 import { loadAllTasks } from "../task/load-all.js";
 import type { MutableFrontmatter } from "../task/mutable.js";
@@ -505,63 +512,134 @@ export async function applyWorkflowEdit(
     // either cleans up the data first or reverts the type change.
     assertCustomFieldTypeChangesAreSafe(prev, next, tasks);
 
-    const nextStatusKeys = new Set(next.statuses.map(s => s.key));
-    const nextPriorityKeys = new Set(next.priorities.map(p => p.key));
-    const nextTypeKeys = new Set(next.task_types.map(t => t.key));
-    const nextRelKeys = new Set(next.relationships.map(r => r.key));
-    const nextFieldsByKey = new Map(next.custom_fields.map(f => [f.key, f]));
+    // Crash-recovery journal: append an entry carrying the full
+    // `next` config + remap directive BEFORE any task or config
+    // write. If we crash between writes, the next withStateLock
+    // caller replays this entry (see registerRecoveryHandler below).
+    // The entry is cleared at the end of the happy path.
+    const journalEntryId = makeJournalEntryId();
+    const journal = await loadJournal(locttDir);
+    const withEntry = appendJournalEntry(journal, {
+      id: journalEntryId,
+      kind: "remap_workflow",
+      started_at: new Date().toISOString(),
+      next,
+      remap,
+    });
+    await saveJournal(locttDir, withEntry);
 
-    let rewrittenTaskCount = 0;
-    // Single timestamp for the whole logical operation so every
-    // task touched in this remap shares the same updated_at.
-    const operationNow = new Date().toISOString();
-    for (const task of tasks) {
-      const fm = toMutable(task.frontmatter);
-      const taskKey = task.frontmatter.key;
-      let changed = false;
+    const result = await executeWorkflowRemap(locttDir, prev, next, remap, tasks);
 
-      if (applyScalarRemap(fm, "status", taskKey, nextStatusKeys, remap.statuses)) changed = true;
-      if (applyScalarRemap(fm, "priority", taskKey, nextPriorityKeys, remap.priorities)) changed = true;
-      if (applyScalarRemap(fm, "task_type", taskKey, nextTypeKeys, remap.task_types)) changed = true;
-      if (applyRelationshipsRemap(fm, taskKey, nextRelKeys, remap.relationships)) changed = true;
-      if (applyCustomFieldsRemap(fm, nextFieldsByKey, remap)) changed = true;
-
-      if (changed) {
-        fm["updated_at"] = operationNow;
-        const updated: Task = { ...task, frontmatter: toFrontmatter(fm) };
-        await writeTask(locttDir, task.frontmatter.id, updated);
-        rewrittenTaskCount += 1;
-      }
-    }
-
-    // Prune list-view.yaml entries that referenced custom fields
-    // about to be removed. `withStateLock` serializes concurrent
-    // callers; it does NOT give crash-atomicity across the multiple
-    // file writes here (tasks → list-view.yaml → workflow.yaml). A
-    // SIGKILL between writes can leave a stale list-view.yaml
-    // referencing a custom field that workflow.yaml has dropped —
-    // the doctor's dangling-ref check surfaces that case as a warn.
-    // Extending the journal (state/journal.ts) to cover workflow
-    // edits is the proper fix; for now this matches the pre-existing
-    // semantics for task rewrites in the same function. Built-in
-    // fields can't disappear from workflow.yaml so they need no
-    // pruning.
-    const removedCustomFieldKeys = new Set<string>();
-    for (const f of prev.custom_fields) {
-      if (!nextFieldsByKey.has(f.key)) removedCustomFieldKeys.add(f.key);
-    }
-    if (removedCustomFieldKeys.size > 0) {
-      const lv = await loadListViewConfig(locttDir);
-      const prunedLv = pruneListViewForRemovedCustomFields(lv, removedCustomFieldKeys);
-      if (prunedLv !== lv) {
-        await saveListViewConfig(locttDir, prunedLv);
-      }
-    }
-
-    await saveWorkflowConfig(locttDir, next);
-    return { rewrittenTaskCount };
+    await clearJournalEntry(locttDir, journalEntryId);
+    return result;
   });
 }
+
+/**
+ * The core "apply this workflow edit" sequence: task rewrites +
+ * list-view pruning + workflow save. Pulled out of
+ * `applyWorkflowEdit` so the journal recovery handler can call it
+ * with the on-disk `prev` to drive a replay. Each step is
+ * idempotent on its own:
+ *   - Task rewrites compare every task's value against the new
+ *     config keys and only write when the current value is no
+ *     longer valid; tasks already pointing at the new value are
+ *     skipped.
+ *   - list-view pruning compares prev vs next custom_fields and
+ *     emits a save only when something actually changed.
+ *   - saveWorkflowConfig is safe to re-run with the same `next`.
+ *
+ * Returns the number of tasks the rewrite pass touched.
+ */
+async function executeWorkflowRemap(
+  locttDir: string,
+  prev: WorkflowConfig,
+  next: WorkflowConfig,
+  remap: WorkflowRemap,
+  tasks: readonly Task[],
+): Promise<{ rewrittenTaskCount: number }> {
+  const nextStatusKeys = new Set(next.statuses.map(s => s.key));
+  const nextPriorityKeys = new Set(next.priorities.map(p => p.key));
+  const nextTypeKeys = new Set(next.task_types.map(t => t.key));
+  const nextRelKeys = new Set(next.relationships.map(r => r.key));
+  const nextFieldsByKey = new Map(next.custom_fields.map(f => [f.key, f]));
+
+  let rewrittenTaskCount = 0;
+  // Single timestamp for the whole logical operation so every
+  // task touched in this remap shares the same updated_at.
+  const operationNow = new Date().toISOString();
+  for (const task of tasks) {
+    const fm = toMutable(task.frontmatter);
+    const taskKey = task.frontmatter.key;
+    let changed = false;
+
+    if (applyScalarRemap(fm, "status", taskKey, nextStatusKeys, remap.statuses)) changed = true;
+    if (applyScalarRemap(fm, "priority", taskKey, nextPriorityKeys, remap.priorities)) changed = true;
+    if (applyScalarRemap(fm, "task_type", taskKey, nextTypeKeys, remap.task_types)) changed = true;
+    if (applyRelationshipsRemap(fm, taskKey, nextRelKeys, remap.relationships)) changed = true;
+    if (applyCustomFieldsRemap(fm, nextFieldsByKey, remap)) changed = true;
+
+    if (changed) {
+      fm["updated_at"] = operationNow;
+      const updated: Task = { ...task, frontmatter: toFrontmatter(fm) };
+      await writeTask(locttDir, task.frontmatter.id, updated);
+      rewrittenTaskCount += 1;
+    }
+  }
+
+  // Prune list-view.yaml entries that referenced custom fields
+  // about to be removed. Now covered by the journal entry that
+  // wraps applyWorkflowEdit, so a SIGKILL between writes will be
+  // replayed by recovery (see registerRecoveryHandler below).
+  const removedCustomFieldKeys = new Set<string>();
+  for (const f of prev.custom_fields) {
+    if (!nextFieldsByKey.has(f.key)) removedCustomFieldKeys.add(f.key);
+  }
+  if (removedCustomFieldKeys.size > 0) {
+    const lv = await loadListViewConfig(locttDir);
+    const prunedLv = pruneListViewForRemovedCustomFields(lv, removedCustomFieldKeys);
+    if (prunedLv !== lv) {
+      await saveListViewConfig(locttDir, prunedLv);
+    }
+  }
+
+  await saveWorkflowConfig(locttDir, next);
+  return { rewrittenTaskCount };
+}
+
+/**
+ * ULID-like id for journal entries. Doesn't need crypto strength;
+ * just needs to be unique within a tracker's lifetime so callers
+ * (and tests) can address the specific entry they wrote.
+ */
+function makeJournalEntryId(): string {
+  return `wf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// Register the crash-recovery handler at module load.
+//
+// Recovery is straightforward: re-read the on-disk workflow config
+// as `prev` (it may equal `next` already if the crash happened
+// after saveWorkflowConfig but before clearJournalEntry — that's
+// fine, executeWorkflowRemap is idempotent), then run the same
+// rewrite/prune/save sequence and clear the entry.
+//
+// `next` and `remap` come from the journal entry — they're the
+// authoritative target state and don't depend on anything that
+// might have been partially written by the crashed op.
+registerRecoveryHandler("remap_workflow", async (locttDir, entry) => {
+  if (entry.kind !== "remap_workflow") return; // narrow the union
+  const prev = await loadWorkflowConfig(locttDir);
+  const tasks = await loadAllTasks(locttDir);
+  // entry.remap is the Zod-inferred shape (mutable, optional fields
+  // typed with `| undefined`); WorkflowRemap is the in-memory shape
+  // (Readonly, no `| undefined`). The structural content matches —
+  // a runtime cast keeps the journal schema simple without forcing
+  // contracts to grow a separate persistence-side type.
+  const remap = entry.remap as WorkflowRemap;
+  await executeWorkflowRemap(locttDir, prev, entry.next, remap, tasks);
+  await clearJournalEntry(locttDir, entry.id);
+});
 
 function serializeWorkflowConfigAsYaml(config: WorkflowConfig): string {
   return stringifyYaml(buildPlainObject(config));

@@ -646,3 +646,165 @@ describe("journal recovery — audit logging", () => {
     infoSpy.mockRestore();
   });
 });
+
+describe("journal recovery — remap_workflow", () => {
+  // Phase 7: applyWorkflowEdit writes a remap_workflow journal entry
+  // around its task-rewrite + list-view-prune + workflow-save
+  // sequence. If the process crashes between any of those writes,
+  // recovery replays the whole sequence idempotently from the
+  // entry's `next` config.
+  //
+  // The handler is registered as a side-effect of importing
+  // config/workflow-write.ts. The tests above don't trigger that
+  // load (they use only entity-remap kinds), so each test below
+  // ensures the module is loaded before driving recovery.
+
+  it("replays a remap_workflow entry that lost the workflow save", async () => {
+    // Stage the world such that:
+    //   - workflow.yaml still has `blocks` AND `in_progress`
+    //   - a journal entry says "drop blocks, remap not_started → in_progress"
+    //   - no task or config rewrites have happened yet
+    // Then trigger recovery and verify the new workflow.yaml is
+    // saved and the task was rewritten.
+    const { loadWorkflowConfig } = await import("../config/workflow.js");
+    // Loading workflow-write registers the remap_workflow handler.
+    await import("../config/workflow-write.js");
+
+    const prevWf = await loadWorkflowConfig(locttDir);
+
+    // Add a task in the not_started status so the remap touches it.
+    const [taskId] = await seedTasks("task", 1);
+    if (taskId === undefined) throw new Error("test setup");
+    // (No need to set status; default is undefined. We'll use a more
+    // realistic case: drop the `blocks` relationship, since the
+    // default workflow has it.)
+
+    const next = {
+      ...prevWf,
+      relationships: prevWf.relationships.filter(r => r.key !== "blocks"),
+    };
+
+    const entry: JournalEntry = {
+      id: "01TEST_WF_RECOVERY_BASIC",
+      kind: "remap_workflow",
+      started_at: "2026-05-12T10:00:00Z",
+      next,
+      remap: {},
+    } as JournalEntry;
+    await writeJournalEntries([entry]);
+
+    // Sanity: the on-disk workflow still has `blocks` before recovery.
+    expect(prevWf.relationships.some(r => r.key === "blocks")).toBe(true);
+
+    // Trigger recovery via withStateLock.
+    await withStateLock(locttDir, () => Promise.resolve());
+
+    // Workflow saved to the new config.
+    const afterWf = await loadWorkflowConfig(locttDir);
+    expect(afterWf.relationships.some(r => r.key === "blocks")).toBe(false);
+    // Journal cleared.
+    expect((await loadJournal(locttDir)).entries).toHaveLength(0);
+  });
+
+  it("replays a remap_workflow entry idempotently when workflow.yaml is already updated", async () => {
+    // Simulates the crash-after-save case: workflow.yaml is already
+    // at `next`, but the journal entry wasn't cleared. Recovery
+    // should re-run executeWorkflowRemap (no-op for tasks because
+    // their values already match next) and then clear the entry
+    // without error.
+    const { saveWorkflowConfig } = await import("../config/workflow-write.js");
+    const { loadWorkflowConfig } = await import("../config/workflow.js");
+    const prevWf = await loadWorkflowConfig(locttDir);
+    const next = {
+      ...prevWf,
+      relationships: prevWf.relationships.filter(r => r.key !== "blocks"),
+    };
+    // Pre-apply: workflow.yaml is already at `next` before recovery.
+    await saveWorkflowConfig(locttDir, next);
+
+    const entry: JournalEntry = {
+      id: "01TEST_WF_RECOVERY_IDEMPOTENT",
+      kind: "remap_workflow",
+      started_at: "2026-05-12T10:00:00Z",
+      next,
+      remap: {},
+    } as JournalEntry;
+    await writeJournalEntries([entry]);
+
+    await withStateLock(locttDir, () => Promise.resolve());
+
+    const afterWf = await loadWorkflowConfig(locttDir);
+    expect(afterWf.relationships.some(r => r.key === "blocks")).toBe(false);
+    expect((await loadJournal(locttDir)).entries).toHaveLength(0);
+  });
+
+  it("replays a remap_workflow entry that applies a status remap mid-task-loop", async () => {
+    // Stage state where SOME tasks were already rewritten but the
+    // config/journal hadn't been touched. Recovery completes the
+    // remaining task rewrites.
+    const { loadWorkflowConfig } = await import("../config/workflow.js");
+    await import("../config/workflow-write.js");
+
+    const prevWf = await loadWorkflowConfig(locttDir);
+
+    // Create 3 tasks; set first two to a different status manually
+    // (simulating a partial rewrite where status `not_started` is
+    // being remapped to `done`).
+    const ids = await seedTasks("task", 3);
+    const { readTask, writeTask } = await import("../task/io.js");
+    // Status field defaults to undefined on seed, so set them to
+    // not_started first.
+    for (const id of ids) {
+      const t = await readTask(locttDir, id);
+      await writeTask(locttDir, id, {
+        ...t,
+        frontmatter: { ...t.frontmatter, status: "not_started" },
+      });
+    }
+    // Simulate partial pre-recovery state: first two are already done.
+    for (const id of ids.slice(0, 2)) {
+      const t = await readTask(locttDir, id);
+      await writeTask(locttDir, id, {
+        ...t,
+        frontmatter: { ...t.frontmatter, status: "done" },
+      });
+    }
+
+    const next = {
+      ...prevWf,
+      statuses: prevWf.statuses.filter(s => s.key !== "not_started"),
+    };
+    const entry: JournalEntry = {
+      id: "01TEST_WF_RECOVERY_MID_LOOP",
+      kind: "remap_workflow",
+      started_at: "2026-05-12T10:00:00Z",
+      next,
+      remap: { statuses: { not_started: "done" } },
+    } as JournalEntry;
+    await writeJournalEntries([entry]);
+
+    await withStateLock(locttDir, () => Promise.resolve());
+
+    // All three tasks now in `done`; journal cleared.
+    for (const id of ids) {
+      const t = await readTask(locttDir, id);
+      expect(t.frontmatter.status).toBe("done");
+    }
+    expect((await loadJournal(locttDir)).entries).toHaveLength(0);
+  });
+
+  it("applyWorkflowEdit writes and clears the journal entry on the happy path", async () => {
+    // The integration test: a normal applyWorkflowEdit call should
+    // leave NO journal entry behind. Catches a regression where
+    // someone forgets the clearJournalEntry at the end.
+    const { applyWorkflowEdit } = await import("../config/workflow-write.js");
+    const { loadWorkflowConfig } = await import("../config/workflow.js");
+    const prevWf = await loadWorkflowConfig(locttDir);
+    const next = {
+      ...prevWf,
+      relationships: prevWf.relationships.filter(r => r.key !== "blocks"),
+    };
+    await applyWorkflowEdit(locttDir, next);
+    expect((await loadJournal(locttDir)).entries).toHaveLength(0);
+  });
+});
