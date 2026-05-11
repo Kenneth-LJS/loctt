@@ -40,4 +40,12 @@ export { buildShowModel,discoverAttachments } from "./show.js";
 export type { RelationshipValidationError } from "./traversal.js";
 export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./traversal.js";
 export type { SetFieldOptions } from "./update.js";
-export { setField, TaskUpdateError,unsetField } from "./update.js";
+export {
+  AUTO_MANAGED_FIELDS,
+  BUILTIN_OPTIONAL_FIELDS,
+  IMMUTABLE_FIELDS,
+  setField,
+  TaskUpdateError,
+  unsetField,
+  WRITABLE_BUILTIN_FIELDS,
+} from "./update.js";

@@ -101,6 +101,152 @@ describe("MCP executeTool", () => {
     }
   });
 
+  describe("update_task validation", () => {
+    it("rejects an immutable field with a useful message", async () => {
+      await executeTool(root, "create_task", { title: "x" });
+      const result = await executeTool(root, "update_task", {
+        ref: "T-1",
+        field: "id",
+        value: "new-id",
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? "").toMatch(/immutable field "id"/);
+    });
+
+    it("rejects an auto-managed field", async () => {
+      await executeTool(root, "create_task", { title: "x" });
+      const result = await executeTool(root, "update_task", {
+        ref: "T-1",
+        field: "completed_date",
+        value: "2026-01-01",
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? "").toMatch(/auto-managed field/);
+    });
+
+    it("rejects a labels value that isn't an array of strings", async () => {
+      await executeTool(root, "create_task", { title: "x" });
+      const result = await executeTool(root, "update_task", {
+        ref: "T-1",
+        field: "labels",
+        value: "bug",
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? "").toMatch(/invalid value for field "labels"/);
+    });
+
+    it("rejects a title that isn't a string", async () => {
+      await executeTool(root, "create_task", { title: "x" });
+      const result = await executeTool(root, "update_task", {
+        ref: "T-1",
+        field: "title",
+        value: 42,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? "").toMatch(/invalid value for field "title"/);
+    });
+
+    it("rejects a missing field argument", async () => {
+      await executeTool(root, "create_task", { title: "x" });
+      const result = await executeTool(root, "update_task", { ref: "T-1", value: "x" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? "").toMatch(/`field` is required/);
+    });
+
+    it("accepts a valid labels array", async () => {
+      await executeTool(root, "create_task", { title: "x" });
+      const result = await executeTool(root, "update_task", {
+        ref: "T-1",
+        field: "labels",
+        value: ["bug", "urgent"],
+      });
+      expect(result.isError).toBeUndefined();
+    });
+
+    it("forwards a valid-shape but workflow-invalid status to the validator", async () => {
+      // Shape passes (`status` accepts any non-empty string), but the
+      // workflow's status enum doesn't recognise "definitely-not-real".
+      // The error reaches the agent as a clean TaskUpdateError, not a
+      // raw stack from setField.
+      await executeTool(root, "create_task", { title: "x" });
+      const result = await executeTool(root, "update_task", {
+        ref: "T-1",
+        field: "status",
+        value: "definitely-not-real",
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? "").toMatch(/status/i);
+    });
+
+    it("rejects setting updated_at via MCP", async () => {
+      // updated_at is built-in writable via setField but not exposed
+      // in the MCP schema map; without the writability check, it
+      // would silently fall through to the custom-field path and
+      // write `fields.updated_at`.
+      await executeTool(root, "create_task", { title: "x" });
+      const result = await executeTool(root, "update_task", {
+        ref: "T-1",
+        field: "updated_at",
+        value: "2026-01-01T00:00:00.000Z",
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? "").toMatch(/not settable via MCP/);
+    });
+
+    it("forwards unknown fields to setField, which then defers to the workflow validator", async () => {
+      // The MCP layer doesn't reject unknown fields outright; it
+      // hands them to setField which checks them against the
+      // workflow's custom_fields. With no custom field declared, the
+      // workflow validator returns the rejection — but the error
+      // reaches the agent as a clean TaskUpdateError, not a stack.
+      await executeTool(root, "create_task", { title: "x" });
+      const result = await executeTool(root, "update_task", {
+        ref: "T-1",
+        field: "story_points",
+        value: 5,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? "").toMatch(/story_points/);
+    });
+  });
+
+  describe("unset_field validation", () => {
+    it("rejects unsetting an immutable field", async () => {
+      await executeTool(root, "create_task", { title: "x" });
+      const result = await executeTool(root, "unset_field", { ref: "T-1", field: "id" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? "").toMatch(/immutable field "id"/);
+    });
+
+    it("rejects unsetting title (required)", async () => {
+      await executeTool(root, "create_task", { title: "x" });
+      const result = await executeTool(root, "unset_field", { ref: "T-1", field: "title" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? "").toMatch(/required field "title"/);
+    });
+
+    it("rejects unsetting an auto-managed field", async () => {
+      await executeTool(root, "create_task", { title: "x" });
+      const result = await executeTool(root, "unset_field", {
+        ref: "T-1",
+        field: "completed_date",
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? "").toMatch(/auto-managed/);
+    });
+
+    it("clears a previously-set built-in optional field", async () => {
+      await executeTool(root, "create_task", { title: "x" });
+      await executeTool(root, "update_task", {
+        ref: "T-1",
+        field: "priority",
+        value: "high",
+      });
+      const result = await executeTool(root, "unset_field", { ref: "T-1", field: "priority" });
+      expect(result.isError).toBeUndefined();
+    });
+  });
+
   it("delete_task without confirm is rejected; archive_task is the soft path", async () => {
     await executeTool(root, "create_task", { title: "to-delete" });
 

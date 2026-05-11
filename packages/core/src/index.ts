@@ -228,7 +228,15 @@ export { appendTaskBody, readTask, readTaskBody, writeTask, writeTaskBody } from
 export { listTaskIds, loadAllTasks, lookupById, lookupByKey, lookupTask, TaskNotFoundError } from "./task/index.js";
 export { createTask } from "./task/index.js";
 export { buildShowModel,discoverAttachments } from "./task/index.js";
-export { setField, TaskUpdateError,unsetField } from "./task/index.js";
+export {
+  AUTO_MANAGED_FIELDS,
+  BUILTIN_OPTIONAL_FIELDS,
+  IMMUTABLE_FIELDS,
+  setField,
+  TaskUpdateError,
+  unsetField,
+  WRITABLE_BUILTIN_FIELDS,
+} from "./task/index.js";
 export { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./task/index.js";
 export { linkTask, RelationshipError,unlinkTask } from "./task/index.js";
 export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./task/index.js";
