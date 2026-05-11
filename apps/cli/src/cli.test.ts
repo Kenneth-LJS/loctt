@@ -107,6 +107,71 @@ describe("CLI commands", () => {
     }
   });
 
+  it("--cwd <dir> targets a tracker outside the process cwd, leaving cwd untouched", async () => {
+    // Initialise both trackers and the source one (already done in
+    // beforeEach for `root`). process.cwd() is mocked to `root`.
+    const otherRoot = await mkdtemp(join(tmpdir(), "loctt-cli-cwd-"));
+    try {
+      await initLoctt(otherRoot);
+      process.argv = ["node", "loctt", "init"]; // safe no-op (already inited)
+      // First, init root via the CLI so it has a clean baseline too.
+      // (beforeEach initialises root via initLoctt directly already.)
+      await main();
+      process.exitCode = undefined;
+
+      process.argv = ["node", "loctt", "--cwd", otherRoot, "create", "elsewhere"];
+      await main();
+      expect(process.exitCode).toBeUndefined();
+
+      // Other tracker contains the new task.
+      process.exitCode = undefined;
+      consoleSpy.mockClear();
+      process.argv = ["node", "loctt", "--cwd", otherRoot, "list"];
+      await main();
+      const otherLog = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(otherLog).toContain("elsewhere");
+
+      // Process cwd's tracker MUST NOT contain it — proves --cwd
+      // wasn't silently ignored and the create didn't double-write.
+      process.exitCode = undefined;
+      consoleSpy.mockClear();
+      process.argv = ["node", "loctt", "list"];
+      await main();
+      const cwdLog = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(cwdLog).not.toContain("elsewhere");
+    } finally {
+      await rm(otherRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("usage error from a converted command exits 2 and prints the Usage hint", async () => {
+    // `project create` without --prefix is a usage error. Confirms
+    // runCommand → UsageError pipeline maps to EXIT.USAGE AND that
+    // the hint line is printed (the whole point of UsageError.usage).
+    process.argv = ["node", "loctt", "init"];
+    await main();
+    process.exitCode = undefined;
+    const errSpy = vi.mocked(console.error);
+    errSpy.mockClear();
+    process.argv = ["node", "loctt", "project", "create", "p"];
+    await main();
+    expect(process.exitCode).toBe(2);
+    const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(stderr).toMatch(/missing key or --prefix/);
+    expect(stderr).toMatch(/Usage:/);
+    expect(stderr).toMatch(/loctt project create/);
+  });
+
+  it("--cwd <flag-looking-value> does not silently swallow the next flag", async () => {
+    // Regression: `loctt --cwd --help` previously consumed --help as
+    // the value of --cwd. Now the next-token-must-not-start-with-dash
+    // rule preserves --help.
+    process.argv = ["node", "loctt", "--cwd", "--help"];
+    await main();
+    // --help routes through the help case, which doesn't set exitCode.
+    expect(process.exitCode).toBeUndefined();
+  });
+
   it("preserves an empty-string flag value (--set '')", async () => {
     // Regression for the mri auto-coercion bug: --set "" must not
     // become 0 or be treated as missing.
