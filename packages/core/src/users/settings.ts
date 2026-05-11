@@ -14,6 +14,10 @@ import { fileExists } from "../utils/fs.js";
  */
 export type UserSettings = Readonly<Record<string, unknown>>;
 
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
 /** Loads a user's settings.yaml. Returns `{}` when absent. */
 export async function loadUserSettings(
   locttDir: string,
@@ -23,9 +27,8 @@ export async function loadUserSettings(
   if (!(await fileExists(path))) return {};
   const raw = await readFile(path, "utf-8");
   if (raw.trim() === "") return {};
-  const parsed = parseYaml(raw) as unknown;
-  if (parsed === null || typeof parsed !== "object") return {};
-  return parsed as UserSettings;
+  const parsed: unknown = parseYaml(raw);
+  return isPlainObject(parsed) ? parsed : {};
 }
 
 /**
@@ -41,10 +44,7 @@ export async function saveUserSettings(
   // and round-trip through a known-shape object.
   const yaml = stringifyYaml(settings);
   // Round-trip: parse back to ensure validity.
-  const parsed = parseYaml(yaml) as unknown;
-  const safe: Record<string, unknown> =
-    parsed === null || typeof parsed !== "object"
-      ? {}
-      : (parsed as Record<string, unknown>);
+  const parsed: unknown = parseYaml(yaml);
+  const safe = isPlainObject(parsed) ? parsed : {};
   await writeYamlAtomically(getUserSettingsPath(locttDir, userId), safe);
 }
