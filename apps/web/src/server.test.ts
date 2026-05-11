@@ -155,6 +155,113 @@ describe("web server security", () => {
     });
   });
 
+  describe("list pagination", () => {
+    const csrfHeaders = {
+      "Content-Type": "application/json",
+      "X-Loctt-Client": "test",
+    };
+
+    it("/api/tasks returns paginated envelope", async () => {
+      // Seed a few tasks (some may already exist from earlier tests
+      // — that's fine, pagination wraps the matching set).
+      for (let i = 0; i < 3; i += 1) {
+        await fetch(`${base}/api/tasks`, {
+          method: "POST",
+          headers: csrfHeaders,
+          body: JSON.stringify({ title: `paginated ${i}` }),
+        });
+      }
+      const res = await fetch(`${base}/api/tasks?limit=2&offset=0`);
+      expect(res.status).toBe(200);
+      const body = await res.json() as {
+        items: unknown[];
+        total: number;
+        offset: number;
+        limit: number;
+      };
+      expect(body.items).toHaveLength(2);
+      expect(body.total).toBeGreaterThanOrEqual(3);
+      expect(body.offset).toBe(0);
+      expect(body.limit).toBe(2);
+    });
+
+    it("/api/tasks pagination total exceeds the core listTasks default cap of 30", async () => {
+      // Regression guard: listTasks() in core has a built-in default
+      // limit of 30 to keep CLI output bounded. The HTTP layer must
+      // opt out of that so total reflects the real matching count
+      // and ?offset=30 returns the next page.
+      const before = await fetch(`${base}/api/tasks?limit=1`);
+      const beforeBody = await before.json() as { total: number };
+      const startTotal = beforeBody.total;
+      const need = Math.max(0, 35 - startTotal);
+      for (let i = 0; i < need; i += 1) {
+        await fetch(`${base}/api/tasks`, {
+          method: "POST",
+          headers: csrfHeaders,
+          body: JSON.stringify({ title: `cap-test ${i}` }),
+        });
+      }
+      const res = await fetch(`${base}/api/tasks?limit=1&offset=0`);
+      const body = await res.json() as { items: unknown[]; total: number };
+      expect(body.total).toBeGreaterThan(30);
+
+      // Page past 30 — must return items, not be cut off by the
+      // hidden core limit.
+      const page2 = await fetch(`${base}/api/tasks?limit=5&offset=30`);
+      const page2Body = await page2.json() as { items: unknown[]; total: number };
+      expect(page2Body.items.length).toBeGreaterThan(0);
+      expect(page2Body.total).toBe(body.total);
+    });
+
+    it("/api/tasks rejects negative limit", async () => {
+      const res = await fetch(`${base}/api/tasks?limit=-1`);
+      expect(res.status).toBe(400);
+    });
+
+    it("/api/tasks rejects non-integer offset", async () => {
+      const res = await fetch(`${base}/api/tasks?offset=abc`);
+      expect(res.status).toBe(400);
+    });
+
+    it("/api/tasks rejects an empty limit (does not silently treat as 0)", async () => {
+      const res = await fetch(`${base}/api/tasks?limit=`);
+      expect(res.status).toBe(400);
+    });
+
+    it("/api/tasks rejects limit beyond MAX_PAGE_LIMIT", async () => {
+      const res = await fetch(`${base}/api/tasks?limit=999999`);
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toMatch(/at most/i);
+    });
+
+    it("/api/projects returns paginated envelope", async () => {
+      const res = await fetch(`${base}/api/projects`);
+      expect(res.status).toBe(200);
+      const body = await res.json() as {
+        items: unknown[];
+        total: number;
+        default: string | null;
+      };
+      expect(Array.isArray(body.items)).toBe(true);
+      expect(typeof body.total).toBe("number");
+      expect("default" in body).toBe(true);
+    });
+
+    it("/api/users returns paginated envelope with current pinned alongside", async () => {
+      const res = await fetch(`${base}/api/users`);
+      expect(res.status).toBe(200);
+      const body = await res.json() as {
+        items: unknown[];
+        total: number;
+        current: string | null;
+      };
+      expect(Array.isArray(body.items)).toBe(true);
+      expect(typeof body.total).toBe("number");
+      expect("current" in body).toBe(true);
+    });
+  });
+
   describe("invalid-JSON request bodies", () => {
     const csrfHeaders = {
       "Content-Type": "application/json",
@@ -192,6 +299,28 @@ describe("web server security", () => {
       expect(res.status).toBe(400);
       const body = await res.json() as { error: string };
       expect(body.error).toMatch(/object/i);
+    });
+
+    it("returns 400 (not 500) when POST /api/tasks gets unparseable JSON", async () => {
+      const res = await fetch(`${base}/api/tasks`, {
+        method: "POST",
+        headers: csrfHeaders,
+        body: "{",
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toMatch(/invalid JSON/i);
+    });
+
+    it("returns 400 when POST /api/projects gets unparseable JSON", async () => {
+      const res = await fetch(`${base}/api/projects`, {
+        method: "POST",
+        headers: csrfHeaders,
+        body: "{",
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toMatch(/invalid JSON/i);
     });
 
     it("returns 400 when PUT /api/user-settings nests too deeply", async () => {
