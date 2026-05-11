@@ -5,13 +5,13 @@ import { startMcpClient } from "../../adapters/mcp-stdio.js";
 import { withTmpLoctt } from "../../fixtures/tmp-loctt.js";
 
 describe("MCP delete_task edge cases (stdio)", () => {
-  it("returns isError when hard: true is passed without confirm: true", async () => {
+  it("returns isError when called without confirm: true", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "t"], { cwd: root });
 
       const client = await startMcpClient(root);
       try {
-        const result = await client.callTool("delete_task", { ref: "T-1", hard: true });
+        const result = await client.callTool("delete_task", { ref: "T-1" });
         expect(result.isError).toBe(true);
         expect(result.content[0]?.text ?? "").toContain("confirm");
 
@@ -30,7 +30,6 @@ describe("MCP delete_task edge cases (stdio)", () => {
       try {
         const result = await client.callTool("delete_task", {
           ref: "T-99",
-          hard: true,
           confirm: true,
         });
         expect(result.isError).toBe(true);

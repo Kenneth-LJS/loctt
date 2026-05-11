@@ -4,7 +4,7 @@ import { runCli } from "../adapters/cli-spawn.js";
 import { startMcpClient } from "../adapters/mcp-stdio.js";
 import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
 
-describe("MCP task_history (stdio)", () => {
+describe("MCP get_task_history (stdio)", () => {
   it("returns history entries newest first", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "tracked"], { cwd: root });
@@ -12,7 +12,7 @@ describe("MCP task_history (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const result = await client.callTool("task_history", { ref: "T-1" });
+        const result = await client.callTool("get_task_history", { ref: "T-1" });
         expect(result.isError).toBeFalsy();
 
         const text = result.content[0]?.text ?? "";

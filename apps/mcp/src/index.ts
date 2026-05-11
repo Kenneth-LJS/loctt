@@ -131,7 +131,7 @@ export function getTools(): McpTool[] {
       inputSchema: {},
     },
     {
-      name: "get_config",
+      name: "get_workflow_config",
       description: "Get the workflow configuration.",
       inputSchema: {},
     },
@@ -210,13 +210,11 @@ export function getTools(): McpTool[] {
     {
       name: "delete_task",
       description:
-        "Delete a task. Default is soft-delete (archive) — sets archived=true and the task " +
-        "remains on disk and can be unarchived. Pass hard: true to permanently remove the " +
-        "task directory. Hard delete additionally requires confirm: true.",
+        "Permanently remove a task directory. Use `archive_task` for the reversible (soft) " +
+        "variant. Always requires `confirm: true`.",
       inputSchema: {
         ref: z.string(),
-        hard: z.boolean().optional().describe("If true, permanently remove the task directory"),
-        confirm: z.boolean().optional().describe("Required when hard is true"),
+        confirm: z.boolean().optional().describe("Required: must be true to proceed"),
       },
     },
     {
@@ -275,39 +273,39 @@ export function getTools(): McpTool[] {
       },
     },
     {
-      name: "git_enable",
+      name: "enable_git",
       description: "Enables git-backed mode for this tracker. Sets up a dedicated loctt branch for task data on a sparse worktree. Only call when the user has explicitly asked to share tasks across machines or set up sync — this is one-time infrastructure setup, not a routine task operation.",
       inputSchema: {},
     },
     {
-      name: "git_disable",
+      name: "disable_git",
       description: "Disables git-backed mode for this tracker. Local task data is preserved.",
       inputSchema: {},
     },
     {
-      name: "git_status",
+      name: "get_git_status",
       description: "Returns structured JSON describing git-backed mode state (enabled, branch, remote, auto_push, auto_fetch, in_git_repo, last_synced_commit).",
       inputSchema: {},
     },
     {
-      name: "git_publish",
+      name: "publish_to_git",
       description: "Commits the current task state to the local loctt branch and (if remote+auto_push are set) pushes to remote. Call when the user has indicated they want to share or sync tasks — not speculatively after routine task edits.",
       inputSchema: {},
     },
     {
-      name: "git_sync",
+      name: "sync_from_git",
       description: "Pulls the loctt branch state into the local workspace. If a remote is configured and auto_fetch is set, fetches first. Call when the user wants to bring in changes from another machine.",
       inputSchema: {},
     },
     {
-      name: "config_get",
+      name: "get_config_value",
       description: "Reads a machine-local config value (currently git.* keys). Returns structured JSON {key, value, type} with the value preserving its native type.",
       inputSchema: {
         key: z.string().describe("Config key (e.g. git.enabled, git.remote)."),
       },
     },
     {
-      name: "config_set",
+      name: "set_config_value",
       description: "Changes machine-local config (currently git.* keys only). Echo the change you're making in your response so the user can see what was adjusted. Don't call speculatively — only when the user has indicated they want to change a setting.",
       inputSchema: {
         key: z.string(),
@@ -315,19 +313,19 @@ export function getTools(): McpTool[] {
       },
     },
     {
-      name: "config_unset",
+      name: "unset_config_value",
       description: "Restores a machine-local config key to its default. Echo the change so the user can see what was reset. Don't call speculatively — only when the user has indicated they want to revert a setting.",
       inputSchema: {
         key: z.string(),
       },
     },
     {
-      name: "config_list",
+      name: "list_config_values",
       description: "Lists all known config keys with their current values, types, and descriptions. Returns structured JSON array.",
       inputSchema: {},
     },
     {
-      name: "task_history",
+      name: "get_task_history",
       description: "Get the activity/history log for a task. Returns structured entries (newest first).",
       inputSchema: {
         ref: z.string().describe("Task key (e.g. T-1) or ID"),
@@ -335,12 +333,12 @@ export function getTools(): McpTool[] {
       },
     },
     {
-      name: "project_list",
+      name: "list_projects",
       description: "List projects defined in projects.yaml. Returns each project's key, label, prefix, and which (if any) is the workspace default.",
       inputSchema: {},
     },
     {
-      name: "project_create",
+      name: "create_project",
       description: "Create a new project. Project keys are immutable; prefixes must be unique across the tracker. Setting `make_default` true also sets the workspace default.",
       inputSchema: {
         key: z.string().describe("Slug identifier (lowercase letters, digits, hyphen, underscore)"),
@@ -350,7 +348,7 @@ export function getTools(): McpTool[] {
       },
     },
     {
-      name: "project_edit",
+      name: "edit_project",
       description: "Edit an existing project. Only `label` is mutable — `key` and `prefix` are immutable after creation.",
       inputSchema: {
         key: z.string(),
@@ -358,58 +356,57 @@ export function getTools(): McpTool[] {
       },
     },
     {
-      name: "project_delete",
+      name: "delete_project",
       description:
-        "Delete a project. Default is soft-delete: archived: true is set on the project; tasks " +
-        "still reference it. With hard: true, the project is removed from projects.yaml and " +
-        "(for projects with tasks) `remap_to` is required to migrate them to another project. " +
-        "Cannot hard-delete the only project. The counter is preserved in retired_keys so a " +
-        "later create with the same key resumes numbering. hard: true requires confirm: true.",
+        "Permanently remove a project from projects.yaml. For projects with tasks, " +
+        "`remap_to` is required to migrate them to another project. Cannot delete the only " +
+        "project. The counter is preserved in retired_keys so a later create with the same " +
+        "key resumes numbering. Use `archive_project` for the reversible (soft) variant. " +
+        "Always requires `confirm: true`.",
       inputSchema: {
         key: z.string(),
-        hard: z.boolean().optional().describe("If true, permanently remove the project from projects.yaml"),
-        confirm: z.boolean().optional().describe("Required when hard is true"),
-        remap_to: z.string().optional().describe("Hard-delete only: target project key for tasks in the deleted project"),
+        confirm: z.boolean().optional().describe("Required: must be true to proceed"),
+        remap_to: z.string().optional().describe("Target project key for tasks in the deleted project"),
       },
     },
     {
-      name: "project_archive",
-      description: "Mark a project as archived. Archived projects are hidden from default lists and pickers. Equivalent to project_delete without hard.",
+      name: "archive_project",
+      description: "Mark a project as archived. Archived projects are hidden from default lists and pickers. Reversible via `unarchive_project`.",
       inputSchema: { key: z.string() },
     },
     {
-      name: "project_unarchive",
+      name: "unarchive_project",
       description: "Clear the archived flag on a project.",
       inputSchema: { key: z.string() },
     },
     {
-      name: "project_set_default",
+      name: "set_default_project",
       description: "Set or clear the workspace default project. Pass `key` to set, or omit it to clear the default.",
       inputSchema: {
         key: z.string().optional(),
       },
     },
     {
-      name: "user_list",
+      name: "list_users",
       description: "List registered users. By default, archived users are hidden; pass include_archived=true to include them.",
       inputSchema: {
         include_archived: z.boolean().optional(),
       },
     },
     {
-      name: "user_current",
+      name: "get_current_user",
       description: "Returns the currently active user's profile.",
       inputSchema: {},
     },
     {
-      name: "user_switch",
+      name: "switch_user",
       description: "Switches the active user. Accepts either a UUID or an exact name (when unambiguous).",
       inputSchema: {
         ref: z.string().describe("User UUID or exact name"),
       },
     },
     {
-      name: "user_create",
+      name: "create_user",
       description: "Creates a new user. Names are not unique (UUIDs disambiguate). Timezone defaults to the system timezone. Avatars are not settable via MCP — use the CLI or web UI.",
       inputSchema: {
         name: z.string(),
@@ -419,7 +416,7 @@ export function getTools(): McpTool[] {
       },
     },
     {
-      name: "user_edit",
+      name: "edit_user",
       description: "Edit an existing user's profile fields. Avatars are not settable via MCP — use the CLI or web UI.",
       inputSchema: {
         ref: z.string(),
@@ -429,21 +426,21 @@ export function getTools(): McpTool[] {
       },
     },
     {
-      name: "user_archive",
+      name: "archive_user",
       description: "Archives (soft-deletes) a user. Hides them from pickers without breaking historical task references. Blocked when target is the active user.",
       inputSchema: {
         ref: z.string(),
       },
     },
     {
-      name: "user_unarchive",
-      description: "Reverses user_archive — clears the archived flag.",
+      name: "unarchive_user",
+      description: "Reverses archive_user — clears the archived flag.",
       inputSchema: {
         ref: z.string(),
       },
     },
     {
-      name: "user_delete",
+      name: "delete_user",
       description: "Hard-deletes a user. When the user has task references (assignee/reporter), exactly one of `remap_to` or `unassign` is required. Mutually exclusive. Blocked when target is the active user. Requires confirm: true.",
       inputSchema: {
         ref: z.string(),
@@ -453,7 +450,7 @@ export function getTools(): McpTool[] {
       },
     },
     {
-      name: "label_list",
+      name: "list_labels",
       description: "List labels defined in labels.yaml.",
       inputSchema: {},
     },
@@ -463,12 +460,12 @@ export function getTools(): McpTool[] {
       inputSchema: {},
     },
     {
-      name: "sprint_list",
+      name: "list_sprints",
       description: "List sprints defined in sprints.yaml.",
       inputSchema: {},
     },
     {
-      name: "sprint_create",
+      name: "create_sprint",
       description: "Register a new sprint with start/end dates and a state (active|completed|future).",
       inputSchema: {
         key: z.string(),
@@ -480,7 +477,7 @@ export function getTools(): McpTool[] {
       },
     },
     {
-      name: "sprint_edit",
+      name: "edit_sprint",
       description:
         "Edit a sprint. Pass null goal to clear. Re-opening a completed sprint " +
         "(state: 'completed' -> 'active' or 'future') is blocked by default; pass " +
@@ -496,35 +493,34 @@ export function getTools(): McpTool[] {
       },
     },
     {
-      name: "sprint_delete",
+      name: "delete_sprint",
       description:
-        "Delete a sprint. Default is soft-delete (archived: true). With hard: true, the entry " +
-        "is removed from sprints.yaml and the `sprint` field on each affected task is either " +
-        "unset or remapped to `remap_to`. hard: true requires confirm: true.",
+        "Permanently remove a sprint from sprints.yaml. The `sprint` field on each affected " +
+        "task is unset or remapped via `remap_to`. Use `archive_sprint` for the reversible " +
+        "(soft) variant. Always requires `confirm: true`.",
       inputSchema: {
         key: z.string(),
-        hard: z.boolean().optional(),
-        confirm: z.boolean().optional().describe("Required when hard is true"),
-        remap_to: z.string().optional().describe("Hard-delete only"),
+        confirm: z.boolean().optional().describe("Required: must be true to proceed"),
+        remap_to: z.string().optional().describe("Target sprint key for affected tasks"),
       },
     },
     {
-      name: "sprint_archive",
-      description: "Mark a sprint as archived. Equivalent to sprint_delete without hard.",
+      name: "archive_sprint",
+      description: "Mark a sprint as archived. Reversible via `unarchive_sprint`.",
       inputSchema: { key: z.string() },
     },
     {
-      name: "sprint_unarchive",
+      name: "unarchive_sprint",
       description: "Clear the archived flag on a sprint.",
       inputSchema: { key: z.string() },
     },
     {
-      name: "milestone_list",
+      name: "list_milestones",
       description: "List milestones defined in milestones.yaml.",
       inputSchema: {},
     },
     {
-      name: "milestone_create",
+      name: "create_milestone",
       description: "Register a new milestone with optional target date.",
       inputSchema: {
         key: z.string(),
@@ -533,7 +529,7 @@ export function getTools(): McpTool[] {
       },
     },
     {
-      name: "milestone_edit",
+      name: "edit_milestone",
       description: "Edit a milestone. Pass null target_date to clear.",
       inputSchema: {
         key: z.string(),
@@ -543,30 +539,29 @@ export function getTools(): McpTool[] {
       },
     },
     {
-      name: "milestone_delete",
+      name: "delete_milestone",
       description:
-        "Delete a milestone. Default is soft-delete (archived: true). With hard: true, the " +
-        "entry is removed from milestones.yaml and the `milestone` field on each affected task " +
-        "is either unset or remapped to `remap_to`. hard: true requires confirm: true.",
+        "Permanently remove a milestone from milestones.yaml. The `milestone` field on each " +
+        "affected task is unset or remapped via `remap_to`. Use `archive_milestone` for the " +
+        "reversible (soft) variant. Always requires `confirm: true`.",
       inputSchema: {
         key: z.string(),
-        hard: z.boolean().optional(),
-        confirm: z.boolean().optional().describe("Required when hard is true"),
-        remap_to: z.string().optional().describe("Hard-delete only"),
+        confirm: z.boolean().optional().describe("Required: must be true to proceed"),
+        remap_to: z.string().optional().describe("Target milestone key for affected tasks"),
       },
     },
     {
-      name: "milestone_archive",
-      description: "Mark a milestone as archived. Equivalent to milestone_delete without hard.",
+      name: "archive_milestone",
+      description: "Mark a milestone as archived. Reversible via `unarchive_milestone`.",
       inputSchema: { key: z.string() },
     },
     {
-      name: "milestone_unarchive",
+      name: "unarchive_milestone",
       description: "Clear the archived flag on a milestone.",
       inputSchema: { key: z.string() },
     },
     {
-      name: "label_create",
+      name: "create_label",
       description: "Register a new label. Keys are immutable; pass --label and optional --color.",
       inputSchema: {
         key: z.string(),
@@ -575,7 +570,7 @@ export function getTools(): McpTool[] {
       },
     },
     {
-      name: "label_edit",
+      name: "edit_label",
       description: "Edit a label's display name or color. The key is immutable.",
       inputSchema: {
         key: z.string(),
@@ -584,25 +579,24 @@ export function getTools(): McpTool[] {
       },
     },
     {
-      name: "label_delete",
+      name: "delete_label",
       description:
-        "Delete a label. Default is soft-delete (archived: true). With hard: true, the entry " +
-        "is removed from labels.yaml and the key is dropped from every task's labels array (or " +
-        "remapped via remap_to). hard: true requires confirm: true.",
+        "Permanently remove a label from labels.yaml; the key is dropped from every task's " +
+        "labels array (or remapped via `remap_to`). Use `archive_label` for the reversible " +
+        "(soft) variant. Always requires `confirm: true`.",
       inputSchema: {
         key: z.string(),
-        hard: z.boolean().optional(),
-        confirm: z.boolean().optional().describe("Required when hard is true"),
-        remap_to: z.string().optional().describe("Hard-delete only"),
+        confirm: z.boolean().optional().describe("Required: must be true to proceed"),
+        remap_to: z.string().optional().describe("Target label key for affected tasks"),
       },
     },
     {
-      name: "label_archive",
-      description: "Mark a label as archived. Equivalent to label_delete without hard.",
+      name: "archive_label",
+      description: "Mark a label as archived. Reversible via `unarchive_label`.",
       inputSchema: { key: z.string() },
     },
     {
-      name: "label_unarchive",
+      name: "unarchive_label",
       description: "Clear the archived flag on a label.",
       inputSchema: { key: z.string() },
     },
@@ -752,7 +746,7 @@ export async function executeTool(
         }
       }
 
-      case "get_config": {
+      case "get_workflow_config": {
         const config = await loadWorkflowConfig(locttDir);
         return text(JSON.stringify(config, null, 2));
       }
@@ -842,22 +836,11 @@ export async function executeTool(
       }
 
       case "delete_task": {
-        const hard = args["hard"] === true;
+        const blocked = requireConfirm(args, "delete_task");
+        if (blocked) return blocked;
         const task = await lookupTask(locttDir, args["ref"] as string);
-        if (hard) {
-          const blocked = requireConfirm(args, "hard delete");
-          if (blocked) return blocked;
-          await deleteTask(locttDir, task.frontmatter.id, { force: true });
-          return text(`Hard-deleted ${task.frontmatter.key}.`);
-        }
-        if (task.frontmatter.archived) {
-          return errorResult(
-            `Task ${task.frontmatter.key} is already archived. ` +
-            `Pass hard: true (and confirm: true) to permanently remove it.`,
-          );
-        }
-        await archiveTask(locttDir, task.frontmatter.id);
-        return text(`Archived ${task.frontmatter.key} (use hard: true to remove permanently).`);
+        await deleteTask(locttDir, task.frontmatter.id, { force: true });
+        return text(`Deleted ${task.frontmatter.key}.`);
       }
 
       case "link_tasks": {
@@ -939,7 +922,7 @@ export async function executeTool(
         }
       }
 
-      case "task_history": {
+      case "get_task_history": {
         const task = await lookupTask(locttDir, args["ref"] as string);
         const entries = await readHistory(locttDir, task.frontmatter.id);
         entries.reverse();
@@ -1003,17 +986,17 @@ export async function executeTool(
         return text(`Initialized .loctt at ${result.locttDir}\nCreated ${result.created.length} files`);
       }
 
-      case "git_enable": {
+      case "enable_git": {
         await enableGit(locttDir, root);
         return text("Git-backed mode enabled");
       }
 
-      case "git_disable": {
+      case "disable_git": {
         await disableGit(locttDir);
         return text("Git-backed mode disabled");
       }
 
-      case "git_status": {
+      case "get_git_status": {
         const status = await getGitStatus(locttDir, root);
         const result = {
           enabled: status.enabled,
@@ -1027,7 +1010,7 @@ export async function executeTool(
         return text(JSON.stringify(result, null, 2));
       }
 
-      case "git_publish": {
+      case "publish_to_git": {
         const result = await publish(locttDir, root);
         const lines: string[] = [];
         if (result.committed) {
@@ -1043,7 +1026,7 @@ export async function executeTool(
         return text(lines.join("\n"));
       }
 
-      case "git_sync": {
+      case "sync_from_git": {
         const result = await sync(locttDir, root);
         const lines: string[] = [];
         if (result.fetched === true) {
@@ -1059,7 +1042,7 @@ export async function executeTool(
         return text(lines.join("\n"));
       }
 
-      case "config_get": {
+      case "get_config_value": {
         const key = args["key"] as string;
         const def = CONFIG_KEYS.find(d => d.key === key);
         if (!def) {
@@ -1073,20 +1056,20 @@ export async function executeTool(
         }, null, 2));
       }
 
-      case "config_set": {
+      case "set_config_value": {
         const key = args["key"] as string;
         const value = args["value"] as string;
         await setConfigValue({ locttDir, root }, key, value);
         return text(`Set ${key} = ${value}`);
       }
 
-      case "config_unset": {
+      case "unset_config_value": {
         const key = args["key"] as string;
         await unsetConfigValue({ locttDir, root }, key);
         return text(`Unset ${key}`);
       }
 
-      case "config_list": {
+      case "list_config_values": {
         const items = [];
         for (const def of CONFIG_KEYS) {
           let value: string | boolean | null = null;
@@ -1106,7 +1089,7 @@ export async function executeTool(
         return text(JSON.stringify(items, null, 2));
       }
 
-      case "project_list": {
+      case "list_projects": {
         const cfg = await loadProjectsConfig(locttDir);
         return text(JSON.stringify({
           projects: cfg.projects,
@@ -1114,7 +1097,7 @@ export async function executeTool(
         }, null, 2));
       }
 
-      case "project_create": {
+      case "create_project": {
         try {
           await createProject(locttDir, {
             key: args["key"] as string,
@@ -1133,7 +1116,7 @@ export async function executeTool(
         }
       }
 
-      case "project_edit": {
+      case "edit_project": {
         try {
           await editProject(locttDir, args["key"] as string, {
             label: args["label"] as string,
@@ -1147,20 +1130,16 @@ export async function executeTool(
         }
       }
 
-      case "project_delete": {
+      case "delete_project": {
         try {
+          const blocked = requireConfirm(args, "delete_project");
+          if (blocked) return blocked;
           const remapTo = args["remap_to"] as string | undefined;
-          const hard = args["hard"] === true;
-          if (hard) {
-            const blocked = requireConfirm(args, "hard delete");
-            if (blocked) return blocked;
-          }
           const result = await deleteProject(locttDir, args["key"] as string, {
-            hard,
+            hard: true,
             ...(remapTo !== undefined ? { remapTo } : {}),
           });
           return text(JSON.stringify({
-            mode: hard ? "hard" : "soft",
             key: args["key"],
             remappedTaskCount: result.remappedTaskCount,
           }, null, 2));
@@ -1172,20 +1151,20 @@ export async function executeTool(
         }
       }
 
-      case "project_archive":
-      case "project_unarchive": {
+      case "archive_project":
+      case "unarchive_project": {
         try {
           const key = args["key"] as string;
-          if (name === "project_archive") await archiveProject(locttDir, key);
+          if (name === "archive_project") await archiveProject(locttDir, key);
           else await unarchiveProject(locttDir, key);
-          return text(`${name === "project_archive" ? "Archived" : "Unarchived"} project ${key}`);
+          return text(`${name === "archive_project" ? "Archived" : "Unarchived"} project ${key}`);
         } catch (err) {
           if (err instanceof ProjectError) return errorResult(err.message);
           throw err;
         }
       }
 
-      case "project_set_default": {
+      case "set_default_project": {
         try {
           const key = (args["key"] as string | undefined) ?? null;
           await setDefaultProject(locttDir, key);
@@ -1198,7 +1177,7 @@ export async function executeTool(
         }
       }
 
-      case "user_list": {
+      case "list_users": {
         const includeArchived = args["include_archived"] === true;
         const users = await loadAllUsers(locttDir);
         const current = await getCurrentUser(locttDir);
@@ -1209,13 +1188,13 @@ export async function executeTool(
         }, null, 2));
       }
 
-      case "user_current": {
+      case "get_current_user": {
         const current = await getCurrentUser(locttDir);
         if (!current) return errorResult("no users registered");
         return text(JSON.stringify(current, null, 2));
       }
 
-      case "user_switch": {
+      case "switch_user": {
         try {
           const target = await resolveUserRef(locttDir, args["ref"] as string);
           await switchCurrentUser(locttDir, target.id);
@@ -1226,7 +1205,7 @@ export async function executeTool(
         }
       }
 
-      case "user_create": {
+      case "create_user": {
         try {
           const created = await createUser(locttDir, {
             name: args["name"] as string,
@@ -1241,7 +1220,7 @@ export async function executeTool(
         }
       }
 
-      case "user_edit": {
+      case "edit_user": {
         try {
           const target = await resolveUserRef(locttDir, args["ref"] as string);
           const updated = await updateUser(locttDir, target.id, {
@@ -1258,22 +1237,22 @@ export async function executeTool(
         }
       }
 
-      case "user_archive":
-      case "user_unarchive": {
+      case "archive_user":
+      case "unarchive_user": {
         try {
           const target = await resolveUserRef(locttDir, args["ref"] as string);
-          if (name === "user_archive") await archiveUser(locttDir, target.id);
+          if (name === "archive_user") await archiveUser(locttDir, target.id);
           else await unarchiveUser(locttDir, target.id);
-          return text(`${name === "user_archive" ? "Archived" : "Unarchived"} ${target.name}`);
+          return text(`${name === "archive_user" ? "Archived" : "Unarchived"} ${target.name}`);
         } catch (err) {
           if (err instanceof UserError) return errorResult(err.message);
           throw err;
         }
       }
 
-      case "user_delete": {
+      case "delete_user": {
         try {
-          const blocked = requireConfirm(args, "user_delete");
+          const blocked = requireConfirm(args, "delete_user");
           if (blocked) return blocked;
           const target = await resolveUserRef(locttDir, args["ref"] as string);
           const remapToRef = args["remap_to"] as string | undefined;
@@ -1295,12 +1274,12 @@ export async function executeTool(
         }
       }
 
-      case "label_list": {
+      case "list_labels": {
         const cfg = await loadLabelsConfig(locttDir);
         return text(JSON.stringify(cfg, null, 2));
       }
 
-      case "label_create": {
+      case "create_label": {
         try {
           const color = args["color"] as string | undefined;
           await createLabel(locttDir, {
@@ -1315,7 +1294,7 @@ export async function executeTool(
         }
       }
 
-      case "label_edit": {
+      case "edit_label": {
         try {
           const colorArg = args["color"] as string | null | undefined;
           await editLabel(locttDir, args["key"] as string, {
@@ -1329,20 +1308,16 @@ export async function executeTool(
         }
       }
 
-      case "label_delete": {
+      case "delete_label": {
         try {
+          const blocked = requireConfirm(args, "delete_label");
+          if (blocked) return blocked;
           const remapTo = args["remap_to"] as string | undefined;
-          const hard = args["hard"] === true;
-          if (hard) {
-            const blocked = requireConfirm(args, "hard delete");
-            if (blocked) return blocked;
-          }
           const result = await deleteLabel(locttDir, args["key"] as string, {
-            hard,
+            hard: true,
             ...(remapTo !== undefined ? { remapTo } : {}),
           });
           return text(JSON.stringify({
-            mode: hard ? "hard" : "soft",
             key: args["key"],
             ...result,
           }, null, 2));
@@ -1357,12 +1332,12 @@ export async function executeTool(
         return text(JSON.stringify(cfg, null, 2));
       }
 
-      case "sprint_list": {
+      case "list_sprints": {
         const cfg = await loadSprintsConfig(locttDir);
         return text(JSON.stringify(cfg, null, 2));
       }
 
-      case "sprint_create": {
+      case "create_sprint": {
         try {
           const goal = args["goal"] as string | undefined;
           await createSprint(locttDir, {
@@ -1380,7 +1355,7 @@ export async function executeTool(
         }
       }
 
-      case "sprint_edit": {
+      case "edit_sprint": {
         try {
           const goal = args["goal"] as string | null | undefined;
           await editSprint(locttDir, args["key"] as string, {
@@ -1398,20 +1373,16 @@ export async function executeTool(
         }
       }
 
-      case "sprint_delete": {
+      case "delete_sprint": {
         try {
+          const blocked = requireConfirm(args, "delete_sprint");
+          if (blocked) return blocked;
           const remapTo = args["remap_to"] as string | undefined;
-          const hard = args["hard"] === true;
-          if (hard) {
-            const blocked = requireConfirm(args, "hard delete");
-            if (blocked) return blocked;
-          }
           const result = await deleteSprint(locttDir, args["key"] as string, {
-            hard,
+            hard: true,
             ...(remapTo !== undefined ? { remapTo } : {}),
           });
           return text(JSON.stringify({
-            mode: hard ? "hard" : "soft",
             key: args["key"],
             ...result,
           }, null, 2));
@@ -1421,12 +1392,12 @@ export async function executeTool(
         }
       }
 
-      case "milestone_list": {
+      case "list_milestones": {
         const cfg = await loadMilestonesConfig(locttDir);
         return text(JSON.stringify(cfg, null, 2));
       }
 
-      case "milestone_create": {
+      case "create_milestone": {
         try {
           const td = args["target_date"] as string | undefined;
           await createMilestone(locttDir, {
@@ -1441,7 +1412,7 @@ export async function executeTool(
         }
       }
 
-      case "milestone_edit": {
+      case "edit_milestone": {
         try {
           const td = args["target_date"] as string | null | undefined;
           const archived = args["archived"] as boolean | undefined;
@@ -1457,20 +1428,16 @@ export async function executeTool(
         }
       }
 
-      case "milestone_delete": {
+      case "delete_milestone": {
         try {
+          const blocked = requireConfirm(args, "delete_milestone");
+          if (blocked) return blocked;
           const remapTo = args["remap_to"] as string | undefined;
-          const hard = args["hard"] === true;
-          if (hard) {
-            const blocked = requireConfirm(args, "hard delete");
-            if (blocked) return blocked;
-          }
           const result = await deleteMilestone(locttDir, args["key"] as string, {
-            hard,
+            hard: true,
             ...(remapTo !== undefined ? { remapTo } : {}),
           });
           return text(JSON.stringify({
-            mode: hard ? "hard" : "soft",
             key: args["key"],
             ...result,
           }, null, 2));
@@ -1480,39 +1447,39 @@ export async function executeTool(
         }
       }
 
-      case "label_archive":
-      case "label_unarchive": {
+      case "archive_label":
+      case "unarchive_label": {
         try {
           const key = args["key"] as string;
-          if (name === "label_archive") await archiveLabel(locttDir, key);
+          if (name === "archive_label") await archiveLabel(locttDir, key);
           else await unarchiveLabel(locttDir, key);
-          return text(`${name === "label_archive" ? "Archived" : "Unarchived"} label ${key}`);
+          return text(`${name === "archive_label" ? "Archived" : "Unarchived"} label ${key}`);
         } catch (err) {
           if (err instanceof LabelError) return errorResult(err.message);
           throw err;
         }
       }
 
-      case "milestone_archive":
-      case "milestone_unarchive": {
+      case "archive_milestone":
+      case "unarchive_milestone": {
         try {
           const key = args["key"] as string;
-          if (name === "milestone_archive") await archiveMilestone(locttDir, key);
+          if (name === "archive_milestone") await archiveMilestone(locttDir, key);
           else await unarchiveMilestone(locttDir, key);
-          return text(`${name === "milestone_archive" ? "Archived" : "Unarchived"} milestone ${key}`);
+          return text(`${name === "archive_milestone" ? "Archived" : "Unarchived"} milestone ${key}`);
         } catch (err) {
           if (err instanceof MilestoneError) return errorResult(err.message);
           throw err;
         }
       }
 
-      case "sprint_archive":
-      case "sprint_unarchive": {
+      case "archive_sprint":
+      case "unarchive_sprint": {
         try {
           const key = args["key"] as string;
-          if (name === "sprint_archive") await archiveSprint(locttDir, key);
+          if (name === "archive_sprint") await archiveSprint(locttDir, key);
           else await unarchiveSprint(locttDir, key);
-          return text(`${name === "sprint_archive" ? "Archived" : "Unarchived"} sprint ${key}`);
+          return text(`${name === "archive_sprint" ? "Archived" : "Unarchived"} sprint ${key}`);
         } catch (err) {
           if (err instanceof SprintError) return errorResult(err.message);
           throw err;

@@ -22,7 +22,7 @@ describe("CLI delete edge cases (spawned binary)", () => {
 
   it("delete on a nonexistent task errors", async () => {
     await withTmpLoctt(async ({ root }) => {
-      const result = await runCli(["delete", "T-99", "--hard"], { cwd: root });
+      const result = await runCli(["delete", "T-99", "--hard", "--yes"], { cwd: root });
       expect(result.exitCode).not.toBe(0);
       expect(result.stderr).toContain("not found");
     });
@@ -36,7 +36,7 @@ describe("CLI delete edge cases (spawned binary)", () => {
       await runCli(["create", "second"], { cwd: root });
       await runCli(["link", "T-1", "blocks", "T-2"], { cwd: root });
 
-      const del = await runCli(["delete", "T-2", "--hard"], { cwd: root });
+      const del = await runCli(["delete", "T-2", "--hard", "--yes"], { cwd: root });
       expect(del.exitCode).toBe(0);
 
       const show = await runCli(["show", "T-1"], { cwd: root });

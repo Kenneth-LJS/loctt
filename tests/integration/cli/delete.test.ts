@@ -18,15 +18,29 @@ describe("CLI delete (spawned binary)", () => {
     });
   });
 
-  it("removes a task permanently with --hard", async () => {
+  it("removes a task permanently with --hard --yes", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "doomed"], { cwd: root });
 
-      const del = await runCli(["delete", "T-1", "--hard"], { cwd: root });
+      const del = await runCli(["delete", "T-1", "--hard", "--yes"], { cwd: root });
       expect(del.exitCode).toBe(0);
 
       const show = await runCli(["show", "T-1"], { cwd: root });
       expect(show.exitCode).not.toBe(0);
+    });
+  });
+
+  it("--hard without --yes refuses in non-TTY contexts (exit 1)", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "doomed"], { cwd: root });
+
+      const del = await runCli(["delete", "T-1", "--hard"], { cwd: root });
+      expect(del.exitCode).toBe(1);
+      expect(del.stderr).toMatch(/--yes/);
+
+      // Task still on disk.
+      const show = await runCli(["show", "T-1"], { cwd: root });
+      expect(show.exitCode).toBe(0);
     });
   });
 });
