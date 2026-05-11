@@ -115,17 +115,12 @@ function inverseOf(workflow: WorkflowConfig, type: string): string {
 }
 
 function readHistorySync(taskId: string): unknown[] {
-  const newPath = path.join(tasksDir(), taskId, "_history.yaml");
-  const legacyPath = path.join(tasksDir(), taskId, "history.yaml");
-  let content: string | undefined;
+  const filePath = path.join(tasksDir(), taskId, "_history.yaml");
+  let content: string;
   try {
-    content = readFileSync(newPath, "utf-8");
+    content = readFileSync(filePath, "utf-8");
   } catch {
-    try {
-      content = readFileSync(legacyPath, "utf-8");
-    } catch {
-      return [];
-    }
+    return [];
   }
   const parsed: unknown = parseYaml(content);
   return Array.isArray(parsed) ? parsed : [];

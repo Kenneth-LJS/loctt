@@ -22,18 +22,14 @@ git:
     expect(state.git.last_synced_commit).toBe("abc123");
   });
 
-  it("migrates older format without remote/auto_push/auto_fetch by filling defaults", () => {
+  it("rejects files missing remote/auto_push/auto_fetch", () => {
     const yaml = `
 git:
   enabled: true
   branch: loctt
   last_synced_commit: abc123
 `;
-    const state = parseSyncState(yaml);
-    expect(state.git.remote).toBe("origin");
-    expect(state.git.auto_push).toBe(true);
-    expect(state.git.auto_fetch).toBe(true);
-    expect(state.git.last_synced_commit).toBe("abc123");
+    expect(() => parseSyncState(yaml)).toThrow(SyncStateError);
   });
 
   it("allows omitting last_synced_commit", () => {
@@ -41,6 +37,9 @@ git:
 git:
   enabled: false
   branch: .loctt
+  remote: origin
+  auto_push: true
+  auto_fetch: true
 `;
     const state = parseSyncState(yaml);
     expect(state.git.enabled).toBe(false);
@@ -75,6 +74,9 @@ describe("serializeSyncState", () => {
 git:
   enabled: true
   branch: .loctt
+  remote: origin
+  auto_push: true
+  auto_fetch: true
   last_synced_commit: abc123
 `;
     const original = parseSyncState(yaml);

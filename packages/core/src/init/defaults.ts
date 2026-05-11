@@ -1,3 +1,5 @@
+import { ulid } from "ulid";
+
 /** Default workflow.yaml content matching design-doc defaults. */
 export function defaultWorkflowYaml(prefix: string): string {
   return `key:
@@ -53,14 +55,18 @@ custom_fields: []
 
 /** Default queries.yaml content. */
 export function defaultQueriesYaml(): string {
+  const id1 = ulid();
+  const id2 = ulid();
   return `queries:
-  - name: recent-open
+  - id: ${id1}
+    name: recent-open
     query: archived != true and status != done
     sort:
       - field: updated_at
         direction: desc
 
-  - name: blocked
+  - id: ${id2}
+    name: blocked
     query: archived != true and status = blocked
     sort:
       - field: priority

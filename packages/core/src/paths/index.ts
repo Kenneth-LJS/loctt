@@ -9,7 +9,6 @@ const ATTACHMENTS_DIR = "attachments";
 const STATE_FILE = "state.yaml";
 const TASK_FILE = "task.md";
 const HISTORY_FILE = "_history.yaml";
-const LEGACY_HISTORY_FILE = "history.yaml";
 const WORKFLOW_FILE = "workflow.yaml";
 const QUERIES_FILE = "queries.yaml";
 const SYNC_FILE = "sync.yaml";
@@ -74,16 +73,6 @@ export function getTaskFilePath(locttDir: string, taskId: string): string {
 export function getHistoryFilePath(locttDir: string, taskId: string): string {
   assertSafeBasename(taskId);
   return join(locttDir, TASKS_DIR, taskId, HISTORY_FILE);
-}
-
-/**
- * Returns the path to a task's legacy `history.yaml` file. Used by the
- * dual-read fallback so old trackers keep working until their next write
- * consolidates them onto `_history.yaml`.
- */
-export function getLegacyHistoryFilePath(locttDir: string, taskId: string): string {
-  assertSafeBasename(taskId);
-  return join(locttDir, TASKS_DIR, taskId, LEGACY_HISTORY_FILE);
 }
 
 /** Returns the path to a task's attachments directory. */

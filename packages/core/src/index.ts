@@ -125,7 +125,6 @@ export {
   getDocsDir,
   getHistoryFilePath,
   getKeyIndexPath,
-  getLegacyHistoryFilePath,
   getLocalDir,
   getQueriesConfigPath,
   getReconcileStatePath,

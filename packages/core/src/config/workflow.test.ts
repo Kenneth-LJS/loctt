@@ -103,7 +103,7 @@ describe("parseWorkflowConfig", () => {
     expect(config.custom_fields[1]?.values).toBeUndefined();
   });
 
-  it("allows omitting custom_fields", () => {
+  it("rejects files missing custom_fields", () => {
     const yaml = `
 key:
   prefix: X-
@@ -123,8 +123,7 @@ relationships:
     inverse: child
     inverse_label: Child
 `;
-    const config = parseWorkflowConfig(yaml);
-    expect(config.custom_fields).toEqual([]);
+    expect(() => parseWorkflowConfig(yaml)).toThrow(WorkflowConfigError);
   });
 
   it("allows priorities without numeric value", () => {
@@ -146,6 +145,7 @@ relationships:
     label: Parent
     inverse: child
     inverse_label: Child
+custom_fields: []
 `;
     const config = parseWorkflowConfig(yaml);
     expect(config.priorities[0]?.value).toBeUndefined();

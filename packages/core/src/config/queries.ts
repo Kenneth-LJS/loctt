@@ -1,8 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 import type { QueriesConfig, SavedQuery } from "@loctt/contracts";
-import { QuerySortSchema } from "@loctt/contracts";
-import { ulid } from "ulid";
+import { SavedQuerySchema } from "@loctt/contracts";
 import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
@@ -20,24 +19,8 @@ export class QueriesConfigError extends Error {
   }
 }
 
-/**
- * Schema used while parsing on-disk YAML. Differs from the
- * exported `SavedQuerySchema` in two ways:
- *  - `id` is optional (older files pre-date stable ids; we
- *    auto-assign one before returning).
- *  - the `query` field is additionally validated via the DSL
- *    parser so unrunnable views fail at load time.
- */
-const RawSavedQuerySchema = z.object({
-  id: z.string().min(1).optional(),
-  name: z.string().min(1),
-  query: z.string().min(1),
-  sort: z.array(QuerySortSchema).optional(),
-  archived: z.boolean().optional(),
-}).strict();
-
 const RawQueriesConfigSchema = z.object({
-  queries: z.array(RawSavedQuerySchema),
+  queries: z.array(SavedQuerySchema),
 }).strict();
 
 export function parseQueriesConfig(yamlContent: string): QueriesConfig {
@@ -67,14 +50,13 @@ export function parseQueriesConfig(yamlContent: string): QueriesConfig {
       throw err;
     }
 
-    const id = item.id ?? ulid();
-    if (seenIds.has(id)) {
-      throw new QueriesConfigError(`duplicate query id: ${id}`);
+    if (seenIds.has(item.id)) {
+      throw new QueriesConfigError(`duplicate query id: ${item.id}`);
     }
-    seenIds.add(id);
+    seenIds.add(item.id);
 
     return {
-      id,
+      id: item.id,
       name: item.name,
       query: item.query,
       ...(item.sort !== undefined ? { sort: item.sort } : {}),

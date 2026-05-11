@@ -27,12 +27,11 @@ holidays:
     ]);
   });
 
-  it("defaults holidays to [] when absent", () => {
-    const cfg = parseCalendarConfig(`timezone: UTC
+  it("requires holidays to be present", () => {
+    expect(() => parseCalendarConfig(`timezone: UTC
 first_day_of_week: 0
 working_days: [1, 2, 3, 4, 5]
-`);
-    expect(cfg.holidays).toEqual([]);
+`)).toThrow(CalendarConfigError);
   });
 
   it("rejects an unknown timezone", () => {
