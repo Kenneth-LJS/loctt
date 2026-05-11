@@ -5,6 +5,17 @@ import { z } from "zod";
 
 import { formatZodIssues } from "../config/zod-error.js";
 
+/**
+ * Frontmatter keys the schema knows about, derived from
+ * `TaskFrontmatterSchema.shape` so this list can't drift if a new
+ * field is added to the schema. Used by `serializeFrontmatter` to
+ * detect unknown keys (kept around because the schema uses
+ * `.passthrough()`) so they can be re-emitted verbatim.
+ */
+const KNOWN_FRONTMATTER_KEYS: ReadonlySet<string> = new Set(
+  Object.keys(TaskFrontmatterSchema.shape),
+);
+
 export class TaskParseError extends Error {
   constructor(message: string) {
     super(message);
@@ -27,6 +38,20 @@ export function splitTaskFile(content: string): { rawYaml: string; body: string 
 }
 
 /**
+ * Required frontmatter fields. A `null` value for one of these is
+ * a real error (use of YAML `~` to "clear" a required field), so
+ * we keep the null and let zod surface "expected string" rather
+ * than the misleading "title is required".
+ */
+const REQUIRED_FRONTMATTER_FIELDS = new Set([
+  "id",
+  "key",
+  "title",
+  "created_at",
+  "updated_at",
+]);
+
+/**
  * Coerces YAML's quirky parsing (Date instances, empty
  * frontmatter, etc.) into the shape that TaskFrontmatterSchema
  * expects. Specifically: Date → ISO string. We don't trim
@@ -39,8 +64,15 @@ function coerceFrontmatter(raw: unknown): unknown {
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
     // YAML's `~` / explicit `null` is treated as "field absent"
     // for optional fields — drop the key so zod's optional()
-    // accepts it.
-    if (v === null) continue;
+    // accepts it. For required fields we keep the null so zod
+    // produces a "must be a string" error rather than the
+    // misleading "field is required".
+    if (v === null) {
+      if (REQUIRED_FRONTMATTER_FIELDS.has(k)) {
+        out[k] = null;
+      }
+      continue;
+    }
     if (v instanceof Date) {
       // Date-only fields land as YYYY-MM-DD; full timestamps stay
       // as ISO. We can't tell which from yaml alone, so produce
@@ -69,7 +101,13 @@ export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
 
 /**
  * Serializes a TaskFrontmatter to YAML string (without --- delimiters).
- * Fields are ordered for readability: required first, then optional.
+ *
+ * Field ordering: required identity first, then state, then dates,
+ * then arrays/maps. Unknown keys (kept around because the schema
+ * uses `.passthrough()`) are emitted last in their original order.
+ * This means `parse → serialize` is round-trip-stable even for
+ * frontmatter with experimental or plugin-defined fields the
+ * schema hasn't enumerated.
  */
 export function serializeFrontmatter(fm: TaskFrontmatter): string {
   const obj: Record<string, unknown> = {
@@ -106,6 +144,19 @@ export function serializeFrontmatter(fm: TaskFrontmatter): string {
   if (fm.key_history !== undefined) obj["key_history"] = [...fm.key_history];
   if (fm.fields !== undefined) obj["fields"] = { ...fm.fields };
   if (fm.board_rank !== undefined) obj["board_rank"] = fm.board_rank;
+
+  // Pass-through preservation: any extra key the schema didn't
+  // enumerate but accepted via .passthrough() is emitted last,
+  // preserving user-added or plugin-defined frontmatter across
+  // edits. We skip `undefined` (the field isn't really there); a
+  // `foo: null` source ends up filtered out earlier by
+  // coerceFrontmatter so it doesn't reach this loop.
+  const fmRecord = fm as unknown as Record<string, unknown>;
+  for (const [k, v] of Object.entries(fmRecord)) {
+    if (KNOWN_FRONTMATTER_KEYS.has(k)) continue;
+    if (v === undefined) continue;
+    obj[k] = v;
+  }
 
   return stringifyYaml(obj, { lineWidth: 0 });
 }

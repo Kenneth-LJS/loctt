@@ -30,12 +30,15 @@ describe("CLI delete (spawned binary)", () => {
     });
   });
 
-  it("--hard without --yes refuses in non-TTY contexts (exit 1)", async () => {
+  it("--hard without --yes refuses in non-TTY contexts (usage error, exit 2)", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "doomed"], { cwd: root });
 
       const del = await runCli(["delete", "T-1", "--hard"], { cwd: root });
-      expect(del.exitCode).toBe(1);
+      // EXIT.USAGE = 2 — the script forgot `--yes`. Distinguishes
+      // from EXIT.RUNTIME (1, a real error) and EXIT.SUCCESS (0,
+      // user said no at an interactive prompt).
+      expect(del.exitCode).toBe(2);
       expect(del.stderr).toMatch(/--yes/);
 
       // Task still on disk.

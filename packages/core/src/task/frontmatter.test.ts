@@ -191,6 +191,76 @@ updated_at: "2026-01-01T00:00:00Z"
     expect(serialized).not.toContain("relationships:");
     expect(serialized).not.toContain("fields:");
   });
+
+  it("preserves unknown frontmatter keys across parse → serialize", () => {
+    // The schema uses .passthrough(), so user-added or plugin-defined
+    // frontmatter must survive a round-trip rather than silently
+    // disappearing on the next edit.
+    const input = `
+id: abc
+key: T-1
+title: Has extras
+created_at: "2026-01-01T00:00:00Z"
+updated_at: "2026-01-01T00:00:00Z"
+plugin_owner: alice
+custom_metric: 42
+experimental_flag: true
+`.trimStart();
+    const fm = parseFrontmatter(input);
+    const serialized = serializeFrontmatter(fm);
+    expect(serialized).toContain("plugin_owner: alice");
+    expect(serialized).toContain("custom_metric: 42");
+    expect(serialized).toContain("experimental_flag: true");
+
+    // And the round-trip must be value-stable.
+    const reparsed = parseFrontmatter(serialized);
+    expect((reparsed as unknown as Record<string, unknown>)["plugin_owner"]).toBe("alice");
+    expect((reparsed as unknown as Record<string, unknown>)["custom_metric"]).toBe(42);
+    expect((reparsed as unknown as Record<string, unknown>)["experimental_flag"]).toBe(true);
+  });
+
+  it("emits unknown keys after the canonical known fields", () => {
+    const fm = parseFrontmatter(`
+id: abc
+key: T-1
+title: Ordering
+created_at: "2026-01-01T00:00:00Z"
+updated_at: "2026-01-01T00:00:00Z"
+plugin_zzz: last
+status: in_progress
+`.trimStart());
+    const serialized = serializeFrontmatter(fm);
+    // status (known) appears before plugin_zzz (unknown), regardless
+    // of source order.
+    expect(serialized.indexOf("status:")).toBeLessThan(serialized.indexOf("plugin_zzz:"));
+  });
+});
+
+describe("required-field null handling", () => {
+  // YAML `~` clears a value to null. For an OPTIONAL field we treat
+  // that as absent (zod.optional() accepts). For a REQUIRED field
+  // we keep the null and let zod surface a clear type error rather
+  // than the misleading "Required" / "is required".
+  const valid = {
+    id: "01HSV6TQ3Y7M8K9N4R5S6A7B8C",
+    key: "T-1",
+    title: "ok",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  };
+  function withField(field: string, value: string): string {
+    return Object.entries({ ...valid, [field]: value })
+      .map(([k, v]) => `${k}: ${v}`)
+      .join("\n");
+  }
+
+  for (const field of ["id", "key", "title", "created_at", "updated_at"]) {
+    it(`reports ${field}: ~ as a type error mentioning the field`, () => {
+      expect(() => parseFrontmatter(withField(field, "~"))).toThrow(
+        new RegExp(field),
+      );
+    });
+  }
 });
 
 describe("assembleTaskFile", () => {
