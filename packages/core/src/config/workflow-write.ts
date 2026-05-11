@@ -415,6 +415,67 @@ function applyRelationshipsRemap(
   return true;
 }
 
+/** YYYY-MM-DD matcher mirroring the one in validation.ts. */
+const DATE_FIELD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Predicate: does `v` satisfy a single-value `type`? */
+function isValidForCustomFieldType(v: unknown, type: CustomFieldDef["type"]): boolean {
+  switch (type) {
+    case "string": return typeof v === "string";
+    case "number": return typeof v === "number" && Number.isFinite(v);
+    case "boolean": return typeof v === "boolean";
+    case "date": return typeof v === "string" && DATE_FIELD_RE.test(v);
+    case "enum": return typeof v === "string";
+  }
+}
+
+/**
+ * Pre-flight check for type/multi changes on custom fields between
+ * `prev` and `next`. For every field whose `type` or `multi` flag
+ * shifted, walk all tasks and verify that any stored value is still
+ * compatible with the new shape. Rejects the edit with a pointer to
+ * the first offending task — the user must clean up that data (or
+ * revert the type change) before re-applying.
+ *
+ * Enum→enum value remapping is handled separately by
+ * `validateRemapCoversDeletions` + `applyCustomFieldsRemap`; this
+ * function does NOT inspect enum value membership, only the
+ * underlying type compatibility.
+ */
+function assertCustomFieldTypeChangesAreSafe(
+  prev: WorkflowConfig,
+  next: WorkflowConfig,
+  tasks: readonly Task[],
+): void {
+  const nextByKey = new Map(next.custom_fields.map(f => [f.key, f]));
+  const changedShape: Array<{ key: string; nextDef: CustomFieldDef }> = [];
+  for (const prevDef of prev.custom_fields) {
+    const nextDef = nextByKey.get(prevDef.key);
+    if (!nextDef) continue; // whole field gone — handled by remap path
+    if (prevDef.type === nextDef.type && prevDef.multi === nextDef.multi) continue;
+    changedShape.push({ key: prevDef.key, nextDef });
+  }
+  if (changedShape.length === 0) return;
+
+  for (const { key, nextDef } of changedShape) {
+    for (const task of tasks) {
+      const fields = task.frontmatter.fields;
+      if (!fields || !(key in fields)) continue;
+      const v = fields[key];
+      const ok = nextDef.multi
+        ? Array.isArray(v) && v.every(item => isValidForCustomFieldType(item, nextDef.type))
+        : isValidForCustomFieldType(v, nextDef.type);
+      if (!ok) {
+        throw new WorkflowConfigError(
+          `custom_fields.${key} type change to ${nextDef.multi ? "multi " : ""}${nextDef.type} ` +
+          `is incompatible with existing data on task ${task.frontmatter.key} ` +
+          `(value: ${JSON.stringify(v)}); clean up the task data or revert the type change`,
+        );
+      }
+    }
+  }
+}
+
 /**
  * High-level "edit workflow" entry point. Atomically:
  *  1. Reads the current workflow + all tasks.
@@ -434,6 +495,15 @@ export async function applyWorkflowEdit(
     const usage = computeWorkflowKeyUsage(tasks);
 
     validateRemapCoversDeletions(prev, next, remap, usage);
+
+    // Strict type-change guard for custom fields. If a field's `type`
+    // or `multi` flag changed, every task already carrying a value
+    // for that field must have data compatible with the NEW shape;
+    // otherwise the edit would leave the tracker holding invalid
+    // data that the loaders would then reject. Surfaces a single
+    // clear error pointing at the first offending task; the user
+    // either cleans up the data first or reverts the type change.
+    assertCustomFieldTypeChangesAreSafe(prev, next, tasks);
 
     const nextStatusKeys = new Set(next.statuses.map(s => s.key));
     const nextPriorityKeys = new Set(next.priorities.map(p => p.key));

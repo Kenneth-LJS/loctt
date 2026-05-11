@@ -114,6 +114,125 @@ describe("validateTaskAgainstWorkflow", () => {
     const errors = validateTaskAgainstWorkflow(fm, config);
     expect(errors).toHaveLength(2);
   });
+
+  describe("strict non-enum custom field types", () => {
+    // Phase 5: validator rejects values whose runtime type doesn't
+    // match the declared custom_field type. Previously only `enum`
+    // membership was checked; primitives were silently accepted.
+
+    const typedConfig: WorkflowConfig = {
+      ...config,
+      custom_fields: [
+        ...config.custom_fields,
+        { key: "score", label: "Score", type: "number", multi: false, searchable: false },
+        { key: "is_blocked", label: "Blocked?", type: "boolean", multi: false, searchable: false },
+        { key: "due", label: "Due", type: "date", multi: false, searchable: false },
+        { key: "tags", label: "Tags", type: "string", multi: true, searchable: false },
+        { key: "scores", label: "Scores", type: "number", multi: true, searchable: false },
+      ],
+    };
+
+    it("accepts a string value for a string field", () => {
+      const fm = { ...validFm, fields: { notes: "hello" } };
+      expect(validateTaskAgainstWorkflow(fm, typedConfig)).toEqual([]);
+    });
+
+    it("rejects a number value for a string field", () => {
+      const fm = { ...validFm, fields: { notes: 42 } };
+      const errors = validateTaskAgainstWorkflow(fm, typedConfig);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.field).toBe("fields.notes");
+      expect(errors[0]?.message).toMatch(/expected string/);
+    });
+
+    it("accepts a finite number for a number field", () => {
+      const fm = { ...validFm, fields: { sprint: "sprint_1", score: 3.14 } };
+      expect(validateTaskAgainstWorkflow(fm, typedConfig)).toEqual([]);
+    });
+
+    it("rejects a string value for a number field", () => {
+      const fm = { ...validFm, fields: { sprint: "sprint_1", score: "abc" } };
+      const errors = validateTaskAgainstWorkflow(fm, typedConfig);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.field).toBe("fields.score");
+      expect(errors[0]?.message).toMatch(/expected finite number/);
+    });
+
+    it("rejects NaN and Infinity for a number field (non-finite)", () => {
+      for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+        const fm = { ...validFm, fields: { sprint: "sprint_1", score: bad } };
+        const errors = validateTaskAgainstWorkflow(fm, typedConfig);
+        expect(errors).toHaveLength(1);
+        expect(errors[0]?.field).toBe("fields.score");
+      }
+    });
+
+    it("accepts boolean true/false for a boolean field", () => {
+      for (const b of [true, false]) {
+        const fm = { ...validFm, fields: { sprint: "sprint_1", is_blocked: b } };
+        expect(validateTaskAgainstWorkflow(fm, typedConfig)).toEqual([]);
+      }
+    });
+
+    it("rejects a string for a boolean field (no truthiness coercion)", () => {
+      const fm = { ...validFm, fields: { sprint: "sprint_1", is_blocked: "true" } };
+      const errors = validateTaskAgainstWorkflow(fm, typedConfig);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.message).toMatch(/expected boolean/);
+    });
+
+    it("accepts a YYYY-MM-DD string for a date field", () => {
+      const fm = { ...validFm, fields: { sprint: "sprint_1", due: "2026-05-12" } };
+      expect(validateTaskAgainstWorkflow(fm, typedConfig)).toEqual([]);
+    });
+
+    it("rejects a non-date string for a date field", () => {
+      const fm = { ...validFm, fields: { sprint: "sprint_1", due: "tomorrow" } };
+      const errors = validateTaskAgainstWorkflow(fm, typedConfig);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.message).toMatch(/YYYY-MM-DD/);
+    });
+
+    it("rejects a full timestamp for a date field (must be date-only)", () => {
+      const fm = { ...validFm, fields: { sprint: "sprint_1", due: "2026-05-12T00:00:00Z" } };
+      const errors = validateTaskAgainstWorkflow(fm, typedConfig);
+      expect(errors).toHaveLength(1);
+    });
+
+    it("accepts an array of strings for a multi:true string field", () => {
+      const fm = { ...validFm, fields: { sprint: "sprint_1", tags: ["a", "b"] } };
+      expect(validateTaskAgainstWorkflow(fm, typedConfig)).toEqual([]);
+    });
+
+    it("rejects a scalar value for a multi:true string field", () => {
+      const fm = { ...validFm, fields: { sprint: "sprint_1", tags: "single" } };
+      const errors = validateTaskAgainstWorkflow(fm, typedConfig);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.message).toMatch(/must be an array/);
+    });
+
+    it("rejects array with wrong-type elements for a multi:true string field", () => {
+      const fm = { ...validFm, fields: { sprint: "sprint_1", tags: ["a", 2, "c"] } };
+      const errors = validateTaskAgainstWorkflow(fm, typedConfig);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.field).toBe("fields.tags[1]");
+    });
+
+    it("reports the array index for each bad element in a multi field", () => {
+      const fm = { ...validFm, fields: { sprint: "sprint_1", scores: [1, "two", 3, null] } };
+      const errors = validateTaskAgainstWorkflow(fm, typedConfig);
+      expect(errors).toHaveLength(2);
+      expect(errors[0]?.field).toBe("fields.scores[1]");
+      expect(errors[1]?.field).toBe("fields.scores[3]");
+    });
+
+    it("uses 'null' / 'array' in describeType error messages (not 'object')", () => {
+      // Verifies the describeType helper surfaces useful labels.
+      const fm = { ...validFm, fields: { sprint: "sprint_1", score: null } };
+      const errors = validateTaskAgainstWorkflow(fm, typedConfig);
+      expect(errors[0]?.message).toMatch(/got null/);
+    });
+  });
 });
 
 describe("validateWorkflowConfig", () => {
