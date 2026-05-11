@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stringify as stringifyYaml } from "yaml";
 
 import { initLoctt } from "../init/init.js";
@@ -603,5 +603,46 @@ describe("recoverPendingJournal direct invocation", () => {
       expect(t.frontmatter.project).toBe("p2");
     }
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
+  });
+});
+
+describe("journal recovery — audit logging", () => {
+  // Suggestion 6: every successful replay emits an info-level audit
+  // line so operators can correlate post-crash state changes with
+  // the originating interrupted operation. The happy path stays
+  // silent (loop body only runs when entries are pending).
+
+  it("logs one info line per replayed entry, including kind and id", async () => {
+    await createProject(locttDir, { key: "p2", label: "Two", prefix: "P-" });
+    const ids = await seedTasks("task", 1);
+
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    const entryId = "01TEST_AUDIT_LOG";
+    const entry: JournalEntry = {
+      id: entryId,
+      kind: "remap_project",
+      started_at: "2026-05-12T10:00:00Z",
+      from: "task",
+      to: "p2",
+      task_ids: ids,
+    };
+    await writeJournalEntries([entry]);
+    await recoverPendingJournal(locttDir);
+
+    const messages = infoSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(messages).toMatch(/journal recovery replayed entry/);
+    expect(messages).toContain(entryId);
+    expect(messages).toMatch(/kind='remap_project'/);
+    infoSpy.mockRestore();
+  });
+
+  it("does not log when the journal is empty (no spurious noise)", async () => {
+    // Guards against the audit line accidentally being moved outside
+    // the per-entry loop where it would fire on every lock entry.
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    await recoverPendingJournal(locttDir);
+    expect(infoSpy).not.toHaveBeenCalled();
+    infoSpy.mockRestore();
   });
 });

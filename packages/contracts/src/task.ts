@@ -76,6 +76,9 @@ export const TaskFrontmatterSchema = z.object({
   archived_at: IsoTimestamp.optional(),
   relationships: z.array(TaskRelationshipSchema).optional(),
   key_history: z.array(z.string()).optional(),
+  // Custom field values are user-defined and shape-varying per workflow
+  // config; semantic validation runs in core (validateTaskAgainstWorkflow)
+  // against the field's `type`, not at the contract layer.
   fields: z.record(z.string(), z.unknown()).optional(),
   /**
    * Lexorank string for manual drag-reorder within a board column.
@@ -83,6 +86,10 @@ export const TaskFrontmatterSchema = z.object({
    * sort below ranked ones, fallback to created.
    */
   board_rank: z.string().optional(),
+  // .passthrough(): unknown frontmatter keys are preserved on
+  // round-trip rather than dropped. Authors may attach experimental
+  // or tool-specific metadata; semantic checks live in core, and
+  // discarding here would silently destroy that data.
 }).passthrough();
 export type TaskFrontmatter = z.infer<typeof TaskFrontmatterSchema>;
 

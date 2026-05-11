@@ -2,7 +2,7 @@ import { stat as fsStat } from "node:fs/promises";
 import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { HistoryEntry } from "@loctt/contracts";
+import type { HistoryEntry, WorkflowConfig } from "@loctt/contracts";
 import {
   appendTaskBody,
   archiveLabel,
@@ -462,6 +462,48 @@ async function runCommand(fn: () => Promise<void>): Promise<void> {
   }
 }
 
+/**
+ * Pre-flight check for enum-typed CLI args. Fails fast with a
+ * "known values" hint when the user passes a status/priority/task_type
+ * that isn't in the workflow config — friendlier than letting the
+ * core surface a generic update error. `undefined` is allowed (the
+ * field is being omitted, not set to a bad value).
+ *
+ * No-op when `workflowConfig` is undefined (tracker without one).
+ */
+function assertWorkflowEnumKey(
+  workflowConfig: WorkflowConfig | undefined,
+  field: "status" | "priority" | "task_type",
+  value: string | undefined,
+): void {
+  if (workflowConfig === undefined || value === undefined) return;
+  const defs = field === "status" ? workflowConfig.statuses
+    : field === "priority" ? workflowConfig.priorities
+    : workflowConfig.task_types;
+  const keys = defs.map(d => d.key);
+  if (!keys.includes(value)) {
+    const known = keys.length > 0 ? keys.join(", ") : "(none configured)";
+    throw new UsageError(`unknown ${field} '${value}'. Known: ${known}`);
+  }
+}
+
+/**
+ * Pre-flight check for relationship-type CLI args. Same rationale
+ * as {@link assertWorkflowEnumKey}: surface a "known values" hint
+ * at the CLI boundary instead of letting the core throw.
+ */
+function assertWorkflowRelationshipKey(
+  workflowConfig: WorkflowConfig | undefined,
+  value: string,
+): void {
+  if (workflowConfig === undefined) return;
+  const keys = workflowConfig.relationships.map(r => r.key);
+  if (!keys.includes(value)) {
+    const known = keys.length > 0 ? keys.join(", ") : "(none configured)";
+    throw new UsageError(`unknown relationship '${value}'. Known: ${known}`);
+  }
+}
+
 /** Round a number to one decimal place for compact column display. */
 function formatNumber(n: number): string {
   if (Number.isInteger(n)) return String(n);
@@ -691,23 +733,18 @@ export async function main(): Promise<void> {
       }
 
       case "create": {
-        const title = args[1];
-        if (!title) {
-          console.error("Usage: loctt create <title>");
-          process.exitCode = EXIT.USAGE;
-          break;
-        }
-        const locttDir = resolveLocttDir(root);
-        const { workflowConfig } = await loadOptionalConfigs(locttDir);
+        await runCommand(async () => {
+          const title = args[1];
+          if (!title) throw new UsageError("missing title", "loctt create <title>");
+          const locttDir = resolveLocttDir(root);
+          const { workflowConfig } = await loadOptionalConfigs(locttDir);
 
-        // Resolve target project. Walk explicit > per-user default >
-        // workspace default > unique-single-project. Fail if
-        // ambiguous. The per-user default is loaded from the active
-        // user's settings.yaml when one is registered; if no users
-        // exist yet (first-run before init) the chain falls through.
-        const projectsConfig = await loadProjectsConfig(locttDir);
-        let projectKey: string;
-        try {
+          // Resolve target project. Walk explicit > per-user default >
+          // workspace default > unique-single-project. Fail if
+          // ambiguous. The per-user default is loaded from the active
+          // user's settings.yaml when one is registered; if no users
+          // exist yet (first-run before init) the chain falls through.
+          const projectsConfig = await loadProjectsConfig(locttDir);
           const explicit = getArg(args, "--project");
           const current = await getCurrentUser(locttDir);
           let userDefault: string | undefined;
@@ -716,243 +753,245 @@ export async function main(): Promise<void> {
             const raw = settings["default_project"];
             if (typeof raw === "string" && raw.length > 0) userDefault = raw;
           }
-          projectKey = resolveProjectKey(projectsConfig, {
+          const projectKey = resolveProjectKey(projectsConfig, {
             ...(explicit !== undefined ? { explicit } : {}),
             ...(userDefault !== undefined ? { userDefault } : {}),
           });
-        } catch (err) {
-          console.error(`Error: ${(err as Error).message}`);
-          process.exitCode = EXIT.RUNTIME;
-          break;
-        }
 
-        const task = await withStateLock(locttDir, async () => {
-          const state = await loadState(locttDir);
           const status = getArg(args, "--status");
           const priority = getArg(args, "--priority");
           const taskType = getArg(args, "--type");
-          const created = await createTask({
-            locttDir,
-            state,
-            ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-            options: {
-              project: projectKey,
-              title,
-              ...(status !== undefined ? { status } : {}),
-              ...(priority !== undefined ? { priority } : {}),
-              ...(taskType !== undefined ? { task_type: taskType } : {}),
-            },
+          assertWorkflowEnumKey(workflowConfig, "status", status);
+          assertWorkflowEnumKey(workflowConfig, "priority", priority);
+          assertWorkflowEnumKey(workflowConfig, "task_type", taskType);
+
+          const task = await withStateLock(locttDir, async () => {
+            const state = await loadState(locttDir);
+            const created = await createTask({
+              locttDir,
+              state,
+              ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+              options: {
+                project: projectKey,
+                title,
+                ...(status !== undefined ? { status } : {}),
+                ...(priority !== undefined ? { priority } : {}),
+                ...(taskType !== undefined ? { task_type: taskType } : {}),
+              },
+            });
+            await saveState(locttDir, state);
+            return created;
           });
-          await saveState(locttDir, state);
-          return created;
+          console.log(`Created ${task.frontmatter.key}: ${task.frontmatter.title}`);
         });
-        console.log(`Created ${task.frontmatter.key}: ${task.frontmatter.title}`);
         break;
       }
 
       case "list": {
-        const locttDir = resolveLocttDir(root);
-        const tasks = await loadAllTasks(locttDir);
-        const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
+        await runCommand(async () => {
+          const locttDir = resolveLocttDir(root);
+          const tasks = await loadAllTasks(locttDir);
+          const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
 
-        let limit: number | undefined;
-        const limitArg = getArg(args, "--limit");
-        if (limitArg !== undefined) {
-          limit = Number(limitArg);
-          if (Number.isNaN(limit) || limit < 0 || !Number.isInteger(limit)) {
-            console.error("Error: --limit must be a non-negative integer");
-            process.exitCode = EXIT.USAGE;
-            break;
+          let limit: number | undefined;
+          const limitArg = getArg(args, "--limit");
+          if (limitArg !== undefined) {
+            limit = Number(limitArg);
+            if (Number.isNaN(limit) || limit < 0 || !Number.isInteger(limit)) {
+              throw new UsageError("--limit must be a non-negative integer");
+            }
           }
-        }
 
-        // Sugar: `--project <key>` is equivalent to a `project = <key>`
-        // clause AND-ed onto whatever query the user passed. Avoids
-        // making users construct DSL strings for the common case.
-        const projectFilter = getArg(args, "--project");
-        const baseQuery = getArg(args, "--query");
-        const composedQuery = projectFilter !== undefined
-          ? (baseQuery !== undefined && baseQuery.length > 0
-              ? `(${baseQuery}) and project = ${projectFilter}`
-              : `project = ${projectFilter}`)
-          : baseQuery;
+          // Sugar: `--project <key>` is equivalent to a `project = <key>`
+          // clause AND-ed onto whatever query the user passed. Avoids
+          // making users construct DSL strings for the common case.
+          const projectFilter = getArg(args, "--project");
+          const baseQuery = getArg(args, "--query");
+          const composedQuery = projectFilter !== undefined
+            ? (baseQuery !== undefined && baseQuery.length > 0
+                ? `(${baseQuery}) and project = ${projectFilter}`
+                : `project = ${projectFilter}`)
+            : baseQuery;
 
-        const view = getArg(args, "--view");
-        const result = listTasks({
-          tasks,
-          options: {
-            ...(composedQuery !== undefined ? { query: composedQuery } : {}),
-            ...(view !== undefined ? { view } : {}),
-            ...(limit !== undefined ? { limit } : {}),
-            includeArchived: hasFlag(args, "--archived"),
-          },
-          ...(queriesConfig !== undefined ? { queriesConfig } : {}),
-          ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-          ctx: buildListContext(tasks),
+          const view = getArg(args, "--view");
+          const result = listTasks({
+            tasks,
+            options: {
+              ...(composedQuery !== undefined ? { query: composedQuery } : {}),
+              ...(view !== undefined ? { view } : {}),
+              ...(limit !== undefined ? { limit } : {}),
+              includeArchived: hasFlag(args, "--archived"),
+            },
+            ...(queriesConfig !== undefined ? { queriesConfig } : {}),
+            ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+            ctx: buildListContext(tasks),
+          });
+
+          if (result.length === 0) {
+            console.log("No tasks found.");
+          } else {
+            for (const task of result) {
+              const status = task.frontmatter.status ? ` [${task.frontmatter.status}]` : "";
+              console.log(`${task.frontmatter.key}  ${task.frontmatter.title}${status}`);
+            }
+          }
         });
-
-        if (result.length === 0) {
-          console.log("No tasks found.");
-        } else {
-          for (const task of result) {
-            const status = task.frontmatter.status ? ` [${task.frontmatter.status}]` : "";
-            console.log(`${task.frontmatter.key}  ${task.frontmatter.title}${status}`);
-          }
-        }
         break;
       }
 
       case "show": {
-        const ref = args[1];
-        if (!ref) {
-          console.error("Usage: loctt show <task>");
-          process.exitCode = EXIT.USAGE;
-          break;
-        }
-        const locttDir = resolveLocttDir(root);
-        const task = await lookupTask(locttDir, ref);
-        const model = await buildShowModel(locttDir, task);
+        await runCommand(async () => {
+          const ref = args[1];
+          if (!ref) throw new UsageError("missing task ref", "loctt show <task>");
+          const locttDir = resolveLocttDir(root);
+          const task = await lookupTask(locttDir, ref);
+          const model = await buildShowModel(locttDir, task);
 
-        console.log(`${model.task.frontmatter.key}: ${model.task.frontmatter.title}`);
-        const fm = model.task.frontmatter;
-        if (fm.status) console.log(`Status: ${fm.status}`);
-        if (fm.priority) console.log(`Priority: ${fm.priority}`);
-        if (fm.task_type) console.log(`Type: ${fm.task_type}`);
-        if (fm.assignee) console.log(`Assignee: ${fm.assignee}`);
-        if (fm.due_date) console.log(`Due: ${fm.due_date}`);
-        if (fm.archived) console.log(`Archived: ${fm.archived_at}`);
-        if (model.relationships.length > 0) {
-          console.log(`Relationships:`);
-          for (const r of model.relationships) {
-            const display = r.missing
-              ? `${r.target.slice(0, 8)}… (deleted)`
-              : r.resolvedKey ?? r.target;
-            console.log(`  ${r.type} → ${display}`);
+          console.log(`${model.task.frontmatter.key}: ${model.task.frontmatter.title}`);
+          const fm = model.task.frontmatter;
+          if (fm.status) console.log(`Status: ${fm.status}`);
+          if (fm.priority) console.log(`Priority: ${fm.priority}`);
+          if (fm.task_type) console.log(`Type: ${fm.task_type}`);
+          if (fm.assignee) console.log(`Assignee: ${fm.assignee}`);
+          if (fm.due_date) console.log(`Due: ${fm.due_date}`);
+          if (fm.archived) console.log(`Archived: ${fm.archived_at}`);
+          if (model.relationships.length > 0) {
+            console.log(`Relationships:`);
+            for (const r of model.relationships) {
+              const display = r.missing
+                ? `${r.target.slice(0, 8)}… (deleted)`
+                : r.resolvedKey ?? r.target;
+              console.log(`  ${r.type} → ${display}`);
+            }
           }
-        }
-        if (model.attachments.length > 0) {
-          console.log(`Attachments:`);
-          for (const a of model.attachments) {
-            console.log(`  ${a.name} (${a.size} bytes)`);
+          if (model.attachments.length > 0) {
+            console.log(`Attachments:`);
+            for (const a of model.attachments) {
+              console.log(`  ${a.name} (${a.size} bytes)`);
+            }
           }
-        }
-        if (model.task.body.trim()) {
-          console.log(`\n${model.task.body}`);
-        }
+          if (model.task.body.trim()) {
+            console.log(`\n${model.task.body}`);
+          }
+        });
         break;
       }
 
       case "set": {
-        const ref = args[1];
-        const field = args[2];
-        const value = args[3];
-        if (!ref || !field || value === undefined) {
-          console.error("Usage: loctt set <task> <field> <value>");
-          process.exitCode = EXIT.USAGE;
-          break;
-        }
-        const locttDir = resolveLocttDir(root);
-        const { workflowConfig } = await loadOptionalConfigs(locttDir);
-        const task = await lookupTask(locttDir, ref);
-        await setField({
-          locttDir,
-          taskId: task.frontmatter.id,
-          field,
-          value,
-          ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+        await runCommand(async () => {
+          const ref = args[1];
+          const field = args[2];
+          const value = args[3];
+          if (!ref || !field || value === undefined) {
+            throw new UsageError("missing args", "loctt set <task> <field> <value>");
+          }
+          const locttDir = resolveLocttDir(root);
+          const { workflowConfig } = await loadOptionalConfigs(locttDir);
+          // Pre-validate enum-typed fields against the workflow config
+          // so the CLI can surface a friendly "known values" hint
+          // instead of letting the core throw a generic update error.
+          if (field === "status" || field === "priority" || field === "task_type") {
+            assertWorkflowEnumKey(workflowConfig, field, value);
+          }
+          const task = await lookupTask(locttDir, ref);
+          await setField({
+            locttDir,
+            taskId: task.frontmatter.id,
+            field,
+            value,
+            ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+          });
+          console.log(`Set ${field} = ${value} on ${task.frontmatter.key}`);
         });
-        console.log(`Set ${field} = ${value} on ${task.frontmatter.key}`);
         break;
       }
 
       case "unset": {
-        const ref = args[1];
-        const field = args[2];
-        if (!ref || !field) {
-          console.error("Usage: loctt unset <task> <field>");
-          process.exitCode = EXIT.USAGE;
-          break;
-        }
-        const locttDir = resolveLocttDir(root);
-        const task = await lookupTask(locttDir, ref);
-        await unsetField(locttDir, task.frontmatter.id, field);
-        console.log(`Unset ${field} on ${task.frontmatter.key}`);
+        await runCommand(async () => {
+          const ref = args[1];
+          const field = args[2];
+          if (!ref || !field) {
+            throw new UsageError("missing args", "loctt unset <task> <field>");
+          }
+          const locttDir = resolveLocttDir(root);
+          const task = await lookupTask(locttDir, ref);
+          await unsetField(locttDir, task.frontmatter.id, field);
+          console.log(`Unset ${field} on ${task.frontmatter.key}`);
+        });
         break;
       }
 
       case "link": {
-        const ref = args[1];
-        const relType = args[2];
-        const target = args[3];
-        if (!ref || !relType || !target) {
-          console.error("Usage: loctt link <task> <relationship> <target>");
-          process.exitCode = EXIT.USAGE;
-          break;
-        }
-        const locttDir = resolveLocttDir(root);
-        const { workflowConfig } = await loadOptionalConfigs(locttDir);
-        const task = await lookupTask(locttDir, ref);
-        const targetTask = await lookupTask(locttDir, target);
-        await linkTask({
-          locttDir,
-          taskId: task.frontmatter.id,
-          type: relType,
-          target: targetTask.frontmatter.id,
-          ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+        await runCommand(async () => {
+          const ref = args[1];
+          const relType = args[2];
+          const target = args[3];
+          if (!ref || !relType || !target) {
+            throw new UsageError("missing args", "loctt link <task> <relationship> <target>");
+          }
+          const locttDir = resolveLocttDir(root);
+          const { workflowConfig } = await loadOptionalConfigs(locttDir);
+          assertWorkflowRelationshipKey(workflowConfig, relType);
+          const task = await lookupTask(locttDir, ref);
+          const targetTask = await lookupTask(locttDir, target);
+          await linkTask({
+            locttDir,
+            taskId: task.frontmatter.id,
+            type: relType,
+            target: targetTask.frontmatter.id,
+            ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+          });
+          console.log(`Linked ${task.frontmatter.key} --${relType}--> ${targetTask.frontmatter.key}`);
         });
-        console.log(`Linked ${task.frontmatter.key} --${relType}--> ${targetTask.frontmatter.key}`);
         break;
       }
 
       case "unlink": {
-        const ref = args[1];
-        const relType = args[2];
-        const target = args[3];
-        if (!ref || !relType || !target) {
-          console.error("Usage: loctt unlink <task> <relationship> <target>");
-          process.exitCode = EXIT.USAGE;
-          break;
-        }
-        const locttDir = resolveLocttDir(root);
-        const { workflowConfig } = await loadOptionalConfigs(locttDir);
-        const task = await lookupTask(locttDir, ref);
-        const targetTask = await lookupTask(locttDir, target);
-        await unlinkTask({
-          locttDir,
-          taskId: task.frontmatter.id,
-          type: relType,
-          target: targetTask.frontmatter.id,
-          ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+        await runCommand(async () => {
+          const ref = args[1];
+          const relType = args[2];
+          const target = args[3];
+          if (!ref || !relType || !target) {
+            throw new UsageError("missing args", "loctt unlink <task> <relationship> <target>");
+          }
+          const locttDir = resolveLocttDir(root);
+          const { workflowConfig } = await loadOptionalConfigs(locttDir);
+          assertWorkflowRelationshipKey(workflowConfig, relType);
+          const task = await lookupTask(locttDir, ref);
+          const targetTask = await lookupTask(locttDir, target);
+          await unlinkTask({
+            locttDir,
+            taskId: task.frontmatter.id,
+            type: relType,
+            target: targetTask.frontmatter.id,
+            ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+          });
+          console.log(`Unlinked ${task.frontmatter.key} --${relType}--> ${targetTask.frontmatter.key}`);
         });
-        console.log(`Unlinked ${task.frontmatter.key} --${relType}--> ${targetTask.frontmatter.key}`);
         break;
       }
 
       case "archive": {
-        const ref = args[1];
-        if (!ref) {
-          console.error("Usage: loctt archive <task>");
-          process.exitCode = EXIT.USAGE;
-          break;
-        }
-        const locttDir = resolveLocttDir(root);
-        const task = await lookupTask(locttDir, ref);
-        await archiveTask(locttDir, task.frontmatter.id);
-        console.log(`Archived ${task.frontmatter.key}`);
+        await runCommand(async () => {
+          const ref = args[1];
+          if (!ref) throw new UsageError("missing task ref", "loctt archive <task>");
+          const locttDir = resolveLocttDir(root);
+          const task = await lookupTask(locttDir, ref);
+          await archiveTask(locttDir, task.frontmatter.id);
+          console.log(`Archived ${task.frontmatter.key}`);
+        });
         break;
       }
 
       case "unarchive": {
-        const ref = args[1];
-        if (!ref) {
-          console.error("Usage: loctt unarchive <task>");
-          process.exitCode = EXIT.USAGE;
-          break;
-        }
-        const locttDir = resolveLocttDir(root);
-        const task = await lookupTask(locttDir, ref);
-        await unarchiveTask(locttDir, task.frontmatter.id);
-        console.log(`Unarchived ${task.frontmatter.key}`);
+        await runCommand(async () => {
+          const ref = args[1];
+          if (!ref) throw new UsageError("missing task ref", "loctt unarchive <task>");
+          const locttDir = resolveLocttDir(root);
+          const task = await lookupTask(locttDir, ref);
+          await unarchiveTask(locttDir, task.frontmatter.id);
+          console.log(`Unarchived ${task.frontmatter.key}`);
+        });
         break;
       }
 

@@ -139,6 +139,44 @@ describe("web server security", () => {
       const res = await fetch(`${base}/api/tasks/NONEXISTENT/activity`);
       expect(res.status).toBe(404);
     });
+
+    it("rejects limit above MAX_PAGE_LIMIT (1000) with 400", async () => {
+      // Regression: activity endpoint previously bypassed the global
+      // pagination cap. Now shares parsePagination with /api/tasks.
+      const createRes = await fetch(`${base}/api/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Loctt-Client": "1" },
+        body: JSON.stringify({ title: "cap test" }),
+      });
+      const created = await createRes.json() as { key: string };
+      const res = await fetch(`${base}/api/tasks/${created.key}/activity?limit=999999`);
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toMatch(/limit must be at most 1000/);
+    });
+
+    it("rejects empty limit string with 400 (not silently 0)", async () => {
+      // Regression: ?limit= previously coerced to 0 instead of erroring.
+      const createRes = await fetch(`${base}/api/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Loctt-Client": "1" },
+        body: JSON.stringify({ title: "empty limit" }),
+      });
+      const created = await createRes.json() as { key: string };
+      const res = await fetch(`${base}/api/tasks/${created.key}/activity?limit=`);
+      expect(res.status).toBe(400);
+    });
+
+    it("rejects non-integer limit with 400", async () => {
+      const createRes = await fetch(`${base}/api/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Loctt-Client": "1" },
+        body: JSON.stringify({ title: "bad limit" }),
+      });
+      const created = await createRes.json() as { key: string };
+      const res = await fetch(`${base}/api/tasks/${created.key}/activity?limit=abc`);
+      expect(res.status).toBe(400);
+    });
   });
 
   describe("path leakage", () => {
