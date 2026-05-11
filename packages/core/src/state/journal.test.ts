@@ -18,7 +18,8 @@ import { createSprint, deleteSprint } from "../sprints/manage.js";
 import { createTask } from "../task/create.js";
 import { readTask } from "../task/io.js";
 import { loadAllTasks } from "../task/load-all.js";
-import { createUser, deleteUser, switchCurrentUser } from "../users/manage.js";
+import { createUser, deleteUser } from "../users/lifecycle.js";
+import { switchCurrentUser } from "../users/manage.js";
 import { loadAllUsers } from "../users/profile.js";
 import type { JournalEntry } from "./journal.js";
 import {

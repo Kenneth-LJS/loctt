@@ -10,17 +10,19 @@ import { loadState, saveState, withStateLock } from "../state/index.js";
 import { createTask } from "../task/create.js";
 import { loadAllTasks } from "../task/load-all.js";
 import { readCurrentUserId, writeCurrentUserId } from "./current.js";
+import { UserError } from "./errors.js";
 import {
   archiveUser,
   createUser,
   deleteUser,
+  unarchiveUser,
+  updateUser,
+} from "./lifecycle.js";
+import {
   ensureDefaultUser,
   getCurrentUser,
   resolveUserRef,
   switchCurrentUser,
-  unarchiveUser,
-  updateUser,
-  UserError,
 } from "./manage.js";
 import { loadAllUsers, userExists } from "./profile.js";
 
@@ -165,7 +167,7 @@ describe("avatar handling", () => {
   });
 
   it("rejects sources larger than MAX_AVATAR_BYTES before reading them", async () => {
-    const { MAX_AVATAR_BYTES } = await import("./manage.js");
+    const { MAX_AVATAR_BYTES } = await import("./avatar.js");
     const u = await createUser(locttDir, { name: "X" });
     const big = join(root, "huge.png");
     // Create a sparse file at MAX+1 bytes via a single seek-write.
