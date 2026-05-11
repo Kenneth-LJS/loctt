@@ -28,6 +28,62 @@ import { SchemaVersionError } from "../schema/version.js";
 const lockHeld = new AsyncLocalStorage<{ locttDir: string; acquiredAt: string }>();
 
 /**
+ * Optional recovery hook fired inside the lock, before the user's
+ * `fn` runs. Used by `state/journal.ts` to drain pending crash-
+ * recovery entries on every critical-section entry. Lives behind
+ * a setter so `lock.ts` doesn't import the journal module (which
+ * itself depends on task IO and would close a layering cycle).
+ */
+type StateLockRecoveryHook = (locttDir: string) => Promise<void>;
+let recoveryHook: StateLockRecoveryHook | null = null;
+
+/**
+ * Registers a recovery callback fired inside `withStateLock` before
+ * the caller's `fn`. Idempotent: a second call replaces the
+ * previous hook. Pass `null` to clear (used by tests).
+ */
+export function setStateLockRecoveryHook(hook: StateLockRecoveryHook | null): void {
+  recoveryHook = hook;
+}
+
+/**
+ * Lazy bootstrap of the journal recovery hook. Runs on the first
+ * `withStateLock` call rather than at module load, so importing
+ * `lock.ts` directly (e.g. from `task/relationships.ts`) still wires
+ * up recovery without forcing every consumer to import via
+ * `state/index.ts`. Without this, an import path that bypassed
+ * `state/index.ts` would silently skip recovery wiring and strand
+ * pending journal entries until something else happened to load the
+ * index.
+ *
+ * Uses a dynamic import to break the layering cycle: `journal.ts`
+ * depends on task IO, which transitively depends on `lock.ts`, so a
+ * top-level import of journal here would close the cycle. Dynamic
+ * import defers resolution until first use, by which point all
+ * modules are fully initialized.
+ */
+let recoveryHookBootstrap: Promise<void> | null = null;
+function ensureRecoveryHookWired(): Promise<void> {
+  if (recoveryHookBootstrap !== null) return recoveryHookBootstrap;
+  recoveryHookBootstrap = (async () => {
+    if (recoveryHook !== null) return;
+    const { recoverPendingJournal } = await import("./journal.js");
+    if (recoveryHook === null) {
+      recoveryHook = recoverPendingJournal;
+    }
+  })();
+  return recoveryHookBootstrap;
+}
+
+// Kick off the lazy bootstrap at module load so the dynamic import
+// is in flight by the time any caller invokes withStateLock. We
+// intentionally don't await — the bootstrap promise is cached and
+// the first withStateLock call will await it (usually already
+// resolved). Errors are swallowed: if the import fails the next
+// withStateLock will surface it through the awaited promise.
+void ensureRecoveryHookWired().catch(() => {});
+
+/**
  * Serializes read-modify-write operations on `state.yaml` for a single
  * tracker. The lock is local-only (POSIX advisory) — it does not work
  * safely on network filesystems (NFS, SMB) or sync folders such as
@@ -63,6 +119,8 @@ export async function withStateLock<T>(
   locttDir: string,
   fn: () => Promise<T>,
 ): Promise<T> {
+  await ensureRecoveryHookWired();
+
   const existing = lockHeld.getStore();
   if (existing && existing.locttDir === locttDir) {
     throw new Error(
@@ -95,7 +153,15 @@ export async function withStateLock<T>(
   try {
     return await lockHeld.run(
       { locttDir, acquiredAt: new Date().toISOString() },
-      fn,
+      async () => {
+        // Drain pending crash-recovery entries (if a hook is
+        // registered) BEFORE running the caller. This guarantees
+        // every critical section sees a fully-applied prior op.
+        // The hook itself uses lock-free helpers so it doesn't
+        // re-enter withStateLock.
+        if (recoveryHook) await recoveryHook(locttDir);
+        return await fn();
+      },
     );
   } finally {
     await release().catch(() => {

@@ -1,11 +1,20 @@
-import type { SprintDef, SprintsConfig, SprintState, Task } from "@loctt/contracts";
+import type { SprintDef, SprintsConfig, SprintState } from "@loctt/contracts";
+import { ulid } from "ulid";
 
 import {
   loadSprintsConfig,
   saveSprintsConfig,
 } from "../config/sprints.js";
-import { withStateLock } from "../state/index.js";
-import { writeTask } from "../task/io.js";
+import {
+  appendJournalEntry,
+  clearJournalEntry,
+  loadJournal,
+  registerRecoveryHandler,
+  replayTaskRemap,
+  saveJournal,
+  withStateLock,
+} from "../state/index.js";
+import type { JournalEntry } from "../state/journal.js";
 import { loadAllTasks } from "../task/load-all.js";
 
 export class SprintError extends Error {
@@ -221,27 +230,39 @@ export async function deleteSprint(
     }
 
     const tasks = await loadAllTasks(locttDir);
-    let affected = 0;
-    const operationNow = new Date().toISOString();
+    const affected = tasks.filter(t => t.frontmatter.sprint === key);
 
-    for (const task of tasks) {
-      if (task.frontmatter.sprint !== key) continue;
-      const fm = { ...task.frontmatter } as Record<string, unknown>;
-      if (options.remapTo !== undefined) {
-        fm["sprint"] = options.remapTo;
-      } else {
-        delete fm["sprint"];
-      }
-      fm["updated_at"] = operationNow;
-      const updated: Task = { ...task, frontmatter: fm as unknown as Task["frontmatter"] };
-      await writeTask(locttDir, task.frontmatter.id, updated);
-      affected += 1;
-    }
+    const entry: JournalEntry = {
+      id: ulid(),
+      kind: "remap_sprint",
+      started_at: new Date().toISOString(),
+      from: key,
+      to: options.remapTo ?? null,
+      task_ids: affected.map(t => t.frontmatter.id),
+    };
+    const journal = await loadJournal(locttDir);
+    await saveJournal(locttDir, appendJournalEntry(journal, entry));
 
-    await saveSprintsConfig(locttDir, {
-      sprints: config.sprints.filter(s => s.key !== key),
-    });
+    await replayTaskRemap(locttDir, entry);
+    await applySprintConfigDeletion(locttDir, key);
+    await clearJournalEntry(locttDir, entry.id);
 
-    return { affectedTaskCount: affected };
+    return { affectedTaskCount: affected.length };
   });
 }
+
+/** Idempotent config-edit half of deleteSprint. */
+async function applySprintConfigDeletion(locttDir: string, key: string): Promise<void> {
+  const config = await loadSprintsConfig(locttDir);
+  if (!config.sprints.some(s => s.key === key)) return;
+  await saveSprintsConfig(locttDir, {
+    sprints: config.sprints.filter(s => s.key !== key),
+  });
+}
+
+registerRecoveryHandler("remap_sprint", async (locttDir, entry) => {
+  if (entry.kind !== "remap_sprint") return;
+  await replayTaskRemap(locttDir, entry);
+  await applySprintConfigDeletion(locttDir, entry.from);
+  await clearJournalEntry(locttDir, entry.id);
+});

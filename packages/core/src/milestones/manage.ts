@@ -1,11 +1,20 @@
-import type { MilestoneDef, MilestonesConfig, Task } from "@loctt/contracts";
+import type { MilestoneDef, MilestonesConfig } from "@loctt/contracts";
+import { ulid } from "ulid";
 
 import {
   loadMilestonesConfig,
   saveMilestonesConfig,
 } from "../config/milestones.js";
-import { withStateLock } from "../state/index.js";
-import { writeTask } from "../task/io.js";
+import {
+  appendJournalEntry,
+  clearJournalEntry,
+  loadJournal,
+  registerRecoveryHandler,
+  replayTaskRemap,
+  saveJournal,
+  withStateLock,
+} from "../state/index.js";
+import type { JournalEntry } from "../state/journal.js";
 import { loadAllTasks } from "../task/load-all.js";
 
 export class MilestoneError extends Error {
@@ -113,27 +122,39 @@ export async function deleteMilestone(
     }
 
     const tasks = await loadAllTasks(locttDir);
-    let affected = 0;
-    const operationNow = new Date().toISOString();
+    const affected = tasks.filter(t => t.frontmatter.milestone === key);
 
-    for (const task of tasks) {
-      if (task.frontmatter.milestone !== key) continue;
-      const fm = { ...task.frontmatter } as Record<string, unknown>;
-      if (options.remapTo !== undefined) {
-        fm["milestone"] = options.remapTo;
-      } else {
-        delete fm["milestone"];
-      }
-      fm["updated_at"] = operationNow;
-      const updated: Task = { ...task, frontmatter: fm as unknown as Task["frontmatter"] };
-      await writeTask(locttDir, task.frontmatter.id, updated);
-      affected += 1;
-    }
+    const entry: JournalEntry = {
+      id: ulid(),
+      kind: "remap_milestone",
+      started_at: new Date().toISOString(),
+      from: key,
+      to: options.remapTo ?? null,
+      task_ids: affected.map(t => t.frontmatter.id),
+    };
+    const journal = await loadJournal(locttDir);
+    await saveJournal(locttDir, appendJournalEntry(journal, entry));
 
-    await saveMilestonesConfig(locttDir, {
-      milestones: config.milestones.filter(m => m.key !== key),
-    });
+    await replayTaskRemap(locttDir, entry);
+    await applyMilestoneConfigDeletion(locttDir, key);
+    await clearJournalEntry(locttDir, entry.id);
 
-    return { affectedTaskCount: affected };
+    return { affectedTaskCount: affected.length };
   });
 }
+
+/** Idempotent config-edit half of deleteMilestone. */
+async function applyMilestoneConfigDeletion(locttDir: string, key: string): Promise<void> {
+  const config = await loadMilestonesConfig(locttDir);
+  if (!config.milestones.some(m => m.key === key)) return;
+  await saveMilestonesConfig(locttDir, {
+    milestones: config.milestones.filter(m => m.key !== key),
+  });
+}
+
+registerRecoveryHandler("remap_milestone", async (locttDir, entry) => {
+  if (entry.kind !== "remap_milestone") return;
+  await replayTaskRemap(locttDir, entry);
+  await applyMilestoneConfigDeletion(locttDir, entry.from);
+  await clearJournalEntry(locttDir, entry.id);
+});

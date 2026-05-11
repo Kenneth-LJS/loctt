@@ -1,17 +1,24 @@
-import type { LocttState, ProjectDef, ProjectsConfig, Task } from "@loctt/contracts";
+import type { LocttState, ProjectDef, ProjectsConfig } from "@loctt/contracts";
+import { ulid } from "ulid";
 
 import {
   loadProjectsConfig,
   saveProjectsConfig,
 } from "../config/projects.js";
 import {
+  appendJournalEntry,
+  clearJournalEntry,
   initKeyAllocation,
   KeyAllocationError,
+  loadJournal,
   loadState,
+  registerRecoveryHandler,
+  replayTaskRemap,
+  saveJournal,
   saveState,
   withStateLock,
 } from "../state/index.js";
-import { writeTask } from "../task/io.js";
+import type { JournalEntry } from "../state/journal.js";
 import { loadAllTasks } from "../task/load-all.js";
 
 export class ProjectError extends Error {
@@ -283,6 +290,7 @@ export async function deleteProject(
     const tasks = await loadAllTasks(locttDir);
     const affected = tasks.filter(t => t.frontmatter.project === key);
 
+    let remapTo: string | undefined;
     if (affected.length > 0) {
       if (options.remapTo === undefined) {
         throw new ProjectError(
@@ -295,57 +303,105 @@ export async function deleteProject(
       if (options.remapTo === key) {
         throw new ProjectError(`remap target must differ from the project being deleted`);
       }
-
-      // Rewrite each affected task atomically (one file at a time).
-      // Single timestamp so every remapped task in this operation
-      // shares the same updated_at.
-      const operationNow = new Date().toISOString();
-      for (const task of affected) {
-        const updated: Task = {
-          ...task,
-          frontmatter: {
-            ...task.frontmatter,
-            project: options.remapTo,
-            updated_at: operationNow,
-          },
-        };
-        await writeTask(locttDir, task.frontmatter.id, updated);
-      }
+      remapTo = options.remapTo;
     }
 
-    // Remove from projects.yaml. If the deleted project was the
-    // workspace default, clear the default — caller's responsibility
-    // to set a new one.
-    const remainingProjects = config.projects.filter(p => p.key !== key);
-    const newConfig: ProjectsConfig = {
-      projects: remainingProjects,
-      ...(config.default !== undefined && config.default !== key
-        ? { default: config.default }
-        : {}),
+    // Journal-then-apply: write a recovery entry describing the
+    // entire op BEFORE touching any task or config. If the process
+    // crashes anywhere below, the next critical section's recovery
+    // hook replays this same handler and re-applies whatever wasn't
+    // finished. Every step below is idempotent.
+    const entry: JournalEntry = {
+      id: ulid(),
+      kind: "remap_project",
+      started_at: new Date().toISOString(),
+      from: key,
+      to: remapTo ?? key, // unused when no tasks; recovery checks task_ids
+      task_ids: affected.map(t => t.frontmatter.id),
     };
-    await saveProjectsConfig(locttDir, newConfig);
+    const journal = await loadJournal(locttDir);
+    await saveJournal(locttDir, appendJournalEntry(journal, entry));
 
-    // Move the project's counter to retired_keys. Re-creating the
-    // same project later resumes numbering from this point so we
-    // never reuse keys that surviving tasks may still reference.
-    const state = await loadState(locttDir);
-    const newKeys: Record<string, { prefix: string; next_number: number }> = {};
-    for (const [k, v] of Object.entries(state.keys)) {
-      if (k !== key) newKeys[k] = v;
+    if (remapTo !== undefined) {
+      await replayTaskRemap(locttDir, entry);
     }
-    const retired: Record<string, { prefix: string; next_number: number }> = {
-      ...(state.retired_keys ?? {}),
-    };
-    const removed = state.keys[key];
-    if (removed !== undefined) {
-      retired[key] = { prefix: removed.prefix, next_number: removed.next_number };
-    }
-    const newState: LocttState = {
-      keys: newKeys,
-      ...(Object.keys(retired).length > 0 ? { retired_keys: retired } : {}),
-    };
-    await saveState(locttDir, newState);
+
+    await applyProjectConfigDeletion(locttDir, key);
+
+    await clearJournalEntry(locttDir, entry.id);
 
     return { remappedTaskCount: affected.length };
   });
 }
+
+/**
+ * The config-edit half of `deleteProject`: drop the project from
+ * `projects.yaml` and move its counter to `retired_keys` in
+ * `state.yaml`. Idempotent — if the project is already gone (a
+ * crash mid-op left the journal entry but the config edit had
+ * already landed), this is a no-op.
+ *
+ * Extracted as a top-level helper because the recovery handler
+ * (registered below) re-uses it during crash replay.
+ */
+async function applyProjectConfigDeletion(locttDir: string, key: string): Promise<void> {
+  const config = await loadProjectsConfig(locttDir);
+  if (!config.projects.some(p => p.key === key)) {
+    // Project is already gone from projects.yaml — either a recovery
+    // replay after the config write succeeded but the journal-clear
+    // didn't, or a human edit between the journal write and replay.
+    // We still need to check state.keys: the counter migration is a
+    // separate write below, so the previous run may have crashed
+    // between the projects.yaml save and the state.yaml save. If
+    // both sides are already done, fully no-op; otherwise fall
+    // through and the counter-migration block below will complete.
+    const state = await loadState(locttDir);
+    if (state.keys[key] === undefined) return;
+    // Fall through with config unchanged; the saveProjectsConfig
+    // below is a no-op rewrite of the same content, which the
+    // atomic-yaml writer collapses to a stable file.
+  }
+
+  const remainingProjects = config.projects.filter(p => p.key !== key);
+  const newConfig: ProjectsConfig = {
+    projects: remainingProjects,
+    ...(config.default !== undefined && config.default !== key
+      ? { default: config.default }
+      : {}),
+  };
+  await saveProjectsConfig(locttDir, newConfig);
+
+  // Move the project's counter to retired_keys. Re-creating the
+  // same project later resumes numbering from this point so we
+  // never reuse keys that surviving tasks may still reference.
+  const state = await loadState(locttDir);
+  const newKeys: Record<string, { prefix: string; next_number: number }> = {};
+  for (const [k, v] of Object.entries(state.keys)) {
+    if (k !== key) newKeys[k] = v;
+  }
+  const retired: Record<string, { prefix: string; next_number: number }> = {
+    ...(state.retired_keys ?? {}),
+  };
+  const removed = state.keys[key];
+  if (removed !== undefined) {
+    retired[key] = { prefix: removed.prefix, next_number: removed.next_number };
+  }
+  const newState: LocttState = {
+    keys: newKeys,
+    ...(Object.keys(retired).length > 0 ? { retired_keys: retired } : {}),
+  };
+  await saveState(locttDir, newState);
+}
+
+// Register a crash-recovery handler that runs the same steps the
+// happy-path code does, in the same order, but each idempotently.
+// Fired by `withStateLock`'s recovery hook for any pending
+// `remap_project` entry. Idempotent because:
+//   - replayTaskRemap skips tasks already at the new project,
+//   - applyProjectConfigDeletion no-ops when the project is gone.
+registerRecoveryHandler("remap_project", async (locttDir, entry) => {
+  if (entry.kind !== "remap_project") return; // narrow the union
+  await replayTaskRemap(locttDir, entry);
+  await applyProjectConfigDeletion(locttDir, entry.from);
+  await clearJournalEntry(locttDir, entry.id);
+});
