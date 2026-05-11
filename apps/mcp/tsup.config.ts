@@ -10,7 +10,9 @@ export default defineConfig({
   outDir: "dist",
   // Don't clean — tsc --build already placed .d.ts files in dist
   clean: false,
-  external: ["yaml", "ulid", "proper-lockfile"],
+  // sharp ships a native .node binding; cannot be bundled. Must be
+  // installed as a runtime dep alongside the bundled output.
+  external: ["yaml", "ulid", "proper-lockfile", "sharp"],
   noExternal: ["@loctt/core", "@loctt/contracts"],
   esbuildOptions(options) {
     options.alias = {

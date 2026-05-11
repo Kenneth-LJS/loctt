@@ -6,7 +6,8 @@ import type { Task } from "@loctt/contracts";
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
 import { writeTask } from "./io.js";
-import { listTaskIds, lookupById, lookupByKey, lookupTask, TaskNotFoundError } from "./lookup.js";
+import { listTaskIds } from "./list-ids.js";
+import { lookupById, lookupByKey, lookupTask, TaskNotFoundError } from "./lookup.js";
 
 describe("task lookup", () => {
   let locttDir: string;
@@ -186,7 +187,7 @@ describe("task lookup", () => {
     // this break around 250 tasks. Seeding 100 here is a safety
     // floor — the cap (READ_CONCURRENCY = 32) is well below the
     // ulimit so a thousand-task tracker would still be fine.
-    const { loadAllTasks } = await import("./lookup.js");
+    const { loadAllTasks } = await import("./load-all.js");
     const COUNT = 100;
     for (let i = 0; i < COUNT; i += 1) {
       const id = `01LARGE${String(i).padStart(3, "0")}`;

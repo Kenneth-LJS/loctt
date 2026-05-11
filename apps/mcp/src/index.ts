@@ -1166,8 +1166,8 @@ export async function executeTool(
           lines.push(`Statuses: ${info.workflowConfig.statuses.map(s => s.key).join(", ")}`);
         }
         if (info.state) {
-          // Show every project counter, not just the legacy "task"
-          // entry. Sorted by project key so output is stable.
+          // Show every project counter. Sorted by project key so
+          // output is stable.
           const entries = Object.entries(info.state.keys).sort(([a], [b]) => a.localeCompare(b));
           if (entries.length > 0) {
             lines.push(`Next keys:`);

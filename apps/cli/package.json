@@ -27,7 +27,13 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {},
+  "dependencies": {
+    "busboy": "^1.6.0",
+    "proper-lockfile": "^4.1.2",
+    "sharp": "^0.34.4",
+    "ulid": "^3.0.2",
+    "yaml": "^2.8.3"
+  },
   "devDependencies": {
     "@loctt/core": "*",
     "@loctt/mcp": "*",

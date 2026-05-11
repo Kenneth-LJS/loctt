@@ -6,7 +6,7 @@ import {
 } from "../config/milestones.js";
 import { withStateLock } from "../state/index.js";
 import { writeTask } from "../task/io.js";
-import { loadAllTasks } from "../task/lookup.js";
+import { loadAllTasks } from "../task/load-all.js";
 
 export class MilestoneError extends Error {
   constructor(message: string) {
