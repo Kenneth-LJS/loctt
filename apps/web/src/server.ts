@@ -96,6 +96,7 @@ import {
   switchCurrentUser,
   sync,
   TaskNotFoundError,
+  TaskUpdateError,
   unarchiveTask,
   unarchiveUser,
   unlinkTask,
@@ -167,6 +168,10 @@ class HandledRequestError extends Error {
  * HandledRequestError so the surrounding handler can early-exit
  * via try/catch. Keeps the per-route boilerplate small while
  * mapping bad JSON to 400 instead of letting it bubble to 500.
+ *
+ * An empty body is treated as `{}` — convenient for routes whose
+ * fields are all optional. Routes that *require* fields should
+ * still validate after parsing.
  */
 async function parseJsonBody<T = unknown>(
   req: import("node:http").IncomingMessage,
@@ -180,6 +185,93 @@ async function parseJsonBody<T = unknown>(
     error(res, `invalid JSON body: ${(err as Error).message}`, 400);
     throw new HandledRequestError();
   }
+}
+
+/** Default page size when a list endpoint is called without `?limit`. */
+const DEFAULT_PAGE_LIMIT = 100;
+/** Hard cap on page size; clients can request smaller but not larger. */
+const MAX_PAGE_LIMIT = 1000;
+
+/**
+ * Parses `?limit` and `?offset` from a URL into a validated tuple.
+ * Returns `null` (after writing a 400) if either is malformed.
+ *
+ * - `limit` defaults to {@link DEFAULT_PAGE_LIMIT} and may not exceed
+ *   {@link MAX_PAGE_LIMIT}. Exceeding the cap returns 400 rather than
+ *   silently clamping, so the client knows it didn't get everything.
+ * - `offset` defaults to 0.
+ * - Both must be non-negative integers when present.
+ */
+function parsePagination(
+  url: URL,
+  res: import("node:http").ServerResponse,
+): { offset: number; limit: number } | null {
+  let limit = DEFAULT_PAGE_LIMIT;
+  let offset = 0;
+  if (url.searchParams.has("limit")) {
+    const raw = url.searchParams.get("limit") ?? "";
+    if (raw.length === 0) {
+      error(res, "limit must be a non-negative integer", 400);
+      return null;
+    }
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 0) {
+      error(res, "limit must be a non-negative integer", 400);
+      return null;
+    }
+    if (n > MAX_PAGE_LIMIT) {
+      error(res, `limit must be at most ${MAX_PAGE_LIMIT}`, 400);
+      return null;
+    }
+    limit = n;
+  }
+  if (url.searchParams.has("offset")) {
+    const raw = url.searchParams.get("offset") ?? "";
+    if (raw.length === 0) {
+      error(res, "offset must be a non-negative integer", 400);
+      return null;
+    }
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 0) {
+      error(res, "offset must be a non-negative integer", 400);
+      return null;
+    }
+    offset = n;
+  }
+  return { offset, limit };
+}
+
+/**
+ * Builds a paginated response envelope. Slices `items` by the
+ * provided offset+limit and reports the unsliced total so clients
+ * can render `Page X of Y` without a follow-up count call.
+ */
+function paginated<T>(items: readonly T[], offset: number, limit: number): {
+  items: T[];
+  total: number;
+  offset: number;
+  limit: number;
+} {
+  return {
+    items: items.slice(offset, offset + limit),
+    total: items.length,
+    offset,
+    limit,
+  };
+}
+
+/**
+ * Asserts that an entity we just wrote can still be read back. The
+ * create/update handlers re-load the config and find the entry by
+ * key so they can return the persisted resource. If the find fails,
+ * something raced (delete during request) or wrote silently — either
+ * way the client should not get a degraded `{key}` shape.
+ */
+function assertPersisted<T>(entity: T | undefined, kind: string, key: string): T {
+  if (entity === undefined) {
+    throw new Error(`${kind} ${key} was just written but could not be read back`);
+  }
+  return entity;
 }
 
 const VALID_REF_RE = /^[A-Za-z0-9_-]+$/;
@@ -401,8 +493,7 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleCreateView: RouteHandler = async ({ req, res, locttDir }) => {
-    const body = await readBody(req);
-    const r = JSON.parse(body) as Parameters<typeof createView>[1];
+    const r = await parseJsonBody<Parameters<typeof createView>[1]>(req, res);
     try {
       const created = await createView(locttDir, r);
       json(res, created, 201);
@@ -414,8 +505,7 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleUpdateView: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = captures[0] ?? "";
-    const body = await readBody(req);
-    const r = JSON.parse(body) as Parameters<typeof editView>[2];
+    const r = await parseJsonBody<Parameters<typeof editView>[2]>(req, res);
     try {
       const updated = await editView(locttDir, ref, r);
       json(res, updated);
@@ -442,11 +532,10 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handlePutWorkflow: RouteHandler = async ({ req, res, locttDir }) => {
-    const body = await readBody(req);
-    const payload = JSON.parse(body) as {
+    const payload = await parseJsonBody<{
       workflow: Parameters<typeof applyWorkflowEdit>[1];
       remap?: Parameters<typeof applyWorkflowEdit>[2];
-    };
+    }>(req, res);
     try {
       const result = await applyWorkflowEdit(locttDir, payload.workflow, payload.remap ?? {});
       json(res, result);
@@ -463,19 +552,23 @@ export function createWebApp(options: WebAppOptions) {
     json(res, response);
   };
 
-  const handleListProjects: RouteHandler = async ({ res, locttDir }) => {
+  const handleListProjects: RouteHandler = async ({ res, url, locttDir }) => {
+    const page = parsePagination(url, res);
+    if (!page) return;
     const cfg = await loadProjectsConfig(locttDir);
-    json(res, { projects: cfg.projects, default: cfg.default ?? null });
+    json(res, {
+      ...paginated(cfg.projects, page.offset, page.limit),
+      default: cfg.default ?? null,
+    });
   };
 
   const handleCreateProject: RouteHandler = async ({ req, res, locttDir }) => {
-    const body = await readBody(req);
-    const request = JSON.parse(body) as {
+    const request = await parseJsonBody<{
       key: string;
       label: string;
       prefix: string;
       make_default?: boolean;
-    };
+    }>(req, res);
     try {
       await createProject(locttDir, {
         key: request.key,
@@ -485,7 +578,13 @@ export function createWebApp(options: WebAppOptions) {
       if (request.make_default === true) {
         await setDefaultProject(locttDir, request.key);
       }
-      json(res, { key: request.key }, 201);
+      const cfg = await loadProjectsConfig(locttDir);
+      const created = assertPersisted(
+        cfg.projects.find(p => p.key === request.key),
+        "project",
+        request.key,
+      );
+      json(res, created, 201);
     } catch (err) {
       if (err instanceof ProjectError) {
         error(res, err.message, 400);
@@ -497,8 +596,7 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleUpdateProject: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const key = captures[0] ?? "";
-    const body = await readBody(req);
-    const request = JSON.parse(body) as { label?: string; default?: boolean };
+    const request = await parseJsonBody<{ label?: string; default?: boolean }>(req, res);
     try {
       if (request.label !== undefined) {
         await editProject(locttDir, key, { label: request.label });
@@ -510,7 +608,13 @@ export function createWebApp(options: WebAppOptions) {
         const cfg = await loadProjectsConfig(locttDir);
         if (cfg.default === key) await setDefaultProject(locttDir, null);
       }
-      json(res, { key });
+      const cfg = await loadProjectsConfig(locttDir);
+      const updated = assertPersisted(
+        cfg.projects.find(p => p.key === key),
+        "project",
+        key,
+      );
+      json(res, updated);
     } catch (err) {
       if (err instanceof ProjectError) {
         error(res, err.message, 400);
@@ -558,21 +662,22 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
-  const handleListSprints: RouteHandler = async ({ res, locttDir }) => {
+  const handleListSprints: RouteHandler = async ({ res, url, locttDir }) => {
+    const page = parsePagination(url, res);
+    if (!page) return;
     const cfg = await loadSprintsConfig(locttDir);
-    json(res, cfg);
+    json(res, paginated(cfg.sprints, page.offset, page.limit));
   };
 
   const handleCreateSprint: RouteHandler = async ({ req, res, locttDir }) => {
-    const body = await readBody(req);
-    const r = JSON.parse(body) as {
+    const r = await parseJsonBody<{
       key: string;
       label: string;
       start_date: string;
       end_date: string;
       state: "active" | "completed" | "future";
       goal?: string;
-    };
+    }>(req, res);
     try {
       await createSprint(locttDir, {
         key: r.key,
@@ -582,7 +687,13 @@ export function createWebApp(options: WebAppOptions) {
         state: r.state,
         ...(r.goal !== undefined ? { goal: r.goal } : {}),
       });
-      json(res, { key: r.key }, 201);
+      const cfg = await loadSprintsConfig(locttDir);
+      const created = assertPersisted(
+        cfg.sprints.find(s => s.key === r.key),
+        "sprint",
+        r.key,
+      );
+      json(res, created, 201);
     } catch (err) {
       if (err instanceof SprintError) { error(res, err.message, 400); return; }
       throw err;
@@ -591,14 +702,13 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleUpdateSprint: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const key = captures[0] ?? "";
-    const body = await readBody(req);
-    const r = JSON.parse(body) as {
+    const r = await parseJsonBody<{
       label?: string;
       start_date?: string;
       end_date?: string;
       state?: "active" | "completed" | "future";
       goal?: string | null;
-    };
+    }>(req, res);
     try {
       await editSprint(locttDir, key, {
         ...(r.label !== undefined ? { label: r.label } : {}),
@@ -607,7 +717,13 @@ export function createWebApp(options: WebAppOptions) {
         ...(r.state !== undefined ? { state: r.state } : {}),
         ...("goal" in r ? { goal: r.goal } : {}),
       });
-      json(res, { key });
+      const cfg = await loadSprintsConfig(locttDir);
+      const updated = assertPersisted(
+        cfg.sprints.find(s => s.key === key),
+        "sprint",
+        key,
+      );
+      json(res, updated);
     } catch (err) {
       if (err instanceof SprintError) { error(res, err.message, 400); return; }
       throw err;
@@ -629,21 +745,28 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
-  const handleListMilestones: RouteHandler = async ({ res, locttDir }) => {
+  const handleListMilestones: RouteHandler = async ({ res, url, locttDir }) => {
+    const page = parsePagination(url, res);
+    if (!page) return;
     const cfg = await loadMilestonesConfig(locttDir);
-    json(res, cfg);
+    json(res, paginated(cfg.milestones, page.offset, page.limit));
   };
 
   const handleCreateMilestone: RouteHandler = async ({ req, res, locttDir }) => {
-    const body = await readBody(req);
-    const r = JSON.parse(body) as { key: string; label: string; target_date?: string };
+    const r = await parseJsonBody<{ key: string; label: string; target_date?: string }>(req, res);
     try {
       await createMilestone(locttDir, {
         key: r.key,
         label: r.label,
         ...(r.target_date !== undefined ? { target_date: r.target_date } : {}),
       });
-      json(res, { key: r.key }, 201);
+      const cfg = await loadMilestonesConfig(locttDir);
+      const created = assertPersisted(
+        cfg.milestones.find(m => m.key === r.key),
+        "milestone",
+        r.key,
+      );
+      json(res, created, 201);
     } catch (err) {
       if (err instanceof MilestoneError) { error(res, err.message, 400); return; }
       throw err;
@@ -652,19 +775,24 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleUpdateMilestone: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const key = captures[0] ?? "";
-    const body = await readBody(req);
-    const r = JSON.parse(body) as {
+    const r = await parseJsonBody<{
       label?: string;
       target_date?: string | null;
       archived?: boolean;
-    };
+    }>(req, res);
     try {
       await editMilestone(locttDir, key, {
         ...(r.label !== undefined ? { label: r.label } : {}),
         ...("target_date" in r ? { target_date: r.target_date } : {}),
         ...(r.archived !== undefined ? { archived: r.archived } : {}),
       });
-      json(res, { key });
+      const cfg = await loadMilestonesConfig(locttDir);
+      const updated = assertPersisted(
+        cfg.milestones.find(m => m.key === key),
+        "milestone",
+        key,
+      );
+      json(res, updated);
     } catch (err) {
       if (err instanceof MilestoneError) { error(res, err.message, 400); return; }
       throw err;
@@ -686,21 +814,28 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
-  const handleListLabels: RouteHandler = async ({ res, locttDir }) => {
+  const handleListLabels: RouteHandler = async ({ res, url, locttDir }) => {
+    const page = parsePagination(url, res);
+    if (!page) return;
     const cfg = await loadLabelsConfig(locttDir);
-    json(res, cfg);
+    json(res, paginated(cfg.labels, page.offset, page.limit));
   };
 
   const handleCreateLabel: RouteHandler = async ({ req, res, locttDir }) => {
-    const body = await readBody(req);
-    const r = JSON.parse(body) as { key: string; label: string; color?: string };
+    const r = await parseJsonBody<{ key: string; label: string; color?: string }>(req, res);
     try {
       await createLabel(locttDir, {
         key: r.key,
         label: r.label,
         ...(r.color !== undefined ? { color: r.color } : {}),
       });
-      json(res, { key: r.key }, 201);
+      const cfg = await loadLabelsConfig(locttDir);
+      const created = assertPersisted(
+        cfg.labels.find(l => l.key === r.key),
+        "label",
+        r.key,
+      );
+      json(res, created, 201);
     } catch (err) {
       if (err instanceof LabelError) { error(res, err.message, 400); return; }
       throw err;
@@ -709,14 +844,19 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleUpdateLabel: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const key = captures[0] ?? "";
-    const body = await readBody(req);
-    const r = JSON.parse(body) as { label?: string; color?: string | null };
+    const r = await parseJsonBody<{ label?: string; color?: string | null }>(req, res);
     try {
       await editLabel(locttDir, key, {
         ...(r.label !== undefined ? { label: r.label } : {}),
         ...("color" in r ? { color: r.color } : {}),
       });
-      json(res, { key });
+      const cfg = await loadLabelsConfig(locttDir);
+      const updated = assertPersisted(
+        cfg.labels.find(l => l.key === key),
+        "label",
+        key,
+      );
+      json(res, updated);
     } catch (err) {
       if (err instanceof LabelError) { error(res, err.message, 400); return; }
       throw err;
@@ -739,11 +879,16 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleListUsers: RouteHandler = async ({ res, url, locttDir }) => {
+    const page = parsePagination(url, res);
+    if (!page) return;
     const includeArchived = url.searchParams.get("include_archived") === "true";
     const users = await loadAllUsers(locttDir);
     const current = await getCurrentUser(locttDir);
     const filtered = users.filter(u => includeArchived || u.archived !== true);
-    json(res, { current: current?.id ?? null, users: filtered });
+    json(res, {
+      ...paginated(filtered, page.offset, page.limit),
+      current: current?.id ?? null,
+    });
   };
 
   const handleCurrentUser: RouteHandler = async ({ res, locttDir }) => {
@@ -753,8 +898,11 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleSwitchUser: RouteHandler = async ({ req, res, locttDir }) => {
-    const body = await readBody(req);
-    const request = JSON.parse(body) as { ref: string };
+    const request = await parseJsonBody<{ ref: string }>(req, res);
+    if (typeof request.ref !== "string" || request.ref.length === 0) {
+      error(res, "ref must be a non-empty string", 400);
+      return;
+    }
     try {
       const target = await resolveUserRef(locttDir, request.ref);
       await switchCurrentUser(locttDir, target.id);
@@ -944,8 +1092,7 @@ export function createWebApp(options: WebAppOptions) {
     const ref = captures[0] ?? "";
     if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
     const task = await lookupTask(locttDir, ref);
-    const body = await readBody(req);
-    const r = JSON.parse(body) as { body: string };
+    const r = await parseJsonBody<{ body: string }>(req, res);
     if (typeof r.body !== "string") { error(res, "body must be a string", 400); return; }
     await writeTaskBody(locttDir, task.frontmatter.id, r.body);
     json(res, { ok: true });
@@ -955,18 +1102,16 @@ export function createWebApp(options: WebAppOptions) {
     const ref = captures[0] ?? "";
     if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
     const task = await lookupTask(locttDir, ref);
-    const body = await readBody(req);
-    const r = JSON.parse(body) as { text: string };
+    const r = await parseJsonBody<{ text: string }>(req, res);
     if (typeof r.text !== "string") { error(res, "text must be a string", 400); return; }
     await appendTaskBody(locttDir, task.frontmatter.id, r.text);
     json(res, { ok: true });
   };
 
   const handleInit: RouteHandler = async ({ req, res }) => {
-    const body = await readBody(req);
-    const r = body.length > 0 ? JSON.parse(body) as Parameters<typeof initLoctt>[1] : undefined;
+    const r = await parseJsonBody<Parameters<typeof initLoctt>[1]>(req, res);
     try {
-      const result = await initLoctt(root, r ?? {});
+      const result = await initLoctt(root, r);
       json(res, { locttDir: result.locttDir, created: result.created.length }, 201);
     } catch (err) {
       error(res, (err as Error).message, 400);
@@ -975,8 +1120,7 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleSetConfigValue: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const key = captures[0] ?? "";
-    const body = await readBody(req);
-    const r = JSON.parse(body) as { value: unknown };
+    const r = await parseJsonBody<{ value: unknown }>(req, res);
     try {
       await setConfigValue({ locttDir, root }, key, String(r.value));
       json(res, { key });
@@ -1077,8 +1221,7 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleBoardRerank: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = captures[0] ?? "";
-    const body = await readBody(req);
-    const request = JSON.parse(body) as { before?: string; after?: string };
+    const request = await parseJsonBody<{ before?: string; after?: string }>(req, res);
     try {
       const result = await reorderBoardRank({
         locttDir,
@@ -1097,8 +1240,7 @@ export function createWebApp(options: WebAppOptions) {
     const sourceRef = captures[0] ?? "";
     const relationshipType = captures[1] ?? "";
     const targetRef = captures[2] ?? "";
-    const body = await readBody(req);
-    const request = JSON.parse(body || "{}") as { before?: string; after?: string };
+    const request = await parseJsonBody<{ before?: string; after?: string }>(req, res);
     try {
       const result = await reorderRelationship({
         locttDir,
@@ -1116,18 +1258,10 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleListTasks: RouteHandler = async ({ res, url, locttDir }) => {
+    const page = parsePagination(url, res);
+    if (!page) return;
     const tasks = await loadAllTasks(locttDir);
     const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
-
-    let limit: number | undefined;
-    if (url.searchParams.has("limit")) {
-      const n = Number(url.searchParams.get("limit"));
-      if (Number.isNaN(n) || n < 0 || !Number.isInteger(n)) {
-        error(res, "limit must be a non-negative integer", 400);
-        return;
-      }
-      limit = n;
-    }
 
     // Sugar: `?project=<key>` AND-merges into the query, mirroring
     // the CLI's `--project` flag.
@@ -1140,10 +1274,15 @@ export function createWebApp(options: WebAppOptions) {
       : baseQuery;
 
     const view = url.searchParams.get("view") ?? undefined;
+    // listTasks() applies a built-in default limit (30) for the CLI's
+    // benefit. The HTTP API paginates explicitly, so opt out by
+    // passing a sentinel limit large enough to cover any tracker.
+    // `total` then reflects the true matching count and the page
+    // slice happens in `paginated()` below.
     const params: ListTasksRequest = {
       ...(composedQuery !== undefined ? { query: composedQuery } : {}),
       ...(view !== undefined ? { view } : {}),
-      ...(limit !== undefined ? { limit } : {}),
+      limit: Number.MAX_SAFE_INTEGER,
     };
 
     const result = listTasks({
@@ -1153,12 +1292,12 @@ export function createWebApp(options: WebAppOptions) {
       ...(workflowConfig !== undefined ? { workflowConfig } : {}),
       ctx: buildListContext(tasks),
     });
-    json(res, result.map(t => t.frontmatter));
+    const frontmatters = result.map(t => t.frontmatter);
+    json(res, paginated(frontmatters, page.offset, page.limit));
   };
 
   const handleCreateTask: RouteHandler = async ({ req, res, locttDir }) => {
-    const body = await readBody(req);
-    const request = JSON.parse(body) as CreateTaskRequest;
+    const request = await parseJsonBody<CreateTaskRequest>(req, res);
     const wfConfig = await loadWorkflowConfig(locttDir);
 
     // Resolve target project. The HTTP API mirrors the CLI's
@@ -1237,22 +1376,44 @@ export function createWebApp(options: WebAppOptions) {
   const handleSetField: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = captures[0] ?? "";
     if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
-    const body = await readBody(req);
-    const request = JSON.parse(body) as UpdateTaskRequest;
+    const request = await parseJsonBody<UpdateTaskRequest>(req, res);
+    if (typeof request.field !== "string" || request.field.length === 0) {
+      error(res, "field must be a non-empty string", 400);
+      return;
+    }
     const wfConfig = await loadWorkflowConfig(locttDir);
     const task = await lookupTask(locttDir, ref);
-    const updated = await setField({ locttDir, taskId: task.frontmatter.id, field: request.field, value: request.value, workflowConfig: wfConfig });
-    json(res, updated.frontmatter);
+    try {
+      const updated = await setField({
+        locttDir,
+        taskId: task.frontmatter.id,
+        field: request.field,
+        value: request.value,
+        workflowConfig: wfConfig,
+      });
+      json(res, updated.frontmatter);
+    } catch (err) {
+      if (err instanceof TaskUpdateError) { error(res, err.message, 400); return; }
+      throw err;
+    }
   };
 
   const handleUnsetField: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = captures[0] ?? "";
     if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
-    const body = await readBody(req);
-    const { field } = JSON.parse(body) as { field: string };
+    const { field } = await parseJsonBody<{ field: string }>(req, res);
+    if (typeof field !== "string" || field.length === 0) {
+      error(res, "field must be a non-empty string", 400);
+      return;
+    }
     const task = await lookupTask(locttDir, ref);
-    const updated = await unsetField(locttDir, task.frontmatter.id, field);
-    json(res, updated.frontmatter);
+    try {
+      const updated = await unsetField(locttDir, task.frontmatter.id, field);
+      json(res, updated.frontmatter);
+    } catch (err) {
+      if (err instanceof TaskUpdateError) { error(res, err.message, 400); return; }
+      throw err;
+    }
   };
 
   const handleArchive: RouteHandler = async ({ res, locttDir, captures }) => {
@@ -1287,8 +1448,7 @@ export function createWebApp(options: WebAppOptions) {
   const handleLink: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = captures[0] ?? "";
     if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
-    const body = await readBody(req);
-    const request = JSON.parse(body) as LinkRequest;
+    const request = await parseJsonBody<LinkRequest>(req, res);
     const wfConfig = await loadWorkflowConfig(locttDir);
     const task = await lookupTask(locttDir, ref);
     const target = await lookupTask(locttDir, request.target);
@@ -1299,8 +1459,7 @@ export function createWebApp(options: WebAppOptions) {
   const handleUnlink: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = captures[0] ?? "";
     if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
-    const body = await readBody(req);
-    const request = JSON.parse(body) as LinkRequest;
+    const request = await parseJsonBody<LinkRequest>(req, res);
     const task = await lookupTask(locttDir, ref);
     const target = await lookupTask(locttDir, request.target);
     const updated = await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: request.type, target: target.frontmatter.id });

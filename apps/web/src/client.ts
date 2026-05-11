@@ -65,11 +65,17 @@ export class LocttClient {
     return this.fetch("/api/config");
   }
 
-  async listTasks(params?: { query?: string; view?: string; limit?: number }): Promise<TaskFrontmatter[]> {
+  async listTasks(params?: {
+    query?: string;
+    view?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: TaskFrontmatter[]; total: number; offset: number; limit: number }> {
     const searchParams = new URLSearchParams();
     if (params?.query) searchParams.set("query", params.query);
     if (params?.view) searchParams.set("view", params.view);
     if (params?.limit !== undefined) searchParams.set("limit", String(params.limit));
+    if (params?.offset !== undefined) searchParams.set("offset", String(params.offset));
     const qs = searchParams.toString();
     return this.fetch(`/api/tasks${qs ? `?${qs}` : ""}`);
   }
@@ -108,7 +114,7 @@ export class LocttClient {
   }
 
   async deleteTask(ref: string): Promise<{ deleted: string }> {
-    return this.fetch(`/api/tasks/${encodeURIComponent(ref)}`, { method: "DELETE" });
+    return this.fetch(`/api/tasks/${encodeURIComponent(ref)}?confirm=true`, { method: "DELETE" });
   }
 
   async linkTasks(ref: string, type: string, target: string): Promise<TaskFrontmatter> {
