@@ -62,7 +62,13 @@ No new commands. `saveWorkflowConfig` already passes through these keys.
 
 ## 1.2 Board columns with optional WIP limits
 
-### Behavior
+### Why core handles it
+
+Column grouping + WIP limits are workspace-shared decisions — every viewer
+sees the same columns. Must live in `workflow.yaml`. Backend reads only,
+no enforcement — UI computes `cardCount > wip` and styles it.
+
+### Behavior (UI-side, recorded for reference)
 
 Passive indicator only. No enforcement, no modals.
 - Column header: `In Progress · 2/3` (neutral) or `In Progress · 5/3` (red)
@@ -84,6 +90,11 @@ boards:
 - If absent: 1 status = 1 column (today's behavior).
 - If present: a column may group multiple statuses, optional `wip` int.
 - Backend only reads this — no enforcement.
+
+### Note: no query DSL `column:` filter
+
+The query DSL has no notion of "column" today. If a column-keyed filter is
+ever needed, that's new query work. Defer until a real consumer asks for it.
 
 ### CLI/MCP
 
@@ -160,19 +171,23 @@ Behavior:
 when present, every key must appear in `preset_values`; every value must
 be a finite non-negative number. Only meaningful for `unit: custom_enum`.
 
-## 1.5 List-view config (workspace + user layered)
+## 1.5 List-view config — workspace file only (slim)
 
-Custom-field filter chips on the list view are configurable workspace-wide
-with per-user overrides.
+Custom-field filter chips on the list view are configurable workspace-wide.
+Per-user overrides are deferred to Part 2 (UI prefs) — they live entirely
+inside `users/<id>/settings.yaml` and core does not interpret them.
 
-### Two surfaces
+### Why core handles the workspace file
 
-1. **Settings → List View panel** (workspace-level). Checkboxes for every
-   built-in field + every declared custom field. Toggles write to
-   `.loctt/config/list-view.yaml`.
-2. **Per-user override on the list page**. The "+ Filter" chip-bar popover
-   shows the same list with the workspace default as baseline; user
-   toggles write to `users/<id>/settings.yaml#list_view.filter_chips`.
+Two reasons:
+1. `list-view.yaml` is committed (shared across the team), so it needs the
+   standard atomic-write + zod-validation treatment.
+2. When a custom field is deleted in `saveWorkflowConfig`, dangling refs
+   in `list-view.yaml` need pruning. Doctor reports any that linger from
+   hand edits.
+
+UI rendering rules (chip visibility resolution, "+ Filter" popover) are
+Part 2 concerns and not in scope here.
 
 ### New file: `list-view.yaml`
 
@@ -183,31 +198,15 @@ filters:
 ```
 
 If `visible` is absent → show everything by default. `hidden` always takes
-precedence over `visible`.
-
-### User-level shape (in `users/<id>/settings.yaml`)
-
-```yaml
-list_view:
-  filter_chips:
-    show: [reporter, custom_field_team]
-    hide: [type]
-```
-
-### Resolution order (highest precedence first)
-
-1. User `hide` → hidden
-2. User `show` → shown
-3. Workspace `hidden` → hidden
-4. Workspace `visible` (if set) → shown if listed, else hidden
-5. Default → all built-ins + all custom fields shown
+precedence over `visible`. Validation requires every entry to either be a
+built-in field key (allowlist) or match a declared `custom_fields[].key`
+in workflow.yaml.
 
 ### Cleanup on delete
 
-When a custom field is deleted, the workflow writer also prunes any
-matching entries in `list-view.yaml#filters.visible/hidden` (atomic, same
-write). User settings are NOT touched server-side — stale refs are
-harmless and pruned lazily by the UI on next load.
+When a custom field is deleted, `saveWorkflowConfig` also prunes matching
+entries in `list-view.yaml#filters.visible/hidden` (atomic, same write).
+User settings are NOT touched server-side.
 
 ### Contract / core additions
 
@@ -215,57 +214,72 @@ harmless and pruned lazily by the UI on next load.
 - `packages/core/src/config/list-view.ts` (new) — atomic read/write.
 - `packages/core/src/config/workflow-write.ts` — extend to prune
   `list-view.yaml` on custom-field delete.
-
-### HTTP
-
-- `GET /api/list-view` — read workspace config
-- `PUT /api/list-view` — replace workspace config
-
-## 1.6 Typed UserSettings
-
-`packages/core/src/users/settings.ts` currently stores settings as
-`Readonly<Record<string, unknown>>`. Replace with a typed shape.
-
-### Contract addition
-
-In `packages/contracts/src/users.ts`, add `UserSettingsSchema`:
-
-```ts
-theme?: "light" | "dark" | "system";
-date_format?: "iso" | "us" | "eu";          // YYYY-MM-DD / MM-DD-YYYY / DD-MM-YYYY
-default_view?: "list" | "board" | "timeline";
-default_sort?: { field: string; direction: "asc" | "desc" };
-card_layout?: {
-  show_priority?: boolean;
-  show_assignee?: boolean;
-  show_labels?: boolean;
-  show_type?: boolean;
-  show_due_date?: boolean;
-  show_estimate?: boolean;
-  show_milestone?: boolean;
-  show_relationship_count?: boolean;
-};
-sidebar_pins?: string[];   // ordered list of saved-view IDs / built-in filter IDs
-default_project?: string;  // per-user default project key
-list_view?: {
-  filter_chips?: {
-    show?: string[];
-    hide?: string[];
-  };
-};
-```
-
-All optional. Backend round-trips as a typed bag.
-
-### Migration
-
-None — `loadUserSettings` continues to return an empty object when absent;
-existing files validate (all fields optional).
+- `packages/core/src/diagnostics/...` — doctor check for dangling refs.
 
 ### CLI/MCP
 
-Not exposed via CLI — these are UI prefs. Already accessible via
-`GET/PUT /api/user-settings`.
+None. Filter chips are a list-view rendering concern; CLI takes explicit
+`--query` strings and MCP agents pass explicit queries. No surface needed.
+
+### HTTP
+
+- `GET /api/list-view` — read workspace config (UI needs this)
+- `PUT /api/list-view` — replace workspace config (UI needs this)
+
+## 1.6 UserSettings — typed core field, passthrough for UI prefs
+
+Most user settings are pure UI render config (theme, date_format,
+card_layout, sidebar_pins, default_view, default_sort, list_view.*). Core
+doesn't interpret them. Typing the full surface in `packages/contracts`
+would couple core to the UI's render decisions without buying anything.
+
+**One field is genuinely cross-cutting:** `default_project`. The
+default-project resolution chain (`--project` flag > user
+`default_project` > workspace default) is enforced by `loctt create`, so
+core needs to read and validate it.
+
+### Schema shape
+
+In `packages/contracts/src/users.ts`, add:
+
+```ts
+const UserSettingsSchema = z.object({
+  // Typed + validated by core. Effect on CLI's create flow.
+  default_project: z.string().min(1).optional(),
+}).passthrough();   // everything else is UI-managed; core round-trips opaquely
+```
+
+The `.passthrough()` means YAML keys core doesn't know about survive a
+load → save round trip unchanged. UI code reads/writes its own keys
+directly through `GET/PUT /api/user-settings`. UI gets TypeScript types
+from a separate (UI-only) extension of this schema in Part 2.
+
+### Validation semantics for `default_project`
+
+When core loads `UserSettings.default_project` and the referenced project
+doesn't exist:
+- **Soft degradation.** Load settings, ignore the dangling field, fall
+  back to workspace default. Doctor flags it as informational.
+- Same pattern as the `timeline.dependency_relationship` auto-clear (§1.3).
+- The field is NOT auto-cleared on `saveUserSettings` — leave it for the
+  user to re-pick. Doctor surfaces it.
+
+### Core change
+
+Replace `Readonly<Record<string, unknown>>` in
+`packages/core/src/users/settings.ts` with the typed `UserSettings`
+inferred from the schema above.
+
+### Migration
+
+None — existing settings.yaml files all validate (all fields optional;
+unknown keys passthrough).
+
+### CLI/MCP
+
+CLI `loctt create` resolves the project chain including
+`UserSettings.default_project`. No new CLI command for editing settings —
+all writes happen via the UI's `PUT /api/user-settings`.
 
 ## 1.7 Attachment MIME
 
@@ -331,10 +345,10 @@ Add to `apps/mcp/src/index.ts` — registration + handler that calls
 - `docs/user/cli/reference.md` — new section under Relationships and Ranks
 - `docs/user/mcp/reference.md` — same
 
-## 1.9 Sprint burndown reader
+## 1.9 Sprint burndown — core reader + CLI + MCP + HTTP
 
 Dedicated page at `/sprints/:key` (UI in Part 2). Backend supplies the
-series.
+series; agents and scripts get equal access via CLI and MCP.
 
 ### Rendering rules
 
@@ -366,9 +380,12 @@ chart.
 
 - `packages/core/src/sprints/burndown.ts` (new) — reconstruct-from-history
   reader. Pure function over (sprint, tasks, history) → series.
-- `GET /api/sprints/:key/burndown` (new) — returns the series.
-- No CLI/MCP surface for the chart; agents can query the underlying data
-  via existing `get_sprint` + task history.
+- `GET /api/sprints/:key/burndown` (new) — returns
+  `{ series, start, end, unit, initial_total }`.
+- CLI: `loctt sprint burndown <key>` — defaults to a text table for
+  terminals; `--format json` for piping. Shape matches HTTP response.
+- MCP: `get_sprint_burndown` — returns the same JSON shape. Agents can
+  reason about progress without scraping history themselves.
 
 ## 1.10 Markdown extensions doc
 
@@ -416,6 +433,12 @@ Authoring flows:
 - Text color, font size, font family.
 - Arbitrary HTML — outside the allowlist triggers the lossy-content
   guardrail (forces source mode).
+
+### Why this matters for non-UI consumers
+
+Agents reading task bodies via `get_task` MCP must respect LocTT
+extension syntax (`![[...]]`, `@user:<uuid>`, `^sup^`, etc.) and not
+"correct" it. This doc is the canonical reference for that contract.
 
 ---
 
