@@ -15,6 +15,7 @@ const QUERIES_FILE = "queries.yaml";
 const SYNC_FILE = "sync.yaml";
 const RECONCILE_FILE = "reconcile.yaml";
 const KEY_INDEX_FILE = "key-index.yaml";
+const JOURNAL_FILE = "journal.yaml";
 const SCHEMA_VERSION_FILE = ".schema-version";
 const SCHEMA_MIGRATION_IN_PROGRESS_FILE = ".schema-migration-in-progress";
 const USERS_DIR = "users";
@@ -154,6 +155,15 @@ export function getTasksDir(locttDir: string): string {
 /** Returns the path to .loctt/local/key-index.yaml. */
 export function getKeyIndexPath(locttDir: string): string {
   return join(locttDir, LOCAL_DIR, KEY_INDEX_FILE);
+}
+
+/**
+ * Returns the path to .loctt/local/journal.yaml — the crash-recovery
+ * journal for multi-step writes (see `state/journal.ts`). Local only;
+ * not shared across machines via git.
+ */
+export function getJournalPath(locttDir: string): string {
+  return join(locttDir, LOCAL_DIR, JOURNAL_FILE);
 }
 
 /** Returns the path to .loctt/.schema-version. */

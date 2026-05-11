@@ -26,6 +26,12 @@ describe("withStateLock", () => {
   it("serializes parallel critical sections on the same locttDir", async () => {
     const order: string[] = [];
 
+    // Warm-up: drain any first-call lazy bootstrap inside lock.ts
+    // (dynamic import of journal.js for recovery-hook wiring) so
+    // the timing of `slow` below is governed only by file I/O,
+    // not module-resolution latency.
+    await withStateLock(locttDir, () => Promise.resolve());
+
     const slow = withStateLock(locttDir, async () => {
       order.push("a:start");
       await new Promise(r => setTimeout(r, 100));

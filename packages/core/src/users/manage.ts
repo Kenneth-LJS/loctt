@@ -2,13 +2,21 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-import type { Task, UserProfile } from "@loctt/contracts";
+import type { UserProfile } from "@loctt/contracts";
 import sharp from "sharp";
 import { ulid } from "ulid";
 
 import { getUserDir } from "../paths/index.js";
-import { withStateLock } from "../state/index.js";
-import { writeTask } from "../task/io.js";
+import {
+  appendJournalEntry,
+  clearJournalEntry,
+  loadJournal,
+  registerRecoveryHandler,
+  replayTaskRemap,
+  saveJournal,
+  withStateLock,
+} from "../state/index.js";
+import type { JournalEntry } from "../state/journal.js";
 import { loadAllTasks } from "../task/load-all.js";
 import {
   readCurrentUserId,
@@ -401,12 +409,11 @@ export async function deleteUser(
 
   return withStateLock(locttDir, async () => {
     const tasks = await loadAllTasks(locttDir);
+    const affectedAssignee = tasks.filter(t => t.frontmatter.assignee === userId);
+    const affectedReporter = tasks.filter(t => t.frontmatter.reporter === userId);
     const affected = tasks.filter(
       t => t.frontmatter.assignee === userId || t.frontmatter.reporter === userId,
     );
-
-    let remappedAssigneeCount = 0;
-    let remappedReporterCount = 0;
 
     if (affected.length > 0) {
       if (options.remapTo === undefined && options.unassign !== true) {
@@ -423,39 +430,37 @@ export async function deleteUser(
           throw new UserError(`remap target must differ from the user being deleted`);
         }
       }
-
-      const operationNow = new Date().toISOString();
-      for (const task of affected) {
-        const newFm = { ...task.frontmatter };
-        let touched = false;
-        if (newFm.assignee === userId) {
-          if (options.remapTo !== undefined) {
-            (newFm as { assignee?: string }).assignee = options.remapTo;
-          } else {
-            delete (newFm as { assignee?: string }).assignee;
-          }
-          remappedAssigneeCount += 1;
-          touched = true;
-        }
-        if (newFm.reporter === userId) {
-          if (options.remapTo !== undefined) {
-            (newFm as { reporter?: string }).reporter = options.remapTo;
-          } else {
-            delete (newFm as { reporter?: string }).reporter;
-          }
-          remappedReporterCount += 1;
-          touched = true;
-        }
-        if (touched) {
-          (newFm as { updated_at: string }).updated_at = operationNow;
-          const updated: Task = { ...task, frontmatter: newFm };
-          await writeTask(locttDir, task.frontmatter.id, updated);
-        }
-      }
     }
 
-    // Finally remove the user folder entirely.
+    // Journal the user remap. The "config edit" half here is the
+    // user-folder removal (rm -rf <userDir>), which is also
+    // idempotent — but we encode it via a separate field so the
+    // recovery handler can decide to skip it on a partial replay.
+    const entry: JournalEntry = {
+      id: ulid(),
+      kind: "remap_user",
+      started_at: new Date().toISOString(),
+      from: userId,
+      to: options.remapTo ?? null,
+      task_ids: affected.map(t => t.frontmatter.id),
+      fields: ["assignee", "reporter"],
+    };
+    const journal = await loadJournal(locttDir);
+    await saveJournal(locttDir, appendJournalEntry(journal, entry));
+
+    if (affected.length > 0) {
+      await replayTaskRemap(locttDir, entry);
+    }
+
+    // Pre-compute return value before the user dir disappears —
+    // affected counts are derived from the in-memory snapshot.
+    const remappedAssigneeCount = affectedAssignee.length;
+    const remappedReporterCount = affectedReporter.length;
+
+    // Finally remove the user folder entirely. Idempotent (rm -rf).
     await rm(getUserDir(locttDir, userId), { recursive: true, force: true });
+
+    await clearJournalEntry(locttDir, entry.id);
 
     return { remappedAssigneeCount, remappedReporterCount };
   });
@@ -473,6 +478,17 @@ async function assertNotActiveUser(
     );
   }
 }
+
+// Recovery handler for a partially-completed deleteUser. Same
+// shape as the project/label/milestone/sprint handlers: replay
+// the task remap idempotently, complete the user-dir removal
+// (idempotent rm -rf), drop the journal entry.
+registerRecoveryHandler("remap_user", async (locttDir, entry) => {
+  if (entry.kind !== "remap_user") return;
+  await replayTaskRemap(locttDir, entry);
+  await rm(getUserDir(locttDir, entry.from), { recursive: true, force: true });
+  await clearJournalEntry(locttDir, entry.id);
+});
 
 /**
  * Resolves a user reference (ULID, exact name, or unique

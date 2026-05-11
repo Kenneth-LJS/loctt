@@ -1,11 +1,20 @@
-import type { LabelDef, LabelsConfig, Task } from "@loctt/contracts";
+import type { LabelDef, LabelsConfig } from "@loctt/contracts";
+import { ulid } from "ulid";
 
 import {
   loadLabelsConfig,
   saveLabelsConfig,
 } from "../config/labels.js";
-import { withStateLock } from "../state/index.js";
-import { writeTask } from "../task/io.js";
+import {
+  appendJournalEntry,
+  clearJournalEntry,
+  loadJournal,
+  registerRecoveryHandler,
+  replayTaskRemap,
+  saveJournal,
+  withStateLock,
+} from "../state/index.js";
+import type { JournalEntry } from "../state/journal.js";
 import { loadAllTasks } from "../task/load-all.js";
 
 export class LabelError extends Error {
@@ -169,48 +178,46 @@ export async function deleteLabel(
     }
 
     const tasks = await loadAllTasks(locttDir);
-    let affected = 0;
-    const operationNow = new Date().toISOString();
+    const affected = tasks.filter(t => t.frontmatter.labels?.includes(key) ?? false);
 
-    for (const task of tasks) {
-      const labels = task.frontmatter.labels;
-      if (!labels || !labels.includes(key)) continue;
-      const next: string[] = [];
-      for (const l of labels) {
-        if (l === key) {
-          if (options.remapTo !== undefined && !next.includes(options.remapTo)) {
-            next.push(options.remapTo);
-          }
-        } else {
-          next.push(l);
-        }
-      }
-      const updated: Task = {
-        ...task,
-        frontmatter: {
-          ...task.frontmatter,
-          ...(next.length > 0 ? { labels: next } : {}),
-          updated_at: operationNow,
-        },
-      };
-      // Remove the labels key entirely if empty.
-      if (next.length === 0) {
-        const fm = { ...updated.frontmatter } as Record<string, unknown>;
-        delete fm["labels"];
-        await writeTask(locttDir, task.frontmatter.id, {
-          ...updated,
-          frontmatter: fm as unknown as Task["frontmatter"],
-        });
-      } else {
-        await writeTask(locttDir, task.frontmatter.id, updated);
-      }
-      affected += 1;
-    }
+    // Journal-then-apply: see deleteProject for the rationale.
+    const entry: JournalEntry = {
+      id: ulid(),
+      kind: "remap_label",
+      started_at: new Date().toISOString(),
+      from: key,
+      to: options.remapTo ?? null,
+      task_ids: affected.map(t => t.frontmatter.id),
+    };
+    const journal = await loadJournal(locttDir);
+    await saveJournal(locttDir, appendJournalEntry(journal, entry));
 
-    await saveLabelsConfig(locttDir, {
-      labels: config.labels.filter(l => l.key !== key),
-    });
+    await replayTaskRemap(locttDir, entry);
+    await applyLabelConfigDeletion(locttDir, key);
+    await clearJournalEntry(locttDir, entry.id);
 
-    return { affectedTaskCount: affected };
+    return { affectedTaskCount: affected.length };
   });
 }
+
+/**
+ * Idempotent config-edit half of deleteLabel: drop the label from
+ * `labels.yaml`. No-op if already absent (recovery replay).
+ */
+async function applyLabelConfigDeletion(locttDir: string, key: string): Promise<void> {
+  const config = await loadLabelsConfig(locttDir);
+  if (!config.labels.some(l => l.key === key)) return;
+  await saveLabelsConfig(locttDir, {
+    labels: config.labels.filter(l => l.key !== key),
+  });
+}
+
+// Recovery handler: same steps as the happy path, but each
+// idempotent. Fired by the state-lock recovery hook for any
+// pending `remap_label` entry left by a crashed deleteLabel.
+registerRecoveryHandler("remap_label", async (locttDir, entry) => {
+  if (entry.kind !== "remap_label") return;
+  await replayTaskRemap(locttDir, entry);
+  await applyLabelConfigDeletion(locttDir, entry.from);
+  await clearJournalEntry(locttDir, entry.id);
+});
