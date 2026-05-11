@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Initialise tracker · TaskTracker</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <script>
+      (function () { var t = localStorage.getItem("tt-theme"); if (t === "dark") document.documentElement.classList.add("dark"); })();
+    </script>
+    <style>
+      .init-page {
+        max-width: 640px;
+        margin: 64px auto;
+        padding: 0 24px;
+      }
+      .init-mark {
+        width: 56px;
+        height: 56px;
+        border-radius: var(--radius-lg);
+        background: var(--accent);
+        color: var(--accent-contrast);
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        font-size: 24px;
+        margin: 0 auto 16px;
+      }
+      .init-title {
+        font-size: 28px;
+        font-weight: 600;
+        text-align: center;
+        margin: 0 0 4px;
+      }
+      .init-sub {
+        text-align: center;
+        font-size: 14px;
+        color: var(--text-secondary);
+        margin-bottom: 32px;
+      }
+      .init-card {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        padding: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .init-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .init-field__label {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text-primary);
+      }
+      .init-field__hint {
+        font-size: 12px;
+        color: var(--text-tertiary);
+      }
+      .row-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      .preset-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+      .preset {
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
+        padding: 12px;
+        text-align: left;
+        background: var(--bg-surface);
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .preset:hover { background: var(--bg-muted); }
+      .preset.is-selected {
+        border-color: var(--accent);
+        background: var(--accent-muted);
+      }
+      .preset__name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+      .preset__desc { font-size: 11px; color: var(--text-tertiary); }
+      .footer-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding-top: 8px;
+        border-top: 1px solid var(--border-subtle);
+      }
+      .cwd-line {
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+        font-size: 12px;
+        color: var(--text-tertiary);
+        background: var(--bg-muted);
+        padding: 6px 10px;
+        border-radius: var(--radius-sm);
+        margin-top: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="init-page">
+      <div class="init-mark">T</div>
+      <h1 class="init-title">Start a new tracker here</h1>
+      <div class="init-sub">No <code>.loctt/</code> directory was found in this folder. Create one to begin.</div>
+
+      <div class="init-card">
+        <div class="init-field">
+          <div class="init-field__label">Starting project</div>
+          <div class="init-field__hint">A tracker can hold multiple projects. You can add more in <em>Settings → Projects</em>. The starting project's key and prefix are immutable once created.</div>
+          <div class="row-pair">
+            <div>
+              <input class="input" id="project-key" value="tasks" placeholder="key (slug)" style="width: 100%;" />
+              <div class="init-field__hint" style="margin-top: 4px;">Project key</div>
+            </div>
+            <div>
+              <input class="input" id="project-prefix" value="T-" placeholder="T-" style="width: 100%;" />
+              <div class="init-field__hint" style="margin-top: 4px;">Task-key prefix</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="init-field">
+          <div class="init-field__label">Workflow preset</div>
+          <div class="init-field__hint">A preset seeds <code>workflow.yaml</code> with statuses, priorities, types, and relationships. Everything is editable later in Settings.</div>
+          <div class="preset-grid">
+            <button class="preset is-selected" data-preset="default">
+              <span class="preset__name">Default</span>
+              <span class="preset__desc">6 statuses, 4 priorities, 3 types. <em>blocks</em> + <em>relates&nbsp;to</em>.</span>
+            </button>
+            <button class="preset" data-preset="minimal">
+              <span class="preset__name">Minimal</span>
+              <span class="preset__desc">3 statuses (Todo/Doing/Done), no priorities, one type.</span>
+            </button>
+            <button class="preset" data-preset="agile">
+              <span class="preset__name">Agile-style</span>
+              <span class="preset__desc">Backlog/Ready/Doing/Review/Done, story-point estimation enabled, sprints.</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="init-field">
+          <label class="chk"><input type="checkbox" id="no-docs" /><span class="chk__box"></span>Skip starter docs in <code>.loctt/docs/</code></label>
+          <div class="init-field__hint">Helper docs explain the schema and workflow conventions to humans (and agents) reading the repo.</div>
+        </div>
+
+        <div class="footer-actions">
+          <div style="font-size: 11px; color: var(--text-tertiary); flex: 1;">
+            User: <strong id="auto-user">ken (system tz)</strong> — created automatically. Edit in Settings → Users.
+          </div>
+          <button class="btn btn--ghost" id="cancel-btn">Cancel</button>
+          <button class="btn btn--primary" id="create-btn">Create tracker</button>
+        </div>
+      </div>
+
+      <div class="cwd-line">Will create: <span id="cwd-display">~/Documents/PDev/myproject/.loctt/</span></div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+      // Preset picker
+      document.querySelectorAll(".preset").forEach(p => {
+        p.addEventListener("click", () => {
+          document.querySelectorAll(".preset").forEach(x => x.classList.toggle("is-selected", x === p));
+        });
+      });
+
+      document.getElementById("create-btn").addEventListener("click", () => {
+        const key = document.getElementById("project-key").value;
+        const prefix = document.getElementById("project-prefix").value;
+        const preset = document.querySelector(".preset.is-selected").dataset.preset;
+        alert(`Would POST /api/init with project_key="${key}", prefix="${prefix}", workflow_preset="${preset}".\n\n(Mock — actual call goes to backend.)`);
+      });
+
+      document.getElementById("cancel-btn").addEventListener("click", () => {
+        window.location.href = "index.html";
+      });
+    </script>
+  </body>
+</html>
