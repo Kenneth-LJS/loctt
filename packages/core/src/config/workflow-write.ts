@@ -1,4 +1,5 @@
 import type {
+  BoardsConfig,
   CustomFieldDef,
   EstimationConfig,
   PriorityDef,
@@ -6,6 +7,7 @@ import type {
   StatusDef,
   Task,
   TaskTypeDef,
+  TimelineConfig,
   WorkflowConfig,
 } from "@loctt/contracts";
 import { stringify as stringifyYaml } from "yaml";
@@ -38,21 +40,67 @@ export interface WorkflowRemap {
   readonly priorities?: Readonly<Record<string, string | null>>;
   readonly task_types?: Readonly<Record<string, string | null>>;
   readonly custom_fields?: Readonly<Record<string, Readonly<Record<string, string | null>>>>;
+  /**
+   * Relationship-type remap: keys are old relationship-type keys being
+   * deleted; values are the new type to remap onto, or `null` to drop
+   * those relationship edges entirely from every task that referenced
+   * the deleted type.
+   *
+   * Relationship keys themselves are immutable in `workflow.yaml`. To
+   * "rename" a relationship, delete it and create a new one with the
+   * desired key — that goes through this remap with the new key as the
+   * target.
+   */
+  readonly relationships?: Readonly<Record<string, string | null>>;
 }
 
 /**
  * Atomically writes workflow.yaml. Round-trips through parse to
  * enforce all invariants before persisting.
+ *
+ * Auto-clears `timeline.dependency_relationship` when the referenced
+ * relationship key is no longer present in `config.relationships` — a
+ * dangling timeline ref would just render zero arrows anyway, so we
+ * silently drop the field rather than failing the write or leaving a
+ * misleading config on disk.
  */
 export async function saveWorkflowConfig(
   locttDir: string,
   config: WorkflowConfig,
 ): Promise<void> {
+  const cleaned = autoClearTimelineDependency(config);
   // Re-encode and re-parse so any caller-side issues surface as
   // validation errors rather than corrupting on-disk state.
-  const yaml = serializeWorkflowConfigAsYaml(config);
+  const yaml = serializeWorkflowConfigAsYaml(cleaned);
   parseWorkflowConfig(yaml);
-  await writeYamlAtomically(getWorkflowConfigPath(locttDir), buildPlainObject(config));
+  await writeYamlAtomically(getWorkflowConfigPath(locttDir), buildPlainObject(cleaned));
+}
+
+/**
+ * Returns `config` with `timeline.dependency_relationship` cleared
+ * (field omitted) when the referenced relationship key is not present
+ * in `config.relationships`. Returns the input unchanged when the
+ * reference is still valid or no timeline config exists.
+ */
+function autoClearTimelineDependency(config: WorkflowConfig): WorkflowConfig {
+  const dep = config.timeline?.dependency_relationship;
+  if (dep === undefined || dep === null) return config;
+  const relKeys = new Set(config.relationships.map(r => r.key));
+  if (relKeys.has(dep)) return config;
+  // Drop the field entirely. Preserve any other timeline keys for
+  // forward-compat; today there's only `dependency_relationship`, but
+  // we don't want a future field added here to be silently dropped by
+  // an old core version's auto-clear pass.
+  const { dependency_relationship: _drop, ...rest } = config.timeline ?? {};
+  void _drop;
+  const restEmpty = Object.keys(rest).length === 0;
+  // Rebuild without the now-empty timeline block, or with the
+  // surviving keys.
+  const { timeline: _t, ...withoutTimeline } = config;
+  void _t;
+  return restEmpty
+    ? (withoutTimeline as WorkflowConfig)
+    : ({ ...withoutTimeline, timeline: rest } as WorkflowConfig);
 }
 
 type SimpleCollection = "statuses" | "priorities" | "task_types";
@@ -68,7 +116,7 @@ export function validateRemapCoversDeletions(
   prev: WorkflowConfig,
   next: WorkflowConfig,
   remap: WorkflowRemap,
-  inUse: { statuses: ReadonlySet<string>; priorities: ReadonlySet<string>; task_types: ReadonlySet<string>; custom_field_values: Readonly<Record<string, ReadonlySet<string>>> },
+  inUse: { statuses: ReadonlySet<string>; priorities: ReadonlySet<string>; task_types: ReadonlySet<string>; custom_field_values: Readonly<Record<string, ReadonlySet<string>>>; relationships: ReadonlySet<string> },
 ): void {
   function checkSimple(
     name: SimpleCollection,
@@ -98,6 +146,29 @@ export function validateRemapCoversDeletions(
   checkSimple("statuses", prev.statuses.map(s => s.key), next.statuses.map(s => s.key), inUse.statuses);
   checkSimple("priorities", prev.priorities.map(p => p.key), next.priorities.map(p => p.key), inUse.priorities);
   checkSimple("task_types", prev.task_types.map(t => t.key), next.task_types.map(t => t.key), inUse.task_types);
+
+  // Relationships use a parallel check but a separate code path
+  // because `checkSimple` is parameterised over a `SimpleCollection`
+  // string and `remap.relationships` lives at the same top level.
+  // Inline the same logic here so the error messages share wording
+  // with the scalar collections.
+  const nextRelKeys = new Set(next.relationships.map(r => r.key));
+  const relRemap = remap.relationships ?? {};
+  for (const r of prev.relationships) {
+    if (nextRelKeys.has(r.key)) continue;
+    if (!inUse.relationships.has(r.key)) continue;
+    if (!(r.key in relRemap)) {
+      throw new WorkflowConfigError(
+        `relationships key '${r.key}' is in use; provide a remap target (or null to clear)`,
+      );
+    }
+    const target = relRemap[r.key];
+    if (target !== null && target !== undefined && !nextRelKeys.has(target)) {
+      throw new WorkflowConfigError(
+        `relationships remap '${r.key}' → '${target}' targets a key not present in the new config`,
+      );
+    }
+  }
 
   // Custom field enum values: per field, validate that any deleted
   // value either has a remap target in the same field or wasn't
@@ -143,17 +214,24 @@ export function computeWorkflowKeyUsage(tasks: readonly Task[]): {
   priorities: Set<string>;
   task_types: Set<string>;
   custom_field_values: Record<string, Set<string>>;
+  relationships: Set<string>;
 } {
   const usage = {
     statuses: new Set<string>(),
     priorities: new Set<string>(),
     task_types: new Set<string>(),
     custom_field_values: {} as Record<string, Set<string>>,
+    relationships: new Set<string>(),
   };
   for (const t of tasks) {
     if (t.frontmatter.status) usage.statuses.add(t.frontmatter.status);
     if (t.frontmatter.priority) usage.priorities.add(t.frontmatter.priority);
     if (t.frontmatter.task_type) usage.task_types.add(t.frontmatter.task_type);
+    if (t.frontmatter.relationships) {
+      for (const rel of t.frontmatter.relationships) {
+        usage.relationships.add(rel.type);
+      }
+    }
     if (t.frontmatter.fields) {
       for (const [field, value] of Object.entries(t.frontmatter.fields)) {
         if (typeof value === "string") {
@@ -271,6 +349,68 @@ function applyCustomFieldsRemap(
 }
 
 /**
+ * Applies a remap directive to a single task's `relationships` array.
+ * Drops edges whose type is gone from the new config (when the remap
+ * is `null`), remaps them onto the new type (when the remap is a
+ * string), and leaves edges referencing surviving types untouched.
+ * Returns `true` when anything changed. Mutates `fm` in place.
+ */
+function applyRelationshipsRemap(
+  fm: MutableFrontmatter,
+  taskKey: string,
+  nextRelKeys: ReadonlySet<string>,
+  remapTable: Readonly<Record<string, string | null>> | undefined,
+): boolean {
+  const rels = fm["relationships"];
+  if (!Array.isArray(rels) || rels.length === 0) return false;
+
+  const out: Array<Record<string, unknown>> = [];
+  let changed = false;
+  for (const rel of rels) {
+    if (rel === null || typeof rel !== "object") {
+      // Malformed edge entry: drop it. Preserving it would let the
+      // downstream task-write validator throw mid-loop, leaving a
+      // partial commit on disk. Dropping matches the `null`-remap
+      // path's "edge is unusable, remove it" semantics.
+      changed = true;
+      continue;
+    }
+    const r = rel as Record<string, unknown>;
+    const type = r["type"];
+    if (typeof type !== "string") {
+      // Same rationale as above: drop instead of preserving a shape
+      // the schema would reject when we round-trip writeTask.
+      changed = true;
+      continue;
+    }
+    if (nextRelKeys.has(type)) {
+      out.push(r);
+      continue;
+    }
+    const target = remapTable?.[type];
+    if (target === undefined) {
+      throw new Error(
+        `internal: missing relationships remap for "${type}" on task ${taskKey}`,
+      );
+    }
+    if (target === null) {
+      changed = true;
+      continue; // drop the edge
+    }
+    out.push({ ...r, type: target });
+    changed = true;
+  }
+
+  if (!changed) return false;
+  if (out.length === 0) {
+    delete fm["relationships"];
+  } else {
+    fm["relationships"] = out;
+  }
+  return true;
+}
+
+/**
  * High-level "edit workflow" entry point. Atomically:
  *  1. Reads the current workflow + all tasks.
  *  2. Validates that the proposed `next` config is internally valid.
@@ -293,6 +433,7 @@ export async function applyWorkflowEdit(
     const nextStatusKeys = new Set(next.statuses.map(s => s.key));
     const nextPriorityKeys = new Set(next.priorities.map(p => p.key));
     const nextTypeKeys = new Set(next.task_types.map(t => t.key));
+    const nextRelKeys = new Set(next.relationships.map(r => r.key));
     const nextFieldsByKey = new Map(next.custom_fields.map(f => [f.key, f]));
 
     let rewrittenTaskCount = 0;
@@ -307,6 +448,7 @@ export async function applyWorkflowEdit(
       if (applyScalarRemap(fm, "status", taskKey, nextStatusKeys, remap.statuses)) changed = true;
       if (applyScalarRemap(fm, "priority", taskKey, nextPriorityKeys, remap.priorities)) changed = true;
       if (applyScalarRemap(fm, "task_type", taskKey, nextTypeKeys, remap.task_types)) changed = true;
+      if (applyRelationshipsRemap(fm, taskKey, nextRelKeys, remap.relationships)) changed = true;
       if (applyCustomFieldsRemap(fm, nextFieldsByKey, remap)) changed = true;
 
       if (changed) {
@@ -326,8 +468,27 @@ function serializeWorkflowConfigAsYaml(config: WorkflowConfig): string {
   return stringifyYaml(buildPlainObject(config));
 }
 
+/**
+ * Conditional spread for the optional icon + color fields shared by
+ * status / priority / task_type / relationship / custom_field_value.
+ * Keeps every serializer's spread list short and consistent.
+ */
+function iconColorSpread(
+  o: { icon?: string | undefined; color?: string | undefined },
+): Record<string, unknown> {
+  return {
+    ...(o.icon !== undefined ? { icon: o.icon } : {}),
+    ...(o.color !== undefined ? { color: o.color } : {}),
+  };
+}
+
 function serializeStatus(s: StatusDef): Record<string, unknown> {
-  return { key: s.key, label: s.label, category: s.category };
+  return {
+    key: s.key,
+    label: s.label,
+    category: s.category,
+    ...iconColorSpread(s),
+  };
 }
 
 function serializePriority(p: PriorityDef): Record<string, unknown> {
@@ -335,11 +496,16 @@ function serializePriority(p: PriorityDef): Record<string, unknown> {
     key: p.key,
     label: p.label,
     ...(p.value !== undefined ? { value: p.value } : {}),
+    ...iconColorSpread(p),
   };
 }
 
 function serializeTaskType(t: TaskTypeDef): Record<string, unknown> {
-  return { key: t.key, label: t.label };
+  return {
+    key: t.key,
+    label: t.label,
+    ...iconColorSpread(t),
+  };
 }
 
 function serializeRelationship(r: RelationshipDef): Record<string, unknown> {
@@ -350,6 +516,7 @@ function serializeRelationship(r: RelationshipDef): Record<string, unknown> {
     inverse_label: r.inverse_label,
     ...(r.structural === true ? { structural: true } : {}),
     ...(r.ranked === true ? { ranked: true } : {}),
+    ...iconColorSpread(r),
   };
 }
 
@@ -366,6 +533,7 @@ function serializeCustomField(f: CustomFieldDef): Record<string, unknown> {
             key: v.key,
             label: v.label,
             ...(v.value !== undefined ? { value: v.value } : {}),
+            ...iconColorSpread(v),
           })),
         }
       : {}),
@@ -379,6 +547,28 @@ function serializeEstimation(e: EstimationConfig): Record<string, unknown> {
     ...(e.unit_label !== undefined ? { unit_label: e.unit_label } : {}),
     ...(e.scale !== undefined ? { scale: e.scale } : {}),
     ...(e.preset_values !== undefined ? { preset_values: [...e.preset_values] } : {}),
+    ...(e.weights !== undefined ? { weights: { ...e.weights } } : {}),
+  };
+}
+
+function serializeBoards(b: BoardsConfig): Record<string, unknown> {
+  return {
+    columns: b.columns.map(c => ({
+      key: c.key,
+      label: c.label,
+      statuses: [...c.statuses],
+      ...(c.wip !== undefined ? { wip: c.wip } : {}),
+    })),
+  };
+}
+
+function serializeTimeline(t: TimelineConfig): Record<string, unknown> {
+  // `dependency_relationship: null` is meaningful (explicitly disabled
+  // arrows); preserve it on disk rather than collapsing to absent.
+  return {
+    ...(t.dependency_relationship !== undefined
+      ? { dependency_relationship: t.dependency_relationship }
+      : {}),
   };
 }
 
@@ -393,6 +583,18 @@ function buildPlainObject(config: WorkflowConfig): Record<string, unknown> {
   };
   if (config.estimation !== undefined) {
     out["estimation"] = serializeEstimation(config.estimation);
+  }
+  if (config.boards !== undefined) {
+    out["boards"] = serializeBoards(config.boards);
+  }
+  if (config.timeline !== undefined) {
+    // Skip emitting an empty timeline block (e.g. after auto-clear);
+    // the schema treats absent and empty the same and the on-disk
+    // file should not carry a no-op section.
+    const t = serializeTimeline(config.timeline);
+    if (Object.keys(t).length > 0) {
+      out["timeline"] = t;
+    }
   }
   return out;
 }
