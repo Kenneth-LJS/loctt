@@ -16,6 +16,7 @@ import {
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,
+  AUTO_MANAGED_FIELDS,
   buildListContext,
   buildShowModel,
   CONFIG_KEYS,
@@ -42,6 +43,7 @@ import {
   getCurrentUser,
   getGitStatus,
   getTrackerInfo,
+  IMMUTABLE_FIELDS,
   initLoctt,
   LabelError,
   linkTask,
@@ -76,6 +78,7 @@ import {
   SprintError,
   switchCurrentUser,
   sync,
+  TaskUpdateError,
   unarchiveLabel,
   unarchiveMilestone,
   unarchiveProject,
@@ -88,6 +91,7 @@ import {
   updateUser,
   UserError,
   withStateLock,
+  WRITABLE_BUILTIN_FIELDS,
   writeTaskBody,
 } from "@loctt/core";
 import { z } from "zod";
@@ -633,6 +637,131 @@ function requireConfirm(args: Record<string, unknown>, action: string): McpToolR
 }
 
 /**
+ * Per-field value validators for `update_task`. Each entry is a zod
+ * schema that the caller's `value` argument is parsed against before
+ * we hand it to `setField`. Custom fields (anything not listed here
+ * and not in {@link IMMUTABLE_FIELDS} / {@link AUTO_MANAGED_FIELDS})
+ * accept any JSON value.
+ *
+ * Keep these schemas conservative — they're the only barrier between
+ * an LLM-supplied value and the YAML on disk, and `setField` itself
+ * accepts `unknown`. Workflow-aware checks (status enum, label
+ * membership, etc.) still happen in `validateTaskAgainstWorkflow`
+ * inside `setField`, so this layer only enforces *shape*.
+ */
+const NonEmptyString = z.string().min(1);
+// Date-only (YYYY-MM-DD) or full ISO-8601 are both accepted by the
+// underlying parser; the brand schemas in @loctt/contracts will reject
+// nonsense at write time. Here we only require a string.
+const DateLikeString = z.string().min(1);
+const UPDATE_TASK_FIELD_SCHEMAS: Record<string, z.ZodTypeAny> = {
+  title: NonEmptyString,
+  status: NonEmptyString,
+  task_type: NonEmptyString,
+  priority: NonEmptyString,
+  labels: z.array(z.string()),
+  assignee: z.string().nullable(),
+  reporter: z.string().nullable(),
+  start_date: DateLikeString,
+  due_date: DateLikeString,
+  estimate: z.union([z.string(), z.number()]),
+  milestone: z.string().nullable(),
+  sprint: z.string().nullable(),
+};
+
+/**
+ * Sorted list of writable built-in field names exposed by `update_task`.
+ * Used in error messages so the agent always sees the same canonical
+ * list as the schema map.
+ */
+const EXPOSED_FIELDS_LIST = Object.keys(UPDATE_TASK_FIELD_SCHEMAS).sort().join(", ");
+
+/**
+ * Returns an error if `field` is one of the known unsettable categories
+ * (immutable, auto-managed, or built-in-but-not-MCP-exposed), or `null`
+ * if the field is OK to forward to setField/unsetField. Shared by
+ * `validateUpdateTaskArgs` and `validateUnsetFieldArgs`.
+ */
+function checkFieldWritability(field: string, action: "set" | "unset"): McpToolResult | null {
+  if (IMMUTABLE_FIELDS.has(field)) {
+    return errorResult(
+      `cannot ${action} immutable field "${field}". ` +
+      `Writable built-in fields: ${EXPOSED_FIELDS_LIST}.`,
+    );
+  }
+  if (AUTO_MANAGED_FIELDS.has(field)) {
+    return errorResult(
+      `cannot ${action} auto-managed field "${field}" directly; ` +
+      `it is updated automatically based on status changes`,
+    );
+  }
+  // `updated_at` and any other built-in writable field that isn't in
+  // the exposed schema map: not surfaced to MCP. Without this guard a
+  // request to set/unset such a field would silently fall through to
+  // the custom-field code path in core and write `fields.<name>`.
+  if (
+    WRITABLE_BUILTIN_FIELDS.has(field)
+    && !Object.prototype.hasOwnProperty.call(UPDATE_TASK_FIELD_SCHEMAS, field)
+  ) {
+    return errorResult(
+      `built-in field "${field}" is not settable via MCP. ` +
+      `Writable built-in fields: ${EXPOSED_FIELDS_LIST}.`,
+    );
+  }
+  return null;
+}
+
+/**
+ * Validates `args` for `update_task` and returns either an error
+ * result (caller should return it as-is) or `null` to proceed.
+ *
+ * Catches:
+ * - missing/non-string `field`,
+ * - immutable / auto-managed / not-exposed built-in fields,
+ * - per-field value-shape mismatches for built-in fields.
+ *
+ * Custom (workflow-defined) fields skip shape validation here and
+ * are handed to `setField` directly; that layer applies workflow
+ * constraints.
+ */
+function validateUpdateTaskArgs(args: Record<string, unknown>): McpToolResult | null {
+  const field = args["field"];
+  if (typeof field !== "string" || field.length === 0) {
+    return errorResult("`field` is required and must be a non-empty string");
+  }
+  const writability = checkFieldWritability(field, "set");
+  if (writability) return writability;
+  const schema = UPDATE_TASK_FIELD_SCHEMAS[field];
+  if (schema !== undefined) {
+    const parsed = schema.safeParse(args["value"]);
+    if (!parsed.success) {
+      const detail = parsed.error.issues
+        .map(i => `${i.path.length > 0 ? `${i.path.join(".")}: ` : ""}${i.message}`)
+        .join("; ");
+      return errorResult(`invalid value for field "${field}": ${detail}`);
+    }
+  }
+  return null;
+}
+
+/**
+ * Validates `args` for `unset_field`. Mirrors `validateUpdateTaskArgs`
+ * for the field-level checks but skips value-shape validation (no
+ * value to validate when unsetting). Also rejects `title` since it's
+ * required and `unsetField` would throw `cannot unset required field`.
+ */
+function validateUnsetFieldArgs(args: Record<string, unknown>): McpToolResult | null {
+  const field = args["field"];
+  if (typeof field !== "string" || field.length === 0) {
+    return errorResult("`field` is required and must be a non-empty string");
+  }
+  if (field === "title") {
+    return errorResult(`cannot unset required field "title"`);
+  }
+  return checkFieldWritability(field, "unset");
+}
+
+/**
  * MCP tools that are exempt from the schema-version boot guard.
  * `init` is the only entry point legitimately called against a
  * non-existent or pre-version tracker.
@@ -790,18 +919,25 @@ export async function executeTool(
       }
 
       case "update_task": {
+        const invalid = validateUpdateTaskArgs(args);
+        if (invalid) return invalid;
         const task = await lookupTask(locttDir, args["ref"] as string);
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
         const field = args["field"] as string;
         const value = args["value"];
-        const updated = await setField({
-          locttDir,
-          taskId: task.frontmatter.id,
-          field,
-          value,
-          ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-        });
-        return text(`Updated ${updated.frontmatter.key}: set ${field} = ${JSON.stringify(value)}`);
+        try {
+          const updated = await setField({
+            locttDir,
+            taskId: task.frontmatter.id,
+            field,
+            value,
+            ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+          });
+          return text(`Updated ${updated.frontmatter.key}: set ${field} = ${JSON.stringify(value)}`);
+        } catch (err) {
+          if (err instanceof TaskUpdateError) return errorResult(err.message);
+          throw err;
+        }
       }
 
       case "append_task_body": {
@@ -829,10 +965,17 @@ export async function executeTool(
       }
 
       case "unset_field": {
+        const invalid = validateUnsetFieldArgs(args);
+        if (invalid) return invalid;
         const task = await lookupTask(locttDir, args["ref"] as string);
         const field = args["field"] as string;
-        const updated = await unsetField(locttDir, task.frontmatter.id, field);
-        return text(`Updated ${updated.frontmatter.key}: unset ${field}`);
+        try {
+          const updated = await unsetField(locttDir, task.frontmatter.id, field);
+          return text(`Updated ${updated.frontmatter.key}: unset ${field}`);
+        } catch (err) {
+          if (err instanceof TaskUpdateError) return errorResult(err.message);
+          throw err;
+        }
       }
 
       case "delete_task": {

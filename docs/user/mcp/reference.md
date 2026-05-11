@@ -102,11 +102,28 @@ Set a single field on a task.
 | `field` | string | yes | Field name |
 | `value` | any | yes | Value to set |
 
-**Writable built-in fields:** `title`, `status`, `task_type`, `priority`, `labels`, `assignee`, `reporter`, `start_date`, `due_date`, `estimate`, `milestone`, `sprint`.
+**Writable built-in fields and accepted value shapes:**
 
-**Custom fields:** any field name not in the built-in list is treated as a custom field and must be declared in `workflow.yaml` under `custom_fields`. Custom fields go through `update_task` too — there is no separate tool.
+| Field | Value shape |
+|---|---|
+| `title` | non-empty string |
+| `status` | non-empty string (workflow validates the key) |
+| `task_type` | non-empty string |
+| `priority` | non-empty string |
+| `labels` | array of strings |
+| `assignee` | string or `null` |
+| `reporter` | string or `null` |
+| `start_date` | string (`YYYY-MM-DD` or full ISO-8601) |
+| `due_date` | string (`YYYY-MM-DD` or full ISO-8601) |
+| `estimate` | string or number |
+| `milestone` | string or `null` |
+| `sprint` | string or `null` |
 
-**Rejected (system-managed) fields:** `id`, `key`, `created_at`, `project`, `key_history` (immutable); `relationships` (use `link_tasks` / `unlink_tasks`); `archived`, `archived_at` (use `archive_task` / `unarchive_task` / `delete_task`); `status_updated_at` (auto-stamped on status change); `completed_date`, `board_rank` (auto-managed).
+A value-shape mismatch returns `invalid value for field "<name>": <details>`. Workflow-aware checks (status enum, label membership, etc.) happen on top of the shape check and return `invalid value: <details>` if they fail.
+
+**Custom fields:** any field name not in the built-in list is treated as a custom field and must be declared in `workflow.yaml` under `custom_fields`. Custom fields go through `update_task` too — there is no separate tool. Their value shape is whatever the workflow's `custom_fields` definition allows.
+
+**Rejected (system-managed) fields:** `id`, `key`, `created_at`, `project`, `key_history` (immutable); `relationships` (use `link_tasks` / `unlink_tasks`); `archived`, `archived_at` (use `archive_task` / `unarchive_task` / `delete_task`); `status_updated_at` (auto-stamped on status change); `completed_date`, `board_rank` (auto-managed). Sending one of these returns a clear error naming the alternate tool or that the field is auto-managed.
 
 Returns: `Updated <KEY>: set <field> = <value>`.
 
@@ -119,7 +136,7 @@ Remove a field from a task.
 | `ref` | string | yes | Task key or ID |
 | `field` | string | yes | Field to remove |
 
-Allowlist matches `update_task`: writable built-ins and declared custom fields. The system-managed fields rejected by `update_task` are also rejected here. `title` and `updated_at` cannot be unset (required).
+Allowlist matches `update_task`: writable built-ins and declared custom fields. The system-managed fields rejected by `update_task` are also rejected here. `title` cannot be unset (required), and `updated_at` is not exposed via MCP.
 
 Returns: `Updated <KEY>: unset <field>`.
 

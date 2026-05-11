@@ -11,14 +11,20 @@ export class TaskUpdateError extends Error {
   }
 }
 
-// Fields that cannot be set/unset — they are system-managed.
-// `relationships` is here because edges go through linkTask /
-// unlinkTask (which validate the workflow's rel definitions).
-// `key_history` is bookkeeping for project-key migrations.
-// `archived` / `archived_at` go through archiveTask / unarchiveTask
-// so the history entry and timestamp stay consistent.
-// `status_updated_at` is stamped automatically when status changes.
-const IMMUTABLE_FIELDS = new Set([
+/**
+ * Fields that cannot be set/unset — they are system-managed:
+ * - `relationships` flows through linkTask / unlinkTask (which
+ *   validate the workflow's rel definitions).
+ * - `key_history` is bookkeeping for project-key migrations.
+ * - `archived` / `archived_at` go through archiveTask / unarchiveTask
+ *   so the history entry and timestamp stay consistent.
+ * - `status_updated_at` is stamped automatically when status changes.
+ *
+ * Exported so callers (CLI, MCP, web) can pre-validate input at
+ * their own boundaries and produce clearer errors than waiting for
+ * `setField` to throw.
+ */
+export const IMMUTABLE_FIELDS: ReadonlySet<string> = new Set([
   "id",
   "key",
   "created_at",
@@ -30,18 +36,26 @@ const IMMUTABLE_FIELDS = new Set([
   "status_updated_at",
 ]);
 
-// Fields that are auto-managed by `setField` itself — users may not
-// write to them directly even via the generic field setter. The
-// `board_rank` field is auto-managed too: callers must use the
-// dedicated `reorderBoardRank` API rather than `setField` so the
-// rank-computation logic and rebalance trigger stays in one place.
-const AUTO_MANAGED_FIELDS = new Set(["completed_date", "board_rank"]);
+/**
+ * Fields auto-managed by `setField` — users may not write to them
+ * directly even via the generic field setter.
+ *
+ * `board_rank` is auto-managed too: callers must use the dedicated
+ * `reorderBoardRank` API rather than `setField` so the rank
+ * computation and rebalance trigger stays in one place.
+ */
+export const AUTO_MANAGED_FIELDS: ReadonlySet<string> = new Set([
+  "completed_date",
+  "board_rank",
+]);
 
-// Built-in optional fields that live at the top level of frontmatter
-// and ARE writable through setField. Anything not in this set (and
-// not "title" / "updated_at" / immutable / auto-managed) is treated
-// as a custom field under `fields:`.
-const BUILTIN_OPTIONAL_FIELDS = new Set([
+/**
+ * Built-in optional fields that live at the top level of frontmatter
+ * and ARE writable through `setField`. Anything not in this set (and
+ * not `title` / `updated_at` / immutable / auto-managed) is treated as
+ * a custom field under `fields:`.
+ */
+export const BUILTIN_OPTIONAL_FIELDS: ReadonlySet<string> = new Set([
   "status",
   "task_type",
   "priority",
@@ -53,6 +67,18 @@ const BUILTIN_OPTIONAL_FIELDS = new Set([
   "estimate",
   "milestone",
   "sprint",
+]);
+
+/**
+ * Built-in fields that `setField` knows how to write — including
+ * `title` and `updated_at` in addition to the optional set. Useful for
+ * callers that want to enumerate the writable surface for prompting
+ * or autocomplete.
+ */
+export const WRITABLE_BUILTIN_FIELDS: ReadonlySet<string> = new Set([
+  "title",
+  "updated_at",
+  ...BUILTIN_OPTIONAL_FIELDS,
 ]);
 
 /**
