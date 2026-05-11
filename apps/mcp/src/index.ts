@@ -769,6 +769,73 @@ function validateUnsetFieldArgs(args: Record<string, unknown>): McpToolResult | 
 const SCHEMA_GUARD_EXEMPT_TOOLS = new Set(["init"]);
 
 /**
+ * Memoized tool list — `getTools()` rebuilds the full ~50-tool array
+ * on every call, which would be O(N) per executeTool dispatch. The
+ * tool definitions are referentially pure (no config-conditional
+ * registration) so caching once at module load is safe; if that
+ * assumption ever changes (e.g. config-gated tools), this needs a
+ * cache-bust hook.
+ */
+const ALL_TOOLS: readonly McpTool[] = getTools();
+
+/**
+ * Lazy cache of `z.object(tool.inputSchema).strict()` per tool name.
+ * Built once on first lookup and reused. We use `.strict()` so an
+ * agent that invents a field name (e.g. typo'd `tite` for `title`)
+ * gets a clean rejection instead of a silently-ignored field that
+ * cascades into a downstream missing-required error.
+ *
+ * Note: while validation guarantees the shape, individual handlers
+ * still bracket-access `args` and cast at the use site
+ * (`args["ref"] as string`). Removing those casts requires a
+ * larger refactor (replace the `Record<string, unknown>` parameter
+ * with the inferred zod type per case) and was deferred from this
+ * chunk.
+ */
+const TOOL_ARG_SCHEMAS = new Map<string, z.ZodObject<Record<string, z.ZodTypeAny>>>();
+
+function getToolArgSchema(name: string): z.ZodObject<Record<string, z.ZodTypeAny>> | undefined {
+  let schema = TOOL_ARG_SCHEMAS.get(name);
+  if (schema !== undefined) return schema;
+  const tool = ALL_TOOLS.find(t => t.name === name);
+  if (tool === undefined) return undefined;
+  schema = z.object(tool.inputSchema).strict();
+  TOOL_ARG_SCHEMAS.set(name, schema);
+  return schema;
+}
+
+/**
+ * Validates `args` against the tool's declared `inputSchema`. On
+ * success, returns the parsed (and strictly-typed) object. On
+ * failure, returns a structured error result the dispatcher can
+ * surface to the agent with field paths and per-field reasons.
+ *
+ * Tools whose inputSchema is `{}` (no inputs) get a no-op pass.
+ */
+function parseToolArgs(
+  name: string,
+  args: Record<string, unknown>,
+): { ok: true; value: Record<string, unknown> } | { ok: false; result: McpToolResult } {
+  const schema = getToolArgSchema(name);
+  if (schema === undefined) {
+    // Unknown tool — let the dispatcher's default branch produce
+    // the canonical "Unknown tool: …" error.
+    return { ok: true, value: args };
+  }
+  const parsed = schema.safeParse(args);
+  if (parsed.success) {
+    return { ok: true, value: parsed.data };
+  }
+  const detail = parsed.error.issues
+    .map(i => `${i.path.length > 0 ? `${i.path.join(".")}: ` : ""}${i.message}`)
+    .join("; ");
+  return {
+    ok: false,
+    result: errorResult(`invalid args for ${name}: ${detail}`),
+  };
+}
+
+/**
  * Returns true when the directory exists. Used as an inexpensive
  * existence check before applying the schema guard so we don't
  * mask "no .loctt directory" with "missing .schema-version".
@@ -801,6 +868,18 @@ export async function executeTool(
       return errorResult((err as Error).message);
     }
   }
+
+  // Validate args against the tool's declared inputSchema before
+  // dispatch. Catches missing required fields, wrong types, and
+  // (because we use .strict()) unknown field names.
+  //
+  // We replace `args` with the parsed result so handlers below
+  // see the validated shape. Reassigning the parameter is
+  // intentional: every later reference (`args["ref"]` etc.) reads
+  // from the parsed object, never the raw caller input.
+  const validated = parseToolArgs(name, args);
+  if (!validated.ok) return validated.result;
+  args = validated.value;
 
   try {
     switch (name) {
