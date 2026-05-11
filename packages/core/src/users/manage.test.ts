@@ -89,6 +89,29 @@ describe("updateUser", () => {
   });
 });
 
+describe("avatar handling", () => {
+  // SVG attachments could carry inline <script> and execute under the
+  // app's origin. The allowlist intentionally omits svg.
+  it("rejects an SVG avatar source", async () => {
+    const u = await createUser(locttDir, { name: "X" });
+    const svg = join(root, "pic.svg");
+    await writeFile(svg, "<svg><script>alert(1)</script></svg>", "utf-8");
+    await expect(
+      updateUser(locttDir, u.id, { avatarSourcePath: svg }),
+    ).rejects.toThrow(/unsupported avatar extension/i);
+  });
+
+  it("accepts a PNG avatar source", async () => {
+    const u = await createUser(locttDir, { name: "X" });
+    const png = join(root, "pic.png");
+    // Minimal 1x1 PNG (a few bytes of arbitrary content is enough — the
+    // implementation only inspects extension and size, not content).
+    await writeFile(png, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const updated = await updateUser(locttDir, u.id, { avatarSourcePath: png });
+    expect(updated.avatar).toBe("avatar.png");
+  });
+});
+
 describe("archiveUser", () => {
   it("sets the archived flag", async () => {
     const u = await createUser(locttDir, { name: "X" });

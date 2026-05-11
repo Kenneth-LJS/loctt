@@ -1,15 +1,15 @@
-// Multipart/form-data parser for the attachments upload endpoint, backed by
-// busboy. Streams the first file part matching `fieldName` to a temp file
-// while draining other parts. Enforces a hard 50 MB cap on the file body.
+// Multipart/form-data parser for upload endpoints, backed by busboy.
+// Streams the first file part matching `fieldName` to a temp file while
+// draining other parts. Enforces a per-file size cap (default 50 MB,
+// matching `DEFAULT_MAX_ATTACHMENT_BYTES` from core).
 
 import { createWriteStream } from "node:fs";
 import { unlink } from "node:fs/promises";
 import type { IncomingMessage } from "node:http";
 import { basename, join as pathJoin } from "node:path";
 
+import { DEFAULT_MAX_ATTACHMENT_BYTES } from "@loctt/core";
 import Busboy from "busboy";
-
-const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB hard cap
 
 export interface ParsedFilePart {
   /** Path to the temp file the upload was written to. */
@@ -24,20 +24,22 @@ export interface ParsedFilePart {
  * Parses a multipart/form-data request body and writes the first file part
  * matching `fieldName` into `tmpDir`. Returns metadata about the written
  * file. Throws on malformed input, missing field, empty filename, or when
- * the upload exceeds the 50 MB cap.
+ * the upload exceeds `maxBytes` (default
+ * {@link DEFAULT_MAX_ATTACHMENT_BYTES}).
  */
 export async function parseMultipartFile(
   req: IncomingMessage,
   contentType: string,
   tmpDir: string,
   fieldName: string,
+  maxBytes: number = DEFAULT_MAX_ATTACHMENT_BYTES,
 ): Promise<ParsedFilePart> {
   return new Promise((resolve, reject) => {
     let bb: ReturnType<typeof Busboy>;
     try {
       bb = Busboy({
         headers: { "content-type": contentType },
-        limits: { fileSize: MAX_UPLOAD_BYTES },
+        limits: { fileSize: maxBytes },
       });
     } catch (err) {
       reject(err as Error);
@@ -101,7 +103,7 @@ export async function parseMultipartFile(
         out.on("error", rejectWrite);
         out.on("close", () => {
           if (limitHit) {
-            rejectWrite(new Error(`upload exceeds maximum size of ${MAX_UPLOAD_BYTES} bytes`));
+            rejectWrite(new Error(`upload exceeds maximum size of ${maxBytes} bytes`));
             return;
           }
           captured = { tempPath, filename: safeName, size };

@@ -254,6 +254,113 @@ describe("web server security", () => {
       }
     });
 
+    it("ignores avatar_source_path in POST /api/users (field is no longer accepted)", async () => {
+      const res = await fetch(`${base}/api/users`, {
+        method: "POST",
+        headers: csrfHeaders,
+        body: JSON.stringify({
+          name: "no-avatar",
+          avatar_source_path: "/etc/passwd",
+        }),
+      });
+      expect(res.status).toBe(201);
+      const created = await res.json() as { id: string; avatar?: string };
+      // The server must not act on avatar_source_path — no avatar file was
+      // copied, so the profile must not have an `avatar` field.
+      expect(created.avatar).toBeUndefined();
+    });
+
+    it("ignores avatar_source_path in PUT /api/users/:id (field is no longer accepted)", async () => {
+      const current = await getCurrentUser(join(root, ".loctt"));
+      if (!current) throw new Error("expected default user");
+      const res = await fetch(`${base}/api/users/${current.id}`, {
+        method: "PUT",
+        headers: csrfHeaders,
+        body: JSON.stringify({
+          avatar_source_path: "/etc/passwd",
+        }),
+      });
+      expect(res.status).toBe(200);
+      const updated = await res.json() as { avatar?: string };
+      expect(updated.avatar).toBeUndefined();
+    });
+
+    it("rejects POST /api/users/:id/avatar without multipart/form-data", async () => {
+      const current = await getCurrentUser(join(root, ".loctt"));
+      if (!current) throw new Error("expected default user");
+      const res = await fetch(`${base}/api/users/${current.id}/avatar`, {
+        method: "POST",
+        headers: csrfHeaders,
+        body: "not multipart",
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it("accepts a valid PNG via multipart POST /api/users/:id/avatar", async () => {
+      const current = await getCurrentUser(join(root, ".loctt"));
+      if (!current) throw new Error("expected default user");
+      const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      const form = new FormData();
+      form.append("file", new Blob([png], { type: "image/png" }), "pic.png");
+      const res = await fetch(`${base}/api/users/${current.id}/avatar`, {
+        method: "POST",
+        headers: { "X-Loctt-Client": "1" },
+        body: form,
+      });
+      expect(res.status).toBe(200);
+      const updated = await res.json() as { avatar?: string };
+      expect(updated.avatar).toBe("avatar.png");
+    });
+
+    it("rejects a multipart SVG upload to /api/users/:id/avatar", async () => {
+      const current = await getCurrentUser(join(root, ".loctt"));
+      if (!current) throw new Error("expected default user");
+      const svg = "<svg><script>alert(1)</script></svg>";
+      const form = new FormData();
+      form.append("file", new Blob([svg], { type: "image/svg+xml" }), "evil.svg");
+      const res = await fetch(`${base}/api/users/${current.id}/avatar`, {
+        method: "POST",
+        headers: { "X-Loctt-Client": "1" },
+        body: form,
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toMatch(/unsupported avatar extension/i);
+    });
+
+    it("rejects /api/users/:id without ?confirm=true", async () => {
+      // Create a throwaway user we can try to delete.
+      const createRes = await fetch(`${base}/api/users`, {
+        method: "POST",
+        headers: csrfHeaders,
+        body: JSON.stringify({ name: "to-delete" }),
+      });
+      const created = await createRes.json() as { id: string };
+      const res = await fetch(`${base}/api/users/${created.id}`, {
+        method: "DELETE",
+        headers: csrfHeaders,
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toMatch(/confirm=true/);
+    });
+
+    it("rejects /api/tasks/:ref without ?confirm=true", async () => {
+      const createRes = await fetch(`${base}/api/tasks`, {
+        method: "POST",
+        headers: csrfHeaders,
+        body: JSON.stringify({ title: "to-delete" }),
+      });
+      const created = await createRes.json() as { key: string };
+      const res = await fetch(`${base}/api/tasks/${created.key}`, {
+        method: "DELETE",
+        headers: csrfHeaders,
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toMatch(/confirm=true/);
+    });
+
     it("returns 400 when PUT /api/calendar gets a payload that fails schema validation", async () => {
       const res = await fetch(`${base}/api/calendar`, {
         method: "PUT",

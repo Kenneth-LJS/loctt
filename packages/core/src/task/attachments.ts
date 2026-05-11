@@ -10,6 +10,13 @@ import {
 } from "../paths/index.js";
 import { appendHistory } from "./history.js";
 
+/**
+ * Default maximum attachment size, in bytes (50 MB). Callers can override
+ * via `AttachOptions.maxBytes`. Picked to match the web app's multipart
+ * per-file cap so a file accepted via either entry point behaves the same.
+ */
+export const DEFAULT_MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+
 /** Options for attaching a file to a task. */
 export interface AttachOptions {
   readonly locttDir: string;
@@ -18,6 +25,11 @@ export interface AttachOptions {
   readonly sourcePath: string;
   /** When true, overwrite an existing attachment with the same basename. */
   readonly force?: boolean;
+  /**
+   * Maximum file size in bytes. Defaults to
+   * {@link DEFAULT_MAX_ATTACHMENT_BYTES}. Pass `Infinity` to disable.
+   */
+  readonly maxBytes?: number;
 }
 
 /** Result of a successful attachFile call. */
@@ -73,15 +85,16 @@ export class AttachmentSourceError extends Error {
  *   separators, no `..`, no null bytes, no leading dot.
  * - Symlinks are rejected outright; callers must pass the path to the
  *   target file directly.
+ * - Files larger than `maxBytes` (default
+ *   {@link DEFAULT_MAX_ATTACHMENT_BYTES}) are rejected before any copy.
  * - If the destination already exists and `force` is not true, throws
  *   `AttachmentExistsError`. If `force` is true, overwrites.
  * - On success, appends an `attachment_added` history entry with
  *   `meta: { name, size }`.
- *
- * TODO: consider warning at 10 MB.
  */
 export async function attachFile(opts: AttachOptions): Promise<AttachResult> {
   const { locttDir, taskId, sourcePath, force = false } = opts;
+  const maxBytes = opts.maxBytes ?? DEFAULT_MAX_ATTACHMENT_BYTES;
 
   const absSource = isAbsolute(sourcePath)
     ? sourcePath
@@ -106,6 +119,11 @@ export async function attachFile(opts: AttachOptions): Promise<AttachResult> {
   }
   if (!lst.isFile()) {
     throw new AttachmentSourceError("attachments must be regular files");
+  }
+  if (lst.size > maxBytes) {
+    throw new AttachmentSourceError(
+      `attachment is ${lst.size} bytes; max is ${maxBytes}`,
+    );
   }
   const copySource = absSource;
 
@@ -139,11 +157,7 @@ export async function attachFile(opts: AttachOptions): Promise<AttachResult> {
     // ENOENT or other — treat as "doesn't exist", proceed.
   }
 
-  // Copy without following further symlinks at the source side.
-  // We've already resolved one level; copyFile will copy whatever
-  // copySource points at. If copySource happens to itself be another
-  // symlink, copyFile will resolve it. That's fine — we've documented
-  // a single-resolution policy and not promised deep symlink rejection.
+  // Symlinks at the source were already rejected above via lstat.
   await copyFile(copySource, dest);
 
   const stats = await stat(dest);

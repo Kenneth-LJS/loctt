@@ -149,6 +149,13 @@ describe("attachments", () => {
       ).rejects.toBeInstanceOf(AttachmentSourceError);
     });
 
+    it("rejects sources larger than maxBytes", async () => {
+      const src = await makeSource("big.bin", "x".repeat(1024));
+      await expect(
+        attachFile({ locttDir, taskId, sourcePath: src, maxBytes: 100 }),
+      ).rejects.toBeInstanceOf(AttachmentSourceError);
+    });
+
     it("creates attachments/ lazily", async () => {
       const before = getAttachmentsDir(locttDir, taskId);
       await expect(stat(before)).rejects.toThrow();
