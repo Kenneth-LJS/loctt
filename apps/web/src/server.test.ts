@@ -559,5 +559,53 @@ describe("web server security", () => {
       const body = await res.json() as { error: string };
       expect(body.error).toMatch(/invalid calendar config/i);
     });
+
+    it("GET /api/list-view returns {} on a fresh tracker", async () => {
+      const res = await fetch(`${base}/api/list-view`);
+      expect(res.status).toBe(200);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body).toEqual({});
+    });
+
+    it("PUT /api/list-view round-trips a valid filters block", async () => {
+      const put = await fetch(`${base}/api/list-view`, {
+        method: "PUT",
+        headers: csrfHeaders,
+        body: JSON.stringify({
+          filters: { visible: ["status", "priority"], hidden: ["type"] },
+        }),
+      });
+      expect(put.status).toBe(200);
+      const get = await fetch(`${base}/api/list-view`);
+      const body = await get.json() as { filters?: { visible?: string[]; hidden?: string[] } };
+      expect(body.filters?.visible).toEqual(["status", "priority"]);
+      expect(body.filters?.hidden).toEqual(["type"]);
+    });
+
+    it("PUT /api/list-view returns 400 for a duplicate entry", async () => {
+      const res = await fetch(`${base}/api/list-view`, {
+        method: "PUT",
+        headers: csrfHeaders,
+        body: JSON.stringify({
+          filters: { visible: ["status", "status"] },
+        }),
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toMatch(/invalid list-view config/i);
+    });
+
+    it("PUT /api/list-view returns 400 for visible/hidden overlap", async () => {
+      const res = await fetch(`${base}/api/list-view`, {
+        method: "PUT",
+        headers: csrfHeaders,
+        body: JSON.stringify({
+          filters: { visible: ["status", "type"], hidden: ["type"] },
+        }),
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toMatch(/both visible and hidden/);
+    });
   });
 });

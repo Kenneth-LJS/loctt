@@ -21,6 +21,7 @@ export {
 } from "./labels.js";
 export type { ListViewConfig, ListViewFilters } from "./list-view.js";
 export {
+  BUILTIN_FILTER_FIELD_KEYS,
   ListViewConfigSchema,
   ListViewFiltersSchema,
 } from "./list-view.js";

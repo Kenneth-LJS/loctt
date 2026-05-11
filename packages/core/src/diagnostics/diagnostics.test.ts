@@ -71,4 +71,32 @@ describe("runDoctor", () => {
     expect(taskCheck?.status).toBe("ok");
     expect(taskCheck?.message).toContain("0 task(s)");
   });
+
+  it("warns when list-view.yaml references an unknown field", async () => {
+    await initLoctt(root);
+    const { resolveLocttDir } = await import("../paths/index.js");
+    const { saveListViewConfig } = await import("../config/list-view.js");
+    const locttDir = resolveLocttDir(root);
+    // Built-in `status` is fine; `severity` does not match any
+    // declared custom field, so doctor should flag it.
+    await saveListViewConfig(locttDir, {
+      filters: { visible: ["status", "severity"] },
+    });
+    const checks = await runDoctor(root);
+    const warn = checks.find(c => c.name === "list-view.yaml references");
+    expect(warn?.status).toBe("warn");
+    expect(warn?.message).toContain("severity");
+  });
+
+  it("does not warn when list-view.yaml references only built-in fields", async () => {
+    await initLoctt(root);
+    const { resolveLocttDir } = await import("../paths/index.js");
+    const { saveListViewConfig } = await import("../config/list-view.js");
+    const locttDir = resolveLocttDir(root);
+    await saveListViewConfig(locttDir, {
+      filters: { visible: ["status", "priority", "type"] },
+    });
+    const checks = await runDoctor(root);
+    expect(checks.find(c => c.name === "list-view.yaml references")).toBeUndefined();
+  });
 });

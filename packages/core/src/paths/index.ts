@@ -11,6 +11,7 @@ const TASK_FILE = "task.md";
 const HISTORY_FILE = "_history.yaml";
 const WORKFLOW_FILE = "workflow.yaml";
 const QUERIES_FILE = "queries.yaml";
+const LIST_VIEW_FILE = "list-view.yaml";
 const SYNC_FILE = "sync.yaml";
 const RECONCILE_FILE = "reconcile.yaml";
 const KEY_INDEX_FILE = "key-index.yaml";
@@ -119,6 +120,11 @@ export function getWorkflowConfigPath(locttDir: string): string {
 /** Returns the path to .loctt/config/queries.yaml. */
 export function getQueriesConfigPath(locttDir: string): string {
   return join(locttDir, CONFIG_DIR, QUERIES_FILE);
+}
+
+/** Returns the path to .loctt/config/list-view.yaml. */
+export function getListViewConfigPath(locttDir: string): string {
+  return join(locttDir, CONFIG_DIR, LIST_VIEW_FILE);
 }
 
 /** Returns the path to .loctt/local/sync.yaml. */
