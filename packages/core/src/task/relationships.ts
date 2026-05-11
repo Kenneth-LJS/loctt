@@ -20,6 +20,12 @@ export interface LinkTaskOptions {
   readonly type: string;
   readonly target: string;
   readonly workflowConfig?: WorkflowConfig;
+  /**
+   * When true (default), reject linking to an archived target task.
+   * Internal callers (e.g. crash-recovery replay) can opt out by
+   * setting this to false.
+   */
+  readonly blockArchivedTarget?: boolean;
 }
 
 /** Options bag for unlinkTask. */
@@ -150,6 +156,7 @@ function applyRelationships(
  */
 export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
   const { locttDir, taskId, type, target, workflowConfig } = opts;
+  const blockArchived = opts.blockArchivedTarget !== false;
   if (workflowConfig) {
     const validTypes = new Set(workflowConfig.relationships.flatMap(r => [r.key, r.inverse]));
     if (!validTypes.has(type)) {
@@ -175,6 +182,20 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
       throw new RelationshipError(
         `cannot link a task to itself (${task.frontmatter.key})`,
       );
+    }
+
+    if (blockArchived) {
+      const targetTask = await readTask(locttDir, target);
+      if (targetTask.frontmatter.archived === true) {
+        const alreadyLinked = (task.frontmatter.relationships ?? []).some(
+          r => r.type === type && r.target === target,
+        );
+        if (!alreadyLinked) {
+          throw new RelationshipError(
+            `cannot link to archived task ${targetTask.frontmatter.key}; unarchive it first`,
+          );
+        }
+      }
     }
 
     // Cycle detection for structural relationships only.

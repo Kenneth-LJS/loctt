@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { HistoryEntry, WorkflowConfig } from "@loctt/contracts";
 import {
   appendTaskBody,
+  ArchivedReferenceError,
   archiveLabel,
   archiveMilestone,
   archiveProject,
@@ -48,6 +49,7 @@ import {
   listTasks,
   loadAllTasks,
   loadAllUsers,
+  loadArchivedGuardConfigs,
   loadCalendarConfig,
   loadLabelsConfig,
   loadMilestonesConfig,
@@ -396,6 +398,7 @@ class UsageError extends Error {
  * every command.
  */
 const KNOWN_DOMAIN_ERRORS: ReadonlyArray<new (...args: never[]) => Error> = [
+  ArchivedReferenceError,
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,
@@ -765,12 +768,14 @@ export async function main(): Promise<void> {
           assertWorkflowEnumKey(workflowConfig, "priority", priority);
           assertWorkflowEnumKey(workflowConfig, "task_type", taskType);
 
+          const archivedGuard = await loadArchivedGuardConfigs(locttDir);
           const task = await withStateLock(locttDir, async () => {
             const state = await loadState(locttDir);
             const created = await createTask({
               locttDir,
               state,
               ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+              archivedGuard,
               options: {
                 project: projectKey,
                 title,
@@ -894,12 +899,14 @@ export async function main(): Promise<void> {
             assertWorkflowEnumKey(workflowConfig, field, value);
           }
           const task = await lookupTask(locttDir, ref);
+          const archivedGuard = await loadArchivedGuardConfigs(locttDir);
           await setField({
             locttDir,
             taskId: task.frontmatter.id,
             field,
             value,
             ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+            archivedGuard,
           });
           console.log(`Set ${field} = ${value} on ${task.frontmatter.key}`);
         });

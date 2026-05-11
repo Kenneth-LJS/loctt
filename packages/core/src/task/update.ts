@@ -1,5 +1,7 @@
 import type { HistoryEntry, Task, TaskFrontmatter, WorkflowConfig } from "@loctt/contracts";
 
+import type { ArchivedGuardConfigs } from "../config/archived-guard.js";
+import { assertNotArchivedReferences } from "../config/archived-guard.js";
 import { validateTaskAgainstWorkflow } from "../config/validation.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
@@ -115,6 +117,13 @@ export interface SetFieldOptions {
   readonly field: string;
   readonly value: unknown;
   readonly workflowConfig?: WorkflowConfig;
+  /**
+   * Aux configs for archived-reference checks. When provided,
+   * setField rejects newly-set values that point at archived
+   * project/label/milestone/sprint/assignee/reporter. Existing
+   * archived references on the task are preserved untouched.
+   */
+  readonly archivedGuard?: ArchivedGuardConfigs;
 }
 
 /**
@@ -127,7 +136,7 @@ export interface SetFieldOptions {
  * - If setting `status`, also updates `status_updated_at`.
  */
 export async function setField(opts: SetFieldOptions): Promise<Task> {
-  const { locttDir, taskId, field, value, workflowConfig } = opts;
+  const { locttDir, taskId, field, value, workflowConfig, archivedGuard } = opts;
   if (IMMUTABLE_FIELDS.has(field)) {
     throw new TaskUpdateError(`cannot set immutable field "${field}"`);
   }
@@ -188,6 +197,10 @@ export async function setField(opts: SetFieldOptions): Promise<Task> {
         `invalid value: ${errors.map(e => `${e.field}: ${e.message}`).join("; ")}`,
       );
     }
+  }
+
+  if (archivedGuard) {
+    assertNotArchivedReferences(updated, task.frontmatter, archivedGuard);
   }
 
   const updatedTask: Task = { frontmatter: updated, body: task.body };
