@@ -125,29 +125,24 @@ describe("task lookup", () => {
     await expect(lookupById(locttDir, "01CORRUPT")).rejects.toThrow();
   });
 
-  describe("lookupByKey caching (chunk 9)", () => {
-    it("uses the watermark to skip rebuild on stable misses", async () => {
+  describe("lookupByKey lazy fold + dangling drop", () => {
+    it("does not rewrite the index file when a miss finds no new task directories", async () => {
       const { stat } = await import("node:fs/promises");
       const { rebuildKeyIndex } = await import("../state/key-index.js");
       const { getKeyIndexPath } = await import("../paths/index.js");
       await seedTasks();
-      // Build the index once. Watermark = 2.
-      const initial = await rebuildKeyIndex(locttDir);
-      expect(initial.task_count).toBe(2);
+      await rebuildKeyIndex(locttDir);
 
-      // Capture the index file's mtime BEFORE the miss. If the
-      // miss path were to rebuild, it would write the index file
-      // and bump mtime. Stable mtime ⇒ no rebuild.
       const indexPath = getKeyIndexPath(locttDir);
       const mtimeBefore = (await stat(indexPath)).mtimeMs;
 
-      // Pause briefly so any rebuild would produce a strictly
-      // greater mtime even on filesystems with second-level
-      // granularity.
+      // Pause so any rebuild would produce a strictly greater
+      // mtime even on second-granularity filesystems.
       await new Promise(resolve => setTimeout(resolve, 1100));
 
       await expect(lookupByKey(locttDir, "T-99")).rejects.toThrow(TaskNotFoundError);
 
+      // Fold short-circuits when unknownIds is empty — no save.
       const mtimeAfter = (await stat(indexPath)).mtimeMs;
       expect(mtimeAfter).toBe(mtimeBefore);
     });
@@ -173,11 +168,85 @@ describe("task lookup", () => {
         body: "",
       });
 
-      // Without invalidation, this would still throw from the
-      // cached miss. With invalidation, the rebuild path runs and
-      // resolves T-3 → 01CCC.
+      // The fold path then discovers the new task directory and
+      // adds it to the index.
       const task = await lookupByKey(locttDir, "T-3");
       expect(task.frontmatter.id).toBe("01CCC");
+    });
+
+    it("folds in a task created out-of-band (creation race / git pull)", async () => {
+      const { rebuildKeyIndex, loadKeyIndex } = await import("../state/key-index.js");
+      await seedTasks();
+      await rebuildKeyIndex(locttDir);
+
+      // Simulate another process / git pull adding a task without
+      // going through writeTask (which would invalidate the cache).
+      // We use writeTask here because it produces the right format,
+      // but we then clear the negative cache manually to mimic a
+      // fresh process that has no in-memory state about T-7.
+      await writeTask(locttDir, "01DDD", {
+        frontmatter: {
+          id: "01DDD",
+          key: "T-7",
+          title: "out-of-band",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+        body: "",
+      });
+
+      const before = await loadKeyIndex(locttDir);
+      expect(before?.entries["T-7"]).toBeUndefined();
+
+      const task = await lookupByKey(locttDir, "T-7");
+      expect(task.frontmatter.id).toBe("01DDD");
+
+      // Fold persisted the new entry.
+      const after = await loadKeyIndex(locttDir);
+      expect(after?.entries["T-7"]).toBe("01DDD");
+    });
+
+    it("drops a dangling entry when the indexed task.md is gone", async () => {
+      const { rm } = await import("node:fs/promises");
+      const { rebuildKeyIndex, loadKeyIndex } = await import("../state/key-index.js");
+      await seedTasks();
+      await rebuildKeyIndex(locttDir);
+
+      // Simulate a concurrent delete by another process.
+      await rm(join(locttDir, "tasks", "01AAA"), { recursive: true });
+
+      await expect(lookupByKey(locttDir, "T-1")).rejects.toThrow(TaskNotFoundError);
+
+      const after = await loadKeyIndex(locttDir);
+      expect(after?.entries["T-1"]).toBeUndefined();
+    });
+
+    it("documented limitation: an out-of-band rewrite of an existing task's key is NOT auto-detected; doctor repairs it", async () => {
+      const { mkdir, readFile, writeFile } = await import("node:fs/promises");
+      const { rebuildKeyIndex } = await import("../state/key-index.js");
+      await seedTasks();
+      await rebuildKeyIndex(locttDir);
+
+      // Hand-rewrite task1's frontmatter to change its key. This is
+      // explicitly unsupported; LocTT's contract says key edits go
+      // through git reconciliation, and out-of-band edits require
+      // `loctt doctor --rebuild-index`. The test pins the contract.
+      void mkdir;
+      const taskMd = join(locttDir, "tasks", "01AAA", "task.md");
+      const original = await readFile(taskMd, "utf-8");
+      const rewritten = original.replace("key: T-1", "key: T-1-renamed");
+      await writeFile(taskMd, rewritten, "utf-8");
+
+      // Index still says T-1 → 01AAA. Lookup happily returns 01AAA
+      // with its new key, which IS the file on disk. The "stale"
+      // aspect is that "T-1-renamed" → 01AAA isn't in the index
+      // until doctor rebuilds.
+      await expect(lookupByKey(locttDir, "T-1-renamed")).rejects.toThrow(TaskNotFoundError);
+
+      // After explicit rebuild, the new key resolves.
+      await rebuildKeyIndex(locttDir);
+      const found = await lookupByKey(locttDir, "T-1-renamed");
+      expect(found.frontmatter.id).toBe("01AAA");
     });
   });
 
