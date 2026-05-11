@@ -106,7 +106,7 @@ Loctt aims for full parity between the CLI and the MCP server: an LLM agent shou
 | Tracker info | `info` | `info` |
 | Doctor | `doctor` | `doctor` |
 | List saved views | `views` | `list_views` |
-| Show workflow config | `schema` | `get_config` |
+| Show workflow config | `schema` | `get_workflow_config` |
 | Create | `create <title> [--status --priority --type]` | `create_task` |
 | Read one | `show <ref>` | `get_task` |
 | List | `list [--query --view --limit --archived]` | `list_tasks` |
@@ -120,25 +120,25 @@ Loctt aims for full parity between the CLI and the MCP server: an LLM agent shou
 | Delete (hard) | `delete <ref> --hard` | `delete_task` with `hard: true, confirm: true` |
 | Link | `link <ref> <rel> <target>` | `link_tasks` |
 | Unlink | `unlink <ref> <rel> <target>` | `unlink_tasks` |
-| History | `log <ref> [--limit]` | `task_history` |
+| History | `log <ref> [--limit]` | `get_task_history` |
 | Attach | `attach <ref> <path> [--force]` | `attach_file` |
 | Detach | `detach <ref> <name>` | `detach_file` |
-| Git enable | `git enable` | `git_enable` |
-| Git disable | `git disable` | `git_disable` |
-| Git status | `git status` | `git_status` |
-| Git publish | `git publish` | `git_publish` |
-| Git sync | `git sync` | `git_sync` |
-| Config get | `config get <key>` | `config_get` |
-| Config set | `config set <key> <value>` | `config_set` |
-| Config unset | `config unset <key>` | `config_unset` |
-| Config list | `config list` | `config_list` |
+| Git enable | `git enable` | `enable_git` |
+| Git disable | `git disable` | `disable_git` |
+| Git status | `git status` | `get_git_status` |
+| Git publish | `git publish` | `publish_to_git` |
+| Git sync | `git sync` | `sync_from_git` |
+| Config get | `config get <key>` | `get_config_value` |
+| Config set | `config set <key> <value>` | `set_config_value` |
+| Config unset | `config unset <key>` | `unset_config_value` |
+| Config list | `config list` | `list_config_values` |
 
 **CLI-only (by definition):**
 - `mcp` — starts the MCP server itself.
 - `ui` — starts the web HTTP server and UI (foreground).
 - `help` / `--help` / `-h` — usage text. MCP equivalent is `tools/list`.
 
-The parity runner asserts byte-equal `.loctt/` state across surfaces for the operations that exist on both. The MCP-specific tool descriptions for higher-authority operations (`init`, `git_enable`, `git_publish`, `config_set`, `config_unset`) include intent guidance reminding the agent these are infrastructure changes, not routine task edits.
+The parity runner asserts byte-equal `.loctt/` state across surfaces for the operations that exist on both. The MCP-specific tool descriptions for higher-authority operations (`init`, `enable_git`, `publish_to_git`, `set_config_value`, `unset_config_value`) include intent guidance reminding the agent these are infrastructure changes, not routine task edits.
 
 ### Modes
 

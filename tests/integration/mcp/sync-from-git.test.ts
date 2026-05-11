@@ -5,7 +5,7 @@ import { runCli } from "../adapters/cli-spawn.js";
 import { startMcpClient } from "../adapters/mcp-stdio.js";
 import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
 
-describe("MCP git_sync (stdio)", () => {
+describe("MCP sync_from_git (stdio)", () => {
   it("syncs the loctt branch into local workspace", async () => {
     await withTmpLoctt(async ({ root }) => {
       execaSync("git", ["init"], { cwd: root });
@@ -18,7 +18,7 @@ describe("MCP git_sync (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const result = await client.callTool("git_sync", {});
+        const result = await client.callTool("sync_from_git", {});
         expect(result.isError).toBeFalsy();
         expect(result.content[0]?.text ?? "").toMatch(/up to date|Synced/);
       } finally {

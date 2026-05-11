@@ -5,8 +5,8 @@ LocTT's MCP server provides structured tools for AI agents to manage tasks via t
 ## Agent Guidelines
 
 - **Always use structured tools.** Never edit `task.md` frontmatter or any `.loctt/` config file directly via raw filesystem writes. The body of a task is editable only via `replace_task_body` and `append_task_body`.
-- **Use `get_config` and the `*_list` tools to discover valid values.** Statuses, priorities, task types, relationship types, projects, labels, milestones, sprints, and users all live in config — read them before writing.
-- **`delete_task` defaults to soft-delete (archive).** Only pass `hard: true` together with `confirm: true` when the user has explicitly asked to permanently remove a task. The same default-soft behavior applies to `project_delete`, `label_delete`, `milestone_delete`, and `sprint_delete`. `archive_task` / `unarchive_task` (and the `*_archive` / `*_unarchive` tools) are the same operation as the soft path.
+- **Use `get_workflow_config` and the `*_list` tools to discover valid values.** Statuses, priorities, task types, relationship types, projects, labels, milestones, sprints, and users all live in config — read them before writing.
+- **`delete_*` tools are hard-only and irreversible.** Every `delete_*` tool (`delete_task`, `delete_project`, `delete_label`, `delete_milestone`, `delete_sprint`, `delete_user`) requires `confirm: true`. For the reversible (soft) variant, use the matching `archive_*` tool — that's the same operation as the old soft path. `unarchive_*` brings them back.
 - **Schema-version guard.** Every tool except `init` first calls `requireSupportedSchema`. If the tracker's `.schema-version` is missing or doesn't match this server, every route refuses with a clear error pointing at `loctt migrate`. There is no MCP tool that runs the migration — the user must invoke the CLI command.
 - **Archived semantics.** Archived entities (projects, labels, milestones, sprints, users, tasks) are hidden from default listings but remain valid references on existing tasks. Pass `include_archived: true` (or the equivalent flag) to surface them.
 - **Validation failures are real.** If a structured operation rejects a value, do not bypass it by editing files; surface the error and ask the user.
@@ -88,7 +88,7 @@ Returns JSON array of `{key, title, status, priority}`.
 
 Lists saved views from `queries.yaml`. No parameters. Returns JSON `[{name, query}]`, or the prose `No saved views configured.` when the file is absent.
 
-### `get_config`
+### `get_workflow_config`
 
 Returns the workflow configuration as JSON. No parameters.
 
@@ -125,23 +125,18 @@ Returns: `Updated <KEY>: unset <field>`.
 
 ### `delete_task`
 
-Default behavior is **soft-delete (archive)** — sets `archived: true`; the task remains on disk and can be unarchived. Pass `hard: true` (along with `confirm: true`) to permanently remove the task directory.
+Permanently removes the task directory. Use `archive_task` for the reversible (soft) variant. **Always requires `confirm: true`.**
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `ref` | string | yes | Task key or ID |
-| `hard` | boolean | no | If true, permanently remove the task directory |
-| `confirm` | boolean | no | Required (must be `true`) when `hard` is true |
+| `confirm` | boolean | yes | Must be `true` to proceed |
 
-Returns: `Archived <KEY> (use hard: true to remove permanently).` for the soft path, or `Hard-deleted <KEY>.` for the hard path.
-
-Errors:
-- `hard delete requires confirm: true to proceed` when `hard: true` is passed without `confirm: true`.
-- `Task <KEY> is already archived. Pass hard: true (and confirm: true) to permanently remove it.` when soft-deleting an already-archived task.
+Returns: `Deleted <KEY>.`. Errors: `delete_task requires confirm: true to proceed`.
 
 ### `archive_task` / `unarchive_task`
 
-Aliases for the soft-delete path and its inverse.
+Reversible soft-delete and its inverse.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -171,7 +166,7 @@ Append text to a task's markdown body.
 
 Returns: `Appended to <KEY> body.`.
 
-### `task_history`
+### `get_task_history`
 
 Get the activity/history log for a task. Returns structured entries (newest first).
 
@@ -211,11 +206,11 @@ Returns: `Detached <name> from <KEY>`. Errors via `AttachmentNotFoundError` when
 
 ## Projects
 
-### `project_list`
+### `list_projects`
 
 No parameters. Returns JSON `{projects: [...], default: <key|null>}` from `projects.yaml`.
 
-### `project_create`
+### `create_project`
 
 Create a new project. Project keys are immutable; prefixes must be unique across the tracker.
 
@@ -228,7 +223,7 @@ Create a new project. Project keys are immutable; prefixes must be unique across
 
 Returns: `Created project <key>`. `ProjectError` on validation failures.
 
-### `project_edit`
+### `edit_project`
 
 Edit an existing project. Only `label` is mutable — `key` and `prefix` are immutable after creation.
 
@@ -237,28 +232,27 @@ Edit an existing project. Only `label` is mutable — `key` and `prefix` are imm
 | `key` | string | yes | Project key |
 | `label` | string | yes | New label |
 
-### `project_archive` / `project_unarchive`
+### `archive_project` / `unarchive_project`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `key` | string | yes | Project key |
 
-`project_archive` is equivalent to `project_delete` without `hard`.
+`archive_project` is the reversible (soft) variant of `delete_project`.
 
-### `project_delete`
+### `delete_project`
 
-Default soft-delete (`archived: true`); tasks still reference the project. With `hard: true`, the project is removed from `projects.yaml`; for projects with tasks, `remap_to` is **required** to migrate them to another project. Cannot hard-delete the only project. The counter is preserved in `retired_keys` so a later create with the same key resumes numbering. **`hard: true` requires `confirm: true`.**
+Permanently removes the project from `projects.yaml`. For projects with tasks, `remap_to` is **required** to migrate them to another project. Cannot delete the only project. The counter is preserved in `retired_keys` so a later create with the same key resumes numbering. **Always requires `confirm: true`.** Use `archive_project` for the reversible variant.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `key` | string | yes | Project key |
-| `hard` | boolean | no | If true, permanently remove from `projects.yaml` |
-| `confirm` | boolean | no | Required (must be `true`) when `hard` is true |
-| `remap_to` | string | no | Hard-delete only: target project key for tasks in the deleted project |
+| `confirm` | boolean | yes | Must be `true` to proceed |
+| `remap_to` | string | no | Target project key for tasks in the deleted project |
 
-Returns JSON `{mode: "soft"|"hard", key, remappedTaskCount}`.
+Returns JSON `{key, remappedTaskCount}`.
 
-### `project_set_default`
+### `set_default_project`
 
 Set or clear the workspace default project.
 
@@ -268,7 +262,7 @@ Set or clear the workspace default project.
 
 ## Users
 
-### `user_list`
+### `list_users`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -276,11 +270,11 @@ Set or clear the workspace default project.
 
 Returns JSON `{current: <id|null>, users: [...]}`.
 
-### `user_current`
+### `get_current_user`
 
 No parameters. Returns the active user's profile JSON, or errors with `no users registered`.
 
-### `user_switch`
+### `switch_user`
 
 Switches the active user. Accepts a UUID or an exact name (when unambiguous).
 
@@ -288,7 +282,7 @@ Switches the active user. Accepts a UUID or an exact name (when unambiguous).
 |---|---|---|---|
 | `ref` | string | yes | User UUID or exact name |
 
-### `user_create`
+### `create_user`
 
 Names are not unique (UUIDs disambiguate). Timezone defaults to the system timezone. Avatars are not settable via MCP — use the CLI (`loctt user create --avatar <path>`) or web UI.
 
@@ -301,7 +295,7 @@ Names are not unique (UUIDs disambiguate). Timezone defaults to the system timez
 
 Returns the created user as JSON.
 
-### `user_edit`
+### `edit_user`
 
 Avatars are not settable via MCP — use the CLI or web UI.
 
@@ -312,7 +306,7 @@ Avatars are not settable via MCP — use the CLI or web UI.
 | `email` | string \| null | no | Pass `null` to clear |
 | `timezone` | string | no | New IANA timezone |
 
-### `user_archive` / `user_unarchive`
+### `archive_user` / `unarchive_user`
 
 Soft-deletes / restores a user. Hides them from pickers without breaking historical task references. **Blocked when the target is the active user.**
 
@@ -320,7 +314,7 @@ Soft-deletes / restores a user. Hides them from pickers without breaking histori
 |---|---|---|---|
 | `ref` | string | yes | User UUID or name |
 
-### `user_delete`
+### `delete_user`
 
 Hard-deletes a user. When the user has task references (assignee/reporter), exactly one of `remap_to` or `unassign` is required — they are **mutually exclusive**. Blocked when the target is the active user. **Always requires `confirm: true`.**
 
@@ -331,15 +325,15 @@ Hard-deletes a user. When the user has task references (assignee/reporter), exac
 | `remap_to` | string | conditional | UUID/name to migrate references onto |
 | `unassign` | boolean | conditional | Clear assignee/reporter on affected tasks |
 
-Returns JSON `{deleted: <id>, ...result}`. Errors: `user_delete requires confirm: true to proceed`; `remap_to and unassign are mutually exclusive`; cannot delete the active user.
+Returns JSON `{deleted: <id>, ...result}`. Errors: `delete_user requires confirm: true to proceed`; `remap_to and unassign are mutually exclusive`; cannot delete the active user.
 
 ## Labels
 
-### `label_list`
+### `list_labels`
 
 No parameters. Returns the full labels config JSON.
 
-### `label_create`
+### `create_label`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -347,7 +341,7 @@ No parameters. Returns the full labels config JSON.
 | `label` | string | yes | Display name |
 | `color` | string | no | Color value |
 
-### `label_edit`
+### `edit_label`
 
 The key is immutable.
 
@@ -357,32 +351,31 @@ The key is immutable.
 | `label` | string | no | New display name |
 | `color` | string \| null | no | Pass `null` to clear |
 
-### `label_archive` / `label_unarchive`
+### `archive_label` / `unarchive_label`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `key` | string | yes | Label key |
 
-### `label_delete`
+### `delete_label`
 
-Default soft-delete. With `hard: true`, the entry is removed from `labels.yaml` and the key is dropped from every task's `labels` array (or remapped via `remap_to`). **`hard: true` requires `confirm: true`.**
+Permanently removes the entry from `labels.yaml`; the key is dropped from every task's `labels` array (or remapped via `remap_to`). **Always requires `confirm: true`.** Use `archive_label` for the reversible variant.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `key` | string | yes | Label key |
-| `hard` | boolean | no | Permanently remove |
-| `confirm` | boolean | no | Required (must be `true`) when `hard` is true |
-| `remap_to` | string | no | Hard-delete only: target label key |
+| `confirm` | boolean | yes | Must be `true` to proceed |
+| `remap_to` | string | no | Target label key for affected tasks |
 
-Returns JSON `{mode, key, ...result}`.
+Returns JSON `{key, ...result}`.
 
 ## Milestones
 
-### `milestone_list`
+### `list_milestones`
 
 No parameters. Returns the full milestones config JSON.
 
-### `milestone_create`
+### `create_milestone`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -390,7 +383,7 @@ No parameters. Returns the full milestones config JSON.
 | `label` | string | yes | Display name |
 | `target_date` | string | no | `YYYY-MM-DD` |
 
-### `milestone_edit`
+### `edit_milestone`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -399,32 +392,31 @@ No parameters. Returns the full milestones config JSON.
 | `target_date` | string \| null | no | Pass `null` to clear |
 | `archived` | boolean | no | Archived flag |
 
-### `milestone_archive` / `milestone_unarchive`
+### `archive_milestone` / `unarchive_milestone`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `key` | string | yes | Milestone key |
 
-### `milestone_delete`
+### `delete_milestone`
 
-Default soft-delete. With `hard: true`, the entry is removed from `milestones.yaml` and the `milestone` field on each affected task is either unset or remapped to `remap_to`. **`hard: true` requires `confirm: true`.**
+Permanently removes the entry from `milestones.yaml`; the `milestone` field on each affected task is unset or remapped via `remap_to`. **Always requires `confirm: true`.** Use `archive_milestone` for the reversible variant.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `key` | string | yes | Milestone key |
-| `hard` | boolean | no | Permanently remove |
-| `confirm` | boolean | no | Required (must be `true`) when `hard` is true |
-| `remap_to` | string | no | Hard-delete only |
+| `confirm` | boolean | yes | Must be `true` to proceed |
+| `remap_to` | string | no | Target milestone key for affected tasks |
 
-Returns JSON `{mode, key, ...result}`.
+Returns JSON `{key, ...result}`.
 
 ## Sprints
 
-### `sprint_list`
+### `list_sprints`
 
 No parameters. Returns the full sprints config JSON.
 
-### `sprint_create`
+### `create_sprint`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -435,7 +427,7 @@ No parameters. Returns the full sprints config JSON.
 | `state` | enum | yes | `active` \| `completed` \| `future` |
 | `goal` | string | no | Sprint goal |
 
-### `sprint_edit`
+### `edit_sprint`
 
 Edit a sprint. Re-opening a completed sprint (state `completed` → `active` or `future`) is blocked by default; pass `force: true` to override. Pass `null` `goal` to clear it.
 
@@ -449,24 +441,23 @@ Edit a sprint. Re-opening a completed sprint (state `completed` → `active` or 
 | `goal` | string \| null | no | Pass `null` to clear |
 | `force` | boolean | no | Override the block on re-opening a completed sprint |
 
-### `sprint_archive` / `sprint_unarchive`
+### `archive_sprint` / `unarchive_sprint`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `key` | string | yes | Sprint key |
 
-### `sprint_delete`
+### `delete_sprint`
 
-Default soft-delete. With `hard: true`, removed from `sprints.yaml` and the `sprint` field on each affected task is unset or remapped via `remap_to`. **`hard: true` requires `confirm: true`.**
+Permanently removes the entry from `sprints.yaml`; the `sprint` field on each affected task is unset or remapped via `remap_to`. **Always requires `confirm: true`.** Use `archive_sprint` for the reversible variant.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `key` | string | yes | Sprint key |
-| `hard` | boolean | no | Permanently remove |
-| `confirm` | boolean | no | Required (must be `true`) when `hard` is true |
-| `remap_to` | string | no | Hard-delete only |
+| `confirm` | boolean | yes | Must be `true` to proceed |
+| `remap_to` | string | no | Target sprint key for affected tasks |
 
-Returns JSON `{mode, key, ...result}`.
+Returns JSON `{key, ...result}`.
 
 ## Calendar
 
@@ -510,7 +501,7 @@ Returns the result of the reorder (the new ordering of targets) as JSON. Errors 
 
 Config tools currently target machine-local keys (`git.*`).
 
-### `config_get`
+### `get_config_value`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -518,7 +509,7 @@ Config tools currently target machine-local keys (`git.*`).
 
 Returns JSON `{key, value, type}` with the value preserving its native type. Errors with `unknown config key '<key>'`.
 
-### `config_set`
+### `set_config_value`
 
 Echo the change you're making in your response. Don't call speculatively.
 
@@ -527,7 +518,7 @@ Echo the change you're making in your response. Don't call speculatively.
 | `key` | string | yes | Config key |
 | `value` | string | yes | Stringified value; booleans accept `true/false/1/0/yes/no` |
 
-### `config_unset`
+### `unset_config_value`
 
 Restores a key to its default.
 
@@ -535,29 +526,29 @@ Restores a key to its default.
 |---|---|---|---|
 | `key` | string | yes | Config key |
 
-### `config_list`
+### `list_config_values`
 
 No parameters. Returns JSON array of `{key, value, type, description}` for every known config key.
 
-### `git_enable`
+### `enable_git`
 
 Enables git-backed mode for this tracker. Sets up a dedicated `loctt` branch on a sparse worktree. One-time infrastructure setup — only call when explicitly asked. No parameters.
 
-### `git_disable`
+### `disable_git`
 
 Disables git-backed mode. Local task data is preserved. No parameters.
 
-### `git_status`
+### `get_git_status`
 
 No parameters. Returns JSON `{enabled, branch, remote, auto_push, auto_fetch, in_git_repo, last_synced_commit}` (the last entry is `null` when nothing has synced yet).
 
-### `git_publish`
+### `publish_to_git`
 
 Commits the current task state to the local `loctt` branch and (if `remote` and `auto_push` are set) pushes to the remote. Only call when the user has indicated they want to share or sync — not speculatively after routine edits. No parameters.
 
 Output is prose: which of `Published local state to loctt branch` / `No changes to publish`, and whether the push succeeded or `Published locally; remote push failed: <reason>`.
 
-### `git_sync`
+### `sync_from_git`
 
 Pulls the `loctt` branch state into the local workspace. If a remote is configured and `auto_fetch` is set, fetches first. No parameters.
 

@@ -9,7 +9,7 @@ loctt set T-1 priority high
 
 **Prompt:** *"What changes have been made to T-1?"*
 
-**Expected tools called:** `task_history` with `ref: "T-1"`.
+**Expected tools called:** `get_task_history` with `ref: "T-1"`.
 
 **Expected end-state:** read-only. Agent's response should mention the create event, status change, and priority change.
 

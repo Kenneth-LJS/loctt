@@ -5,16 +5,17 @@ import { startMcpClient } from "../adapters/mcp-stdio.js";
 import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
 
 describe("MCP delete_task (stdio)", () => {
-  it("soft-deletes (archives) by default", async () => {
+  it("rejects delete without confirm: true", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "doomed"], { cwd: root });
 
       const client = await startMcpClient(root);
       try {
         const del = await client.callTool("delete_task", { ref: "T-1" });
-        expect(del.isError).toBeFalsy();
+        expect(del.isError).toBe(true);
+        expect(del.content[0]?.text ?? "").toMatch(/confirm/i);
 
-        // Task still readable; just archived.
+        // Task still on disk.
         const get = await client.callTool("get_task", { ref: "T-1" });
         expect(get.isError).toBeFalsy();
       } finally {
@@ -23,7 +24,7 @@ describe("MCP delete_task (stdio)", () => {
     });
   });
 
-  it("permanently removes a task with hard: true and confirm: true", async () => {
+  it("permanently removes a task with confirm: true", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "doomed"], { cwd: root });
 
@@ -31,7 +32,6 @@ describe("MCP delete_task (stdio)", () => {
       try {
         const del = await client.callTool("delete_task", {
           ref: "T-1",
-          hard: true,
           confirm: true,
         });
         expect(del.isError).toBeFalsy();

@@ -24,7 +24,27 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "archive_label",
+            },
+            {
+              "hasDescription": true,
+              "name": "archive_milestone",
+            },
+            {
+              "hasDescription": true,
+              "name": "archive_project",
+            },
+            {
+              "hasDescription": true,
+              "name": "archive_sprint",
+            },
+            {
+              "hasDescription": true,
               "name": "archive_task",
+            },
+            {
+              "hasDescription": true,
+              "name": "archive_user",
             },
             {
               "hasDescription": true,
@@ -32,19 +52,19 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
-              "name": "config_get",
+              "name": "create_label",
             },
             {
               "hasDescription": true,
-              "name": "config_list",
+              "name": "create_milestone",
             },
             {
               "hasDescription": true,
-              "name": "config_set",
+              "name": "create_project",
             },
             {
               "hasDescription": true,
-              "name": "config_unset",
+              "name": "create_sprint",
             },
             {
               "hasDescription": true,
@@ -52,7 +72,31 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "create_user",
+            },
+            {
+              "hasDescription": true,
+              "name": "delete_label",
+            },
+            {
+              "hasDescription": true,
+              "name": "delete_milestone",
+            },
+            {
+              "hasDescription": true,
+              "name": "delete_project",
+            },
+            {
+              "hasDescription": true,
+              "name": "delete_sprint",
+            },
+            {
+              "hasDescription": true,
               "name": "delete_task",
+            },
+            {
+              "hasDescription": true,
+              "name": "delete_user",
             },
             {
               "hasDescription": true,
@@ -60,7 +104,35 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "disable_git",
+            },
+            {
+              "hasDescription": true,
               "name": "doctor",
+            },
+            {
+              "hasDescription": true,
+              "name": "edit_label",
+            },
+            {
+              "hasDescription": true,
+              "name": "edit_milestone",
+            },
+            {
+              "hasDescription": true,
+              "name": "edit_project",
+            },
+            {
+              "hasDescription": true,
+              "name": "edit_sprint",
+            },
+            {
+              "hasDescription": true,
+              "name": "edit_user",
+            },
+            {
+              "hasDescription": true,
+              "name": "enable_git",
             },
             {
               "hasDescription": true,
@@ -68,7 +140,15 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
-              "name": "get_config",
+              "name": "get_config_value",
+            },
+            {
+              "hasDescription": true,
+              "name": "get_current_user",
+            },
+            {
+              "hasDescription": true,
+              "name": "get_git_status",
             },
             {
               "hasDescription": true,
@@ -76,23 +156,11 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
-              "name": "git_disable",
+              "name": "get_task_history",
             },
             {
               "hasDescription": true,
-              "name": "git_enable",
-            },
-            {
-              "hasDescription": true,
-              "name": "git_publish",
-            },
-            {
-              "hasDescription": true,
-              "name": "git_status",
-            },
-            {
-              "hasDescription": true,
-              "name": "git_sync",
+              "name": "get_workflow_config",
             },
             {
               "hasDescription": true,
@@ -104,31 +172,27 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
-              "name": "label_archive",
-            },
-            {
-              "hasDescription": true,
-              "name": "label_create",
-            },
-            {
-              "hasDescription": true,
-              "name": "label_delete",
-            },
-            {
-              "hasDescription": true,
-              "name": "label_edit",
-            },
-            {
-              "hasDescription": true,
-              "name": "label_list",
-            },
-            {
-              "hasDescription": true,
-              "name": "label_unarchive",
-            },
-            {
-              "hasDescription": true,
               "name": "link_tasks",
+            },
+            {
+              "hasDescription": true,
+              "name": "list_config_values",
+            },
+            {
+              "hasDescription": true,
+              "name": "list_labels",
+            },
+            {
+              "hasDescription": true,
+              "name": "list_milestones",
+            },
+            {
+              "hasDescription": true,
+              "name": "list_projects",
+            },
+            {
+              "hasDescription": true,
+              "name": "list_sprints",
             },
             {
               "hasDescription": true,
@@ -136,59 +200,15 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "list_users",
+            },
+            {
+              "hasDescription": true,
               "name": "list_views",
             },
             {
               "hasDescription": true,
-              "name": "milestone_archive",
-            },
-            {
-              "hasDescription": true,
-              "name": "milestone_create",
-            },
-            {
-              "hasDescription": true,
-              "name": "milestone_delete",
-            },
-            {
-              "hasDescription": true,
-              "name": "milestone_edit",
-            },
-            {
-              "hasDescription": true,
-              "name": "milestone_list",
-            },
-            {
-              "hasDescription": true,
-              "name": "milestone_unarchive",
-            },
-            {
-              "hasDescription": true,
-              "name": "project_archive",
-            },
-            {
-              "hasDescription": true,
-              "name": "project_create",
-            },
-            {
-              "hasDescription": true,
-              "name": "project_delete",
-            },
-            {
-              "hasDescription": true,
-              "name": "project_edit",
-            },
-            {
-              "hasDescription": true,
-              "name": "project_list",
-            },
-            {
-              "hasDescription": true,
-              "name": "project_set_default",
-            },
-            {
-              "hasDescription": true,
-              "name": "project_unarchive",
+              "name": "publish_to_git",
             },
             {
               "hasDescription": true,
@@ -200,31 +220,35 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
-              "name": "sprint_archive",
+              "name": "set_config_value",
             },
             {
               "hasDescription": true,
-              "name": "sprint_create",
+              "name": "set_default_project",
             },
             {
               "hasDescription": true,
-              "name": "sprint_delete",
+              "name": "switch_user",
             },
             {
               "hasDescription": true,
-              "name": "sprint_edit",
+              "name": "sync_from_git",
             },
             {
               "hasDescription": true,
-              "name": "sprint_list",
+              "name": "unarchive_label",
             },
             {
               "hasDescription": true,
-              "name": "sprint_unarchive",
+              "name": "unarchive_milestone",
             },
             {
               "hasDescription": true,
-              "name": "task_history",
+              "name": "unarchive_project",
+            },
+            {
+              "hasDescription": true,
+              "name": "unarchive_sprint",
             },
             {
               "hasDescription": true,
@@ -232,7 +256,15 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "unarchive_user",
+            },
+            {
+              "hasDescription": true,
               "name": "unlink_tasks",
+            },
+            {
+              "hasDescription": true,
+              "name": "unset_config_value",
             },
             {
               "hasDescription": true,
@@ -241,38 +273,6 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "update_task",
-            },
-            {
-              "hasDescription": true,
-              "name": "user_archive",
-            },
-            {
-              "hasDescription": true,
-              "name": "user_create",
-            },
-            {
-              "hasDescription": true,
-              "name": "user_current",
-            },
-            {
-              "hasDescription": true,
-              "name": "user_delete",
-            },
-            {
-              "hasDescription": true,
-              "name": "user_edit",
-            },
-            {
-              "hasDescription": true,
-              "name": "user_list",
-            },
-            {
-              "hasDescription": true,
-              "name": "user_switch",
-            },
-            {
-              "hasDescription": true,
-              "name": "user_unarchive",
             },
           ]
         `);

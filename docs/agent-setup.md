@@ -34,7 +34,7 @@ The MCP tools enforce structural constraints automatically:
 - Task identity (ID, key) is managed by the system
 - Frontmatter is never edited directly — all changes go through validated tools
 
-You don't need to instruct the agent about any of this. It will get validation errors if it tries invalid values, and it can call `get_config` to discover what's available.
+You don't need to instruct the agent about any of this. It will get validation errors if it tries invalid values, and it can call `get_workflow_config` to discover what's available.
 
 ## What you should configure
 
@@ -162,6 +162,6 @@ Treat `attach_file` like a file-upload dialog: review every call before approvin
 
 ## Notes
 
-- The agent can always call `get_config` to discover available statuses, priorities, types, and relationships at runtime. You don't need to list every valid value.
+- The agent can always call `get_workflow_config` to discover available statuses, priorities, types, and relationships at runtime. You don't need to list every valid value.
 - These instructions are about conventions and judgment calls — the kind of thing you'd tell a new team member, not what a schema enforces.
 - Keep instructions concise. Agents work better with clear rules than lengthy explanations.

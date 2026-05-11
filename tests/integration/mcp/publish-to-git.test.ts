@@ -5,7 +5,7 @@ import { runCli } from "../adapters/cli-spawn.js";
 import { startMcpClient } from "../adapters/mcp-stdio.js";
 import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
 
-describe("MCP git_publish (stdio)", () => {
+describe("MCP publish_to_git (stdio)", () => {
   it("commits the current state to the loctt branch", async () => {
     await withTmpLoctt(async ({ root }) => {
       execaSync("git", ["init"], { cwd: root });
@@ -19,7 +19,7 @@ describe("MCP git_publish (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const result = await client.callTool("git_publish", {});
+        const result = await client.callTool("publish_to_git", {});
         expect(result.isError).toBeFalsy();
         expect(result.content[0]?.text ?? "").toMatch(/Published|No changes/);
       } finally {
