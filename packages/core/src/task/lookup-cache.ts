@@ -4,10 +4,11 @@
  * invalidate it without importing the full `lookup.ts` (which would
  * create an import cycle: lookup → io → lookup).
  *
- * When the on-disk task population hasn't changed (verified via the
- * key-index watermark), a "key not found" verdict is stable for the
- * rest of the process — subsequent lookups of the same key skip the
- * rebuild scan.
+ * Within a single process, a "key not found" verdict is stable
+ * until a writer (`writeTask`, `deleteTask`, etc.) calls
+ * `clearLookupCaches`. The cache short-circuits repeated misses on
+ * the same key so a keyspace-probe pattern doesn't repeatedly
+ * fold-in the same set of unknown task directories.
  *
  * Defends against keyspace-probe patterns that hit many missing keys
  * in a single MCP tool call or web request (e.g. an LLM iterating
