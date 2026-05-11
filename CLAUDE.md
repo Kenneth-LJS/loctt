@@ -14,8 +14,8 @@ Local task tracker — CLI tool, MCP server, and GUI for managing tasks stored a
 User-facing documentation lives in `docs/`. Developer documentation lives in `docs/dev/`. Cross-reference before implementing:
 - `docs/dev/architecture.md` — monorepo layout, data model, task identity
 - `docs/dev/schema-reference.md` — file formats (task.md, workflow.yaml, etc.)
-- `docs/cli-reference.md` — CLI commands
-- `docs/mcp-reference.md` — MCP tools and agent guidelines
+- `docs/user/cli/reference.md` — CLI commands
+- `docs/user/mcp/reference.md` — MCP tools and agent guidelines
 
 Key points:
 - Tasks use `id` (internal, ULID) and `key` (user-facing, e.g. `T-123`)
@@ -44,8 +44,7 @@ npx tsc --build      # Build via project references
   - `packages/core` — shared LocTT logic
   - `apps/cli` — CLI interface
   - `apps/mcp` — MCP server
-  - `apps/web` — web app (HTTP server + API + UI, merged from former `apps/service`)
-- **Note:** `apps/service` is being merged into `apps/web`. Do not re-separate them.
+  - `apps/web` — web app (HTTP server + API + UI)
 - `.loctt/` — data directory (tasks, config, state)
 - Documentation: `docs/` (user-facing), `docs/dev/` (developer)
 
