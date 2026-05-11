@@ -384,7 +384,7 @@ queries:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `id` | string | yes | Stable unique identifier (ULID). Auto-assigned on first read of older files. Duplicate ids across queries are rejected |
+| `id` | string | yes | Stable unique identifier (ULID). Duplicate ids across queries are rejected |
 | `name` | string | yes | Display label |
 | `query` | string | yes | Query DSL string. The parser tokenizes and parses every `query` at load time, so a malformed entry rejects the whole file. See [query-language.md](../user/common/query-language.md) |
 | `sort` | array | no | Ordered list of sort specifiers |
@@ -557,7 +557,7 @@ holidays:
     label: Lunar New Year
 ```
 
-Weekday indices are `0..6` with `0 = Sunday`. `holidays` is back-fill defaulted to `[]` on read for older files.
+Weekday indices are `0..6` with `0 = Sunday`. `holidays` must be present (use `[]` to mean no holidays).
 
 ### Top-level
 
@@ -615,7 +615,7 @@ retired_keys:
 
 ## local/sync.yaml
 
-Located at `.loctt/local/sync.yaml`. Records git-backed sync configuration for this checkout. The parser fills in `remote`, `auto_push`, `auto_fetch` defaults on read for files that predate them.
+Located at `.loctt/local/sync.yaml`. Records git-backed sync configuration for this checkout.
 
 ```yaml
 git:
@@ -627,7 +627,7 @@ git:
   last_synced_commit: 4f1c2a9c83a13d6f1c0ed9e2b7a8f5d2c4e6a1b8
 ```
 
-Back-fill defaults applied at parse time when the field is missing from older `sync.yaml` files: `remote=origin`, `auto_push=true`, `auto_fetch=true`. `branch` is required and is not back-filled — `loctt git enable` writes it on first activation.
+`loctt git enable` writes the full object on first activation. All fields are required (only `last_synced_commit` is optional, as the first sync hasn't happened yet).
 
 ### `git`
 
