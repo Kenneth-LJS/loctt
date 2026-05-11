@@ -19,6 +19,7 @@ import { CalendarConfigSchema, ListViewConfigSchema } from "@loctt/contracts";
 import {
   appendTaskBody,
   applyWorkflowEdit,
+  ArchivedReferenceError,
   archiveTask,
   archiveUser,
   assertSafeBasename,
@@ -62,6 +63,7 @@ import {
   listTasks,
   loadAllTasks,
   loadAllUsers,
+  loadArchivedGuardConfigs,
   loadCalendarConfig,
   loadLabelsConfig,
   loadListViewConfig,
@@ -1400,17 +1402,25 @@ export function createWebApp(options: WebAppOptions) {
       return;
     }
 
-    const task = await withStateLock(locttDir, async () => {
-      const state = await loadState(locttDir);
-      const created = await createTask({
-        locttDir,
-        state,
-        options: { ...request, project: projectKey },
-        workflowConfig: wfConfig,
+    const archivedGuard = await loadArchivedGuardConfigs(locttDir);
+    let task;
+    try {
+      task = await withStateLock(locttDir, async () => {
+        const state = await loadState(locttDir);
+        const created = await createTask({
+          locttDir,
+          state,
+          options: { ...request, project: projectKey },
+          workflowConfig: wfConfig,
+          archivedGuard,
+        });
+        await saveState(locttDir, state);
+        return created;
       });
-      await saveState(locttDir, state);
-      return created;
-    });
+    } catch (err) {
+      if (err instanceof ArchivedReferenceError) { error(res, err.message, 400); return; }
+      throw err;
+    }
     json(res, task.frontmatter, 201);
   };
 
@@ -1455,6 +1465,7 @@ export function createWebApp(options: WebAppOptions) {
     }
     const wfConfig = await loadWorkflowConfig(locttDir);
     const task = await lookupTask(locttDir, ref);
+    const archivedGuard = await loadArchivedGuardConfigs(locttDir);
     try {
       const updated = await setField({
         locttDir,
@@ -1462,10 +1473,12 @@ export function createWebApp(options: WebAppOptions) {
         field: request.field,
         value: request.value,
         workflowConfig: wfConfig,
+        archivedGuard,
       });
       json(res, updated.frontmatter);
     } catch (err) {
       if (err instanceof TaskUpdateError) { error(res, err.message, 400); return; }
+      if (err instanceof ArchivedReferenceError) { error(res, err.message, 400); return; }
       throw err;
     }
   };
@@ -1524,8 +1537,13 @@ export function createWebApp(options: WebAppOptions) {
     const wfConfig = await loadWorkflowConfig(locttDir);
     const task = await lookupTask(locttDir, ref);
     const target = await lookupTask(locttDir, request.target);
-    const updated = await linkTask({ locttDir, taskId: task.frontmatter.id, type: request.type, target: target.frontmatter.id, workflowConfig: wfConfig });
-    json(res, updated.frontmatter);
+    try {
+      const updated = await linkTask({ locttDir, taskId: task.frontmatter.id, type: request.type, target: target.frontmatter.id, workflowConfig: wfConfig });
+      json(res, updated.frontmatter);
+    } catch (err) {
+      if (err instanceof ArchivedReferenceError) { error(res, err.message, 400); return; }
+      throw err;
+    }
   };
 
   const handleUnlink: RouteHandler = async ({ req, res, locttDir, captures }) => {

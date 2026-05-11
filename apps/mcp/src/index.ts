@@ -51,6 +51,7 @@ import {
   listTasks,
   loadAllTasks,
   loadAllUsers,
+  loadArchivedGuardConfigs,
   loadCalendarConfig,
   loadLabelsConfig,
   loadMilestonesConfig,
@@ -1009,12 +1010,14 @@ export async function executeTool(
         const priority = args["priority"] as string | undefined;
         const taskType = args["task_type"] as string | undefined;
         const body = args["body"] as string | undefined;
+        const archivedGuard = await loadArchivedGuardConfigs(locttDir);
         const task = await withStateLock(locttDir, async () => {
           const state = await loadState(locttDir);
           const created = await createTask({
             locttDir,
             state,
             ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+            archivedGuard,
             options: {
               project: projectKey,
               title: args["title"] as string,
@@ -1035,6 +1038,7 @@ export async function executeTool(
         if (invalid) return invalid;
         const task = await lookupTask(locttDir, args["ref"] as string);
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
+        const archivedGuard = await loadArchivedGuardConfigs(locttDir);
         const field = args["field"] as string;
         const value = args["value"];
         try {
@@ -1044,6 +1048,7 @@ export async function executeTool(
             field,
             value,
             ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+            archivedGuard,
           });
           return text(`Updated ${updated.frontmatter.key}: set ${field} = ${JSON.stringify(value)}`);
         } catch (err) {

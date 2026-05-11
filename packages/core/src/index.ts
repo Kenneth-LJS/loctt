@@ -3,6 +3,7 @@
 export type { OptionalConfigs } from "./config/index.js";
 export type { WorkflowRemap } from "./config/index.js";
 export type { ConfigKeyDef } from "./config/index.js";
+export type { ArchivedGuardConfigs } from "./config/index.js";
 export {
   applyWorkflowEdit,
   computeWorkflowKeyUsage,
@@ -27,6 +28,12 @@ export {
 } from "./config/index.js";
 export { loadOptionalConfigs } from "./config/index.js";
 export { validateTaskAgainstWorkflow, validateWorkflowConfig } from "./config/index.js";
+export {
+  ArchivedReferenceError,
+  assertNotArchivedReferences,
+  assertNotArchivedRelationshipTarget,
+  loadArchivedGuardConfigs,
+} from "./config/index.js";
 export {
   CONFIG_KEYS,
   ConfigRouterError,

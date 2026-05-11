@@ -1,3 +1,10 @@
+export type { ArchivedGuardConfigs } from "./archived-guard.js";
+export {
+  ArchivedReferenceError,
+  assertNotArchivedReferences,
+  assertNotArchivedRelationshipTarget,
+  loadArchivedGuardConfigs,
+} from "./archived-guard.js";
 export {
   CalendarConfigError,
   calendarConfigExists,

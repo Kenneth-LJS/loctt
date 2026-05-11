@@ -487,7 +487,9 @@ describe("multi-user switching: state is global, settings are per-user", () => {
     const cfg = await loadProjectsConfig(locttDir);
     const userDefault = await resolveCurrentUserDefault();
     expect(userDefault).toBe("alt"); // settings file unchanged
-    expect(resolveProjectKey(cfg, { userDefault })).toBe("task");
+    expect(
+      resolveProjectKey(cfg, userDefault !== undefined ? { userDefault } : {}),
+    ).toBe("task");
   });
 
   it("a per-user default_project pointing at an ARCHIVED project still resolves (current behavior)", async () => {
@@ -509,7 +511,9 @@ describe("multi-user switching: state is global, settings are per-user", () => {
     const { loadProjectsConfig } = await import("../config/projects.js");
     const cfg = await loadProjectsConfig(locttDir);
     const userDefault = await resolveCurrentUserDefault();
-    expect(resolveProjectKey(cfg, { userDefault })).toBe("alt");
+    expect(
+      resolveProjectKey(cfg, userDefault !== undefined ? { userDefault } : {}),
+    ).toBe("alt");
   });
 
   it("settings written under one user do not leak to another", async () => {

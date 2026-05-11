@@ -1,6 +1,8 @@
 import type { LocttState,Task, TaskFrontmatter, WorkflowConfig } from "@loctt/contracts";
 import { ulid } from "ulid";
 
+import type { ArchivedGuardConfigs } from "../config/archived-guard.js";
+import { assertNotArchivedReferences } from "../config/archived-guard.js";
 import { validateTaskAgainstWorkflow } from "../config/validation.js";
 import { allocateKey } from "../state/keys.js";
 import { appendHistory } from "./history.js";
@@ -38,6 +40,15 @@ export interface CreateTaskParams {
   readonly state: LocttState;
   readonly options: CreateTaskOptions;
   readonly workflowConfig?: WorkflowConfig;
+  /**
+   * Aux configs for archived-reference checks. When provided,
+   * createTask rejects new assignments to archived project, label,
+   * milestone, sprint, assignee, or reporter — the "archive blocks
+   * new uses but preserves historical references" policy.
+   * Callers that omit this opt out of the check (e.g. internal
+   * remap/recovery paths that need to assign archived entities).
+   */
+  readonly archivedGuard?: ArchivedGuardConfigs;
 }
 
 /**
@@ -47,7 +58,7 @@ export interface CreateTaskParams {
  * Returns the created task.
  */
 export async function createTask(params: CreateTaskParams): Promise<Task> {
-  const { locttDir, state, options, workflowConfig } = params;
+  const { locttDir, state, options, workflowConfig, archivedGuard } = params;
   const id = ulid();
   // Each project owns its own counter in state.yaml. The project
   // key doubles as the entity-type for `allocateKey`.
@@ -97,6 +108,10 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
     if (errors.length > 0) {
       throw new Error(`invalid task: ${errors.map(e => `${e.field}: ${e.message}`).join("; ")}`);
     }
+  }
+
+  if (archivedGuard) {
+    assertNotArchivedReferences(frontmatter, undefined, archivedGuard);
   }
 
   const task: Task = {
