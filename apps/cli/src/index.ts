@@ -55,6 +55,7 @@ import {
   loadProjectsConfig,
   loadSprintsConfig,
   loadState,
+  loadUserSettings,
   lookupTask,
   migrateToCurrent,
   MilestoneError,
@@ -699,14 +700,25 @@ export async function main(): Promise<void> {
         const locttDir = resolveLocttDir(root);
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
 
-        // Resolve target project. Walk explicit > workspace default
-        // > unique-single-project. Fail if ambiguous.
+        // Resolve target project. Walk explicit > per-user default >
+        // workspace default > unique-single-project. Fail if
+        // ambiguous. The per-user default is loaded from the active
+        // user's settings.yaml when one is registered; if no users
+        // exist yet (first-run before init) the chain falls through.
         const projectsConfig = await loadProjectsConfig(locttDir);
         let projectKey: string;
         try {
           const explicit = getArg(args, "--project");
+          const current = await getCurrentUser(locttDir);
+          let userDefault: string | undefined;
+          if (current) {
+            const settings = await loadUserSettings(locttDir, current.id);
+            const raw = settings["default_project"];
+            if (typeof raw === "string" && raw.length > 0) userDefault = raw;
+          }
           projectKey = resolveProjectKey(projectsConfig, {
             ...(explicit !== undefined ? { explicit } : {}),
+            ...(userDefault !== undefined ? { userDefault } : {}),
           });
         } catch (err) {
           console.error(`Error: ${(err as Error).message}`);

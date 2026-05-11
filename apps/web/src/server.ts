@@ -1378,14 +1378,22 @@ export function createWebApp(options: WebAppOptions) {
     const wfConfig = await loadWorkflowConfig(locttDir);
 
     // Resolve target project. The HTTP API mirrors the CLI's
-    // resolution order: explicit > workspace default > unique
-    // single project. If ambiguous, return 400 so the client can
-    // surface a project picker.
+    // resolution order: explicit > per-user default > workspace
+    // default > unique single project. If ambiguous, return 400 so
+    // the client can surface a project picker.
     const projectsConfig = await loadProjectsConfig(locttDir);
     let projectKey: string;
     try {
+      const current = await getCurrentUser(locttDir);
+      let userDefault: string | undefined;
+      if (current) {
+        const settings = await loadUserSettings(locttDir, current.id);
+        const raw = settings["default_project"];
+        if (typeof raw === "string" && raw.length > 0) userDefault = raw;
+      }
       projectKey = resolveProjectKey(projectsConfig, {
         ...(request.project !== undefined ? { explicit: request.project } : {}),
+        ...(userDefault !== undefined ? { userDefault } : {}),
       });
     } catch (err) {
       error(res, (err as Error).message, 400);

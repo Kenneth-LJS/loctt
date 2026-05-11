@@ -19,11 +19,24 @@ Structure:
 
 ---
 
-# Part 1 — Core / shared
+# Part 1 — Core / shared [DONE 2026-05-11]
 
-These are backend additions that affect the data model, CLI, MCP server,
-and HTTP API. All UI features eventually rest on this layer, so this part
-ships first.
+These were backend additions affecting the data model, CLI, MCP server,
+and HTTP API. All sections below are implemented and tested. UI work
+(Part 2) can now build on top of this layer.
+
+Phase commits (in order):
+- `51dff76` Phase 1: contracts batch (icons/colors, boards, timeline,
+  weights, list-view, typed UserSettings, attachment mime)
+- `4472ed3` Phase 2: attachment MIME end-to-end
+- `fbe2c7e` Phase 3: board-rerank CLI + MCP
+- `e7acc08` Phase 4: workflow editor relationship remap, timeline
+  auto-clear, icon/color/weights/boards persistence
+- `9012eb6` Phase 5: list-view config, prune-on-delete, HTTP, doctor
+- `067b558` Phase 6: sprint burndown reader + CLI/MCP/HTTP
+- `0e33dea` Phase 7: docs/dev/markdown-extensions.md
+- (pending commit) Phase 8: default-project resolution wires
+  UserSettings.default_project into CLI/MCP/HTTP create paths
 
 ## 1.1 Workflow icons + colors
 

@@ -315,6 +315,66 @@ describe("CLI commands", () => {
     expect(stderr).toMatch(/Usage:/);
   });
 
+  it("create honors the per-user default_project when --project is omitted", async () => {
+    // Init creates one project ("task") and a default user. Add a
+    // second project so resolution is genuinely ambiguous without a
+    // default. Set the per-user default_project to the second one
+    // and confirm `create` uses it instead of the workspace default.
+    await initLoctt(root);
+    const locttDir = resolveLocttDir(root);
+    const { createProject, getCurrentUser, saveUserSettings } = await import("@loctt/core");
+    await createProject(locttDir, { key: "alpha", label: "Alpha", prefix: "A-" });
+    const current = await getCurrentUser(locttDir);
+    if (!current) throw new Error("test setup: no current user");
+    await saveUserSettings(locttDir, current.id, { default_project: "alpha" });
+
+    process.argv = ["node", "loctt", "create", "user-defaulted"];
+    process.exitCode = undefined;
+    consoleSpy.mockClear();
+    await main();
+    expect(process.exitCode).toBeUndefined();
+    const log = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(log).toContain("A-1");
+  });
+
+  it("create with --project explicit wins over per-user default", async () => {
+    await initLoctt(root);
+    const locttDir = resolveLocttDir(root);
+    const { createProject, getCurrentUser, saveUserSettings } = await import("@loctt/core");
+    await createProject(locttDir, { key: "alpha", label: "Alpha", prefix: "A-" });
+    const current = await getCurrentUser(locttDir);
+    if (!current) throw new Error("test setup: no current user");
+    await saveUserSettings(locttDir, current.id, { default_project: "alpha" });
+
+    process.argv = ["node", "loctt", "create", "explicit-wins", "--project", "task"];
+    process.exitCode = undefined;
+    consoleSpy.mockClear();
+    await main();
+    expect(process.exitCode).toBeUndefined();
+    const log = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+    // workspace default prefix is "T-"
+    expect(log).toContain("T-1");
+  });
+
+  it("create falls through when per-user default_project points at a non-existent project", async () => {
+    // Stale per-user default — the resolution chain documents that
+    // we ignore it and fall through to workspace default.
+    await initLoctt(root);
+    const locttDir = resolveLocttDir(root);
+    const { getCurrentUser, saveUserSettings } = await import("@loctt/core");
+    const current = await getCurrentUser(locttDir);
+    if (!current) throw new Error("test setup: no current user");
+    await saveUserSettings(locttDir, current.id, { default_project: "ghost" });
+
+    process.argv = ["node", "loctt", "create", "stale-fallback"];
+    process.exitCode = undefined;
+    consoleSpy.mockClear();
+    await main();
+    expect(process.exitCode).toBeUndefined();
+    const log = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(log).toContain("T-1");
+  });
+
   it("sprint burndown prints a table by default", async () => {
     await initLoctt(root);
     process.argv = [
