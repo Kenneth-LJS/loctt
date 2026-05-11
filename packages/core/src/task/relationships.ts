@@ -4,6 +4,7 @@ import { withStateLock } from "../state/lock.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 import { lookupById, TaskNotFoundError } from "./lookup.js";
+import { toFrontmatter, toMutable } from "./mutable.js";
 
 export class RelationshipError extends Error {
   constructor(message: string) {
@@ -125,14 +126,14 @@ function applyRelationships(
   relationships: TaskRelationship[],
   now: string,
 ): TaskFrontmatter {
-  const copy = { ...frontmatter } as Record<string, unknown>;
+  const copy = toMutable(frontmatter);
   if (relationships.length > 0) {
     copy["relationships"] = relationships;
   } else {
     delete copy["relationships"];
   }
   copy["updated_at"] = now;
-  return copy as unknown as TaskFrontmatter;
+  return toFrontmatter(copy);
 }
 
 /**
