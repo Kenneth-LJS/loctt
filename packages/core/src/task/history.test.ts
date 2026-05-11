@@ -151,4 +151,65 @@ describe("task history", () => {
     const entries = await readHistory(locttDir, "task1");
     expect(entries).toEqual([entry1, entry2]);
   });
+
+  it("concurrent appends consolidate a pre-existing legacy history.yaml without losing entries", async () => {
+    // Race regression: an earlier implementation hydrated the new
+    // _history.yaml from the legacy file OUTSIDE the lock, which
+    // could overwrite a freshly-merged file with stale legacy
+    // content under concurrent writers. This test seeds a legacy
+    // file with one entry and fires N appends; the result must
+    // contain the legacy entry plus all N appended entries (no
+    // loss, no duplication).
+    const taskDir = getTaskDir(locttDir, "task-legacy-race");
+    await mkdir(taskDir, { recursive: true });
+    const legacyEntry: HistoryEntry = {
+      timestamp: "2026-04-15T00:00:00Z",
+      kind: "created",
+    };
+    await writeFile(
+      getLegacyHistoryFilePath(locttDir, "task-legacy-race"),
+      stringifyYaml([legacyEntry]),
+      "utf-8",
+    );
+
+    const N = 5;
+    const newEntries: HistoryEntry[] = Array.from({ length: N }, (_, i) => ({
+      timestamp: `2026-04-16T10:00:${String(i).padStart(2, "0")}Z`,
+      kind: "created",
+    }));
+    await Promise.all(
+      newEntries.map(e => appendHistory(locttDir, "task-legacy-race", [e])),
+    );
+
+    const final = await readHistory(locttDir, "task-legacy-race");
+    expect(final).toHaveLength(N + 1);
+    const seenTimestamps = new Set(final.map(e => e.timestamp));
+    expect(seenTimestamps.has(legacyEntry.timestamp)).toBe(true);
+    for (const e of newEntries) {
+      expect(seenTimestamps.has(e.timestamp)).toBe(true);
+    }
+    // Legacy file must be cleaned up after consolidation.
+    expect(await exists(getLegacyHistoryFilePath(locttDir, "task-legacy-race"))).toBe(false);
+  });
+
+  it("concurrent appends to the same task do not lose entries", async () => {
+    // Without the per-task lock, two simultaneous append calls would
+    // both read the empty baseline, both write, and the second
+    // rename would clobber the first — losing one entry. Five
+    // concurrent writers is enough to deterministically expose the
+    // race in the unlocked implementation while staying well under
+    // the lock retry budget on CI.
+    const N = 5;
+    const entries: HistoryEntry[] = Array.from({ length: N }, (_, i) => ({
+      timestamp: `2026-04-16T10:00:${String(i).padStart(2, "0")}Z`,
+      kind: "created",
+    }));
+    await Promise.all(
+      entries.map(e => appendHistory(locttDir, "task-concurrent", [e])),
+    );
+    const final = await readHistory(locttDir, "task-concurrent");
+    expect(final).toHaveLength(N);
+    const seenTimestamps = new Set(final.map(e => e.timestamp));
+    expect(seenTimestamps.size).toBe(N);
+  });
 });

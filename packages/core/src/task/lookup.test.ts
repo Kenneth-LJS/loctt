@@ -123,4 +123,32 @@ describe("task lookup", () => {
     await expect(lookupById(locttDir, "01CORRUPT")).rejects.not.toThrow(TaskNotFoundError);
     await expect(lookupById(locttDir, "01CORRUPT")).rejects.toThrow();
   });
+
+  it("loadAllTasks returns every task and tolerates large counts", async () => {
+    // Regression: loadAllTasks used to fan out one fd per task with
+    // an unbounded Promise.all. macOS's default ulimit (256) made
+    // this break around 250 tasks. Seeding 100 here is a safety
+    // floor — the cap (READ_CONCURRENCY = 32) is well below the
+    // ulimit so a thousand-task tracker would still be fine.
+    const { loadAllTasks } = await import("./lookup.js");
+    const COUNT = 100;
+    for (let i = 0; i < COUNT; i += 1) {
+      const id = `01LARGE${String(i).padStart(3, "0")}`;
+      await writeTask(locttDir, id, {
+        frontmatter: {
+          id,
+          key: `T-${i}`,
+          title: `task ${i}`,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+        body: "",
+      });
+    }
+    const tasks = await loadAllTasks(locttDir);
+    expect(tasks).toHaveLength(COUNT);
+    // Sanity check ordering matches the listed ids.
+    const titles = new Set(tasks.map(t => t.frontmatter.title));
+    expect(titles.size).toBe(COUNT);
+  });
 });

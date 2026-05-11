@@ -1,5 +1,6 @@
 import type { HistoryEntry, Task, TaskFrontmatter, TaskRelationship, WorkflowConfig } from "@loctt/contracts";
 
+import { withStateLock } from "../state/lock.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 import { lookupById, TaskNotFoundError } from "./lookup.js";
@@ -157,92 +158,99 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
     }
   }
 
-  const inverseType = findInverseType(workflowConfig, type);
-  const now = new Date().toISOString();
+  // Wrap the read-modify-write in the tracker-wide state lock so the
+  // structural-cycle check, the forward write, and the inverse write
+  // all happen against the same snapshot. Without the lock, two
+  // concurrent linkTask calls could each see "no cycle yet" and both
+  // commit, producing a cycle.
+  return withStateLock(locttDir, async () => {
+    const inverseType = findInverseType(workflowConfig, type);
+    const now = new Date().toISOString();
 
-  // Forward side
-  const task = await readTask(locttDir, taskId);
+    // Forward side
+    const task = await readTask(locttDir, taskId);
 
-  if (task.frontmatter.id === target) {
-    throw new RelationshipError(
-      `cannot link a task to itself (${task.frontmatter.key})`,
-    );
-  }
+    if (task.frontmatter.id === target) {
+      throw new RelationshipError(
+        `cannot link a task to itself (${task.frontmatter.key})`,
+      );
+    }
 
-  // Cycle detection for structural relationships only.
-  if (workflowConfig) {
-    const relDef = workflowConfig.relationships.find(r => r.key === type);
-    if (relDef?.structural) {
-      const cyclePath = await findStructuralCycle(locttDir, taskId, target, type);
-      if (cyclePath) {
-        // Build a readable arrow trail using keys where possible.
-        const keys: string[] = [task.frontmatter.key];
-        for (const id of cyclePath) {
-          if (id === taskId) {
-            keys.push(task.frontmatter.key);
-            continue;
+    // Cycle detection for structural relationships only.
+    if (workflowConfig) {
+      const relDef = workflowConfig.relationships.find(r => r.key === type);
+      if (relDef?.structural) {
+        const cyclePath = await findStructuralCycle(locttDir, taskId, target, type);
+        if (cyclePath) {
+          // Build a readable arrow trail using keys where possible.
+          const keys: string[] = [task.frontmatter.key];
+          for (const id of cyclePath) {
+            if (id === taskId) {
+              keys.push(task.frontmatter.key);
+              continue;
+            }
+            try {
+              const t = await lookupById(locttDir, id);
+              keys.push(t.frontmatter.key);
+            } catch {
+              keys.push(id);
+            }
           }
-          try {
-            const t = await lookupById(locttDir, id);
-            keys.push(t.frontmatter.key);
-          } catch {
-            keys.push(id);
-          }
+          throw new RelationshipError(
+            `cannot create cycle in structural relationship '${type}': ${keys.join(" -> ")}`,
+          );
         }
-        throw new RelationshipError(
-          `cannot create cycle in structural relationship '${type}': ${keys.join(" -> ")}`,
-        );
       }
     }
-  }
 
-  const forwardExisting = task.frontmatter.relationships ?? [];
-  const forwardUpdatedRels = addEdge(forwardExisting, type, target);
+    const forwardExisting = task.frontmatter.relationships ?? [];
+    const forwardUpdatedRels = addEdge(forwardExisting, type, target);
 
-  // Inverse side. Skip when there's no inverse defined.
-  let inverseTask: Task | undefined;
-  let inverseUpdatedRels: TaskRelationship[] | null = null;
+    // Inverse side. Skip when there's no inverse defined.
+    let inverseTask: Task | undefined;
+    let inverseUpdatedRels: TaskRelationship[] | null = null;
 
-  if (inverseType) {
-    inverseTask = await readTask(locttDir, target);
-    const inverseExisting = inverseTask.frontmatter.relationships ?? [];
-    inverseUpdatedRels = addEdge(inverseExisting, inverseType, taskId);
-  }
+    if (inverseType) {
+      inverseTask = await readTask(locttDir, target);
+      const inverseExisting = inverseTask.frontmatter.relationships ?? [];
+      inverseUpdatedRels = addEdge(inverseExisting, inverseType, taskId);
+    }
 
-  // If neither side needed to change, the relationship already fully exists.
-  if (forwardUpdatedRels === null && inverseUpdatedRels === null) {
-    throw new RelationshipError(
-      `relationship ${type} -> ${target} already exists on task ${taskId}`,
-    );
-  }
+    // If neither side needed to change, the relationship already fully exists.
+    if (forwardUpdatedRels === null && inverseUpdatedRels === null) {
+      throw new RelationshipError(
+        `relationship ${type} -> ${target} already exists on task ${taskId}`,
+      );
+    }
 
-  // Persist forward side
-  let result: Task;
-  if (forwardUpdatedRels !== null) {
-    const updatedFrontmatter = applyRelationships(task.frontmatter, forwardUpdatedRels, now);
-    result = { frontmatter: updatedFrontmatter, body: task.body };
-    await writeTask(locttDir, taskId, result);
-    await appendHistory(locttDir, taskId, [{
-      timestamp: now,
-      kind: "link_added",
-      meta: { type, target },
-    }]);
-  } else {
-    result = task;
-  }
+    // Persist forward side
+    let result: Task;
+    if (forwardUpdatedRels !== null) {
+      const updatedFrontmatter = applyRelationships(task.frontmatter, forwardUpdatedRels, now);
+      result = { frontmatter: updatedFrontmatter, body: task.body };
+      await writeTask(locttDir, taskId, result);
+      await appendHistory(locttDir, taskId, [{
+        timestamp: now,
+        kind: "link_added",
+        meta: { type, target },
+      }]);
+    } else {
+      result = task;
+    }
 
-  // Persist inverse side
-  if (inverseUpdatedRels !== null && inverseTask && inverseType) {
-    const updatedInverse = applyRelationships(inverseTask.frontmatter, inverseUpdatedRels, now);
-    await writeTask(locttDir, target, { frontmatter: updatedInverse, body: inverseTask.body });
-    await appendHistory(locttDir, target, [{
-      timestamp: now,
-      kind: "link_added",
-      meta: { type: inverseType, target: taskId },
-    }]);
-  }
+    // Persist inverse side
+    if (inverseUpdatedRels !== null && inverseTask && inverseType) {
+      const updatedInverse = applyRelationships(inverseTask.frontmatter, inverseUpdatedRels, now);
+      await writeTask(locttDir, target, { frontmatter: updatedInverse, body: inverseTask.body });
+      await appendHistory(locttDir, target, [{
+        timestamp: now,
+        kind: "link_added",
+        meta: { type: inverseType, target: taskId },
+      }]);
+    }
 
-  return result;
+    return result;
+  });
 }
 
 /**
@@ -256,57 +264,63 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
  */
 export async function unlinkTask(opts: UnlinkTaskOptions): Promise<Task> {
   const { locttDir, taskId, type, target, workflowConfig } = opts;
-  const inverseType = findInverseType(workflowConfig, type);
-  const isSelfLink = taskId === target;
-  const now = new Date().toISOString();
 
-  // Forward side
-  const task = await readTask(locttDir, taskId);
-  const forwardExisting = task.frontmatter.relationships ?? [];
-  const forwardUpdatedRels = removeEdge(forwardExisting, type, target);
+  // Same lock as linkTask for the same race-avoidance reason: forward
+  // and inverse must be observed and written atomically against each
+  // other.
+  return withStateLock(locttDir, async () => {
+    const inverseType = findInverseType(workflowConfig, type);
+    const isSelfLink = taskId === target;
+    const now = new Date().toISOString();
 
-  // Inverse side
-  let inverseTask: Task | undefined;
-  let inverseUpdatedRels: TaskRelationship[] | null = null;
+    // Forward side
+    const task = await readTask(locttDir, taskId);
+    const forwardExisting = task.frontmatter.relationships ?? [];
+    const forwardUpdatedRels = removeEdge(forwardExisting, type, target);
 
-  if (inverseType && !isSelfLink) {
-    inverseTask = await readTask(locttDir, target);
-    const inverseExisting = inverseTask.frontmatter.relationships ?? [];
-    inverseUpdatedRels = removeEdge(inverseExisting, inverseType, taskId);
-  }
+    // Inverse side
+    let inverseTask: Task | undefined;
+    let inverseUpdatedRels: TaskRelationship[] | null = null;
 
-  if (forwardUpdatedRels === null && inverseUpdatedRels === null) {
-    throw new RelationshipError(
-      `relationship ${type} -> ${target} does not exist on task ${taskId}`,
-    );
-  }
+    if (inverseType && !isSelfLink) {
+      inverseTask = await readTask(locttDir, target);
+      const inverseExisting = inverseTask.frontmatter.relationships ?? [];
+      inverseUpdatedRels = removeEdge(inverseExisting, inverseType, taskId);
+    }
 
-  // Persist forward side
-  let result: Task;
-  if (forwardUpdatedRels !== null) {
-    const updatedFrontmatter = applyRelationships(task.frontmatter, forwardUpdatedRels, now);
-    result = { frontmatter: updatedFrontmatter, body: task.body };
-    await writeTask(locttDir, taskId, result);
-    const entry: HistoryEntry = {
-      timestamp: now,
-      kind: "link_removed",
-      meta: { type, target },
-    };
-    await appendHistory(locttDir, taskId, [entry]);
-  } else {
-    result = task;
-  }
+    if (forwardUpdatedRels === null && inverseUpdatedRels === null) {
+      throw new RelationshipError(
+        `relationship ${type} -> ${target} does not exist on task ${taskId}`,
+      );
+    }
 
-  // Persist inverse side
-  if (inverseUpdatedRels !== null && inverseTask && inverseType) {
-    const updatedInverse = applyRelationships(inverseTask.frontmatter, inverseUpdatedRels, now);
-    await writeTask(locttDir, target, { frontmatter: updatedInverse, body: inverseTask.body });
-    await appendHistory(locttDir, target, [{
-      timestamp: now,
-      kind: "link_removed",
-      meta: { type: inverseType, target: taskId },
-    }]);
-  }
+    // Persist forward side
+    let result: Task;
+    if (forwardUpdatedRels !== null) {
+      const updatedFrontmatter = applyRelationships(task.frontmatter, forwardUpdatedRels, now);
+      result = { frontmatter: updatedFrontmatter, body: task.body };
+      await writeTask(locttDir, taskId, result);
+      const entry: HistoryEntry = {
+        timestamp: now,
+        kind: "link_removed",
+        meta: { type, target },
+      };
+      await appendHistory(locttDir, taskId, [entry]);
+    } else {
+      result = task;
+    }
 
-  return result;
+    // Persist inverse side
+    if (inverseUpdatedRels !== null && inverseTask && inverseType) {
+      const updatedInverse = applyRelationships(inverseTask.frontmatter, inverseUpdatedRels, now);
+      await writeTask(locttDir, target, { frontmatter: updatedInverse, body: inverseTask.body });
+      await appendHistory(locttDir, target, [{
+        timestamp: now,
+        kind: "link_removed",
+        meta: { type: inverseType, target: taskId },
+      }]);
+    }
+
+    return result;
+  });
 }
