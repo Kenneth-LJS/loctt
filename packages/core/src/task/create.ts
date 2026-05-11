@@ -5,6 +5,7 @@ import { validateTaskAgainstWorkflow } from "../config/validation.js";
 import { allocateKey } from "../state/keys.js";
 import { appendHistory } from "./history.js";
 import { writeTask } from "./io.js";
+import { clearLookupCaches } from "./lookup-cache.js";
 
 /** Options for creating a new task. */
 export interface CreateTaskOptions {
@@ -105,5 +106,8 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
 
   await writeTask(locttDir, id, task);
   await appendHistory(locttDir, id, [{ timestamp: now, kind: "created" }]);
+  // Invalidate any in-process "key not found" verdicts cached by
+  // lookupByKey — the new task's key/key_history may now resolve.
+  clearLookupCaches(locttDir);
   return task;
 }

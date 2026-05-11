@@ -1,86 +1,30 @@
-import { readdir } from "node:fs/promises";
-
 import type { Task } from "@loctt/contracts";
 
-import { getTasksDir } from "../paths/index.js";
-import { loadKeyIndex, lookupKeyInIndex, rebuildKeyIndex } from "../state/key-index.js";
+import { isKeyIndexFresh, loadKeyIndex, lookupKeyInIndex, rebuildKeyIndex } from "../state/key-index.js";
 import { readTask } from "./io.js";
+import { hasNegativeLookup, rememberNegativeLookup } from "./lookup-cache.js";
+
+// Re-exported for backward compatibility — listTaskIds lives in
+// list-ids.ts (a leaf module) so callers like state/key-index.ts
+// can use it without closing an import cycle through this file.
+export { listTaskIds } from "./list-ids.js";
+
+// Re-exported for backward compatibility — clearLookupCaches lives
+// in lookup-cache.ts (a leaf module) so writers in io.ts /
+// lifecycle.ts / create.ts can invalidate without closing an import
+// cycle through this file.
+export { clearLookupCaches } from "./lookup-cache.js";
+
+// Re-exported for backward compatibility — loadAllTasks lives in
+// load-all.ts (a leaf module) so state/key-index.ts can call it
+// without closing an import cycle through this file.
+export { loadAllTasks } from "./load-all.js";
 
 export class TaskNotFoundError extends Error {
   constructor(ref: string) {
     super(`task not found: "${ref}"`);
     this.name = "TaskNotFoundError";
   }
-}
-
-/**
- * Lists all task IDs by reading the tasks directory.
- * Returns an empty array if the tasks directory doesn't exist.
- */
-export async function listTaskIds(locttDir: string): Promise<string[]> {
-  const tasksDir = getTasksDir(locttDir);
-  try {
-    const entries = await readdir(tasksDir, { withFileTypes: true });
-    return entries.filter(e => e.isDirectory()).map(e => e.name);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      return [];
-    }
-    throw err;
-  }
-}
-
-/**
- * Maximum number of concurrent task reads when scanning the whole
- * tracker. Without a cap, `Promise.all(ids.map(readTask))` opens one
- * file descriptor per task; macOS's default ulimit (256) trips at
- * ~250 tasks. Picked low enough to stay well below that, high enough
- * that throughput doesn't suffer on a thousand-task tracker.
- */
-const READ_CONCURRENCY = 32;
-
-/**
- * Promise.all with a concurrency cap. Preserves input order in the
- * result. Used by `loadAllTasks` to avoid exhausting file descriptors
- * on large trackers.
- */
-async function mapWithLimit<T, R>(
-  items: readonly T[],
-  limit: number,
-  fn: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length) as R[];
-  let cursor = 0;
-  async function worker(): Promise<void> {
-    while (true) {
-      const idx = cursor;
-      cursor += 1;
-      if (idx >= items.length) return;
-      const item = items[idx];
-      // Defensive: a sparse input would otherwise leave `results`
-      // with a hole. `continue`, not `return`, so this worker keeps
-      // pulling the next slot.
-      if (item === undefined) continue;
-      results[idx] = await fn(item, idx);
-    }
-  }
-  const workers: Promise<void>[] = [];
-  for (let i = 0; i < Math.min(limit, items.length); i += 1) {
-    workers.push(worker());
-  }
-  await Promise.all(workers);
-  return results;
-}
-
-/**
- * Loads all tasks from the .loctt directory.
- *
- * Reads are bounded by {@link READ_CONCURRENCY} to keep file-descriptor
- * usage in check on large trackers — see the constant's docstring.
- */
-export async function loadAllTasks(locttDir: string): Promise<Task[]> {
-  const ids = await listTaskIds(locttDir);
-  return mapWithLimit(ids, READ_CONCURRENCY, id => readTask(locttDir, id));
 }
 
 /**
@@ -101,8 +45,24 @@ export async function lookupById(locttDir: string, id: string): Promise<Task> {
  * Looks up a task by key (e.g. "T-123").
  * Uses the key index if available, falling back to a full scan.
  * Also checks key_history for previously rekeyed tasks.
+ *
+ * Negative-cache + watermark optimisations:
+ * - On a hit, returns immediately.
+ * - On a miss with a fresh index (task count matches the watermark
+ *   recorded at the last rebuild), trusts the index and throws
+ *   without scanning. Records the key in the in-process negative
+ *   cache so subsequent identical lookups in the same process
+ *   short-circuit.
+ * - On a miss with a stale (or watermark-less) index, rebuilds the
+ *   index and retries. Still records a final miss in the negative
+ *   cache to defend against keyspace probes within the same task
+ *   population.
  */
 export async function lookupByKey(locttDir: string, key: string): Promise<Task> {
+  if (hasNegativeLookup(locttDir, key)) {
+    throw new TaskNotFoundError(key);
+  }
+
   // Try key index first (single file read)
   let index = await loadKeyIndex(locttDir);
   if (index) {
@@ -111,8 +71,13 @@ export async function lookupByKey(locttDir: string, key: string): Promise<Task> 
       try {
         return await readTask(locttDir, id);
       } catch {
-        // Index stale — fall through to rebuild
+        // Index stale at the entry level — fall through to rebuild
       }
+    } else if (await isKeyIndexFresh(locttDir, index)) {
+      // Index reflects the current task population AND doesn't
+      // contain the key. Skip the rebuild scan; cache the miss.
+      rememberNegativeLookup(locttDir, key);
+      throw new TaskNotFoundError(key);
     }
   }
 
@@ -123,6 +88,7 @@ export async function lookupByKey(locttDir: string, key: string): Promise<Task> 
     return await readTask(locttDir, id);
   }
 
+  rememberNegativeLookup(locttDir, key);
   throw new TaskNotFoundError(key);
 }
 

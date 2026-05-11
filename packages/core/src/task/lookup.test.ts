@@ -124,6 +124,62 @@ describe("task lookup", () => {
     await expect(lookupById(locttDir, "01CORRUPT")).rejects.toThrow();
   });
 
+  describe("lookupByKey caching (chunk 9)", () => {
+    it("uses the watermark to skip rebuild on stable misses", async () => {
+      const { stat } = await import("node:fs/promises");
+      const { rebuildKeyIndex } = await import("../state/key-index.js");
+      const { getKeyIndexPath } = await import("../paths/index.js");
+      await seedTasks();
+      // Build the index once. Watermark = 2.
+      const initial = await rebuildKeyIndex(locttDir);
+      expect(initial.task_count).toBe(2);
+
+      // Capture the index file's mtime BEFORE the miss. If the
+      // miss path were to rebuild, it would write the index file
+      // and bump mtime. Stable mtime ⇒ no rebuild.
+      const indexPath = getKeyIndexPath(locttDir);
+      const mtimeBefore = (await stat(indexPath)).mtimeMs;
+
+      // Pause briefly so any rebuild would produce a strictly
+      // greater mtime even on filesystems with second-level
+      // granularity.
+      await new Promise(resolve => setTimeout(resolve, 1100));
+
+      await expect(lookupByKey(locttDir, "T-99")).rejects.toThrow(TaskNotFoundError);
+
+      const mtimeAfter = (await stat(indexPath)).mtimeMs;
+      expect(mtimeAfter).toBe(mtimeBefore);
+    });
+
+    it("the in-process negative cache is invalidated when a task write lands", async () => {
+      const { rebuildKeyIndex } = await import("../state/key-index.js");
+      await seedTasks();
+      await rebuildKeyIndex(locttDir);
+
+      // Cache the miss for T-3.
+      await expect(lookupByKey(locttDir, "T-3")).rejects.toThrow(TaskNotFoundError);
+
+      // Write a third task with key T-3. writeTask invalidates the
+      // in-process negative cache so the next lookup retries.
+      await writeTask(locttDir, "01CCC", {
+        frontmatter: {
+          id: "01CCC",
+          key: "T-3",
+          title: "third",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+        body: "",
+      });
+
+      // Without invalidation, this would still throw from the
+      // cached miss. With invalidation, the rebuild path runs and
+      // resolves T-3 → 01CCC.
+      const task = await lookupByKey(locttDir, "T-3");
+      expect(task.frontmatter.id).toBe("01CCC");
+    });
+  });
+
   it("loadAllTasks returns every task and tolerates large counts", async () => {
     // Regression: loadAllTasks used to fan out one fd per task with
     // an unbounded Promise.all. macOS's default ulimit (256) made

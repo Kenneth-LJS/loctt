@@ -6,6 +6,7 @@ import { getTaskFilePath } from "../paths/index.js";
 import { writeFileAtomically } from "../utils/atomic-yaml.js";
 import { assembleTaskFile,parseFrontmatter, serializeFrontmatter, splitTaskFile } from "./frontmatter.js";
 import { appendHistory } from "./history.js";
+import { clearLookupCaches } from "./lookup-cache.js";
 
 /**
  * Reads and parses a task.md file into a Task (frontmatter + body).
@@ -22,6 +23,13 @@ export async function readTask(locttDir: string, taskId: string): Promise<Task> 
 /**
  * Writes a full task.md file (frontmatter + body) to disk.
  * Creates the task directory if it doesn't exist.
+ *
+ * Drops in-process lookup negative cache entries because a write
+ * may have introduced or rewritten a key (e.g. project remap loops
+ * call writeTask per task with a new `project` field, and the
+ * task's `key` may have changed via key_history). Cheaper than
+ * trying to detect key changes here; positive lookups still go
+ * through the on-disk index.
  */
 export async function writeTask(locttDir: string, taskId: string, task: Task): Promise<void> {
   // Validate frontmatter by round-tripping through serialize+parse before writing
@@ -30,6 +38,7 @@ export async function writeTask(locttDir: string, taskId: string, task: Task): P
   const filePath = getTaskFilePath(locttDir, taskId);
   const content = assembleTaskFile(task.frontmatter, task.body);
   await writeFileAtomically(filePath, content);
+  clearLookupCaches(locttDir);
 }
 
 /**
