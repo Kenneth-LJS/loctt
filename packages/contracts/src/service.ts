@@ -50,6 +50,12 @@ export interface ListTasksRequest {
 export interface AttachmentResponse {
   readonly name: string;
   readonly size: number;
+  /**
+   * MIME type derived from the filename extension. Absent when the
+   * extension is unknown — consumers should treat that as
+   * `application/octet-stream`.
+   */
+  readonly mime?: string;
 }
 
 /** Task response for API. */

@@ -19,6 +19,11 @@ export {
   LabelDefSchema,
   LabelsConfigSchema,
 } from "./labels.js";
+export type { ListViewConfig, ListViewFilters } from "./list-view.js";
+export {
+  ListViewConfigSchema,
+  ListViewFiltersSchema,
+} from "./list-view.js";
 export type { MilestoneDef, MilestonesConfig } from "./milestones.js";
 export {
   MilestoneDefSchema,
@@ -83,38 +88,49 @@ export {
   TaskFrontmatterSchema,
   TaskRelationshipSchema,
 } from "./task.js";
-export type { UserProfile, UsersList } from "./users.js";
+export type { UserProfile, UserSettings, UsersList } from "./users.js";
 export {
   UserProfileSchema,
+  UserSettingsSchema,
   UsersListSchema,
 } from "./users.js";
 export type {
+  BoardColumnDef,
+  BoardsConfig,
   CustomFieldDef,
   CustomFieldType,
   CustomFieldValueDef,
   EstimationConfig,
   EstimationScale,
   EstimationUnit,
+  EstimationWeights,
+  IconString,
   KeyConfig,
   PriorityDef,
   RelationshipDef,
   StatusCategory,
   StatusDef,
   TaskTypeDef,
+  TimelineConfig,
   WorkflowConfig,
 } from "./workflow.js";
 export {
+  BoardColumnDefSchema,
+  BoardsConfigSchema,
   CustomFieldDefSchema,
   CustomFieldTypeSchema,
   CustomFieldValueDefSchema,
   EstimationConfigSchema,
   EstimationScaleSchema,
   EstimationUnitSchema,
+  EstimationWeightsSchema,
+  IconStringSchema,
   KeyConfigSchema,
   PriorityDefSchema,
   RelationshipDefSchema,
   StatusCategorySchema,
   StatusDefSchema,
   TaskTypeDefSchema,
+  TimelineConfigSchema,
   WorkflowConfigSchema,
 } from "./workflow.js";
