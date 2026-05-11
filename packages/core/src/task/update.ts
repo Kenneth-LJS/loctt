@@ -3,6 +3,7 @@ import type { HistoryEntry, Task, TaskFrontmatter, WorkflowConfig } from "@loctt
 import { validateTaskAgainstWorkflow } from "../config/validation.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
+import { readField, toFrontmatter, toMutable } from "./mutable.js";
 
 export class TaskUpdateError extends Error {
   constructor(message: string) {
@@ -153,11 +154,9 @@ export async function setField(opts: SetFieldOptions): Promise<Task> {
     }
     updated = { ...task.frontmatter, updated_at: value };
   } else if (BUILTIN_OPTIONAL_FIELDS.has(field)) {
-    const patch: Record<string, unknown> = {
-      ...task.frontmatter,
-      [field]: value,
-      updated_at: now,
-    };
+    const patch = toMutable(task.frontmatter);
+    patch[field] = value;
+    patch["updated_at"] = now;
     if (field === "status") {
       patch["status_updated_at"] = now;
       // Auto-manage `completed_date` based on the new status's
@@ -171,7 +170,7 @@ export async function setField(opts: SetFieldOptions): Promise<Task> {
         delete patch["completed_date"];
       }
     }
-    updated = patch as unknown as TaskFrontmatter;
+    updated = toFrontmatter(patch);
   } else {
     // Custom field — goes under fields:
     const existingFields = task.frontmatter.fields ?? {};
@@ -235,7 +234,7 @@ function buildSetFieldHistory(
   }
 
   // Built-in field
-  const before = (oldFm as unknown as Record<string, unknown>)[field];
+  const before = readField(oldFm, field);
   if (before === value) return [];
   return [{ timestamp, kind: "field_change", field, before: before ?? null, after: value }];
 }
@@ -269,10 +268,10 @@ export async function unsetField(
   let updated: TaskFrontmatter;
 
   if (BUILTIN_OPTIONAL_FIELDS.has(field)) {
-    const copy = { ...task.frontmatter } as Record<string, unknown>;
+    const copy = toMutable(task.frontmatter);
     delete copy[field];
     copy["updated_at"] = now;
-    updated = copy as unknown as TaskFrontmatter;
+    updated = toFrontmatter(copy);
   } else {
     // Custom field under fields:
     const existingFields = { ...(task.frontmatter.fields ?? {}) };
@@ -281,17 +280,14 @@ export async function unsetField(
     }
     delete existingFields[field];
     const fields = Object.keys(existingFields).length > 0 ? existingFields : undefined;
-    updated = {
-      ...task.frontmatter,
-      ...(fields !== undefined ? { fields } : {}),
-      updated_at: now,
-    };
-    // Remove fields key entirely if empty
-    if (fields === undefined) {
-      const copy = { ...updated } as Record<string, unknown>;
+    const copy = toMutable(task.frontmatter);
+    copy["updated_at"] = now;
+    if (fields !== undefined) {
+      copy["fields"] = fields;
+    } else {
       delete copy["fields"];
-      updated = copy as unknown as TaskFrontmatter;
     }
+    updated = toFrontmatter(copy);
   }
 
   const updatedTask: Task = { frontmatter: updated, body: task.body };
@@ -327,6 +323,6 @@ function buildUnsetFieldHistory(
   }
 
   // Built-in field
-  const before = (oldFm as unknown as Record<string, unknown>)[field];
+  const before = readField(oldFm, field);
   return [{ timestamp, kind: "field_change", field, before: before ?? null, after: null }];
 }

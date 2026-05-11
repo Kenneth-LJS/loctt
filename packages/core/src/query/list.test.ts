@@ -127,6 +127,23 @@ describe("listTasks", () => {
     expect(result[0]?.frontmatter.key).toBe("T-1");
   });
 
+  it("sort by a prototype-chain field name treats values as undefined", () => {
+    // Regression: prior implementations used `field in fm` to detect
+    // built-in frontmatter fields, which would also match prototype
+    // keys like "toString" — every task would then "have" a
+    // toString function as its sort key, making sort order arbitrary
+    // and crashing the YAML formatter elsewhere if such a value
+    // leaked out. With hasOwnProperty narrowing, every task sees
+    // undefined for these keys and the input order is preserved.
+    const result = listTasks({
+      tasks,
+      options: { sort: [{ field: "toString", direction: "asc" }] },
+    });
+    expect(result.map(t => t.frontmatter.key)).toEqual([
+      "T-1", "T-2", "T-3", "T-4",
+    ]);
+  });
+
   it("throws for unknown view", () => {
     expect(() => listTasks({ tasks, options: { view: "bogus" }, queriesConfig, workflowConfig: config }))
       .toThrow("unknown view");

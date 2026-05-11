@@ -1,6 +1,7 @@
 import type { QueriesConfig, Task, WorkflowConfig } from "@loctt/contracts";
 
 import { QueriesConfigError } from "../config/queries.js";
+import { readField } from "../task/mutable.js";
 import type { EvalContext } from "./evaluator.js";
 import { evaluateQuery } from "./evaluator.js";
 import { parseQuery } from "./parser.js";
@@ -174,8 +175,9 @@ function buildPriorityMap(
 }
 
 function getTaskFieldValue(task: Task, field: string): unknown {
-  const fm = task.frontmatter as unknown as Record<string, unknown>;
-  if (field in fm) return fm[field];
+  if (Object.prototype.hasOwnProperty.call(task.frontmatter, field)) {
+    return readField(task.frontmatter, field);
+  }
   if (task.frontmatter.fields && field in task.frontmatter.fields) {
     return task.frontmatter.fields[field];
   }

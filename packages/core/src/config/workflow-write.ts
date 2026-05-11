@@ -14,6 +14,8 @@ import { getWorkflowConfigPath } from "../paths/index.js";
 import { withStateLock } from "../state/index.js";
 import { writeTask } from "../task/io.js";
 import { loadAllTasks } from "../task/load-all.js";
+import type { MutableFrontmatter } from "../task/mutable.js";
+import { toFrontmatter, toMutable } from "../task/mutable.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import {
   loadWorkflowConfig,
@@ -180,7 +182,7 @@ export function computeWorkflowKeyUsage(tasks: readonly Task[]): {
  * the task pointing at a deleted key.
  */
 function applyScalarRemap(
-  fm: Record<string, unknown>,
+  fm: MutableFrontmatter,
   slot: "status" | "priority" | "task_type",
   taskKey: string,
   nextKeys: ReadonlySet<string>,
@@ -208,7 +210,7 @@ function applyScalarRemap(
  * Returns `true` when anything changed. Mutates `fm` in place.
  */
 function applyCustomFieldsRemap(
-  fm: Record<string, unknown>,
+  fm: MutableFrontmatter,
   nextFieldsByKey: ReadonlyMap<string, CustomFieldDef>,
   remap: WorkflowRemap,
 ): boolean {
@@ -298,7 +300,7 @@ export async function applyWorkflowEdit(
     // task touched in this remap shares the same updated_at.
     const operationNow = new Date().toISOString();
     for (const task of tasks) {
-      const fm: Record<string, unknown> = { ...task.frontmatter };
+      const fm = toMutable(task.frontmatter);
       const taskKey = task.frontmatter.key;
       let changed = false;
 
@@ -309,7 +311,7 @@ export async function applyWorkflowEdit(
 
       if (changed) {
         fm["updated_at"] = operationNow;
-        const updated: Task = { ...task, frontmatter: fm as unknown as Task["frontmatter"] };
+        const updated: Task = { ...task, frontmatter: toFrontmatter(fm) };
         await writeTask(locttDir, task.frontmatter.id, updated);
         rewrittenTaskCount += 1;
       }

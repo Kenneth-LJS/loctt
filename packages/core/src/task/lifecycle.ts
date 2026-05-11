@@ -6,6 +6,7 @@ import { getTaskDir } from "../paths/index.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 import { clearLookupCaches } from "./lookup-cache.js";
+import { toFrontmatter, toMutable } from "./mutable.js";
 
 export class TaskLifecycleError extends Error {
   constructor(message: string) {
@@ -43,11 +44,11 @@ export async function unarchiveTask(locttDir: string, taskId: string): Promise<T
   }
 
   const now = new Date().toISOString();
-  const copy = { ...task.frontmatter } as Record<string, unknown>;
+  const copy = toMutable(task.frontmatter);
   delete copy["archived"];
   delete copy["archived_at"];
   copy["updated_at"] = now;
-  const updated = copy as unknown as TaskFrontmatter;
+  const updated = toFrontmatter(copy);
 
   const result: Task = { frontmatter: updated, body: task.body };
   await writeTask(locttDir, taskId, result);

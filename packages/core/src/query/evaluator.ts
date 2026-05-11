@@ -1,5 +1,6 @@
 import type { TaskFrontmatter } from "@loctt/contracts";
 
+import { readField } from "../task/mutable.js";
 import type { QueryNode, QueryValue } from "./parser.js";
 
 /** Context for query evaluation that provides access to task body and other tasks. */
@@ -50,7 +51,7 @@ function getFieldValue(fm: TaskFrontmatter, field: string): unknown {
   // Check built-in fields first. Use hasOwnProperty so we don't
   // pick up inherited prototype keys (e.g. "toString").
   if (Object.prototype.hasOwnProperty.call(fm, field)) {
-    return (fm as unknown as Record<string, unknown>)[field];
+    return readField(fm, field);
   }
   if (fm.fields && Object.prototype.hasOwnProperty.call(fm.fields, field)) {
     return fm.fields[field];

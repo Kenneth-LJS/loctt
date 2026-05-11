@@ -4,6 +4,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
 import { formatZodIssues } from "../config/zod-error.js";
+import { toMutable } from "./mutable.js";
 
 /**
  * Frontmatter keys the schema knows about, derived from
@@ -151,8 +152,7 @@ export function serializeFrontmatter(fm: TaskFrontmatter): string {
   // edits. We skip `undefined` (the field isn't really there); a
   // `foo: null` source ends up filtered out earlier by
   // coerceFrontmatter so it doesn't reach this loop.
-  const fmRecord = fm as unknown as Record<string, unknown>;
-  for (const [k, v] of Object.entries(fmRecord)) {
+  for (const [k, v] of Object.entries(toMutable(fm))) {
     if (KNOWN_FRONTMATTER_KEYS.has(k)) continue;
     if (v === undefined) continue;
     obj[k] = v;
