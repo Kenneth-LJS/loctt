@@ -24,6 +24,7 @@
 
 import { readFile } from "node:fs/promises";
 
+import { WorkflowConfigSchema } from "@loctt/contracts";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
@@ -98,12 +99,48 @@ const RemapUserSchema = z.object({
   fields: z.array(UserFieldSchema).min(1),
 });
 
+/**
+ * Workflow-edit remap directive embedded in `RemapWorkflowSchema`.
+ * Mirrors the in-memory `WorkflowRemap` shape used by
+ * config/workflow-write.ts; redefined here as a Zod schema so the
+ * journal can validate persisted entries on load.
+ */
+const WorkflowRemapTableSchema = z.record(z.string(), z.string().nullable());
+const WorkflowRemapSchema = z.object({
+  statuses: WorkflowRemapTableSchema.optional(),
+  priorities: WorkflowRemapTableSchema.optional(),
+  task_types: WorkflowRemapTableSchema.optional(),
+  relationships: WorkflowRemapTableSchema.optional(),
+  custom_fields: z.record(z.string(), WorkflowRemapTableSchema).optional(),
+});
+
+/**
+ * Crash-recovery entry for `applyWorkflowEdit`. Unlike the per-entity
+ * remaps above, a workflow edit can touch many fields at once
+ * (statuses + priorities + relationship keys + custom-field values)
+ * and the affected-task set is "all tasks" — every task is read,
+ * each remap applied if needed. Carrying the full target config
+ * `next` rather than just a diff lets recovery operate on the
+ * (old config, new config) pair regardless of which write step
+ * was interrupted: if workflow.yaml hadn't been saved yet, recovery
+ * still has the new config to write; if it had, the on-disk config
+ * already matches and the task-rewrite pass becomes a no-op.
+ */
+const RemapWorkflowSchema = z.object({
+  id: z.string().min(1),
+  started_at: z.string().min(1),
+  kind: z.literal("remap_workflow"),
+  next: WorkflowConfigSchema,
+  remap: WorkflowRemapSchema,
+});
+
 export const JournalEntrySchema = z.discriminatedUnion("kind", [
   RemapProjectSchema,
   RemapLabelSchema,
   RemapMilestoneSchema,
   RemapSprintSchema,
   RemapUserSchema,
+  RemapWorkflowSchema,
 ]);
 export type JournalEntry = z.infer<typeof JournalEntrySchema>;
 
@@ -179,7 +216,16 @@ export function removeJournalEntry(journal: Journal, id: string): Journal {
  * update would either lie about when tasks changed or skip the
  * bump on legitimately-changed tasks.
  */
-export async function replayTaskRemap(locttDir: string, entry: JournalEntry): Promise<void> {
+/**
+ * Subset of {@link JournalEntry} kinds that carry an explicit
+ * `task_ids` snapshot — i.e. every entity-remap kind except the
+ * config-level `remap_workflow`. `replayTaskRemap` operates only on
+ * these; the workflow handler lives in `config/workflow-write.ts`
+ * and walks all tasks for its own remap pass.
+ */
+export type TaskRemapEntry = Exclude<JournalEntry, { kind: "remap_workflow" }>;
+
+export async function replayTaskRemap(locttDir: string, entry: TaskRemapEntry): Promise<void> {
   for (const taskId of entry.task_ids) {
     let task;
     try {
