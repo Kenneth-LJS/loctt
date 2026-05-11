@@ -62,6 +62,7 @@ import {
   publish,
   readHistory,
   readTaskBody,
+  reorderBoardRank,
   ReorderError,
   reorderRelationship,
   requireSupportedSchema,
@@ -76,6 +77,7 @@ import {
   SprintError,
   switchCurrentUser,
   sync,
+  TaskNotFoundError,
   unarchiveLabel,
   unarchiveMilestone,
   unarchiveProject,
@@ -151,6 +153,7 @@ Commands:
                                    delete --hard: permanent (clears sprint field on tasks)
   calendar show                   Print the calendar config (timezone, working days, holidays)
   rerank <source> <relationship> <target> [--before <task>] [--after <task>]
+  board-rerank <task> [--before <task>] [--after <task>]
   create <title> [--project <key>] [--status <s>] [--priority <p>] [--type <t>]
   list [--query <q>] [--view <v>] [--limit <n>] [--archived] [--project <key>]
                                    --archived: include archived tasks
@@ -397,6 +400,7 @@ const KNOWN_DOMAIN_ERRORS: ReadonlyArray<new (...args: never[]) => Error> = [
   ProjectError,
   ReorderError,
   SprintError,
+  TaskNotFoundError,
   UserError,
   // RelationshipError surfaces from link/unlink; not currently
   // imported here because the existing handlers let it bubble.
@@ -1840,6 +1844,34 @@ export async function main(): Promise<void> {
             ...(after !== undefined ? { after } : {}),
           });
           console.log(`Reranked ${target} under ${source}/${relationship} (rank=${result.rank})`);
+          if (result.rebalanced) {
+            console.log(`(also rebalanced sibling ranks)`);
+          }
+        });
+        break;
+      }
+
+      case "board-rerank": {
+        await runCommand(async () => {
+          const task = args[1];
+          if (!task) {
+            throw new UsageError(
+              "missing task",
+              "loctt board-rerank <task> [--before <task>] [--after <task>]",
+            );
+          }
+          const before = getArg(args, "--before");
+          const after = getArg(args, "--after");
+          if (before !== undefined && after !== undefined) {
+            throw new UsageError("--before and --after are mutually exclusive; pass at most one");
+          }
+          const result = await reorderBoardRank({
+            locttDir: resolveLocttDir(root),
+            taskRef: task,
+            ...(before !== undefined ? { before } : {}),
+            ...(after !== undefined ? { after } : {}),
+          });
+          console.log(`Reranked ${task} on board (rank=${result.rank})`);
           if (result.rebalanced) {
             console.log(`(also rebalanced sibling ranks)`);
           }

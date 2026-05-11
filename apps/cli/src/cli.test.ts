@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { initLoctt } from "@loctt/core";
+import { initLoctt, lookupByKey, resolveLocttDir } from "@loctt/core";
 import type { MockInstance } from "vitest";
 import { afterEach,beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -170,6 +170,149 @@ describe("CLI commands", () => {
     await main();
     // --help routes through the help case, which doesn't set exitCode.
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it("board-rerank --before actually places the task ahead of the referenced sibling", async () => {
+    // Verifying the rank change here — not just the success log — so a
+    // future regression that silently no-ops can't slip through.
+    await initLoctt(root);
+    process.argv = ["node", "loctt", "create", "alpha"];
+    await main();
+    process.argv = ["node", "loctt", "create", "bravo"];
+    await main();
+    process.argv = ["node", "loctt", "create", "charlie"];
+    await main();
+    process.exitCode = undefined;
+    consoleSpy.mockClear();
+
+    process.argv = ["node", "loctt", "board-rerank", "T-3", "--before", "T-1"];
+    await main();
+    expect(process.exitCode).toBeUndefined();
+    const log = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(log).toContain("Reranked T-3 on board");
+
+    const locttDir = resolveLocttDir(root);
+    const t1 = await lookupByKey(locttDir, "T-1");
+    const t3 = await lookupByKey(locttDir, "T-3");
+    expect(typeof t3.frontmatter.board_rank).toBe("string");
+    // Lexicographic comparison — T-3's rank must sort before T-1's
+    // rank after the reorder, because --before places it ahead.
+    expect(t3.frontmatter.board_rank).toBeDefined();
+    if (t1.frontmatter.board_rank !== undefined) {
+      // T-1 had a board_rank assigned (it was created and presumably
+      // stamped on create); T-3 must sort before it.
+      expect(t3.frontmatter.board_rank! < t1.frontmatter.board_rank).toBe(true);
+    }
+  });
+
+  it("board-rerank --after places the task behind the referenced sibling", async () => {
+    await initLoctt(root);
+    process.argv = ["node", "loctt", "create", "alpha"];
+    await main();
+    process.argv = ["node", "loctt", "create", "bravo"];
+    await main();
+    process.argv = ["node", "loctt", "create", "charlie"];
+    await main();
+    process.exitCode = undefined;
+    consoleSpy.mockClear();
+
+    process.argv = ["node", "loctt", "board-rerank", "T-1", "--after", "T-3"];
+    await main();
+    expect(process.exitCode).toBeUndefined();
+    const log = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(log).toContain("Reranked T-1 on board");
+
+    const locttDir = resolveLocttDir(root);
+    const t1 = await lookupByKey(locttDir, "T-1");
+    const t3 = await lookupByKey(locttDir, "T-3");
+    expect(t1.frontmatter.board_rank).toBeDefined();
+    if (t3.frontmatter.board_rank !== undefined) {
+      expect(t1.frontmatter.board_rank! > t3.frontmatter.board_rank).toBe(true);
+    }
+  });
+
+  it("board-rerank with no --before/--after moves the task to the end", async () => {
+    await initLoctt(root);
+    process.argv = ["node", "loctt", "create", "alpha"];
+    await main();
+    process.argv = ["node", "loctt", "create", "bravo"];
+    await main();
+    process.argv = ["node", "loctt", "create", "charlie"];
+    await main();
+    process.exitCode = undefined;
+    consoleSpy.mockClear();
+
+    process.argv = ["node", "loctt", "board-rerank", "T-1"];
+    await main();
+    expect(process.exitCode).toBeUndefined();
+
+    const locttDir = resolveLocttDir(root);
+    const t1 = await lookupByKey(locttDir, "T-1");
+    const t2 = await lookupByKey(locttDir, "T-2");
+    const t3 = await lookupByKey(locttDir, "T-3");
+    // T-1 must now sort last among the three.
+    expect(t1.frontmatter.board_rank).toBeDefined();
+    if (
+      t2.frontmatter.board_rank !== undefined &&
+      t3.frontmatter.board_rank !== undefined
+    ) {
+      expect(t1.frontmatter.board_rank! > t2.frontmatter.board_rank).toBe(true);
+      expect(t1.frontmatter.board_rank! > t3.frontmatter.board_rank).toBe(true);
+    }
+  });
+
+  it("board-rerank rejects --before and --after together", async () => {
+    await initLoctt(root);
+    process.argv = ["node", "loctt", "create", "alpha"];
+    await main();
+    process.argv = ["node", "loctt", "create", "bravo"];
+    await main();
+    process.argv = ["node", "loctt", "create", "charlie"];
+    await main();
+    process.exitCode = undefined;
+    const errSpy = vi.mocked(console.error);
+    errSpy.mockClear();
+
+    process.argv = ["node", "loctt", "board-rerank", "T-3", "--before", "T-1", "--after", "T-2"];
+    await main();
+    expect(process.exitCode).toBe(2);
+    const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(stderr).toMatch(/mutually exclusive/);
+  });
+
+  it("board-rerank exits cleanly when the task ref does not resolve", async () => {
+    // Regression for TaskNotFoundError leaking past runCommand. Before
+    // the whitelist gained TaskNotFoundError, this case threw an
+    // uncaught exception and exited with a stack trace. Now it prints
+    // a clean Error line and exits with the runtime exit code.
+    await initLoctt(root);
+    process.exitCode = undefined;
+    const errSpy = vi.mocked(console.error);
+    errSpy.mockClear();
+
+    process.argv = ["node", "loctt", "board-rerank", "T-999"];
+    await main();
+    // EXIT.RUNTIME = 1
+    expect(process.exitCode).toBe(1);
+    const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(stderr).toMatch(/Error:/);
+    // Implementation detail of TaskNotFoundError, but pinning the user
+    // visible reference helps with debugging.
+    expect(stderr).toMatch(/T-999/);
+  });
+
+  it("board-rerank requires the task argument", async () => {
+    await initLoctt(root);
+    process.exitCode = undefined;
+    const errSpy = vi.mocked(console.error);
+    errSpy.mockClear();
+
+    process.argv = ["node", "loctt", "board-rerank"];
+    await main();
+    expect(process.exitCode).toBe(2);
+    const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(stderr).toMatch(/missing task/);
+    expect(stderr).toMatch(/Usage:/);
   });
 
   it("preserves an empty-string flag value (--set '')", async () => {
