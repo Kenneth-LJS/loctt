@@ -1,10 +1,10 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
-import { getSchemaVersionPath } from "../paths/index.js";
+import { getSchemaVersionPath, getStateFilePath } from "../paths/index.js";
 import { withMigrationLock } from "../schema/lock.js";
 import { SchemaVersionError } from "../schema/version.js";
 import { withStateLock } from "./lock.js";
@@ -162,5 +162,59 @@ describe("withStateLock", () => {
       const ok = await withStateLock(locttDir, () => Promise.resolve("next"));
       expect(ok).toBe("next");
     });
+  });
+
+  describe("stale-lock breakthrough", () => {
+    // proper-lockfile considers a lock stale when the lockdir's mtime
+    // is older than `options.stale` (10s for withStateLock). We
+    // simulate a dead lock-holder by hand-creating the lockdir with a
+    // backdated mtime, then verify the next caller breaks through.
+    // This is the on-disk equivalent of a SIGKILL'd CLI process that
+    // left its lock behind.
+
+    it("breaks through a stale lock left by a dead holder", async () => {
+      // Pre-create state.yaml so proper-lockfile has a target, then
+      // hand-create the lockdir and backdate it past the stale window.
+      const target = getStateFilePath(locttDir);
+      await writeFile(target, "keys: {}\n", "utf-8");
+      const lockDir = `${target}.lock`;
+      await mkdir(lockDir);
+      const oldTime = new Date(Date.now() - 60_000); // 60s ago, 6× stale
+      await utimes(lockDir, oldTime, oldTime);
+
+      let ran = false;
+      await withStateLock(locttDir, () => {
+        ran = true;
+        return Promise.resolve();
+      });
+      expect(ran).toBe(true);
+    });
+
+    it("does not break through a fresh lockdir (sanity for the stale check)", async () => {
+      // Inverse of the above: a lockdir whose mtime is current should
+      // block. We use the retry budget (10 retries) as a proxy for
+      // "could not acquire"; the call rejects after ~5 seconds when
+      // retries are exhausted.
+      // Reduced retries via a shorter critical section: hold the lock
+      // from one async context and try to acquire from a
+      // top-level sibling — that already tests serialization, so for
+      // staleness specifically we only assert that a fresh lockdir
+      // is NOT considered stale by stat-mtime checks. Done by
+      // observing the lockdir is preserved after a no-op acquire of
+      // a different state.
+      const target = getStateFilePath(locttDir);
+      await writeFile(target, "keys: {}\n", "utf-8");
+      const lockDir = `${target}.lock`;
+      await mkdir(lockDir);
+      // Fresh mtime — proper-lockfile considers this NOT stale.
+      const fresh = new Date();
+      await utimes(lockDir, fresh, fresh);
+
+      // Acquiring should retry and ultimately fail because no one
+      // owns the lock to release it. Capture the rejection.
+      await expect(
+        withStateLock(locttDir, () => Promise.resolve()),
+      ).rejects.toThrow();
+    }, 15_000);
   });
 });
