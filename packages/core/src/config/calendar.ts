@@ -3,13 +3,13 @@ import { join } from "node:path";
 
 import type { CalendarConfig } from "@loctt/contracts";
 import { CalendarConfigSchema } from "@loctt/contracts";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
 import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
-import { coerceYaml } from "./yaml-coerce.js";
+import { coerceYaml, safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
 export class CalendarConfigError extends Error {
@@ -26,7 +26,7 @@ export function getCalendarConfigPath(locttDir: string): string {
 }
 
 export function parseCalendarConfig(yamlContent: string): CalendarConfig {
-  const raw = coerceYaml(parseYaml(yamlContent));
+  const raw = coerceYaml(safeParseYaml(yamlContent, "calendar.yaml"));
   // `holidays` was historically optional in the file but required
   // in the type. Default to [] before the schema parses.
   if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {

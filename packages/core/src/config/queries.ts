@@ -3,13 +3,14 @@ import { readFile } from "node:fs/promises";
 import type { QueriesConfig, SavedQuery } from "@loctt/contracts";
 import { QuerySortSchema } from "@loctt/contracts";
 import { ulid } from "ulid";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
 import { getQueriesConfigPath } from "../paths/index.js";
 import { ParseError, parseQuery } from "../query/parser.js";
 import { tokenize, TokenizeError } from "../query/tokenizer.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
+import { safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
 export class QueriesConfigError extends Error {
@@ -40,7 +41,7 @@ const RawQueriesConfigSchema = z.object({
 }).strict();
 
 export function parseQueriesConfig(yamlContent: string): QueriesConfig {
-  const raw: unknown = parseYaml(yamlContent);
+  const raw: unknown = safeParseYaml(yamlContent, "queries.yaml");
   let parsed: z.infer<typeof RawQueriesConfigSchema>;
   try {
     parsed = RawQueriesConfigSchema.parse(raw);

@@ -5,6 +5,7 @@ import {
   ProjectsConfigError,
   serializeProjectsConfig,
 } from "./projects.js";
+import { YamlSyntaxError } from "./yaml-coerce.js";
 
 describe("parseProjectsConfig", () => {
   it("parses a minimal valid config", () => {
@@ -132,6 +133,11 @@ projects:
 default: nope
 `;
     expect(() => parseProjectsConfig(yaml)).toThrow(/not in the projects list/);
+  });
+
+  it("throws YamlSyntaxError on malformed YAML (tagged with file label)", () => {
+    expect(() => parseProjectsConfig("{ projects: [")).toThrow(YamlSyntaxError);
+    expect(() => parseProjectsConfig("{ projects: [")).toThrow(/projects\.yaml/);
   });
 });
 

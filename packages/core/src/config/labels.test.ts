@@ -5,6 +5,7 @@ import {
   parseLabelsConfig,
   serializeLabelsConfig,
 } from "./labels.js";
+import { YamlSyntaxError } from "./yaml-coerce.js";
 
 describe("parseLabelsConfig", () => {
   it("parses a minimal config", () => {
@@ -114,6 +115,11 @@ extra: nope
     description: nope
 `;
     expect(() => parseLabelsConfig(yaml)).toThrow(/unrecognized key/);
+  });
+
+  it("throws YamlSyntaxError on malformed YAML (tagged with file label)", () => {
+    expect(() => parseLabelsConfig("{ labels: [")).toThrow(YamlSyntaxError);
+    expect(() => parseLabelsConfig("{ labels: [")).toThrow(/labels\.yaml/);
   });
 });
 

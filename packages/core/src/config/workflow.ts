@@ -2,10 +2,10 @@ import { readFile } from "node:fs/promises";
 
 import type { WorkflowConfig } from "@loctt/contracts";
 import { WorkflowConfigSchema } from "@loctt/contracts";
-import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
 import { getWorkflowConfigPath } from "../paths/index.js";
+import { safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
 /** Errors thrown when workflow config is invalid. */
@@ -26,7 +26,7 @@ export class WorkflowConfigError extends Error {
  * workflow.yaml files predate the field.
  */
 export function parseWorkflowConfig(yamlContent: string): WorkflowConfig {
-  const raw: unknown = parseYaml(yamlContent);
+  const raw: unknown = safeParseYaml(yamlContent, "workflow.yaml");
   if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
     const r = raw as Record<string, unknown>;
     if (r["custom_fields"] === undefined) r["custom_fields"] = [];

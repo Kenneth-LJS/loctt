@@ -5,6 +5,7 @@ import {
   parseMilestonesConfig,
   serializeMilestonesConfig,
 } from "./milestones.js";
+import { YamlSyntaxError } from "./yaml-coerce.js";
 
 describe("parseMilestonesConfig", () => {
   it("parses a minimal milestone", () => {
@@ -70,6 +71,11 @@ describe("parseMilestonesConfig", () => {
     label: ""
 `;
     expect(() => parseMilestonesConfig(yaml)).toThrow("milestones[0].label must be a non-empty string");
+  });
+
+  it("throws YamlSyntaxError on malformed YAML (tagged with file label)", () => {
+    expect(() => parseMilestonesConfig("{ milestones: [")).toThrow(YamlSyntaxError);
+    expect(() => parseMilestonesConfig("{ milestones: [")).toThrow(/milestones\.yaml/);
   });
 });
 

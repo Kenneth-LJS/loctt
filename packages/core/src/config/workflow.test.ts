@@ -1,6 +1,7 @@
 import { describe, expect,it } from "vitest";
 
 import { parseWorkflowConfig, WorkflowConfigError } from "./workflow.js";
+import { YamlSyntaxError } from "./yaml-coerce.js";
 
 const CANONICAL_YAML = `
 key:
@@ -278,5 +279,10 @@ estimation:
   unit: custom_numeric
 `;
     expect(() => parseWorkflowConfig(yaml)).toThrow(/unit_label is required/);
+  });
+
+  it("throws YamlSyntaxError on malformed YAML (tagged with file label)", () => {
+    expect(() => parseWorkflowConfig("{ statuses: [")).toThrow(YamlSyntaxError);
+    expect(() => parseWorkflowConfig("{ statuses: [")).toThrow(/workflow\.yaml/);
   });
 });

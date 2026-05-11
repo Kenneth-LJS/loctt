@@ -1,6 +1,7 @@
 import { describe, expect,it } from "vitest";
 
 import { parseQueriesConfig, QueriesConfigError } from "./queries.js";
+import { YamlSyntaxError } from "./yaml-coerce.js";
 
 const CANONICAL_YAML = `
 queries:
@@ -97,5 +98,10 @@ queries:
     query: "status =="
 `;
     expect(() => parseQueriesConfig(yaml)).toThrow(/not a valid query/);
+  });
+
+  it("throws YamlSyntaxError on malformed YAML (tagged with file label)", () => {
+    expect(() => parseQueriesConfig("{ queries: [")).toThrow(YamlSyntaxError);
+    expect(() => parseQueriesConfig("{ queries: [")).toThrow(/queries\.yaml/);
   });
 });

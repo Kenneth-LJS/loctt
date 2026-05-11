@@ -1,3 +1,38 @@
+import { parse as parseYaml } from "yaml";
+
+/**
+ * Thrown by config-loaders when the underlying YAML text fails to
+ * parse (unterminated string, malformed flow, tab indentation,
+ * etc.). Keeping this as a distinct error class lets callers
+ * disambiguate "file unparseable" from "file parsed but failed
+ * schema validation" (which surfaces as the loader's own *ConfigError).
+ *
+ * Includes the wrapped library error's message so the line/column
+ * hint from the `yaml` package isn't lost.
+ */
+export class YamlSyntaxError extends Error {
+  constructor(label: string, cause: unknown) {
+    const inner = cause instanceof Error ? cause.message : String(cause);
+    super(`${label}: malformed YAML: ${inner}`);
+    this.name = "YamlSyntaxError";
+  }
+}
+
+/**
+ * Parses YAML text, rethrowing any parser error as a
+ * {@link YamlSyntaxError} tagged with the provided file label. Use
+ * this instead of `yaml.parse` directly in config loaders so a
+ * corrupt file produces a clean, attributed error rather than a
+ * raw library exception.
+ */
+export function safeParseYaml(yamlContent: string, fileLabel: string): unknown {
+  try {
+    return parseYaml(yamlContent);
+  } catch (err) {
+    throw new YamlSyntaxError(fileLabel, err);
+  }
+}
+
 /**
  * Coerces YAML-parsed values into a shape that the contract zod
  * schemas expect:

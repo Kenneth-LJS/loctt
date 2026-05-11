@@ -5,6 +5,7 @@ import {
   parseCalendarConfig,
   serializeCalendarConfig,
 } from "./calendar.js";
+import { YamlSyntaxError } from "./yaml-coerce.js";
 
 describe("parseCalendarConfig", () => {
   it("parses a complete config", () => {
@@ -94,6 +95,11 @@ holidays:
     label: ""
 `;
     expect(() => parseCalendarConfig(yaml)).toThrow("holidays[0].label must be a non-empty string");
+  });
+
+  it("throws YamlSyntaxError on malformed YAML (tagged with file label)", () => {
+    expect(() => parseCalendarConfig("{ timezone: [UTC")).toThrow(YamlSyntaxError);
+    expect(() => parseCalendarConfig("{ timezone: [UTC")).toThrow(/calendar\.yaml/);
   });
 });
 
