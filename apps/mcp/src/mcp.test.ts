@@ -101,6 +101,47 @@ describe("MCP executeTool", () => {
     }
   });
 
+  describe("tool-level arg validation (chunk 8)", () => {
+    it("rejects an unknown field name in args (strict mode)", async () => {
+      // The tool's inputSchema doesn't declare `tite`. Without strict
+      // arg parsing the typo would be silently ignored and the
+      // missing required `title` would surface as a downstream
+      // create error. With strict() the LLM gets a clean rejection
+      // pointing at the typo.
+      const result = await executeTool(root, "create_task", {
+        tite: "typo!",
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? "").toMatch(/invalid args for create_task/);
+    });
+
+    it("rejects a wrong-type arg with the field path in the error", async () => {
+      // `ref` should be a string. Pass a number.
+      const result = await executeTool(root, "get_task", {
+        ref: 42,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? "").toMatch(/ref/);
+      expect(result.content[0]?.text ?? "").toMatch(/expected string/i);
+    });
+
+    it("accepts well-shaped args without complaint", async () => {
+      await executeTool(root, "create_task", { title: "ok" });
+      const result = await executeTool(root, "get_task", { ref: "T-1" });
+      expect(result.isError).toBeUndefined();
+    });
+
+    it("tools with empty inputSchema still validate (and accept {})", async () => {
+      // info has inputSchema: {}. Strict mode means an unknown arg
+      // is rejected; empty args succeed.
+      const ok = await executeTool(root, "info", {});
+      expect(ok.isError).toBeUndefined();
+      const bad = await executeTool(root, "info", { surprise: 1 });
+      expect(bad.isError).toBe(true);
+      expect(bad.content[0]?.text ?? "").toMatch(/invalid args for info/);
+    });
+  });
+
   describe("update_task validation", () => {
     it("rejects an immutable field with a useful message", async () => {
       await executeTool(root, "create_task", { title: "x" });
@@ -150,7 +191,11 @@ describe("MCP executeTool", () => {
       await executeTool(root, "create_task", { title: "x" });
       const result = await executeTool(root, "update_task", { ref: "T-1", value: "x" });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text ?? "").toMatch(/`field` is required/);
+      // Caught at the outer parseToolArgs layer now (chunk 8); the
+      // message names the field path and the expected type rather
+      // than the older inner-validator wording.
+      expect(result.content[0]?.text ?? "").toMatch(/field/);
+      expect(result.content[0]?.text ?? "").toMatch(/expected string/i);
     });
 
     it("accepts a valid labels array", async () => {
