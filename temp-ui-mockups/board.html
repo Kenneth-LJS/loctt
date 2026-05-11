@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Board · TaskTracker</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <script>
+      (function () { var t = localStorage.getItem("tt-theme"); if (t === "dark") document.documentElement.classList.add("dark"); })();
+    </script>
+    <style>
+      .board {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: 280px;
+        gap: 12px;
+        align-items: start;
+        overflow-x: auto;
+        padding-bottom: 12px;
+      }
+      .col {
+        background: var(--bg-muted);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        display: flex;
+        flex-direction: column;
+        min-height: 200px;
+        max-height: calc(100vh - 220px);
+      }
+      .col__head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .col__title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-primary);
+        flex: 1;
+      }
+      .col__count {
+        font-size: 12px;
+        color: var(--text-tertiary);
+        font-variant-numeric: tabular-nums;
+      }
+      .col__icon {
+        width: 16px;
+        height: 16px;
+        display: grid;
+        place-items: center;
+        color: var(--text-secondary);
+      }
+      .col__body {
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        overflow-y: auto;
+      }
+
+      .board-card {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        cursor: grab;
+      }
+      .board-card:hover { border-color: var(--border-default); }
+      .board-card--dragging {
+        box-shadow: var(--shadow-overlay);
+        transform: rotate(-1deg) scale(1.02);
+        border-color: var(--border-strong);
+      }
+      .board-card__top {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--text-tertiary);
+      }
+      .task-key { font-size: 11px; color: var(--text-tertiary); letter-spacing: 0.01em; }
+      .board-card__title {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text-primary);
+        line-height: 1.4;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .board-card__meta {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .board-card__chips {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+      }
+
+      .col--discarded .board-card { opacity: 0.6; }
+
+      .ghost {
+        height: 56px;
+        border: 2px dashed var(--accent);
+        border-radius: var(--radius-md);
+        background: var(--accent-muted);
+      }
+      .col__body.is-drop-target {
+        background: var(--accent-muted);
+        outline: 2px dashed var(--accent);
+        outline-offset: -4px;
+      }
+      .board-card.is-dragging {
+        opacity: 0.4;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <button class="btn btn--icon btn--ghost" data-action="collapse-sidebar" aria-label="Toggle sidebar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+        </button>
+        <div class="header__brand">
+          <span class="header__brand-mark">T</span>
+          <span>TaskTracker</span>
+        </div>
+        <div class="header__spacer"></div>
+        <div class="header__actions">
+          <input class="input input--search" placeholder="Search tasks…" style="width: 280px;" />
+          <div class="theme-toggle">
+            <button data-theme="light">☀</button>
+            <button data-theme="dark">☾</button>
+          </div>
+          <button class="btn btn--primary">+ New task</button>
+          <button class="avatar avatar--a" data-menu-trigger="user-menu" aria-label="User menu" style="border: 0; cursor: pointer;">KL</button>
+        </div>
+      </header>
+      <div class="menu" id="user-menu" style="min-width: 240px;">
+        <div style="padding: 10px 12px; border-bottom: 1px solid var(--border-subtle);">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="avatar avatar--a">KL</span>
+            <div><div style="font-weight: 500; font-size: 13px;">Ken Loh</div><div style="font-size: 11px; color: var(--text-tertiary);">ken@example.com</div></div>
+          </div>
+        </div>
+        <a class="menu__item" href="settings.html#users">Manage users…</a>
+        <a class="menu__item" href="settings.html#preferences">My preferences…</a>
+      </div>
+
+      <aside class="sidebar">
+        <div class="sidebar__group">
+          <a class="sidebar__item" href="list.html">
+            <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+            <span class="sidebar__label">List</span>
+            <span class="sidebar__badge">128</span>
+          </a>
+          <a class="sidebar__item is-active">
+            <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="6" height="18" rx="1"/><rect x="10" y="3" width="6" height="12" rx="1"/><rect x="17" y="3" width="4" height="8" rx="1"/></svg>
+            <span class="sidebar__label">Board</span>
+          </a>
+          <a class="sidebar__item" href="timeline.html">
+            <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h12M3 12h18M3 18h8"/></svg>
+            <span class="sidebar__label">Timeline</span>
+          </a>
+        </div>
+        <div class="sidebar__group">
+          <div class="sidebar__group-label">Projects</div>
+          <a class="sidebar__item"><span class="priority-dot" style="background: #1E6FCB;"></span><span class="sidebar__label">Web</span><span class="sidebar__badge">86</span></a>
+          <a class="sidebar__item"><span class="priority-dot" style="background: #1F8A4C;"></span><span class="sidebar__label">Backend</span><span class="sidebar__badge">31</span></a>
+          <a class="sidebar__item"><span class="priority-dot" style="background: #D97706;"></span><span class="sidebar__label">Infra</span><span class="sidebar__badge">11</span></a>
+        </div>
+        <div class="sidebar__group">
+          <div class="sidebar__group-label">Saved filters</div>
+          <a class="sidebar__item"><span class="sidebar__label">Assigned to me</span><span class="sidebar__badge">12</span></a>
+          <a class="sidebar__item"><span class="sidebar__label">Due this week</span><span class="sidebar__badge">5</span></a>
+          <a class="sidebar__item"><span class="sidebar__label">High priority</span><span class="sidebar__badge">8</span></a>
+        </div>
+        <div class="sidebar__group">
+          <div class="sidebar__group-label">Sprints</div>
+          <a class="sidebar__item"><span class="priority-dot" style="background: #1F8A4C;"></span><span class="sidebar__label">S-12 <span style="color: var(--text-tertiary); font-size: 11px;">active</span></span></a>
+        </div>
+        <div class="sidebar__group" style="margin-top: auto;">
+          <a class="sidebar__item" href="settings.html"><span class="sidebar__label">Settings</span></a>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="page">
+          <div class="page__title-row">
+            <h1 class="page__title">Board</h1>
+            <span class="chip chip--accent">Project: Web <span class="chip__x">×</span></span>
+            <div class="page__spacer"></div>
+            <div class="row">
+              <button class="btn btn--secondary">Filters</button>
+              <button class="btn btn--secondary" data-menu-trigger="swimlane-menu">
+                Group: <span id="swimlane-label" style="color: var(--text-primary); font-weight: 500; margin-left: 4px;">None</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left: 4px;"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <label class="chk">
+                <input type="checkbox" checked /><span class="chk__box"></span>
+                Hide discarded
+              </label>
+            </div>
+          </div>
+
+          <div class="board">
+            <!-- Not started -->
+            <div class="col">
+              <div class="col__head">
+                <span class="col__icon" title="Pending">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/></svg>
+                </span>
+                <span class="col__title">Not started</span>
+                <span class="col__count">8</span>
+                <button class="btn btn--icon btn--sm btn--ghost" aria-label="Collapse">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+                </button>
+              </div>
+              <div class="col__body">
+                <div class="board-card">
+                  <div class="board-card__top">
+                    <span class="task-key">T-125</span>
+                  </div>
+                  <div class="board-card__title">Seed script idempotency tests</div>
+                  <div class="board-card__chips">
+                    <span class="chip">backend</span><span class="chip">testing</span>
+                  </div>
+                  <div class="board-card__meta">
+                    <span class="priority-label"><span class="priority-dot priority-dot--low"></span>Low</span>
+                    <span style="margin-left: auto;" class="avatar avatar--d">MR</span>
+                  </div>
+                </div>
+                <div class="board-card">
+                  <div class="board-card__top"><span class="task-key">T-119</span></div>
+                  <div class="board-card__title">Add labels endpoint pagination</div>
+                  <div class="board-card__chips"><span class="chip">backend</span></div>
+                  <div class="board-card__meta">
+                    <span class="priority-label"><span class="priority-dot priority-dot--medium"></span>Medium</span>
+                    <span style="margin-left: auto;" class="avatar avatar--c">JP</span>
+                  </div>
+                </div>
+                <div class="board-card">
+                  <div class="board-card__top"><span class="task-key">T-117</span></div>
+                  <div class="board-card__title">Empty-state illustrations for List, Board, Timeline</div>
+                  <div class="board-card__chips"><span class="chip">frontend</span><span class="chip">design</span></div>
+                  <div class="board-card__meta">
+                    <span class="priority-label"><span class="priority-dot priority-dot--low"></span>Low</span>
+                    <span style="margin-left: auto;" class="avatar avatar--b">SM</span>
+                  </div>
+                </div>
+                <button class="btn btn--ghost btn--sm" style="justify-content: flex-start;">+ Add task</button>
+              </div>
+            </div>
+
+            <!-- In progress -->
+            <div class="col">
+              <div class="col__head">
+                <span class="col__icon" title="Active">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-dasharray="4 3"><circle cx="12" cy="12" r="9"/></svg>
+                </span>
+                <span class="col__title">In progress</span>
+                <span class="wip-indicator wip-indicator--over" title="Over WIP limit">5 / 3</span>
+                <button class="btn btn--icon btn--sm btn--ghost"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg></button>
+              </div>
+              <div class="col__body">
+                <div class="board-card">
+                  <div class="board-card__top"><span class="task-key">T-128</span></div>
+                  <div class="board-card__title">Implement Gantt edge-drag handles</div>
+                  <div class="board-card__chips"><span class="chip">frontend</span><span class="chip">timeline</span></div>
+                  <div class="board-card__meta">
+                    <span class="priority-label"><span class="priority-dot priority-dot--high"></span>High</span>
+                    <span style="margin-left: auto;" class="avatar avatar--a">KL</span>
+                  </div>
+                </div>
+                <div class="board-card">
+                  <div class="board-card__top"><span class="task-key">T-123</span></div>
+                  <div class="board-card__title">Replace hardcoded statuses with config-driven dropdown</div>
+                  <div class="board-card__chips"><span class="chip">frontend</span></div>
+                  <div class="board-card__meta">
+                    <span class="priority-label"><span class="priority-dot priority-dot--high"></span>High</span>
+                    <span style="margin-left: auto;" class="avatar avatar--a">KL</span>
+                  </div>
+                </div>
+                <div class="board-card">
+                  <div class="board-card__top"><span class="task-key">T-121</span></div>
+                  <div class="board-card__title">TipTap ↔ markdown round-trip test fixtures</div>
+                  <div class="board-card__chips"><span class="chip">frontend</span><span class="chip">testing</span></div>
+                  <div class="board-card__meta">
+                    <span class="priority-label"><span class="priority-dot priority-dot--medium"></span>Medium</span>
+                    <span style="margin-left: auto;" class="avatar avatar--b">SM</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- In review -->
+            <div class="col">
+              <div class="col__head">
+                <span class="col__icon" title="Active">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-dasharray="4 3"><circle cx="12" cy="12" r="9"/></svg>
+                </span>
+                <span class="col__title">In review</span>
+                <span class="col__count">2</span>
+                <button class="btn btn--icon btn--sm btn--ghost"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg></button>
+              </div>
+              <div class="col__body">
+                <div class="board-card">
+                  <div class="board-card__top"><span class="task-key">T-126</span></div>
+                  <div class="board-card__title">Activity log: render link_added events</div>
+                  <div class="board-card__chips"><span class="chip">backend</span></div>
+                  <div class="board-card__meta">
+                    <span class="priority-label"><span class="priority-dot priority-dot--medium"></span>Medium</span>
+                    <span style="margin-left: auto;" class="avatar avatar--c">JP</span>
+                  </div>
+                </div>
+                <div class="board-card">
+                  <div class="board-card__top"><span class="task-key">T-118</span></div>
+                  <div class="board-card__title">PATCH semantics: null clears nullable fields</div>
+                  <div class="board-card__chips"><span class="chip">backend</span></div>
+                  <div class="board-card__meta">
+                    <span class="priority-label"><span class="priority-dot priority-dot--high"></span>High</span>
+                    <span style="margin-left: auto;" class="avatar avatar--e">AT</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Blocked -->
+            <div class="col">
+              <div class="col__head">
+                <span class="col__icon" title="Active">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-dasharray="4 3"><circle cx="12" cy="12" r="9"/></svg>
+                </span>
+                <span class="col__title">Blocked</span>
+                <span class="col__count">1</span>
+                <button class="btn btn--icon btn--sm btn--ghost"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg></button>
+              </div>
+              <div class="col__body">
+                <div class="board-card" style="border-color: var(--feedback-warn-fg);">
+                  <div class="board-card__top">
+                    <span class="task-key">T-127</span>
+                    <span class="badge badge--warn" style="margin-left: auto;">⚠ Blocked</span>
+                  </div>
+                  <div class="board-card__title">Audit dependency arrows on month zoom</div>
+                  <div class="board-card__chips"><span class="chip">frontend</span></div>
+                  <div class="board-card__meta">
+                    <span class="priority-label"><span class="priority-dot priority-dot--critical"></span>Critical</span>
+                    <span style="margin-left: auto; color: var(--feedback-danger-fg); font-size: 12px; font-weight: 500;">Apr 16</span>
+                    <span class="avatar avatar--b">SM</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Done -->
+            <div class="col">
+              <div class="col__head">
+                <span class="col__icon" title="Completed">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--status-completed-fg)" stroke="var(--status-completed-fg)" stroke-width="1.75"><circle cx="12" cy="12" r="9" fill="var(--status-completed-bg)"/><polyline points="9 12 11 14 15 10" fill="none" stroke="var(--status-completed-fg)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                <span class="col__title">Done</span>
+                <span class="col__count">42</span>
+                <button class="btn btn--icon btn--sm btn--ghost"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg></button>
+              </div>
+              <div class="col__body">
+                <div class="board-card">
+                  <div class="board-card__top"><span class="task-key">T-124</span></div>
+                  <div class="board-card__title">Multer disk storage path normalization</div>
+                  <div class="board-card__chips"><span class="chip">backend</span><span class="chip">infra</span></div>
+                  <div class="board-card__meta">
+                    <span class="priority-label"><span class="priority-dot priority-dot--medium"></span>Medium</span>
+                    <span style="margin-left: auto;" class="avatar avatar--e">AT</span>
+                  </div>
+                </div>
+                <div class="board-card">
+                  <div class="board-card__top"><span class="task-key">T-120</span></div>
+                  <div class="board-card__title">Workflow auto-seed on first boot</div>
+                  <div class="board-card__chips"><span class="chip">backend</span></div>
+                  <div class="board-card__meta">
+                    <span class="priority-label"><span class="priority-dot priority-dot--high"></span>High</span>
+                    <span style="margin-left: auto;" class="avatar avatar--a">KL</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Won't do (collapsed example) -->
+            <div class="col col--discarded" style="opacity: 0.6;">
+              <div class="col__head">
+                <span class="col__icon" title="Discarded">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><line x1="6" y1="18" x2="18" y2="6"/></svg>
+                </span>
+                <span class="col__title">Won't do</span>
+                <span class="col__count">3</span>
+                <button class="btn btn--icon btn--sm btn--ghost"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+    <!-- Swimlane menu -->
+    <div class="menu" id="swimlane-menu">
+      <div class="menu__item menu__item--check is-selected" data-val="none">None</div>
+      <div class="menu__item menu__item--check" data-val="assignee">Assignee</div>
+      <div class="menu__item menu__item--check" data-val="priority">Priority</div>
+      <div class="menu__item menu__item--check" data-val="type">Type</div>
+      <div class="menu__item menu__item--check" data-val="project">Project</div>
+      <div class="menu__item menu__item--check" data-val="milestone">Milestone</div>
+      <div class="menu__item menu__item--check" data-val="sprint">Sprint</div>
+      <div class="menu__item menu__item--check" data-val="label">Label</div>
+      <div class="menu__item menu__item--check" data-val="status_category">Status category</div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+      // Column collapse — click the chevron button inside each col__head
+      document.querySelectorAll(".col").forEach(col => {
+        const btn = col.querySelector(".col__head .btn--icon");
+        if (!btn) return;
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const body = col.querySelector(".col__body");
+          if (!body) return;
+          const collapsed = body.style.display === "none";
+          body.style.display = collapsed ? "" : "none";
+          btn.querySelector("svg").innerHTML = collapsed
+            ? '<polyline points="18 15 12 9 6 15" />'
+            : '<polyline points="6 9 12 15 18 9" />';
+        });
+      });
+
+      // Swimlane menu
+      const laneKey = "tt-board-swimlane";
+      const LANE_LABELS = {
+        none: "None", assignee: "Assignee", priority: "Priority", type: "Type",
+        project: "Project", milestone: "Milestone", sprint: "Sprint",
+        label: "Label", status_category: "Status category",
+      };
+      function setLane(v) {
+        localStorage.setItem(laneKey, v);
+        document.getElementById("swimlane-label").textContent = LANE_LABELS[v];
+        document.querySelectorAll("#swimlane-menu .menu__item").forEach(it => {
+          it.classList.toggle("is-selected", it.dataset.val === v);
+        });
+        // Flash a visual hint that rows would be grouped differently — thin banner
+        let banner = document.getElementById("lane-banner");
+        if (!banner) {
+          banner = document.createElement("div");
+          banner.id = "lane-banner";
+          banner.style.cssText = "background: var(--accent-muted); color: var(--accent); padding: 6px 12px; border-radius: var(--radius-md); font-size: 12px; margin-bottom: 8px;";
+          document.querySelector(".board").before(banner);
+        }
+        if (v === "none") { banner.remove(); }
+        else { banner.textContent = `Swimlanes: grouping cards by ${LANE_LABELS[v]}. (Mock — rendering shown conceptually.)`; }
+      }
+      document.querySelectorAll("#swimlane-menu .menu__item").forEach(it => {
+        it.addEventListener("click", () => setLane(it.dataset.val));
+      });
+      const saved = localStorage.getItem(laneKey) || "none";
+      setLane(saved);
+
+      // "Add task" inline create
+      document.querySelectorAll(".col__body .btn--ghost").forEach(b => {
+        if (!b.textContent.includes("Add task")) return;
+        b.addEventListener("click", () => {
+          const input = document.createElement("input");
+          input.className = "input";
+          input.placeholder = "Task title, Enter to create";
+          input.style.width = "100%";
+          b.parentElement.insertBefore(input, b);
+          input.focus();
+          input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && input.value.trim()) {
+              const card = document.createElement("div");
+              card.className = "board-card";
+              card.innerHTML = `
+                <div class="board-card__top"><span class="task-key">T-NEW</span></div>
+                <div class="board-card__title">${input.value.replace(/</g, '&lt;')}</div>
+                <div class="board-card__meta"><span class="priority-label"><span class="priority-dot priority-dot--medium"></span>Medium</span></div>
+              `;
+              b.parentElement.insertBefore(card, b);
+              input.value = "";
+            } else if (e.key === "Escape") {
+              input.remove();
+            }
+          });
+          input.addEventListener("blur", () => setTimeout(() => input.remove(), 100));
+        });
+      });
+
+      // ============================================================
+      // Card drag-and-drop between columns (HTML5 DnD)
+      // ============================================================
+      let draggedCard = null;
+
+      function initCard(card) {
+        card.setAttribute("draggable", "true");
+        card.addEventListener("dragstart", (e) => {
+          draggedCard = card;
+          card.classList.add("is-dragging");
+          if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = "move";
+            // Firefox needs something in dataTransfer
+            e.dataTransfer.setData("text/plain", "card");
+          }
+        });
+        card.addEventListener("dragend", () => {
+          card.classList.remove("is-dragging");
+          draggedCard = null;
+          document.querySelectorAll(".col__body").forEach(b => b.classList.remove("is-drop-target"));
+        });
+      }
+      function initColumnBody(body) {
+        body.addEventListener("dragover", (e) => {
+          if (!draggedCard) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          body.classList.add("is-drop-target");
+        });
+        body.addEventListener("dragleave", (e) => {
+          // Only clear if actually leaving the body (not just entering a child)
+          if (!body.contains(e.relatedTarget)) {
+            body.classList.remove("is-drop-target");
+          }
+        });
+        body.addEventListener("drop", (e) => {
+          if (!draggedCard) return;
+          e.preventDefault();
+          body.classList.remove("is-drop-target");
+
+          // Insert before the card closest to the drop point (for vertical ordering)
+          const cards = Array.from(body.querySelectorAll(".board-card"));
+          const dropY = e.clientY;
+          let insertBefore = null;
+          for (const c of cards) {
+            if (c === draggedCard) continue;
+            const r = c.getBoundingClientRect();
+            if (dropY < r.top + r.height / 2) {
+              insertBefore = c;
+              break;
+            }
+          }
+          if (insertBefore) body.insertBefore(draggedCard, insertBefore);
+          else {
+            // Append before the "+ Add task" button if it exists, otherwise to end
+            const addBtn = body.querySelector(".btn--ghost");
+            if (addBtn) body.insertBefore(draggedCard, addBtn);
+            else body.appendChild(draggedCard);
+          }
+
+          // Update counts
+          updateCounts();
+          // Flash
+          draggedCard.animate(
+            [{ filter: "brightness(1.15)" }, { filter: "brightness(1)" }],
+            { duration: 280, easing: "ease-out" }
+          );
+        });
+      }
+      function updateCounts() {
+        document.querySelectorAll(".col").forEach(col => {
+          const body = col.querySelector(".col__body");
+          if (!body) return;
+          const n = body.querySelectorAll(".board-card").length;
+          const countEl = col.querySelector(".col__count");
+          if (countEl) countEl.textContent = n;
+          // WIP indicator refresh (only for "In progress" in the mock — limit 3)
+          const wip = col.querySelector(".wip-indicator");
+          if (wip) {
+            const limit = 3;
+            wip.textContent = `${n} / ${limit}`;
+            wip.classList.toggle("wip-indicator--over", n > limit);
+            wip.classList.toggle("wip-indicator--ok", n <= limit);
+          }
+        });
+      }
+
+      document.querySelectorAll(".board-card").forEach(initCard);
+      document.querySelectorAll(".col__body").forEach(initColumnBody);
+      updateCounts();
+
+      // Also init any cards added by quick-create — patch the existing handler
+      const origAddHandler = (b) => b; // noop, the handler already inserts nodes, we re-run initCard after
+      // Observe the board for new cards (covers "+ Add task" flow)
+      new MutationObserver(mutations => {
+        for (const m of mutations) {
+          m.addedNodes.forEach(n => {
+            if (n.nodeType === 1 && n.classList.contains("board-card")) initCard(n);
+          });
+        }
+        updateCounts();
+      }).observe(document.querySelector(".board"), { subtree: true, childList: true });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,1383 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Settings · TaskTracker</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <script>
+      (function () { var t = localStorage.getItem("tt-theme"); if (t === "dark") document.documentElement.classList.add("dark"); })();
+    </script>
+    <style>
+      .settings { display: grid; grid-template-columns: 220px 1fr; gap: 32px; }
+      .settings-nav { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; align-self: start; }
+      .settings-nav button {
+        display: flex; align-items: center; gap: 8px;
+        padding: 8px 12px; border-radius: var(--radius-md);
+        font-size: 13px; color: var(--text-secondary); font-weight: 500;
+        text-align: left; width: 100%;
+        position: relative;
+        transition: background-color 100ms ease-out, color 100ms ease-out, padding-left 120ms ease-out;
+      }
+      .settings-nav button::after {
+        content: "›";
+        margin-left: auto;
+        color: var(--text-tertiary);
+        opacity: 0;
+        transition: opacity 120ms ease-out, transform 120ms ease-out;
+        font-size: 16px;
+        line-height: 1;
+      }
+      .settings-nav button:hover {
+        background: var(--bg-muted);
+        color: var(--text-primary);
+      }
+      .settings-nav button:hover::after { opacity: 0.6; }
+      .settings-nav button.is-active {
+        background: var(--accent-muted);
+        color: var(--accent);
+      }
+      .settings-nav button.is-active::after {
+        content: "";
+        opacity: 1;
+        position: absolute;
+        left: 0; top: 6px; bottom: 6px;
+        width: 3px;
+        background: var(--accent);
+        border-radius: 2px;
+        margin-left: 0;
+      }
+      .settings-nav button.is-flashing {
+        animation: nav-flash 220ms ease-out;
+      }
+      @keyframes nav-flash {
+        0%, 100% { background: var(--accent-muted); }
+        50% { background: var(--bg-muted-hover); }
+      }
+      .settings-nav__head {
+        font-size: 11px; text-transform: uppercase; color: var(--text-tertiary);
+        font-weight: 600; letter-spacing: 0.06em; padding: 12px 12px 4px;
+      }
+
+      .panel {
+        background: var(--bg-surface); border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg); margin-bottom: 20px;
+      }
+      .panel__head {
+        padding: 16px 20px; border-bottom: 1px solid var(--border-subtle);
+        display: flex; align-items: center; gap: 12px;
+      }
+      .panel__title { font-size: 16px; font-weight: 600; margin: 0; }
+      .panel__sub { color: var(--text-tertiary); font-size: 12px; margin-top: 2px; }
+      .panel__body { padding: 16px 20px; }
+
+      .item-row {
+        display: flex; align-items: center; gap: 12px;
+        padding: 10px 20px; border-bottom: 1px solid var(--border-subtle);
+      }
+      .item-row:last-child { border-bottom: 0; }
+      .grip { color: var(--text-tertiary); cursor: grab; font-size: 14px; width: 14px; }
+      .grip:hover { color: var(--text-primary); }
+
+      .pill {
+        display: inline-flex; align-items: center; gap: 6px;
+        height: 22px; padding: 0 8px; border-radius: var(--radius-sm);
+        font-size: 12px; background: var(--bg-muted); color: var(--text-secondary);
+      }
+
+      .panel__foot {
+        padding: 12px 20px; border-top: 1px solid var(--border-subtle);
+        display: flex; justify-content: space-between; align-items: center;
+      }
+
+      .inline-swatch {
+        width: 22px; height: 22px; border-radius: var(--radius-sm);
+        cursor: pointer; flex-shrink: 0;
+        transition: transform 100ms ease-out;
+      }
+      .inline-swatch:hover { transform: scale(1.1); }
+
+      .inline-icon {
+        width: 22px; height: 22px; display: inline-grid; place-items: center;
+        border-radius: var(--radius-sm); background: var(--bg-muted);
+        color: var(--text-primary); font-size: 14px; cursor: pointer;
+        transition: background-color 100ms ease-out;
+      }
+      .inline-icon:hover { background: var(--bg-muted-hover); }
+
+      .sw-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; width: 220px; }
+
+      .icon-tabs { display: flex; gap: 2px; margin-bottom: 10px; padding: 2px; background: var(--bg-muted); border-radius: var(--radius-md); }
+      .icon-tabs button { flex: 1; padding: 4px 10px; border-radius: calc(var(--radius-md) - 2px); font-size: 12px; color: var(--text-secondary); }
+      .icon-tabs button.is-active { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-raised); }
+      .icon-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; width: 280px; max-height: 220px; overflow-y: auto; }
+      .icon-cell { width: 32px; height: 32px; display: grid; place-items: center; border-radius: var(--radius-sm); cursor: pointer; font-size: 16px; color: var(--text-primary); }
+      .icon-cell:hover { background: var(--bg-muted); }
+      .icon-cell.is-selected { background: var(--accent-muted); box-shadow: inset 0 0 0 1px var(--accent); }
+      .icon-tab { display: none; }
+      .icon-tab.is-active { display: block; }
+
+      .weekday-row { display: flex; gap: 6px; }
+      .weekday-btn {
+        flex: 1; height: 40px; border: 1px solid var(--border-default);
+        border-radius: var(--radius-md); background: var(--bg-surface);
+        font-size: 12px; color: var(--text-secondary); font-weight: 500;
+      }
+      .weekday-btn.is-on { background: var(--accent-muted); border-color: var(--accent); color: var(--accent); }
+      .weekday-btn:hover { border-color: var(--border-strong); }
+
+      .card-layout { display: grid; grid-template-columns: 1fr 240px; gap: 16px; }
+      .card-field-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
+      .card-preview { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+
+      .setting {
+        display: grid; grid-template-columns: 1fr 320px; align-items: center;
+        padding: 14px 20px; gap: 24px; border-bottom: 1px solid var(--border-subtle);
+      }
+      .setting:last-child { border-bottom: 0; }
+      .setting__label { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+      .setting__hint { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+      .setting__control { display: flex; justify-content: flex-end; gap: 8px; }
+
+      .radio-row { display: flex; gap: 6px; flex-wrap: wrap; }
+      .radio-row button {
+        height: 28px; padding: 0 12px; border: 1px solid var(--border-default);
+        border-radius: var(--radius-md); background: var(--bg-surface);
+        font-size: 12px; color: var(--text-secondary); font-weight: 500;
+      }
+      .radio-row button.is-on { background: var(--accent-muted); border-color: var(--accent); color: var(--accent); }
+
+      .holidays-table { width: 100%; border-collapse: collapse; }
+      .holidays-table th { text-align: left; font-size: 11px; text-transform: uppercase; color: var(--text-tertiary); font-weight: 600; letter-spacing: 0.05em; padding: 8px 0; border-bottom: 1px solid var(--border-subtle); }
+      .holidays-table td { padding: 10px 0; border-bottom: 1px solid var(--border-subtle); font-size: 13px; }
+      .holidays-table tr:last-child td { border-bottom: 0; }
+
+      .theme-strip { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      .theme-swatch-preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 6px; }
+      .theme-swatch-preview .sw-swatch { width: 100%; height: 36px; }
+      .theme-panel { padding: 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-muted); }
+
+      .kbd-table { width: 100%; border-collapse: collapse; }
+      .kbd-table td { padding: 8px 0; border-bottom: 1px solid var(--border-subtle); font-size: 13px; }
+      .kbd-table td:first-child { width: 120px; }
+      .kbd-table tr:last-child td { border-bottom: 0; }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <button class="btn btn--icon btn--ghost" data-action="collapse-sidebar" aria-label="Toggle sidebar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+        </button>
+        <div class="header__brand"><span class="header__brand-mark">T</span><span>TaskTracker</span></div>
+        <div class="header__spacer"></div>
+        <div class="header__actions">
+          <input class="input input--search" placeholder="Search tasks…" style="width: 280px;" />
+          <div class="theme-toggle">
+            <button data-theme="light">☀</button>
+            <button data-theme="dark">☾</button>
+          </div>
+          <button class="btn btn--primary">+ New task</button>
+        </div>
+      </header>
+
+      <aside class="sidebar">
+        <div class="sidebar__group">
+          <a class="sidebar__item" href="list.html"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 6h18M3 12h18M3 18h18"/></svg><span class="sidebar__label">List</span></a>
+          <a class="sidebar__item" href="board.html"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="3" width="6" height="18" rx="1"/><rect x="10" y="3" width="6" height="12" rx="1"/><rect x="17" y="3" width="4" height="8" rx="1"/></svg><span class="sidebar__label">Board</span></a>
+          <a class="sidebar__item" href="timeline.html"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 6h12M3 12h18M3 18h8"/></svg><span class="sidebar__label">Timeline</span></a>
+        </div>
+        <div class="sidebar__group" style="margin-top: auto;">
+          <a class="sidebar__item is-active"><span class="sidebar__label">Settings</span></a>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="page">
+          <div class="page__title-row">
+            <h1 class="page__title">Settings</h1>
+            <div class="page__subtitle">Workspace configuration — applies to everyone.</div>
+          </div>
+
+          <div class="settings">
+            <nav class="settings-nav" id="settings-nav">
+              <div class="settings-nav__head">Workspace</div>
+              <button data-section="projects" class="is-active">Projects</button>
+              <button data-section="users">Users</button>
+              <button data-section="general">General</button>
+              <button data-section="calendar">Calendar</button>
+              <div class="settings-nav__head">Workflow</div>
+              <button data-section="statuses">Statuses</button>
+              <button data-section="priorities">Priorities</button>
+              <button data-section="types">Task types</button>
+              <button data-section="relationships">Relationships</button>
+              <button data-section="custom-fields">Custom fields</button>
+              <button data-section="estimation">Estimation</button>
+              <button data-section="board">Board columns</button>
+              <button data-section="timeline">Timeline</button>
+              <div class="settings-nav__head">Data</div>
+              <button data-section="labels">Labels</button>
+              <button data-section="milestones">Milestones</button>
+              <button data-section="sprints">Sprints</button>
+              <button data-section="views">Saved views</button>
+              <div class="settings-nav__head">Tracker</div>
+              <button data-section="sync">Sync</button>
+              <button data-section="doctor">Doctor</button>
+              <div class="settings-nav__head">Personal</div>
+              <button data-section="preferences">My preferences</button>
+              <button data-section="shortcuts">Keyboard</button>
+            </nav>
+
+            <div id="settings-content">
+
+              <!-- PROJECTS — multi-project per tracker. Project key + prefix are immutable after creation. -->
+              <section class="section" data-section="projects">
+                <div class="panel">
+                  <div class="panel__head">
+                    <div><h2 class="panel__title">Projects</h2><div class="panel__sub">Each project has its own prefix and key counter. Workspace, workflow, labels, milestones, sprints, users, and calendar are shared across all projects.</div></div>
+                    <div style="flex: 1;"></div>
+                    <label class="chk"><input type="checkbox" /><span class="chk__box"></span>Show archived</label>
+                    <button class="btn btn--secondary">+ New project</button>
+                  </div>
+                  <div>
+                    <div class="item-row">
+                      <span style="font-weight: 500; min-width: 120px;">Web ⭐</span>
+                      <span class="pill">key: web</span>
+                      <span class="pill">prefix: WEB-</span>
+                      <span class="pill">next: WEB-87</span>
+                      <div style="flex: 1;"></div>
+                      <span style="font-size: 12px; color: var(--text-tertiary);">86 tasks</span>
+                      <button class="btn btn--ghost btn--sm">Edit</button>
+                      <button class="btn btn--ghost btn--sm">Archive</button>
+                      <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete…</button>
+                    </div>
+                    <div class="item-row">
+                      <span style="font-weight: 500; min-width: 120px;">Backend</span>
+                      <span class="pill">key: backend</span>
+                      <span class="pill">prefix: BACKEND-</span>
+                      <span class="pill">next: BACKEND-43</span>
+                      <div style="flex: 1;"></div>
+                      <span style="font-size: 12px; color: var(--text-tertiary);">31 tasks</span>
+                      <button class="btn btn--ghost btn--sm">Edit</button>
+                      <button class="btn btn--ghost btn--sm">Archive</button>
+                      <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete…</button>
+                    </div>
+                    <div class="item-row">
+                      <span style="font-weight: 500; min-width: 120px;">Infra</span>
+                      <span class="pill">key: infra</span>
+                      <span class="pill">prefix: INF-</span>
+                      <span class="pill">next: INF-12</span>
+                      <div style="flex: 1;"></div>
+                      <span style="font-size: 12px; color: var(--text-tertiary);">11 tasks</span>
+                      <button class="btn btn--ghost btn--sm">Edit</button>
+                      <button class="btn btn--ghost btn--sm">Archive</button>
+                      <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete…</button>
+                    </div>
+                  </div>
+                  <div class="panel__foot">
+                    <span style="font-size: 12px; color: var(--text-tertiary);"><strong>⭐</strong> = workspace default. Deleting a project with tasks requires picking a target to migrate them to.</span>
+                  </div>
+                </div>
+              </section>
+
+              <!-- USERS — folder-per-user identity. Names are not unique; UUIDs disambiguate. -->
+              <section class="section" data-section="users" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head">
+                    <div><h2 class="panel__title">Users</h2><div class="panel__sub">Tracked users. Each user has a profile, optional avatar, and gitignored UI preferences. Switch the active user from the avatar menu in the header.</div></div>
+                    <div style="flex: 1;"></div>
+                    <label class="chk"><input type="checkbox" /><span class="chk__box"></span>Show archived</label>
+                    <button class="btn btn--secondary">+ Add user</button>
+                  </div>
+                  <div>
+                    <div class="item-row">
+                      <span class="avatar avatar--a">KL</span>
+                      <span style="font-weight: 500;">Ken Loh</span>
+                      <span class="pill">ken@example.com</span>
+                      <span class="pill">Asia/Singapore</span>
+                      <span class="pill" style="color: var(--accent); background: var(--accent-muted);">active</span>
+                      <div style="flex: 1;"></div>
+                      <button class="btn btn--ghost btn--sm">Edit</button>
+                      <button class="btn btn--ghost btn--sm" disabled title="Switch to another user first">Archive</button>
+                      <button class="btn btn--ghost btn--sm" disabled title="Cannot delete the active user">Delete…</button>
+                    </div>
+                    <div class="item-row">
+                      <span class="avatar avatar--b">SM</span>
+                      <span style="font-weight: 500;">Sara Marquez</span>
+                      <span class="pill">sara@example.com</span>
+                      <span class="pill">Europe/Madrid</span>
+                      <div style="flex: 1;"></div>
+                      <button class="btn btn--ghost btn--sm">Switch to</button>
+                      <button class="btn btn--ghost btn--sm">Edit</button>
+                      <button class="btn btn--ghost btn--sm">Archive</button>
+                      <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete…</button>
+                    </div>
+                    <div class="item-row">
+                      <span class="avatar avatar--c">JP</span>
+                      <span style="font-weight: 500;">Jess Park</span>
+                      <span class="pill">jess@example.com</span>
+                      <span class="pill">America/New_York</span>
+                      <div style="flex: 1;"></div>
+                      <button class="btn btn--ghost btn--sm">Switch to</button>
+                      <button class="btn btn--ghost btn--sm">Edit</button>
+                      <button class="btn btn--ghost btn--sm">Archive</button>
+                      <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete…</button>
+                    </div>
+                    <div class="item-row">
+                      <span class="avatar avatar--d">MR</span>
+                      <span style="font-weight: 500;">Mira Rao</span>
+                      <span class="pill">mira@example.com</span>
+                      <span class="pill">Asia/Kolkata</span>
+                      <div style="flex: 1;"></div>
+                      <button class="btn btn--ghost btn--sm">Switch to</button>
+                      <button class="btn btn--ghost btn--sm">Edit</button>
+                      <button class="btn btn--ghost btn--sm">Archive</button>
+                      <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete…</button>
+                    </div>
+                  </div>
+                  <div class="panel__foot">
+                    <span style="font-size: 12px; color: var(--text-tertiary);">Profile data lives at <code>.loctt/users/&lt;uuid&gt;/profile.yaml</code> (committed). Per-user UI prefs in <code>settings.yaml</code> are gitignored. Deleting a user with task references requires choosing <em>remap to</em> or <em>unassign</em>.</span>
+                  </div>
+                </div>
+              </section>
+
+              <section class="section" data-section="statuses" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head">
+                    <div><h2 class="panel__title">Statuses</h2><div class="panel__sub">Drag to reorder. Click a swatch or icon to change it.</div></div>
+                    <div style="flex: 1;"></div>
+                    <button class="btn btn--secondary">+ Add status</button>
+                  </div>
+                  <div id="status-list"></div>
+                  <div class="panel__foot">
+                    <span style="font-size: 12px; color: var(--text-tertiary);">Changes apply to every view.</span>
+                    <div class="row"><button class="btn btn--ghost" disabled>Discard</button><button class="btn btn--primary" disabled>Save changes</button></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="section" data-section="priorities" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head">
+                    <div><h2 class="panel__title">Priorities</h2><div class="panel__sub">Drag to reorder. Values auto-renumber on save.</div></div>
+                    <div style="flex: 1;"></div>
+                    <button class="btn btn--secondary">+ Add priority</button>
+                  </div>
+                  <div id="priority-list"></div>
+                </div>
+              </section>
+
+              <section class="section" data-section="types" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head">
+                    <div><h2 class="panel__title">Task types</h2><div class="panel__sub">Categorise tasks (Bug, Feature, Task, etc.). Each type can have its own icon and color.</div></div>
+                    <div style="flex: 1;"></div>
+                    <button class="btn btn--secondary">+ Add type</button>
+                  </div>
+                  <div id="type-list"></div>
+                </div>
+              </section>
+
+              <section class="section" data-section="labels" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head">
+                    <div><h2 class="panel__title">Labels</h2><div class="panel__sub">Label registry. Labels can be created inline from task UIs. Setting an unknown label on a task fails — register it here first.</div></div>
+                    <div style="flex: 1;"></div>
+                    <label class="chk"><input type="checkbox" /><span class="chk__box"></span>Show archived</label>
+                    <button class="btn btn--secondary">+ Add label</button>
+                  </div>
+                  <div id="label-list"></div>
+                </div>
+              </section>
+
+              <section class="section" data-section="milestones" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head">
+                    <div><h2 class="panel__title">Milestones</h2><div class="panel__sub">Named release markers with optional target dates. Not time-boxed — for that, use Sprints. Archived milestones hide from pickers.</div></div>
+                    <div style="flex: 1;"></div>
+                    <label class="chk"><input type="checkbox" checked /><span class="chk__box"></span>Show archived</label>
+                    <button class="btn btn--secondary">+ Add milestone</button>
+                  </div>
+                  <div id="milestone-list"></div>
+                </div>
+              </section>
+
+              <section class="section" data-section="relationships" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head">
+                    <div><h2 class="panel__title">Relationship types</h2><div class="panel__sub">Forward/inverse pairs. There is no built-in parent/child concept — declare one here if you want it. The <em>ranked</em> flag enables drag-reorder of links of that type within a task.</div></div>
+                    <div style="flex: 1;"></div>
+                    <button class="btn btn--secondary">+ Add relationship</button>
+                  </div>
+                  <div>
+                    <div class="item-row">
+                      <span class="grip">⋮⋮</span>
+                      <span style="font-weight: 500;">blocks</span><span style="color: var(--text-tertiary);">↔</span><span style="font-weight: 500;">is blocked by</span>
+                      <span class="pill">ranked</span>
+                      <span class="pill" title="Used by the Timeline view to render dependency arrows.">timeline arrows</span>
+                      <div style="flex: 1;"></div>
+                      <button class="btn btn--ghost btn--sm">Edit</button>
+                      <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete</button>
+                    </div>
+                    <div class="item-row">
+                      <span class="grip">⋮⋮</span>
+                      <span style="font-weight: 500;">relates to</span><span style="color: var(--text-tertiary);">↔</span><span style="font-weight: 500;">relates to</span>
+                      <div style="flex: 1;"></div>
+                      <button class="btn btn--ghost btn--sm">Edit</button>
+                      <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete</button>
+                    </div>
+                  </div>
+                  <div class="panel__foot">
+                    <span style="font-size: 12px; color: var(--text-tertiary);">Pick one relationship type as the Timeline's dependency arrow source in <em>Timeline defaults</em> below.</span>
+                  </div>
+                </div>
+              </section>
+
+              <section class="section" data-section="custom-fields" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head">
+                    <div><h2 class="panel__title">Custom fields</h2><div class="panel__sub">Project-specific fields. Type is locked after creation.</div></div>
+                    <div style="flex: 1;"></div>
+                    <button class="btn btn--secondary">+ Add custom field</button>
+                  </div>
+                  <div>
+                    <div class="item-row">
+                      <span class="grip">⋮⋮</span>
+                      <span style="font-weight: 500;">Customer impact</span>
+                      <span class="pill">key: impact</span><span class="pill">enum</span><span class="pill">5 values</span>
+                      <div style="flex: 1;"></div>
+                      <span style="font-size: 12px; color: var(--text-tertiary);">12 tasks</span>
+                      <button class="btn btn--ghost btn--sm">Edit</button>
+                      <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete</button>
+                    </div>
+                    <div class="item-row">
+                      <span class="grip">⋮⋮</span>
+                      <span style="font-weight: 500;">Risk score</span>
+                      <span class="pill">key: risk</span><span class="pill">number</span>
+                      <div style="flex: 1;"></div>
+                      <span style="font-size: 12px; color: var(--text-tertiary);">7 tasks</span>
+                      <button class="btn btn--ghost btn--sm">Edit</button>
+                      <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete</button>
+                    </div>
+                  </div>
+                  <div class="panel__foot">
+                    <span style="font-size: 12px; color: var(--text-tertiary);">Sprint, milestone, labels, assignee, reporter, project, estimate, dates — these are <em>core</em> fields, not custom. See their dedicated panels.</span>
+                  </div>
+                </div>
+              </section>
+
+              <section class="section" data-section="estimation" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head"><div><h2 class="panel__title">Estimation</h2><div class="panel__sub">Display-only. Estimates don't drive timeline or duration math.</div></div></div>
+                  <div>
+                    <div class="setting">
+                      <div><div class="setting__label">Enable estimates</div><div class="setting__hint">Hides the estimate field across the app when off.</div></div>
+                      <div class="setting__control"><label class="chk"><input type="checkbox" checked /><span class="chk__box"></span></label></div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Unit</div><div class="setting__hint">Numeric units sum across selected tasks. Custom enum is categorical (e.g. XS / S / M / L / XL) — aggregated as per-category counts instead.</div></div>
+                      <div class="setting__control">
+                        <div class="radio-row" id="estimation-unit">
+                          <button class="is-on" data-val="points">Points</button>
+                          <button data-val="hours">Hours</button>
+                          <button data-val="days">Days</button>
+                          <button data-val="custom_numeric">Custom numeric</button>
+                          <button data-val="custom_enum">Custom enum</button>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="setting" id="custom-unit-row" style="display: none;">
+                      <div><div class="setting__label">Unit label</div><div class="setting__hint">Shown after numeric values, e.g. <em>pts</em>, <em>hrs</em>. For custom enum: a noun like <em>t-shirt</em>.</div></div>
+                      <div class="setting__control"><input class="input" placeholder="pts" /></div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Scale</div><div class="setting__hint">Only applies to numeric units.</div></div>
+                      <div class="setting__control">
+                        <div class="radio-row" id="estimation-scale">
+                          <button data-val="free">Free</button>
+                          <button class="is-on" data-val="fibonacci">Fibonacci</button>
+                          <button data-val="linear">Linear</button>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Preset values</div><div class="setting__hint">Comma-separated. Required for custom enum (e.g. <em>XS, S, M, L, XL</em>). Optional for numeric units when scale ≠ Free.</div></div>
+                      <div class="setting__control"><input class="input" value="1, 2, 3, 5, 8, 13, 21" style="width: 100%;" /></div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="section" data-section="calendar" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head"><div><h2 class="panel__title">Working days</h2><div class="panel__sub">Non-working days render shaded on the Timeline. No business-day math.</div></div></div>
+                  <div class="panel__body">
+                    <div class="weekday-row" id="weekday-row">
+                      <button class="weekday-btn" data-day="0">Sun</button>
+                      <button class="weekday-btn is-on" data-day="1">Mon</button>
+                      <button class="weekday-btn is-on" data-day="2">Tue</button>
+                      <button class="weekday-btn is-on" data-day="3">Wed</button>
+                      <button class="weekday-btn is-on" data-day="4">Thu</button>
+                      <button class="weekday-btn is-on" data-day="5">Fri</button>
+                      <button class="weekday-btn" data-day="6">Sat</button>
+                    </div>
+                    <div class="setting" style="padding-left: 0; padding-right: 0; margin-top: 16px; border-top: 1px solid var(--border-subtle); border-bottom: 0;">
+                      <div><div class="setting__label">First day of week</div><div class="setting__hint">Affects date pickers and week labels.</div></div>
+                      <div class="setting__control">
+                        <select class="select">
+                          <option value="0">Sunday</option>
+                          <option value="1" selected>Monday</option>
+                          <option value="6">Saturday</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="panel">
+                  <div class="panel__head">
+                    <div><h2 class="panel__title">Holidays</h2><div class="panel__sub">Individual dates to shade on the Timeline.</div></div>
+                    <div style="flex: 1;"></div>
+                    <button class="btn btn--secondary">+ Add holiday</button>
+                  </div>
+                  <div class="panel__body">
+                    <table class="holidays-table tabular">
+                      <thead><tr><th style="width: 140px;">Date</th><th>Label</th><th style="width: 80px;"></th></tr></thead>
+                      <tbody>
+                        <tr><td>2026-01-01</td><td>New Year's Day</td><td><button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">×</button></td></tr>
+                        <tr><td>2026-05-01</td><td>Labor Day</td><td><button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">×</button></td></tr>
+                        <tr><td>2026-12-25</td><td>Christmas</td><td><button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">×</button></td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+
+              <section class="section" data-section="board" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head">
+                    <div><h2 class="panel__title">Board columns</h2><div class="panel__sub">Default: one status = one column. Define this block to group multiple statuses under one column or to set <strong>WIP limits</strong> — a soft cap that flags overload (red badge "5 / 3"), without blocking drops.</div></div>
+                    <div style="flex: 1;"></div>
+                    <button class="btn btn--secondary">+ Add column</button>
+                  </div>
+                  <div id="board-column-list"></div>
+                </div>
+
+                <div class="panel">
+                  <div class="panel__head"><div><h2 class="panel__title">Card layout</h2><div class="panel__sub">Card field visibility is a personal preference — see <em>My preferences → Card layout</em>.</div></div></div>
+                </div>
+              </section>
+
+              <section class="section" data-section="timeline" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head"><div><h2 class="panel__title">Timeline defaults</h2><div class="panel__sub">Defaults when a user opens Timeline for the first time.</div></div></div>
+                  <div>
+                    <div class="setting">
+                      <div><div class="setting__label">Default zoom</div></div>
+                      <div class="setting__control">
+                        <div class="radio-row" id="timeline-zoom"><button data-val="day">Day</button><button class="is-on" data-val="week">Week</button><button data-val="month">Month</button></div>
+                      </div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Dependency relationship</div><div class="setting__hint">Which relationship type renders as SVG arrows between bars. Defaults to <em>blocks</em> if it exists, otherwise none. Configurable in <code>workflow.yaml#timeline.dependency_relationship</code>.</div></div>
+                      <div class="setting__control">
+                        <select class="select">
+                          <option value="blocks" selected>blocks</option>
+                          <option value="relates_to">relates_to</option>
+                          <option value="">— none —</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Show dependency arrows by default</div></div>
+                      <div class="setting__control"><label class="chk"><input type="checkbox" checked /><span class="chk__box"></span></label></div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Default grouping</div></div>
+                      <div class="setting__control">
+                        <div class="radio-row" id="timeline-group"><button data-val="none">None</button><button class="is-on" data-val="milestone">Milestone</button><button data-val="assignee">Assignee</button><button data-val="status">Status</button></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="section" data-section="general" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head"><div><h2 class="panel__title">General</h2><div class="panel__sub">Workspace-level identity and shared defaults. Personal display preferences live under <em>My preferences</em>.</div></div></div>
+                  <div>
+                    <div class="setting">
+                      <div><div class="setting__label">Workspace name</div><div class="setting__hint">Display only — not used for the project key prefix.</div></div>
+                      <div class="setting__control"><input class="input" value="TaskTracker" style="width: 100%;" /></div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Workspace default project</div><div class="setting__hint">Used when creating tasks if no per-user override and no <code>--project</code> flag.</div></div>
+                      <div class="setting__control">
+                        <select class="select">
+                          <option selected>Web (WEB-)</option>
+                          <option>Backend (BACKEND-)</option>
+                          <option>Infra (INF-)</option>
+                          <option>— (force picker)</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Schema version</div><div class="setting__hint">From <code>.loctt/.schema-version</code>. Run <code>loctt migrate</code> to upgrade after the CLI is updated.</div></div>
+                      <div class="setting__control"><span class="pill">version: 1</span></div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <!-- SPRINTS — first-class core registry. NOT a custom field. -->
+              <section class="section" data-section="sprints" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head">
+                    <div><h2 class="panel__title">Sprints</h2><div class="panel__sub">Time-boxed work intervals. No start/complete ceremony — <em>state</em> is just a label. No carry-over.</div></div>
+                    <div style="flex: 1;"></div>
+                    <label class="chk"><input type="checkbox" /><span class="chk__box"></span>Show archived</label>
+                    <button class="btn btn--secondary">+ New sprint</button>
+                  </div>
+                  <div>
+                    <div class="item-row">
+                      <span style="font-weight: 500; min-width: 100px;">S-12</span>
+                      <span class="pill" style="background: var(--sw-green-bg); color: var(--sw-green-fg);">active</span>
+                      <span class="pill">2026-05-01 → 2026-05-14</span>
+                      <span style="color: var(--text-secondary); font-size: 12px;">Goal: <em>Ship login flow</em></span>
+                      <div style="flex: 1;"></div>
+                      <span style="font-size: 12px; color: var(--text-tertiary);">14 tasks</span>
+                      <button class="btn btn--ghost btn--sm">Edit</button>
+                      <button class="btn btn--ghost btn--sm">Archive</button>
+                      <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete…</button>
+                    </div>
+                    <div class="item-row">
+                      <span style="font-weight: 500; min-width: 100px;">S-13</span>
+                      <span class="pill">future</span>
+                      <span class="pill">2026-05-15 → 2026-05-28</span>
+                      <span style="color: var(--text-secondary); font-size: 12px;">Goal: <em>Settings polish</em></span>
+                      <div style="flex: 1;"></div>
+                      <span style="font-size: 12px; color: var(--text-tertiary);">3 tasks</span>
+                      <button class="btn btn--ghost btn--sm">Edit</button>
+                      <button class="btn btn--ghost btn--sm">Archive</button>
+                      <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete…</button>
+                    </div>
+                    <div class="item-row" style="opacity: 0.55;">
+                      <span style="font-weight: 500; min-width: 100px;">S-11</span>
+                      <span class="pill">completed</span>
+                      <span class="pill">2026-04-17 → 2026-04-30</span>
+                      <span style="color: var(--text-secondary); font-size: 12px;">Goal: <em>Timeline MVP</em></span>
+                      <div style="flex: 1;"></div>
+                      <span style="font-size: 12px; color: var(--text-tertiary);">22 tasks</span>
+                      <button class="btn btn--ghost btn--sm" title="Re-opening a completed sprint requires --force / { force: true }">Re-open…</button>
+                      <button class="btn btn--ghost btn--sm">Archive</button>
+                      <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete…</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Burndown — placeholder. Estimation-aware: numeric units render sum-remaining; custom_enum renders count-remaining. -->
+                <div class="panel">
+                  <div class="panel__head"><div><h2 class="panel__title">Burndown · S-12</h2><div class="panel__sub">Estimate-burndown when estimation unit is numeric; task-count burndown for custom enum.</div></div></div>
+                  <div class="panel__body" style="text-align: center; padding: 32px; color: var(--text-tertiary); border: 1.5px dashed var(--border-default); border-radius: var(--radius-md);">
+                    📉 Burndown chart placeholder (out of scope for the mockup round)
+                  </div>
+                </div>
+              </section>
+
+              <!-- SAVED VIEWS — queries.yaml CRUD. Stable IDs so renames don't break pinned references. -->
+              <section class="section" data-section="views" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head">
+                    <div><h2 class="panel__title">Saved views</h2><div class="panel__sub">Workspace-shared filters from <code>queries.yaml</code>. Each view has a stable ID — renaming the display name doesn't break sidebar pins.</div></div>
+                    <div style="flex: 1;"></div>
+                    <button class="btn btn--secondary">+ New view</button>
+                  </div>
+                  <div>
+                    <div class="item-row">
+                      <span style="font-weight: 500; min-width: 160px;">In progress</span>
+                      <code style="font-size: 11px; color: var(--text-tertiary);">status = doing or status = in_review</code>
+                      <span class="pill">sort: priority desc</span>
+                      <div style="flex: 1;"></div>
+                      <button class="btn btn--ghost btn--sm">Edit</button>
+                      <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete</button>
+                    </div>
+                    <div class="item-row">
+                      <span style="font-weight: 500; min-width: 160px;">Stale (no update &gt; 14d)</span>
+                      <code style="font-size: 11px; color: var(--text-tertiary);">updated_at &lt; today - 14d and status != done</code>
+                      <span class="pill">sort: updated_at asc</span>
+                      <div style="flex: 1;"></div>
+                      <button class="btn btn--ghost btn--sm">Edit</button>
+                      <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete</button>
+                    </div>
+                    <div class="item-row">
+                      <span style="font-weight: 500; min-width: 160px;">High-prio bugs</span>
+                      <code style="font-size: 11px; color: var(--text-tertiary);">type = bug and priority in (high, critical)</code>
+                      <span class="pill">sort: created_at desc</span>
+                      <div style="flex: 1;"></div>
+                      <button class="btn btn--ghost btn--sm">Edit</button>
+                      <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete</button>
+                    </div>
+                  </div>
+                  <div class="panel__foot">
+                    <span style="font-size: 12px; color: var(--text-tertiary);">Built-in dynamic filters (<em>Assigned to me</em>, <em>Due this week</em>, etc.) are parameterised by the active user and not stored here.</span>
+                  </div>
+                </div>
+              </section>
+
+              <!-- SYNC — git-backed mode. -->
+              <section class="section" data-section="sync" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head"><div><h2 class="panel__title">Git sync</h2><div class="panel__sub">Optional. When enabled, LocTT uses a dedicated <code>loctt</code> branch on a sparse worktree to share task state across machines.</div></div></div>
+                  <div>
+                    <div class="setting">
+                      <div><div class="setting__label">Status</div><div class="setting__hint">Live state of the integration.</div></div>
+                      <div class="setting__control">
+                        <span class="pill" style="background: var(--sw-green-bg); color: var(--sw-green-fg);">enabled</span>
+                        <span class="pill">branch: loctt</span>
+                        <span class="pill">remote: origin</span>
+                      </div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Enable git-backed mode</div><div class="setting__hint">Toggling requires confirmation — flipping this creates or tears down the sparse worktree on the <code>loctt</code> branch.</div></div>
+                      <div class="setting__control"><label class="chk"><input type="checkbox" checked /><span class="chk__box"></span></label></div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Auto-push on publish</div></div>
+                      <div class="setting__control"><label class="chk"><input type="checkbox" checked /><span class="chk__box"></span></label></div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Auto-fetch on sync</div></div>
+                      <div class="setting__control"><label class="chk"><input type="checkbox" checked /><span class="chk__box"></span></label></div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Last synced</div><div class="setting__hint">Commit <code>ae88455</code> · 17m ago</div></div>
+                      <div class="setting__control">
+                        <button class="btn btn--secondary">Publish local changes</button>
+                        <button class="btn btn--secondary">Sync from remote</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <!-- DOCTOR — invokes /api/doctor. -->
+              <section class="section" data-section="doctor" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head">
+                    <div><h2 class="panel__title">Doctor</h2><div class="panel__sub">Diagnostic checks across the tracker. Run periodically to surface integrity drift.</div></div>
+                    <div style="flex: 1;"></div>
+                    <button class="btn btn--primary">⟲ Re-run checks</button>
+                  </div>
+                  <div>
+                    <div class="item-row">
+                      <span style="color: var(--feedback-success-fg);">✓</span>
+                      <span style="font-weight: 500;">schema_version</span>
+                      <div style="flex: 1;"></div>
+                      <span style="font-size: 12px; color: var(--text-tertiary);">Schema version 1 matches CLI.</span>
+                    </div>
+                    <div class="item-row">
+                      <span style="color: var(--feedback-success-fg);">✓</span>
+                      <span style="font-weight: 500;">projects</span>
+                      <div style="flex: 1;"></div>
+                      <span style="font-size: 12px; color: var(--text-tertiary);">3 projects, 1 default, all prefixes unique.</span>
+                    </div>
+                    <div class="item-row">
+                      <span style="color: var(--feedback-warn-fg);">!</span>
+                      <span style="font-weight: 500;">user_references</span>
+                      <div style="flex: 1;"></div>
+                      <span style="font-size: 12px; color: var(--feedback-warn-fg);">2 tasks reference user UUID <code>5f1c…</code> (archived). Reassign or unarchive.</span>
+                    </div>
+                    <div class="item-row">
+                      <span style="color: var(--feedback-success-fg);">✓</span>
+                      <span style="font-weight: 500;">label_registry</span>
+                      <div style="flex: 1;"></div>
+                      <span style="font-size: 12px; color: var(--text-tertiary);">All task labels are registered.</span>
+                    </div>
+                    <div class="item-row">
+                      <span style="color: var(--feedback-success-fg);">✓</span>
+                      <span style="font-weight: 500;">current_user_resolvable</span>
+                      <div style="flex: 1;"></div>
+                      <span style="font-size: 12px; color: var(--text-tertiary);"><code>.current-user</code> → Ken Loh.</span>
+                    </div>
+                    <div class="item-row">
+                      <span style="color: var(--feedback-danger-fg);">✗</span>
+                      <span style="font-weight: 500;">orphaned_relationships</span>
+                      <div style="flex: 1;"></div>
+                      <span style="font-size: 12px; color: var(--feedback-danger-fg);">WEB-128 → BACKEND-9000 (missing target).</span>
+                    </div>
+                  </div>
+                  <div class="panel__foot">
+                    <span style="font-size: 12px; color: var(--text-tertiary);">Equivalent to <code>loctt doctor</code> on the CLI and <code>doctor</code> MCP tool.</span>
+                  </div>
+                </div>
+              </section>
+
+              <!-- MY PREFERENCES — per-user settings (gitignored). -->
+              <section class="section" data-section="preferences" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head"><div><h2 class="panel__title">My preferences</h2><div class="panel__sub">Per-user UI settings. Saved at <code>.loctt/users/&lt;your-id&gt;/settings.yaml</code> (gitignored — does not leak across teammates).</div></div></div>
+                  <div>
+                    <div class="setting">
+                      <div><div class="setting__label">Theme</div><div class="setting__hint">Also accessible from the header toggle (shortcut <kbd class="kbd">t</kbd>).</div></div>
+                      <div class="setting__control">
+                        <div class="radio-row"><button>Light</button><button class="is-on">Dark</button><button>System</button></div>
+                      </div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Date format</div></div>
+                      <div class="setting__control">
+                        <select class="select">
+                          <option>YYYY-MM-DD</option>
+                          <option selected>MMM DD, YYYY</option>
+                          <option>DD MMM YYYY</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Default view</div><div class="setting__hint">Where the app lands when you open it.</div></div>
+                      <div class="setting__control"><div class="radio-row"><button class="is-on">List</button><button>Board</button><button>Timeline</button></div></div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Default list sort</div></div>
+                      <div class="setting__control">
+                        <select class="select">
+                          <option selected>Created</option>
+                          <option>Updated</option>
+                          <option>Due date</option>
+                          <option>Priority</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Default project</div><div class="setting__hint">Overrides the workspace default when creating tasks. Set to "—" to fall back to the workspace default.</div></div>
+                      <div class="setting__control">
+                        <select class="select">
+                          <option>— (use workspace default)</option>
+                          <option selected>Web</option>
+                          <option>Backend</option>
+                          <option>Infra</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="setting">
+                      <div><div class="setting__label">Timezone</div><div class="setting__hint">Used for personal date display (due-this-week, activity timestamps). Workspace timezone takes precedence for shared rendering (timeline shading).</div></div>
+                      <div class="setting__control">
+                        <select class="select"><option selected>Asia/Singapore</option><option>America/New_York</option><option>Europe/Madrid</option></select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="panel">
+                  <div class="panel__head"><div><h2 class="panel__title">Card layout</h2><div class="panel__sub">Which fields render on each kanban card. Personal — doesn't affect teammates' boards.</div></div></div>
+                  <div class="panel__body card-layout">
+                    <div class="card-field-opts">
+                      <label class="chk"><input type="checkbox" disabled checked /><span class="chk__box"></span>Key <span style="color: var(--text-tertiary); font-size: 11px;">(always)</span></label>
+                      <label class="chk"><input type="checkbox" disabled checked /><span class="chk__box"></span>Title <span style="color: var(--text-tertiary); font-size: 11px;">(always)</span></label>
+                      <label class="chk"><input type="checkbox" checked /><span class="chk__box"></span>Project</label>
+                      <label class="chk"><input type="checkbox" checked /><span class="chk__box"></span>Priority</label>
+                      <label class="chk"><input type="checkbox" checked /><span class="chk__box"></span>Assignee</label>
+                      <label class="chk"><input type="checkbox" checked /><span class="chk__box"></span>Labels</label>
+                      <label class="chk"><input type="checkbox" /><span class="chk__box"></span>Type</label>
+                      <label class="chk"><input type="checkbox" checked /><span class="chk__box"></span>Due date</label>
+                      <label class="chk"><input type="checkbox" /><span class="chk__box"></span>Estimate</label>
+                      <label class="chk"><input type="checkbox" /><span class="chk__box"></span>Milestone</label>
+                      <label class="chk"><input type="checkbox" /><span class="chk__box"></span>Sprint</label>
+                      <label class="chk"><input type="checkbox" checked /><span class="chk__box"></span>Relationship count</label>
+                    </div>
+                    <div class="card-preview">
+                      <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-tertiary);">WEB-128 · <span class="chip" style="font-size: 10px;">Web</span></div>
+                      <div style="font-size: 13px; font-weight: 500;">Implement Gantt edge-drag handles</div>
+                      <div style="display: flex; gap: 4px; flex-wrap: wrap;"><span class="chip">frontend</span><span class="chip">timeline</span></div>
+                      <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary);">
+                        <span class="sw-dot sw-dot-orange"></span>High
+                        <span style="margin-left: auto;" class="avatar avatar--a">KL</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="panel">
+                  <div class="panel__head"><div><h2 class="panel__title">Sidebar pins</h2><div class="panel__sub">Drag the saved views or built-in filters you want pinned to the left sidebar.</div></div></div>
+                  <div>
+                    <div class="item-row"><span class="grip">⋮⋮</span><span>Assigned to me</span><span class="pill">built-in</span><div style="flex: 1;"></div><button class="btn btn--ghost btn--sm">✕</button></div>
+                    <div class="item-row"><span class="grip">⋮⋮</span><span>Due this week</span><span class="pill">built-in</span><div style="flex: 1;"></div><button class="btn btn--ghost btn--sm">✕</button></div>
+                    <div class="item-row"><span class="grip">⋮⋮</span><span>High-prio bugs</span><span class="pill">saved view</span><div style="flex: 1;"></div><button class="btn btn--ghost btn--sm">✕</button></div>
+                    <div class="item-row" style="opacity: 0.6;"><span style="color: var(--text-tertiary);">+ Add pin…</span></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="section" data-section="shortcuts" style="display: none;">
+                <div class="panel">
+                  <div class="panel__head"><div><h2 class="panel__title">Keyboard shortcuts</h2><div class="panel__sub">Global shortcuts that work anywhere in the app.</div></div></div>
+                  <div class="panel__body">
+                    <table class="kbd-table">
+                      <tr><td><kbd class="kbd">c</kbd></td><td>Create a new task</td></tr>
+                      <tr><td><kbd class="kbd">/</kbd></td><td>Focus search</td></tr>
+                      <tr><td><kbd class="kbd">g</kbd> <kbd class="kbd">l</kbd></td><td>Go to List</td></tr>
+                      <tr><td><kbd class="kbd">g</kbd> <kbd class="kbd">b</kbd></td><td>Go to Board</td></tr>
+                      <tr><td><kbd class="kbd">g</kbd> <kbd class="kbd">t</kbd></td><td>Go to Timeline</td></tr>
+                      <tr><td><kbd class="kbd">[</kbd></td><td>Toggle sidebar</td></tr>
+                      <tr><td><kbd class="kbd">t</kbd></td><td>Toggle theme</td></tr>
+                      <tr><td><kbd class="kbd">Esc</kbd></td><td>Close dialog / popover</td></tr>
+                      <tr><td><kbd class="kbd">?</kbd></td><td>This help</td></tr>
+                    </table>
+                  </div>
+                </div>
+              </section>
+
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <div class="popover" id="swatch-popover">
+      <div class="popover__title">Pick a color</div>
+      <div class="sw-grid" id="sw-grid"></div>
+    </div>
+    <div class="popover" id="icon-popover" style="width: 310px;">
+      <div class="icon-tabs">
+        <button class="is-active" data-tab="icons">Icons</button>
+        <button data-tab="emoji">Emoji</button>
+      </div>
+      <div class="icon-tab is-active" data-tab="icons">
+        <input class="input" placeholder="Search icons…" style="width: 100%; margin-bottom: 8px;" id="icon-search" />
+        <div class="icon-grid" id="icon-grid"></div>
+      </div>
+      <div class="icon-tab" data-tab="emoji">
+        <div style="font-size: 12px; color: var(--text-tertiary); margin-bottom: 8px;">Type or paste any unicode character.</div>
+        <input class="input" id="emoji-input" placeholder="🚀" style="font-size: 24px; height: 48px; text-align: center;" />
+        <div style="display: flex; gap: 8px; margin-top: 8px;">
+          <button class="btn btn--secondary" id="emoji-clear" style="flex: 1;">Clear</button>
+          <button class="btn btn--primary" id="emoji-set" style="flex: 1;">Set</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+      const SWATCHES = ["gray","slate","zinc","stone","red","rose","pink","fuchsia","purple","violet","indigo","blue","sky","cyan","teal","emerald","green","lime","yellow","amber","orange","brown"];
+      const ICONS = [
+        "circle","circle-dashed","circle-dot","circle-check","circle-slash","circle-x","circle-alert",
+        "clock","hourglass","flag","bookmark","pin","tag","star","heart",
+        "arrow-up","arrow-down","chevron-up","chevron-down","chevrons-up","chevrons-down","equal","target",
+        "bug","sparkles","wrench","zap","rocket","lightbulb","code","terminal",
+        "user","users","eye","file","folder","package","layers","database",
+        "octagon-x","triangle-alert","shield","info"
+      ];
+      const ICON_SVG = {
+        "circle": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>',
+        "circle-dashed": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"><circle cx="12" cy="12" r="9"/></svg>',
+        "circle-dot": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>',
+        "circle-check": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="9 12 11 14 15 10"/></svg>',
+        "circle-slash": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="6" y1="18" x2="18" y2="6"/></svg>',
+        "circle-x": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="8" y1="8" x2="16" y2="16"/><line x1="16" y1="8" x2="8" y2="16"/></svg>',
+        "circle-alert": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12" y2="16"/></svg>',
+        "clock": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>',
+        "hourglass": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4h12M6 20h12M7 4s0 5 5 8c5-3 5-8 5-8M7 20s0-5 5-8c5 3 5 8 5 8"/></svg>',
+        "flag": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 22V4c6-3 10 3 16 0v11c-6 3-10-3-16 0"/></svg>',
+        "bookmark": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3h14v18l-7-5-7 5z"/></svg>',
+        "pin": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22v-6M10 16h4M8 11V5l8 0v6l2 3H6z"/></svg>',
+        "tag": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12L12 20 3 11V3h8z"/><circle cx="7" cy="7" r="1.5" fill="currentColor"/></svg>',
+        "star": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15 9 22 10 17 15 18 22 12 18 6 22 7 15 2 10 9 9"/></svg>',
+        "heart": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 9a5 5 0 0 0-9-3 5 5 0 0 0-9 3c0 7 9 12 9 12s9-5 9-12z"/></svg>',
+        "arrow-up": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>',
+        "arrow-down": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>',
+        "chevron-up": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>',
+        "chevron-down": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>',
+        "chevrons-up": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 11 12 5 6 11"/><polyline points="18 18 12 12 6 18"/></svg>',
+        "chevrons-down": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 6 12 12 18 6"/><polyline points="6 13 12 19 18 13"/></svg>',
+        "equal": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="9" x2="19" y2="9"/><line x1="5" y1="15" x2="19" y2="15"/></svg>',
+        "target": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>',
+        "bug": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="6" width="8" height="14" rx="4"/><path d="M12 6V3M9 3l-2-2M15 3l2-2M5 12h3M16 12h3M5 7h3M16 17h3M5 17h3M16 7h3"/></svg>',
+        "sparkles": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l3 3M19 19l-3-3M5 19l3-3M19 5l-3 3"/></svg>',
+        "wrench": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 7l-2 2-7 7 2 2 7-7 2-2zm4-4l-3 3 2 2 3-3zm-4 4a3 3 0 1 0-3 3"/></svg>',
+        "zap": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg>',
+        "rocket": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 19c-1 2-1 4-1 4s2 0 4-1M13 15a5 5 0 0 0 5-5V3h-7a5 5 0 0 0-5 5v7zM13 10a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>',
+        "lightbulb": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 21h4M9 14c-2-2-3-4-3-6a6 6 0 1 1 12 0c0 2-1 4-3 6z"/></svg>',
+        "code": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+        "terminal": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><polyline points="7 10 10 13 7 16"/><line x1="12" y1="16" x2="16" y2="16"/></svg>',
+        "user": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 1 1 16 0"/></svg>',
+        "users": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20a6 6 0 0 1 12 0M15 20a5 5 0 0 1 6-4"/></svg>',
+        "eye": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+        "file": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+        "folder": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+        "package": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><polyline points="3 8 12 13 21 8"/><line x1="12" y1="13" x2="12" y2="22"/></svg>',
+        "layers": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 8 12 14 22 8"/><polyline points="2 14 12 20 22 14"/></svg>',
+        "database": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 2 4 3 8 3s8-1 8-3V5M4 12v7c0 2 4 3 8 3s8-1 8-3v-7"/></svg>',
+        "octagon-x": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="8 2 16 2 22 8 22 16 16 22 8 22 2 16 2 8"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>',
+        "triangle-alert": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 22h20z"/><line x1="12" y1="10" x2="12" y2="14"/><line x1="12" y1="18" x2="12" y2="18"/></svg>',
+        "shield": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-4 9-8 10-4-1-8-5-8-10V6z"/></svg>',
+        "info": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="8" r="0.7" fill="currentColor"/></svg>',
+      };
+      function renderIcon(spec) {
+        if (!spec) return "";
+        if (spec.startsWith("emoji:")) return `<span style="font-size: 14px;">${spec.slice(6)}</span>`;
+        if (spec.startsWith("lucide:")) {
+          const name = spec.slice(7);
+          return ICON_SVG[name] || `<span style="font-size: 10px; color: var(--text-tertiary);">${name}</span>`;
+        }
+        return "";
+      }
+
+      const state = {
+        statuses: [
+          { key: "not_started", label: "Not started", category: "pending", color: "slate", icon: "lucide:circle" },
+          { key: "in_progress", label: "In progress", category: "active", color: "blue", icon: "lucide:circle-dashed" },
+          { key: "in_review", label: "In review", category: "active", color: "violet", icon: "lucide:eye" },
+          { key: "blocked", label: "Blocked", category: "active", color: "amber", icon: "lucide:octagon-x" },
+          { key: "done", label: "Done", category: "completed", color: "green", icon: "lucide:circle-check" },
+          { key: "wont_do", label: "Won't do", category: "discarded", color: "slate", icon: "lucide:circle-slash" },
+        ],
+        priorities: [
+          { key: "low", label: "Low", value: 1, color: "slate", icon: "lucide:chevron-down" },
+          { key: "medium", label: "Medium", value: 2, color: "blue", icon: "lucide:equal" },
+          { key: "high", label: "High", value: 3, color: "orange", icon: "lucide:chevron-up" },
+          { key: "critical", label: "Critical", value: 4, color: "red", icon: "lucide:chevrons-up" },
+        ],
+        types: [
+          { key: "task", label: "Task", color: null, icon: "lucide:circle-dot" },
+          { key: "bug", label: "Bug", color: "red", icon: "lucide:bug" },
+          { key: "feature", label: "Feature", color: "violet", icon: "lucide:sparkles" },
+        ],
+        labels: [
+          { key: "frontend", label: "frontend", color: "blue", icon: null, count: 42 },
+          { key: "backend", label: "backend", color: "emerald", icon: null, count: 31 },
+          { key: "infra", label: "infra", color: "stone", icon: "lucide:database", count: 18 },
+          { key: "design", label: "design", color: "pink", icon: "emoji:🎨", count: 11 },
+          { key: "testing", label: "testing", color: "amber", icon: null, count: 9 },
+          { key: "research", label: "research", color: "purple", icon: "lucide:lightbulb", count: 5 },
+        ],
+        milestones: [
+          { key: "v1-ga", label: "v1 GA", targetDate: "2026-05-31", archived: false, count: 24 },
+          { key: "v11-polish", label: "v1.1 polish", targetDate: "2026-06-30", archived: false, count: 8 },
+          { key: "v0-alpha", label: "v0 alpha", targetDate: "2026-02-15", archived: true, count: 0 },
+        ],
+        boardColumns: [
+          { key: "not_started", label: "Not started", statuses: ["not_started"], wipLimit: null, hidden: false },
+          { key: "in_progress", label: "In progress", statuses: ["in_progress"], wipLimit: 5, hidden: false },
+          { key: "in_review", label: "In review", statuses: ["in_review"], wipLimit: 3, hidden: false },
+          { key: "blocked", label: "Blocked", statuses: ["blocked"], wipLimit: null, hidden: false },
+          { key: "done", label: "Done", statuses: ["done"], wipLimit: null, hidden: false },
+          { key: "wont_do", label: "Won't do", statuses: ["wont_do"], wipLimit: null, hidden: false },
+        ],
+      };
+
+      const $ = (sel, el = document) => el.querySelector(sel);
+      const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+
+      function renderStatusList() {
+        $("#status-list").innerHTML = state.statuses.map((s, i) => `
+          <div class="item-row" data-idx="${i}">
+            <span class="grip">⋮⋮</span>
+            <button class="inline-icon" data-row-icon="statuses:${i}" title="Change icon">${renderIcon(s.icon)}</button>
+            <button class="inline-swatch sw-swatch sw-swatch-${s.color}" data-row-swatch="statuses:${i}" title="Change color"></button>
+            <span class="sw-badge sw-badge-${s.color}">${esc(s.label)}</span>
+            <span class="pill">key: ${esc(s.key)}</span>
+            <span class="pill">category: ${esc(s.category)}</span>
+            <div style="flex: 1;"></div>
+            <button class="btn btn--ghost btn--sm">Edit</button>
+            <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete</button>
+          </div>
+        `).join("");
+      }
+
+      function renderPriorityList() {
+        $("#priority-list").innerHTML = state.priorities.map((p, i) => `
+          <div class="item-row" data-idx="${i}">
+            <span class="grip">⋮⋮</span>
+            <button class="inline-icon" data-row-icon="priorities:${i}" title="Change icon">${renderIcon(p.icon)}</button>
+            <button class="inline-swatch sw-swatch sw-swatch-${p.color}" data-row-swatch="priorities:${i}" title="Change color"></button>
+            <span style="display: inline-flex; align-items: center; gap: 6px;"><span class="sw-dot sw-dot-${p.color}"></span><span style="font-weight: 500;">${esc(p.label)}</span></span>
+            <span class="pill">key: ${esc(p.key)}</span>
+            <span class="pill">value: ${p.value}</span>
+            <div style="flex: 1;"></div>
+            <button class="btn btn--ghost btn--sm">Edit</button>
+            <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete</button>
+          </div>
+        `).join("");
+      }
+
+      function renderTypeList() {
+        $("#type-list").innerHTML = state.types.map((t, i) => `
+          <div class="item-row" data-idx="${i}">
+            <span class="grip">⋮⋮</span>
+            <button class="inline-icon" data-row-icon="types:${i}" title="Change icon">${renderIcon(t.icon)}</button>
+            <button class="inline-swatch sw-swatch sw-swatch-${t.color || 'slate'}" data-row-swatch="types:${i}" title="Change color" ${t.color ? '' : 'style="opacity: 0.35;"'}></button>
+            <span style="font-weight: 500;">${esc(t.label)}</span>
+            <span class="pill">key: ${esc(t.key)}</span>
+            <div style="flex: 1;"></div>
+            <button class="btn btn--ghost btn--sm">Edit</button>
+            <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete</button>
+          </div>
+        `).join("");
+      }
+
+      function renderLabelList() {
+        $("#label-list").innerHTML = state.labels.map((l, i) => `
+          <div class="item-row" data-idx="${i}">
+            <span class="grip">⋮⋮</span>
+            <button class="inline-icon" data-row-icon="labels:${i}" title="Change icon">${l.icon ? renderIcon(l.icon) : `<span style="color: var(--text-tertiary); font-size: 11px;">—</span>`}</button>
+            <button class="inline-swatch sw-swatch sw-swatch-${l.color}" data-row-swatch="labels:${i}" title="Change color"></button>
+            <span class="sw-badge sw-badge-${l.color}">${l.icon ? renderIcon(l.icon) + ' ' : ''}${esc(l.label)}</span>
+            <span class="pill">key: ${esc(l.key)}</span>
+            <div style="flex: 1;"></div>
+            <span style="font-size: 12px; color: var(--text-tertiary);">${l.count} tasks</span>
+            <button class="btn btn--ghost btn--sm">Edit</button>
+            <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete</button>
+          </div>
+        `).join("");
+      }
+
+      function renderMilestoneList() {
+        $("#milestone-list").innerHTML = state.milestones.map((m, i) => `
+          <div class="item-row" data-idx="${i}" style="${m.archived ? 'opacity: 0.55;' : ''}">
+            <span class="grip">⋮⋮</span>
+            <span style="font-weight: 500;">${esc(m.label)}</span>
+            <span class="pill">key: ${esc(m.key)}</span>
+            <span class="pill">target: ${esc(m.targetDate)}</span>
+            ${m.archived ? '<span class="pill" style="color: var(--feedback-warn-fg); background: var(--feedback-warn-bg);">archived</span>' : ''}
+            <div style="flex: 1;"></div>
+            <span style="font-size: 12px; color: var(--text-tertiary);">${m.count} tasks</span>
+            <button class="btn btn--ghost btn--sm">${m.archived ? "Restore" : "Archive"}</button>
+            <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete</button>
+          </div>
+        `).join("");
+      }
+
+      function renderBoardColumns() {
+        $("#board-column-list").innerHTML = state.boardColumns.map((c, i) => `
+          <div class="item-row" data-idx="${i}">
+            <span class="grip">⋮⋮</span>
+            <span style="font-weight: 500; min-width: 120px;">${esc(c.label)}</span>
+            <span class="pill">statuses: ${c.statuses.join(", ")}</span>
+            <span class="pill">WIP: ${c.wipLimit ?? "none"}</span>
+            ${c.hidden ? '<span class="pill">hidden</span>' : ''}
+            <div style="flex: 1;"></div>
+            <button class="btn btn--ghost btn--sm">Edit</button>
+            <button class="btn btn--ghost btn--sm" style="color: var(--feedback-danger-fg);">Delete</button>
+          </div>
+        `).join("");
+      }
+
+      function renderThemePreview() {
+        const mk = () => SWATCHES.map(s => `<div class="sw-swatch sw-swatch-${s}" title="${s}"></div>`).join("");
+        const lt = $("#theme-preview-light");
+        const dk = $("#theme-preview-dark");
+        if (lt) lt.innerHTML = mk();
+        if (dk) dk.innerHTML = mk();
+      }
+
+      function rerenderAll() {
+        renderStatusList(); renderPriorityList(); renderTypeList();
+        renderLabelList(); renderMilestoneList(); renderBoardColumns();
+        renderThemePreview();
+        wireReorder();
+      }
+
+      // ============================================================
+      // Drag-to-reorder across settings lists
+      // ============================================================
+      const LIST_MAP = {
+        "status-list": "statuses",
+        "priority-list": "priorities",
+        "type-list": "types",
+        "label-list": "labels",
+        "milestone-list": "milestones",
+        "board-column-list": "boardColumns",
+      };
+      let dragSrcIdx = null;
+      let dragSrcList = null;
+
+      function wireReorder() {
+        Object.entries(LIST_MAP).forEach(([listId, stateKey]) => {
+          const container = document.getElementById(listId);
+          if (!container) return;
+          Array.from(container.querySelectorAll(".item-row")).forEach((row, idx) => {
+            row.setAttribute("draggable", "true");
+            row.addEventListener("dragstart", (e) => {
+              dragSrcIdx = idx;
+              dragSrcList = stateKey;
+              row.classList.add("is-dragging");
+              row.style.opacity = "0.4";
+              if (e.dataTransfer) {
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", String(idx));
+              }
+            });
+            row.addEventListener("dragend", () => {
+              row.classList.remove("is-dragging");
+              row.style.opacity = "";
+              dragSrcIdx = null;
+              dragSrcList = null;
+              container.querySelectorAll(".item-row").forEach(r => r.style.borderTop = "");
+            });
+            row.addEventListener("dragover", (e) => {
+              if (dragSrcList !== stateKey) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              // Visual cue: thicker top border on the row we would insert before
+              container.querySelectorAll(".item-row").forEach(r => r.style.borderTop = "");
+              row.style.borderTop = "2px solid var(--accent)";
+            });
+            row.addEventListener("drop", (e) => {
+              if (dragSrcList !== stateKey || dragSrcIdx === null) return;
+              e.preventDefault();
+              let targetIdx = idx;
+              if (dragSrcIdx < targetIdx) targetIdx -= 0; // move-forward: insert before current row
+              const arr = state[stateKey];
+              const moved = arr.splice(dragSrcIdx, 1)[0];
+              arr.splice(targetIdx, 0, moved);
+              // Priorities auto-renumber value on reorder
+              if (stateKey === "priorities") {
+                arr.forEach((p, i) => p.value = i + 1);
+              }
+              rerenderAll();
+            });
+          });
+        });
+      }
+
+      rerenderAll();
+
+      // Section switching
+      document.querySelectorAll("#settings-nav button").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const target = btn.dataset.section;
+          document.querySelectorAll("#settings-nav button").forEach(b => b.classList.toggle("is-active", b === btn));
+          document.querySelectorAll(".section").forEach(s => {
+            s.style.display = s.dataset.section === target ? "" : "none";
+          });
+          localStorage.setItem("tt-settings-section", target);
+          window.scrollTo(0, 0);
+          // Brief flash on the clicked item so users see the action register
+          btn.classList.remove("is-flashing");
+          void btn.offsetWidth;
+          btn.classList.add("is-flashing");
+        });
+      });
+      const saved = localStorage.getItem("tt-settings-section");
+      const hashSection = window.location.hash.replace("#", "");
+      const initial = hashSection || saved;
+      if (initial) {
+        const btn = document.querySelector(`#settings-nav button[data-section="${initial}"]`);
+        if (btn) btn.click();
+      }
+
+      // Swatch picker
+      const swGrid = $("#sw-grid");
+      swGrid.innerHTML = SWATCHES.map(s => `<button class="sw-swatch sw-swatch-${s}" data-swatch="${s}" title="${s}"></button>`).join("");
+
+      let currentSwatchTarget = null;
+      document.addEventListener("click", (e) => {
+        const trigger = e.target.closest("[data-row-swatch]");
+        if (trigger) {
+          currentSwatchTarget = trigger.dataset.rowSwatch;
+          const [coll, idxStr] = currentSwatchTarget.split(":");
+          const currentColor = state[coll][+idxStr].color;
+          swGrid.querySelectorAll(".sw-swatch").forEach(b => {
+            b.classList.toggle("is-selected", b.dataset.swatch === currentColor);
+          });
+          const pop = $("#swatch-popover");
+          TT.closeAllFloating();
+          TT.positionNear(trigger, pop);
+          pop.classList.add("is-open");
+          e.stopImmediatePropagation();
+        }
+      });
+      swGrid.addEventListener("click", (e) => {
+        const b = e.target.closest(".sw-swatch");
+        if (!b || !currentSwatchTarget) return;
+        const [coll, idxStr] = currentSwatchTarget.split(":");
+        state[coll][+idxStr].color = b.dataset.swatch;
+        TT.closeAllFloating();
+        rerenderAll();
+      });
+
+      // Icon picker
+      const iconGrid = $("#icon-grid");
+      function renderIconGrid(filter = "") {
+        const f = filter.toLowerCase().trim();
+        iconGrid.innerHTML = ICONS.filter(n => !f || n.includes(f)).map(n => `
+          <button class="icon-cell" data-icon-name="${n}" title="${n}">${ICON_SVG[n] || n.slice(0,2)}</button>
+        `).join("");
+      }
+      renderIconGrid();
+
+      let currentIconTarget = null;
+      document.addEventListener("click", (e) => {
+        const trigger = e.target.closest("[data-row-icon]");
+        if (trigger) {
+          currentIconTarget = trigger.dataset.rowIcon;
+          const [coll, idxStr] = currentIconTarget.split(":");
+          const current = state[coll][+idxStr].icon || "";
+          iconGrid.querySelectorAll(".icon-cell").forEach(b => {
+            b.classList.toggle("is-selected", "lucide:" + b.dataset.iconName === current);
+          });
+          const pop = $("#icon-popover");
+          TT.closeAllFloating();
+          TT.positionNear(trigger, pop);
+          pop.classList.add("is-open");
+          e.stopImmediatePropagation();
+        }
+      });
+
+      $("#icon-popover").addEventListener("click", (e) => {
+        const tabBtn = e.target.closest(".icon-tabs button");
+        if (tabBtn) {
+          const tab = tabBtn.dataset.tab;
+          $("#icon-popover").querySelectorAll(".icon-tabs button").forEach(b => b.classList.toggle("is-active", b === tabBtn));
+          $("#icon-popover").querySelectorAll(".icon-tab").forEach(t => t.classList.toggle("is-active", t.dataset.tab === tab));
+          e.stopPropagation();
+        }
+      });
+      iconGrid.addEventListener("click", (e) => {
+        const cell = e.target.closest(".icon-cell");
+        if (!cell || !currentIconTarget) return;
+        const [coll, idxStr] = currentIconTarget.split(":");
+        state[coll][+idxStr].icon = "lucide:" + cell.dataset.iconName;
+        TT.closeAllFloating();
+        rerenderAll();
+      });
+      $("#icon-search").addEventListener("input", (e) => renderIconGrid(e.target.value));
+
+      $("#emoji-set").addEventListener("click", (e) => {
+        if (!currentIconTarget) return;
+        const v = $("#emoji-input").value.trim();
+        if (!v) return;
+        const [coll, idxStr] = currentIconTarget.split(":");
+        state[coll][+idxStr].icon = "emoji:" + Array.from(v)[0];
+        $("#emoji-input").value = "";
+        TT.closeAllFloating();
+        rerenderAll();
+        e.stopPropagation();
+      });
+      $("#emoji-clear").addEventListener("click", (e) => {
+        if (!currentIconTarget) return;
+        const [coll, idxStr] = currentIconTarget.split(":");
+        state[coll][+idxStr].icon = null;
+        TT.closeAllFloating();
+        rerenderAll();
+        e.stopPropagation();
+      });
+
+      // Radio rows + weekday toggle
+      document.querySelectorAll(".radio-row").forEach(group => {
+        group.addEventListener("click", (e) => {
+          const b = e.target.closest("button");
+          if (!b) return;
+          group.querySelectorAll("button").forEach(x => x.classList.toggle("is-on", x === b));
+          if (group.id === "estimation-unit") {
+            $("#custom-unit-row").style.display = b.dataset.val === "custom" ? "" : "none";
+          }
+        });
+      });
+      $("#weekday-row").addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (b) b.classList.toggle("is-on");
+      });
+    </script>
+  </body>
+</html>
