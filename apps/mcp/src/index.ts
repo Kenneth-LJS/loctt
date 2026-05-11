@@ -895,7 +895,11 @@ export async function executeTool(
             target: r.missing ? r.target : r.resolvedKey ?? r.target,
             ...(r.missing ? { missing: true } : {}),
           })),
-          attachments: model.attachments.map(a => ({ name: a.name, size: a.size })),
+          attachments: model.attachments.map(a => ({
+            name: a.name,
+            size: a.size,
+            ...(a.mime !== undefined ? { mime: a.mime } : {}),
+          })),
         };
         if (model.relationships.length === 0) {
           delete result["relationships"];

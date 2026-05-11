@@ -1378,7 +1378,11 @@ export function createWebApp(options: WebAppOptions) {
     const response: TaskResponse = {
       frontmatter: model.task.frontmatter,
       body: model.task.body,
-      attachments: model.attachments.map(a => ({ name: a.name, size: a.size })),
+      attachments: model.attachments.map(a => ({
+        name: a.name,
+        size: a.size,
+        ...(a.mime !== undefined ? { mime: a.mime } : {}),
+      })),
     };
     json(res, response);
   };
@@ -1595,6 +1599,14 @@ export function createWebApp(options: WebAppOptions) {
     // the browser from inferring a content type, and the
     // Content-Disposition: attachment header makes browsers offer
     // a save dialog rather than rendering inline.
+    //
+    // The UI gets the inferred MIME type via the `mime` field on
+    // `AttachmentResponse` (returned by GET /api/tasks/:ref), and
+    // dispatches client-side — e.g. fetching the bytes here and
+    // wrapping them in a sandboxed `<img>`/`<video>`/`<audio>` blob
+    // URL. Don't switch this endpoint to a derived Content-Type —
+    // an inline image/svg+xml or text/html upload would be an XSS
+    // hole even with nosniff.
     const escaped = rawName.replace(/"/g, "\\\"");
     res.writeHead(200, {
       "Content-Type": "application/octet-stream",
