@@ -186,6 +186,8 @@ Returns JSON array of history entries.
 
 Copy a local file into a task's attachments directory. Only filesystem paths are supported in v1 — no base64 content. The file must be readable from the MCP server's filesystem.
 
+> **Security note.** `attach_file` accepts any absolute path the MCP server process can read — including paths outside the repo such as `~/.ssh/id_rsa`, `~/.aws/credentials`, or `.env` files elsewhere on disk. The contents are then copied into `.loctt/tasks/<id>/attachments/`, where they may be committed, synced, or otherwise exfiltrated. **Do not auto-approve `attach_file` calls.** See [Agent setup → Permissions and auto-approval](agent-setup.md#permissions-and-auto-approval).
+
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `ref` | string | yes | Task key or ID |
@@ -245,12 +247,13 @@ Edit an existing project. Only `label` is mutable — `key` and `prefix` are imm
 
 ### `project_delete`
 
-Default soft-delete (`archived: true`); tasks still reference the project. With `hard: true`, the project is removed from `projects.yaml`; for projects with tasks, `remap_to` is **required** to migrate them to another project. Cannot hard-delete the only project. The counter is preserved in `retired_keys` so a later create with the same key resumes numbering.
+Default soft-delete (`archived: true`); tasks still reference the project. With `hard: true`, the project is removed from `projects.yaml`; for projects with tasks, `remap_to` is **required** to migrate them to another project. Cannot hard-delete the only project. The counter is preserved in `retired_keys` so a later create with the same key resumes numbering. **`hard: true` requires `confirm: true`.**
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `key` | string | yes | Project key |
 | `hard` | boolean | no | If true, permanently remove from `projects.yaml` |
+| `confirm` | boolean | no | Required (must be `true`) when `hard` is true |
 | `remap_to` | string | no | Hard-delete only: target project key for tasks in the deleted project |
 
 Returns JSON `{mode: "soft"|"hard", key, remappedTaskCount}`.
@@ -287,19 +290,20 @@ Switches the active user. Accepts a UUID or an exact name (when unambiguous).
 
 ### `user_create`
 
-Names are not unique (UUIDs disambiguate). Timezone defaults to the system timezone.
+Names are not unique (UUIDs disambiguate). Timezone defaults to the system timezone. Avatars are not settable via MCP — use the CLI (`loctt user create --avatar <path>`) or web UI.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `name` | string | yes | Display name |
 | `email` | string | no | Email |
 | `timezone` | string | no | IANA timezone |
-| `avatar_source_path` | string | no | Absolute path to an avatar image to copy in |
 | `switch_to_on_create` | boolean | no | Switch to this user after creation |
 
 Returns the created user as JSON.
 
 ### `user_edit`
+
+Avatars are not settable via MCP — use the CLI or web UI.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -307,7 +311,6 @@ Returns the created user as JSON.
 | `name` | string | no | New display name |
 | `email` | string \| null | no | Pass `null` to clear |
 | `timezone` | string | no | New IANA timezone |
-| `avatar_source_path` | string | no | Absolute path to a new avatar image |
 
 ### `user_archive` / `user_unarchive`
 
@@ -319,15 +322,16 @@ Soft-deletes / restores a user. Hides them from pickers without breaking histori
 
 ### `user_delete`
 
-Hard-deletes a user. When the user has task references (assignee/reporter), exactly one of `remap_to` or `unassign` is required — they are **mutually exclusive**. Blocked when the target is the active user.
+Hard-deletes a user. When the user has task references (assignee/reporter), exactly one of `remap_to` or `unassign` is required — they are **mutually exclusive**. Blocked when the target is the active user. **Always requires `confirm: true`.**
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `ref` | string | yes | User UUID or name |
+| `confirm` | boolean | yes | Must be `true` to proceed |
 | `remap_to` | string | conditional | UUID/name to migrate references onto |
 | `unassign` | boolean | conditional | Clear assignee/reporter on affected tasks |
 
-Returns JSON `{deleted: <id>, ...result}`. Errors: `remap_to and unassign are mutually exclusive`; cannot delete the active user.
+Returns JSON `{deleted: <id>, ...result}`. Errors: `user_delete requires confirm: true to proceed`; `remap_to and unassign are mutually exclusive`; cannot delete the active user.
 
 ## Labels
 
@@ -361,12 +365,13 @@ The key is immutable.
 
 ### `label_delete`
 
-Default soft-delete. With `hard: true`, the entry is removed from `labels.yaml` and the key is dropped from every task's `labels` array (or remapped via `remap_to`).
+Default soft-delete. With `hard: true`, the entry is removed from `labels.yaml` and the key is dropped from every task's `labels` array (or remapped via `remap_to`). **`hard: true` requires `confirm: true`.**
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `key` | string | yes | Label key |
 | `hard` | boolean | no | Permanently remove |
+| `confirm` | boolean | no | Required (must be `true`) when `hard` is true |
 | `remap_to` | string | no | Hard-delete only: target label key |
 
 Returns JSON `{mode, key, ...result}`.
@@ -402,12 +407,13 @@ No parameters. Returns the full milestones config JSON.
 
 ### `milestone_delete`
 
-Default soft-delete. With `hard: true`, the entry is removed from `milestones.yaml` and the `milestone` field on each affected task is either unset or remapped to `remap_to`.
+Default soft-delete. With `hard: true`, the entry is removed from `milestones.yaml` and the `milestone` field on each affected task is either unset or remapped to `remap_to`. **`hard: true` requires `confirm: true`.**
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `key` | string | yes | Milestone key |
 | `hard` | boolean | no | Permanently remove |
+| `confirm` | boolean | no | Required (must be `true`) when `hard` is true |
 | `remap_to` | string | no | Hard-delete only |
 
 Returns JSON `{mode, key, ...result}`.
@@ -451,12 +457,13 @@ Edit a sprint. Re-opening a completed sprint (state `completed` → `active` or 
 
 ### `sprint_delete`
 
-Default soft-delete. With `hard: true`, removed from `sprints.yaml` and the `sprint` field on each affected task is unset or remapped via `remap_to`.
+Default soft-delete. With `hard: true`, removed from `sprints.yaml` and the `sprint` field on each affected task is unset or remapped via `remap_to`. **`hard: true` requires `confirm: true`.**
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `key` | string | yes | Sprint key |
 | `hard` | boolean | no | Permanently remove |
+| `confirm` | boolean | no | Required (must be `true`) when `hard` is true |
 | `remap_to` | string | no | Hard-delete only |
 
 Returns JSON `{mode, key, ...result}`.
