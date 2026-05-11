@@ -311,6 +311,53 @@ describe("saveWorkflowConfig auto-clear", () => {
   });
 });
 
+describe("applyWorkflowEdit — list-view pruning", () => {
+  it("prunes list-view.yaml entries that reference a deleted custom field", async () => {
+    // Start with a custom field declared and a list-view.yaml that
+    // references it.
+    const wf = await loadWorkflowConfig(locttDir);
+    const withField: WorkflowConfig = {
+      ...wf,
+      custom_fields: [
+        ...wf.custom_fields,
+        { key: "severity", label: "Severity", type: "string", multi: false, searchable: false },
+      ],
+    };
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await saveWorkflowConfig(locttDir, withField);
+    const { saveListViewConfig, loadListViewConfig } = await import("./list-view.js");
+    await saveListViewConfig(locttDir, {
+      filters: { visible: ["status", "severity"], hidden: ["type"] },
+    });
+
+    // Now drop the custom field via applyWorkflowEdit.
+    const next: WorkflowConfig = {
+      ...withField,
+      custom_fields: withField.custom_fields.filter(f => f.key !== "severity"),
+    };
+    await applyWorkflowEdit(locttDir, next);
+
+    // The list-view config should have lost its `severity` entry but
+    // retained the built-in ones.
+    const lv = await loadListViewConfig(locttDir);
+    expect(lv.filters?.visible).toEqual(["status"]);
+    expect(lv.filters?.hidden).toEqual(["type"]);
+  });
+
+  it("leaves list-view.yaml unchanged when no custom fields are deleted", async () => {
+    const { saveListViewConfig, loadListViewConfig } = await import("./list-view.js");
+    await saveListViewConfig(locttDir, {
+      filters: { visible: ["status", "priority"] },
+    });
+    const before = await loadListViewConfig(locttDir);
+    const wf = await loadWorkflowConfig(locttDir);
+    // No-op edit: rewrite the same config.
+    await applyWorkflowEdit(locttDir, wf);
+    const after = await loadListViewConfig(locttDir);
+    expect(after).toEqual(before);
+  });
+});
+
 describe("workflow serializer — icon/color/weights/boards round-trip", () => {
   it("persists icon and color on status/priority/task_type/relationship", async () => {
     const wf = await loadWorkflowConfig(locttDir);

@@ -15,7 +15,7 @@ import type {
   TrackerInfoResponse,
   UpdateTaskRequest,
 } from "@loctt/contracts";
-import { CalendarConfigSchema } from "@loctt/contracts";
+import { CalendarConfigSchema, ListViewConfigSchema } from "@loctt/contracts";
 import {
   appendTaskBody,
   applyWorkflowEdit,
@@ -63,6 +63,7 @@ import {
   loadAllUsers,
   loadCalendarConfig,
   loadLabelsConfig,
+  loadListViewConfig,
   loadMilestonesConfig,
   loadOptionalConfigs,
   loadProjectsConfig,
@@ -86,6 +87,7 @@ import {
   resolveUserRef,
   runDoctor,
   saveCalendarConfig,
+  saveListViewConfig,
   saveState,
   saveUserSettings,
   SchemaTooNewError,
@@ -685,6 +687,26 @@ export function createWebApp(options: WebAppOptions) {
     }
     try {
       await saveCalendarConfig(locttDir, parsed.data);
+      json(res, parsed.data);
+    } catch (err) {
+      error(res, (err as Error).message, 400);
+    }
+  };
+
+  const handleGetListView: RouteHandler = async ({ res, locttDir }) => {
+    const cfg = await loadListViewConfig(locttDir);
+    json(res, cfg);
+  };
+
+  const handlePutListView: RouteHandler = async ({ req, res, locttDir }) => {
+    const raw = await parseJsonBody<unknown>(req, res);
+    const parsed = ListViewConfigSchema.safeParse(raw);
+    if (!parsed.success) {
+      error(res, `invalid list-view config: ${parsed.error.issues.map(i => i.message).join("; ")}`, 400);
+      return;
+    }
+    try {
+      await saveListViewConfig(locttDir, parsed.data);
       json(res, parsed.data);
     } catch (err) {
       error(res, (err as Error).message, 400);
@@ -1667,6 +1689,8 @@ export function createWebApp(options: WebAppOptions) {
     { method: "DELETE", pattern: MILESTONE_KEY_RE, handler: handleDeleteMilestone },
     { method: "GET", pattern: "/api/calendar", handler: handleGetCalendar },
     { method: "PUT", pattern: "/api/calendar", handler: handlePutCalendar },
+    { method: "GET", pattern: "/api/list-view", handler: handleGetListView },
+    { method: "PUT", pattern: "/api/list-view", handler: handlePutListView },
     { method: "GET", pattern: "/api/workflow", handler: handleGetWorkflow },
     { method: "PUT", pattern: "/api/workflow", handler: handlePutWorkflow },
     { method: "GET", pattern: "/api/views", handler: handleListViews },

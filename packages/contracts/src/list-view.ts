@@ -1,6 +1,28 @@
 import { z } from "zod";
 
 /**
+ * Built-in field keys recognised as filter chips on the list view.
+ * Used as the allowlist for entries in
+ * `list-view.yaml#filters.visible/hidden`: an entry must either be
+ * one of these built-ins or match a declared `custom_fields[].key`
+ * in `workflow.yaml`. Doctor surfaces dangling references.
+ *
+ * Single source of truth — both the doctor check and (eventually) the
+ * UI's "+ Filter" picker read this list rather than redeclaring it.
+ */
+export const BUILTIN_FILTER_FIELD_KEYS: ReadonlySet<string> = new Set([
+  "status",
+  "priority",
+  "type",
+  "assignee",
+  "reporter",
+  "labels",
+  "milestone",
+  "sprint",
+  "project",
+]);
+
+/**
  * Workspace-level list-view filter chip configuration. Stored at
  * `.loctt/config/list-view.yaml` (committed, shared across the team).
  *

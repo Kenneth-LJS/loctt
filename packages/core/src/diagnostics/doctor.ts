@@ -1,12 +1,15 @@
+import { BUILTIN_FILTER_FIELD_KEYS } from "@loctt/contracts";
+
 import { getCalendarConfigPath, loadCalendarConfig } from "../config/calendar.js";
 import { getLabelsConfigPath,loadLabelsConfig } from "../config/labels.js";
+import { loadListViewConfig } from "../config/list-view.js";
 import { getMilestonesConfigPath,loadMilestonesConfig } from "../config/milestones.js";
 import { getProjectsConfigPath, loadProjectsConfig } from "../config/projects.js";
 import { loadQueriesConfig } from "../config/queries.js";
 import { getSprintsConfigPath,loadSprintsConfig } from "../config/sprints.js";
 import { validateTaskAgainstWorkflow,validateWorkflowConfig } from "../config/validation.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
-import { getConfigDir,getQueriesConfigPath, getStateFilePath, getTasksDir, getUsersDir, getWorkflowConfigPath, resolveLocttDir } from "../paths/index.js";
+import { getConfigDir, getListViewConfigPath, getQueriesConfigPath, getStateFilePath, getTasksDir, getUsersDir, getWorkflowConfigPath, resolveLocttDir } from "../paths/index.js";
 import { loadState } from "../state/state.js";
 import { loadAllTasks } from "../task/load-all.js";
 import { validateRelationships } from "../task/traversal.js";
@@ -161,6 +164,44 @@ export async function runDoctor(root: string): Promise<readonly DiagnosticCheck[
       checks.push({ name: "calendar.yaml", status: "ok", message: "valid" });
     } catch (err) {
       checks.push({ name: "calendar.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
+    }
+  }
+
+  // list-view.yaml: optional workspace filter-chip config. Surfaces
+  // parse errors, then cross-checks every entry in
+  // filters.visible/hidden against the union of built-in field keys
+  // and declared custom_fields[].key. Dangling refs are informational
+  // — the resolution order treats them as missing and falls through.
+  if (await fileExists(getListViewConfigPath(locttDir))) {
+    try {
+      const lv = await loadListViewConfig(locttDir);
+      const entries = [
+        ...(lv.filters?.visible ?? []),
+        ...(lv.filters?.hidden ?? []),
+      ];
+      checks.push({
+        name: "list-view.yaml",
+        status: "ok",
+        message: `${entries.length} chip entry/entries`,
+      });
+
+      if (workflowConfig && entries.length > 0) {
+        const customFieldKeys = new Set(workflowConfig.custom_fields.map(f => f.key));
+        const dangling = entries.filter(
+          k => !BUILTIN_FILTER_FIELD_KEYS.has(k) && !customFieldKeys.has(k),
+        );
+        if (dangling.length > 0) {
+          const sample = dangling.slice(0, 3).join(", ");
+          const more = dangling.length > 3 ? ` (+${dangling.length - 3} more)` : "";
+          checks.push({
+            name: "list-view.yaml references",
+            status: "warn",
+            message: `${dangling.length} entry/entries refer to unknown fields: ${sample}${more}`,
+          });
+        }
+      }
+    } catch (err) {
+      checks.push({ name: "list-view.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
     }
   }
 

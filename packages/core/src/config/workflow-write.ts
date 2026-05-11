@@ -20,6 +20,11 @@ import type { MutableFrontmatter } from "../task/mutable.js";
 import { toFrontmatter, toMutable } from "../task/mutable.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import {
+  loadListViewConfig,
+  pruneListViewForRemovedCustomFields,
+  saveListViewConfig,
+} from "./list-view.js";
+import {
   loadWorkflowConfig,
   parseWorkflowConfig,
   WorkflowConfigError,
@@ -456,6 +461,30 @@ export async function applyWorkflowEdit(
         const updated: Task = { ...task, frontmatter: toFrontmatter(fm) };
         await writeTask(locttDir, task.frontmatter.id, updated);
         rewrittenTaskCount += 1;
+      }
+    }
+
+    // Prune list-view.yaml entries that referenced custom fields
+    // about to be removed. `withStateLock` serializes concurrent
+    // callers; it does NOT give crash-atomicity across the multiple
+    // file writes here (tasks → list-view.yaml → workflow.yaml). A
+    // SIGKILL between writes can leave a stale list-view.yaml
+    // referencing a custom field that workflow.yaml has dropped —
+    // the doctor's dangling-ref check surfaces that case as a warn.
+    // Extending the journal (state/journal.ts) to cover workflow
+    // edits is the proper fix; for now this matches the pre-existing
+    // semantics for task rewrites in the same function. Built-in
+    // fields can't disappear from workflow.yaml so they need no
+    // pruning.
+    const removedCustomFieldKeys = new Set<string>();
+    for (const f of prev.custom_fields) {
+      if (!nextFieldsByKey.has(f.key)) removedCustomFieldKeys.add(f.key);
+    }
+    if (removedCustomFieldKeys.size > 0) {
+      const lv = await loadListViewConfig(locttDir);
+      const prunedLv = pruneListViewForRemovedCustomFields(lv, removedCustomFieldKeys);
+      if (prunedLv !== lv) {
+        await saveListViewConfig(locttDir, prunedLv);
       }
     }
 

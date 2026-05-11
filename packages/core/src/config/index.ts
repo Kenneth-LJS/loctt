@@ -17,6 +17,13 @@ export {
   serializeLabelsConfig,
 } from "./labels.js";
 export {
+  ListViewConfigError,
+  loadListViewConfig,
+  parseListViewConfig,
+  pruneListViewForRemovedCustomFields,
+  saveListViewConfig,
+} from "./list-view.js";
+export {
   getMilestonesConfigPath,
   loadMilestonesConfig,
   MilestonesConfigError,
