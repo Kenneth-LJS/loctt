@@ -309,6 +309,40 @@ describe("MCP executeTool", () => {
     expect(deleted.isError).toBeUndefined();
   });
 
+  describe("get_sprint_burndown", () => {
+    it("returns the series for a known sprint", async () => {
+      // Create a sprint via the file system directly so the MCP test
+      // doesn't depend on a sprint-create tool being registered.
+      const { resolveLocttDir } = await import("@loctt/core");
+      const { saveSprintsConfig } = await import("@loctt/core");
+      const locttDir = resolveLocttDir(root);
+      await saveSprintsConfig(locttDir, {
+        sprints: [{
+          key: "s1",
+          label: "Sprint 1",
+          start_date: "2026-05-04",
+          end_date: "2026-05-08",
+          state: "active",
+        }],
+      });
+
+      const result = await executeTool(root, "get_sprint_burndown", { key: "s1" });
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text ?? "{}") as {
+        sprintKey: string;
+        series: { date: string }[];
+      };
+      expect(payload.sprintKey).toBe("s1");
+      expect(payload.series.length).toBe(5);
+    });
+
+    it("returns a clean error for an unknown sprint key", async () => {
+      const result = await executeTool(root, "get_sprint_burndown", { key: "nope" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? "").toMatch(/unknown sprint: nope/);
+    });
+  });
+
   describe("reorder_board", () => {
     it("is registered with the expected schema", () => {
       const tool = getTools().find(t => t.name === "reorder_board");

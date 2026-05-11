@@ -19,6 +19,7 @@ import {
   AUTO_MANAGED_FIELDS,
   buildListContext,
   buildShowModel,
+  BurndownError,
   CONFIG_KEYS,
   createLabel,
   createMilestone,
@@ -63,6 +64,7 @@ import {
   MilestoneError,
   ProjectError,
   publish,
+  readBurndownSeries,
   readHistory,
   reorderBoardRank,
   ReorderError,
@@ -623,6 +625,13 @@ export function getTools(): McpTool[] {
         ref: z.string().describe("Task key or ID"),
         before: z.string().optional().describe("Sibling task to position before"),
         after: z.string().optional().describe("Sibling task to position after"),
+      },
+    },
+    {
+      name: "get_sprint_burndown",
+      description: "Return the burndown series for a sprint, reconstructed from task history. The response carries the daily 'remaining' total across the sprint window, the unit being summed (points/hours/weighted-enum/task-count), the initial total at sprint start, the ideal straight-line, and per-day incomplete task counts. Scope changes (tasks joining or leaving the sprint mid-run) appear as visible steps in the series.",
+      inputSchema: {
+        key: z.string().describe("Sprint key (e.g. 's1' / 'sprint_2026.q1')"),
       },
     },
   ];
@@ -1740,6 +1749,16 @@ export async function executeTool(
           return text(JSON.stringify(result, null, 2));
         } catch (err) {
           if (err instanceof ReorderError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "get_sprint_burndown": {
+        try {
+          const series = await readBurndownSeries(locttDir, args["key"] as string);
+          return text(JSON.stringify(series, null, 2));
+        } catch (err) {
+          if (err instanceof BurndownError) return errorResult(err.message);
           throw err;
         }
       }

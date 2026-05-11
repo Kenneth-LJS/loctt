@@ -28,6 +28,7 @@ import {
   AttachmentSourceError,
   buildListContext,
   buildShowModel,
+  BurndownError,
   ConfigRouterError,
   createLabel,
   createMilestone,
@@ -77,6 +78,7 @@ import {
   MilestoneError,
   ProjectError,
   publish,
+  readBurndownSeries,
   readHistory,
   reorderBoardRank,
   ReorderError,
@@ -330,6 +332,7 @@ const TASK_RELATIONSHIP_RERANK_RE = /^\/api\/tasks\/([^/]+)\/relationships\/([^/
 const TASK_BODY_RE = /^\/api\/tasks\/([^/]+)\/body$/;
 const TASK_BODY_APPEND_RE = /^\/api\/tasks\/([^/]+)\/body\/append$/;
 const CONFIG_KEY_RE = /^\/api\/config\/([^/]+)$/;
+const SPRINT_BURNDOWN_RE = /^\/api\/sprints\/([^/]+)\/burndown$/;
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -696,6 +699,17 @@ export function createWebApp(options: WebAppOptions) {
   const handleGetListView: RouteHandler = async ({ res, locttDir }) => {
     const cfg = await loadListViewConfig(locttDir);
     json(res, cfg);
+  };
+
+  const handleSprintBurndown: RouteHandler = async ({ res, locttDir, captures }) => {
+    const key = decodeURIComponent(captures[0] ?? "");
+    try {
+      const series = await readBurndownSeries(locttDir, key);
+      json(res, series);
+    } catch (err) {
+      if (err instanceof BurndownError) { error(res, err.message, 404); return; }
+      throw err;
+    }
   };
 
   const handlePutListView: RouteHandler = async ({ req, res, locttDir }) => {
@@ -1691,6 +1705,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "PUT", pattern: "/api/calendar", handler: handlePutCalendar },
     { method: "GET", pattern: "/api/list-view", handler: handleGetListView },
     { method: "PUT", pattern: "/api/list-view", handler: handlePutListView },
+    { method: "GET", pattern: SPRINT_BURNDOWN_RE, handler: handleSprintBurndown },
     { method: "GET", pattern: "/api/workflow", handler: handleGetWorkflow },
     { method: "PUT", pattern: "/api/workflow", handler: handlePutWorkflow },
     { method: "GET", pattern: "/api/views", handler: handleListViews },

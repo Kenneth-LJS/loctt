@@ -17,6 +17,7 @@ import {
   AttachmentSourceError,
   buildListContext,
   buildShowModel,
+  BurndownError,
   CONFIG_KEYS,
   createLabel,
   createMilestone,
@@ -60,6 +61,7 @@ import {
   planMigration,
   ProjectError,
   publish,
+  readBurndownSeries,
   readHistory,
   readTaskBody,
   reorderBoardRank,
@@ -148,9 +150,10 @@ Commands:
   milestone <list|create|edit|archive|unarchive|delete> ...
                                    list --all: include archived milestones
                                    delete --hard: permanent (clears milestone field on tasks)
-  sprint <list|create|edit|archive|unarchive|delete> ...
+  sprint <list|create|edit|archive|unarchive|delete|burndown> ...
                                    list --all: include archived sprints
                                    delete --hard: permanent (clears sprint field on tasks)
+                                   burndown <key> [--format <table|json>]
   calendar show                   Print the calendar config (timezone, working days, holidays)
   rerank <source> <relationship> <target> [--before <task>] [--after <task>]
   board-rerank <task> [--before <task>] [--after <task>]
@@ -395,6 +398,7 @@ const KNOWN_DOMAIN_ERRORS: ReadonlyArray<new (...args: never[]) => Error> = [
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,
+  BurndownError,
   LabelError,
   MilestoneError,
   ProjectError,
@@ -455,6 +459,17 @@ async function runCommand(fn: () => Promise<void>): Promise<void> {
     }
     throw err;
   }
+}
+
+/** Round a number to one decimal place for compact column display. */
+function formatNumber(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  return n.toFixed(1);
+}
+
+/** Right-pad a string to `width` columns (single-byte assumption). */
+function pad(s: string, width: number): string {
+  return s.length >= width ? s : s + " ".repeat(width - s.length);
 }
 
 function formatValue(v: unknown): string {
@@ -1788,8 +1803,45 @@ export async function main(): Promise<void> {
             });
             break;
           }
+          case "burndown": {
+            await runCommand(async () => {
+              const key = args[2];
+              if (!key) {
+                throw new UsageError(
+                  "missing key",
+                  "loctt sprint burndown <key> [--format <table|json>]",
+                );
+              }
+              const format = getArg(args, "--format") ?? "table";
+              if (format !== "table" && format !== "json") {
+                throw new UsageError("--format must be one of table|json");
+              }
+              const series = await readBurndownSeries(locttDir, key);
+              if (format === "json") {
+                console.log(JSON.stringify(series, null, 2));
+                return;
+              }
+              const unitDisplay = series.unitLabel ?? series.unit;
+              console.log(`Sprint:        ${series.sprintKey}`);
+              console.log(`Window:        ${series.start} .. ${series.end}`);
+              console.log(`Unit:          ${unitDisplay}`);
+              console.log(`Initial total: ${series.initialTotal}`);
+              console.log(``);
+              console.log(`Date          Remaining    Incomplete    Ideal`);
+              for (let i = 0; i < series.series.length; i++) {
+                const p = series.series[i];
+                const ideal = series.ideal[i];
+                if (!p) continue;
+                const idealStr = ideal ? formatNumber(ideal.remaining) : "";
+                console.log(
+                  `${p.date}    ${pad(formatNumber(p.remaining), 9)}    ${pad(String(p.incompleteTaskCount), 10)}    ${idealStr}`,
+                );
+              }
+            });
+            break;
+          }
           default:
-            console.error(`Usage: loctt sprint <list|create|edit|archive|unarchive|delete> ...`);
+            console.error(`Usage: loctt sprint <list|create|edit|archive|unarchive|delete|burndown> ...`);
             process.exitCode = EXIT.USAGE;
             break;
         }
