@@ -427,3 +427,399 @@ describe("workflow serializer — icon/color/weights/boards round-trip", () => {
     expect(reloaded.boards?.columns[0]?.statuses).toEqual(["not_started"]);
   });
 });
+
+/**
+ * Helper: seed a single task whose frontmatter has the given field set
+ * to the given value, bypassing setField so we can inject values
+ * regardless of current workflow validation. Used to stage tasks that
+ * will exercise the remap path.
+ */
+async function seedTaskWithField(
+  field: "priority" | "task_type",
+  value: string,
+): Promise<void> {
+  await withStateLock(locttDir, async () => {
+    const state = await loadState(locttDir);
+    const created = await createTask({
+      locttDir, state,
+      options: { project: "task", title: "T" },
+    });
+    await saveState(locttDir, state);
+    const { writeTask } = await import("../task/io.js");
+    await writeTask(locttDir, created.frontmatter.id, {
+      ...created,
+      frontmatter: { ...created.frontmatter, [field]: value },
+    });
+  });
+}
+
+describe("applyWorkflowEdit — priorities", () => {
+  // Mirrors the status-mutation suite. The implementation routes
+  // status/priority/task_type through one shared helper
+  // (applyScalarRemap), so a regression in any of them surfaces here.
+
+  it("rewrites tasks when a priority is removed and remap supplied", async () => {
+    await seedTaskWithField("priority", "high");
+    const wf = await loadWorkflowConfig(locttDir);
+    const next: WorkflowConfig = {
+      ...wf,
+      priorities: wf.priorities.filter(p => p.key !== "high"),
+    };
+    const result = await applyWorkflowEdit(locttDir, next, {
+      priorities: { high: "medium" },
+    });
+    expect(result.rewrittenTaskCount).toBe(1);
+    const tasks = await loadAllTasks(locttDir);
+    expect(tasks[0]?.frontmatter.priority).toBe("medium");
+  });
+
+  it("clears priority when remap target is null", async () => {
+    await seedTaskWithField("priority", "high");
+    const wf = await loadWorkflowConfig(locttDir);
+    const next: WorkflowConfig = {
+      ...wf,
+      priorities: wf.priorities.filter(p => p.key !== "high"),
+    };
+    await applyWorkflowEdit(locttDir, next, { priorities: { high: null } });
+    const tasks = await loadAllTasks(locttDir);
+    expect(tasks[0]?.frontmatter.priority).toBeUndefined();
+  });
+
+  it("rejects deletion of in-use priority without remap", async () => {
+    await seedTaskWithField("priority", "high");
+    const wf = await loadWorkflowConfig(locttDir);
+    const next: WorkflowConfig = {
+      ...wf,
+      priorities: wf.priorities.filter(p => p.key !== "high"),
+    };
+    await expect(applyWorkflowEdit(locttDir, next, {})).rejects.toThrow(/in use/);
+  });
+
+  it("rejects priority remap targeting a key not in the new config", async () => {
+    await seedTaskWithField("priority", "high");
+    const wf = await loadWorkflowConfig(locttDir);
+    const next: WorkflowConfig = {
+      ...wf,
+      priorities: wf.priorities.filter(p => p.key !== "high"),
+    };
+    await expect(applyWorkflowEdit(locttDir, next, {
+      priorities: { high: "nonexistent" },
+    })).rejects.toThrow(/not present in the new config/);
+  });
+
+  it("permits silent deletion of unused priorities", async () => {
+    const wf = await loadWorkflowConfig(locttDir);
+    const next: WorkflowConfig = {
+      ...wf,
+      priorities: wf.priorities.filter(p => p.key !== "low"),
+    };
+    const result = await applyWorkflowEdit(locttDir, next);
+    expect(result.rewrittenTaskCount).toBe(0);
+  });
+});
+
+describe("applyWorkflowEdit — task_types", () => {
+  it("rewrites tasks when a task_type is removed and remap supplied", async () => {
+    // The default workflow has only one task_type (`task`), so we
+    // first add a second type to delete it later.
+    const wf0 = await loadWorkflowConfig(locttDir);
+    const withBug: WorkflowConfig = {
+      ...wf0,
+      task_types: [...wf0.task_types, { key: "bug", label: "Bug" }],
+    };
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await saveWorkflowConfig(locttDir, withBug);
+
+    await seedTaskWithField("task_type", "bug");
+
+    const next: WorkflowConfig = {
+      ...withBug,
+      task_types: withBug.task_types.filter(t => t.key !== "bug"),
+    };
+    const result = await applyWorkflowEdit(locttDir, next, {
+      task_types: { bug: "task" },
+    });
+    expect(result.rewrittenTaskCount).toBe(1);
+    const tasks = await loadAllTasks(locttDir);
+    expect(tasks[0]?.frontmatter.task_type).toBe("task");
+  });
+
+  it("clears task_type when remap target is null", async () => {
+    const wf0 = await loadWorkflowConfig(locttDir);
+    const withBug: WorkflowConfig = {
+      ...wf0,
+      task_types: [...wf0.task_types, { key: "bug", label: "Bug" }],
+    };
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await saveWorkflowConfig(locttDir, withBug);
+    await seedTaskWithField("task_type", "bug");
+
+    const next: WorkflowConfig = {
+      ...withBug,
+      task_types: withBug.task_types.filter(t => t.key !== "bug"),
+    };
+    await applyWorkflowEdit(locttDir, next, { task_types: { bug: null } });
+    const tasks = await loadAllTasks(locttDir);
+    expect(tasks[0]?.frontmatter.task_type).toBeUndefined();
+  });
+
+  it("rejects deletion of in-use task_type without remap", async () => {
+    const wf0 = await loadWorkflowConfig(locttDir);
+    const withBug: WorkflowConfig = {
+      ...wf0,
+      task_types: [...wf0.task_types, { key: "bug", label: "Bug" }],
+    };
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await saveWorkflowConfig(locttDir, withBug);
+    await seedTaskWithField("task_type", "bug");
+
+    const next: WorkflowConfig = {
+      ...withBug,
+      task_types: withBug.task_types.filter(t => t.key !== "bug"),
+    };
+    await expect(applyWorkflowEdit(locttDir, next, {})).rejects.toThrow(/in use/);
+  });
+
+  it("rejects task_type remap targeting a key not in the new config", async () => {
+    const wf0 = await loadWorkflowConfig(locttDir);
+    const withBug: WorkflowConfig = {
+      ...wf0,
+      task_types: [...wf0.task_types, { key: "bug", label: "Bug" }],
+    };
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await saveWorkflowConfig(locttDir, withBug);
+    await seedTaskWithField("task_type", "bug");
+
+    const next: WorkflowConfig = {
+      ...withBug,
+      task_types: withBug.task_types.filter(t => t.key !== "bug"),
+    };
+    await expect(applyWorkflowEdit(locttDir, next, {
+      task_types: { bug: "nonexistent" },
+    })).rejects.toThrow(/not present in the new config/);
+  });
+});
+
+describe("applyWorkflowEdit — custom field enum values", () => {
+  // The most complex remap path: an enum value (not the whole field)
+  // is deleted from `custom_fields[].values`, and tasks referencing
+  // that value must be remapped or cleared.
+
+  async function setupSeverityField(): Promise<void> {
+    const wf = await loadWorkflowConfig(locttDir);
+    const withField: WorkflowConfig = {
+      ...wf,
+      custom_fields: [
+        ...wf.custom_fields,
+        {
+          key: "severity",
+          label: "Severity",
+          type: "enum",
+          multi: false,
+          searchable: false,
+          values: [
+            { key: "low", label: "Low" },
+            { key: "medium", label: "Medium" },
+            { key: "high", label: "High" },
+          ],
+        },
+      ],
+    };
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await saveWorkflowConfig(locttDir, withField);
+  }
+
+  async function seedTaskWithCustomField(
+    fieldKey: string,
+    value: string | string[],
+  ): Promise<void> {
+    await withStateLock(locttDir, async () => {
+      const state = await loadState(locttDir);
+      const created = await createTask({
+        locttDir, state,
+        options: { project: "task", title: "T" },
+      });
+      await saveState(locttDir, state);
+      const { writeTask } = await import("../task/io.js");
+      await writeTask(locttDir, created.frontmatter.id, {
+        ...created,
+        frontmatter: {
+          ...created.frontmatter,
+          fields: { [fieldKey]: value },
+        },
+      });
+    });
+  }
+
+  it("remaps a single-valued enum field when a value is removed with target", async () => {
+    await setupSeverityField();
+    await seedTaskWithCustomField("severity", "high");
+
+    const wf = await loadWorkflowConfig(locttDir);
+    const next: WorkflowConfig = {
+      ...wf,
+      custom_fields: wf.custom_fields.map(f =>
+        f.key === "severity"
+          ? { ...f, values: f.values?.filter(v => v.key !== "high") }
+          : f,
+      ),
+    };
+    const result = await applyWorkflowEdit(locttDir, next, {
+      custom_fields: { severity: { high: "medium" } },
+    });
+    expect(result.rewrittenTaskCount).toBe(1);
+    const tasks = await loadAllTasks(locttDir);
+    expect(tasks[0]?.frontmatter.fields?.["severity"]).toBe("medium");
+  });
+
+  it("clears a single-valued enum field when remap target is null", async () => {
+    await setupSeverityField();
+    await seedTaskWithCustomField("severity", "high");
+
+    const wf = await loadWorkflowConfig(locttDir);
+    const next: WorkflowConfig = {
+      ...wf,
+      custom_fields: wf.custom_fields.map(f =>
+        f.key === "severity"
+          ? { ...f, values: f.values?.filter(v => v.key !== "high") }
+          : f,
+      ),
+    };
+    await applyWorkflowEdit(locttDir, next, {
+      custom_fields: { severity: { high: null } },
+    });
+    const tasks = await loadAllTasks(locttDir);
+    // Field is fully dropped when the only value clears.
+    expect(tasks[0]?.frontmatter.fields?.["severity"]).toBeUndefined();
+  });
+
+  it("rejects deletion of an in-use enum value without remap", async () => {
+    await setupSeverityField();
+    await seedTaskWithCustomField("severity", "high");
+
+    const wf = await loadWorkflowConfig(locttDir);
+    const next: WorkflowConfig = {
+      ...wf,
+      custom_fields: wf.custom_fields.map(f =>
+        f.key === "severity"
+          ? { ...f, values: f.values?.filter(v => v.key !== "high") }
+          : f,
+      ),
+    };
+    await expect(applyWorkflowEdit(locttDir, next, {})).rejects.toThrow(/in use/);
+  });
+
+  it("remaps individual values inside a multi-enum field", async () => {
+    // Configure severity as multi, then put two values on the task,
+    // remap one of them, verify the array survives with the new value.
+    const wf0 = await loadWorkflowConfig(locttDir);
+    const withMulti: WorkflowConfig = {
+      ...wf0,
+      custom_fields: [
+        ...wf0.custom_fields,
+        {
+          key: "tags",
+          label: "Tags",
+          type: "enum",
+          multi: true,
+          searchable: false,
+          values: [
+            { key: "a", label: "A" },
+            { key: "b", label: "B" },
+            { key: "c", label: "C" },
+          ],
+        },
+      ],
+    };
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await saveWorkflowConfig(locttDir, withMulti);
+    await seedTaskWithCustomField("tags", ["a", "b"]);
+
+    const next: WorkflowConfig = {
+      ...withMulti,
+      custom_fields: withMulti.custom_fields.map(f =>
+        f.key === "tags"
+          ? { ...f, values: f.values?.filter(v => v.key !== "a") }
+          : f,
+      ),
+    };
+    await applyWorkflowEdit(locttDir, next, {
+      custom_fields: { tags: { a: "c" } },
+    });
+    const tasks = await loadAllTasks(locttDir);
+    expect(tasks[0]?.frontmatter.fields?.["tags"]).toEqual(["c", "b"]);
+  });
+
+  it("drops individual values inside a multi-enum field when remap is null", async () => {
+    const wf0 = await loadWorkflowConfig(locttDir);
+    const withMulti: WorkflowConfig = {
+      ...wf0,
+      custom_fields: [
+        ...wf0.custom_fields,
+        {
+          key: "tags",
+          label: "Tags",
+          type: "enum",
+          multi: true,
+          searchable: false,
+          values: [
+            { key: "a", label: "A" },
+            { key: "b", label: "B" },
+          ],
+        },
+      ],
+    };
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await saveWorkflowConfig(locttDir, withMulti);
+    await seedTaskWithCustomField("tags", ["a", "b"]);
+
+    const next: WorkflowConfig = {
+      ...withMulti,
+      custom_fields: withMulti.custom_fields.map(f =>
+        f.key === "tags"
+          ? { ...f, values: f.values?.filter(v => v.key !== "a") }
+          : f,
+      ),
+    };
+    await applyWorkflowEdit(locttDir, next, {
+      custom_fields: { tags: { a: null } },
+    });
+    const tasks = await loadAllTasks(locttDir);
+    expect(tasks[0]?.frontmatter.fields?.["tags"]).toEqual(["b"]);
+  });
+
+  it("drops the whole field when the only remaining multi value is dropped", async () => {
+    // Edge case: a multi-enum with one value, that value gets remapped
+    // to null. The field should disappear entirely (not be left as []).
+    const wf0 = await loadWorkflowConfig(locttDir);
+    const withMulti: WorkflowConfig = {
+      ...wf0,
+      custom_fields: [
+        ...wf0.custom_fields,
+        {
+          key: "tags",
+          label: "Tags",
+          type: "enum",
+          multi: true,
+          searchable: false,
+          values: [{ key: "a", label: "A" }],
+        },
+      ],
+    };
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await saveWorkflowConfig(locttDir, withMulti);
+    await seedTaskWithCustomField("tags", ["a"]);
+
+    const next: WorkflowConfig = {
+      ...withMulti,
+      custom_fields: withMulti.custom_fields.map(f =>
+        f.key === "tags" ? { ...f, values: [] } : f,
+      ),
+    };
+    await applyWorkflowEdit(locttDir, next, {
+      custom_fields: { tags: { a: null } },
+    });
+    const tasks = await loadAllTasks(locttDir);
+    expect(tasks[0]?.frontmatter.fields?.["tags"]).toBeUndefined();
+  });
+});
