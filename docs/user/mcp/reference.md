@@ -514,6 +514,18 @@ Reorder a relationship target within one source task's links of a given type. Pa
 
 Returns the result of the reorder (the new ordering of targets) as JSON. Errors via `ReorderError`; passing both `before` and `after` errors with `` `before` and `after` are mutually exclusive; pass at most one ``.
 
+### `reorder_board`
+
+Reorder a task's position on the board (its `board_rank`). The board column is implicit — the task stays in its current status; this only changes its order within that column. Pass exactly one of `before` or `after` to position relative to a sibling, or neither to move to the end. **`before` and `after` are mutually exclusive.**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ref` | string | yes | Task key or ID being moved |
+| `before` | string | no | Sibling task to position before |
+| `after` | string | no | Sibling task to position after |
+
+Returns the result of the reorder as JSON (`{ rank, rebalanced }`). Errors via `ReorderError`; passing both `before` and `after` errors with the same mutually-exclusive message as `reorder_relationship`.
+
 ## Config and Git
 
 Config tools currently target machine-local keys (`git.*`).

@@ -64,6 +64,7 @@ import {
   ProjectError,
   publish,
   readHistory,
+  reorderBoardRank,
   ReorderError,
   reorderRelationship,
   requireSupportedSchema,
@@ -613,6 +614,15 @@ export function getTools(): McpTool[] {
         target: z.string().describe("Target task key or ID being moved"),
         before: z.string().optional().describe("Sibling target to position before"),
         after: z.string().optional().describe("Sibling target to position after"),
+      },
+    },
+    {
+      name: "reorder_board",
+      description: "Reorder a task's position on the board (its `board_rank`). Pass exactly one of `before` or `after` to position the task relative to a sibling, or neither to move it to the end of its column. The board column is implicit — the task stays in its current status; this only changes its order within that column.",
+      inputSchema: {
+        ref: z.string().describe("Task key or ID"),
+        before: z.string().optional().describe("Sibling task to position before"),
+        after: z.string().optional().describe("Sibling task to position after"),
       },
     },
   ];
@@ -1724,6 +1734,26 @@ export async function executeTool(
             sourceRef: args["source"] as string,
             relationshipType: args["type"] as string,
             targetRef: args["target"] as string,
+            ...(before !== undefined ? { before } : {}),
+            ...(after !== undefined ? { after } : {}),
+          });
+          return text(JSON.stringify(result, null, 2));
+        } catch (err) {
+          if (err instanceof ReorderError) return errorResult(err.message);
+          throw err;
+        }
+      }
+
+      case "reorder_board": {
+        try {
+          const before = args["before"] as string | undefined;
+          const after = args["after"] as string | undefined;
+          if (before !== undefined && after !== undefined) {
+            return errorResult("`before` and `after` are mutually exclusive; pass at most one");
+          }
+          const result = await reorderBoardRank({
+            locttDir,
+            taskRef: args["ref"] as string,
             ...(before !== undefined ? { before } : {}),
             ...(after !== undefined ? { after } : {}),
           });

@@ -402,6 +402,19 @@ loctt rerank <source> <relationship> <target> [--before <task> | --after <task>]
 
 Example: `loctt rerank epic-1 has_subtask T-9 --after T-7`
 
+### `loctt board-rerank`
+
+Re-order a task's position on the board (its `board_rank`). The task stays
+in its current status; only its order within the column changes. Pass
+either `--before` or `--after` (mutually exclusive); without either, the
+task moves to the end of its column.
+
+```
+loctt board-rerank <task> [--before <task> | --after <task>]
+```
+
+Example: `loctt board-rerank T-9 --after T-7`
+
 ## Lifecycle
 
 ### `loctt archive`

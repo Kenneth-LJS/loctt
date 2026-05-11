@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { initLoctt } from "@loctt/core";
+import { initLoctt, lookupByKey, resolveLocttDir } from "@loctt/core";
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
 import { executeTool,getTools } from "./index.js";
@@ -307,5 +307,96 @@ describe("MCP executeTool", () => {
     // delete_task with confirm succeeds and removes the task entirely.
     const deleted = await executeTool(root, "delete_task", { ref: "T-1", confirm: true });
     expect(deleted.isError).toBeUndefined();
+  });
+
+  describe("reorder_board", () => {
+    it("is registered with the expected schema", () => {
+      const tool = getTools().find(t => t.name === "reorder_board");
+      expect(tool).toBeDefined();
+      expect(tool?.inputSchema).toHaveProperty("ref");
+      expect(tool?.inputSchema).toHaveProperty("before");
+      expect(tool?.inputSchema).toHaveProperty("after");
+    });
+
+    it("moves a task before another and persists the new rank", async () => {
+      // Verifying the on-disk rank change here — not just the returned
+      // payload — so a regression that returns a rank but skips the
+      // write can't slip through.
+      await executeTool(root, "create_task", { title: "a" });
+      await executeTool(root, "create_task", { title: "b" });
+      await executeTool(root, "create_task", { title: "c" });
+      const result = await executeTool(root, "reorder_board", {
+        ref: "T-3",
+        before: "T-1",
+      });
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text ?? "{}") as {
+        rank: string;
+      };
+      expect(typeof payload.rank).toBe("string");
+      expect(payload.rank.length).toBeGreaterThan(0);
+
+      const locttDir = resolveLocttDir(root);
+      const t1 = await lookupByKey(locttDir, "T-1");
+      const t3 = await lookupByKey(locttDir, "T-3");
+      expect(t3.frontmatter.board_rank).toBe(payload.rank);
+      if (t1.frontmatter.board_rank !== undefined) {
+        expect(t3.frontmatter.board_rank! < t1.frontmatter.board_rank).toBe(true);
+      }
+    });
+
+    it("moves a task after another", async () => {
+      await executeTool(root, "create_task", { title: "a" });
+      await executeTool(root, "create_task", { title: "b" });
+      await executeTool(root, "create_task", { title: "c" });
+      const result = await executeTool(root, "reorder_board", {
+        ref: "T-1",
+        after: "T-3",
+      });
+      expect(result.isError).toBeUndefined();
+      const locttDir = resolveLocttDir(root);
+      const t1 = await lookupByKey(locttDir, "T-1");
+      const t3 = await lookupByKey(locttDir, "T-3");
+      if (t3.frontmatter.board_rank !== undefined) {
+        expect(t1.frontmatter.board_rank! > t3.frontmatter.board_rank).toBe(true);
+      }
+    });
+
+    it("with neither before nor after, moves the task to the end of the column", async () => {
+      await executeTool(root, "create_task", { title: "a" });
+      await executeTool(root, "create_task", { title: "b" });
+      await executeTool(root, "create_task", { title: "c" });
+      const result = await executeTool(root, "reorder_board", { ref: "T-1" });
+      expect(result.isError).toBeUndefined();
+      const locttDir = resolveLocttDir(root);
+      const t1 = await lookupByKey(locttDir, "T-1");
+      const t2 = await lookupByKey(locttDir, "T-2");
+      const t3 = await lookupByKey(locttDir, "T-3");
+      if (
+        t2.frontmatter.board_rank !== undefined &&
+        t3.frontmatter.board_rank !== undefined
+      ) {
+        expect(t1.frontmatter.board_rank! > t2.frontmatter.board_rank).toBe(true);
+        expect(t1.frontmatter.board_rank! > t3.frontmatter.board_rank).toBe(true);
+      }
+    });
+
+    it("rejects before + after together", async () => {
+      await executeTool(root, "create_task", { title: "a" });
+      await executeTool(root, "create_task", { title: "b" });
+      await executeTool(root, "create_task", { title: "c" });
+      const result = await executeTool(root, "reorder_board", {
+        ref: "T-3",
+        before: "T-1",
+        after: "T-2",
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? "").toMatch(/mutually exclusive/);
+    });
+
+    it("returns a clean error when the task ref does not resolve", async () => {
+      const result = await executeTool(root, "reorder_board", { ref: "T-999" });
+      expect(result.isError).toBe(true);
+    });
   });
 });
