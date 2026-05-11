@@ -71,6 +71,7 @@ import {
   loadUserSettings,
   loadWorkflowConfig,
   lookupTask,
+  MAX_AVATAR_BYTES,
   MilestoneError,
   ProjectError,
   publish,
@@ -107,6 +108,7 @@ import {
   writeTaskBody,
 } from "@loctt/core";
 
+import type { ParsedFilePart } from "./multipart.js";
 import { parseMultipartFile } from "./multipart.js";
 
 const DEFAULT_PORT = 4321;
@@ -252,7 +254,6 @@ const STATIC_MIME: Record<string, string> = {
   ".mjs": "application/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
-  ".svg": "image/svg+xml",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -765,20 +766,22 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleCreateUser: RouteHandler = async ({ req, res, locttDir }) => {
-    const body = await readBody(req);
-    const request = JSON.parse(body) as {
+    const request = await parseJsonBody<{
       name: string;
       email?: string;
       timezone?: string;
-      avatar_source_path?: string;
       switch_to_on_create?: boolean;
-    };
+    }>(req, res);
+    if (request === undefined) return;
+    if (typeof request.name !== "string" || request.name.length === 0) {
+      error(res, "name must be a non-empty string", 400);
+      return;
+    }
     try {
       const created = await createUser(locttDir, {
         name: request.name,
         ...(request.email !== undefined ? { email: request.email } : {}),
         ...(request.timezone !== undefined ? { timezone: request.timezone } : {}),
-        ...(request.avatar_source_path !== undefined ? { avatarSourcePath: request.avatar_source_path } : {}),
         switchToOnCreate: request.switch_to_on_create === true,
       });
       json(res, created, 201);
@@ -790,25 +793,66 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleUpdateUser: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = captures[0] ?? "";
-    const body = await readBody(req);
-    const request = JSON.parse(body) as {
+    const request = await parseJsonBody<{
       name?: string;
       email?: string | null;
       timezone?: string;
-      avatar_source_path?: string;
-    };
+    }>(req, res);
+    if (request === undefined) return;
     try {
       const target = await resolveUserRef(locttDir, ref);
       const updated = await updateUser(locttDir, target.id, {
         ...(request.name !== undefined ? { name: request.name } : {}),
         ...("email" in request ? { email: request.email } : {}),
         ...(request.timezone !== undefined ? { timezone: request.timezone } : {}),
-        ...(request.avatar_source_path !== undefined ? { avatarSourcePath: request.avatar_source_path } : {}),
       });
       json(res, updated);
     } catch (err) {
       if (err instanceof UserError) { error(res, err.message, 400); return; }
       throw err;
+    }
+  };
+
+  const handleUploadAvatar: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const ref = captures[0] ?? "";
+    const contentType = req.headers["content-type"] ?? "";
+    if (!/^multipart\/form-data\s*;/i.test(contentType)) {
+      error(res, "Content-Type must be multipart/form-data", 400);
+      return;
+    }
+
+    let target;
+    try {
+      target = await resolveUserRef(locttDir, ref);
+    } catch (err) {
+      if (err instanceof UserError) { error(res, err.message, 404); return; }
+      throw err;
+    }
+
+    const tmpParent = await mkdtemp(pathJoin(tmpdir(), "loctt-avatar-"));
+    try {
+      let parsed: ParsedFilePart;
+      try {
+        // Cap multipart at the avatar size limit so we reject huge
+        // payloads before reading them into a temp file. The core
+        // copyAvatar() also enforces MAX_AVATAR_BYTES on the written
+        // file as defense-in-depth.
+        parsed = await parseMultipartFile(req, contentType, tmpParent, "file", MAX_AVATAR_BYTES);
+      } catch (parseErr) {
+        error(res, (parseErr as Error).message, 400);
+        return;
+      }
+      try {
+        const updated = await updateUser(locttDir, target.id, {
+          avatarSourcePath: parsed.tempPath,
+        });
+        json(res, updated);
+      } catch (err) {
+        if (err instanceof UserError) { error(res, err.message, 400); return; }
+        throw err;
+      }
+    } finally {
+      await rm(tmpParent, { recursive: true, force: true }).catch(() => undefined);
     }
   };
 
@@ -839,6 +883,10 @@ export function createWebApp(options: WebAppOptions) {
   const handleDeleteUser: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = captures[0] ?? "";
     const url = new URL(req.url ?? "/", `http://localhost:${port}`);
+    if (url.searchParams.get("confirm") !== "true") {
+      error(res, "user delete is permanent; pass ?confirm=true to proceed", 400);
+      return;
+    }
     const remapToRef = url.searchParams.get("remap_to") ?? undefined;
     const unassign = url.searchParams.get("unassign") === "true";
     if (remapToRef !== undefined && unassign) {
@@ -1223,9 +1271,14 @@ export function createWebApp(options: WebAppOptions) {
     json(res, updated.frontmatter);
   };
 
-  const handleDeleteTask: RouteHandler = async ({ res, locttDir, captures }) => {
+  const handleDeleteTask: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = captures[0] ?? "";
     if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+    const url = new URL(req.url ?? "/", `http://localhost:${port}`);
+    if (url.searchParams.get("confirm") !== "true") {
+      error(res, "task delete is permanent; pass ?confirm=true to proceed", 400);
+      return;
+    }
     const task = await lookupTask(locttDir, ref);
     await deleteTask(locttDir, task.frontmatter.id, { force: true });
     json(res, { deleted: task.frontmatter.key });
@@ -1271,7 +1324,7 @@ export function createWebApp(options: WebAppOptions) {
     const tmpParent = await mkdtemp(pathJoin(tmpdir(), "loctt-upload-"));
     let tmpFilePath: string | undefined;
     try {
-      let parsed;
+      let parsed: ParsedFilePart;
       try {
         parsed = await parseMultipartFile(req, contentType, tmpParent, "file");
       } catch (parseErr) {
@@ -1310,26 +1363,15 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
-  function validateAttachmentName(rawName: string): boolean {
-    return !(
-      rawName.length === 0
-      || rawName.includes("/")
-      || rawName.includes("\\")
-      || rawName.includes("\0")
-      || rawName === "."
-      || rawName === ".."
-      || rawName.split(/[/\\]/).some(p => p === "..")
-    );
-  }
-
   const handleGetAttachment: RouteHandler = async ({ res, locttDir, captures }) => {
     const ref = captures[0] ?? "";
     const rawName = decodeURIComponent(captures[1] ?? "");
     if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
-    if (!validateAttachmentName(rawName)) { error(res, "Invalid attachment name", 400); return; }
 
     const task = await lookupTask(locttDir, ref);
 
+    // assertSafeBasename rejects empty strings, separators, "..", null
+    // bytes, etc.; it's the same guard `getAttachmentPath` uses.
     let filePath: string;
     try {
       filePath = getAttachmentPath(locttDir, task.frontmatter.id, rawName);
@@ -1369,7 +1411,12 @@ export function createWebApp(options: WebAppOptions) {
     const ref = captures[0] ?? "";
     const rawName = decodeURIComponent(captures[1] ?? "");
     if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
-    if (!validateAttachmentName(rawName)) { error(res, "Invalid attachment name", 400); return; }
+    try {
+      assertSafeBasename(rawName);
+    } catch {
+      error(res, "Invalid attachment name", 400);
+      return;
+    }
 
     const task = await lookupTask(locttDir, ref);
 
@@ -1427,6 +1474,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "POST", pattern: USER_ARCHIVE_RE, handler: handleArchiveUser },
     { method: "POST", pattern: USER_UNARCHIVE_RE, handler: handleUnarchiveUser },
     { method: "GET", pattern: USER_AVATAR_RE, handler: handleGetAvatar },
+    { method: "POST", pattern: USER_AVATAR_RE, handler: handleUploadAvatar },
     { method: "GET", pattern: "/api/tasks", handler: handleListTasks },
     { method: "POST", pattern: "/api/tasks", handler: handleCreateTask },
     { method: "GET", pattern: TASK_ACTIVITY_RE, handler: handleTaskActivity },

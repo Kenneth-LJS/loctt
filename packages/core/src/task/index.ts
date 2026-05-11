@@ -4,6 +4,7 @@ export {
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,
+  DEFAULT_MAX_ATTACHMENT_BYTES,
   detachFile,
 } from "./attachments.js";
 export type { CreateTaskOptions, CreateTaskParams } from "./create.js";

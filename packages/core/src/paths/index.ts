@@ -59,16 +59,19 @@ export function resolveLocttDir(root: string): string {
 
 /** Returns the path to the tasks directory: .loctt/tasks/ */
 export function getTaskDir(locttDir: string, taskId: string): string {
+  assertSafeBasename(taskId);
   return join(locttDir, TASKS_DIR, taskId);
 }
 
 /** Returns the path to a task's task.md file. */
 export function getTaskFilePath(locttDir: string, taskId: string): string {
+  assertSafeBasename(taskId);
   return join(locttDir, TASKS_DIR, taskId, TASK_FILE);
 }
 
 /** Returns the path to a task's _history.yaml file. */
 export function getHistoryFilePath(locttDir: string, taskId: string): string {
+  assertSafeBasename(taskId);
   return join(locttDir, TASKS_DIR, taskId, HISTORY_FILE);
 }
 
@@ -78,11 +81,13 @@ export function getHistoryFilePath(locttDir: string, taskId: string): string {
  * consolidates them onto `_history.yaml`.
  */
 export function getLegacyHistoryFilePath(locttDir: string, taskId: string): string {
+  assertSafeBasename(taskId);
   return join(locttDir, TASKS_DIR, taskId, LEGACY_HISTORY_FILE);
 }
 
 /** Returns the path to a task's attachments directory. */
 export function getAttachmentsDir(locttDir: string, taskId: string): string {
+  assertSafeBasename(taskId);
   return join(locttDir, TASKS_DIR, taskId, ATTACHMENTS_DIR);
 }
 
@@ -96,6 +101,7 @@ export function getAttachmentPath(
   taskId: string,
   name: string,
 ): string {
+  assertSafeBasename(taskId);
   assertSafeBasename(name);
   return join(locttDir, TASKS_DIR, taskId, ATTACHMENTS_DIR, name);
 }
@@ -167,16 +173,19 @@ export function getUsersDir(locttDir: string): string {
 
 /** Returns the path to a single user's folder: .loctt/users/<id>/. */
 export function getUserDir(locttDir: string, userId: string): string {
+  assertSafeBasename(userId);
   return join(locttDir, USERS_DIR, userId);
 }
 
 /** Returns the path to a user's profile.yaml. */
 export function getUserProfilePath(locttDir: string, userId: string): string {
+  assertSafeBasename(userId);
   return join(locttDir, USERS_DIR, userId, USER_PROFILE_FILE);
 }
 
 /** Returns the path to a user's settings.yaml (gitignored). */
 export function getUserSettingsPath(locttDir: string, userId: string): string {
+  assertSafeBasename(userId);
   return join(locttDir, USERS_DIR, userId, USER_SETTINGS_FILE);
 }
 

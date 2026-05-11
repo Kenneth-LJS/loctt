@@ -364,10 +364,11 @@ export function getTools(): McpTool[] {
         "still reference it. With hard: true, the project is removed from projects.yaml and " +
         "(for projects with tasks) `remap_to` is required to migrate them to another project. " +
         "Cannot hard-delete the only project. The counter is preserved in retired_keys so a " +
-        "later create with the same key resumes numbering.",
+        "later create with the same key resumes numbering. hard: true requires confirm: true.",
       inputSchema: {
         key: z.string(),
         hard: z.boolean().optional().describe("If true, permanently remove the project from projects.yaml"),
+        confirm: z.boolean().optional().describe("Required when hard is true"),
         remap_to: z.string().optional().describe("Hard-delete only: target project key for tasks in the deleted project"),
       },
     },
@@ -409,24 +410,22 @@ export function getTools(): McpTool[] {
     },
     {
       name: "user_create",
-      description: "Creates a new user. Names are not unique (UUIDs disambiguate). Timezone defaults to the system timezone.",
+      description: "Creates a new user. Names are not unique (UUIDs disambiguate). Timezone defaults to the system timezone. Avatars are not settable via MCP — use the CLI or web UI.",
       inputSchema: {
         name: z.string(),
         email: z.string().optional(),
         timezone: z.string().optional(),
-        avatar_source_path: z.string().optional().describe("Absolute path to an avatar image to copy in"),
         switch_to_on_create: z.boolean().optional(),
       },
     },
     {
       name: "user_edit",
-      description: "Edit an existing user's profile fields.",
+      description: "Edit an existing user's profile fields. Avatars are not settable via MCP — use the CLI or web UI.",
       inputSchema: {
         ref: z.string(),
         name: z.string().optional(),
         email: z.string().nullable().optional().describe("Pass null to clear"),
         timezone: z.string().optional(),
-        avatar_source_path: z.string().optional(),
       },
     },
     {
@@ -445,9 +444,10 @@ export function getTools(): McpTool[] {
     },
     {
       name: "user_delete",
-      description: "Hard-deletes a user. When the user has task references (assignee/reporter), exactly one of `remap_to` or `unassign` is required. Mutually exclusive. Blocked when target is the active user.",
+      description: "Hard-deletes a user. When the user has task references (assignee/reporter), exactly one of `remap_to` or `unassign` is required. Mutually exclusive. Blocked when target is the active user. Requires confirm: true.",
       inputSchema: {
         ref: z.string(),
+        confirm: z.boolean().optional().describe("Required: must be true to proceed"),
         remap_to: z.string().optional().describe("Target user UUID/name to migrate references onto"),
         unassign: z.boolean().optional().describe("Clear assignee/reporter on affected tasks"),
       },
@@ -500,10 +500,11 @@ export function getTools(): McpTool[] {
       description:
         "Delete a sprint. Default is soft-delete (archived: true). With hard: true, the entry " +
         "is removed from sprints.yaml and the `sprint` field on each affected task is either " +
-        "unset or remapped to `remap_to`.",
+        "unset or remapped to `remap_to`. hard: true requires confirm: true.",
       inputSchema: {
         key: z.string(),
         hard: z.boolean().optional(),
+        confirm: z.boolean().optional().describe("Required when hard is true"),
         remap_to: z.string().optional().describe("Hard-delete only"),
       },
     },
@@ -546,10 +547,11 @@ export function getTools(): McpTool[] {
       description:
         "Delete a milestone. Default is soft-delete (archived: true). With hard: true, the " +
         "entry is removed from milestones.yaml and the `milestone` field on each affected task " +
-        "is either unset or remapped to `remap_to`.",
+        "is either unset or remapped to `remap_to`. hard: true requires confirm: true.",
       inputSchema: {
         key: z.string(),
         hard: z.boolean().optional(),
+        confirm: z.boolean().optional().describe("Required when hard is true"),
         remap_to: z.string().optional().describe("Hard-delete only"),
       },
     },
@@ -586,10 +588,11 @@ export function getTools(): McpTool[] {
       description:
         "Delete a label. Default is soft-delete (archived: true). With hard: true, the entry " +
         "is removed from labels.yaml and the key is dropped from every task's labels array (or " +
-        "remapped via remap_to).",
+        "remapped via remap_to). hard: true requires confirm: true.",
       inputSchema: {
         key: z.string(),
         hard: z.boolean().optional(),
+        confirm: z.boolean().optional().describe("Required when hard is true"),
         remap_to: z.string().optional().describe("Hard-delete only"),
       },
     },
@@ -623,6 +626,16 @@ function text(content: string): McpToolResult {
 
 function errorResult(message: string): McpToolResult {
   return { content: [{ type: "text", text: `Error: ${message}` }], isError: true };
+}
+
+/**
+ * Returns a structured error when a destructive tool was invoked
+ * without `confirm: true`. Pulls the boilerplate string into one
+ * place so every gate reads the same way.
+ */
+function requireConfirm(args: Record<string, unknown>, action: string): McpToolResult | null {
+  if (args["confirm"] === true) return null;
+  return errorResult(`${action} requires confirm: true to proceed`);
 }
 
 /**
@@ -832,9 +845,8 @@ export async function executeTool(
         const hard = args["hard"] === true;
         const task = await lookupTask(locttDir, args["ref"] as string);
         if (hard) {
-          if (args["confirm"] !== true) {
-            return errorResult("hard delete requires confirm: true to proceed");
-          }
+          const blocked = requireConfirm(args, "hard delete");
+          if (blocked) return blocked;
           await deleteTask(locttDir, task.frontmatter.id, { force: true });
           return text(`Hard-deleted ${task.frontmatter.key}.`);
         }
@@ -1139,6 +1151,10 @@ export async function executeTool(
         try {
           const remapTo = args["remap_to"] as string | undefined;
           const hard = args["hard"] === true;
+          if (hard) {
+            const blocked = requireConfirm(args, "hard delete");
+            if (blocked) return blocked;
+          }
           const result = await deleteProject(locttDir, args["key"] as string, {
             hard,
             ...(remapTo !== undefined ? { remapTo } : {}),
@@ -1216,7 +1232,6 @@ export async function executeTool(
             name: args["name"] as string,
             ...(args["email"] !== undefined ? { email: args["email"] as string } : {}),
             ...(args["timezone"] !== undefined ? { timezone: args["timezone"] as string } : {}),
-            ...(args["avatar_source_path"] !== undefined ? { avatarSourcePath: args["avatar_source_path"] as string } : {}),
             switchToOnCreate: args["switch_to_on_create"] === true,
           });
           return text(JSON.stringify(created, null, 2));
@@ -1235,7 +1250,6 @@ export async function executeTool(
               ? { email: args["email"] as string | null }
               : {}),
             ...(args["timezone"] !== undefined ? { timezone: args["timezone"] as string } : {}),
-            ...(args["avatar_source_path"] !== undefined ? { avatarSourcePath: args["avatar_source_path"] as string } : {}),
           });
           return text(JSON.stringify(updated, null, 2));
         } catch (err) {
@@ -1259,6 +1273,8 @@ export async function executeTool(
 
       case "user_delete": {
         try {
+          const blocked = requireConfirm(args, "user_delete");
+          if (blocked) return blocked;
           const target = await resolveUserRef(locttDir, args["ref"] as string);
           const remapToRef = args["remap_to"] as string | undefined;
           const unassign = args["unassign"] === true;
@@ -1317,6 +1333,10 @@ export async function executeTool(
         try {
           const remapTo = args["remap_to"] as string | undefined;
           const hard = args["hard"] === true;
+          if (hard) {
+            const blocked = requireConfirm(args, "hard delete");
+            if (blocked) return blocked;
+          }
           const result = await deleteLabel(locttDir, args["key"] as string, {
             hard,
             ...(remapTo !== undefined ? { remapTo } : {}),
@@ -1382,6 +1402,10 @@ export async function executeTool(
         try {
           const remapTo = args["remap_to"] as string | undefined;
           const hard = args["hard"] === true;
+          if (hard) {
+            const blocked = requireConfirm(args, "hard delete");
+            if (blocked) return blocked;
+          }
           const result = await deleteSprint(locttDir, args["key"] as string, {
             hard,
             ...(remapTo !== undefined ? { remapTo } : {}),
@@ -1437,6 +1461,10 @@ export async function executeTool(
         try {
           const remapTo = args["remap_to"] as string | undefined;
           const hard = args["hard"] === true;
+          if (hard) {
+            const blocked = requireConfirm(args, "hard delete");
+            if (blocked) return blocked;
+          }
           const result = await deleteMilestone(locttDir, args["key"] as string, {
             hard,
             ...(remapTo !== undefined ? { remapTo } : {}),

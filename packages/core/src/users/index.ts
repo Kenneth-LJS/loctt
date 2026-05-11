@@ -11,6 +11,7 @@ export {
   detectSystemTimezone,
   ensureDefaultUser,
   getCurrentUser,
+  MAX_AVATAR_BYTES,
   resolveUserRef,
   switchCurrentUser,
   unarchiveUser,

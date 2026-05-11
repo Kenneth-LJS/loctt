@@ -99,8 +99,9 @@ export async function createUser(
   });
 }
 
-const ALLOWED_AVATAR_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);
-const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+const ALLOWED_AVATAR_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
+/** Maximum avatar file size in bytes (2 MB). */
+export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 
 /**
  * Copies an avatar source file into the user's folder. Returns the

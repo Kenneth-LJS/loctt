@@ -205,6 +205,35 @@ async function confirmInteractive(question: string): Promise<boolean> {
   }
 }
 
+type ConfirmOutcome = "yes" | "no" | "refused";
+
+/**
+ * Confirms a destructive action.
+ * - `--yes` flag → "yes" (no prompt).
+ * - Interactive TTY: prompts; user "y" → "yes", anything else → "no".
+ * - Non-TTY without `--yes` → "refused" (a usage error, not a denial).
+ *
+ * Callers should map "no" → exit 0 (clean refusal) and "refused" →
+ * exit 1 (script must pass `--yes`).
+ */
+async function confirmHardDelete(args: string[], question: string): Promise<ConfirmOutcome> {
+  if (hasFlag(args, "--yes")) return "yes";
+  if (!process.stdin.isTTY) {
+    console.error(
+      `Refusing to prompt for confirmation in non-interactive mode. Pass --yes to skip.`,
+    );
+    return "refused";
+  }
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (await rl.question(`${question} [y/N] `)).trim().toLowerCase();
+    return answer === "y" || answer === "yes" ? "yes" : "no";
+  } finally {
+    rl.close();
+  }
+}
+
 function formatValue(v: unknown): string {
   if (v === null || v === undefined) return "(none)";
   if (typeof v === "string") return v;
@@ -670,7 +699,7 @@ export async function main(): Promise<void> {
       case "delete": {
         const ref = args[1];
         if (!ref) {
-          console.error("Usage: loctt delete <task> [--hard]");
+          console.error("Usage: loctt delete <task> [--hard] [--yes]");
           process.exitCode = 1;
           break;
         }
@@ -678,6 +707,11 @@ export async function main(): Promise<void> {
         const locttDir = resolveLocttDir(root);
         const task = await lookupTask(locttDir, ref);
         if (hard) {
+          const outcome = await confirmHardDelete(
+            args,
+            `Permanently delete task ${task.frontmatter.key}?`,
+          );
+          if (outcome !== "yes") { process.exitCode = outcome === "refused" ? 1 : 0; break; }
           await deleteTask(locttDir, task.frontmatter.id, { force: true });
           console.log(`Hard-deleted ${task.frontmatter.key}`);
         } else {
@@ -977,9 +1011,16 @@ export async function main(): Promise<void> {
             const remapTo = getArg(args, "--remap-to");
             const hard = hasFlag(args, "--hard");
             if (!key) {
-              console.error(`Usage: loctt project delete <key> [--hard] [--remap-to <other-key>]`);
+              console.error(`Usage: loctt project delete <key> [--hard] [--remap-to <other-key>] [--yes]`);
               process.exitCode = 1;
               break;
+            }
+            if (hard) {
+              const outcome = await confirmHardDelete(
+                args,
+                `Permanently delete project ${key}? This will rewrite affected tasks.`,
+              );
+              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? 1 : 0; break; }
             }
             try {
               const result = await deleteProject(locttDir, key, {
@@ -1188,7 +1229,7 @@ export async function main(): Promise<void> {
           case "delete": {
             const ref = args[2];
             if (!ref) {
-              console.error(`Usage: loctt user delete <id-or-name> [--remap-to <id-or-name> | --unassign]`);
+              console.error(`Usage: loctt user delete <id-or-name> [--remap-to <id-or-name> | --unassign] [--yes]`);
               process.exitCode = 1;
               break;
             }
@@ -1201,6 +1242,12 @@ export async function main(): Promise<void> {
             }
             try {
               const target = await resolveUserRef(locttDir, ref);
+              const outcome = await confirmHardDelete(
+                args,
+                `Permanently delete user ${target.name} (${target.id})? ` +
+                `This will rewrite affected tasks.`,
+              );
+              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? 1 : 0; break; }
               const remapTo = remapToRef !== undefined
                 ? (await resolveUserRef(locttDir, remapToRef)).id
                 : undefined;
@@ -1304,12 +1351,19 @@ export async function main(): Promise<void> {
           case "delete": {
             const key = args[2];
             if (!key) {
-              console.error(`Usage: loctt label delete <key> [--hard] [--remap-to <other>]`);
+              console.error(`Usage: loctt label delete <key> [--hard] [--remap-to <other>] [--yes]`);
               process.exitCode = 1;
               break;
             }
             const remapTo = getArg(args, "--remap-to");
             const hard = hasFlag(args, "--hard");
+            if (hard) {
+              const outcome = await confirmHardDelete(
+                args,
+                `Permanently delete label ${key}? This will rewrite affected tasks.`,
+              );
+              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? 1 : 0; break; }
+            }
             try {
               const result = await deleteLabel(locttDir, key, {
                 hard,
@@ -1440,12 +1494,19 @@ export async function main(): Promise<void> {
           case "delete": {
             const key = args[2];
             if (!key) {
-              console.error(`Usage: loctt milestone delete <key> [--hard] [--remap-to <other>]`);
+              console.error(`Usage: loctt milestone delete <key> [--hard] [--remap-to <other>] [--yes]`);
               process.exitCode = 1;
               break;
             }
             const remapTo = getArg(args, "--remap-to");
             const hard = hasFlag(args, "--hard");
+            if (hard) {
+              const outcome = await confirmHardDelete(
+                args,
+                `Permanently delete milestone ${key}? This will rewrite affected tasks.`,
+              );
+              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? 1 : 0; break; }
+            }
             try {
               const result = await deleteMilestone(locttDir, key, {
                 hard,
@@ -1593,12 +1654,19 @@ export async function main(): Promise<void> {
           case "delete": {
             const key = args[2];
             if (!key) {
-              console.error(`Usage: loctt sprint delete <key> [--hard] [--remap-to <other>]`);
+              console.error(`Usage: loctt sprint delete <key> [--hard] [--remap-to <other>] [--yes]`);
               process.exitCode = 1;
               break;
             }
             const remapTo = getArg(args, "--remap-to");
             const hard = hasFlag(args, "--hard");
+            if (hard) {
+              const outcome = await confirmHardDelete(
+                args,
+                `Permanently delete sprint ${key}? This will rewrite affected tasks.`,
+              );
+              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? 1 : 0; break; }
+            }
             try {
               const result = await deleteSprint(locttDir, key, {
                 hard,

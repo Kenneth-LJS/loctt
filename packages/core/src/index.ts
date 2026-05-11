@@ -219,6 +219,7 @@ export {
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,
+  DEFAULT_MAX_ATTACHMENT_BYTES,
   detachFile,
 } from "./task/index.js";
 export { appendHistory, readHistory } from "./task/index.js";
@@ -243,6 +244,7 @@ export {
   loadAllUsers,
   loadUserProfile,
   loadUserSettings,
+  MAX_AVATAR_BYTES,
   parseUserProfile,
   readCurrentUserId,
   resolveUserRef,
