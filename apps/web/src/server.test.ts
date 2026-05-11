@@ -337,6 +337,20 @@ describe("web server security", () => {
       expect(body.error).toMatch(/nested/i);
     });
 
+    it("returns 413 (not 500) when a JSON body exceeds the size cap", async () => {
+      // readBody caps bodies at 1 MiB; oversized requests must
+      // surface as 413 so clients distinguish "too big" from 500.
+      const oversize = "x".repeat(1_100_000);
+      const res = await fetch(`${base}/api/user-settings`, {
+        method: "PUT",
+        headers: csrfHeaders,
+        body: JSON.stringify({ blob: oversize }),
+      });
+      expect(res.status).toBe(413);
+      const body = await res.json() as { error: string };
+      expect(body.error).toMatch(/exceeds|too large/i);
+    });
+
     it("does not serve content when profile.yaml has a traversal avatar", async () => {
       // Two layers protect this:
       //  1. UserProfileSchema.avatar is a basename brand — the

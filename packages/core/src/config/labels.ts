@@ -3,12 +3,13 @@ import { join } from "node:path";
 
 import type { LabelsConfig } from "@loctt/contracts";
 import { LabelsConfigSchema } from "@loctt/contracts";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
 import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
+import { safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
 export class LabelsConfigError extends Error {
@@ -26,7 +27,7 @@ export function getLabelsConfigPath(locttDir: string): string {
 
 /** Parses raw YAML content into a LabelsConfig. */
 export function parseLabelsConfig(yamlContent: string): LabelsConfig {
-  const raw: unknown = parseYaml(yamlContent);
+  const raw: unknown = safeParseYaml(yamlContent, "labels.yaml");
   let parsed: LabelsConfig;
   try {
     parsed = LabelsConfigSchema.parse(raw);

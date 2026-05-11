@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat as fsLstat, mkdtemp, rm, stat as fsStat } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -123,21 +124,49 @@ async function trackerDirExists(locttDir: string): Promise<boolean> {
   }
 }
 
+/**
+ * Thrown when an incoming request body exceeds the configured byte
+ * cap. Surfaces to the top-level handler as HTTP 413 so clients
+ * can distinguish "too big" from a generic 500.
+ */
+class BodyTooLargeError extends Error {
+  constructor(limit: number) {
+    super(`request body exceeds ${limit} bytes`);
+    this.name = "BodyTooLargeError";
+  }
+}
+
 async function readBody(req: import("node:http").IncomingMessage, maxBytes = 1024 * 1024): Promise<string> {
   return new Promise((resolve, reject) => {
     let bytes = 0;
+    let aborted = false;
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => {
+      if (aborted) return;
       bytes += chunk.length;
       if (bytes > maxBytes) {
-        req.destroy();
-        reject(new Error("Request body too large"));
+        // Stop accumulating but DON'T destroy the socket here — the
+        // top-level handler still needs to write a 413 response
+        // through it. We `pause` so further data chunks don't
+        // accumulate, drain the request to its end event, then
+        // reject. The handler writes the 413, and the response
+        // close cleans up the socket.
+        aborted = true;
+        chunks.length = 0;
+        req.pause();
+        reject(new BodyTooLargeError(maxBytes));
         return;
       }
       chunks.push(chunk);
     });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
-    req.on("error", reject);
+    req.on("end", () => {
+      if (aborted) return;
+      resolve(Buffer.concat(chunks).toString("utf-8"));
+    });
+    req.on("error", (err) => {
+      if (aborted) return;
+      reject(err);
+    });
   });
 }
 
@@ -1680,6 +1709,12 @@ export function createWebApp(options: WebAppOptions) {
     req: import("node:http").IncomingMessage,
     res: import("node:http").ServerResponse,
   ): Promise<void> {
+    // Short per-request id used in error logs so a stack trace can be
+    // correlated to the request that produced it. 8 hex chars is
+    // plenty — these are log-correlation tokens for an operator
+    // grepping recent output, not identifiers persisted anywhere.
+    const reqId = randomBytes(4).toString("hex");
+
     if (!requireCsrfHeader(req, res)) return;
 
     const url = new URL(req.url ?? "/", `http://localhost:${port}`);
@@ -1735,7 +1770,22 @@ export function createWebApp(options: WebAppOptions) {
         error(res, err.message, 404);
         return;
       }
-      console.error(err);
+      if (err instanceof BodyTooLargeError) {
+        // Force-close the connection on overflow: the request body
+        // was paused mid-read (so the response could write back),
+        // which leaves the socket's receive buffer stuck. A
+        // misbehaving / malicious client could otherwise sit on a
+        // half-open connection until the OS keepalive timeout —
+        // setting Connection: close and destroying the request
+        // stream guarantees the socket cleans up promptly.
+        res.setHeader("Connection", "close");
+        error(res, err.message, 413);
+        req.destroy();
+        return;
+      }
+      // Tag the log line with method+path+req-id so an operator
+      // looking at a stack trace can find which request triggered it.
+      console.error(`[req ${reqId}] ${req.method ?? "?"} ${path}`, err);
       error(res, "Internal server error", 500);
     }
   }

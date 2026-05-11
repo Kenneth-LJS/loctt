@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   HexColor,
   IanaTimezone,
+  isIanaTimezoneShape,
   IsoDate,
   SlugKey,
   SprintKey,
@@ -152,5 +153,59 @@ describe("IanaTimezone", () => {
 
   it("rejects offset-only forms", () => {
     expect(() => IanaTimezone.parse("+05:00")).toThrow(/timezone/);
+  });
+});
+
+describe("isIanaTimezoneShape (fallback validator)", () => {
+  // This is the fallback path used when Intl.supportedValuesOf
+  // isn't available (older Node). It can't distinguish a real
+  // zone from a well-shaped string; the contract is only "looks
+  // like an IANA zone." Testing it directly because the runtime
+  // branch is hard to exercise via IanaTimezone.parse on a Node
+  // version that does have supportedValuesOf.
+
+  it("accepts UTC", () => {
+    expect(isIanaTimezoneShape("UTC")).toBe(true);
+  });
+
+  it("accepts Region/City shape", () => {
+    expect(isIanaTimezoneShape("America/Los_Angeles")).toBe(true);
+    expect(isIanaTimezoneShape("Europe/London")).toBe(true);
+    expect(isIanaTimezoneShape("Asia/Tokyo")).toBe(true);
+  });
+
+  it("accepts multi-segment paths (e.g. America/Argentina/Buenos_Aires)", () => {
+    expect(isIanaTimezoneShape("America/Argentina/Buenos_Aires")).toBe(true);
+    expect(isIanaTimezoneShape("America/Indiana/Indianapolis")).toBe(true);
+  });
+
+  it("accepts shapes with digits (e.g. Etc/GMT+5)", () => {
+    expect(isIanaTimezoneShape("Etc/GMT+5")).toBe(true);
+    expect(isIanaTimezoneShape("Etc/GMT-3")).toBe(true);
+  });
+
+  it("rejects bare abbreviations", () => {
+    expect(isIanaTimezoneShape("PST")).toBe(false);
+    expect(isIanaTimezoneShape("EST")).toBe(false);
+  });
+
+  it("rejects offset-only forms", () => {
+    expect(isIanaTimezoneShape("+05:00")).toBe(false);
+    expect(isIanaTimezoneShape("-08:00")).toBe(false);
+  });
+
+  it("rejects empty string", () => {
+    expect(isIanaTimezoneShape("")).toBe(false);
+  });
+
+  it("rejects lowercase region prefixes", () => {
+    // IANA zones use TitleCase region/city; the fallback enforces
+    // this so a typo like "america/los_angeles" doesn't slip through.
+    expect(isIanaTimezoneShape("america/Los_Angeles")).toBe(false);
+  });
+
+  it("rejects strings without a slash (except UTC)", () => {
+    expect(isIanaTimezoneShape("Europe")).toBe(false);
+    expect(isIanaTimezoneShape("Tokyo")).toBe(false);
   });
 });

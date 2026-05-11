@@ -3,13 +3,13 @@ import { join } from "node:path";
 
 import type { MilestonesConfig } from "@loctt/contracts";
 import { MilestonesConfigSchema } from "@loctt/contracts";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
 import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
-import { coerceYaml } from "./yaml-coerce.js";
+import { coerceYaml, safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
 export class MilestonesConfigError extends Error {
@@ -26,7 +26,7 @@ export function getMilestonesConfigPath(locttDir: string): string {
 }
 
 export function parseMilestonesConfig(yamlContent: string): MilestonesConfig {
-  const raw = coerceYaml(parseYaml(yamlContent));
+  const raw = coerceYaml(safeParseYaml(yamlContent, "milestones.yaml"));
   let parsed: MilestonesConfig;
   try {
     parsed = MilestonesConfigSchema.parse(raw);

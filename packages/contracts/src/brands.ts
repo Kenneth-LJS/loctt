@@ -63,6 +63,17 @@ const SUPPORTED_TIMEZONES: ReadonlySet<string> | null = (() => {
   return null;
 })();
 
+/**
+ * Coarse syntactic check used when `Intl.supportedValuesOf` isn't
+ * available (older runtimes). Accepts `UTC` plus `Region/City`-shaped
+ * names. Exported so tests can exercise the fallback branch directly,
+ * without monkeypatching the module-level `SUPPORTED_TIMEZONES`.
+ */
+export function isIanaTimezoneShape(value: string): boolean {
+  if (value === "UTC") return true;
+  return /^[A-Z][A-Za-z_]+\/[A-Z][A-Za-z_/+\-0-9]*$/.test(value);
+}
+
 export const IanaTimezone = z
   .string()
   .superRefine((value, ctx) => {
@@ -72,9 +83,7 @@ export const IanaTimezone = z
       ctx.addIssue({ code: "custom", message: `unknown IANA timezone: ${value}` });
       return;
     }
-    // Fallback: at least require Region/City shape or "UTC".
-    if (value === "UTC") return;
-    if (!/^[A-Z][A-Za-z_]+\/[A-Z][A-Za-z_/+\-0-9]*$/.test(value)) {
+    if (!isIanaTimezoneShape(value)) {
       ctx.addIssue({ code: "custom", message: `not a recognizable IANA timezone: ${value}` });
     }
   });

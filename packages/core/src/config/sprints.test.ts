@@ -5,6 +5,7 @@ import {
   serializeSprintsConfig,
   SprintsConfigError,
 } from "./sprints.js";
+import { YamlSyntaxError } from "./yaml-coerce.js";
 
 describe("parseSprintsConfig", () => {
   it("parses a minimal sprint", () => {
@@ -144,6 +145,11 @@ describe("parseSprintsConfig", () => {
     velocity: 42
 `;
     expect(() => parseSprintsConfig(yaml)).toThrow(/unrecognized key/);
+  });
+
+  it("throws YamlSyntaxError on malformed YAML (tagged with file label)", () => {
+    expect(() => parseSprintsConfig("{ sprints: [")).toThrow(YamlSyntaxError);
+    expect(() => parseSprintsConfig("{ sprints: [")).toThrow(/sprints\.yaml/);
   });
 });
 

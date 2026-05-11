@@ -3,13 +3,13 @@ import { join } from "node:path";
 
 import type { SprintsConfig } from "@loctt/contracts";
 import { SprintsConfigSchema } from "@loctt/contracts";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
 import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
-import { coerceYaml } from "./yaml-coerce.js";
+import { coerceYaml, safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
 export class SprintsConfigError extends Error {
@@ -26,7 +26,7 @@ export function getSprintsConfigPath(locttDir: string): string {
 }
 
 export function parseSprintsConfig(yamlContent: string): SprintsConfig {
-  const raw = coerceYaml(parseYaml(yamlContent));
+  const raw = coerceYaml(safeParseYaml(yamlContent, "sprints.yaml"));
   let parsed: SprintsConfig;
   try {
     parsed = SprintsConfigSchema.parse(raw);

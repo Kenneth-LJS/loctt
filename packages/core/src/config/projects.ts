@@ -3,12 +3,13 @@ import { join } from "node:path";
 
 import type { ProjectsConfig } from "@loctt/contracts";
 import { ProjectsConfigSchema } from "@loctt/contracts";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
 import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
+import { safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
 export class ProjectsConfigError extends Error {
@@ -30,7 +31,7 @@ export function getProjectsConfigPath(locttDir: string): string {
  * default points at a known project.
  */
 export function parseProjectsConfig(yamlContent: string): ProjectsConfig {
-  const raw: unknown = parseYaml(yamlContent);
+  const raw: unknown = safeParseYaml(yamlContent, "projects.yaml");
   try {
     return ProjectsConfigSchema.parse(raw);
   } catch (err) {
