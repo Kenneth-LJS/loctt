@@ -25,6 +25,15 @@ export interface ListOptions {
    * Saved views (`view`) are never modified — they are respected as authored.
    */
   readonly includeArchived?: boolean;
+  /**
+   * Project filter. When set, only tasks with this project key are
+   * returned. Applied as a post-query filter against `frontmatter.project`
+   * (rather than concatenated into the query string) so callers can
+   * pass user-controlled project keys without escaping concerns. Like
+   * `includeArchived`, this is *not* applied when `view` is set — saved
+   * views are respected as authored.
+   */
+  readonly project?: string;
 }
 
 /** Full options bag for listTasks. */
@@ -120,6 +129,13 @@ export function listTasks(opts: ListTasksOptions): Task[] {
     });
   } else {
     filtered = [...tasks];
+  }
+
+  // Project filter applied as a structured post-query step. Skipped
+  // when a saved view is in play, matching the includeArchived
+  // policy: views are respected as authored.
+  if (options.project !== undefined && !usedView) {
+    filtered = filtered.filter(t => t.frontmatter.project === options.project);
   }
 
   // Sort

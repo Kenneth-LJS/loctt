@@ -809,24 +809,21 @@ export async function main(): Promise<void> {
             }
           }
 
-          // Sugar: `--project <key>` is equivalent to a `project = <key>`
-          // clause AND-ed onto whatever query the user passed. Avoids
-          // making users construct DSL strings for the common case.
+          // `--project <key>` is a structured filter; passing it as
+          // an option keeps user-supplied project keys away from the
+          // query parser so values containing operators or spaces
+          // can't break parsing.
           const projectFilter = getArg(args, "--project");
           const baseQuery = getArg(args, "--query");
-          const composedQuery = projectFilter !== undefined
-            ? (baseQuery !== undefined && baseQuery.length > 0
-                ? `(${baseQuery}) and project = ${projectFilter}`
-                : `project = ${projectFilter}`)
-            : baseQuery;
 
           const view = getArg(args, "--view");
           const result = listTasks({
             tasks,
             options: {
-              ...(composedQuery !== undefined ? { query: composedQuery } : {}),
+              ...(baseQuery !== undefined ? { query: baseQuery } : {}),
               ...(view !== undefined ? { view } : {}),
               ...(limit !== undefined ? { limit } : {}),
+              ...(projectFilter !== undefined ? { project: projectFilter } : {}),
               includeArchived: hasFlag(args, "--archived"),
             },
             ...(queriesConfig !== undefined ? { queriesConfig } : {}),
