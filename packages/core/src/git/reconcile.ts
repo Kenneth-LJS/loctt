@@ -44,7 +44,7 @@ export function rekeyCollisions(
       if (!taskEntry) continue;
 
       const newKey = `${taskEntry.prefix}${taskEntry.next_number}`;
-      (state.keys as Record<string, { prefix: string; next_number: number }>)["task"] = {
+      state.keys["task"] = {
         prefix: taskEntry.prefix,
         next_number: taskEntry.next_number + 1,
       };

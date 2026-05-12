@@ -135,7 +135,7 @@ export async function createProject(
       // Restore the retired counter. Prefix may have changed between
       // the original project and the recreation; honor the new
       // prefix but keep the next_number so we never reuse old keys.
-      (state.keys as Record<string, { prefix: string; next_number: number }>)[def.key] = {
+      state.keys[def.key] = {
         prefix: def.prefix,
         next_number: retired.next_number,
       };
@@ -143,11 +143,10 @@ export async function createProject(
       for (const [k, v] of Object.entries(state.retired_keys ?? {})) {
         if (k !== def.key) remainingRetired[k] = v;
       }
-      const stateMut = state as { retired_keys?: Record<string, { prefix: string; next_number: number }> };
       if (Object.keys(remainingRetired).length > 0) {
-        stateMut.retired_keys = remainingRetired;
+        state.retired_keys = remainingRetired;
       } else {
-        delete stateMut.retired_keys;
+        delete state.retired_keys;
       }
     } else {
       try {
@@ -161,7 +160,7 @@ export async function createProject(
           // matches the new project's prefix; otherwise the user
           // has changed the prefix on a name collision and silently
           // resuming would mint keys under the wrong prefix.
-          const existing = (state.keys as Record<string, { prefix: string; next_number: number }>)[def.key];
+          const existing = state.keys[def.key];
           if (existing && existing.prefix !== def.prefix) {
             throw new ProjectError(
               `cannot create project '${def.key}' with prefix '${def.prefix}': ` +

@@ -1,11 +1,11 @@
 import { readFile } from "node:fs/promises";
 
-import type { Task } from "@loctt/contracts";
+import { type Task, TaskFrontmatterSchema } from "@loctt/contracts";
 
 import { getTaskFilePath } from "../paths/index.js";
 import { withStateLock } from "../state/lock.js";
 import { writeFileAtomically } from "../utils/atomic-yaml.js";
-import { assembleTaskFile,parseFrontmatter, serializeFrontmatter, splitTaskFile } from "./frontmatter.js";
+import { assembleTaskFile,parseFrontmatter, splitTaskFile } from "./frontmatter.js";
 import { appendHistory } from "./history.js";
 import { clearLookupCaches } from "./lookup-cache.js";
 
@@ -33,8 +33,11 @@ export async function readTask(locttDir: string, taskId: string): Promise<Task> 
  * through the on-disk index.
  */
 export async function writeTask(locttDir: string, taskId: string, task: Task): Promise<void> {
-  // Validate frontmatter by round-tripping through serialize+parse before writing
-  parseFrontmatter(serializeFrontmatter(task.frontmatter));
+  // Validate the frontmatter shape against the schema before writing.
+  // Previously this round-tripped through serialize+parse, which
+  // re-stringified the YAML purely to re-parse it — schema validation
+  // catches the same class of error in one pass.
+  TaskFrontmatterSchema.parse(task.frontmatter);
 
   const filePath = getTaskFilePath(locttDir, taskId);
   const content = assembleTaskFile(task.frontmatter, task.body);
