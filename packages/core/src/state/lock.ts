@@ -134,6 +134,15 @@ export async function withStateLock<T>(
   // Refuse to mutate while a migration is in progress. The migration
   // framework rewrites task frontmatter and config files atomically;
   // a concurrent state-lock holder would race those writes.
+  //
+  // We re-check after acquiring the OS lock so a migration that
+  // grabbed its lock between our cheap pre-check and `lockfile.lock`
+  // doesn't slip through. (Migration's own protocol grabs the state
+  // lock first to flush in-flight writers, then the migration lock;
+  // a writer that beats migration to the state lock will see the
+  // pre-check false and not be racing — the post-acquire check is
+  // for the case where migration started before the writer even
+  // entered withStateLock.)
   if (await isMigrationLocked(locttDir)) {
     throw new SchemaVersionError(
       `A schema migration is in progress for ${locttDir}. ` +
@@ -151,6 +160,17 @@ export async function withStateLock<T>(
     realpath: false,
   });
   try {
+    // Post-acquire re-check: closes the TOCTOU window between the
+    // pre-check above and the OS lock acquire. A migration that
+    // started in that window has already raced past our pre-check;
+    // we release the lock and fail loudly rather than letting the
+    // caller mutate against an in-progress migration.
+    if (await isMigrationLocked(locttDir)) {
+      throw new SchemaVersionError(
+        `A schema migration is in progress for ${locttDir}. ` +
+        `Wait for it to complete before retrying.`,
+      );
+    }
     return await lockHeld.run(
       { locttDir, acquiredAt: new Date().toISOString() },
       async () => {
@@ -169,5 +189,48 @@ export async function withStateLock<T>(
       // removed or the lock expired. Swallow so it doesn't mask the
       // caller's outcome.
     });
+  }
+}
+
+/**
+ * Lock-free state-lock variant for the schema migration framework.
+ * Acquires the OS-level state lock without checking migration
+ * status — used by `migrateToCurrent` so it can briefly hold the
+ * state lock at the start of migration to flush any in-flight
+ * writers, then hand off to the migration lock.
+ *
+ * The callback receives a `releaseEarly` function. Once the
+ * migration lock is held, the migration calls `releaseEarly()` to
+ * drop the state lock so concurrent writers can fail fast with a
+ * "migration in progress" message instead of queuing on
+ * `state.yaml` for the whole migration. If the callback never
+ * calls `releaseEarly`, the state lock is released on return.
+ *
+ * Do NOT use from ordinary writers. Use `withStateLock` instead.
+ */
+export async function withStateLockForMigration<T>(
+  locttDir: string,
+  fn: (releaseEarly: () => Promise<void>) => Promise<T>,
+): Promise<T> {
+  const target = getStateFilePath(locttDir);
+  await mkdir(dirname(target), { recursive: true });
+  const release = await lockfile.lock(target, {
+    retries: { retries: 10, factor: 2, minTimeout: 50, maxTimeout: 500 },
+    stale: 10_000,
+    realpath: false,
+  });
+  let released = false;
+  const releaseEarly = async (): Promise<void> => {
+    if (released) return;
+    released = true;
+    await release().catch(() => {});
+  };
+  try {
+    return await fn(releaseEarly);
+  } finally {
+    if (!released) {
+      released = true;
+      await release().catch(() => {});
+    }
   }
 }

@@ -1,6 +1,7 @@
 import { rm } from "node:fs/promises";
 
 import { getSchemaMigrationInProgressPath } from "../paths/index.js";
+import { withStateLockForMigration } from "../state/lock.js";
 import { writeFileAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
 import { withMigrationLock } from "./lock.js";
@@ -104,67 +105,83 @@ export async function migrateToCurrent(
     return { from: recorded, to: recorded, steps: [] };
   }
 
-  return withMigrationLock(locttDir, async () => {
-    // Re-read inside the lock in case another process migrated us
-    // while we were waiting to acquire the lock.
-    const after = await readSchemaVersion(locttDir);
-    if (after === null) {
-      throw new SchemaVersionError(
-        `.schema-version disappeared while waiting for migration lock`,
-      );
-    }
-    if (after > CURRENT_SCHEMA_VERSION) {
-      throw new SchemaTooNewError(after, CURRENT_SCHEMA_VERSION);
-    }
-    if (after === CURRENT_SCHEMA_VERSION) {
-      return { from: after, to: after, steps: [] };
-    }
+  // Hand-off protocol to plug the migration TOCTOU:
+  //   1. Acquire state lock — flushes any in-flight writer.
+  //   2. Acquire migration lock — done while still holding state
+  //      lock, so no new writer can sneak in between.
+  //   3. Release state lock — new writers entering withStateLock
+  //      will re-check isMigrationLocked inside their own lock
+  //      and bail out cleanly with the "migration in progress"
+  //      message, rather than blocking on the state lock for the
+  //      whole migration.
+  //   4. Run migration under migration lock only.
+  return withStateLockForMigration(locttDir, releaseStateEarly =>
+    withMigrationLock(locttDir, async () => {
+      // Migration lock acquired; release state lock so concurrent
+      // writers fail fast instead of queuing on state.yaml.
+      await releaseStateEarly();
 
-    const path = findMigrationPath(after, CURRENT_SCHEMA_VERSION);
-    if (path === null || path.length === 0) {
-      throw new SchemaVersionError(
-        `No migration path found from schema v${after} to v${CURRENT_SCHEMA_VERSION}.`,
-      );
-    }
-
-    const backupPath = await backupLocttDir(locttDir, after);
-    const applied: Migration[] = [];
-    let current = after;
-    const sentinelPath = getSchemaMigrationInProgressPath(locttDir);
-
-    for (const migration of path) {
-      if (migration.from !== current) {
-        // Defensive: migration order broke our invariant. Bail loudly.
+      // Re-read inside the lock in case another process migrated us
+      // while we were waiting to acquire the lock.
+      const after = await readSchemaVersion(locttDir);
+      if (after === null) {
         throw new SchemaVersionError(
-          `migration ordering invariant violated: at v${current}, ` +
-          `next migration starts at v${migration.from}`,
+          `.schema-version disappeared while waiting for migration lock`,
         );
       }
-      // Drop a sentinel before applying so a mid-step crash leaves a
-      // marker that requireSupportedSchema can refuse to boot against.
-      // The sentinel records the from/to pair plus the backup path
-      // for recovery guidance. Written atomically (temp-file +
-      // rename) so a crash during the write itself can never leave
-      // a truncated sentinel whose recovery instructions are
-      // unreadable — either the full sentinel is present or none.
-      await writeFileAtomically(
-        sentinelPath,
-        `from: ${migration.from}\nto: ${migration.to}\nbackup: ${backupPath}\n`,
-      );
-      await migration.apply(locttDir);
-      current = migration.to;
-      await writeSchemaVersion(locttDir, current);
-      // Clear sentinel after the version stamp lands. If we crash
-      // between writeSchemaVersion and rm, the next boot sees a
-      // version that matches a registered to-version and an orphan
-      // sentinel — requireSupportedSchema treats the sentinel as
-      // authoritative and refuses to boot.
-      await rm(sentinelPath, { force: true });
-      applied.push(migration);
-    }
+      if (after > CURRENT_SCHEMA_VERSION) {
+        throw new SchemaTooNewError(after, CURRENT_SCHEMA_VERSION);
+      }
+      if (after === CURRENT_SCHEMA_VERSION) {
+        return { from: after, to: after, steps: [] };
+      }
 
-    return { from: after, to: current, backupPath, steps: applied };
-  });
+      const path = findMigrationPath(after, CURRENT_SCHEMA_VERSION);
+      if (path === null || path.length === 0) {
+        throw new SchemaVersionError(
+          `No migration path found from schema v${after} to v${CURRENT_SCHEMA_VERSION}.`,
+        );
+      }
+
+      const backupPath = await backupLocttDir(locttDir, after);
+      const applied: Migration[] = [];
+      let current = after;
+      const sentinelPath = getSchemaMigrationInProgressPath(locttDir);
+
+      for (const migration of path) {
+        if (migration.from !== current) {
+          // Defensive: migration order broke our invariant. Bail loudly.
+          throw new SchemaVersionError(
+            `migration ordering invariant violated: at v${current}, ` +
+            `next migration starts at v${migration.from}`,
+          );
+        }
+        // Drop a sentinel before applying so a mid-step crash leaves a
+        // marker that requireSupportedSchema can refuse to boot against.
+        // The sentinel records the from/to pair plus the backup path
+        // for recovery guidance. Written atomically (temp-file +
+        // rename) so a crash during the write itself can never leave
+        // a truncated sentinel whose recovery instructions are
+        // unreadable — either the full sentinel is present or none.
+        await writeFileAtomically(
+          sentinelPath,
+          `from: ${migration.from}\nto: ${migration.to}\nbackup: ${backupPath}\n`,
+        );
+        await migration.apply(locttDir);
+        current = migration.to;
+        await writeSchemaVersion(locttDir, current);
+        // Clear sentinel after the version stamp lands. If we crash
+        // between writeSchemaVersion and rm, the next boot sees a
+        // version that matches a registered to-version and an orphan
+        // sentinel — requireSupportedSchema treats the sentinel as
+        // authoritative and refuses to boot.
+        await rm(sentinelPath, { force: true });
+        applied.push(migration);
+      }
+
+      return { from: after, to: current, backupPath, steps: applied };
+    }),
+  );
 }
 
 /**
