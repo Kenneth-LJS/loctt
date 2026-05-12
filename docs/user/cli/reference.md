@@ -256,6 +256,27 @@ loctt sprint edit s24 --state completed
 loctt sprint edit s24 --state active --force
 ```
 
+### `loctt sprint burndown`
+
+Print the burndown series for a sprint. The series is reconstructed from
+task history every time — no daily snapshots are stored on disk. Scope
+changes (tasks joining or leaving the sprint mid-run) appear as visible
+steps in the output.
+
+```
+loctt sprint burndown <key> [--format <table|json>]
+```
+
+Defaults to a text table; pass `--format json` for piping. Y-axis unit is
+chosen automatically from `workflow.yaml#estimation`:
+
+- numeric units (points / hours / days / custom_numeric) → sum of
+  `estimate` of incomplete tasks
+- `custom_enum` with `weights` → sum of weights
+- everything else → count of incomplete tasks
+
+Example: `loctt sprint burndown sprint_2026.q1 --format json`
+
 ## Calendar
 
 ### `loctt calendar show`
@@ -430,37 +451,19 @@ loctt unlink <task> <relationship> <target>
 
 Example: `loctt unlink T-5 blocks T-8`
 
+## Ranks
+
 ### `loctt rerank`
 
-Re-order a relationship edge among its siblings. Pass either `--before` or
-`--after` (mutually exclusive); without either, the edge is moved to the end.
+Re-order a relationship edge among its siblings within a single
+`(source, type)` group. Pass either `--before` or `--after` (mutually
+exclusive); without either, the edge is moved to the end.
 
 ```
 loctt rerank <source> <relationship> <target> [--before <task> | --after <task>]
 ```
 
 Example: `loctt rerank epic-1 has_subtask T-9 --after T-7`
-
-### `loctt sprint burndown`
-
-Print the burndown series for a sprint. The series is reconstructed from
-task history every time — no daily snapshots are stored on disk. Scope
-changes (tasks joining or leaving the sprint mid-run) appear as visible
-steps in the output.
-
-```
-loctt sprint burndown <key> [--format <table|json>]
-```
-
-Defaults to a text table; pass `--format json` for piping. Y-axis unit is
-chosen automatically from `workflow.yaml#estimation`:
-
-- numeric units (points / hours / days / custom_numeric) → sum of
-  `estimate` of incomplete tasks
-- `custom_enum` with `weights` → sum of weights
-- everything else → count of incomplete tasks
-
-Example: `loctt sprint burndown sprint_2026.q1 --format json`
 
 ### `loctt board-rerank`
 
