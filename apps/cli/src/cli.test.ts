@@ -553,6 +553,49 @@ describe("CLI commands", () => {
       );
     });
 
+    it("body / log / delete on missing task surface clean runtime errors", async () => {
+      await initLoctt(root);
+      await expectCleanRuntimeError(
+        ["node", "loctt", "body", "T-999"],
+        /Error:.*T-999/i,
+      );
+      await expectCleanRuntimeError(
+        ["node", "loctt", "log", "T-999"],
+        /Error:.*T-999/i,
+      );
+      // delete needs --yes to skip the interactive prompt; the
+      // lookup runs before the prompt so the not-found error still
+      // surfaces cleanly.
+      await expectCleanRuntimeError(
+        ["node", "loctt", "delete", "T-999", "--yes"],
+        /Error:.*T-999/i,
+      );
+    });
+
+    it("attach with --force missing prints 'use --force to overwrite' hint", async () => {
+      const { writeFile } = await import("node:fs/promises");
+      await initLoctt(root);
+      process.argv = ["node", "loctt", "create", "real"];
+      await main();
+      // Place a small file to attach.
+      const src = join(root, "payload.txt");
+      await writeFile(src, "hello", "utf-8");
+      // First attach succeeds.
+      process.exitCode = undefined;
+      process.argv = ["node", "loctt", "attach", "T-1", src];
+      await main();
+      expect(process.exitCode).toBeUndefined();
+      // Second attach without --force triggers the augmented hint.
+      const errSpy = vi.mocked(console.error);
+      errSpy.mockClear();
+      process.exitCode = undefined;
+      process.argv = ["node", "loctt", "attach", "T-1", src];
+      await main();
+      expect(process.exitCode).toBe(1);
+      const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(stderr).toMatch(/use --force to overwrite/i);
+    });
+
     it("missing args on wrapped commands print Usage and exit 2", async () => {
       // Confirms the usage-error path inside runCommand still routes
       // through EXIT.USAGE for every wrapped command.
@@ -566,6 +609,10 @@ describe("CLI commands", () => {
         ["node", "loctt", "archive"],
         ["node", "loctt", "unarchive"],
         ["node", "loctt", "create"],
+        ["node", "loctt", "body"],
+        ["node", "loctt", "log"],
+        ["node", "loctt", "delete"],
+        ["node", "loctt", "attach"],
       ]) {
         const errSpy = vi.mocked(console.error);
         errSpy.mockClear();

@@ -137,18 +137,17 @@ export interface SetFieldOptions {
  * - If setting `status`, also updates `status_updated_at`.
  */
 export async function setField(opts: SetFieldOptions): Promise<Task> {
-  const { locttDir, taskId, field, value, workflowConfig, archivedGuard } = opts;
-  if (IMMUTABLE_FIELDS.has(field)) {
-    throw new TaskUpdateError(`cannot set immutable field "${field}"`);
+  if (IMMUTABLE_FIELDS.has(opts.field)) {
+    throw new TaskUpdateError(`cannot set immutable field "${opts.field}"`);
   }
-  if (AUTO_MANAGED_FIELDS.has(field)) {
+  if (AUTO_MANAGED_FIELDS.has(opts.field)) {
     throw new TaskUpdateError(
-      `cannot set auto-managed field "${field}" directly; ` +
+      `cannot set auto-managed field "${opts.field}" directly; ` +
       `it is updated automatically based on status changes`,
     );
   }
 
-  return withStateLock(locttDir, () => setFieldLocked(opts));
+  return withStateLock(opts.locttDir, () => setFieldLocked(opts));
 }
 
 async function setFieldLocked(opts: SetFieldOptions): Promise<Task> {

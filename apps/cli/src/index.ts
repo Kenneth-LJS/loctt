@@ -1003,18 +1003,18 @@ export async function main(): Promise<void> {
       }
 
       case "delete": {
-        const ref = args[1];
-        if (!ref) {
-          throw new UsageError("missing task ref", "loctt delete <task> [--yes]");
-        }
-        // Confirm prompt has its own exit-code semantics (refused =
-        // usage error, declined = success), so it stays outside
-        // runCommand which would conflate the two. The lookup AND
-        // the destructive call run inside runCommand so domain
-        // errors (TaskNotFoundError in particular) map to a clean
-        // RUNTIME exit instead of bubbling out as unhandled.
-        const locttDir = resolveLocttDir(root);
+        // The lookup AND the destructive call run inside runCommand
+        // so domain errors (TaskNotFoundError in particular) map to
+        // a clean RUNTIME exit instead of bubbling out as unhandled.
+        // The confirm prompt's outcome carries its own exit-code
+        // semantics (refused = USAGE, declined = SUCCESS) which the
+        // body sets directly via `process.exitCode` before returning.
         await runCommand(async () => {
+          const ref = args[1];
+          if (!ref) {
+            throw new UsageError("missing task ref", "loctt delete <task> [--yes]");
+          }
+          const locttDir = resolveLocttDir(root);
           const task = await lookupTask(locttDir, ref);
           const outcome = await confirmHardDelete(
             args,
@@ -1097,47 +1097,47 @@ export async function main(): Promise<void> {
       }
 
       case "attach": {
-        // Caught explicitly (rather than via runCommand) because the
-        // CLI augments `AttachmentExistsError` with a "Use --force"
-        // hint that the core error class can't carry on its own.
-        const ref = args[1];
-        const filePath = args[2];
-        if (!ref || !filePath) {
-          console.error("Error: missing task ref or file path");
-          console.error("Usage: loctt attach <task> <file-path> [--force]");
-          process.exitCode = EXIT.USAGE;
-          break;
-        }
-        const force = hasFlag(args, "--force");
-        const locttDir = resolveLocttDir(root);
-        const task = await lookupTask(locttDir, ref);
-        const sourcePath = isAbsolute(filePath)
-          ? filePath
-          : resolvePath(process.cwd(), filePath);
-        try {
-          const result = await attachFile({
-            locttDir,
-            taskId: task.frontmatter.id,
-            sourcePath,
-            force,
-          });
-          const prefix = result.overwritten ? "(overwrote existing) " : "";
-          console.log(
-            `${prefix}Attached ${result.name} (${result.size} bytes) to ${task.frontmatter.key}`,
-          );
-        } catch (err) {
-          if (err instanceof AttachmentExistsError) {
-            console.error(`Error: ${err.message}. Use --force to overwrite.`);
-            process.exitCode = EXIT.RUNTIME;
-            break;
+        await runCommand(async () => {
+          const ref = args[1];
+          const filePath = args[2];
+          if (!ref || !filePath) {
+            throw new UsageError(
+              "missing task ref or file path",
+              "loctt attach <task> <file-path> [--force]",
+            );
           }
-          if (err instanceof AttachmentSourceError) {
-            console.error(`Error: ${err.message}`);
-            process.exitCode = EXIT.RUNTIME;
-            break;
+          const force = hasFlag(args, "--force");
+          const locttDir = resolveLocttDir(root);
+          const task = await lookupTask(locttDir, ref);
+          const sourcePath = isAbsolute(filePath)
+            ? filePath
+            : resolvePath(process.cwd(), filePath);
+          try {
+            const result = await attachFile({
+              locttDir,
+              taskId: task.frontmatter.id,
+              sourcePath,
+              force,
+            });
+            const prefix = result.overwritten ? "(overwrote existing) " : "";
+            console.log(
+              `${prefix}Attached ${result.name} (${result.size} bytes) to ${task.frontmatter.key}`,
+            );
+          } catch (err) {
+            // Re-throw with the CLI-specific "Use --force" hint
+            // attached, so runCommand still does the canonical
+            // domain-error formatting and exit code rather than us
+            // duplicating that logic here. The hint is CLI-specific
+            // (MCP would pass force: true) so it belongs on this
+            // surface, not on the core error class.
+            if (err instanceof AttachmentExistsError) {
+              throw new AttachmentExistsError(
+                `${err.attachmentName} (use --force to overwrite)`,
+              );
+            }
+            throw err;
           }
-          throw err;
-        }
+        });
         break;
       }
 
