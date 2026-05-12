@@ -49,6 +49,7 @@ export {
 } from "./query.js";
 export type {
   AttachmentResponse,
+  AttachResultResponse,
   ConfigResponse,
   CreateTaskRequest,
   DoctorCheckResponse,

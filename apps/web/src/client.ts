@@ -1,6 +1,7 @@
 // Internal HTTP client for the web app's own API endpoints.
 
 import type {
+  AttachResultResponse,
   ConfigResponse,
   CreateTaskRequest,
   DoctorCheckResponse,
@@ -9,13 +10,7 @@ import type {
   TrackerInfoResponse,
 } from "@loctt/contracts";
 
-/** Result of a successful attach upload. */
-export interface AttachResultResponse {
-  readonly name: string;
-  readonly size: number;
-  readonly overwritten: boolean;
-  readonly task_key: string;
-}
+export type { AttachResultResponse };
 
 /**
  * Thrown when an attachment upload fails because a file with the same name
