@@ -6,7 +6,7 @@ import type { Task, WorkflowConfig } from "@loctt/contracts";
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
 import { writeTask } from "./io.js";
-import { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./traversal.js";
+import { buildTree, findStructuralCycles, getChildren, getParents,getRelatedTasks, validateRelationships } from "./traversal.js";
 
 const config: WorkflowConfig = {
   key: { prefix: "T-" },
@@ -159,5 +159,55 @@ describe("buildTree multi-parent (DAG)", () => {
     expect(tree.get("")).toEqual(["p1", "p2"]);
     expect(tree.get("p1")).toEqual(["child"]);
     expect(tree.get("p2")).toEqual(["child"]);
+  });
+});
+
+describe("findStructuralCycles", () => {
+  it("returns no cycles for an acyclic graph", () => {
+    const tasks = [
+      makeTask("a", "T-1"),
+      makeTask("b", "T-2", [{ type: "parent", target: "a" }]),
+      makeTask("c", "T-3", [{ type: "parent", target: "a" }]),
+    ];
+    expect(findStructuralCycles(tasks, config)).toEqual([]);
+  });
+
+  it("detects a direct two-node cycle", () => {
+    const tasks = [
+      makeTask("a", "T-1", [{ type: "parent", target: "b" }]),
+      makeTask("b", "T-2", [{ type: "parent", target: "a" }]),
+    ];
+    const cycles = findStructuralCycles(tasks, config);
+    expect(cycles).toHaveLength(1);
+    expect(cycles[0]?.relationshipKey).toBe("parent");
+    expect(cycles[0]?.path).toEqual(["a", "b", "a"]);
+  });
+
+  it("detects an indirect cycle and rotates to lowest-id start", () => {
+    const tasks = [
+      makeTask("c", "T-3", [{ type: "parent", target: "a" }]),
+      makeTask("a", "T-1", [{ type: "parent", target: "b" }]),
+      makeTask("b", "T-2", [{ type: "parent", target: "c" }]),
+    ];
+    const cycles = findStructuralCycles(tasks, config);
+    expect(cycles).toHaveLength(1);
+    // Rotation normalizes the starting id to the lowest in the ring.
+    expect(cycles[0]?.path[0]).toBe("a");
+    expect(cycles[0]?.path).toEqual(["a", "b", "c", "a"]);
+  });
+
+  it("ignores cycles on non-structural relationships", () => {
+    const tasks = [
+      makeTask("a", "T-1", [{ type: "blocks", target: "b" }]),
+      makeTask("b", "T-2", [{ type: "blocks", target: "a" }]),
+    ];
+    expect(findStructuralCycles(tasks, config)).toEqual([]);
+  });
+
+  it("does not crash on a dangling target", () => {
+    const tasks = [
+      makeTask("a", "T-1", [{ type: "parent", target: "ghost" }]),
+    ];
+    expect(findStructuralCycles(tasks, config)).toEqual([]);
   });
 });

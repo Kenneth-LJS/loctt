@@ -15,7 +15,7 @@ import { loadState } from "../state/state.js";
 import { readTask } from "../task/io.js";
 import { listTaskIds } from "../task/list-ids.js";
 import { loadAllTasks } from "../task/load-all.js";
-import { validateRelationships } from "../task/traversal.js";
+import { findStructuralCycles,validateRelationships } from "../task/traversal.js";
 import { loadAllUsers } from "../users/profile.js";
 import { fileExists } from "../utils/fs.js";
 
@@ -286,6 +286,27 @@ export async function runDoctor(
           name: "tasks",
           status: "ok",
           message: `${tasks.length} task(s) found, references valid`,
+        });
+      }
+
+      // Structural cycle scan. Pre-fix versions of linkTask let an
+      // inverse-key call slip past the cycle guard; cycles may also
+      // be introduced by direct frontmatter edits or by a sync that
+      // didn't run reconcile. Surface them here without auto-repair.
+      const cycles = findStructuralCycles(tasks, workflowConfig);
+      if (cycles.length > 0) {
+        const byId = new Map(tasks.map(t => [t.frontmatter.id, t]));
+        const byKeyToString = (ids: readonly string[]): string =>
+          ids.map(id => byId.get(id)?.frontmatter.key ?? id).join(" -> ");
+        const sample = cycles
+          .slice(0, 2)
+          .map(c => `${c.relationshipKey}: ${byKeyToString(c.path)}`)
+          .join("; ");
+        const more = cycles.length > 2 ? ` (+${cycles.length - 2} more)` : "";
+        checks.push({
+          name: "structural cycles",
+          status: "warn",
+          message: `${cycles.length} cycle(s) found: ${sample}${more}`,
         });
       }
     } catch {
