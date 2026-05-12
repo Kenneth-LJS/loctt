@@ -182,6 +182,15 @@ Commands:
   git <enable|disable|status|publish|sync>
   config <get|set|unset|list> [key] [value]
   migrate [--yes] [--dry-run]      Upgrade the tracker schema to the current version
+
+Common flags:
+  --yes                            Skip confirmation prompts on destructive operations
+                                   (delete, migrate). Required in non-interactive contexts.
+  --remap-to <key|id>              On hard-delete of a project/label/milestone/sprint/user,
+                                   migrate affected task references to the named target
+                                   instead of clearing them.
+  --unassign                       On 'loctt user delete', clear assignee/reporter on
+                                   affected tasks. Mutually exclusive with --remap-to.
 `);
 }
 
@@ -293,13 +302,24 @@ function stripCwdArg(args: string[]): string[] {
   return out;
 }
 
+const TRUTHY_FLAG_SUFFIXES = new Set(["true", "1", "yes", "on"]);
+const FALSY_FLAG_SUFFIXES = new Set(["false", "0", "no", "off"]);
+
 /**
  * Returns true when a boolean flag is present (`--archived`,
  * `--archived=true`). `--archived=false` is treated as absent so a
- * caller can override a default-true behaviour. Any other value
- * after `=` (`--archived=anything`, `--archived=`) is treated as
- * truthy, matching common shell-flag intuition. Anything after `--`
- * is positional and ignored.
+ * caller can override a default-true behaviour.
+ *
+ * Accepted suffixes:
+ *   truthy: `true`, `1`, `yes`, `on`
+ *   falsy:  `false`, `0`, `no`, `off`
+ *
+ * An unrecognized suffix (`--archived=ture`) throws a UsageError
+ * rather than silently being interpreted as truthy, so typos
+ * surface as a clear "did you mean..." kind of error instead of
+ * silently triggering the flag.
+ *
+ * Anything after `--` is positional and ignored.
  */
 function hasFlag(args: string[], flag: string): boolean {
   const name = flag.replace(/^--?/, "");
@@ -309,9 +329,17 @@ function hasFlag(args: string[], flag: string): boolean {
     if (a === "--") break;
     if (a === undefined) continue;
     if (a === `--${name}` || a === `-${name}`) { present = true; continue; }
-    if (a === `--${name}=true` || a === `-${name}=true`) { present = true; continue; }
-    if (a === `--${name}=false` || a === `-${name}=false`) { present = false; continue; }
-    if (a.startsWith(`--${name}=`) || a.startsWith(`-${name}=`)) { present = true; continue; }
+    const eqMatch = a === `--${name}` || a.startsWith(`--${name}=`) ? `--${name}`
+      : a === `-${name}` || a.startsWith(`-${name}=`) ? `-${name}`
+      : null;
+    if (eqMatch !== null && a.startsWith(`${eqMatch}=`)) {
+      const suffix = a.slice(eqMatch.length + 1).toLowerCase();
+      if (TRUTHY_FLAG_SUFFIXES.has(suffix)) { present = true; continue; }
+      if (FALSY_FLAG_SUFFIXES.has(suffix)) { present = false; continue; }
+      throw new UsageError(
+        `invalid value for ${eqMatch}: ${JSON.stringify(suffix)}. Expected one of: true, false, 1, 0, yes, no, on, off.`,
+      );
+    }
   }
   return present;
 }
@@ -650,8 +678,11 @@ export async function main(): Promise<void> {
               console.log(`  ${p.key}${star}  ${p.label}  next: ${next}`);
             }
           }
-        } catch {
-          // No projects.yaml — show nothing extra.
+        } catch (err) {
+          // Missing projects.yaml is normal on a fresh tracker — skip
+          // the per-project block silently. Parse / permission errors
+          // are real and should surface.
+          if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
         }
         break;
       }
