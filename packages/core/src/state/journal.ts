@@ -159,15 +159,39 @@ const EMPTY_JOURNAL: Journal = { entries: [] };
  */
 export async function loadJournal(locttDir: string): Promise<Journal> {
   const path = getJournalPath(locttDir);
+  let content: string;
   try {
-    const content = await readFile(path, "utf-8");
-    const raw: unknown = parseYaml(content);
-    const parsed = JournalSchema.safeParse(raw);
-    if (!parsed.success) return EMPTY_JOURNAL;
-    return parsed.data;
-  } catch {
+    content = await readFile(path, "utf-8");
+  } catch (err) {
+    // ENOENT is the common "no journal yet" case; treat any other
+    // I/O error as a real failure that the caller's logger should
+    // see, since silently returning an empty journal would discard
+    // pending recovery entries.
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error(`[journal] failed to read ${path}:`, err);
+    }
     return EMPTY_JOURNAL;
   }
+  let raw: unknown;
+  try {
+    raw = parseYaml(content);
+  } catch (err) {
+    // A corrupted YAML file is operator-visible (manual edit gone
+    // wrong, half-written rename). Log so they can fix it; the
+    // empty fallback means startup doesn't deadlock waiting for
+    // recovery entries that can't be parsed.
+    console.error(`[journal] corrupt YAML at ${path}; discarding pending entries:`, err);
+    return EMPTY_JOURNAL;
+  }
+  const parsed = JournalSchema.safeParse(raw);
+  if (!parsed.success) {
+    console.error(
+      `[journal] shape mismatch at ${path}; discarding pending entries:`,
+      parsed.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join("; "),
+    );
+    return EMPTY_JOURNAL;
+  }
+  return parsed.data;
 }
 
 /** Persists the journal atomically. */
