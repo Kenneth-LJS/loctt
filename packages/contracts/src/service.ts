@@ -51,6 +51,13 @@ export interface ListTasksRequest {
   readonly view?: string;
   readonly sort?: readonly QuerySort[];
   readonly limit?: number;
+  /**
+   * Structured project filter. Not concatenated into the query
+   * string; applied as a post-query equality check on
+   * `frontmatter.project`. Ignored when a saved view is in play
+   * (views are respected as authored).
+   */
+  readonly project?: string;
 }
 
 /** Attachment info for API responses. */

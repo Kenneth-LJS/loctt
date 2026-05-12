@@ -1342,16 +1342,12 @@ export function createWebApp(options: WebAppOptions) {
     const tasks = await loadAllTasks(locttDir);
     const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
 
-    // Sugar: `?project=<key>` AND-merges into the query, mirroring
-    // the CLI's `--project` flag.
+    // Sugar: `?project=<key>` filters to that project. Passed as a
+    // structured option so query-parser specials in the value (e.g.
+    // a project key containing whitespace or operators) cannot
+    // confuse the parser.
     const projectFilter = url.searchParams.get("project") ?? undefined;
     const baseQuery = url.searchParams.get("query") ?? undefined;
-    const composedQuery = projectFilter !== undefined
-      ? (baseQuery !== undefined && baseQuery.length > 0
-          ? `(${baseQuery}) and project = ${projectFilter}`
-          : `project = ${projectFilter}`)
-      : baseQuery;
-
     const view = url.searchParams.get("view") ?? undefined;
     // listTasks() applies a built-in default limit (30) for the CLI's
     // benefit. The HTTP API paginates explicitly, so opt out by
@@ -1359,8 +1355,9 @@ export function createWebApp(options: WebAppOptions) {
     // `total` then reflects the true matching count and the page
     // slice happens in `paginated()` below.
     const params: ListTasksRequest = {
-      ...(composedQuery !== undefined ? { query: composedQuery } : {}),
+      ...(baseQuery !== undefined ? { query: baseQuery } : {}),
       ...(view !== undefined ? { view } : {}),
+      ...(projectFilter !== undefined ? { project: projectFilter } : {}),
       limit: Number.MAX_SAFE_INTEGER,
     };
 

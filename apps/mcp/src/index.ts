@@ -969,24 +969,21 @@ export async function executeTool(
         const tasks = await loadAllTasks(locttDir);
         const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
 
-        // Compose ad-hoc query with optional `project` filter sugar.
+        // `project` is a structured filter (not concatenated into
+        // the query string) so agent-supplied project keys can't
+        // confuse the query parser.
         const projectFilter = args["project"] as string | undefined;
         const baseQuery = args["query"] as string | undefined;
-        const composedQuery = projectFilter !== undefined
-          ? (baseQuery !== undefined && baseQuery.length > 0
-              ? `(${baseQuery}) and project = ${projectFilter}`
-              : `project = ${projectFilter}`)
-          : baseQuery;
-
         const view = args["view"] as string | undefined;
         const limit = args["limit"] as number | undefined;
         const includeArchived = args["include_archived"] as boolean | undefined;
         const result = listTasks({
           tasks,
           options: {
-            ...(composedQuery !== undefined ? { query: composedQuery } : {}),
+            ...(baseQuery !== undefined ? { query: baseQuery } : {}),
             ...(view !== undefined ? { view } : {}),
             ...(limit !== undefined ? { limit } : {}),
+            ...(projectFilter !== undefined ? { project: projectFilter } : {}),
             ...(includeArchived !== undefined ? { includeArchived } : {}),
           },
           ...(queriesConfig !== undefined ? { queriesConfig } : {}),
