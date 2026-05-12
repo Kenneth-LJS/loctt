@@ -7,6 +7,7 @@ export {
   findProject,
   ProjectError,
   resolveProjectKey,
+  resolveProjectKeyForUser,
   setDefaultProject,
   unarchiveProject,
 } from "./manage.js";

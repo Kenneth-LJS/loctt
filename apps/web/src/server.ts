@@ -87,7 +87,7 @@ import {
   reorderRelationship,
   requireSupportedSchema,
   resolveLocttDir,
-  resolveProjectKey,
+  resolveProjectKeyForUser,
   resolveUserRef,
   runDoctor,
   saveCalendarConfig,
@@ -1377,24 +1377,12 @@ export function createWebApp(options: WebAppOptions) {
     const request = await parseJsonBody<CreateTaskRequest>(req, res);
     const wfConfig = await loadWorkflowConfig(locttDir);
 
-    // Resolve target project. The HTTP API mirrors the CLI's
-    // resolution order: explicit > per-user default > workspace
-    // default > unique single project. If ambiguous, return 400 so
-    // the client can surface a project picker.
-    const projectsConfig = await loadProjectsConfig(locttDir);
+    // Resolve target project via the shared chain: explicit
+    // > per-user default > workspace default > sole project. If
+    // ambiguous, return 400 so the client can surface a picker.
     let projectKey: string;
     try {
-      const current = await getCurrentUser(locttDir);
-      let userDefault: string | undefined;
-      if (current) {
-        const settings = await loadUserSettings(locttDir, current.id);
-        const raw = settings["default_project"];
-        if (typeof raw === "string" && raw.length > 0) userDefault = raw;
-      }
-      projectKey = resolveProjectKey(projectsConfig, {
-        ...(request.project !== undefined ? { explicit: request.project } : {}),
-        ...(userDefault !== undefined ? { userDefault } : {}),
-      });
+      projectKey = await resolveProjectKeyForUser(locttDir, request.project);
     } catch (err) {
       error(res, (err as Error).message, 400);
       return;
