@@ -1005,87 +1005,94 @@ export async function main(): Promise<void> {
       case "delete": {
         const ref = args[1];
         if (!ref) {
-          console.error("Usage: loctt delete <task> [--yes]");
-          process.exitCode = EXIT.USAGE;
-          break;
+          throw new UsageError("missing task ref", "loctt delete <task> [--yes]");
         }
+        // Confirm prompt has its own exit-code semantics (refused =
+        // usage error, declined = success), so it stays outside
+        // runCommand which would conflate the two. The lookup AND
+        // the destructive call run inside runCommand so domain
+        // errors (TaskNotFoundError in particular) map to a clean
+        // RUNTIME exit instead of bubbling out as unhandled.
         const locttDir = resolveLocttDir(root);
-        const task = await lookupTask(locttDir, ref);
-        const outcome = await confirmHardDelete(
-          args,
-          `Permanently delete task ${task.frontmatter.key}? (use 'loctt archive' for a reversible alternative)`,
-        );
-        if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
-        await deleteTask(locttDir, task.frontmatter.id, { force: true });
-        console.log(`Deleted ${task.frontmatter.key}`);
+        await runCommand(async () => {
+          const task = await lookupTask(locttDir, ref);
+          const outcome = await confirmHardDelete(
+            args,
+            `Permanently delete task ${task.frontmatter.key}? (use 'loctt archive' for a reversible alternative)`,
+          );
+          if (outcome !== "yes") {
+            process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS;
+            return;
+          }
+          await deleteTask(locttDir, task.frontmatter.id, { force: true });
+          console.log(`Deleted ${task.frontmatter.key}`);
+        });
         break;
       }
 
       case "body": {
-        const ref = args[1];
-        if (!ref) {
-          console.error("Usage: loctt body <task> [--set <text>] [--append <text>]");
-          process.exitCode = EXIT.USAGE;
-          break;
-        }
-        const newBody = getArg(args, "--set");
-        const appendText = getArg(args, "--append");
-        if (newBody !== undefined && appendText !== undefined) {
-          console.error("Error: --set and --append are mutually exclusive");
-          process.exitCode = EXIT.USAGE;
-          break;
-        }
-        const locttDir = resolveLocttDir(root);
-        const task = await lookupTask(locttDir, ref);
-        if (newBody !== undefined) {
-          await writeTaskBody(locttDir, task.frontmatter.id, newBody + "\n");
-          console.log(`Updated body for ${task.frontmatter.key}`);
-        } else if (appendText !== undefined) {
-          await appendTaskBody(locttDir, task.frontmatter.id, appendText);
-          console.log(`Appended to body for ${task.frontmatter.key}`);
-        } else {
-          const body = await readTaskBody(locttDir, task.frontmatter.id);
-          if (body.trim()) {
-            console.log(body);
-          } else {
-            console.log("(empty body)");
+        await runCommand(async () => {
+          const ref = args[1];
+          if (!ref) {
+            throw new UsageError(
+              "missing task ref",
+              "loctt body <task> [--set <text>] [--append <text>]",
+            );
           }
-        }
+          const newBody = getArg(args, "--set");
+          const appendText = getArg(args, "--append");
+          if (newBody !== undefined && appendText !== undefined) {
+            throw new UsageError("--set and --append are mutually exclusive");
+          }
+          const locttDir = resolveLocttDir(root);
+          const task = await lookupTask(locttDir, ref);
+          if (newBody !== undefined) {
+            await writeTaskBody(locttDir, task.frontmatter.id, newBody + "\n");
+            console.log(`Updated body for ${task.frontmatter.key}`);
+          } else if (appendText !== undefined) {
+            await appendTaskBody(locttDir, task.frontmatter.id, appendText);
+            console.log(`Appended to body for ${task.frontmatter.key}`);
+          } else {
+            const body = await readTaskBody(locttDir, task.frontmatter.id);
+            if (body.trim()) {
+              console.log(body);
+            } else {
+              console.log("(empty body)");
+            }
+          }
+        });
         break;
       }
 
       case "log": {
-        const ref = args[1];
-        if (!ref) {
-          console.error("Usage: loctt log <task> [--limit <n>]");
-          process.exitCode = EXIT.USAGE;
-          break;
-        }
-        const locttDir = resolveLocttDir(root);
-        const task = await lookupTask(locttDir, ref);
-
-        let limit: number | undefined;
-        const limitArg = getArg(args, "--limit");
-        if (limitArg !== undefined) {
-          limit = Number(limitArg);
-          if (Number.isNaN(limit) || limit < 0 || !Number.isInteger(limit)) {
-            console.error("Error: --limit must be a non-negative integer");
-            process.exitCode = EXIT.USAGE;
-            break;
+        await runCommand(async () => {
+          const ref = args[1];
+          if (!ref) {
+            throw new UsageError("missing task ref", "loctt log <task> [--limit <n>]");
           }
-        }
-
-        const entries = await readHistory(locttDir, task.frontmatter.id);
-        entries.reverse();
-        const display = limit !== undefined ? entries.slice(0, limit) : entries;
-
-        if (display.length === 0) {
-          console.log("No history entries.");
-        } else {
-          for (const entry of display) {
-            console.log(formatHistoryEntry(entry));
+          let limit: number | undefined;
+          const limitArg = getArg(args, "--limit");
+          if (limitArg !== undefined) {
+            limit = Number(limitArg);
+            if (Number.isNaN(limit) || limit < 0 || !Number.isInteger(limit)) {
+              throw new UsageError("--limit must be a non-negative integer");
+            }
           }
-        }
+          const locttDir = resolveLocttDir(root);
+          const task = await lookupTask(locttDir, ref);
+
+          const entries = await readHistory(locttDir, task.frontmatter.id);
+          const reversed = [...entries].reverse();
+          const display = limit !== undefined ? reversed.slice(0, limit) : reversed;
+
+          if (display.length === 0) {
+            console.log("No history entries.");
+          } else {
+            for (const entry of display) {
+              console.log(formatHistoryEntry(entry));
+            }
+          }
+        });
         break;
       }
 
