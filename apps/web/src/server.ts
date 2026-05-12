@@ -410,7 +410,15 @@ async function tryServeStatic(
   if (req.method !== "GET" && req.method !== "HEAD") return false;
 
   const root = pathResolve(clientDir);
-  const requested = decodeURIComponent(urlPath === "/" ? "/index.html" : urlPath);
+  // Malformed percent-encoding (e.g. `%E0` without a follow-up byte)
+  // throws URIError. Bail out as "not a static file" rather than
+  // letting it propagate to the request handler and 500.
+  let requested: string;
+  try {
+    requested = decodeURIComponent(urlPath === "/" ? "/index.html" : urlPath);
+  } catch {
+    return false;
+  }
   const candidate = pathNormalize(pathJoin(root, requested));
   if (!candidate.startsWith(root + pathSep) && candidate !== root) {
     return false;
@@ -988,7 +996,6 @@ export function createWebApp(options: WebAppOptions) {
       timezone?: string;
       switch_to_on_create?: boolean;
     }>(req, res);
-    if (request === undefined) return;
     if (typeof request.name !== "string" || request.name.length === 0) {
       error(res, "name must be a non-empty string", 400);
       return;
@@ -1014,7 +1021,6 @@ export function createWebApp(options: WebAppOptions) {
       email?: string | null;
       timezone?: string;
     }>(req, res);
-    if (request === undefined) return;
     try {
       const target = await resolveUserRef(locttDir, ref);
       const updated = await updateUser(locttDir, target.id, {
