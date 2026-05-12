@@ -19,7 +19,7 @@ Generated from a full codebase review (2026-05-12). This document tracks the imp
 | Phase | Status | Notes |
 |---|---|---|
 | 1. Critical (3) + concurrency (4) + error narrowing (3) | **DONE** | 11 commits, all gates green. setField/unsetField also got locked (was implicit in 1.4b) |
-| 2. API contracts + CLI/MCP alignment (delete verb rename) | TODO | Breaking change for CLI users |
+| 2. API contracts + CLI/MCP alignment (delete verb rename) | **DONE** | 12 items; 2.12 confirmed false-positive |
 | 3. Docs + minor batch | TODO | Lower risk, high value |
 | 4. Structural splits + per-tool zod + test additions | TODO | Highest churn, lowest correctness value — do last |
 
@@ -276,9 +276,9 @@ Project-resolution chain (explicit → per-user default → workspace default �
 
 CLI pre-validates at `apps/cli/src/index.ts:767-769` via `assertWorkflowEnumKey`. MCP at `apps/mcp/src/index.ts:987-1034` doesn't. Add the same pre-check so the agent gets a clear "known values" hint rather than a deeper `TaskUpdateError`.
 
-### 2.12 — MCP `list_tasks` default limit
+### 2.12 — MCP `list_tasks` default limit — FALSE POSITIVE
 
-`apps/mcp/src/index.ts:932-968` description says "default 30", handler forwards `undefined`. Either pass `30` explicitly when omitted, or have core's `listTasks` document/apply its own default. Audit. Either way: doc and code align.
+`apps/mcp/src/index.ts` describes `limit` as "default 30" and forwards `undefined` to core's `listTasks`. Core applies `options.limit ?? 30` at `packages/core/src/query/list.ts:160`, so the documented default is the effective default. No drift. Skip.
 
 ### 2.13 — Phase 2 commit plan
 
