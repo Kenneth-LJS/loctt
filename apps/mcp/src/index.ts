@@ -69,6 +69,7 @@ import {
   readBurndownSeries,
   readHistory,
   reorderBoardRank,
+  RelationshipError,
   ReorderError,
   reorderRelationship,
   requireSupportedSchema,
@@ -77,12 +78,16 @@ import {
   resolveUserRef,
   runDoctor,
   saveState,
+  SchemaTooNewError,
+  SchemaVersionError,
   setConfigValue,
   setDefaultProject,
   setField,
   SprintError,
   switchCurrentUser,
   sync,
+  TaskLifecycleError,
+  TaskNotFoundError,
   TaskUpdateError,
   unarchiveLabel,
   unarchiveMilestone,
@@ -647,6 +652,35 @@ function text(content: string): McpToolResult {
 
 function errorResult(message: string): McpToolResult {
   return { content: [{ type: "text", text: `Error: ${message}` }], isError: true };
+}
+
+/**
+ * Returns true for errors that represent expected, user-actionable
+ * conditions (a bad arg, a not-found task, a workflow validation
+ * miss). Used by the dispatcher's outer catch: known domain errors
+ * become `errorResult` so the agent sees a clear message; anything
+ * else is a real bug and is rethrown so the MCP framework can log
+ * and surface it as a server fault instead of papering over it.
+ */
+function isKnownDomainError(err: unknown): err is Error {
+  return (
+    err instanceof TaskUpdateError
+    || err instanceof TaskNotFoundError
+    || err instanceof TaskLifecycleError
+    || err instanceof RelationshipError
+    || err instanceof AttachmentExistsError
+    || err instanceof AttachmentNotFoundError
+    || err instanceof AttachmentSourceError
+    || err instanceof BurndownError
+    || err instanceof LabelError
+    || err instanceof MilestoneError
+    || err instanceof ProjectError
+    || err instanceof ReorderError
+    || err instanceof SprintError
+    || err instanceof UserError
+    || err instanceof SchemaVersionError
+    || err instanceof SchemaTooNewError
+  );
 }
 
 /**
@@ -1805,6 +1839,13 @@ export async function executeTool(
         return errorResult(`Unknown tool: ${name}`);
     }
   } catch (err) {
-    return errorResult((err as Error).message);
+    if (isKnownDomainError(err)) {
+      return errorResult(err.message);
+    }
+    // Re-throw anything else — a TypeError or unexpected I/O failure
+    // is a real bug, not a routine tool error. The MCP framework
+    // will surface it as a server fault and log it; masking it as
+    // an errorResult here would hide the diagnosis.
+    throw err;
   }
 }
