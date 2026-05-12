@@ -10,6 +10,7 @@ import type {
   TimelineConfig,
   WorkflowConfig,
 } from "@loctt/contracts";
+import { ulid } from "ulid";
 import { stringify as stringifyYaml } from "yaml";
 
 import { getWorkflowConfigPath } from "../paths/index.js";
@@ -608,12 +609,12 @@ async function executeWorkflowRemap(
 }
 
 /**
- * ULID-like id for journal entries. Doesn't need crypto strength;
- * just needs to be unique within a tracker's lifetime so callers
- * (and tests) can address the specific entry they wrote.
+ * Journal entry id. Plain ulid() — same namespace and time-ordering
+ * other journal handlers use, so log lines from a recovery run sort
+ * naturally regardless of which kind of entry produced them.
  */
 function makeJournalEntryId(): string {
-  return `wf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return ulid();
 }
 
 // Register the crash-recovery handler at module load.

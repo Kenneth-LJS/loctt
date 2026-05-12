@@ -154,8 +154,22 @@ export async function createProject(
         initKeyAllocation(state, def.key, def.prefix, 1);
       } catch (err) {
         if (err instanceof KeyAllocationError) {
-          // Counter already exists from a prior partial write. Treat
-          // as recoverable — the counter survives.
+          // A counter for this key already exists in state — most
+          // likely a partial write from a prior `createProject`
+          // that crashed between saveState and saveProjectsConfig.
+          // Recovery is fine *if* the existing counter's prefix
+          // matches the new project's prefix; otherwise the user
+          // has changed the prefix on a name collision and silently
+          // resuming would mint keys under the wrong prefix.
+          const existing = (state.keys as Record<string, { prefix: string; next_number: number }>)[def.key];
+          if (existing && existing.prefix !== def.prefix) {
+            throw new ProjectError(
+              `cannot create project '${def.key}' with prefix '${def.prefix}': ` +
+              `a counter for this key already exists with prefix '${existing.prefix}'. ` +
+              `If this is a partial-write recovery, retry with the original prefix.`,
+            );
+          }
+          // Prefix matches: safe to continue, the counter survives.
         } else {
           throw err;
         }
