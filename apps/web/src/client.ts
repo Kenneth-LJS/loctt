@@ -32,6 +32,18 @@ export class LocttClient {
     this.base = baseUrl.replace(/\/+$/, "");
   }
 
+  /**
+   * Reads the error payload from a non-ok response and returns its
+   * `error` message, falling back to the HTTP status text. Some
+   * routes return JSON; some (e.g. a server-side fault before a
+   * route is matched) don't, so a failed `.json()` falls back to
+   * the status line.
+   */
+  private async readErrorMessage(res: Response): Promise<string> {
+    const body = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
+    return body.error ?? `HTTP ${res.status}`;
+  }
+
   private async fetch<T>(path: string, options?: RequestInit): Promise<T> {
     const res = await fetch(`${this.base}${path}`, {
       ...options,
@@ -42,8 +54,7 @@ export class LocttClient {
       },
     });
     if (!res.ok) {
-      const body: { error?: string } = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
-      throw new Error(body.error ?? `HTTP ${res.status}`);
+      throw new Error(await this.readErrorMessage(res));
     }
     return res.json() as Promise<T>;
   }
@@ -145,8 +156,7 @@ export class LocttClient {
       },
     );
     if (!res.ok) {
-      const body: { error?: string } = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
-      const message = body.error ?? `HTTP ${res.status}`;
+      const message = await this.readErrorMessage(res);
       if (res.status === 409) {
         throw new AttachmentExistsError(message);
       }
@@ -164,8 +174,7 @@ export class LocttClient {
       },
     );
     if (!res.ok) {
-      const body: { error?: string } = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
-      throw new Error(body.error ?? `HTTP ${res.status}`);
+      throw new Error(await this.readErrorMessage(res));
     }
   }
 

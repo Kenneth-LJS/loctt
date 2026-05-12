@@ -708,10 +708,15 @@ function requireConfirm(args: Record<string, unknown>, action: string): McpToolR
  * inside `setField`, so this layer only enforces *shape*.
  */
 const NonEmptyString = z.string().min(1);
-// Date-only (YYYY-MM-DD) or full ISO-8601 are both accepted by the
-// underlying parser; the brand schemas in @loctt/contracts will reject
-// nonsense at write time. Here we only require a string.
-const DateLikeString = z.string().min(1);
+// Date-only (YYYY-MM-DD) or full ISO-8601 timestamp. The brand
+// schemas in @loctt/contracts apply the canonical check at write
+// time; this regex matches the same shape so the boundary error
+// names the field rather than waiting for setField to fail with
+// a deeper message.
+const DateLikeString = z.string().regex(
+  /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/,
+  "must be YYYY-MM-DD or full ISO-8601 timestamp",
+);
 const UPDATE_TASK_FIELD_SCHEMAS: Record<string, z.ZodTypeAny> = {
   title: NonEmptyString,
   status: NonEmptyString,
