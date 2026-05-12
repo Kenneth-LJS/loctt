@@ -116,6 +116,7 @@ import {
   writeTaskBody,
 } from "@loctt/core";
 
+import { contentDispositionAttachment } from "./content-disposition.js";
 import type { ParsedFilePart } from "./multipart.js";
 import { parseMultipartFile } from "./multipart.js";
 
@@ -1649,11 +1650,10 @@ export function createWebApp(options: WebAppOptions) {
     // URL. Don't switch this endpoint to a derived Content-Type —
     // an inline image/svg+xml or text/html upload would be an XSS
     // hole even with nosniff.
-    const escaped = rawName.replace(/"/g, "\\\"");
     res.writeHead(200, {
       "Content-Type": "application/octet-stream",
       "X-Content-Type-Options": "nosniff",
-      "Content-Disposition": `attachment; filename="${escaped}"`,
+      "Content-Disposition": contentDispositionAttachment(rawName),
       "Content-Length": String(fileStat.size),
     });
     const stream = createReadStream(filePath);
