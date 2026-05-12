@@ -250,6 +250,49 @@ describe("relationships", () => {
       const c = await readTask(locttDir, "c");
       expect(c.frontmatter.relationships?.some(r => r.type === "parent" && r.target === "a")).toBe(true);
     });
+
+    /**
+     * Production-shaped workflow: only the forward direction is
+     * listed as a workflow entry. The inverse direction is reached
+     * only via `inverse`. Earlier code matched `r.key === type` and
+     * silently skipped cycle detection on inverse-key calls.
+     */
+    const inverseOnlyWorkflow: WorkflowConfig = {
+      key: { prefix: "T" },
+      statuses: [],
+      priorities: [],
+      task_types: [],
+      relationships: [
+        { key: "parent", label: "Parent", inverse: "child", inverse_label: "Child", structural: true },
+      ],
+      custom_fields: [],
+    };
+
+    it("rejects a direct cycle when called via the inverse key", async () => {
+      await seedAB();
+      // A is parent of B (canonical edge: A -[parent]-> B).
+      await linkTask({ locttDir, taskId: "a", type: "parent", target: "b", workflowConfig: inverseOnlyWorkflow });
+      // Now try to make A "child" of B. Canonically that's the edge
+      // B -[parent]-> A, which would close the cycle. Pre-fix this
+      // silently succeeded because the cycle walker couldn't find
+      // a workflow entry whose `key === "child"`.
+      await expect(
+        linkTask({ locttDir, taskId: "a", type: "child", target: "b", workflowConfig: inverseOnlyWorkflow }),
+      ).rejects.toThrow(/cannot create cycle in structural relationship 'parent'/);
+    });
+
+    it("rejects an indirect cycle when the final link uses the inverse key", async () => {
+      await seedAB();
+      await writeTask(locttDir, "c", seedC);
+      // A is parent of B, B is parent of C.
+      await linkTask({ locttDir, taskId: "a", type: "parent", target: "b", workflowConfig: inverseOnlyWorkflow });
+      await linkTask({ locttDir, taskId: "b", type: "parent", target: "c", workflowConfig: inverseOnlyWorkflow });
+      // Now try to make A "child" of C — canonically C -[parent]-> A,
+      // which closes the chain.
+      await expect(
+        linkTask({ locttDir, taskId: "a", type: "child", target: "c", workflowConfig: inverseOnlyWorkflow }),
+      ).rejects.toThrow(/cannot create cycle in structural relationship 'parent'/);
+    });
   });
 
   describe("unlinkTask (bilateral)", () => {
