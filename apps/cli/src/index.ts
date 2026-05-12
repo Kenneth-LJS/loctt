@@ -140,7 +140,8 @@ Global options:
 Commands:
   init [--prefix <prefix>] [--project-key <key>] [--project-label <label>] [--no-docs]
   info
-  doctor
+  doctor [--rebuild-index]         Run diagnostic checks; with --rebuild-index, rebuild
+                                   the key-lookup cache after out-of-band frontmatter edits
   views                            List saved views from queries.yaml
   schema                           Show the workflow config (statuses, priorities, etc.)
   project <list|create|edit|archive|unarchive|delete|set-default> ...
@@ -656,7 +657,8 @@ export async function main(): Promise<void> {
       }
 
       case "doctor": {
-        const checks = await runDoctor(root);
+        const rebuildIndex = hasFlag(args, "--rebuild-index");
+        const checks = await runDoctor(root, { rebuildIndex });
         for (const check of checks) {
           const icon = check.status === "ok" ? "✓" : check.status === "warn" ? "!" : "✗";
           console.log(`  ${icon} ${check.name}: ${check.message}`);

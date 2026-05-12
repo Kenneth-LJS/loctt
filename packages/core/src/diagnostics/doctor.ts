@@ -10,7 +10,10 @@ import { getSprintsConfigPath,loadSprintsConfig } from "../config/sprints.js";
 import { validateTaskAgainstWorkflow,validateWorkflowConfig } from "../config/validation.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
 import { getConfigDir, getListViewConfigPath, getQueriesConfigPath, getStateFilePath, getTasksDir, getUsersDir, getWorkflowConfigPath, resolveLocttDir } from "../paths/index.js";
+import { loadKeyIndex, rebuildKeyIndex } from "../state/key-index.js";
 import { loadState } from "../state/state.js";
+import { readTask } from "../task/io.js";
+import { listTaskIds } from "../task/list-ids.js";
 import { loadAllTasks } from "../task/load-all.js";
 import { validateRelationships } from "../task/traversal.js";
 import { loadAllUsers } from "../users/profile.js";
@@ -24,8 +27,22 @@ export interface DiagnosticCheck {
   readonly message: string;
 }
 
+export interface DoctorOptions {
+  /**
+   * When true, rebuild the on-disk key index from a full task scan
+   * after running checks. Used as the recovery path after out-of-
+   * band edits to a task's `key` / `key_history`, which LocTT can
+   * not auto-detect (the indexed task id still exists; only the
+   * key↔id mapping changed).
+   */
+  readonly rebuildIndex?: boolean;
+}
+
 /** Runs diagnostic checks on a .loctt tracker. */
-export async function runDoctor(root: string): Promise<readonly DiagnosticCheck[]> {
+export async function runDoctor(
+  root: string,
+  options: DoctorOptions = {},
+): Promise<readonly DiagnosticCheck[]> {
   const checks: DiagnosticCheck[] = [];
   const locttDir = resolveLocttDir(root);
 
@@ -273,6 +290,91 @@ export async function runDoctor(root: string): Promise<readonly DiagnosticCheck[
       }
     } catch {
       // Skip on error — earlier checks already surfaced parse failures.
+    }
+  }
+
+  // Key-index integrity. The index is a cache LocTT maintains; the
+  // only on-disk drift case is out-of-band edits to a task's `key`
+  // / `key_history` (vim, scripts), which LocTT cannot auto-detect
+  // because the indexed task id is still present. Surface drift
+  // here so the user knows to rerun with --rebuild-index.
+  if (await fileExists(getTasksDir(locttDir))) {
+    try {
+      const index = await loadKeyIndex(locttDir);
+      if (!index) {
+        checks.push({
+          name: "key index",
+          status: "warn",
+          message: "no index on disk — will rebuild on next lookup",
+        });
+      } else {
+        const allTaskIds = new Set(await listTaskIds(locttDir));
+        const issues: string[] = [];
+        const indexedIds = new Set<string>();
+        for (const [indexedKey, id] of Object.entries(index.entries)) {
+          indexedIds.add(id);
+          if (!allTaskIds.has(id)) {
+            issues.push(`${indexedKey} → ${id} (target missing)`);
+            continue;
+          }
+          try {
+            const task = await readTask(locttDir, id);
+            const current = task.frontmatter.key;
+            const history = task.frontmatter.key_history ?? [];
+            if (current !== indexedKey && !history.includes(indexedKey)) {
+              issues.push(`${indexedKey} → ${id} (now has key ${current})`);
+            }
+          } catch {
+            issues.push(`${indexedKey} → ${id} (unreadable)`);
+          }
+        }
+        const orphanIds = [...allTaskIds].filter(id => !indexedIds.has(id));
+        if (issues.length > 0 || orphanIds.length > 0) {
+          const parts: string[] = [];
+          if (issues.length > 0) {
+            const sample = issues.slice(0, 3).join("; ");
+            const more = issues.length > 3 ? ` (+${issues.length - 3} more)` : "";
+            parts.push(`${issues.length} stale entry/entries: ${sample}${more}`);
+          }
+          if (orphanIds.length > 0) {
+            parts.push(`${orphanIds.length} task dir(s) not in index`);
+          }
+          checks.push({
+            name: "key index",
+            status: "warn",
+            message: `${parts.join("; ")} — rerun with --rebuild-index to repair`,
+          });
+        } else {
+          checks.push({
+            name: "key index",
+            status: "ok",
+            message: `${Object.keys(index.entries).length} entry/entries, in sync`,
+          });
+        }
+      }
+    } catch (err) {
+      checks.push({
+        name: "key index",
+        status: "error",
+        message: `check failed: ${(err as Error).message}`,
+      });
+    }
+  }
+
+  if (options.rebuildIndex) {
+    try {
+      const rebuilt = await rebuildKeyIndex(locttDir);
+      checks.push({
+        name: "key index rebuild",
+        status: "ok",
+        message: `rebuilt with ${Object.keys(rebuilt.entries).length} entry/entries`,
+      });
+    } catch (err) {
+      checks.push({
+        name: "key index rebuild",
+        status: "error",
+        message: `failed: ${(err as Error).message}`,
+      });
     }
   }
 
