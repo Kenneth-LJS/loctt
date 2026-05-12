@@ -1,5 +1,5 @@
 import type { QueriesConfig,QuerySort } from "./query.js";
-import type { TaskFrontmatter } from "./task.js";
+import type { TaskFrontmatterPublic } from "./task.js";
 import type { WorkflowConfig } from "./workflow.js";
 
 /** Request to create a new task. */
@@ -88,7 +88,13 @@ export interface AttachmentResponse {
 
 /** Task response for API. */
 export interface TaskResponse {
-  readonly frontmatter: TaskFrontmatter;
+  /**
+   * Projected public frontmatter (known keys only). Unknown keys
+   * that an author may have written into the task.md frontmatter
+   * are preserved on disk but not echoed here — the API shape
+   * stays a stable contract.
+   */
+  readonly frontmatter: TaskFrontmatterPublic;
   readonly body: string;
   readonly attachments: readonly AttachmentResponse[];
 }

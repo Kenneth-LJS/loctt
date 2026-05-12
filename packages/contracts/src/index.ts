@@ -84,9 +84,12 @@ export {
 export type {
   Task,
   TaskFrontmatter,
+  TaskFrontmatterPublic,
   TaskRelationship,
 } from "./task.js";
 export {
+  projectTaskFrontmatter,
+  TaskFrontmatterPublicSchema,
   TaskFrontmatterSchema,
   TaskRelationshipSchema,
 } from "./task.js";

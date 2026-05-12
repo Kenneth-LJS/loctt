@@ -15,7 +15,7 @@ import type {
   TrackerInfoResponse,
   UpdateTaskRequest,
 } from "@loctt/contracts";
-import { CalendarConfigSchema, ListViewConfigSchema } from "@loctt/contracts";
+import { CalendarConfigSchema, ListViewConfigSchema, projectTaskFrontmatter } from "@loctt/contracts";
 import {
   appendTaskBody,
   applyWorkflowEdit,
@@ -1369,7 +1369,7 @@ export function createWebApp(options: WebAppOptions) {
       ...(workflowConfig !== undefined ? { workflowConfig } : {}),
       ctx: buildListContext(tasks),
     });
-    const frontmatters = result.map(t => t.frontmatter);
+    const frontmatters = result.map(t => projectTaskFrontmatter(t.frontmatter));
     json(res, paginated(frontmatters, page.offset, page.limit));
   };
 
@@ -1419,7 +1419,7 @@ export function createWebApp(options: WebAppOptions) {
       if (err instanceof ArchivedReferenceError) { error(res, err.message, 400); return; }
       throw err;
     }
-    json(res, task.frontmatter, 201);
+    json(res, projectTaskFrontmatter(task.frontmatter), 201);
   };
 
   const handleGetTask: RouteHandler = async ({ res, locttDir, captures }) => {
@@ -1428,7 +1428,7 @@ export function createWebApp(options: WebAppOptions) {
     const task = await lookupTask(locttDir, ref);
     const model = await buildShowModel(locttDir, task);
     const response: TaskResponse = {
-      frontmatter: model.task.frontmatter,
+      frontmatter: projectTaskFrontmatter(model.task.frontmatter),
       body: model.task.body,
       attachments: model.attachments.map(a => ({
         name: a.name,
@@ -1476,7 +1476,7 @@ export function createWebApp(options: WebAppOptions) {
         workflowConfig: wfConfig,
         archivedGuard,
       });
-      json(res, updated.frontmatter);
+      json(res, projectTaskFrontmatter(updated.frontmatter));
     } catch (err) {
       if (err instanceof TaskUpdateError) { error(res, err.message, 400); return; }
       if (err instanceof ArchivedReferenceError) { error(res, err.message, 400); return; }
@@ -1495,7 +1495,7 @@ export function createWebApp(options: WebAppOptions) {
     const task = await lookupTask(locttDir, ref);
     try {
       const updated = await unsetField(locttDir, task.frontmatter.id, field);
-      json(res, updated.frontmatter);
+      json(res, projectTaskFrontmatter(updated.frontmatter));
     } catch (err) {
       if (err instanceof TaskUpdateError) { error(res, err.message, 400); return; }
       throw err;
@@ -1507,7 +1507,7 @@ export function createWebApp(options: WebAppOptions) {
     if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
     const task = await lookupTask(locttDir, ref);
     const updated = await archiveTask(locttDir, task.frontmatter.id);
-    json(res, updated.frontmatter);
+    json(res, projectTaskFrontmatter(updated.frontmatter));
   };
 
   const handleUnarchive: RouteHandler = async ({ res, locttDir, captures }) => {
@@ -1515,7 +1515,7 @@ export function createWebApp(options: WebAppOptions) {
     if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
     const task = await lookupTask(locttDir, ref);
     const updated = await unarchiveTask(locttDir, task.frontmatter.id);
-    json(res, updated.frontmatter);
+    json(res, projectTaskFrontmatter(updated.frontmatter));
   };
 
   const handleDeleteTask: RouteHandler = async ({ req, res, locttDir, captures }) => {
@@ -1540,7 +1540,7 @@ export function createWebApp(options: WebAppOptions) {
     const target = await lookupTask(locttDir, request.target);
     try {
       const updated = await linkTask({ locttDir, taskId: task.frontmatter.id, type: request.type, target: target.frontmatter.id, workflowConfig: wfConfig });
-      json(res, updated.frontmatter);
+      json(res, projectTaskFrontmatter(updated.frontmatter));
     } catch (err) {
       if (err instanceof ArchivedReferenceError) { error(res, err.message, 400); return; }
       throw err;
@@ -1554,7 +1554,7 @@ export function createWebApp(options: WebAppOptions) {
     const task = await lookupTask(locttDir, ref);
     const target = await lookupTask(locttDir, request.target);
     const updated = await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: request.type, target: target.frontmatter.id });
-    json(res, updated.frontmatter);
+    json(res, projectTaskFrontmatter(updated.frontmatter));
   };
 
   const handleAttachUpload: RouteHandler = async ({ req, res, url, locttDir, captures }) => {

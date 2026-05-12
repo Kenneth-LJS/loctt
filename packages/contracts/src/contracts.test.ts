@@ -10,6 +10,7 @@ import type {
   WorkflowConfig,
 } from "./index.js";
 import {
+  projectTaskFrontmatter,
   TaskFrontmatterSchema,
 } from "./index.js";
 
@@ -109,5 +110,33 @@ describe("TaskFrontmatter round-trip", () => {
     expect(parsed.fields?.["flagged"]).toBe(true);
     expect(parsed.fields?.["tags"]).toEqual(["a", "b"]);
     expect(parsed.fields?.["nested"]).toEqual({ score: 0.7 });
+  });
+
+  it("projectTaskFrontmatter drops unknown top-level keys for API responses", () => {
+    // Disk-level parsing preserves unknown keys (passthrough); the
+    // public projection used for API responses strips them so the
+    // response shape stays a stable contract.
+    const onDisk = TaskFrontmatterSchema.parse({
+      ...minimal,
+      status: "in_progress",
+      x_custom: "preserved-on-disk",
+      x_legacy_marker: { whatever: 1 },
+    });
+    const apiShape = projectTaskFrontmatter(onDisk);
+    expect((apiShape as Record<string, unknown>)["x_custom"]).toBeUndefined();
+    expect((apiShape as Record<string, unknown>)["x_legacy_marker"]).toBeUndefined();
+    // Known fields survive.
+    expect(apiShape.status).toBe("in_progress");
+    expect(apiShape.id).toBe(minimal.id);
+    expect(apiShape.key).toBe(minimal.key);
+  });
+
+  it("projectTaskFrontmatter preserves the custom fields map", () => {
+    const onDisk = TaskFrontmatterSchema.parse({
+      ...minimal,
+      fields: { story_points: 5, flagged: true },
+    });
+    const apiShape = projectTaskFrontmatter(onDisk);
+    expect(apiShape.fields).toEqual({ story_points: 5, flagged: true });
   });
 });
