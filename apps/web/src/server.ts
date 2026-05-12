@@ -311,6 +311,29 @@ function assertPersisted<T>(entity: T | undefined, kind: string, key: string): T
 }
 
 const VALID_REF_RE = /^[A-Za-z0-9_-]+$/;
+
+/**
+ * Validates a captured ref / key / id from a route capture.
+ * Returns the ref string when valid, or null when it isn't — in
+ * which case the helper has already written a 400 to `res`, so
+ * the caller just needs to `return` from the handler.
+ *
+ * Folds in the ~15 repeated
+ *   if (!VALID_REF_RE.test(ref)) { error(res, ...); return; }
+ * blocks into one place.
+ */
+function requireValidRef(
+  captures: readonly string[],
+  res: import("node:http").ServerResponse,
+  index: number = 0,
+): string | null {
+  const ref = captures[index] ?? "";
+  if (!VALID_REF_RE.test(ref)) {
+    error(res, "Invalid task reference", 400);
+    return null;
+  }
+  return ref;
+}
 const TASK_REF_RE = /^\/api\/tasks\/([^/]+)$/;
 const PROJECT_KEY_RE = /^\/api\/projects\/([^/]+)$/;
 const LABEL_KEY_RE = /^\/api\/labels\/([^/]+)$/;
@@ -669,9 +692,8 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
-  const handleDeleteProject: RouteHandler = async ({ req, res, locttDir, captures }) => {
+  const handleDeleteProject: RouteHandler = async ({ res, url, locttDir, captures }) => {
     const key = captures[0] ?? "";
-    const url = new URL(req.url ?? "/", `http://localhost:${port}`);
     const remapTo = url.searchParams.get("remap_to") ?? undefined;
     try {
       const result = await deleteProject(locttDir, key, {
@@ -806,9 +828,8 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
-  const handleDeleteSprint: RouteHandler = async ({ req, res, locttDir, captures }) => {
+  const handleDeleteSprint: RouteHandler = async ({ res, url, locttDir, captures }) => {
     const key = captures[0] ?? "";
-    const url = new URL(req.url ?? "/", `http://localhost:${port}`);
     const remapTo = url.searchParams.get("remap_to") ?? undefined;
     try {
       const result = await deleteSprint(locttDir, key, {
@@ -875,9 +896,8 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
-  const handleDeleteMilestone: RouteHandler = async ({ req, res, locttDir, captures }) => {
+  const handleDeleteMilestone: RouteHandler = async ({ res, url, locttDir, captures }) => {
     const key = captures[0] ?? "";
-    const url = new URL(req.url ?? "/", `http://localhost:${port}`);
     const remapTo = url.searchParams.get("remap_to") ?? undefined;
     try {
       const result = await deleteMilestone(locttDir, key, {
@@ -939,9 +959,8 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
-  const handleDeleteLabel: RouteHandler = async ({ req, res, locttDir, captures }) => {
+  const handleDeleteLabel: RouteHandler = async ({ res, url, locttDir, captures }) => {
     const key = captures[0] ?? "";
-    const url = new URL(req.url ?? "/", `http://localhost:${port}`);
     const remapTo = url.searchParams.get("remap_to") ?? undefined;
     try {
       const result = await deleteLabel(locttDir, key, {
@@ -1102,9 +1121,8 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
-  const handleDeleteUser: RouteHandler = async ({ req, res, locttDir, captures }) => {
+  const handleDeleteUser: RouteHandler = async ({ res, url, locttDir, captures }) => {
     const ref = captures[0] ?? "";
-    const url = new URL(req.url ?? "/", `http://localhost:${port}`);
     if (url.searchParams.get("confirm") !== "true") {
       error(res, "user delete is permanent; pass ?confirm=true to proceed", 400);
       return;
@@ -1175,8 +1193,8 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleReplaceBody: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const ref = captures[0] ?? "";
-    if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
     const task = await lookupTask(locttDir, ref);
     const r = await parseJsonBody<{ body: string }>(req, res);
     if (typeof r.body !== "string") { error(res, "body must be a string", 400); return; }
@@ -1185,8 +1203,8 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleAppendBody: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const ref = captures[0] ?? "";
-    if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
     const task = await lookupTask(locttDir, ref);
     const r = await parseJsonBody<{ text: string }>(req, res);
     if (typeof r.text !== "string") { error(res, "text must be a string", 400); return; }
@@ -1417,8 +1435,8 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleGetTask: RouteHandler = async ({ res, locttDir, captures }) => {
-    const ref = captures[0] ?? "";
-    if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
     const task = await lookupTask(locttDir, ref);
     const model = await buildShowModel(locttDir, task);
     const response: TaskResponse = {
@@ -1434,8 +1452,8 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleTaskActivity: RouteHandler = async ({ res, url, locttDir, captures }) => {
-    const ref = captures[0] ?? "";
-    if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
     const task = await lookupTask(locttDir, ref);
     const entries = await readHistory(locttDir, task.frontmatter.id);
 
@@ -1451,8 +1469,8 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleSetField: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const ref = captures[0] ?? "";
-    if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
     const request = await parseJsonBody<UpdateTaskRequest>(req, res);
     if (typeof request.field !== "string" || request.field.length === 0) {
       error(res, "field must be a non-empty string", 400);
@@ -1479,8 +1497,8 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleUnsetField: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const ref = captures[0] ?? "";
-    if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
     const { field } = await parseJsonBody<{ field: string }>(req, res);
     if (typeof field !== "string" || field.length === 0) {
       error(res, "field must be a non-empty string", 400);
@@ -1497,25 +1515,24 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleArchive: RouteHandler = async ({ res, locttDir, captures }) => {
-    const ref = captures[0] ?? "";
-    if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
     const task = await lookupTask(locttDir, ref);
     const updated = await archiveTask(locttDir, task.frontmatter.id);
     json(res, projectTaskFrontmatter(updated.frontmatter));
   };
 
   const handleUnarchive: RouteHandler = async ({ res, locttDir, captures }) => {
-    const ref = captures[0] ?? "";
-    if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
     const task = await lookupTask(locttDir, ref);
     const updated = await unarchiveTask(locttDir, task.frontmatter.id);
     json(res, projectTaskFrontmatter(updated.frontmatter));
   };
 
-  const handleDeleteTask: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const ref = captures[0] ?? "";
-    if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
-    const url = new URL(req.url ?? "/", `http://localhost:${port}`);
+  const handleDeleteTask: RouteHandler = async ({ res, url, locttDir, captures }) => {
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
     if (url.searchParams.get("confirm") !== "true") {
       error(res, "task delete is permanent; pass ?confirm=true to proceed", 400);
       return;
@@ -1526,8 +1543,8 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleLink: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const ref = captures[0] ?? "";
-    if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
     const request = await parseJsonBody<LinkRequest>(req, res);
     const wfConfig = await loadWorkflowConfig(locttDir);
     const task = await lookupTask(locttDir, ref);
@@ -1542,8 +1559,8 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleUnlink: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const ref = captures[0] ?? "";
-    if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
     const request = await parseJsonBody<LinkRequest>(req, res);
     const task = await lookupTask(locttDir, ref);
     const target = await lookupTask(locttDir, request.target);
@@ -1552,8 +1569,8 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleAttachUpload: RouteHandler = async ({ req, res, url, locttDir, captures }) => {
-    const ref = captures[0] ?? "";
-    if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
 
     const task = await lookupTask(locttDir, ref);
 
@@ -1608,9 +1625,9 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleGetAttachment: RouteHandler = async ({ res, locttDir, captures }) => {
-    const ref = captures[0] ?? "";
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
     const rawName = decodeURIComponent(captures[1] ?? "");
-    if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
 
     const task = await lookupTask(locttDir, ref);
 
@@ -1659,9 +1676,9 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleDeleteAttachment: RouteHandler = async ({ res, locttDir, captures }) => {
-    const ref = captures[0] ?? "";
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
     const rawName = decodeURIComponent(captures[1] ?? "");
-    if (!VALID_REF_RE.test(ref)) { error(res, "Invalid task reference", 400); return; }
     try {
       assertSafeBasename(rawName);
     } catch {
