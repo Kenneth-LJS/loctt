@@ -1,6 +1,7 @@
-import { rm,writeFile } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 
 import { getSchemaMigrationInProgressPath } from "../paths/index.js";
+import { writeFileAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
 import { withMigrationLock } from "./lock.js";
 import { findMigrationPath, type Migration } from "./migrations.js";
@@ -141,12 +142,14 @@ export async function migrateToCurrent(
       }
       // Drop a sentinel before applying so a mid-step crash leaves a
       // marker that requireSupportedSchema can refuse to boot against.
-      // The sentinel records the from/to pair plus the backup path for
-      // recovery guidance.
-      await writeFile(
+      // The sentinel records the from/to pair plus the backup path
+      // for recovery guidance. Written atomically (temp-file +
+      // rename) so a crash during the write itself can never leave
+      // a truncated sentinel whose recovery instructions are
+      // unreadable — either the full sentinel is present or none.
+      await writeFileAtomically(
         sentinelPath,
         `from: ${migration.from}\nto: ${migration.to}\nbackup: ${backupPath}\n`,
-        "utf-8",
       );
       await migration.apply(locttDir);
       current = migration.to;
