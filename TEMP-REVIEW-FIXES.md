@@ -18,7 +18,7 @@ Generated from a full codebase review (2026-05-12). This document tracks the imp
 
 | Phase | Status | Notes |
 |---|---|---|
-| 1. Critical (3) + concurrency (4) + error narrowing (3) | TODO | Highest priority |
+| 1. Critical (3) + concurrency (4) + error narrowing (3) | **DONE** | 11 commits, all gates green. setField/unsetField also got locked (was implicit in 1.4b) |
 | 2. API contracts + CLI/MCP alignment (delete verb rename) | TODO | Breaking change for CLI users |
 | 3. Docs + minor batch | TODO | Lower risk, high value |
 | 4. Structural splits + per-tool zod + test additions | TODO | Highest churn, lowest correctness value — do last |
