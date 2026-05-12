@@ -4,6 +4,7 @@
 import { access } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 
+import type { WorkflowConfig } from "@loctt/contracts";
 import {
   appendTaskBody,
   archiveLabel,
@@ -801,6 +802,32 @@ function validateUpdateTaskArgs(args: Record<string, unknown>): McpToolResult | 
 }
 
 /**
+ * Pre-flight check for enum-typed workflow values on create_task /
+ * update_task. Mirrors the CLI's assertWorkflowEnumKey: surface the
+ * known-values hint at the boundary instead of letting `createTask`
+ * throw a generic "invalid task" string the agent has to puzzle
+ * over. `undefined` means the field wasn't supplied; not an error.
+ */
+function assertWorkflowEnumKey(
+  workflowConfig: WorkflowConfig | undefined,
+  field: "status" | "priority" | "task_type",
+  value: string | undefined,
+): McpToolResult | null {
+  if (workflowConfig === undefined || value === undefined) return null;
+  const defs = field === "status"
+    ? workflowConfig.statuses
+    : field === "priority"
+      ? workflowConfig.priorities
+      : workflowConfig.task_types;
+  const keys = defs.map(d => d.key);
+  if (!keys.includes(value)) {
+    const known = keys.length > 0 ? keys.join(", ") : "(none configured)";
+    return errorResult(`unknown ${field} '${value}'. Known: ${known}`);
+  }
+  return null;
+}
+
+/**
  * Validates `args` for `unset_field`. Mirrors `validateUpdateTaskArgs`
  * for the field-level checks but skips value-shape validation (no
  * value to validate when unsetting). Also rejects `title` since it's
@@ -1033,6 +1060,13 @@ export async function executeTool(
         const priority = args["priority"] as string | undefined;
         const taskType = args["task_type"] as string | undefined;
         const body = args["body"] as string | undefined;
+        // Validate enum keys against the workflow at the boundary so
+        // the agent gets a "Known: ..." hint instead of the deeper
+        // generic "invalid task" string createTask would throw.
+        const enumCheck = assertWorkflowEnumKey(workflowConfig, "status", status)
+          ?? assertWorkflowEnumKey(workflowConfig, "priority", priority)
+          ?? assertWorkflowEnumKey(workflowConfig, "task_type", taskType);
+        if (enumCheck) return enumCheck;
         const archivedGuard = await loadArchivedGuardConfigs(locttDir);
         const task = await withStateLock(locttDir, async () => {
           const state = await loadState(locttDir);

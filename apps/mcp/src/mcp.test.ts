@@ -131,6 +131,30 @@ describe("MCP executeTool", () => {
       expect(result.isError).toBeUndefined();
     });
 
+    it("create_task surfaces a 'Known: ...' hint for an unknown status", async () => {
+      // Mirrors the CLI's enum pre-validation: instead of letting
+      // createTask throw a generic 'invalid task' string, the MCP
+      // boundary returns a clear errorResult with the workflow's
+      // valid keys listed.
+      const result = await executeTool(root, "create_task", {
+        title: "x",
+        status: "nope",
+      });
+      expect(result.isError).toBe(true);
+      const msg = result.content[0]?.text ?? "";
+      expect(msg).toMatch(/unknown status 'nope'/);
+      expect(msg).toMatch(/Known: /);
+    });
+
+    it("create_task accepts a known status without complaint", async () => {
+      // not_started is the first default workflow status.
+      const result = await executeTool(root, "create_task", {
+        title: "x",
+        status: "not_started",
+      });
+      expect(result.isError).toBeUndefined();
+    });
+
     it("tools with empty inputSchema still validate (and accept {})", async () => {
       // info has inputSchema: {}. Strict mode means an unknown arg
       // is rejected; empty args succeed.
