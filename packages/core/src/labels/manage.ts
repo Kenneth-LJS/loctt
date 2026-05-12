@@ -172,8 +172,19 @@ export async function deleteLabel(
       if (options.remapTo === key) {
         throw new LabelError(`remap target must differ from the label being deleted`);
       }
-      if (!config.labels.some(l => l.key === options.remapTo)) {
+      const target = config.labels.find(l => l.key === options.remapTo);
+      if (!target) {
         throw new LabelError(`unknown remap target label: ${options.remapTo}`);
+      }
+      // Archived entities preserve historical references but reject
+      // new uses; remapping the to-be-deleted key onto an archived
+      // target would create fresh references to it, violating the
+      // policy. Reject so the user picks an active target (or
+      // unarchives first).
+      if (target.archived === true) {
+        throw new LabelError(
+          `remap target label "${options.remapTo}" is archived; unarchive it first or pick an active label`,
+        );
       }
     }
 

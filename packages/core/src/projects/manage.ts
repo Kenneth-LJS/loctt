@@ -297,11 +297,17 @@ export async function deleteProject(
           `project '${key}' has ${affected.length} task(s); pass remapTo to migrate them to another project`,
         );
       }
-      if (!config.projects.some(p => p.key === options.remapTo)) {
+      const target = config.projects.find(p => p.key === options.remapTo);
+      if (!target) {
         throw new ProjectError(`unknown remap target project: ${options.remapTo}`);
       }
       if (options.remapTo === key) {
         throw new ProjectError(`remap target must differ from the project being deleted`);
+      }
+      if (target.archived === true) {
+        throw new ProjectError(
+          `remap target project "${options.remapTo}" is archived; unarchive it first or pick an active project`,
+        );
       }
       remapTo = options.remapTo;
     }

@@ -224,8 +224,14 @@ export async function deleteSprint(
       if (options.remapTo === key) {
         throw new SprintError(`remap target must differ from the sprint being deleted`);
       }
-      if (!config.sprints.some(s => s.key === options.remapTo)) {
+      const target = config.sprints.find(s => s.key === options.remapTo);
+      if (!target) {
         throw new SprintError(`unknown remap target sprint: ${options.remapTo}`);
+      }
+      if (target.archived === true) {
+        throw new SprintError(
+          `remap target sprint "${options.remapTo}" is archived; unarchive it first or pick an active sprint`,
+        );
       }
     }
 

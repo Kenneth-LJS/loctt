@@ -116,8 +116,14 @@ export async function deleteMilestone(
       if (options.remapTo === key) {
         throw new MilestoneError(`remap target must differ from the milestone being deleted`);
       }
-      if (!config.milestones.some(m => m.key === options.remapTo)) {
+      const target = config.milestones.find(m => m.key === options.remapTo);
+      if (!target) {
         throw new MilestoneError(`unknown remap target milestone: ${options.remapTo}`);
+      }
+      if (target.archived === true) {
+        throw new MilestoneError(
+          `remap target milestone "${options.remapTo}" is archived; unarchive it first or pick an active milestone`,
+        );
       }
     }
 
