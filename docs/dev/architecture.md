@@ -105,6 +105,19 @@ Task identity has two halves:
 
 `key_history` preserves prior keys after collisions are resolved during sync, so old links keep resolving.
 
+#### Key-lookup cache
+
+`local/key-index.yaml` maps every current key (and every `key_history` entry) to the task id that owns it. It's a cache that LocTT itself maintains:
+
+- **Creation:** `createTask` updates it on every new task.
+- **Sync rekey:** `git/reconcile.ts:rekeyCollisions` is the only LocTT code path that rewrites a task's `key`; it updates the index for the affected tasks.
+- **Out-of-band creation (`git pull`, another process):** `lookupByKey` lazily folds in any task directories not yet represented in the index. Cost is proportional to the number of new directories, not the total population.
+- **Out-of-band deletion:** the indexed entry is dropped on ENOENT during read; the lookup falls through to the fold path.
+
+The one drift case LocTT cannot auto-detect is a manual frontmatter edit (vim, scripts) that changes an **existing** task's `key` or `key_history`. The indexed task id is still on disk, so neither fold nor dangling-drop fires; the old `key→id` mapping in the index is just stale. `loctt doctor` surfaces this drift as a "key index" warning; `loctt doctor --rebuild-index` (or the `doctor` MCP tool with `rebuild_index: true`) repairs it by rebuilding from a full scan.
+
+MCP, CLI, and the web API all reject `key` and `key_history` as immutable, so this drift case is reachable only by direct file editing.
+
 Tasks belong to **exactly one project** via `TaskFrontmatter.project`. They nest indefinitely via parent/child relationships configured in `workflow.yaml`. There is no separate "epic" type — use `task_type` to distinguish if needed. Workflow values (`status`, `priority`, `task_type`) are stored as config `key`s, never as display labels.
 
 ### Projects

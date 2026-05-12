@@ -58,8 +58,20 @@ Run diagnostic checks on the `.loctt/` setup. Each check prints with `✓`,
 `!`, or `✗`. Exits with code `1` if any check is in error state.
 
 ```
-loctt doctor
+loctt doctor [--rebuild-index]
 ```
+
+| Flag | Description |
+|---|---|
+| `--rebuild-index` | After running checks, rebuild the key-lookup cache from a full task scan |
+
+The key-lookup cache (`.loctt/state/key-index.yaml`) is normally kept current by
+LocTT itself: every create / git-sync rekey updates it, and ordinary lookups
+fold-in any task directories that appeared out-of-band (e.g. via `git pull`).
+The one drift case LocTT cannot auto-detect is a manual frontmatter edit that
+changes an *existing* task's `key` or `key_history`. Run `loctt doctor` to
+surface drift (the "key index" check turns to `!`), then rerun with
+`--rebuild-index` to repair it.
 
 ### `loctt views`
 

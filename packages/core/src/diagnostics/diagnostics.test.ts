@@ -99,4 +99,69 @@ describe("runDoctor", () => {
     const checks = await runDoctor(root);
     expect(checks.find(c => c.name === "list-view.yaml references")).toBeUndefined();
   });
+
+  it("warns on key-index drift after an out-of-band frontmatter edit", async () => {
+    const { readFile, writeFile } = await import("node:fs/promises");
+    const { resolveLocttDir } = await import("../paths/index.js");
+    const { writeTask } = await import("../task/io.js");
+    const { rebuildKeyIndex } = await import("../state/key-index.js");
+    await initLoctt(root);
+    const locttDir = resolveLocttDir(root);
+    await writeTask(locttDir, "01XYZ", {
+      frontmatter: {
+        id: "01XYZ",
+        key: "T-1",
+        title: "first",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      body: "",
+    });
+    await rebuildKeyIndex(locttDir);
+
+    // Hand-edit the task's key — the kind of change LocTT cannot
+    // auto-detect because the indexed task id still resolves.
+    const taskMd = join(locttDir, "tasks", "01XYZ", "task.md");
+    const original = await readFile(taskMd, "utf-8");
+    const rewritten = original.replace("key: T-1", "key: T-RENAMED");
+    await writeFile(taskMd, rewritten, "utf-8");
+
+    const checks = await runDoctor(root);
+    const idx = checks.find(c => c.name === "key index");
+    expect(idx?.status).toBe("warn");
+    expect(idx?.message).toContain("--rebuild-index");
+  });
+
+  it("rebuild-index option rebuilds the index in place", async () => {
+    const { readFile, writeFile } = await import("node:fs/promises");
+    const { resolveLocttDir } = await import("../paths/index.js");
+    const { writeTask } = await import("../task/io.js");
+    const { rebuildKeyIndex, loadKeyIndex } = await import("../state/key-index.js");
+    await initLoctt(root);
+    const locttDir = resolveLocttDir(root);
+    await writeTask(locttDir, "01XYZ", {
+      frontmatter: {
+        id: "01XYZ",
+        key: "T-1",
+        title: "first",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      body: "",
+    });
+    await rebuildKeyIndex(locttDir);
+
+    const taskMd = join(locttDir, "tasks", "01XYZ", "task.md");
+    const original = await readFile(taskMd, "utf-8");
+    const rewritten = original.replace("key: T-1", "key: T-RENAMED");
+    await writeFile(taskMd, rewritten, "utf-8");
+
+    const checks = await runDoctor(root, { rebuildIndex: true });
+    const rebuild = checks.find(c => c.name === "key index rebuild");
+    expect(rebuild?.status).toBe("ok");
+
+    const idx = await loadKeyIndex(locttDir);
+    expect(idx?.entries["T-RENAMED"]).toBe("01XYZ");
+    expect(idx?.entries["T-1"]).toBeUndefined();
+  });
 });

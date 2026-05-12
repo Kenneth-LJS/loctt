@@ -268,8 +268,10 @@ export function getTools(): McpTool[] {
     },
     {
       name: "doctor",
-      description: "Runs diagnostic checks on the tracker. Output is human-prose. Useful for surfacing problems to the user; not designed for chained tool calls.",
-      inputSchema: {},
+      description: "Runs diagnostic checks on the tracker. Output is human-prose. Useful for surfacing problems to the user; not designed for chained tool calls. Pass `rebuild_index: true` to also rebuild the key-lookup cache (recovery path for out-of-band frontmatter edits).",
+      inputSchema: {
+        rebuild_index: z.boolean().optional().describe("If true, rebuild the on-disk key index after checks. Use after manual frontmatter edits to a task's key or key_history."),
+      },
     },
     {
       name: "init",
@@ -1218,7 +1220,8 @@ export async function executeTool(
       }
 
       case "doctor": {
-        const checks = await runDoctor(root);
+        const rebuildIndex = args["rebuild_index"] === true;
+        const checks = await runDoctor(root, { rebuildIndex });
         const lines = checks.map(c => {
           const icon = c.status === "ok" ? "ok" : c.status === "warn" ? "warn" : "error";
           return `[${icon}] ${c.name}: ${c.message}`;

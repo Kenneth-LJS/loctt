@@ -38,7 +38,11 @@ If `.loctt/` is missing, returns a hint to run `loctt init`.
 
 ### `doctor`
 
-Runs diagnostic checks on the tracker. No parameters. Output is human-prose lines of the form `[ok|warn|error] <name>: <message>`. Useful for surfacing problems to the user; not designed for chained tool calls.
+Runs diagnostic checks on the tracker. Output is human-prose lines of the form `[ok|warn|error] <name>: <message>`. Useful for surfacing problems to the user; not designed for chained tool calls.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `rebuild_index` | boolean | no | If true, rebuild the on-disk key index after checks. Use after manual frontmatter edits to a task's `key` or `key_history` (LocTT can't auto-detect this drift because the indexed task id is still present). |
 
 ## Tasks
 
