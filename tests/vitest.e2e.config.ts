@@ -7,5 +7,10 @@ export default defineConfig({
     passWithNoTests: true,
     testTimeout: 30_000,
     hookTimeout: 30_000,
+    // Same orphan-dir sweep the integration suite runs, so a
+    // SIGKILL'd previous run can't leave loctt-* dirs piling up
+    // under tests/workspace/. Belt-and-braces over per-test
+    // teardown.
+    globalSetup: ["tests/integration/fixtures/global-sweep.ts"],
   },
 });

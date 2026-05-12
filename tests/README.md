@@ -21,13 +21,23 @@ tests/
     adapters/                # cli-in-process, cli-spawn, mcp-stdio
     scenarios/               # shared scenario DSL for parity tests
     cli/                     # CLI-spawn tests, one file per command
+      edges/                 # CLI argv / parser edge-case tests
     mcp/                     # MCP-stdio tests, one file per tool
+      edges/                 # MCP-protocol edge-case tests
     git/                     # git-backed scenarios
     parity.test.ts           # one scenario across all adapters
   e2e/
     *.test.ts                # full user journeys
   perf/
-    stress.test.ts           # 1k tasks, concurrent writers (opt-in)
+    01-bulk-create.test.ts   # bulk task creation throughput (in-process)
+    02-chain-traversal.test.ts # parent-chain walk on a 1k-node DAG (in-process)
+    03-concurrent-create.test.ts # spawned CLI; serializes via state lock
+  llm/
+    README.md                # manual LLM runbook
+    lib/                     # runner + verify helpers
+    scenarios/               # one folder per scenario
+    verify/                  # post-run checks
+    results/                 # gitignored: per-run logs
   workspace/                 # per-test tmpdirs created here
     .gitkeep
     .gitignore               # ignores everything except .gitkeep
@@ -46,7 +56,7 @@ npm run test:perf            # opt-in, runs tests/perf — does NOT rebuild
 
 `pretest:integration` and `pretest:e2e` run `npm run build` so the spawned CLI/MCP binaries are current.
 
-**`test:perf` does not have a pretest hook by design.** Test 03 (`concurrent-create`) spawns the bundled CLI binary, so when iterating on CLI / MCP / core source you must `npm run build` first. The other two perf tests use core APIs in-process and don't need the build.
+**`test:perf` does not have a pretest hook by design.** `concurrent-create.test.ts` spawns the bundled CLI binary, so when iterating on CLI / MCP / core source you must `npm run build` first. The other perf tests use core APIs in-process and don't need the build.
 
 For interactive sanity checks, [`tests/scripts/smoke.sh`](./scripts/smoke.sh) runs E2E journey #1 against the bundled binary directly — useful when you want pass/fail in <1 second without Vitest startup overhead.
 

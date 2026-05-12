@@ -36,7 +36,7 @@ All YAML files are written atomically (via `writeFileAtomically` / `writeYamlAto
       sync.yaml               # git-backed sync configuration
       reconcile.yaml          # mid-reconcile sentinel
       key-index.yaml          # cached key→id index
-    docs/                     # optional, opt-in via `loctt init --docs`
+    docs/                     # on by default; pass `loctt init --no-docs` to skip
 ```
 
 ## Brand Types

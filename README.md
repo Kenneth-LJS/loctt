@@ -76,7 +76,7 @@ loctt init
 
 This creates a `.loctt/` directory with default config. You're ready to go.
 
-> **From source:** Clone the repo, run `npm install && npm run build`, then `npm link` to make the `loctt` command available globally.
+> **From source:** Clone the repo, run `npm install && npm run build`, then `npm link --workspace apps/cli` to make the `loctt` command available globally.
 
 Create your first task:
 
