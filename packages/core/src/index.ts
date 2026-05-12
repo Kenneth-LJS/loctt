@@ -165,6 +165,7 @@ export {
   findProject,
   ProjectError,
   resolveProjectKey,
+  resolveProjectKeyForUser,
   setDefaultProject,
   unarchiveProject,
 } from "./projects/index.js";

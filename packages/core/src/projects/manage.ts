@@ -20,6 +20,8 @@ import {
 } from "../state/index.js";
 import type { JournalEntry } from "../state/journal.js";
 import { loadAllTasks } from "../task/load-all.js";
+import { getCurrentUser } from "../users/manage.js";
+import { loadUserSettings } from "../users/settings.js";
 
 export class ProjectError extends Error {
   constructor(message: string) {
@@ -63,6 +65,34 @@ export function resolveProjectKey(
   throw new ProjectError(
     `no default project configured and multiple projects exist; pass --project explicitly`,
   );
+}
+
+/**
+ * Convenience over `resolveProjectKey` that also picks up the
+ * per-user default from `users/<id>/settings.yaml` for the active
+ * user. The same chain used by CLI / MCP / web surfaces:
+ *
+ *   explicit > per-user default > workspace default > sole project
+ *
+ * If no user is registered, the per-user step is skipped and the
+ * chain falls through to the workspace default.
+ */
+export async function resolveProjectKeyForUser(
+  locttDir: string,
+  explicit?: string,
+): Promise<string> {
+  const config = await loadProjectsConfig(locttDir);
+  const current = await getCurrentUser(locttDir);
+  let userDefault: string | undefined;
+  if (current) {
+    const settings = await loadUserSettings(locttDir, current.id);
+    const raw = settings["default_project"];
+    if (typeof raw === "string" && raw.length > 0) userDefault = raw;
+  }
+  return resolveProjectKey(config, {
+    ...(explicit !== undefined ? { explicit } : {}),
+    ...(userDefault !== undefined ? { userDefault } : {}),
+  });
 }
 
 /** Returns the project definition for a key, or throws. */

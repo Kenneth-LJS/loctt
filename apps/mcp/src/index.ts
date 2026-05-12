@@ -60,7 +60,6 @@ import {
   loadQueriesConfig,
   loadSprintsConfig,
   loadState,
-  loadUserSettings,
   loadWorkflowConfig,
   lookupTask,
   MilestoneError,
@@ -74,7 +73,7 @@ import {
   reorderRelationship,
   requireSupportedSchema,
   resolveLocttDir,
-  resolveProjectKey,
+  resolveProjectKeyForUser,
   resolveUserRef,
   runDoctor,
   saveState,
@@ -1019,23 +1018,14 @@ export async function executeTool(
 
       case "create_task": {
         const { workflowConfig } = await loadOptionalConfigs(locttDir);
-        // Resolve target project. Mirrors CLI/HTTP semantics:
-        // explicit > per-user default > workspace default > sole project.
-        const projectsConfig = await loadProjectsConfig(locttDir);
+        // Resolve target project via the shared chain: explicit
+        // > per-user default > workspace default > sole project.
         let projectKey: string;
         try {
-          const explicit = args["project"] as string | undefined;
-          const current = await getCurrentUser(locttDir);
-          let userDefault: string | undefined;
-          if (current) {
-            const settings = await loadUserSettings(locttDir, current.id);
-            const raw = settings["default_project"];
-            if (typeof raw === "string" && raw.length > 0) userDefault = raw;
-          }
-          projectKey = resolveProjectKey(projectsConfig, {
-            ...(explicit !== undefined ? { explicit } : {}),
-            ...(userDefault !== undefined ? { userDefault } : {}),
-          });
+          projectKey = await resolveProjectKeyForUser(
+            locttDir,
+            args["project"] as string | undefined,
+          );
         } catch (err) {
           return errorResult((err as Error).message);
         }
