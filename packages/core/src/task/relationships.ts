@@ -52,6 +52,25 @@ function findInverseType(workflowConfig: WorkflowConfig | undefined, type: strin
 }
 
 /**
+ * Resolves the canonical direction of a relationship. Callers may
+ * pass either side (`r.key` or `r.inverse`) as `type`; cycle
+ * detection only makes sense against the canonical (`r.key`)
+ * direction. Returns the matched workflow def and whether the
+ * caller's `type` was the inverse side, so the caller can swap
+ * source/target before walking.
+ */
+function resolveRelationshipDef(
+  workflowConfig: WorkflowConfig,
+  type: string,
+): { def: WorkflowConfig["relationships"][number]; isInverse: boolean } | undefined {
+  for (const def of workflowConfig.relationships) {
+    if (def.key === type) return { def, isInverse: false };
+    if (def.inverse === type) return { def, isInverse: true };
+  }
+  return undefined;
+}
+
+/**
  * Adds an edge (type -> target) to a task if not already present.
  * Returns the updated relationships array, or `null` if the edge already existed.
  */
@@ -81,20 +100,23 @@ function removeEdge(
 }
 
 /**
- * For a structural relationship `type`, check whether adding the edge
- * `sourceId -[type]-> targetId` would form a cycle. Walks outgoing edges of
- * the same `type` from `targetId` (DFS over `frontmatter.relationships[].target`
- * filtered by type). If any path reaches `sourceId`, a cycle would form.
+ * For a structural relationship of canonical key `canonicalType`,
+ * check whether adding the edge `sourceId -[canonicalType]-> targetId`
+ * would form a cycle. Walks outgoing canonical-direction edges from
+ * `targetId` (DFS over `frontmatter.relationships[].target` filtered
+ * by `canonicalType`). If any path reaches `sourceId`, a cycle would
+ * form.
  *
- * Returns the cycle path (target...sourceId) when a cycle would form, else null.
- * Stops walking branches that lead into deleted tasks. Bounded at 1000 visits
- * as a safety net for absurd graphs.
+ * Returns the cycle path (target...sourceId) when a cycle would form,
+ * else null. Stops walking branches that lead into deleted tasks.
+ * Throws if the walk hits MAX_VISITS — a graph too large to verify
+ * is treated as "refuse to add the link" rather than "looks fine."
  */
 async function findStructuralCycle(
   locttDir: string,
   sourceId: string,
   targetId: string,
-  type: string,
+  canonicalType: string,
 ): Promise<string[] | null> {
   const MAX_VISITS = 1000;
   const visited = new Set<string>();
@@ -102,7 +124,11 @@ async function findStructuralCycle(
   const stack: { id: string; path: string[] }[] = [{ id: targetId, path: [targetId] }];
 
   while (stack.length > 0) {
-    if (visited.size > MAX_VISITS) return null;
+    if (visited.size > MAX_VISITS) {
+      throw new RelationshipError(
+        `relationship graph too large to verify cycles (>${MAX_VISITS} nodes); split the link or contact a maintainer`,
+      );
+    }
     const { id, path } = stack.pop() as { id: string; path: string[] };
     if (id === sourceId) {
       return path;
@@ -120,7 +146,7 @@ async function findStructuralCycle(
 
     const rels = task.frontmatter.relationships ?? [];
     for (const rel of rels) {
-      if (rel.type !== type) continue;
+      if (rel.type !== canonicalType) continue;
       stack.push({ id: rel.target, path: [...path, rel.target] });
     }
   }
@@ -198,28 +224,54 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
       }
     }
 
-    // Cycle detection for structural relationships only.
+    // Cycle detection for structural relationships only. The user
+    // may pass either the forward (`r.key`) or inverse (`r.inverse`)
+    // direction as `type`; resolve to the canonical direction first
+    // so the walk runs against the right end of the edge.
     if (workflowConfig) {
-      const relDef = workflowConfig.relationships.find(r => r.key === type);
-      if (relDef?.structural) {
-        const cyclePath = await findStructuralCycle(locttDir, taskId, target, type);
+      const resolved = resolveRelationshipDef(workflowConfig, type);
+      if (resolved?.def.structural) {
+        // When the caller passed the inverse, the canonical edge is
+        // target → source; swap before walking so the cycle search
+        // starts from the right node.
+        const canonicalSource = resolved.isInverse ? target : taskId;
+        const canonicalTarget = resolved.isInverse ? taskId : target;
+        const cyclePath = await findStructuralCycle(
+          locttDir,
+          canonicalSource,
+          canonicalTarget,
+          resolved.def.key,
+        );
         if (cyclePath) {
           // Build a readable arrow trail using keys where possible.
-          const keys: string[] = [task.frontmatter.key];
+          // Look up the canonical source for the prefix; on inverse
+          // calls that's the target task, not the caller's `taskId`.
+          let sourceKey = task.frontmatter.key;
+          if (resolved.isInverse) {
+            try {
+              const src = await lookupById(locttDir, canonicalSource);
+              sourceKey = src.frontmatter.key;
+            } catch (err) {
+              if (!(err instanceof TaskNotFoundError)) throw err;
+              sourceKey = canonicalSource;
+            }
+          }
+          const keys: string[] = [sourceKey];
           for (const id of cyclePath) {
-            if (id === taskId) {
-              keys.push(task.frontmatter.key);
+            if (id === canonicalSource) {
+              keys.push(sourceKey);
               continue;
             }
             try {
               const t = await lookupById(locttDir, id);
               keys.push(t.frontmatter.key);
-            } catch {
+            } catch (err) {
+              if (!(err instanceof TaskNotFoundError)) throw err;
               keys.push(id);
             }
           }
           throw new RelationshipError(
-            `cannot create cycle in structural relationship '${type}': ${keys.join(" -> ")}`,
+            `cannot create cycle in structural relationship '${resolved.def.key}': ${keys.join(" -> ")}`,
           );
         }
       }
