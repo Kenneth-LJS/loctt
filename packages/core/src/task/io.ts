@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import type { Task } from "@loctt/contracts";
 
 import { getTaskFilePath } from "../paths/index.js";
+import { withStateLock } from "../state/lock.js";
 import { writeFileAtomically } from "../utils/atomic-yaml.js";
 import { assembleTaskFile,parseFrontmatter, serializeFrontmatter, splitTaskFile } from "./frontmatter.js";
 import { appendHistory } from "./history.js";
@@ -55,22 +56,34 @@ export async function readTaskBody(locttDir: string, taskId: string): Promise<st
  * Internal helper: reads a task once, applies `transformer` to the body,
  * bumps `updated_at`, writes atomically, and appends a `body_edited`
  * history entry. Single read+write — no double parse/serialize.
+ *
+ * Wrapped in withStateLock so a concurrent setField/archive can't
+ * interleave with the read-modify-write, and so the body write +
+ * history append are atomic against other writers.
+ *
+ * Clears the in-process lookup negative cache on success so a
+ * just-rewritten body doesn't continue to resolve a stale "key
+ * not found" cached from before — same invariant `writeTask`
+ * maintains for frontmatter writes.
  */
 async function updateTaskBody(
   locttDir: string,
   taskId: string,
   transformer: (body: string) => string,
 ): Promise<void> {
-  const filePath = getTaskFilePath(locttDir, taskId);
-  const content = await readFile(filePath, "utf-8");
-  const { rawYaml, body } = splitTaskFile(content);
-  const frontmatter = parseFrontmatter(rawYaml);
-  const newBody = transformer(body);
-  const now = new Date().toISOString();
-  const updated = { ...frontmatter, updated_at: now };
-  const assembled = assembleTaskFile(updated, newBody);
-  await writeFileAtomically(filePath, assembled);
-  await appendHistory(locttDir, taskId, [{ timestamp: now, kind: "body_edited" }]);
+  await withStateLock(locttDir, async () => {
+    const filePath = getTaskFilePath(locttDir, taskId);
+    const content = await readFile(filePath, "utf-8");
+    const { rawYaml, body } = splitTaskFile(content);
+    const frontmatter = parseFrontmatter(rawYaml);
+    const newBody = transformer(body);
+    const now = new Date().toISOString();
+    const updated = { ...frontmatter, updated_at: now };
+    const assembled = assembleTaskFile(updated, newBody);
+    await writeFileAtomically(filePath, assembled);
+    clearLookupCaches(locttDir);
+    await appendHistory(locttDir, taskId, [{ timestamp: now, kind: "body_edited" }]);
+  });
 }
 
 /**
