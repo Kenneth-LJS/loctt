@@ -137,9 +137,14 @@ Per-project key counters live in `state.yaml` under `keys.<project-key>`. Alloca
 
 When a project is hard-deleted, its counter is moved to `state.retired_keys.<key>` rather than discarded. Re-creating a project with the same key restores the counter from there, so re-numbered tasks never collide with surviving references in `key_history` or external links.
 
-### Soft delete
+### Archive vs delete
 
-Every entity — tasks, projects, labels, milestones, sprints, views, users — carries an optional `archived: boolean` flag. The default `delete` operation flips that flag; passing `--hard` (CLI) or `hard: true` (MCP/API) removes the entry from its config file and remaps any task references the caller has supplied. Hard-deleting a project additionally retires its counter as described above.
+Every entity — tasks, projects, labels, milestones, sprints, views, users — carries an optional `archived: boolean` flag. The two verbs are deliberately distinct across all surfaces:
+
+- **`archive`** flips the `archived` flag. Reversible via `unarchive`. References are preserved; archived entities are hidden from default lists and pickers but historical links keep resolving. New uses of an archived entity are rejected by the archived-reference guard.
+- **`delete`** is always permanent. CLI requires `--yes` confirmation; MCP requires `confirm: true`. The entry is removed from its config file and task references are remapped (`--remap-to <other>`) or cleared. Hard-deleting a project additionally retires its counter as described above.
+
+The CLI and MCP surfaces both use the same verb names with the same semantics; there is no `--hard` flag.
 
 ### Users
 

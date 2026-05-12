@@ -146,17 +146,18 @@ Commands:
   schema                           Show the workflow config (statuses, priorities, etc.)
   project <list|create|edit|archive|unarchive|delete|set-default> ...
                                    list --all: include archived projects
-                                   delete --hard: permanent (remap_to required if tasks exist)
+                                   delete: permanent (remap_to required if tasks exist; use 'archive' for soft)
   user <list|current|switch|create|edit|archive|unarchive|delete> ...
+                                   delete: permanent (use 'archive' for the reversible alternative)
   label <list|create|edit|archive|unarchive|delete> ...
                                    list --all: include archived labels
-                                   delete --hard: permanent (drops key from every task)
+                                   delete: permanent (drops key from every task; use 'archive' for soft)
   milestone <list|create|edit|archive|unarchive|delete> ...
                                    list --all: include archived milestones
-                                   delete --hard: permanent (clears milestone field on tasks)
+                                   delete: permanent (clears milestone field on tasks; use 'archive' for soft)
   sprint <list|create|edit|archive|unarchive|delete|burndown> ...
                                    list --all: include archived sprints
-                                   delete --hard: permanent (clears sprint field on tasks)
+                                   delete: permanent (clears sprint field on tasks; use 'archive' for soft)
                                    burndown <key> [--format <table|json>]
   calendar show                   Print the calendar config (timezone, working days, holidays)
   rerank <source> <relationship> <target> [--before <task>] [--after <task>]
@@ -170,9 +171,9 @@ Commands:
   unset <task> <field>
   link <task> <relationship> <target>
   unlink <task> <relationship> <target>
-  archive <task>
+  archive <task>                   Soft-delete (reversible). Use 'delete' to permanently remove.
   unarchive <task>
-  delete <task> [--hard]            Soft-delete (archive) by default; --hard removes the task directory
+  delete <task> [--yes]             Permanent removal; use 'archive' for the reversible alternative
   body <task> [--set <text>] [--append <text>]
   log <task> [--limit <n>]
   attach <task> <file-path> [--force]
@@ -1004,33 +1005,19 @@ export async function main(): Promise<void> {
       case "delete": {
         const ref = args[1];
         if (!ref) {
-          console.error("Usage: loctt delete <task> [--hard] [--yes]");
+          console.error("Usage: loctt delete <task> [--yes]");
           process.exitCode = EXIT.USAGE;
           break;
         }
-        const hard = hasFlag(args, "--hard");
         const locttDir = resolveLocttDir(root);
         const task = await lookupTask(locttDir, ref);
-        if (hard) {
-          const outcome = await confirmHardDelete(
-            args,
-            `Permanently delete task ${task.frontmatter.key}?`,
-          );
-          if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
-          await deleteTask(locttDir, task.frontmatter.id, { force: true });
-          console.log(`Hard-deleted ${task.frontmatter.key}`);
-        } else {
-          if (task.frontmatter.archived) {
-            console.error(
-              `Task ${task.frontmatter.key} is already archived. ` +
-              `Use --hard to permanently remove it.`,
-            );
-            process.exitCode = EXIT.RUNTIME;
-            break;
-          }
-          await archiveTask(locttDir, task.frontmatter.id);
-          console.log(`Archived ${task.frontmatter.key} (use --hard to remove permanently)`);
-        }
+        const outcome = await confirmHardDelete(
+          args,
+          `Permanently delete task ${task.frontmatter.key}? (use 'loctt archive' for a reversible alternative)`,
+        );
+        if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
+        await deleteTask(locttDir, task.frontmatter.id, { force: true });
+        console.log(`Deleted ${task.frontmatter.key}`);
         break;
       }
 
@@ -1286,36 +1273,29 @@ export async function main(): Promise<void> {
           case "delete": {
             const key = args[2];
             const remapTo = getArg(args, "--remap-to");
-            const hard = hasFlag(args, "--hard");
             if (!key) {
               console.error(`Error: missing key`);
-              console.error(`Usage: loctt project delete <key> [--hard] [--remap-to <other-key>] [--yes]`);
+              console.error(`Usage: loctt project delete <key> [--remap-to <other-key>] [--yes]`);
               process.exitCode = EXIT.USAGE;
               break;
             }
-            if (hard) {
-              // Confirmation has its own exit-code semantics (refused
-              // = usage error, no = success), so it stays outside
-              // runCommand which would conflate the two.
-              const outcome = await confirmHardDelete(
-                args,
-                `Permanently delete project ${key}? This will rewrite affected tasks.`,
-              );
-              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
-            }
+            // Confirmation has its own exit-code semantics (refused =
+            // usage error, no = success), so it stays outside
+            // runCommand which would conflate the two.
+            const outcome = await confirmHardDelete(
+              args,
+              `Permanently delete project ${key}? This will rewrite affected tasks. (use 'loctt project archive' for a reversible alternative)`,
+            );
+            if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
             await runCommand(async () => {
               const result = await deleteProject(locttDir, key, {
-                hard,
+                hard: true,
                 ...(remapTo !== undefined ? { remapTo } : {}),
               });
-              if (hard) {
-                if (result.remappedTaskCount > 0) {
-                  console.log(`Remapped ${result.remappedTaskCount} task(s) to ${remapTo}`);
-                }
-                console.log(`Hard-deleted project ${key}`);
-              } else {
-                console.log(`Archived project ${key} (use --hard to remove permanently)`);
+              if (result.remappedTaskCount > 0) {
+                console.log(`Remapped ${result.remappedTaskCount} task(s) to ${remapTo}`);
               }
+              console.log(`Deleted project ${key}`);
             });
             break;
           }
@@ -1485,7 +1465,8 @@ export async function main(): Promise<void> {
             const outcome = await confirmHardDelete(
               args,
               `Permanently delete user ${target.name} (${target.id})? ` +
-              `This will rewrite affected tasks.`,
+              `This will rewrite affected tasks. ` +
+              `(use 'loctt user archive' for a reversible alternative)`,
             );
             if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
             await runCommand(async () => {
@@ -1574,33 +1555,26 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error(`Error: missing key`);
-              console.error(`Usage: loctt label delete <key> [--hard] [--remap-to <other>] [--yes]`);
+              console.error(`Usage: loctt label delete <key> [--remap-to <other>] [--yes]`);
               process.exitCode = EXIT.USAGE;
               break;
             }
             const remapTo = getArg(args, "--remap-to");
-            const hard = hasFlag(args, "--hard");
-            if (hard) {
-              const outcome = await confirmHardDelete(
-                args,
-                `Permanently delete label ${key}? This will rewrite affected tasks.`,
-              );
-              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
-            }
+            const outcome = await confirmHardDelete(
+              args,
+              `Permanently delete label ${key}? This will rewrite affected tasks. (use 'loctt label archive' for a reversible alternative)`,
+            );
+            if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
             await runCommand(async () => {
               const result = await deleteLabel(locttDir, key, {
-                hard,
+                hard: true,
                 ...(remapTo !== undefined ? { remapTo } : {}),
               });
-              if (hard) {
-                if (result.affectedTaskCount > 0) {
-                  const action = remapTo !== undefined ? `remapped to '${remapTo}'` : "removed from";
-                  console.log(`${action} ${result.affectedTaskCount} task(s)`);
-                }
-                console.log(`Hard-deleted label ${key}`);
-              } else {
-                console.log(`Archived label ${key} (use --hard to remove permanently)`);
+              if (result.affectedTaskCount > 0) {
+                const action = remapTo !== undefined ? `remapped to '${remapTo}'` : "removed from";
+                console.log(`${action} ${result.affectedTaskCount} task(s)`);
               }
+              console.log(`Deleted label ${key}`);
             });
             break;
           }
@@ -1688,33 +1662,26 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error(`Error: missing key`);
-              console.error(`Usage: loctt milestone delete <key> [--hard] [--remap-to <other>] [--yes]`);
+              console.error(`Usage: loctt milestone delete <key> [--remap-to <other>] [--yes]`);
               process.exitCode = EXIT.USAGE;
               break;
             }
             const remapTo = getArg(args, "--remap-to");
-            const hard = hasFlag(args, "--hard");
-            if (hard) {
-              const outcome = await confirmHardDelete(
-                args,
-                `Permanently delete milestone ${key}? This will rewrite affected tasks.`,
-              );
-              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
-            }
+            const outcome = await confirmHardDelete(
+              args,
+              `Permanently delete milestone ${key}? This will rewrite affected tasks. (use 'loctt milestone archive' for a reversible alternative)`,
+            );
+            if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
             await runCommand(async () => {
               const result = await deleteMilestone(locttDir, key, {
-                hard,
+                hard: true,
                 ...(remapTo !== undefined ? { remapTo } : {}),
               });
-              if (hard) {
-                if (result.affectedTaskCount > 0) {
-                  const action = remapTo !== undefined ? `remapped to '${remapTo}'` : "cleared from";
-                  console.log(`${action} ${result.affectedTaskCount} task(s)`);
-                }
-                console.log(`Hard-deleted milestone ${key}`);
-              } else {
-                console.log(`Archived milestone ${key} (use --hard to remove permanently)`);
+              if (result.affectedTaskCount > 0) {
+                const action = remapTo !== undefined ? `remapped to '${remapTo}'` : "cleared from";
+                console.log(`${action} ${result.affectedTaskCount} task(s)`);
               }
+              console.log(`Deleted milestone ${key}`);
             });
             break;
           }
@@ -1817,33 +1784,26 @@ export async function main(): Promise<void> {
             const key = args[2];
             if (!key) {
               console.error(`Error: missing key`);
-              console.error(`Usage: loctt sprint delete <key> [--hard] [--remap-to <other>] [--yes]`);
+              console.error(`Usage: loctt sprint delete <key> [--remap-to <other>] [--yes]`);
               process.exitCode = EXIT.USAGE;
               break;
             }
             const remapTo = getArg(args, "--remap-to");
-            const hard = hasFlag(args, "--hard");
-            if (hard) {
-              const outcome = await confirmHardDelete(
-                args,
-                `Permanently delete sprint ${key}? This will rewrite affected tasks.`,
-              );
-              if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
-            }
+            const outcome = await confirmHardDelete(
+              args,
+              `Permanently delete sprint ${key}? This will rewrite affected tasks. (use 'loctt sprint archive' for a reversible alternative)`,
+            );
+            if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
             await runCommand(async () => {
               const result = await deleteSprint(locttDir, key, {
-                hard,
+                hard: true,
                 ...(remapTo !== undefined ? { remapTo } : {}),
               });
-              if (hard) {
-                if (result.affectedTaskCount > 0) {
-                  const action = remapTo !== undefined ? `remapped to '${remapTo}'` : "cleared from";
-                  console.log(`${action} ${result.affectedTaskCount} task(s)`);
-                }
-                console.log(`Hard-deleted sprint ${key}`);
-              } else {
-                console.log(`Archived sprint ${key} (use --hard to remove permanently)`);
+              if (result.affectedTaskCount > 0) {
+                const action = remapTo !== undefined ? `remapped to '${remapTo}'` : "cleared from";
+                console.log(`${action} ${result.affectedTaskCount} task(s)`);
               }
+              console.log(`Deleted sprint ${key}`);
             });
             break;
           }

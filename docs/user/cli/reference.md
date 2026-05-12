@@ -102,15 +102,20 @@ loctt project create <key> --prefix <prefix> [--label <label>] [--default]
 loctt project edit <key> --label <label>
 loctt project archive <key>
 loctt project unarchive <key>
-loctt project delete <key> [--hard] [--remap-to <other-key>]
+loctt project delete <key> [--remap-to <other-key>] [--yes]
 loctt project set-default <key|->
 ```
 
 `list` hides archived projects unless `--all` is passed. The workspace default
 project is marked with `*`.
 
-`delete` archives by default; `--hard` permanently removes. If the project has
-tasks, `--remap-to <other-key>` is required to move them under another project.
+`archive` is the reversible (soft) variant — the project becomes hidden from
+default lists but its references are preserved.
+
+`delete` is permanent — the project entry is removed and affected tasks are
+rewritten. If the project has tasks, `--remap-to <other-key>` is required to
+move them under another project. Always prompts for confirmation; pass `--yes`
+to skip the prompt in scripts.
 
 `set-default` accepts `-` to clear the workspace default.
 
@@ -119,7 +124,8 @@ Examples:
 ```
 loctt project create web --prefix WEB- --label "Website" --default
 loctt project list --all
-loctt project delete legacy --hard --remap-to archive
+loctt project archive legacy          # soft, reversible
+loctt project delete legacy --remap-to archive --yes
 loctt project set-default -
 ```
 
@@ -167,20 +173,24 @@ loctt label create <key> [--label <label>] [--color <hex>]
 loctt label edit <key> [--label <label>] [--color <hex|->]
 loctt label archive <key>
 loctt label unarchive <key>
-loctt label delete <key> [--hard] [--remap-to <other>]
+loctt label delete <key> [--remap-to <other>] [--yes]
 ```
 
 `edit --color -` clears an existing color.
 
-`delete --hard` permanently removes the label. Without `--remap-to`, the key is
+`archive` is the reversible (soft) variant.
+
+`delete` permanently removes the label. Without `--remap-to`, the key is
 dropped from every task that has it; with `--remap-to <other>`, it's replaced.
+Always prompts for confirmation; pass `--yes` to skip the prompt.
 
 Examples:
 
 ```
 loctt label create blocker --label "Blocker" --color "#cc0000"
 loctt label edit blocker --color -
-loctt label delete blocker --hard --remap-to high-priority
+loctt label archive blocker          # soft, reversible
+loctt label delete blocker --remap-to high-priority --yes
 ```
 
 ## Milestones
@@ -193,21 +203,25 @@ loctt milestone create <key> [--label <label>] [--target-date <YYYY-MM-DD>]
 loctt milestone edit <key> [--label <label>] [--target-date <YYYY-MM-DD|->] [--archived <true|false>]
 loctt milestone archive <key>
 loctt milestone unarchive <key>
-loctt milestone delete <key> [--hard] [--remap-to <other>]
+loctt milestone delete <key> [--remap-to <other>] [--yes]
 ```
 
 `edit --target-date -` clears the target date. `--archived` accepts only the
 literal strings `true` or `false`.
 
-`delete --hard` clears the milestone field on all referenced tasks (or remaps
-it to `--remap-to <other>`).
+`archive` is the reversible (soft) variant.
+
+`delete` permanently clears the milestone field on all referenced tasks (or
+remaps it to `--remap-to <other>`). Always prompts for confirmation; pass
+`--yes` to skip.
 
 Examples:
 
 ```
 loctt milestone create v1 --label "Version 1.0" --target-date 2026-06-30
 loctt milestone edit v1 --target-date -
-loctt milestone delete v0 --hard --remap-to v1
+loctt milestone archive v0           # soft, reversible
+loctt milestone delete v0 --remap-to v1 --yes
 ```
 
 ## Sprints
@@ -220,7 +234,7 @@ loctt sprint create <key> --start <YYYY-MM-DD> --end <YYYY-MM-DD> [--state <acti
 loctt sprint edit <key> [--label <l>] [--start <d>] [--end <d>] [--state <s>] [--goal <g|->] [--force]
 loctt sprint archive <key>
 loctt sprint unarchive <key>
-loctt sprint delete <key> [--hard] [--remap-to <other>]
+loctt sprint delete <key> [--remap-to <other>] [--yes]
 ```
 
 `create --state` defaults to `future`. `edit --goal -` clears the sprint goal.
@@ -228,8 +242,11 @@ loctt sprint delete <key> [--hard] [--remap-to <other>]
 `edit --force` is required to re-open a completed sprint (move it from
 `completed` back to `active` or `future`).
 
-`delete --hard` clears the sprint field on all referenced tasks (or remaps
-it to `--remap-to <other>`).
+`archive` is the reversible (soft) variant.
+
+`delete` permanently clears the sprint field on all referenced tasks (or remaps
+it to `--remap-to <other>`). Always prompts for confirmation; pass `--yes`
+to skip.
 
 Examples:
 
@@ -462,7 +479,8 @@ Example: `loctt board-rerank T-9 --after T-7`
 
 ### `loctt archive`
 
-Archive a task. Reversible.
+Soft-delete a task (reversible). The task is marked `archived: true` and
+hidden from default lists, but its directory and history are preserved.
 
 ```
 loctt archive <task>
@@ -478,22 +496,22 @@ loctt unarchive <task>
 
 ### `loctt delete`
 
-Soft-delete by default — equivalent to `loctt archive`. With `--hard`, removes
-the task directory from disk. Hard-deleting a task that isn't already archived
-is allowed; soft-deleting one that's already archived is not (the CLI tells you
-to pass `--hard` instead).
+Permanently remove a task's directory from disk. Irreversible. Always
+prompts for confirmation; pass `--yes` to skip the prompt in scripts.
+
+LocTT deliberately uses two distinct verbs — `archive` (soft, reversible)
+and `delete` (hard, permanent) — across both the CLI and MCP surfaces.
+There is no `--hard` flag.
 
 ```
-loctt delete <task> [--hard]
+loctt delete <task> [--yes]
 ```
-
-`archive` / `unarchive` are aliases for the soft path.
 
 Examples:
 
 ```
-loctt delete T-12             # soft (archives)
-loctt delete T-12 --hard      # permanent
+loctt archive T-12           # soft, reversible
+loctt delete T-12 --yes      # permanent
 ```
 
 ## Servers
@@ -599,12 +617,12 @@ loctt list --query 'status = doing and assignee = me'
 loctt list --project web --archived           # archived web tasks
 ```
 
-### Soft vs hard delete
+### Archive vs delete
 
 ```
-loctt delete T-12              # archive (reversible)
+loctt archive T-12             # soft, reversible
 loctt unarchive T-12           # restore
-loctt delete T-12 --hard       # permanent — removes the task directory
+loctt delete T-12 --yes        # permanent — removes the task directory
 ```
 
 ### Switch users
