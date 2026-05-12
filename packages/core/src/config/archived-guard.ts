@@ -7,6 +7,12 @@ import type {
   UserProfile,
 } from "@loctt/contracts";
 
+import { loadAllUsers } from "../users/profile.js";
+import { loadLabelsConfig } from "./labels.js";
+import { loadMilestonesConfig } from "./milestones.js";
+import { loadProjectsConfig } from "./projects.js";
+import { loadSprintsConfig } from "./sprints.js";
+
 /**
  * Aux configs needed to detect archived references at write time.
  * Mirrors the validation.AuxConfigs shape but adds `users` because
@@ -38,12 +44,6 @@ export class ArchivedReferenceError extends Error {
 export async function loadArchivedGuardConfigs(
   locttDir: string,
 ): Promise<ArchivedGuardConfigs> {
-  const { loadProjectsConfig } = await import("./projects.js");
-  const { loadLabelsConfig } = await import("./labels.js");
-  const { loadMilestonesConfig } = await import("./milestones.js");
-  const { loadSprintsConfig } = await import("./sprints.js");
-  const { loadAllUsers } = await import("../users/profile.js");
-
   const projects = await loadProjectsConfig(locttDir);
   let labels: Awaited<ReturnType<typeof loadLabelsConfig>> | undefined;
   let milestones: Awaited<ReturnType<typeof loadMilestonesConfig>> | undefined;
