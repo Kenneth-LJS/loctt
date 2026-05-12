@@ -46,7 +46,7 @@ import {
   getCurrentUser,
   getGitStatus,
   getTrackerInfo,
-  IMMUTABLE_FIELDS,
+  USER_IMMUTABLE_FIELDS,
   initLoctt,
   LabelError,
   linkTask,
@@ -698,7 +698,7 @@ function requireConfirm(args: Record<string, unknown>, action: string): McpToolR
  * Per-field value validators for `update_task`. Each entry is a zod
  * schema that the caller's `value` argument is parsed against before
  * we hand it to `setField`. Custom fields (anything not listed here
- * and not in {@link IMMUTABLE_FIELDS} / {@link AUTO_MANAGED_FIELDS})
+ * and not in {@link USER_IMMUTABLE_FIELDS} / {@link AUTO_MANAGED_FIELDS})
  * accept any JSON value.
  *
  * Keep these schemas conservative — they're the only barrier between
@@ -741,7 +741,7 @@ const EXPOSED_FIELDS_LIST = Object.keys(UPDATE_TASK_FIELD_SCHEMAS).sort().join("
  * `validateUpdateTaskArgs` and `validateUnsetFieldArgs`.
  */
 function checkFieldWritability(field: string, action: "set" | "unset"): McpToolResult | null {
-  if (IMMUTABLE_FIELDS.has(field)) {
+  if (USER_IMMUTABLE_FIELDS.has(field)) {
     return errorResult(
       `cannot ${action} immutable field "${field}". ` +
       `Writable built-in fields: ${EXPOSED_FIELDS_LIST}.`,

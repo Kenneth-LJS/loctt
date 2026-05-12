@@ -16,19 +16,17 @@ export class TaskUpdateError extends Error {
 }
 
 /**
- * Fields that cannot be set/unset — they are system-managed:
- * - `relationships` flows through linkTask / unlinkTask (which
- *   validate the workflow's rel definitions).
- * - `key_history` is bookkeeping for project-key migrations.
- * - `archived` / `archived_at` go through archiveTask / unarchiveTask
- *   so the history entry and timestamp stay consistent.
- * - `status_updated_at` is stamped automatically when status changes.
+ * Fields that users cannot set/unset directly through the generic
+ * `setField`/`unsetField` API. Most have a dedicated privileged
+ * caller that mutates them; see {@link SYSTEM_MUTABLE_VIA} for the
+ * authoritative map. Two — `id` and `created_at` — are never
+ * mutated by anything after task creation.
  *
  * Exported so callers (CLI, MCP, web) can pre-validate input at
  * their own boundaries and produce clearer errors than waiting for
  * `setField` to throw.
  */
-export const IMMUTABLE_FIELDS: ReadonlySet<string> = new Set([
+export const USER_IMMUTABLE_FIELDS: ReadonlySet<string> = new Set([
   "id",
   "key",
   "created_at",
@@ -39,6 +37,40 @@ export const IMMUTABLE_FIELDS: ReadonlySet<string> = new Set([
   "archived_at",
   "status_updated_at",
 ]);
+
+/**
+ * Legacy alias for {@link USER_IMMUTABLE_FIELDS}. The original name
+ * lied — some of these fields ARE mutated, just by system code
+ * paths (see {@link SYSTEM_MUTABLE_VIA}). Kept as a re-export so
+ * existing external imports keep compiling.
+ *
+ * @deprecated Use `USER_IMMUTABLE_FIELDS`.
+ */
+export const IMMUTABLE_FIELDS: ReadonlySet<string> = USER_IMMUTABLE_FIELDS;
+
+/**
+ * Documents which privileged code path is allowed to mutate each
+ * field that's blocked from `setField`/`unsetField`. The keys
+ * match {@link USER_IMMUTABLE_FIELDS}; the values name the function
+ * or invariant that owns the mutation.
+ *
+ * This is documentation that lives next to the type — a future
+ * reader can grep for the field name and find the one place that
+ * legitimately writes it. The runtime guards remain
+ * {@link USER_IMMUTABLE_FIELDS} (set/unset path) and the per-call
+ * checks at the privileged callers.
+ */
+export const SYSTEM_MUTABLE_VIA: Readonly<Record<string, string>> = {
+  id: "never mutated after createTask",
+  key: "rekeyCollisions during git-sync reconcile; writes key_history alongside",
+  created_at: "never mutated after createTask",
+  project: "deleteProject(hard) remap_project journal handler",
+  relationships: "linkTask / unlinkTask (validates against workflow rels)",
+  key_history: "rekeyCollisions and key-history append on rekey",
+  archived: "archiveTask / unarchiveTask (paired with archived_at)",
+  archived_at: "archiveTask / unarchiveTask (paired with archived)",
+  status_updated_at: "setField('status', ...) auto-stamps it",
+};
 
 /**
  * Fields auto-managed by `setField` — users may not write to them
@@ -137,7 +169,7 @@ export interface SetFieldOptions {
  * - If setting `status`, also updates `status_updated_at`.
  */
 export async function setField(opts: SetFieldOptions): Promise<Task> {
-  if (IMMUTABLE_FIELDS.has(opts.field)) {
+  if (USER_IMMUTABLE_FIELDS.has(opts.field)) {
     throw new TaskUpdateError(`cannot set immutable field "${opts.field}"`);
   }
   if (AUTO_MANAGED_FIELDS.has(opts.field)) {
@@ -270,7 +302,7 @@ export async function unsetField(
   taskId: string,
   field: string,
 ): Promise<Task> {
-  if (IMMUTABLE_FIELDS.has(field) || field === "title" || field === "updated_at") {
+  if (USER_IMMUTABLE_FIELDS.has(field) || field === "title" || field === "updated_at") {
     throw new TaskUpdateError(`cannot unset required field "${field}"`);
   }
   if (AUTO_MANAGED_FIELDS.has(field)) {

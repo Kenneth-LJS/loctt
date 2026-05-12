@@ -42,7 +42,9 @@ export {
   BUILTIN_OPTIONAL_FIELDS,
   IMMUTABLE_FIELDS,
   setField,
+  SYSTEM_MUTABLE_VIA,
   TaskUpdateError,
   unsetField,
+  USER_IMMUTABLE_FIELDS,
   WRITABLE_BUILTIN_FIELDS,
 } from "./update.js";
