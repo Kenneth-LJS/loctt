@@ -1445,12 +1445,15 @@ export function createWebApp(options: WebAppOptions) {
     const task = await lookupTask(locttDir, ref);
     const entries = await readHistory(locttDir, task.frontmatter.id);
 
-    entries.reverse();
+    // Copy before reversing — if `readHistory` ever caches the
+    // returned array (or another caller observes the same reference),
+    // an in-place reverse would corrupt their view.
+    const reversed = [...entries].reverse();
 
     const page = parsePagination(url, res);
     if (page === null) return;
-    const sliced = entries.slice(page.offset, page.offset + page.limit);
-    json(res, { entries: sliced, total: entries.length });
+    const sliced = reversed.slice(page.offset, page.offset + page.limit);
+    json(res, { entries: sliced, total: reversed.length });
   };
 
   const handleSetField: RouteHandler = async ({ req, res, locttDir, captures }) => {

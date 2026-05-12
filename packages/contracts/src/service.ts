@@ -60,6 +60,20 @@ export interface ListTasksRequest {
   readonly project?: string;
 }
 
+/**
+ * Response shape for `POST /api/tasks/:ref/attachments`. The server
+ * confirms which name the upload landed under (post sanitization),
+ * the resulting size, whether it overwrote an existing file, and
+ * the task's user-facing key so the client can render an updated
+ * task view without a second round-trip.
+ */
+export interface AttachResultResponse {
+  readonly name: string;
+  readonly size: number;
+  readonly overwritten: boolean;
+  readonly task_key: string;
+}
+
 /** Attachment info for API responses. */
 export interface AttachmentResponse {
   readonly name: string;
