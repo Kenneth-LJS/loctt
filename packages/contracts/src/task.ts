@@ -98,3 +98,76 @@ export interface Task {
   readonly frontmatter: TaskFrontmatter;
   readonly body: string;
 }
+
+/**
+ * Public projection of `TaskFrontmatterSchema` for API responses.
+ *
+ * The disk-level schema is `.passthrough()` so authors can attach
+ * experimental or tool-specific metadata to a task.md without it
+ * being silently dropped on round-trip. Public HTTP responses use
+ * this projection instead so the response shape stays a stable
+ * contract — unknown top-level keys on disk are *kept on disk*
+ * (passthrough at parse / serialize time) but *not echoed* to API
+ * clients as if they were canonical fields.
+ *
+ * Custom-field values declared in workflow.yaml live under the
+ * `fields` map; they are part of the contract because their shape
+ * is governed by the workflow config, not by individual files.
+ *
+ * Use `projectTaskFrontmatter()` (below) to apply this schema —
+ * .parse() drops anything not listed here.
+ */
+export const TaskFrontmatterPublicSchema = z.object({
+  id: z.string().min(1),
+  key: z.string().min(1),
+  project: SlugKey.optional(),
+  title: z.string().min(1),
+  created_at: IsoTimestamp,
+  updated_at: IsoTimestamp,
+  status: z.string().optional(),
+  status_updated_at: IsoTimestamp.optional(),
+  task_type: z.string().optional(),
+  priority: z.string().optional(),
+  labels: z.array(SlugKey).optional(),
+  assignee: z.string().optional(),
+  reporter: z.string().optional(),
+  start_date: DateOrIsoString.optional(),
+  due_date: DateOrIsoString.optional(),
+  estimate: z.union([z.string(), z.number()]).transform(v => String(v)).optional(),
+  completed_date: DateOrIsoString.optional(),
+  milestone: SlugKey.optional(),
+  sprint: SprintKey.optional(),
+  archived: z.boolean().optional(),
+  archived_at: IsoTimestamp.optional(),
+  relationships: z.array(TaskRelationshipSchema).optional(),
+  key_history: z.array(z.string()).optional(),
+  fields: z.record(z.string(), z.unknown()).optional(),
+  board_rank: z.string().optional(),
+}).strict();
+export type TaskFrontmatterPublic = z.infer<typeof TaskFrontmatterPublicSchema>;
+
+/**
+ * Projects a frontmatter object to the public API shape. Strips
+ * any unknown top-level keys that may have come from passthrough
+ * parsing of an on-disk task.md. Throws if a known field fails
+ * validation — that's a sign of corruption, not user error.
+ */
+export function projectTaskFrontmatter(fm: TaskFrontmatter): TaskFrontmatterPublic {
+  // Build a shallow object containing only the public keys, then
+  // parse to apply the schema's transforms (e.g. `estimate` →
+  // string). Using `.parse()` rather than `.strip()` so we get
+  // the typed result.
+  const KNOWN_KEYS = [
+    "id", "key", "project", "title", "created_at", "updated_at",
+    "status", "status_updated_at", "task_type", "priority", "labels",
+    "assignee", "reporter", "start_date", "due_date", "estimate",
+    "completed_date", "milestone", "sprint", "archived", "archived_at",
+    "relationships", "key_history", "fields", "board_rank",
+  ] as const;
+  const out: Record<string, unknown> = {};
+  const src = fm as unknown as Record<string, unknown>;
+  for (const k of KNOWN_KEYS) {
+    if (src[k] !== undefined) out[k] = src[k];
+  }
+  return TaskFrontmatterPublicSchema.parse(out);
+}
