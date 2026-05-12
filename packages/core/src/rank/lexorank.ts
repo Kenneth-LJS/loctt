@@ -187,6 +187,14 @@ export function evenlySpacedRanks(count: number): string[] {
     // Pick digits centered in the alphabet so we leave room before
     // and after for future inserts.
     const start = Math.floor((BASE - count) / 2);
+    // Defensive: start must be ≥ 1 so we never produce a rank of
+    // '0', which is a phantom prefix of any longer rank starting
+    // with the same first digit. Given the `count <= BASE - 2`
+    // guard above, `start` is always ≥ 1 — but assert so a future
+    // tweak to the bound can't silently regress this.
+    if (start < 1) {
+      throw new Error(`evenlySpacedRanks: derived start=${start} < 1 (count=${count}, BASE=${BASE})`);
+    }
     for (let i = 0; i < count; i += 1) {
       out.push(ALPHABET.charAt(start + i));
     }

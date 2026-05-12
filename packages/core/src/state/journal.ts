@@ -389,6 +389,16 @@ export function registerRecoveryHandler(
  * MUST be called inside `withStateLock` so concurrent processes
  * don't race the dispatch + clear-entry steps.
  */
+/**
+ * In-process set of journal-entry ids we've already logged as
+ * "no recovery handler for kind ..." . The recovery hook fires on
+ * every `withStateLock` call, so without dedupe a single stranded
+ * entry would spam the error log on every mutation for the rest
+ * of the process's lifetime. Process-scoped is enough — the
+ * stranded entry's id is stable across calls.
+ */
+const loggedMissingHandlerIds = new Set<string>();
+
 export async function recoverPendingJournal(locttDir: string): Promise<void> {
   const journal = await loadJournal(locttDir);
   if (journal.entries.length === 0) return;
@@ -400,13 +410,18 @@ export async function recoverPendingJournal(locttDir: string): Promise<void> {
       // write was interrupted and nobody can finish it. The entry
       // sits forever and may leave the tracker in a half-applied
       // state. Surfaced loudly so it's visible in logs/CI rather
-      // than buried as a benign warning.
-      console.error(
-        `[loctt] no recovery handler for journal entry kind '${entry.kind}'; ` +
-        `entry ${entry.id} (started_at=${entry.started_at}) left in place. ` +
-        `This indicates the manage module that owns this kind was not loaded ` +
-        `before withStateLock ran — investigate import order.`,
-      );
+      // than buried as a benign warning — but deduped per entry-id
+      // so the recovery hook firing on every withStateLock doesn't
+      // spam the log.
+      if (!loggedMissingHandlerIds.has(entry.id)) {
+        loggedMissingHandlerIds.add(entry.id);
+        console.error(
+          `[loctt] no recovery handler for journal entry kind '${entry.kind}'; ` +
+          `entry ${entry.id} (started_at=${entry.started_at}) left in place. ` +
+          `This indicates the manage module that owns this kind was not loaded ` +
+          `before withStateLock ran — investigate import order.`,
+        );
+      }
       continue;
     }
     await handler(locttDir, entry);
