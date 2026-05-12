@@ -23,8 +23,8 @@ export function allocateKey(state: LocttState, entityType: string): string {
 
   const key = `${entry.prefix}${entry.next_number}`;
 
-  // Mutate in place — state is mutable during operations
-  (state.keys as Record<string, { prefix: string; next_number: number }>)[entityType] = {
+  // Mutate in place — state is mutable during operations.
+  state.keys[entityType] = {
     prefix: entry.prefix,
     next_number: entry.next_number + 1,
   };
@@ -47,7 +47,7 @@ export function initKeyAllocation(
       `key allocation state already exists for entity type "${entityType}"`
     );
   }
-  (state.keys as Record<string, { prefix: string; next_number: number }>)[entityType] = {
+  state.keys[entityType] = {
     prefix,
     next_number: startNumber,
   };
