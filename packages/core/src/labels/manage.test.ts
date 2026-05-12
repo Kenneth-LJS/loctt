@@ -136,6 +136,20 @@ describe("deleteLabel (hard)", () => {
     await createLabel(locttDir, { key: "x", label: "X" });
     await expect(deleteLabel(locttDir, "x", { hard: true, remapTo: "x" })).rejects.toThrow(LabelError);
   });
+
+  it("rejects remap onto an archived label", async () => {
+    // Archived entities preserve historical references but reject
+    // new uses; remapping a hard-deleted key onto an archived
+    // target would create fresh references to it, violating the
+    // policy.
+    const { archiveLabel } = await import("./manage.js");
+    await createLabel(locttDir, { key: "old", label: "Old" });
+    await createLabel(locttDir, { key: "dest", label: "Dest" });
+    await archiveLabel(locttDir, "dest");
+    await expect(
+      deleteLabel(locttDir, "old", { hard: true, remapTo: "dest" }),
+    ).rejects.toThrow(/archived/);
+  });
 });
 
 describe("assertLabelKeysRegistered", () => {

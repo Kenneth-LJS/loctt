@@ -210,6 +210,12 @@ export async function deleteUser(
         if (options.remapTo === userId) {
           throw new UserError(`remap target must differ from the user being deleted`);
         }
+        const target = await loadUserProfile(locttDir, options.remapTo);
+        if (target.archived === true) {
+          throw new UserError(
+            `remap target user "${options.remapTo}" is archived; unarchive them first or pick an active user`,
+          );
+        }
       }
     }
 
