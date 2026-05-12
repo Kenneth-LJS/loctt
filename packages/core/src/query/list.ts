@@ -7,6 +7,14 @@ import { evaluateQuery } from "./evaluator.js";
 import { parseQuery } from "./parser.js";
 import { tokenize } from "./tokenizer.js";
 
+/**
+ * Default page size for `listTasks` when the caller doesn't supply
+ * `limit`. Exposed so surface descriptions (CLI help, MCP tool
+ * `limit` schema, HTTP API docs) can reference the same constant
+ * and stay in sync if it ever changes.
+ */
+export const DEFAULT_LIST_LIMIT = 30;
+
 /** Filter/sort options within a list call. */
 export interface ListOptions {
   /** Ad hoc query string. */
@@ -15,7 +23,7 @@ export interface ListOptions {
   readonly view?: string;
   /** Sort specifiers. Overrides view sort if provided. */
   readonly sort?: readonly { field: string; direction: "asc" | "desc" }[];
-  /** Maximum number of results. Defaults to 30. */
+  /** Maximum number of results. Defaults to {@link DEFAULT_LIST_LIMIT}. */
   readonly limit?: number;
   /**
    * If true, include archived tasks in the results.
@@ -157,7 +165,7 @@ export function listTasks(opts: ListTasksOptions): Task[] {
   }
 
   // Limit
-  const limit = options.limit ?? 30;
+  const limit = options.limit ?? DEFAULT_LIST_LIMIT;
   return filtered.slice(0, limit);
 }
 

@@ -212,11 +212,11 @@ Share tasks across clones by syncing to a dedicated branch:
 
 ```bash
 loctt git enable     # Turn on git-backed mode
-loctt publish        # Push task state to the .loctt branch
-loctt sync           # Pull task state from the .loctt branch
+loctt git publish    # Push task state to the loctt branch
+loctt git sync       # Pull task state from the loctt branch
 ```
 
-Conflicts are handled through a 3-way reconciliation flow — see [docs/user/common/git-sync.md](docs/user/common/git-sync.md).
+Conflicts are handled through automatic 3-way reconciliation — see [docs/user/common/git-sync.md](docs/user/common/git-sync.md).
 
 ## Configuration
 
