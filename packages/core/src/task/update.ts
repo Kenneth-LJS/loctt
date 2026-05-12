@@ -3,6 +3,7 @@ import type { HistoryEntry, Task, TaskFrontmatter, WorkflowConfig } from "@loctt
 import type { ArchivedGuardConfigs } from "../config/archived-guard.js";
 import { assertNotArchivedReferences } from "../config/archived-guard.js";
 import { validateTaskAgainstWorkflow } from "../config/validation.js";
+import { withStateLock } from "../state/lock.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 import { readField, toFrontmatter, toMutable } from "./mutable.js";
@@ -147,6 +148,11 @@ export async function setField(opts: SetFieldOptions): Promise<Task> {
     );
   }
 
+  return withStateLock(locttDir, () => setFieldLocked(opts));
+}
+
+async function setFieldLocked(opts: SetFieldOptions): Promise<Task> {
+  const { locttDir, taskId, field, value, workflowConfig, archivedGuard } = opts;
   const task = await readTask(locttDir, taskId);
   const now = new Date().toISOString();
 
@@ -275,6 +281,14 @@ export async function unsetField(
     );
   }
 
+  return withStateLock(locttDir, () => unsetFieldLocked(locttDir, taskId, field));
+}
+
+async function unsetFieldLocked(
+  locttDir: string,
+  taskId: string,
+  field: string,
+): Promise<Task> {
   const task = await readTask(locttDir, taskId);
   const now = new Date().toISOString();
 
