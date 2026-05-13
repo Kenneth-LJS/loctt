@@ -554,6 +554,28 @@ function formatValue(v: unknown): string {
   return JSON.stringify(v);
 }
 
+/**
+ * Narrows a `link_added` / `link_removed` history entry's `meta`
+ * into the {type, target} shape the formatter expects. Type-guards
+ * at runtime instead of casting blindly so a future kind that
+ * happens to share the meta slot can't render with stale labels.
+ */
+function readLinkMeta(meta: unknown): { type: string; target: string } {
+  if (
+    typeof meta === "object"
+    && meta !== null
+    && "type" in meta
+    && "target" in meta
+    && typeof (meta as { type: unknown }).type === "string"
+    && typeof (meta as { target: unknown }).target === "string"
+  ) {
+    return meta as { type: string; target: string };
+  }
+  // Corrupt or out-of-shape entry — surface visibly rather than
+  // rendering a phantom "undefined → undefined".
+  return { type: "(unknown)", target: "(unknown)" };
+}
+
 function formatHistoryEntry(entry: HistoryEntry): string {
   const ts = entry.timestamp;
   switch (entry.kind) {
@@ -572,11 +594,11 @@ function formatHistoryEntry(entry: HistoryEntry): string {
     case "unarchived":
       return `${ts}  unarchived`;
     case "link_added": {
-      const meta = entry.meta as { type: string; target: string };
+      const meta = readLinkMeta(entry.meta);
       return `${ts}  link added: ${meta.type} → ${meta.target}`;
     }
     case "link_removed": {
-      const meta = entry.meta as { type: string; target: string };
+      const meta = readLinkMeta(entry.meta);
       return `${ts}  link removed: ${meta.type} → ${meta.target}`;
     }
     case "body_edited":
