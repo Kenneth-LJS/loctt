@@ -138,7 +138,19 @@ export function validateRemapCoversDeletions(
     inUseKeys: ReadonlySet<string>,
   ): void {
     const nextSet = new Set(nextKeys);
+    const prevSet = new Set(prevKeys);
     const remapTable = remap[name] ?? {};
+    // Validate every remap source is a key that exists in the
+    // previous config. A typo like `{ statuses: { "in_progresss":
+    // "done" } }` would otherwise silently get journaled and
+    // surface as a confusing "no-op" at apply time.
+    for (const source of Object.keys(remapTable)) {
+      if (!prevSet.has(source)) {
+        throw new WorkflowConfigError(
+          `${name} remap source '${source}' is not a key in the previous config`,
+        );
+      }
+    }
     for (const k of prevKeys) {
       if (nextSet.has(k)) continue;
       if (!inUseKeys.has(k)) continue; // unused — fine to delete silently
@@ -166,7 +178,15 @@ export function validateRemapCoversDeletions(
   // Inline the same logic here so the error messages share wording
   // with the scalar collections.
   const nextRelKeys = new Set(next.relationships.map(r => r.key));
+  const prevRelKeys = new Set(prev.relationships.map(r => r.key));
   const relRemap = remap.relationships ?? {};
+  for (const source of Object.keys(relRemap)) {
+    if (!prevRelKeys.has(source)) {
+      throw new WorkflowConfigError(
+        `relationships remap source '${source}' is not a key in the previous config`,
+      );
+    }
+  }
   for (const r of prev.relationships) {
     if (nextRelKeys.has(r.key)) continue;
     if (!inUse.relationships.has(r.key)) continue;
@@ -189,6 +209,17 @@ export function validateRemapCoversDeletions(
   // sweep below clears it from tasks; we don't require a remap for
   // the values in that case (the parent field is going away).
   const nextFieldKeys = new Set(next.custom_fields.map(f => f.key));
+  // Top-level: every key in remap.custom_fields must name a field
+  // that existed in `prev`. Catches typos in the field name itself
+  // before we drill into per-value remaps.
+  const prevFieldKeys = new Set(prev.custom_fields.map(f => f.key));
+  for (const fieldKey of Object.keys(remap.custom_fields ?? {})) {
+    if (!prevFieldKeys.has(fieldKey)) {
+      throw new WorkflowConfigError(
+        `custom_fields remap source '${fieldKey}' is not a field in the previous config`,
+      );
+    }
+  }
   for (const prevField of prev.custom_fields) {
     if (!nextFieldKeys.has(prevField.key)) continue; // whole field gone
     const nextField = next.custom_fields.find(f => f.key === prevField.key);
@@ -197,8 +228,17 @@ export function validateRemapCoversDeletions(
     if (!nextField.values || nextField.values.length === 0) continue;
 
     const nextValueKeys = new Set(nextField.values.map(v => v.key));
+    const prevValueKeys = new Set(prevField.values.map(v => v.key));
     const inUseValues = inUse.custom_field_values[prevField.key] ?? new Set<string>();
     const remapForField = remap.custom_fields?.[prevField.key] ?? {};
+    // Per-value: each remap source must be a value that existed.
+    for (const source of Object.keys(remapForField)) {
+      if (!prevValueKeys.has(source)) {
+        throw new WorkflowConfigError(
+          `custom_fields.${prevField.key} remap source '${source}' is not a value in the previous config`,
+        );
+      }
+    }
     for (const v of prevField.values) {
       if (nextValueKeys.has(v.key)) continue;
       if (!inUseValues.has(v.key)) continue;
