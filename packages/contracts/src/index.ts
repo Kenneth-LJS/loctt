@@ -59,6 +59,18 @@ export type {
   TrackerInfoResponse,
   UpdateTaskRequest,
 } from "./service.js";
+export type {
+  CreateViewRequest,
+  EditViewRequest,
+  InitRequest,
+  PutWorkflowRequest,
+} from "./service-schemas.js";
+export {
+  CreateViewRequestSchema,
+  EditViewRequestSchema,
+  InitRequestSchema,
+  PutWorkflowRequestSchema,
+} from "./service-schemas.js";
 export type { SprintDef, SprintsConfig, SprintState } from "./sprints.js";
 export {
   SprintDefSchema,
