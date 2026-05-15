@@ -561,7 +561,7 @@ MCP (`apps/mcp/src/mcp.test.ts`):
 - `delete_project`, `delete_label`, `delete_milestone`, `delete_sprint`, `delete_user` all reject without `confirm: true`. (Currently only `delete_task` is covered.)
 
 Web (`apps/web/src/server.test.ts`):
-- Convert `beforeAll`/`afterAll` to `beforeEach`/`afterEach` for the security suite so tests don't leak state between cases. The avatar / to-delete cases are particularly cross-contaminated.
+- ~~Convert `beforeAll`/`afterAll` to `beforeEach`/`afterEach` for the security suite.~~ **Evaluated, not needed.** Audited the suite during Phase 4b: each test creates its own task (server returns sequential keys), and no assertion depends on a total count or pre-existing state. The wholesale conversion would 5× the suite runtime to fix a non-issue. Revisit only if a future test actually leaks state.
 - Avatar upload tests: assert no file written outside the user dir (defense in depth; current code already enforces this via `assertSafeBasename`).
 
 ### 4.7 — Web stream-error pre-headers

@@ -333,6 +333,58 @@ describe("MCP executeTool", () => {
     expect(deleted.isError).toBeUndefined();
   });
 
+  describe("delete-confirm gating across entities", () => {
+    // Every delete_* tool MUST refuse without confirm: true. This is
+    // the contract documented in docs/user/mcp/reference.md and the
+    // agent's safety net: a delete_* call without confirm means the
+    // agent misunderstood the destructive nature; archive_* is the
+    // reversible alternative.
+
+    it("delete_project without confirm is rejected", async () => {
+      // Need two projects so the lone-project guard doesn't fire
+      // first.
+      await executeTool(root, "create_project", { key: "alt", prefix: "ALT-" });
+      const result = await executeTool(root, "delete_project", { key: "alt" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/confirm/i);
+    });
+
+    it("delete_label without confirm is rejected", async () => {
+      await executeTool(root, "create_label", { key: "blocker" });
+      const result = await executeTool(root, "delete_label", { key: "blocker" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/confirm/i);
+    });
+
+    it("delete_milestone without confirm is rejected", async () => {
+      await executeTool(root, "create_milestone", { key: "v1", label: "v1" });
+      const result = await executeTool(root, "delete_milestone", { key: "v1" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/confirm/i);
+    });
+
+    it("delete_sprint without confirm is rejected", async () => {
+      await executeTool(root, "create_sprint", {
+        key: "s1",
+        label: "Sprint 1",
+        start_date: "2026-05-04",
+        end_date: "2026-05-08",
+      });
+      const result = await executeTool(root, "delete_sprint", { key: "s1" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/confirm/i);
+    });
+
+    it("delete_user without confirm is rejected", async () => {
+      // delete_user accepts a `ref` (id-or-name); pass "Alice" to
+      // skip the need to parse the ULID out of create_user output.
+      await executeTool(root, "create_user", { name: "Alice" });
+      const result = await executeTool(root, "delete_user", { ref: "Alice" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/confirm/i);
+    });
+  });
+
   describe("get_sprint_burndown", () => {
     it("returns the series for a known sprint", async () => {
       // Create a sprint via the file system directly so the MCP test
