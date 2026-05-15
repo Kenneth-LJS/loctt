@@ -16,7 +16,15 @@ import type {
   TrackerInfoResponse,
   UpdateTaskRequest,
 } from "@loctt/contracts";
-import { CalendarConfigSchema, ListViewConfigSchema, projectTaskFrontmatter } from "@loctt/contracts";
+import {
+  CalendarConfigSchema,
+  CreateViewRequestSchema,
+  EditViewRequestSchema,
+  InitRequestSchema,
+  ListViewConfigSchema,
+  projectTaskFrontmatter,
+  PutWorkflowRequestSchema,
+} from "@loctt/contracts";
 import {
   appendTaskBody,
   applyWorkflowEdit,
@@ -222,6 +230,34 @@ async function parseJsonBody<T = unknown>(
     error(res, `invalid JSON body: ${(err as Error).message}`, 400);
     throw new HandledRequestError();
   }
+}
+
+/**
+ * Reads a JSON body and validates it against a zod schema. On
+ * shape failure writes a 400 with the field path and throws
+ * `HandledRequestError` so the handler returns without further
+ * work. On success returns the typed, parsed result.
+ *
+ * Use for any endpoint whose request body is a documented
+ * structured shape — closes the gap where the old
+ * `parseJsonBody<T>(...)` cast accepted whatever JSON came in
+ * regardless of declared TypeScript shape.
+ */
+async function parseJsonBodyWithSchema<S extends import("zod").ZodTypeAny>(
+  req: import("node:http").IncomingMessage,
+  res: import("node:http").ServerResponse,
+  schema: S,
+): Promise<import("zod").infer<S>> {
+  const raw = await parseJsonBody<unknown>(req, res);
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    const detail = parsed.error.issues
+      .map(i => `${i.path.length > 0 ? `${i.path.join(".")}: ` : ""}${i.message}`)
+      .join("; ");
+    error(res, `invalid request body: ${detail}`, 400);
+    throw new HandledRequestError();
+  }
+  return parsed.data;
 }
 
 /** Default page size when a list endpoint is called without `?limit`. */
@@ -572,7 +608,7 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleCreateView: RouteHandler = async ({ req, res, locttDir }) => {
-    const r = await parseJsonBody<Parameters<typeof createView>[1]>(req, res);
+    const r = await parseJsonBodyWithSchema(req, res, CreateViewRequestSchema);
     try {
       const created = await createView(locttDir, r);
       json(res, created, 201);
@@ -584,9 +620,17 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleUpdateView: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = captures[0] ?? "";
-    const r = await parseJsonBody<Parameters<typeof editView>[2]>(req, res);
+    const r = await parseJsonBodyWithSchema(req, res, EditViewRequestSchema);
     try {
-      const updated = await editView(locttDir, ref, r);
+      // Drop explicitly-`undefined` keys so we're passing
+      // EditViewInput (T?: shape) not zod's `T | undefined` shape
+      // — exactOptionalPropertyTypes treats them as different. The
+      // sort: null case ("clear sort") is preserved.
+      const updated = await editView(locttDir, ref, {
+        ...(r.name !== undefined ? { name: r.name } : {}),
+        ...(r.query !== undefined ? { query: r.query } : {}),
+        ...(r.sort !== undefined ? { sort: r.sort } : {}),
+      });
       json(res, updated);
     } catch (err) {
       if (err instanceof ViewError) { error(res, err.message, 400); return; }
@@ -611,12 +655,20 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handlePutWorkflow: RouteHandler = async ({ req, res, locttDir }) => {
-    const payload = await parseJsonBody<{
-      workflow: Parameters<typeof applyWorkflowEdit>[1];
-      remap?: Parameters<typeof applyWorkflowEdit>[2];
-    }>(req, res);
+    const payload = await parseJsonBodyWithSchema(req, res, PutWorkflowRequestSchema);
     try {
-      const result = await applyWorkflowEdit(locttDir, payload.workflow, payload.remap ?? {});
+      // Spread-narrow the remap to drop explicitly-undefined keys —
+      // core's WorkflowRemap uses T?: shape, zod's optional() emits
+      // T | undefined; exactOptionalPropertyTypes treats them as
+      // different.
+      const remap = payload.remap === undefined ? {} : {
+        ...(payload.remap.statuses !== undefined ? { statuses: payload.remap.statuses } : {}),
+        ...(payload.remap.priorities !== undefined ? { priorities: payload.remap.priorities } : {}),
+        ...(payload.remap.task_types !== undefined ? { task_types: payload.remap.task_types } : {}),
+        ...(payload.remap.relationships !== undefined ? { relationships: payload.remap.relationships } : {}),
+        ...(payload.remap.custom_fields !== undefined ? { custom_fields: payload.remap.custom_fields } : {}),
+      };
+      const result = await applyWorkflowEdit(locttDir, payload.workflow, remap);
       json(res, result);
     } catch (err) {
       error(res, (err as Error).message, 400);
@@ -1224,9 +1276,14 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleInit: RouteHandler = async ({ req, res }) => {
-    const r = await parseJsonBody<Parameters<typeof initLoctt>[1]>(req, res);
+    const r = await parseJsonBodyWithSchema(req, res, InitRequestSchema);
     try {
-      const result = await initLoctt(root, r);
+      const result = await initLoctt(root, {
+        ...(r.prefix !== undefined ? { prefix: r.prefix } : {}),
+        ...(r.projectKey !== undefined ? { projectKey: r.projectKey } : {}),
+        ...(r.projectLabel !== undefined ? { projectLabel: r.projectLabel } : {}),
+        ...(r.docs !== undefined ? { docs: r.docs } : {}),
+      });
       json(res, { locttDir: result.locttDir, created: result.created.length }, 201);
     } catch (err) {
       error(res, (err as Error).message, 400);
