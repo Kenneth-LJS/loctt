@@ -1248,8 +1248,14 @@ export async function main(): Promise<void> {
           const { spawn } = await import("node:child_process");
           try {
             spawn(opener, [url], { detached: true, stdio: "ignore", shell: process.platform === "win32" }).unref();
-          } catch {
-            // ignore — user can open the URL manually
+          } catch (err) {
+            // The browser-open is a nice-to-have, not the operation;
+            // the URL is already printed above. Silent failure is
+            // intentional for end users — but surface the cause
+            // under LOCTT_DEBUG so it's debuggable when needed.
+            if (process.env["LOCTT_DEBUG"] === "1") {
+              console.error(`[loctt ui] failed to auto-open browser:`, err);
+            }
           }
         }
 
