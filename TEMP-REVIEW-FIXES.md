@@ -354,127 +354,6 @@ CLI pre-validates at `apps/cli/src/index.ts:767-769` via `assertWorkflowEnumKey`
 
 Group docs in one commit per area; minor fixes in 2-3 themed commits (state/journal, web cleanup, naming/typing).
 
----
-
-## Phase 4 — Structural splits + per-tool zod + test additions
-
-### 4.1 — Split `apps/cli/src/index.ts` (2214 lines)
-
-Target structure:
-```
-apps/cli/src/
-  index.ts              # dispatcher only (~50 lines)
-  argv.ts               # getArg, stripCwdArg, hasFlag, parseArgs
-  runtime.ts            # runCommand, UsageError, KNOWN_DOMAIN_ERRORS, confirmHardDelete
-  commands/
-    init.ts             # init, schema
-    info.ts             # info, doctor, views
-    task.ts             # create, get, list, set, unset, body, log, attach, detach, archive, unarchive, delete, link, unlink, reorder-relationship
-    project.ts
-    label.ts
-    milestone.ts
-    sprint.ts
-    user.ts
-    git.ts
-    config.ts
-    mcp.ts              # the `loctt mcp` command
-    ui.ts
-```
-
-Each command file exports `(args: string[], root: string) => Promise<void>`. Dispatcher in `index.ts` is a `Record<string, CommandHandler>`.
-
-Process:
-1. Extract `argv.ts` and `runtime.ts` first (pure helpers, easy diff).
-2. Extract one command group at a time, run tests, commit each.
-3. Final commit: shrink `index.ts` to dispatcher.
-
-### 4.2 — Split `apps/mcp/src/index.ts` (1807 lines)
-
-Target structure:
-```
-apps/mcp/src/
-  index.ts              # server bootstrap + dispatcher
-  runtime.ts            # parseToolArgs, requireConfirm, checkFieldWritability, KNOWN_DOMAIN_ERRORS
-  tools/
-    definitions.ts      # ALL_TOOLS array (replace getTools() function)
-    schemas.ts          # per-tool zod schemas + discriminated union
-    handlers/
-      task.ts
-      project.ts
-      label.ts
-      milestone.ts
-      sprint.ts
-      user.ts
-      calendar.ts
-      git.ts
-      config.ts
-  schemas.ts removed in favor of tools/schemas.ts
-```
-
-Switch → typed `Map<string, Handler>`:
-```ts
-type Handler<T> = (args: T, ctx: ToolContext) => Promise<ToolResult>;
-const handlers = new Map<ToolName, Handler<ToolArgs>>([...]);
-```
-
-Per-tool zod schemas:
-- Each tool defines `<ToolName>ArgsSchema = z.object({...}).strict()`.
-- `parseToolArgs(name, raw)` returns `{ ok: true, args: ToolArgs } | { ok: false, error: string }`.
-- Handlers receive a fully-typed args object — no `args["ref"] as string` anywhere.
-
-Drop dual `getTools()` + `ALL_TOOLS` export; keep only the const.
-
-### 4.3 — Test additions
-
-CLI (`apps/cli/src/cli.test.ts`):
-- `--set "" --append` mutex.
-- `--limit` non-integer validation.
-- `attach` AttachmentExistsError → `--force` hint path.
-- `loctt list --view --project` interaction (verify documented behavior).
-- `loctt delete` without `--yes` rejected (post-Phase 2).
-
-MCP (`apps/mcp/src/mcp.test.ts`):
-- `delete_project`, `delete_label`, `delete_milestone`, `delete_sprint`, `delete_user` all reject without `confirm: true`.
-- `create_task` workflow-enum hint (post-2.11).
-- `list_tasks` default limit (post-2.12).
-
-Web (`apps/web/src/server.test.ts`):
-- Convert from `beforeAll`/`afterAll` to `beforeEach`/`afterEach` for the security suite.
-- Add assertion: avatar upload tests verify no file written outside the user dir.
-
-Cycle tests:
-- Per Phase 1.2.
-
-### 4.4 — Suggestions
-
-- `apps/cli/src/index.ts` argv: `getArg` rejects single-dash long-form. Document in argv.ts comment.
-- `apps/cli` `ui` command: log spawn failure under `LOCTT_DEBUG=1`.
-- `tests/perf/03-concurrent-create.test.ts`: assert `apps/cli/dist/index.js` mtime > source mtime, fail loudly otherwise.
-
-### 4.5 — Phase 4 commit plan
-
-CLI split:
-1. `cli: extract argv helpers`
-2. `cli: extract runtime helpers (runCommand, errors)`
-3. `cli: extract task command group`
-4. `cli: extract project/label/milestone/sprint/user command groups`
-5. `cli: extract git/config/mcp/ui/init/info commands`
-6. `cli: dispatcher map in index.ts`
-
-MCP split:
-7. `mcp: extract runtime helpers`
-8. `mcp: per-tool zod schemas + discriminated parser`
-9. `mcp: extract task tools`
-10. `mcp: extract project/label/milestone/sprint/user tools`
-11. `mcp: extract calendar/git/config tools`
-12. `mcp: typed handler map`
-
-Tests:
-13. `cli: cover missing parser edge cases`
-14. `mcp: cover delete-confirm gating across entities`
-15. `web: per-test isolation in security suite`
-
----
 
 ## Carry-over notes for next agent
 
@@ -503,70 +382,139 @@ Phases 1, 2, and 3 are done. 33+ commits in this pass; full suite green on each.
 
 ### 4.1 — Split `apps/cli/src/index.ts` (2200+ lines)
 
-Target structure:
+Layout (sub-agent reviewed; entity-axis split, with task verb-grouped by concern):
+
 ```
 apps/cli/src/
-  index.ts              # dispatcher only (~50 lines)
-  argv.ts               # getArg, stripCwdArg, hasFlag, parseArgs, EXIT
-  runtime.ts            # runCommand, UsageError, KNOWN_DOMAIN_ERRORS, confirmHardDelete, assertWorkflowEnumKey, assertWorkflowRelationshipKey
-  format.ts             # formatHistoryEntry, formatValue, pad, formatNumber, readLinkMeta
+  index.ts                      # entrypoint + main() + dispatcher map
+  usage.ts                      # usage() text
+  runtime/
+    args.ts                     # getArg, hasFlag, stripCwdArg, parseArgs, TRUTHY/FALSY sets, EXIT
+    errors.ts                   # UsageError, KNOWN_DOMAIN_ERRORS, runCommand
+    confirm.ts                  # confirmInteractive, confirmHardDelete, ConfirmOutcome
+    workflow-assert.ts          # assertWorkflowEnumKey, assertWorkflowRelationshipKey
+    schema-guard.ts             # SCHEMA_GUARD_EXEMPT_COMMANDS, dirExists, resolveClientDir
+  format/
+    value.ts                    # formatValue, formatNumber, pad
+    history.ts                  # formatHistoryEntry, readLinkMeta
   commands/
-    init.ts             # init, schema, views
-    info.ts             # info, doctor
-    task.ts             # create, show, list, set, unset, body, log, attach, detach, archive, unarchive, delete, link, unlink
-    project.ts
-    label.ts
-    milestone.ts
-    sprint.ts
-    user.ts
-    rank.ts             # rerank, board-rerank
-    git.ts
-    config.ts
-    mcp.ts              # `loctt mcp` server-launch command
-    ui.ts
-    calendar.ts
-    migrate.ts
+    init.ts                     # init
+    info.ts                     # info
+    doctor.ts                   # doctor
+    views.ts                    # views
+    schema.ts                   # schema
+    task-crud.ts                # create, show, list, set, unset, body, log, delete
+    task-archive.ts             # archive, unarchive
+    task-files.ts               # attach, detach
+    task-links.ts               # link, unlink
+    task-rank.ts                # rerank, board-rerank
+    project.ts                  # project {list,create,edit,delete,archive,unarchive,set-default}
+    user.ts                     # user {list,current,switch,create,edit,archive,unarchive,delete}
+    label.ts                    # label {list,create,edit,delete,archive,unarchive}
+    milestone.ts                # milestone {list,create,edit,delete,archive,unarchive}
+    sprint.ts                   # sprint {...,burndown}
+    calendar.ts                 # calendar show
+    git.ts                      # git {enable,disable,status,publish,sync}
+    config.ts                   # config {get,set,unset,list}
+    migrate.ts                  # migrate
+    mcp.ts                      # `loctt mcp` server-launch
+    ui.ts                       # `loctt ui` server-launch
 ```
 
-Each command file exports `(args: string[], root: string) => Promise<void>`. Dispatcher in `index.ts` becomes a `Record<string, CommandHandler>` map.
+Each `commands/*.ts` exports `export async function run(args: string[], root: string): Promise<void>`.
+
+Dispatcher in `index.ts`:
+```ts
+type Handler = (args: string[], root: string) => Promise<void>;
+const COMMANDS = {
+  init: initCmd.run,
+  info: infoCmd.run,
+  /* ... */
+} as const satisfies Record<string, Handler>;
+```
+
+`main()`: parse `--cwd`, resolve `root`, read `command = args[0]`, check schema-guard exemption, `await runCommand(() => COMMANDS[command]?.(args.slice(1), root))`. Unknown command → `usage()` + `EXIT.USAGE`. The `satisfies` clause gives compile-time signature exhaustiveness; commands are open by nature so runtime "unknown command" is the right failure mode.
 
 Process:
-1. Extract `argv.ts` and `runtime.ts` first (pure helpers, easy diff).
-2. Extract `format.ts` next.
-3. Extract one command group per commit, run tests, commit each.
-4. Final commit: shrink `index.ts` to dispatcher.
+1. Extract `runtime/args.ts` + `runtime/errors.ts` (pure helpers, easy diff)
+2. Extract `runtime/confirm.ts` + `runtime/workflow-assert.ts` + `runtime/schema-guard.ts`
+3. Extract `format/value.ts` + `format/history.ts`
+4. Extract `usage.ts`
+5. Extract single-command files (init, info, doctor, views, schema)
+6. Extract task-crud / task-archive / task-files / task-links / task-rank
+7. Extract project / user / label / milestone / sprint / calendar
+8. Extract git / config / migrate / mcp / ui
+9. Shrink `index.ts` to entrypoint + dispatcher map
+10. Run `npm run test:integration` and `npm run test:e2e` once at end
 
-### 4.2 — Split `apps/mcp/src/index.ts` (1800+ lines)
+### 4.2 — Split `apps/mcp/src/index.ts` (1800+ lines) + registry pattern
 
-Target structure:
+Layout (sub-agent reviewed; entity-axis split with the **registry pattern** collapsing the array+switch duplication):
+
 ```
 apps/mcp/src/
-  index.ts              # server bootstrap + dispatcher
-  runtime.ts            # parseToolArgs, requireConfirm, checkFieldWritability, isKnownDomainError, assertWorkflowEnumKey, errorResult, text helpers
+  index.ts                      # server entry: stdio transport
+  server.ts                     # executeTool dispatcher + schema-guard
+  registry.ts                   # TOOL_REGISTRY = Map<name, ToolDef> + getTools() shim
+  types.ts                      # McpTool, McpToolResult, ToolDef, ToolCtx
+  runtime/
+    args.ts                     # parseToolArgs (operates on ToolDef.inputSchema)
+    confirm.ts                  # requireConfirm
+    errors.ts                   # isKnownDomainError, errorResult, text
+    fields.ts                   # UPDATE_TASK_FIELD_SCHEMAS, checkFieldWritability, EXPOSED_FIELDS_LIST, NonEmptyString, DateLikeString
+    workflow-assert.ts          # assertWorkflowEnumKey
+    schema-guard.ts             # dirExists (exempt status moves to ToolDef.exemptFromSchemaGuard)
   tools/
-    definitions.ts      # ALL_TOOLS array (replace getTools() function — drop the dual export)
-    schemas.ts          # per-tool zod schemas + discriminated union type
-    handlers/
-      tracker.ts        # init, info, doctor, enable_git, disable_git, get_git_status, publish, sync
-      task.ts           # create_task, get_task, list_tasks, update_task, unset_field, get_task_history, replace_task_body, append_task_body, attach_file, detach_file, archive_task, unarchive_task, delete_task, link_tasks, unlink_tasks, reorder_relationship
-      project.ts        # list_projects, create_project, edit_project, archive_project, unarchive_project, delete_project, set_default_project
-      user.ts           # list_users, get_current_user, switch_user, create_user, edit_user, archive_user, unarchive_user, delete_user
-      label.ts          # list_labels, create_label, edit_label, archive_label, unarchive_label, delete_label
-      milestone.ts      # list_milestones, create_milestone, edit_milestone, archive_milestone, unarchive_milestone, delete_milestone
-      sprint.ts         # list_sprints, create_sprint, edit_sprint, archive_sprint, unarchive_sprint, delete_sprint, get_sprint_burndown
-      calendar.ts       # get_calendar
-      config.ts         # get_config_value, set_config_value, unset_config_value
-      views.ts          # list_views, get_workflow_config
-      rank.ts           # reorder_board
+    task-crud.ts                # get_task, list_tasks, create_task, update_task, unset_field, delete_task, get_task_history
+    task-body.ts                # append_task_body, replace_task_body
+    task-archive.ts             # archive_task, unarchive_task
+    task-files.ts               # attach_file, detach_file
+    task-links.ts               # link_tasks, unlink_tasks
+    task-rank.ts                # reorder_relationship, reorder_board
+    tracker.ts                  # init, info, doctor
+    git.ts                      # enable_git, disable_git, get_git_status, publish_to_git, sync_from_git
+    config.ts                   # get/set/unset/list_config_value
+    views.ts                    # list_views, get_workflow_config
+    project.ts                  # list/create/edit/delete/archive/unarchive/set_default _project
+    user.ts                     # *_user
+    label.ts                    # *_label
+    milestone.ts                # *_milestone
+    sprint.ts                   # *_sprint + get_sprint_burndown
+    calendar.ts                 # get_calendar
 ```
 
-Switch → typed `Map<string, Handler>`:
+**Registry pattern.** Each `tools/*.ts` exports `const X_TOOLS: readonly ToolDef[]`. Drops the array+switch duplication where each tool name appears twice.
+
 ```ts
-type Handler<T> = (args: T, ctx: ToolContext) => Promise<McpToolResult>;
-const handlers = new Map<ToolName, Handler<ToolArgs>>([...]);
+// types.ts
+type ToolDef<S extends z.ZodObject<any> = z.ZodObject<any>> = {
+  name: string;
+  description: string;
+  inputSchema: S;
+  exemptFromSchemaGuard?: boolean;   // replaces SCHEMA_GUARD_EXEMPT_TOOLS magic set
+  handler: (ctx: ToolCtx, args: z.infer<S>) => Promise<McpToolResult>;
+};
+type ToolCtx = { root: string; locttDir: string };
+
+// registry.ts
+export const TOOL_REGISTRY = new Map<string, ToolDef>([
+  ...TASK_CRUD_TOOLS.map(t => [t.name, t] as const),
+  ...PROJECT_TOOLS.map(t => [t.name, t] as const),
+  /* ... */
+]);
+
+// getTools() shim preserves the existing wire format for external callers
+// (tests, CLI's `mcp` command, anything that imports from @loctt/mcp).
+export function getTools(): McpTool[] {
+  return [...TOOL_REGISTRY.values()].map(stripHandlerAndExemptFlag);
+}
 ```
 
-Per-tool zod schemas (item 4.3 below) make this typed handler map exhaustive at compile time.
+**Wire format note.** Today's `inputSchema` field on each tool def is already a `z.<...>`-shaped record (e.g. `{ ref: z.string() }`), accepted by the MCP SDK directly. So converting to `inputSchema: z.object({ ref: z.string() })` is a reshape but not a wire-format change. Verify by reading the actual tool definitions before assuming — if the SDK demands raw JSON Schema after a recent change, do the two-step migration the sub-agent recommended (keep both `jsonSchema` and `zod` fields during phase 4, derive in a separate follow-up).
+
+**Build-time registry exhaustiveness check.** Add a test that imports `TOOL_REGISTRY`, snapshots the sorted name list, and asserts against a canonical list in `types.ts`. Catches "I forgot to add my new tool to the registry imports" earlier than the dispatcher's runtime default-case throw.
+
+Per-tool zod schemas (item 4.3 below) replace the `args["x"] as string` casts in every handler — `parseToolArgs(toolDef, raw)` returns `{ ok: true, args: z.infer<typeof toolDef.inputSchema> }`.
 
 ### 4.3 — Per-tool zod schemas
 
@@ -646,37 +594,44 @@ Current `apps/mcp/src/index.ts` has `archive_project` at ~1414, `archive_label` 
 
 ### 4.10 — Phase 4 commit plan
 
-CLI split:
-1. `cli: extract argv helpers (argv.ts)`
-2. `cli: extract runtime helpers (runtime.ts)`
-3. `cli: extract formatting helpers (format.ts)`
-4. `cli: extract init/info/schema/views/doctor commands`
-5. `cli: extract task command group`
-6. `cli: extract project command group`
-7. `cli: extract label/milestone/sprint command groups`
-8. `cli: extract user command group`
-9. `cli: extract rank command group`
-10. `cli: extract git/config/migrate commands`
-11. `cli: extract mcp/ui server-launch commands`
-12. `cli: dispatcher map in index.ts`
+**Reordered from the doc's original sketch** to put correctness/tests *before* the structural splits. Rationale:
+- Misc correctness items (4.7, 4.8, 4.5) have real bug-fix value and are small. Land them against the file layout we already know.
+- Test additions (4.6) cover real gaps standalone, regardless of file structure.
+- Structural splits (4.1, 4.2) are pure refactors. Doing them last keeps the diff easy to bisect — if a regression appears it's clearly in a split commit.
+- Verification per split commit: `npm run typecheck`, `npm test` (unit, retry once on flake), and a grep audit (nothing left behind in the old file, no orphan imports). `npm run test:integration` runs once at the end of each split section. `npm run test:e2e` runs once at the end of Phase 4.
 
-MCP split:
-13. `mcp: extract runtime helpers (runtime.ts)`
-14. `mcp: per-tool zod schemas + discriminated parser`
-15. `mcp: extract tool definitions module`
-16. `mcp: extract task tool handlers`
-17. `mcp: extract project/label/milestone/sprint/user handlers`
-18. `mcp: extract calendar/git/config/views handlers`
-19. `mcp: extract rank/burndown handlers`
-20. `mcp: typed handler map; drop getTools() factory`
+**Phase 4a — Misc correctness** (3 commits):
+1. `cli: getArg rejects single-dash long-form` (4.5)
+2. `web: pipeline() with destroy on tryServeStatic stream errors` (4.7)
+3. `web: zod request schemas for create/update endpoints` (4.8)
 
-Misc:
-21. `cli: getArg rejects single-dash long-form`
-22. `web: pipeline() with destroy on tryServeStatic stream errors`
-23. `web: zod request schemas for createView / updateProject / etc`
+**Phase 4b — Test additions** (4 commits):
+4. `cli: cover --set/--append mutex and --limit edge cases` (4.6)
+5. `cli: cover list --view + --project interaction` (4.6)
+6. `mcp: cover delete-confirm gating across all 5 entities` (4.6)
+7. `web: per-test isolation in security suite` (4.6)
 
-Tests:
-24. `cli: cover --set/--append mutex and --limit edge cases`
-25. `cli: cover list --view + --project interaction`
-26. `mcp: cover delete-confirm gating across all entities`
+**Phase 4c — CLI split** (10 commits, each followed by typecheck + npm test):
+8. `cli: extract runtime/args.ts` (pure helpers, easy diff)
+9. `cli: extract runtime/errors.ts + runtime/confirm.ts`
+10. `cli: extract runtime/workflow-assert.ts + runtime/schema-guard.ts`
+11. `cli: extract format/value.ts + format/history.ts`
+12. `cli: extract usage.ts + single-command files (init/info/doctor/views/schema)`
+13. `cli: extract task-crud/archive/files/links/rank commands`
+14. `cli: extract project/user/label/milestone/sprint/calendar commands`
+15. `cli: extract git/config/migrate/mcp/ui commands`
+16. `cli: dispatcher map in index.ts (final shrink)`
+17. Run `npm run test:integration` + `npm run test:e2e`; commit any fixes.
+
+**Phase 4d — MCP split + per-tool zod** (10 commits, each followed by typecheck + npm test):
+18. `mcp: extract runtime/* helpers (errors, confirm, fields, workflow-assert, schema-guard)`
+19. `mcp: add types.ts + registry.ts shell (empty registry, getTools() shim still calls legacy)`
+20. `mcp: migrate task-crud tools into registry; drop their cases from legacy switch`
+21. `mcp: migrate task-body/archive/files/links/rank tools`
+22. `mcp: migrate tracker/git/config/views tools`
+23. `mcp: migrate project/user/label/milestone/sprint/calendar tools`
+24. `mcp: delete legacy switch + in-file getTools(); registry-only`
+25. `mcp: build-time registry exhaustiveness test (canonical name list)`
+26. `mcp: exemptFromSchemaGuard flag replaces SCHEMA_GUARD_EXEMPT_TOOLS magic set`
+27. Run `npm run test:integration` for MCP suite; commit any fixes.
 27. `web: per-test isolation in security suite`
