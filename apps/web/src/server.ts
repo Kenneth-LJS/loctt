@@ -4,6 +4,7 @@ import { lstat as fsLstat, mkdtemp, rm, stat as fsStat } from "node:fs/promises"
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join as pathJoin, normalize as pathNormalize, resolve as pathResolve, sep as pathSep } from "node:path";
+import { pipeline } from "node:stream/promises";
 
 import type {
   ConfigResponse,
@@ -481,12 +482,22 @@ async function tryServeStatic(
     res.end();
     return true;
   }
-  await new Promise<void>((resolve, reject) => {
-    const stream = createReadStream(target);
-    stream.on("error", reject);
-    stream.on("end", () => resolve());
-    stream.pipe(res);
-  });
+  // pipeline() handles backpressure, propagates errors from either
+  // end, and waits for the writer to finish. On stream-side error
+  // (disk EIO, file truncated mid-read) we can't recover the
+  // already-sent 200 headers — destroy the socket so the client
+  // sees a truncated transfer instead of a silent stall. Logged
+  // under LOCTT_DEBUG so an operator can correlate.
+  try {
+    await pipeline(createReadStream(target), res);
+  } catch (err) {
+    if (process.env["LOCTT_DEBUG"] === "1") {
+      console.error(`[web] static-stream error for ${target}:`, err);
+    }
+    if (!res.writableEnded) {
+      res.destroy();
+    }
+  }
   return true;
 }
 
