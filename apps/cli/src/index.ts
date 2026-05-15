@@ -36,8 +36,6 @@ import {
   getConfigValue,
   getCurrentUser,
   getGitStatus,
-  getTrackerInfo,
-  initLoctt,
   linkTask,
   listTasks,
   loadAllTasks,
@@ -63,7 +61,6 @@ import {
   resolveLocttDir,
   resolveProjectKeyForUser,
   resolveUserRef,
-  runDoctor,
   saveState,
   setConfigValue,
   setDefaultProject,
@@ -85,6 +82,11 @@ import {
   writeTaskBody,
 } from "@loctt/core";
 
+import * as doctorCmd from "./commands/doctor.js";
+import * as infoCmd from "./commands/info.js";
+import * as initCmd from "./commands/init.js";
+import * as schemaCmd from "./commands/schema.js";
+import * as viewsCmd from "./commands/views.js";
 import { formatHistoryEntry } from "./format/history.js";
 import { formatNumber, pad } from "./format/value.js";
 import { getArg, hasFlag, stripCwdArg } from "./runtime/args.js";
@@ -126,136 +128,11 @@ export async function main(): Promise<void> {
     }
 
     switch (command) {
-      case "init": {
-        const prefix = getArg(args, "--prefix") ?? "T-";
-        const projectKey = getArg(args, "--project-key");
-        const projectLabel = getArg(args, "--project-label");
-        const docs = !hasFlag(args, "--no-docs");
-        const result = await initLoctt(root, {
-          prefix,
-          docs,
-          ...(projectKey ? { projectKey } : {}),
-          ...(projectLabel ? { projectLabel } : {}),
-        });
-        console.log(`Initialized .loctt at ${result.locttDir}`);
-        console.log(`Created ${result.created.length} files`);
-        break;
-      }
-
-      case "info": {
-        const info = await getTrackerInfo(root);
-        if (!info.exists) {
-          console.log("No .loctt directory found. Run 'loctt init' to get started.");
-          break;
-        }
-        console.log(`LocTT directory: ${info.locttDir}`);
-        console.log(`Tasks: ${info.taskCount}`);
-        if (info.workflowConfig) {
-          console.log(`Statuses: ${info.workflowConfig.statuses.map(s => s.key).join(", ")}`);
-        }
-        // Print per-project counters. Each line: "<key> [*]  <prefix><next_number>"
-        // The asterisk marks the workspace default.
-        try {
-          const projects = await loadProjectsConfig(resolveLocttDir(root));
-          if (projects.projects.length > 0) {
-            console.log(``);
-            console.log(`Projects:`);
-            for (const p of projects.projects) {
-              const counter = info.state?.keys[p.key];
-              const star = projects.default === p.key ? " *" : "";
-              const next = counter ? `${counter.prefix}${counter.next_number}` : `(no counter)`;
-              console.log(`  ${p.key}${star}  ${p.label}  next: ${next}`);
-            }
-          }
-        } catch (err) {
-          // Missing projects.yaml is normal on a fresh tracker — skip
-          // the per-project block silently. Parse / permission errors
-          // are real and should surface.
-          if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-        }
-        break;
-      }
-
-      case "doctor": {
-        const rebuildIndex = hasFlag(args, "--rebuild-index");
-        const checks = await runDoctor(root, { rebuildIndex });
-        for (const check of checks) {
-          const icon = check.status === "ok" ? "✓" : check.status === "warn" ? "!" : "✗";
-          console.log(`  ${icon} ${check.name}: ${check.message}`);
-        }
-        const hasError = checks.some(c => c.status === "error");
-        if (hasError) process.exitCode = EXIT.RUNTIME;
-        break;
-      }
-
-      case "views": {
-        const locttDir = resolveLocttDir(root);
-        const { queriesConfig } = await loadOptionalConfigs(locttDir);
-        if (!queriesConfig || queriesConfig.queries.length === 0) {
-          console.log("No saved views.");
-          break;
-        }
-        for (const v of queriesConfig.queries) {
-          const sortPart = v.sort && v.sort.length > 0
-            ? `  [sort: ${v.sort.map(s => `${s.field} ${s.direction}`).join(", ")}]`
-            : "";
-          console.log(`${v.name}  ${v.query}${sortPart}`);
-        }
-        break;
-      }
-
-      case "schema": {
-        const locttDir = resolveLocttDir(root);
-        const { workflowConfig } = await loadOptionalConfigs(locttDir);
-        if (!workflowConfig) {
-          console.log("No workflow config found.");
-          break;
-        }
-        console.log(`Key prefix: ${workflowConfig.key.prefix}`);
-        console.log("");
-        console.log("Statuses:");
-        for (const s of workflowConfig.statuses) {
-          console.log(`  ${s.key} (${s.category}): ${s.label}`);
-        }
-        if (workflowConfig.priorities.length > 0) {
-          console.log("");
-          console.log("Priorities:");
-          for (const p of workflowConfig.priorities) {
-            const valuePart = p.value !== undefined ? ` [${p.value}]` : "";
-            console.log(`  ${p.key}: ${p.label}${valuePart}`);
-          }
-        }
-        if (workflowConfig.task_types.length > 0) {
-          console.log("");
-          console.log("Task types:");
-          for (const t of workflowConfig.task_types) {
-            console.log(`  ${t.key}: ${t.label}`);
-          }
-        }
-        if (workflowConfig.relationships.length > 0) {
-          console.log("");
-          console.log("Relationships:");
-          for (const r of workflowConfig.relationships) {
-            const structural = r.structural ? " [structural]" : "";
-            console.log(`  ${r.key} (${r.label}) ↔ ${r.inverse} (${r.inverse_label})${structural}`);
-          }
-        }
-        if (workflowConfig.custom_fields.length > 0) {
-          console.log("");
-          console.log("Custom fields:");
-          for (const f of workflowConfig.custom_fields) {
-            const multi = f.multi ? " multi" : "";
-            const searchable = f.searchable ? " searchable" : "";
-            console.log(`  ${f.key} (${f.type}${multi}${searchable}): ${f.label}`);
-            if (f.values && f.values.length > 0) {
-              for (const v of f.values) {
-                console.log(`    - ${v.key}: ${v.label}`);
-              }
-            }
-          }
-        }
-        break;
-      }
+      case "init":   await initCmd.run(args, root);   break;
+      case "info":   await infoCmd.run(args, root);   break;
+      case "doctor": await doctorCmd.run(args, root); break;
+      case "views":  await viewsCmd.run(args, root);  break;
+      case "schema": await schemaCmd.run(args, root); break;
 
       case "create": {
         await runCommand(async () => {
