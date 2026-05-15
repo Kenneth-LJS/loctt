@@ -650,6 +650,85 @@ describe("CLI commands", () => {
     });
   });
 
+  describe("CLI flag handling edge cases", () => {
+    it("body --set and --append are mutually exclusive (exit 2)", async () => {
+      await initLoctt(root);
+      process.argv = ["node", "loctt", "create", "t"];
+      await main();
+      const errSpy = vi.mocked(console.error);
+      errSpy.mockClear();
+      process.exitCode = undefined;
+      process.argv = ["node", "loctt", "body", "T-1", "--set", "x", "--append", "y"];
+      await main();
+      expect(process.exitCode).toBe(2);
+      const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(stderr).toMatch(/mutually exclusive/);
+    });
+
+    it("body --set with empty string is treated as set-to-empty (not omitted)", async () => {
+      // Regression for the rolled-our-own arg parser: empty-string
+      // values must survive as `""` rather than being coerced or
+      // treated as missing.
+      await initLoctt(root);
+      process.argv = ["node", "loctt", "create", "t"];
+      await main();
+      const consoleSpy = vi.mocked(console.log);
+      consoleSpy.mockClear();
+      process.exitCode = undefined;
+      process.argv = ["node", "loctt", "body", "T-1", "--set", ""];
+      await main();
+      expect(process.exitCode).toBeUndefined();
+      const stdout = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(stdout).toMatch(/Updated body for T-1/);
+    });
+
+    it("log --limit rejects non-integer values (exit 2)", async () => {
+      await initLoctt(root);
+      process.argv = ["node", "loctt", "create", "t"];
+      await main();
+      const errSpy = vi.mocked(console.error);
+      errSpy.mockClear();
+      process.exitCode = undefined;
+      process.argv = ["node", "loctt", "log", "T-1", "--limit", "abc"];
+      await main();
+      expect(process.exitCode).toBe(2);
+      const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(stderr).toMatch(/--limit must be a non-negative integer/);
+    });
+
+    it("log --limit=-3 rejects negative values (exit 2)", async () => {
+      // Use `=` form to pass a negative number; the bare-arg form
+      // (`--limit -3`) treats `-3` as a flag, not as the value,
+      // which is consistent with how getArg refuses to swallow
+      // anything starting with `-` as a value.
+      await initLoctt(root);
+      process.argv = ["node", "loctt", "create", "t"];
+      await main();
+      const errSpy = vi.mocked(console.error);
+      errSpy.mockClear();
+      process.exitCode = undefined;
+      process.argv = ["node", "loctt", "log", "T-1", "--limit=-3"];
+      await main();
+      expect(process.exitCode).toBe(2);
+      const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(stderr).toMatch(/--limit must be a non-negative integer/);
+    });
+
+    it("log --limit=0 returns no entries but is not an error", async () => {
+      await initLoctt(root);
+      process.argv = ["node", "loctt", "create", "t"];
+      await main();
+      const consoleSpy = vi.mocked(console.log);
+      consoleSpy.mockClear();
+      process.exitCode = undefined;
+      process.argv = ["node", "loctt", "log", "T-1", "--limit", "0"];
+      await main();
+      expect(process.exitCode).toBeUndefined();
+      const stdout = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(stdout).toMatch(/No history entries/);
+    });
+  });
+
   describe("CLI enum pre-validation against workflow config", () => {
     // Regression tests for the assertWorkflowEnumKey / ...Relationship
     // helpers: unknown workflow keys fail at the CLI boundary with a

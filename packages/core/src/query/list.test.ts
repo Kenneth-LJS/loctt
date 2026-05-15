@@ -197,4 +197,48 @@ describe("listTasks", () => {
       expect(result.map(t => t.frontmatter.key).sort()).toEqual(["T-1", "T-2"]);
     });
   });
+
+  describe("project filter interaction", () => {
+    const multiProjectTasks: Task[] = [
+      makeTask("WEB-1", { project: "web", status: "not_started" }),
+      makeTask("WEB-2", { project: "web", status: "done" }),
+      makeTask("API-1", { project: "api", status: "not_started" }),
+      makeTask("API-2", { project: "api", status: "done" }),
+    ];
+
+    it("applies the project filter as a post-query equality check", () => {
+      const result = listTasks({
+        tasks: multiProjectTasks,
+        options: { project: "web", includeArchived: true },
+      });
+      expect(result.map(t => t.frontmatter.key).sort()).toEqual(["WEB-1", "WEB-2"]);
+    });
+
+    it("project filter composes with an explicit query", () => {
+      const result = listTasks({
+        tasks: multiProjectTasks,
+        options: { project: "web", query: "status = not_started" },
+      });
+      expect(result.map(t => t.frontmatter.key)).toEqual(["WEB-1"]);
+    });
+
+    it("project filter is IGNORED when a saved view is used (views are respected as authored)", () => {
+      // This is the documented interaction: when `view` is set,
+      // the `project` filter is NOT applied. The view's authored
+      // query is the source of truth — surfaces would conflate the
+      // two if they were AND-merged silently.
+      const viewConfig: QueriesConfig = {
+        queries: [{ id: "01HSV0000000000000ALLOPEN", name: "all-open", query: "status != done" }],
+      };
+      const result = listTasks({
+        tasks: multiProjectTasks,
+        options: { view: "all-open", project: "web" },
+        queriesConfig: viewConfig,
+        workflowConfig: config,
+      });
+      // View matches WEB-1 and API-1; the `project: "web"` filter
+      // was supplied but the view-precedence policy ignores it.
+      expect(result.map(t => t.frontmatter.key).sort()).toEqual(["API-1", "WEB-1"]);
+    });
+  });
 });
