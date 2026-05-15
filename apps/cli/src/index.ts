@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import type { HistoryEntry, WorkflowConfig } from "@loctt/contracts";
 import {
   appendTaskBody,
-  ArchivedReferenceError,
   archiveLabel,
   archiveMilestone,
   archiveProject,
@@ -14,11 +13,8 @@ import {
   archiveUser,
   attachFile,
   AttachmentExistsError,
-  AttachmentNotFoundError,
-  AttachmentSourceError,
   buildListContext,
   buildShowModel,
-  BurndownError,
   CONFIG_KEYS,
   createLabel,
   createMilestone,
@@ -44,7 +40,6 @@ import {
   getGitStatus,
   getTrackerInfo,
   initLoctt,
-  LabelError,
   linkTask,
   listTasks,
   loadAllTasks,
@@ -59,15 +54,12 @@ import {
   loadState,
   lookupTask,
   migrateToCurrent,
-  MilestoneError,
   planMigration,
-  ProjectError,
   publish,
   readBurndownSeries,
   readHistory,
   readTaskBody,
   reorderBoardRank,
-  ReorderError,
   reorderRelationship,
   requireSupportedSchema,
   resolveLocttDir,
@@ -78,10 +70,8 @@ import {
   setConfigValue,
   setDefaultProject,
   setField,
-  SprintError,
   switchCurrentUser,
   sync,
-  TaskNotFoundError,
   unarchiveLabel,
   unarchiveMilestone,
   unarchiveProject,
@@ -96,6 +86,9 @@ import {
   withStateLock,
   writeTaskBody,
 } from "@loctt/core";
+
+import { getArg, hasFlag, stripCwdArg } from "./runtime/args.js";
+import { EXIT, runCommand, UsageError } from "./runtime/errors.js";
 
 async function dirExists(p: string): Promise<boolean> {
   try {
@@ -195,151 +188,6 @@ Common flags:
 }
 
 /**
- * Process exit codes used across all `loctt` subcommands. Scripts and
- * tests can switch on these to distinguish "user said no" from "the
- * tracker is on a newer schema" from "you typed the command wrong."
- */
-export const EXIT = {
-  /** Command succeeded, or user declined a confirm prompt. */
-  SUCCESS: 0,
-  /** Domain/runtime error (validation, IO, schema mismatch, …). */
-  RUNTIME: 1,
-  /** Usage error: missing args, bad flag, mutually-exclusive flags. */
-  USAGE: 2,
-} as const;
-
-/**
- * Returns the string value for `--flag <value>` or `--flag=value`.
- * Returns undefined if the flag is absent or used in boolean form
- * (`--flag` followed by another flag), so callers can distinguish
- * "not set" from "set to empty string".
- *
- * Anything after `--` is treated as positional and ignored.
- *
- * Notes:
- * - Empty-string values (`--set ""`) are returned as `""` rather than
- *   coerced to a number or treated as missing. We rolled our own
- *   parser because off-the-shelf mri auto-coerces `""` to `0`.
- * - Repeated flags: the last occurrence wins, matching the most
- *   intuitive shell behavior (`--limit 1 --limit 2` → `2`).
- * - **Long-form only.** `-flag` (single dash) is NOT accepted; LocTT
- *   has no short flags so the single-dash form was always a typo
- *   for `--flag`. Used to be silently accepted; now ignored (the
- *   caller will see `undefined` and surface a UsageError pointing
- *   at the missing required value, which is the right outcome).
- */
-function getArg(args: string[], flag: string): string | undefined {
-  const name = flag.replace(/^--?/, "");
-  let result: string | undefined;
-  for (let i = 0; i < args.length; i += 1) {
-    const a = args[i];
-    if (a === "--") break;
-    if (a === undefined) continue;
-    // `--flag=value` form
-    if (a === `--${name}=` || a.startsWith(`--${name}=`)) {
-      result = a.slice(`--${name}=`.length);
-      continue;
-    }
-    // `--flag value` form. Treat the next arg as a value unless it
-    // looks like another flag — in which case --flag was bare/boolean.
-    if (a === `--${name}`) {
-      const next = args[i + 1];
-      if (next === undefined) continue;
-      if (next.startsWith("-") && next !== "-") continue;
-      result = next;
-      i += 1;
-    }
-  }
-  return result;
-}
-
-/**
- * Removes `--cwd <value>` and `--cwd=<value>` occurrences from an
- * argv slice. Used by `main()` after extracting the cwd value so
- * handlers never see the global flag and so the first positional
- * after `loctt` is always the subcommand. Repeated occurrences are
- * all stripped (last one wins for the value, consistent with
- * `getArg`).
- *
- * Mirrors `getArg`'s rules so the two helpers can't disagree about
- * what counts as the value of `--cwd`:
- * - The value is consumed only when the next token is a positional
- *   (does not start with `-`). Bare `--cwd --help` therefore leaves
- *   `--help` in the output instead of swallowing it.
- * - Anything after `--` is positional and never touched.
- */
-function stripCwdArg(args: string[]): string[] {
-  const out: string[] = [];
-  let i = 0;
-  while (i < args.length) {
-    const a = args[i];
-    if (a === undefined) { i += 1; continue; }
-    if (a === "--") {
-      out.push(...args.slice(i));
-      return out;
-    }
-    if (a === "--cwd") {
-      const next = args[i + 1];
-      // Same rule as getArg: only treat the next token as the value
-      // if it doesn't itself look like a flag (so `--cwd --help`
-      // leaves `--help` intact).
-      if (next !== undefined && !next.startsWith("-")) {
-        i += 2;
-      } else {
-        i += 1;
-      }
-      continue;
-    }
-    if (a.startsWith("--cwd=")) {
-      i += 1;
-      continue;
-    }
-    out.push(a);
-    i += 1;
-  }
-  return out;
-}
-
-const TRUTHY_FLAG_SUFFIXES = new Set(["true", "1", "yes", "on"]);
-const FALSY_FLAG_SUFFIXES = new Set(["false", "0", "no", "off"]);
-
-/**
- * Returns true when a boolean flag is present (`--archived`,
- * `--archived=true`). `--archived=false` is treated as absent so a
- * caller can override a default-true behaviour.
- *
- * Accepted suffixes:
- *   truthy: `true`, `1`, `yes`, `on`
- *   falsy:  `false`, `0`, `no`, `off`
- *
- * An unrecognized suffix (`--archived=ture`) throws a UsageError
- * rather than silently being interpreted as truthy, so typos
- * surface as a clear "did you mean..." kind of error instead of
- * silently triggering the flag.
- *
- * Anything after `--` is positional and ignored.
- */
-function hasFlag(args: string[], flag: string): boolean {
-  const name = flag.replace(/^--?/, "");
-  let present = false;
-  for (let i = 0; i < args.length; i += 1) {
-    const a = args[i];
-    if (a === "--") break;
-    if (a === undefined) continue;
-    if (a === `--${name}`) { present = true; continue; }
-    if (a.startsWith(`--${name}=`)) {
-      const suffix = a.slice(`--${name}=`.length).toLowerCase();
-      if (TRUTHY_FLAG_SUFFIXES.has(suffix)) { present = true; continue; }
-      if (FALSY_FLAG_SUFFIXES.has(suffix)) { present = false; continue; }
-      throw new UsageError(
-        `invalid value for --${name}: ${JSON.stringify(suffix)}. Expected one of: true, false, 1, 0, yes, no, on, off.`,
-      );
-    }
-  }
-  return present;
-}
-
-/**
  * Reads a single line from stdin and resolves true on a `y`/`yes`
  * response (case-insensitive), false on anything else (including
  * empty input or EOF). Used for destructive-action confirmations.
@@ -390,102 +238,6 @@ async function confirmHardDelete(args: string[], question: string): Promise<Conf
     return answer === "y" || answer === "yes" ? "yes" : "no";
   } finally {
     rl.close();
-  }
-}
-
-/**
- * Thrown by command handlers for input/usage errors (missing args,
- * mutually-exclusive flags, malformed values that the parser
- * caught). The dispatcher prints a "Usage:" line if `usage` is
- * provided, then exits with {@link EXIT.USAGE}.
- *
- * Domain errors (e.g. `ProjectError`) bubble out as themselves and
- * are mapped to {@link EXIT.RUNTIME} by the dispatcher; only call
- * this when the *user's input* is wrong.
- */
-class UsageError extends Error {
-  readonly name = "UsageError" as const;
-  constructor(message: string, readonly usage?: string) {
-    super(message);
-  }
-}
-
-/**
- * Domain-error classes that the CLI dispatcher knows how to report
- * cleanly: print `Error: <message>` to stderr, exit
- * {@link EXIT.RUNTIME}. Anything not in this list bubbles through
- * the top-level catch (which still prints a clean message but
- * cannot show a "this was a known kind of failure" hint).
- *
- * Listed once here so adding a new domain error class is a single
- * import + one-line append rather than a new try/catch arm in
- * every command.
- */
-const KNOWN_DOMAIN_ERRORS: ReadonlyArray<new (...args: never[]) => Error> = [
-  ArchivedReferenceError,
-  AttachmentExistsError,
-  AttachmentNotFoundError,
-  AttachmentSourceError,
-  BurndownError,
-  LabelError,
-  MilestoneError,
-  ProjectError,
-  ReorderError,
-  SprintError,
-  TaskNotFoundError,
-  UserError,
-  // RelationshipError surfaces from link/unlink; not currently
-  // imported here because the existing handlers let it bubble.
-  // Add it when a future command catches it.
-];
-
-/**
- * Runs a command handler and maps thrown errors to the right exit
- * code + stderr message:
- * - `UsageError` → print `Error: …` (and `Usage: …` if provided),
- *   exit {@link EXIT.USAGE}.
- * - Any class in {@link KNOWN_DOMAIN_ERRORS} → print `Error: …`,
- *   exit {@link EXIT.RUNTIME}.
- * - Anything else → re-throw so the outer `main()` catch handles it.
- *
- * The body owns the success path: `runCommand` only touches
- * `process.exitCode` on a thrown error. A body that needs to
- * report partial success can set `process.exitCode` itself before
- * returning normally.
- *
- * Each command's body becomes:
- *
- *     case "foo": {
- *       await runCommand(async () => {
- *         // body that may throw UsageError, or a domain error,
- *         // or do nothing if the command succeeds.
- *       });
- *       break;
- *     }
- *
- * which is much shorter than the per-command try/catch pattern
- * the file used to use.
- */
-async function runCommand(fn: () => Promise<void>): Promise<void> {
-  try {
-    await fn();
-  } catch (err) {
-    if (err instanceof UsageError) {
-      console.error(`Error: ${err.message}`);
-      if (err.usage) console.error(`Usage: ${err.usage}`);
-      process.exitCode = EXIT.USAGE;
-      return;
-    }
-    if (err instanceof Error) {
-      for (const Klass of KNOWN_DOMAIN_ERRORS) {
-        if (err instanceof Klass) {
-          console.error(`Error: ${err.message}`);
-          process.exitCode = EXIT.RUNTIME;
-          return;
-        }
-      }
-    }
-    throw err;
   }
 }
 
