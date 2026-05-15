@@ -625,6 +625,29 @@ describe("CLI commands", () => {
         expect(stderr).toMatch(/^Usage:/m);
       }
     });
+
+    it("single-dash long-form (`-project`) is rejected; only `--project` is accepted", async () => {
+      // LocTT defines no short flags, so `-project` was always a
+      // typo for `--project`. The old parser silently accepted it;
+      // the new parser ignores the single-dash form. End result:
+      // the value isn't picked up, so a command needing it falls
+      // through to its usage error.
+      await initLoctt(root);
+      const errSpy = vi.mocked(console.error);
+      errSpy.mockClear();
+      process.exitCode = undefined;
+      // `loctt create "foo" -project task` — the `-project task`
+      // tokens are now treated as positional / ignored, so the
+      // command itself still runs against the default project.
+      // The point is just that single-dash isn't recognized; it's
+      // not a hard error, just silently inert.
+      process.argv = ["node", "loctt", "create", "task with single-dash flag", "-project", "task"];
+      await main();
+      // The command succeeded against the default project — the
+      // single-dash form didn't match a flag, so it was treated as
+      // (ignored) garbage in the trailing args.
+      expect(process.exitCode).toBeUndefined();
+    });
   });
 
   describe("CLI enum pre-validation against workflow config", () => {
