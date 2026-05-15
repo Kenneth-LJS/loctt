@@ -1,8 +1,7 @@
-import { stat as fsStat } from "node:fs/promises";
-import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
+import { isAbsolute, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { HistoryEntry, WorkflowConfig } from "@loctt/contracts";
+import type { HistoryEntry } from "@loctt/contracts";
 import {
   appendTaskBody,
   archiveLabel,
@@ -88,38 +87,10 @@ import {
 } from "@loctt/core";
 
 import { getArg, hasFlag, stripCwdArg } from "./runtime/args.js";
+import { confirmHardDelete, confirmInteractive } from "./runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "./runtime/errors.js";
-
-async function dirExists(p: string): Promise<boolean> {
-  try {
-    const s = await fsStat(p);
-    return s.isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Locate the built client SPA directory. Tries (in order):
- *   1. LOCTT_CLIENT_DIR env override
- *   2. <cli-bundle>/client            (production: shipped alongside CLI bundle)
- *   3. <cli-bundle>/../../web/dist/client  (workspace dev: apps/web/dist/client)
- * Returns undefined if no client build is available — server still works as API-only.
- */
-async function resolveClientDir(): Promise<string | undefined> {
-  const envDir = process.env.LOCTT_CLIENT_DIR;
-  if (envDir && (await dirExists(envDir))) return envDir;
-
-  const here = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    resolvePath(here, "client"),
-    resolvePath(here, "../../web/dist/client"),
-  ];
-  for (const c of candidates) {
-    if (await dirExists(c)) return c;
-  }
-  return undefined;
-}
+import { dirExists, resolveClientDir, SCHEMA_GUARD_EXEMPT_COMMANDS } from "./runtime/schema-guard.js";
+import { assertWorkflowEnumKey, assertWorkflowRelationshipKey } from "./runtime/workflow-assert.js";
 
 function usage(): void {
   console.log(`Usage: loctt [--cwd <dir>] <command> [options]
@@ -185,102 +156,6 @@ Common flags:
   --unassign                       On 'loctt user delete', clear assignee/reporter on
                                    affected tasks. Mutually exclusive with --remap-to.
 `);
-}
-
-/**
- * Reads a single line from stdin and resolves true on a `y`/`yes`
- * response (case-insensitive), false on anything else (including
- * empty input or EOF). Used for destructive-action confirmations.
- *
- * If stdin isn't a TTY (piped input, CI), returns false — callers
- * should pass `--yes` to skip the prompt non-interactively.
- */
-async function confirmInteractive(question: string): Promise<boolean> {
-  if (!process.stdin.isTTY) {
-    console.error(
-      `Refusing to prompt for confirmation in non-interactive mode. Pass --yes to skip.`,
-    );
-    return false;
-  }
-  const { createInterface } = await import("node:readline/promises");
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = (await rl.question(`${question} [y/N] `)).trim().toLowerCase();
-    return answer === "y" || answer === "yes";
-  } finally {
-    rl.close();
-  }
-}
-
-type ConfirmOutcome = "yes" | "no" | "refused";
-
-/**
- * Confirms a destructive action.
- * - `--yes` flag → "yes" (no prompt).
- * - Interactive TTY: prompts; user "y" → "yes", anything else → "no".
- * - Non-TTY without `--yes` → "refused" (a usage error, not a denial).
- *
- * Callers should map `"no"` → {@link EXIT.SUCCESS} (clean refusal)
- * and `"refused"` → {@link EXIT.USAGE} (the script forgot `--yes`).
- */
-async function confirmHardDelete(args: string[], question: string): Promise<ConfirmOutcome> {
-  if (hasFlag(args, "--yes")) return "yes";
-  if (!process.stdin.isTTY) {
-    console.error(
-      `Refusing to prompt for confirmation in non-interactive mode. Pass --yes to skip.`,
-    );
-    return "refused";
-  }
-  const { createInterface } = await import("node:readline/promises");
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = (await rl.question(`${question} [y/N] `)).trim().toLowerCase();
-    return answer === "y" || answer === "yes" ? "yes" : "no";
-  } finally {
-    rl.close();
-  }
-}
-
-/**
- * Pre-flight check for enum-typed CLI args. Fails fast with a
- * "known values" hint when the user passes a status/priority/task_type
- * that isn't in the workflow config — friendlier than letting the
- * core surface a generic update error. `undefined` is allowed (the
- * field is being omitted, not set to a bad value).
- *
- * No-op when `workflowConfig` is undefined (tracker without one).
- */
-function assertWorkflowEnumKey(
-  workflowConfig: WorkflowConfig | undefined,
-  field: "status" | "priority" | "task_type",
-  value: string | undefined,
-): void {
-  if (workflowConfig === undefined || value === undefined) return;
-  const defs = field === "status" ? workflowConfig.statuses
-    : field === "priority" ? workflowConfig.priorities
-    : workflowConfig.task_types;
-  const keys = defs.map(d => d.key);
-  if (!keys.includes(value)) {
-    const known = keys.length > 0 ? keys.join(", ") : "(none configured)";
-    throw new UsageError(`unknown ${field} '${value}'. Known: ${known}`);
-  }
-}
-
-/**
- * Pre-flight check for relationship-type CLI args. Same rationale
- * as {@link assertWorkflowEnumKey}: surface a "known values" hint
- * at the CLI boundary instead of letting the core throw.
- */
-function assertWorkflowRelationshipKey(
-  workflowConfig: WorkflowConfig | undefined,
-  value: string,
-): void {
-  if (workflowConfig === undefined) return;
-  const keys = workflowConfig.relationships.map(r => r.key);
-  if (!keys.includes(value)) {
-    const known = keys.length > 0 ? keys.join(", ") : "(none configured)";
-    throw new UsageError(`unknown relationship '${value}'. Known: ${known}`);
-  }
 }
 
 /** Round a number to one decimal place for compact column display. */
@@ -354,25 +229,6 @@ function formatHistoryEntry(entry: HistoryEntry): string {
       return `${ts}  ${entry.kind}`;
   }
 }
-
-/**
- * Commands that are exempt from the schema-version boot guard.
- *  - `init` runs before any tracker exists.
- *  - `migrate` is the path that fixes a stale schema.
- *  - help/usage commands don't touch the tracker.
- *  - `mcp` and `ui` are long-lived servers that run their own
- *    per-request boot guard.
- */
-const SCHEMA_GUARD_EXEMPT_COMMANDS = new Set([
-  "init",
-  "migrate",
-  "mcp",
-  "ui",
-  "help",
-  "--help",
-  "-h",
-  undefined,
-]);
 
 export async function main(): Promise<void> {
   const rawArgs = process.argv.slice(2);
