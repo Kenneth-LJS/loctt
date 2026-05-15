@@ -20,8 +20,8 @@ Generated from a full codebase review (2026-05-12). This document tracks the imp
 |---|---|---|
 | 1. Critical (3) + concurrency (4) + error narrowing (3) | **DONE** | 11 commits, all gates green. setField/unsetField also got locked (was implicit in 1.4b) |
 | 2. API contracts + CLI/MCP alignment (delete verb rename) | **DONE** | 12 items; 2.12 confirmed false-positive |
-| 3. Docs + minor batch | TODO | Lower risk, high value |
-| 4. Structural splits + per-tool zod + test additions | TODO | Highest churn, lowest correctness value — do last |
+| 3. Docs + minor batch | **DONE** | Items 25-52 landed in 10+ commits; a few were false positives |
+| 4. Structural splits + per-tool zod + test additions | TODO | Highest churn, lowest correctness value — pacing carefully |
 
 Update the table above as phases complete. Within a phase, tick items as they land.
 
@@ -481,7 +481,202 @@ Tests:
 - **`TEMP-IMPLEMENTATION-PLAN.md` and `temp-ui-mockups/` are intentionally kept.** Do not delete.
 - **No AI/Claude attribution** in commit messages. Read CLAUDE.md.
 - After every commit: `npm run typecheck && npm test` from repo root. If fails, fix in the same commit before moving on.
+  - **Known pre-existing flakes** under parallel `npm test`: `src/git/publish-sync.test.ts`, `src/git/push-fetch.test.ts`, occasionally `src/scaffold.test.ts`. They pass cleanly in isolation. If only these fail, re-run before treating it as a real regression.
 - `npm run lint` is separate; run at end of each phase.
 - Read this doc top to bottom before touching code. Each item references the exact file:line so you can validate the fix is still relevant before applying.
 - When in doubt about a multi-option design call, look in the "Decisions already locked in" section first — most have been made.
 - The reviewer's note about MCP `hard` parameter on delete tools is a **false positive** — docs and code agree (MCP delete is hard-only, MCP archive is the soft path). Do not "fix" this.
+
+## Snapshot of completed work (Phases 1-3)
+
+Phases 1, 2, and 3 are done. 33+ commits in this pass; full suite green on each.
+
+**Phase 1 — Critical + Concurrency + Error narrowing.** Key-index lazy fold-on-miss replaces the count watermark and ships with `loctt doctor --rebuild-index` for the out-of-band-edit escape hatch. Cycle detection resolves inverse keys before walking and now throws on MAX_VISITS overflow; a separate `findStructuralCycles` doctor scan surfaces existing cycles on disk. Schema migration sentinel writes atomically. State lock closes the migration TOCTOU via a hand-off protocol (state-lock briefly during migration-lock acquire, released early so concurrent writers fail fast). `archiveTask` / `unarchiveTask` / `deleteTask` / `setField` / `unsetField` / `updateTaskBody` all wrapped in `withStateLock`. Error narrowing: `lookupByKey` and `lookupTask` propagate non-ENOENT / non-`TaskNotFoundError`; MCP dispatcher's outer catch whitelists domain errors and rethrows the rest.
+
+**Phase 2 — API contracts + CLI/MCP alignment.** Structured `project` filter for `listTasks` across all three surfaces (no more string-concat into the query DSL). `Content-Disposition` uses RFC 5987 `filename*` + sanitized ASCII fallback. `TaskFrontmatterPublicSchema` projects HTTP responses through a strict allowlist. `AttachResultResponse` moved to contracts. Activity endpoint clones before reverse. Hard-delete rejects archived remap targets across label/sprint/milestone/project/user. **CLI `--hard` removed entirely** — `delete` is permanent, `archive` is reversible, both surfaces use the same two-verb model. `body`/`log`/`delete` now route through `runCommand`; `attach` rethrows with `--force` hint. `resolveProjectKeyForUser` extracted to core. MCP `create_task` pre-validates workflow enum keys with the "Known: ..." hint.
+
+**Phase 3 — Docs + minor batch.** README + `docs/user/common/git-sync.md` updated for `loctt git publish` / `loctt git sync` (reconcile section removed). `TODO.md` rewritten. CLI reference: ranks section split out, `sprint burndown` moved under Sprints. `tests/README.md` layout regenerated. E2E + perf configs got the loctt-* workspace sweep wired in. `IMMUTABLE_FIELDS` renamed to `USER_IMMUTABLE_FIELDS` + new `SYSTEM_MUTABLE_VIA` map documenting privileged callers. Journal corruption is now logged instead of swallowed. `workflow-write` cross-validates remap source keys at write time. `DEFAULT_LIST_LIMIT` constant. `requireValidRef` helper in web. `readErrorMessage` helper in client. Perf test 03 fails loud on stale dist. `loctt ui` debug-logs spawn failures. ~14 other minor fidelity fixes.
+
+## Phase 4 — Structural splits + per-tool zod + test additions
+
+**Pacing note:** Phase 4 is the highest-churn pass and the lowest correctness value. If pressed for time, ship Phases 1-3 first and treat Phase 4 as a separate follow-up. The CLI/MCP files are 2200 / 1800 lines each and refactoring them is multi-day work with real regression risk.
+
+### 4.1 — Split `apps/cli/src/index.ts` (2200+ lines)
+
+Target structure:
+```
+apps/cli/src/
+  index.ts              # dispatcher only (~50 lines)
+  argv.ts               # getArg, stripCwdArg, hasFlag, parseArgs, EXIT
+  runtime.ts            # runCommand, UsageError, KNOWN_DOMAIN_ERRORS, confirmHardDelete, assertWorkflowEnumKey, assertWorkflowRelationshipKey
+  format.ts             # formatHistoryEntry, formatValue, pad, formatNumber, readLinkMeta
+  commands/
+    init.ts             # init, schema, views
+    info.ts             # info, doctor
+    task.ts             # create, show, list, set, unset, body, log, attach, detach, archive, unarchive, delete, link, unlink
+    project.ts
+    label.ts
+    milestone.ts
+    sprint.ts
+    user.ts
+    rank.ts             # rerank, board-rerank
+    git.ts
+    config.ts
+    mcp.ts              # `loctt mcp` server-launch command
+    ui.ts
+    calendar.ts
+    migrate.ts
+```
+
+Each command file exports `(args: string[], root: string) => Promise<void>`. Dispatcher in `index.ts` becomes a `Record<string, CommandHandler>` map.
+
+Process:
+1. Extract `argv.ts` and `runtime.ts` first (pure helpers, easy diff).
+2. Extract `format.ts` next.
+3. Extract one command group per commit, run tests, commit each.
+4. Final commit: shrink `index.ts` to dispatcher.
+
+### 4.2 — Split `apps/mcp/src/index.ts` (1800+ lines)
+
+Target structure:
+```
+apps/mcp/src/
+  index.ts              # server bootstrap + dispatcher
+  runtime.ts            # parseToolArgs, requireConfirm, checkFieldWritability, isKnownDomainError, assertWorkflowEnumKey, errorResult, text helpers
+  tools/
+    definitions.ts      # ALL_TOOLS array (replace getTools() function — drop the dual export)
+    schemas.ts          # per-tool zod schemas + discriminated union type
+    handlers/
+      tracker.ts        # init, info, doctor, enable_git, disable_git, get_git_status, publish, sync
+      task.ts           # create_task, get_task, list_tasks, update_task, unset_field, get_task_history, replace_task_body, append_task_body, attach_file, detach_file, archive_task, unarchive_task, delete_task, link_tasks, unlink_tasks, reorder_relationship
+      project.ts        # list_projects, create_project, edit_project, archive_project, unarchive_project, delete_project, set_default_project
+      user.ts           # list_users, get_current_user, switch_user, create_user, edit_user, archive_user, unarchive_user, delete_user
+      label.ts          # list_labels, create_label, edit_label, archive_label, unarchive_label, delete_label
+      milestone.ts      # list_milestones, create_milestone, edit_milestone, archive_milestone, unarchive_milestone, delete_milestone
+      sprint.ts         # list_sprints, create_sprint, edit_sprint, archive_sprint, unarchive_sprint, delete_sprint, get_sprint_burndown
+      calendar.ts       # get_calendar
+      config.ts         # get_config_value, set_config_value, unset_config_value
+      views.ts          # list_views, get_workflow_config
+      rank.ts           # reorder_board
+```
+
+Switch → typed `Map<string, Handler>`:
+```ts
+type Handler<T> = (args: T, ctx: ToolContext) => Promise<McpToolResult>;
+const handlers = new Map<ToolName, Handler<ToolArgs>>([...]);
+```
+
+Per-tool zod schemas (item 4.3 below) make this typed handler map exhaustive at compile time.
+
+### 4.3 — Per-tool zod schemas
+
+Define one schema per tool in `tools/schemas.ts`:
+```ts
+export const CreateTaskArgsSchema = z.object({
+  title: z.string().min(1),
+  project: z.string().optional(),
+  status: z.string().optional(),
+  priority: z.string().optional(),
+  task_type: z.string().optional(),
+  parent: z.string().optional(),
+  labels: z.array(z.string()).optional(),
+  assignee: z.string().optional(),
+  // ...
+  body: z.string().optional(),
+}).strict();
+export type CreateTaskArgs = z.infer<typeof CreateTaskArgsSchema>;
+```
+
+`parseToolArgs(name, raw)` returns `{ ok: true, args: ToolArgs } | { ok: false, error: McpToolResult }`. Handlers receive a fully-typed args object — no `args["ref"] as string` casts anywhere.
+
+Memoize `ALL_TOOLS = getTools()` and drop the lazy `getTools()` factory function (item from the original review — dual export invites drift).
+
+### 4.4 — Memoize getTools (rename to ALL_TOOLS export)
+
+Drop the function-form export `getTools()`. Only export the memoized const. Update CLI's `mcp` command callsite if it uses the function form.
+
+### 4.5 — Argv tightenings
+
+In the new `argv.ts`:
+
+- `getArg` rejects single-dash long-form (`-cwd value`). Currently both `--cwd` and `-cwd` are accepted; pick one (long-form only) and reject the other as `UsageError`.
+- Document that `--` ends flag parsing.
+
+### 4.6 — Test additions
+
+CLI (`apps/cli/src/cli.test.ts`):
+- `--set "" --append <text>` mutex (already documented but untested).
+- `--limit` non-integer / negative validation on `list` and `log`.
+- `list --view <v> --project <p>` interaction — verify the documented "view is respected as authored; --project is applied as a post-query filter" behavior.
+
+MCP (`apps/mcp/src/mcp.test.ts`):
+- `delete_project`, `delete_label`, `delete_milestone`, `delete_sprint`, `delete_user` all reject without `confirm: true`. (Currently only `delete_task` is covered.)
+
+Web (`apps/web/src/server.test.ts`):
+- Convert `beforeAll`/`afterAll` to `beforeEach`/`afterEach` for the security suite so tests don't leak state between cases. The avatar / to-delete cases are particularly cross-contaminated.
+- Avatar upload tests: assert no file written outside the user dir (defense in depth; current code already enforces this via `assertSafeBasename`).
+
+### 4.7 — Web stream-error pre-headers
+
+`apps/web/src/server.ts:447` — `tryServeStatic` writes 200 + Content-Type then streams; on `stream.on("error", reject)` after headers are sent the connection is half-written. Stat first (already done), then either:
+- Detect the error before `writeHead` (replace `createReadStream(filePath).pipe(res)` with a try-stream-once probe), OR
+- Wrap the stream in `pipeline()` from `node:stream/promises` and call `res.destroy()` on stream errors so the client sees a truncated connection rather than a half-written body.
+
+The second is simpler; do that.
+
+### 4.8 — Web createView/updateView/etc casts → zod schemas
+
+`apps/web/src/server.ts:531-580` — several handlers use `Parameters<typeof createView>[1]` casts to bypass runtime validation. If core changes its signature, the HTTP boundary accepts whatever-shaped JSON. Replace with zod schemas in contracts (mirror `CalendarConfigSchema` / `ListViewConfigSchema` already in use):
+- `CreateViewRequestSchema`
+- `UpdateViewRequestSchema`
+- `CreateProjectRequestSchema`
+- `UpdateProjectRequestSchema`
+- `CreateSprintRequestSchema`
+- `UpdateSprintRequestSchema`
+- `CreateMilestoneRequestSchema`
+- `UpdateMilestoneRequestSchema`
+- `CreateLabelRequestSchema`
+- `UpdateLabelRequestSchema`
+
+Each handler does `.safeParse()` on the JSON body and returns 400 with field path on failure.
+
+### 4.9 — MCP archive_*/unarchive_* case regrouping
+
+Current `apps/mcp/src/index.ts` has `archive_project` at ~1414, `archive_label` at ~1710, `archive_milestone` at ~1723, `archive_sprint` at ~1736. Grouped by verb instead of by entity. Phase 4.2's split into `tools/handlers/<entity>.ts` naturally fixes this — the regroup is a free consequence of the structural split.
+
+### 4.10 — Phase 4 commit plan
+
+CLI split:
+1. `cli: extract argv helpers (argv.ts)`
+2. `cli: extract runtime helpers (runtime.ts)`
+3. `cli: extract formatting helpers (format.ts)`
+4. `cli: extract init/info/schema/views/doctor commands`
+5. `cli: extract task command group`
+6. `cli: extract project command group`
+7. `cli: extract label/milestone/sprint command groups`
+8. `cli: extract user command group`
+9. `cli: extract rank command group`
+10. `cli: extract git/config/migrate commands`
+11. `cli: extract mcp/ui server-launch commands`
+12. `cli: dispatcher map in index.ts`
+
+MCP split:
+13. `mcp: extract runtime helpers (runtime.ts)`
+14. `mcp: per-tool zod schemas + discriminated parser`
+15. `mcp: extract tool definitions module`
+16. `mcp: extract task tool handlers`
+17. `mcp: extract project/label/milestone/sprint/user handlers`
+18. `mcp: extract calendar/git/config/views handlers`
+19. `mcp: extract rank/burndown handlers`
+20. `mcp: typed handler map; drop getTools() factory`
+
+Misc:
+21. `cli: getArg rejects single-dash long-form`
+22. `web: pipeline() with destroy on tryServeStatic stream errors`
+23. `web: zod request schemas for createView / updateProject / etc`
+
+Tests:
+24. `cli: cover --set/--append mutex and --limit edge cases`
+25. `cli: cover list --view + --project interaction`
+26. `mcp: cover delete-confirm gating across all entities`
+27. `web: per-test isolation in security suite`
