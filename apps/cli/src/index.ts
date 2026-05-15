@@ -1,7 +1,6 @@
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { HistoryEntry } from "@loctt/contracts";
 import {
   appendTaskBody,
   archiveLabel,
@@ -86,149 +85,14 @@ import {
   writeTaskBody,
 } from "@loctt/core";
 
+import { formatHistoryEntry } from "./format/history.js";
+import { formatNumber, pad } from "./format/value.js";
 import { getArg, hasFlag, stripCwdArg } from "./runtime/args.js";
 import { confirmHardDelete, confirmInteractive } from "./runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "./runtime/errors.js";
 import { dirExists, resolveClientDir, SCHEMA_GUARD_EXEMPT_COMMANDS } from "./runtime/schema-guard.js";
 import { assertWorkflowEnumKey, assertWorkflowRelationshipKey } from "./runtime/workflow-assert.js";
-
-function usage(): void {
-  console.log(`Usage: loctt [--cwd <dir>] <command> [options]
-
-Global options:
-  --cwd <dir>                      Operate against the tracker rooted
-                                   at <dir> instead of the current
-                                   working directory.
-
-Commands:
-  init [--prefix <prefix>] [--project-key <key>] [--project-label <label>] [--no-docs]
-  info
-  doctor [--rebuild-index]         Run diagnostic checks; with --rebuild-index, rebuild
-                                   the key-lookup cache after out-of-band frontmatter edits
-  views                            List saved views from queries.yaml
-  schema                           Show the workflow config (statuses, priorities, etc.)
-  project <list|create|edit|archive|unarchive|delete|set-default> ...
-                                   list --all: include archived projects
-                                   delete: permanent (remap_to required if tasks exist; use 'archive' for soft)
-  user <list|current|switch|create|edit|archive|unarchive|delete> ...
-                                   delete: permanent (use 'archive' for the reversible alternative)
-  label <list|create|edit|archive|unarchive|delete> ...
-                                   list --all: include archived labels
-                                   delete: permanent (drops key from every task; use 'archive' for soft)
-  milestone <list|create|edit|archive|unarchive|delete> ...
-                                   list --all: include archived milestones
-                                   delete: permanent (clears milestone field on tasks; use 'archive' for soft)
-  sprint <list|create|edit|archive|unarchive|delete|burndown> ...
-                                   list --all: include archived sprints
-                                   delete: permanent (clears sprint field on tasks; use 'archive' for soft)
-                                   burndown <key> [--format <table|json>]
-  calendar show                   Print the calendar config (timezone, working days, holidays)
-  rerank <source> <relationship> <target> [--before <task>] [--after <task>]
-  board-rerank <task> [--before <task>] [--after <task>]
-  create <title> [--project <key>] [--status <s>] [--priority <p>] [--type <t>]
-  list [--query <q>] [--view <v>] [--limit <n>] [--archived] [--project <key>]
-                                   --archived: include archived tasks
-                                   (hidden by default; saved views are respected as authored)
-  show <task>
-  set <task> <field> <value>
-  unset <task> <field>
-  link <task> <relationship> <target>
-  unlink <task> <relationship> <target>
-  archive <task>                   Soft-delete (reversible). Use 'delete' to permanently remove.
-  unarchive <task>
-  delete <task> [--yes]             Permanent removal; use 'archive' for the reversible alternative
-  body <task> [--set <text>] [--append <text>]
-  log <task> [--limit <n>]
-  attach <task> <file-path> [--force]
-  detach <task> <name>
-  mcp                              Start the MCP server (stdio)
-  ui [--port <n>] [--no-open]      Start the web UI (foreground)
-  git <enable|disable|status|publish|sync>
-  config <get|set|unset|list> [key] [value]
-  migrate [--yes] [--dry-run]      Upgrade the tracker schema to the current version
-
-Common flags:
-  --yes                            Skip confirmation prompts on destructive operations
-                                   (delete, migrate). Required in non-interactive contexts.
-  --remap-to <key|id>              On hard-delete of a project/label/milestone/sprint/user,
-                                   migrate affected task references to the named target
-                                   instead of clearing them.
-  --unassign                       On 'loctt user delete', clear assignee/reporter on
-                                   affected tasks. Mutually exclusive with --remap-to.
-`);
-}
-
-/** Round a number to one decimal place for compact column display. */
-function formatNumber(n: number): string {
-  if (Number.isInteger(n)) return String(n);
-  return n.toFixed(1);
-}
-
-/** Right-pad a string to `width` columns (single-byte assumption). */
-function pad(s: string, width: number): string {
-  return s.length >= width ? s : s + " ".repeat(width - s.length);
-}
-
-function formatValue(v: unknown): string {
-  if (v === null || v === undefined) return "(none)";
-  if (typeof v === "string") return v;
-  if (typeof v === "number" || typeof v === "boolean" || typeof v === "bigint") return String(v);
-  return JSON.stringify(v);
-}
-
-/**
- * Narrows a `link_added` / `link_removed` history entry's `meta`
- * into the {type, target} shape the formatter expects. Type-guards
- * at runtime instead of casting blindly so a future kind that
- * happens to share the meta slot can't render with stale labels.
- */
-function readLinkMeta(meta: unknown): { type: string; target: string } {
-  if (
-    typeof meta === "object"
-    && meta !== null
-    && "type" in meta
-    && "target" in meta
-    && typeof (meta as { type: unknown }).type === "string"
-    && typeof (meta as { target: unknown }).target === "string"
-  ) {
-    return meta as { type: string; target: string };
-  }
-  // Corrupt or out-of-shape entry — surface visibly rather than
-  // rendering a phantom "undefined → undefined".
-  return { type: "(unknown)", target: "(unknown)" };
-}
-
-function formatHistoryEntry(entry: HistoryEntry): string {
-  const ts = entry.timestamp;
-  switch (entry.kind) {
-    case "created":
-      return `${ts}  created`;
-    case "field_change":
-      return `${ts}  ${entry.field}: ${formatValue(entry.before)} → ${formatValue(entry.after)}`;
-    case "custom_field_change":
-      return `${ts}  ${entry.field}: ${formatValue(entry.before)} → ${formatValue(entry.after)}`;
-    case "label_added":
-      return `${ts}  label added: ${String(entry.after)}`;
-    case "label_removed":
-      return `${ts}  label removed: ${String(entry.before)}`;
-    case "archived":
-      return `${ts}  archived`;
-    case "unarchived":
-      return `${ts}  unarchived`;
-    case "link_added": {
-      const meta = readLinkMeta(entry.meta);
-      return `${ts}  link added: ${meta.type} → ${meta.target}`;
-    }
-    case "link_removed": {
-      const meta = readLinkMeta(entry.meta);
-      return `${ts}  link removed: ${meta.type} → ${meta.target}`;
-    }
-    case "body_edited":
-      return `${ts}  body edited`;
-    default:
-      return `${ts}  ${entry.kind}`;
-  }
-}
+import { usage } from "./usage.js";
 
 export async function main(): Promise<void> {
   const rawArgs = process.argv.slice(2);
