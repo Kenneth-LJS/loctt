@@ -222,9 +222,11 @@ export const EXIT = {
  *   parser because off-the-shelf mri auto-coerces `""` to `0`.
  * - Repeated flags: the last occurrence wins, matching the most
  *   intuitive shell behavior (`--limit 1 --limit 2` → `2`).
- * - Long-flag form `-flag` (single dash) is implicitly accepted so
- *   `--flag` and `-flag` collide. The CLI defines no short flags so
- *   this is harmless today; revisit if any are added.
+ * - **Long-form only.** `-flag` (single dash) is NOT accepted; LocTT
+ *   has no short flags so the single-dash form was always a typo
+ *   for `--flag`. Used to be silently accepted; now ignored (the
+ *   caller will see `undefined` and surface a UsageError pointing
+ *   at the missing required value, which is the right outcome).
  */
 function getArg(args: string[], flag: string): string | undefined {
   const name = flag.replace(/^--?/, "");
@@ -238,13 +240,9 @@ function getArg(args: string[], flag: string): string | undefined {
       result = a.slice(`--${name}=`.length);
       continue;
     }
-    if (a === `-${name}=` || a.startsWith(`-${name}=`)) {
-      result = a.slice(`-${name}=`.length);
-      continue;
-    }
     // `--flag value` form. Treat the next arg as a value unless it
     // looks like another flag — in which case --flag was bare/boolean.
-    if (a === `--${name}` || a === `-${name}`) {
+    if (a === `--${name}`) {
       const next = args[i + 1];
       if (next === undefined) continue;
       if (next.startsWith("-") && next !== "-") continue;
@@ -280,7 +278,7 @@ function stripCwdArg(args: string[]): string[] {
       out.push(...args.slice(i));
       return out;
     }
-    if (a === "--cwd" || a === "-cwd") {
+    if (a === "--cwd") {
       const next = args[i + 1];
       // Same rule as getArg: only treat the next token as the value
       // if it doesn't itself look like a flag (so `--cwd --help`
@@ -292,7 +290,7 @@ function stripCwdArg(args: string[]): string[] {
       }
       continue;
     }
-    if (a.startsWith("--cwd=") || a.startsWith("-cwd=")) {
+    if (a.startsWith("--cwd=")) {
       i += 1;
       continue;
     }
@@ -328,16 +326,13 @@ function hasFlag(args: string[], flag: string): boolean {
     const a = args[i];
     if (a === "--") break;
     if (a === undefined) continue;
-    if (a === `--${name}` || a === `-${name}`) { present = true; continue; }
-    const eqMatch = a === `--${name}` || a.startsWith(`--${name}=`) ? `--${name}`
-      : a === `-${name}` || a.startsWith(`-${name}=`) ? `-${name}`
-      : null;
-    if (eqMatch !== null && a.startsWith(`${eqMatch}=`)) {
-      const suffix = a.slice(eqMatch.length + 1).toLowerCase();
+    if (a === `--${name}`) { present = true; continue; }
+    if (a.startsWith(`--${name}=`)) {
+      const suffix = a.slice(`--${name}=`.length).toLowerCase();
       if (TRUTHY_FLAG_SUFFIXES.has(suffix)) { present = true; continue; }
       if (FALSY_FLAG_SUFFIXES.has(suffix)) { present = false; continue; }
       throw new UsageError(
-        `invalid value for ${eqMatch}: ${JSON.stringify(suffix)}. Expected one of: true, false, 1, 0, yes, no, on, off.`,
+        `invalid value for --${name}: ${JSON.stringify(suffix)}. Expected one of: true, false, 1, 0, yes, no, on, off.`,
       );
     }
   }
