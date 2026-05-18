@@ -4,7 +4,6 @@
 import { access } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 
-import type { WorkflowConfig } from "@loctt/contracts";
 import {
   appendTaskBody,
   archiveLabel,
@@ -17,7 +16,6 @@ import {
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,
-  AUTO_MANAGED_FIELDS,
   buildListContext,
   buildShowModel,
   BurndownError,
@@ -68,7 +66,6 @@ import {
   publish,
   readBurndownSeries,
   readHistory,
-  RelationshipError,
   reorderBoardRank,
   ReorderError,
   reorderRelationship,
@@ -78,16 +75,12 @@ import {
   resolveUserRef,
   runDoctor,
   saveState,
-  SchemaTooNewError,
-  SchemaVersionError,
   setConfigValue,
   setDefaultProject,
   setField,
   SprintError,
   switchCurrentUser,
   sync,
-  TaskLifecycleError,
-  TaskNotFoundError,
   TaskUpdateError,
   unarchiveLabel,
   unarchiveMilestone,
@@ -99,24 +92,23 @@ import {
   unsetConfigValue,
   unsetField,
   updateUser,
-  USER_IMMUTABLE_FIELDS,
   UserError,
   withStateLock,
-  WRITABLE_BUILTIN_FIELDS,
   writeTaskBody,
 } from "@loctt/core";
 import { z } from "zod";
 
-export interface McpTool {
-  readonly name: string;
-  readonly description: string;
-  readonly inputSchema: Record<string, z.ZodTypeAny>;
-}
+import { requireConfirm } from "./runtime/confirm.js";
+import { errorResult, isKnownDomainError, text } from "./runtime/errors.js";
+import {
+  validateUnsetFieldArgs,
+  validateUpdateTaskArgs,
+} from "./runtime/fields.js";
+import { SCHEMA_GUARD_EXEMPT_TOOLS } from "./runtime/schema-guard.js";
+import { assertWorkflowEnumKey } from "./runtime/workflow-assert.js";
+import type { McpTool, McpToolResult } from "./types.js";
 
-export interface McpToolResult {
-  readonly content: Array<{ type: "text"; text: string }>;
-  readonly isError?: boolean;
-}
+export type { McpTool, McpToolResult } from "./types.js";
 
 /** Returns the list of available MCP tools. */
 export function getTools(): McpTool[] {
@@ -646,216 +638,6 @@ export function getTools(): McpTool[] {
     },
   ];
 }
-
-function text(content: string): McpToolResult {
-  return { content: [{ type: "text", text: content }] };
-}
-
-function errorResult(message: string): McpToolResult {
-  return { content: [{ type: "text", text: `Error: ${message}` }], isError: true };
-}
-
-/**
- * Returns true for errors that represent expected, user-actionable
- * conditions (a bad arg, a not-found task, a workflow validation
- * miss). Used by the dispatcher's outer catch: known domain errors
- * become `errorResult` so the agent sees a clear message; anything
- * else is a real bug and is rethrown so the MCP framework can log
- * and surface it as a server fault instead of papering over it.
- */
-function isKnownDomainError(err: unknown): err is Error {
-  return (
-    err instanceof TaskUpdateError
-    || err instanceof TaskNotFoundError
-    || err instanceof TaskLifecycleError
-    || err instanceof RelationshipError
-    || err instanceof AttachmentExistsError
-    || err instanceof AttachmentNotFoundError
-    || err instanceof AttachmentSourceError
-    || err instanceof BurndownError
-    || err instanceof LabelError
-    || err instanceof MilestoneError
-    || err instanceof ProjectError
-    || err instanceof ReorderError
-    || err instanceof SprintError
-    || err instanceof UserError
-    || err instanceof SchemaVersionError
-    || err instanceof SchemaTooNewError
-  );
-}
-
-/**
- * Returns a structured error when a destructive tool was invoked
- * without `confirm: true`. Pulls the boilerplate string into one
- * place so every gate reads the same way.
- */
-function requireConfirm(args: Record<string, unknown>, action: string): McpToolResult | null {
-  if (args["confirm"] === true) return null;
-  return errorResult(`${action} requires confirm: true to proceed`);
-}
-
-/**
- * Per-field value validators for `update_task`. Each entry is a zod
- * schema that the caller's `value` argument is parsed against before
- * we hand it to `setField`. Custom fields (anything not listed here
- * and not in {@link USER_IMMUTABLE_FIELDS} / {@link AUTO_MANAGED_FIELDS})
- * accept any JSON value.
- *
- * Keep these schemas conservative — they're the only barrier between
- * an LLM-supplied value and the YAML on disk, and `setField` itself
- * accepts `unknown`. Workflow-aware checks (status enum, label
- * membership, etc.) still happen in `validateTaskAgainstWorkflow`
- * inside `setField`, so this layer only enforces *shape*.
- */
-const NonEmptyString = z.string().min(1);
-// Date-only (YYYY-MM-DD) or full ISO-8601 timestamp. The brand
-// schemas in @loctt/contracts apply the canonical check at write
-// time; this regex matches the same shape so the boundary error
-// names the field rather than waiting for setField to fail with
-// a deeper message.
-const DateLikeString = z.string().regex(
-  /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/,
-  "must be YYYY-MM-DD or full ISO-8601 timestamp",
-);
-const UPDATE_TASK_FIELD_SCHEMAS: Record<string, z.ZodTypeAny> = {
-  title: NonEmptyString,
-  status: NonEmptyString,
-  task_type: NonEmptyString,
-  priority: NonEmptyString,
-  labels: z.array(z.string()),
-  assignee: z.string().nullable(),
-  reporter: z.string().nullable(),
-  start_date: DateLikeString,
-  due_date: DateLikeString,
-  estimate: z.union([z.string(), z.number()]),
-  milestone: z.string().nullable(),
-  sprint: z.string().nullable(),
-};
-
-/**
- * Sorted list of writable built-in field names exposed by `update_task`.
- * Used in error messages so the agent always sees the same canonical
- * list as the schema map.
- */
-const EXPOSED_FIELDS_LIST = Object.keys(UPDATE_TASK_FIELD_SCHEMAS).sort().join(", ");
-
-/**
- * Returns an error if `field` is one of the known unsettable categories
- * (immutable, auto-managed, or built-in-but-not-MCP-exposed), or `null`
- * if the field is OK to forward to setField/unsetField. Shared by
- * `validateUpdateTaskArgs` and `validateUnsetFieldArgs`.
- */
-function checkFieldWritability(field: string, action: "set" | "unset"): McpToolResult | null {
-  if (USER_IMMUTABLE_FIELDS.has(field)) {
-    return errorResult(
-      `cannot ${action} immutable field "${field}". ` +
-      `Writable built-in fields: ${EXPOSED_FIELDS_LIST}.`,
-    );
-  }
-  if (AUTO_MANAGED_FIELDS.has(field)) {
-    return errorResult(
-      `cannot ${action} auto-managed field "${field}" directly; ` +
-      `it is updated automatically based on status changes`,
-    );
-  }
-  // `updated_at` and any other built-in writable field that isn't in
-  // the exposed schema map: not surfaced to MCP. Without this guard a
-  // request to set/unset such a field would silently fall through to
-  // the custom-field code path in core and write `fields.<name>`.
-  if (
-    WRITABLE_BUILTIN_FIELDS.has(field)
-    && !Object.prototype.hasOwnProperty.call(UPDATE_TASK_FIELD_SCHEMAS, field)
-  ) {
-    return errorResult(
-      `built-in field "${field}" is not settable via MCP. ` +
-      `Writable built-in fields: ${EXPOSED_FIELDS_LIST}.`,
-    );
-  }
-  return null;
-}
-
-/**
- * Validates `args` for `update_task` and returns either an error
- * result (caller should return it as-is) or `null` to proceed.
- *
- * Catches:
- * - missing/non-string `field`,
- * - immutable / auto-managed / not-exposed built-in fields,
- * - per-field value-shape mismatches for built-in fields.
- *
- * Custom (workflow-defined) fields skip shape validation here and
- * are handed to `setField` directly; that layer applies workflow
- * constraints.
- */
-function validateUpdateTaskArgs(args: Record<string, unknown>): McpToolResult | null {
-  const field = args["field"];
-  if (typeof field !== "string" || field.length === 0) {
-    return errorResult("`field` is required and must be a non-empty string");
-  }
-  const writability = checkFieldWritability(field, "set");
-  if (writability) return writability;
-  const schema = UPDATE_TASK_FIELD_SCHEMAS[field];
-  if (schema !== undefined) {
-    const parsed = schema.safeParse(args["value"]);
-    if (!parsed.success) {
-      const detail = parsed.error.issues
-        .map(i => `${i.path.length > 0 ? `${i.path.join(".")}: ` : ""}${i.message}`)
-        .join("; ");
-      return errorResult(`invalid value for field "${field}": ${detail}`);
-    }
-  }
-  return null;
-}
-
-/**
- * Pre-flight check for enum-typed workflow values on create_task /
- * update_task. Mirrors the CLI's assertWorkflowEnumKey: surface the
- * known-values hint at the boundary instead of letting `createTask`
- * throw a generic "invalid task" string the agent has to puzzle
- * over. `undefined` means the field wasn't supplied; not an error.
- */
-function assertWorkflowEnumKey(
-  workflowConfig: WorkflowConfig | undefined,
-  field: "status" | "priority" | "task_type",
-  value: string | undefined,
-): McpToolResult | null {
-  if (workflowConfig === undefined || value === undefined) return null;
-  const defs = field === "status"
-    ? workflowConfig.statuses
-    : field === "priority"
-      ? workflowConfig.priorities
-      : workflowConfig.task_types;
-  const keys = defs.map(d => d.key);
-  if (!keys.includes(value)) {
-    const known = keys.length > 0 ? keys.join(", ") : "(none configured)";
-    return errorResult(`unknown ${field} '${value}'. Known: ${known}`);
-  }
-  return null;
-}
-
-/**
- * Validates `args` for `unset_field`. Mirrors `validateUpdateTaskArgs`
- * for the field-level checks but skips value-shape validation (no
- * value to validate when unsetting). Also rejects `title` since it's
- * required and `unsetField` would throw `cannot unset required field`.
- */
-function validateUnsetFieldArgs(args: Record<string, unknown>): McpToolResult | null {
-  const field = args["field"];
-  if (typeof field !== "string" || field.length === 0) {
-    return errorResult("`field` is required and must be a non-empty string");
-  }
-  if (field === "title") {
-    return errorResult(`cannot unset required field "title"`);
-  }
-  return checkFieldWritability(field, "unset");
-}
-
-/**
- * MCP tools that are exempt from the schema-version boot guard.
- * `init` is the only entry point legitimately called against a
- * non-existent or pre-version tracker.
- */
-const SCHEMA_GUARD_EXEMPT_TOOLS = new Set(["init"]);
 
 /**
  * Memoized tool list — `getTools()` rebuilds the full ~50-tool array

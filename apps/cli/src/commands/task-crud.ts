@@ -1,4 +1,5 @@
 import {
+  appendTaskBody,
   buildListContext,
   buildShowModel,
   createTask,
@@ -9,12 +10,15 @@ import {
   loadOptionalConfigs,
   loadState,
   lookupTask,
+  readHistory,
+  readTaskBody,
   resolveLocttDir,
   resolveProjectKeyForUser,
   saveState,
   setField,
   unsetField,
   withStateLock,
+  writeTaskBody,
 } from "@loctt/core";
 
 import { formatHistoryEntry } from "../format/history.js";
@@ -22,7 +26,6 @@ import { getArg, hasFlag } from "../runtime/args.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, UsageError } from "../runtime/errors.js";
 import { assertWorkflowEnumKey } from "../runtime/workflow-assert.js";
-import { appendTaskBody, readHistory, readTaskBody, writeTaskBody } from "@loctt/core";
 
 /**
  * Task CRUD commands. Each function runs the body that was

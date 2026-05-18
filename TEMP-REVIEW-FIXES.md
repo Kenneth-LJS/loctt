@@ -447,7 +447,11 @@ Process:
 9. Shrink `index.ts` to entrypoint + dispatcher map
 10. Run `npm run test:integration` and `npm run test:e2e` once at end
 
-### 4.2 — Split `apps/mcp/src/index.ts` (1800+ lines) + registry pattern
+### 4.2 — Split `apps/mcp/src/index.ts` (1800+ lines) — runtime extraction first, registry as follow-up
+
+**Pragmatic scope.** The runtime helpers (errors, confirm, fields, workflow-assert, schema-guard) are mechanically safe to extract — same pattern as the CLI split. The registry pattern (collapsing the `getTools()` array + `executeTool` switch into a single `TOOL_REGISTRY`) is high-value but high-risk: it touches every tool's wire format and requires re-running the MCP integration suite per migration step. Land the runtime extraction first to bank the navigation benefit; defer the registry to a follow-up so it can be reviewed and gated independently.
+
+
 
 Layout (sub-agent reviewed; entity-axis split with the **registry pattern** collapsing the array+switch duplication):
 
