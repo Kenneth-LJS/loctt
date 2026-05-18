@@ -2,19 +2,13 @@
 // Provides structured tools for task management via Model Context Protocol.
 
 import { access } from "node:fs/promises";
-import { isAbsolute } from "node:path";
 
 import {
-  appendTaskBody,
   archiveLabel,
   archiveMilestone,
   archiveProject,
   archiveSprint,
   archiveUser,
-  attachFile,
-  AttachmentExistsError,
-  AttachmentNotFoundError,
-  AttachmentSourceError,
   buildListContext,
   buildShowModel,
   BurndownError,
@@ -32,7 +26,6 @@ import {
   deleteSprint,
   deleteTask,
   deleteUser,
-  detachFile,
   disableGit,
   editLabel,
   editMilestone,
@@ -43,7 +36,6 @@ import {
   getCurrentUser,
   getGitStatus,
   LabelError,
-  linkTask,
   listTasks,
   loadAllTasks,
   loadAllUsers,
@@ -63,9 +55,6 @@ import {
   publish,
   readBurndownSeries,
   readHistory,
-  reorderBoardRank,
-  ReorderError,
-  reorderRelationship,
   requireSupportedSchema,
   resolveLocttDir,
   resolveProjectKeyForUser,
@@ -83,13 +72,11 @@ import {
   unarchiveProject,
   unarchiveSprint,
   unarchiveUser,
-  unlinkTask,
   unsetConfigValue,
   unsetField,
   updateUser,
   UserError,
   withStateLock,
-  writeTaskBody,
 } from "@loctt/core";
 import { z } from "zod";
 
@@ -175,22 +162,6 @@ export function getTools(): McpTool[] {
       },
     },
     {
-      name: "append_task_body",
-      description: "Append text to a task's markdown body.",
-      inputSchema: {
-        ref: z.string(),
-        text: z.string(),
-      },
-    },
-    {
-      name: "replace_task_body",
-      description: "Replace a task's entire markdown body.",
-      inputSchema: {
-        ref: z.string(),
-        body: z.string(),
-      },
-    },
-    {
       name: "unset_field",
       description:
         "Remove a field from a task. Same allowlist as update_task: writable " +
@@ -210,41 +181,6 @@ export function getTools(): McpTool[] {
       inputSchema: {
         ref: z.string(),
         confirm: z.boolean().optional().describe("Required: must be true to proceed"),
-      },
-    },
-    {
-      name: "link_tasks",
-      description: "Add a relationship between tasks.",
-      inputSchema: {
-        ref: z.string(),
-        type: z.string().describe("Relationship type (e.g. parent, blocks)"),
-        target: z.string().describe("Target task key or ID"),
-      },
-    },
-    {
-      name: "unlink_tasks",
-      description: "Remove a relationship between tasks.",
-      inputSchema: {
-        ref: z.string(),
-        type: z.string(),
-        target: z.string(),
-      },
-    },
-    {
-      name: "attach_file",
-      description: "Copy a local file into a task's attachments directory. Only file paths are supported in v1 (no base64 content); the file must be readable from the MCP server's filesystem.",
-      inputSchema: {
-        ref: z.string().describe("Task key (e.g. T-1) or ID"),
-        source_path: z.string().describe("Absolute path to the file to attach. Must be absolute — the MCP server's cwd is not guaranteed to match the agent's mental model."),
-        force: z.boolean().optional().describe("If true, overwrite an existing attachment with the same basename."),
-      },
-    },
-    {
-      name: "detach_file",
-      description: "Remove a file from a task's attachments directory.",
-      inputSchema: {
-        ref: z.string().describe("Task key or ID"),
-        name: z.string().describe("Basename of the attachment, no path separators"),
       },
     },
     {
@@ -576,26 +512,6 @@ export function getTools(): McpTool[] {
       inputSchema: { key: z.string() },
     },
     {
-      name: "reorder_relationship",
-      description: "Reorder a relationship target within one source task's links of a given type. Pass exactly one of `before` or `after` to position the target relative to a sibling, or neither to move it to the end.",
-      inputSchema: {
-        source: z.string().describe("Source task key or ID"),
-        type: z.string().describe("Relationship type (e.g. parent)"),
-        target: z.string().describe("Target task key or ID being moved"),
-        before: z.string().optional().describe("Sibling target to position before"),
-        after: z.string().optional().describe("Sibling target to position after"),
-      },
-    },
-    {
-      name: "reorder_board",
-      description: "Reorder a task's position on the board (its `board_rank`). Pass exactly one of `before` or `after` to position the task relative to a sibling, or neither to move it to the end of its column. The board column is implicit — the task stays in its current status; this only changes its order within that column.",
-      inputSchema: {
-        ref: z.string().describe("Task key or ID"),
-        before: z.string().optional().describe("Sibling task to position before"),
-        after: z.string().optional().describe("Sibling task to position after"),
-      },
-    },
-    {
       name: "get_sprint_burndown",
       description: "Return the burndown series for a sprint, reconstructed from task history. The response carries the daily 'remaining' total across the sprint window, the unit being summed (points/hours/weighted-enum/task-count), the initial total at sprint start, the ideal straight-line, and per-day incomplete task counts. Scope changes (tasks joining or leaving the sprint mid-run) appear as visible steps in the series.",
       inputSchema: {
@@ -897,18 +813,6 @@ export async function executeTool(
         }
       }
 
-      case "append_task_body": {
-        const task = await lookupTask(locttDir, args["ref"] as string);
-        await appendTaskBody(locttDir, task.frontmatter.id, args["text"] as string);
-        return text(`Appended to ${task.frontmatter.key} body.`);
-      }
-
-      case "replace_task_body": {
-        const task = await lookupTask(locttDir, args["ref"] as string);
-        await writeTaskBody(locttDir, task.frontmatter.id, (args["body"] as string) + "\n");
-        return text(`Replaced ${task.frontmatter.key} body.`);
-      }
-
       case "unset_field": {
         const invalid = validateUnsetFieldArgs(args);
         if (invalid) return invalid;
@@ -929,85 +833,6 @@ export async function executeTool(
         const task = await lookupTask(locttDir, args["ref"] as string);
         await deleteTask(locttDir, task.frontmatter.id, { force: true });
         return text(`Deleted ${task.frontmatter.key}.`);
-      }
-
-      case "link_tasks": {
-        const task = await lookupTask(locttDir, args["ref"] as string);
-        const target = await lookupTask(locttDir, args["target"] as string);
-        const { workflowConfig } = await loadOptionalConfigs(locttDir);
-        const relType = args["type"] as string;
-        await linkTask({
-          locttDir,
-          taskId: task.frontmatter.id,
-          type: relType,
-          target: target.frontmatter.id,
-          ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-        });
-        return text(`Linked ${task.frontmatter.key} --${relType}--> ${target.frontmatter.key}`);
-      }
-
-      case "unlink_tasks": {
-        const task = await lookupTask(locttDir, args["ref"] as string);
-        const target = await lookupTask(locttDir, args["target"] as string);
-        const { workflowConfig } = await loadOptionalConfigs(locttDir);
-        const relType = args["type"] as string;
-        await unlinkTask({
-          locttDir,
-          taskId: task.frontmatter.id,
-          type: relType,
-          target: target.frontmatter.id,
-          ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-        });
-        return text(`Unlinked ${task.frontmatter.key} --${relType}--> ${target.frontmatter.key}`);
-      }
-
-      case "attach_file": {
-        const task = await lookupTask(locttDir, args["ref"] as string);
-        const sourcePath = args["source_path"] as string;
-        if (!isAbsolute(sourcePath)) {
-          return errorResult("source_path must be absolute");
-        }
-        const force = (args["force"] as boolean | undefined) ?? false;
-        try {
-          const result = await attachFile({
-            locttDir,
-            taskId: task.frontmatter.id,
-            sourcePath,
-            force,
-          });
-          return text(JSON.stringify({
-            name: result.name,
-            size: result.size,
-            overwritten: result.overwritten,
-            task_key: task.frontmatter.key,
-          }, null, 2));
-        } catch (err) {
-          if (err instanceof AttachmentExistsError) {
-            return errorResult(`${err.message}. Pass force: true to overwrite.`);
-          }
-          if (err instanceof AttachmentSourceError) {
-            return errorResult(err.message);
-          }
-          throw err;
-        }
-      }
-
-      case "detach_file": {
-        const task = await lookupTask(locttDir, args["ref"] as string);
-        const name = args["name"] as string;
-        try {
-          await detachFile({
-            locttDir,
-            taskId: task.frontmatter.id,
-            name,
-          });
-          return text(`Detached ${name} from ${task.frontmatter.key}`);
-        } catch (err) {
-          if (err instanceof AttachmentNotFoundError) {
-            return errorResult(err.message);
-          }
-          throw err;
-        }
       }
 
       case "get_task_history": {
@@ -1519,54 +1344,12 @@ export async function executeTool(
         }
       }
 
-      case "reorder_relationship": {
-        try {
-          const before = args["before"] as string | undefined;
-          const after = args["after"] as string | undefined;
-          if (before !== undefined && after !== undefined) {
-            return errorResult("`before` and `after` are mutually exclusive; pass at most one");
-          }
-          const result = await reorderRelationship({
-            locttDir,
-            sourceRef: args["source"] as string,
-            relationshipType: args["type"] as string,
-            targetRef: args["target"] as string,
-            ...(before !== undefined ? { before } : {}),
-            ...(after !== undefined ? { after } : {}),
-          });
-          return text(JSON.stringify(result, null, 2));
-        } catch (err) {
-          if (err instanceof ReorderError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
       case "get_sprint_burndown": {
         try {
           const series = await readBurndownSeries(locttDir, args["key"] as string);
           return text(JSON.stringify(series, null, 2));
         } catch (err) {
           if (err instanceof BurndownError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "reorder_board": {
-        try {
-          const before = args["before"] as string | undefined;
-          const after = args["after"] as string | undefined;
-          if (before !== undefined && after !== undefined) {
-            return errorResult("`before` and `after` are mutually exclusive; pass at most one");
-          }
-          const result = await reorderBoardRank({
-            locttDir,
-            taskRef: args["ref"] as string,
-            ...(before !== undefined ? { before } : {}),
-            ...(after !== undefined ? { after } : {}),
-          });
-          return text(JSON.stringify(result, null, 2));
-        } catch (err) {
-          if (err instanceof ReorderError) return errorResult(err.message);
           throw err;
         }
       }
