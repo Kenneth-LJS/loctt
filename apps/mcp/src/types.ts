@@ -57,9 +57,7 @@ export interface ToolDef {
   /**
    * When true, this tool bypasses the schema-version boot guard
    * in the dispatcher. Only `init` legitimately runs against a
-   * pre-version tracker. Replaces the magic
-   * `SCHEMA_GUARD_EXEMPT_TOOLS` set with a per-tool flag —
-   * colocation-of-truth.
+   * pre-version tracker.
    */
   readonly exemptFromSchemaGuard?: boolean;
   readonly handler: (

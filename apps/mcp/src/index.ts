@@ -1,368 +1,47 @@
 // @loctt/mcp — MCP server for LocTT
 // Provides structured tools for task management via Model Context Protocol.
+//
+// This module is intentionally thin: every tool lives in
+// `tools/<entity>.ts` and is registered through `registry.ts`. The
+// dispatcher here just resolves the locttDir, applies the boot
+// schema-version guard, strict-parses args against the tool's
+// declared zod inputSchema, and forwards to the handler. Any
+// "expected, user-actionable" domain error (see
+// `runtime/errors.ts::isKnownDomainError`) is mapped to an
+// errorResult; anything else propagates so the MCP framework can
+// surface it as a real fault.
 
 import { access } from "node:fs/promises";
 
-import {
-  archiveLabel,
-  archiveMilestone,
-  archiveProject,
-  archiveSprint,
-  archiveUser,
-  BurndownError,
-  createLabel,
-  createMilestone,
-  createProject,
-  createSprint,
-  createUser,
-  deleteLabel,
-  deleteMilestone,
-  deleteProject,
-  deleteSprint,
-  deleteUser,
-  editLabel,
-  editMilestone,
-  editProject,
-  editSprint,
-  getCurrentUser,
-  LabelError,
-  loadAllUsers,
-  loadLabelsConfig,
-  loadMilestonesConfig,
-  loadProjectsConfig,
-  loadSprintsConfig,
-  MilestoneError,
-  ProjectError,
-  readBurndownSeries,
-  requireSupportedSchema,
-  resolveLocttDir,
-  resolveUserRef,
-  setDefaultProject,
-  SprintError,
-  switchCurrentUser,
-  unarchiveLabel,
-  unarchiveMilestone,
-  unarchiveProject,
-  unarchiveSprint,
-  unarchiveUser,
-  updateUser,
-  UserError,
-} from "@loctt/core";
+import { requireSupportedSchema, resolveLocttDir } from "@loctt/core";
 import { z } from "zod";
 
 import { listRegisteredTools, lookupTool, stripHandler } from "./registry.js";
-import { requireConfirm } from "./runtime/confirm.js";
-import { errorResult, isKnownDomainError, text } from "./runtime/errors.js";
-import { SCHEMA_GUARD_EXEMPT_TOOLS } from "./runtime/schema-guard.js";
+import { errorResult, isKnownDomainError } from "./runtime/errors.js";
 import type { McpTool, McpToolResult } from "./types.js";
 
 export type { McpTool, McpToolResult } from "./types.js";
 
 /**
- * Returns the list of available MCP tools. During the gradual
- * registry migration this concatenates the legacy in-file array
- * with the registry-resident tools; once the migration completes
- * the function body becomes just `listRegisteredTools().map(stripHandler)`.
+ * Returns the wire-format tool list. Drops handlers off each
+ * ToolDef so the result matches the `McpTool` shape the MCP SDK
+ * and external test fixtures expect.
+ *
+ * Memoized at module load below — calling `getTools()` repeatedly
+ * is cheap.
  */
 export function getTools(): McpTool[] {
-  return [
-    ...listRegisteredTools().map(stripHandler),
-    {
-      name: "list_projects",
-      description: "List projects defined in projects.yaml. Returns each project's key, label, prefix, and which (if any) is the workspace default.",
-      inputSchema: {},
-    },
-    {
-      name: "create_project",
-      description: "Create a new project. Project keys are immutable; prefixes must be unique across the tracker. Setting `make_default` true also sets the workspace default.",
-      inputSchema: {
-        key: z.string().describe("Slug identifier (lowercase letters, digits, hyphen, underscore)"),
-        label: z.string().describe("Human-readable label"),
-        prefix: z.string().describe("Task-key prefix, e.g. BACKEND-"),
-        make_default: z.boolean().optional().describe("If true, also set this project as the workspace default"),
-      },
-    },
-    {
-      name: "edit_project",
-      description: "Edit an existing project. Only `label` is mutable — `key` and `prefix` are immutable after creation.",
-      inputSchema: {
-        key: z.string(),
-        label: z.string().describe("New label"),
-      },
-    },
-    {
-      name: "delete_project",
-      description:
-        "Permanently remove a project from projects.yaml. For projects with tasks, " +
-        "`remap_to` is required to migrate them to another project. Cannot delete the only " +
-        "project. The counter is preserved in retired_keys so a later create with the same " +
-        "key resumes numbering. Use `archive_project` for the reversible (soft) variant. " +
-        "Always requires `confirm: true`.",
-      inputSchema: {
-        key: z.string(),
-        confirm: z.boolean().optional().describe("Required: must be true to proceed"),
-        remap_to: z.string().optional().describe("Target project key for tasks in the deleted project"),
-      },
-    },
-    {
-      name: "archive_project",
-      description: "Mark a project as archived. Archived projects are hidden from default lists and pickers. Reversible via `unarchive_project`.",
-      inputSchema: { key: z.string() },
-    },
-    {
-      name: "unarchive_project",
-      description: "Clear the archived flag on a project.",
-      inputSchema: { key: z.string() },
-    },
-    {
-      name: "set_default_project",
-      description: "Set or clear the workspace default project. Pass `key` to set, or omit it to clear the default.",
-      inputSchema: {
-        key: z.string().optional(),
-      },
-    },
-    {
-      name: "list_users",
-      description: "List registered users. By default, archived users are hidden; pass include_archived=true to include them.",
-      inputSchema: {
-        include_archived: z.boolean().optional(),
-      },
-    },
-    {
-      name: "get_current_user",
-      description: "Returns the currently active user's profile.",
-      inputSchema: {},
-    },
-    {
-      name: "switch_user",
-      description: "Switches the active user. Accepts either a UUID or an exact name (when unambiguous).",
-      inputSchema: {
-        ref: z.string().describe("User UUID or exact name"),
-      },
-    },
-    {
-      name: "create_user",
-      description: "Creates a new user. Names are not unique (UUIDs disambiguate). Timezone defaults to the system timezone. Avatars are not settable via MCP — use the CLI or web UI.",
-      inputSchema: {
-        name: z.string(),
-        email: z.string().optional(),
-        timezone: z.string().optional(),
-        switch_to_on_create: z.boolean().optional(),
-      },
-    },
-    {
-      name: "edit_user",
-      description: "Edit an existing user's profile fields. Avatars are not settable via MCP — use the CLI or web UI.",
-      inputSchema: {
-        ref: z.string(),
-        name: z.string().optional(),
-        email: z.string().nullable().optional().describe("Pass null to clear"),
-        timezone: z.string().optional(),
-      },
-    },
-    {
-      name: "archive_user",
-      description: "Archives (soft-deletes) a user. Hides them from pickers without breaking historical task references. Blocked when target is the active user.",
-      inputSchema: {
-        ref: z.string(),
-      },
-    },
-    {
-      name: "unarchive_user",
-      description: "Reverses archive_user — clears the archived flag.",
-      inputSchema: {
-        ref: z.string(),
-      },
-    },
-    {
-      name: "delete_user",
-      description: "Hard-deletes a user. When the user has task references (assignee/reporter), exactly one of `remap_to` or `unassign` is required. Mutually exclusive. Blocked when target is the active user. Requires confirm: true.",
-      inputSchema: {
-        ref: z.string(),
-        confirm: z.boolean().optional().describe("Required: must be true to proceed"),
-        remap_to: z.string().optional().describe("Target user UUID/name to migrate references onto"),
-        unassign: z.boolean().optional().describe("Clear assignee/reporter on affected tasks"),
-      },
-    },
-    {
-      name: "list_labels",
-      description: "List labels defined in labels.yaml.",
-      inputSchema: {},
-    },
-    {
-      name: "list_sprints",
-      description: "List sprints defined in sprints.yaml.",
-      inputSchema: {},
-    },
-    {
-      name: "create_sprint",
-      description: "Register a new sprint with start/end dates and a state (active|completed|future).",
-      inputSchema: {
-        key: z.string(),
-        label: z.string(),
-        start_date: z.string().describe("YYYY-MM-DD"),
-        end_date: z.string().describe("YYYY-MM-DD"),
-        state: z.enum(["active", "completed", "future"]),
-        goal: z.string().optional(),
-      },
-    },
-    {
-      name: "edit_sprint",
-      description:
-        "Edit a sprint. Pass null goal to clear. Re-opening a completed sprint " +
-        "(state: 'completed' -> 'active' or 'future') is blocked by default; pass " +
-        "force: true to override.",
-      inputSchema: {
-        key: z.string(),
-        label: z.string().optional(),
-        start_date: z.string().optional(),
-        end_date: z.string().optional(),
-        state: z.enum(["active", "completed", "future"]).optional(),
-        goal: z.string().nullable().optional(),
-        force: z.boolean().optional(),
-      },
-    },
-    {
-      name: "delete_sprint",
-      description:
-        "Permanently remove a sprint from sprints.yaml. The `sprint` field on each affected " +
-        "task is unset or remapped via `remap_to`. Use `archive_sprint` for the reversible " +
-        "(soft) variant. Always requires `confirm: true`.",
-      inputSchema: {
-        key: z.string(),
-        confirm: z.boolean().optional().describe("Required: must be true to proceed"),
-        remap_to: z.string().optional().describe("Target sprint key for affected tasks"),
-      },
-    },
-    {
-      name: "archive_sprint",
-      description: "Mark a sprint as archived. Reversible via `unarchive_sprint`.",
-      inputSchema: { key: z.string() },
-    },
-    {
-      name: "unarchive_sprint",
-      description: "Clear the archived flag on a sprint.",
-      inputSchema: { key: z.string() },
-    },
-    {
-      name: "list_milestones",
-      description: "List milestones defined in milestones.yaml.",
-      inputSchema: {},
-    },
-    {
-      name: "create_milestone",
-      description: "Register a new milestone with optional target date.",
-      inputSchema: {
-        key: z.string(),
-        label: z.string(),
-        target_date: z.string().optional().describe("YYYY-MM-DD"),
-      },
-    },
-    {
-      name: "edit_milestone",
-      description: "Edit a milestone. Pass null target_date to clear.",
-      inputSchema: {
-        key: z.string(),
-        label: z.string().optional(),
-        target_date: z.string().nullable().optional(),
-        archived: z.boolean().optional(),
-      },
-    },
-    {
-      name: "delete_milestone",
-      description:
-        "Permanently remove a milestone from milestones.yaml. The `milestone` field on each " +
-        "affected task is unset or remapped via `remap_to`. Use `archive_milestone` for the " +
-        "reversible (soft) variant. Always requires `confirm: true`.",
-      inputSchema: {
-        key: z.string(),
-        confirm: z.boolean().optional().describe("Required: must be true to proceed"),
-        remap_to: z.string().optional().describe("Target milestone key for affected tasks"),
-      },
-    },
-    {
-      name: "archive_milestone",
-      description: "Mark a milestone as archived. Reversible via `unarchive_milestone`.",
-      inputSchema: { key: z.string() },
-    },
-    {
-      name: "unarchive_milestone",
-      description: "Clear the archived flag on a milestone.",
-      inputSchema: { key: z.string() },
-    },
-    {
-      name: "create_label",
-      description: "Register a new label. Keys are immutable; pass --label and optional --color.",
-      inputSchema: {
-        key: z.string(),
-        label: z.string(),
-        color: z.string().optional(),
-      },
-    },
-    {
-      name: "edit_label",
-      description: "Edit a label's display name or color. The key is immutable.",
-      inputSchema: {
-        key: z.string(),
-        label: z.string().optional(),
-        color: z.string().nullable().optional().describe("Pass null to clear"),
-      },
-    },
-    {
-      name: "delete_label",
-      description:
-        "Permanently remove a label from labels.yaml; the key is dropped from every task's " +
-        "labels array (or remapped via `remap_to`). Use `archive_label` for the reversible " +
-        "(soft) variant. Always requires `confirm: true`.",
-      inputSchema: {
-        key: z.string(),
-        confirm: z.boolean().optional().describe("Required: must be true to proceed"),
-        remap_to: z.string().optional().describe("Target label key for affected tasks"),
-      },
-    },
-    {
-      name: "archive_label",
-      description: "Mark a label as archived. Reversible via `unarchive_label`.",
-      inputSchema: { key: z.string() },
-    },
-    {
-      name: "unarchive_label",
-      description: "Clear the archived flag on a label.",
-      inputSchema: { key: z.string() },
-    },
-    {
-      name: "get_sprint_burndown",
-      description: "Return the burndown series for a sprint, reconstructed from task history. The response carries the daily 'remaining' total across the sprint window, the unit being summed (points/hours/weighted-enum/task-count), the initial total at sprint start, the ideal straight-line, and per-day incomplete task counts. Scope changes (tasks joining or leaving the sprint mid-run) appear as visible steps in the series.",
-      inputSchema: {
-        key: z.string().describe("Sprint key (e.g. 's1' / 'sprint_2026.q1')"),
-      },
-    },
-  ];
+  return listRegisteredTools().map(stripHandler);
 }
 
-/**
- * Memoized tool list — `getTools()` rebuilds the full ~50-tool array
- * on every call, which would be O(N) per executeTool dispatch. The
- * tool definitions are referentially pure (no config-conditional
- * registration) so caching once at module load is safe; if that
- * assumption ever changes (e.g. config-gated tools), this needs a
- * cache-bust hook.
- */
 const ALL_TOOLS: readonly McpTool[] = getTools();
 
 /**
  * Lazy cache of `z.object(tool.inputSchema).strict()` per tool name.
- * Built once on first lookup and reused. We use `.strict()` so an
- * agent that invents a field name (e.g. typo'd `tite` for `title`)
- * gets a clean rejection instead of a silently-ignored field that
+ * Built once on first lookup and reused. `.strict()` so an agent
+ * that invents a field name (e.g. typo'd `tite` for `title`) gets
+ * a clean rejection instead of a silently-ignored field that
  * cascades into a downstream missing-required error.
- *
- * Note: while validation guarantees the shape, individual handlers
- * still bracket-access `args` and cast at the use site
- * (`args["ref"] as string`). Removing those casts requires a
- * larger refactor (replace the `Record<string, unknown>` parameter
- * with the inferred zod type per case) and was deferred from this
- * chunk.
  */
 const TOOL_ARG_SCHEMAS = new Map<string, z.ZodObject<Record<string, z.ZodTypeAny>>>();
 
@@ -374,37 +53,6 @@ function getToolArgSchema(name: string): z.ZodObject<Record<string, z.ZodTypeAny
   schema = z.object(tool.inputSchema).strict();
   TOOL_ARG_SCHEMAS.set(name, schema);
   return schema;
-}
-
-/**
- * Validates `args` against the tool's declared `inputSchema`. On
- * success, returns the parsed (and strictly-typed) object. On
- * failure, returns a structured error result the dispatcher can
- * surface to the agent with field paths and per-field reasons.
- *
- * Tools whose inputSchema is `{}` (no inputs) get a no-op pass.
- */
-function parseToolArgs(
-  name: string,
-  args: Record<string, unknown>,
-): { ok: true; value: Record<string, unknown> } | { ok: false; result: McpToolResult } {
-  const schema = getToolArgSchema(name);
-  if (schema === undefined) {
-    // Unknown tool — let the dispatcher's default branch produce
-    // the canonical "Unknown tool: …" error.
-    return { ok: true, value: args };
-  }
-  const parsed = schema.safeParse(args);
-  if (parsed.success) {
-    return { ok: true, value: parsed.data };
-  }
-  const detail = parsed.error.issues
-    .map(i => `${i.path.length > 0 ? `${i.path.join(".")}: ` : ""}${i.message}`)
-    .join("; ");
-  return {
-    ok: false,
-    result: errorResult(`invalid args for ${name}: ${detail}`),
-  };
 }
 
 /**
@@ -429,40 +77,18 @@ export async function executeTool(
 ): Promise<McpToolResult> {
   const locttDir = resolveLocttDir(root);
 
-  // Tools migrated to the registry are dispatched first; everything
-  // else falls through to the legacy in-file switch below. During
-  // the gradual migration both paths coexist; once every tool is
-  // moved the switch + parseToolArgs go away.
   const registered = lookupTool(name);
-  if (registered !== undefined) {
-    if (!registered.exemptFromSchemaGuard && (await dirExists(locttDir))) {
-      try {
-        await requireSupportedSchema(locttDir);
-      } catch (err) {
-        return errorResult((err as Error).message);
-      }
-    }
-    const schema = z.object(registered.inputSchema).strict();
-    const parsed = schema.safeParse(args);
-    if (!parsed.success) {
-      const detail = parsed.error.issues
-        .map(i => `${i.path.length > 0 ? `${i.path.join(".")}: ` : ""}${i.message}`)
-        .join("; ");
-      return errorResult(`invalid args for ${name}: ${detail}`);
-    }
-    try {
-      return await registered.handler({ root, locttDir }, parsed.data);
-    } catch (err) {
-      if (isKnownDomainError(err)) return errorResult(err.message);
-      throw err;
-    }
+  if (registered === undefined) {
+    return errorResult(`Unknown tool: ${name}`);
   }
 
   // Boot guard — refuse to run tools against a tracker whose
   // schema doesn't match this MCP server's expectations. The agent
   // sees a clear error pointing at `loctt migrate` rather than
-  // partial reads against an unfamiliar schema.
-  if (!SCHEMA_GUARD_EXEMPT_TOOLS.has(name) && (await dirExists(locttDir))) {
+  // partial reads against an unfamiliar schema. `init` is the one
+  // legitimately tool that runs against a pre-version tracker; it
+  // sets `exemptFromSchemaGuard: true`.
+  if (!registered.exemptFromSchemaGuard && (await dirExists(locttDir))) {
     try {
       await requireSupportedSchema(locttDir);
     } catch (err) {
@@ -470,433 +96,32 @@ export async function executeTool(
     }
   }
 
-  // Validate args against the tool's declared inputSchema before
-  // dispatch. Catches missing required fields, wrong types, and
-  // (because we use .strict()) unknown field names.
-  //
-  // We replace `args` with the parsed result so handlers below
-  // see the validated shape. Reassigning the parameter is
-  // intentional: every later reference (`args["ref"]` etc.) reads
-  // from the parsed object, never the raw caller input.
-  const validated = parseToolArgs(name, args);
-  if (!validated.ok) return validated.result;
-  args = validated.value;
+  // Validate args against the tool's declared inputSchema. Strict
+  // mode rejects unknown fields with a structured error pointing
+  // at the offending path.
+  const schema = getToolArgSchema(name);
+  if (schema === undefined) {
+    // Shouldn't happen — registry hit means the schema cache will
+    // populate on this call. Defensive: surface as a tool error
+    // rather than a TypeError.
+    return errorResult(`Unknown tool: ${name}`);
+  }
+  const parsed = schema.safeParse(args);
+  if (!parsed.success) {
+    const detail = parsed.error.issues
+      .map(i => `${i.path.length > 0 ? `${i.path.join(".")}: ` : ""}${i.message}`)
+      .join("; ");
+    return errorResult(`invalid args for ${name}: ${detail}`);
+  }
 
   try {
-    switch (name) {
-      case "list_projects": {
-        const cfg = await loadProjectsConfig(locttDir);
-        return text(JSON.stringify({
-          projects: cfg.projects,
-          default: cfg.default ?? null,
-        }, null, 2));
-      }
-
-      case "create_project": {
-        try {
-          await createProject(locttDir, {
-            key: args["key"] as string,
-            label: args["label"] as string,
-            prefix: args["prefix"] as string,
-          });
-          if (args["make_default"] === true) {
-            await setDefaultProject(locttDir, args["key"] as string);
-          }
-          return text(`Created project ${String(args["key"])}`);
-        } catch (err) {
-          if (err instanceof ProjectError) {
-            return errorResult(err.message);
-          }
-          throw err;
-        }
-      }
-
-      case "edit_project": {
-        try {
-          await editProject(locttDir, args["key"] as string, {
-            label: args["label"] as string,
-          });
-          return text(`Updated project ${String(args["key"])}`);
-        } catch (err) {
-          if (err instanceof ProjectError) {
-            return errorResult(err.message);
-          }
-          throw err;
-        }
-      }
-
-      case "delete_project": {
-        try {
-          const blocked = requireConfirm(args, "delete_project");
-          if (blocked) return blocked;
-          const remapTo = args["remap_to"] as string | undefined;
-          const result = await deleteProject(locttDir, args["key"] as string, {
-            hard: true,
-            ...(remapTo !== undefined ? { remapTo } : {}),
-          });
-          return text(JSON.stringify({
-            key: args["key"],
-            remappedTaskCount: result.remappedTaskCount,
-          }, null, 2));
-        } catch (err) {
-          if (err instanceof ProjectError) {
-            return errorResult(err.message);
-          }
-          throw err;
-        }
-      }
-
-      case "archive_project":
-      case "unarchive_project": {
-        try {
-          const key = args["key"] as string;
-          if (name === "archive_project") await archiveProject(locttDir, key);
-          else await unarchiveProject(locttDir, key);
-          return text(`${name === "archive_project" ? "Archived" : "Unarchived"} project ${key}`);
-        } catch (err) {
-          if (err instanceof ProjectError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "set_default_project": {
-        try {
-          const key = (args["key"] as string | undefined) ?? null;
-          await setDefaultProject(locttDir, key);
-          return text(key === null ? `Cleared workspace default project` : `Set workspace default to ${key}`);
-        } catch (err) {
-          if (err instanceof ProjectError) {
-            return errorResult(err.message);
-          }
-          throw err;
-        }
-      }
-
-      case "list_users": {
-        const includeArchived = args["include_archived"] === true;
-        const users = await loadAllUsers(locttDir);
-        const current = await getCurrentUser(locttDir);
-        const filtered = users.filter(u => includeArchived || u.archived !== true);
-        return text(JSON.stringify({
-          current: current?.id ?? null,
-          users: filtered,
-        }, null, 2));
-      }
-
-      case "get_current_user": {
-        const current = await getCurrentUser(locttDir);
-        if (!current) return errorResult("no users registered");
-        return text(JSON.stringify(current, null, 2));
-      }
-
-      case "switch_user": {
-        try {
-          const target = await resolveUserRef(locttDir, args["ref"] as string);
-          await switchCurrentUser(locttDir, target.id);
-          return text(`Switched to ${target.name} (${target.id})`);
-        } catch (err) {
-          if (err instanceof UserError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "create_user": {
-        try {
-          const created = await createUser(locttDir, {
-            name: args["name"] as string,
-            ...(args["email"] !== undefined ? { email: args["email"] as string } : {}),
-            ...(args["timezone"] !== undefined ? { timezone: args["timezone"] as string } : {}),
-            switchToOnCreate: args["switch_to_on_create"] === true,
-          });
-          return text(JSON.stringify(created, null, 2));
-        } catch (err) {
-          if (err instanceof UserError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "edit_user": {
-        try {
-          const target = await resolveUserRef(locttDir, args["ref"] as string);
-          const updated = await updateUser(locttDir, target.id, {
-            ...(args["name"] !== undefined ? { name: args["name"] as string } : {}),
-            ...("email" in args
-              ? { email: args["email"] as string | null }
-              : {}),
-            ...(args["timezone"] !== undefined ? { timezone: args["timezone"] as string } : {}),
-          });
-          return text(JSON.stringify(updated, null, 2));
-        } catch (err) {
-          if (err instanceof UserError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "archive_user":
-      case "unarchive_user": {
-        try {
-          const target = await resolveUserRef(locttDir, args["ref"] as string);
-          if (name === "archive_user") await archiveUser(locttDir, target.id);
-          else await unarchiveUser(locttDir, target.id);
-          return text(`${name === "archive_user" ? "Archived" : "Unarchived"} ${target.name}`);
-        } catch (err) {
-          if (err instanceof UserError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "delete_user": {
-        try {
-          const blocked = requireConfirm(args, "delete_user");
-          if (blocked) return blocked;
-          const target = await resolveUserRef(locttDir, args["ref"] as string);
-          const remapToRef = args["remap_to"] as string | undefined;
-          const unassign = args["unassign"] === true;
-          if (remapToRef !== undefined && unassign) {
-            return errorResult("remap_to and unassign are mutually exclusive");
-          }
-          const remapTo = remapToRef !== undefined
-            ? (await resolveUserRef(locttDir, remapToRef)).id
-            : undefined;
-          const result = await deleteUser(locttDir, target.id, {
-            ...(remapTo !== undefined ? { remapTo } : {}),
-            ...(unassign ? { unassign: true } : {}),
-          });
-          return text(JSON.stringify({ deleted: target.id, ...result }, null, 2));
-        } catch (err) {
-          if (err instanceof UserError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "list_labels": {
-        const cfg = await loadLabelsConfig(locttDir);
-        return text(JSON.stringify(cfg, null, 2));
-      }
-
-      case "create_label": {
-        try {
-          const color = args["color"] as string | undefined;
-          await createLabel(locttDir, {
-            key: args["key"] as string,
-            label: args["label"] as string,
-            ...(color !== undefined ? { color } : {}),
-          });
-          return text(`Created label ${String(args["key"])}`);
-        } catch (err) {
-          if (err instanceof LabelError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "edit_label": {
-        try {
-          const colorArg = args["color"] as string | null | undefined;
-          await editLabel(locttDir, args["key"] as string, {
-            ...(args["label"] !== undefined ? { label: args["label"] as string } : {}),
-            ...("color" in args ? { color: colorArg ?? null } : {}),
-          });
-          return text(`Updated label ${String(args["key"])}`);
-        } catch (err) {
-          if (err instanceof LabelError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "delete_label": {
-        try {
-          const blocked = requireConfirm(args, "delete_label");
-          if (blocked) return blocked;
-          const remapTo = args["remap_to"] as string | undefined;
-          const result = await deleteLabel(locttDir, args["key"] as string, {
-            hard: true,
-            ...(remapTo !== undefined ? { remapTo } : {}),
-          });
-          return text(JSON.stringify({
-            key: args["key"],
-            ...result,
-          }, null, 2));
-        } catch (err) {
-          if (err instanceof LabelError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "list_sprints": {
-        const cfg = await loadSprintsConfig(locttDir);
-        return text(JSON.stringify(cfg, null, 2));
-      }
-
-      case "create_sprint": {
-        try {
-          const goal = args["goal"] as string | undefined;
-          await createSprint(locttDir, {
-            key: args["key"] as string,
-            label: args["label"] as string,
-            start_date: args["start_date"] as string,
-            end_date: args["end_date"] as string,
-            state: args["state"] as "active" | "completed" | "future",
-            ...(goal !== undefined ? { goal } : {}),
-          });
-          return text(`Created sprint ${String(args["key"])}`);
-        } catch (err) {
-          if (err instanceof SprintError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "edit_sprint": {
-        try {
-          const goal = args["goal"] as string | null | undefined;
-          await editSprint(locttDir, args["key"] as string, {
-            ...(args["label"] !== undefined ? { label: args["label"] as string } : {}),
-            ...(args["start_date"] !== undefined ? { start_date: args["start_date"] as string } : {}),
-            ...(args["end_date"] !== undefined ? { end_date: args["end_date"] as string } : {}),
-            ...(args["state"] !== undefined ? { state: args["state"] as "active" | "completed" | "future" } : {}),
-            ...("goal" in args ? { goal: goal ?? null } : {}),
-            ...(args["force"] === true ? { force: true } : {}),
-          });
-          return text(`Updated sprint ${String(args["key"])}`);
-        } catch (err) {
-          if (err instanceof SprintError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "delete_sprint": {
-        try {
-          const blocked = requireConfirm(args, "delete_sprint");
-          if (blocked) return blocked;
-          const remapTo = args["remap_to"] as string | undefined;
-          const result = await deleteSprint(locttDir, args["key"] as string, {
-            hard: true,
-            ...(remapTo !== undefined ? { remapTo } : {}),
-          });
-          return text(JSON.stringify({
-            key: args["key"],
-            ...result,
-          }, null, 2));
-        } catch (err) {
-          if (err instanceof SprintError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "list_milestones": {
-        const cfg = await loadMilestonesConfig(locttDir);
-        return text(JSON.stringify(cfg, null, 2));
-      }
-
-      case "create_milestone": {
-        try {
-          const td = args["target_date"] as string | undefined;
-          await createMilestone(locttDir, {
-            key: args["key"] as string,
-            label: args["label"] as string,
-            ...(td !== undefined ? { target_date: td } : {}),
-          });
-          return text(`Created milestone ${String(args["key"])}`);
-        } catch (err) {
-          if (err instanceof MilestoneError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "edit_milestone": {
-        try {
-          const td = args["target_date"] as string | null | undefined;
-          const archived = args["archived"] as boolean | undefined;
-          await editMilestone(locttDir, args["key"] as string, {
-            ...(args["label"] !== undefined ? { label: args["label"] as string } : {}),
-            ...("target_date" in args ? { target_date: td ?? null } : {}),
-            ...(archived !== undefined ? { archived } : {}),
-          });
-          return text(`Updated milestone ${String(args["key"])}`);
-        } catch (err) {
-          if (err instanceof MilestoneError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "delete_milestone": {
-        try {
-          const blocked = requireConfirm(args, "delete_milestone");
-          if (blocked) return blocked;
-          const remapTo = args["remap_to"] as string | undefined;
-          const result = await deleteMilestone(locttDir, args["key"] as string, {
-            hard: true,
-            ...(remapTo !== undefined ? { remapTo } : {}),
-          });
-          return text(JSON.stringify({
-            key: args["key"],
-            ...result,
-          }, null, 2));
-        } catch (err) {
-          if (err instanceof MilestoneError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "archive_label":
-      case "unarchive_label": {
-        try {
-          const key = args["key"] as string;
-          if (name === "archive_label") await archiveLabel(locttDir, key);
-          else await unarchiveLabel(locttDir, key);
-          return text(`${name === "archive_label" ? "Archived" : "Unarchived"} label ${key}`);
-        } catch (err) {
-          if (err instanceof LabelError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "archive_milestone":
-      case "unarchive_milestone": {
-        try {
-          const key = args["key"] as string;
-          if (name === "archive_milestone") await archiveMilestone(locttDir, key);
-          else await unarchiveMilestone(locttDir, key);
-          return text(`${name === "archive_milestone" ? "Archived" : "Unarchived"} milestone ${key}`);
-        } catch (err) {
-          if (err instanceof MilestoneError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "archive_sprint":
-      case "unarchive_sprint": {
-        try {
-          const key = args["key"] as string;
-          if (name === "archive_sprint") await archiveSprint(locttDir, key);
-          else await unarchiveSprint(locttDir, key);
-          return text(`${name === "archive_sprint" ? "Archived" : "Unarchived"} sprint ${key}`);
-        } catch (err) {
-          if (err instanceof SprintError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      case "get_sprint_burndown": {
-        try {
-          const series = await readBurndownSeries(locttDir, args["key"] as string);
-          return text(JSON.stringify(series, null, 2));
-        } catch (err) {
-          if (err instanceof BurndownError) return errorResult(err.message);
-          throw err;
-        }
-      }
-
-      default:
-        return errorResult(`Unknown tool: ${name}`);
-    }
+    return await registered.handler({ root, locttDir }, parsed.data);
   } catch (err) {
-    if (isKnownDomainError(err)) {
-      return errorResult(err.message);
-    }
-    // Re-throw anything else — a TypeError or unexpected I/O failure
-    // is a real bug, not a routine tool error. The MCP framework
-    // will surface it as a server fault and log it; masking it as
-    // an errorResult here would hide the diagnosis.
+    if (isKnownDomainError(err)) return errorResult(err.message);
+    // Re-throw anything else — a TypeError or unexpected I/O
+    // failure is a real bug, not a routine tool error. The MCP
+    // framework will surface it as a server fault and log it;
+    // masking it as an errorResult here would hide the diagnosis.
     throw err;
   }
 }
