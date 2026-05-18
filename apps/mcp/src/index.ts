@@ -42,8 +42,6 @@ import {
   getConfigValue,
   getCurrentUser,
   getGitStatus,
-  getTrackerInfo,
-  initLoctt,
   LabelError,
   linkTask,
   listTasks,
@@ -72,7 +70,6 @@ import {
   resolveLocttDir,
   resolveProjectKeyForUser,
   resolveUserRef,
-  runDoctor,
   saveState,
   setConfigValue,
   setDefaultProject,
@@ -248,28 +245,6 @@ export function getTools(): McpTool[] {
       inputSchema: {
         ref: z.string().describe("Task key or ID"),
         name: z.string().describe("Basename of the attachment, no path separators"),
-      },
-    },
-    {
-      name: "info",
-      description: "Returns prose summary of the tracker state (locttDir, task count, key prefix, statuses, next key). Mirrors the CLI 'info' command.",
-      inputSchema: {},
-    },
-    {
-      name: "doctor",
-      description: "Runs diagnostic checks on the tracker. Output is human-prose. Useful for surfacing problems to the user; not designed for chained tool calls. Pass `rebuild_index: true` to also rebuild the key-lookup cache (recovery path for out-of-band frontmatter edits).",
-      inputSchema: {
-        rebuild_index: z.boolean().optional().describe("If true, rebuild the on-disk key index after checks. Use after manual frontmatter edits to a task's key or key_history."),
-      },
-    },
-    {
-      name: "init",
-      description: "Bootstraps a new loctt tracker at the server's working directory if .loctt/ doesn't exist yet. Only call when explicitly asked to set up a new tracker — this is a one-time operation, not a routine task action.",
-      inputSchema: {
-        prefix: z.string().optional().describe("Key prefix for tasks (default 'T-')."),
-        project_key: z.string().optional().describe("Initial project key (slug; default 'task')."),
-        project_label: z.string().optional().describe("Initial project label (display name; default 'Task')."),
-        no_docs: z.boolean().optional().describe("If true, skip generating helper docs."),
       },
     },
     {
@@ -1042,62 +1017,6 @@ export async function executeTool(
         const limit = args["limit"] as number | undefined;
         const display = limit !== undefined ? entries.slice(0, limit) : entries;
         return text(JSON.stringify(display, null, 2));
-      }
-
-      case "info": {
-        const info = await getTrackerInfo(root);
-        if (!info.exists) {
-          return text("No .loctt directory found. Run 'loctt init' to get started.");
-        }
-        const lines: string[] = [];
-        lines.push(`LocTT directory: ${info.locttDir}`);
-        lines.push(`Tasks: ${info.taskCount}`);
-        if (info.workflowConfig) {
-          lines.push(`Key prefix: ${info.workflowConfig.key.prefix}`);
-          lines.push(`Statuses: ${info.workflowConfig.statuses.map(s => s.key).join(", ")}`);
-        }
-        if (info.state) {
-          // Show every project counter. Sorted by project key so
-          // output is stable.
-          const entries = Object.entries(info.state.keys).sort(([a], [b]) => a.localeCompare(b));
-          if (entries.length > 0) {
-            lines.push(`Next keys:`);
-            for (const [key, val] of entries) {
-              lines.push(`  ${key}: ${val.prefix}${val.next_number}`);
-            }
-          }
-        }
-        return text(lines.join("\n"));
-      }
-
-      case "doctor": {
-        const rebuildIndex = args["rebuild_index"] === true;
-        const checks = await runDoctor(root, { rebuildIndex });
-        const lines = checks.map(c => {
-          const icon = c.status === "ok" ? "ok" : c.status === "warn" ? "warn" : "error";
-          return `[${icon}] ${c.name}: ${c.message}`;
-        });
-        return text(lines.join("\n"));
-      }
-
-      case "init": {
-        try {
-          await access(locttDir);
-          return errorResult(`.loctt directory already exists at ${locttDir}`);
-        } catch {
-          // doesn't exist — proceed
-        }
-        const prefix = args["prefix"] as string | undefined;
-        const projectKey = args["project_key"] as string | undefined;
-        const projectLabel = args["project_label"] as string | undefined;
-        const noDocs = (args["no_docs"] as boolean | undefined) ?? false;
-        const result = await initLoctt(root, {
-          ...(prefix !== undefined ? { prefix } : {}),
-          ...(projectKey !== undefined ? { projectKey } : {}),
-          ...(projectLabel !== undefined ? { projectLabel } : {}),
-          docs: !noDocs,
-        });
-        return text(`Initialized .loctt at ${result.locttDir}\nCreated ${result.created.length} files`);
       }
 
       case "enable_git": {
