@@ -19,6 +19,8 @@
  * sorted name list — see registry.test.ts.
  */
 
+import { TOOLS as CONFIG_TOOLS } from "./tools/config.js";
+import { TOOLS as GIT_TOOLS } from "./tools/git.js";
 import { TOOLS as TASK_ARCHIVE_TOOLS } from "./tools/task-archive.js";
 import { TOOLS as TASK_BODY_TOOLS } from "./tools/task-body.js";
 import { TOOLS as TASK_CRUD_TOOLS } from "./tools/task-crud.js";
@@ -26,6 +28,7 @@ import { TOOLS as TASK_FILES_TOOLS } from "./tools/task-files.js";
 import { TOOLS as TASK_LINKS_TOOLS } from "./tools/task-links.js";
 import { TOOLS as TASK_RANK_TOOLS } from "./tools/task-rank.js";
 import { TOOLS as TRACKER_TOOLS } from "./tools/tracker.js";
+import { TOOLS as VIEWS_TOOLS } from "./tools/views.js";
 import type { McpTool, ToolDef } from "./types.js";
 
 /**
@@ -40,6 +43,8 @@ import type { McpTool, ToolDef } from "./types.js";
  * dispatcher consults the registry first.
  */
 const TOOL_GROUPS: readonly (readonly ToolDef[])[] = [
+  CONFIG_TOOLS,
+  GIT_TOOLS,
   TASK_ARCHIVE_TOOLS,
   TASK_BODY_TOOLS,
   TASK_CRUD_TOOLS,
@@ -47,6 +52,7 @@ const TOOL_GROUPS: readonly (readonly ToolDef[])[] = [
   TASK_LINKS_TOOLS,
   TASK_RANK_TOOLS,
   TRACKER_TOOLS,
+  VIEWS_TOOLS,
   // Add new tool groups here as they're migrated.
 ];
 
