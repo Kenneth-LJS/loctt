@@ -21,6 +21,7 @@
 
 import { TOOLS as TASK_ARCHIVE_TOOLS } from "./tools/task-archive.js";
 import { TOOLS as TASK_BODY_TOOLS } from "./tools/task-body.js";
+import { TOOLS as TASK_CRUD_TOOLS } from "./tools/task-crud.js";
 import { TOOLS as TASK_FILES_TOOLS } from "./tools/task-files.js";
 import { TOOLS as TASK_LINKS_TOOLS } from "./tools/task-links.js";
 import { TOOLS as TASK_RANK_TOOLS } from "./tools/task-rank.js";
@@ -41,6 +42,7 @@ import type { McpTool, ToolDef } from "./types.js";
 const TOOL_GROUPS: readonly (readonly ToolDef[])[] = [
   TASK_ARCHIVE_TOOLS,
   TASK_BODY_TOOLS,
+  TASK_CRUD_TOOLS,
   TASK_FILES_TOOLS,
   TASK_LINKS_TOOLS,
   TASK_RANK_TOOLS,
