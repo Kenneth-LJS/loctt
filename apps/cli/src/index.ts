@@ -1,32 +1,23 @@
-import { isAbsolute, resolve as resolvePath } from "node:path";
+import { resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  appendTaskBody,
   archiveLabel,
   archiveMilestone,
   archiveProject,
   archiveSprint,
-  archiveTask,
   archiveUser,
-  attachFile,
-  AttachmentExistsError,
-  buildListContext,
-  buildShowModel,
   CONFIG_KEYS,
   createLabel,
   createMilestone,
   createProject,
   createSprint,
-  createTask,
   createUser,
   deleteLabel,
   deleteMilestone,
   deleteProject,
   deleteSprint,
-  deleteTask,
   deleteUser,
-  detachFile,
   disableGit,
   editLabel,
   editMilestone,
@@ -36,64 +27,48 @@ import {
   getConfigValue,
   getCurrentUser,
   getGitStatus,
-  linkTask,
-  listTasks,
-  loadAllTasks,
   loadAllUsers,
-  loadArchivedGuardConfigs,
   loadCalendarConfig,
   loadLabelsConfig,
   loadMilestonesConfig,
-  loadOptionalConfigs,
   loadProjectsConfig,
   loadSprintsConfig,
-  loadState,
-  lookupTask,
   migrateToCurrent,
   planMigration,
   publish,
   readBurndownSeries,
-  readHistory,
-  readTaskBody,
-  reorderBoardRank,
-  reorderRelationship,
   requireSupportedSchema,
   resolveLocttDir,
-  resolveProjectKeyForUser,
   resolveUserRef,
-  saveState,
   setConfigValue,
   setDefaultProject,
-  setField,
   switchCurrentUser,
   sync,
   unarchiveLabel,
   unarchiveMilestone,
   unarchiveProject,
   unarchiveSprint,
-  unarchiveTask,
   unarchiveUser,
-  unlinkTask,
   unsetConfigValue,
-  unsetField,
   updateUser,
   UserError,
-  withStateLock,
-  writeTaskBody,
 } from "@loctt/core";
 
 import * as doctorCmd from "./commands/doctor.js";
 import * as infoCmd from "./commands/info.js";
 import * as initCmd from "./commands/init.js";
 import * as schemaCmd from "./commands/schema.js";
+import * as taskArchiveCmd from "./commands/task-archive.js";
+import * as taskCrudCmd from "./commands/task-crud.js";
+import * as taskFilesCmd from "./commands/task-files.js";
+import * as taskLinksCmd from "./commands/task-links.js";
+import * as taskRankCmd from "./commands/task-rank.js";
 import * as viewsCmd from "./commands/views.js";
-import { formatHistoryEntry } from "./format/history.js";
 import { formatNumber, pad } from "./format/value.js";
 import { getArg, hasFlag, stripCwdArg } from "./runtime/args.js";
 import { confirmHardDelete, confirmInteractive } from "./runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "./runtime/errors.js";
 import { dirExists, resolveClientDir, SCHEMA_GUARD_EXEMPT_COMMANDS } from "./runtime/schema-guard.js";
-import { assertWorkflowEnumKey, assertWorkflowRelationshipKey } from "./runtime/workflow-assert.js";
 import { usage } from "./usage.js";
 
 export async function main(): Promise<void> {
@@ -134,416 +109,20 @@ export async function main(): Promise<void> {
       case "views":  await viewsCmd.run(args, root);  break;
       case "schema": await schemaCmd.run(args, root); break;
 
-      case "create": {
-        await runCommand(async () => {
-          const title = args[1];
-          if (!title) throw new UsageError("missing title", "loctt create <title>");
-          const locttDir = resolveLocttDir(root);
-          const { workflowConfig } = await loadOptionalConfigs(locttDir);
-
-          // Resolve target project via the shared chain: explicit
-          // > per-user default > workspace default > sole project.
-          const explicit = getArg(args, "--project");
-          const projectKey = await resolveProjectKeyForUser(locttDir, explicit);
-
-          const status = getArg(args, "--status");
-          const priority = getArg(args, "--priority");
-          const taskType = getArg(args, "--type");
-          assertWorkflowEnumKey(workflowConfig, "status", status);
-          assertWorkflowEnumKey(workflowConfig, "priority", priority);
-          assertWorkflowEnumKey(workflowConfig, "task_type", taskType);
-
-          const archivedGuard = await loadArchivedGuardConfigs(locttDir);
-          const task = await withStateLock(locttDir, async () => {
-            const state = await loadState(locttDir);
-            const created = await createTask({
-              locttDir,
-              state,
-              ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-              archivedGuard,
-              options: {
-                project: projectKey,
-                title,
-                ...(status !== undefined ? { status } : {}),
-                ...(priority !== undefined ? { priority } : {}),
-                ...(taskType !== undefined ? { task_type: taskType } : {}),
-              },
-            });
-            await saveState(locttDir, state);
-            return created;
-          });
-          console.log(`Created ${task.frontmatter.key}: ${task.frontmatter.title}`);
-        });
-        break;
-      }
-
-      case "list": {
-        await runCommand(async () => {
-          const locttDir = resolveLocttDir(root);
-          const tasks = await loadAllTasks(locttDir);
-          const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
-
-          let limit: number | undefined;
-          const limitArg = getArg(args, "--limit");
-          if (limitArg !== undefined) {
-            limit = Number(limitArg);
-            if (Number.isNaN(limit) || limit < 0 || !Number.isInteger(limit)) {
-              throw new UsageError("--limit must be a non-negative integer");
-            }
-          }
-
-          // `--project <key>` is a structured filter; passing it as
-          // an option keeps user-supplied project keys away from the
-          // query parser so values containing operators or spaces
-          // can't break parsing.
-          const projectFilter = getArg(args, "--project");
-          const baseQuery = getArg(args, "--query");
-
-          const view = getArg(args, "--view");
-          const result = listTasks({
-            tasks,
-            options: {
-              ...(baseQuery !== undefined ? { query: baseQuery } : {}),
-              ...(view !== undefined ? { view } : {}),
-              ...(limit !== undefined ? { limit } : {}),
-              ...(projectFilter !== undefined ? { project: projectFilter } : {}),
-              includeArchived: hasFlag(args, "--archived"),
-            },
-            ...(queriesConfig !== undefined ? { queriesConfig } : {}),
-            ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-            ctx: buildListContext(tasks),
-          });
-
-          if (result.length === 0) {
-            console.log("No tasks found.");
-          } else {
-            for (const task of result) {
-              const status = task.frontmatter.status ? ` [${task.frontmatter.status}]` : "";
-              console.log(`${task.frontmatter.key}  ${task.frontmatter.title}${status}`);
-            }
-          }
-        });
-        break;
-      }
-
-      case "show": {
-        await runCommand(async () => {
-          const ref = args[1];
-          if (!ref) throw new UsageError("missing task ref", "loctt show <task>");
-          const locttDir = resolveLocttDir(root);
-          const task = await lookupTask(locttDir, ref);
-          const model = await buildShowModel(locttDir, task);
-
-          console.log(`${model.task.frontmatter.key}: ${model.task.frontmatter.title}`);
-          const fm = model.task.frontmatter;
-          if (fm.status) console.log(`Status: ${fm.status}`);
-          if (fm.priority) console.log(`Priority: ${fm.priority}`);
-          if (fm.task_type) console.log(`Type: ${fm.task_type}`);
-          if (fm.assignee) console.log(`Assignee: ${fm.assignee}`);
-          if (fm.due_date) console.log(`Due: ${fm.due_date}`);
-          if (fm.archived) console.log(`Archived: ${fm.archived_at}`);
-          if (model.relationships.length > 0) {
-            console.log(`Relationships:`);
-            for (const r of model.relationships) {
-              const display = r.missing
-                ? `${r.target.slice(0, 8)}… (deleted)`
-                : r.resolvedKey ?? r.target;
-              console.log(`  ${r.type} → ${display}`);
-            }
-          }
-          if (model.attachments.length > 0) {
-            console.log(`Attachments:`);
-            for (const a of model.attachments) {
-              console.log(`  ${a.name} (${a.size} bytes)`);
-            }
-          }
-          if (model.task.body.trim()) {
-            console.log(`\n${model.task.body}`);
-          }
-        });
-        break;
-      }
-
-      case "set": {
-        await runCommand(async () => {
-          const ref = args[1];
-          const field = args[2];
-          const value = args[3];
-          if (!ref || !field || value === undefined) {
-            throw new UsageError("missing args", "loctt set <task> <field> <value>");
-          }
-          const locttDir = resolveLocttDir(root);
-          const { workflowConfig } = await loadOptionalConfigs(locttDir);
-          // Pre-validate enum-typed fields against the workflow config
-          // so the CLI can surface a friendly "known values" hint
-          // instead of letting the core throw a generic update error.
-          if (field === "status" || field === "priority" || field === "task_type") {
-            assertWorkflowEnumKey(workflowConfig, field, value);
-          }
-          const task = await lookupTask(locttDir, ref);
-          const archivedGuard = await loadArchivedGuardConfigs(locttDir);
-          await setField({
-            locttDir,
-            taskId: task.frontmatter.id,
-            field,
-            value,
-            ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-            archivedGuard,
-          });
-          console.log(`Set ${field} = ${value} on ${task.frontmatter.key}`);
-        });
-        break;
-      }
-
-      case "unset": {
-        await runCommand(async () => {
-          const ref = args[1];
-          const field = args[2];
-          if (!ref || !field) {
-            throw new UsageError("missing args", "loctt unset <task> <field>");
-          }
-          const locttDir = resolveLocttDir(root);
-          const task = await lookupTask(locttDir, ref);
-          await unsetField(locttDir, task.frontmatter.id, field);
-          console.log(`Unset ${field} on ${task.frontmatter.key}`);
-        });
-        break;
-      }
-
-      case "link": {
-        await runCommand(async () => {
-          const ref = args[1];
-          const relType = args[2];
-          const target = args[3];
-          if (!ref || !relType || !target) {
-            throw new UsageError("missing args", "loctt link <task> <relationship> <target>");
-          }
-          const locttDir = resolveLocttDir(root);
-          const { workflowConfig } = await loadOptionalConfigs(locttDir);
-          assertWorkflowRelationshipKey(workflowConfig, relType);
-          const task = await lookupTask(locttDir, ref);
-          const targetTask = await lookupTask(locttDir, target);
-          await linkTask({
-            locttDir,
-            taskId: task.frontmatter.id,
-            type: relType,
-            target: targetTask.frontmatter.id,
-            ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-          });
-          console.log(`Linked ${task.frontmatter.key} --${relType}--> ${targetTask.frontmatter.key}`);
-        });
-        break;
-      }
-
-      case "unlink": {
-        await runCommand(async () => {
-          const ref = args[1];
-          const relType = args[2];
-          const target = args[3];
-          if (!ref || !relType || !target) {
-            throw new UsageError("missing args", "loctt unlink <task> <relationship> <target>");
-          }
-          const locttDir = resolveLocttDir(root);
-          const { workflowConfig } = await loadOptionalConfigs(locttDir);
-          assertWorkflowRelationshipKey(workflowConfig, relType);
-          const task = await lookupTask(locttDir, ref);
-          const targetTask = await lookupTask(locttDir, target);
-          await unlinkTask({
-            locttDir,
-            taskId: task.frontmatter.id,
-            type: relType,
-            target: targetTask.frontmatter.id,
-            ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-          });
-          console.log(`Unlinked ${task.frontmatter.key} --${relType}--> ${targetTask.frontmatter.key}`);
-        });
-        break;
-      }
-
-      case "archive": {
-        await runCommand(async () => {
-          const ref = args[1];
-          if (!ref) throw new UsageError("missing task ref", "loctt archive <task>");
-          const locttDir = resolveLocttDir(root);
-          const task = await lookupTask(locttDir, ref);
-          await archiveTask(locttDir, task.frontmatter.id);
-          console.log(`Archived ${task.frontmatter.key}`);
-        });
-        break;
-      }
-
-      case "unarchive": {
-        await runCommand(async () => {
-          const ref = args[1];
-          if (!ref) throw new UsageError("missing task ref", "loctt unarchive <task>");
-          const locttDir = resolveLocttDir(root);
-          const task = await lookupTask(locttDir, ref);
-          await unarchiveTask(locttDir, task.frontmatter.id);
-          console.log(`Unarchived ${task.frontmatter.key}`);
-        });
-        break;
-      }
-
-      case "delete": {
-        // The lookup AND the destructive call run inside runCommand
-        // so domain errors (TaskNotFoundError in particular) map to
-        // a clean RUNTIME exit instead of bubbling out as unhandled.
-        // The confirm prompt's outcome carries its own exit-code
-        // semantics (refused = USAGE, declined = SUCCESS) which the
-        // body sets directly via `process.exitCode` before returning.
-        await runCommand(async () => {
-          const ref = args[1];
-          if (!ref) {
-            throw new UsageError("missing task ref", "loctt delete <task> [--yes]");
-          }
-          const locttDir = resolveLocttDir(root);
-          const task = await lookupTask(locttDir, ref);
-          const outcome = await confirmHardDelete(
-            args,
-            `Permanently delete task ${task.frontmatter.key}? (use 'loctt archive' for a reversible alternative)`,
-          );
-          if (outcome !== "yes") {
-            process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS;
-            return;
-          }
-          await deleteTask(locttDir, task.frontmatter.id, { force: true });
-          console.log(`Deleted ${task.frontmatter.key}`);
-        });
-        break;
-      }
-
-      case "body": {
-        await runCommand(async () => {
-          const ref = args[1];
-          if (!ref) {
-            throw new UsageError(
-              "missing task ref",
-              "loctt body <task> [--set <text>] [--append <text>]",
-            );
-          }
-          const newBody = getArg(args, "--set");
-          const appendText = getArg(args, "--append");
-          if (newBody !== undefined && appendText !== undefined) {
-            throw new UsageError("--set and --append are mutually exclusive");
-          }
-          const locttDir = resolveLocttDir(root);
-          const task = await lookupTask(locttDir, ref);
-          if (newBody !== undefined) {
-            await writeTaskBody(locttDir, task.frontmatter.id, newBody + "\n");
-            console.log(`Updated body for ${task.frontmatter.key}`);
-          } else if (appendText !== undefined) {
-            await appendTaskBody(locttDir, task.frontmatter.id, appendText);
-            console.log(`Appended to body for ${task.frontmatter.key}`);
-          } else {
-            const body = await readTaskBody(locttDir, task.frontmatter.id);
-            if (body.trim()) {
-              console.log(body);
-            } else {
-              console.log("(empty body)");
-            }
-          }
-        });
-        break;
-      }
-
-      case "log": {
-        await runCommand(async () => {
-          const ref = args[1];
-          if (!ref) {
-            throw new UsageError("missing task ref", "loctt log <task> [--limit <n>]");
-          }
-          let limit: number | undefined;
-          const limitArg = getArg(args, "--limit");
-          if (limitArg !== undefined) {
-            limit = Number(limitArg);
-            if (Number.isNaN(limit) || limit < 0 || !Number.isInteger(limit)) {
-              throw new UsageError("--limit must be a non-negative integer");
-            }
-          }
-          const locttDir = resolveLocttDir(root);
-          const task = await lookupTask(locttDir, ref);
-
-          const entries = await readHistory(locttDir, task.frontmatter.id);
-          const reversed = [...entries].reverse();
-          const display = limit !== undefined ? reversed.slice(0, limit) : reversed;
-
-          if (display.length === 0) {
-            console.log("No history entries.");
-          } else {
-            for (const entry of display) {
-              console.log(formatHistoryEntry(entry));
-            }
-          }
-        });
-        break;
-      }
-
-      case "attach": {
-        await runCommand(async () => {
-          const ref = args[1];
-          const filePath = args[2];
-          if (!ref || !filePath) {
-            throw new UsageError(
-              "missing task ref or file path",
-              "loctt attach <task> <file-path> [--force]",
-            );
-          }
-          const force = hasFlag(args, "--force");
-          const locttDir = resolveLocttDir(root);
-          const task = await lookupTask(locttDir, ref);
-          const sourcePath = isAbsolute(filePath)
-            ? filePath
-            : resolvePath(process.cwd(), filePath);
-          try {
-            const result = await attachFile({
-              locttDir,
-              taskId: task.frontmatter.id,
-              sourcePath,
-              force,
-            });
-            const prefix = result.overwritten ? "(overwrote existing) " : "";
-            console.log(
-              `${prefix}Attached ${result.name} (${result.size} bytes) to ${task.frontmatter.key}`,
-            );
-          } catch (err) {
-            // Re-throw with the CLI-specific "Use --force" hint
-            // attached, so runCommand still does the canonical
-            // domain-error formatting and exit code rather than us
-            // duplicating that logic here. The hint is CLI-specific
-            // (MCP would pass force: true) so it belongs on this
-            // surface, not on the core error class.
-            if (err instanceof AttachmentExistsError) {
-              throw new AttachmentExistsError(
-                `${err.attachmentName} (use --force to overwrite)`,
-              );
-            }
-            throw err;
-          }
-        });
-        break;
-      }
-
-      case "detach": {
-        await runCommand(async () => {
-          const ref = args[1];
-          const name = args[2];
-          if (!ref || !name) {
-            throw new UsageError("missing task ref or name", "loctt detach <task> <name>");
-          }
-          if (name.includes("/") || name.includes("\\") || name.includes("..")) {
-            throw new UsageError(`<name> must be a plain basename (no path separators or '..')`);
-          }
-          const locttDir = resolveLocttDir(root);
-          const task = await lookupTask(locttDir, ref);
-          await detachFile({
-            locttDir,
-            taskId: task.frontmatter.id,
-            name,
-          });
-          console.log(`Detached ${name} from ${task.frontmatter.key}`);
-        });
-        break;
-      }
+      case "create":    await runCommand(() => taskCrudCmd.create(args, root));    break;
+      case "list":      await runCommand(() => taskCrudCmd.list(args, root));      break;
+      case "show":      await runCommand(() => taskCrudCmd.show(args, root));      break;
+      case "set":       await runCommand(() => taskCrudCmd.set(args, root));       break;
+      case "unset":     await runCommand(() => taskCrudCmd.unset(args, root));     break;
+      case "body":      await runCommand(() => taskCrudCmd.body(args, root));      break;
+      case "log":       await runCommand(() => taskCrudCmd.log(args, root));       break;
+      case "delete":    await runCommand(() => taskCrudCmd.deleteCmd(args, root)); break;
+      case "archive":   await runCommand(() => taskArchiveCmd.archive(args, root));   break;
+      case "unarchive": await runCommand(() => taskArchiveCmd.unarchive(args, root)); break;
+      case "attach":    await runCommand(() => taskFilesCmd.attach(args, root));   break;
+      case "detach":    await runCommand(() => taskFilesCmd.detach(args, root));   break;
+      case "link":      await runCommand(() => taskLinksCmd.link(args, root));     break;
+      case "unlink":    await runCommand(() => taskLinksCmd.unlink(args, root));   break;
 
       case "mcp": {
         const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
@@ -1283,65 +862,8 @@ export async function main(): Promise<void> {
         break;
       }
 
-      case "rerank": {
-        await runCommand(async () => {
-          const source = args[1];
-          const relationship = args[2];
-          const target = args[3];
-          if (!source || !relationship || !target) {
-            throw new UsageError(
-              "missing source, relationship, or target",
-              "loctt rerank <source> <relationship> <target> [--before <task>] [--after <task>]",
-            );
-          }
-          const before = getArg(args, "--before");
-          const after = getArg(args, "--after");
-          if (before !== undefined && after !== undefined) {
-            throw new UsageError("--before and --after are mutually exclusive; pass at most one");
-          }
-          const result = await reorderRelationship({
-            locttDir: resolveLocttDir(root),
-            sourceRef: source,
-            relationshipType: relationship,
-            targetRef: target,
-            ...(before !== undefined ? { before } : {}),
-            ...(after !== undefined ? { after } : {}),
-          });
-          console.log(`Reranked ${target} under ${source}/${relationship} (rank=${result.rank})`);
-          if (result.rebalanced) {
-            console.log(`(also rebalanced sibling ranks)`);
-          }
-        });
-        break;
-      }
-
-      case "board-rerank": {
-        await runCommand(async () => {
-          const task = args[1];
-          if (!task) {
-            throw new UsageError(
-              "missing task",
-              "loctt board-rerank <task> [--before <task>] [--after <task>]",
-            );
-          }
-          const before = getArg(args, "--before");
-          const after = getArg(args, "--after");
-          if (before !== undefined && after !== undefined) {
-            throw new UsageError("--before and --after are mutually exclusive; pass at most one");
-          }
-          const result = await reorderBoardRank({
-            locttDir: resolveLocttDir(root),
-            taskRef: task,
-            ...(before !== undefined ? { before } : {}),
-            ...(after !== undefined ? { after } : {}),
-          });
-          console.log(`Reranked ${task} on board (rank=${result.rank})`);
-          if (result.rebalanced) {
-            console.log(`(also rebalanced sibling ranks)`);
-          }
-        });
-        break;
-      }
+      case "rerank":       await runCommand(() => taskRankCmd.rerank(args, root));      break;
+      case "board-rerank": await runCommand(() => taskRankCmd.boardRerank(args, root)); break;
 
       case "git": {
         const sub = args[1];
