@@ -21,6 +21,10 @@
 
 import { TOOLS as CONFIG_TOOLS } from "./tools/config.js";
 import { TOOLS as GIT_TOOLS } from "./tools/git.js";
+import { TOOLS as LABEL_TOOLS } from "./tools/label.js";
+import { TOOLS as MILESTONE_TOOLS } from "./tools/milestone.js";
+import { TOOLS as PROJECT_TOOLS } from "./tools/project.js";
+import { TOOLS as SPRINT_TOOLS } from "./tools/sprint.js";
 import { TOOLS as TASK_ARCHIVE_TOOLS } from "./tools/task-archive.js";
 import { TOOLS as TASK_BODY_TOOLS } from "./tools/task-body.js";
 import { TOOLS as TASK_CRUD_TOOLS } from "./tools/task-crud.js";
@@ -28,6 +32,7 @@ import { TOOLS as TASK_FILES_TOOLS } from "./tools/task-files.js";
 import { TOOLS as TASK_LINKS_TOOLS } from "./tools/task-links.js";
 import { TOOLS as TASK_RANK_TOOLS } from "./tools/task-rank.js";
 import { TOOLS as TRACKER_TOOLS } from "./tools/tracker.js";
+import { TOOLS as USER_TOOLS } from "./tools/user.js";
 import { TOOLS as VIEWS_TOOLS } from "./tools/views.js";
 import type { McpTool, ToolDef } from "./types.js";
 
@@ -36,15 +41,14 @@ import type { McpTool, ToolDef } from "./types.js";
  * fine: each tools/<entity>.ts file imports only from
  * @loctt/core, ../runtime/*, ../types — no circular deps with
  * this module.
- *
- * Tool groups are added here as they're migrated from the legacy
- * `getTools()` array + `executeTool` switch in index.ts. The
- * legacy paths still answer for any tool NOT in the registry; the
- * dispatcher consults the registry first.
  */
 const TOOL_GROUPS: readonly (readonly ToolDef[])[] = [
   CONFIG_TOOLS,
   GIT_TOOLS,
+  LABEL_TOOLS,
+  MILESTONE_TOOLS,
+  PROJECT_TOOLS,
+  SPRINT_TOOLS,
   TASK_ARCHIVE_TOOLS,
   TASK_BODY_TOOLS,
   TASK_CRUD_TOOLS,
@@ -52,8 +56,8 @@ const TOOL_GROUPS: readonly (readonly ToolDef[])[] = [
   TASK_LINKS_TOOLS,
   TASK_RANK_TOOLS,
   TRACKER_TOOLS,
+  USER_TOOLS,
   VIEWS_TOOLS,
-  // Add new tool groups here as they're migrated.
 ];
 
 function build(): Map<string, ToolDef> {
@@ -74,19 +78,6 @@ const REGISTRY = build();
 /** Looks up a tool by name. Returns undefined for unknown names. */
 export function lookupTool(name: string): ToolDef | undefined {
   return REGISTRY.get(name);
-}
-
-/**
- * Returns true if the registry contains any tool with this name.
- * Used by the dispatcher to distinguish registry-migrated tools
- * from those still living in the legacy in-file switch.
- *
- * During the gradual migration, both `lookupTool` and the legacy
- * `executeTool` switch are consulted; once every tool is migrated
- * the switch goes away.
- */
-export function hasRegisteredTool(name: string): boolean {
-  return REGISTRY.has(name);
 }
 
 /** Returns every registered tool. Used by the wire-format shim. */
