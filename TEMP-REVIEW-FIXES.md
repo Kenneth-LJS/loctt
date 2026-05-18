@@ -458,6 +458,33 @@ Process:
 - Wire-format risk: confirmed during runtime extraction that `inputSchema` is already a `Record<string, ZodTypeAny>` (the MCP SDK accepts this directly). So the registry conversion is reshape-only, not a wire change. The earlier concern about needing a two-step migration was wrong; one pass suffices.
 - A follow-up session should split by entity (~10 commits) and apply the registry pattern (~3 commits including the build-time exhaustiveness test) as a single discrete piece of work, gated by `npm run test:integration` for MCP after each step.
 
+**Starting point for the follow-up:**
+
+1. Update `apps/mcp/src/types.ts` to add a `ToolDef<S>` interface with `handler` and optional `exemptFromSchemaGuard`. Keep the existing `McpTool` interface for the wire-format shim.
+2. Add `apps/mcp/src/registry.ts` exporting `TOOL_REGISTRY: Map<string, ToolDef>` (initially empty) and a `getTools()` shim that maps registry entries to the legacy `McpTool` shape.
+3. Migrate one tool group at a time: copy its tool definitions out of the giant `getTools()` array, copy each `case` body out of `executeTool`, and create a `tools/<entity>.ts` file exporting a `const X_TOOLS: readonly ToolDef[]`. Each handler signature becomes `(args, ctx) => Promise<McpToolResult>` with the `args` typed via `z.infer<typeof ToolDef.inputSchema>`.
+4. After all groups migrate: delete the legacy in-file `getTools()` function and the `executeTool` switch. The dispatcher becomes a registry lookup.
+5. Add a build-time test that asserts `TOOL_REGISTRY.size === ALL_TOOL_NAMES.length` against a canonical sorted list.
+6. Each migration commit must run `npm run test:integration` for the MCP suite — this is the only gate that catches wire-format regressions, because the MCP stdio transport sees the JSON Schema that `getTools()` produces, not the in-process zod object.
+
+Suggested entity groupings (from the sub-agent's proposal in §4.2 plan):
+- `task-crud.ts` — get_task, list_tasks, create_task, update_task, unset_field, delete_task, get_task_history
+- `task-body.ts` — append_task_body, replace_task_body
+- `task-archive.ts` — archive_task, unarchive_task
+- `task-files.ts` — attach_file, detach_file
+- `task-links.ts` — link_tasks, unlink_tasks
+- `task-rank.ts` — reorder_relationship, reorder_board
+- `tracker.ts` — init, info, doctor
+- `git.ts` — enable_git, disable_git, get_git_status, publish_to_git, sync_from_git
+- `config.ts` — get/set/unset/list_config_value
+- `views.ts` — list_views, get_workflow_config
+- `project.ts` — list/create/edit/delete/archive/unarchive/set_default _project
+- `user.ts` — *_user (8 tools incl. switch_user, get_current_user)
+- `label.ts` — *_label
+- `milestone.ts` — *_milestone
+- `sprint.ts` — *_sprint + get_sprint_burndown
+- `calendar.ts` — get_calendar
+
 
 
 Layout (sub-agent reviewed; entity-axis split with the **registry pattern** collapsing the array+switch duplication):
