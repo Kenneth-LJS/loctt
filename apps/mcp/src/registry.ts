@@ -19,6 +19,7 @@
  * sorted name list — see registry.test.ts.
  */
 
+import { TOOLS as TASK_ARCHIVE_TOOLS } from "./tools/task-archive.js";
 import type { McpTool, ToolDef } from "./types.js";
 
 /**
@@ -33,6 +34,7 @@ import type { McpTool, ToolDef } from "./types.js";
  * dispatcher consults the registry first.
  */
 const TOOL_GROUPS: readonly (readonly ToolDef[])[] = [
+  TASK_ARCHIVE_TOOLS,
   // Add new tool groups here as they're migrated.
 ];
 
