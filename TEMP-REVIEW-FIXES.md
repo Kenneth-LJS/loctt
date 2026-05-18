@@ -21,7 +21,7 @@ Generated from a full codebase review (2026-05-12). This document tracks the imp
 | 1. Critical (3) + concurrency (4) + error narrowing (3) | **DONE** | 11 commits, all gates green. setField/unsetField also got locked (was implicit in 1.4b) |
 | 2. API contracts + CLI/MCP alignment (delete verb rename) | **DONE** | 12 items; 2.12 confirmed false-positive |
 | 3. Docs + minor batch | **DONE** | Items 25-52 landed in 10+ commits; a few were false positives |
-| 4. Structural splits + per-tool zod + test additions | TODO | Highest churn, lowest correctness value — pacing carefully |
+| 4. Structural splits + per-tool zod + test additions | **MOSTLY DONE** | CLI split complete (2351 → 147 lines). MCP runtime extracted (1878 → 1660). MCP per-entity split + registry pattern deferred — documented in §4.2 |
 
 Update the table above as phases complete. Within a phase, tick items as they land.
 
@@ -447,9 +447,16 @@ Process:
 9. Shrink `index.ts` to entrypoint + dispatcher map
 10. Run `npm run test:integration` and `npm run test:e2e` once at end
 
-### 4.2 — Split `apps/mcp/src/index.ts` (1800+ lines) — runtime extraction first, registry as follow-up
+### 4.2 — Split `apps/mcp/src/index.ts`
 
-**Pragmatic scope.** The runtime helpers (errors, confirm, fields, workflow-assert, schema-guard) are mechanically safe to extract — same pattern as the CLI split. The registry pattern (collapsing the `getTools()` array + `executeTool` switch into a single `TOOL_REGISTRY`) is high-value but high-risk: it touches every tool's wire format and requires re-running the MCP integration suite per migration step. Land the runtime extraction first to bank the navigation benefit; defer the registry to a follow-up so it can be reviewed and gated independently.
+**Status.** Runtime extraction **DONE** (commit 014deb2). Five new files under `apps/mcp/src/runtime/` plus `types.ts`; index.ts shrunk by ~200 lines and the domain-error class imports dropped from 17 to 6.
+
+**Deferred to a follow-up:** the per-entity tool split + registry pattern. Reasoning:
+
+- `getTools()` is ~520 lines, `executeTool` is ~940 lines. Splitting per entity (tools/task.ts, tools/project.ts, etc.) is mechanically identical to the CLI split but bigger.
+- The registry pattern (collapsing `getTools()` array + `executeTool` switch into one `TOOL_REGISTRY: Map<name, ToolDef>` with `handler` colocated) is the higher-value structural change. Each `ToolDef` carries `name + description + inputSchema + handler + exemptFromSchemaGuard` together; the array+switch duplication where each tool name appears twice goes away.
+- Wire-format risk: confirmed during runtime extraction that `inputSchema` is already a `Record<string, ZodTypeAny>` (the MCP SDK accepts this directly). So the registry conversion is reshape-only, not a wire change. The earlier concern about needing a two-step migration was wrong; one pass suffices.
+- A follow-up session should split by entity (~10 commits) and apply the registry pattern (~3 commits including the build-time exhaustiveness test) as a single discrete piece of work, gated by `npm run test:integration` for MCP after each step.
 
 
 
