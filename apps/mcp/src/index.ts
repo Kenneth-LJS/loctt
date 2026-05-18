@@ -98,6 +98,7 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
+import { listRegisteredTools, lookupTool, stripHandler } from "./registry.js";
 import { requireConfirm } from "./runtime/confirm.js";
 import { errorResult, isKnownDomainError, text } from "./runtime/errors.js";
 import {
@@ -110,9 +111,15 @@ import type { McpTool, McpToolResult } from "./types.js";
 
 export type { McpTool, McpToolResult } from "./types.js";
 
-/** Returns the list of available MCP tools. */
+/**
+ * Returns the list of available MCP tools. During the gradual
+ * registry migration this concatenates the legacy in-file array
+ * with the registry-resident tools; once the migration completes
+ * the function body becomes just `listRegisteredTools().map(stripHandler)`.
+ */
 export function getTools(): McpTool[] {
   return [
+    ...listRegisteredTools().map(stripHandler),
     {
       name: "get_task",
       description: "Get a task by key or ID, optionally including the markdown body. Relationship targets are returned as user-facing keys (e.g. T-2); deleted targets carry `missing: true` and retain the raw ID in `target`.",
@@ -727,6 +734,35 @@ export async function executeTool(
   args: Record<string, unknown>,
 ): Promise<McpToolResult> {
   const locttDir = resolveLocttDir(root);
+
+  // Tools migrated to the registry are dispatched first; everything
+  // else falls through to the legacy in-file switch below. During
+  // the gradual migration both paths coexist; once every tool is
+  // moved the switch + parseToolArgs go away.
+  const registered = lookupTool(name);
+  if (registered !== undefined) {
+    if (!registered.exemptFromSchemaGuard && (await dirExists(locttDir))) {
+      try {
+        await requireSupportedSchema(locttDir);
+      } catch (err) {
+        return errorResult((err as Error).message);
+      }
+    }
+    const schema = z.object(registered.inputSchema).strict();
+    const parsed = schema.safeParse(args);
+    if (!parsed.success) {
+      const detail = parsed.error.issues
+        .map(i => `${i.path.length > 0 ? `${i.path.join(".")}: ` : ""}${i.message}`)
+        .join("; ");
+      return errorResult(`invalid args for ${name}: ${detail}`);
+    }
+    try {
+      return await registered.handler({ root, locttDir }, parsed.data);
+    } catch (err) {
+      if (isKnownDomainError(err)) return errorResult(err.message);
+      throw err;
+    }
+  }
 
   // Boot guard — refuse to run tools against a tracker whose
   // schema doesn't match this MCP server's expectations. The agent
