@@ -10,7 +10,6 @@ import {
   archiveSprint,
   archiveUser,
   BurndownError,
-  CONFIG_KEYS,
   createLabel,
   createMilestone,
   createProject,
@@ -21,42 +20,31 @@ import {
   deleteProject,
   deleteSprint,
   deleteUser,
-  disableGit,
   editLabel,
   editMilestone,
   editProject,
   editSprint,
-  enableGit,
-  getConfigValue,
   getCurrentUser,
-  getGitStatus,
   LabelError,
   loadAllUsers,
-  loadCalendarConfig,
   loadLabelsConfig,
   loadMilestonesConfig,
   loadProjectsConfig,
-  loadQueriesConfig,
   loadSprintsConfig,
-  loadWorkflowConfig,
   MilestoneError,
   ProjectError,
-  publish,
   readBurndownSeries,
   requireSupportedSchema,
   resolveLocttDir,
   resolveUserRef,
-  setConfigValue,
   setDefaultProject,
   SprintError,
   switchCurrentUser,
-  sync,
   unarchiveLabel,
   unarchiveMilestone,
   unarchiveProject,
   unarchiveSprint,
   unarchiveUser,
-  unsetConfigValue,
   updateUser,
   UserError,
 } from "@loctt/core";
@@ -79,68 +67,6 @@ export type { McpTool, McpToolResult } from "./types.js";
 export function getTools(): McpTool[] {
   return [
     ...listRegisteredTools().map(stripHandler),
-    {
-      name: "list_views",
-      description: "List available saved views from queries.yaml.",
-      inputSchema: {},
-    },
-    {
-      name: "get_workflow_config",
-      description: "Get the workflow configuration.",
-      inputSchema: {},
-    },
-    {
-      name: "enable_git",
-      description: "Enables git-backed mode for this tracker. Sets up a dedicated loctt branch for task data on a sparse worktree. Only call when the user has explicitly asked to share tasks across machines or set up sync — this is one-time infrastructure setup, not a routine task operation.",
-      inputSchema: {},
-    },
-    {
-      name: "disable_git",
-      description: "Disables git-backed mode for this tracker. Local task data is preserved.",
-      inputSchema: {},
-    },
-    {
-      name: "get_git_status",
-      description: "Returns structured JSON describing git-backed mode state (enabled, branch, remote, auto_push, auto_fetch, in_git_repo, last_synced_commit).",
-      inputSchema: {},
-    },
-    {
-      name: "publish_to_git",
-      description: "Commits the current task state to the local loctt branch and (if remote+auto_push are set) pushes to remote. Call when the user has indicated they want to share or sync tasks — not speculatively after routine task edits.",
-      inputSchema: {},
-    },
-    {
-      name: "sync_from_git",
-      description: "Pulls the loctt branch state into the local workspace. If a remote is configured and auto_fetch is set, fetches first. Call when the user wants to bring in changes from another machine.",
-      inputSchema: {},
-    },
-    {
-      name: "get_config_value",
-      description: "Reads a machine-local config value (currently git.* keys). Returns structured JSON {key, value, type} with the value preserving its native type.",
-      inputSchema: {
-        key: z.string().describe("Config key (e.g. git.enabled, git.remote)."),
-      },
-    },
-    {
-      name: "set_config_value",
-      description: "Changes machine-local config (currently git.* keys only). Echo the change you're making in your response so the user can see what was adjusted. Don't call speculatively — only when the user has indicated they want to change a setting.",
-      inputSchema: {
-        key: z.string(),
-        value: z.string().describe("Stringified value; booleans accept true/false/1/0/yes/no."),
-      },
-    },
-    {
-      name: "unset_config_value",
-      description: "Restores a machine-local config key to its default. Echo the change so the user can see what was reset. Don't call speculatively — only when the user has indicated they want to revert a setting.",
-      inputSchema: {
-        key: z.string(),
-      },
-    },
-    {
-      name: "list_config_values",
-      description: "Lists all known config keys with their current values, types, and descriptions. Returns structured JSON array.",
-      inputSchema: {},
-    },
     {
       name: "list_projects",
       description: "List projects defined in projects.yaml. Returns each project's key, label, prefix, and which (if any) is the workspace default.",
@@ -261,11 +187,6 @@ export function getTools(): McpTool[] {
     {
       name: "list_labels",
       description: "List labels defined in labels.yaml.",
-      inputSchema: {},
-    },
-    {
-      name: "get_calendar",
-      description: "Returns the workspace calendar config (timezone, working days, holidays). Read-only — calendar is configured via the UI.",
       inputSchema: {},
     },
     {
@@ -563,126 +484,6 @@ export async function executeTool(
 
   try {
     switch (name) {
-      case "list_views": {
-        try {
-          const config = await loadQueriesConfig(locttDir);
-          return text(JSON.stringify(config.queries.map(q => ({
-            name: q.name,
-            query: q.query,
-          })), null, 2));
-        } catch {
-          return text("No saved views configured.");
-        }
-      }
-
-      case "get_workflow_config": {
-        const config = await loadWorkflowConfig(locttDir);
-        return text(JSON.stringify(config, null, 2));
-      }
-
-      case "enable_git": {
-        await enableGit(locttDir, root);
-        return text("Git-backed mode enabled");
-      }
-
-      case "disable_git": {
-        await disableGit(locttDir);
-        return text("Git-backed mode disabled");
-      }
-
-      case "get_git_status": {
-        const status = await getGitStatus(locttDir, root);
-        const result = {
-          enabled: status.enabled,
-          branch: status.branch,
-          remote: status.remote,
-          auto_push: status.autoPush,
-          auto_fetch: status.autoFetch,
-          in_git_repo: status.isGitRepo,
-          last_synced_commit: status.lastSyncedCommit ?? null,
-        };
-        return text(JSON.stringify(result, null, 2));
-      }
-
-      case "publish_to_git": {
-        const result = await publish(locttDir, root);
-        const lines: string[] = [];
-        if (result.committed) {
-          lines.push("Published local state to loctt branch");
-        } else {
-          lines.push("No changes to publish");
-        }
-        if (result.pushed === true) {
-          lines.push("Pushed to remote");
-        } else if (result.pushError) {
-          lines.push(`Published locally; remote push failed: ${result.pushError}`);
-        }
-        return text(lines.join("\n"));
-      }
-
-      case "sync_from_git": {
-        const result = await sync(locttDir, root);
-        const lines: string[] = [];
-        if (result.fetched === true) {
-          lines.push("Fetched from remote");
-        } else if (result.fetchError) {
-          lines.push(`Remote fetch failed: ${result.fetchError}`);
-        }
-        if (result.updated) {
-          lines.push("Synced loctt branch into local workspace");
-        } else {
-          lines.push("Already up to date");
-        }
-        return text(lines.join("\n"));
-      }
-
-      case "get_config_value": {
-        const key = args["key"] as string;
-        const def = CONFIG_KEYS.find(d => d.key === key);
-        if (!def) {
-          return errorResult(`unknown config key '${key}'`);
-        }
-        const value = await getConfigValue(locttDir, key);
-        return text(JSON.stringify({
-          key,
-          value: value ?? null,
-          type: def.type,
-        }, null, 2));
-      }
-
-      case "set_config_value": {
-        const key = args["key"] as string;
-        const value = args["value"] as string;
-        await setConfigValue({ locttDir, root }, key, value);
-        return text(`Set ${key} = ${value}`);
-      }
-
-      case "unset_config_value": {
-        const key = args["key"] as string;
-        await unsetConfigValue({ locttDir, root }, key);
-        return text(`Unset ${key}`);
-      }
-
-      case "list_config_values": {
-        const items = [];
-        for (const def of CONFIG_KEYS) {
-          let value: string | boolean | null = null;
-          try {
-            const v = await getConfigValue(locttDir, def.key);
-            value = v === undefined ? null : v;
-          } catch {
-            value = null;
-          }
-          items.push({
-            key: def.key,
-            value,
-            type: def.type,
-            description: def.description,
-          });
-        }
-        return text(JSON.stringify(items, null, 2));
-      }
-
       case "list_projects": {
         const cfg = await loadProjectsConfig(locttDir);
         return text(JSON.stringify({
@@ -919,11 +720,6 @@ export async function executeTool(
           if (err instanceof LabelError) return errorResult(err.message);
           throw err;
         }
-      }
-
-      case "get_calendar": {
-        const cfg = await loadCalendarConfig(locttDir);
-        return text(JSON.stringify(cfg, null, 2));
       }
 
       case "list_sprints": {
