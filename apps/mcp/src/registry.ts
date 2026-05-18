@@ -20,6 +20,7 @@
  */
 
 import { TOOLS as TASK_ARCHIVE_TOOLS } from "./tools/task-archive.js";
+import { TOOLS as TRACKER_TOOLS } from "./tools/tracker.js";
 import type { McpTool, ToolDef } from "./types.js";
 
 /**
@@ -35,6 +36,7 @@ import type { McpTool, ToolDef } from "./types.js";
  */
 const TOOL_GROUPS: readonly (readonly ToolDef[])[] = [
   TASK_ARCHIVE_TOOLS,
+  TRACKER_TOOLS,
   // Add new tool groups here as they're migrated.
 ];
 
