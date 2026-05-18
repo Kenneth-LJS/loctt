@@ -10,7 +10,6 @@ import {
   archiveMilestone,
   archiveProject,
   archiveSprint,
-  archiveTask,
   archiveUser,
   attachFile,
   AttachmentExistsError,
@@ -86,7 +85,6 @@ import {
   unarchiveMilestone,
   unarchiveProject,
   unarchiveSprint,
-  unarchiveTask,
   unarchiveUser,
   unlinkTask,
   unsetConfigValue,
@@ -193,20 +191,6 @@ export function getTools(): McpTool[] {
       inputSchema: {
         ref: z.string(),
         body: z.string(),
-      },
-    },
-    {
-      name: "archive_task",
-      description: "Archive a task.",
-      inputSchema: {
-        ref: z.string(),
-      },
-    },
-    {
-      name: "unarchive_task",
-      description: "Unarchive a task.",
-      inputSchema: {
-        ref: z.string(),
       },
     },
     {
@@ -948,18 +932,6 @@ export async function executeTool(
         const task = await lookupTask(locttDir, args["ref"] as string);
         await writeTaskBody(locttDir, task.frontmatter.id, (args["body"] as string) + "\n");
         return text(`Replaced ${task.frontmatter.key} body.`);
-      }
-
-      case "archive_task": {
-        const task = await lookupTask(locttDir, args["ref"] as string);
-        await archiveTask(locttDir, task.frontmatter.id);
-        return text(`Archived ${task.frontmatter.key}.`);
-      }
-
-      case "unarchive_task": {
-        const task = await lookupTask(locttDir, args["ref"] as string);
-        await unarchiveTask(locttDir, task.frontmatter.id);
-        return text(`Unarchived ${task.frontmatter.key}.`);
       }
 
       case "unset_field": {
