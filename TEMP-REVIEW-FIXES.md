@@ -21,7 +21,7 @@ Generated from a full codebase review (2026-05-12). This document tracks the imp
 | 1. Critical (3) + concurrency (4) + error narrowing (3) | **DONE** | 11 commits, all gates green. setField/unsetField also got locked (was implicit in 1.4b) |
 | 2. API contracts + CLI/MCP alignment (delete verb rename) | **DONE** | 12 items; 2.12 confirmed false-positive |
 | 3. Docs + minor batch | **DONE** | Items 25-52 landed in 10+ commits; a few were false positives |
-| 4. Structural splits + per-tool zod + test additions | **MOSTLY DONE** | CLI split complete (2351 → 147 lines). MCP runtime extracted (1878 → 1660). MCP per-entity split + registry pattern deferred — documented in §4.2 |
+| 4. Structural splits + per-tool zod + test additions | **DONE** | CLI split complete (2351 → 147 lines). MCP fully migrated to per-entity files + registry pattern (1878 → ~125 lines). All 53 tools live under tools/<entity>.ts with colocated handlers. Build-time invariants in registry.test.ts; wire-format snapshot in tests/e2e/11-mcp-schema-contract.test.ts |
 
 Update the table above as phases complete. Within a phase, tick items as they land.
 
@@ -449,9 +449,11 @@ Process:
 
 ### 4.2 — Split `apps/mcp/src/index.ts`
 
-**Status.** Runtime extraction **DONE** (commit 014deb2). Five new files under `apps/mcp/src/runtime/` plus `types.ts`; index.ts shrunk by ~200 lines and the domain-error class imports dropped from 17 to 6.
+**Status.** **DONE.** Runtime extraction landed in commit 014deb2. Per-entity tool split + registry pattern landed across commits 7907214 (body/files/links/rank), ba9d2f6 (task-crud), b0a8ed6 (views/config/git), 3fbf112 (project/user/label/milestone/sprint + retire legacy switch). Plus earlier task-archive and tracker commits.
 
-**Deferred to a follow-up:** the per-entity tool split + registry pattern. Reasoning:
+Final state: `apps/mcp/src/index.ts` ~125 lines (pure dispatcher). 15 files under `tools/` carry all 53 tools, each as a `ToolDef` with colocated handler. `registry.ts` flattens the groups into a Map. The wire-format `getTools()` and the dispatcher's stdin entry point keep their public signatures unchanged. A new `registry.test.ts` enforces invariants (unique names, non-empty descriptions, handler/schema shape, init-only exempt flag, lookup identity, stripHandler round-trip). The e2e snapshot at `tests/e2e/11-mcp-schema-contract.test.ts` continues to pin the full tool-name list.
+
+**Historical reasoning (left for context):**
 
 - `getTools()` is ~520 lines, `executeTool` is ~940 lines. Splitting per entity (tools/task.ts, tools/project.ts, etc.) is mechanically identical to the CLI split but bigger.
 - The registry pattern (collapsing `getTools()` array + `executeTool` switch into one `TOOL_REGISTRY: Map<name, ToolDef>` with `handler` colocated) is the higher-value structural change. Each `ToolDef` carries `name + description + inputSchema + handler + exemptFromSchemaGuard` together; the array+switch duplication where each tool name appears twice goes away.
