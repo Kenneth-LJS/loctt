@@ -14,8 +14,12 @@ describe("CLI link relationship edge cases (spawned binary)", () => {
         { cwd: root },
       );
       expect(result.exitCode).not.toBe(0);
-      expect(result.stderr).toContain("unknown relationship type");
+      // CLI's assertWorkflowRelationshipKey produces "unknown
+      // relationship 'X'. Known: <list>" — surfaces a friendly hint
+      // at the boundary instead of letting core throw a deeper error.
+      expect(result.stderr).toContain("unknown relationship");
       expect(result.stderr).toContain("nonexistent_type");
+      expect(result.stderr).toContain("Known:");
     });
   });
 

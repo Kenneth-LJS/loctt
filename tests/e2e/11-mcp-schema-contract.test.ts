@@ -152,6 +152,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "get_sprint_burndown",
+            },
+            {
+              "hasDescription": true,
               "name": "get_task",
             },
             {
@@ -209,6 +213,10 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "publish_to_git",
+            },
+            {
+              "hasDescription": true,
+              "name": "reorder_board",
             },
             {
               "hasDescription": true,
