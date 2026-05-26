@@ -37,14 +37,7 @@ export function parseLabelsConfig(yamlContent: string): LabelsConfig {
     }
     throw err;
   }
-  // Uniqueness check (zod schema doesn't enforce cross-element constraints).
-  const seen = new Set<string>();
-  for (const l of parsed.labels) {
-    if (seen.has(l.key)) {
-      throw new LabelsConfigError(`duplicate label key: ${l.key}`);
-    }
-    seen.add(l.key);
-  }
+  // Schema already enforces uniqueness on id via superRefine.
   return parsed;
 }
 
@@ -52,8 +45,8 @@ export function parseLabelsConfig(yamlContent: string): LabelsConfig {
 export function serializeLabelsConfig(config: LabelsConfig): string {
   return stringifyYaml({
     labels: config.labels.map(l => ({
-      key: l.key,
-      label: l.label,
+      id: l.id,
+      name: l.name,
       ...(l.color !== undefined ? { color: l.color } : {}),
       ...(l.archived === true ? { archived: true } : {}),
     })),
@@ -75,8 +68,8 @@ export async function saveLabelsConfig(
   const validated = parseLabelsConfig(serializeLabelsConfig(config));
   await writeYamlAtomically(getLabelsConfigPath(locttDir), {
     labels: validated.labels.map(l => ({
-      key: l.key,
-      label: l.label,
+      id: l.id,
+      name: l.name,
       ...(l.color !== undefined ? { color: l.color } : {}),
       ...(l.archived === true ? { archived: true } : {}),
     })),

@@ -10,18 +10,16 @@ import { YamlSyntaxError } from "./yaml-coerce.js";
 describe("parseMilestonesConfig", () => {
   it("parses a minimal milestone", () => {
     const cfg = parseMilestonesConfig(`milestones:
-  - key: v1
-    label: Version 1.0
+  - id: 01HX0000000000000000000001
+    name: Version 1.0
 `);
-    expect(cfg.milestones[0]).toEqual({ key: "v1", label: "Version 1.0" });
+    expect(cfg.milestones[0]).toEqual({ id: "01HX0000000000000000000001", name: "Version 1.0" });
   });
 
   it("accepts a YYYY-MM-DD target_date as a string or YAML date", () => {
-    // Unquoted YYYY-MM-DD is parsed as Date by yaml; the parser
-    // coerces it back to a string before zod runs.
     const cfg = parseMilestonesConfig(`milestones:
-  - key: v1
-    label: Version 1.0
+  - id: 01HX0000000000000000000001
+    name: Version 1.0
     target_date: 2026-06-30
 `);
     expect(cfg.milestones[0]?.target_date).toBe("2026-06-30");
@@ -29,48 +27,39 @@ describe("parseMilestonesConfig", () => {
 
   it("preserves archived", () => {
     const cfg = parseMilestonesConfig(`milestones:
-  - key: v1
-    label: V1
+  - id: 01HX0000000000000000000001
+    name: V1
     archived: true
 `);
     expect(cfg.milestones[0]?.archived).toBe(true);
   });
 
-  it("rejects a leading-digit key (slug rules)", () => {
-    const yaml = `milestones:
-  - key: 1v1
-    label: Bad
-`;
-    expect(() => parseMilestonesConfig(yaml)).toThrow(MilestonesConfigError);
-    expect(() => parseMilestonesConfig(yaml)).toThrow(/slug starting with a letter/);
-  });
-
   it("rejects a malformed target_date", () => {
     const yaml = `milestones:
-  - key: v1
-    label: V1
+  - id: 01HX0000000000000000000001
+    name: V1
     target_date: "06-2026"
 `;
     expect(() => parseMilestonesConfig(yaml)).toThrow(MilestonesConfigError);
     expect(() => parseMilestonesConfig(yaml)).toThrow(/YYYY-MM-DD/);
   });
 
-  it("rejects duplicate keys", () => {
+  it("rejects duplicate ids", () => {
     const yaml = `milestones:
-  - key: v1
-    label: A
-  - key: v1
-    label: B
+  - id: 01HX0000000000000000000001
+    name: A
+  - id: 01HX0000000000000000000001
+    name: B
 `;
-    expect(() => parseMilestonesConfig(yaml)).toThrow("duplicate milestone key: v1");
+    expect(() => parseMilestonesConfig(yaml)).toThrow(/duplicate milestone id/);
   });
 
-  it("rejects empty label", () => {
+  it("rejects empty name", () => {
     const yaml = `milestones:
-  - key: v1
-    label: ""
+  - id: 01HX0000000000000000000001
+    name: ""
 `;
-    expect(() => parseMilestonesConfig(yaml)).toThrow("milestones[0].label must be a non-empty string");
+    expect(() => parseMilestonesConfig(yaml)).toThrow(MilestonesConfigError);
   });
 
   it("throws YamlSyntaxError on malformed YAML (tagged with file label)", () => {
@@ -83,7 +72,7 @@ describe("serializeMilestonesConfig", () => {
   it("round-trips through parse", () => {
     const cfg = {
       milestones: [
-        { key: "v1", label: "V1.0", target_date: "2026-06-30" as const },
+        { id: "01HX0000000000000000000001", name: "V1.0", target_date: "2026-06-30" as const },
       ],
     };
     const yaml = serializeMilestonesConfig(cfg);

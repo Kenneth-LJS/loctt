@@ -109,18 +109,20 @@ export {
 export { mergeKeyHistory,mergeRelationships, rekeyCollisions } from "./git/index.js";
 export type { InitOptions, InitResult } from "./init/index.js";
 export { initLoctt } from "./init/index.js";
-export type { DeleteLabelOptions } from "./labels/index.js";
+export type { CreateLabelInput, DeleteLabelOptions, LabelByNameResult } from "./labels/index.js";
 export {
   archiveLabel,
-  assertLabelKeysRegistered,
+  assertLabelIdsRegistered,
   createLabel,
   deleteLabel,
   editLabel,
   findLabel,
   LabelError,
+  resolveLabelByName,
+  resolveLabelIdFromInput,
   unarchiveLabel,
 } from "./labels/index.js";
-export type { DeleteMilestoneOptions } from "./milestones/index.js";
+export type { CreateMilestoneInput, DeleteMilestoneOptions, MilestoneByNameResult } from "./milestones/index.js";
 export {
   archiveMilestone,
   createMilestone,
@@ -128,6 +130,8 @@ export {
   editMilestone,
   findMilestone,
   MilestoneError,
+  resolveMilestoneByName,
+  resolveMilestoneIdFromInput,
   unarchiveMilestone,
 } from "./milestones/index.js";
 export {
@@ -213,9 +217,11 @@ export type {
   BurndownPoint,
   BurndownSeries,
   BurndownUnit,
+  CreateSprintInput,
   DeleteSprintOptions,
   EditSprintOptions,
   IdealPoint,
+  SprintByNameResult,
 } from "./sprints/index.js";
 export {
   archiveSprint,
@@ -226,6 +232,8 @@ export {
   editSprint,
   findSprint,
   readBurndownSeries,
+  resolveSprintByName,
+  resolveSprintIdFromInput,
   SprintError,
   unarchiveSprint,
 } from "./sprints/index.js";
@@ -244,6 +252,7 @@ export { allocateKey, appendKeyHistory, initKeyAllocation, KeyAllocationError } 
 export { addToKeyIndex, loadKeyIndex, lookupKeyInIndex, rebuildKeyIndex, removeFromKeyIndex, saveKeyIndex } from "./state/index.js";
 export type { AttachOptions, AttachResult, DetachOptions } from "./task/index.js";
 export type { CreateTaskOptions, CreateTaskParams } from "./task/index.js";
+export type { DuplicateTaskOverrides, DuplicateTaskParams } from "./task/index.js";
 export type { AttachmentInfo, TaskShowModel } from "./task/index.js";
 export type { RelationshipValidationError } from "./task/index.js";
 export type { SetFieldOptions } from "./task/index.js";
@@ -261,6 +270,7 @@ export { assembleTaskFile, parseFrontmatter, serializeFrontmatter, splitTaskFile
 export { appendTaskBody, readTask, readTaskBody, writeTask, writeTaskBody } from "./task/index.js";
 export { listTaskIds, loadAllTasks, lookupById, lookupByKey, lookupTask, TaskNotFoundError } from "./task/index.js";
 export { createTask } from "./task/index.js";
+export { duplicateTask } from "./task/index.js";
 export { buildShowModel,discoverAttachments } from "./task/index.js";
 export { mimeForFilename } from "./task/index.js";
 export {

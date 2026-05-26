@@ -40,10 +40,7 @@ function assertIsoDate(value: string, field: string): void {
 /**
  * Allowed sprint state transitions. `future` and `active` can move
  * freely between themselves and to `completed`. Re-opening a
- * `completed` sprint requires explicit edit through this layer
- * (callers that need it pass force=true) — without that guard, a
- * casual reopen could disrupt downstream reporting that assumes
- * "completed" is a terminal state.
+ * `completed` sprint requires `force: true`.
  */
 const SPRINT_STATE_TRANSITIONS: Readonly<Record<SprintState, ReadonlySet<SprintState>>> = {
   future: new Set<SprintState>(["future", "active", "completed"]),
@@ -51,54 +48,106 @@ const SPRINT_STATE_TRANSITIONS: Readonly<Record<SprintState, ReadonlySet<SprintS
   completed: new Set<SprintState>(["completed"]),
 };
 
-export function findSprint(config: SprintsConfig, key: string): SprintDef {
-  const def = config.sprints.find(s => s.key === key);
-  if (!def) throw new SprintError(`unknown sprint: ${key}`);
+export type SprintByNameResult =
+  | { kind: "match"; sprint: SprintDef }
+  | { kind: "ambiguous"; matches: readonly SprintDef[] }
+  | { kind: "not_found" };
+
+export function findSprint(config: SprintsConfig, id: string): SprintDef {
+  const def = config.sprints.find(s => s.id === id);
+  if (!def) throw new SprintError(`unknown sprint: ${id}`);
   return def;
+}
+
+export function resolveSprintByName(
+  config: SprintsConfig,
+  name: string,
+  options: { includeArchived?: boolean } = {},
+): SprintByNameResult {
+  const pool = options.includeArchived === true
+    ? config.sprints
+    : config.sprints.filter(s => s.archived !== true);
+  const matches = pool.filter(s => s.name === name);
+  if (matches.length === 0) return { kind: "not_found" };
+  if (matches.length === 1) return { kind: "match", sprint: matches[0] as SprintDef };
+  return { kind: "ambiguous", matches };
+}
+
+export function resolveSprintIdFromInput(
+  config: SprintsConfig,
+  input: string,
+  options: { includeArchived?: boolean } = {},
+): string {
+  const byId = config.sprints.find(s => s.id === input
+    && (options.includeArchived === true || s.archived !== true));
+  if (byId) return byId.id;
+  const byName = resolveSprintByName(config, input, options);
+  if (byName.kind === "match") return byName.sprint.id;
+  if (byName.kind === "ambiguous") {
+    const ids = byName.matches.map(s => s.id).join(", ");
+    throw new SprintError(
+      `sprint name '${input}' is ambiguous — matches ${byName.matches.length} sprints (${ids}). Pass the id instead.`,
+    );
+  }
+  throw new SprintError(`unknown sprint: ${input}`);
+}
+
+/** Input to createSprint. Core generates the id. */
+export interface CreateSprintInput {
+  readonly name: string;
+  readonly start_date: string;
+  readonly end_date: string;
+  readonly state: SprintState;
+  readonly goal?: string;
+  readonly archived?: boolean;
 }
 
 export async function createSprint(
   locttDir: string,
-  def: SprintDef,
-): Promise<void> {
-  assertIsoDate(def.start_date, "start_date");
-  assertIsoDate(def.end_date, "end_date");
-  if (def.end_date < def.start_date) {
+  input: CreateSprintInput,
+): Promise<SprintDef> {
+  assertIsoDate(input.start_date, "start_date");
+  assertIsoDate(input.end_date, "end_date");
+  if (input.end_date < input.start_date) {
     throw new SprintError(
-      `end_date (${def.end_date}) must not be before start_date (${def.start_date})`,
+      `end_date (${input.end_date}) must not be before start_date (${input.start_date})`,
     );
   }
-  if (!VALID_SPRINT_STATES.has(def.state)) {
+  if (!VALID_SPRINT_STATES.has(input.state)) {
     throw new SprintError(
-      `state must be one of active|completed|future, got: ${def.state}`,
+      `state must be one of active|completed|future, got: ${input.state}`,
     );
   }
-  await withStateLock(locttDir, async () => {
+  return withStateLock(locttDir, async () => {
     const config = await loadSprintsConfig(locttDir);
-    if (config.sprints.some(s => s.key === def.key)) {
-      throw new SprintError(`sprint with key '${def.key}' already exists`);
-    }
+    const id = ulid();
+    const def: SprintDef = {
+      id,
+      name: input.name,
+      start_date: input.start_date,
+      end_date: input.end_date,
+      state: input.state,
+      ...(input.goal !== undefined ? { goal: input.goal } : {}),
+      ...(input.archived === true ? { archived: true } : {}),
+    };
     await saveSprintsConfig(locttDir, { sprints: [...config.sprints, def] });
+    return def;
   });
 }
 
 export interface EditSprintOptions {
-  readonly label?: string;
+  readonly name?: string;
   readonly start_date?: string;
   readonly end_date?: string;
   readonly state?: SprintState;
   readonly goal?: string | null;
-  /**
-   * If true, allow a state transition that would otherwise be
-   * blocked (currently: re-opening a completed sprint). Defaults
-   * to false.
-   */
+  /** If true, allow a state transition that would otherwise be blocked. */
   readonly force?: boolean;
 }
 
 export async function editSprint(
   locttDir: string,
-  key: string,
+  id: string,
   changes: EditSprintOptions,
 ): Promise<void> {
   if (changes.start_date !== undefined) assertIsoDate(changes.start_date, "start_date");
@@ -110,10 +159,10 @@ export async function editSprint(
   }
   await withStateLock(locttDir, async () => {
     const config = await loadSprintsConfig(locttDir);
-    const idx = config.sprints.findIndex(s => s.key === key);
-    if (idx === -1) throw new SprintError(`unknown sprint: ${key}`);
+    const idx = config.sprints.findIndex(s => s.id === id);
+    if (idx === -1) throw new SprintError(`unknown sprint: ${id}`);
     const existing = config.sprints[idx];
-    if (!existing) throw new SprintError(`unknown sprint: ${key}`);
+    if (!existing) throw new SprintError(`unknown sprint: ${id}`);
 
     const nextStart = changes.start_date ?? existing.start_date;
     const nextEnd = changes.end_date ?? existing.end_date;
@@ -135,8 +184,8 @@ export async function editSprint(
     }
 
     const updated: SprintDef = {
-      key: existing.key,
-      label: changes.label ?? existing.label,
+      id: existing.id,
+      name: changes.name ?? existing.name,
       start_date: nextStart,
       end_date: nextEnd,
       state: nextState,
@@ -155,14 +204,13 @@ export async function editSprint(
   });
 }
 
-/** Marks a sprint as archived. No-op when already archived. */
-export async function archiveSprint(locttDir: string, key: string): Promise<void> {
+export async function archiveSprint(locttDir: string, id: string): Promise<void> {
   await withStateLock(locttDir, async () => {
     const config = await loadSprintsConfig(locttDir);
-    const idx = config.sprints.findIndex(s => s.key === key);
-    if (idx === -1) throw new SprintError(`unknown sprint: ${key}`);
+    const idx = config.sprints.findIndex(s => s.id === id);
+    if (idx === -1) throw new SprintError(`unknown sprint: ${id}`);
     const existing = config.sprints[idx];
-    if (!existing) throw new SprintError(`unknown sprint: ${key}`);
+    if (!existing) throw new SprintError(`unknown sprint: ${id}`);
     if (existing.archived === true) return;
     const next = [...config.sprints];
     next[idx] = { ...existing, archived: true };
@@ -170,18 +218,17 @@ export async function archiveSprint(locttDir: string, key: string): Promise<void
   });
 }
 
-/** Clears the archived flag on a sprint. */
-export async function unarchiveSprint(locttDir: string, key: string): Promise<void> {
+export async function unarchiveSprint(locttDir: string, id: string): Promise<void> {
   await withStateLock(locttDir, async () => {
     const config = await loadSprintsConfig(locttDir);
-    const idx = config.sprints.findIndex(s => s.key === key);
-    if (idx === -1) throw new SprintError(`unknown sprint: ${key}`);
+    const idx = config.sprints.findIndex(s => s.id === id);
+    if (idx === -1) throw new SprintError(`unknown sprint: ${id}`);
     const existing = config.sprints[idx];
-    if (!existing) throw new SprintError(`unknown sprint: ${key}`);
+    if (!existing) throw new SprintError(`unknown sprint: ${id}`);
     if (existing.archived !== true) return;
     const cleared: SprintDef = {
-      key: existing.key,
-      label: existing.label,
+      id: existing.id,
+      name: existing.name,
       start_date: existing.start_date,
       end_date: existing.end_date,
       state: existing.state,
@@ -194,55 +241,50 @@ export async function unarchiveSprint(locttDir: string, key: string): Promise<vo
 }
 
 export interface DeleteSprintOptions {
-  /**
-   * If true, hard-delete the sprint from sprints.yaml and either
-   * unset or remap the `sprint` field on every affected task. The
-   * default is a soft-delete (archive).
-   */
   readonly hard?: boolean;
   readonly remapTo?: string;
 }
 
 export async function deleteSprint(
   locttDir: string,
-  key: string,
+  id: string,
   options: DeleteSprintOptions = {},
 ): Promise<{ affectedTaskCount: number }> {
   if (options.hard !== true) {
     if (options.remapTo !== undefined) {
       throw new SprintError(`--remap-to only applies to --hard delete`);
     }
-    await archiveSprint(locttDir, key);
+    await archiveSprint(locttDir, id);
     return { affectedTaskCount: 0 };
   }
   return withStateLock(locttDir, async () => {
     const config = await loadSprintsConfig(locttDir);
-    if (!config.sprints.some(s => s.key === key)) {
-      throw new SprintError(`unknown sprint: ${key}`);
+    if (!config.sprints.some(s => s.id === id)) {
+      throw new SprintError(`unknown sprint: ${id}`);
     }
     if (options.remapTo !== undefined) {
-      if (options.remapTo === key) {
+      if (options.remapTo === id) {
         throw new SprintError(`remap target must differ from the sprint being deleted`);
       }
-      const target = config.sprints.find(s => s.key === options.remapTo);
+      const target = config.sprints.find(s => s.id === options.remapTo);
       if (!target) {
         throw new SprintError(`unknown remap target sprint: ${options.remapTo}`);
       }
       if (target.archived === true) {
         throw new SprintError(
-          `remap target sprint "${options.remapTo}" is archived; unarchive it first or pick an active sprint`,
+          `remap target sprint '${options.remapTo}' is archived; unarchive it first or pick an active sprint`,
         );
       }
     }
 
     const tasks = await loadAllTasks(locttDir);
-    const affected = tasks.filter(t => t.frontmatter.sprint === key);
+    const affected = tasks.filter(t => t.frontmatter.sprint === id);
 
     const entry: JournalEntry = {
       id: ulid(),
       kind: "remap_sprint",
       started_at: new Date().toISOString(),
-      from: key,
+      from: id,
       to: options.remapTo ?? null,
       task_ids: affected.map(t => t.frontmatter.id),
     };
@@ -250,19 +292,18 @@ export async function deleteSprint(
     await saveJournal(locttDir, appendJournalEntry(journal, entry));
 
     await replayTaskRemap(locttDir, entry);
-    await applySprintConfigDeletion(locttDir, key);
+    await applySprintConfigDeletion(locttDir, id);
     await clearJournalEntry(locttDir, entry.id);
 
     return { affectedTaskCount: affected.length };
   });
 }
 
-/** Idempotent config-edit half of deleteSprint. */
-async function applySprintConfigDeletion(locttDir: string, key: string): Promise<void> {
+async function applySprintConfigDeletion(locttDir: string, id: string): Promise<void> {
   const config = await loadSprintsConfig(locttDir);
-  if (!config.sprints.some(s => s.key === key)) return;
+  if (!config.sprints.some(s => s.id === id)) return;
   await saveSprintsConfig(locttDir, {
-    sprints: config.sprints.filter(s => s.key !== key),
+    sprints: config.sprints.filter(s => s.id !== id),
   });
 }
 

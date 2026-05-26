@@ -71,7 +71,7 @@
   function labelChip(labelKey, onX) {
     const l = store.getLabel(labelKey);
     if (!l) return el("span", { class: "chip" }, labelKey);
-    const ch = el("span", { class: "chip", style: l.color ? { background: l.color + "22", color: l.color } : null }, l.label);
+    const ch = el("span", { class: "chip", style: l.color ? { background: l.color + "22", color: l.color } : null }, l.name);
     if (onX) ch.appendChild(el("span", { class: "chip__x", onclick: onX }, "×"));
     return ch;
   }
@@ -232,9 +232,9 @@
       clear(node);
       const tasks = store.listTasks();
       store.listMilestones().forEach(m => {
-        const count = tasks.filter(t => t.milestone === m.key).length;
+        const count = tasks.filter(t => t.milestone === m.id).length;
         node.appendChild(el("a", { class: "sidebar__item" },
-          el("span", { class: "sidebar__label" }, m.label),
+          el("span", { class: "sidebar__label" }, m.name),
           el("span", { class: "sidebar__badge" }, count),
         ));
       });
@@ -245,7 +245,7 @@
       store.listSprints().filter(s => s.state !== "completed").forEach(s => {
         node.appendChild(el("a", { class: "sidebar__item" },
           el("span", { class: "priority-dot", style: { background: s.state === "active" ? "#1F8A4C" : "var(--text-tertiary)" }}),
-          el("span", { class: "sidebar__label" }, s.label, " ", el("span", { style: { color: "var(--text-tertiary)", fontSize: "11px" }}, s.state)),
+          el("span", { class: "sidebar__label" }, s.name, " ", el("span", { style: { color: "var(--text-tertiary)", fontSize: "11px" }}, s.state)),
         ));
       });
     });
@@ -255,7 +255,7 @@
       store.listLabels().forEach(l => {
         node.appendChild(el("a", { class: "sidebar__item" },
           el("span", { class: "priority-dot", style: { background: l.color || "var(--text-tertiary)" }}),
-          el("span", { class: "sidebar__label" }, l.label),
+          el("span", { class: "sidebar__label" }, l.name),
         ));
       });
     });
@@ -348,9 +348,9 @@
       { key: "priority",  label: "Priority",  opts: store.workflow().priorities.map(p => ({ value: p.key, label: p.label })) },
       { key: "type",      label: "Type",      opts: store.workflow().task_types.map(t => ({ value: t.key, label: t.label })) },
       { key: "assignee",  label: "Assignee",  opts: store.listUsers().map(u => ({ value: u.id, label: u.name })) },
-      { key: "label",     label: "Label",     opts: store.listLabels().map(l => ({ value: l.key, label: l.label })), filterKey: "labels" },
-      { key: "milestone", label: "Milestone", opts: store.listMilestones().map(m => ({ value: m.key, label: m.label })) },
-      { key: "sprint",    label: "Sprint",    opts: store.listSprints().map(s => ({ value: s.key, label: s.label })) },
+      { key: "label",     label: "Label",     opts: store.listLabels().map(l => ({ value: l.id, label: l.name })), filterKey: "labels" },
+      { key: "milestone", label: "Milestone", opts: store.listMilestones().map(m => ({ value: m.id, label: m.name })) },
+      { key: "sprint",    label: "Sprint",    opts: store.listSprints().map(s => ({ value: s.id, label: s.name })) },
     ];
 
     const bar = el("div", { class: "filter-bar" });
@@ -411,9 +411,9 @@
         priority: v => (findPriority(v) || {}).label,
         type: v => (findType(v) || {}).label,
         assignee: v => (store.getUser(v) || {}).name,
-        labels: v => (store.getLabel(v) || {}).label,
-        milestone: v => v,
-        sprint: v => v,
+        labels: v => (store.getLabel(v) || {}).name,
+        milestone: v => (store.getMilestone(v) || {}).name || v,
+        sprint: v => (store.getSprint(v) || {}).name || v,
       }[k] || (v => v);
       const labels = vals.map(labelMap).filter(Boolean).join(", ");
       pills.appendChild(el("span", { class: "chip chip--accent" }, `${k}: ${labels}`,
@@ -454,8 +454,8 @@
     bar.appendChild(bulkSelectMenu("Set status…", store.workflow().statuses.map(s => ({ value: s.key, label: s.label })), v => store.bulkUpdate([...LIST_STATE.selected], { status: v })));
     bar.appendChild(bulkSelectMenu("Set priority…", store.workflow().priorities.map(p => ({ value: p.key, label: p.label })), v => store.bulkUpdate([...LIST_STATE.selected], { priority: v })));
     bar.appendChild(bulkSelectMenu("Set assignee…", [{ value: null, label: "Unassigned" }].concat(store.listUsers().map(u => ({ value: u.id, label: u.name }))), v => store.bulkUpdate([...LIST_STATE.selected], { assignee: v })));
-    bar.appendChild(bulkSelectMenu("Set milestone…", [{ value: null, label: "—" }].concat(store.listMilestones().map(m => ({ value: m.key, label: m.label }))), v => store.bulkUpdate([...LIST_STATE.selected], { milestone: v })));
-    bar.appendChild(bulkSelectMenu("Set sprint…", [{ value: null, label: "—" }].concat(store.listSprints().map(s => ({ value: s.key, label: s.label }))), v => store.bulkUpdate([...LIST_STATE.selected], { sprint: v })));
+    bar.appendChild(bulkSelectMenu("Set milestone…", [{ value: null, label: "—" }].concat(store.listMilestones().map(m => ({ value: m.id, label: m.name }))), v => store.bulkUpdate([...LIST_STATE.selected], { milestone: v })));
+    bar.appendChild(bulkSelectMenu("Set sprint…", [{ value: null, label: "—" }].concat(store.listSprints().map(s => ({ value: s.id, label: s.name }))), v => store.bulkUpdate([...LIST_STATE.selected], { sprint: v })));
     bar.appendChild(el("div", { style: { flex: "1" }}));
     bar.appendChild(el("button", { class: "btn btn--secondary btn--sm", onclick: () => {
       store.bulkArchive([...LIST_STATE.selected]);
@@ -597,9 +597,9 @@
         { key: "task_type", label: "Type",      type: "enum",  values: wf.task_types.map(t => ({ value: t.key, label: t.label })) },
         { key: "assignee",  label: "Assignee",  type: "user" },
         { key: "reporter",  label: "Reporter",  type: "user" },
-        { key: "labels",    label: "Label",     type: "enum",  values: store.listLabels().map(l => ({ value: l.key, label: l.label })), multi: true },
-        { key: "milestone", label: "Milestone", type: "enum",  values: store.listMilestones().map(m => ({ value: m.key, label: m.label })) },
-        { key: "sprint",    label: "Sprint",    type: "enum",  values: store.listSprints().map(s => ({ value: s.key, label: s.label })) },
+        { key: "labels",    label: "Label",     type: "enum",  values: store.listLabels().map(l => ({ value: l.id, label: l.name })), multi: true },
+        { key: "milestone", label: "Milestone", type: "enum",  values: store.listMilestones().map(m => ({ value: m.id, label: m.name })) },
+        { key: "sprint",    label: "Sprint",    type: "enum",  values: store.listSprints().map(s => ({ value: s.id, label: s.name })) },
         { key: "due_date",  label: "Due date",  type: "date" },
         { key: "start_date",label: "Start date",type: "date" },
         { key: "created_at",label: "Created",   type: "date" },
@@ -803,7 +803,7 @@
         col("Milestone",
           el("select", { class: "select", onchange: (e) => state.milestone = e.target.value || null, style: { width: "100%" }},
             el("option", { value: "" }, "—"),
-            ...store.listMilestones().map(m => el("option", Object.assign({ value: m.key }, state.milestone === m.key ? { selected: "" } : {}), m.label))
+            ...store.listMilestones().map(m => el("option", Object.assign({ value: m.id }, state.milestone === m.id ? { selected: "" } : {}), m.name))
           )
         ),
       ));
@@ -825,7 +825,7 @@
         )),
         col("Sprint", el("select", { class: "select", onchange: e => state.sprint = e.target.value || null, style: { width: "100%" }},
           el("option", { value: "" }, "—"),
-          ...store.listSprints().map(s => el("option", Object.assign({ value: s.key }, state.sprint === s.key ? { selected: "" } : {}), `${s.label} (${s.state})`))
+          ...store.listSprints().map(s => el("option", Object.assign({ value: s.id }, state.sprint === s.id ? { selected: "" } : {}), `${s.name} (${s.state})`))
         )),
       ));
       // Assignee + Reporter
@@ -844,12 +844,13 @@
       const labelInput = el("input", { style: { flex: "1", minWidth: "120px", border: "none", outline: "none", background: "transparent" }, placeholder: "Add a label…", onkeydown: (e) => {
         if (e.key === "Enter" && e.target.value.trim()) {
           e.preventDefault();
-          const key = e.target.value.trim().toLowerCase().replace(/\s+/g, "-");
-          if (!store.getLabel(key)) {
-            if (confirm(`Create new label "${key}"?`)) store.createLabel({ key, label: e.target.value.trim(), color: "#3b82f6" });
+          const name = e.target.value.trim();
+          let l = store.getLabel(name);
+          if (!l) {
+            if (confirm(`Create new label "${name}"?`)) l = store.createLabel({ name, color: "#3b82f6" });
             else { e.target.value = ""; return; }
           }
-          if (!state.labels.includes(key)) state.labels.push(key);
+          if (l && !state.labels.includes(l.id)) state.labels.push(l.id);
           e.target.value = "";
           render();
         }
@@ -932,7 +933,7 @@
     // Breadcrumb + title row
     const proj = store.getProject(t.project);
     root.appendChild(el("div", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--text-tertiary)" }},
-      el("a", { href: "list.html" }, "All tasks"), " › ", el("span", null, `Project · ${proj ? proj.label : t.project}`)
+      el("a", { href: "list.html" }, "All tasks"), " › ", el("span", null, `Project · ${proj ? proj.name : t.project}`)
     ));
     const titleRow = el("div", { class: "row", style: { gap: "12px" }});
     titleRow.appendChild(el("span", { class: "chip", style: { fontFamily: "ui-monospace, monospace" }}, t.key));
@@ -1070,16 +1071,18 @@
     right.appendChild(metaRow("Due",      el("input", { type: "date", class: "input", style: { width: "100%" }, value: t.due_date || "", onchange: e => store.updateTask(t.id, { due_date: e.target.value || null })})));
     right.appendChild(metaRow("Completed",t.completed_date || "—", { note: "(auto)" }));
     right.appendChild(metaRow("Estimate", el("input", { class: "input", style: { width: "100%" }, value: t.estimate || "", placeholder: wf.estimation.enabled ? wf.estimation.unit_label : "—", onchange: e => store.updateTask(t.id, { estimate: e.target.value || null })})));
-    right.appendChild(metaRow("Milestone",selectField("milestone", store.listMilestones().map(m => ({ value: m.key, label: m.label })))));
-    right.appendChild(metaRow("Sprint",   selectField("sprint", store.listSprints().map(s => ({ value: s.key, label: `${s.label} (${s.state})` })))));
+    right.appendChild(metaRow("Milestone",selectField("milestone", store.listMilestones().map(m => ({ value: m.id, label: m.name })))));
+    right.appendChild(metaRow("Sprint",   selectField("sprint", store.listSprints().map(s => ({ value: s.id, label: `${s.name} (${s.state})` })))));
 
     // Labels
     const labelsCell = el("div", { class: "row", style: { flexWrap: "wrap", gap: "4px" }});
     t.labels.forEach(lk => labelsCell.appendChild(labelChip(lk, () => { t.labels = t.labels.filter(x => x !== lk); store.updateTask(t.id, {}); })));
     labelsCell.appendChild(el("button", { class: "btn btn--ghost btn--sm", onclick: () => {
-      const choices = store.listLabels().filter(l => !t.labels.includes(l.key)).map(l => l.label + " (" + l.key + ")").join("\n");
-      const k = prompt("Label key to add (available: " + store.listLabels().filter(l => !t.labels.includes(l.key)).map(l => l.key).join(", ") + ")");
-      if (k && store.getLabel(k.trim())) { t.labels.push(k.trim()); store.updateTask(t.id, {}); }
+      const available = store.listLabels().filter(l => !t.labels.includes(l.id));
+      const name = prompt("Label name to add (available: " + available.map(l => l.name).join(", ") + ")");
+      if (!name) return;
+      const l = store.getLabel(name.trim());
+      if (l && !t.labels.includes(l.id)) { t.labels.push(l.id); store.updateTask(t.id, {}); }
     }}, "+"));
     right.appendChild(metaRow("Labels", labelsCell));
 
@@ -1756,36 +1759,34 @@
       panel.appendChild(panelHeader("Labels", "Label registry. Setting an unknown label fails — register here first (or from a task form).", [
         el("label", { class: "chk" }, el("input", { type: "checkbox", checked: showArch, onchange: e => { showArch = e.target.checked; rerender(); }}), el("span", { class: "chk__box" }), " Show archived"),
         el("button", { class: "btn btn--secondary", onclick: () => {
-          const key = prompt("Key:");
-          if (!key) return;
-          const label = prompt("Label:", key) || key;
+          const name = prompt("Name:");
+          if (!name) return;
           const color = prompt("Color (hex):", "#3b82f6");
-          store.createLabel({ key, label, color });
+          store.createLabel({ name, color });
         }}, "+ Add label"),
       ]));
       store.listLabels(showArch).forEach(l => {
-        const count = tasks.filter(t => t.labels.includes(l.key)).length;
-        const row = el("div", { class: "row", style: { padding: "10px 0", borderBottom: "1px solid var(--border-subtle)" }, draggable: "true", ondragstart: e => { e.dataTransfer.setData("text/plain", l.key); }},
+        const count = tasks.filter(t => t.labels.includes(l.id)).length;
+        const row = el("div", { class: "row", style: { padding: "10px 0", borderBottom: "1px solid var(--border-subtle)" }, draggable: "true", ondragstart: e => { e.dataTransfer.setData("text/plain", l.id); }},
           el("span", { style: { color: "var(--text-tertiary)" }}, "⋮⋮"),
           el("span", { style: { width: "16px", height: "16px", borderRadius: "4px", background: l.color || "#94a3b8" }}),
-          el("span", { style: { fontWeight: "500" }}, l.label),
-          el("span", { class: "chip" }, `key: ${l.key}`),
+          el("span", { style: { fontWeight: "500" }}, l.name),
           el("div", { style: { flex: "1" }}),
           el("span", { style: { color: "var(--text-tertiary)", fontSize: "12px" }}, `${count} tasks`),
           el("button", { class: "btn btn--ghost btn--sm", onclick: () => {
-            const label = prompt("Label:", l.label); if (label == null) return;
+            const name = prompt("Name:", l.name); if (name == null) return;
             const color = prompt("Color:", l.color);
-            store.updateLabel(l.key, { label, color });
+            store.updateLabel(l.id, { name, color });
           }}, "Edit"),
-          el("button", { class: "btn btn--ghost btn--sm", onclick: () => store.updateLabel(l.key, { archived: !l.archived })}, l.archived ? "Unarchive" : "Archive"),
+          el("button", { class: "btn btn--ghost btn--sm", onclick: () => store.updateLabel(l.id, { archived: !l.archived })}, l.archived ? "Unarchive" : "Archive"),
           el("button", { class: "btn btn--ghost btn--sm", style: { color: "var(--feedback-danger-fg)" }, onclick: () => {
-            if (count > 0) { const remap = prompt(`${count} task(s) reference this label. Remap to (or cancel):`); if (!remap) return; store.deleteLabel(l.key, remap); }
-            else if (confirm("Delete?")) store.deleteLabel(l.key);
+            if (count > 0) { const remap = prompt(`${count} task(s) reference this label. Remap to (or cancel):`); if (!remap) return; store.deleteLabel(l.id, remap); }
+            else if (confirm("Delete?")) store.deleteLabel(l.id);
           }}, "Delete"),
         );
         row.ondragover = e => { e.preventDefault(); row.style.borderTop = "2px solid var(--accent)"; };
         row.ondragleave = () => { row.style.borderTop = ""; };
-        row.ondrop = e => { e.preventDefault(); row.style.borderTop = ""; const k = e.dataTransfer.getData("text/plain"); if (k && k !== l.key) store.reorderLabel(k, l.key); };
+        row.ondrop = e => { e.preventDefault(); row.style.borderTop = ""; const k = e.dataTransfer.getData("text/plain"); if (k && k !== l.id) store.reorderLabel(k, l.id); };
         panel.appendChild(row);
       });
     }
@@ -1798,27 +1799,26 @@
       const tasks = store.listTasks();
       panel.appendChild(panelHeader("Milestones", "Target dates for groups of tasks.", [
         el("button", { class: "btn btn--secondary", onclick: () => {
-          const key = prompt("Key:"); if (!key) return;
-          const label = prompt("Label:", key) || key;
+          const name = prompt("Name:"); if (!name) return;
           const target = prompt("Target date (YYYY-MM-DD, optional):");
-          store.createMilestone({ key, label, target_date: target || null });
+          store.createMilestone({ name, target_date: target || null });
         }}, "+ New milestone"),
       ]));
       store.listMilestones(true).forEach(m => {
-        const count = tasks.filter(t => t.milestone === m.key).length;
+        const count = tasks.filter(t => t.milestone === m.id).length;
         const row = el("div", { class: "row", style: { padding: "10px 0", borderBottom: "1px solid var(--border-subtle)" }},
-          el("span", { style: { fontWeight: "500" }}, m.label),
+          el("span", { style: { fontWeight: "500" }}, m.name),
           m.target_date ? el("span", { class: "chip" }, `target: ${m.target_date}`) : null,
           el("div", { style: { flex: "1" }}),
           el("span", { style: { color: "var(--text-tertiary)", fontSize: "12px" }}, `${count} tasks`),
           el("button", { class: "btn btn--ghost btn--sm", onclick: () => {
-            const label = prompt("Label:", m.label); if (label == null) return;
+            const name = prompt("Name:", m.name); if (name == null) return;
             const target = prompt("Target date:", m.target_date || "");
-            store.updateMilestone(m.key, { label, target_date: target || null });
+            store.updateMilestone(m.id, { name, target_date: target || null });
           }}, "Edit"),
           el("button", { class: "btn btn--ghost btn--sm", style: { color: "var(--feedback-danger-fg)" }, onclick: () => {
-            if (count > 0) { const remap = prompt(`${count} task(s) reference. Remap (or cancel):`); if (!remap) return; store.deleteMilestone(m.key, remap); }
-            else if (confirm("Delete?")) store.deleteMilestone(m.key);
+            if (count > 0) { const remap = prompt(`${count} task(s) reference. Remap (or cancel):`); if (!remap) return; store.deleteMilestone(m.id, remap); }
+            else if (confirm("Delete?")) store.deleteMilestone(m.id);
           }}, "Delete"),
         );
         panel.appendChild(row);
@@ -1833,17 +1833,17 @@
       const tasks = store.listTasks();
       panel.appendChild(panelHeader("Sprints", "Time-boxed work intervals.", [
         el("button", { class: "btn btn--secondary", onclick: () => {
-          const key = prompt("Key (e.g. S-14):"); if (!key) return;
+          const name = prompt("Name (e.g. Sprint 14):"); if (!name) return;
           const start = prompt("Start date (YYYY-MM-DD):"); if (!start) return;
           const end = prompt("End date (YYYY-MM-DD):"); if (!end) return;
           const goal = prompt("Goal (optional):");
-          store.createSprint({ key, label: key, start_date: start, end_date: end, state: "future", goal });
+          store.createSprint({ name, start_date: start, end_date: end, state: "future", goal });
         }}, "+ New sprint"),
       ]));
       store.listSprints(true).forEach(s => {
-        const count = tasks.filter(t => t.sprint === s.key).length;
+        const count = tasks.filter(t => t.sprint === s.id).length;
         const row = el("div", { class: "row", style: { padding: "10px 0", borderBottom: "1px solid var(--border-subtle)", opacity: s.state === "completed" ? "0.7" : "1" }},
-          el("span", { style: { fontWeight: "500" }}, s.label),
+          el("span", { style: { fontWeight: "500" }}, s.name),
           el("span", { class: "chip chip--" + (s.state === "active" ? "accent" : "") }, s.state),
           el("span", { class: "chip" }, `${s.start_date} → ${s.end_date}`),
           s.goal ? el("span", { style: { fontStyle: "italic", color: "var(--text-secondary)" }}, s.goal) : null,
@@ -1851,11 +1851,11 @@
           el("span", { style: { color: "var(--text-tertiary)", fontSize: "12px" }}, `${count} tasks`),
           el("button", { class: "btn btn--ghost btn--sm", onclick: () => {
             const newState = prompt("State (active/future/completed):", s.state);
-            store.updateSprint(s.key, { state: newState });
+            store.updateSprint(s.id, { state: newState });
           }}, "Edit"),
           el("button", { class: "btn btn--ghost btn--sm", style: { color: "var(--feedback-danger-fg)" }, onclick: () => {
-            if (count > 0) { const remap = prompt(`${count} task(s) reference. Remap (or cancel):`); if (!remap) return; store.deleteSprint(s.key, remap); }
-            else if (confirm("Delete?")) store.deleteSprint(s.key);
+            if (count > 0) { const remap = prompt(`${count} task(s) reference. Remap (or cancel):`); if (!remap) return; store.deleteSprint(s.id, remap); }
+            else if (confirm("Delete?")) store.deleteSprint(s.id);
           }}, "Delete"),
         );
         panel.appendChild(row);

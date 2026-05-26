@@ -378,67 +378,65 @@ describe("CLI commands", () => {
   it("sprint burndown prints a table by default", async () => {
     await initLoctt(root);
     process.argv = [
-      "node", "loctt", "sprint", "create", "s1",
+      "node", "loctt", "sprint", "create", "Sprint One",
       "--start", "2026-05-04", "--end", "2026-05-08", "--state", "active",
     ];
     await main();
     process.exitCode = undefined;
     consoleSpy.mockClear();
 
-    process.argv = ["node", "loctt", "sprint", "burndown", "s1"];
+    process.argv = ["node", "loctt", "sprint", "burndown", "Sprint One"];
     await main();
     expect(process.exitCode).toBeUndefined();
     const log = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
     expect(log).toContain("Sprint:");
-    expect(log).toContain("s1");
     expect(log).toContain("2026-05-04");
     expect(log).toContain("Remaining");
-    // Ideal column header is part of the table.
     expect(log).toContain("Ideal");
   });
 
   it("sprint burndown --format json emits a parseable payload", async () => {
     await initLoctt(root);
     process.argv = [
-      "node", "loctt", "sprint", "create", "s1",
+      "node", "loctt", "sprint", "create", "Sprint One",
       "--start", "2026-05-04", "--end", "2026-05-08", "--state", "active",
     ];
     await main();
     process.exitCode = undefined;
     consoleSpy.mockClear();
 
-    process.argv = ["node", "loctt", "sprint", "burndown", "s1", "--format", "json"];
+    process.argv = ["node", "loctt", "sprint", "burndown", "Sprint One", "--format", "json"];
     await main();
     expect(process.exitCode).toBeUndefined();
     const log = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
     const payload = JSON.parse(log) as {
-      sprintKey: string;
+      sprintId: string;
       series: { date: string; remaining: number }[];
       ideal: unknown[];
     };
-    expect(payload.sprintKey).toBe("s1");
+    expect(payload.sprintId).toMatch(/^[0-9A-Z]{26}$/);
     expect(payload.series.length).toBe(5);
     expect(payload.series[0]?.date).toBe("2026-05-04");
     expect(payload.ideal.length).toBe(5);
   });
 
-  it("sprint burndown exits cleanly when the key does not resolve", async () => {
+  it("sprint burndown exits cleanly when the name does not resolve", async () => {
     await initLoctt(root);
     process.exitCode = undefined;
     const errSpy = vi.mocked(console.error);
     errSpy.mockClear();
 
-    process.argv = ["node", "loctt", "sprint", "burndown", "nonexistent"];
+    process.argv = ["node", "loctt", "sprint", "burndown", "Nonexistent"];
     await main();
     expect(process.exitCode).toBe(1);
     const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
-    expect(stderr).toMatch(/unknown sprint: nonexistent/);
+    expect(stderr).toMatch(/unknown sprint/);
   });
 
   it("sprint burndown rejects an unknown --format", async () => {
     await initLoctt(root);
     process.argv = [
-      "node", "loctt", "sprint", "create", "s1",
+      "node", "loctt", "sprint", "create", "Sprint One",
       "--start", "2026-05-04", "--end", "2026-05-08", "--state", "active",
     ];
     await main();
@@ -446,7 +444,7 @@ describe("CLI commands", () => {
     const errSpy = vi.mocked(console.error);
     errSpy.mockClear();
 
-    process.argv = ["node", "loctt", "sprint", "burndown", "s1", "--format", "html"];
+    process.argv = ["node", "loctt", "sprint", "burndown", "Sprint One", "--format", "html"];
     await main();
     expect(process.exitCode).toBe(2);
     const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");

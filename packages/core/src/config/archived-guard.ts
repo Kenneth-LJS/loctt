@@ -61,24 +61,8 @@ export async function loadArchivedGuardConfigs(
   };
 }
 
-/**
- * Returns the set of entity keys (or user IDs) that are currently
- * archived in the given aux configs. Empty set if the config slice
- * is absent.
- */
-function archivedKeys(
-  defs: ReadonlyArray<{ readonly key: string; readonly archived?: boolean | undefined }> | undefined,
-): ReadonlySet<string> {
-  if (!defs) return new Set();
-  const out = new Set<string>();
-  for (const d of defs) {
-    if (d.archived === true) out.add(d.key);
-  }
-  return out;
-}
-
-/** Like archivedKeys but for projects, which identify by `id`. */
-function archivedProjectIds(
+/** Returns the set of ids currently archived in the given config slice. */
+function archivedIds(
   defs: ReadonlyArray<{ readonly id: string; readonly archived?: boolean | undefined }> | undefined,
 ): ReadonlySet<string> {
   if (!defs) return new Set();
@@ -132,9 +116,9 @@ export function assertNotArchivedReferences(
     archived: ReadonlySet<string>;
     kindLabel: string;
   }> = [
-    { field: "project", archived: archivedProjectIds(aux.projects?.projects), kindLabel: "project" },
-    { field: "milestone", archived: archivedKeys(aux.milestones?.milestones), kindLabel: "milestone" },
-    { field: "sprint", archived: archivedKeys(aux.sprints?.sprints), kindLabel: "sprint" },
+    { field: "project", archived: archivedIds(aux.projects?.projects), kindLabel: "project" },
+    { field: "milestone", archived: archivedIds(aux.milestones?.milestones), kindLabel: "milestone" },
+    { field: "sprint", archived: archivedIds(aux.sprints?.sprints), kindLabel: "sprint" },
     { field: "assignee", archived: archivedUserIds(aux.users), kindLabel: "user" },
     { field: "reporter", archived: archivedUserIds(aux.users), kindLabel: "user" },
   ];
@@ -154,7 +138,7 @@ export function assertNotArchivedReferences(
   // Labels: an array. Block newly-added labels that are archived,
   // tolerate ones that were already present.
   if (fm.labels !== undefined) {
-    const archived = archivedKeys(aux.labels?.labels);
+    const archived = archivedIds(aux.labels?.labels);
     const prior = new Set(prev?.labels ?? []);
     for (const k of fm.labels) {
       if (prior.has(k)) continue;

@@ -183,22 +183,23 @@
         { id: userJess, name: "Jess Park",    email: "jess@example.com", timezone: "America/New_York", archived: false, settings: {} },
         { id: userMira, name: "Mira Rao",     email: "mira@example.com", timezone: "Asia/Kolkata",    archived: false, settings: {} },
       ],
+      // Mock ids — real init generates ULIDs.
       labels: [
-        { key: "frontend", label: "frontend", color: "#3b82f6", archived: false },
-        { key: "backend",  label: "backend",  color: "#10b981", archived: false },
-        { key: "infra",    label: "infra",    color: "#78716c", icon: "database", archived: false },
-        { key: "design",   label: "design",   color: "#ec4899", archived: false },
-        { key: "testing",  label: "testing",  color: "#f59e0b", archived: false },
-        { key: "research", label: "research", color: "#a855f7", icon: "lightbulb", archived: false },
+        { id: "l_frontend", name: "frontend", color: "#3b82f6", archived: false },
+        { id: "l_backend",  name: "backend",  color: "#10b981", archived: false },
+        { id: "l_infra",    name: "infra",    color: "#78716c", icon: "database", archived: false },
+        { id: "l_design",   name: "design",   color: "#ec4899", archived: false },
+        { id: "l_testing",  name: "testing",  color: "#f59e0b", archived: false },
+        { id: "l_research", name: "research", color: "#a855f7", icon: "lightbulb", archived: false },
       ],
       milestones: [
-        { key: "v1",        label: "v1 GA",       target_date: todayYMD(45), archived: false },
-        { key: "v1-polish", label: "v1.1 polish", target_date: todayYMD(90), archived: false },
+        { id: "m_v1",        name: "v1 GA",       target_date: todayYMD(45), archived: false },
+        { id: "m_v1_polish", name: "v1.1 polish", target_date: todayYMD(90), archived: false },
       ],
       sprints: [
-        { key: "S-11", label: "S-11", start_date: todayYMD(-30), end_date: todayYMD(-17), state: "completed", goal: "Timeline MVP",   archived: false },
-        { key: "S-12", label: "S-12", start_date: todayYMD(-3),  end_date: todayYMD(11),  state: "active",    goal: "Ship login flow", archived: false },
-        { key: "S-13", label: "S-13", start_date: todayYMD(12),  end_date: todayYMD(25),  state: "future",    goal: "Settings polish", archived: false },
+        { id: "sp_s11", name: "Sprint 11", start_date: todayYMD(-30), end_date: todayYMD(-17), state: "completed", goal: "Timeline MVP",   archived: false },
+        { id: "sp_s12", name: "Sprint 12", start_date: todayYMD(-3),  end_date: todayYMD(11),  state: "active",    goal: "Ship login flow", archived: false },
+        { id: "sp_s13", name: "Sprint 13", start_date: todayYMD(12),  end_date: todayYMD(25),  state: "future",    goal: "Settings polish", archived: false },
       ],
       tasks: buildSampleTasks(userKen, userSara, userJess),
       views: [
@@ -249,16 +250,16 @@
       }, opts);
     }
     return [
-      mk({ key: "WEB-128", project: "p_web",     title: "Implement Gantt edge-drag handles", status: "in_progress", priority: "high",     task_type: "feature", assignee: uKen,  reporter: uKen,  labels: ["frontend", "design"],  due_date: todayYMD(7),  start_date: todayYMD(-3), milestone: "v1",  sprint: "S-12", estimate: "3", board_rank: "a", body: "Drag the edges of bars to resize.\n\n- Edge zone: 6px on either side\n- Snap to day grid\n- Tooltip with new date" }),
-      mk({ key: "WEB-127", project: "p_web",     title: "Audit dependency arrows on month zoom", status: "in_progress", priority: "medium", task_type: "bug",     assignee: uSara, reporter: uKen,  labels: ["frontend"], due_date: todayYMD(3), milestone: "v1", sprint: "S-12", estimate: "2", board_rank: "b" }),
-      mk({ key: "WEB-126", project: "p_web",     title: "Detect edge-zone hover on bars",        status: "backlog",     priority: "medium", task_type: "task",    reporter: uKen,  labels: ["frontend"], milestone: "v1", sprint: "S-12", estimate: "1", board_rank: "c" }),
-      mk({ key: "WEB-125", project: "p_web",     title: "Keyboard shortcuts overlay",            status: "backlog",     priority: "low",    task_type: "feature", reporter: uSara, labels: ["frontend"], sprint: "S-13", estimate: "2", board_rank: "d" }),
-      mk({ key: "WEB-115", project: "p_web",     title: "Sidebar collapse animation jank",       status: "backlog",     priority: "low",    task_type: "bug",     reporter: uKen,  labels: ["frontend"], board_rank: "e" }),
-      mk({ key: "WEB-101", project: "p_web",     title: "Theme tokens audit",                     status: "done",        priority: "low",    task_type: "task",    assignee: uKen,  reporter: uKen,  labels: ["frontend", "design"], board_rank: "f", completed_date: todayYMD(-5) }),
-      mk({ key: "BACKEND-126", project: "p_backend", title: "Cycle-detect on inverse relationship key", status: "in_progress", priority: "critical", task_type: "bug", assignee: uJess, reporter: uKen, labels: ["backend"], due_date: todayYMD(1), milestone: "v1", sprint: "S-12", estimate: "5", board_rank: "g" }),
-      mk({ key: "BACKEND-125", project: "p_backend", title: "Atomic schema sentinel write",          status: "done",        priority: "high",   task_type: "task",    assignee: uJess, reporter: uKen, labels: ["backend"], milestone: "v1", sprint: "S-11", estimate: "3", board_rank: "h", completed_date: todayYMD(-12) }),
-      mk({ key: "BACKEND-9", project: "p_backend", title: "Bulk operations core helpers",          status: "backlog",     priority: "high",   task_type: "feature", reporter: uKen, labels: ["backend"], sprint: "S-13", estimate: "8", board_rank: "i" }),
-      mk({ key: "INF-12",   project: "p_infra",   title: "Wire test workspace sweep",             status: "wont_do",     priority: "low",    task_type: "task",    reporter: uKen,  labels: ["infra"], board_rank: "j" }),
+      mk({ key: "WEB-128", project: "p_web",     title: "Implement Gantt edge-drag handles", status: "in_progress", priority: "high",     task_type: "feature", assignee: uKen,  reporter: uKen,  labels: ["l_frontend", "l_design"],  due_date: todayYMD(7),  start_date: todayYMD(-3), milestone: "m_v1",  sprint: "sp_s12", estimate: "3", board_rank: "a", body: "Drag the edges of bars to resize.\n\n- Edge zone: 6px on either side\n- Snap to day grid\n- Tooltip with new date" }),
+      mk({ key: "WEB-127", project: "p_web",     title: "Audit dependency arrows on month zoom", status: "in_progress", priority: "medium", task_type: "bug",     assignee: uSara, reporter: uKen,  labels: ["l_frontend"], due_date: todayYMD(3), milestone: "m_v1", sprint: "sp_s12", estimate: "2", board_rank: "b" }),
+      mk({ key: "WEB-126", project: "p_web",     title: "Detect edge-zone hover on bars",        status: "backlog",     priority: "medium", task_type: "task",    reporter: uKen,  labels: ["l_frontend"], milestone: "m_v1", sprint: "sp_s12", estimate: "1", board_rank: "c" }),
+      mk({ key: "WEB-125", project: "p_web",     title: "Keyboard shortcuts overlay",            status: "backlog",     priority: "low",    task_type: "feature", reporter: uSara, labels: ["l_frontend"], sprint: "sp_s13", estimate: "2", board_rank: "d" }),
+      mk({ key: "WEB-115", project: "p_web",     title: "Sidebar collapse animation jank",       status: "backlog",     priority: "low",    task_type: "bug",     reporter: uKen,  labels: ["l_frontend"], board_rank: "e" }),
+      mk({ key: "WEB-101", project: "p_web",     title: "Theme tokens audit",                     status: "done",        priority: "low",    task_type: "task",    assignee: uKen,  reporter: uKen,  labels: ["l_frontend", "l_design"], board_rank: "f", completed_date: todayYMD(-5) }),
+      mk({ key: "BACKEND-126", project: "p_backend", title: "Cycle-detect on inverse relationship key", status: "in_progress", priority: "critical", task_type: "bug", assignee: uJess, reporter: uKen, labels: ["l_backend"], due_date: todayYMD(1), milestone: "m_v1", sprint: "sp_s12", estimate: "5", board_rank: "g" }),
+      mk({ key: "BACKEND-125", project: "p_backend", title: "Atomic schema sentinel write",          status: "done",        priority: "high",   task_type: "task",    assignee: uJess, reporter: uKen, labels: ["l_backend"], milestone: "m_v1", sprint: "sp_s11", estimate: "3", board_rank: "h", completed_date: todayYMD(-12) }),
+      mk({ key: "BACKEND-9", project: "p_backend", title: "Bulk operations core helpers",          status: "backlog",     priority: "high",   task_type: "feature", reporter: uKen, labels: ["l_backend"], sprint: "sp_s13", estimate: "8", board_rank: "i" }),
+      mk({ key: "INF-12",   project: "p_infra",   title: "Wire test workspace sweep",             status: "wont_do",     priority: "low",    task_type: "task",    reporter: uKen,  labels: ["l_infra"], board_rank: "j" }),
     ];
   }
 
@@ -501,29 +502,43 @@
       return true;
     },
 
-    // labels
+    // labels — { id, name, color?, archived? }
     listLabels(includeArchived) { return load().labels.filter(l => includeArchived || !l.archived); },
-    getLabel(key) { return load().labels.find(l => l.key === key); },
-    createLabel(def) { load().labels.push({ archived: false, ...def }); save(); },
-    updateLabel(key, changes) { const l = store.getLabel(key); if (l) Object.assign(l, changes); save(); },
-    deleteLabel(key, remapTo) {
+    getLabel(idOrName) {
+      const labels = load().labels;
+      return labels.find(l => l.id === idOrName) || labels.find(l => l.name === idOrName);
+    },
+    createLabel(def) {
+      const id = def.id || ("l_" + ulid().slice(-8).toLowerCase());
+      load().labels.push({ id, name: def.name, ...(def.color ? { color: def.color } : {}), archived: false });
+      save();
+      return id;
+    },
+    updateLabel(id, changes) {
+      const l = load().labels.find(x => x.id === id); if (!l) return;
+      if (changes.name !== undefined) l.name = changes.name;
+      if (changes.color !== undefined) { if (changes.color === null) delete l.color; else l.color = changes.color; }
+      if (changes.archived !== undefined) l.archived = changes.archived;
+      save();
+    },
+    deleteLabel(id, remapTo) {
       const d = load();
       d.tasks.forEach(t => {
-        if (t.labels.includes(key)) {
-          t.labels = t.labels.filter(x => x !== key);
+        if (t.labels && t.labels.includes(id)) {
+          t.labels = t.labels.filter(x => x !== id);
           if (remapTo && !t.labels.includes(remapTo)) t.labels.push(remapTo);
         }
       });
-      d.labels = d.labels.filter(l => l.key !== key);
+      d.labels = d.labels.filter(l => l.id !== id);
       save();
     },
-    reorderLabel(key, beforeKey) {
+    reorderLabel(id, beforeId) {
       const d = load();
-      const i = d.labels.findIndex(l => l.key === key);
+      const i = d.labels.findIndex(l => l.id === id);
       if (i < 0) return;
       const [item] = d.labels.splice(i, 1);
-      if (beforeKey) {
-        const j = d.labels.findIndex(l => l.key === beforeKey);
+      if (beforeId) {
+        const j = d.labels.findIndex(l => l.id === beforeId);
         d.labels.splice(j < 0 ? d.labels.length : j, 0, item);
       } else {
         d.labels.push(item);
@@ -531,25 +546,53 @@
       save();
     },
 
-    // milestones
+    // milestones — { id, name, target_date?, archived? }
     listMilestones(includeArchived) { return load().milestones.filter(m => includeArchived || !m.archived); },
-    createMilestone(def) { load().milestones.push({ archived: false, ...def }); save(); },
-    updateMilestone(key, changes) { const m = load().milestones.find(x => x.key === key); if (m) Object.assign(m, changes); save(); },
-    deleteMilestone(key, remapTo) {
+    getMilestone(idOrName) {
+      const ms = load().milestones;
+      return ms.find(m => m.id === idOrName) || ms.find(m => m.name === idOrName);
+    },
+    createMilestone(def) {
+      const id = def.id || ("m_" + ulid().slice(-8).toLowerCase());
+      load().milestones.push({ id, name: def.name, ...(def.target_date ? { target_date: def.target_date } : {}), archived: false });
+      save();
+      return id;
+    },
+    updateMilestone(id, changes) {
+      const m = load().milestones.find(x => x.id === id); if (!m) return;
+      if (changes.name !== undefined) m.name = changes.name;
+      if (changes.target_date !== undefined) { if (changes.target_date === null) delete m.target_date; else m.target_date = changes.target_date; }
+      if (changes.archived !== undefined) m.archived = changes.archived;
+      save();
+    },
+    deleteMilestone(id, remapTo) {
       const d = load();
-      d.tasks.forEach(t => { if (t.milestone === key) t.milestone = remapTo || null; });
-      d.milestones = d.milestones.filter(m => m.key !== key);
+      d.tasks.forEach(t => { if (t.milestone === id) t.milestone = remapTo || null; });
+      d.milestones = d.milestones.filter(m => m.id !== id);
       save();
     },
 
-    // sprints
+    // sprints — { id, name, start_date, end_date, state, goal?, archived? }
     listSprints(includeArchived) { return load().sprints.filter(s => includeArchived || !s.archived); },
-    createSprint(def) { load().sprints.push({ archived: false, ...def }); save(); },
-    updateSprint(key, changes) { const s = load().sprints.find(x => x.key === key); if (s) Object.assign(s, changes); save(); },
-    deleteSprint(key, remapTo) {
+    getSprint(idOrName) {
+      const sprints = load().sprints;
+      return sprints.find(s => s.id === idOrName) || sprints.find(s => s.name === idOrName);
+    },
+    createSprint(def) {
+      const id = def.id || ("sp_" + ulid().slice(-8).toLowerCase());
+      load().sprints.push({ id, ...def, archived: false });
+      save();
+      return id;
+    },
+    updateSprint(id, changes) {
+      const s = load().sprints.find(x => x.id === id); if (!s) return;
+      Object.assign(s, changes);
+      save();
+    },
+    deleteSprint(id, remapTo) {
       const d = load();
-      d.tasks.forEach(t => { if (t.sprint === key) t.sprint = remapTo || null; });
-      d.sprints = d.sprints.filter(s => s.key !== key);
+      d.tasks.forEach(t => { if (t.sprint === id) t.sprint = remapTo || null; });
+      d.sprints = d.sprints.filter(s => s.id !== id);
       save();
     },
 

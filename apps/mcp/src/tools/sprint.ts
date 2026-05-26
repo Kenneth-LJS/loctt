@@ -1,12 +1,10 @@
 /**
  * Sprint catalog and burndown. Sprints live in sprints.yaml; the
- * burndown read reconstructs a per-day "remaining" series from
- * task history, so it can answer historical scope-change questions
- * without persisting a snapshot.
+ * burndown read reconstructs a per-day "remaining" series from task
+ * history without persisting snapshots.
  *
  * `edit_sprint` blocks re-opening a completed sprint unless
- * `force: true` is passed — protects against accidental rollbacks
- * that would invalidate downstream reporting.
+ * `force: true` is passed.
  */
 
 import {
@@ -16,6 +14,7 @@ import {
   editSprint,
   loadSprintsConfig,
   readBurndownSeries,
+  resolveSprintIdFromInput,
   unarchiveSprint,
 } from "@loctt/core";
 import { z } from "zod";
@@ -27,7 +26,7 @@ import type { ToolDef } from "../types.js";
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "list_sprints",
-    description: "List sprints defined in sprints.yaml.",
+    description: "List sprints defined in sprints.yaml. Each sprint has an internal id (ULID), a display name, dates, state, and optional goal.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       const cfg = await loadSprintsConfig(locttDir);
@@ -36,10 +35,9 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "create_sprint",
-    description: "Register a new sprint with start/end dates and a state (active|completed|future).",
+    description: "Register a new sprint with start/end dates and a state (active|completed|future). Returns the generated id.",
     inputSchema: {
-      key: z.string(),
-      label: z.string(),
+      name: z.string(),
       start_date: z.string().describe("YYYY-MM-DD"),
       end_date: z.string().describe("YYYY-MM-DD"),
       state: z.enum(["active", "completed", "future"]),
@@ -47,26 +45,24 @@ export const TOOLS: readonly ToolDef[] = [
     },
     handler: async ({ locttDir }, args) => {
       const goal = args["goal"] as string | undefined;
-      await createSprint(locttDir, {
-        key: args["key"] as string,
-        label: args["label"] as string,
+      const def = await createSprint(locttDir, {
+        name: args["name"] as string,
         start_date: args["start_date"] as string,
         end_date: args["end_date"] as string,
         state: args["state"] as "active" | "completed" | "future",
         ...(goal !== undefined ? { goal } : {}),
       });
-      return text(`Created sprint ${String(args["key"])}`);
+      return text(JSON.stringify({ id: def.id, name: def.name }, null, 2));
     },
   },
   {
     name: "edit_sprint",
     description:
-      "Edit a sprint. Pass null goal to clear. Re-opening a completed sprint " +
-      "(state: 'completed' -> 'active' or 'future') is blocked by default; pass " +
-      "force: true to override.",
+      "Edit a sprint. `sprint` accepts id or name. Pass null goal to clear. Re-opening " +
+      "a completed sprint requires `force: true`.",
     inputSchema: {
-      key: z.string(),
-      label: z.string().optional(),
+      sprint: z.string().describe("Sprint id or name"),
+      name: z.string().optional(),
       start_date: z.string().optional(),
       end_date: z.string().optional(),
       state: z.enum(["active", "completed", "future"]).optional(),
@@ -74,69 +70,77 @@ export const TOOLS: readonly ToolDef[] = [
       force: z.boolean().optional(),
     },
     handler: async ({ locttDir }, args) => {
+      const cfg = await loadSprintsConfig(locttDir);
+      const id = resolveSprintIdFromInput(cfg, args["sprint"] as string, { includeArchived: true });
       const goal = args["goal"] as string | null | undefined;
-      await editSprint(locttDir, args["key"] as string, {
-        ...(args["label"] !== undefined ? { label: args["label"] as string } : {}),
+      await editSprint(locttDir, id, {
+        ...(args["name"] !== undefined ? { name: args["name"] as string } : {}),
         ...(args["start_date"] !== undefined ? { start_date: args["start_date"] as string } : {}),
         ...(args["end_date"] !== undefined ? { end_date: args["end_date"] as string } : {}),
         ...(args["state"] !== undefined ? { state: args["state"] as "active" | "completed" | "future" } : {}),
         ...("goal" in args ? { goal: goal ?? null } : {}),
         ...(args["force"] === true ? { force: true } : {}),
       });
-      return text(`Updated sprint ${String(args["key"])}`);
+      return text(`Updated sprint ${id}`);
     },
   },
   {
     name: "delete_sprint",
     description:
-      "Permanently remove a sprint from sprints.yaml. The `sprint` field on each affected " +
-      "task is unset or remapped via `remap_to`. Use `archive_sprint` for the reversible " +
-      "(soft) variant. Always requires `confirm: true`.",
+      "Permanently remove a sprint. The `sprint` field on each affected task is unset or " +
+      "remapped via `remap_to`. Use `archive_sprint` for the reversible (soft) variant. " +
+      "Always requires `confirm: true`.",
     inputSchema: {
-      key: z.string(),
+      sprint: z.string().describe("Sprint id or name"),
       confirm: z.boolean().optional().describe("Required: must be true to proceed"),
-      remap_to: z.string().optional().describe("Target sprint key for affected tasks"),
+      remap_to: z.string().optional().describe("Target sprint (id or name) for affected tasks"),
     },
     handler: async ({ locttDir }, args) => {
       const blocked = requireConfirm(args, "delete_sprint");
       if (blocked) return blocked;
+      const cfg = await loadSprintsConfig(locttDir);
+      const id = resolveSprintIdFromInput(cfg, args["sprint"] as string, { includeArchived: true });
       const remapTo = args["remap_to"] as string | undefined;
-      const result = await deleteSprint(locttDir, args["key"] as string, {
+      const remapToId = remapTo !== undefined ? resolveSprintIdFromInput(cfg, remapTo) : undefined;
+      const result = await deleteSprint(locttDir, id, {
         hard: true,
-        ...(remapTo !== undefined ? { remapTo } : {}),
+        ...(remapToId !== undefined ? { remapTo: remapToId } : {}),
       });
-      return text(JSON.stringify({
-        key: args["key"],
-        ...result,
-      }, null, 2));
+      return text(JSON.stringify({ id, ...result }, null, 2));
     },
   },
   {
     name: "archive_sprint",
     description: "Mark a sprint as archived. Reversible via `unarchive_sprint`.",
-    inputSchema: { key: z.string() },
+    inputSchema: { sprint: z.string().describe("Sprint id or name") },
     handler: async ({ locttDir }, args) => {
-      await archiveSprint(locttDir, args["key"] as string);
-      return text(`Archived sprint ${String(args["key"])}`);
+      const cfg = await loadSprintsConfig(locttDir);
+      const id = resolveSprintIdFromInput(cfg, args["sprint"] as string, { includeArchived: true });
+      await archiveSprint(locttDir, id);
+      return text(`Archived sprint ${id}`);
     },
   },
   {
     name: "unarchive_sprint",
     description: "Clear the archived flag on a sprint.",
-    inputSchema: { key: z.string() },
+    inputSchema: { sprint: z.string().describe("Sprint id or name") },
     handler: async ({ locttDir }, args) => {
-      await unarchiveSprint(locttDir, args["key"] as string);
-      return text(`Unarchived sprint ${String(args["key"])}`);
+      const cfg = await loadSprintsConfig(locttDir);
+      const id = resolveSprintIdFromInput(cfg, args["sprint"] as string, { includeArchived: true });
+      await unarchiveSprint(locttDir, id);
+      return text(`Unarchived sprint ${id}`);
     },
   },
   {
     name: "get_sprint_burndown",
-    description: "Return the burndown series for a sprint, reconstructed from task history. The response carries the daily 'remaining' total across the sprint window, the unit being summed (points/hours/weighted-enum/task-count), the initial total at sprint start, the ideal straight-line, and per-day incomplete task counts. Scope changes (tasks joining or leaving the sprint mid-run) appear as visible steps in the series.",
+    description: "Return the burndown series for a sprint, reconstructed from task history. Carries daily 'remaining' totals, unit, initial total, ideal line, and per-day incomplete counts.",
     inputSchema: {
-      key: z.string().describe("Sprint key (e.g. 's1' / 'sprint_2026.q1')"),
+      sprint: z.string().describe("Sprint id or name"),
     },
     handler: async ({ locttDir }, args) => {
-      const series = await readBurndownSeries(locttDir, args["key"] as string);
+      const cfg = await loadSprintsConfig(locttDir);
+      const id = resolveSprintIdFromInput(cfg, args["sprint"] as string, { includeArchived: true });
+      const series = await readBurndownSeries(locttDir, id);
       return text(JSON.stringify(series, null, 2));
     },
   },

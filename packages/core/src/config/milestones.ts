@@ -36,21 +36,15 @@ export function parseMilestonesConfig(yamlContent: string): MilestonesConfig {
     }
     throw err;
   }
-  const seen = new Set<string>();
-  for (const m of parsed.milestones) {
-    if (seen.has(m.key)) {
-      throw new MilestonesConfigError(`duplicate milestone key: ${m.key}`);
-    }
-    seen.add(m.key);
-  }
+  // Schema enforces uniqueness on id via superRefine.
   return parsed;
 }
 
 export function serializeMilestonesConfig(config: MilestonesConfig): string {
   return stringifyYaml({
     milestones: config.milestones.map(m => ({
-      key: m.key,
-      label: m.label,
+      id: m.id,
+      name: m.name,
       ...(m.target_date !== undefined ? { target_date: m.target_date } : {}),
       ...(m.archived === true ? { archived: true } : {}),
     })),
@@ -71,8 +65,8 @@ export async function saveMilestonesConfig(
   const validated = parseMilestonesConfig(serializeMilestonesConfig(config));
   await writeYamlAtomically(getMilestonesConfigPath(locttDir), {
     milestones: validated.milestones.map(m => ({
-      key: m.key,
-      label: m.label,
+      id: m.id,
+      name: m.name,
       ...(m.target_date !== undefined ? { target_date: m.target_date } : {}),
       ...(m.archived === true ? { archived: true } : {}),
     })),

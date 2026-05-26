@@ -9,13 +9,15 @@ export {
   computeBurndown,
   readBurndownSeries,
 } from "./burndown.js";
-export type { DeleteSprintOptions, EditSprintOptions } from "./manage.js";
+export type { CreateSprintInput, DeleteSprintOptions, EditSprintOptions, SprintByNameResult } from "./manage.js";
 export {
   archiveSprint,
   createSprint,
   deleteSprint,
   editSprint,
   findSprint,
+  resolveSprintByName,
+  resolveSprintIdFromInput,
   SprintError,
   unarchiveSprint,
 } from "./manage.js";

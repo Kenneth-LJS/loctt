@@ -15,6 +15,8 @@ import {
   createMilestone,
   deleteMilestone,
   MilestoneError,
+  resolveMilestoneByName,
+  resolveMilestoneIdFromInput,
   unarchiveMilestone,
 } from "./manage.js";
 
@@ -36,117 +38,129 @@ afterEach(async () => {
 });
 
 describe("createMilestone", () => {
-  it("appends to milestones.yaml", async () => {
-    await createMilestone(locttDir, { key: "v1", label: "V1.0" });
+  it("appends to milestones.yaml with a generated id", async () => {
+    const def = await createMilestone(locttDir, { name: "V1.0" });
     const cfg = await loadMilestonesConfig(locttDir);
-    expect(cfg.milestones[0]).toEqual({ key: "v1", label: "V1.0" });
+    expect(cfg.milestones[0]).toEqual({ id: def.id, name: "V1.0" });
   });
 
-  it("rejects duplicates", async () => {
-    await createMilestone(locttDir, { key: "v1", label: "V1.0" });
-    await expect(createMilestone(locttDir, { key: "v1", label: "Dup" })).rejects.toThrow(/already exists/);
+  it("allows duplicate names (disambiguated by id)", async () => {
+    const a = await createMilestone(locttDir, { name: "Twin" });
+    const b = await createMilestone(locttDir, { name: "Twin" });
+    expect(a.id).not.toBe(b.id);
   });
 });
 
 describe("archiveMilestone / unarchiveMilestone", () => {
   it("flips archived: true and back", async () => {
-    await createMilestone(locttDir, { key: "v1", label: "V1.0" });
-    await archiveMilestone(locttDir, "v1");
+    const def = await createMilestone(locttDir, { name: "V1.0" });
+    await archiveMilestone(locttDir, def.id);
     let cfg = await loadMilestonesConfig(locttDir);
     expect(cfg.milestones[0]?.archived).toBe(true);
 
-    await unarchiveMilestone(locttDir, "v1");
+    await unarchiveMilestone(locttDir, def.id);
     cfg = await loadMilestonesConfig(locttDir);
     expect(cfg.milestones[0]?.archived).toBeUndefined();
   });
 
   it("throws on unknown milestone", async () => {
-    await expect(archiveMilestone(locttDir, "nope")).rejects.toThrow(MilestoneError);
+    await expect(archiveMilestone(locttDir, "01HXNOPE")).rejects.toThrow(MilestoneError);
   });
 });
 
 describe("deleteMilestone (soft, default)", () => {
   it("sets archived: true and leaves task references intact", async () => {
-    await createMilestone(locttDir, { key: "v1", label: "V1.0" });
+    const def = await createMilestone(locttDir, { name: "V1.0" });
     await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);
       await createTask({
-        locttDir,
-        state,
-        options: { project: taskProjectId, title: "t", milestone: "v1" },
+        locttDir, state,
+        options: { project: taskProjectId, title: "t", milestone: def.id },
       });
       await saveState(locttDir, state);
     });
 
-    const result = await deleteMilestone(locttDir, "v1");
+    const result = await deleteMilestone(locttDir, def.id);
     expect(result.affectedTaskCount).toBe(0);
-
     const cfg = await loadMilestonesConfig(locttDir);
     expect(cfg.milestones[0]?.archived).toBe(true);
-
     const tasks = await loadAllTasks(locttDir);
-    expect(tasks[0]?.frontmatter.milestone).toBe("v1");
+    expect(tasks[0]?.frontmatter.milestone).toBe(def.id);
   });
 
   it("rejects --remap-to without --hard", async () => {
-    await createMilestone(locttDir, { key: "v1", label: "V1.0" });
-    await createMilestone(locttDir, { key: "v2", label: "V2.0" });
+    const a = await createMilestone(locttDir, { name: "V1.0" });
+    const b = await createMilestone(locttDir, { name: "V2.0" });
     await expect(
-      deleteMilestone(locttDir, "v1", { remapTo: "v2" }),
+      deleteMilestone(locttDir, a.id, { remapTo: b.id }),
     ).rejects.toThrow(/only applies to --hard/);
   });
 });
 
 describe("deleteMilestone (hard)", () => {
   it("removes the milestone from milestones.yaml", async () => {
-    await createMilestone(locttDir, { key: "v1", label: "V1.0" });
-    const result = await deleteMilestone(locttDir, "v1", { hard: true });
+    const def = await createMilestone(locttDir, { name: "V1.0" });
+    const result = await deleteMilestone(locttDir, def.id, { hard: true });
     expect(result.affectedTaskCount).toBe(0);
     const cfg = await loadMilestonesConfig(locttDir);
     expect(cfg.milestones).toHaveLength(0);
   });
 
   it("clears milestone from tasks when no remap target", async () => {
-    await createMilestone(locttDir, { key: "v1", label: "V1.0" });
+    const def = await createMilestone(locttDir, { name: "V1.0" });
     await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);
       await createTask({
-        locttDir,
-        state,
-        options: { project: taskProjectId, title: "t", milestone: "v1" },
+        locttDir, state,
+        options: { project: taskProjectId, title: "t", milestone: def.id },
       });
       await saveState(locttDir, state);
     });
 
-    const result = await deleteMilestone(locttDir, "v1", { hard: true });
+    const result = await deleteMilestone(locttDir, def.id, { hard: true });
     expect(result.affectedTaskCount).toBe(1);
     const tasks = await loadAllTasks(locttDir);
     expect(tasks[0]?.frontmatter.milestone).toBeUndefined();
   });
 
   it("remaps milestone to remap target", async () => {
-    await createMilestone(locttDir, { key: "v1", label: "V1.0" });
-    await createMilestone(locttDir, { key: "v2", label: "V2.0" });
+    const a = await createMilestone(locttDir, { name: "V1.0" });
+    const b = await createMilestone(locttDir, { name: "V2.0" });
     await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);
       await createTask({
-        locttDir,
-        state,
-        options: { project: taskProjectId, title: "t", milestone: "v1" },
+        locttDir, state,
+        options: { project: taskProjectId, title: "t", milestone: a.id },
       });
       await saveState(locttDir, state);
     });
 
-    const result = await deleteMilestone(locttDir, "v1", { hard: true, remapTo: "v2" });
+    const result = await deleteMilestone(locttDir, a.id, { hard: true, remapTo: b.id });
     expect(result.affectedTaskCount).toBe(1);
     const tasks = await loadAllTasks(locttDir);
-    expect(tasks[0]?.frontmatter.milestone).toBe("v2");
+    expect(tasks[0]?.frontmatter.milestone).toBe(b.id);
   });
 
   it("rejects remap to self", async () => {
-    await createMilestone(locttDir, { key: "v1", label: "V1.0" });
+    const def = await createMilestone(locttDir, { name: "V1.0" });
     await expect(
-      deleteMilestone(locttDir, "v1", { hard: true, remapTo: "v1" }),
+      deleteMilestone(locttDir, def.id, { hard: true, remapTo: def.id }),
     ).rejects.toThrow(MilestoneError);
+  });
+});
+
+describe("resolveMilestoneByName / resolveMilestoneIdFromInput", () => {
+  it("resolves a single match by name", async () => {
+    const def = await createMilestone(locttDir, { name: "v1 GA" });
+    const cfg = await loadMilestonesConfig(locttDir);
+    expect(resolveMilestoneByName(cfg, "v1 GA").kind).toBe("match");
+    expect(resolveMilestoneIdFromInput(cfg, "v1 GA")).toBe(def.id);
+  });
+
+  it("returns ambiguous for duplicate names", async () => {
+    await createMilestone(locttDir, { name: "Twin" });
+    await createMilestone(locttDir, { name: "Twin" });
+    const cfg = await loadMilestonesConfig(locttDir);
+    expect(resolveMilestoneByName(cfg, "Twin").kind).toBe("ambiguous");
   });
 });

@@ -1,4 +1,4 @@
-export type { DeleteMilestoneOptions } from "./manage.js";
+export type { CreateMilestoneInput, DeleteMilestoneOptions, MilestoneByNameResult } from "./manage.js";
 export {
   archiveMilestone,
   createMilestone,
@@ -6,5 +6,7 @@ export {
   editMilestone,
   findMilestone,
   MilestoneError,
+  resolveMilestoneByName,
+  resolveMilestoneIdFromInput,
   unarchiveMilestone,
 } from "./manage.js";
