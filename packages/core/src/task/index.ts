@@ -9,6 +9,8 @@ export {
 } from "./attachments.js";
 export type { CreateTaskOptions, CreateTaskParams } from "./create.js";
 export { createTask } from "./create.js";
+export type { DuplicateTaskOverrides, DuplicateTaskParams } from "./duplicate.js";
+export { duplicateTask } from "./duplicate.js";
 export {
   assembleTaskFile,
   parseFrontmatter,
