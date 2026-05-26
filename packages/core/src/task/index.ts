@@ -9,6 +9,13 @@ export {
 } from "./attachments.js";
 export type { CountTasksByReferenceOptions, TaskReferenceKind } from "./counts.js";
 export { countTasksByReference, countTasksByReferences } from "./counts.js";
+export type { ExportOptions } from "./export.js";
+export {
+  DEFAULT_EXPORT_COLUMNS,
+  exportTasksToCSV,
+  exportTasksToJSON,
+  filterForExport,
+} from "./export.js";
 export type { CreateTaskOptions, CreateTaskParams } from "./create.js";
 export { createTask } from "./create.js";
 export type { DuplicateTaskOverrides, DuplicateTaskParams } from "./duplicate.js";
