@@ -9,6 +9,20 @@ export {
 } from "./attachments.js";
 export type { BulkArchiveOptions, BulkResult, BulkSetFieldsOptions } from "./bulk.js";
 export { bulkArchive, bulkSetFields } from "./bulk.js";
+export type {
+  Comment,
+  DeleteCommentOptions,
+  EditCommentOptions,
+  PostCommentOptions,
+} from "./comments.js";
+export {
+  CommentError,
+  deleteComment,
+  editComment,
+  extractMentions,
+  listComments,
+  postComment,
+} from "./comments.js";
 export type { CountTasksByReferenceOptions, TaskReferenceKind } from "./counts.js";
 export { countTasksByReference, countTasksByReferences } from "./counts.js";
 export type { ExportOptions } from "./export.js";

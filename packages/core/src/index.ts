@@ -256,6 +256,20 @@ export type { DuplicateTaskOverrides, DuplicateTaskParams } from "./task/index.j
 export type { AttachmentInfo, TaskShowModel } from "./task/index.js";
 export type { RelationshipValidationError } from "./task/index.js";
 export type { BulkArchiveOptions, BulkResult, BulkSetFieldsOptions } from "./task/index.js";
+export type {
+  Comment,
+  DeleteCommentOptions,
+  EditCommentOptions,
+  PostCommentOptions,
+} from "./task/index.js";
+export {
+  CommentError,
+  deleteComment,
+  editComment,
+  extractMentions,
+  listComments,
+  postComment,
+} from "./task/index.js";
 export type { CountTasksByReferenceOptions, TaskReferenceKind } from "./task/index.js";
 export type { ExportOptions } from "./task/index.js";
 export type { ReadHistoryOptions, ReadHistoryPage } from "./task/index.js";

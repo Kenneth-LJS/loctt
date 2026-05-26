@@ -9,6 +9,7 @@ const ATTACHMENTS_DIR = "attachments";
 const STATE_FILE = "state.yaml";
 const TASK_FILE = "task.md";
 const HISTORY_FILE = "_history.yaml";
+const COMMENTS_FILE = "_comments.yaml";
 const WORKFLOW_FILE = "workflow.yaml";
 const QUERIES_FILE = "queries.yaml";
 const LIST_VIEW_FILE = "list-view.yaml";
@@ -74,6 +75,12 @@ export function getTaskFilePath(locttDir: string, taskId: string): string {
 export function getHistoryFilePath(locttDir: string, taskId: string): string {
   assertSafeBasename(taskId);
   return join(locttDir, TASKS_DIR, taskId, HISTORY_FILE);
+}
+
+/** Returns the path to a task's _comments.yaml file. */
+export function getCommentsFilePath(locttDir: string, taskId: string): string {
+  assertSafeBasename(taskId);
+  return join(locttDir, TASKS_DIR, taskId, COMMENTS_FILE);
 }
 
 /** Returns the path to a task's attachments directory. */
