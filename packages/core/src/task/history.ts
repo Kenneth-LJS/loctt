@@ -24,24 +24,67 @@ export const BODY_EDITED_COALESCE_WINDOW_MS = 15 * 60 * 1000;
 const COALESCEABLE_KINDS: ReadonlySet<HistoryKind> = new Set(["body_edited"]);
 
 /**
+ * Pagination options for {@link readHistory}. When omitted, all entries are
+ * returned in chronological order (oldest first).
+ *
+ * - `order: "desc"` flips to newest-first.
+ * - `limit` caps the number of returned entries (after ordering).
+ * - `offset` skips that many entries before counting toward the limit.
+ * - `kinds` filters to a subset of HistoryKinds (applied before limit/offset).
+ */
+export interface ReadHistoryOptions {
+  readonly order?: "asc" | "desc";
+  readonly limit?: number;
+  readonly offset?: number;
+  readonly kinds?: readonly HistoryKind[];
+}
+
+export interface ReadHistoryPage {
+  readonly entries: HistoryEntry[];
+  readonly total: number;
+}
+
+/**
  * Reads all history entries for a task. Returns `[]` if the file does
- * not exist.
+ * not exist. With options, returns a {@link ReadHistoryPage} with the
+ * post-filter total so callers can render "x of y" cursors.
  */
 export async function readHistory(
   locttDir: string,
   taskId: string,
-): Promise<HistoryEntry[]> {
+): Promise<HistoryEntry[]>;
+export async function readHistory(
+  locttDir: string,
+  taskId: string,
+  options: ReadHistoryOptions,
+): Promise<ReadHistoryPage>;
+export async function readHistory(
+  locttDir: string,
+  taskId: string,
+  options?: ReadHistoryOptions,
+): Promise<HistoryEntry[] | ReadHistoryPage> {
   const filePath = getHistoryFilePath(locttDir, taskId);
 
   let content: string;
   try {
     content = await readFile(filePath, "utf-8");
   } catch {
-    return [];
+    if (options === undefined) return [];
+    return { entries: [], total: 0 };
   }
   const parsed: unknown = parseYaml(content);
-  if (!Array.isArray(parsed)) return [];
-  return parsed as HistoryEntry[];
+  const all = Array.isArray(parsed) ? (parsed as HistoryEntry[]) : [];
+  if (options === undefined) return all;
+
+  const kindSet = options.kinds && options.kinds.length > 0
+    ? new Set(options.kinds)
+    : null;
+  const filtered = kindSet ? all.filter(e => kindSet.has(e.kind)) : all;
+  const ordered = options.order === "desc" ? [...filtered].reverse() : filtered;
+  const offset = Math.max(0, options.offset ?? 0);
+  const limit = options.limit;
+  const sliced = limit === undefined ? ordered.slice(offset) : ordered.slice(offset, offset + limit);
+  return { entries: sliced, total: filtered.length };
 }
 
 /**
