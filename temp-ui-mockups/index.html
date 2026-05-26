@@ -14,7 +14,7 @@
       <div class="row row--between">
         <div>
           <h1 class="page__title">TaskTracker mockups</h1>
-          <div class="page__subtitle">Interactive mockups. Theme persists across pages. Settings is the most interactive — try the swatch and icon pickers.</div>
+          <div class="page__subtitle">Interactive mockups. Mock data persists in <code>localStorage</code>. Use the ⚙ button bottom-right to reset or wipe.</div>
         </div>
         <div class="theme-toggle">
           <button data-theme="light">Light</button>
@@ -25,31 +25,31 @@
       <div class="mockup-nav" style="padding: 0;">
         <a class="mockup-card" href="list.html">
           <div class="mockup-card__title">List view</div>
-          <div class="mockup-card__desc">Sortable columns (click headers), dismissible filter chips, Load more.</div>
+          <div class="mockup-card__desc">Filter via chip dropdowns, sort by column, bulk-select with toolbar actions. Drives all CRUD.</div>
         </a>
         <a class="mockup-card" href="board.html">
           <div class="mockup-card__title">Kanban board</div>
-          <div class="mockup-card__desc">Collapsible columns, Group-by swimlane menu, WIP indicator, inline Add task.</div>
+          <div class="mockup-card__desc">Drag-drop between status columns. WIP indicators. Per-status filter chips (no Hide-discarded toggle).</div>
         </a>
         <a class="mockup-card" href="timeline.html">
           <div class="mockup-card__title">Timeline / Gantt</div>
-          <div class="mockup-card__desc">Axis, today marker, weekend shading, dependency arrow, due-date points.</div>
+          <div class="mockup-card__desc">Date axis, weekend shading, today marker, status-colored bars + due-date diamonds.</div>
         </a>
         <a class="mockup-card" href="task-detail.html">
           <div class="mockup-card__title">Task detail</div>
-          <div class="mockup-card__desc">Status / Priority / Type popovers in the sidebar. Activity collapse. Editor mode toggle.</div>
+          <div class="mockup-card__desc">Inline-edit title and meta fields. Related links, attachments, full activity feed. More menu.</div>
         </a>
-        <a class="mockup-card" href="create-task.html">
+        <a class="mockup-card" href="list.html?create=1">
           <div class="mockup-card__title">Create task dialog</div>
-          <div class="mockup-card__desc">Opens on New-task button. Esc/backdrop close. "Create another" persists.</div>
+          <div class="mockup-card__desc">Modal over the list view. Inline label creation. "Create another" persists fields.</div>
         </a>
         <a class="mockup-card" href="settings.html">
           <div class="mockup-card__title">Settings</div>
-          <div class="mockup-card__desc">Projects, Users, Workflow, Labels, Milestones, Sprints, Calendar, Saved views, Sync, Doctor, My preferences, and more.</div>
+          <div class="mockup-card__desc">Full CRUD across projects, users, workflow (statuses/priorities/types/relationships/custom fields/estimation), labels, milestones, sprints, calendar, board columns, timeline defaults, saved views, sync, doctor, prefs.</div>
         </a>
         <a class="mockup-card" href="init.html">
           <div class="mockup-card__title">Init wizard</div>
-          <div class="mockup-card__desc">Empty-state landing for a new tracker. Picks starting project and workflow preset.</div>
+          <div class="mockup-card__desc">Empty-state landing. Pick starting project key + prefix. Default workflow auto-seeded.</div>
         </a>
       </div>
     </div>
