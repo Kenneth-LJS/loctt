@@ -176,15 +176,19 @@ History kinds added: `comment_added`, `comment_edited`, `comment_deleted` (taxon
 
 Size: **M**.
 
-### CW-16 · History coalescing for `body_edited`
-`appendHistory` gains a `coalesceWithin: { kind: "body_edited", windowMs: 900_000 }` option (or a wrapper helper).
+### CW-16 · History coalescing for `body_edited` ✅
+`appendHistory` now coalesces consecutive `body_edited` entries by the
+same actor within a 15-minute window (constant
+`BODY_EDITED_COALESCE_WINDOW_MS` exported from `task/history.ts`).
+When the most recent on-disk entry matches:
 
-When appending a `body_edited` entry:
-- If the most recent entry on the same task is also `body_edited`
-- Same `actor`
-- `at` within 15 minutes
+- kind in the coalesceable set (currently just `body_edited`)
+- same `actor`
+- neither carries a `bulk_op_id`
+- timestamps within the window
 
-→ Update the existing entry's `at` instead of appending a new row. Supports auto-save without history spam. Size: **XS**.
+→ the existing entry's `timestamp` rolls forward; no new row is added.
+Supports auto-save without spamming history. Size: **XS**.
 
 ### CW-19 · Recents tracking
 New gitignored file `.loctt/users/<id>/recents.yaml`:
