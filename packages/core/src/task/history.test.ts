@@ -272,6 +272,60 @@ describe("history actor attribution", () => {
     });
   });
 
+  describe("pagination (CW-7)", () => {
+    async function seedN(taskId: string, n: number): Promise<void> {
+      const entries: HistoryEntry[] = Array.from({ length: n }, (_, i) => ({
+        timestamp: `2026-05-21T10:${String(i).padStart(2, "0")}:00Z`,
+        kind: i % 2 === 0 ? "field_change" : "label_added",
+        ...(i % 2 === 0
+          ? { field: "title", before: `a${i}`, after: `b${i}` }
+          : { after: `l${i}` }),
+      }));
+      await appendHistory(locttDir, taskId, entries);
+    }
+
+    it("returns array when no options provided", async () => {
+      await seedN("p1", 3);
+      const result = await readHistory(locttDir, "p1");
+      expect(Array.isArray(result)).toBe(true);
+      expect(result).toHaveLength(3);
+    });
+
+    it("returns page with total when options provided", async () => {
+      await seedN("p2", 10);
+      const page = await readHistory(locttDir, "p2", { limit: 3 });
+      expect(page.entries).toHaveLength(3);
+      expect(page.total).toBe(10);
+    });
+
+    it("offset + limit produce the right slice", async () => {
+      await seedN("p3", 10);
+      const page = await readHistory(locttDir, "p3", { offset: 5, limit: 3 });
+      expect(page.entries).toHaveLength(3);
+      expect(page.entries[0]?.timestamp).toBe("2026-05-21T10:05:00Z");
+    });
+
+    it("order: desc returns newest first", async () => {
+      await seedN("p4", 5);
+      const page = await readHistory(locttDir, "p4", { order: "desc", limit: 2 });
+      expect(page.entries[0]?.timestamp).toBe("2026-05-21T10:04:00Z");
+      expect(page.entries[1]?.timestamp).toBe("2026-05-21T10:03:00Z");
+    });
+
+    it("kinds filter applies before limit and total", async () => {
+      await seedN("p5", 10);
+      const page = await readHistory(locttDir, "p5", { kinds: ["label_added"] });
+      expect(page.total).toBe(5);
+      expect(page.entries.every(e => e.kind === "label_added")).toBe(true);
+    });
+
+    it("missing history file returns empty page when options provided", async () => {
+      const page = await readHistory(locttDir, "nope", { limit: 5 });
+      expect(page.entries).toEqual([]);
+      expect(page.total).toBe(0);
+    });
+  });
+
   it("round-trips bulk_op_id through write + read", async () => {
     // CW-11: bulk operations stamp every entry in one logical bulk call
     // with a shared bulk_op_id. The UI uses this to collapse entries.
