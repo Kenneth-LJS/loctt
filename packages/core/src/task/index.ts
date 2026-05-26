@@ -7,6 +7,8 @@ export {
   DEFAULT_MAX_ATTACHMENT_BYTES,
   detachFile,
 } from "./attachments.js";
+export type { BulkArchiveOptions, BulkResult, BulkSetFieldsOptions } from "./bulk.js";
+export { bulkArchive, bulkSetFields } from "./bulk.js";
 export type { CountTasksByReferenceOptions, TaskReferenceKind } from "./counts.js";
 export { countTasksByReference, countTasksByReferences } from "./counts.js";
 export type { ExportOptions } from "./export.js";

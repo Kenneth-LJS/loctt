@@ -255,6 +255,7 @@ export type { CreateTaskOptions, CreateTaskParams } from "./task/index.js";
 export type { DuplicateTaskOverrides, DuplicateTaskParams } from "./task/index.js";
 export type { AttachmentInfo, TaskShowModel } from "./task/index.js";
 export type { RelationshipValidationError } from "./task/index.js";
+export type { BulkArchiveOptions, BulkResult, BulkSetFieldsOptions } from "./task/index.js";
 export type { CountTasksByReferenceOptions, TaskReferenceKind } from "./task/index.js";
 export type { ExportOptions } from "./task/index.js";
 export type { ReadHistoryOptions, ReadHistoryPage } from "./task/index.js";
@@ -288,6 +289,7 @@ export {
   USER_IMMUTABLE_FIELDS,
   WRITABLE_BUILTIN_FIELDS,
 } from "./task/index.js";
+export { bulkArchive, bulkSetFields } from "./task/index.js";
 export { countTasksByReference, countTasksByReferences } from "./task/index.js";
 export {
   DEFAULT_EXPORT_COLUMNS,
