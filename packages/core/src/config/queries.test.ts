@@ -1,6 +1,6 @@
 import { describe, expect,it } from "vitest";
 
-import { parseQueriesConfig, QueriesConfigError } from "./queries.js";
+import { parseQueriesConfig, QueriesConfigError, serializeQueriesConfig } from "./queries.js";
 import { YamlSyntaxError } from "./yaml-coerce.js";
 
 const CANONICAL_YAML = `
@@ -114,5 +114,103 @@ queries:
   it("throws YamlSyntaxError on malformed YAML (tagged with file label)", () => {
     expect(() => parseQueriesConfig("{ queries: [")).toThrow(YamlSyntaxError);
     expect(() => parseQueriesConfig("{ queries: [")).toThrow(/queries\.yaml/);
+  });
+
+  describe("display block (CW-2)", () => {
+    it("parses a saved view with full timeline display config", () => {
+      const yaml = `
+queries:
+  - id: 01HX0000000000000000000001
+    name: sprint-12-timeline
+    query: sprint = S-12
+    display:
+      mode: timeline
+      zoom: month
+      grouping: assignee
+      show_arrows: false
+`;
+      const config = parseQueriesConfig(yaml);
+      const view = config.queries[0];
+      expect(view?.display?.mode).toBe("timeline");
+      expect(view?.display?.zoom).toBe("month");
+      expect(view?.display?.grouping).toBe("assignee");
+      expect(view?.display?.show_arrows).toBe(false);
+    });
+
+    it("parses a saved view with list columns + sort", () => {
+      const yaml = `
+queries:
+  - id: 01HX0000000000000000000002
+    name: my-bugs
+    query: assignee = me and task_type = bug
+    sort:
+      - field: priority
+        direction: desc
+    display:
+      mode: list
+      columns: [key, title, status, priority, due]
+`;
+      const config = parseQueriesConfig(yaml);
+      const view = config.queries[0];
+      expect(view?.display?.mode).toBe("list");
+      expect(view?.display?.columns).toEqual(["key", "title", "status", "priority", "due"]);
+      expect(view?.sort?.[0]?.field).toBe("priority");
+    });
+
+    it("parses a saved view with board grouping", () => {
+      const yaml = `
+queries:
+  - id: 01HX0000000000000000000003
+    name: by-assignee
+    query: archived != true
+    display:
+      mode: board
+      group_by: assignee
+`;
+      const config = parseQueriesConfig(yaml);
+      const view = config.queries[0];
+      expect(view?.display?.mode).toBe("board");
+      expect(view?.display?.group_by).toBe("assignee");
+    });
+
+    it("omits display when not provided (existing views unchanged)", () => {
+      const yaml = `
+queries:
+  - id: 01HX0000000000000000000004
+    name: plain
+    query: archived != true
+`;
+      const config = parseQueriesConfig(yaml);
+      expect(config.queries[0]?.display).toBeUndefined();
+    });
+
+    it("round-trips display through serialize + parse", () => {
+      const yaml = `
+queries:
+  - id: 01HX0000000000000000000006
+    name: rt
+    query: archived != true
+    display:
+      mode: timeline
+      zoom: day
+      show_arrows: true
+`;
+      const parsed = parseQueriesConfig(yaml);
+      const reparsed = parseQueriesConfig(serializeQueriesConfig(parsed));
+      expect(reparsed).toEqual(parsed);
+    });
+
+    it("rejects unknown fields inside display (strict)", () => {
+      const yaml = `
+queries:
+  - id: 01HX0000000000000000000005
+    name: bad
+    query: archived != true
+    display:
+      mode: list
+      unknown_key: foo
+`;
+      expect(() => parseQueriesConfig(yaml)).toThrow();
+    });
   });
 });
