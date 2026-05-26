@@ -36,15 +36,21 @@ export {
   ProjectsConfigSchema,
 } from "./projects.js";
 export type {
+  BoardGrouping,
   QueriesConfig,
   QuerySort,
   SavedQuery,
+  SavedViewDisplay,
+  SavedViewMode,
   SortDirection,
 } from "./query.js";
 export {
+  BoardGroupingSchema,
   QueriesConfigSchema,
   QuerySortSchema,
   SavedQuerySchema,
+  SavedViewDisplaySchema,
+  SavedViewModeSchema,
   SortDirectionSchema,
 } from "./query.js";
 export type {

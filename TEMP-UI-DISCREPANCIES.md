@@ -81,18 +81,21 @@ Workspace-level fallback. Per-view overrides via CW-2. Auto-clear of
 `dependency_relationship` preserves the new fields. New `TimelineZoom`
 / `TimelineGrouping` enum schemas exported from contracts. Size: **XS**.
 
-### CW-2 · `SavedView.display` block
+### CW-2 · `SavedView.display` block ✅
 New optional block on each saved view:
 ```yaml
 display:
   mode: list | board | timeline
   zoom: day | week | month         # timeline only
-  grouping: ...                     # board/timeline only
+  grouping: ...                     # timeline only (reuses TimelineGrouping)
   show_arrows: boolean              # timeline only
   columns: [key, title, ...]        # list only
-  group_by: ...                     # board only
+  group_by: ...                     # board only (BoardGrouping enum)
 ```
-Resolution order on view open: view.display → workspace defaults → built-ins. Size: **S**.
+Resolution order on view open: `view.display` → `workflow.timeline.*`
+defaults → built-in defaults. New exports `SavedViewDisplay`,
+`SavedViewMode`, `BoardGrouping` schemas. Round-trips through
+serialize+parse; strict rejection of unknown fields. Size: **S**.
 
 ### CW-12 · Projects: ULID + name + prefix
 **Breaking schema change**, justified because LocTT is pre-release.

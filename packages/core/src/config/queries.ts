@@ -60,6 +60,7 @@ export function parseQueriesConfig(yamlContent: string): QueriesConfig {
       name: item.name,
       query: item.query,
       ...(item.sort !== undefined ? { sort: item.sort } : {}),
+      ...(item.display !== undefined ? { display: item.display } : {}),
       ...(item.archived === true ? { archived: true } : {}),
     };
   });
@@ -67,17 +68,34 @@ export function parseQueriesConfig(yamlContent: string): QueriesConfig {
   return { queries };
 }
 
+/** Build a plain serializable object for one SavedQuery. */
+function serializeSavedQuery(q: QueriesConfig["queries"][number]): Record<string, unknown> {
+  return {
+    id: q.id,
+    name: q.name,
+    query: q.query,
+    ...(q.sort !== undefined ? {
+      sort: q.sort.map(s => ({ field: s.field, direction: s.direction })),
+    } : {}),
+    ...(q.display !== undefined ? { display: serializeDisplay(q.display) } : {}),
+    ...(q.archived === true ? { archived: true } : {}),
+  };
+}
+
+function serializeDisplay(d: NonNullable<QueriesConfig["queries"][number]["display"]>): Record<string, unknown> {
+  return {
+    ...(d.mode !== undefined ? { mode: d.mode } : {}),
+    ...(d.columns !== undefined ? { columns: d.columns } : {}),
+    ...(d.group_by !== undefined ? { group_by: d.group_by } : {}),
+    ...(d.zoom !== undefined ? { zoom: d.zoom } : {}),
+    ...(d.grouping !== undefined ? { grouping: d.grouping } : {}),
+    ...(d.show_arrows !== undefined ? { show_arrows: d.show_arrows } : {}),
+  };
+}
+
 export function serializeQueriesConfig(config: QueriesConfig): string {
   return stringifyYaml({
-    queries: config.queries.map(q => ({
-      id: q.id,
-      name: q.name,
-      query: q.query,
-      ...(q.sort !== undefined ? {
-        sort: q.sort.map(s => ({ field: s.field, direction: s.direction })),
-      } : {}),
-      ...(q.archived === true ? { archived: true } : {}),
-    })),
+    queries: config.queries.map(serializeSavedQuery),
   });
 }
 
@@ -87,15 +105,7 @@ export async function saveQueriesConfig(
 ): Promise<void> {
   const validated = parseQueriesConfig(serializeQueriesConfig(config));
   await writeYamlAtomically(getQueriesConfigPath(locttDir), {
-    queries: validated.queries.map(q => ({
-      id: q.id,
-      name: q.name,
-      query: q.query,
-      ...(q.sort !== undefined ? {
-        sort: q.sort.map(s => ({ field: s.field, direction: s.direction })),
-      } : {}),
-      ...(q.archived === true ? { archived: true } : {}),
-    })),
+    queries: validated.queries.map(serializeSavedQuery),
   });
 }
 
