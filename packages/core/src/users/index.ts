@@ -29,5 +29,7 @@ export {
   userExists,
   UserProfileError,
 } from "./profile.js";
+export type { RecentEntry } from "./recents.js";
+export { pushRecent, readRecents, RECENTS_CAP, removeRecent } from "./recents.js";
 export type { UserSettings } from "./settings.js";
 export { loadUserSettings, saveUserSettings } from "./settings.js";
