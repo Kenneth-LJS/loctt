@@ -23,11 +23,15 @@ import {
 
 let root: string;
 let locttDir: string;
+let taskProjectId: string;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "loctt-archived-guard-"));
   await initLoctt(root, { docs: false });
   locttDir = resolveLocttDir(root);
+  const { loadProjectsConfig } = await import("./projects.js");
+  const cfg = await loadProjectsConfig(locttDir);
+  taskProjectId = cfg.projects[0]?.id as string;
 });
 
 afterEach(async () => {
@@ -50,7 +54,7 @@ describe("archived-reference guard: createTask", () => {
         try {
           await createTask({
             locttDir, state, archivedGuard,
-            options: { project: "task", title: "T", labels: ["bug"] },
+            options: { project: taskProjectId, title: "T", labels: ["bug"] },
           });
         } finally {
           await saveState(locttDir, state);
@@ -70,7 +74,7 @@ describe("archived-reference guard: createTask", () => {
         try {
           await createTask({
             locttDir, state, archivedGuard,
-            options: { project: "task", title: "T", milestone: "v1" },
+            options: { project: taskProjectId, title: "T", milestone: "v1" },
           });
         } finally {
           await saveState(locttDir, state);
@@ -96,7 +100,7 @@ describe("archived-reference guard: createTask", () => {
         try {
           await createTask({
             locttDir, state, archivedGuard,
-            options: { project: "task", title: "T", sprint: "s1" },
+            options: { project: taskProjectId, title: "T", sprint: "s1" },
           });
         } finally {
           await saveState(locttDir, state);
@@ -116,7 +120,7 @@ describe("archived-reference guard: createTask", () => {
         try {
           await createTask({
             locttDir, state, archivedGuard,
-            options: { project: "task", title: "T", assignee: user.id },
+            options: { project: taskProjectId, title: "T", assignee: user.id },
           });
         } finally {
           await saveState(locttDir, state);
@@ -136,7 +140,7 @@ describe("archived-reference guard: createTask", () => {
         try {
           await createTask({
             locttDir, state, archivedGuard,
-            options: { project: "task", title: "T", reporter: user.id },
+            options: { project: taskProjectId, title: "T", reporter: user.id },
           });
         } finally {
           await saveState(locttDir, state);
@@ -146,10 +150,10 @@ describe("archived-reference guard: createTask", () => {
   });
 
   it("rejects createTask with an archived project", async () => {
-    // Create a second project, then archive it; the first project
-    // (default "task") stays as the workspace default.
-    await createProject(locttDir, { key: "alt", prefix: "A-", label: "Alt" });
-    await archiveProject(locttDir, "alt");
+    // Create a second project, then archive it; the seeded "Tasks"
+    // project stays as the workspace default.
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "A-" });
+    await archiveProject(locttDir, alt.id);
     const archivedGuard = await loadArchivedGuardConfigs(locttDir);
 
     await expect(
@@ -158,13 +162,13 @@ describe("archived-reference guard: createTask", () => {
         try {
           await createTask({
             locttDir, state, archivedGuard,
-            options: { project: "alt", title: "T" },
+            options: { project: alt.id, title: "T" },
           });
         } finally {
           await saveState(locttDir, state);
         }
       }),
-    ).rejects.toThrow(/archived project "alt"/);
+    ).rejects.toThrow(new RegExp(`archived project "${alt.id}"`));
   });
 
   it("permits createTask when references are live", async () => {
@@ -178,7 +182,7 @@ describe("archived-reference guard: createTask", () => {
       const created = await createTask({
         locttDir, state, archivedGuard,
         options: {
-          project: "task",
+          project: taskProjectId,
           title: "T",
           labels: ["bug"],
           milestone: "v1",
@@ -202,7 +206,7 @@ describe("archived-reference guard: createTask", () => {
       const state = await loadState(locttDir);
       const created = await createTask({
         locttDir, state,
-        options: { project: "task", title: "T", labels: ["bug"] },
+        options: { project: taskProjectId, title: "T", labels: ["bug"] },
       });
       await saveState(locttDir, state);
       return created;
@@ -221,7 +225,7 @@ describe("archived-reference guard: setField", () => {
       const state = await loadState(locttDir);
       const t = await createTask({
         locttDir, state,
-        options: { project: "task", title: "T" },
+        options: { project: taskProjectId, title: "T" },
       });
       await saveState(locttDir, state);
       return t;
@@ -315,8 +319,8 @@ describe("archived-reference guard: linkTask", () => {
 
   async function makePair(): Promise<{ a: string; b: string }> {
     const state = await loadState(locttDir);
-    const a = await createTask({ locttDir, state, options: { project: "task", title: "A" } });
-    const b = await createTask({ locttDir, state, options: { project: "task", title: "B" } });
+    const a = await createTask({ locttDir, state, options: { project: taskProjectId, title: "A" } });
+    const b = await createTask({ locttDir, state, options: { project: taskProjectId, title: "B" } });
     await saveState(locttDir, state);
     return { a: a.frontmatter.id, b: b.frontmatter.id };
   }

@@ -14,11 +14,15 @@ import { reorderBoardRank, ReorderError,reorderRelationship } from "./reorder.js
 
 let root: string;
 let locttDir: string;
+let taskProjectId: string;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "loctt-reorder-"));
   await initLoctt(root, { docs: false });
   locttDir = resolveLocttDir(root);
+  const { loadProjectsConfig } = await import("../config/projects.js");
+  const cfg = await loadProjectsConfig(locttDir);
+  taskProjectId = cfg.projects[0]?.id as string;
 });
 
 afterEach(async () => {
@@ -33,7 +37,7 @@ async function makeTasks(count: number): Promise<string[]> {
       const t = await createTask({
         locttDir,
         state,
-        options: { project: "task", title: `Task ${i + 1}` },
+        options: { project: taskProjectId, title: `Task ${i + 1}` },
       });
       keys.push(t.frontmatter.key);
     }

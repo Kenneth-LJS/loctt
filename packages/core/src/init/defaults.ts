@@ -131,24 +131,30 @@ export function defaultQueriesYaml(): string {
 
 /**
  * Default state.yaml content. The entity type is keyed by the
- * starting project's key, not the literal `task`, so per-project
- * counters work cleanly when more projects are added later.
+ * starting project's id (ULID), matching the projects.yaml entry.
  */
-export function defaultStateYaml(projectKey: string, prefix: string): string {
+export function defaultStateYaml(projectId: string, prefix: string): string {
   return `keys:
-  ${projectKey}:
+  ${projectId}:
     prefix: "${prefix}"
     next_number: 1
 `;
 }
 
-/** Default projects.yaml content for `loctt init`. */
-export function defaultProjectsYaml(projectKey: string, label: string, prefix: string): string {
+/**
+ * Default projects.yaml content for `loctt init`.
+ *
+ * Caller passes the generated project id (ULID), the user-visible
+ * name, and the immutable task-key prefix.
+ */
+export function defaultProjectsYaml(projectId: string, name: string, prefix: string): string {
+  // YAML scalar that may contain spaces — quote `name` to be safe.
+  const escapedName = JSON.stringify(name);
   return `projects:
-  - key: ${projectKey}
-    label: ${label}
+  - id: ${projectId}
+    name: ${escapedName}
     prefix: "${prefix}"
 
-default: ${projectKey}
+default: ${projectId}
 `;
 }

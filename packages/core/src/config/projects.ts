@@ -45,8 +45,8 @@ export function parseProjectsConfig(yamlContent: string): ProjectsConfig {
 export function serializeProjectsConfig(config: ProjectsConfig): string {
   const out: Record<string, unknown> = {
     projects: config.projects.map(p => ({
-      key: p.key,
-      label: p.label,
+      id: p.id,
+      name: p.name,
       prefix: p.prefix,
       ...(p.archived === true ? { archived: true } : {}),
     })),
@@ -71,8 +71,8 @@ export async function saveProjectsConfig(
   const validated = parseProjectsConfig(serializeProjectsConfig(config));
   await writeYamlAtomically(getProjectsConfigPath(locttDir), {
     projects: validated.projects.map(p => ({
-      key: p.key,
-      label: p.label,
+      id: p.id,
+      name: p.name,
       prefix: p.prefix,
       ...(p.archived === true ? { archived: true } : {}),
     })),

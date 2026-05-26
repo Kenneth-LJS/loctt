@@ -77,6 +77,18 @@ function archivedKeys(
   return out;
 }
 
+/** Like archivedKeys but for projects, which identify by `id`. */
+function archivedProjectIds(
+  defs: ReadonlyArray<{ readonly id: string; readonly archived?: boolean | undefined }> | undefined,
+): ReadonlySet<string> {
+  if (!defs) return new Set();
+  const out = new Set<string>();
+  for (const d of defs) {
+    if (d.archived === true) out.add(d.id);
+  }
+  return out;
+}
+
 function archivedUserIds(
   users: ReadonlyArray<UserProfile> | undefined,
 ): ReadonlySet<string> {
@@ -120,7 +132,7 @@ export function assertNotArchivedReferences(
     archived: ReadonlySet<string>;
     kindLabel: string;
   }> = [
-    { field: "project", archived: archivedKeys(aux.projects?.projects), kindLabel: "project" },
+    { field: "project", archived: archivedProjectIds(aux.projects?.projects), kindLabel: "project" },
     { field: "milestone", archived: archivedKeys(aux.milestones?.milestones), kindLabel: "milestone" },
     { field: "sprint", archived: archivedKeys(aux.sprints?.sprints), kindLabel: "sprint" },
     { field: "assignee", archived: archivedUserIds(aux.users), kindLabel: "user" },

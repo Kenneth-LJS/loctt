@@ -1,41 +1,46 @@
 import { z } from "zod";
 
-import { SlugKey } from "./brands.js";
-
 /**
  * A single project definition. A LocTT tracker can host multiple
- * projects, each with its own key prefix and counter. Tasks belong
- * to exactly one project (via `TaskFrontmatter.project`).
+ * projects, each with its own task-key prefix and counter. Tasks
+ * belong to exactly one project (via `TaskFrontmatter.project`,
+ * which holds the project's ULID).
  *
- *  - `key` is the immutable internal identifier (slug).
- *  - `label` is the human display name; editable.
- *  - `prefix` is the task-key prefix (e.g. `BACKEND-`, `WEB-`);
- *    immutable after creation.
+ *  - `id` is a ULID generated at creation, immutable, never shown
+ *    to users. Tasks reference projects by id.
+ *  - `name` is the human display name. Editable. Not unique
+ *    (disambiguated by id when ambiguous).
+ *  - `prefix` is the task-key prefix (e.g. `BACKEND-`, `WEB-`).
+ *    Immutable after creation.
  *  - `archived` hides the project; hard-delete (with explicit
  *    remap) moves the counter to LocttState.retired_keys.
  */
 export const ProjectDefSchema = z.object({
-  key: SlugKey,
-  label: z.string().min(1),
+  id: z.string().min(1),
+  name: z.string().min(1),
   prefix: z.string().min(1),
   archived: z.boolean().optional(),
 }).strict();
 export type ProjectDef = z.infer<typeof ProjectDefSchema>;
 
-/** The full projects.yaml shape. */
+/**
+ * The full projects.yaml shape.
+ *
+ * `default` (when present) is a project id. Stale references are
+ * rejected at parse time so the file always reflects a coherent state.
+ */
 export const ProjectsConfigSchema = z.object({
   projects: z.array(ProjectDefSchema).min(1, "at least one project is required"),
   default: z.string().optional(),
 }).strict().superRefine((cfg, ctx) => {
-  const keys = new Set(cfg.projects.map(p => p.key));
-  // Uniqueness checks.
-  const seenKeys = new Set<string>();
+  const ids = new Set(cfg.projects.map(p => p.id));
+  const seenIds = new Set<string>();
   const seenPrefixes = new Set<string>();
   for (const [i, p] of cfg.projects.entries()) {
-    if (seenKeys.has(p.key)) {
-      ctx.addIssue({ code: "custom", message: `duplicate project key: ${p.key}`, path: ["projects", i, "key"] });
+    if (seenIds.has(p.id)) {
+      ctx.addIssue({ code: "custom", message: `duplicate project id: ${p.id}`, path: ["projects", i, "id"] });
     }
-    seenKeys.add(p.key);
+    seenIds.add(p.id);
     if (seenPrefixes.has(p.prefix)) {
       ctx.addIssue({
         code: "custom",
@@ -45,7 +50,7 @@ export const ProjectsConfigSchema = z.object({
     }
     seenPrefixes.add(p.prefix);
   }
-  if (cfg.default !== undefined && !keys.has(cfg.default)) {
+  if (cfg.default !== undefined && !ids.has(cfg.default)) {
     ctx.addIssue({
       code: "custom",
       message: `default project '${cfg.default}' is not in the projects list`,

@@ -77,7 +77,7 @@
   }
   function projectChip(projectKey) {
     const p = store.getProject(projectKey);
-    return el("span", { class: "chip", style: { fontSize: "10px" } }, p ? p.label : projectKey);
+    return el("span", { class: "chip", style: { fontSize: "10px" } }, p ? p.name : projectKey);
   }
   function fmtDate(d) {
     if (!d) return "—";
@@ -182,11 +182,11 @@
       const counts = {};
       tasks.forEach(t => counts[t.project] = (counts[t.project] || 0) + 1);
       store.listProjects().forEach(p => {
-        const a = el("a", { class: "sidebar__item", href: `list.html?project=${p.key}` },
+        const a = el("a", { class: "sidebar__item", href: `list.html?project=${p.id}` },
           el("span", { class: "priority-dot", style: { background: "#1E6FCB" }}),
-          el("span", { class: "sidebar__label" }, p.label),
+          el("span", { class: "sidebar__label" }, p.name),
           p.default ? el("span", { style: { fontSize: "10px", color: "var(--accent)" } }, "★") : null,
-          el("span", { class: "sidebar__badge" }, counts[p.key] || 0),
+          el("span", { class: "sidebar__badge" }, counts[p.id] || 0),
         );
         node.appendChild(a);
       });
@@ -343,7 +343,7 @@
 
   function renderListFilterBar() {
     const filters = [
-      { key: "project",   label: "Project",   opts: store.listProjects().map(p => ({ value: p.key, label: p.label })) },
+      { key: "project",   label: "Project",   opts: store.listProjects().map(p => ({ value: p.id, label: p.name })) },
       { key: "status",    label: "Status",    opts: store.workflow().statuses.map(s => ({ value: s.key, label: s.label })) },
       { key: "priority",  label: "Priority",  opts: store.workflow().priorities.map(p => ({ value: p.key, label: p.label })) },
       { key: "type",      label: "Type",      opts: store.workflow().task_types.map(t => ({ value: t.key, label: t.label })) },
@@ -406,7 +406,7 @@
       if (!vals || !vals.length) continue;
       any = true;
       const labelMap = {
-        project: v => (store.getProject(v) || {}).label,
+        project: v => (store.getProject(v) || {}).name,
         status: v => (findStatus(v) || {}).label,
         priority: v => (findPriority(v) || {}).label,
         type: v => (findType(v) || {}).label,
@@ -591,7 +591,7 @@
     function fieldOpts() {
       const wf = store.workflow();
       return [
-        { key: "project",   label: "Project",   type: "enum",  values: store.listProjects().map(p => ({ value: p.key, label: p.label })) },
+        { key: "project",   label: "Project",   type: "enum",  values: store.listProjects().map(p => ({ value: p.id, label: p.name })) },
         { key: "status",    label: "Status",    type: "enum",  values: wf.statuses.map(s => ({ value: s.key, label: s.label })) },
         { key: "priority",  label: "Priority",  type: "enum",  values: wf.priorities.map(p => ({ value: p.key, label: p.label })) },
         { key: "task_type", label: "Type",      type: "enum",  values: wf.task_types.map(t => ({ value: t.key, label: t.label })) },
@@ -767,7 +767,7 @@
     const me = store.currentUser();
     const def = store.listProjects().find(p => p.default) || store.listProjects()[0];
     const state = {
-      project: def && def.key,
+      project: def && def.id,
       title: "",
       status: wf.statuses[0] && wf.statuses[0].key,
       priority: "medium",
@@ -796,7 +796,7 @@
       body.appendChild(el("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }},
         col("Project *",
           el("select", { class: "select", onchange: (e) => { state.project = e.target.value; render(); }, style: { width: "100%" }},
-            ...store.listProjects().map(p => el("option", Object.assign({ value: p.key }, state.project === p.key ? { selected: "" } : {}), `${p.label} (${p.prefix})`))
+            ...store.listProjects().map(p => el("option", Object.assign({ value: p.id }, state.project === p.id ? { selected: "" } : {}), `${p.name} (${p.prefix})`))
           ),
           el("div", { style: { fontSize: "11px", color: "var(--text-tertiary)", marginTop: "4px" }}, proj ? `Next key: ${proj.prefix}${proj.next_number}. The project's prefix is immutable.` : "")
         ),
@@ -1380,37 +1380,37 @@
     let showArch = false;
     function rerender() {
       clear(panel);
-      panel.appendChild(panelHeader("Projects", "Each project has its own prefix and key counter.", [
+      panel.appendChild(panelHeader("Projects", "Each project has its own prefix and key counter. Name is editable; prefix is immutable. Internal ids are auto-generated and not user-visible.", [
         el("label", { class: "chk" }, el("input", { type: "checkbox", checked: showArch, onchange: e => { showArch = e.target.checked; rerender(); }}), el("span", { class: "chk__box" }), " Show archived"),
         el("button", { class: "btn btn--secondary", onclick: () => {
-          const key = prompt("Project key (slug, immutable):");
-          if (!key) return;
+          const name = prompt("Project name:");
+          if (!name) return;
           const prefix = prompt("Prefix (immutable, e.g. WEB-):");
           if (!prefix) return;
-          const label = prompt("Display label:", key) || key;
-          store.createProject({ key, prefix, label });
+          store.createProject({ name, prefix });
         }}, "+ New project"),
       ]));
       const tasks = store.listTasks();
       store.listProjects(showArch).forEach(p => {
-        const count = tasks.filter(t => t.project === p.key).length;
+        const count = tasks.filter(t => t.project === p.id).length;
         const row = el("div", { class: "row", style: { padding: "10px 0", borderBottom: "1px solid var(--border-subtle)" }},
-          el("span", { style: { fontWeight: "500", flex: "0 0 auto" }}, p.label, p.default ? el("span", { style: { color: "var(--accent)", marginLeft: "6px" }}, "★") : null),
-          el("span", { class: "chip" }, `key: ${p.key}`),
+          el("span", { style: { fontWeight: "500", flex: "0 0 auto" }}, p.name, p.default ? el("span", { style: { color: "var(--accent)", marginLeft: "6px" }}, "★") : null),
           el("span", { class: "chip" }, `prefix: ${p.prefix}`),
           el("span", { class: "chip" }, `next: ${p.prefix}${p.next_number}`),
           el("div", { style: { flex: "1" }}),
           el("span", { style: { color: "var(--text-tertiary)", fontSize: "12px" }}, `${count} tasks`),
-          el("button", { class: "btn btn--ghost btn--sm", onclick: () => store.setDefaultProject(p.key) }, "Set default"),
-          el("button", { class: "btn btn--ghost btn--sm", onclick: () => { const lbl = prompt("New label:", p.label); if (lbl) store.updateProject(p.key, { label: lbl }); }}, "Edit"),
-          el("button", { class: "btn btn--ghost btn--sm", onclick: () => store.updateProject(p.key, { archived: !p.archived })}, p.archived ? "Unarchive" : "Archive"),
+          el("button", { class: "btn btn--ghost btn--sm", onclick: () => store.setDefaultProject(p.id) }, "Set default"),
+          el("button", { class: "btn btn--ghost btn--sm", onclick: () => { const n = prompt("New name:", p.name); if (n) store.updateProject(p.id, { name: n }); }}, "Edit"),
+          el("button", { class: "btn btn--ghost btn--sm", onclick: () => store.updateProject(p.id, { archived: !p.archived })}, p.archived ? "Unarchive" : "Archive"),
           el("button", { class: "btn btn--ghost btn--sm", style: { color: "var(--feedback-danger-fg)" }, onclick: () => {
             if (count > 0) {
-              const remap = prompt(`This project has ${count} task(s). Remap to project key (or cancel):`);
+              const remap = prompt(`This project has ${count} task(s). Remap to project name (or cancel):`);
               if (!remap) return;
-              store.deleteProject(p.key, remap);
+              const target = store.getProject(remap);
+              if (!target) { alert("Unknown project: " + remap); return; }
+              store.deleteProject(p.id, target.id);
             } else {
-              if (confirm("Delete this project?")) store.deleteProject(p.key);
+              if (confirm("Delete this project?")) store.deleteProject(p.id);
             }
           }}, "Delete"),
         );
@@ -1898,7 +1898,7 @@
         el("div", { class: "row" }, el("span", { style: { width: "180px" }}, "Default project"),
           el("select", { class: "select", onchange: e => store.setDefaultProject(e.target.value || null)},
             el("option", { value: "" }, "— (force picker)"),
-            ...store.listProjects().map(p => el("option", Object.assign({ value: p.key }, def && def.key === p.key ? { selected: "" } : {}), `${p.label} (${p.prefix})`))
+            ...store.listProjects().map(p => el("option", Object.assign({ value: p.id }, def && def.id === p.id ? { selected: "" } : {}), `${p.name} (${p.prefix})`))
           ),
         ),
       ));
@@ -2076,7 +2076,7 @@
       ));
       row("Default project", el("select", { class: "select", onchange: e => store.updateUserSettings({ default_project: e.target.value || null })},
         el("option", { value: "" }, "— (use workspace default)"),
-        ...store.listProjects().map(p => el("option", Object.assign({ value: p.key }, s.default_project === p.key ? { selected: "" } : {}), p.label))
+        ...store.listProjects().map(p => el("option", Object.assign({ value: p.id }, s.default_project === p.id ? { selected: "" } : {}), p.name))
       ));
       row("Timezone", el("input", { class: "input", value: (me && me.timezone) || "", onchange: e => { if (me) store.updateUser(me.id, { timezone: e.target.value }); }}));
     }

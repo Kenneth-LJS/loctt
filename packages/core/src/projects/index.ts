@@ -1,4 +1,4 @@
-export type { DeleteProjectOptions } from "./manage.js";
+export type { CreateProjectInput, DeleteProjectOptions, ProjectByNameResult } from "./manage.js";
 export {
   archiveProject,
   createProject,
@@ -6,8 +6,10 @@ export {
   editProject,
   findProject,
   ProjectError,
-  resolveProjectKey,
-  resolveProjectKeyForUser,
+  resolveProjectByName,
+  resolveProjectId,
+  resolveProjectIdForUser,
+  resolveProjectIdFromInput,
   setDefaultProject,
   unarchiveProject,
 } from "./manage.js";

@@ -157,6 +157,7 @@ export {
   resolveLocttDir,
 } from "./paths/index.js";
 export type { DeleteProjectOptions } from "./projects/index.js";
+export type { CreateProjectInput, ProjectByNameResult } from "./projects/index.js";
 export {
   archiveProject,
   createProject,
@@ -164,8 +165,10 @@ export {
   editProject,
   findProject,
   ProjectError,
-  resolveProjectKey,
-  resolveProjectKeyForUser,
+  resolveProjectByName,
+  resolveProjectId,
+  resolveProjectIdForUser,
+  resolveProjectIdFromInput,
   setDefaultProject,
   unarchiveProject,
 } from "./projects/index.js";

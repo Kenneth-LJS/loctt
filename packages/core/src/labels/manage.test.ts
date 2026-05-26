@@ -20,11 +20,15 @@ import {
 
 let root: string;
 let locttDir: string;
+let taskProjectId: string;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "loctt-labels-"));
   await initLoctt(root, { docs: false });
   locttDir = resolveLocttDir(root);
+  const { loadProjectsConfig } = await import("../config/projects.js");
+  const cfg = await loadProjectsConfig(locttDir);
+  taskProjectId = cfg.projects[0]?.id as string;
 });
 
 afterEach(async () => {
@@ -69,7 +73,7 @@ describe("deleteLabel (soft, default)", () => {
       await createTask({
         locttDir,
         state,
-        options: { project: "task", title: "t", labels: ["x"] },
+        options: { project: taskProjectId, title: "t", labels: ["x"] },
       });
       await saveState(locttDir, state);
     });
@@ -104,7 +108,7 @@ describe("deleteLabel (hard)", () => {
       await createTask({
         locttDir,
         state,
-        options: { project: "task", title: "t", labels: ["x"] },
+        options: { project: taskProjectId, title: "t", labels: ["x"] },
       });
       await saveState(locttDir, state);
     });
@@ -122,7 +126,7 @@ describe("deleteLabel (hard)", () => {
       await createTask({
         locttDir,
         state,
-        options: { project: "task", title: "t", labels: ["old"] },
+        options: { project: taskProjectId, title: "t", labels: ["old"] },
       });
       await saveState(locttDir, state);
     });

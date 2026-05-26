@@ -51,6 +51,7 @@ describe("commitToLocttBranch + pushLocttBranch", () => {
   let root: string;
   let locttDir: string;
   let bareRemote: string;
+  let taskProjectId: string;
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "loctt-push-"));
@@ -63,9 +64,12 @@ describe("commitToLocttBranch + pushLocttBranch", () => {
     await initLoctt(root);
     locttDir = resolveLocttDir(root);
     await enableGit(locttDir, root);
+    const { loadProjectsConfig } = await import("../config/projects.js");
+    const cfg = await loadProjectsConfig(locttDir);
+    taskProjectId = cfg.projects[0]?.id as string;
 
     const state = await loadState(locttDir);
-    await createTask({ locttDir, state, options: { project: "task", title: "T" } });
+    await createTask({ locttDir, state, options: { project: taskProjectId, title: "T" } });
     await saveState(locttDir, state);
   });
 
@@ -126,6 +130,7 @@ describe("publish() with remote", () => {
   let locttDir: string;
   let bareRemote: string;
   let stderrSpy: ReturnType<typeof vi.spyOn>;
+  let taskProjectId: string;
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "loctt-pub-"));
@@ -138,9 +143,12 @@ describe("publish() with remote", () => {
     await initLoctt(root);
     locttDir = resolveLocttDir(root);
     await enableGit(locttDir, root);
+    const { loadProjectsConfig } = await import("../config/projects.js");
+    const cfg = await loadProjectsConfig(locttDir);
+    taskProjectId = cfg.projects[0]?.id as string;
 
     const state = await loadState(locttDir);
-    await createTask({ locttDir, state, options: { project: "task", title: "T" } });
+    await createTask({ locttDir, state, options: { project: taskProjectId, title: "T" } });
     await saveState(locttDir, state);
 
     stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);

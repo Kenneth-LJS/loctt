@@ -51,7 +51,7 @@ export type TaskRelationship = z.infer<typeof TaskRelationshipSchema>;
 export const TaskFrontmatterSchema = z.object({
   id: z.string().min(1),
   key: z.string().min(1),
-  project: SlugKey.optional(),
+  project: z.string().min(1).optional(),
   title: z.string().min(1),
   created_at: IsoTimestamp,
   updated_at: IsoTimestamp,
@@ -120,7 +120,7 @@ export interface Task {
 export const TaskFrontmatterPublicSchema = z.object({
   id: z.string().min(1),
   key: z.string().min(1),
-  project: SlugKey.optional(),
+  project: z.string().min(1).optional(),
   title: z.string().min(1),
   created_at: IsoTimestamp,
   updated_at: IsoTimestamp,

@@ -157,7 +157,7 @@ describe("CLI commands", () => {
     await main();
     expect(process.exitCode).toBe(2);
     const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
-    expect(stderr).toMatch(/missing key or --prefix/);
+    expect(stderr).toMatch(/missing name or --prefix/);
     expect(stderr).toMatch(/Usage:/);
     expect(stderr).toMatch(/loctt project create/);
   });
@@ -323,10 +323,10 @@ describe("CLI commands", () => {
     await initLoctt(root);
     const locttDir = resolveLocttDir(root);
     const { createProject, getCurrentUser, saveUserSettings } = await import("@loctt/core");
-    await createProject(locttDir, { key: "alpha", label: "Alpha", prefix: "A-" });
+    const alpha = await createProject(locttDir, { name: "Alpha", prefix: "A-" });
     const current = await getCurrentUser(locttDir);
     if (!current) throw new Error("test setup: no current user");
-    await saveUserSettings(locttDir, current.id, { default_project: "alpha" });
+    await saveUserSettings(locttDir, current.id, { default_project: alpha.id });
 
     process.argv = ["node", "loctt", "create", "user-defaulted"];
     process.exitCode = undefined;
@@ -341,12 +341,12 @@ describe("CLI commands", () => {
     await initLoctt(root);
     const locttDir = resolveLocttDir(root);
     const { createProject, getCurrentUser, saveUserSettings } = await import("@loctt/core");
-    await createProject(locttDir, { key: "alpha", label: "Alpha", prefix: "A-" });
+    const alpha = await createProject(locttDir, { name: "Alpha", prefix: "A-" });
     const current = await getCurrentUser(locttDir);
     if (!current) throw new Error("test setup: no current user");
-    await saveUserSettings(locttDir, current.id, { default_project: "alpha" });
+    await saveUserSettings(locttDir, current.id, { default_project: alpha.id });
 
-    process.argv = ["node", "loctt", "create", "explicit-wins", "--project", "task"];
+    process.argv = ["node", "loctt", "create", "explicit-wins", "--project", "Tasks"];
     process.exitCode = undefined;
     consoleSpy.mockClear();
     await main();
