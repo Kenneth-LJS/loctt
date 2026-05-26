@@ -206,8 +206,11 @@ Size: **S**.
 
 ## B.3 Query & evaluation extensions
 
-### CW-6 · `listTasks` returns `total`
-Pagination needs an unsliced count. Response becomes `{ items, total, offset, limit }`. Size: **XS**.
+### CW-6 · `listTasksPaginated` returns `{ items, total, limit, offset }` ✅
+Pagination needs an unsliced count. New `listTasksPaginated(opts)` returns
+`{ items, total, limit, offset }`; the legacy `listTasks(opts)` array form
+is preserved. `offset` clamps to 0 when negative; `total` is the count
+*after* filters but *before* the page slice. Size: **XS**.
 
 ### CW-7 · `readHistory({ limit, offset }) → { entries, total }`
 Server-side activity pagination. UI shows N at a time with Load more. Size: **XS**.
