@@ -62,29 +62,6 @@
         color: var(--text-tertiary);
       }
       .row-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-      .preset-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 8px;
-      }
-      .preset {
-        border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
-        padding: 12px;
-        text-align: left;
-        background: var(--bg-surface);
-        cursor: pointer;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-      }
-      .preset:hover { background: var(--bg-muted); }
-      .preset.is-selected {
-        border-color: var(--accent);
-        background: var(--accent-muted);
-      }
-      .preset__name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-      .preset__desc { font-size: 11px; color: var(--text-tertiary); }
       .footer-actions {
         display: flex;
         align-items: center;
@@ -126,21 +103,10 @@
         </div>
 
         <div class="init-field">
-          <div class="init-field__label">Workflow preset</div>
-          <div class="init-field__hint">A preset seeds <code>workflow.yaml</code> with statuses, priorities, types, and relationships. Everything is editable later in Settings.</div>
-          <div class="preset-grid">
-            <button class="preset is-selected" data-preset="default">
-              <span class="preset__name">Default</span>
-              <span class="preset__desc">6 statuses, 4 priorities, 3 types. <em>blocks</em> + <em>relates&nbsp;to</em>.</span>
-            </button>
-            <button class="preset" data-preset="minimal">
-              <span class="preset__name">Minimal</span>
-              <span class="preset__desc">3 statuses (Todo/Doing/Done), no priorities, one type.</span>
-            </button>
-            <button class="preset" data-preset="agile">
-              <span class="preset__name">Agile-style</span>
-              <span class="preset__desc">Backlog/Ready/Doing/Review/Done, story-point estimation enabled, sprints.</span>
-            </button>
+          <div class="init-field__label">Workflow</div>
+          <div class="init-field__hint">
+            A starter workflow is seeded automatically: statuses (Backlog · In progress · Done · Won't do), priorities (Low/Medium/High/Critical), task types (Story · Bug · Task · Spike · Feature), six relationship types (blocks · parent · clones · duplicates · causes · relates&nbsp;to), story-point estimation, and a board grouped by sprint.
+            All of this is editable in <em>Settings → Workflow</em> later.
           </div>
         </div>
 
@@ -163,18 +129,15 @@
 
     <script src="app.js"></script>
     <script>
-      // Preset picker
-      document.querySelectorAll(".preset").forEach(p => {
-        p.addEventListener("click", () => {
-          document.querySelectorAll(".preset").forEach(x => x.classList.toggle("is-selected", x === p));
-        });
-      });
-
       document.getElementById("create-btn").addEventListener("click", () => {
-        const key = document.getElementById("project-key").value;
-        const prefix = document.getElementById("project-prefix").value;
-        const preset = document.querySelector(".preset.is-selected").dataset.preset;
-        alert(`Would POST /api/init with project_key="${key}", prefix="${prefix}", workflow_preset="${preset}".\n\n(Mock — actual call goes to backend.)`);
+        const key = document.getElementById("project-key").value.trim();
+        const prefix = document.getElementById("project-prefix").value.trim();
+        const noDocs = document.getElementById("no-docs").checked;
+        if (!key || !prefix) {
+          alert("Project key and prefix are both required.");
+          return;
+        }
+        alert(`Would POST /api/init with:\n  project_key="${key}"\n  prefix="${prefix}"\n  skip_docs=${noDocs}\n\n(Mock — actual call goes to backend.)`);
       });
 
       document.getElementById("cancel-btn").addEventListener("click", () => {

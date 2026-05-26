@@ -8,216 +8,36 @@
     <script>
       (function () { var t = localStorage.getItem("tt-theme"); if (t === "dark") document.documentElement.classList.add("dark"); })();
     </script>
-    <style>
-      .gantt {
-        background: var(--bg-surface);
-        border: 1px solid var(--border-subtle);
-        border-radius: var(--radius-md);
-        display: grid;
-        grid-template-columns: 260px 1fr;
-        overflow: hidden;
-        position: relative;
-      }
-      .gantt__labels {
-        border-right: 1px solid var(--border-subtle);
-        background: var(--bg-surface);
-      }
-      .gantt__chart {
-        position: relative;
-        overflow-x: auto;
-      }
-
-      .gantt__group-head {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 12px;
-        background: var(--bg-canvas);
-        border-bottom: 1px solid var(--border-subtle);
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--text-secondary);
-        height: 32px;
-      }
-      .dark .gantt__group-head { background: var(--bg-muted); }
-
-      .gantt__row {
-        height: 36px;
-        display: flex;
-        align-items: center;
-        padding: 0 12px;
-        border-bottom: 1px solid var(--border-subtle);
-        gap: 8px;
-        font-size: 13px;
-      }
-      .gantt__row .task-key { color: var(--text-tertiary); font-size: 12px; width: 44px; display: inline-block; }
-      .gantt__row .title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-      /* Chart side */
-      .gantt__axis {
-        display: grid;
-        grid-template-columns: repeat(28, 40px);
-        height: 32px;
-        border-bottom: 1px solid var(--border-subtle);
-        background: var(--bg-canvas);
-        font-size: 11px;
-        color: var(--text-tertiary);
-        position: sticky;
-        top: 0;
-        z-index: 2;
-      }
-      .dark .gantt__axis { background: var(--bg-muted); }
-      .gantt__axis > div {
-        border-right: 1px solid var(--border-subtle);
-        display: grid;
-        place-items: center;
-        font-variant-numeric: tabular-nums;
-      }
-      .gantt__axis > div.is-weekend { background: var(--bg-muted); color: var(--text-tertiary); }
-      .gantt__axis > div.is-today { color: var(--accent); font-weight: 600; }
-
-      .gantt__chart-body {
-        position: relative;
-      }
-      .gantt__chart-body .gantt__group-head,
-      .gantt__chart-body .gantt__row {
-        padding: 0;
-        position: relative;
-        background-image:
-          /* weekend shading: two 40px columns at positions 200..280 every 280px */
-          repeating-linear-gradient(
-            to right,
-            transparent 0,
-            transparent 200px,
-            var(--bg-muted) 200px,
-            var(--bg-muted) 280px
-          ),
-          /* day gridlines */
-          repeating-linear-gradient(to right, transparent 0 39px, var(--border-subtle) 39px 40px);
-      }
-
-      .bar {
-        position: absolute;
-        top: 7px;
-        height: 22px;
-        border-radius: var(--radius-sm);
-        display: flex;
-        align-items: center;
-        padding: 0 8px;
-        font-size: 11px;
-        font-weight: 500;
-        white-space: nowrap;
-        overflow: hidden;
-        cursor: grab;
-        border: 1px solid transparent;
-      }
-      .bar--pending { background: var(--status-pending-bg); color: var(--status-pending-fg); border-color: var(--border-default); }
-      .bar--active { background: var(--status-active-bg); color: var(--status-active-fg); border-color: var(--status-active-fg); }
-      .bar--completed { background: var(--status-completed-bg); color: var(--status-completed-fg); border-color: var(--status-completed-fg); }
-      .bar--blocked { background: var(--feedback-warn-bg); color: var(--feedback-warn-fg); border-color: var(--feedback-warn-fg); }
-      .bar__handle {
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        width: 4px;
-        background: rgba(0, 0, 0, 0.15);
-        cursor: ew-resize;
-      }
-      .bar__handle--l { left: 0; border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
-      .bar__handle--r { right: 0; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
-
-      .point {
-        position: absolute;
-        top: 9px;
-        width: 18px;
-        height: 18px;
-        transform: rotate(45deg);
-        border: 1px solid var(--status-active-fg);
-        background: var(--status-active-bg);
-      }
-
-      .today-line {
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        width: 2px;
-        background: var(--accent);
-        z-index: 1;
-        pointer-events: none;
-      }
-      .today-line::before {
-        content: "Today";
-        position: absolute;
-        top: -22px;
-        left: -18px;
-        background: var(--accent);
-        color: var(--accent-contrast);
-        font-size: 10px;
-        font-weight: 600;
-        padding: 2px 6px;
-        border-radius: var(--radius-sm);
-      }
-
-      .arrow {
-        stroke: var(--text-tertiary);
-        stroke-width: 1.25;
-        fill: none;
-        marker-end: url(#arrowhead);
-      }
-    </style>
   </head>
   <body>
     <div class="app">
       <header class="header">
-        <button class="btn btn--icon btn--ghost" data-action="collapse-sidebar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg></button>
+        <button class="btn btn--icon btn--ghost" data-action="collapse-sidebar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 12h18M3 6h18M3 18h18"/></svg></button>
         <div class="header__brand"><span class="header__brand-mark">T</span><span>TaskTracker</span></div>
         <div class="header__spacer"></div>
         <div class="header__actions">
           <input class="input input--search" placeholder="Search tasks…" style="width: 280px;" />
-          <div class="theme-toggle">
-            <button data-theme="light">☀</button>
-            <button data-theme="dark">☾</button>
-          </div>
-          <button class="btn btn--primary">+ New task</button>
-          <button class="avatar avatar--a" data-menu-trigger="user-menu" aria-label="User menu" style="border: 0; cursor: pointer;">KL</button>
+          <div class="theme-toggle" aria-label="Theme"><button data-theme="light" title="Light">☀</button><button data-theme="dark" title="Dark">☾</button></div>
+          <button class="btn btn--primary" id="new-task-btn">+ New task</button>
+          <button class="avatar avatar--a" data-menu-trigger="user-menu" data-tt-mount="user-avatar" style="border: 0; cursor: pointer;">KL</button>
         </div>
       </header>
-      <div class="menu" id="user-menu" style="min-width: 240px;">
-        <div style="padding: 10px 12px; border-bottom: 1px solid var(--border-subtle);">
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <span class="avatar avatar--a">KL</span>
-            <div><div style="font-weight: 500; font-size: 13px;">Ken Loh</div><div style="font-size: 11px; color: var(--text-tertiary);">ken@example.com</div></div>
-          </div>
-        </div>
-        <a class="menu__item" href="settings.html#users">Manage users…</a>
-        <a class="menu__item" href="settings.html#preferences">My preferences…</a>
-      </div>
-
+      <div class="menu" id="user-menu" style="min-width: 240px;"><div data-tt-mount="user-switcher"></div></div>
       <aside class="sidebar">
         <div class="sidebar__group">
-          <a class="sidebar__item" href="list.html"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 6h18M3 12h18M3 18h18"/></svg><span class="sidebar__label">List</span><span class="sidebar__badge">128</span></a>
+          <a class="sidebar__item" href="list.html"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 6h18M3 12h18M3 18h18"/></svg><span class="sidebar__label">List</span></a>
           <a class="sidebar__item" href="board.html"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="3" width="6" height="18" rx="1"/><rect x="10" y="3" width="6" height="12" rx="1"/><rect x="17" y="3" width="4" height="8" rx="1"/></svg><span class="sidebar__label">Board</span></a>
-          <a class="sidebar__item is-active"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 6h12M3 12h18M3 18h8"/></svg><span class="sidebar__label">Timeline</span></a>
+          <a class="sidebar__item is-active" href="timeline.html"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 6h12M3 12h18M3 18h8"/></svg><span class="sidebar__label">Timeline</span></a>
         </div>
-        <div class="sidebar__group">
-          <div class="sidebar__group-label">Projects</div>
-          <a class="sidebar__item"><span class="priority-dot" style="background: #1E6FCB;"></span><span class="sidebar__label">Web</span><span class="sidebar__badge">86</span></a>
-          <a class="sidebar__item"><span class="priority-dot" style="background: #1F8A4C;"></span><span class="sidebar__label">Backend</span><span class="sidebar__badge">31</span></a>
-        </div>
-        <div class="sidebar__group">
-          <div class="sidebar__group-label">Saved filters</div>
-          <a class="sidebar__item"><span class="sidebar__label">Assigned to me</span><span class="sidebar__badge">12</span></a>
-          <a class="sidebar__item"><span class="sidebar__label">Due this week</span><span class="sidebar__badge">5</span></a>
-        </div>
-        <div class="sidebar__group">
-          <div class="sidebar__group-label">Sprints</div>
-          <a class="sidebar__item"><span class="priority-dot" style="background: #1F8A4C;"></span><span class="sidebar__label">S-12 active</span></a>
-        </div>
+        <div class="sidebar__group"><div class="sidebar__group-label">Projects</div><div data-tt-mount="sidebar-projects"></div></div>
+        <div class="sidebar__group"><div class="sidebar__group-label">Saved filters</div><div data-tt-mount="sidebar-builtins"></div><div data-tt-mount="sidebar-views"></div></div>
+        <div class="sidebar__group"><div class="sidebar__group-label">Milestones</div><div data-tt-mount="sidebar-milestones"></div></div>
+        <div class="sidebar__group"><div class="sidebar__group-label">Sprints</div><div data-tt-mount="sidebar-sprints"></div></div>
         <div class="sidebar__group" style="margin-top: auto;">
-          <a class="sidebar__item" href="settings.html"><span class="sidebar__label">Settings</span></a>
+          <div data-tt-mount="sidebar-footer"></div>
+          <a class="sidebar__item" href="settings.html"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/></svg><span class="sidebar__label">Settings</span></a>
         </div>
       </aside>
-
       <main class="main">
         <div class="page">
           <div class="page__title-row">
@@ -225,264 +45,21 @@
             <div class="page__spacer"></div>
             <div class="row">
               <div class="theme-toggle" style="background: var(--bg-muted);">
-                <button>Day</button>
-                <button class="is-active">Week</button>
-                <button>Month</button>
-              </div>
-              <button class="btn btn--secondary">Group: Milestone</button>
-              <button class="btn btn--secondary">Jump to today</button>
-            </div>
-          </div>
-
-          <div class="gantt">
-            <div class="gantt__labels">
-              <div class="gantt__group-head">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                Milestone · v1 GA <span style="color: var(--text-tertiary); font-weight: 400;">(8)</span>
-              </div>
-              <div class="gantt__row"><span class="task-key">T-128</span><span class="title">Implement Gantt edge-drag handles</span></div>
-              <div class="gantt__row"><span class="task-key">T-127</span><span class="title">Audit dependency arrows on month zoom</span></div>
-              <div class="gantt__row"><span class="task-key">T-126</span><span class="title">Activity log: render link_added events</span></div>
-              <div class="gantt__row"><span class="task-key">T-123</span><span class="title">Replace hardcoded statuses</span></div>
-              <div class="gantt__row"><span class="task-key">T-121</span><span class="title">TipTap markdown round-trip tests</span></div>
-
-              <div class="gantt__group-head">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                Milestone · v1.1 polish <span style="color: var(--text-tertiary); font-weight: 400;">(3)</span>
-              </div>
-              <div class="gantt__row"><span class="task-key">T-119</span><span class="title">Add labels endpoint pagination</span></div>
-              <div class="gantt__row"><span class="task-key">T-117</span><span class="title">Empty-state illustrations</span></div>
-              <div class="gantt__row"><span class="task-key">T-115</span><span class="title">Keyboard shortcuts overlay</span></div>
-            </div>
-
-            <div class="gantt__chart">
-              <!-- Axis: 28 days, weeks of Apr 7–May 4 (M-S) -->
-              <div class="gantt__axis">
-                <!-- Week 1 Apr 7–13 -->
-                <div>M 7</div><div>T 8</div><div>W 9</div><div>T 10</div><div>F 11</div><div class="is-weekend">S 12</div><div class="is-weekend">S 13</div>
-                <!-- Week 2 Apr 14–20 -->
-                <div>M 14</div><div>T 15</div><div>W 16</div><div class="is-today">T 17</div><div>F 18</div><div class="is-weekend">S 19</div><div class="is-weekend">S 20</div>
-                <!-- Week 3 Apr 21–27 -->
-                <div>M 21</div><div>T 22</div><div>W 23</div><div>T 24</div><div>F 25</div><div class="is-weekend">S 26</div><div class="is-weekend">S 27</div>
-                <!-- Week 4 Apr 28–May 4 -->
-                <div>M 28</div><div>T 29</div><div>W 30</div><div>T 1</div><div>F 2</div><div class="is-weekend">S 3</div><div class="is-weekend">S 4</div>
-              </div>
-
-              <div class="gantt__chart-body" style="position: relative; min-width: 1120px;">
-                <!-- Today line at day 11 (Apr 17) -> 10*40 + 20 = 420 -->
-                <div class="today-line" style="left: 420px;"></div>
-
-                <!-- Group head spacer -->
-                <div class="gantt__group-head" style="background: transparent;">&nbsp;</div>
-
-                <!-- T-128: Apr 14 (day 7) – Apr 25 (day 18) -->
-                <div class="gantt__row" data-task="T-128">
-                  <div class="bar bar--active" style="left: 280px; width: 480px;">
-                    <div class="bar__handle bar__handle--l"></div>
-                    Implement Gantt edge-drag handles
-                    <div class="bar__handle bar__handle--r"></div>
-                  </div>
-                </div>
-
-                <!-- T-127: blocked, Apr 8 (day 1) – Apr 16 (day 9) - overdue -->
-                <div class="gantt__row" data-task="T-127">
-                  <div class="bar bar--blocked" style="left: 40px; width: 360px;">
-                    <div class="bar__handle bar__handle--l"></div>
-                    ⚠ Audit dependency arrows
-                    <div class="bar__handle bar__handle--r"></div>
-                  </div>
-                </div>
-
-                <!-- T-126: Apr 21 – Apr 25 -->
-                <div class="gantt__row" data-task="T-126">
-                  <div class="bar bar--active" style="left: 560px; width: 200px;">
-                    <div class="bar__handle bar__handle--l"></div>
-                    Activity log: link_added
-                    <div class="bar__handle bar__handle--r"></div>
-                  </div>
-                </div>
-
-                <!-- T-123: Apr 17 (today) – Apr 30 -->
-                <div class="gantt__row" data-task="T-123">
-                  <div class="bar bar--active" style="left: 400px; width: 520px;">
-                    <div class="bar__handle bar__handle--l"></div>
-                    Config-driven statuses
-                    <div class="bar__handle bar__handle--r"></div>
-                  </div>
-                </div>
-
-                <!-- T-121: Apr 28 – May 2 (point only) - shown as bar -->
-                <div class="gantt__row" data-task="T-121">
-                  <div class="bar bar--pending" style="left: 840px; width: 200px;">
-                    <div class="bar__handle bar__handle--l"></div>
-                    Round-trip fixtures
-                    <div class="bar__handle bar__handle--r"></div>
-                  </div>
-                </div>
-
-                <div class="gantt__group-head" style="background: transparent;">&nbsp;</div>
-
-                <!-- T-119: due-only (point) at Apr 22 -->
-                <div class="gantt__row" data-task="T-119">
-                  <div class="point" title="Due Apr 22" style="left: 591px;"></div>
-                </div>
-                <!-- T-117: Apr 22 – May 1 -->
-                <div class="gantt__row" data-task="T-117">
-                  <div class="bar bar--pending" style="left: 600px; width: 360px;">
-                    <div class="bar__handle bar__handle--l"></div>
-                    Empty-state illustrations
-                    <div class="bar__handle bar__handle--r"></div>
-                  </div>
-                </div>
-                <!-- T-115: May 1 – May 4 -->
-                <div class="gantt__row" data-task="T-115">
-                  <div class="bar bar--pending" style="left: 960px; width: 160px;">
-                    <div class="bar__handle bar__handle--l"></div>
-                    Keyboard shortcuts overlay
-                    <div class="bar__handle bar__handle--r"></div>
-                  </div>
-                </div>
-
-                <!-- Dependency arrows: T-127 blocks T-126 -->
-                <svg style="position: absolute; inset: 0; pointer-events: none;" width="100%" height="100%">
-                  <defs>
-                    <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                      <path d="M0,0 L6,3 L0,6 z" fill="var(--text-tertiary)"/>
-                    </marker>
-                  </defs>
-                  <!-- from T-127 right end (~400, row offset 32+36+18=86) to T-126 left (~560, 32+36*3+18=158) -->
-                  <path class="arrow" d="M 400 86 H 480 V 158 H 560" />
-                </svg>
+                <a href="list.html" style="text-decoration: none;"><button>List</button></a>
+                <a href="board.html" style="text-decoration: none;"><button>Board</button></a>
+                <button class="is-active">Timeline</button>
               </div>
             </div>
           </div>
-
-          <div class="row" style="font-size: 12px; color: var(--text-tertiary); gap: 16px;">
-            <span class="row" style="gap: 6px;"><span class="bar bar--pending" style="position: static; height: 12px; width: 24px; padding: 0;"></span> Pending</span>
-            <span class="row" style="gap: 6px;"><span class="bar bar--active" style="position: static; height: 12px; width: 24px; padding: 0;"></span> Active</span>
-            <span class="row" style="gap: 6px;"><span class="bar bar--completed" style="position: static; height: 12px; width: 24px; padding: 0;"></span> Completed</span>
-            <span class="row" style="gap: 6px;"><span class="bar bar--blocked" style="position: static; height: 12px; width: 24px; padding: 0;"></span> Blocked</span>
-            <span class="row" style="gap: 6px;"><span class="point" style="position: static; transform: none; width: 12px; height: 12px;"></span> Due-date only</span>
-          </div>
+          <div data-tt-mount="timeline-view"></div>
         </div>
       </main>
     </div>
     <script src="app.js"></script>
+    <script src="views.js"></script>
     <script>
-      const DAY_W = 40;
-      const tooltip = document.createElement("div");
-      tooltip.style.cssText = `
-        position: fixed; z-index: 100; pointer-events: none;
-        background: var(--text-primary); color: var(--bg-surface);
-        padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;
-        box-shadow: var(--shadow-overlay); display: none; white-space: nowrap;
-      `;
-      document.body.appendChild(tooltip);
-
-      function snapToDay(px) { return Math.round(px / DAY_W) * DAY_W; }
-      const AXIS_LABELS = [
-        "Apr 7","Apr 8","Apr 9","Apr 10","Apr 11","Apr 12","Apr 13",
-        "Apr 14","Apr 15","Apr 16","Apr 17","Apr 18","Apr 19","Apr 20",
-        "Apr 21","Apr 22","Apr 23","Apr 24","Apr 25","Apr 26","Apr 27",
-        "Apr 28","Apr 29","Apr 30","May 1","May 2","May 3","May 4",
-      ];
-      function dayLabel(d) {
-        const i = Math.round(d);
-        if (i < 0) return "before Apr 7";
-        if (i >= AXIS_LABELS.length) return "after May 4";
-        return AXIS_LABELS[i];
-      }
-
-      function attachBarDrag(bar) {
-        const lHandle = bar.querySelector(".bar__handle--l");
-        const rHandle = bar.querySelector(".bar__handle--r");
-
-        function startDrag(e, mode) {
-          e.preventDefault();
-          e.stopPropagation();
-          const startX = e.clientX;
-          const startLeft = parseFloat(bar.style.left) || 0;
-          const startWidth = bar.offsetWidth;
-          document.body.style.cursor = mode === "move" ? "grabbing" : "ew-resize";
-          tooltip.style.display = "block";
-          bar.style.transition = "none";
-
-          function onMove(ev) {
-            const dx = ev.clientX - startX;
-            if (mode === "move") {
-              const newLeft = Math.max(0, snapToDay(startLeft + dx));
-              bar.style.left = newLeft + "px";
-              const sd = newLeft / DAY_W;
-              const ed = sd + startWidth / DAY_W - 1;
-              tooltip.textContent = `${dayLabel(sd)} → ${dayLabel(ed)} (${Math.round(startWidth / DAY_W)}d)`;
-            } else if (mode === "left") {
-              const newLeft = Math.max(0, snapToDay(startLeft + dx));
-              const delta = newLeft - startLeft;
-              const newWidth = Math.max(DAY_W, startWidth - delta);
-              bar.style.left = newLeft + "px";
-              bar.style.width = newWidth + "px";
-              tooltip.textContent = `start → ${dayLabel(newLeft / DAY_W)}`;
-            } else if (mode === "right") {
-              const newWidth = Math.max(DAY_W, snapToDay(startWidth + dx));
-              bar.style.width = newWidth + "px";
-              const ed = (startLeft + newWidth) / DAY_W - 1;
-              tooltip.textContent = `end → ${dayLabel(ed)}`;
-            }
-            tooltip.style.left = (ev.clientX + 12) + "px";
-            tooltip.style.top = (ev.clientY - 28) + "px";
-          }
-
-          function onUp() {
-            document.removeEventListener("mousemove", onMove);
-            document.removeEventListener("mouseup", onUp);
-            document.body.style.cursor = "";
-            tooltip.style.display = "none";
-            bar.style.transition = "";
-            bar.animate(
-              [{ filter: "brightness(1.15)" }, { filter: "brightness(1)" }],
-              { duration: 280, easing: "ease-out" }
-            );
-          }
-          document.addEventListener("mousemove", onMove);
-          document.addEventListener("mouseup", onUp);
-        }
-
-        bar.addEventListener("mousedown", (e) => {
-          if (e.target === lHandle || e.target === rHandle) return;
-          startDrag(e, "move");
-        });
-        if (lHandle) lHandle.addEventListener("mousedown", (e) => startDrag(e, "left"));
-        if (rHandle) rHandle.addEventListener("mousedown", (e) => startDrag(e, "right"));
-      }
-      document.querySelectorAll(".gantt__chart-body .bar").forEach(attachBarDrag);
-
-      document.querySelectorAll(".gantt__chart-body .point").forEach(point => {
-        point.style.cursor = "grab";
-        point.addEventListener("mousedown", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const startX = e.clientX;
-          const startLeft = parseFloat(point.style.left) || 0;
-          document.body.style.cursor = "grabbing";
-          tooltip.style.display = "block";
-          function onMove(ev) {
-            const dx = ev.clientX - startX;
-            const newLeft = Math.max(0, snapToDay(startLeft + dx));
-            point.style.left = newLeft + "px";
-            tooltip.textContent = `due → ${dayLabel(newLeft / DAY_W)}`;
-            tooltip.style.left = (ev.clientX + 12) + "px";
-            tooltip.style.top = (ev.clientY - 28) + "px";
-          }
-          function onUp() {
-            document.removeEventListener("mousemove", onMove);
-            document.removeEventListener("mouseup", onUp);
-            document.body.style.cursor = "";
-            tooltip.style.display = "none";
-          }
-          document.addEventListener("mousemove", onMove);
-          document.addEventListener("mouseup", onUp);
-        });
-      });
+      window.TT.views.renderTimeline();
+      document.getElementById("new-task-btn").addEventListener("click", () => window.TT.views.openCreateTaskModal());
     </script>
   </body>
 </html>
