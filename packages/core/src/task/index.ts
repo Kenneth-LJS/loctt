@@ -38,12 +38,13 @@ export type { AttachmentInfo, TaskShowModel } from "./show.js";
 export { buildShowModel,discoverAttachments } from "./show.js";
 export type { RelationshipValidationError } from "./traversal.js";
 export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./traversal.js";
-export type { SetFieldOptions } from "./update.js";
+export type { SetFieldOptions, SetFieldsEntry, SetFieldsOptions } from "./update.js";
 export {
   AUTO_MANAGED_FIELDS,
   BUILTIN_OPTIONAL_FIELDS,
   IMMUTABLE_FIELDS,
   setField,
+  setFields,
   SYSTEM_MUTABLE_VIA,
   TaskUpdateError,
   unsetField,

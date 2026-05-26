@@ -6,7 +6,8 @@ import type { Task } from "@loctt/contracts";
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
 import { readTask,writeTask } from "./io.js";
-import { setField, TaskUpdateError,unsetField } from "./update.js";
+import { readHistory } from "./history.js";
+import { setField, setFields, TaskUpdateError,unsetField } from "./update.js";
 
 describe("setField / unsetField", () => {
   let locttDir: string;
@@ -211,6 +212,107 @@ describe("setField / unsetField", () => {
       await seedTask();
       await expect(unsetField(locttDir, "abc", "completed_date"))
         .rejects.toThrow(/auto-managed/);
+    });
+  });
+
+  describe("setFields", () => {
+    it("applies multiple set changes in one write with a single updated_at", async () => {
+      await seedTask();
+      const updated = await setFields({
+        locttDir, taskId: "abc",
+        changes: [
+          { field: "priority", value: "high" },
+          { field: "assignee", value: "u1" },
+          { field: "title", value: "Renamed" },
+        ],
+      });
+      expect(updated.frontmatter.priority).toBe("high");
+      expect(updated.frontmatter.assignee).toBe("u1");
+      expect(updated.frontmatter.title).toBe("Renamed");
+      const loaded = await readTask(locttDir, "abc");
+      expect(loaded.frontmatter.updated_at).toBe(updated.frontmatter.updated_at);
+    });
+
+    it("mixes set and unset (value === undefined) in one call", async () => {
+      await seedTask();
+      await setField({ locttDir, taskId: "abc", field: "milestone", value: "m1" });
+      const updated = await setFields({
+        locttDir, taskId: "abc",
+        changes: [
+          { field: "priority", value: "low" },
+          { field: "milestone", value: undefined },
+        ],
+      });
+      expect(updated.frontmatter.priority).toBe("low");
+      expect(updated.frontmatter.milestone).toBeUndefined();
+    });
+
+    it("appends history entries for each change", async () => {
+      await seedTask();
+      await setFields({
+        locttDir, taskId: "abc",
+        changes: [
+          { field: "priority", value: "high" },
+          { field: "assignee", value: "u1" },
+        ],
+      });
+      const h = await readHistory(locttDir, "abc");
+      const kinds = h.map(e => e.kind);
+      expect(kinds.filter(k => k === "field_change").length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("stamps status_updated_at when status is in the batch", async () => {
+      await seedTask();
+      const updated = await setFields({
+        locttDir, taskId: "abc",
+        changes: [
+          { field: "status", value: "done" },
+          { field: "priority", value: "high" },
+        ],
+      });
+      expect(updated.frontmatter.status).toBe("done");
+      expect(updated.frontmatter.status_updated_at).toBe(updated.frontmatter.updated_at);
+    });
+
+    it("rejects duplicate field in changes", async () => {
+      await seedTask();
+      await expect(setFields({
+        locttDir, taskId: "abc",
+        changes: [
+          { field: "priority", value: "high" },
+          { field: "priority", value: "low" },
+        ],
+      })).rejects.toThrow(/duplicate/);
+    });
+
+    it("rejects immutable fields", async () => {
+      await seedTask();
+      await expect(setFields({
+        locttDir, taskId: "abc",
+        changes: [{ field: "id", value: "x" }],
+      })).rejects.toThrow(TaskUpdateError);
+    });
+
+    it("rejects empty changes", async () => {
+      await seedTask();
+      await expect(setFields({ locttDir, taskId: "abc", changes: [] }))
+        .rejects.toThrow(/at least one/);
+    });
+
+    it("custom fields work in batch", async () => {
+      await seedTask();
+      const updated = await setFields({
+        locttDir, taskId: "abc",
+        changes: [
+          { field: "owner_team", value: "platform" },
+          { field: "impact", value: "high" },
+        ],
+      });
+      expect(updated.frontmatter.fields).toMatchObject({
+        sprint_field: "sprint_1",
+        owner_team: "platform",
+        impact: "high",
+      });
     });
   });
 });

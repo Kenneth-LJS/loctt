@@ -360,6 +360,138 @@ async function unsetFieldLocked(
   return updatedTask;
 }
 
+/**
+ * Atomic multi-field write. Each entry is either a set (value !== undefined)
+ * or an unset (value === undefined). All changes share a single timestamp,
+ * the task is written once, and history entries are appended in a single
+ * batch. If validation fails for any field, nothing is written.
+ */
+export interface SetFieldsEntry {
+  readonly field: string;
+  readonly value: unknown;
+}
+
+export interface SetFieldsOptions {
+  readonly locttDir: string;
+  readonly taskId: string;
+  readonly changes: readonly SetFieldsEntry[];
+  readonly workflowConfig?: WorkflowConfig;
+  readonly archivedGuard?: ArchivedGuardConfigs;
+}
+
+export async function setFields(opts: SetFieldsOptions): Promise<Task> {
+  if (opts.changes.length === 0) {
+    throw new TaskUpdateError("setFields requires at least one change");
+  }
+  const seen = new Set<string>();
+  for (const c of opts.changes) {
+    if (seen.has(c.field)) {
+      throw new TaskUpdateError(`duplicate field in setFields: "${c.field}"`);
+    }
+    seen.add(c.field);
+    if (USER_IMMUTABLE_FIELDS.has(c.field)) {
+      throw new TaskUpdateError(`cannot set immutable field "${c.field}"`);
+    }
+    if (AUTO_MANAGED_FIELDS.has(c.field)) {
+      throw new TaskUpdateError(
+        `cannot set auto-managed field "${c.field}" directly`,
+      );
+    }
+    if (c.value === undefined && (c.field === "title" || c.field === "updated_at")) {
+      throw new TaskUpdateError(`cannot unset required field "${c.field}"`);
+    }
+  }
+  return withStateLock(opts.locttDir, () => setFieldsLocked(opts));
+}
+
+async function setFieldsLocked(opts: SetFieldsOptions): Promise<Task> {
+  const { locttDir, taskId, changes, workflowConfig, archivedGuard } = opts;
+  const task = await readTask(locttDir, taskId);
+  const now = new Date().toISOString();
+  const patch = toMutable(task.frontmatter);
+  let statusChanged = false;
+  let newStatus: unknown = task.frontmatter.status;
+
+  for (const { field, value } of changes) {
+    if (field === "title") {
+      if (typeof value !== "string" || value.length === 0) {
+        throw new TaskUpdateError("title must be a non-empty string");
+      }
+      patch["title"] = value;
+    } else if (field === "updated_at") {
+      if (typeof value !== "string") {
+        throw new TaskUpdateError("updated_at must be a string");
+      }
+      patch["updated_at"] = value;
+    } else if (BUILTIN_OPTIONAL_FIELDS.has(field)) {
+      if (value === undefined) {
+        delete patch[field];
+      } else {
+        patch[field] = value;
+      }
+      if (field === "status") {
+        statusChanged = true;
+        newStatus = value;
+        patch["status_updated_at"] = now;
+      }
+    } else {
+      const existingFields = (patch["fields"] as Record<string, unknown> | undefined) ?? {};
+      if (value === undefined) {
+        if (!(field in existingFields)) {
+          throw new TaskUpdateError(`custom field "${field}" is not set`);
+        }
+        const next = { ...existingFields };
+        delete next[field];
+        if (Object.keys(next).length === 0) delete patch["fields"];
+        else patch["fields"] = next;
+      } else {
+        patch["fields"] = { ...existingFields, [field]: value };
+      }
+    }
+  }
+
+  if (statusChanged) {
+    const wasCompleted = isCompletedStatus(task.frontmatter.status, workflowConfig);
+    const isNowCompleted = isCompletedStatus(newStatus, workflowConfig);
+    if (isNowCompleted && !wasCompleted) {
+      patch["completed_date"] = todayDateString();
+    } else if (!isNowCompleted && wasCompleted) {
+      delete patch["completed_date"];
+    }
+  }
+
+  patch["updated_at"] = now;
+  const updated = toFrontmatter(patch);
+
+  if (workflowConfig) {
+    const errors = validateTaskAgainstWorkflow(updated, workflowConfig);
+    if (errors.length > 0) {
+      throw new TaskUpdateError(
+        `invalid value: ${errors.map(e => `${e.field}: ${e.message}`).join("; ")}`,
+      );
+    }
+  }
+  if (archivedGuard) {
+    assertNotArchivedReferences(updated, task.frontmatter, archivedGuard);
+  }
+
+  const updatedTask: Task = { frontmatter: updated, body: task.body };
+  await writeTask(locttDir, taskId, updatedTask);
+
+  const historyEntries: HistoryEntry[] = [];
+  for (const { field, value } of changes) {
+    const entries = value === undefined
+      ? buildUnsetFieldHistory(task.frontmatter, field, now)
+      : buildSetFieldHistory(task.frontmatter, field, value, now);
+    historyEntries.push(...entries);
+  }
+  if (historyEntries.length > 0) {
+    await appendHistory(locttDir, taskId, historyEntries);
+  }
+
+  return updatedTask;
+}
+
 function buildUnsetFieldHistory(
   oldFm: TaskFrontmatter,
   field: string,
