@@ -240,8 +240,8 @@ CLI: `loctt list --format csv > tasks.csv`. Size: **S**.
 
 ## B.4 Defaults & init
 
-### CW-10 · Default workflow fixture
-Replace hardcoded init workflow with the canonical fixture below. Init seeds this for every new tracker. **No preset selector** (B7 from the original audit, dropped).
+### CW-10 · Default workflow fixture ✅
+Init now seeds the canonical fixture below for every new tracker. **No preset selector** (B7 from the original audit, dropped). Users edit anything they don't want in Settings → Workflow.
 
 ```yaml
 statuses:

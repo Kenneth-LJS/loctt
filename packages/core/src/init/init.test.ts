@@ -36,8 +36,11 @@ describe("initLoctt", () => {
     const config = parseWorkflowConfig(content);
     expect(config.key.prefix).toBe("T-");
     expect(config.statuses).toHaveLength(4);
-    expect(config.priorities).toHaveLength(3);
-    expect(config.relationships).toHaveLength(3);
+    expect(config.priorities).toHaveLength(4);
+    expect(config.task_types).toHaveLength(5);
+    expect(config.relationships).toHaveLength(6);
+    expect(config.estimation?.enabled).toBe(true);
+    expect(config.timeline?.dependency_relationship).toBe("blocks");
   });
 
   it("creates valid queries.yaml", async () => {

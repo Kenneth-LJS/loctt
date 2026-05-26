@@ -39,14 +39,14 @@ async function makeTaskWithStatus(status: string): Promise<void> {
 
 describe("applyWorkflowEdit", () => {
   it("rewrites tasks when a status is removed and remap supplied", async () => {
-    await makeTaskWithStatus("not_started");
+    await makeTaskWithStatus("backlog");
     const wf = await loadWorkflowConfig(locttDir);
     const next: WorkflowConfig = {
       ...wf,
-      statuses: wf.statuses.filter(s => s.key !== "not_started"),
+      statuses: wf.statuses.filter(s => s.key !== "backlog"),
     };
     const result = await applyWorkflowEdit(locttDir, next, {
-      statuses: { not_started: "in_progress" },
+      statuses: { backlog: "in_progress" },
     });
     expect(result.rewrittenTaskCount).toBe(1);
     const tasks = await loadAllTasks(locttDir);
@@ -54,36 +54,36 @@ describe("applyWorkflowEdit", () => {
   });
 
   it("clears the field when remap target is null", async () => {
-    await makeTaskWithStatus("not_started");
+    await makeTaskWithStatus("backlog");
     const wf = await loadWorkflowConfig(locttDir);
     const next: WorkflowConfig = {
       ...wf,
-      statuses: wf.statuses.filter(s => s.key !== "not_started"),
+      statuses: wf.statuses.filter(s => s.key !== "backlog"),
     };
-    await applyWorkflowEdit(locttDir, next, { statuses: { not_started: null } });
+    await applyWorkflowEdit(locttDir, next, { statuses: { backlog: null } });
     const tasks = await loadAllTasks(locttDir);
     expect(tasks[0]?.frontmatter.status).toBeUndefined();
   });
 
   it("rejects deletion of in-use status without remap", async () => {
-    await makeTaskWithStatus("not_started");
+    await makeTaskWithStatus("backlog");
     const wf = await loadWorkflowConfig(locttDir);
     const next: WorkflowConfig = {
       ...wf,
-      statuses: wf.statuses.filter(s => s.key !== "not_started"),
+      statuses: wf.statuses.filter(s => s.key !== "backlog"),
     };
     await expect(applyWorkflowEdit(locttDir, next, {})).rejects.toThrow(/in use/);
   });
 
   it("rejects remap targeting a key not in the new config", async () => {
-    await makeTaskWithStatus("not_started");
+    await makeTaskWithStatus("backlog");
     const wf = await loadWorkflowConfig(locttDir);
     const next: WorkflowConfig = {
       ...wf,
-      statuses: wf.statuses.filter(s => s.key !== "not_started"),
+      statuses: wf.statuses.filter(s => s.key !== "backlog"),
     };
     await expect(applyWorkflowEdit(locttDir, next, {
-      statuses: { not_started: "nonexistent" },
+      statuses: { backlog: "nonexistent" },
     })).rejects.toThrow(/not present in the new config/);
   });
 
@@ -485,7 +485,7 @@ describe("workflow serializer — icon/color/weights/boards round-trip", () => {
       ...wf,
       boards: {
         columns: [
-          { key: "todo", label: "To Do", statuses: ["not_started"] },
+          { key: "todo", label: "To Do", statuses: ["backlog"] },
           { key: "doing", label: "Doing", statuses: ["in_progress"], wip: 3 },
           { key: "done", label: "Done", statuses: ["done"] },
         ],
@@ -496,7 +496,7 @@ describe("workflow serializer — icon/color/weights/boards round-trip", () => {
     const reloaded = await loadWorkflowConfig(locttDir);
     expect(reloaded.boards?.columns).toHaveLength(3);
     expect(reloaded.boards?.columns[1]?.wip).toBe(3);
-    expect(reloaded.boards?.columns[0]?.statuses).toEqual(["not_started"]);
+    expect(reloaded.boards?.columns[0]?.statuses).toEqual(["backlog"]);
   });
 });
 
