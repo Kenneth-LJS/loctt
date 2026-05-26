@@ -730,8 +730,9 @@ function serializeRelationship(r: RelationshipDef): Record<string, unknown> {
   return {
     key: r.key,
     label: r.label,
-    inverse: r.inverse,
-    inverse_label: r.inverse_label,
+    ...(r.kind !== undefined ? { kind: r.kind } : {}),
+    ...(r.inverse !== undefined ? { inverse: r.inverse } : {}),
+    ...(r.inverse_label !== undefined ? { inverse_label: r.inverse_label } : {}),
     ...(r.structural === true ? { structural: true } : {}),
     ...(r.ranked === true ? { ranked: true } : {}),
     ...iconColorSpread(r),

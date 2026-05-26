@@ -53,7 +53,7 @@ describe("relationships", () => {
       { key: "blocked_by", label: "Blocked by", inverse: "blocks", inverse_label: "Blocks" },
       { key: "parent", label: "Parent", inverse: "child", inverse_label: "Child", structural: true },
       { key: "child", label: "Child", inverse: "parent", inverse_label: "Parent", structural: true },
-      { key: "related_to", label: "Related to", inverse: "related_to", inverse_label: "Related to" },
+      { key: "related_to", label: "Related to", kind: "symmetric" },
     ],
     custom_fields: [],
   };
@@ -97,6 +97,17 @@ describe("relationships", () => {
       const b = await readTask(locttDir, "b");
       expect(a.frontmatter.relationships).toEqual([{ type: "related_to", target: "b" }]);
       expect(b.frontmatter.relationships).toEqual([{ type: "related_to", target: "a" }]);
+    });
+
+    it("symmetric relationships record the same forward type on both endpoints", async () => {
+      // Both endpoints store `type: related_to` (the canonical key), never
+      // a separate inverse spelling. Distinguishes symmetric from directional.
+      await seedAB();
+      await linkTask({ locttDir, taskId: "a", type: "related_to", target: "b", workflowConfig: workflow });
+      const a = await readTask(locttDir, "a");
+      const b = await readTask(locttDir, "b");
+      expect(a.frontmatter.relationships?.[0]?.type).toBe("related_to");
+      expect(b.frontmatter.relationships?.[0]?.type).toBe("related_to");
     });
 
     it("writes history entries on both tasks reflecting their perspective", async () => {

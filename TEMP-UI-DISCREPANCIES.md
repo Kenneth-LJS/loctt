@@ -105,13 +105,14 @@ Resolution order on view open: view.display → workspace defaults → built-ins
 
 Touches contracts, projects/manage, state/keys, task/create, journal, query/list, doctor. Size: **M**.
 
-### CW-15 · `symmetric` flag on RelationshipDef
-Cleaner expression of self-inverse relationships:
+### CW-15 · `kind` enum on RelationshipDef ✅
+Cleaner expression of self-inverse relationships via an open enum:
 ```yaml
 relationships:
-  - { key: relates_to, label: "Relates to", symmetric: true }
+  - { key: blocks,     label: "Blocks", inverse: is_blocked_by, inverse_label: "Is blocked by" }   # default: kind: directional
+  - { key: relates_to, label: "Relates to", kind: symmetric }
 ```
-When `symmetric: true`: `inverse` / `inverse_label` not required (auto = self). Existing `inverse: <self>` rows auto-migrate. UI groups both directions under one heading. Size: **XS**.
+When `kind: "symmetric"`: `inverse` / `inverse_label` not required (auto = self). For `kind: "directional"`, `inverse` is required and must differ from `key` (declaring inverse-equals-key is rejected — must use symmetric). New exports: `isSymmetricRelationship`, `effectiveInverseKey`, `effectiveInverseLabel`, `relationshipTypeKeys`. UI groups both directions under one heading when symmetric. Size: **XS**.
 
 ### CW-17 · `UserSettings.card_layout` as ordered array
 Was `boolean` per field. Now `[{ key, visible }, ...]` — preserves order. UI-managed passthrough; core treats opaquely. Size: **XS**.

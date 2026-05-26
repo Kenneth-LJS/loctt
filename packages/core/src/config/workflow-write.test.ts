@@ -260,6 +260,30 @@ describe("applyWorkflowEdit — relationships", () => {
   });
 });
 
+describe("saveWorkflowConfig — symmetric round-trip", () => {
+  it("round-trips a symmetric relationship through save + load", async () => {
+    const wf = await loadWorkflowConfig(locttDir);
+    // Replace `relates_to` (already symmetric in the seeded default) with
+    // a different symmetric rel to exercise the writer.
+    const withSym: WorkflowConfig = {
+      ...wf,
+      relationships: [
+        ...wf.relationships.filter(r => r.key !== "relates_to"),
+        { key: "siblings", label: "Siblings", kind: "symmetric", structural: true },
+      ],
+    };
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await saveWorkflowConfig(locttDir, withSym);
+    const reloaded = await loadWorkflowConfig(locttDir);
+    const sym = reloaded.relationships.find(r => r.key === "siblings");
+    expect(sym).toBeDefined();
+    expect(sym?.kind).toBe("symmetric");
+    expect(sym?.inverse).toBeUndefined();
+    expect(sym?.inverse_label).toBeUndefined();
+    expect(sym?.structural).toBe(true);
+  });
+});
+
 describe("saveWorkflowConfig auto-clear", () => {
   it("drops timeline.dependency_relationship when the referenced key is gone", async () => {
     const wf = await loadWorkflowConfig(locttDir);

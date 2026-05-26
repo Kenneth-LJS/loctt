@@ -148,7 +148,7 @@
           { key: "clones",     label: "Clones",     inverse: "is_cloned_by",     inverse_label: "Is cloned by" },
           { key: "duplicates", label: "Duplicates", inverse: "is_duplicated_by", inverse_label: "Is duplicated by" },
           { key: "causes",     label: "Causes",     inverse: "is_caused_by",     inverse_label: "Is caused by" },
-          { key: "relates_to", label: "Relates to", inverse: "relates_to",       inverse_label: "Relates to" },
+          { key: "relates_to", label: "Relates to", kind: "symmetric" },
         ],
         custom_fields: [
           { key: "impact", label: "Customer impact", type: "enum",   multi: false, searchable: true,  values: [

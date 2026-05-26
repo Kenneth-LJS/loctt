@@ -1,4 +1,5 @@
 import type { Task, WorkflowConfig } from "@loctt/contracts";
+import { relationshipTypeKeys } from "@loctt/contracts";
 
 import { loadAllTasks } from "./load-all.js";
 
@@ -20,7 +21,7 @@ export async function validateRelationships(
   const tasks = await loadAllTasks(locttDir);
   const taskIds = new Set(tasks.map(t => t.frontmatter.id));
   const validTypes = new Set(
-    config.relationships.flatMap(r => [r.key, r.inverse]),
+    config.relationships.flatMap(relationshipTypeKeys),
   );
 
   const errors: RelationshipValidationError[] = [];
