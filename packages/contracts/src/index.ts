@@ -130,6 +130,8 @@ export type {
   StatusDef,
   TaskTypeDef,
   TimelineConfig,
+  TimelineGrouping,
+  TimelineZoom,
   WorkflowConfig,
 } from "./workflow.js";
 export {
@@ -155,5 +157,7 @@ export {
   StatusDefSchema,
   TaskTypeDefSchema,
   TimelineConfigSchema,
+  TimelineGroupingSchema,
+  TimelineZoomSchema,
   WorkflowConfigSchema,
 } from "./workflow.js";
