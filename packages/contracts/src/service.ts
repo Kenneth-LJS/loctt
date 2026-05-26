@@ -105,12 +105,27 @@ export interface ConfigResponse {
   readonly queries: QueriesConfig | null;
 }
 
+/**
+ * Schema-version status surfaced to the UI so it can render a
+ * read-only banner blocking writes when the on-disk schema doesn't
+ * match what the running CLI/UI knows. Migration is CLI-only (run
+ * `loctt migrate`); the UI surfaces the state but doesn't initiate
+ * the migration.
+ */
+export type SchemaStatusResponse =
+  | { readonly kind: "current"; readonly version: number }
+  | { readonly kind: "outdated"; readonly on_disk: number; readonly current: number }
+  | { readonly kind: "future"; readonly on_disk: number; readonly current: number }
+  | { readonly kind: "missing" }
+  | { readonly kind: "unknown"; readonly message: string };
+
 /** Tracker info response for API. */
 export interface TrackerInfoResponse {
   readonly exists: boolean;
   readonly taskCount: number;
   readonly keyPrefix: string | null;
   readonly nextKey: string | null;
+  readonly schemaStatus: SchemaStatusResponse;
 }
 
 /** Doctor check response for API. */
