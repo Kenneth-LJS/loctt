@@ -338,14 +338,34 @@ export const BoardsConfigSchema = z.object({
 });
 export type BoardsConfig = z.infer<typeof BoardsConfigSchema>;
 
+/** Default zoom level for the timeline (Gantt) view. */
+export const TimelineZoomSchema = z.enum(["day", "week", "month"]);
+export type TimelineZoom = z.infer<typeof TimelineZoomSchema>;
+
+/** How tasks on the timeline are grouped into rows. */
+export const TimelineGroupingSchema = z.enum(["none", "milestone", "assignee", "status", "sprint"]);
+export type TimelineGrouping = z.infer<typeof TimelineGroupingSchema>;
+
 /**
- * Optional timeline (Gantt) config. `dependency_relationship` names the
- * relationship key whose links the timeline renders as dependency arrows
- * (e.g. "blocks"). When the key is deleted from `relationships`, the
- * workflow writer auto-clears this field in the same atomic write.
+ * Optional timeline (Gantt) config. Workspace-level defaults applied
+ * when a user opens the Timeline view without a per-view override.
+ *
+ *  - `dependency_relationship`: relationship key whose links the
+ *    timeline renders as dependency arrows (e.g. "blocks"). When the
+ *    key is deleted from `relationships`, the workflow writer
+ *    auto-clears this field in the same atomic write.
+ *  - `default_zoom`: zoom level when first opening the view.
+ *  - `show_arrows`: whether dependency arrows are drawn by default.
+ *  - `default_grouping`: row grouping when first opening the view.
+ *
+ * Each field is optional. UI consumers fall back to built-in defaults
+ * when a field is absent (week / true / none).
  */
 export const TimelineConfigSchema = z.object({
   dependency_relationship: z.string().min(1).nullable().optional(),
+  default_zoom: TimelineZoomSchema.optional(),
+  show_arrows: z.boolean().optional(),
+  default_grouping: TimelineGroupingSchema.optional(),
 }).strict();
 export type TimelineConfig = z.infer<typeof TimelineConfigSchema>;
 

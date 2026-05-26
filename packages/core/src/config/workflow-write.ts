@@ -788,6 +788,9 @@ function serializeTimeline(t: TimelineConfig): Record<string, unknown> {
     ...(t.dependency_relationship !== undefined
       ? { dependency_relationship: t.dependency_relationship }
       : {}),
+    ...(t.default_zoom !== undefined ? { default_zoom: t.default_zoom } : {}),
+    ...(t.show_arrows !== undefined ? { show_arrows: t.show_arrows } : {}),
+    ...(t.default_grouping !== undefined ? { default_grouping: t.default_grouping } : {}),
   };
 }
 

@@ -260,6 +260,54 @@ describe("applyWorkflowEdit — relationships", () => {
   });
 });
 
+describe("saveWorkflowConfig — timeline defaults", () => {
+  it("round-trips default_zoom, show_arrows, default_grouping", async () => {
+    const wf = await loadWorkflowConfig(locttDir);
+    const withDefaults: WorkflowConfig = {
+      ...wf,
+      timeline: {
+        dependency_relationship: "blocks",
+        default_zoom: "month",
+        show_arrows: false,
+        default_grouping: "milestone",
+      },
+    };
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await saveWorkflowConfig(locttDir, withDefaults);
+    const reloaded = await loadWorkflowConfig(locttDir);
+    expect(reloaded.timeline?.default_zoom).toBe("month");
+    expect(reloaded.timeline?.show_arrows).toBe(false);
+    expect(reloaded.timeline?.default_grouping).toBe("milestone");
+    expect(reloaded.timeline?.dependency_relationship).toBe("blocks");
+  });
+
+  it("preserves new timeline fields when dependency_relationship is auto-cleared", async () => {
+    const wf = await loadWorkflowConfig(locttDir);
+    const withDefaults: WorkflowConfig = {
+      ...wf,
+      timeline: {
+        dependency_relationship: "blocks",
+        default_zoom: "day",
+        show_arrows: true,
+      },
+    };
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await saveWorkflowConfig(locttDir, withDefaults);
+
+    // Remove `blocks` from relationships; auto-clear should drop
+    // `dependency_relationship` but keep default_zoom + show_arrows.
+    const withoutBlocks: WorkflowConfig = {
+      ...withDefaults,
+      relationships: withDefaults.relationships.filter(r => r.key !== "blocks"),
+    };
+    await saveWorkflowConfig(locttDir, withoutBlocks);
+    const final = await loadWorkflowConfig(locttDir);
+    expect(final.timeline?.dependency_relationship).toBeUndefined();
+    expect(final.timeline?.default_zoom).toBe("day");
+    expect(final.timeline?.show_arrows).toBe(true);
+  });
+});
+
 describe("saveWorkflowConfig — symmetric round-trip", () => {
   it("round-trips a symmetric relationship through save + load", async () => {
     const wf = await loadWorkflowConfig(locttDir);

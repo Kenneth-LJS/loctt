@@ -71,13 +71,15 @@ schemas are involved). CLI/MCP/HTTP wrappers follow per surface. Sizes:
 
 ## B.1 Schema extensions
 
-### CW-1 · `workflow.timeline.*` extension
-Add three optional fields to `workflow.yaml#timeline`:
-- `default_zoom: day | week | month` (default `week`)
-- `show_arrows: boolean` (default `true`)
+### CW-1 · `workflow.timeline.*` extension ✅
+Three optional fields added to `workflow.yaml#timeline`:
+- `default_zoom: day | week | month`
+- `show_arrows: boolean`
 - `default_grouping: none | milestone | assignee | status | sprint`
 
-Workspace-level fallback. Per-view overrides via CW-2. Size: **XS**.
+Workspace-level fallback. Per-view overrides via CW-2. Auto-clear of
+`dependency_relationship` preserves the new fields. New `TimelineZoom`
+/ `TimelineGrouping` enum schemas exported from contracts. Size: **XS**.
 
 ### CW-2 · `SavedView.display` block
 New optional block on each saved view:
