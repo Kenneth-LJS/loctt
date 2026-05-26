@@ -39,13 +39,9 @@ afterEach(async () => {
 });
 
 describe("archived-reference guard: createTask", () => {
-  // The policy: assigning a brand-new task to an archived entity is
-  // blocked. The user must unarchive first. Existing references are
-  // unaffected (covered separately below).
-
   it("rejects createTask with an archived label", async () => {
-    await createLabel(locttDir, { key: "bug", label: "Bug" });
-    await archiveLabel(locttDir, "bug");
+    const bug = await createLabel(locttDir, { name: "Bug" });
+    await archiveLabel(locttDir, bug.id);
     const archivedGuard = await loadArchivedGuardConfigs(locttDir);
 
     await expect(
@@ -54,7 +50,7 @@ describe("archived-reference guard: createTask", () => {
         try {
           await createTask({
             locttDir, state, archivedGuard,
-            options: { project: taskProjectId, title: "T", labels: ["bug"] },
+            options: { project: taskProjectId, title: "T", labels: [bug.id] },
           });
         } finally {
           await saveState(locttDir, state);
@@ -64,8 +60,8 @@ describe("archived-reference guard: createTask", () => {
   });
 
   it("rejects createTask with an archived milestone", async () => {
-    await createMilestone(locttDir, { key: "v1", label: "v1" });
-    await archiveMilestone(locttDir, "v1");
+    const v1 = await createMilestone(locttDir, { name: "v1" });
+    await archiveMilestone(locttDir, v1.id);
     const archivedGuard = await loadArchivedGuardConfigs(locttDir);
 
     await expect(
@@ -74,24 +70,23 @@ describe("archived-reference guard: createTask", () => {
         try {
           await createTask({
             locttDir, state, archivedGuard,
-            options: { project: taskProjectId, title: "T", milestone: "v1" },
+            options: { project: taskProjectId, title: "T", milestone: v1.id },
           });
         } finally {
           await saveState(locttDir, state);
         }
       }),
-    ).rejects.toThrow(/archived milestone "v1"/);
+    ).rejects.toThrow(new RegExp(`archived milestone "${v1.id}"`));
   });
 
   it("rejects createTask with an archived sprint", async () => {
-    await createSprint(locttDir, {
-      key: "s1",
-      label: "Sprint 1",
+    const s1 = await createSprint(locttDir, {
+      name: "Sprint 1",
       start_date: "2026-05-01",
       end_date: "2026-05-14",
       state: "future",
     });
-    await archiveSprint(locttDir, "s1");
+    await archiveSprint(locttDir, s1.id);
     const archivedGuard = await loadArchivedGuardConfigs(locttDir);
 
     await expect(
@@ -100,13 +95,13 @@ describe("archived-reference guard: createTask", () => {
         try {
           await createTask({
             locttDir, state, archivedGuard,
-            options: { project: taskProjectId, title: "T", sprint: "s1" },
+            options: { project: taskProjectId, title: "T", sprint: s1.id },
           });
         } finally {
           await saveState(locttDir, state);
         }
       }),
-    ).rejects.toThrow(/archived sprint "s1"/);
+    ).rejects.toThrow(new RegExp(`archived sprint "${s1.id}"`));
   });
 
   it("rejects createTask with an archived assignee", async () => {
@@ -150,8 +145,6 @@ describe("archived-reference guard: createTask", () => {
   });
 
   it("rejects createTask with an archived project", async () => {
-    // Create a second project, then archive it; the seeded "Tasks"
-    // project stays as the workspace default.
     const alt = await createProject(locttDir, { name: "Alt", prefix: "A-" });
     await archiveProject(locttDir, alt.id);
     const archivedGuard = await loadArchivedGuardConfigs(locttDir);
@@ -172,8 +165,8 @@ describe("archived-reference guard: createTask", () => {
   });
 
   it("permits createTask when references are live", async () => {
-    await createLabel(locttDir, { key: "bug", label: "Bug" });
-    await createMilestone(locttDir, { key: "v1", label: "v1" });
+    const bug = await createLabel(locttDir, { name: "Bug" });
+    const v1 = await createMilestone(locttDir, { name: "v1" });
     const user = await createUser(locttDir, { name: "Sara" });
     const archivedGuard = await loadArchivedGuardConfigs(locttDir);
 
@@ -182,44 +175,35 @@ describe("archived-reference guard: createTask", () => {
       const created = await createTask({
         locttDir, state, archivedGuard,
         options: {
-          project: taskProjectId,
-          title: "T",
-          labels: ["bug"],
-          milestone: "v1",
-          assignee: user.id,
+          project: taskProjectId, title: "T",
+          labels: [bug.id], milestone: v1.id, assignee: user.id,
         },
       });
       await saveState(locttDir, state);
       return created;
     });
-    expect(task.frontmatter.labels).toEqual(["bug"]);
-    expect(task.frontmatter.milestone).toBe("v1");
+    expect(task.frontmatter.labels).toEqual([bug.id]);
+    expect(task.frontmatter.milestone).toBe(v1.id);
   });
 
   it("is a no-op when archivedGuard is not provided", async () => {
-    // Internal callers (e.g. migration / recovery) can omit the
-    // guard to bypass the check. Pin this contract.
-    await createLabel(locttDir, { key: "bug", label: "Bug" });
-    await archiveLabel(locttDir, "bug");
+    const bug = await createLabel(locttDir, { name: "Bug" });
+    await archiveLabel(locttDir, bug.id);
 
     const task = await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);
       const created = await createTask({
         locttDir, state,
-        options: { project: taskProjectId, title: "T", labels: ["bug"] },
+        options: { project: taskProjectId, title: "T", labels: [bug.id] },
       });
       await saveState(locttDir, state);
       return created;
     });
-    expect(task.frontmatter.labels).toEqual(["bug"]);
+    expect(task.frontmatter.labels).toEqual([bug.id]);
   });
 });
 
 describe("archived-reference guard: setField", () => {
-  // setField checks the DELTA — only newly-set references are
-  // blocked. References that were already on the task before the
-  // entity got archived stay attached.
-
   async function createBaseTask(): Promise<string> {
     const created = await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);
@@ -235,88 +219,77 @@ describe("archived-reference guard: setField", () => {
 
   it("rejects assigning an archived milestone via setField", async () => {
     const taskId = await createBaseTask();
-    await createMilestone(locttDir, { key: "v1", label: "v1" });
-    await archiveMilestone(locttDir, "v1");
+    const v1 = await createMilestone(locttDir, { name: "v1" });
+    await archiveMilestone(locttDir, v1.id);
     const archivedGuard = await loadArchivedGuardConfigs(locttDir);
 
     await expect(
-      setField({ locttDir, taskId, field: "milestone", value: "v1", archivedGuard }),
+      setField({ locttDir, taskId, field: "milestone", value: v1.id, archivedGuard }),
     ).rejects.toThrow(ArchivedReferenceError);
   });
 
   it("rejects adding an archived label via setField", async () => {
     const taskId = await createBaseTask();
-    await createLabel(locttDir, { key: "bug", label: "Bug" });
-    await archiveLabel(locttDir, "bug");
+    const bug = await createLabel(locttDir, { name: "Bug" });
+    await archiveLabel(locttDir, bug.id);
     const archivedGuard = await loadArchivedGuardConfigs(locttDir);
 
     await expect(
-      setField({ locttDir, taskId, field: "labels", value: ["bug"], archivedGuard }),
-    ).rejects.toThrow(/archived label "bug"/);
+      setField({ locttDir, taskId, field: "labels", value: [bug.id], archivedGuard }),
+    ).rejects.toThrow(new RegExp(`archived label "${bug.id}"`));
   });
 
   it("preserves an existing label that was archived AFTER the task referenced it", async () => {
-    // The whole point of archiving: don't break existing references.
-    // Create task with label, then archive label, then a no-op
-    // setField on a different field must NOT fail.
     const taskId = await createBaseTask();
-    await createLabel(locttDir, { key: "bug", label: "Bug" });
-    // Attach the label while it's still live.
+    const bug = await createLabel(locttDir, { name: "Bug" });
     const guard1 = await loadArchivedGuardConfigs(locttDir);
-    await setField({ locttDir, taskId, field: "labels", value: ["bug"], archivedGuard: guard1 });
-    // Now archive the label.
-    await archiveLabel(locttDir, "bug");
+    await setField({ locttDir, taskId, field: "labels", value: [bug.id], archivedGuard: guard1 });
+    await archiveLabel(locttDir, bug.id);
     const guard2 = await loadArchivedGuardConfigs(locttDir);
 
-    // Unrelated update must succeed; the archived label stays.
     const updated = await setField({
       locttDir, taskId, field: "title", value: "renamed", archivedGuard: guard2,
     });
     expect(updated.frontmatter.title).toBe("renamed");
-    expect(updated.frontmatter.labels).toEqual(["bug"]);
+    expect(updated.frontmatter.labels).toEqual([bug.id]);
   });
 
   it("preserves an existing milestone that was archived after assignment", async () => {
     const taskId = await createBaseTask();
-    await createMilestone(locttDir, { key: "v1", label: "v1" });
+    const v1 = await createMilestone(locttDir, { name: "v1" });
     const guard1 = await loadArchivedGuardConfigs(locttDir);
-    await setField({ locttDir, taskId, field: "milestone", value: "v1", archivedGuard: guard1 });
-    await archiveMilestone(locttDir, "v1");
+    await setField({ locttDir, taskId, field: "milestone", value: v1.id, archivedGuard: guard1 });
+    await archiveMilestone(locttDir, v1.id);
     const guard2 = await loadArchivedGuardConfigs(locttDir);
 
     const updated = await setField({
       locttDir, taskId, field: "title", value: "renamed", archivedGuard: guard2,
     });
-    expect(updated.frontmatter.milestone).toBe("v1");
+    expect(updated.frontmatter.milestone).toBe(v1.id);
   });
 
   it("blocks ADDING a second label when the new label is archived (preserves existing)", async () => {
-    // Mixed case: task already has label A (live); we try to add an
-    // archived label B. The add must fail, A stays.
     const taskId = await createBaseTask();
-    await createLabel(locttDir, { key: "live", label: "Live" });
-    await createLabel(locttDir, { key: "dead", label: "Dead" });
+    const live = await createLabel(locttDir, { name: "Live" });
+    const dead = await createLabel(locttDir, { name: "Dead" });
     const guard1 = await loadArchivedGuardConfigs(locttDir);
-    await setField({ locttDir, taskId, field: "labels", value: ["live"], archivedGuard: guard1 });
-    await archiveLabel(locttDir, "dead");
+    await setField({ locttDir, taskId, field: "labels", value: [live.id], archivedGuard: guard1 });
+    await archiveLabel(locttDir, dead.id);
     const guard2 = await loadArchivedGuardConfigs(locttDir);
 
     await expect(
       setField({
-        locttDir, taskId, field: "labels", value: ["live", "dead"],
+        locttDir, taskId, field: "labels", value: [live.id, dead.id],
         archivedGuard: guard2,
       }),
-    ).rejects.toThrow(/archived label "dead"/);
+    ).rejects.toThrow(new RegExp(`archived label "${dead.id}"`));
 
-    // Verify the task still has just `live` on disk.
     const onDisk = await readTask(locttDir, taskId);
-    expect(onDisk.frontmatter.labels).toEqual(["live"]);
+    expect(onDisk.frontmatter.labels).toEqual([live.id]);
   });
 });
 
 describe("archived-reference guard: linkTask", () => {
-  // linkTask checks the target task's archived flag at link time.
-
   async function makePair(): Promise<{ a: string; b: string }> {
     const state = await loadState(locttDir);
     const a = await createTask({ locttDir, state, options: { project: taskProjectId, title: "A" } });
@@ -327,8 +300,6 @@ describe("archived-reference guard: linkTask", () => {
 
   it("rejects linking to an archived target task", async () => {
     const { a, b } = await withStateLock(locttDir, makePair);
-    // Archive B by hand-flipping the flag — simpler than wiring
-    // archiveTask through here.
     const bTask = await readTask(locttDir, b);
     await writeTask(locttDir, b, {
       ...bTask,
@@ -349,7 +320,6 @@ describe("archived-reference guard: linkTask", () => {
   });
 
   it("bypass: blockArchivedTarget=false allows linking to an archived task", async () => {
-    // Internal/recovery code path: explicit opt-out.
     const { a, b } = await withStateLock(locttDir, makePair);
     const bTask = await readTask(locttDir, b);
     await writeTask(locttDir, b, {

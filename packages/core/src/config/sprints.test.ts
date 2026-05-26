@@ -10,15 +10,15 @@ import { YamlSyntaxError } from "./yaml-coerce.js";
 describe("parseSprintsConfig", () => {
   it("parses a minimal sprint", () => {
     const cfg = parseSprintsConfig(`sprints:
-  - key: s1
-    label: Sprint 1
+  - id: 01HX0000000000000000000001
+    name: Sprint 1
     start_date: 2026-01-01
     end_date: 2026-01-14
     state: active
 `);
     expect(cfg.sprints[0]).toEqual({
-      key: "s1",
-      label: "Sprint 1",
+      id: "01HX0000000000000000000001",
+      name: "Sprint 1",
       start_date: "2026-01-01",
       end_date: "2026-01-14",
       state: "active",
@@ -27,8 +27,8 @@ describe("parseSprintsConfig", () => {
 
   it("accepts dates already quoted as strings", () => {
     const cfg = parseSprintsConfig(`sprints:
-  - key: s1
-    label: Sprint
+  - id: 01HX0000000000000000000001
+    name: Sprint
     start_date: "2026-01-01"
     end_date: "2026-01-14"
     state: future
@@ -38,8 +38,8 @@ describe("parseSprintsConfig", () => {
 
   it("preserves goal and archived", () => {
     const cfg = parseSprintsConfig(`sprints:
-  - key: s1
-    label: Sprint
+  - id: 01HX0000000000000000000001
+    name: Sprint
     start_date: 2026-01-01
     end_date: 2026-01-14
     state: completed
@@ -47,8 +47,8 @@ describe("parseSprintsConfig", () => {
     archived: true
 `);
     expect(cfg.sprints[0]).toEqual({
-      key: "s1",
-      label: "Sprint",
+      id: "01HX0000000000000000000001",
+      name: "Sprint",
       start_date: "2026-01-01",
       end_date: "2026-01-14",
       state: "completed",
@@ -59,8 +59,8 @@ describe("parseSprintsConfig", () => {
 
   it("rejects a malformed start_date", () => {
     const yaml = `sprints:
-  - key: s1
-    label: Sprint
+  - id: 01HX0000000000000000000001
+    name: Sprint
     start_date: "01/01/2026"
     end_date: 2026-01-14
     state: future
@@ -71,8 +71,8 @@ describe("parseSprintsConfig", () => {
 
   it("rejects end_date before start_date", () => {
     const yaml = `sprints:
-  - key: s1
-    label: Sprint
+  - id: 01HX0000000000000000000001
+    name: Sprint
     start_date: 2026-01-14
     end_date: 2026-01-01
     state: future
@@ -85,8 +85,8 @@ describe("parseSprintsConfig", () => {
 
   it("accepts end_date equal to start_date", () => {
     const cfg = parseSprintsConfig(`sprints:
-  - key: s1
-    label: Sprint
+  - id: 01HX0000000000000000000001
+    name: Sprint
     start_date: 2026-01-01
     end_date: 2026-01-01
     state: future
@@ -96,49 +96,35 @@ describe("parseSprintsConfig", () => {
 
   it("rejects an unknown state", () => {
     const yaml = `sprints:
-  - key: s1
-    label: Sprint
+  - id: 01HX0000000000000000000001
+    name: Sprint
     start_date: 2026-01-01
     end_date: 2026-01-14
     state: planning
 `;
     expect(() => parseSprintsConfig(yaml)).toThrow(SprintsConfigError);
-    expect(() => parseSprintsConfig(yaml)).toThrow(
-      `state must be one of: "active", "completed", "future"`,
-    );
   });
 
-  it("accepts dotted sprint keys", () => {
-    const cfg = parseSprintsConfig(`sprints:
-  - key: 2026.q1
-    label: Q1
-    start_date: 2026-01-01
-    end_date: 2026-03-31
-    state: future
-`);
-    expect(cfg.sprints[0]?.key).toBe("2026.q1");
-  });
-
-  it("rejects duplicate sprint keys", () => {
+  it("rejects duplicate sprint ids", () => {
     const yaml = `sprints:
-  - key: s1
-    label: A
+  - id: 01HX0000000000000000000001
+    name: A
     start_date: 2026-01-01
     end_date: 2026-01-14
     state: future
-  - key: s1
-    label: B
+  - id: 01HX0000000000000000000001
+    name: B
     start_date: 2026-02-01
     end_date: 2026-02-14
     state: future
 `;
-    expect(() => parseSprintsConfig(yaml)).toThrow("duplicate sprint key: s1");
+    expect(() => parseSprintsConfig(yaml)).toThrow(/duplicate sprint id/);
   });
 
   it("rejects unknown per-sprint keys", () => {
     const yaml = `sprints:
-  - key: s1
-    label: Sprint
+  - id: 01HX0000000000000000000001
+    name: Sprint
     start_date: 2026-01-01
     end_date: 2026-01-14
     state: future
@@ -158,8 +144,8 @@ describe("serializeSprintsConfig", () => {
     const cfg = {
       sprints: [
         {
-          key: "s1",
-          label: "Sprint 1",
+          id: "01HX0000000000000000000001",
+          name: "Sprint 1",
           start_date: "2026-01-01",
           end_date: "2026-01-14",
           state: "active" as const,

@@ -66,7 +66,7 @@ export interface IdealPoint {
 
 /** The full burndown response. */
 export interface BurndownSeries {
-  readonly sprintKey: string;
+  readonly sprintId: string;
   /** Sprint window start (YYYY-MM-DD). */
   readonly start: string;
   /** Sprint window end (YYYY-MM-DD). */
@@ -91,7 +91,7 @@ export interface BurndownSeries {
 }
 
 /**
- * Returns the burndown series for `sprintKey`, reconstructed from
+ * Returns the burndown series for `sprintId`, reconstructed from
  * task history. No daily snapshots are stored on disk — we replay
  * each task's `_history.yaml` to derive its state at each end-of-day
  * in the sprint window.
@@ -100,19 +100,19 @@ export interface BurndownSeries {
  * mid-run, the remaining total bumps up on that day. When a task
  * leaves, it bumps down. Hiding scope creep defeats the chart.
  *
- * Throws `BurndownError` when the sprint key is unknown.
+ * Throws `BurndownError` when the sprint id is unknown.
  */
 export async function readBurndownSeries(
   locttDir: string,
-  sprintKey: string,
+  sprintId: string,
 ): Promise<BurndownSeries> {
   const [sprintsCfg, workflow] = await Promise.all([
     loadSprintsConfig(locttDir),
     loadWorkflowConfig(locttDir),
   ]);
-  const sprint = sprintsCfg.sprints.find(s => s.key === sprintKey);
+  const sprint = sprintsCfg.sprints.find(s => s.id === sprintId);
   if (!sprint) {
-    throw new BurndownError(`unknown sprint: ${sprintKey}`);
+    throw new BurndownError(`unknown sprint: ${sprintId}`);
   }
   const tasks = await loadAllTasks(locttDir);
   const historiesByTaskId = new Map<string, readonly HistoryEntry[]>();
@@ -179,7 +179,7 @@ export function computeBurndown(input: ComputeBurndownInput): BurndownSeries {
   const ideal = buildIdealLine(days, initialTotal);
 
   return {
-    sprintKey: sprint.key,
+    sprintId: sprint.id,
     start: sprint.start_date,
     end: sprint.end_date,
     unit,

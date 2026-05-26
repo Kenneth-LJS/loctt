@@ -1,11 +1,13 @@
-export type { DeleteLabelOptions } from "./manage.js";
+export type { CreateLabelInput, DeleteLabelOptions, LabelByNameResult } from "./manage.js";
 export {
   archiveLabel,
-  assertLabelKeysRegistered,
+  assertLabelIdsRegistered,
   createLabel,
   deleteLabel,
   editLabel,
   findLabel,
   LabelError,
+  resolveLabelByName,
+  resolveLabelIdFromInput,
   unarchiveLabel,
 } from "./manage.js";

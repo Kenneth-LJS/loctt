@@ -36,21 +36,15 @@ export function parseSprintsConfig(yamlContent: string): SprintsConfig {
     }
     throw err;
   }
-  const seen = new Set<string>();
-  for (const s of parsed.sprints) {
-    if (seen.has(s.key)) {
-      throw new SprintsConfigError(`duplicate sprint key: ${s.key}`);
-    }
-    seen.add(s.key);
-  }
+  // Schema enforces uniqueness on id via superRefine.
   return parsed;
 }
 
 export function serializeSprintsConfig(config: SprintsConfig): string {
   return stringifyYaml({
     sprints: config.sprints.map(s => ({
-      key: s.key,
-      label: s.label,
+      id: s.id,
+      name: s.name,
       start_date: s.start_date,
       end_date: s.end_date,
       state: s.state,
@@ -74,8 +68,8 @@ export async function saveSprintsConfig(
   const validated = parseSprintsConfig(serializeSprintsConfig(config));
   await writeYamlAtomically(getSprintsConfigPath(locttDir), {
     sprints: validated.sprints.map(s => ({
-      key: s.key,
-      label: s.label,
+      id: s.id,
+      name: s.name,
       start_date: s.start_date,
       end_date: s.end_date,
       state: s.state,

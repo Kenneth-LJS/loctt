@@ -322,22 +322,20 @@ describe("journal recovery — multiple stacked entries", () => {
 
 describe("journal recovery — all op kinds", () => {
   it("replays a remap_label entry", async () => {
-    await createLabel(locttDir, { key: "old", label: "Old" });
-    await createLabel(locttDir, { key: "new", label: "New" });
-    // Tag a task with the label, then write a journal entry to
-    // remap it (without going through deleteLabel itself).
+    const oldLabel = await createLabel(locttDir, { name: "Old" });
+    const newLabel = await createLabel(locttDir, { name: "New" });
     const ids = await seedTasks(TASK_PROJECT_ID, 2);
     const { setField } = await import("../task/update.js");
     for (const id of ids) {
-      await setField({ locttDir, taskId: id, field: "labels", value: ["old"] });
+      await setField({ locttDir, taskId: id, field: "labels", value: [oldLabel.id] });
     }
 
     const entry: JournalEntry = {
       id: "01TEST_LABEL",
       kind: "remap_label",
       started_at: "2026-05-12T10:00:00Z",
-      from: "old",
-      to: "new",
+      from: oldLabel.id,
+      to: newLabel.id,
       task_ids: ids,
     };
     await writeJournalEntries([entry]);
@@ -346,29 +344,29 @@ describe("journal recovery — all op kinds", () => {
 
     for (const id of ids) {
       const t = await readTask(locttDir, id);
-      expect(t.frontmatter.labels).toContain("new");
-      expect(t.frontmatter.labels).not.toContain("old");
+      expect(t.frontmatter.labels).toContain(newLabel.id);
+      expect(t.frontmatter.labels).not.toContain(oldLabel.id);
     }
     const { loadLabelsConfig } = await import("../config/labels.js");
     const labels = await loadLabelsConfig(locttDir);
-    expect(labels.labels.some(l => l.key === "old")).toBe(false);
+    expect(labels.labels.some(l => l.id === oldLabel.id)).toBe(false);
   });
 
   it("replays a remap_milestone entry", async () => {
-    await createMilestone(locttDir, { key: "ms-old", label: "Old MS" });
-    await createMilestone(locttDir, { key: "ms-new", label: "New MS" });
+    const oldMs = await createMilestone(locttDir, { name: "Old MS" });
+    const newMs = await createMilestone(locttDir, { name: "New MS" });
     const ids = await seedTasks(TASK_PROJECT_ID, 2);
     const { setField } = await import("../task/update.js");
     for (const id of ids) {
-      await setField({ locttDir, taskId: id, field: "milestone", value: "ms-old" });
+      await setField({ locttDir, taskId: id, field: "milestone", value: oldMs.id });
     }
 
     const entry: JournalEntry = {
       id: "01TEST_MILESTONE",
       kind: "remap_milestone",
       started_at: "2026-05-12T10:00:00Z",
-      from: "ms-old",
-      to: "ms-new",
+      from: oldMs.id,
+      to: newMs.id,
       task_ids: ids,
     };
     await writeJournalEntries([entry]);
@@ -377,14 +375,13 @@ describe("journal recovery — all op kinds", () => {
 
     for (const id of ids) {
       const t = await readTask(locttDir, id);
-      expect(t.frontmatter.milestone).toBe("ms-new");
+      expect(t.frontmatter.milestone).toBe(newMs.id);
     }
   });
 
   it("replays a remap_sprint entry with to=null (clears)", async () => {
-    await createSprint(locttDir, {
-      key: "sprint.1",
-      label: "S1",
+    const sprint = await createSprint(locttDir, {
+      name: "Sprint 1",
       start_date: "2026-01-01",
       end_date: "2026-01-15",
       state: "active",
@@ -392,14 +389,14 @@ describe("journal recovery — all op kinds", () => {
     const ids = await seedTasks(TASK_PROJECT_ID, 2);
     const { setField } = await import("../task/update.js");
     for (const id of ids) {
-      await setField({ locttDir, taskId: id, field: "sprint", value: "sprint.1" });
+      await setField({ locttDir, taskId: id, field: "sprint", value: sprint.id });
     }
 
     const entry: JournalEntry = {
       id: "01TEST_SPRINT_NULL",
       kind: "remap_sprint",
       started_at: "2026-05-12T10:00:00Z",
-      from: "sprint.1",
+      from: sprint.id,
       to: null,
       task_ids: ids,
     };
@@ -553,35 +550,34 @@ describe("journal recovery — happy-path ops also clear the journal", () => {
   });
 
   it("a successful deleteLabel leaves no journal entry", async () => {
-    await createLabel(locttDir, { key: "lbl", label: "L" });
+    const lbl = await createLabel(locttDir, { name: "L" });
     const ids = await seedTasks(TASK_PROJECT_ID, 1);
     const { setField } = await import("../task/update.js");
-    await setField({ locttDir, taskId: ids[0]!, field: "labels", value: ["lbl"] });
-    await deleteLabel(locttDir, "lbl", { hard: true });
+    await setField({ locttDir, taskId: ids[0]!, field: "labels", value: [lbl.id] });
+    await deleteLabel(locttDir, lbl.id, { hard: true });
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
 
   it("a successful deleteMilestone leaves no journal entry", async () => {
-    await createMilestone(locttDir, { key: "ms", label: "M" });
+    const ms = await createMilestone(locttDir, { name: "M" });
     const ids = await seedTasks(TASK_PROJECT_ID, 1);
     const { setField } = await import("../task/update.js");
-    await setField({ locttDir, taskId: ids[0]!, field: "milestone", value: "ms" });
-    await deleteMilestone(locttDir, "ms", { hard: true });
+    await setField({ locttDir, taskId: ids[0]!, field: "milestone", value: ms.id });
+    await deleteMilestone(locttDir, ms.id, { hard: true });
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
 
   it("a successful deleteSprint leaves no journal entry", async () => {
-    await createSprint(locttDir, {
-      key: "sp.1",
-      label: "S",
+    const sprint = await createSprint(locttDir, {
+      name: "S",
       start_date: "2026-01-01",
       end_date: "2026-01-15",
       state: "active",
     });
     const ids = await seedTasks(TASK_PROJECT_ID, 1);
     const { setField } = await import("../task/update.js");
-    await setField({ locttDir, taskId: ids[0]!, field: "sprint", value: "sp.1" });
-    await deleteSprint(locttDir, "sp.1", { hard: true });
+    await setField({ locttDir, taskId: ids[0]!, field: "sprint", value: sprint.id });
+    await deleteSprint(locttDir, sprint.id, { hard: true });
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
 
@@ -853,16 +849,16 @@ describe("journal recovery — crash-point coverage for remap_label", () => {
   }
 
   it("crash before task loop: recovery applies all task remaps and config", async () => {
-    await createLabel(locttDir, { key: "old", label: "Old" });
-    await createLabel(locttDir, { key: "new", label: "New" });
+    const labelOld = await createLabel(locttDir, { name: "Old" });
+    const labelNew = await createLabel(locttDir, { name: "New" });
     const ids = await seedTasks(TASK_PROJECT_ID, 4);
-    await tagTasksWithLabel(ids, "old");
+    await tagTasksWithLabel(ids, labelOld.id);
 
     await writeJournalEntries([{
       id: "01TEST_LABEL_BEFORE_LOOP",
       kind: "remap_label",
       started_at: "2026-05-12T10:00:00Z",
-      from: "old", to: "new",
+      from: labelOld.id, to: labelNew.id,
       task_ids: ids,
     }]);
 
@@ -870,26 +866,26 @@ describe("journal recovery — crash-point coverage for remap_label", () => {
 
     for (const id of ids) {
       const t = await readTask(locttDir, id);
-      expect(t.frontmatter.labels).toContain("new");
-      expect(t.frontmatter.labels).not.toContain("old");
+      expect(t.frontmatter.labels).toContain(labelNew.id);
+      expect(t.frontmatter.labels).not.toContain(labelOld.id);
     }
     const { loadLabelsConfig } = await import("../config/labels.js");
-    expect((await loadLabelsConfig(locttDir)).labels.some(l => l.key === "old")).toBe(false);
+    expect((await loadLabelsConfig(locttDir)).labels.some(l => l.id === labelOld.id)).toBe(false);
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
 
   it("crash mid task loop: recovery completes remaining tasks and config", async () => {
-    await createLabel(locttDir, { key: "old", label: "Old" });
-    await createLabel(locttDir, { key: "new", label: "New" });
+    const labelOld = await createLabel(locttDir, { name: "Old" });
+    const labelNew = await createLabel(locttDir, { name: "New" });
     const ids = await seedTasks(TASK_PROJECT_ID, 4);
-    await tagTasksWithLabel(ids, "old");
+    await tagTasksWithLabel(ids, labelOld.id);
 
     // Pre-apply the first two: simulate crash between writes 2 and 3.
     for (const id of ids.slice(0, 2)) {
       const t = await readTask(locttDir, id);
       await writeTask(locttDir, id, {
         ...t,
-        frontmatter: { ...t.frontmatter, labels: ["new"] },
+        frontmatter: { ...t.frontmatter, labels: [labelNew.id] },
       });
     }
 
@@ -897,7 +893,7 @@ describe("journal recovery — crash-point coverage for remap_label", () => {
       id: "01TEST_LABEL_MID_LOOP",
       kind: "remap_label",
       started_at: "2026-05-12T10:00:00Z",
-      from: "old", to: "new",
+      from: labelOld.id, to: labelNew.id,
       task_ids: ids,
     }]);
 
@@ -905,26 +901,26 @@ describe("journal recovery — crash-point coverage for remap_label", () => {
 
     for (const id of ids) {
       const t = await readTask(locttDir, id);
-      expect(t.frontmatter.labels).toContain("new");
-      expect(t.frontmatter.labels).not.toContain("old");
+      expect(t.frontmatter.labels).toContain(labelNew.id);
+      expect(t.frontmatter.labels).not.toContain(labelOld.id);
     }
     const { loadLabelsConfig } = await import("../config/labels.js");
-    expect((await loadLabelsConfig(locttDir)).labels.some(l => l.key === "old")).toBe(false);
+    expect((await loadLabelsConfig(locttDir)).labels.some(l => l.id === labelOld.id)).toBe(false);
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
 
   it("crash after tasks, before config: recovery completes the config edit", async () => {
-    await createLabel(locttDir, { key: "old", label: "Old" });
-    await createLabel(locttDir, { key: "new", label: "New" });
+    const labelOld = await createLabel(locttDir, { name: "Old" });
+    const labelNew = await createLabel(locttDir, { name: "New" });
     const ids = await seedTasks(TASK_PROJECT_ID, 3);
-    await tagTasksWithLabel(ids, "old");
+    await tagTasksWithLabel(ids, labelOld.id);
 
     // Pre-apply all task rewrites; config still has `old`.
     for (const id of ids) {
       const t = await readTask(locttDir, id);
       await writeTask(locttDir, id, {
         ...t,
-        frontmatter: { ...t.frontmatter, labels: ["new"] },
+        frontmatter: { ...t.frontmatter, labels: [labelNew.id] },
       });
     }
 
@@ -932,48 +928,48 @@ describe("journal recovery — crash-point coverage for remap_label", () => {
       id: "01TEST_LABEL_BEFORE_CONFIG",
       kind: "remap_label",
       started_at: "2026-05-12T10:00:00Z",
-      from: "old", to: "new",
+      from: labelOld.id, to: labelNew.id,
       task_ids: ids,
     }]);
 
     await withStateLock(locttDir, () => Promise.resolve());
 
     const { loadLabelsConfig } = await import("../config/labels.js");
-    expect((await loadLabelsConfig(locttDir)).labels.some(l => l.key === "old")).toBe(false);
+    expect((await loadLabelsConfig(locttDir)).labels.some(l => l.id === labelOld.id)).toBe(false);
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
 
   it("crash after config, before clearing journal: recovery clears entry only", async () => {
-    await createLabel(locttDir, { key: "old", label: "Old" });
-    await createLabel(locttDir, { key: "new", label: "New" });
+    const labelOld = await createLabel(locttDir, { name: "Old" });
+    const labelNew = await createLabel(locttDir, { name: "New" });
     const ids = await seedTasks(TASK_PROJECT_ID, 2);
-    await tagTasksWithLabel(ids, "old");
+    await tagTasksWithLabel(ids, labelOld.id);
     // Apply both task rewrites AND the config deletion.
     for (const id of ids) {
       const t = await readTask(locttDir, id);
       await writeTask(locttDir, id, {
         ...t,
-        frontmatter: { ...t.frontmatter, labels: ["new"] },
+        frontmatter: { ...t.frontmatter, labels: [labelNew.id] },
       });
     }
     const { loadLabelsConfig, saveLabelsConfig } = await import("../config/labels.js");
     const cfg = await loadLabelsConfig(locttDir);
     await saveLabelsConfig(locttDir, {
-      labels: cfg.labels.filter(l => l.key !== "old"),
+      labels: cfg.labels.filter(l => l.id !== labelOld.id),
     });
 
     await writeJournalEntries([{
       id: "01TEST_LABEL_AFTER_CONFIG",
       kind: "remap_label",
       started_at: "2026-05-12T10:00:00Z",
-      from: "old", to: "new",
+      from: labelOld.id, to: labelNew.id,
       task_ids: ids,
     }]);
 
     await withStateLock(locttDir, () => Promise.resolve());
 
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
-    expect((await loadLabelsConfig(locttDir)).labels.some(l => l.key === "old")).toBe(false);
+    expect((await loadLabelsConfig(locttDir)).labels.some(l => l.id === labelOld.id)).toBe(false);
   });
 });
 
@@ -986,16 +982,16 @@ describe("journal recovery — crash-point coverage for remap_milestone", () => 
   }
 
   it("crash before task loop: recovery applies all task remaps and config", async () => {
-    await createMilestone(locttDir, { key: "ms-old", label: "Old" });
-    await createMilestone(locttDir, { key: "ms-new", label: "New" });
+    const msOld = await createMilestone(locttDir, { name: "Old" });
+    const msNew = await createMilestone(locttDir, { name: "New" });
     const ids = await seedTasks(TASK_PROJECT_ID, 4);
-    await tagWithMilestone(ids, "ms-old");
+    await tagWithMilestone(ids, msOld.id);
 
     await writeJournalEntries([{
       id: "01TEST_MS_BEFORE_LOOP",
       kind: "remap_milestone",
       started_at: "2026-05-12T10:00:00Z",
-      from: "ms-old", to: "ms-new",
+      from: msOld.id, to: msNew.id,
       task_ids: ids,
     }]);
 
@@ -1003,23 +999,23 @@ describe("journal recovery — crash-point coverage for remap_milestone", () => 
 
     for (const id of ids) {
       const t = await readTask(locttDir, id);
-      expect(t.frontmatter.milestone).toBe("ms-new");
+      expect(t.frontmatter.milestone).toBe(msNew.id);
     }
     const { loadMilestonesConfig } = await import("../config/milestones.js");
-    expect((await loadMilestonesConfig(locttDir)).milestones.some(m => m.key === "ms-old")).toBe(false);
+    expect((await loadMilestonesConfig(locttDir)).milestones.some(m => m.id === msOld.id)).toBe(false);
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
 
   it("crash mid task loop: recovery completes remaining tasks and config", async () => {
-    await createMilestone(locttDir, { key: "ms-old", label: "Old" });
-    await createMilestone(locttDir, { key: "ms-new", label: "New" });
+    const msOld = await createMilestone(locttDir, { name: "Old" });
+    const msNew = await createMilestone(locttDir, { name: "New" });
     const ids = await seedTasks(TASK_PROJECT_ID, 4);
-    await tagWithMilestone(ids, "ms-old");
+    await tagWithMilestone(ids, msOld.id);
     for (const id of ids.slice(0, 2)) {
       const t = await readTask(locttDir, id);
       await writeTask(locttDir, id, {
         ...t,
-        frontmatter: { ...t.frontmatter, milestone: "ms-new" },
+        frontmatter: { ...t.frontmatter, milestone: msNew.id },
       });
     }
 
@@ -1027,7 +1023,7 @@ describe("journal recovery — crash-point coverage for remap_milestone", () => 
       id: "01TEST_MS_MID_LOOP",
       kind: "remap_milestone",
       started_at: "2026-05-12T10:00:00Z",
-      from: "ms-old", to: "ms-new",
+      from: msOld.id, to: msNew.id,
       task_ids: ids,
     }]);
 
@@ -1035,21 +1031,21 @@ describe("journal recovery — crash-point coverage for remap_milestone", () => 
 
     for (const id of ids) {
       const t = await readTask(locttDir, id);
-      expect(t.frontmatter.milestone).toBe("ms-new");
+      expect(t.frontmatter.milestone).toBe(msNew.id);
     }
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
 
   it("crash after tasks, before config: recovery completes the config edit", async () => {
-    await createMilestone(locttDir, { key: "ms-old", label: "Old" });
-    await createMilestone(locttDir, { key: "ms-new", label: "New" });
+    const msOld = await createMilestone(locttDir, { name: "Old" });
+    const msNew = await createMilestone(locttDir, { name: "New" });
     const ids = await seedTasks(TASK_PROJECT_ID, 3);
-    await tagWithMilestone(ids, "ms-old");
+    await tagWithMilestone(ids, msOld.id);
     for (const id of ids) {
       const t = await readTask(locttDir, id);
       await writeTask(locttDir, id, {
         ...t,
-        frontmatter: { ...t.frontmatter, milestone: "ms-new" },
+        frontmatter: { ...t.frontmatter, milestone: msNew.id },
       });
     }
 
@@ -1057,47 +1053,47 @@ describe("journal recovery — crash-point coverage for remap_milestone", () => 
       id: "01TEST_MS_BEFORE_CONFIG",
       kind: "remap_milestone",
       started_at: "2026-05-12T10:00:00Z",
-      from: "ms-old", to: "ms-new",
+      from: msOld.id, to: msNew.id,
       task_ids: ids,
     }]);
 
     await withStateLock(locttDir, () => Promise.resolve());
 
     const { loadMilestonesConfig } = await import("../config/milestones.js");
-    expect((await loadMilestonesConfig(locttDir)).milestones.some(m => m.key === "ms-old")).toBe(false);
+    expect((await loadMilestonesConfig(locttDir)).milestones.some(m => m.id === msOld.id)).toBe(false);
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
 
   it("crash after config, before clearing journal: recovery clears entry only", async () => {
-    await createMilestone(locttDir, { key: "ms-old", label: "Old" });
-    await createMilestone(locttDir, { key: "ms-new", label: "New" });
+    const msOld = await createMilestone(locttDir, { name: "Old" });
+    const msNew = await createMilestone(locttDir, { name: "New" });
     const ids = await seedTasks(TASK_PROJECT_ID, 2);
-    await tagWithMilestone(ids, "ms-old");
+    await tagWithMilestone(ids, msOld.id);
     for (const id of ids) {
       const t = await readTask(locttDir, id);
       await writeTask(locttDir, id, {
         ...t,
-        frontmatter: { ...t.frontmatter, milestone: "ms-new" },
+        frontmatter: { ...t.frontmatter, milestone: msNew.id },
       });
     }
     const { loadMilestonesConfig, saveMilestonesConfig } = await import("../config/milestones.js");
     const cfg = await loadMilestonesConfig(locttDir);
     await saveMilestonesConfig(locttDir, {
-      milestones: cfg.milestones.filter(m => m.key !== "ms-old"),
+      milestones: cfg.milestones.filter(m => m.id !== msOld.id),
     });
 
     await writeJournalEntries([{
       id: "01TEST_MS_AFTER_CONFIG",
       kind: "remap_milestone",
       started_at: "2026-05-12T10:00:00Z",
-      from: "ms-old", to: "ms-new",
+      from: msOld.id, to: msNew.id,
       task_ids: ids,
     }]);
 
     await withStateLock(locttDir, () => Promise.resolve());
 
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
-    expect((await loadMilestonesConfig(locttDir)).milestones.some(m => m.key === "ms-old")).toBe(false);
+    expect((await loadMilestonesConfig(locttDir)).milestones.some(m => m.id === msOld.id)).toBe(false);
   });
 });
 
@@ -1108,25 +1104,26 @@ describe("journal recovery — crash-point coverage for remap_sprint", () => {
       await setField({ locttDir, taskId: id, field: "sprint", value: sprint });
     }
   }
-  async function makeSprint(key: string): Promise<void> {
-    await createSprint(locttDir, {
-      key, label: key,
+  async function makeSprint(name: string): Promise<string> {
+    const s = await createSprint(locttDir, {
+      name,
       start_date: "2026-01-01", end_date: "2026-01-15",
       state: "active",
     });
+    return s.id;
   }
 
   it("crash before task loop: recovery applies all task remaps and config", async () => {
-    await makeSprint("sprint.old");
-    await makeSprint("sprint.new");
+    const sprintOldId = await makeSprint("Old");
+    const sprintNewId = await makeSprint("New");
     const ids = await seedTasks(TASK_PROJECT_ID, 4);
-    await tagWithSprint(ids, "sprint.old");
+    await tagWithSprint(ids, sprintOldId);
 
     await writeJournalEntries([{
       id: "01TEST_SPRINT_BEFORE_LOOP",
       kind: "remap_sprint",
       started_at: "2026-05-12T10:00:00Z",
-      from: "sprint.old", to: "sprint.new",
+      from: sprintOldId, to: sprintNewId,
       task_ids: ids,
     }]);
 
@@ -1134,23 +1131,23 @@ describe("journal recovery — crash-point coverage for remap_sprint", () => {
 
     for (const id of ids) {
       const t = await readTask(locttDir, id);
-      expect(t.frontmatter.sprint).toBe("sprint.new");
+      expect(t.frontmatter.sprint).toBe(sprintNewId);
     }
     const { loadSprintsConfig } = await import("../config/sprints.js");
-    expect((await loadSprintsConfig(locttDir)).sprints.some(s => s.key === "sprint.old")).toBe(false);
+    expect((await loadSprintsConfig(locttDir)).sprints.some(s => s.id === sprintOldId)).toBe(false);
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
 
   it("crash mid task loop: recovery completes remaining tasks and config", async () => {
-    await makeSprint("sprint.old");
-    await makeSprint("sprint.new");
+    const sprintOldId = await makeSprint("Old");
+    const sprintNewId = await makeSprint("New");
     const ids = await seedTasks(TASK_PROJECT_ID, 4);
-    await tagWithSprint(ids, "sprint.old");
+    await tagWithSprint(ids, sprintOldId);
     for (const id of ids.slice(0, 2)) {
       const t = await readTask(locttDir, id);
       await writeTask(locttDir, id, {
         ...t,
-        frontmatter: { ...t.frontmatter, sprint: "sprint.new" },
+        frontmatter: { ...t.frontmatter, sprint: sprintNewId },
       });
     }
 
@@ -1158,7 +1155,7 @@ describe("journal recovery — crash-point coverage for remap_sprint", () => {
       id: "01TEST_SPRINT_MID_LOOP",
       kind: "remap_sprint",
       started_at: "2026-05-12T10:00:00Z",
-      from: "sprint.old", to: "sprint.new",
+      from: sprintOldId, to: sprintNewId,
       task_ids: ids,
     }]);
 
@@ -1166,21 +1163,21 @@ describe("journal recovery — crash-point coverage for remap_sprint", () => {
 
     for (const id of ids) {
       const t = await readTask(locttDir, id);
-      expect(t.frontmatter.sprint).toBe("sprint.new");
+      expect(t.frontmatter.sprint).toBe(sprintNewId);
     }
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
 
   it("crash after tasks, before config: recovery completes the config edit", async () => {
-    await makeSprint("sprint.old");
-    await makeSprint("sprint.new");
+    const sprintOldId = await makeSprint("Old");
+    const sprintNewId = await makeSprint("New");
     const ids = await seedTasks(TASK_PROJECT_ID, 3);
-    await tagWithSprint(ids, "sprint.old");
+    await tagWithSprint(ids, sprintOldId);
     for (const id of ids) {
       const t = await readTask(locttDir, id);
       await writeTask(locttDir, id, {
         ...t,
-        frontmatter: { ...t.frontmatter, sprint: "sprint.new" },
+        frontmatter: { ...t.frontmatter, sprint: sprintNewId },
       });
     }
 
@@ -1188,47 +1185,47 @@ describe("journal recovery — crash-point coverage for remap_sprint", () => {
       id: "01TEST_SPRINT_BEFORE_CONFIG",
       kind: "remap_sprint",
       started_at: "2026-05-12T10:00:00Z",
-      from: "sprint.old", to: "sprint.new",
+      from: sprintOldId, to: sprintNewId,
       task_ids: ids,
     }]);
 
     await withStateLock(locttDir, () => Promise.resolve());
 
     const { loadSprintsConfig } = await import("../config/sprints.js");
-    expect((await loadSprintsConfig(locttDir)).sprints.some(s => s.key === "sprint.old")).toBe(false);
+    expect((await loadSprintsConfig(locttDir)).sprints.some(s => s.id === sprintOldId)).toBe(false);
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
 
   it("crash after config, before clearing journal: recovery clears entry only", async () => {
-    await makeSprint("sprint.old");
-    await makeSprint("sprint.new");
+    const sprintOldId = await makeSprint("Old");
+    const sprintNewId = await makeSprint("New");
     const ids = await seedTasks(TASK_PROJECT_ID, 2);
-    await tagWithSprint(ids, "sprint.old");
+    await tagWithSprint(ids, sprintOldId);
     for (const id of ids) {
       const t = await readTask(locttDir, id);
       await writeTask(locttDir, id, {
         ...t,
-        frontmatter: { ...t.frontmatter, sprint: "sprint.new" },
+        frontmatter: { ...t.frontmatter, sprint: sprintNewId },
       });
     }
     const { loadSprintsConfig, saveSprintsConfig } = await import("../config/sprints.js");
     const cfg = await loadSprintsConfig(locttDir);
     await saveSprintsConfig(locttDir, {
-      sprints: cfg.sprints.filter(s => s.key !== "sprint.old"),
+      sprints: cfg.sprints.filter(s => s.id !== sprintOldId),
     });
 
     await writeJournalEntries([{
       id: "01TEST_SPRINT_AFTER_CONFIG",
       kind: "remap_sprint",
       started_at: "2026-05-12T10:00:00Z",
-      from: "sprint.old", to: "sprint.new",
+      from: sprintOldId, to: sprintNewId,
       task_ids: ids,
     }]);
 
     await withStateLock(locttDir, () => Promise.resolve());
 
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
-    expect((await loadSprintsConfig(locttDir)).sprints.some(s => s.key === "sprint.old")).toBe(false);
+    expect((await loadSprintsConfig(locttDir)).sprints.some(s => s.id === sprintOldId)).toBe(false);
   });
 });
 

@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import { SlugKey, SprintKey } from "./brands.js";
 
 /**
  * Date-or-timestamp string. Frontmatter date fields can be authored
@@ -59,7 +58,7 @@ export const TaskFrontmatterSchema = z.object({
   status_updated_at: IsoTimestamp.optional(),
   task_type: z.string().optional(),
   priority: z.string().optional(),
-  labels: z.array(SlugKey).optional(),
+  labels: z.array(z.string().min(1)).optional(),
   assignee: z.string().optional(),
   reporter: z.string().optional(),
   start_date: DateOrIsoString.optional(),
@@ -70,8 +69,8 @@ export const TaskFrontmatterSchema = z.object({
    * status; cleared when moved out. Not user-editable.
    */
   completed_date: DateOrIsoString.optional(),
-  milestone: SlugKey.optional(),
-  sprint: SprintKey.optional(),
+  milestone: z.string().min(1).optional(),
+  sprint: z.string().min(1).optional(),
   archived: z.boolean().optional(),
   archived_at: IsoTimestamp.optional(),
   relationships: z.array(TaskRelationshipSchema).optional(),
@@ -128,15 +127,15 @@ export const TaskFrontmatterPublicSchema = z.object({
   status_updated_at: IsoTimestamp.optional(),
   task_type: z.string().optional(),
   priority: z.string().optional(),
-  labels: z.array(SlugKey).optional(),
+  labels: z.array(z.string().min(1)).optional(),
   assignee: z.string().optional(),
   reporter: z.string().optional(),
   start_date: DateOrIsoString.optional(),
   due_date: DateOrIsoString.optional(),
   estimate: z.union([z.string(), z.number()]).transform(v => String(v)).optional(),
   completed_date: DateOrIsoString.optional(),
-  milestone: SlugKey.optional(),
-  sprint: SprintKey.optional(),
+  milestone: z.string().min(1).optional(),
+  sprint: z.string().min(1).optional(),
   archived: z.boolean().optional(),
   archived_at: IsoTimestamp.optional(),
   relationships: z.array(TaskRelationshipSchema).optional(),

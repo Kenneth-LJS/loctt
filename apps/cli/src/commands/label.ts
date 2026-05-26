@@ -4,6 +4,7 @@ import {
   deleteLabel,
   editLabel,
   loadLabelsConfig,
+  resolveLabelIdFromInput,
   resolveLocttDir,
   unarchiveLabel,
 } from "@loctt/core";
@@ -15,8 +16,8 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
 /**
  * `loctt label <subcommand>` — label lifecycle.
  *
- * `delete` keeps its confirm prompt outside runCommand for the
- * exit-code-disambiguation reason (refused = USAGE, no = SUCCESS).
+ * Label references accepted as either an id (ULID) or a name; the
+ * `list` command prints names + ids so users can disambiguate.
  */
 export async function run(args: string[], root: string): Promise<void> {
   const sub = args[1];
@@ -24,93 +25,100 @@ export async function run(args: string[], root: string): Promise<void> {
   switch (sub) {
     case "list": {
       const includeArchived = hasFlag(args, "--all");
+      const showIds = hasFlag(args, "--ids");
       const cfg = await loadLabelsConfig(locttDir);
       for (const l of cfg.labels) {
         if (!includeArchived && l.archived === true) continue;
         const color = l.color ? `  ${l.color}` : "";
         const arch = l.archived === true ? "  (archived)" : "";
-        console.log(`${l.key}\t${l.label}${color}${arch}`);
+        const idCol = showIds ? `\t${l.id}` : "";
+        console.log(`${l.name}${idCol}${color}${arch}`);
       }
       break;
     }
     case "create": {
       await runCommand(async () => {
-        const key = args[2];
-        if (!key) {
+        const name = args[2];
+        if (!name) {
           throw new UsageError(
-            "missing key",
-            "loctt label create <key> [--label <label>] [--color <hex>]",
+            "missing name",
+            "loctt label create <name> [--color <hex>]",
           );
         }
-        const label = getArg(args, "--label") ?? key;
         const color = getArg(args, "--color");
-        await createLabel(locttDir, {
-          key,
-          label,
+        const def = await createLabel(locttDir, {
+          name,
           ...(color !== undefined ? { color } : {}),
         });
-        console.log(`Created label ${key}`);
+        console.log(`Created label "${name}" (id ${def.id})`);
       });
       break;
     }
     case "edit": {
       await runCommand(async () => {
-        const key = args[2];
-        if (!key) {
+        const ref = args[2];
+        if (!ref) {
           throw new UsageError(
-            "missing key",
-            "loctt label edit <key> [--label <label>] [--color <hex|->]",
+            "missing label ref",
+            "loctt label edit <name|id> [--name <new-name>] [--color <hex|->]",
           );
         }
-        const label = getArg(args, "--label");
+        const cfg = await loadLabelsConfig(locttDir);
+        const id = resolveLabelIdFromInput(cfg, ref, { includeArchived: true });
+        const name = getArg(args, "--name");
         const colorArg = getArg(args, "--color");
-        await editLabel(locttDir, key, {
-          ...(label !== undefined ? { label } : {}),
+        await editLabel(locttDir, id, {
+          ...(name !== undefined ? { name } : {}),
           ...(colorArg !== undefined
             ? { color: colorArg === "-" ? null : colorArg }
             : {}),
         });
-        console.log(`Updated label ${key}`);
+        console.log(`Updated label ${ref}`);
       });
       break;
     }
     case "delete": {
-      const key = args[2];
-      if (!key) {
-        console.error(`Error: missing key`);
-        console.error(`Usage: loctt label delete <key> [--remap-to <other>] [--yes]`);
+      const ref = args[2];
+      if (!ref) {
+        console.error(`Error: missing label ref`);
+        console.error(`Usage: loctt label delete <name|id> [--remap-to <other>] [--yes]`);
         process.exitCode = EXIT.USAGE;
         break;
       }
       const remapTo = getArg(args, "--remap-to");
       const outcome = await confirmHardDelete(
         args,
-        `Permanently delete label ${key}? This will rewrite affected tasks. (use 'loctt label archive' for a reversible alternative)`,
+        `Permanently delete label ${ref}? This will rewrite affected tasks. (use 'loctt label archive' for a reversible alternative)`,
       );
       if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
       await runCommand(async () => {
-        const result = await deleteLabel(locttDir, key, {
+        const cfg = await loadLabelsConfig(locttDir);
+        const id = resolveLabelIdFromInput(cfg, ref, { includeArchived: true });
+        const remapToId = remapTo !== undefined ? resolveLabelIdFromInput(cfg, remapTo) : undefined;
+        const result = await deleteLabel(locttDir, id, {
           hard: true,
-          ...(remapTo !== undefined ? { remapTo } : {}),
+          ...(remapToId !== undefined ? { remapTo: remapToId } : {}),
         });
         if (result.affectedTaskCount > 0) {
           const action = remapTo !== undefined ? `remapped to '${remapTo}'` : "removed from";
           console.log(`${action} ${result.affectedTaskCount} task(s)`);
         }
-        console.log(`Deleted label ${key}`);
+        console.log(`Deleted label ${ref}`);
       });
       break;
     }
     case "archive":
     case "unarchive": {
       await runCommand(async () => {
-        const key = args[2];
-        if (!key) {
-          throw new UsageError("missing key", `loctt label ${sub} <key>`);
+        const ref = args[2];
+        if (!ref) {
+          throw new UsageError("missing label ref", `loctt label ${sub} <name|id>`);
         }
-        if (sub === "archive") await archiveLabel(locttDir, key);
-        else await unarchiveLabel(locttDir, key);
-        console.log(`${sub === "archive" ? "Archived" : "Unarchived"} label ${key}`);
+        const cfg = await loadLabelsConfig(locttDir);
+        const id = resolveLabelIdFromInput(cfg, ref, { includeArchived: true });
+        if (sub === "archive") await archiveLabel(locttDir, id);
+        else await unarchiveLabel(locttDir, id);
+        console.log(`${sub === "archive" ? "Archived" : "Unarchived"} label ${ref}`);
       });
       break;
     }

@@ -350,27 +350,27 @@ describe("MCP executeTool", () => {
     });
 
     it("delete_label without confirm is rejected", async () => {
-      await executeTool(root, "create_label", { key: "blocker" });
-      const result = await executeTool(root, "delete_label", { key: "blocker" });
+      await executeTool(root, "create_label", { name: "Blocker" });
+      const result = await executeTool(root, "delete_label", { label: "Blocker" });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toMatch(/confirm/i);
     });
 
     it("delete_milestone without confirm is rejected", async () => {
-      await executeTool(root, "create_milestone", { key: "v1", label: "v1" });
-      const result = await executeTool(root, "delete_milestone", { key: "v1" });
+      await executeTool(root, "create_milestone", { name: "v1" });
+      const result = await executeTool(root, "delete_milestone", { milestone: "v1" });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toMatch(/confirm/i);
     });
 
     it("delete_sprint without confirm is rejected", async () => {
       await executeTool(root, "create_sprint", {
-        key: "s1",
-        label: "Sprint 1",
+        name: "Sprint 1",
         start_date: "2026-05-04",
         end_date: "2026-05-08",
+        state: "active",
       });
-      const result = await executeTool(root, "delete_sprint", { key: "s1" });
+      const result = await executeTool(root, "delete_sprint", { sprint: "Sprint 1" });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toMatch(/confirm/i);
     });
@@ -387,35 +387,33 @@ describe("MCP executeTool", () => {
 
   describe("get_sprint_burndown", () => {
     it("returns the series for a known sprint", async () => {
-      // Create a sprint via the file system directly so the MCP test
-      // doesn't depend on a sprint-create tool being registered.
-      const { resolveLocttDir } = await import("@loctt/core");
-      const { saveSprintsConfig } = await import("@loctt/core");
+      const { resolveLocttDir, saveSprintsConfig } = await import("@loctt/core");
       const locttDir = resolveLocttDir(root);
+      const sprintId = "01HXSPRINT0000000000000001";
       await saveSprintsConfig(locttDir, {
         sprints: [{
-          key: "s1",
-          label: "Sprint 1",
+          id: sprintId,
+          name: "Sprint 1",
           start_date: "2026-05-04",
           end_date: "2026-05-08",
           state: "active",
         }],
       });
 
-      const result = await executeTool(root, "get_sprint_burndown", { key: "s1" });
+      const result = await executeTool(root, "get_sprint_burndown", { sprint: sprintId });
       expect(result.isError).toBeUndefined();
       const payload = JSON.parse(result.content[0]?.text ?? "{}") as {
-        sprintKey: string;
+        sprintId: string;
         series: { date: string }[];
       };
-      expect(payload.sprintKey).toBe("s1");
+      expect(payload.sprintId).toBe(sprintId);
       expect(payload.series.length).toBe(5);
     });
 
-    it("returns a clean error for an unknown sprint key", async () => {
-      const result = await executeTool(root, "get_sprint_burndown", { key: "nope" });
+    it("returns a clean error for an unknown sprint", async () => {
+      const result = await executeTool(root, "get_sprint_burndown", { sprint: "01HXNOSUCH" });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text ?? "").toMatch(/unknown sprint: nope/);
+      expect(result.content[0]?.text ?? "").toMatch(/unknown sprint/);
     });
   });
 

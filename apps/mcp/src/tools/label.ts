@@ -1,7 +1,7 @@
 /**
- * Label catalog tools. Labels live in labels.yaml and are
- * referenced from each task's `labels` array; deleting a label
- * sweeps it from every task (or remaps to another key).
+ * Label catalog tools. Labels live in labels.yaml and are referenced
+ * from each task's `labels` array by id. Deleting a label sweeps it
+ * from every task (or remaps to another id).
  */
 
 import {
@@ -10,6 +10,7 @@ import {
   deleteLabel,
   editLabel,
   loadLabelsConfig,
+  resolveLabelIdFromInput,
   unarchiveLabel,
 } from "@loctt/core";
 import { z } from "zod";
@@ -21,7 +22,7 @@ import type { ToolDef } from "../types.js";
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "list_labels",
-    description: "List labels defined in labels.yaml.",
+    description: "List labels defined in labels.yaml. Each label has an internal id (ULID), a display name, and optional color.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       const cfg = await loadLabelsConfig(locttDir);
@@ -30,80 +31,84 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "create_label",
-    description: "Register a new label. Keys are immutable; pass --label and optional --color.",
+    description: "Register a new label. Returns the generated id. Names are not unique; disambiguated by id.",
     inputSchema: {
-      key: z.string(),
-      label: z.string(),
+      name: z.string(),
       color: z.string().optional(),
     },
     handler: async ({ locttDir }, args) => {
       const color = args["color"] as string | undefined;
-      await createLabel(locttDir, {
-        key: args["key"] as string,
-        label: args["label"] as string,
+      const def = await createLabel(locttDir, {
+        name: args["name"] as string,
         ...(color !== undefined ? { color } : {}),
       });
-      return text(`Created label ${String(args["key"])}`);
+      return text(JSON.stringify({ id: def.id, name: def.name }, null, 2));
     },
   },
   {
     name: "edit_label",
-    description: "Edit a label's display name or color. The key is immutable.",
+    description: "Edit a label's display name or color. The id is immutable. `label` parameter accepts id or name.",
     inputSchema: {
-      key: z.string(),
-      label: z.string().optional(),
+      label: z.string().describe("Label id or name"),
+      name: z.string().optional().describe("New name"),
       color: z.string().nullable().optional().describe("Pass null to clear"),
     },
     handler: async ({ locttDir }, args) => {
+      const cfg = await loadLabelsConfig(locttDir);
+      const id = resolveLabelIdFromInput(cfg, args["label"] as string, { includeArchived: true });
       const colorArg = args["color"] as string | null | undefined;
-      await editLabel(locttDir, args["key"] as string, {
-        ...(args["label"] !== undefined ? { label: args["label"] as string } : {}),
+      await editLabel(locttDir, id, {
+        ...(args["name"] !== undefined ? { name: args["name"] as string } : {}),
         ...("color" in args ? { color: colorArg ?? null } : {}),
       });
-      return text(`Updated label ${String(args["key"])}`);
+      return text(`Updated label ${id}`);
     },
   },
   {
     name: "delete_label",
     description:
-      "Permanently remove a label from labels.yaml; the key is dropped from every task's " +
-      "labels array (or remapped via `remap_to`). Use `archive_label` for the reversible " +
-      "(soft) variant. Always requires `confirm: true`.",
+      "Permanently remove a label; the id is dropped from every task's labels array (or " +
+      "remapped via `remap_to`). Use `archive_label` for the reversible (soft) variant. " +
+      "Always requires `confirm: true`.",
     inputSchema: {
-      key: z.string(),
+      label: z.string().describe("Label id or name"),
       confirm: z.boolean().optional().describe("Required: must be true to proceed"),
-      remap_to: z.string().optional().describe("Target label key for affected tasks"),
+      remap_to: z.string().optional().describe("Target label (id or name) for affected tasks"),
     },
     handler: async ({ locttDir }, args) => {
       const blocked = requireConfirm(args, "delete_label");
       if (blocked) return blocked;
+      const cfg = await loadLabelsConfig(locttDir);
+      const id = resolveLabelIdFromInput(cfg, args["label"] as string, { includeArchived: true });
       const remapTo = args["remap_to"] as string | undefined;
-      const result = await deleteLabel(locttDir, args["key"] as string, {
+      const remapToId = remapTo !== undefined ? resolveLabelIdFromInput(cfg, remapTo) : undefined;
+      const result = await deleteLabel(locttDir, id, {
         hard: true,
-        ...(remapTo !== undefined ? { remapTo } : {}),
+        ...(remapToId !== undefined ? { remapTo: remapToId } : {}),
       });
-      return text(JSON.stringify({
-        key: args["key"],
-        ...result,
-      }, null, 2));
+      return text(JSON.stringify({ id, ...result }, null, 2));
     },
   },
   {
     name: "archive_label",
     description: "Mark a label as archived. Reversible via `unarchive_label`.",
-    inputSchema: { key: z.string() },
+    inputSchema: { label: z.string().describe("Label id or name") },
     handler: async ({ locttDir }, args) => {
-      await archiveLabel(locttDir, args["key"] as string);
-      return text(`Archived label ${String(args["key"])}`);
+      const cfg = await loadLabelsConfig(locttDir);
+      const id = resolveLabelIdFromInput(cfg, args["label"] as string, { includeArchived: true });
+      await archiveLabel(locttDir, id);
+      return text(`Archived label ${id}`);
     },
   },
   {
     name: "unarchive_label",
     description: "Clear the archived flag on a label.",
-    inputSchema: { key: z.string() },
+    inputSchema: { label: z.string().describe("Label id or name") },
     handler: async ({ locttDir }, args) => {
-      await unarchiveLabel(locttDir, args["key"] as string);
-      return text(`Unarchived label ${String(args["key"])}`);
+      const cfg = await loadLabelsConfig(locttDir);
+      const id = resolveLabelIdFromInput(cfg, args["label"] as string, { includeArchived: true });
+      await unarchiveLabel(locttDir, id);
+      return text(`Unarchived label ${id}`);
     },
   },
 ];

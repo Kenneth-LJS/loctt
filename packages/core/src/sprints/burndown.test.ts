@@ -27,8 +27,8 @@ function mkWorkflow(estimation?: WorkflowConfig["estimation"]): WorkflowConfig {
 
 function mkSprint(overrides: Partial<SprintDef> = {}): SprintDef {
   return {
-    key: "s1",
-    label: "Sprint 1",
+    id: "01HXSPRINT0000000000000001",
+    name: "Sprint 1",
     start_date: "2026-05-04",
     end_date: "2026-05-08",
     state: "active",
@@ -74,7 +74,7 @@ describe("computeBurndown — unit: tasks (estimation disabled)", () => {
 
   it("counts a task that starts in the sprint and never completes as remaining on every day", () => {
     const task = mkTask("t1", {
-      sprint: "s1",
+      sprint: "01HXSPRINT0000000000000001",
       status: "todo",
       created_at: "2026-05-03T10:00:00.000Z",
     });
@@ -96,7 +96,7 @@ describe("computeBurndown — unit: tasks (estimation disabled)", () => {
     // to derive the initial state, so the frontmatter here reflects
     // the post-done state and the history records the transition.
     const task = mkTask("t1", {
-      sprint: "s1",
+      sprint: "01HXSPRINT0000000000000001",
       status: "done",
       created_at: "2026-05-03T10:00:00.000Z",
     });
@@ -126,7 +126,7 @@ describe("computeBurndown — unit: tasks (estimation disabled)", () => {
     // Task added to sprint s1 on May 6. Before that the task was
     // outside the sprint, so it should not be counted on May 4 or 5.
     const task = mkTask("t1", {
-      sprint: "s1",
+      sprint: "01HXSPRINT0000000000000001",
       status: "todo",
       created_at: "2026-05-03T10:00:00.000Z",
     });
@@ -136,7 +136,7 @@ describe("computeBurndown — unit: tasks (estimation disabled)", () => {
         kind: "field_change",
         field: "sprint",
         before: null,
-        after: "s1",
+        after: "01HXSPRINT0000000000000001",
       },
     ];
     const out = computeBurndown({
@@ -160,7 +160,7 @@ describe("computeBurndown — unit: tasks (estimation disabled)", () => {
         timestamp: "2026-05-06T08:00:00.000Z",
         kind: "field_change",
         field: "sprint",
-        before: "s1",
+        before: "01HXSPRINT0000000000000001",
         after: null,
       },
     ];
@@ -175,7 +175,7 @@ describe("computeBurndown — unit: tasks (estimation disabled)", () => {
 
   it("does not count a task created after the sprint window ends", () => {
     const task = mkTask("t1", {
-      sprint: "s1",
+      sprint: "01HXSPRINT0000000000000001",
       status: "todo",
       created_at: "2026-05-10T10:00:00.000Z",
     });
@@ -192,7 +192,7 @@ describe("computeBurndown — unit: tasks (estimation disabled)", () => {
   it("does not count a task already completed before the sprint window starts", () => {
     // Task created Apr 30, completed May 1, sprint runs May 4-8.
     const task = mkTask("t1", {
-      sprint: "s1",
+      sprint: "01HXSPRINT0000000000000001",
       status: "done",
       created_at: "2026-04-30T10:00:00.000Z",
     });
@@ -217,7 +217,7 @@ describe("computeBurndown — unit: tasks (estimation disabled)", () => {
   it("rolls up multiple status changes in the same day to the final end-of-day state", () => {
     // todo → doing at 09:00, doing → done at 17:00 on May 5.
     const task = mkTask("t1", {
-      sprint: "s1",
+      sprint: "01HXSPRINT0000000000000001",
       status: "done",
       created_at: "2026-05-03T10:00:00.000Z",
     });
@@ -238,7 +238,7 @@ describe("computeBurndown — unit: tasks (estimation disabled)", () => {
 
   it("treats a `discarded`-category status the same as completed (not remaining)", () => {
     const task = mkTask("t1", {
-      sprint: "s1",
+      sprint: "01HXSPRINT0000000000000001",
       status: "dropped",
       created_at: "2026-05-03T10:00:00.000Z",
     });
@@ -264,13 +264,13 @@ describe("computeBurndown — unit: tasks (estimation disabled)", () => {
 describe("computeBurndown — unit: points (numeric)", () => {
   it("sums the `estimate` field across incomplete tasks", () => {
     const t1 = mkTask("t1", {
-      sprint: "s1",
+      sprint: "01HXSPRINT0000000000000001",
       status: "todo",
       estimate: "3",
       created_at: "2026-05-03T10:00:00.000Z",
     });
     const t2 = mkTask("t2", {
-      sprint: "s1",
+      sprint: "01HXSPRINT0000000000000001",
       status: "todo",
       estimate: "5",
       created_at: "2026-05-03T10:00:00.000Z",
@@ -290,7 +290,7 @@ describe("computeBurndown — unit: points (numeric)", () => {
   it("reflects an estimate change mid-sprint as a step in the remaining total", () => {
     // Task starts with estimate 3, jumps to 8 on May 6.
     const task = mkTask("t1", {
-      sprint: "s1",
+      sprint: "01HXSPRINT0000000000000001",
       status: "todo",
       estimate: "8",
       created_at: "2026-05-03T10:00:00.000Z",
@@ -317,13 +317,13 @@ describe("computeBurndown — unit: points (numeric)", () => {
 
   it("contributes 0 for a task without an estimate but still counts it as 1 incomplete", () => {
     const t1 = mkTask("t1", {
-      sprint: "s1",
+      sprint: "01HXSPRINT0000000000000001",
       status: "todo",
       estimate: "3",
       created_at: "2026-05-03T10:00:00.000Z",
     });
     const t2 = mkTask("t2", {
-      sprint: "s1",
+      sprint: "01HXSPRINT0000000000000001",
       status: "todo",
       created_at: "2026-05-03T10:00:00.000Z",
     });
@@ -349,13 +349,13 @@ describe("computeBurndown — unit: weighted_enum", () => {
 
   it("sums weights for custom_enum tasks with `weights`", () => {
     const t1 = mkTask("t1", {
-      sprint: "s1",
+      sprint: "01HXSPRINT0000000000000001",
       status: "todo",
       estimate: "S",
       created_at: "2026-05-03T10:00:00.000Z",
     });
     const t2 = mkTask("t2", {
-      sprint: "s1",
+      sprint: "01HXSPRINT0000000000000001",
       status: "todo",
       estimate: "L",
       created_at: "2026-05-03T10:00:00.000Z",
@@ -378,7 +378,7 @@ describe("computeBurndown — unit: weighted_enum", () => {
       preset_values: ["S", "M", "L"],
     });
     const t1 = mkTask("t1", {
-      sprint: "s1",
+      sprint: "01HXSPRINT0000000000000001",
       status: "todo",
       estimate: "S",
       created_at: "2026-05-03T10:00:00.000Z",
@@ -397,7 +397,7 @@ describe("computeBurndown — unit: weighted_enum", () => {
 describe("computeBurndown — ideal line", () => {
   it("is a straight line from initialTotal to 0", () => {
     const t1 = mkTask("t1", {
-      sprint: "s1",
+      sprint: "01HXSPRINT0000000000000001",
       status: "todo",
       created_at: "2026-05-03T10:00:00.000Z",
     });

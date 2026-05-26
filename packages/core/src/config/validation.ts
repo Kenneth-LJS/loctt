@@ -86,7 +86,7 @@ export function validateTaskAgainstWorkflow(
   }
 
   if (aux.milestones && fm.milestone !== undefined) {
-    const known = new Set(aux.milestones.milestones.map(m => m.key));
+    const known = new Set(aux.milestones.milestones.map(m => m.id));
     if (!known.has(fm.milestone)) {
       errors.push({
         field: "milestone",
@@ -96,7 +96,7 @@ export function validateTaskAgainstWorkflow(
   }
 
   if (aux.sprints && fm.sprint !== undefined) {
-    const known = new Set(aux.sprints.sprints.map(s => s.key));
+    const known = new Set(aux.sprints.sprints.map(s => s.id));
     if (!known.has(fm.sprint)) {
       errors.push({
         field: "sprint",
@@ -106,7 +106,7 @@ export function validateTaskAgainstWorkflow(
   }
 
   if (aux.labels && fm.labels !== undefined) {
-    const known = new Set(aux.labels.labels.map(l => l.key));
+    const known = new Set(aux.labels.labels.map(l => l.id));
     for (const [i, k] of fm.labels.entries()) {
       if (!known.has(k)) {
         errors.push({

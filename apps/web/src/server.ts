@@ -824,28 +824,20 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleCreateSprint: RouteHandler = async ({ req, res, locttDir }) => {
     const r = await parseJsonBody<{
-      key: string;
-      label: string;
+      name: string;
       start_date: string;
       end_date: string;
       state: "active" | "completed" | "future";
       goal?: string;
     }>(req, res);
     try {
-      await createSprint(locttDir, {
-        key: r.key,
-        label: r.label,
+      const created = await createSprint(locttDir, {
+        name: r.name,
         start_date: r.start_date,
         end_date: r.end_date,
         state: r.state,
         ...(r.goal !== undefined ? { goal: r.goal } : {}),
       });
-      const cfg = await loadSprintsConfig(locttDir);
-      const created = assertPersisted(
-        cfg.sprints.find(s => s.key === r.key),
-        "sprint",
-        r.key,
-      );
       json(res, created, 201);
     } catch (err) {
       if (err instanceof SprintError) { error(res, err.message, 400); return; }
@@ -854,17 +846,17 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleUpdateSprint: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const key = captures[0] ?? "";
+    const id = captures[0] ?? "";
     const r = await parseJsonBody<{
-      label?: string;
+      name?: string;
       start_date?: string;
       end_date?: string;
       state?: "active" | "completed" | "future";
       goal?: string | null;
     }>(req, res);
     try {
-      await editSprint(locttDir, key, {
-        ...(r.label !== undefined ? { label: r.label } : {}),
+      await editSprint(locttDir, id, {
+        ...(r.name !== undefined ? { name: r.name } : {}),
         ...(r.start_date !== undefined ? { start_date: r.start_date } : {}),
         ...(r.end_date !== undefined ? { end_date: r.end_date } : {}),
         ...(r.state !== undefined ? { state: r.state } : {}),
@@ -872,9 +864,9 @@ export function createWebApp(options: WebAppOptions) {
       });
       const cfg = await loadSprintsConfig(locttDir);
       const updated = assertPersisted(
-        cfg.sprints.find(s => s.key === key),
+        cfg.sprints.find(s => s.id === id),
         "sprint",
-        key,
+        id,
       );
       json(res, updated);
     } catch (err) {
@@ -884,13 +876,13 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleDeleteSprint: RouteHandler = async ({ res, url, locttDir, captures }) => {
-    const key = captures[0] ?? "";
+    const id = captures[0] ?? "";
     const remapTo = url.searchParams.get("remap_to") ?? undefined;
     try {
-      const result = await deleteSprint(locttDir, key, {
+      const result = await deleteSprint(locttDir, id, {
         ...(remapTo !== undefined ? { remapTo } : {}),
       });
-      json(res, { deleted: key, ...result });
+      json(res, { deleted: id, ...result });
     } catch (err) {
       if (err instanceof SprintError) { error(res, err.message, 400); return; }
       throw err;
@@ -905,19 +897,12 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleCreateMilestone: RouteHandler = async ({ req, res, locttDir }) => {
-    const r = await parseJsonBody<{ key: string; label: string; target_date?: string }>(req, res);
+    const r = await parseJsonBody<{ name: string; target_date?: string }>(req, res);
     try {
-      await createMilestone(locttDir, {
-        key: r.key,
-        label: r.label,
+      const created = await createMilestone(locttDir, {
+        name: r.name,
         ...(r.target_date !== undefined ? { target_date: r.target_date } : {}),
       });
-      const cfg = await loadMilestonesConfig(locttDir);
-      const created = assertPersisted(
-        cfg.milestones.find(m => m.key === r.key),
-        "milestone",
-        r.key,
-      );
       json(res, created, 201);
     } catch (err) {
       if (err instanceof MilestoneError) { error(res, err.message, 400); return; }
@@ -926,23 +911,23 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleUpdateMilestone: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const key = captures[0] ?? "";
+    const id = captures[0] ?? "";
     const r = await parseJsonBody<{
-      label?: string;
+      name?: string;
       target_date?: string | null;
       archived?: boolean;
     }>(req, res);
     try {
-      await editMilestone(locttDir, key, {
-        ...(r.label !== undefined ? { label: r.label } : {}),
+      await editMilestone(locttDir, id, {
+        ...(r.name !== undefined ? { name: r.name } : {}),
         ...("target_date" in r ? { target_date: r.target_date } : {}),
         ...(r.archived !== undefined ? { archived: r.archived } : {}),
       });
       const cfg = await loadMilestonesConfig(locttDir);
       const updated = assertPersisted(
-        cfg.milestones.find(m => m.key === key),
+        cfg.milestones.find(m => m.id === id),
         "milestone",
-        key,
+        id,
       );
       json(res, updated);
     } catch (err) {
@@ -952,13 +937,13 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleDeleteMilestone: RouteHandler = async ({ res, url, locttDir, captures }) => {
-    const key = captures[0] ?? "";
+    const id = captures[0] ?? "";
     const remapTo = url.searchParams.get("remap_to") ?? undefined;
     try {
-      const result = await deleteMilestone(locttDir, key, {
+      const result = await deleteMilestone(locttDir, id, {
         ...(remapTo !== undefined ? { remapTo } : {}),
       });
-      json(res, { deleted: key, ...result });
+      json(res, { deleted: id, ...result });
     } catch (err) {
       if (err instanceof MilestoneError) { error(res, err.message, 400); return; }
       throw err;
@@ -973,19 +958,12 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleCreateLabel: RouteHandler = async ({ req, res, locttDir }) => {
-    const r = await parseJsonBody<{ key: string; label: string; color?: string }>(req, res);
+    const r = await parseJsonBody<{ name: string; color?: string }>(req, res);
     try {
-      await createLabel(locttDir, {
-        key: r.key,
-        label: r.label,
+      const created = await createLabel(locttDir, {
+        name: r.name,
         ...(r.color !== undefined ? { color: r.color } : {}),
       });
-      const cfg = await loadLabelsConfig(locttDir);
-      const created = assertPersisted(
-        cfg.labels.find(l => l.key === r.key),
-        "label",
-        r.key,
-      );
       json(res, created, 201);
     } catch (err) {
       if (err instanceof LabelError) { error(res, err.message, 400); return; }
@@ -994,18 +972,18 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleUpdateLabel: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const key = captures[0] ?? "";
-    const r = await parseJsonBody<{ label?: string; color?: string | null }>(req, res);
+    const id = captures[0] ?? "";
+    const r = await parseJsonBody<{ name?: string; color?: string | null }>(req, res);
     try {
-      await editLabel(locttDir, key, {
-        ...(r.label !== undefined ? { label: r.label } : {}),
+      await editLabel(locttDir, id, {
+        ...(r.name !== undefined ? { name: r.name } : {}),
         ...("color" in r ? { color: r.color } : {}),
       });
       const cfg = await loadLabelsConfig(locttDir);
       const updated = assertPersisted(
-        cfg.labels.find(l => l.key === key),
+        cfg.labels.find(l => l.id === id),
         "label",
-        key,
+        id,
       );
       json(res, updated);
     } catch (err) {
@@ -1015,13 +993,13 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleDeleteLabel: RouteHandler = async ({ res, url, locttDir, captures }) => {
-    const key = captures[0] ?? "";
+    const id = captures[0] ?? "";
     const remapTo = url.searchParams.get("remap_to") ?? undefined;
     try {
-      const result = await deleteLabel(locttDir, key, {
+      const result = await deleteLabel(locttDir, id, {
         ...(remapTo !== undefined ? { remapTo } : {}),
       });
-      json(res, { deleted: key, ...result });
+      json(res, { deleted: id, ...result });
     } catch (err) {
       if (err instanceof LabelError) { error(res, err.message, 400); return; }
       throw err;

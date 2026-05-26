@@ -633,35 +633,34 @@ describe("web server security", () => {
       expect(body.error).toMatch(/invalid list-view config/i);
     });
 
-    it("GET /api/sprints/:key/burndown returns the series for a known sprint", async () => {
-      // Create a sprint via the existing POST /api/sprints route.
+    it("GET /api/sprints/:id/burndown returns the series for a known sprint", async () => {
       const create = await fetch(`${base}/api/sprints`, {
         method: "POST",
         headers: csrfHeaders,
         body: JSON.stringify({
-          key: "s1",
-          label: "Sprint 1",
+          name: "Sprint 1",
           start_date: "2026-05-04",
           end_date: "2026-05-08",
           state: "active",
         }),
       });
       expect(create.status).toBe(201);
+      const created = await create.json() as { id: string };
 
-      const res = await fetch(`${base}/api/sprints/s1/burndown`);
+      const res = await fetch(`${base}/api/sprints/${created.id}/burndown`);
       expect(res.status).toBe(200);
       const body = await res.json() as {
-        sprintKey: string;
+        sprintId: string;
         series: { date: string }[];
         ideal: { date: string }[];
       };
-      expect(body.sprintKey).toBe("s1");
+      expect(body.sprintId).toBe(created.id);
       expect(body.series.length).toBe(5);
       expect(body.ideal.length).toBe(5);
     });
 
-    it("GET /api/sprints/:key/burndown returns 404 for an unknown sprint", async () => {
-      const res = await fetch(`${base}/api/sprints/nonexistent/burndown`);
+    it("GET /api/sprints/:id/burndown returns 404 for an unknown sprint", async () => {
+      const res = await fetch(`${base}/api/sprints/01HXNOSUCH/burndown`);
       expect(res.status).toBe(404);
       const body = await res.json() as { error: string };
       expect(body.error).toMatch(/unknown sprint/);
