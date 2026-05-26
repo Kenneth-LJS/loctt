@@ -2,7 +2,7 @@ import type { QueriesConfig, Task, WorkflowConfig } from "@loctt/contracts";
 import { describe, expect,it } from "vitest";
 
 import { QueriesConfigError } from "../config/queries.js";
-import { listTasks, resolveView } from "./list.js";
+import { listTasks, listTasksPaginated, resolveView } from "./list.js";
 
 const config: WorkflowConfig = {
   key: { prefix: "T-" },
@@ -240,5 +240,51 @@ describe("listTasks", () => {
       // was supplied but the view-precedence policy ignores it.
       expect(result.map(t => t.frontmatter.key).sort()).toEqual(["API-1", "WEB-1"]);
     });
+  });
+});
+
+describe("listTasksPaginated", () => {
+  it("returns { items, total, limit, offset } with total unaffected by limit", () => {
+    const result = listTasksPaginated({
+      tasks,
+      options: { limit: 2 },
+    });
+    expect(result.items).toHaveLength(2);
+    expect(result.total).toBe(4); // all 4 tasks (none archived); total is unaffected by limit
+    expect(result.limit).toBe(2);
+    expect(result.offset).toBe(0);
+  });
+
+  it("honors offset to return a subsequent page", () => {
+    const page1 = listTasksPaginated({ tasks, options: { limit: 2 }, offset: 0 });
+    const page2 = listTasksPaginated({ tasks, options: { limit: 2 }, offset: 2 });
+    expect(page1.items).toHaveLength(2);
+    expect(page2.items.length).toBeGreaterThanOrEqual(1);
+    // No overlap between pages
+    const page1Keys = new Set(page1.items.map(t => t.frontmatter.key));
+    for (const t of page2.items) {
+      expect(page1Keys.has(t.frontmatter.key)).toBe(false);
+    }
+  });
+
+  it("returns empty items when offset is past total", () => {
+    const result = listTasksPaginated({ tasks, options: { limit: 10 }, offset: 100 });
+    expect(result.items).toEqual([]);
+    expect(result.total).toBeGreaterThan(0);
+  });
+
+  it("total reflects post-filter count, not the input array size", () => {
+    const result = listTasksPaginated({
+      tasks,
+      options: { query: "priority = high", limit: 10 },
+    });
+    expect(result.total).toBe(1); // only T-2 is high
+    expect(result.items).toHaveLength(1);
+  });
+
+  it("clamps negative offset to 0", () => {
+    const result = listTasksPaginated({ tasks, options: { limit: 1 }, offset: -5 });
+    expect(result.offset).toBe(0);
+    expect(result.items).toHaveLength(1);
   });
 });

@@ -87,10 +87,54 @@ export function resolveView(
 }
 
 /**
+ * Result envelope for paginated task listing. `total` is the count
+ * *before* applying `limit`, so the UI can show "1-50 of 128".
+ */
+export interface ListTasksResult {
+  readonly items: Task[];
+  readonly total: number;
+  readonly limit: number;
+  readonly offset: number;
+}
+
+/**
+ * Filters, sorts, and paginates tasks. Returns the page of items
+ * plus the unsliced count and the effective limit/offset.
+ *
+ * `offset` defaults to 0 and is taken from `options.offset` when present
+ * (which is not currently surfaced on ListTasksOptions; callers that
+ * paginate beyond the first page pass it via the same options bag).
+ */
+export function listTasksPaginated(opts: ListTasksOptions & { offset?: number }): ListTasksResult {
+  const filtered = applyListTasksFilterAndSort(opts);
+  const offset = Math.max(0, opts.offset ?? 0);
+  const limit = opts.options.limit ?? DEFAULT_LIST_LIMIT;
+  return {
+    items: filtered.slice(offset, offset + limit),
+    total: filtered.length,
+    limit,
+    offset,
+  };
+}
+
+/**
  * Filters and sorts tasks according to ListOptions.
  * Applies query filtering, sorting, and limit.
+ *
+ * Legacy single-array return. Prefer `listTasksPaginated` for UI
+ * surfaces that need the unsliced count.
  */
 export function listTasks(opts: ListTasksOptions): Task[] {
+  const filtered = applyListTasksFilterAndSort(opts);
+  const limit = opts.options.limit ?? DEFAULT_LIST_LIMIT;
+  return filtered.slice(0, limit);
+}
+
+/**
+ * Returns the filtered + sorted task list before any limit/offset is
+ * applied. Shared by `listTasks` and `listTasksPaginated`.
+ */
+function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
   const { tasks, options, queriesConfig, workflowConfig, ctx = {} } = opts;
   let queryStr: string | undefined = options.query;
   let sortSpec = options.sort;
@@ -164,9 +208,7 @@ export function listTasks(opts: ListTasksOptions): Task[] {
     );
   }
 
-  // Limit
-  const limit = options.limit ?? DEFAULT_LIST_LIMIT;
-  return filtered.slice(0, limit);
+  return filtered;
 }
 
 /**
