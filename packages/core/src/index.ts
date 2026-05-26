@@ -255,7 +255,10 @@ export type { CreateTaskOptions, CreateTaskParams } from "./task/index.js";
 export type { DuplicateTaskOverrides, DuplicateTaskParams } from "./task/index.js";
 export type { AttachmentInfo, TaskShowModel } from "./task/index.js";
 export type { RelationshipValidationError } from "./task/index.js";
-export type { SetFieldOptions } from "./task/index.js";
+export type { CountTasksByReferenceOptions, TaskReferenceKind } from "./task/index.js";
+export type { ExportOptions } from "./task/index.js";
+export type { ReadHistoryOptions, ReadHistoryPage } from "./task/index.js";
+export type { SetFieldOptions, SetFieldsEntry, SetFieldsOptions } from "./task/index.js";
 export type { LinkTaskOptions, UnlinkTaskOptions } from "./task/index.js";
 export {
   attachFile,
@@ -278,16 +281,25 @@ export {
   BUILTIN_OPTIONAL_FIELDS,
   IMMUTABLE_FIELDS,
   setField,
+  setFields,
   SYSTEM_MUTABLE_VIA,
   TaskUpdateError,
   unsetField,
   USER_IMMUTABLE_FIELDS,
   WRITABLE_BUILTIN_FIELDS,
 } from "./task/index.js";
+export { countTasksByReference, countTasksByReferences } from "./task/index.js";
+export {
+  DEFAULT_EXPORT_COLUMNS,
+  exportTasksToCSV,
+  exportTasksToJSON,
+  filterForExport,
+} from "./task/index.js";
 export { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./task/index.js";
 export { linkTask, RelationshipError,unlinkTask } from "./task/index.js";
 export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./task/index.js";
 export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserSettings } from "./users/index.js";
+export type { RecentEntry } from "./users/index.js";
 export {
   archiveUser,
   createUser,
@@ -301,7 +313,11 @@ export {
   loadUserSettings,
   MAX_AVATAR_BYTES,
   parseUserProfile,
+  pushRecent,
   readCurrentUserId,
+  readRecents,
+  RECENTS_CAP,
+  removeRecent,
   resolveUserRef,
   saveUserProfile,
   saveUserSettings,

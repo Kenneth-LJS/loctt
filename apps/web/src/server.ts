@@ -70,6 +70,9 @@ import {
   LabelError,
   linkTask,
   listTasks,
+  exportTasksToCSV,
+  exportTasksToJSON,
+  filterForExport,
   loadAllTasks,
   loadAllUsers,
   loadArchivedGuardConfigs,
@@ -1435,6 +1438,57 @@ export function createWebApp(options: WebAppOptions) {
     json(res, paginated(frontmatters, page.offset, page.limit));
   };
 
+  const handleExportTasks: RouteHandler = async ({ res, url, locttDir }) => {
+    const format = (url.searchParams.get("format") ?? "csv").toLowerCase();
+    if (format !== "csv" && format !== "json") {
+      error(res, "format must be csv or json", 400);
+      return;
+    }
+    const includeArchived = url.searchParams.get("archived") === "true";
+    const includeBody = url.searchParams.get("body") === "true";
+    const columnsParam = url.searchParams.get("columns");
+    const columns = columnsParam ? columnsParam.split(",").map(c => c.trim()).filter(Boolean) : undefined;
+
+    const tasks = await loadAllTasks(locttDir);
+    const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
+    const baseQuery = url.searchParams.get("query") ?? undefined;
+    const view = url.searchParams.get("view") ?? undefined;
+    const projectFilter = url.searchParams.get("project") ?? undefined;
+    const params: ListTasksRequest = {
+      ...(baseQuery !== undefined ? { query: baseQuery } : {}),
+      ...(view !== undefined ? { view } : {}),
+      ...(projectFilter !== undefined ? { project: projectFilter } : {}),
+      limit: Number.MAX_SAFE_INTEGER,
+    };
+    const result = listTasks({
+      tasks,
+      options: params,
+      ...(queriesConfig !== undefined ? { queriesConfig } : {}),
+      ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+      ctx: buildListContext(tasks),
+    });
+    const filtered = filterForExport(result, includeArchived);
+    const opts = {
+      ...(columns ? { columns } : {}),
+      ...(includeBody ? { includeBody: true } : {}),
+    };
+    if (format === "json") {
+      const body = exportTasksToJSON(filtered, opts);
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Content-Disposition": 'attachment; filename="loctt-tasks.json"',
+      });
+      res.end(body);
+    } else {
+      const body = exportTasksToCSV(filtered, opts);
+      res.writeHead(200, {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": 'attachment; filename="loctt-tasks.csv"',
+      });
+      res.end(body);
+    }
+  };
+
   const handleCreateTask: RouteHandler = async ({ req, res, locttDir }) => {
     const request = await parseJsonBody<CreateTaskRequest>(req, res);
     const wfConfig = await loadWorkflowConfig(locttDir);
@@ -1785,6 +1839,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "GET", pattern: USER_AVATAR_RE, handler: handleGetAvatar },
     { method: "POST", pattern: USER_AVATAR_RE, handler: handleUploadAvatar },
     { method: "GET", pattern: "/api/tasks", handler: handleListTasks },
+    { method: "GET", pattern: "/api/tasks/export", handler: handleExportTasks },
     { method: "POST", pattern: "/api/tasks", handler: handleCreateTask },
     { method: "GET", pattern: TASK_ACTIVITY_RE, handler: handleTaskActivity },
     { method: "POST", pattern: TASK_SET_RE, handler: handleSetField },

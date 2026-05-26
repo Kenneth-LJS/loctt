@@ -666,6 +666,35 @@ describe("web server security", () => {
       expect(body.error).toMatch(/unknown sprint/);
     });
 
+    it("GET /api/tasks/export returns CSV by default", async () => {
+      await fetch(`${base}/api/tasks`, {
+        method: "POST",
+        headers: csrfHeaders,
+        body: JSON.stringify({ title: "Export A" }),
+      });
+      const res = await fetch(`${base}/api/tasks/export`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toMatch(/text\/csv/);
+      const body = await res.text();
+      expect(body.split("\n")[0]).toMatch(/^key,id,title/);
+      expect(body).toMatch(/Export A/);
+    });
+
+    it("GET /api/tasks/export?format=json returns JSON", async () => {
+      const res = await fetch(`${base}/api/tasks/export?format=json&columns=key,title`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toMatch(/application\/json/);
+      const body = await res.json() as Array<{ key: string; title: string }>;
+      expect(Array.isArray(body)).toBe(true);
+      expect(body[0]).toHaveProperty("key");
+      expect(body[0]).toHaveProperty("title");
+    });
+
+    it("GET /api/tasks/export rejects bad format", async () => {
+      const res = await fetch(`${base}/api/tasks/export?format=xml`);
+      expect(res.status).toBe(400);
+    });
+
     it("PUT /api/list-view returns 400 for visible/hidden overlap", async () => {
       const res = await fetch(`${base}/api/list-view`, {
         method: "PUT",
