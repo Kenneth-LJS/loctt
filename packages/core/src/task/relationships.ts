@@ -1,4 +1,5 @@
 import type { HistoryEntry, Task, TaskFrontmatter, TaskRelationship, WorkflowConfig } from "@loctt/contracts";
+import { effectiveInverseKey, isSymmetricRelationship, relationshipTypeKeys } from "@loctt/contracts";
 
 import { withStateLock } from "../state/lock.js";
 import { appendHistory } from "./history.js";
@@ -45,8 +46,9 @@ export interface UnlinkTaskOptions {
 function findInverseType(workflowConfig: WorkflowConfig | undefined, type: string): string | undefined {
   if (!workflowConfig) return undefined;
   for (const rel of workflowConfig.relationships) {
-    if (rel.key === type) return rel.inverse;
-    if (rel.inverse === type) return rel.key;
+    const inv = effectiveInverseKey(rel);
+    if (rel.key === type) return inv;
+    if (inv === type) return rel.key;
   }
   return undefined;
 }
@@ -64,8 +66,14 @@ function resolveRelationshipDef(
   type: string,
 ): { def: WorkflowConfig["relationships"][number]; isInverse: boolean } | undefined {
   for (const def of workflowConfig.relationships) {
-    if (def.key === type) return { def, isInverse: false };
-    if (def.inverse === type) return { def, isInverse: true };
+    if (def.key === type) {
+      // For symmetric rels, the "inverse" call equals the forward call,
+      // so isInverse should be false — there's no separate inverse direction.
+      return { def, isInverse: false };
+    }
+    if (!isSymmetricRelationship(def) && def.inverse === type) {
+      return { def, isInverse: true };
+    }
   }
   return undefined;
 }
@@ -184,7 +192,7 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
   const { locttDir, taskId, type, target, workflowConfig } = opts;
   const blockArchived = opts.blockArchivedTarget !== false;
   if (workflowConfig) {
-    const validTypes = new Set(workflowConfig.relationships.flatMap(r => [r.key, r.inverse]));
+    const validTypes = new Set(workflowConfig.relationships.flatMap(relationshipTypeKeys));
     if (!validTypes.has(type)) {
       throw new RelationshipError(
         `unknown relationship type "${type}"; valid: ${[...validTypes].join(", ")}`,

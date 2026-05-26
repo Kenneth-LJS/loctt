@@ -46,8 +46,7 @@ relationships:
     inverse_label: Is blocked by
   - key: relates_to
     label: Relates to
-    inverse: relates_to
-    inverse_label: Relates to
+    kind: symmetric
 
 custom_fields: []
 `;

@@ -6,6 +6,7 @@ import type {
   TaskFrontmatter,
   WorkflowConfig,
 } from "@loctt/contracts";
+import { relationshipTypeKeys } from "@loctt/contracts";
 
 export interface ValidationError {
   readonly field: string;
@@ -39,7 +40,7 @@ export function validateTaskAgainstWorkflow(
   const statusKeys = new Set(config.statuses.map(s => s.key));
   const priorityKeys = new Set(config.priorities.map(p => p.key));
   const taskTypeKeys = new Set(config.task_types.map(t => t.key));
-  const relationshipKeys = new Set(config.relationships.flatMap(r => [r.key, r.inverse]));
+  const relationshipKeys = new Set(config.relationships.flatMap(relationshipTypeKeys));
   const customFieldDefs = new Map(config.custom_fields.map(f => [f.key, f]));
 
   if (fm.status !== undefined && !statusKeys.has(fm.status)) {

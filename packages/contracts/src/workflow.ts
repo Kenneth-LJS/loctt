@@ -49,18 +49,115 @@ export const TaskTypeDefSchema = z.object({
 }).strict();
 export type TaskTypeDef = z.infer<typeof TaskTypeDefSchema>;
 
-/** A single relationship type definition from workflow.yaml. */
+/**
+ * How a relationship behaves with respect to direction.
+ *
+ *  - `directional` (default): forward/inverse pair, e.g. `blocks` ↔
+ *    `is_blocked_by`. Requires `inverse` and `inverse_label`.
+ *  - `symmetric`: link reads identically on both sides, e.g.
+ *    `relates_to`. `inverse` and `inverse_label` are not used; if
+ *    provided they must equal `key` / `label`.
+ *
+ * The field is open to future kinds (e.g. specialized hierarchical
+ * semantics) without adding more boolean flags.
+ */
+export const RelationshipKindSchema = z.enum(["directional", "symmetric"]);
+export type RelationshipKind = z.infer<typeof RelationshipKindSchema>;
+
+/**
+ * A single relationship type definition from workflow.yaml.
+ *
+ * `kind` defaults to `"directional"` when omitted. The UI groups
+ * both directions under a single heading when `kind: "symmetric"`.
+ */
 export const RelationshipDefSchema = z.object({
   key: z.string().min(1),
   label: z.string().min(1),
-  inverse: z.string().min(1),
-  inverse_label: z.string().min(1),
+  kind: RelationshipKindSchema.optional(),
+  inverse: z.string().min(1).optional(),
+  inverse_label: z.string().min(1).optional(),
   structural: z.boolean().optional(),
   ranked: z.boolean().optional(),
   icon: IconStringSchema.optional(),
   color: HexColor.optional(),
-}).strict();
+}).strict().superRefine((rel, ctx) => {
+  const kind = rel.kind ?? "directional";
+  if (kind === "symmetric") {
+    if (rel.inverse !== undefined && rel.inverse !== rel.key) {
+      ctx.addIssue({
+        code: "custom",
+        message: `symmetric relationship '${rel.key}' must omit 'inverse' or set it to '${rel.key}'`,
+        path: ["inverse"],
+      });
+    }
+    if (rel.inverse_label !== undefined && rel.inverse_label !== rel.label) {
+      ctx.addIssue({
+        code: "custom",
+        message: `symmetric relationship '${rel.key}' must omit 'inverse_label' or set it to '${rel.label}'`,
+        path: ["inverse_label"],
+      });
+    }
+  } else {
+    if (rel.inverse === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: `directional relationship '${rel.key}' requires an 'inverse' (or set kind: symmetric)`,
+        path: ["inverse"],
+      });
+    } else if (rel.inverse === rel.key) {
+      ctx.addIssue({
+        code: "custom",
+        message: `directional relationship '${rel.key}' has 'inverse' equal to 'key' — declare it as symmetric instead (kind: symmetric)`,
+        path: ["inverse"],
+      });
+    }
+    if (rel.inverse_label === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: `directional relationship '${rel.key}' requires an 'inverse_label' (or set kind: symmetric)`,
+        path: ["inverse_label"],
+      });
+    }
+  }
+});
 export type RelationshipDef = z.infer<typeof RelationshipDefSchema>;
+
+/** Returns true when the relationship is symmetric (its own inverse). */
+export function isSymmetricRelationship(rel: RelationshipDef): boolean {
+  return rel.kind === "symmetric";
+}
+
+/**
+ * Resolves the effective inverse key for a relationship.
+ * For directional rels: returns `inverse` (always defined after schema parse).
+ * For symmetric rels: returns `key` (self).
+ *
+ * Falls back to `key` if `inverse` is somehow undefined on a non-symmetric
+ * rel — schema-validated input guarantees this never happens, but defending
+ * here keeps hand-constructed `RelationshipDef` literals (e.g. in tests)
+ * from silently producing `undefined`.
+ */
+export function effectiveInverseKey(rel: RelationshipDef): string {
+  if (isSymmetricRelationship(rel)) return rel.key;
+  return rel.inverse ?? rel.key;
+}
+
+/** Resolves the effective inverse label, paired with effectiveInverseKey. */
+export function effectiveInverseLabel(rel: RelationshipDef): string {
+  if (isSymmetricRelationship(rel)) return rel.label;
+  return rel.inverse_label ?? rel.label;
+}
+
+/**
+ * Returns the unique relationship-type keys produced by a definition.
+ * Symmetric rels contribute one key; directional rels contribute two
+ * (forward + inverse). Used by validation, traversal, and link
+ * acceptance to build the set of "valid relationship type tokens".
+ */
+export function relationshipTypeKeys(rel: RelationshipDef): readonly string[] {
+  if (isSymmetricRelationship(rel)) return [rel.key];
+  return [rel.key, effectiveInverseKey(rel)];
+}
 
 /** Supported custom field types. */
 export const CustomFieldTypeSchema = z.enum(["string", "number", "date", "boolean", "enum"]);

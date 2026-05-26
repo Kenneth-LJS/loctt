@@ -1,3 +1,4 @@
+import { effectiveInverseKey, effectiveInverseLabel, isSymmetricRelationship } from "@loctt/contracts";
 import { loadOptionalConfigs, resolveLocttDir } from "@loctt/core";
 
 /**
@@ -41,8 +42,15 @@ export async function run(_args: string[], root: string): Promise<void> {
     console.log("");
     console.log("Relationships:");
     for (const r of workflowConfig.relationships) {
-      const structural = r.structural ? " [structural]" : "";
-      console.log(`  ${r.key} (${r.label}) ↔ ${r.inverse} (${r.inverse_label})${structural}`);
+      const tags: string[] = [];
+      if (r.structural) tags.push("structural");
+      if (r.ranked) tags.push("ranked");
+      const tagStr = tags.length ? ` [${tags.join(", ")}]` : "";
+      if (isSymmetricRelationship(r)) {
+        console.log(`  ${r.key} (${r.label}) [symmetric]${tagStr}`);
+      } else {
+        console.log(`  ${r.key} (${r.label}) ↔ ${effectiveInverseKey(r)} (${effectiveInverseLabel(r)})${tagStr}`);
+      }
     }
   }
   if (workflowConfig.custom_fields.length > 0) {
