@@ -147,10 +147,10 @@ describe("MCP executeTool", () => {
     });
 
     it("create_task accepts a known status without complaint", async () => {
-      // not_started is the first default workflow status.
+      // backlog is the first default workflow status.
       const result = await executeTool(root, "create_task", {
         title: "x",
-        status: "not_started",
+        status: "backlog",
       });
       expect(result.isError).toBeUndefined();
     });
