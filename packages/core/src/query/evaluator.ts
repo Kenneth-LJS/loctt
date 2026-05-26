@@ -1,4 +1,4 @@
-import type { TaskFrontmatter } from "@loctt/contracts";
+import type { TaskFrontmatter, WorkflowConfig } from "@loctt/contracts";
 
 import { readField } from "../task/mutable.js";
 import type { QueryNode, QueryValue } from "./parser.js";
@@ -9,6 +9,78 @@ export interface EvalContext {
   readonly body?: string;
   /** Resolves a task ID to its key (for parent alias). */
   readonly resolveKey?: (id: string) => string | undefined;
+  /**
+   * Workflow config used to resolve nested-field queries like
+   * `status.category = completed`. When omitted, nested access on
+   * enum-like fields (status/priority/task_type) returns undefined.
+   */
+  readonly workflow?: WorkflowConfig;
+}
+
+/**
+ * Maps a top-level enum-like field name to its workflow config list.
+ * Used by getNestedFieldValue to look up a status/priority/task_type
+ * record by key when the query says `status.category` etc.
+ */
+function workflowDefList(
+  wf: WorkflowConfig,
+  field: string,
+): readonly Record<string, unknown>[] | undefined {
+  switch (field) {
+    case "status": return wf.statuses as readonly Record<string, unknown>[];
+    case "priority": return wf.priorities as readonly Record<string, unknown>[];
+    case "task_type": return wf.task_types as readonly Record<string, unknown>[];
+    default: return undefined;
+  }
+}
+
+/**
+ * Resolves a dotted field path like `status.category` or
+ * `fields.impact.severity` against a frontmatter object.
+ *
+ * - `status.<attr>` / `priority.<attr>` / `task_type.<attr>`:
+ *   when workflow config is available, looks up the matching def by
+ *   key and reads `<attr>` off it (e.g. `category`, `color`).
+ * - `fields.<custom>.<sub>`: nested access into a custom field that
+ *   itself holds an object value.
+ *
+ * Returns undefined when any segment can't resolve.
+ */
+function getNestedFieldValue(
+  fm: TaskFrontmatter,
+  path: readonly string[],
+  ctx: EvalContext,
+): unknown {
+  const [head, ...rest] = path;
+  if (head === undefined || rest.length === 0) {
+    return head !== undefined ? getFieldValue(fm, head) : undefined;
+  }
+  if (ctx.workflow) {
+    const defs = workflowDefList(ctx.workflow, head);
+    if (defs) {
+      const key = getFieldValue(fm, head);
+      if (typeof key !== "string") return undefined;
+      const def = defs.find(d => d["key"] === key);
+      if (!def) return undefined;
+      return descend(def, rest);
+    }
+  }
+  if (head === "fields" && rest[0] !== undefined) {
+    const val = fm.fields?.[rest[0]];
+    return rest.length === 1 ? val : descend(val, rest.slice(1));
+  }
+  const base = getFieldValue(fm, head);
+  return descend(base, rest);
+}
+
+function descend(value: unknown, path: readonly string[]): unknown {
+  let cur: unknown = value;
+  for (const seg of path) {
+    if (cur === null || cur === undefined) return undefined;
+    if (typeof cur !== "object") return undefined;
+    cur = (cur as Record<string, unknown>)[seg];
+  }
+  return cur;
 }
 
 /**
@@ -277,7 +349,9 @@ export function evaluateQuery(
         return rels.some(r => compareValues(r.target, node.op, resolved));
       }
 
-      const fieldVal = getFieldValue(fm, node.field);
+      const fieldVal = node.field.includes(".")
+        ? getNestedFieldValue(fm, node.field.split("."), ctx)
+        : getFieldValue(fm, node.field);
 
       if (node.op === "in" || node.op === "not in") {
         if (fieldVal === undefined || fieldVal === null) {

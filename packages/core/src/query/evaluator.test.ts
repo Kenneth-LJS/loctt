@@ -220,3 +220,46 @@ describe("relationship-based query filtering", () => {
     expect(evaluateQuery(query("relationship.depends_on != x"), task)).toBe(true);
   });
 });
+
+describe("nested field access (CW-9)", () => {
+  const workflow = {
+    statuses: [
+      { key: "in_progress", label: "In progress", category: "in_progress" },
+      { key: "done", label: "Done", category: "completed" },
+    ],
+    priorities: [
+      { key: "high", label: "High", weight: 1 },
+      { key: "low", label: "Low", weight: 3 },
+    ],
+    task_types: [{ key: "task", label: "Task" }],
+    relationships: [],
+    custom_fields: [],
+  } as unknown as Parameters<typeof evaluateQuery>[2] extends infer C
+    ? C extends { workflow?: infer W }
+      ? W
+      : never
+    : never;
+  const ctx: EvalContext = { workflow };
+
+  it("status.category resolves through workflow", () => {
+    expect(evaluateQuery(query("status.category = in_progress"), task, ctx)).toBe(true);
+    expect(evaluateQuery(query("status.category = completed"), task, ctx)).toBe(false);
+    const done: TaskFrontmatter = { ...task, status: "done" };
+    expect(evaluateQuery(query("status.category = completed"), done, ctx)).toBe(true);
+  });
+
+  it("priority.weight supports numeric ordering", () => {
+    expect(evaluateQuery(query("priority.weight < 2"), task, ctx)).toBe(true);
+    expect(evaluateQuery(query("priority.weight > 2"), task, ctx)).toBe(false);
+  });
+
+  it("returns undefined-shaped result (no match) when workflow context is absent", () => {
+    expect(evaluateQuery(query("status.category = in_progress"), task)).toBe(false);
+    expect(evaluateQuery(query("status.category != in_progress"), task)).toBe(true);
+  });
+
+  it("nested access on unknown status key yields no match", () => {
+    const weird: TaskFrontmatter = { ...task, status: "ghost" };
+    expect(evaluateQuery(query("status.category = in_progress"), weird, ctx)).toBe(false);
+  });
+});
