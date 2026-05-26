@@ -9,10 +9,10 @@
 import { isAbsolute } from "node:path";
 
 import {
+  attachFile,
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,
-  attachFile,
   detachFile,
   lookupTask,
 } from "@loctt/core";
