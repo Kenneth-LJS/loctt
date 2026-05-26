@@ -593,6 +593,7 @@ export function createWebApp(options: WebAppOptions) {
       nextKey: primaryEntry
         ? `${primaryEntry.prefix}${primaryEntry.next_number}`
         : null,
+      schemaStatus: info.schemaStatus,
     };
     json(res, response);
   };

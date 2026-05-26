@@ -282,8 +282,14 @@ timeline:
 
 The first project created on init is auto-set as the workspace default. Init wizard collects: project name + prefix + skip-docs (no preset selector, no workspace name field). Size: **XS**.
 
-### CW-18 · Schema-mismatch banner support
-`getTrackerInfo` exposes a new `schema_status: "current" | "outdated"` field. UI surfaces a read-only banner blocking writes when `outdated`, instructing user to run `loctt migrate` from the CLI. (Migrate itself stays CLI-only per the C1 lock.) Size: **XS**.
+### CW-18 · Schema-mismatch banner support ✅
+`getTrackerInfo` exposes a new discriminated-union `schemaStatus`:
+`current | outdated | future | missing | unknown`. Each variant carries
+the relevant version numbers (or error message for `unknown`). HTTP
+`TrackerInfoResponse.schemaStatus` propagates the same shape verbatim.
+UI surfaces a read-only banner blocking writes when not `current`,
+instructing user to run `loctt migrate` from the CLI. Migrate itself
+stays CLI-only per the C1 lock. Size: **XS**.
 
 ## B.5 Cosmetic / supportive
 

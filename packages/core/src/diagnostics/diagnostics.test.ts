@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
 import { initLoctt } from "../init/init.js";
+import { CURRENT_SCHEMA_VERSION, writeSchemaVersion } from "../schema/index.js";
 import { runDoctor } from "./doctor.js";
 import { getTrackerInfo } from "./info.js";
 
@@ -23,6 +24,7 @@ describe("getTrackerInfo", () => {
     const info = await getTrackerInfo(root);
     expect(info.exists).toBe(false);
     expect(info.taskCount).toBe(0);
+    expect(info.schemaStatus.kind).toBe("missing");
   });
 
   it("reports initialized tracker info", async () => {
@@ -34,6 +36,41 @@ describe("getTrackerInfo", () => {
     expect(info.queriesConfig).not.toBeNull();
     expect(info.state).not.toBeNull();
     expect(info.taskCount).toBe(0);
+  });
+
+  it("reports schema status: current on a fresh init", async () => {
+    await initLoctt(root);
+    const info = await getTrackerInfo(root);
+    expect(info.schemaStatus.kind).toBe("current");
+    if (info.schemaStatus.kind === "current") {
+      expect(info.schemaStatus.version).toBe(CURRENT_SCHEMA_VERSION);
+    }
+  });
+
+  it("reports schema status: outdated when on-disk < current", async () => {
+    await initLoctt(root);
+    // Force an older on-disk version (only meaningful when CURRENT > 1).
+    if (CURRENT_SCHEMA_VERSION > 1) {
+      const locttDir = `${root}/.loctt`;
+      await writeSchemaVersion(locttDir, CURRENT_SCHEMA_VERSION - 1);
+      const info = await getTrackerInfo(root);
+      expect(info.schemaStatus.kind).toBe("outdated");
+      if (info.schemaStatus.kind === "outdated") {
+        expect(info.schemaStatus.on_disk).toBe(CURRENT_SCHEMA_VERSION - 1);
+        expect(info.schemaStatus.current).toBe(CURRENT_SCHEMA_VERSION);
+      }
+    }
+  });
+
+  it("reports schema status: future when on-disk > current", async () => {
+    await initLoctt(root);
+    const locttDir = `${root}/.loctt`;
+    await writeSchemaVersion(locttDir, CURRENT_SCHEMA_VERSION + 1);
+    const info = await getTrackerInfo(root);
+    expect(info.schemaStatus.kind).toBe("future");
+    if (info.schemaStatus.kind === "future") {
+      expect(info.schemaStatus.on_disk).toBe(CURRENT_SCHEMA_VERSION + 1);
+    }
   });
 });
 
