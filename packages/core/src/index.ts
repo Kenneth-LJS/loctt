@@ -298,6 +298,13 @@ export {
   filterForExport,
 } from "./task/index.js";
 export { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./task/index.js";
+export type {
+  BulkMoveTaskOptions,
+  BulkMoveTaskResult,
+  MoveTaskOptions,
+  MoveTaskResult,
+} from "./task/index.js";
+export { bulkMoveTasksToProject, moveTaskToProject, MoveTaskError } from "./task/index.js";
 export { linkTask, RelationshipError,unlinkTask } from "./task/index.js";
 export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./task/index.js";
 export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserSettings } from "./users/index.js";
