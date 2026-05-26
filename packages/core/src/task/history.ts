@@ -2,11 +2,26 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import type { HistoryEntry } from "@loctt/contracts";
+import type { HistoryEntry, HistoryKind } from "@loctt/contracts";
 import * as lockfile from "proper-lockfile";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { getHistoryFilePath } from "../paths/index.js";
+
+/**
+ * Coalesce window for body_edited entries by the same actor. Auto-save
+ * UIs spam history during a typing burst; collapsing them into a single
+ * "edited body" event over the window keeps the activity feed readable.
+ *
+ * The window applies between the most recent existing entry and any new
+ * entry being appended. When a coalesce occurs, the existing entry's
+ * `timestamp` is rolled forward to the new entry's timestamp; no entry
+ * is duplicated.
+ */
+export const BODY_EDITED_COALESCE_WINDOW_MS = 15 * 60 * 1000;
+
+/** Kinds eligible for coalescing in appendHistory. */
+const COALESCEABLE_KINDS: ReadonlySet<HistoryKind> = new Set(["body_edited"]);
 
 /**
  * Reads all history entries for a task. Returns `[]` if the file does
@@ -83,7 +98,7 @@ export async function appendHistory(
   });
   try {
     const existing = await readHistory(locttDir, taskId);
-    const merged = [...existing, ...stamped];
+    const merged = coalesceHistory(existing, stamped);
     const tmpPath = `${filePath}.${randomUUID()}.tmp`;
     await writeFile(tmpPath, stringifyYaml(merged), "utf-8");
     await rename(tmpPath, filePath);
@@ -94,4 +109,50 @@ export async function appendHistory(
       // caller's outcome.
     });
   }
+}
+
+/**
+ * Merge `incoming` entries into `existing`, coalescing consecutive
+ * same-actor entries of a coalesceable kind that fall inside the
+ * window. Coalescing rolls the timestamp forward (so the burst's
+ * "edited" event appears as recently as possible) but does NOT add
+ * a new row.
+ *
+ * Bulk-op entries (those carrying `bulk_op_id`) never coalesce — each
+ * bulk op stays distinct so the UI can group it. Likewise, mismatched
+ * actors never coalesce.
+ *
+ * Exported (named, but module-internal — re-exported from index) for
+ * testability.
+ */
+export function coalesceHistory(
+  existing: readonly HistoryEntry[],
+  incoming: readonly HistoryEntry[],
+): HistoryEntry[] {
+  const result: HistoryEntry[] = [...existing];
+  for (const next of incoming) {
+    const last = result[result.length - 1];
+    if (
+      last !== undefined &&
+      COALESCEABLE_KINDS.has(next.kind) &&
+      last.kind === next.kind &&
+      last.actor === next.actor &&
+      last.bulk_op_id === undefined &&
+      next.bulk_op_id === undefined &&
+      withinCoalesceWindow(last.timestamp, next.timestamp)
+    ) {
+      // Roll the existing entry's timestamp forward; drop the new entry.
+      result[result.length - 1] = { ...last, timestamp: next.timestamp };
+      continue;
+    }
+    result.push(next);
+  }
+  return result;
+}
+
+function withinCoalesceWindow(a: string, b: string): boolean {
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return false;
+  return Math.abs(tb - ta) <= BODY_EDITED_COALESCE_WINDOW_MS;
 }

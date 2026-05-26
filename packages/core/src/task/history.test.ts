@@ -225,6 +225,53 @@ describe("history actor attribution", () => {
     for (const e of entries) expect(e.actor).toBe(activeId);
   });
 
+  describe("body_edited coalescing (CW-16)", () => {
+    it("coalesces a same-actor body_edited burst into one entry", async () => {
+      // Three appends within the 15-min window: only one entry on disk.
+      const t0 = "2026-05-21T10:00:00Z";
+      const t1 = "2026-05-21T10:05:00Z";
+      const t2 = "2026-05-21T10:14:30Z";
+      await appendHistory(locttDir, "t1", [{ timestamp: t0, kind: "body_edited" }]);
+      await appendHistory(locttDir, "t1", [{ timestamp: t1, kind: "body_edited" }]);
+      await appendHistory(locttDir, "t1", [{ timestamp: t2, kind: "body_edited" }]);
+      const entries = await readHistory(locttDir, "t1");
+      expect(entries).toHaveLength(1);
+      // Timestamp rolled forward to the most recent.
+      expect(entries[0]?.timestamp).toBe(t2);
+    });
+
+    it("starts a fresh entry when the window expires", async () => {
+      const t0 = "2026-05-21T10:00:00Z";
+      const t1 = "2026-05-21T10:20:00Z"; // 20 min later — past the window
+      await appendHistory(locttDir, "t1", [{ timestamp: t0, kind: "body_edited" }]);
+      await appendHistory(locttDir, "t1", [{ timestamp: t1, kind: "body_edited" }]);
+      const entries = await readHistory(locttDir, "t1");
+      expect(entries).toHaveLength(2);
+    });
+
+    it("does not coalesce across actors", async () => {
+      // Force-stamp distinct actors by passing them on the entry directly.
+      await appendHistory(locttDir, "t1", [{ timestamp: "2026-05-21T10:00:00Z", kind: "body_edited", actor: "u-ken" }]);
+      await appendHistory(locttDir, "t1", [{ timestamp: "2026-05-21T10:05:00Z", kind: "body_edited", actor: "u-sara" }]);
+      const entries = await readHistory(locttDir, "t1");
+      expect(entries).toHaveLength(2);
+    });
+
+    it("does not coalesce non-body_edited kinds", async () => {
+      await appendHistory(locttDir, "t1", [{ timestamp: "2026-05-21T10:00:00Z", kind: "field_change", field: "title", before: "a", after: "b" }]);
+      await appendHistory(locttDir, "t1", [{ timestamp: "2026-05-21T10:01:00Z", kind: "field_change", field: "title", before: "b", after: "c" }]);
+      const entries = await readHistory(locttDir, "t1");
+      expect(entries).toHaveLength(2);
+    });
+
+    it("never coalesces entries carrying bulk_op_id", async () => {
+      await appendHistory(locttDir, "t1", [{ timestamp: "2026-05-21T10:00:00Z", kind: "body_edited", bulk_op_id: "op1" }]);
+      await appendHistory(locttDir, "t1", [{ timestamp: "2026-05-21T10:01:00Z", kind: "body_edited", bulk_op_id: "op2" }]);
+      const entries = await readHistory(locttDir, "t1");
+      expect(entries).toHaveLength(2);
+    });
+  });
+
   it("round-trips bulk_op_id through write + read", async () => {
     // CW-11: bulk operations stamp every entry in one logical bulk call
     // with a shared bulk_op_id. The UI uses this to collapse entries.
