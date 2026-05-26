@@ -176,10 +176,10 @@ export type { Token, TokenType } from "./query/index.js";
 export type { ComparisonOp,QueryNode, QueryValue } from "./query/index.js";
 export type { EvalContext } from "./query/index.js";
 export type { ListContext,ListOptions, ListTasksOptions } from "./query/index.js";
+export type { ListTasksResult } from "./query/index.js";
 export { tokenize, TokenizeError } from "./query/index.js";
 export { ParseError,parseQuery } from "./query/index.js";
 export { evaluateQuery } from "./query/index.js";
-export type { ListTasksResult } from "./query/index.js";
 export { buildListContext, DEFAULT_LIST_LIMIT, listTasks, listTasksPaginated, resolveView } from "./query/index.js";
 export type {
   ReorderBoardRankOptions,
