@@ -47,8 +47,9 @@ function workerSource(coreEntry: string): string {
 import { withStateLock, loadState, saveState, createTask } from ${JSON.stringify(coreEntry)};
 
 const locttDir = process.argv[2];
-if (!locttDir) {
-  console.error("missing locttDir arg");
+const projectId = process.argv[3];
+if (!locttDir || !projectId) {
+  console.error("missing locttDir or projectId arg");
   process.exit(2);
 }
 
@@ -58,7 +59,7 @@ try {
     const created = await createTask({
       locttDir,
       state,
-      options: { project: "task", title: "from worker " + process.pid },
+      options: { project: projectId, title: "from worker " + process.pid },
     });
     await saveState(locttDir, state);
     return created;
@@ -72,9 +73,9 @@ try {
 `;
 }
 
-async function spawnWorker(scriptPath: string, locttDir: string): Promise<string> {
+async function spawnWorker(scriptPath: string, locttDir: string, projectId: string): Promise<string> {
   return await new Promise<string>((resolveP, rejectP) => {
-    const child = spawn(process.execPath, [scriptPath, locttDir], {
+    const child = spawn(process.execPath, [scriptPath, locttDir, projectId], {
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -97,6 +98,7 @@ describe.skipIf(SKIP_REASON !== "")("cross-process lock serialization", () => {
   let root: string;
   let locttDir: string;
   let scriptPath: string;
+  let serialProjectId: string;
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "loctt-xp-"));
@@ -104,6 +106,9 @@ describe.skipIf(SKIP_REASON !== "")("cross-process lock serialization", () => {
     locttDir = resolveLocttDir(root);
     scriptPath = join(root, "worker.mjs");
     await writeFile(scriptPath, workerSource(coreDistIndex), "utf-8");
+    const { loadProjectsConfig } = await import("../config/projects.js");
+    const cfg = await loadProjectsConfig(locttDir);
+    serialProjectId = cfg.projects[0]?.id as string;
   });
 
   afterEach(async () => {
@@ -117,7 +122,7 @@ describe.skipIf(SKIP_REASON !== "")("cross-process lock serialization", () => {
     // worker would fail with a constraint error.
     const N = 5;
     const results = await Promise.all(
-      Array.from({ length: N }, () => spawnWorker(scriptPath, locttDir)),
+      Array.from({ length: N }, () => spawnWorker(scriptPath, locttDir, serialProjectId)),
     );
     expect(results).toHaveLength(N);
     expect(new Set(results).size).toBe(N);
@@ -138,8 +143,8 @@ describe.skipIf(SKIP_REASON !== "")("cross-process lock serialization", () => {
     // concurrent test by accident. Run two workers strictly in
     // sequence; the second must observe state.yaml has been bumped
     // (key T-2, not T-1).
-    const first = await spawnWorker(scriptPath, locttDir);
-    const second = await spawnWorker(scriptPath, locttDir);
+    const first = await spawnWorker(scriptPath, locttDir, serialProjectId);
+    const second = await spawnWorker(scriptPath, locttDir, serialProjectId);
     expect(first).toBe("T-1");
     expect(second).toBe("T-2");
   }, 20_000);
@@ -287,6 +292,8 @@ describe.skipIf(SKIP_REASON !== "")("cross-process crash recovery", () => {
   let locttDir: string;
   let victimPath: string;
   let recovererPath: string;
+  let taskProjectId: string;
+  let p2Id: string;
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "loctt-xp-recovery-"));
@@ -297,15 +304,21 @@ describe.skipIf(SKIP_REASON !== "")("cross-process crash recovery", () => {
     await writeFile(victimPath, victimWorkerSource(coreDistIndex), "utf-8");
     await writeFile(recovererPath, recovererWorkerSource(coreDistIndex), "utf-8");
 
+    // Capture the seeded project's id (UI generates a ULID on init).
+    const { loadProjectsConfig } = await import("../config/projects.js");
+    const cfg = await loadProjectsConfig(locttDir);
+    taskProjectId = cfg.projects[0]?.id as string;
+
     // Seed: create the destination project + four tasks under the
-    // default `task` project.
-    await createProject(locttDir, { key: "p2", label: "Two", prefix: "P-" });
+    // default ("Tasks") project.
+    const p2 = await createProject(locttDir, { name: "Two", prefix: "P-" });
+    p2Id = p2.id;
     await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);
       for (let i = 0; i < 4; i += 1) {
         await createTask({
           locttDir, state,
-          options: { project: "task", title: "task " + i },
+          options: { project: taskProjectId, title: "task " + i },
         });
       }
       await saveState(locttDir, state);
@@ -329,7 +342,7 @@ describe.skipIf(SKIP_REASON !== "")("cross-process crash recovery", () => {
     // cleanly (releases the lock but leaves the entry).
     const aOut = await new Promise<string>((resolveP, rejectP) => {
       const child = spawn(process.execPath, [
-        victimPath, locttDir, "release", "task", "p2", ...ids,
+        victimPath, locttDir, "release", taskProjectId, p2Id, ...ids,
       ], { stdio: ["ignore", "pipe", "pipe"] });
       let out = ""; let err = "";
       child.stdout.on("data", c => { out += String(c); });
@@ -346,8 +359,8 @@ describe.skipIf(SKIP_REASON !== "")("cross-process crash recovery", () => {
     const midJournal = await loadJournal(locttDir);
     expect(midJournal.entries).toHaveLength(1);
     const midTasks = await loadAllTasks(locttDir);
-    const onP2 = midTasks.filter(t => t.frontmatter.project === "p2");
-    const onTask = midTasks.filter(t => t.frontmatter.project === "task");
+    const onP2 = midTasks.filter(t => t.frontmatter.project === p2Id);
+    const onTask = midTasks.filter(t => t.frontmatter.project === taskProjectId);
     expect(onP2.length + onTask.length).toBe(4);
     expect(onP2).toHaveLength(2);
     expect(onTask).toHaveLength(2);
@@ -376,9 +389,9 @@ describe.skipIf(SKIP_REASON !== "")("cross-process crash recovery", () => {
     const finalJournal = await loadJournal(locttDir);
     expect(finalJournal.entries).toHaveLength(0);
     const finalTasks = await loadAllTasks(locttDir);
-    expect(finalTasks.every(t => t.frontmatter.project === "p2")).toBe(true);
+    expect(finalTasks.every(t => t.frontmatter.project === p2Id)).toBe(true);
     const projects = await loadProjectsConfig(locttDir);
-    expect(projects.projects.some(p => p.key === "task")).toBe(false);
+    expect(projects.projects.some(p => p.id === taskProjectId)).toBe(false);
   }, 30_000);
 
   it("SIGKILL'd holder: process B breaks the stale lock and completes recovery", async () => {
@@ -397,7 +410,7 @@ describe.skipIf(SKIP_REASON !== "")("cross-process crash recovery", () => {
 
     const aOut = await new Promise<string>((resolveP, rejectP) => {
       const child = spawn(process.execPath, [
-        victimPath, locttDir, "hold", "task", "p2", ...ids,
+        victimPath, locttDir, "hold", taskProjectId, p2Id, ...ids,
       ], { stdio: ["ignore", "pipe", "pipe"] });
       let out = ""; let err = "";
       child.stdout.on("data", c => { out += String(c); });
@@ -442,6 +455,6 @@ describe.skipIf(SKIP_REASON !== "")("cross-process crash recovery", () => {
     const finalJournal = await loadJournal(locttDir);
     expect(finalJournal.entries).toHaveLength(0);
     const finalTasks = await loadAllTasks(locttDir);
-    expect(finalTasks.every(t => t.frontmatter.project === "p2")).toBe(true);
+    expect(finalTasks.every(t => t.frontmatter.project === p2Id)).toBe(true);
   }, 30_000);
 });

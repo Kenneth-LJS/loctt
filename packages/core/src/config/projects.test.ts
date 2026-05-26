@@ -11,81 +11,74 @@ describe("parseProjectsConfig", () => {
   it("parses a minimal valid config", () => {
     const yaml = `
 projects:
-  - key: task
-    label: Task
+  - id: 01HX0000000000000000000001
+    name: Tasks
     prefix: "T-"
 `;
     const cfg = parseProjectsConfig(yaml);
     expect(cfg.projects).toHaveLength(1);
-    expect(cfg.projects[0]).toEqual({ key: "task", label: "Task", prefix: "T-" });
+    expect(cfg.projects[0]).toEqual({ id: "01HX0000000000000000000001", name: "Tasks", prefix: "T-" });
     expect(cfg.default).toBeUndefined();
   });
 
   it("parses multiple projects with a default", () => {
     const yaml = `
 projects:
-  - key: backend
-    label: Backend
+  - id: 01HX0000000000000000000010
+    name: Backend
     prefix: "BACKEND-"
-  - key: web
-    label: Web
+  - id: 01HX0000000000000000000020
+    name: Web
     prefix: "WEB-"
-default: backend
+default: 01HX0000000000000000000010
 `;
     const cfg = parseProjectsConfig(yaml);
     expect(cfg.projects).toHaveLength(2);
-    expect(cfg.default).toBe("backend");
+    expect(cfg.default).toBe("01HX0000000000000000000010");
   });
 
   it("rejects an empty projects list", () => {
     expect(() => parseProjectsConfig("projects: []")).toThrow(ProjectsConfigError);
   });
 
-  it("rejects duplicate keys", () => {
+  it("rejects duplicate ids", () => {
     const yaml = `
 projects:
-  - key: x
-    label: X
+  - id: 01HX0000000000000000000099
+    name: X
     prefix: "X-"
-  - key: x
-    label: Y
+  - id: 01HX0000000000000000000099
+    name: Y
     prefix: "Y-"
 `;
-    expect(() => parseProjectsConfig(yaml)).toThrow(/duplicate project key/);
+    expect(() => parseProjectsConfig(yaml)).toThrow(/duplicate project id/);
   });
 
   it("rejects duplicate prefixes", () => {
     const yaml = `
 projects:
-  - key: a
-    label: A
+  - id: 01HX00000000000000000000A1
+    name: A
     prefix: "T-"
-  - key: b
-    label: B
+  - id: 01HX00000000000000000000A2
+    name: B
     prefix: "T-"
 `;
     expect(() => parseProjectsConfig(yaml)).toThrow(/duplicate project prefix/);
   });
 
-  it("rejects keys with invalid characters", () => {
+  it("allows duplicate names (disambiguated by id)", () => {
     const yaml = `
 projects:
-  - key: "Bad Key"
-    label: X
-    prefix: "X-"
+  - id: 01HX0000000000000000000111
+    name: Twin
+    prefix: "T1-"
+  - id: 01HX0000000000000000000222
+    name: Twin
+    prefix: "T2-"
 `;
-    expect(() => parseProjectsConfig(yaml)).toThrow(/slug starting with a letter/);
-  });
-
-  it("rejects a leading-digit key", () => {
-    const yaml = `
-projects:
-  - key: 1bad
-    label: X
-    prefix: "X-"
-`;
-    expect(() => parseProjectsConfig(yaml)).toThrow(ProjectsConfigError);
-    expect(() => parseProjectsConfig(yaml)).toThrow(/slug starting with a letter/);
+    const cfg = parseProjectsConfig(yaml);
+    expect(cfg.projects).toHaveLength(2);
   });
 
   it("rejects an empty projects array", () => {
@@ -95,8 +88,8 @@ projects:
 
   it("rejects unknown top-level keys", () => {
     const yaml = `projects:
-  - key: x
-    label: X
+  - id: 01HX0000000000000000000333
+    name: X
     prefix: "X-"
 extra: nope
 `;
@@ -105,8 +98,8 @@ extra: nope
 
   it("rejects unknown per-project keys", () => {
     const yaml = `projects:
-  - key: x
-    label: X
+  - id: 01HX0000000000000000000444
+    name: X
     prefix: "X-"
     description: nope
 `;
@@ -116,21 +109,40 @@ extra: nope
   it("rejects an empty prefix", () => {
     const yaml = `
 projects:
-  - key: x
-    label: X
+  - id: 01HX0000000000000000000555
+    name: X
     prefix: ""
 `;
     expect(() => parseProjectsConfig(yaml)).toThrow(ProjectsConfigError);
-    expect(() => parseProjectsConfig(yaml)).toThrow("projects[0].prefix must be a non-empty string");
+  });
+
+  it("rejects an empty id", () => {
+    const yaml = `
+projects:
+  - id: ""
+    name: X
+    prefix: "X-"
+`;
+    expect(() => parseProjectsConfig(yaml)).toThrow(ProjectsConfigError);
+  });
+
+  it("rejects an empty name", () => {
+    const yaml = `
+projects:
+  - id: 01HX0000000000000000000666
+    name: ""
+    prefix: "X-"
+`;
+    expect(() => parseProjectsConfig(yaml)).toThrow(ProjectsConfigError);
   });
 
   it("rejects a default that doesn't reference any project", () => {
     const yaml = `
 projects:
-  - key: x
-    label: X
+  - id: 01HX0000000000000000000777
+    name: X
     prefix: "X-"
-default: nope
+default: 01HX0000NONEXISTENT00000000
 `;
     expect(() => parseProjectsConfig(yaml)).toThrow(/not in the projects list/);
   });
@@ -145,10 +157,10 @@ describe("serializeProjectsConfig", () => {
   it("round-trips through parse", () => {
     const cfg = {
       projects: [
-        { key: "task", label: "Task", prefix: "T-" },
-        { key: "bug", label: "Bug", prefix: "B-" },
+        { id: "01HX0000000000000000000001", name: "Tasks", prefix: "T-" },
+        { id: "01HX0000000000000000000002", name: "Bugs", prefix: "B-" },
       ],
-      default: "task",
+      default: "01HX0000000000000000000001",
     };
     const yaml = serializeProjectsConfig(cfg);
     const parsed = parseProjectsConfig(yaml);
@@ -157,7 +169,7 @@ describe("serializeProjectsConfig", () => {
 
   it("omits default when not set", () => {
     const cfg = {
-      projects: [{ key: "task", label: "Task", prefix: "T-" }],
+      projects: [{ id: "01HX0000000000000000000001", name: "Tasks", prefix: "T-" }],
     };
     const yaml = serializeProjectsConfig(cfg);
     expect(yaml).not.toContain("default:");

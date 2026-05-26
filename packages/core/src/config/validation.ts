@@ -76,7 +76,7 @@ export function validateTaskAgainstWorkflow(
   }
 
   if (aux.projects && fm.project !== undefined) {
-    const known = new Set(aux.projects.projects.map(p => p.key));
+    const known = new Set(aux.projects.projects.map(p => p.id));
     if (!known.has(fm.project)) {
       errors.push({
         field: "project",

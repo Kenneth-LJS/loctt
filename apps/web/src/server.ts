@@ -96,7 +96,7 @@ import {
   reorderRelationship,
   requireSupportedSchema,
   resolveLocttDir,
-  resolveProjectKeyForUser,
+  resolveProjectIdForUser,
   resolveUserRef,
   runDoctor,
   saveCalendarConfig,
@@ -577,9 +577,9 @@ export function createWebApp(options: WebAppOptions) {
     if (info.exists && info.state) {
       try {
         const projects = await loadProjectsConfig(locttDir);
-        const primaryKey = projects.default ?? projects.projects[0]?.key;
-        if (primaryKey !== undefined) {
-          primaryEntry = info.state.keys[primaryKey];
+        const primaryId = projects.default ?? projects.projects[0]?.id;
+        if (primaryId !== undefined) {
+          primaryEntry = info.state.keys[primaryId];
         }
       } catch {
         // No projects.yaml — pre-multi-project tracker (shouldn't happen
@@ -696,26 +696,18 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleCreateProject: RouteHandler = async ({ req, res, locttDir }) => {
     const request = await parseJsonBody<{
-      key: string;
-      label: string;
+      name: string;
       prefix: string;
       make_default?: boolean;
     }>(req, res);
     try {
-      await createProject(locttDir, {
-        key: request.key,
-        label: request.label,
+      const created = await createProject(locttDir, {
+        name: request.name,
         prefix: request.prefix,
       });
       if (request.make_default === true) {
-        await setDefaultProject(locttDir, request.key);
+        await setDefaultProject(locttDir, created.id);
       }
-      const cfg = await loadProjectsConfig(locttDir);
-      const created = assertPersisted(
-        cfg.projects.find(p => p.key === request.key),
-        "project",
-        request.key,
-      );
       json(res, created, 201);
     } catch (err) {
       if (err instanceof ProjectError) {
@@ -727,24 +719,23 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleUpdateProject: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const key = captures[0] ?? "";
-    const request = await parseJsonBody<{ label?: string; default?: boolean }>(req, res);
+    const id = captures[0] ?? "";
+    const request = await parseJsonBody<{ name?: string; default?: boolean }>(req, res);
     try {
-      if (request.label !== undefined) {
-        await editProject(locttDir, key, { label: request.label });
+      if (request.name !== undefined) {
+        await editProject(locttDir, id, { name: request.name });
       }
       if (request.default === true) {
-        await setDefaultProject(locttDir, key);
+        await setDefaultProject(locttDir, id);
       } else if (request.default === false) {
-        // Clear default only when it's currently this project.
         const cfg = await loadProjectsConfig(locttDir);
-        if (cfg.default === key) await setDefaultProject(locttDir, null);
+        if (cfg.default === id) await setDefaultProject(locttDir, null);
       }
       const cfg = await loadProjectsConfig(locttDir);
       const updated = assertPersisted(
-        cfg.projects.find(p => p.key === key),
+        cfg.projects.find(p => p.id === id),
         "project",
-        key,
+        id,
       );
       json(res, updated);
     } catch (err) {
@@ -757,13 +748,13 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleDeleteProject: RouteHandler = async ({ res, url, locttDir, captures }) => {
-    const key = captures[0] ?? "";
+    const id = captures[0] ?? "";
     const remapTo = url.searchParams.get("remap_to") ?? undefined;
     try {
-      const result = await deleteProject(locttDir, key, {
+      const result = await deleteProject(locttDir, id, {
         ...(remapTo !== undefined ? { remapTo } : {}),
       });
-      json(res, { deleted: key, remappedTaskCount: result.remappedTaskCount });
+      json(res, { deleted: id, remappedTaskCount: result.remappedTaskCount });
     } catch (err) {
       if (err instanceof ProjectError) {
         error(res, err.message, 400);
@@ -1475,7 +1466,7 @@ export function createWebApp(options: WebAppOptions) {
     // ambiguous, return 400 so the client can surface a picker.
     let projectKey: string;
     try {
-      projectKey = await resolveProjectKeyForUser(locttDir, request.project);
+      projectKey = await resolveProjectIdForUser(locttDir, request.project);
     } catch (err) {
       error(res, (err as Error).message, 400);
       return;

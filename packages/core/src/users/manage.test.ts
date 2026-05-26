@@ -28,11 +28,15 @@ import { loadAllUsers, userExists } from "./profile.js";
 
 let root: string;
 let locttDir: string;
+let taskProjectId: string;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "loctt-users-"));
   await initLoctt(root, { docs: false });
   locttDir = resolveLocttDir(root);
+  const { loadProjectsConfig } = await import("../config/projects.js");
+  const cfg = await loadProjectsConfig(locttDir);
+  taskProjectId = cfg.projects[0]?.id as string;
 });
 
 afterEach(async () => {
@@ -273,7 +277,7 @@ describe("deleteUser", () => {
       await createTask({
         locttDir,
         state,
-        options: { project: "task", title: "T", assignee: u.id },
+        options: { project: taskProjectId, title: "T", assignee: u.id },
       });
       await saveState(locttDir, state);
     });
@@ -296,7 +300,7 @@ describe("deleteUser", () => {
       await createTask({
         locttDir,
         state,
-        options: { project: "task", title: "T", assignee: u.id, reporter: u.id },
+        options: { project: taskProjectId, title: "T", assignee: u.id, reporter: u.id },
       });
       await saveState(locttDir, state);
     });
@@ -315,7 +319,7 @@ describe("deleteUser", () => {
       await createTask({
         locttDir,
         state,
-        options: { project: "task", title: "T", assignee: u.id },
+        options: { project: taskProjectId, title: "T", assignee: u.id },
       });
       await saveState(locttDir, state);
     });
@@ -384,6 +388,13 @@ describe("multi-user switching: state is global, settings are per-user", () => {
   // operations being silently scoped to one user when they should
   // be global.
 
+  /** Resolves the initial project's id (seeded by initLoctt). */
+  async function seededProjectId(): Promise<string> {
+    const { loadProjectsConfig } = await import("../config/projects.js");
+    const cfg = await loadProjectsConfig(locttDir);
+    return cfg.projects[0]?.id as string;
+  }
+
   async function makeUserWithDefault(name: string, defaultProject: string): Promise<string> {
     const u = await createUser(locttDir, { name });
     const { saveUserSettings } = await import("./settings.js");
@@ -404,34 +415,36 @@ describe("multi-user switching: state is global, settings are per-user", () => {
     // Add a second project so each user's default points to something
     // real.
     const { createProject } = await import("../projects/manage.js");
-    await createProject(locttDir, { key: "alt", prefix: "A-", label: "Alt" });
+    const taskId = await seededProjectId();
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "A-" });
 
-    const aliceId = await makeUserWithDefault("Alice", "task");
-    const bobId = await makeUserWithDefault("Bob", "alt");
+    const aliceId = await makeUserWithDefault("Alice", taskId);
+    const bobId = await makeUserWithDefault("Bob", alt.id);
 
     await switchCurrentUser(locttDir, aliceId);
-    expect(await resolveCurrentUserDefault()).toBe("task");
+    expect(await resolveCurrentUserDefault()).toBe(taskId);
 
     await switchCurrentUser(locttDir, bobId);
-    expect(await resolveCurrentUserDefault()).toBe("alt");
+    expect(await resolveCurrentUserDefault()).toBe(alt.id);
 
     // Switch back: must not stick to Bob's value.
     await switchCurrentUser(locttDir, aliceId);
-    expect(await resolveCurrentUserDefault()).toBe("task");
+    expect(await resolveCurrentUserDefault()).toBe(taskId);
   });
 
   it("tasks are global: a task created under user A is visible under user B", async () => {
     // LocTT is NOT a per-user-scoped tracker. Pin that contract here
     // so a future regression toward "user-scoped lists" is caught.
-    const aliceId = await makeUserWithDefault("Alice", "task");
-    const bobId = await makeUserWithDefault("Bob", "task");
+    const taskId = await seededProjectId();
+    const aliceId = await makeUserWithDefault("Alice", taskId);
+    const bobId = await makeUserWithDefault("Bob", taskId);
 
     await switchCurrentUser(locttDir, aliceId);
     await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);
       await createTask({
         locttDir, state,
-        options: { project: "task", title: "made by Alice" },
+        options: { project: taskId, title: "made by Alice" },
       });
       await saveState(locttDir, state);
     });
@@ -443,19 +456,17 @@ describe("multi-user switching: state is global, settings are per-user", () => {
   });
 
   it("rapid switching across three users picks up each user's settings in turn", async () => {
-    // Stress the resolution cache (if any) by switching among 3
-    // users multiple times. If anything is wrongly cached at module
-    // scope, the second pass would observe stale state.
     const { createProject } = await import("../projects/manage.js");
-    await createProject(locttDir, { key: "alt", prefix: "A-", label: "Alt" });
-    await createProject(locttDir, { key: "third", prefix: "X-", label: "Third" });
+    const taskId = await seededProjectId();
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "A-" });
+    const third = await createProject(locttDir, { name: "Third", prefix: "X-" });
 
-    const a = await makeUserWithDefault("A", "task");
-    const b = await makeUserWithDefault("B", "alt");
-    const c = await makeUserWithDefault("C", "third");
+    const a = await makeUserWithDefault("A", taskId);
+    const b = await makeUserWithDefault("B", alt.id);
+    const c = await makeUserWithDefault("C", third.id);
 
     const order = [a, b, c, a, c, b, a];
-    const expected = ["task", "alt", "third", "task", "third", "alt", "task"];
+    const expected = [taskId, alt.id, third.id, taskId, third.id, alt.id, taskId];
     for (let i = 0; i < order.length; i += 1) {
       const id = order[i];
       if (id === undefined) throw new Error("test bug");
@@ -465,55 +476,50 @@ describe("multi-user switching: state is global, settings are per-user", () => {
   });
 
   it("a per-user default_project pointing at a hard-deleted project falls through to workspace default", async () => {
-    // Regression for stale settings: user once had default=alt, alt
-    // got hard-deleted, switching back to that user should not error
-    // or resolve to the stale value.
     const { createProject, deleteProject } = await import("../projects/manage.js");
-    await createProject(locttDir, { key: "alt", prefix: "A-", label: "Alt" });
+    const taskId = await seededProjectId();
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "A-" });
 
-    const aliceId = await makeUserWithDefault("Alice", "alt");
+    const aliceId = await makeUserWithDefault("Alice", alt.id);
     await switchCurrentUser(locttDir, aliceId);
-    expect(await resolveCurrentUserDefault()).toBe("alt");
+    expect(await resolveCurrentUserDefault()).toBe(alt.id);
 
-    // Hard delete `alt` (no tasks reference it, so no remap needed).
-    await deleteProject(locttDir, "alt", { hard: true });
+    // Hard delete alt (no tasks reference it).
+    await deleteProject(locttDir, alt.id, { hard: true });
 
-    // The settings file still says default_project: "alt"; the
-    // resolution layer must treat this as stale and fall through.
-    // resolveProjectKey returns the workspace default ("task" by
-    // initLoctt) in that case.
-    const { resolveProjectKey } = await import("../projects/manage.js");
+    // settings still says default_project = alt.id; resolution must
+    // treat that stale id as missing and fall through to the workspace
+    // default (the seeded project).
+    const { resolveProjectId } = await import("../projects/manage.js");
     const { loadProjectsConfig } = await import("../config/projects.js");
     const cfg = await loadProjectsConfig(locttDir);
     const userDefault = await resolveCurrentUserDefault();
-    expect(userDefault).toBe("alt"); // settings file unchanged
+    expect(userDefault).toBe(alt.id);
     expect(
-      resolveProjectKey(cfg, userDefault !== undefined ? { userDefault } : {}),
-    ).toBe("task");
+      resolveProjectId(cfg, userDefault !== undefined ? { userDefault } : {}),
+    ).toBe(taskId);
   });
 
-  it("a per-user default_project pointing at an ARCHIVED project still resolves (current behavior)", async () => {
-    // Pinning down today's behavior: archived projects remain in
-    // projects.yaml, and resolveProjectKey doesn't filter on archived.
-    // So a user whose default points at an archived project still
-    // resolves to it. Phase 4 will revisit whether archived
-    // references should be allowed as targets of new operations;
-    // resolving an existing default is a separate question. If a
-    // future change makes archived projects unresolvable, update this
-    // test alongside it.
+  it("a per-user default_project pointing at an ARCHIVED project falls through to workspace default", async () => {
+    // CW-12 behavior: resolveProjectId treats archived projects as not
+    // resolvable, so a per-user default pointing at one falls through.
+    // (Different from the pre-CW-12 behavior, where archived projects
+    // were still resolvable as defaults — see the matching note in
+    // resolveProjectIdFromInput.)
+    const taskId = await seededProjectId();
     const { createProject, archiveProject } = await import("../projects/manage.js");
-    await createProject(locttDir, { key: "alt", prefix: "A-", label: "Alt" });
-    const aliceId = await makeUserWithDefault("Alice", "alt");
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "A-" });
+    const aliceId = await makeUserWithDefault("Alice", alt.id);
     await switchCurrentUser(locttDir, aliceId);
-    await archiveProject(locttDir, "alt");
+    await archiveProject(locttDir, alt.id);
 
-    const { resolveProjectKey } = await import("../projects/manage.js");
+    const { resolveProjectId } = await import("../projects/manage.js");
     const { loadProjectsConfig } = await import("../config/projects.js");
     const cfg = await loadProjectsConfig(locttDir);
     const userDefault = await resolveCurrentUserDefault();
     expect(
-      resolveProjectKey(cfg, userDefault !== undefined ? { userDefault } : {}),
-    ).toBe("alt");
+      resolveProjectId(cfg, userDefault !== undefined ? { userDefault } : {}),
+    ).toBe(taskId);
   });
 
   it("settings written under one user do not leak to another", async () => {

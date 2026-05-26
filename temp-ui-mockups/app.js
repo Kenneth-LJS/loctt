@@ -171,9 +171,11 @@
         },
       },
       projects: [
-        { key: "web",     label: "Web",     prefix: "WEB-",     next_number: 129, archived: false, default: true },
-        { key: "backend", label: "Backend", prefix: "BACKEND-", next_number: 127, archived: false },
-        { key: "infra",   label: "Infra",   prefix: "INF-",     next_number: 12,  archived: false },
+        // Mock ids — real init generates ULIDs. Tasks reference these
+        // ids via their `project` field. Names are display-only.
+        { id: "p_web",     name: "Web",     prefix: "WEB-",     next_number: 129, archived: false, default: true },
+        { id: "p_backend", name: "Backend", prefix: "BACKEND-", next_number: 127, archived: false },
+        { id: "p_infra",   name: "Infra",   prefix: "INF-",     next_number: 12,  archived: false },
       ],
       users: [
         { id: userKen,  name: "Ken Loh",      email: "ken@example.com",  timezone: "Asia/Singapore",  archived: false, settings: { theme: "light", default_view: "list" } },
@@ -247,16 +249,16 @@
       }, opts);
     }
     return [
-      mk({ key: "WEB-128", project: "web",     title: "Implement Gantt edge-drag handles", status: "in_progress", priority: "high",     task_type: "feature", assignee: uKen,  reporter: uKen,  labels: ["frontend", "design"],  due_date: todayYMD(7),  start_date: todayYMD(-3), milestone: "v1",  sprint: "S-12", estimate: "3", board_rank: "a", body: "Drag the edges of bars to resize.\n\n- Edge zone: 6px on either side\n- Snap to day grid\n- Tooltip with new date" }),
-      mk({ key: "WEB-127", project: "web",     title: "Audit dependency arrows on month zoom", status: "in_progress", priority: "medium", task_type: "bug",     assignee: uSara, reporter: uKen,  labels: ["frontend"], due_date: todayYMD(3), milestone: "v1", sprint: "S-12", estimate: "2", board_rank: "b" }),
-      mk({ key: "WEB-126", project: "web",     title: "Detect edge-zone hover on bars",        status: "backlog",     priority: "medium", task_type: "task",    reporter: uKen,  labels: ["frontend"], milestone: "v1", sprint: "S-12", estimate: "1", board_rank: "c" }),
-      mk({ key: "WEB-125", project: "web",     title: "Keyboard shortcuts overlay",            status: "backlog",     priority: "low",    task_type: "feature", reporter: uSara, labels: ["frontend"], sprint: "S-13", estimate: "2", board_rank: "d" }),
-      mk({ key: "WEB-115", project: "web",     title: "Sidebar collapse animation jank",       status: "backlog",     priority: "low",    task_type: "bug",     reporter: uKen,  labels: ["frontend"], board_rank: "e" }),
-      mk({ key: "WEB-101", project: "web",     title: "Theme tokens audit",                     status: "done",        priority: "low",    task_type: "task",    assignee: uKen,  reporter: uKen,  labels: ["frontend", "design"], board_rank: "f", completed_date: todayYMD(-5) }),
-      mk({ key: "BACKEND-126", project: "backend", title: "Cycle-detect on inverse relationship key", status: "in_progress", priority: "critical", task_type: "bug", assignee: uJess, reporter: uKen, labels: ["backend"], due_date: todayYMD(1), milestone: "v1", sprint: "S-12", estimate: "5", board_rank: "g" }),
-      mk({ key: "BACKEND-125", project: "backend", title: "Atomic schema sentinel write",          status: "done",        priority: "high",   task_type: "task",    assignee: uJess, reporter: uKen, labels: ["backend"], milestone: "v1", sprint: "S-11", estimate: "3", board_rank: "h", completed_date: todayYMD(-12) }),
-      mk({ key: "BACKEND-9", project: "backend", title: "Bulk operations core helpers",          status: "backlog",     priority: "high",   task_type: "feature", reporter: uKen, labels: ["backend"], sprint: "S-13", estimate: "8", board_rank: "i" }),
-      mk({ key: "INF-12",   project: "infra",   title: "Wire test workspace sweep",             status: "wont_do",     priority: "low",    task_type: "task",    reporter: uKen,  labels: ["infra"], board_rank: "j" }),
+      mk({ key: "WEB-128", project: "p_web",     title: "Implement Gantt edge-drag handles", status: "in_progress", priority: "high",     task_type: "feature", assignee: uKen,  reporter: uKen,  labels: ["frontend", "design"],  due_date: todayYMD(7),  start_date: todayYMD(-3), milestone: "v1",  sprint: "S-12", estimate: "3", board_rank: "a", body: "Drag the edges of bars to resize.\n\n- Edge zone: 6px on either side\n- Snap to day grid\n- Tooltip with new date" }),
+      mk({ key: "WEB-127", project: "p_web",     title: "Audit dependency arrows on month zoom", status: "in_progress", priority: "medium", task_type: "bug",     assignee: uSara, reporter: uKen,  labels: ["frontend"], due_date: todayYMD(3), milestone: "v1", sprint: "S-12", estimate: "2", board_rank: "b" }),
+      mk({ key: "WEB-126", project: "p_web",     title: "Detect edge-zone hover on bars",        status: "backlog",     priority: "medium", task_type: "task",    reporter: uKen,  labels: ["frontend"], milestone: "v1", sprint: "S-12", estimate: "1", board_rank: "c" }),
+      mk({ key: "WEB-125", project: "p_web",     title: "Keyboard shortcuts overlay",            status: "backlog",     priority: "low",    task_type: "feature", reporter: uSara, labels: ["frontend"], sprint: "S-13", estimate: "2", board_rank: "d" }),
+      mk({ key: "WEB-115", project: "p_web",     title: "Sidebar collapse animation jank",       status: "backlog",     priority: "low",    task_type: "bug",     reporter: uKen,  labels: ["frontend"], board_rank: "e" }),
+      mk({ key: "WEB-101", project: "p_web",     title: "Theme tokens audit",                     status: "done",        priority: "low",    task_type: "task",    assignee: uKen,  reporter: uKen,  labels: ["frontend", "design"], board_rank: "f", completed_date: todayYMD(-5) }),
+      mk({ key: "BACKEND-126", project: "p_backend", title: "Cycle-detect on inverse relationship key", status: "in_progress", priority: "critical", task_type: "bug", assignee: uJess, reporter: uKen, labels: ["backend"], due_date: todayYMD(1), milestone: "v1", sprint: "S-12", estimate: "5", board_rank: "g" }),
+      mk({ key: "BACKEND-125", project: "p_backend", title: "Atomic schema sentinel write",          status: "done",        priority: "high",   task_type: "task",    assignee: uJess, reporter: uKen, labels: ["backend"], milestone: "v1", sprint: "S-11", estimate: "3", board_rank: "h", completed_date: todayYMD(-12) }),
+      mk({ key: "BACKEND-9", project: "p_backend", title: "Bulk operations core helpers",          status: "backlog",     priority: "high",   task_type: "feature", reporter: uKen, labels: ["backend"], sprint: "S-13", estimate: "8", board_rank: "i" }),
+      mk({ key: "INF-12",   project: "p_infra",   title: "Wire test workspace sweep",             status: "wont_do",     priority: "low",    task_type: "task",    reporter: uKen,  labels: ["infra"], board_rank: "j" }),
     ];
   }
 
@@ -309,13 +311,16 @@
     },
     createTask(input) {
       const d = load();
-      const proj = d.projects.find(p => p.key === input.project) || d.projects[0];
+      // Accept project id, project name, or fall back to the default/first.
+      const proj = (input.project && d.projects.find(p => p.id === input.project || p.name === input.project))
+        || d.projects.find(p => p.default)
+        || d.projects[0];
       const key = proj.prefix + proj.next_number;
       proj.next_number += 1;
       const task = {
         id: ulid(),
         key,
-        project: proj.key,
+        project: proj.id,
         title: input.title || "(untitled)",
         status: input.status || d.workflow.statuses[0].key,
         priority: input.priority || null,
@@ -431,26 +436,35 @@
     bulkUnarchive(ids) { store.bulkUpdate(ids, { archived: false }); },
     bulkDelete(ids)    { const d = load(); d.tasks = d.tasks.filter(t => !ids.includes(t.id) && !ids.includes(t.key)); save(); },
 
-    // projects
+    // projects — schema mirrors core/contracts: { id, name, prefix, archived? }
+    // plus a mock-only `next_number` for the prefix counter.
     listProjects(includeArchived) { return load().projects.filter(p => includeArchived || !p.archived); },
-    getProject(key) { return load().projects.find(p => p.key === key); },
-    createProject(def) { load().projects.push({ ...def, next_number: 1, archived: false }); save(); },
-    updateProject(key, changes) {
-      const p = store.getProject(key); if (!p) return;
-      // label only (key + prefix immutable)
-      if (changes.label !== undefined) p.label = changes.label;
+    getProject(idOrName) {
+      const projs = load().projects;
+      return projs.find(p => p.id === idOrName) || projs.find(p => p.name === idOrName);
+    },
+    createProject(def) {
+      const id = def.id || ("p_" + ulid().slice(-8).toLowerCase());
+      load().projects.push({ id, name: def.name, prefix: def.prefix, next_number: 1, archived: false });
+      save();
+      return id;
+    },
+    updateProject(id, changes) {
+      const p = load().projects.find(x => x.id === id); if (!p) return;
+      // name only (id + prefix immutable)
+      if (changes.name !== undefined) p.name = changes.name;
       if (changes.archived !== undefined) p.archived = changes.archived;
       save();
     },
-    setDefaultProject(key) {
+    setDefaultProject(id) {
       const d = load();
-      d.projects.forEach(p => { p.default = p.key === key; });
+      d.projects.forEach(p => { p.default = p.id === id; });
       save();
     },
-    deleteProject(key, remapTo) {
+    deleteProject(id, remapTo) {
       const d = load();
-      if (remapTo) d.tasks.forEach(t => { if (t.project === key) t.project = remapTo; });
-      d.projects = d.projects.filter(p => p.key !== key);
+      if (remapTo) d.tasks.forEach(t => { if (t.project === id) t.project = remapTo; });
+      d.projects = d.projects.filter(p => p.id !== id);
       save();
     },
 

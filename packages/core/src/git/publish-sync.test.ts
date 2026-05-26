@@ -15,6 +15,7 @@ import { publish, sync } from "./publish-sync.js";
 describe("publish-sync", () => {
   let root: string;
   let locttDir: string;
+  let taskProjectId: string;
 
   beforeEach(async () => {
     const { mkdtemp } = await import("node:fs/promises");
@@ -27,6 +28,9 @@ describe("publish-sync", () => {
     await initLoctt(root);
     locttDir = resolveLocttDir(root);
     await enableGit(locttDir, root);
+    const { loadProjectsConfig } = await import("../config/projects.js");
+    const cfg = await loadProjectsConfig(locttDir);
+    taskProjectId = cfg.projects[0]?.id as string;
   });
 
   afterEach(async () => {
@@ -41,7 +45,7 @@ describe("publish-sync", () => {
 
       // Create a task so there's something to publish
       const state = await loadState(locttDir);
-      await createTask({ locttDir, state, options: { project: "task", title: "Test task" } });
+      await createTask({ locttDir, state, options: { project: taskProjectId, title: "Test task" } });
       await saveState(locttDir, state);
 
       await publish(locttDir, root);
@@ -55,7 +59,7 @@ describe("publish-sync", () => {
 
     it("removes files from loctt branch when deleted locally", async () => {
       const state = await loadState(locttDir);
-      const task = await createTask({ locttDir, state, options: { project: "task", title: "Will be deleted" } });
+      const task = await createTask({ locttDir, state, options: { project: taskProjectId, title: "Will be deleted" } });
       await saveState(locttDir, state);
 
       // First publish
@@ -83,7 +87,7 @@ describe("publish-sync", () => {
   describe("sync", () => {
     it("removes locally deleted files that were removed on the branch", async () => {
       const state = await loadState(locttDir);
-      const task = await createTask({ locttDir, state, options: { project: "task", title: "Remote delete test" } });
+      const task = await createTask({ locttDir, state, options: { project: taskProjectId, title: "Remote delete test" } });
       await saveState(locttDir, state);
 
       // Publish to branch
@@ -110,7 +114,7 @@ describe("publish-sync", () => {
 
     it("preserves the local/ directory during sync", async () => {
       const state = await loadState(locttDir);
-      await createTask({ locttDir, state, options: { project: "task", title: "Sync test" } });
+      await createTask({ locttDir, state, options: { project: taskProjectId, title: "Sync test" } });
       await saveState(locttDir, state);
       await publish(locttDir, root);
 

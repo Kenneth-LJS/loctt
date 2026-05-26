@@ -343,8 +343,8 @@ describe("MCP executeTool", () => {
     it("delete_project without confirm is rejected", async () => {
       // Need two projects so the lone-project guard doesn't fire
       // first.
-      await executeTool(root, "create_project", { key: "alt", prefix: "ALT-" });
-      const result = await executeTool(root, "delete_project", { key: "alt" });
+      await executeTool(root, "create_project", { name: "Alt", prefix: "ALT-" });
+      const result = await executeTool(root, "delete_project", { project: "Alt" });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toMatch(/confirm/i);
     });

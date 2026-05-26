@@ -16,10 +16,15 @@ import { applyWorkflowEdit } from "./workflow-write.js";
 let root: string;
 let locttDir: string;
 
+let taskProjectId: string;
+
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "loctt-wf-write-"));
   await initLoctt(root, { docs: false });
   locttDir = resolveLocttDir(root);
+  const { loadProjectsConfig } = await import("./projects.js");
+  const cfg = await loadProjectsConfig(locttDir);
+  taskProjectId = cfg.projects[0]?.id as string;
 });
 
 afterEach(async () => {
@@ -31,7 +36,7 @@ async function makeTaskWithStatus(status: string): Promise<void> {
     const state = await loadState(locttDir);
     await createTask({
       locttDir, state,
-      options: { project: "task", title: "T", status },
+      options: { project: taskProjectId, title: "T", status },
     });
     await saveState(locttDir, state);
   });
@@ -102,9 +107,9 @@ describe("applyWorkflowEdit — relationships", () => {
   async function makeLinkedPair(relType: string): Promise<void> {
     await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);
-      await createTask({ locttDir, state, options: { project: "task", title: "A" } });
+      await createTask({ locttDir, state, options: { project: taskProjectId, title: "A" } });
       const target = await createTask({
-        locttDir, state, options: { project: "task", title: "B" },
+        locttDir, state, options: { project: taskProjectId, title: "B" },
       });
       await saveState(locttDir, state);
       // Link A → relType → B directly via writeTask round-trip.
@@ -192,9 +197,9 @@ describe("applyWorkflowEdit — relationships", () => {
     // one type; the other must round-trip untouched.
     await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);
-      await createTask({ locttDir, state, options: { project: "task", title: "A" } });
-      const b = await createTask({ locttDir, state, options: { project: "task", title: "B" } });
-      const c = await createTask({ locttDir, state, options: { project: "task", title: "C" } });
+      await createTask({ locttDir, state, options: { project: taskProjectId, title: "A" } });
+      const b = await createTask({ locttDir, state, options: { project: taskProjectId, title: "B" } });
+      const c = await createTask({ locttDir, state, options: { project: taskProjectId, title: "C" } });
       await saveState(locttDir, state);
       const tasks = await loadAllTasks(locttDir);
       const a = tasks.find(t => t.frontmatter.key === "T-1");
@@ -514,7 +519,7 @@ async function seedTaskWithField(
     const state = await loadState(locttDir);
     const created = await createTask({
       locttDir, state,
-      options: { project: "task", title: "T" },
+      options: { project: taskProjectId, title: "T" },
     });
     await saveState(locttDir, state);
     const { writeTask } = await import("../task/io.js");
@@ -709,7 +714,7 @@ describe("applyWorkflowEdit — custom field enum values", () => {
       const state = await loadState(locttDir);
       const created = await createTask({
         locttDir, state,
-        options: { project: "task", title: "T" },
+        options: { project: taskProjectId, title: "T" },
       });
       await saveState(locttDir, state);
       const { writeTask } = await import("../task/io.js");

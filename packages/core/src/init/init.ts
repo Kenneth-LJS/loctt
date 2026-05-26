@@ -25,15 +25,11 @@ export interface InitOptions {
   /** Key prefix, defaults to "T-". */
   readonly prefix?: string;
   /**
-   * Starting project key (slug). Defaults to "tasks".
-   * The state.yaml counter is keyed by this and tasks created in
-   * this project carry it as their `project` frontmatter field.
+   * Starting project name (display). Defaults to "Tasks".
+   * The project's id is auto-generated as a ULID; the state.yaml
+   * counter and tasks' `project` frontmatter both reference that id.
    */
-  readonly projectKey?: string;
-  /**
-   * Starting project label (display name). Defaults to "Tasks".
-   */
-  readonly projectLabel?: string;
+  readonly projectName?: string;
   /** Whether to generate helper docs. Defaults to true. */
   readonly docs?: boolean;
 }
@@ -50,20 +46,20 @@ export interface InitResult {
 export async function initLoctt(root: string, options: InitOptions = {}): Promise<InitResult> {
   const locttDir = resolveLocttDir(root);
   const prefix = options.prefix ?? "T-";
-  const projectKey = options.projectKey ?? "task";
-  const projectLabel = options.projectLabel ?? "Task";
+  const projectName = options.projectName ?? "Tasks";
   const genDocs = options.docs ?? true;
 
-  // Validate up front so the user sees a clean error rather than a
-  // post-write parse failure on first load.
-  if (!/^[a-z][a-z0-9_-]*$/.test(projectKey)) {
-    throw new Error(
-      `project key must start with a lowercase letter, followed by lowercase letters, digits, hyphen, or underscore (got: ${projectKey})`,
-    );
-  }
   if (prefix.length === 0) {
     throw new Error(`prefix must be non-empty`);
   }
+  if (projectName.length === 0) {
+    throw new Error(`project name must be non-empty`);
+  }
+
+  // Generate the initial project's id up front so projects.yaml and
+  // state.yaml agree on the same ULID.
+  const { ulid } = await import("ulid");
+  const projectId = ulid();
 
   if (await fileExists(locttDir)) {
     throw new Error(`.loctt directory already exists at ${locttDir}`);
@@ -96,14 +92,15 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
     // `loctt project create`, but at least one always exists.
     await writeFile(
       join(stageDir, "config", "projects.yaml"),
-      defaultProjectsYaml(projectKey, projectLabel, prefix),
+      defaultProjectsYaml(projectId, projectName, prefix),
       "utf-8",
     );
     created.push(getProjectsConfigPath(locttDir));
 
-    // Counter is keyed by the project key, not the literal "task"
-    // — per-project counters layer cleanly on top.
-    await writeFile(join(stageDir, "state.yaml"), defaultStateYaml(projectKey, prefix), "utf-8");
+    // Counter is keyed by the project's id (ULID), matching the entry
+    // in projects.yaml. Per-project counters layer on this id cleanly
+    // when more projects are added later.
+    await writeFile(join(stageDir, "state.yaml"), defaultStateYaml(projectId, prefix), "utf-8");
     created.push(getStateFilePath(locttDir));
 
     // Schema version. Migrations key off this on every load.

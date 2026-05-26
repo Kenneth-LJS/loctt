@@ -13,7 +13,7 @@ import {
   readHistory,
   readTaskBody,
   resolveLocttDir,
-  resolveProjectKeyForUser,
+  resolveProjectIdForUser,
   saveState,
   setField,
   unsetField,
@@ -42,7 +42,7 @@ export async function create(args: string[], root: string): Promise<void> {
   // Resolve target project via the shared chain: explicit
   // > per-user default > workspace default > sole project.
   const explicit = getArg(args, "--project");
-  const projectKey = await resolveProjectKeyForUser(locttDir, explicit);
+  const projectKey = await resolveProjectIdForUser(locttDir, explicit);
 
   const status = getArg(args, "--status");
   const priority = getArg(args, "--priority");

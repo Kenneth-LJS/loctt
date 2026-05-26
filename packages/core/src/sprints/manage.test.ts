@@ -21,11 +21,15 @@ import {
 
 let root: string;
 let locttDir: string;
+let taskProjectId: string;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "loctt-sprints-"));
   await initLoctt(root, { docs: false });
   locttDir = resolveLocttDir(root);
+  const { loadProjectsConfig } = await import("../config/projects.js");
+  const cfg = await loadProjectsConfig(locttDir);
+  taskProjectId = cfg.projects[0]?.id as string;
 });
 
 afterEach(async () => {
@@ -160,7 +164,7 @@ describe("deleteSprint (soft, default)", () => {
       await createTask({
         locttDir,
         state,
-        options: { project: "task", title: "t", sprint: "s1" },
+        options: { project: taskProjectId, title: "t", sprint: "s1" },
       });
       await saveState(locttDir, state);
     });
@@ -200,7 +204,7 @@ describe("deleteSprint (hard)", () => {
       await createTask({
         locttDir,
         state,
-        options: { project: "task", title: "t", sprint: "s1" },
+        options: { project: taskProjectId, title: "t", sprint: "s1" },
       });
       await saveState(locttDir, state);
     });
@@ -219,7 +223,7 @@ describe("deleteSprint (hard)", () => {
       await createTask({
         locttDir,
         state,
-        options: { project: "task", title: "t", sprint: "s1" },
+        options: { project: taskProjectId, title: "t", sprint: "s1" },
       });
       await saveState(locttDir, state);
     });

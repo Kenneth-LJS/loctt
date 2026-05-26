@@ -20,11 +20,15 @@ import {
 
 let root: string;
 let locttDir: string;
+let taskProjectId: string;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "loctt-milestones-"));
   await initLoctt(root, { docs: false });
   locttDir = resolveLocttDir(root);
+  const { loadProjectsConfig } = await import("../config/projects.js");
+  const cfg = await loadProjectsConfig(locttDir);
+  taskProjectId = cfg.projects[0]?.id as string;
 });
 
 afterEach(async () => {
@@ -69,7 +73,7 @@ describe("deleteMilestone (soft, default)", () => {
       await createTask({
         locttDir,
         state,
-        options: { project: "task", title: "t", milestone: "v1" },
+        options: { project: taskProjectId, title: "t", milestone: "v1" },
       });
       await saveState(locttDir, state);
     });
@@ -109,7 +113,7 @@ describe("deleteMilestone (hard)", () => {
       await createTask({
         locttDir,
         state,
-        options: { project: "task", title: "t", milestone: "v1" },
+        options: { project: taskProjectId, title: "t", milestone: "v1" },
       });
       await saveState(locttDir, state);
     });
@@ -128,7 +132,7 @@ describe("deleteMilestone (hard)", () => {
       await createTask({
         locttDir,
         state,
-        options: { project: "task", title: "t", milestone: "v1" },
+        options: { project: taskProjectId, title: "t", milestone: "v1" },
       });
       await saveState(locttDir, state);
     });

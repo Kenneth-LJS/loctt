@@ -31,36 +31,97 @@ export class ProjectError extends Error {
 }
 
 /**
+ * Result of looking up a project by name.
+ *
+ *  - `ok`: a single match (or no matches with `notFound: true`)
+ *  - `ambiguous`: two or more projects share the name. Caller must
+ *    disambiguate by id.
+ */
+export type ProjectByNameResult =
+  | { kind: "match"; project: ProjectDef }
+  | { kind: "ambiguous"; matches: readonly ProjectDef[] }
+  | { kind: "not_found" };
+
+/**
+ * Looks up a project by name (case-sensitive exact match). Returns
+ * a discriminated union so CLI/MCP callers can produce the right
+ * error message for "unknown" vs "ambiguous". Names are not unique
+ * — only ids are. The UI shows names; the CLI accepts names with
+ * disambiguation errors.
+ *
+ * Pass `{ includeArchived: true }` to also match archived projects.
+ */
+export function resolveProjectByName(
+  config: ProjectsConfig,
+  name: string,
+  options: { includeArchived?: boolean } = {},
+): ProjectByNameResult {
+  const pool = options.includeArchived === true
+    ? config.projects
+    : config.projects.filter(p => p.archived !== true);
+  const matches = pool.filter(p => p.name === name);
+  if (matches.length === 0) return { kind: "not_found" };
+  if (matches.length === 1) return { kind: "match", project: matches[0] as ProjectDef };
+  return { kind: "ambiguous", matches };
+}
+
+/**
+ * Resolves user input (project name or id) to a project id. Tries id
+ * lookup first (UI/agents pass id), then unique-name lookup. Throws
+ * ProjectError on miss/ambiguous so callers get a clean domain error.
+ */
+export function resolveProjectIdFromInput(
+  config: ProjectsConfig,
+  input: string,
+  options: { includeArchived?: boolean } = {},
+): string {
+  // Direct id match (fast path)
+  const byId = config.projects.find(p => p.id === input
+    && (options.includeArchived === true || p.archived !== true));
+  if (byId) return byId.id;
+
+  const byName = resolveProjectByName(config, input, options);
+  if (byName.kind === "match") return byName.project.id;
+  if (byName.kind === "ambiguous") {
+    const ids = byName.matches.map(p => p.id).join(", ");
+    throw new ProjectError(
+      `project name '${input}' is ambiguous — matches ${byName.matches.length} projects (${ids}). Pass the id instead.`,
+    );
+  }
+  throw new ProjectError(`unknown project: ${input}`);
+}
+
+/**
  * Resolves the active project for an operation by walking the
  * default-resolution order: explicit > workspace default > unique
- * single project > error.
+ * single project > error. All resolution values are project ids.
  *
  * Per-user defaults aren't visible to core (they live in user
  * settings), so callers that have a user-default should pass it as
- * `userDefault`.
+ * `userDefault`. Both `explicit` and `userDefault` may be either a
+ * project id or a name — `resolveProjectIdFromInput` is applied.
  */
-export function resolveProjectKey(
+export function resolveProjectId(
   config: ProjectsConfig,
   options: { explicit?: string; userDefault?: string } = {},
 ): string {
   if (options.explicit !== undefined) {
-    if (!config.projects.some(p => p.key === options.explicit)) {
-      throw new ProjectError(`unknown project: ${options.explicit}`);
-    }
-    return options.explicit;
+    return resolveProjectIdFromInput(config, options.explicit);
   }
   if (options.userDefault !== undefined) {
-    if (config.projects.some(p => p.key === options.userDefault)) {
-      return options.userDefault;
+    try {
+      return resolveProjectIdFromInput(config, options.userDefault);
+    } catch {
+      // Stale user default — fall through to workspace default.
     }
-    // Stale user default — fall through to workspace default.
   }
   if (config.default !== undefined) {
     return config.default;
   }
-  if (config.projects.length === 1) {
-    const only = config.projects[0];
-    if (only) return only.key;
+  const active = config.projects.filter(p => p.archived !== true);
+  if (active.length === 1) {
+    const only = active[0];
+    if (only) return only.id;
   }
   throw new ProjectError(
     `no default project configured and multiple projects exist; pass --project explicitly`,
@@ -68,16 +129,16 @@ export function resolveProjectKey(
 }
 
 /**
- * Convenience over `resolveProjectKey` that also picks up the
- * per-user default from `users/<id>/settings.yaml` for the active
- * user. The same chain used by CLI / MCP / web surfaces:
+ * Convenience over `resolveProjectId` that also picks up the per-user
+ * default from `users/<id>/settings.yaml` for the active user. The
+ * same chain used by CLI / MCP / web surfaces:
  *
  *   explicit > per-user default > workspace default > sole project
  *
  * If no user is registered, the per-user step is skipped and the
  * chain falls through to the workspace default.
  */
-export async function resolveProjectKeyForUser(
+export async function resolveProjectIdForUser(
   locttDir: string,
   explicit?: string,
 ): Promise<string> {
@@ -89,90 +150,79 @@ export async function resolveProjectKeyForUser(
     const raw = settings["default_project"];
     if (typeof raw === "string" && raw.length > 0) userDefault = raw;
   }
-  return resolveProjectKey(config, {
+  return resolveProjectId(config, {
     ...(explicit !== undefined ? { explicit } : {}),
     ...(userDefault !== undefined ? { userDefault } : {}),
   });
 }
 
-/** Returns the project definition for a key, or throws. */
-export function findProject(config: ProjectsConfig, key: string): ProjectDef {
-  const proj = config.projects.find(p => p.key === key);
-  if (!proj) throw new ProjectError(`unknown project: ${key}`);
+/** Returns the project definition for an id, or throws. */
+export function findProject(config: ProjectsConfig, id: string): ProjectDef {
+  const proj = config.projects.find(p => p.id === id);
+  if (!proj) throw new ProjectError(`unknown project: ${id}`);
   return proj;
 }
 
 /**
- * Creates a new project: initializes a key counter in state.yaml and
- * appends to projects.yaml. State is written first so a crash mid-
- * operation never leaves a project visible without a counter.
+ * Input for `createProject`. The caller supplies `name` and `prefix`;
+ * core generates the `id` (ULID).
+ */
+export interface CreateProjectInput {
+  readonly name: string;
+  readonly prefix: string;
+  readonly archived?: boolean;
+}
+
+/**
+ * Creates a new project: generates a ULID, initializes a key counter
+ * in state.yaml under the new id, and appends to projects.yaml. State
+ * is written first so a crash mid-operation never leaves a project
+ * visible without a counter.
  *
- * If the requested key matches a previously-deleted project, its
- * retired counter is restored — re-creating the project resumes
- * numbering from where it left off, avoiding collisions with tasks
- * still carrying the old keys.
+ * Retired counters from previously-hard-deleted projects with the
+ * same prefix are NOT auto-restored under this code path — ids are
+ * unique per creation, so collisions don't apply. Counter recovery
+ * for repeated deletion+creation cycles is handled at the prefix
+ * level by `next_number`.
+ *
+ * Returns the created project (including the generated id).
  */
 export async function createProject(
   locttDir: string,
-  def: ProjectDef,
-): Promise<void> {
-  await withStateLock(locttDir, async () => {
+  input: CreateProjectInput,
+): Promise<ProjectDef> {
+  return withStateLock(locttDir, async () => {
     const config = await loadProjectsConfig(locttDir);
 
-    if (config.projects.some(p => p.key === def.key)) {
-      throw new ProjectError(`project with key '${def.key}' already exists`);
-    }
-    if (config.projects.some(p => p.prefix === def.prefix)) {
+    if (config.projects.some(p => p.prefix === input.prefix)) {
       throw new ProjectError(
-        `project with prefix '${def.prefix}' already exists — prefixes must be unique`,
+        `project with prefix '${input.prefix}' already exists — prefixes must be unique`,
       );
     }
 
-    // 1. Write state first.
+    // Generate the id up front so we can use it as the state.keys key
+    // before the projects.yaml write.
+    const id = ulid();
+    const def: ProjectDef = {
+      id,
+      name: input.name,
+      prefix: input.prefix,
+      ...(input.archived === true ? { archived: true } : {}),
+    };
+
+    // 1. Write state first (counter under the new id).
     const state = await loadState(locttDir);
-    const retired = state.retired_keys?.[def.key];
-    if (retired !== undefined) {
-      // Restore the retired counter. Prefix may have changed between
-      // the original project and the recreation; honor the new
-      // prefix but keep the next_number so we never reuse old keys.
-      state.keys[def.key] = {
-        prefix: def.prefix,
-        next_number: retired.next_number,
-      };
-      const remainingRetired: Record<string, { prefix: string; next_number: number }> = {};
-      for (const [k, v] of Object.entries(state.retired_keys ?? {})) {
-        if (k !== def.key) remainingRetired[k] = v;
+    try {
+      initKeyAllocation(state, id, input.prefix, 1);
+    } catch (err) {
+      if (err instanceof KeyAllocationError) {
+        // Collision on a freshly-generated ULID is essentially impossible
+        // (entropy >= 80 bits), but if it ever happens, surface it.
+        throw new ProjectError(
+          `internal: state.keys already has an entry for generated id '${id}' — retry`,
+        );
       }
-      if (Object.keys(remainingRetired).length > 0) {
-        state.retired_keys = remainingRetired;
-      } else {
-        delete state.retired_keys;
-      }
-    } else {
-      try {
-        initKeyAllocation(state, def.key, def.prefix, 1);
-      } catch (err) {
-        if (err instanceof KeyAllocationError) {
-          // A counter for this key already exists in state — most
-          // likely a partial write from a prior `createProject`
-          // that crashed between saveState and saveProjectsConfig.
-          // Recovery is fine *if* the existing counter's prefix
-          // matches the new project's prefix; otherwise the user
-          // has changed the prefix on a name collision and silently
-          // resuming would mint keys under the wrong prefix.
-          const existing = state.keys[def.key];
-          if (existing && existing.prefix !== def.prefix) {
-            throw new ProjectError(
-              `cannot create project '${def.key}' with prefix '${def.prefix}': ` +
-              `a counter for this key already exists with prefix '${existing.prefix}'. ` +
-              `If this is a partial-write recovery, retry with the original prefix.`,
-            );
-          }
-          // Prefix matches: safe to continue, the counter survives.
-        } else {
-          throw err;
-        }
-      }
+      throw err;
     }
     await saveState(locttDir, state);
 
@@ -182,30 +232,33 @@ export async function createProject(
       ...(config.default !== undefined ? { default: config.default } : {}),
     };
     await saveProjectsConfig(locttDir, newConfig);
+
+    return def;
   });
 }
 
 /**
- * Edits an existing project. Only `label` is mutable. Attempting to
- * change `key` or `prefix` is an error.
+ * Edits an existing project. Only `name` is mutable. Attempting to
+ * change `id` or `prefix` via this API is rejected at the schema
+ * layer (the inputs are typed to forbid it).
  */
 export async function editProject(
   locttDir: string,
-  key: string,
-  changes: { label?: string },
+  id: string,
+  changes: { name?: string },
 ): Promise<void> {
   await withStateLock(locttDir, async () => {
     const config = await loadProjectsConfig(locttDir);
-    const idx = config.projects.findIndex(p => p.key === key);
-    if (idx === -1) throw new ProjectError(`unknown project: ${key}`);
+    const idx = config.projects.findIndex(p => p.id === id);
+    if (idx === -1) throw new ProjectError(`unknown project: ${id}`);
 
-    if (changes.label === undefined) return; // nothing to do
+    if (changes.name === undefined) return; // nothing to do
 
     const existing = config.projects[idx];
-    if (!existing) throw new ProjectError(`unknown project: ${key}`);
+    if (!existing) throw new ProjectError(`unknown project: ${id}`);
     const updated: ProjectDef = {
       ...existing,
-      label: changes.label,
+      name: changes.name,
     };
     const newProjects = [...config.projects];
     newProjects[idx] = updated;
@@ -218,39 +271,40 @@ export async function editProject(
 
 /**
  * Sets (or clears, with `null`) the workspace default project.
+ * `id` may be a project id or a name; names are resolved through
+ * `resolveProjectIdFromInput`.
  */
 export async function setDefaultProject(
   locttDir: string,
-  key: string | null,
+  id: string | null,
 ): Promise<void> {
   await withStateLock(locttDir, async () => {
     const config = await loadProjectsConfig(locttDir);
-    if (key !== null && !config.projects.some(p => p.key === key)) {
-      throw new ProjectError(`unknown project: ${key}`);
+    let resolved: string | null = null;
+    if (id !== null) {
+      resolved = resolveProjectIdFromInput(config, id);
     }
-    const newConfig: ProjectsConfig = key === null
+    const newConfig: ProjectsConfig = resolved === null
       ? { projects: config.projects }
-      : { projects: config.projects, default: key };
+      : { projects: config.projects, default: resolved };
     await saveProjectsConfig(locttDir, newConfig);
   });
 }
 
 /** Marks a project as archived. No-op when already archived. */
-export async function archiveProject(locttDir: string, key: string): Promise<void> {
+export async function archiveProject(locttDir: string, id: string): Promise<void> {
   await withStateLock(locttDir, async () => {
     const config = await loadProjectsConfig(locttDir);
-    const idx = config.projects.findIndex(p => p.key === key);
-    if (idx === -1) throw new ProjectError(`unknown project: ${key}`);
+    const idx = config.projects.findIndex(p => p.id === id);
+    if (idx === -1) throw new ProjectError(`unknown project: ${id}`);
     const existing = config.projects[idx];
-    if (!existing) throw new ProjectError(`unknown project: ${key}`);
+    if (!existing) throw new ProjectError(`unknown project: ${id}`);
     if (existing.archived === true) return;
     const next = [...config.projects];
     next[idx] = { ...existing, archived: true };
     const newConfig: ProjectsConfig = {
       projects: next,
-      // If the archived project was the default, clear the default
-      // so future creates don't land in a hidden project.
-      ...(config.default !== undefined && config.default !== key
+      ...(config.default !== undefined && config.default !== id
         ? { default: config.default }
         : {}),
     };
@@ -259,17 +313,17 @@ export async function archiveProject(locttDir: string, key: string): Promise<voi
 }
 
 /** Clears the archived flag on a project. */
-export async function unarchiveProject(locttDir: string, key: string): Promise<void> {
+export async function unarchiveProject(locttDir: string, id: string): Promise<void> {
   await withStateLock(locttDir, async () => {
     const config = await loadProjectsConfig(locttDir);
-    const idx = config.projects.findIndex(p => p.key === key);
-    if (idx === -1) throw new ProjectError(`unknown project: ${key}`);
+    const idx = config.projects.findIndex(p => p.id === id);
+    if (idx === -1) throw new ProjectError(`unknown project: ${id}`);
     const existing = config.projects[idx];
-    if (!existing) throw new ProjectError(`unknown project: ${key}`);
+    if (!existing) throw new ProjectError(`unknown project: ${id}`);
     if (existing.archived !== true) return;
     const cleared: ProjectDef = {
-      key: existing.key,
-      label: existing.label,
+      id: existing.id,
+      name: existing.name,
       prefix: existing.prefix,
     };
     const next = [...config.projects];
@@ -292,9 +346,10 @@ export interface DeleteProjectOptions {
   readonly hard?: boolean;
   /**
    * Hard-delete only: required when the project has any tasks.
-   * Re-targets the affected tasks at another project. Note: this
-   * does not rewrite task `key` strings — moving a task across
-   * projects keeps its existing key intact.
+   * Re-targets the affected tasks at another project (by id). Note:
+   * this does not rewrite task `key` strings — moving a task across
+   * projects keeps its existing key intact. (CW-13 introduces a
+   * separate `moveTaskToProject` that reallocates keys.)
    */
   readonly remapTo?: string;
 }
@@ -304,25 +359,24 @@ export interface DeleteProjectOptions {
  * and clears the workspace default if the project was it. With
  * `hard: true`, rewrites all affected tasks to `remapTo` (required
  * when the project has tasks), then removes the project from
- * projects.yaml and moves the counter to retired_keys so re-creation
- * resumes numbering.
+ * projects.yaml and moves the counter to retired_keys.
  */
 export async function deleteProject(
   locttDir: string,
-  key: string,
+  id: string,
   options: DeleteProjectOptions = {},
 ): Promise<{ remappedTaskCount: number }> {
   if (options.hard !== true) {
     if (options.remapTo !== undefined) {
       throw new ProjectError(`--remap-to only applies to --hard delete`);
     }
-    await archiveProject(locttDir, key);
+    await archiveProject(locttDir, id);
     return { remappedTaskCount: 0 };
   }
   return withStateLock(locttDir, async () => {
     const config = await loadProjectsConfig(locttDir);
-    const target = config.projects.find(p => p.key === key);
-    if (!target) throw new ProjectError(`unknown project: ${key}`);
+    const target = config.projects.find(p => p.id === id);
+    if (!target) throw new ProjectError(`unknown project: ${id}`);
 
     if (config.projects.length === 1) {
       throw new ProjectError(
@@ -331,25 +385,25 @@ export async function deleteProject(
     }
 
     const tasks = await loadAllTasks(locttDir);
-    const affected = tasks.filter(t => t.frontmatter.project === key);
+    const affected = tasks.filter(t => t.frontmatter.project === id);
 
     let remapTo: string | undefined;
     if (affected.length > 0) {
       if (options.remapTo === undefined) {
         throw new ProjectError(
-          `project '${key}' has ${affected.length} task(s); pass remapTo to migrate them to another project`,
+          `project '${id}' has ${affected.length} task(s); pass remapTo to migrate them to another project`,
         );
       }
-      const target = config.projects.find(p => p.key === options.remapTo);
-      if (!target) {
+      const remapTarget = config.projects.find(p => p.id === options.remapTo);
+      if (!remapTarget) {
         throw new ProjectError(`unknown remap target project: ${options.remapTo}`);
       }
-      if (options.remapTo === key) {
+      if (options.remapTo === id) {
         throw new ProjectError(`remap target must differ from the project being deleted`);
       }
-      if (target.archived === true) {
+      if (remapTarget.archived === true) {
         throw new ProjectError(
-          `remap target project "${options.remapTo}" is archived; unarchive it first or pick an active project`,
+          `remap target project '${options.remapTo}' is archived; unarchive it first or pick an active project`,
         );
       }
       remapTo = options.remapTo;
@@ -364,8 +418,8 @@ export async function deleteProject(
       id: ulid(),
       kind: "remap_project",
       started_at: new Date().toISOString(),
-      from: key,
-      to: remapTo ?? key, // unused when no tasks; recovery checks task_ids
+      from: id,
+      to: remapTo ?? id, // unused when no tasks; recovery checks task_ids
       task_ids: affected.map(t => t.frontmatter.id),
     };
     const journal = await loadJournal(locttDir);
@@ -375,7 +429,7 @@ export async function deleteProject(
       await replayTaskRemap(locttDir, entry);
     }
 
-    await applyProjectConfigDeletion(locttDir, key);
+    await applyProjectConfigDeletion(locttDir, id);
 
     await clearJournalEntry(locttDir, entry.id);
 
@@ -389,51 +443,42 @@ export async function deleteProject(
  * `state.yaml`. Idempotent — if the project is already gone (a
  * crash mid-op left the journal entry but the config edit had
  * already landed), this is a no-op.
- *
- * Extracted as a top-level helper because the recovery handler
- * (registered below) re-uses it during crash replay.
  */
-async function applyProjectConfigDeletion(locttDir: string, key: string): Promise<void> {
+async function applyProjectConfigDeletion(locttDir: string, id: string): Promise<void> {
   const config = await loadProjectsConfig(locttDir);
-  if (!config.projects.some(p => p.key === key)) {
+  if (!config.projects.some(p => p.id === id)) {
     // Project is already gone from projects.yaml — either a recovery
     // replay after the config write succeeded but the journal-clear
     // didn't, or a human edit between the journal write and replay.
-    // We still need to check state.keys: the counter migration is a
-    // separate write below, so the previous run may have crashed
-    // between the projects.yaml save and the state.yaml save. If
-    // both sides are already done, fully no-op; otherwise fall
-    // through and the counter-migration block below will complete.
     const state = await loadState(locttDir);
-    if (state.keys[key] === undefined) return;
-    // Fall through with config unchanged; the saveProjectsConfig
-    // below is a no-op rewrite of the same content, which the
-    // atomic-yaml writer collapses to a stable file.
+    if (state.keys[id] === undefined) return;
   }
 
-  const remainingProjects = config.projects.filter(p => p.key !== key);
+  const remainingProjects = config.projects.filter(p => p.id !== id);
   const newConfig: ProjectsConfig = {
     projects: remainingProjects,
-    ...(config.default !== undefined && config.default !== key
+    ...(config.default !== undefined && config.default !== id
       ? { default: config.default }
       : {}),
   };
   await saveProjectsConfig(locttDir, newConfig);
 
-  // Move the project's counter to retired_keys. Re-creating the
-  // same project later resumes numbering from this point so we
-  // never reuse keys that surviving tasks may still reference.
+  // Move the project's counter to retired_keys. Re-creating the same
+  // prefix later won't restore numbering automatically (ids are
+  // unique per creation), but retired_keys preserves the high-water
+  // mark so an admin recovery script can re-set the counter
+  // explicitly if needed.
   const state = await loadState(locttDir);
   const newKeys: Record<string, { prefix: string; next_number: number }> = {};
   for (const [k, v] of Object.entries(state.keys)) {
-    if (k !== key) newKeys[k] = v;
+    if (k !== id) newKeys[k] = v;
   }
   const retired: Record<string, { prefix: string; next_number: number }> = {
     ...(state.retired_keys ?? {}),
   };
-  const removed = state.keys[key];
+  const removed = state.keys[id];
   if (removed !== undefined) {
-    retired[key] = { prefix: removed.prefix, next_number: removed.next_number };
+    retired[id] = { prefix: removed.prefix, next_number: removed.next_number };
   }
   const newState: LocttState = {
     keys: newKeys,
@@ -444,10 +489,6 @@ async function applyProjectConfigDeletion(locttDir: string, key: string): Promis
 
 // Register a crash-recovery handler that runs the same steps the
 // happy-path code does, in the same order, but each idempotently.
-// Fired by `withStateLock`'s recovery hook for any pending
-// `remap_project` entry. Idempotent because:
-//   - replayTaskRemap skips tasks already at the new project,
-//   - applyProjectConfigDeletion no-ops when the project is gone.
 registerRecoveryHandler("remap_project", async (locttDir, entry) => {
   if (entry.kind !== "remap_project") return; // narrow the union
   await replayTaskRemap(locttDir, entry);

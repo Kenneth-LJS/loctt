@@ -24,7 +24,7 @@ import {
   loadState,
   lookupTask,
   readHistory,
-  resolveProjectKeyForUser,
+  resolveProjectIdForUser,
   saveState,
   setField,
   unsetField,
@@ -129,7 +129,7 @@ export const TOOLS: readonly ToolDef[] = [
       const { workflowConfig } = await loadOptionalConfigs(locttDir);
       let projectKey: string;
       try {
-        projectKey = await resolveProjectKeyForUser(
+        projectKey = await resolveProjectIdForUser(
           locttDir,
           args["project"] as string | undefined,
         );

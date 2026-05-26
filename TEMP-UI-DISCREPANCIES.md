@@ -97,18 +97,19 @@ defaults → built-in defaults. New exports `SavedViewDisplay`,
 `SavedViewMode`, `BoardGrouping` schemas. Round-trips through
 serialize+parse; strict rejection of unknown fields. Size: **S**.
 
-### CW-12 · Projects: ULID + name + prefix
+### CW-12 · Projects: ULID + name + prefix ✅
 **Breaking schema change**, justified because LocTT is pre-release.
-- `ProjectDef: { id: ULID, name: string, prefix: string, archived? }` — no `key` field
-- Tasks' `project` field stores **ULID**, not slug
+- `ProjectDef: { id: ULID, name: string, prefix: string, archived? }` — `key`/`label` retired
+- Tasks' `project` field stores ULID, not slug
 - `state.keys[<ULID>]` map keyed by ULID
 - Journal entries reference ULID
-- CLI/MCP accept project **name** (with ambiguity error on duplicates) or ULID
-- UI shows **name** everywhere; ULID is never displayed
-- New helper: `resolveProjectByName(name): ProjectDef | { ambiguous, matches[] }`
-- `editProject` allows name changes; **prefix is immutable**
+- CLI/MCP accept project name OR ULID via `resolveProjectIdFromInput`; ambiguous names produce a clear error listing the conflicting ids
+- UI shows name everywhere; ULID is never displayed
+- New exports: `resolveProjectByName`, `resolveProjectIdFromInput`, `resolveProjectId`, `resolveProjectIdForUser` (rename), `CreateProjectInput`, `ProjectByNameResult`
+- `editProject` accepts only `{ name }`; prefix is immutable
+- Archived projects fall through in the user-default resolution chain (small behavior change from the prior "still resolves" — documented in tests)
 
-Touches contracts, projects/manage, state/keys, task/create, journal, query/list, doctor. Size: **M**.
+Touches contracts, projects/manage, init, archived-guard, validation, CLI project command, MCP project tool, HTTP server, and all downstream tests. Size: **M**.
 
 ### CW-15 · `kind` enum on RelationshipDef ✅
 Cleaner expression of self-inverse relationships via an open enum:

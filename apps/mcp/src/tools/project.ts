@@ -3,6 +3,10 @@
  * workspace-default pointer. Hard-delete carries a `remap_to`
  * escape hatch for projects that own tasks.
  *
+ * The `project` parameter on edit/delete/archive/etc. accepts either
+ * an internal project ULID or a project name (with disambiguation
+ * error when names are non-unique).
+ *
  * Domain ProjectError lands at the dispatcher's outer catch via
  * isKnownDomainError, so per-handler try/catches are omitted —
  * matches the task-crud pattern.
@@ -14,6 +18,7 @@ import {
   deleteProject,
   editProject,
   loadProjectsConfig,
+  resolveProjectIdFromInput,
   setDefaultProject,
   unarchiveProject,
 } from "@loctt/core";
@@ -26,7 +31,7 @@ import type { ToolDef } from "../types.js";
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "list_projects",
-    description: "List projects defined in projects.yaml. Returns each project's key, label, prefix, and which (if any) is the workspace default.",
+    description: "List projects defined in projects.yaml. Each project carries an internal id (ULID), a display name, and an immutable task-key prefix. The workspace default is identified by id.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       const cfg = await loadProjectsConfig(locttDir);
@@ -38,37 +43,35 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "create_project",
-    description: "Create a new project. Project keys are immutable; prefixes must be unique across the tracker. Setting `make_default` true also sets the workspace default.",
+    description: "Create a new project. Names are not unique — duplicates are disambiguated by the auto-generated id. Prefixes must be unique across the tracker. Setting `make_default: true` also sets the workspace default. Returns the generated id.",
     inputSchema: {
-      key: z.string().describe("Slug identifier (lowercase letters, digits, hyphen, underscore)"),
-      label: z.string().describe("Human-readable label"),
+      name: z.string().describe("Human-readable display name"),
       prefix: z.string().describe("Task-key prefix, e.g. BACKEND-"),
       make_default: z.boolean().optional().describe("If true, also set this project as the workspace default"),
     },
     handler: async ({ locttDir }, args) => {
-      await createProject(locttDir, {
-        key: args["key"] as string,
-        label: args["label"] as string,
+      const def = await createProject(locttDir, {
+        name: args["name"] as string,
         prefix: args["prefix"] as string,
       });
       if (args["make_default"] === true) {
-        await setDefaultProject(locttDir, args["key"] as string);
+        await setDefaultProject(locttDir, def.id);
       }
-      return text(`Created project ${String(args["key"])}`);
+      return text(JSON.stringify({ id: def.id, name: def.name, prefix: def.prefix }, null, 2));
     },
   },
   {
     name: "edit_project",
-    description: "Edit an existing project. Only `label` is mutable — `key` and `prefix` are immutable after creation.",
+    description: "Edit an existing project. Only `name` is mutable — `id` and `prefix` are immutable. The `project` parameter accepts either an id or a name.",
     inputSchema: {
-      key: z.string(),
-      label: z.string().describe("New label"),
+      project: z.string().describe("Project id or name"),
+      name: z.string().describe("New name"),
     },
     handler: async ({ locttDir }, args) => {
-      await editProject(locttDir, args["key"] as string, {
-        label: args["label"] as string,
-      });
-      return text(`Updated project ${String(args["key"])}`);
+      const cfg = await loadProjectsConfig(locttDir);
+      const id = resolveProjectIdFromInput(cfg, args["project"] as string);
+      await editProject(locttDir, id, { name: args["name"] as string });
+      return text(`Updated project ${id}`);
     },
   },
   {
@@ -76,56 +79,66 @@ export const TOOLS: readonly ToolDef[] = [
     description:
       "Permanently remove a project from projects.yaml. For projects with tasks, " +
       "`remap_to` is required to migrate them to another project. Cannot delete the only " +
-      "project. The counter is preserved in retired_keys so a later create with the same " +
-      "key resumes numbering. Use `archive_project` for the reversible (soft) variant. " +
-      "Always requires `confirm: true`.",
+      "project. The counter is preserved in retired_keys. Use `archive_project` for the " +
+      "reversible (soft) variant. Always requires `confirm: true`.",
     inputSchema: {
-      key: z.string(),
+      project: z.string().describe("Project id or name to delete"),
       confirm: z.boolean().optional().describe("Required: must be true to proceed"),
-      remap_to: z.string().optional().describe("Target project key for tasks in the deleted project"),
+      remap_to: z.string().optional().describe("Target project (id or name) for tasks in the deleted project"),
     },
     handler: async ({ locttDir }, args) => {
       const blocked = requireConfirm(args, "delete_project");
       if (blocked) return blocked;
+      const cfg = await loadProjectsConfig(locttDir);
+      const id = resolveProjectIdFromInput(cfg, args["project"] as string);
       const remapTo = args["remap_to"] as string | undefined;
-      const result = await deleteProject(locttDir, args["key"] as string, {
+      const remapToId = remapTo !== undefined ? resolveProjectIdFromInput(cfg, remapTo) : undefined;
+      const result = await deleteProject(locttDir, id, {
         hard: true,
-        ...(remapTo !== undefined ? { remapTo } : {}),
+        ...(remapToId !== undefined ? { remapTo: remapToId } : {}),
       });
       return text(JSON.stringify({
-        key: args["key"],
+        id,
         remappedTaskCount: result.remappedTaskCount,
       }, null, 2));
     },
   },
   {
     name: "archive_project",
-    description: "Mark a project as archived. Archived projects are hidden from default lists and pickers. Reversible via `unarchive_project`.",
-    inputSchema: { key: z.string() },
+    description: "Mark a project as archived. Archived projects are hidden from default lists and pickers. Reversible via `unarchive_project`. Accepts an id or a name.",
+    inputSchema: { project: z.string().describe("Project id or name") },
     handler: async ({ locttDir }, args) => {
-      await archiveProject(locttDir, args["key"] as string);
-      return text(`Archived project ${String(args["key"])}`);
+      const cfg = await loadProjectsConfig(locttDir);
+      const id = resolveProjectIdFromInput(cfg, args["project"] as string, { includeArchived: true });
+      await archiveProject(locttDir, id);
+      return text(`Archived project ${id}`);
     },
   },
   {
     name: "unarchive_project",
     description: "Clear the archived flag on a project.",
-    inputSchema: { key: z.string() },
+    inputSchema: { project: z.string().describe("Project id or name") },
     handler: async ({ locttDir }, args) => {
-      await unarchiveProject(locttDir, args["key"] as string);
-      return text(`Unarchived project ${String(args["key"])}`);
+      const cfg = await loadProjectsConfig(locttDir);
+      const id = resolveProjectIdFromInput(cfg, args["project"] as string, { includeArchived: true });
+      await unarchiveProject(locttDir, id);
+      return text(`Unarchived project ${id}`);
     },
   },
   {
     name: "set_default_project",
-    description: "Set or clear the workspace default project. Pass `key` to set, or omit it to clear the default.",
+    description: "Set or clear the workspace default project. Pass `project` (id or name) to set, or omit it to clear.",
     inputSchema: {
-      key: z.string().optional(),
+      project: z.string().optional().describe("Project id or name; omit to clear"),
     },
     handler: async ({ locttDir }, args) => {
-      const key = (args["key"] as string | undefined) ?? null;
-      await setDefaultProject(locttDir, key);
-      return text(key === null ? `Cleared workspace default project` : `Set workspace default to ${key}`);
+      const project = args["project"] as string | undefined;
+      if (project === undefined) {
+        await setDefaultProject(locttDir, null);
+        return text(`Cleared workspace default project`);
+      }
+      await setDefaultProject(locttDir, project);
+      return text(`Set workspace default to ${project}`);
     },
   },
 ];

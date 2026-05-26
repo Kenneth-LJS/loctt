@@ -34,19 +34,37 @@ import { loadState, saveState } from "./state.js";
 let root: string;
 let locttDir: string;
 
+/** Cached id of the seeded project ("Tasks") from initLoctt. */
+let TASK_PROJECT_ID: string;
+
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "loctt-journal-"));
   await initLoctt(root, { docs: false });
   locttDir = join(root, ".loctt");
+  const { loadProjectsConfig } = await import("../config/projects.js");
+  const cfg = await loadProjectsConfig(locttDir);
+  TASK_PROJECT_ID = cfg.projects[0]?.id as string;
 });
 
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+/** Helper: create a second project and return its id. */
+async function makeP2(): Promise<string> {
+  const def = await createProject(locttDir, { name: "Two", prefix: "P-" });
+  return def.id;
+}
+
+/** Helper: create another project with custom name + prefix. */
+async function makeProject(name: string, prefix: string): Promise<string> {
+  const def = await createProject(locttDir, { name, prefix });
+  return def.id;
+}
+
 /**
  * Seeds N tasks under the given project. Returns the task IDs.
- * Caller passes a project key that already exists in the tracker.
+ * Caller passes the project's id (ULID).
  */
 async function seedTasks(project: string, count: number): Promise<string[]> {
   const ids: string[] = [];
@@ -79,8 +97,8 @@ describe("journal recovery — happy path replay", () => {
   it("replays a remap_project entry: rewrites tasks and drops config", async () => {
     // initLoctt already created the default `task` project; add a
     // second project so the remap target exists.
-    await createProject(locttDir, { key: "p2", label: "Two", prefix: "P-" });
-    const ids = await seedTasks("task", 3);
+    const p2Id = await makeP2();
+    const ids = await seedTasks(TASK_PROJECT_ID, 3);
 
     // Hand-write a journal entry as if deleteProject crashed
     // BEFORE doing any task remap or config edit.
@@ -88,8 +106,8 @@ describe("journal recovery — happy path replay", () => {
       id: "01TEST_PROJECT_REMAP_HAPPY",
       kind: "remap_project",
       started_at: "2026-05-12T10:00:00Z",
-      from: "task",
-      to: "p2",
+      from: TASK_PROJECT_ID,
+      to: p2Id,
       task_ids: ids,
     };
     await writeJournalEntries([entry]);
@@ -102,21 +120,21 @@ describe("journal recovery — happy path replay", () => {
     // project should be gone from projects.yaml.
     const tasks = await loadAllTasks(locttDir);
     for (const t of tasks) {
-      expect(t.frontmatter.project).toBe("p2");
+      expect(t.frontmatter.project).toBe(p2Id);
     }
     const journal = await loadJournal(locttDir);
     expect(journal.entries).toHaveLength(0);
   });
 
   it("recovery is idempotent: a second run is a no-op", async () => {
-    await createProject(locttDir, { key: "p2", label: "Two", prefix: "P-" });
-    const ids = await seedTasks("task", 2);
+    const p2Id = await makeP2();
+    const ids = await seedTasks(TASK_PROJECT_ID, 2);
     const entry: JournalEntry = {
       id: "01TEST_IDEMPOTENT",
       kind: "remap_project",
       started_at: "2026-05-12T10:00:00Z",
-      from: "task",
-      to: "p2",
+      from: TASK_PROJECT_ID,
+      to: p2Id,
       task_ids: ids,
     };
     await writeJournalEntries([entry]);
@@ -136,15 +154,15 @@ describe("journal recovery — crash-point coverage", () => {
   it("crash before any task write: recovery applies all task remaps and config", async () => {
     // Equivalent to: deleteProject crashed immediately after writing
     // the journal entry. No task or config change had happened yet.
-    await createProject(locttDir, { key: "p2", label: "Two", prefix: "P-" });
-    const ids = await seedTasks("task", 4);
+    const p2Id = await makeP2();
+    const ids = await seedTasks(TASK_PROJECT_ID, 4);
 
     const entry: JournalEntry = {
       id: "01TEST_CRASH_BEFORE_LOOP",
       kind: "remap_project",
       started_at: "2026-05-12T10:00:00Z",
-      from: "task",
-      to: "p2",
+      from: TASK_PROJECT_ID,
+      to: p2Id,
       task_ids: ids,
     };
     await writeJournalEntries([entry]);
@@ -153,7 +171,7 @@ describe("journal recovery — crash-point coverage", () => {
 
     for (const id of ids) {
       const t = await readTask(locttDir, id);
-      expect(t.frontmatter.project).toBe("p2");
+      expect(t.frontmatter.project).toBe(p2Id);
     }
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
@@ -161,8 +179,8 @@ describe("journal recovery — crash-point coverage", () => {
   it("crash mid task-loop: recovery completes the remaining tasks", async () => {
     // Equivalent to: deleteProject got partway through the rewrite
     // loop. Half the tasks already say P2; half still say T.
-    await createProject(locttDir, { key: "p2", label: "Two", prefix: "P-" });
-    const ids = await seedTasks("task", 4);
+    const p2Id = await makeP2();
+    const ids = await seedTasks(TASK_PROJECT_ID, 4);
 
     // Pre-apply the first two task rewrites manually, simulating
     // a crash exactly between writes 2 and 3.
@@ -171,7 +189,7 @@ describe("journal recovery — crash-point coverage", () => {
       const { writeTask } = await import("../task/io.js");
       await writeTask(locttDir, id, {
         ...t,
-        frontmatter: { ...t.frontmatter, project: "p2" },
+        frontmatter: { ...t.frontmatter, project: p2Id },
       });
     }
 
@@ -179,8 +197,8 @@ describe("journal recovery — crash-point coverage", () => {
       id: "01TEST_CRASH_MID_LOOP",
       kind: "remap_project",
       started_at: "2026-05-12T10:00:00Z",
-      from: "task",
-      to: "p2",
+      from: TASK_PROJECT_ID,
+      to: p2Id,
       task_ids: ids,
     };
     await writeJournalEntries([entry]);
@@ -189,29 +207,29 @@ describe("journal recovery — crash-point coverage", () => {
 
     for (const id of ids) {
       const t = await readTask(locttDir, id);
-      expect(t.frontmatter.project).toBe("p2");
+      expect(t.frontmatter.project).toBe(p2Id);
     }
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
 
   it("crash after task loop, before config: recovery completes the config edit", async () => {
     // All tasks are already remapped; config edit is still pending.
-    await createProject(locttDir, { key: "p2", label: "Two", prefix: "P-" });
-    const ids = await seedTasks("task", 3);
+    const p2Id = await makeP2();
+    const ids = await seedTasks(TASK_PROJECT_ID, 3);
     const { writeTask } = await import("../task/io.js");
     for (const id of ids) {
       const t = await readTask(locttDir, id);
       await writeTask(locttDir, id, {
         ...t,
-        frontmatter: { ...t.frontmatter, project: "p2" },
+        frontmatter: { ...t.frontmatter, project: p2Id },
       });
     }
     const entry: JournalEntry = {
       id: "01TEST_CRASH_BEFORE_CONFIG",
       kind: "remap_project",
       started_at: "2026-05-12T10:00:00Z",
-      from: "task",
-      to: "p2",
+      from: TASK_PROJECT_ID,
+      to: p2Id,
       task_ids: ids,
     };
     await writeJournalEntries([entry]);
@@ -220,7 +238,7 @@ describe("journal recovery — crash-point coverage", () => {
 
     const { loadProjectsConfig } = await import("../config/projects.js");
     const projects = await loadProjectsConfig(locttDir);
-    expect(projects.projects.some(p => p.key === "task")).toBe(false);
+    expect(projects.projects.some(p => p.id === TASK_PROJECT_ID)).toBe(false);
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
 
@@ -229,29 +247,29 @@ describe("journal recovery — crash-point coverage", () => {
     // the journal entry never got cleared. Recovery must clear it
     // without trying to redo the config edit (which would no-op
     // anyway, but we want zero side-effects on this path).
-    await createProject(locttDir, { key: "p2", label: "Two", prefix: "P-" });
-    const ids = await seedTasks("task", 2);
+    const p2Id = await makeP2();
+    const ids = await seedTasks(TASK_PROJECT_ID, 2);
     const { writeTask } = await import("../task/io.js");
     for (const id of ids) {
       const t = await readTask(locttDir, id);
       await writeTask(locttDir, id, {
         ...t,
-        frontmatter: { ...t.frontmatter, project: "p2" },
+        frontmatter: { ...t.frontmatter, project: p2Id },
       });
     }
     // Apply the config edit ahead of recovery.
     const { saveProjectsConfig, loadProjectsConfig } = await import("../config/projects.js");
     const cfg = await loadProjectsConfig(locttDir);
     await saveProjectsConfig(locttDir, {
-      projects: cfg.projects.filter(p => p.key !== "task"),
+      projects: cfg.projects.filter(p => p.id !== TASK_PROJECT_ID),
     });
 
     const entry: JournalEntry = {
       id: "01TEST_CRASH_AFTER_CONFIG",
       kind: "remap_project",
       started_at: "2026-05-12T10:00:00Z",
-      from: "task",
-      to: "p2",
+      from: TASK_PROJECT_ID,
+      to: p2Id,
       task_ids: ids,
     };
     await writeJournalEntries([entry]);
@@ -260,16 +278,16 @@ describe("journal recovery — crash-point coverage", () => {
 
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
     const projects = await loadProjectsConfig(locttDir);
-    expect(projects.projects.some(p => p.key === "task")).toBe(false);
+    expect(projects.projects.some(p => p.id === TASK_PROJECT_ID)).toBe(false);
   });
 });
 
 describe("journal recovery — multiple stacked entries", () => {
   it("replays two queued entries in order", async () => {
-    await createProject(locttDir, { key: "p2", label: "Two", prefix: "P-" });
-    await createProject(locttDir, { key: "p3", label: "Three", prefix: "Q-" });
-    const ids1 = await seedTasks("task", 2);
-    const ids2 = await seedTasks("p2", 2);
+    const p2Id = await makeP2();
+    const p3Id = await makeProject("Three", "Q-");
+    const ids1 = await seedTasks(TASK_PROJECT_ID, 2);
+    const ids2 = await seedTasks(p2Id, 2);
 
     const journal = await loadJournal(locttDir);
     const next = appendJournalEntry(
@@ -277,16 +295,16 @@ describe("journal recovery — multiple stacked entries", () => {
         id: "01TEST_FIRST",
         kind: "remap_project",
         started_at: "2026-05-12T10:00:00Z",
-        from: "task",
-        to: "p3",
+        from: TASK_PROJECT_ID,
+        to: p3Id,
         task_ids: ids1,
         }),
       {
         id: "01TEST_SECOND",
         kind: "remap_project",
         started_at: "2026-05-12T10:00:01Z",
-        from: "p2",
-        to: "p3",
+        from: p2Id,
+        to: p3Id,
         task_ids: ids2,
         },
     );
@@ -296,7 +314,7 @@ describe("journal recovery — multiple stacked entries", () => {
 
     const tasks = await loadAllTasks(locttDir);
     for (const t of tasks) {
-      expect(t.frontmatter.project).toBe("p3");
+      expect(t.frontmatter.project).toBe(p3Id);
     }
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
@@ -308,7 +326,7 @@ describe("journal recovery — all op kinds", () => {
     await createLabel(locttDir, { key: "new", label: "New" });
     // Tag a task with the label, then write a journal entry to
     // remap it (without going through deleteLabel itself).
-    const ids = await seedTasks("task", 2);
+    const ids = await seedTasks(TASK_PROJECT_ID, 2);
     const { setField } = await import("../task/update.js");
     for (const id of ids) {
       await setField({ locttDir, taskId: id, field: "labels", value: ["old"] });
@@ -339,7 +357,7 @@ describe("journal recovery — all op kinds", () => {
   it("replays a remap_milestone entry", async () => {
     await createMilestone(locttDir, { key: "ms-old", label: "Old MS" });
     await createMilestone(locttDir, { key: "ms-new", label: "New MS" });
-    const ids = await seedTasks("task", 2);
+    const ids = await seedTasks(TASK_PROJECT_ID, 2);
     const { setField } = await import("../task/update.js");
     for (const id of ids) {
       await setField({ locttDir, taskId: id, field: "milestone", value: "ms-old" });
@@ -371,7 +389,7 @@ describe("journal recovery — all op kinds", () => {
       end_date: "2026-01-15",
       state: "active",
     });
-    const ids = await seedTasks("task", 2);
+    const ids = await seedTasks(TASK_PROJECT_ID, 2);
     const { setField } = await import("../task/update.js");
     for (const id of ids) {
       await setField({ locttDir, taskId: id, field: "sprint", value: "sprint.1" });
@@ -399,7 +417,7 @@ describe("journal recovery — all op kinds", () => {
     const u1 = await createUser(locttDir, { name: "Alice" });
     const u2 = await createUser(locttDir, { name: "Bob" });
     await switchCurrentUser(locttDir, u2.id); // so u1 isn't active
-    const ids = await seedTasks("task", 2);
+    const ids = await seedTasks(TASK_PROJECT_ID, 2);
     const { setField } = await import("../task/update.js");
     for (const id of ids) {
       await setField({ locttDir, taskId: id, field: "assignee", value: u1.id });
@@ -430,14 +448,14 @@ describe("journal recovery — all op kinds", () => {
 
 describe("journal recovery — defensive cases", () => {
   it("skips tasks that no longer exist", async () => {
-    await createProject(locttDir, { key: "p2", label: "Two", prefix: "P-" });
-    const ids = await seedTasks("task", 2);
+    const p2Id = await makeP2();
+    const ids = await seedTasks(TASK_PROJECT_ID, 2);
     const entry: JournalEntry = {
       id: "01TEST_MISSING_TASK",
       kind: "remap_project",
       started_at: "2026-05-12T10:00:00Z",
-      from: "task",
-      to: "p2",
+      from: TASK_PROJECT_ID,
+      to: p2Id,
       task_ids: [...ids, "01NEVER_EXISTED"],
     };
     await writeJournalEntries([entry]);
@@ -449,7 +467,7 @@ describe("journal recovery — defensive cases", () => {
 
     for (const id of ids) {
       const t = await readTask(locttDir, id);
-      expect(t.frontmatter.project).toBe("p2");
+      expect(t.frontmatter.project).toBe(p2Id);
     }
   });
 
@@ -494,23 +512,23 @@ describe("journal recovery — synthesized crash state mid-loop", () => {
     // it doesn't prove is "the journal write happens BEFORE the
     // first task write", which is enforced by the manage module
     // and covered by the upstream tests in this file.
-    await createProject(locttDir, { key: "p2", label: "Two", prefix: "P-" });
-    const ids = await seedTasks("task", 8);
+    const p2Id = await makeP2();
+    const ids = await seedTasks(TASK_PROJECT_ID, 8);
 
     const { writeTask } = await import("../task/io.js");
     for (const id of ids.slice(0, 3)) {
       const t = await readTask(locttDir, id);
       await writeTask(locttDir, id, {
         ...t,
-        frontmatter: { ...t.frontmatter, project: "p2" },
+        frontmatter: { ...t.frontmatter, project: p2Id },
       });
     }
     const entry: JournalEntry = {
       id: "01TEST_CRASH_SIMULATED",
       kind: "remap_project",
       started_at: "2026-05-12T10:00:00Z",
-      from: "task",
-      to: "p2",
+      from: TASK_PROJECT_ID,
+      to: p2Id,
       task_ids: ids,
     };
     await writeJournalEntries([entry]);
@@ -520,7 +538,7 @@ describe("journal recovery — synthesized crash state mid-loop", () => {
 
     for (const id of ids) {
       const t = await readTask(locttDir, id);
-      expect(t.frontmatter.project).toBe("p2");
+      expect(t.frontmatter.project).toBe(p2Id);
     }
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
@@ -528,15 +546,15 @@ describe("journal recovery — synthesized crash state mid-loop", () => {
 
 describe("journal recovery — happy-path ops also clear the journal", () => {
   it("a successful deleteProject leaves no journal entry", async () => {
-    await createProject(locttDir, { key: "p2", label: "Two", prefix: "P-" });
-    await seedTasks("task", 2);
-    await deleteProject(locttDir, "task", { hard: true, remapTo: "p2" });
+    const p2Id = await makeP2();
+    await seedTasks(TASK_PROJECT_ID, 2);
+    await deleteProject(locttDir, TASK_PROJECT_ID, { hard: true, remapTo: p2Id });
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
 
   it("a successful deleteLabel leaves no journal entry", async () => {
     await createLabel(locttDir, { key: "lbl", label: "L" });
-    const ids = await seedTasks("task", 1);
+    const ids = await seedTasks(TASK_PROJECT_ID, 1);
     const { setField } = await import("../task/update.js");
     await setField({ locttDir, taskId: ids[0]!, field: "labels", value: ["lbl"] });
     await deleteLabel(locttDir, "lbl", { hard: true });
@@ -545,7 +563,7 @@ describe("journal recovery — happy-path ops also clear the journal", () => {
 
   it("a successful deleteMilestone leaves no journal entry", async () => {
     await createMilestone(locttDir, { key: "ms", label: "M" });
-    const ids = await seedTasks("task", 1);
+    const ids = await seedTasks(TASK_PROJECT_ID, 1);
     const { setField } = await import("../task/update.js");
     await setField({ locttDir, taskId: ids[0]!, field: "milestone", value: "ms" });
     await deleteMilestone(locttDir, "ms", { hard: true });
@@ -560,7 +578,7 @@ describe("journal recovery — happy-path ops also clear the journal", () => {
       end_date: "2026-01-15",
       state: "active",
     });
-    const ids = await seedTasks("task", 1);
+    const ids = await seedTasks(TASK_PROJECT_ID, 1);
     const { setField } = await import("../task/update.js");
     await setField({ locttDir, taskId: ids[0]!, field: "sprint", value: "sp.1" });
     await deleteSprint(locttDir, "sp.1", { hard: true });
@@ -571,7 +589,7 @@ describe("journal recovery — happy-path ops also clear the journal", () => {
     const u1 = await createUser(locttDir, { name: "Alice" });
     const u2 = await createUser(locttDir, { name: "Bob" });
     await switchCurrentUser(locttDir, u2.id);
-    const ids = await seedTasks("task", 1);
+    const ids = await seedTasks(TASK_PROJECT_ID, 1);
     const { setField } = await import("../task/update.js");
     await setField({ locttDir, taskId: ids[0]!, field: "assignee", value: u1.id });
     await deleteUser(locttDir, u1.id, { unassign: true });
@@ -581,14 +599,14 @@ describe("journal recovery — happy-path ops also clear the journal", () => {
 
 describe("recoverPendingJournal direct invocation", () => {
   it("called outside withStateLock still runs (the hook is the wiring; this is the API)", async () => {
-    await createProject(locttDir, { key: "p2", label: "Two", prefix: "P-" });
-    const ids = await seedTasks("task", 1);
+    const p2Id = await makeP2();
+    const ids = await seedTasks(TASK_PROJECT_ID, 1);
     const entry: JournalEntry = {
       id: "01TEST_DIRECT",
       kind: "remap_project",
       started_at: "2026-05-12T10:00:00Z",
-      from: "task",
-      to: "p2",
+      from: TASK_PROJECT_ID,
+      to: p2Id,
       task_ids: ids,
     };
     await writeJournalEntries([entry]);
@@ -600,7 +618,7 @@ describe("recoverPendingJournal direct invocation", () => {
 
     for (const id of ids) {
       const t = await readTask(locttDir, id);
-      expect(t.frontmatter.project).toBe("p2");
+      expect(t.frontmatter.project).toBe(p2Id);
     }
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
@@ -613,8 +631,8 @@ describe("journal recovery — audit logging", () => {
   // silent (loop body only runs when entries are pending).
 
   it("logs one info line per replayed entry, including kind and id", async () => {
-    await createProject(locttDir, { key: "p2", label: "Two", prefix: "P-" });
-    const ids = await seedTasks("task", 1);
+    const p2Id = await makeP2();
+    const ids = await seedTasks(TASK_PROJECT_ID, 1);
 
     const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
 
@@ -623,8 +641,8 @@ describe("journal recovery — audit logging", () => {
       id: entryId,
       kind: "remap_project",
       started_at: "2026-05-12T10:00:00Z",
-      from: "task",
-      to: "p2",
+      from: TASK_PROJECT_ID,
+      to: p2Id,
       task_ids: ids,
     };
     await writeJournalEntries([entry]);
@@ -673,7 +691,7 @@ describe("journal recovery — remap_workflow", () => {
     const prevWf = await loadWorkflowConfig(locttDir);
 
     // Add a task in the not_started status so the remap touches it.
-    const [taskId] = await seedTasks("task", 1);
+    const [taskId] = await seedTasks(TASK_PROJECT_ID, 1);
     if (taskId === undefined) throw new Error("test setup");
     // (No need to set status; default is undefined. We'll use a more
     // realistic case: drop the `blocks` relationship, since the
@@ -750,7 +768,7 @@ describe("journal recovery — remap_workflow", () => {
     // Create 3 tasks; set first two to a different status manually
     // (simulating a partial rewrite where status `not_started` is
     // being remapped to `done`).
-    const ids = await seedTasks("task", 3);
+    const ids = await seedTasks(TASK_PROJECT_ID, 3);
     const { readTask, writeTask } = await import("../task/io.js");
     // Status field defaults to undefined on seed, so set them to
     // not_started first.
@@ -837,7 +855,7 @@ describe("journal recovery — crash-point coverage for remap_label", () => {
   it("crash before task loop: recovery applies all task remaps and config", async () => {
     await createLabel(locttDir, { key: "old", label: "Old" });
     await createLabel(locttDir, { key: "new", label: "New" });
-    const ids = await seedTasks("task", 4);
+    const ids = await seedTasks(TASK_PROJECT_ID, 4);
     await tagTasksWithLabel(ids, "old");
 
     await writeJournalEntries([{
@@ -863,7 +881,7 @@ describe("journal recovery — crash-point coverage for remap_label", () => {
   it("crash mid task loop: recovery completes remaining tasks and config", async () => {
     await createLabel(locttDir, { key: "old", label: "Old" });
     await createLabel(locttDir, { key: "new", label: "New" });
-    const ids = await seedTasks("task", 4);
+    const ids = await seedTasks(TASK_PROJECT_ID, 4);
     await tagTasksWithLabel(ids, "old");
 
     // Pre-apply the first two: simulate crash between writes 2 and 3.
@@ -898,7 +916,7 @@ describe("journal recovery — crash-point coverage for remap_label", () => {
   it("crash after tasks, before config: recovery completes the config edit", async () => {
     await createLabel(locttDir, { key: "old", label: "Old" });
     await createLabel(locttDir, { key: "new", label: "New" });
-    const ids = await seedTasks("task", 3);
+    const ids = await seedTasks(TASK_PROJECT_ID, 3);
     await tagTasksWithLabel(ids, "old");
 
     // Pre-apply all task rewrites; config still has `old`.
@@ -928,7 +946,7 @@ describe("journal recovery — crash-point coverage for remap_label", () => {
   it("crash after config, before clearing journal: recovery clears entry only", async () => {
     await createLabel(locttDir, { key: "old", label: "Old" });
     await createLabel(locttDir, { key: "new", label: "New" });
-    const ids = await seedTasks("task", 2);
+    const ids = await seedTasks(TASK_PROJECT_ID, 2);
     await tagTasksWithLabel(ids, "old");
     // Apply both task rewrites AND the config deletion.
     for (const id of ids) {
@@ -970,7 +988,7 @@ describe("journal recovery — crash-point coverage for remap_milestone", () => 
   it("crash before task loop: recovery applies all task remaps and config", async () => {
     await createMilestone(locttDir, { key: "ms-old", label: "Old" });
     await createMilestone(locttDir, { key: "ms-new", label: "New" });
-    const ids = await seedTasks("task", 4);
+    const ids = await seedTasks(TASK_PROJECT_ID, 4);
     await tagWithMilestone(ids, "ms-old");
 
     await writeJournalEntries([{
@@ -995,7 +1013,7 @@ describe("journal recovery — crash-point coverage for remap_milestone", () => 
   it("crash mid task loop: recovery completes remaining tasks and config", async () => {
     await createMilestone(locttDir, { key: "ms-old", label: "Old" });
     await createMilestone(locttDir, { key: "ms-new", label: "New" });
-    const ids = await seedTasks("task", 4);
+    const ids = await seedTasks(TASK_PROJECT_ID, 4);
     await tagWithMilestone(ids, "ms-old");
     for (const id of ids.slice(0, 2)) {
       const t = await readTask(locttDir, id);
@@ -1025,7 +1043,7 @@ describe("journal recovery — crash-point coverage for remap_milestone", () => 
   it("crash after tasks, before config: recovery completes the config edit", async () => {
     await createMilestone(locttDir, { key: "ms-old", label: "Old" });
     await createMilestone(locttDir, { key: "ms-new", label: "New" });
-    const ids = await seedTasks("task", 3);
+    const ids = await seedTasks(TASK_PROJECT_ID, 3);
     await tagWithMilestone(ids, "ms-old");
     for (const id of ids) {
       const t = await readTask(locttDir, id);
@@ -1053,7 +1071,7 @@ describe("journal recovery — crash-point coverage for remap_milestone", () => 
   it("crash after config, before clearing journal: recovery clears entry only", async () => {
     await createMilestone(locttDir, { key: "ms-old", label: "Old" });
     await createMilestone(locttDir, { key: "ms-new", label: "New" });
-    const ids = await seedTasks("task", 2);
+    const ids = await seedTasks(TASK_PROJECT_ID, 2);
     await tagWithMilestone(ids, "ms-old");
     for (const id of ids) {
       const t = await readTask(locttDir, id);
@@ -1101,7 +1119,7 @@ describe("journal recovery — crash-point coverage for remap_sprint", () => {
   it("crash before task loop: recovery applies all task remaps and config", async () => {
     await makeSprint("sprint.old");
     await makeSprint("sprint.new");
-    const ids = await seedTasks("task", 4);
+    const ids = await seedTasks(TASK_PROJECT_ID, 4);
     await tagWithSprint(ids, "sprint.old");
 
     await writeJournalEntries([{
@@ -1126,7 +1144,7 @@ describe("journal recovery — crash-point coverage for remap_sprint", () => {
   it("crash mid task loop: recovery completes remaining tasks and config", async () => {
     await makeSprint("sprint.old");
     await makeSprint("sprint.new");
-    const ids = await seedTasks("task", 4);
+    const ids = await seedTasks(TASK_PROJECT_ID, 4);
     await tagWithSprint(ids, "sprint.old");
     for (const id of ids.slice(0, 2)) {
       const t = await readTask(locttDir, id);
@@ -1156,7 +1174,7 @@ describe("journal recovery — crash-point coverage for remap_sprint", () => {
   it("crash after tasks, before config: recovery completes the config edit", async () => {
     await makeSprint("sprint.old");
     await makeSprint("sprint.new");
-    const ids = await seedTasks("task", 3);
+    const ids = await seedTasks(TASK_PROJECT_ID, 3);
     await tagWithSprint(ids, "sprint.old");
     for (const id of ids) {
       const t = await readTask(locttDir, id);
@@ -1184,7 +1202,7 @@ describe("journal recovery — crash-point coverage for remap_sprint", () => {
   it("crash after config, before clearing journal: recovery clears entry only", async () => {
     await makeSprint("sprint.old");
     await makeSprint("sprint.new");
-    const ids = await seedTasks("task", 2);
+    const ids = await seedTasks(TASK_PROJECT_ID, 2);
     await tagWithSprint(ids, "sprint.old");
     for (const id of ids) {
       const t = await readTask(locttDir, id);
@@ -1237,7 +1255,7 @@ describe("journal recovery — crash-point coverage for remap_user", () => {
 
   it("crash before task loop: recovery remaps tasks and removes user dir", async () => {
     const { alice, bob } = await setupUsers();
-    const ids = await seedTasks("task", 4);
+    const ids = await seedTasks(TASK_PROJECT_ID, 4);
     await assignTo(ids, alice);
 
     await writeJournalEntries([{
@@ -1261,7 +1279,7 @@ describe("journal recovery — crash-point coverage for remap_user", () => {
 
   it("crash mid task loop: recovery completes the remaining tasks and removes user dir", async () => {
     const { alice, bob } = await setupUsers();
-    const ids = await seedTasks("task", 4);
+    const ids = await seedTasks(TASK_PROJECT_ID, 4);
     await assignTo(ids, alice);
     for (const id of ids.slice(0, 2)) {
       const t = await readTask(locttDir, id);
@@ -1292,7 +1310,7 @@ describe("journal recovery — crash-point coverage for remap_user", () => {
 
   it("crash after tasks, before user dir removed: recovery completes the dir removal", async () => {
     const { alice, bob } = await setupUsers();
-    const ids = await seedTasks("task", 3);
+    const ids = await seedTasks(TASK_PROJECT_ID, 3);
     await assignTo(ids, alice);
     for (const id of ids) {
       const t = await readTask(locttDir, id);
@@ -1319,7 +1337,7 @@ describe("journal recovery — crash-point coverage for remap_user", () => {
 
   it("crash after user dir removed, before clearing journal: recovery clears entry only", async () => {
     const { alice, bob } = await setupUsers();
-    const ids = await seedTasks("task", 2);
+    const ids = await seedTasks(TASK_PROJECT_ID, 2);
     await assignTo(ids, alice);
     for (const id of ids) {
       const t = await readTask(locttDir, id);

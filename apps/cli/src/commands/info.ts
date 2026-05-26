@@ -19,18 +19,18 @@ export async function run(_args: string[], root: string): Promise<void> {
   if (info.workflowConfig) {
     console.log(`Statuses: ${info.workflowConfig.statuses.map(s => s.key).join(", ")}`);
   }
-  // Print per-project counters. Each line: "<key> [*]  <prefix><next_number>"
-  // The asterisk marks the workspace default.
+  // Print per-project counters. Each line: "<name> [*]  <prefix><next_number>"
+  // The asterisk marks the workspace default. Internal ids are not shown.
   try {
     const projects = await loadProjectsConfig(resolveLocttDir(root));
     if (projects.projects.length > 0) {
       console.log(``);
       console.log(`Projects:`);
       for (const p of projects.projects) {
-        const counter = info.state?.keys[p.key];
-        const star = projects.default === p.key ? " *" : "";
+        const counter = info.state?.keys[p.id];
+        const star = projects.default === p.id ? " *" : "";
         const next = counter ? `${counter.prefix}${counter.next_number}` : `(no counter)`;
-        console.log(`  ${p.key}${star}  ${p.label}  next: ${next}`);
+        console.log(`  ${p.name}${star}  next: ${next}`);
       }
     }
   } catch (err) {
