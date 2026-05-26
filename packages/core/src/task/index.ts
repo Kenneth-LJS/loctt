@@ -7,6 +7,8 @@ export {
   DEFAULT_MAX_ATTACHMENT_BYTES,
   detachFile,
 } from "./attachments.js";
+export type { CountTasksByReferenceOptions, TaskReferenceKind } from "./counts.js";
+export { countTasksByReference, countTasksByReferences } from "./counts.js";
 export type { CreateTaskOptions, CreateTaskParams } from "./create.js";
 export { createTask } from "./create.js";
 export type { DuplicateTaskOverrides, DuplicateTaskParams } from "./duplicate.js";
