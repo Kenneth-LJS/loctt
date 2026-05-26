@@ -100,6 +100,14 @@
     if (!d) return false;
     return String(d).slice(0,10) < todayYMD();
   }
+  // Render a comment body to safe HTML: escape, then highlight @mentions
+  // as clickable chips. Markdown rendering is left as a v1 todo (TipTap
+  // would handle this in the real app — the mockup keeps it minimal).
+  function renderCommentBody(body) {
+    const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return esc(body || "").replace(/@([\w\-.]+)/g, (_, tok) =>
+      `<span class="chip chip--accent" style="font-size:11px;padding:1px 6px;">@${esc(tok)}</span>`);
+  }
 
   // --- toast -------------------------------------------------------------
   function toast(msg, opts) {
@@ -196,9 +204,11 @@
       clear(node);
       const me = store.currentUser();
       const tasks = store.listTasks();
+      const mentionsCount = !me ? 0 : tasks.filter(t => store.listComments(t.id).some(c => (c.mentions || []).includes(me.id))).length;
       const builtins = [
         { name: "Assigned to me", icon: "👤", count: tasks.filter(t => me && t.assignee === me.id && t.status !== "done" && t.status !== "wont_do").length },
         { name: "Reported by me", icon: "✎", count: tasks.filter(t => me && t.reporter === me.id).length },
+        { name: "Mentions me", icon: "@", count: mentionsCount },
         { name: "Due this week", icon: "📅", count: tasks.filter(t => t.due_date && t.due_date <= todayYMD(7) && t.status !== "done" && t.status !== "wont_do").length },
         { name: "Overdue", icon: "!", count: tasks.filter(t => isOverdue(t.due_date) && t.status !== "done" && t.status !== "wont_do").length },
         { name: "High priority", icon: "▲", count: tasks.filter(t => (t.priority === "high" || t.priority === "critical") && t.status !== "done" && t.status !== "wont_do").length },
@@ -256,6 +266,23 @@
         node.appendChild(el("a", { class: "sidebar__item" },
           el("span", { class: "priority-dot", style: { background: l.color || "var(--text-tertiary)" }}),
           el("span", { class: "sidebar__label" }, l.name),
+        ));
+      });
+    });
+
+    document.querySelectorAll("[data-tt-mount='sidebar-recents']").forEach(node => {
+      clear(node);
+      const recents = store.listRecents().slice(0, 8);
+      if (recents.length === 0) {
+        node.appendChild(el("div", { style: { padding: "8px 12px", fontSize: "11px", color: "var(--text-tertiary)", fontStyle: "italic" }}, "No recent tasks"));
+        return;
+      }
+      recents.forEach(r => {
+        const t = store.getTask(r.id);
+        if (!t) return;
+        node.appendChild(el("a", { class: "sidebar__item", href: `task-detail.html?id=${t.id}` },
+          el("span", { class: "icon", style: { fontFamily: "ui-monospace, monospace", fontSize: "10px", color: "var(--text-tertiary)", width: "auto", flexShrink: "0" }}, t.key),
+          el("span", { class: "sidebar__label", style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}, t.title),
         ));
       });
     });
@@ -369,7 +396,28 @@
       " Show archived"
     );
     bar.appendChild(showArch);
+    bar.appendChild(makeExportMenu());
     return bar;
+  }
+
+  function makeExportMenu() {
+    const id = "export-menu-" + Math.random().toString(36).slice(2,8);
+    const btn = el("button", { class: "btn btn--secondary", "data-menu-trigger": id }, "Export ▾");
+    const trigger = (format, filename) => () => {
+      const body = store.exportTasks(format);
+      const blob = new Blob([body], { type: format === "json" ? "application/json" : "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast(`Exported ${format.toUpperCase()}`);
+    };
+    const menu = el("div", { class: "menu", id, style: { minWidth: "160px" }},
+      el("div", { class: "menu__item", onclick: trigger("csv", "loctt-tasks.csv") }, "Download CSV"),
+      el("div", { class: "menu__item", onclick: trigger("json", "loctt-tasks.json") }, "Download JSON"),
+    );
+    return el("span", { style: { position: "relative" }}, btn, menu);
   }
 
   function makeFilterDropdown(spec) {
@@ -456,6 +504,11 @@
     bar.appendChild(bulkSelectMenu("Set assignee…", [{ value: null, label: "Unassigned" }].concat(store.listUsers().map(u => ({ value: u.id, label: u.name }))), v => store.bulkUpdate([...LIST_STATE.selected], { assignee: v })));
     bar.appendChild(bulkSelectMenu("Set milestone…", [{ value: null, label: "—" }].concat(store.listMilestones().map(m => ({ value: m.id, label: m.name }))), v => store.bulkUpdate([...LIST_STATE.selected], { milestone: v })));
     bar.appendChild(bulkSelectMenu("Set sprint…", [{ value: null, label: "—" }].concat(store.listSprints().map(s => ({ value: s.id, label: s.name }))), v => store.bulkUpdate([...LIST_STATE.selected], { sprint: v })));
+    bar.appendChild(bulkSelectMenu("Move to project…", store.listProjects().map(p => ({ value: p.id, label: `${p.name} (${p.prefix})` })), pid => {
+      const ids = [...LIST_STATE.selected];
+      const moved = ids.map(id => store.moveTaskToProject(id, pid)).filter(Boolean);
+      toast(`Moved ${moved.length} task(s)`);
+    }));
     bar.appendChild(el("div", { style: { flex: "1" }}));
     bar.appendChild(el("button", { class: "btn btn--secondary btn--sm", onclick: () => {
       store.bulkArchive([...LIST_STATE.selected]);
@@ -928,6 +981,12 @@
     const idOrKey = params.get("id") || params.get("key") || (store.listTasks()[0] && store.listTasks()[0].id);
     const t = store.getTask(idOrKey);
     if (!t) { root.appendChild(el("div", { class: "page" }, el("h1", null, "Task not found"))); return; }
+    if (!renderTaskDetail.__pushedRecent || renderTaskDetail.__pushedRecent !== t.id) {
+      store.pushRecent(t.id);
+      renderTaskDetail.__pushedRecent = t.id;
+      renderTaskDetail.__actLimit = 20;
+      renderTaskDetail.__expandedBulk = {};
+    }
     const wf = store.workflow();
 
     // Breadcrumb + title row
@@ -948,6 +1007,18 @@
       el("div", { class: "menu__item", onclick: () => { navigator.clipboard?.writeText(t.key); toast("Key copied"); }}, "Copy key"),
       el("div", { class: "menu__item", onclick: () => { navigator.clipboard?.writeText(window.location.href); toast("Link copied"); }}, "Copy link"),
       el("div", { class: "menu__item", onclick: () => { const copy = store.duplicateTask(t.id); window.location.href = `task-detail.html?id=${copy.id}`; }}, "Duplicate"),
+      el("div", { class: "menu__item", onclick: () => {
+        const others = store.listProjects().filter(p => p.id !== t.project);
+        if (others.length === 0) { toast("No other project to move to"); return; }
+        const choices = others.map((p, i) => `${i + 1}. ${p.name} (${p.prefix})`).join("\n");
+        const pick = prompt(`Move to which project?\n${choices}\n\nEnter the number:`);
+        const idx = Number(pick) - 1;
+        if (Number.isNaN(idx) || !others[idx]) return;
+        const before = t.key;
+        const moved = store.moveTaskToProject(t.id, others[idx].id);
+        if (moved) toast(`Moved · ${before} → ${moved.key}`);
+        renderTaskDetail();
+      }}, "Move to project…"),
       el("div", { class: "menu__item", style: { color: "var(--feedback-danger-fg)" }, onclick: () => { if (confirm("Delete this task permanently? This cannot be undone.")) { store.deleteTask(t.id); window.location.href = "list.html"; }}}, "Delete (hard)…"),
     );
     root.appendChild(moreMenu);
@@ -962,6 +1033,57 @@
     left.appendChild(section("Description",
       el("textarea", { class: "input", style: { width: "100%", minHeight: "160px", padding: "12px", lineHeight: "1.5", fontFamily: "ui-monospace, Menlo, Consolas, monospace" }, onblur: (e) => { if (e.target.value !== t.body) store.updateTask(t.id, { body: e.target.value }); } }, t.body || "")
     ));
+
+    // Comments (CW-14)
+    const comments = store.listComments(t.id);
+    const commentsSec = section(`Comments · ${comments.length}`, null);
+    const commentsList = el("div", { class: "col", style: { gap: "12px" }});
+    comments.forEach(c => {
+      const author = store.getUser(c.author);
+      const initials = author ? author.name.split(/\s+/).slice(0,2).map(w => w[0]).join("").toUpperCase() : "?";
+      const isOwn = author && store.currentUser() && author.id === store.currentUser().id;
+      const renderedBody = renderCommentBody(c.body);
+      const row = el("div", { class: "row", style: { gap: "10px", alignItems: "flex-start" }},
+        el("span", { class: "avatar avatar--sm", style: { width: "28px", height: "28px", borderRadius: "50%", background: "var(--bg-muted)", display: "inline-grid", placeItems: "center", flexShrink: "0", fontSize: "11px", fontWeight: "600" }}, initials),
+        el("div", { style: { flex: "1", minWidth: "0" }},
+          el("div", { class: "row", style: { gap: "8px", fontSize: "12px", marginBottom: "4px" }},
+            el("strong", null, author ? author.name : "(unknown)"),
+            el("span", { style: { color: "var(--text-tertiary)" }}, relTime(c.created_at)),
+            c.edited ? el("span", { style: { color: "var(--text-tertiary)", fontStyle: "italic" }}, "· edited") : null,
+            el("div", { style: { flex: "1" }}),
+            isOwn ? el("button", { class: "btn btn--ghost btn--sm", onclick: () => {
+              const next = prompt("Edit comment:", c.body);
+              if (next != null) { store.editComment(t.id, c.id, next); renderTaskDetail(); }
+            }}, "Edit") : null,
+            isOwn ? el("button", { class: "btn btn--ghost btn--sm", style: { color: "var(--feedback-danger-fg)" }, onclick: () => {
+              if (confirm("Delete this comment?")) { store.deleteComment(t.id, c.id); renderTaskDetail(); }
+            }}, "Delete") : null,
+          ),
+          el("div", { style: { fontSize: "13px", lineHeight: "1.5", whiteSpace: "pre-wrap" }, html: renderedBody }),
+          c.mentions && c.mentions.length ? el("div", { style: { fontSize: "11px", color: "var(--text-tertiary)", marginTop: "4px" }},
+            "Mentioned: " + c.mentions.map(id => (store.getUser(id) || {}).name || id).join(", "),
+          ) : null,
+        ),
+      );
+      commentsList.appendChild(row);
+    });
+    // Comment composer
+    const composer = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px", padding: "10px", border: "1px solid var(--border-default)", borderRadius: "var(--radius-md)", marginTop: "10px" }});
+    const composerInput = el("textarea", { class: "input", style: { width: "100%", minHeight: "60px", padding: "8px", lineHeight: "1.4", border: "none", outline: "none", resize: "vertical", background: "transparent" }, placeholder: "Add a comment… use @name to mention" });
+    composer.appendChild(composerInput);
+    composer.appendChild(el("div", { class: "row", style: { gap: "8px", justifyContent: "flex-end" }},
+      el("span", { style: { flex: "1", fontSize: "11px", color: "var(--text-tertiary)" }}, "Tip: @ken @sara · markdown supported"),
+      el("button", { class: "btn btn--primary btn--sm", onclick: () => {
+        const v = composerInput.value.trim();
+        if (!v) return;
+        store.postComment(t.id, v);
+        composerInput.value = "";
+        renderTaskDetail();
+      }}, "Comment"),
+    ));
+    commentsList.appendChild(composer);
+    commentsSec.appendChild(commentsList);
+    left.appendChild(commentsSec);
 
     // Related
     const relatedSec = section(`Related · ${t.relationships.length}`, null);
@@ -1018,25 +1140,78 @@
     attSec.appendChild(attGrid);
     left.appendChild(attSec);
 
-    // Activity
+    // Activity (CW-7 pagination + CW-11 bulk_op_id collapse)
+    const ACT_PAGE = 20;
+    renderTaskDetail.__actLimit = renderTaskDetail.__actLimit || ACT_PAGE;
     const actSec = section(`Activity · ${t.history.length}`, null);
     const actList = el("div", { class: "col", style: { gap: "8px" }});
-    t.history.slice().reverse().slice(0, 30).forEach(h => {
-      const u = h.actor && store.getUser(h.actor);
-      const icon = {
-        created: "+", field_change: "→", custom_field_change: "→", label_added: "#", label_removed: "#",
-        archived: "▢", unarchived: "▣", link_added: "⇢", link_removed: "⇢", body_edited: "✎",
-        attachment_added: "📎", attachment_removed: "📎",
-      }[h.kind] || "·";
-      const msg = h.kind === "created" ? "created this task"
-        : h.kind === "field_change" ? `changed ${h.field}${h.before != null ? ` from ${JSON.stringify(h.before)}` : ""} to ${JSON.stringify(h.after)}`
-        : h.kind;
-      actList.appendChild(el("div", { class: "row", style: { gap: "10px", fontSize: "12px" }},
-        el("span", { style: { width: "22px", height: "22px", borderRadius: "50%", background: "var(--bg-muted)", display: "inline-grid", placeItems: "center", flexShrink: "0" }}, icon),
-        el("span", { style: { flex: "1", color: "var(--text-secondary)" }}, u ? u.name + " " : "", msg),
-        el("span", { style: { color: "var(--text-tertiary)" }}, relTime(h.at)),
-      ));
+    const icons = {
+      created: "+", field_change: "→", custom_field_change: "→", label_added: "#", label_removed: "#",
+      archived: "▢", unarchived: "▣", link_added: "⇢", link_removed: "⇢", body_edited: "✎",
+      attachment_added: "📎", attachment_removed: "📎",
+    };
+    const describe = (h) => h.kind === "created" ? "created this task"
+      : h.kind === "field_change" ? `changed ${h.field}${h.before != null ? ` from ${JSON.stringify(h.before)}` : ""} to ${JSON.stringify(h.after)}`
+      : h.kind === "label_added" ? `added label "${h.after}"`
+      : h.kind === "label_removed" ? `removed label "${h.before}"`
+      : h.kind;
+    const all = t.history.slice().reverse();
+    // Group consecutive entries that share a bulk_op_id; non-bulk pass through.
+    const groups = [];
+    let cursor = 0;
+    while (cursor < all.length) {
+      const e = all[cursor];
+      if (e.bulk_op_id) {
+        const run = [e];
+        let j = cursor + 1;
+        while (j < all.length && all[j].bulk_op_id === e.bulk_op_id) { run.push(all[j]); j++; }
+        groups.push({ kind: "bulk", entries: run });
+        cursor = j;
+      } else {
+        groups.push({ kind: "single", entry: e });
+        cursor += 1;
+      }
+    }
+    const visible = groups.slice(0, renderTaskDetail.__actLimit);
+    visible.forEach(g => {
+      if (g.kind === "single") {
+        const h = g.entry;
+        const u = h.actor && store.getUser(h.actor);
+        actList.appendChild(el("div", { class: "row", style: { gap: "10px", fontSize: "12px" }},
+          el("span", { style: { width: "22px", height: "22px", borderRadius: "50%", background: "var(--bg-muted)", display: "inline-grid", placeItems: "center", flexShrink: "0" }}, icons[h.kind] || "·"),
+          el("span", { style: { flex: "1", color: "var(--text-secondary)" }}, u ? u.name + " " : "", describe(h)),
+          el("span", { style: { color: "var(--text-tertiary)" }}, relTime(h.at)),
+        ));
+      } else {
+        const first = g.entries[0];
+        const u = first.actor && store.getUser(first.actor);
+        const expanded = renderTaskDetail.__expandedBulk && renderTaskDetail.__expandedBulk[first.bulk_op_id];
+        const wrap = el("div", { style: { padding: "6px 8px", border: "1px dashed var(--border-default)", borderRadius: "var(--radius-sm)", background: "var(--bg-muted)" }});
+        wrap.appendChild(el("div", { class: "row", style: { gap: "10px", fontSize: "12px", cursor: "pointer" }, onclick: () => {
+          renderTaskDetail.__expandedBulk = renderTaskDetail.__expandedBulk || {};
+          renderTaskDetail.__expandedBulk[first.bulk_op_id] = !expanded;
+          renderTaskDetail();
+        }},
+          el("span", { style: { width: "22px", height: "22px", borderRadius: "50%", background: "var(--bg-surface)", display: "inline-grid", placeItems: "center", flexShrink: "0" }}, "⌘"),
+          el("span", { style: { flex: "1", color: "var(--text-secondary)" }}, u ? u.name + " " : "", `bulk update · ${g.entries.length} change(s)`),
+          el("span", { style: { color: "var(--text-tertiary)" }}, expanded ? "▾" : "▸", " ", relTime(first.at)),
+        ));
+        if (expanded) {
+          g.entries.forEach(h => {
+            wrap.appendChild(el("div", { class: "row", style: { gap: "10px", fontSize: "12px", padding: "4px 0 4px 32px", color: "var(--text-tertiary)" }},
+              el("span", null, describe(h)),
+            ));
+          });
+        }
+        actList.appendChild(wrap);
+      }
     });
+    if (groups.length > renderTaskDetail.__actLimit) {
+      actList.appendChild(el("button", { class: "btn btn--ghost btn--sm", style: { alignSelf: "flex-start" }, onclick: () => {
+        renderTaskDetail.__actLimit = (renderTaskDetail.__actLimit || ACT_PAGE) + ACT_PAGE;
+        renderTaskDetail();
+      }}, `Load more · ${groups.length - renderTaskDetail.__actLimit} remaining`));
+    }
     actSec.appendChild(actList);
     left.appendChild(actSec);
 

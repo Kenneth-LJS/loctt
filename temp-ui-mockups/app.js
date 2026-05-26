@@ -112,6 +112,34 @@
     return d.toISOString().slice(0, 10);
   }
 
+  // Mention parser shared by comments. Matches @token where token can be a
+  // user id, a name slug, or the first part of an email. Returns deduped
+  // user ids in document order; tokens that don't resolve are dropped.
+  function extractMockMentions(body, users) {
+    const seen = new Set();
+    const out = [];
+    const re = /@([\w\-.]+)/g;
+    let m;
+    while ((m = re.exec(body)) !== null) {
+      const tok = m[1].toLowerCase();
+      const u = users.find(u => {
+        if (u.id.toLowerCase() === tok) return true;
+        const slug = (u.name || "").toLowerCase().split(/\s+/).join("");
+        if (slug === tok) return true;
+        const first = (u.name || "").toLowerCase().split(/\s+/)[0];
+        if (first === tok) return true;
+        const emailLocal = (u.email || "").split("@")[0].toLowerCase();
+        if (emailLocal === tok) return true;
+        return false;
+      });
+      if (u && !seen.has(u.id)) {
+        seen.add(u.id);
+        out.push(u.id);
+      }
+    }
+    return out;
+  }
+
   // Default workflow + sample data, mirrors §1.5 of TEMP-UI-DISCREPANCIES.md
   function buildSampleData() {
     const userKen = "u_ken";
@@ -230,7 +258,42 @@
         last_synced_at: todayISO(),
       },
       activity: [],
+      comments: {},
+      recents: { [userKen]: [] },
     };
+  }
+
+  // Seed a couple of demo comments on the most relevant tasks after the
+  // tasks array is built (ids are ulids assigned per reset, so we
+  // resolve by key here).
+  function seedSampleComments(data) {
+    const findId = key => (data.tasks.find(t => t.key === key) || {}).id;
+    const ken = data.users.find(u => u.id === "u_ken");
+    const sara = data.users.find(u => u.id === "u_sara");
+    const jess = data.users.find(u => u.id === "u_jess");
+    const now = Date.now();
+    const ago = ms => new Date(now - ms).toISOString();
+    const seed = (key, items) => {
+      const id = findId(key);
+      if (!id) return;
+      data.comments[id] = items.map((c, i) => ({
+        id: "c_" + key + "_" + i,
+        author: c.author,
+        body: c.body,
+        created_at: c.at,
+        ...(c.mentions ? { mentions: c.mentions } : {}),
+      }));
+    };
+    if (ken && sara && jess) {
+      seed("WEB-128", [
+        { author: sara.id, body: "Started on the edge-drag math. @ken can you double-check the snap-to-day boundary when start_date == due_date?", mentions: [ken.id], at: ago(3 * 3600 * 1000) },
+        { author: ken.id, body: "Looks right. One nit: tooltip should follow the cursor, not the bar edge.", at: ago(2 * 3600 * 1000) },
+      ]);
+      seed("BACKEND-126", [
+        { author: jess.id, body: "Repro narrowed to the symmetric path. Posting a patch shortly.", at: ago(20 * 3600 * 1000) },
+        { author: ken.id, body: "Thanks @jess — please add a regression test that flips inverse_key after link.", mentions: [jess.id], at: ago(18 * 3600 * 1000) },
+      ]);
+    }
   }
 
   function buildSampleTasks(uKen, uSara, uJess) {
@@ -272,6 +335,7 @@
       if (raw) { _data = JSON.parse(raw); return _data; }
     } catch (_e) { /* fall through */ }
     _data = buildSampleData();
+    seedSampleComments(_data);
     save();
     return _data;
   }
@@ -288,6 +352,7 @@
       localStorage.removeItem(STORAGE.mock);
     } else {
       _data = buildSampleData();
+      seedSampleComments(_data);
       save();
     }
     document.dispatchEvent(new CustomEvent("tt:change", { detail: { reason: "reset" } }));
@@ -683,6 +748,115 @@
     // git
     git() { return load().git; },
     updateGit(changes) { Object.assign(load().git, changes); save(); },
+
+    // comments (CW-14)
+    listComments(taskId) {
+      const d = load();
+      d.comments = d.comments || {};
+      return (d.comments[taskId] || []).slice();
+    },
+    postComment(taskId, body) {
+      if (!body || !body.trim()) return null;
+      const d = load();
+      d.comments = d.comments || {};
+      const mentions = extractMockMentions(body, d.users);
+      const c = {
+        id: ulid(),
+        author: d.current_user,
+        body,
+        created_at: todayISO(),
+        ...(mentions.length ? { mentions } : {}),
+      };
+      d.comments[taskId] = d.comments[taskId] || [];
+      d.comments[taskId].push(c);
+      save();
+      return c;
+    },
+    editComment(taskId, commentId, body) {
+      if (!body || !body.trim()) return null;
+      const d = load();
+      const list = (d.comments || {})[taskId] || [];
+      const c = list.find(x => x.id === commentId);
+      if (!c) return null;
+      c.body = body;
+      c.updated_at = todayISO();
+      c.edited = true;
+      const mentions = extractMockMentions(body, d.users);
+      if (mentions.length) c.mentions = mentions;
+      else delete c.mentions;
+      save();
+      return c;
+    },
+    deleteComment(taskId, commentId) {
+      const d = load();
+      if (!d.comments || !d.comments[taskId]) return false;
+      const before = d.comments[taskId].length;
+      d.comments[taskId] = d.comments[taskId].filter(c => c.id !== commentId);
+      save();
+      return d.comments[taskId].length < before;
+    },
+
+    // recents (CW-19) — per current user
+    listRecents() {
+      const d = load();
+      const u = store.currentUser();
+      if (!u) return [];
+      d.recents = d.recents || {};
+      return (d.recents[u.id] || []).slice();
+    },
+    pushRecent(taskId) {
+      const d = load();
+      const u = store.currentUser();
+      if (!u) return;
+      d.recents = d.recents || {};
+      const list = (d.recents[u.id] || []).filter(e => e.id !== taskId);
+      list.unshift({ id: taskId, at: todayISO() });
+      d.recents[u.id] = list.slice(0, 20);
+      save();
+    },
+
+    // export (CW-21)
+    exportTasks(format, opts) {
+      opts = opts || {};
+      const tasks = store.listTasks({ includeArchived: !!opts.includeArchived });
+      const columns = opts.columns || ["key", "id", "title", "project", "status", "priority", "task_type", "labels", "assignee", "reporter", "start_date", "due_date", "estimate", "milestone", "sprint", "completed_date", "created_at", "updated_at"];
+      if (format === "json") {
+        const rows = tasks.map(t => {
+          const row = {};
+          columns.forEach(c => { if (t[c] !== undefined && t[c] !== null) row[c] = t[c]; });
+          if (opts.includeBody) row.body = t.body;
+          return row;
+        });
+        return JSON.stringify(rows, null, 2);
+      }
+      const esc = s => /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      const cell = v => v == null ? "" : Array.isArray(v) ? esc(v.join(",")) : typeof v === "object" ? esc(JSON.stringify(v)) : esc(String(v));
+      const cols = opts.includeBody && !columns.includes("body") ? columns.concat(["body"]) : columns;
+      const lines = [cols.map(esc).join(",")];
+      tasks.forEach(t => lines.push(cols.map(c => cell(t[c])).join(",")));
+      return lines.join("\n") + "\n";
+    },
+
+    // moveTaskToProject (CW-13) — allocates a new key in target project's prefix
+    moveTaskToProject(taskId, targetProjectId) {
+      const d = load();
+      const t = store.getTask(taskId);
+      const target = d.projects.find(p => p.id === targetProjectId);
+      if (!t || !target) return null;
+      if (t.project === targetProjectId) return t;
+      const oldKey = t.key;
+      const oldProject = t.project;
+      const newKey = target.prefix + target.next_number;
+      target.next_number += 1;
+      t.key_history = (t.key_history || []).concat([oldKey]);
+      t.key = newKey;
+      t.project = targetProjectId;
+      t.updated_at = todayISO();
+      t.history.push({ id: ulid(), kind: "field_change", at: t.updated_at, actor: d.current_user, field: "project", before: oldProject, after: targetProjectId });
+      t.history.push({ id: ulid(), kind: "field_change", at: t.updated_at, actor: d.current_user, field: "key", before: oldKey, after: newKey });
+      save();
+      return t;
+    },
 
     // user settings (per-current-user)
     userSettings() { const u = store.currentUser(); return (u && u.settings) || {}; },
