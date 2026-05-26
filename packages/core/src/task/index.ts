@@ -39,6 +39,13 @@ export {
   writeTaskBody,
 } from "./io.js";
 export { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./lifecycle.js";
+export type {
+  BulkMoveTaskOptions,
+  BulkMoveTaskResult,
+  MoveTaskOptions,
+  MoveTaskResult,
+} from "./move.js";
+export { bulkMoveTasksToProject, moveTaskToProject, MoveTaskError } from "./move.js";
 export { listTaskIds } from "./list-ids.js";
 export { loadAllTasks } from "./load-all.js";
 export { lookupById, lookupByKey, lookupTask, TaskNotFoundError } from "./lookup.js";
