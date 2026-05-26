@@ -43,4 +43,12 @@ export interface HistoryEntry {
    * any user exists). Stamped by core's appendHistory.
    */
   readonly actor?: string;
+  /**
+   * Stamped by core's bulk operations (`bulkSetField`, `bulkArchive`,
+   * etc.) on every history entry emitted during a single bulk call.
+   * The UI uses this to collapse adjacent entries into one expandable
+   * row ("Ken bulk-changed status on 50 tasks"). Absent on single-task
+   * operations.
+   */
+  readonly bulk_op_id?: string;
 }

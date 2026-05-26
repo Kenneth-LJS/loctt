@@ -224,4 +224,18 @@ describe("history actor attribution", () => {
     expect(entries).toHaveLength(3);
     for (const e of entries) expect(e.actor).toBe(activeId);
   });
+
+  it("round-trips bulk_op_id through write + read", async () => {
+    // CW-11: bulk operations stamp every entry in one logical bulk call
+    // with a shared bulk_op_id. The UI uses this to collapse entries.
+    const opId = "01HXBULK000000000000000001";
+    await appendHistory(locttDir, "t1", [
+      { timestamp: "2026-05-21T10:00:00Z", kind: "field_change", field: "status", before: "backlog", after: "doing", bulk_op_id: opId },
+      { timestamp: "2026-05-21T10:00:00Z", kind: "field_change", field: "status", before: "backlog", after: "doing", bulk_op_id: opId },
+    ]);
+    const entries = await readHistory(locttDir, "t1");
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.bulk_op_id).toBe(opId);
+    expect(entries[1]?.bulk_op_id).toBe(opId);
+  });
 });

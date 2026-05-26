@@ -296,8 +296,12 @@ stays CLI-only per the C1 lock. Size: **XS**.
 
 ## B.5 Cosmetic / supportive
 
-### CW-11 · Bulk-op history `bulk_op_id`
-History schema gains an optional `bulk_op_id` field. Set by CW-4 bulk ops. UI collapses entries sharing the same `bulk_op_id` into one expandable row. Size: **XS**.
+### CW-11 · Bulk-op history `bulk_op_id` ✅
+History schema gains an optional `bulk_op_id` field on `HistoryEntry`.
+Will be stamped by CW-4 bulk ops (`bulkSetField`, etc.) on every entry
+in a single bulk call. The UI collapses adjacent entries sharing the
+same `bulk_op_id` into one expandable row. Round-trip through YAML
+verified. Size: **XS**.
 
 ### CW-20 · Attachment upload compression (UI-only)
 Frontend converts uploaded images to JPG **or** WebP (whichever is smaller) before sending to the backend. No per-file size cap. Backend takes whatever bytes it gets and stores. No core change; entirely a UI concern. Listed here for visibility.
