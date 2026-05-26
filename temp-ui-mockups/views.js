@@ -2084,28 +2084,76 @@
   }
 
   function renderCardLayoutPanel(panel) {
+    // Card layout is an ordered array of { key, visible }. Order = render
+    // order on the card (top to bottom). Drag-reorder rows to change order;
+    // toggle the checkbox to hide/show a field. New fields appended at
+    // the bottom default to visible.
+    const FIELD_LABELS = {
+      project: "Project", priority: "Priority", assignee: "Assignee",
+      labels: "Labels", type: "Type", due: "Due date", estimate: "Estimate",
+      milestone: "Milestone", sprint: "Sprint", relations: "Relation count",
+    };
+    const DEFAULT_LAYOUT = [
+      { key: "project", visible: true },
+      { key: "priority", visible: true },
+      { key: "assignee", visible: true },
+      { key: "labels", visible: true },
+      { key: "type", visible: false },
+      { key: "due", visible: true },
+      { key: "estimate", visible: false },
+      { key: "milestone", visible: false },
+      { key: "sprint", visible: false },
+      { key: "relations", visible: false },
+    ];
+
+    function migrate(raw) {
+      if (!Array.isArray(raw)) return DEFAULT_LAYOUT.slice();
+      // Legacy shape: array of strings (presence = visible).
+      if (raw.length > 0 && typeof raw[0] === "string") {
+        const visibleSet = new Set(raw);
+        return DEFAULT_LAYOUT.map(d => ({ key: d.key, visible: visibleSet.has(d.key) }));
+      }
+      return raw;
+    }
+
     function rerender() {
       clear(panel);
       const s = store.userSettings();
-      const fields = s.card_layout || ["project","priority","assignee","labels","due"];
-      const all = [
-        { key: "project", label: "Project" }, { key: "priority", label: "Priority" },
-        { key: "assignee", label: "Assignee" }, { key: "labels", label: "Labels" },
-        { key: "type", label: "Type" }, { key: "due", label: "Due date" },
-        { key: "estimate", label: "Estimate" }, { key: "milestone", label: "Milestone" },
-        { key: "sprint", label: "Sprint" }, { key: "relations", label: "Relation count" },
-      ];
-      panel.appendChild(panelHeader("Card layout", "Which fields render on each kanban card.", null));
-      all.forEach(f => {
-        const on = fields.includes(f.key);
-        panel.appendChild(el("label", { class: "chk", style: { padding: "8px 0" }},
-          el("input", { type: "checkbox", checked: on, onchange: e => {
-            const next = e.target.checked ? fields.concat(f.key) : fields.filter(x => x !== f.key);
+      const layout = migrate(s.card_layout);
+      panel.appendChild(panelHeader("Card layout", "Drag to reorder. Toggle to show/hide. Order = render order on the card.", null));
+
+      layout.forEach((entry, idx) => {
+        const label = FIELD_LABELS[entry.key] || entry.key;
+        const row = el("div", {
+          class: "row",
+          draggable: "true",
+          style: { padding: "8px 0", borderBottom: "1px solid var(--border-subtle)", cursor: "move" },
+          ondragstart: (e) => { e.dataTransfer.setData("text/plain", String(idx)); },
+          ondragover: (e) => { e.preventDefault(); row.style.borderTop = "2px solid var(--accent)"; },
+          ondragleave: () => { row.style.borderTop = ""; },
+          ondrop: (e) => {
+            e.preventDefault();
+            row.style.borderTop = "";
+            const fromIdx = Number(e.dataTransfer.getData("text/plain"));
+            if (Number.isNaN(fromIdx) || fromIdx === idx) return;
+            const next = layout.slice();
+            const [item] = next.splice(fromIdx, 1);
+            next.splice(idx, 0, item);
             store.updateUserSettings({ card_layout: next });
-          }}),
-          el("span", { class: "chk__box" }),
-          f.label
-        ));
+          },
+        },
+          el("span", { style: { color: "var(--text-tertiary)" }}, "⋮⋮"),
+          el("label", { class: "chk" },
+            el("input", { type: "checkbox", checked: entry.visible, onchange: (e) => {
+              const next = layout.slice();
+              next[idx] = { key: entry.key, visible: e.target.checked };
+              store.updateUserSettings({ card_layout: next });
+            }}),
+            el("span", { class: "chk__box" }),
+          ),
+          el("span", { style: { flex: "1" }}, label),
+        );
+        panel.appendChild(row);
       });
     }
     rerender();

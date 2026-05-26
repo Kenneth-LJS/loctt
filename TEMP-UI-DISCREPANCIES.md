@@ -114,8 +114,8 @@ relationships:
 ```
 When `kind: "symmetric"`: `inverse` / `inverse_label` not required (auto = self). For `kind: "directional"`, `inverse` is required and must differ from `key` (declaring inverse-equals-key is rejected — must use symmetric). New exports: `isSymmetricRelationship`, `effectiveInverseKey`, `effectiveInverseLabel`, `relationshipTypeKeys`. UI groups both directions under one heading when symmetric. Size: **XS**.
 
-### CW-17 · `UserSettings.card_layout` as ordered array
-Was `boolean` per field. Now `[{ key, visible }, ...]` — preserves order. UI-managed passthrough; core treats opaquely. Size: **XS**.
+### CW-17 · `UserSettings.card_layout` as ordered array ✅
+Was `boolean` per field. Now `[{ key, visible }, ...]` — preserves order. UI-managed passthrough; core treats opaquely (UserSettings already passthroughs unknown keys). Mockup migrates legacy `string[]` shape on read. Size: **XS**.
 
 ## B.2 New core operations
 
