@@ -131,7 +131,7 @@ Pure scaffolding. No UI to review; just code review.
   on 4xx/5xx, JSON parsing. `useInfo` test with mocked fetch
 - **Not in scope**: per-resource hooks (each lands with its view)
 
-### T0.5 · Current-user + schema banner + migrate API ⬜ 🚦
+### T0.5 · Current-user + schema banner + migrate API ✅ 🚦
 - `useCurrentUser()` query + `<UserContext>` provider above all routes
 - `useSchemaStatus()` query against `/api/info` exposing `schema_status`
 - Red banner above `<AppShell />` when `schema_status === "outdated"`,
