@@ -5,8 +5,8 @@ import { join } from "node:path";
 import type { Task } from "@loctt/contracts";
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
-import { readTask,writeTask } from "./io.js";
 import { readHistory } from "./history.js";
+import { readTask,writeTask } from "./io.js";
 import { setField, setFields, TaskUpdateError,unsetField } from "./update.js";
 
 describe("setField / unsetField", () => {

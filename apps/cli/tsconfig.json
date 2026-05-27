@@ -8,6 +8,6 @@
   "references": [
     { "path": "../../packages/core" },
     { "path": "../mcp" },
-    { "path": "../web" }
+    { "path": "../web/tsconfig.server.json" }
   ]
 }

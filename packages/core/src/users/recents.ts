@@ -46,8 +46,8 @@ export async function readRecents(
   if (!Array.isArray(list)) return [];
   return list.filter((e): e is RecentEntry =>
     typeof e === "object" && e !== null
-    && typeof (e as RecentEntry).id === "string"
-    && typeof (e as RecentEntry).at === "string"
+    && typeof (e).id === "string"
+    && typeof (e).at === "string"
   );
 }
 

@@ -25,6 +25,10 @@ export {
 } from "./comments.js";
 export type { CountTasksByReferenceOptions, TaskReferenceKind } from "./counts.js";
 export { countTasksByReference, countTasksByReferences } from "./counts.js";
+export type { CreateTaskOptions, CreateTaskParams } from "./create.js";
+export { createTask } from "./create.js";
+export type { DuplicateTaskOverrides, DuplicateTaskParams } from "./duplicate.js";
+export { duplicateTask } from "./duplicate.js";
 export type { ExportOptions } from "./export.js";
 export {
   DEFAULT_EXPORT_COLUMNS,
@@ -32,10 +36,6 @@ export {
   exportTasksToJSON,
   filterForExport,
 } from "./export.js";
-export type { CreateTaskOptions, CreateTaskParams } from "./create.js";
-export { createTask } from "./create.js";
-export type { DuplicateTaskOverrides, DuplicateTaskParams } from "./duplicate.js";
-export { duplicateTask } from "./duplicate.js";
 export {
   assembleTaskFile,
   parseFrontmatter,
@@ -53,18 +53,18 @@ export {
   writeTaskBody,
 } from "./io.js";
 export { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./lifecycle.js";
+export { listTaskIds } from "./list-ids.js";
+export { loadAllTasks } from "./load-all.js";
+export { lookupById, lookupByKey, lookupTask, TaskNotFoundError } from "./lookup.js";
+export { clearLookupCaches } from "./lookup-cache.js";
+export { mimeForFilename } from "./mime.js";
 export type {
   BulkMoveTaskOptions,
   BulkMoveTaskResult,
   MoveTaskOptions,
   MoveTaskResult,
 } from "./move.js";
-export { bulkMoveTasksToProject, moveTaskToProject, MoveTaskError } from "./move.js";
-export { listTaskIds } from "./list-ids.js";
-export { loadAllTasks } from "./load-all.js";
-export { lookupById, lookupByKey, lookupTask, TaskNotFoundError } from "./lookup.js";
-export { clearLookupCaches } from "./lookup-cache.js";
-export { mimeForFilename } from "./mime.js";
+export { bulkMoveTasksToProject, MoveTaskError,moveTaskToProject } from "./move.js";
 export type { LinkTaskOptions, UnlinkTaskOptions } from "./relationships.js";
 export { linkTask, RelationshipError,unlinkTask } from "./relationships.js";
 export type { AttachmentInfo, TaskShowModel } from "./show.js";

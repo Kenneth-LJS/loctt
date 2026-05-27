@@ -1,8 +1,8 @@
 import type { LocttState, Task, WorkflowConfig } from "@loctt/contracts";
 
 import type { ArchivedGuardConfigs } from "../config/archived-guard.js";
-import { lookupTask } from "./lookup.js";
 import { createTask, type CreateTaskOptions } from "./create.js";
+import { lookupTask } from "./lookup.js";
 
 /**
  * Optional overrides applied on top of the source task's fields when

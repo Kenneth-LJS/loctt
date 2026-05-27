@@ -2,8 +2,8 @@ import type { HistoryEntry, LocttState, Task } from "@loctt/contracts";
 import { ulid } from "ulid";
 
 import { loadProjectsConfig } from "../config/projects.js";
-import { allocateKey, appendKeyHistory } from "../state/keys.js";
 import { loadState, saveState, withStateLock } from "../state/index.js";
+import { allocateKey, appendKeyHistory } from "../state/keys.js";
 import { appendHistory } from "./history.js";
 import { writeTask } from "./io.js";
 import { lookupTask, TaskNotFoundError } from "./lookup.js";
