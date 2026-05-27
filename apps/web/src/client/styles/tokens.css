@@ -1,0 +1,103 @@
+/* Design tokens — carried over from temp-ui-mockups/tokens.css.
+ * Two scopes: :root (light) and .dark (dark). The theme is switched
+ * by toggling the `dark` class on <html>.
+ *
+ * Tailwind references these via @theme in index.css so utility
+ * classes like text-text-primary, bg-bg-canvas, border-border-default
+ * resolve to whichever scope is active. A theme flip costs one class
+ * toggle — no re-render of utility classes required.
+ */
+
+:root {
+  color-scheme: light;
+  --bg-canvas: #F6F8FC;
+  --bg-surface: #FFFFFF;
+  --bg-surface-raised: #FFFFFF;
+  --bg-muted: #EEF2F8;
+  --bg-muted-hover: #E4EAF2;
+  --border-subtle: #E8ECF2;
+  --border-default: #D4DBE6;
+  --border-strong: #A7B1C2;
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-tertiary: #7B8699;
+  --text-disabled: #BAC2CF;
+
+  --accent: #4F46E5;
+  --accent-hover: #4338CA;
+  --accent-muted: #EEF0FE;
+  --accent-contrast: #FFFFFF;
+
+  --status-pending-fg: #475569;
+  --status-pending-bg: #EEF2F8;
+  --status-active-fg: #1E6FCB;
+  --status-active-bg: #E6F0FC;
+  --status-completed-fg: #1F8A4C;
+  --status-completed-bg: #E6F5EC;
+  --status-discarded-fg: #7B8699;
+  --status-discarded-bg: #E4EAF2;
+
+  --feedback-danger-fg: #C2341A;
+  --feedback-danger-bg: #FDECE8;
+  --feedback-warn-fg: #A15C00;
+  --feedback-warn-bg: #FBF1DE;
+  --feedback-success-fg: #1F8A4C;
+  --feedback-success-bg: #E6F5EC;
+
+  --priority-low: #7B8699;
+  --priority-medium: #1E6FCB;
+  --priority-high: #D97706;
+  --priority-critical: #C2341A;
+
+  --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.12);
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+.dark {
+  color-scheme: dark;
+  --bg-canvas: #0B0B0C;
+  --bg-surface: #141416;
+  --bg-surface-raised: #1A1A1D;
+  --bg-muted: #1F1F22;
+  --bg-muted-hover: #25252A;
+  --border-subtle: #222226;
+  --border-default: #2E2E34;
+  --border-strong: #43434A;
+  --text-primary: #F4F4F3;
+  --text-secondary: #A8A8AE;
+  --text-tertiary: #6E6E75;
+  --text-disabled: #4A4A50;
+
+  --accent: #818CF8;
+  --accent-hover: #A5B4FC;
+  --accent-muted: #1E1B4B;
+  --accent-contrast: #0B0B0C;
+
+  --status-pending-fg: #A8A8AE;
+  --status-pending-bg: #25252A;
+  --status-active-fg: #7CB7FF;
+  --status-active-bg: #0F2236;
+  --status-completed-fg: #6EE7A0;
+  --status-completed-bg: #0E2B1A;
+  --status-discarded-fg: #6E6E75;
+  --status-discarded-bg: #1F1F22;
+
+  --feedback-danger-fg: #FF8A73;
+  --feedback-danger-bg: #3A1410;
+  --feedback-warn-fg: #F2B35C;
+  --feedback-warn-bg: #2E1F08;
+  --feedback-success-fg: #6EE7A0;
+  --feedback-success-bg: #0E2B1A;
+
+  --priority-low: #6E6E75;
+  --priority-medium: #7CB7FF;
+  --priority-high: #F2B35C;
+  --priority-critical: #FF8A73;
+
+  --shadow-raised: none;
+  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.4);
+}

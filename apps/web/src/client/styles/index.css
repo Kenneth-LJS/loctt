@@ -1,0 +1,105 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/* Wire CSS variables into Tailwind's @theme so utilities like
+ * bg-canvas, text-text-primary, border-border-default, shadow-raised
+ * resolve through whichever scope (:root vs .dark) is active.
+ *
+ * Tailwind v4 exposes these as CSS variables under --color-*, etc., so
+ * keep the names predictable.
+ */
+@theme {
+  --color-bg-canvas: var(--bg-canvas);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-surface-raised: var(--bg-surface-raised);
+  --color-bg-muted: var(--bg-muted);
+  --color-bg-muted-hover: var(--bg-muted-hover);
+
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-text-disabled: var(--text-disabled);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-muted: var(--accent-muted);
+  --color-accent-contrast: var(--accent-contrast);
+
+  --color-status-pending-fg: var(--status-pending-fg);
+  --color-status-pending-bg: var(--status-pending-bg);
+  --color-status-active-fg: var(--status-active-fg);
+  --color-status-active-bg: var(--status-active-bg);
+  --color-status-completed-fg: var(--status-completed-fg);
+  --color-status-completed-bg: var(--status-completed-bg);
+  --color-status-discarded-fg: var(--status-discarded-fg);
+  --color-status-discarded-bg: var(--status-discarded-bg);
+
+  --color-danger-fg: var(--feedback-danger-fg);
+  --color-danger-bg: var(--feedback-danger-bg);
+  --color-warn-fg: var(--feedback-warn-fg);
+  --color-warn-bg: var(--feedback-warn-bg);
+  --color-success-fg: var(--feedback-success-fg);
+  --color-success-bg: var(--feedback-success-bg);
+
+  --color-priority-low: var(--priority-low);
+  --color-priority-medium: var(--priority-medium);
+  --color-priority-high: var(--priority-high);
+  --color-priority-critical: var(--priority-critical);
+
+  /* Shadows and radii stay as raw CSS vars in tokens.css; reference
+   * them from utilities via the arbitrary-value syntax, e.g.
+   * `shadow-(--shadow-raised)` or `rounded-(--radius-md)`. Aliasing
+   * them under their original names inside @theme would be circular —
+   * Tailwind v4 emits @theme entries as :root variables, and a
+   * `--radius-md: var(--radius-md)` line would resolve to itself.
+   */
+
+  --font-sans:
+    "Inter",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+
+/* Tailwind v4's `dark:` variant defaults to a media query. Override it
+ * to use the `.dark` class on <html> so useTheme can force a mode
+ * regardless of OS preference.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Minimal base styles. Component look-and-feel is composed from
+ * utilities; this section is just the things every page needs.
+ */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg-canvas);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.43;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  a:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+  }
+}
