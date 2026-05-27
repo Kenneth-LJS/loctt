@@ -116,7 +116,7 @@ Pure scaffolding. No UI to review; just code review.
 - **Tests**: search-param schema round-trip (parse → serialize → parse)
 - **Not in scope**: actual view implementations
 
-### T0.4 · TanStack Query + API client ⬜
+### T0.4 · TanStack Query + API client ✅
 - Install `@tanstack/react-query` + devtools
 - `QueryClient` mounted in root with sane defaults (staleTime 30s,
   refetchOnWindowFocus false for now)
