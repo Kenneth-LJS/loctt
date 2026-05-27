@@ -17,9 +17,11 @@
   "dependencies": {
     "@loctt/contracts": "*",
     "@loctt/core": "*",
+    "@tanstack/react-router": "^1.170.8",
     "busboy": "^1.6.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
