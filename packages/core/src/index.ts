@@ -262,6 +262,17 @@ export type {
   EditCommentOptions,
   PostCommentOptions,
 } from "./task/index.js";
+export type { CountTasksByReferenceOptions, TaskReferenceKind } from "./task/index.js";
+export type { ExportOptions } from "./task/index.js";
+export type { ReadHistoryOptions, ReadHistoryPage } from "./task/index.js";
+export type { SetFieldOptions, SetFieldsEntry, SetFieldsOptions } from "./task/index.js";
+export type { LinkTaskOptions, UnlinkTaskOptions } from "./task/index.js";
+export type {
+  BulkMoveTaskOptions,
+  BulkMoveTaskResult,
+  MoveTaskOptions,
+  MoveTaskResult,
+} from "./task/index.js";
 export {
   CommentError,
   deleteComment,
@@ -270,11 +281,6 @@ export {
   listComments,
   postComment,
 } from "./task/index.js";
-export type { CountTasksByReferenceOptions, TaskReferenceKind } from "./task/index.js";
-export type { ExportOptions } from "./task/index.js";
-export type { ReadHistoryOptions, ReadHistoryPage } from "./task/index.js";
-export type { SetFieldOptions, SetFieldsEntry, SetFieldsOptions } from "./task/index.js";
-export type { LinkTaskOptions, UnlinkTaskOptions } from "./task/index.js";
 export {
   attachFile,
   AttachmentExistsError,
@@ -312,13 +318,7 @@ export {
   filterForExport,
 } from "./task/index.js";
 export { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./task/index.js";
-export type {
-  BulkMoveTaskOptions,
-  BulkMoveTaskResult,
-  MoveTaskOptions,
-  MoveTaskResult,
-} from "./task/index.js";
-export { bulkMoveTasksToProject, moveTaskToProject, MoveTaskError } from "./task/index.js";
+export { bulkMoveTasksToProject, MoveTaskError,moveTaskToProject } from "./task/index.js";
 export { linkTask, RelationshipError,unlinkTask } from "./task/index.js";
 export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./task/index.js";
 export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserSettings } from "./users/index.js";

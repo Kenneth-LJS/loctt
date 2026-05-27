@@ -12,7 +12,7 @@ import { loadState, saveState, withStateLock } from "../state/index.js";
 import { createTask } from "./create.js";
 import { readHistory } from "./history.js";
 import { lookupTask } from "./lookup.js";
-import { bulkMoveTasksToProject, moveTaskToProject, MoveTaskError } from "./move.js";
+import { bulkMoveTasksToProject, MoveTaskError,moveTaskToProject } from "./move.js";
 
 let root: string;
 let locttDir: string;

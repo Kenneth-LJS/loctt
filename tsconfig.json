@@ -5,6 +5,6 @@
     { "path": "packages/core" },
     { "path": "apps/cli" },
     { "path": "apps/mcp" },
-    { "path": "apps/web" }
+    { "path": "apps/web/tsconfig.server.json" }
   ]
 }

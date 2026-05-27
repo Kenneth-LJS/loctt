@@ -8,17 +8,19 @@ const ROOT = resolve(import.meta.dirname, "../../..");
 
 describe("monorepo scaffold", () => {
   it("has all expected workspace directories", () => {
-    const expected = [
-      "packages/core",
-      "packages/contracts",
-      "apps/cli",
-      "apps/mcp",
-      "apps/web",
+    const expected: { dir: string; entry: string }[] = [
+      { dir: "packages/core", entry: "src/index.ts" },
+      { dir: "packages/contracts", entry: "src/index.ts" },
+      { dir: "apps/cli", entry: "src/index.ts" },
+      { dir: "apps/mcp", entry: "src/index.ts" },
+      // apps/web is split into server + client (see TEMP-WEB-TICKETS.md
+      // T0.1): the server's entry is src/server/index.ts.
+      { dir: "apps/web", entry: "src/server/index.ts" },
     ];
-    for (const dir of expected) {
+    for (const { dir, entry } of expected) {
       expect(existsSync(resolve(ROOT, dir, "package.json")), `${dir}/package.json should exist`).toBe(true);
       expect(existsSync(resolve(ROOT, dir, "tsconfig.json")), `${dir}/tsconfig.json should exist`).toBe(true);
-      expect(existsSync(resolve(ROOT, dir, "src/index.ts")), `${dir}/src/index.ts should exist`).toBe(true);
+      expect(existsSync(resolve(ROOT, dir, entry)), `${dir}/${entry} should exist`).toBe(true);
     }
   });
 

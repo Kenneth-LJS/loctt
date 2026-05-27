@@ -1,12 +1,7 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src"
-  },
-  "include": ["src"],
+  "files": [],
   "references": [
-    { "path": "../../packages/core" },
-    { "path": "../../packages/contracts" }
+    { "path": "./tsconfig.server.json" },
+    { "path": "./tsconfig.client.json" }
   ]
 }

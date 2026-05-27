@@ -1,4 +1,4 @@
-import type { Task, TaskFrontmatter } from "@loctt/contracts";
+import type { Task } from "@loctt/contracts";
 
 /**
  * Built-in fields that are exported by default when the caller doesn't
@@ -77,10 +77,18 @@ function csvEscape(s: string): string {
 function csvCell(value: unknown): string {
   if (value === undefined || value === null) return "";
   if (Array.isArray(value)) {
-    return csvEscape(value.map(v => String(v)).join(","));
+    return csvEscape(value.map(v => primitiveString(v)).join(","));
   }
   if (typeof value === "object") return csvEscape(JSON.stringify(value));
-  return csvEscape(String(value));
+  return csvEscape(primitiveString(value));
+}
+
+function primitiveString(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean" || typeof v === "bigint") return v.toString();
+  // Symbols and functions don't have a meaningful CSV form — JSON-encode
+  // so callers can spot the value rather than getting "[object Object]".
+  return JSON.stringify(v) ?? "";
 }
 
 /**
@@ -112,5 +120,5 @@ export function filterForExport(
   includeArchived: boolean,
 ): Task[] {
   if (includeArchived) return [...tasks];
-  return tasks.filter(t => !(t.frontmatter as TaskFrontmatter).archived);
+  return tasks.filter(t => !(t.frontmatter).archived);
 }
