@@ -12,6 +12,7 @@ import type {
   DoctorCheckResponse,
   LinkRequest,
   ListTasksRequest,
+  MigrateResponse,
   TaskResponse,
   TrackerInfoResponse,
   UpdateTaskRequest,
@@ -89,6 +90,7 @@ import {
   loadWorkflowConfig,
   lookupTask,
   MAX_AVATAR_BYTES,
+  migrateToCurrent,
   MilestoneError,
   ProjectError,
   publish,
@@ -604,6 +606,31 @@ export function createWebApp(options: WebAppOptions) {
   const handleDoctor: RouteHandler = async ({ res }) => {
     const checks = await runDoctor(root);
     json(res, checks as DoctorCheckResponse[]);
+  };
+
+  // POST /api/migrate — upgrade the tracker schema in place. The
+  // schema-mismatch banner in the web UI calls this with no body when
+  // the user clicks "Migrate now". The CLI's `loctt migrate` command
+  // is the alternative for headless / scripted use.
+  const handleMigrate: RouteHandler = async ({ res, locttDir }) => {
+    try {
+      const result = await migrateToCurrent(locttDir);
+      const response: MigrateResponse = {
+        from: result.from,
+        to: result.to,
+        ...(result.backupPath !== undefined ? { backupPath: result.backupPath } : {}),
+        steps: result.steps.map(s => ({
+          from: s.from,
+          to: s.to,
+          description: s.description,
+        })),
+      };
+      json(res, response);
+    } catch (err) {
+      if (err instanceof SchemaVersionError) { error(res, err.message, 400); return; }
+      if (err instanceof SchemaTooNewError) { error(res, err.message, 400); return; }
+      throw err;
+    }
   };
 
   const handleListViews: RouteHandler = async ({ res, locttDir }) => {
@@ -1800,6 +1827,7 @@ export function createWebApp(options: WebAppOptions) {
   const routes: readonly Route[] = [
     { method: "GET", pattern: "/api/info", handler: handleInfo },
     { method: "GET", pattern: "/api/doctor", handler: handleDoctor },
+    { method: "POST", pattern: "/api/migrate", handler: handleMigrate },
     { method: "GET", pattern: "/api/config", handler: handleConfig },
     { method: "GET", pattern: "/api/projects", handler: handleListProjects },
     { method: "POST", pattern: "/api/projects", handler: handleCreateProject },
@@ -1897,7 +1925,15 @@ export function createWebApp(options: WebAppOptions) {
       // it'll fail through its own existence check inside initLoctt.
       if (
         path.startsWith("/api/") &&
+        // /api/init creates the tracker so there's nothing to guard
+        // yet. /api/migrate is the *escape hatch* for an outdated
+        // schema — if we let the guard block it, the UI would have
+        // no way to recover via the API. /api/info must stay
+        // reachable so the schema banner can read its own state and
+        // the bootstrap can decide whether to surface it.
         path !== "/api/init" &&
+        path !== "/api/migrate" &&
+        path !== "/api/info" &&
         (await trackerDirExists(locttDir))
       ) {
         try {

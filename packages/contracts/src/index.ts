@@ -61,6 +61,8 @@ export type {
   DoctorCheckResponse,
   LinkRequest,
   ListTasksRequest,
+  MigrateResponse,
+  MigrateStepResponse,
   SchemaStatusResponse,
   TaskResponse,
   TrackerInfoResponse,
