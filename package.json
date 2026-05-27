@@ -9,6 +9,7 @@
   "scripts": {
     "build": "tsc --build && npm run build --workspace apps/cli --workspace apps/mcp && npm run build --workspace apps/web",
     "dev": "npm run dev --workspace apps/web",
+    "dev:host": "npm run dev:host --workspace apps/web",
     "test": "npm run test --workspaces --if-present",
     "pretest:integration": "npm run build",
     "test:integration": "vitest run --config tests/vitest.integration.config.ts",
