@@ -8,6 +8,7 @@
     "build": "vite build",
     "clean": "rm -rf dist",
     "dev": "concurrently -k -n api,web -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:host": "concurrently -k -n api,web -c blue,green \"npm:dev:server\" \"npm:dev:client -- --host\"",
     "dev:server": "tsx watch src/server/main.ts",
     "dev:client": "vite",
     "test": "vitest run",
