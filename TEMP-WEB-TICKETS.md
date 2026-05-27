@@ -103,7 +103,7 @@ Pure scaffolding. No UI to review; just code review.
   system preference)
 - **Not in scope**: theme picker UI (lands in My Preferences ticket)
 
-### T0.3 · TanStack Router skeleton ⬜
+### T0.3 · TanStack Router skeleton ✅
 - Install `@tanstack/react-router`
 - Code-based route tree (not file-based — explicit > magic for this app)
 - Root layout `<AppShell />` with `<Outlet />`
