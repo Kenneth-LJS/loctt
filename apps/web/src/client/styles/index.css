@@ -50,11 +50,12 @@
   --color-priority-high: var(--priority-high);
   --color-priority-critical: var(--priority-critical);
 
-  /* Shadows and radii stay as raw CSS vars in tokens.css; reference
-   * them from utilities via the arbitrary-value syntax, e.g.
-   * `shadow-(--shadow-raised)` or `rounded-(--radius-md)`. Aliasing
+  /* Shadows and radii stay as raw CSS vars in tokens.css; Tailwind
+   * v4 picks them up automatically because the names match its
+   * canonical token shape (--radius-sm/md/lg → rounded-sm/md/lg,
+   * --shadow-raised/overlay → shadow-raised/shadow-overlay). Aliasing
    * them under their original names inside @theme would be circular —
-   * Tailwind v4 emits @theme entries as :root variables, and a
+   * Tailwind emits @theme entries as :root variables, and a
    * `--radius-md: var(--radius-md)` line would resolve to itself.
    */
 

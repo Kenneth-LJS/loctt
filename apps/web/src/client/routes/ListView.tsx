@@ -11,7 +11,7 @@ export function ListView() {
       title="List view"
       subtitle="Filter / sort / paginate / bulk-bar / export land in Phase 1."
     >
-      <pre className="bg-bg-muted border border-border-subtle rounded-(--radius-md) p-3 text-xs overflow-auto">
+      <pre className="bg-bg-muted border border-border-subtle rounded-md p-3 text-xs overflow-auto">
 {JSON.stringify(search, null, 2)}
       </pre>
     </Placeholder>
