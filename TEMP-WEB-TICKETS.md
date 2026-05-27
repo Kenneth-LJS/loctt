@@ -75,7 +75,7 @@ between-ticket reviews.
 
 Pure scaffolding. No UI to review; just code review.
 
-### T0.1 · Workspace bootstrap ⬜
+### T0.1 · Workspace bootstrap ✅
 - Move the existing Node API into `apps/web/src/server/` (so existing
   `server.ts` and friends sit under `server/`)
 - Create the React app at `apps/web/src/client/`
