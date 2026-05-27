@@ -28,7 +28,7 @@ export default defineConfig({
       "@loctt/contracts": resolve("../../packages/contracts/src/index.ts"),
       "@loctt/core": resolve("../../packages/core/src/index.ts"),
       "@loctt/mcp": resolve("../mcp/src/index.ts"),
-      "@loctt/web": resolve("../web/src/index.ts"),
+      "@loctt/web": resolve("../web/src/server/index.ts"),
     };
   },
 });
