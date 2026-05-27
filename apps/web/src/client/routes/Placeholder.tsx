@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
+import { useInfo } from "../api/hooks/useInfo.ts";
 import { useTheme } from "../theme/useTheme.ts";
 
 interface PlaceholderProps {
@@ -29,6 +30,7 @@ const NAV: { to: string; label: string }[] = [
  */
 export function Placeholder({ title, subtitle, children }: PlaceholderProps) {
   const { preference, resolved, setPreference } = useTheme();
+  const info = useInfo();
   return (
     <main className="min-h-screen bg-bg-canvas text-text-primary p-8">
       <div className="max-w-3xl mx-auto flex flex-col gap-6">
@@ -36,7 +38,13 @@ export function Placeholder({ title, subtitle, children }: PlaceholderProps) {
           <div>
             <h1 className="text-2xl font-semibold">LocTT</h1>
             <p className="text-text-tertiary text-sm">
-              Router skeleton · the real app shell lands in T1.1
+              {info.isLoading
+                ? "Loading tracker info…"
+                : info.error
+                  ? `Tracker info failed: ${info.error.message}`
+                  : info.data
+                    ? `${info.data.taskCount} task(s) · next ${info.data.nextKey ?? "—"} · schema ${info.data.schemaStatus.kind}`
+                    : "Router skeleton · the real app shell lands in T1.1"}
             </p>
           </div>
           <div className="flex gap-1 p-1 rounded-(--radius-md) bg-bg-muted border border-border-subtle text-xs">
