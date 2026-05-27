@@ -88,7 +88,7 @@ Pure scaffolding. No UI to review; just code review.
 - **Tests**: existing API tests keep passing after the move
 - **Not in scope**: routing, data layer, theming, components
 
-### T0.2 · Tailwind + design tokens ⬜
+### T0.2 · Tailwind + design tokens ✅
 - `tailwind.config.ts` with theme extended from `tokens.css` values
   (colors, radii, shadows, spacing)
 - `index.css` imports Tailwind + token CSS variables (light + dark
