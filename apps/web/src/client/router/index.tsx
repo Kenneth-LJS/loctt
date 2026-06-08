@@ -2,17 +2,19 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
-  Outlet,
   redirect,
 } from "@tanstack/react-router";
 
 import { Stub } from "../routes/Stub.tsx";
+import { AppBootstrap } from "../shell/AppBootstrap.tsx";
 import { listSearchSchema } from "./listSearch.ts";
 
-// Root just renders <Outlet />. The real app shell lands with the
-// first review milestone (see TEMP-WEB-TICKETS.md).
+// The root renders the app shell (header + sidebar + chrome) via
+// AppBootstrap, which gates on tracker info + current user and renders
+// the matched child route through its own <Outlet />. Child routes
+// (list/board/…) render inside the main pane.
 const rootRoute = createRootRoute({
-  component: () => <Outlet />,
+  component: AppBootstrap,
   notFoundComponent: () => <Stub name="404" />,
 });
 

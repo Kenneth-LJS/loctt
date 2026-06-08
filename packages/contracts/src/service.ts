@@ -126,6 +126,30 @@ export interface TrackerInfoResponse {
   readonly keyPrefix: string | null;
   readonly nextKey: string | null;
   readonly schemaStatus: SchemaStatusResponse;
+  /**
+   * Display-only label for the workspace the server is serving, shown
+   * in the sidebar footer so the user can see which tracker they're
+   * looking at. Deliberately NOT a raw absolute path: paths under the
+   * user's home dir collapse to `~/…` and others to their last
+   * segments, so the response never leaks the full server filesystem
+   * layout. Informational — never used to drive a filesystem operation.
+   */
+  readonly cwd: string;
+}
+
+/**
+ * One entry in `GET /api/recents` — a recently-viewed task resolved
+ * to enough frontmatter for the sidebar's "Recently viewed" group to
+ * render a key + title link, plus the `at` timestamp the recents file
+ * recorded. Entries whose task has since been deleted are dropped
+ * server-side, so every entry here resolves to a live task.
+ */
+export interface RecentTaskResponse {
+  readonly key: string;
+  readonly title: string;
+  readonly project?: string;
+  /** ISO timestamp the task was last viewed (from the recents file). */
+  readonly at: string;
 }
 
 /** Doctor check response for API. */
