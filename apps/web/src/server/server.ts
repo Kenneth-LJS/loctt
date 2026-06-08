@@ -1470,6 +1470,21 @@ export function createWebApp(options: WebAppOptions) {
     const projectFilter = url.searchParams.get("project") ?? undefined;
     const baseQuery = url.searchParams.get("query") ?? undefined;
     const view = url.searchParams.get("view") ?? undefined;
+    // Single-column sort from `?sort=<field>&dir=asc|desc`. The list
+    // view drives this off the clicked column header. `dir` defaults to
+    // ascending and rejects anything else so a bad URL doesn't silently
+    // sort the wrong way. When `sort` is absent we pass nothing and let
+    // the view's own sort (or core's default) stand.
+    const sortField = url.searchParams.get("sort") ?? undefined;
+    const dirParam = url.searchParams.get("dir");
+    if (dirParam !== null && dirParam !== "asc" && dirParam !== "desc") {
+      error(res, "dir must be 'asc' or 'desc'", 400);
+      return;
+    }
+    const direction: "asc" | "desc" = dirParam ?? "asc";
+    const sort = sortField !== undefined
+      ? [{ field: sortField, direction }]
+      : undefined;
     // listTasks() applies a built-in default limit (30) for the CLI's
     // benefit. The HTTP API paginates explicitly, so opt out by
     // passing a sentinel limit large enough to cover any tracker.
@@ -1479,6 +1494,7 @@ export function createWebApp(options: WebAppOptions) {
       ...(baseQuery !== undefined ? { query: baseQuery } : {}),
       ...(view !== undefined ? { view } : {}),
       ...(projectFilter !== undefined ? { project: projectFilter } : {}),
+      ...(sort !== undefined ? { sort } : {}),
       limit: Number.MAX_SAFE_INTEGER,
     };
 
