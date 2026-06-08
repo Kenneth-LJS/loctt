@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat as fsLstat, mkdtemp, rm, stat as fsStat } from "node:fs/promises";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join as pathJoin, normalize as pathNormalize, resolve as pathResolve, sep as pathSep } from "node:path";
 import { pipeline } from "node:stream/promises";
 
@@ -12,6 +12,7 @@ import type {
   DoctorCheckResponse,
   LinkRequest,
   ListTasksRequest,
+  RecentTaskResponse,
   TaskResponse,
   TrackerInfoResponse,
   UpdateTaskRequest,
@@ -87,6 +88,7 @@ import {
   loadState,
   loadUserSettings,
   loadWorkflowConfig,
+  lookupById,
   lookupTask,
   MAX_AVATAR_BYTES,
   MilestoneError,
@@ -94,6 +96,7 @@ import {
   publish,
   readBurndownSeries,
   readHistory,
+  readRecents,
   reorderBoardRank,
   ReorderError,
   reorderRelationship,
@@ -133,6 +136,27 @@ import type { ParsedFilePart } from "./multipart.js";
 import { parseMultipartFile } from "./multipart.js";
 
 const DEFAULT_PORT = 4321;
+
+/**
+ * Renders a workspace root for *display* in the UI footer without
+ * leaking a raw absolute server path into the API response. Paths
+ * under the user's home dir collapse to a `~/…`-prefixed form (what
+ * the mockup shows); anything outside home is reduced to its last two
+ * path segments with a leading `…/` to signal the truncation. Either
+ * way the result never starts with `/`, so it can't be mistaken for —
+ * or used as — an absolute filesystem path by a client.
+ */
+function displayPath(absPath: string): string {
+  const home = homedir();
+  if (home && (absPath === home || absPath.startsWith(home + pathSep))) {
+    const rest = absPath.slice(home.length).replace(/^[/\\]/, "");
+    return rest.length > 0 ? `~${pathSep}${rest}` : "~";
+  }
+  const segments = absPath.split(/[/\\]+/).filter(Boolean);
+  if (segments.length === 0) return absPath.replace(/^[/\\]+/, "");
+  const tail = segments.slice(-2).join(pathSep);
+  return segments.length > 2 ? `…${pathSep}${tail}` : tail;
+}
 
 async function trackerDirExists(locttDir: string): Promise<boolean> {
   try {
@@ -597,6 +621,7 @@ export function createWebApp(options: WebAppOptions) {
         ? `${primaryEntry.prefix}${primaryEntry.next_number}`
         : null,
       schemaStatus: info.schemaStatus,
+      cwd: displayPath(root),
     };
     json(res, response);
   };
@@ -1026,6 +1051,36 @@ export function createWebApp(options: WebAppOptions) {
     const current = await getCurrentUser(locttDir);
     if (!current) { error(res, "no users registered", 404); return; }
     json(res, current);
+  };
+
+  const handleListRecents: RouteHandler = async ({ res, url, locttDir }) => {
+    const page = parsePagination(url, res);
+    if (!page) return;
+    const current = await getCurrentUser(locttDir);
+    if (!current) { error(res, "no users registered", 404); return; }
+    const entries = await readRecents(locttDir, current.id);
+    // Resolve each id to its current frontmatter. A recents file can
+    // outlive the tasks it references (delete leaves the entry behind),
+    // so silently drop ids that no longer resolve — the next push from
+    // the client won't re-add them, and the sidebar only ever shows
+    // live tasks.
+    const resolved: RecentTaskResponse[] = [];
+    for (const entry of entries) {
+      try {
+        const task = await lookupById(locttDir, entry.id);
+        const fm = task.frontmatter;
+        resolved.push({
+          key: fm.key,
+          title: fm.title,
+          ...(fm.project !== undefined ? { project: fm.project } : {}),
+          at: entry.at,
+        });
+      } catch (err) {
+        if (err instanceof TaskNotFoundError) continue;
+        throw err;
+      }
+    }
+    json(res, paginated(resolved, page.offset, page.limit));
   };
 
   const handleSwitchUser: RouteHandler = async ({ req, res, locttDir }) => {
@@ -1831,6 +1886,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "GET", pattern: "/api/users", handler: handleListUsers },
     { method: "POST", pattern: "/api/users", handler: handleCreateUser },
     { method: "GET", pattern: "/api/user/current", handler: handleCurrentUser },
+    { method: "GET", pattern: "/api/recents", handler: handleListRecents },
     { method: "POST", pattern: "/api/user/switch", handler: handleSwitchUser },
     { method: "PUT", pattern: USER_REF_RE, handler: handleUpdateUser },
     { method: "DELETE", pattern: USER_REF_RE, handler: handleDeleteUser },

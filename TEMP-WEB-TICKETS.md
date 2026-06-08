@@ -97,17 +97,30 @@ and click into any task (which routes to a stub for now).
   - Saved filters (built-ins: Assigned to me / Reported by me /
     Mentions me / Due this week / Overdue / High priority) + user
     saved views + "+ New filter" (opens stub editor)
+    - **5 built-ins are fully live** (click-through to URL filter
+      state + live count badges via `/api/tasks` total). **"Mentions
+      me" defers to M2.4** — it needs a comment-scan route that lands
+      with comments; until then it renders without a count and is
+      non-interactive.
   - Milestones · Sprints · Labels · Recently viewed
+    - **Recently viewed**: read route (`GET /api/recents`) pulled
+      forward to M1.1 so the group is live. The *write* (`pushRecent`
+      on task-detail mount) inherently belongs to M2.1 — a fresh
+      tracker shows an empty group until a task has been opened.
   - Footer: cwd + Settings link
 - Sidebar collapse state persists to `localStorage`
 - Schema-mismatch banner (CW-18) — surfaces above the shell when
-  `schema_status` is `outdated` / `future` / `unknown`. `outdated`
-  shows a "Migrate now" button that calls `POST /api/migrate`.
+  `schema_status` is `outdated` / `future` / `unknown`. The banner is
+  read-only in M1.1; the **"Migrate now" button + `POST /api/migrate`
+  endpoint move to M4** (see M4.x). Until then `outdated` tells the
+  user to run `loctt migrate` in the CLI.
 - `useCurrentUser`, sidebar data hooks (projects, saved views,
   labels, milestones, sprints, recents)
+- New server route: `GET /api/recents` (read-only; lists current
+  user's recent tasks resolved to frontmatter).
 - **Tests**: sidebar groups render from query data, collapse state
   persists, active route highlighted; schema banner renders for each
-  non-current kind; migrate happy-path returns to current
+  non-current kind; `GET /api/recents` route (mock core)
 
 ### M1.2 · List view — table + columns ⬜
 - Route `/list` (and `/` redirects)
@@ -324,9 +337,15 @@ first-run, and the v1 polish (keyboard, errors, a11y) is done.
   sprint → burndown link
 - Saved views + General + Board columns + Timeline defaults
   (C.10.13–C.10.16)
-- Sync + Doctor (C.10.17–C.10.18); doctor list of checks; no
-  migrate / rebuild buttons (CLI-only)
-- **Tests**: doctor route shape; auto-push/fetch toggles persist
+- Sync + Doctor (C.10.17–C.10.18); doctor list of checks; rebuild
+  stays CLI-only
+- **Schema migrate (moved from M1.1)**: rebuild `POST /api/migrate`
+  (core `migrateToCurrent`) + `MigrateResponse` contract +
+  `useMigrate` hook, and wire the schema banner's "Migrate now" button
+  for the `outdated` kind. Update the stale "migration is CLI-only"
+  comment in `packages/contracts/src/service.ts`.
+- **Tests**: doctor route shape; auto-push/fetch toggles persist;
+  migrate happy-path returns schema to `current` + banner clears
 
 ### M4.4 · Settings — personal + keyboard ⬜
 - My preferences + Card layout + Sidebar pins + Keyboard reference
