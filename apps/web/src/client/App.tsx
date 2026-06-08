@@ -3,8 +3,6 @@ import { RouterProvider } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
 
 import { createQueryClient } from "./api/queryClient.ts";
-import { SchemaBanner } from "./components/SchemaBanner.tsx";
-import { AppBootstrap } from "./context/AppBootstrap.tsx";
 import { router } from "./router/index.tsx";
 
 // Devtools are lazy + dev-only so they don't ship to prod. Vite's
@@ -25,10 +23,7 @@ export function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AppBootstrap>
-        <SchemaBanner />
-        <RouterProvider router={router} />
-      </AppBootstrap>
+      <RouterProvider router={router} />
       {ReactQueryDevtools ? (
         <Suspense>
           <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
