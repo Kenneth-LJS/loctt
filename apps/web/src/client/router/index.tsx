@@ -6,27 +6,19 @@ import {
   redirect,
 } from "@tanstack/react-router";
 
-import { BoardView } from "../routes/BoardView.tsx";
-import { InitView } from "../routes/InitView.tsx";
-import { ListView } from "../routes/ListView.tsx";
-import { NotFoundView } from "../routes/NotFoundView.tsx";
-import { SettingsView } from "../routes/SettingsView.tsx";
-import { SprintDetailView } from "../routes/SprintDetailView.tsx";
-import { TaskDetailView } from "../routes/TaskDetailView.tsx";
-import { TimelineView } from "../routes/TimelineView.tsx";
+import { Stub } from "../routes/Stub.tsx";
 import { listSearchSchema } from "./listSearch.ts";
 
-// Root holds the app shell once T1.1 lands. For now it just renders
-// <Outlet /> so child routes mount directly under <body>.
+// Root just renders <Outlet />. The real app shell lands with the
+// first review milestone (see TEMP-WEB-TICKETS.md).
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
-  notFoundComponent: () => <NotFoundView />,
+  notFoundComponent: () => <Stub name="404" />,
 });
 
-// `/` redirects to `/list` per spec (the list view is the default
-// landing page). TanStack Router uses `throw redirect(...)` to short-
-// circuit the loader chain — the thrown value is a recognized signal,
-// not an exception, hence the eslint suppression.
+// `/` redirects to `/list`. TanStack Router uses `throw redirect(...)`
+// to short-circuit the loader chain — the thrown value is a
+// recognized signal, not an exception, hence the eslint suppression.
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
@@ -40,43 +32,43 @@ const listRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/list",
   validateSearch: listSearchSchema,
-  component: ListView,
+  component: () => <Stub name="/list" />,
 });
 
 const boardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/board",
-  component: BoardView,
+  component: () => <Stub name="/board" />,
 });
 
 const timelineRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/timeline",
-  component: TimelineView,
+  component: () => <Stub name="/timeline" />,
 });
 
 const taskDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tasks/$key",
-  component: TaskDetailView,
+  component: () => <Stub name="/tasks/$key" />,
 });
 
 const sprintDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sprints/$key",
-  component: SprintDetailView,
+  component: () => <Stub name="/sprints/$key" />,
 });
 
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/$section",
-  component: SettingsView,
+  component: () => <Stub name="/settings/$section" />,
 });
 
 const initRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/init",
-  component: InitView,
+  component: () => <Stub name="/init" />,
 });
 
 const routeTree = rootRoute.addChildren([

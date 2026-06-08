@@ -134,27 +134,3 @@ export interface DoctorCheckResponse {
   readonly status: "ok" | "warn" | "error";
   readonly message: string;
 }
-
-/**
- * One step in a migration response — the public summary of a single
- * `Migration` from core. We don't expose the internal fields like
- * `risky` or `deprecated`; the UI only needs `from`, `to`, and a
- * description for surfacing what ran.
- */
-export interface MigrateStepResponse {
-  readonly from: number;
-  readonly to: number;
-  readonly description: string;
-}
-
-/** Response shape for POST /api/migrate. */
-export interface MigrateResponse {
-  /** Schema version the tracker was at before the call. */
-  readonly from: number;
-  /** Schema version the tracker is at after the call. */
-  readonly to: number;
-  /** Path to the pre-migration backup, when any steps ran. */
-  readonly backupPath?: string;
-  /** Migrations applied, in order. Empty when the call was a no-op. */
-  readonly steps: readonly MigrateStepResponse[];
-}
