@@ -5,6 +5,7 @@ import {
   redirect,
 } from "@tanstack/react-router";
 
+import { ListView } from "../list/ListView.tsx";
 import { Stub } from "../routes/Stub.tsx";
 import { AppBootstrap } from "../shell/AppBootstrap.tsx";
 import { listSearchSchema } from "./listSearch.ts";
@@ -34,7 +35,7 @@ const listRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/list",
   validateSearch: listSearchSchema,
-  component: () => <Stub name="/list" />,
+  component: ListView,
 });
 
 const boardRoute = createRoute({
