@@ -12,6 +12,27 @@ import { z } from "zod";
  * validates the key against the active workflow before applying.
  */
 
+/**
+ * URL-safe boolean. `z.coerce.boolean()` is `Boolean(value)`, and every
+ * non-empty string is truthy — so `?archived=false` would parse as
+ * `true` and silently invert the toggle. Parse the string forms the
+ * serializer can emit ("true"/"false") plus the common hand-written
+ * "1"/"0", and treat anything else (absent, empty, garbage) as
+ * undefined so consumers fall back to their own default rather than
+ * failing the whole route's validateSearch.
+ */
+const urlBool = z
+  .union([z.boolean(), z.string()])
+  .optional()
+  .transform(v => {
+    if (typeof v === "boolean") return v;
+    if (v === undefined) return undefined;
+    const s = v.trim().toLowerCase();
+    if (s === "true" || s === "1") return true;
+    if (s === "false" || s === "0") return false;
+    return undefined;
+  });
+
 const csv = z
   .union([z.string(), z.array(z.string())])
   .optional()
@@ -50,7 +71,7 @@ export const listSearchSchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
 
   // Toggles
-  archived: z.coerce.boolean().optional(),
+  archived: urlBool,
 
   // Saved-view id — when set, the view's own filters/sort apply and
   // the params above act as overrides
