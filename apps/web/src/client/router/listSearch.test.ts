@@ -58,6 +58,35 @@ describe("listSearchSchema", () => {
     const parsed = listSearchSchema.parse({ labels: " , " });
     expect(parsed.labels).toBeUndefined();
   });
+
+  // `z.coerce.boolean()` is `Boolean(value)`, so every non-empty string
+  // — including "false" — coerced to true. `?archived=false` showed
+  // archived tasks with the toggle rendering as off.
+  it("parses archived=false as false, not truthy-string true", () => {
+    expect(listSearchSchema.parse({ archived: "false" }).archived).toBe(false);
+    expect(listSearchSchema.parse({ archived: "0" }).archived).toBe(false);
+  });
+
+  it("parses archived=true as true", () => {
+    expect(listSearchSchema.parse({ archived: "true" }).archived).toBe(true);
+    expect(listSearchSchema.parse({ archived: "1" }).archived).toBe(true);
+  });
+
+  it("leaves archived undefined when absent, so consumers apply their own default", () => {
+    expect(listSearchSchema.parse({}).archived).toBeUndefined();
+  });
+
+  // validateSearch runs on every navigation, so a garbage toggle must
+  // fall back rather than throw and break the whole route.
+  it("falls back to undefined for an unparseable archived value without throwing", () => {
+    expect(listSearchSchema.parse({ archived: "yes" }).archived).toBeUndefined();
+    expect(listSearchSchema.parse({ archived: "" }).archived).toBeUndefined();
+  });
+
+  it("accepts a real boolean archived (in-memory state, not from the URL)", () => {
+    expect(listSearchSchema.parse({ archived: false }).archived).toBe(false);
+    expect(listSearchSchema.parse({ archived: true }).archived).toBe(true);
+  });
 });
 
 describe("serializeListSearch", () => {
@@ -102,5 +131,16 @@ describe("serializeListSearch", () => {
     const serialized = serializeListSearch(original);
     const reparsed = listSearchSchema.parse(serialized);
     expect(reparsed).toEqual(original);
+  });
+
+  // The serializer emits `archived=false` rather than dropping it, so
+  // the false branch has to survive the round trip too — previously it
+  // came back as true.
+  it("round-trips archived in both directions", () => {
+    for (const archived of [true, false]) {
+      const serialized = serializeListSearch({ archived });
+      expect(serialized).toEqual({ archived: String(archived) });
+      expect(listSearchSchema.parse(serialized).archived).toBe(archived);
+    }
   });
 });
