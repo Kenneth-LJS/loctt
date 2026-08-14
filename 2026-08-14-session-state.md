@@ -65,6 +65,9 @@ written. See §2 item 0.
 
 Ordered. Dependencies are stated because three items are blocked.
 
+**Phase 2 progress:** 0i, 0e, 0d done. Working order is live bugs first,
+then by dependency — next up 0c (hierarchy), which item 0 depends on.
+
 ### 0. Relationship query syntax — redesign (Tier 0 + Tier 1)
 **Blocked by:** nothing. **Size:** small-medium.
 
@@ -278,8 +281,13 @@ hierarchy relationship is configured, rather than rendering an empty tree.
 **Also fixes:** the `parent` alias hardcoding `"parent"`
 (`evaluator.ts:305`) gets a config-driven source — already noted in item 0.
 
-### 0d. Delete the superseded root planning docs
+### 0d. Delete the superseded root planning docs — ✅ DONE (`781e9a1`)
 **Blocked by:** committing the extraction first. **Size:** trivial.
+
+**Outcome:** five deleted as decided. `temp-ui-mockups/` kept and given a
+README — every reference to it lived in a deleted doc except
+`TEMP-WEB-TICKETS.md`, which said to delete it. Corrected. All 39 app
+design tokens originate there, so it is a live upstream source.
 
 **DECIDED — delete all five, in two commits.**
 
@@ -304,8 +312,12 @@ superseded, 11 invariants). The other 32 are decisions whose outcome is
 visible in code — duplicating them would create a second thing to drift.
 Git history preserves everything regardless.
 
-### 0e. Init silently drops `--project-key` / `--project-label`
+### 0e. Init silently drops `--project-key` / `--project-label` — ✅ DONE (`009a3b7`)
 **Blocked by:** nothing. **Size:** small.
+
+**Outcome:** `--project-label` implemented (maps to core's `projectName`);
+`--project-key` removed everywhere and now rejected with exit 2 via a new
+`rejectUnknownFlags` helper. Covered on CLI and MCP.
 
 Lifted out of `TEMP-BUGS-INIT-OPTIONS.md` before that file is deleted, so
 the bug does not vanish with its note. **Wider than that note claims** —
@@ -437,8 +449,14 @@ flow-bulk export, flow-board, flow-timeline, flow-settings. **Already
 rigorous:** flow-tasks, flow-relationships, flow-git-sync,
 flow-task-create.
 
-### 0i. B8 — three sites emit unparseable list syntax
+### 0i. B8 — three sites emit unparseable list syntax — ✅ DONE (`36c8872`)
 **Blocked by:** nothing. **Size:** small. **This is a live 500, not future work.**
+
+**Outcome:** all three sites emit `(...)`. Four tests asserted the broken
+output and were corrected; each generator now also parses its own output
+through the real tokenizer, and a route test covers the multi-value
+request end to end. A fourth site — `builtinFilters.test.ts` — was not in
+the original list and also had to change.
 
 `buildStructuredQuery` (`apps/web/src/server/server.ts:449`) is called from
 **two live route handlers** (`:1571`, `:1640`). Single-value params use
