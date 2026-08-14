@@ -95,6 +95,12 @@ List tasks with optional query, view, and limit.
 
 Returns JSON array of `{key, title, status, priority}`.
 
+A query naming an unknown field or an invalid enum value is an **error**, not an empty result — `stat = done` reports the typo rather than returning `[]`. Treat an empty array as a genuine "no tasks match".
+
+The one exception is a saved view referencing a since-deleted custom field: it still runs, and the response is prefixed with a `Warning:` line and `Results may be incomplete.` before the JSON. Don't report those results as complete without saying so.
+
+`today` in a query (`due_date < today`) resolves in the workspace timezone from `calendar.yaml`, not the server machine's zone.
+
 ### `list_views`
 
 Lists saved views from `queries.yaml`. No parameters. Returns JSON `[{name, query}]`, or the prose `No saved views configured.` when the file is absent.
