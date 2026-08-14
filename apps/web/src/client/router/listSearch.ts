@@ -33,6 +33,38 @@ const urlBool = z
     return undefined;
   });
 
+/**
+ * URL-safe positive integer with clamping. `z.coerce.number()` throws
+ * on both garbage (`?page=abc`) and out-of-range (`?page=0`) — and
+ * because this schema is the route's `validateSearch` and the client
+ * has no `errorComponent`, a throw breaks the whole `/list` route
+ * rather than just pagination.
+ *
+ * The two cases aren't the same bug, so they're handled differently:
+ *
+ * - Garbage (non-numeric, empty, NaN, Infinity) → `undefined`, so the
+ *   consumer applies its own default. Matching `urlBool`.
+ * - Out-of-range → clamped into `[min, max]`. The bound is still
+ *   enforced (T0.3 called out range bounds as intentional); it just
+ *   doesn't take the route down with it.
+ *
+ * Fractional values truncate toward zero before clamping, so
+ * `?page=2.7` is page 2 rather than a route error.
+ */
+const urlInt = (min: number, max: number) =>
+  z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(v => {
+      if (v === undefined) return undefined;
+      const n = typeof v === "number" ? v : Number(v.trim());
+      // Number("") is 0, and Number(" ") is 0 too — both are garbage
+      // here, not "page zero". Guard on the raw string being empty.
+      if (typeof v === "string" && v.trim() === "") return undefined;
+      if (!Number.isFinite(n)) return undefined;
+      return Math.min(max, Math.max(min, Math.trunc(n)));
+    });
+
 const csv = z
   .union([z.string(), z.array(z.string())])
   .optional()
@@ -66,9 +98,9 @@ export const listSearchSchema = z.object({
   sort: z.string().optional(),
   dir: z.enum(["asc", "desc"]).optional(),
 
-  // Pagination
-  page: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().positive().max(200).optional(),
+  // Pagination. Clamped rather than rejected — see `urlInt`.
+  page: urlInt(1, Number.MAX_SAFE_INTEGER),
+  limit: urlInt(1, 200),
 
   // Toggles
   archived: urlBool,
