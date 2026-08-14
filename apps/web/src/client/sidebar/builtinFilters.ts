@@ -20,8 +20,8 @@ import type { ListSearch } from "../router/listSearch.ts";
  * The LocTT query DSL has no `@me` token and no date arithmetic, so we
  * substitute concrete values here: the user's ULID, and JS-computed
  * `today` / `today + 7d` ISO dates. "Open" (not closed) is expressed
- * workflow-agnostically as `status.category not in [completed,
- * discarded]` so it tracks whatever statuses a workspace has mapped to
+ * workflow-agnostically as `status.category not in (completed,
+ * discarded)` so it tracks whatever statuses a workspace has mapped to
  * those categories.
  *
  * "Mentions me" is intentionally left non-interactive with no count
@@ -50,8 +50,8 @@ export interface BuiltinContext {
   readonly today: string;
 }
 
-/** `status.category not in [completed, discarded]` — i.e. still open. */
-const NOT_CLOSED = "status.category not in [completed, discarded]";
+/** `status.category not in (completed, discarded)` — i.e. still open. */
+const NOT_CLOSED = "status.category not in (completed, discarded)";
 
 /** Adds `days` to a YYYY-MM-DD string, returning YYYY-MM-DD. */
 export function addDays(isoDate: string, days: number): string {
@@ -109,7 +109,7 @@ export const BUILTIN_FILTERS: readonly BuiltinFilter[] = [
     label: "High priority",
     icon: "▲", // ▲
     resolve: () => ({
-      q: `priority in [high, critical] and ${NOT_CLOSED}`,
+      q: `priority in (high, critical) and ${NOT_CLOSED}`,
     }),
   },
 ];

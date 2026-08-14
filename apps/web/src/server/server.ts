@@ -406,7 +406,7 @@ function dslAtom(value: string): string {
 /**
  * The structured list filters, mapping a URL search-param name to the
  * task field its values constrain. Each param is a comma-separated
- * list; multiple values on one field are OR-ed (`field in [a, b]`),
+ * list; multiple values on one field are OR-ed (`field in (a, b)`),
  * and fields are AND-ed together. Custom fields arrive as
  * `field.<key>` and map to `fields.<key>`.
  */
@@ -428,7 +428,7 @@ const STRUCTURED_FILTER_FIELDS: Readonly<Record<string, string>> = {
  * Returns `undefined` when nothing is set (so the caller passes no
  * query at all and core's defaults apply).
  *
- * Multi-value fields become `field in [a, b]`; a single value becomes
+ * Multi-value fields become `field in (a, b)`; a single value becomes
  * `field = a`. Custom-field params (`field.<key>=…`) map to
  * `fields.<key>`. All values flow through {@link dslAtom}, so
  * user-supplied ids/keys can't inject query structure.
@@ -446,7 +446,7 @@ function buildStructuredQuery(url: URL, baseQuery: string | undefined): string |
     if (values.length === 1) {
       clauses.push(`${field} = ${dslAtom(first)}`);
     } else {
-      clauses.push(`${field} in [${values.map(dslAtom).join(", ")}]`);
+      clauses.push(`${field} in (${values.map(dslAtom).join(", ")})`);
     }
   };
 

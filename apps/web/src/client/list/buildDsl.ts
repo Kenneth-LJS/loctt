@@ -6,7 +6,7 @@ import type { ListSearch } from "../router/listSearch.ts";
  * server's structured-filter → DSL translation so a saved view
  * reproduces exactly what the filter bar currently shows.
  *
- * Each multi-value facet becomes `field = a` or `field in [a, b]`;
+ * Each multi-value facet becomes `field = a` or `field in (a, b)`;
  * facets are AND-ed; the free-text `q` (already DSL) is wrapped in
  * parens and AND-ed in; custom `field.<key>` filters map to
  * `fields.<key>`. Values flow through {@link dslAtom} so an id/key can
@@ -36,7 +36,7 @@ function clause(field: string, values: readonly string[]): string | null {
   const first = v[0];
   if (first === undefined) return null;
   if (v.length === 1) return `${field} = ${dslAtom(first)}`;
-  return `${field} in [${v.map(dslAtom).join(", ")}]`;
+  return `${field} in (${v.map(dslAtom).join(", ")})`;
 }
 
 export function buildDslFromSearch(search: Partial<ListSearch>): string {

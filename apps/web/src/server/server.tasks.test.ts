@@ -93,6 +93,42 @@ describe("GET /api/tasks (sort + pagination)", () => {
     expect(filtered.items.map(t => t.title)).toEqual(["Cherry"]);
   });
 
+  it("filters on a comma-separated multi-value param (B8)", async () => {
+    // The single-value path above is what every existing test used, and
+    // it builds `status = x`. Two or more values build a list, which
+    // was emitted as `status in [a, b]` — a form the tokenizer has no
+    // `[` token for, so this returned 500 rather than filtering.
+    // Own fixtures: these tests share one tracker, so relying on what
+    // sibling cases leave behind makes this pass or fail on file order.
+    const workflow = await (await fetch(`${base}/api/workflow`)).json() as {
+      statuses: { key: string }[];
+    };
+    const [s1, s2] = workflow.statuses.map(s => s.key) as [string, string];
+    expect(s2).toBeDefined();
+
+    const made: string[] = [];
+    for (const [title, status] of [["B8-one", s1], ["B8-two", s2], ["B8-three", s1]] as const) {
+      const res = await fetch(`${base}/api/tasks`, {
+        method: "POST", headers: csrf, body: JSON.stringify({ title }),
+      });
+      const { key } = await res.json() as { key: string };
+      made.push(title);
+      await fetch(`${base}/api/tasks/${key}/set`, {
+        method: "POST", headers: csrf, body: JSON.stringify({ field: "status", value: status }),
+      });
+    }
+
+    // Each value alone selects a strict subset, so a multi-value query
+    // matching everything cannot pass by accident.
+    const onlyS2 = await list(`status=${s2}&sort=title&dir=asc`);
+    expect(onlyS2.items.map(t => t.title)).toContain("B8-two");
+    expect(onlyS2.items.map(t => t.title)).not.toContain("B8-one");
+
+    const both = await list(`status=${s1},${s2}&sort=title&dir=asc`);
+    const titles = both.items.map(t => t.title);
+    for (const title of made) expect(titles).toContain(title);
+  });
+
   it("excludes archived tasks by default, includes them with archived=true", async () => {
     const all = await list("sort=title&dir=asc");
     const apple = all.items.find(t => t.title === "Apple");
