@@ -3,6 +3,7 @@ import { describe, expect,it } from "vitest";
 
 import { QueriesConfigError } from "../config/queries.js";
 import { listTasks, listTasksPaginated, resolveView } from "./list.js";
+import { QueryValidationError } from "./validate.js";
 
 const config: WorkflowConfig = {
   key: { prefix: "T-" },
@@ -286,5 +287,127 @@ describe("listTasksPaginated", () => {
     const result = listTasksPaginated({ tasks, options: { limit: 1 }, offset: -5 });
     expect(result.offset).toBe(0);
     expect(result.items).toHaveLength(1);
+  });
+});
+
+describe("listTasks — semantic query validation", () => {
+  // The bug: `stat = done` (typo for `status`) matched nothing and read
+  // as "no tasks match" rather than "your query is wrong".
+  it("throws on a typo'd field in an ad hoc query", () => {
+    expect(() => listTasks({ tasks, options: { query: "stat = done" } }))
+      .toThrow(QueryValidationError);
+  });
+
+  it("throws on an unknown enum value when workflow config is available", () => {
+    expect(() => listTasks({
+      tasks,
+      options: { query: "status = frobnik" },
+      workflowConfig: config,
+    })).toThrow(/unknown status value/);
+  });
+
+  it("still returns an empty list for a valid query that matches nothing", () => {
+    // Must stay distinguishable from the errors above.
+    const result = listTasks({
+      tasks,
+      options: { query: "status = done and priority = high" },
+      workflowConfig: config,
+    });
+    expect(result).toEqual([]);
+  });
+
+  // Positions are validated against the query as authored. The
+  // archived-wrapping rewrites it to `(stat = done) and archived != true`,
+  // which would shift every offset by the `(` prefix.
+  it("reports the position from the user's query, not the archived-wrapped rewrite", () => {
+    let caught: QueryValidationError | undefined;
+    try {
+      listTasks({ tasks, options: { query: "stat = done" } });
+    } catch (err) {
+      caught = err as QueryValidationError;
+    }
+    expect(caught?.position).toBe(0);
+  });
+
+  describe("saved views warn rather than throw", () => {
+    // A view referencing a since-deleted custom field used to work.
+    // Breaking `--view` outright would regress existing trackers.
+    const staleView: QueriesConfig = {
+      queries: [{
+        id: "01HSV0000000000000STALE",
+        name: "stale",
+        query: "fields.deleted_field = x",
+      }],
+    };
+
+    it("runs the view and reports through onWarning", () => {
+      const warnings: QueryValidationError[] = [];
+      const result = listTasks({
+        tasks,
+        options: { view: "stale" },
+        queriesConfig: staleView,
+        workflowConfig: config,
+        onWarning: err => warnings.push(err),
+      });
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]?.message).toContain("unknown custom field");
+      // Ran to completion rather than throwing; matches nothing.
+      expect(result).toEqual([]);
+    });
+
+    it("does not throw when no onWarning handler is supplied", () => {
+      expect(() => listTasks({
+        tasks,
+        options: { view: "stale" },
+        queriesConfig: staleView,
+        workflowConfig: config,
+      })).not.toThrow();
+    });
+  });
+
+  it("does not warn for a valid saved view", () => {
+    const warnings: QueryValidationError[] = [];
+    listTasks({
+      tasks,
+      options: { view: "recent-open" },
+      queriesConfig,
+      workflowConfig: config,
+      onWarning: err => warnings.push(err),
+    });
+    expect(warnings).toEqual([]);
+  });
+});
+
+describe("listTasks — view + ad hoc query", () => {
+  // `--view` and `--query` can be passed together. The query is then
+  // the user's own typing, so a typo in it must still throw rather
+  // than being downgraded to a warning because a view was named.
+  const staleView: QueriesConfig = {
+    queries: [{
+      id: "01HSV0000000000000STALE2",
+      name: "stale",
+      query: "fields.deleted_field = x",
+    }],
+  };
+
+  it("throws on a typo'd ad hoc query even when a view is also named", () => {
+    expect(() => listTasks({
+      tasks,
+      options: { view: "stale", query: "stat = done" },
+      queriesConfig: staleView,
+      workflowConfig: config,
+    })).toThrow(QueryValidationError);
+  });
+
+  it("still warns rather than throws when the query comes from the view", () => {
+    const warnings: QueryValidationError[] = [];
+    expect(() => listTasks({
+      tasks,
+      options: { view: "stale" },
+      queriesConfig: staleView,
+      workflowConfig: config,
+      onWarning: err => warnings.push(err),
+    })).not.toThrow();
+    expect(warnings).toHaveLength(1);
   });
 });

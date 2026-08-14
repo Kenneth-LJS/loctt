@@ -1,0 +1,288 @@
+import type { WorkflowConfig } from "@loctt/contracts";
+
+import type { QueryNode } from "./parser.js";
+
+/**
+ * Raised when a query is syntactically valid but references something
+ * that doesn't exist — a misspelled field, an unknown custom field, or
+ * an enum value outside the workflow config.
+ *
+ * Distinct from TokenizeError/ParseError, which cover *syntax*. Those
+ * already surfaced properly; this closes the semantic gap where
+ * `stat = done` (typo for `status`) silently matched zero tasks and
+ * read as "no tasks match" rather than "your query is wrong".
+ *
+ * `position` points at the offending token so callers can underline it,
+ * matching the parse errors. `suggestions` holds near-miss candidates
+ * for a "did you mean" hint — possibly empty.
+ */
+export class QueryValidationError extends Error {
+  constructor(
+    message: string,
+    public readonly position: number,
+    public readonly suggestions: readonly string[] = [],
+  ) {
+    const hint = suggestions.length > 0 ? ` — did you mean ${suggestions.map(s => `"${s}"`).join(" or ")}?` : "";
+    super(`${message} at position ${position}${hint}`);
+    this.name = "QueryValidationError";
+  }
+}
+
+/**
+ * Built-in queryable fields. Mirrors TaskFrontmatterSchema's keys plus
+ * the evaluator's aliases (`text`, `parent`).
+ *
+ * Kept as an explicit list rather than derived from the zod schema:
+ * TaskFrontmatterSchema is `.passthrough()`, so deriving from it would
+ * accept nothing extra anyway, and the alias fields don't exist on it
+ * at all. An explicit list also lets the error message enumerate what
+ * *is* valid.
+ */
+export const QUERYABLE_FIELDS: readonly string[] = [
+  "id", "key", "project", "title", "created_at", "updated_at",
+  "status", "status_updated_at", "task_type", "priority", "labels",
+  "assignee", "reporter", "start_date", "due_date", "estimate",
+  "completed_date", "milestone", "sprint", "archived", "archived_at",
+  "relationships", "key_history", "board_rank",
+  // Evaluator aliases, not frontmatter keys.
+  "text", "parent",
+];
+
+/**
+ * Nested attributes readable off a workflow-config enum def via
+ * `status.category`, `priority.value`, etc. The evaluator resolves
+ * these through workflowDefList → the matching def object.
+ */
+const ENUM_ATTRS: readonly string[] = ["key", "label", "category", "value", "color", "description"];
+
+/** Top-level fields whose values are constrained by workflow config. */
+const ENUM_FIELDS = ["status", "priority", "task_type"] as const;
+type EnumField = (typeof ENUM_FIELDS)[number];
+
+function isEnumField(field: string): field is EnumField {
+  return (ENUM_FIELDS as readonly string[]).includes(field);
+}
+
+function enumKeys(wf: WorkflowConfig, field: EnumField): string[] {
+  const defs = field === "status" ? wf.statuses
+    : field === "priority" ? wf.priorities
+    : wf.task_types;
+  return (defs ?? []).map(d => d.key);
+}
+
+/**
+ * Levenshtein distance, capped early. Only used to rank "did you mean"
+ * candidates over short field names, so the naive O(n*m) fill is fine.
+ */
+function editDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev: number[] = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i += 1) {
+    const cur: number[] = Array.from({ length: n + 1 }, () => 0);
+    cur[0] = i;
+    for (let j = 1; j <= n; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(
+        (cur[j - 1] ?? 0) + 1,
+        (prev[j] ?? 0) + 1,
+        (prev[j - 1] ?? 0) + cost,
+      );
+    }
+    prev = cur;
+  }
+  return prev[n] ?? 0;
+}
+
+/**
+ * Returns up to `limit` candidates closest to `input`. The threshold
+ * scales with length so short names ("id") don't match everything and
+ * long ones tolerate a two-character slip.
+ */
+function suggest(input: string, candidates: readonly string[], limit = 2): string[] {
+  const threshold = input.length <= 4 ? 1 : input.length <= 8 ? 2 : 3;
+  const lower = input.toLowerCase();
+  return candidates
+    .map(c => ({ c, d: editDistance(lower, c.toLowerCase()) }))
+    .filter(({ c, d }) => d <= threshold || c.toLowerCase().startsWith(lower) || lower.startsWith(c.toLowerCase()))
+    .sort((x, y) => x.d - y.d)
+    .slice(0, limit)
+    .map(({ c }) => c);
+}
+
+export interface ValidateQueryOptions {
+  /**
+   * Workflow config. When present, enum *values* are checked against
+   * it (`status = frobnik` fails) and custom-field keys are read from
+   * `custom_fields`. When absent, only field *names* are validated —
+   * a caller without config loaded still catches typo'd field names.
+   */
+  readonly workflow?: WorkflowConfig;
+}
+
+/**
+ * Walks a parsed query once and raises on the first semantic problem.
+ *
+ * Deliberately separate from evaluation. Validating per-task would
+ * fire N times for one mistake and still couldn't distinguish "bad
+ * field" from "no matches" at zero results — which is the whole bug.
+ * One pass over the AST, before any task is read.
+ *
+ * A well-formed query that legitimately matches nothing passes here
+ * and returns zero tasks, which stays distinguishable from an error.
+ */
+export function validateQuery(node: QueryNode, opts: ValidateQueryOptions = {}): void {
+  switch (node.type) {
+    case "and":
+    case "or":
+      validateQuery(node.left, opts);
+      validateQuery(node.right, opts);
+      return;
+    case "not":
+      validateQuery(node.operand, opts);
+      return;
+    case "comparison":
+      validateComparison(node, opts);
+      return;
+  }
+}
+
+function validateComparison(
+  node: Extract<QueryNode, { type: "comparison" }>,
+  opts: ValidateQueryOptions,
+): void {
+  const { field, position } = node;
+  const pos = position ?? 0;
+
+  // `relationship.<type>` — the suffix is a user-configured relationship
+  // key, so it's only checkable with workflow config in hand.
+  if (field.startsWith("relationship.")) {
+    const relType = field.slice("relationship.".length);
+    const wf = opts.workflow;
+    if (!wf) return;
+    const known = (wf.relationships ?? []).map(r => r.key);
+    if (relType.length === 0) {
+      throw new QueryValidationError(`"relationship." needs a relationship type`, pos, known);
+    }
+    if (!known.includes(relType)) {
+      throw new QueryValidationError(
+        `unknown relationship type "${relType}"`,
+        pos,
+        suggest(relType, known),
+      );
+    }
+    return;
+  }
+
+  if (field.includes(".")) {
+    validateDottedField(field, pos, opts);
+    return;
+  }
+
+  if (!QUERYABLE_FIELDS.includes(field)) {
+    throw new QueryValidationError(
+      `unknown field "${field}"`,
+      pos,
+      suggest(field, [...QUERYABLE_FIELDS, ...customFieldKeys(opts).map(k => `fields.${k}`)]),
+    );
+  }
+
+  validateEnumValue(node, pos, opts);
+}
+
+/**
+ * `fields.<key>` (custom field, optionally with a nested path) and
+ * `status.category` / `priority.value` / `task_type.<attr>`.
+ */
+function validateDottedField(field: string, pos: number, opts: ValidateQueryOptions): void {
+  const [head, ...rest] = field.split(".");
+  if (head === undefined) return;
+
+  if (head === "fields") {
+    const key = rest[0];
+    if (key === undefined || key.length === 0) {
+      throw new QueryValidationError(`"fields." needs a custom field key`, pos, customFieldKeys(opts));
+    }
+    // Without workflow config we can't know the declared custom
+    // fields, so accept and let evaluation proceed.
+    if (!opts.workflow) return;
+    const known = customFieldKeys(opts);
+    if (!known.includes(key)) {
+      throw new QueryValidationError(
+        `unknown custom field "${key}"`,
+        pos,
+        suggest(key, known),
+      );
+    }
+    // Deeper path segments index into an object-valued custom field.
+    // Shapes are user-defined and unvalidated at the contract layer,
+    // so there's nothing to check them against.
+    return;
+  }
+
+  if (isEnumField(head)) {
+    const attr = rest[0];
+    if (attr !== undefined && !ENUM_ATTRS.includes(attr)) {
+      throw new QueryValidationError(
+        `unknown attribute "${attr}" on ${head}`,
+        pos,
+        suggest(attr, ENUM_ATTRS),
+      );
+    }
+    return;
+  }
+
+  // A dotted path on anything else — the head still has to be real.
+  if (!QUERYABLE_FIELDS.includes(head)) {
+    throw new QueryValidationError(
+      `unknown field "${head}"`,
+      pos,
+      suggest(head, QUERYABLE_FIELDS),
+    );
+  }
+}
+
+/**
+ * `status = frobnik` — the field is real but the value isn't one of
+ * the configured keys. Only checked with workflow config present.
+ *
+ * `!=` is checked too: comparing against a nonexistent status is
+ * equally a mistake, even though it happens to match everything.
+ */
+function validateEnumValue(
+  node: Extract<QueryNode, { type: "comparison" }>,
+  pos: number,
+  opts: ValidateQueryOptions,
+): void {
+  const wf = opts.workflow;
+  if (!wf || !isEnumField(node.field)) return;
+
+  // Ordering operators on priority are meaningful against `value`,
+  // and `~` is a substring match — neither implies an exact key.
+  if (node.op !== "=" && node.op !== "!=" && node.op !== "in" && node.op !== "not in") return;
+
+  const known = enumKeys(wf, node.field);
+  const values = node.value.type === "list"
+    ? node.value.values
+    : [node.value];
+
+  for (const v of values) {
+    // Only string-ish literals name an enum key. `today`/numbers/
+    // booleans in this position are a different kind of mistake and
+    // the evaluator's comparison already handles them as non-matches.
+    if (v.type !== "string") continue;
+    if (!known.includes(v.value)) {
+      throw new QueryValidationError(
+        `unknown ${node.field} value "${v.value}"`,
+        pos,
+        suggest(v.value, known),
+      );
+    }
+  }
+}
+
+function customFieldKeys(opts: ValidateQueryOptions): string[] {
+  return (opts.workflow?.custom_fields ?? []).map(d => d.key);
+}

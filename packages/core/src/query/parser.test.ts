@@ -7,7 +7,7 @@ describe("parseQuery", () => {
   it("parses a simple equality comparison", () => {
     const tokens = tokenize("status = done");
     const ast = parseQuery(tokens);
-    expect(ast).toEqual({
+    expect(ast).toMatchObject({
       type: "comparison",
       field: "status",
       op: "=",
@@ -18,7 +18,7 @@ describe("parseQuery", () => {
   it("parses contains operator", () => {
     const tokens = tokenize('text ~ "init"');
     const ast = parseQuery(tokens);
-    expect(ast).toEqual({
+    expect(ast).toMatchObject({
       type: "comparison",
       field: "text",
       op: "~",
@@ -29,7 +29,7 @@ describe("parseQuery", () => {
   it("parses boolean value", () => {
     const tokens = tokenize("archived != true");
     const ast = parseQuery(tokens);
-    expect(ast).toEqual({
+    expect(ast).toMatchObject({
       type: "comparison",
       field: "archived",
       op: "!=",
@@ -40,7 +40,7 @@ describe("parseQuery", () => {
   it("parses today literal", () => {
     const tokens = tokenize("due_date < today");
     const ast = parseQuery(tokens);
-    expect(ast).toEqual({
+    expect(ast).toMatchObject({
       type: "comparison",
       field: "due_date",
       op: "<",
@@ -88,7 +88,7 @@ describe("parseQuery", () => {
   it("parses IN expression", () => {
     const tokens = tokenize("status in (done, blocked)");
     const ast = parseQuery(tokens);
-    expect(ast).toEqual({
+    expect(ast).toMatchObject({
       type: "comparison",
       field: "status",
       op: "in",
@@ -105,7 +105,7 @@ describe("parseQuery", () => {
   it("parses NOT IN expression", () => {
     const tokens = tokenize("status not in (done)");
     const ast = parseQuery(tokens);
-    expect(ast).toEqual({
+    expect(ast).toMatchObject({
       type: "comparison",
       field: "status",
       op: "not in",
