@@ -6,6 +6,7 @@ import type { EvalContext } from "./evaluator.js";
 import { evaluateQuery } from "./evaluator.js";
 import { parseQuery } from "./parser.js";
 import { tokenize } from "./tokenizer.js";
+import { QueryValidationError, validateQuery } from "./validate.js";
 
 /**
  * Default page size for `listTasks` when the caller doesn't supply
@@ -51,6 +52,14 @@ export interface ListTasksOptions {
   readonly queriesConfig?: QueriesConfig;
   readonly workflowConfig?: WorkflowConfig;
   readonly ctx?: ListContext;
+  /**
+   * Called instead of throwing when a *saved view's* query fails
+   * semantic validation — e.g. it references a custom field that has
+   * since been deleted. Such a view used to work, so it keeps running
+   * and returns what it matches; the caller decides how to surface the
+   * problem. Ad hoc queries throw instead.
+   */
+  readonly onWarning?: (err: QueryValidationError) => void;
 }
 
 /** Context provider for building EvalContext per task. */
@@ -139,6 +148,11 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
   let queryStr: string | undefined = options.query;
   let sortSpec = options.sort;
   let usedView = false;
+  // Distinct from `usedView`: a caller can pass `--view` *and*
+  // `--query`, in which case the query is the user's own typing and a
+  // typo in it should still throw. Only a query that actually came
+  // from the saved view gets the lenient treatment.
+  let queryFromView = false;
 
   // Resolve view if specified
   if (options.view) {
@@ -151,9 +165,37 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
     if (!view) {
       throw new Error(`unknown view "${options.view}"`);
     }
-    if (!queryStr) queryStr = view.query;
+    if (!queryStr) {
+      queryStr = view.query;
+      queryFromView = true;
+    }
     if (!sortSpec && view.sort) sortSpec = view.sort;
     usedView = true;
+  }
+
+  // Semantic validation runs against the query *as authored*, before
+  // the archived-wrapping below rewrites it. Validating the rewritten
+  // string would report positions shifted by the `(` prefix, so a UI
+  // underlining the error would point one character off.
+  //
+  // Severity differs by origin. A query the user just typed is a
+  // mistake worth stopping on. A saved view referencing a
+  // since-deleted custom field is a pre-existing tracker that used to
+  // work — breaking `loctt list --view x` outright would be a
+  // regression, so it warns and runs, returning whatever it matches.
+  // Callers surface `onWarning` (a banner in the UI, a stderr line in
+  // the CLI).
+  if (queryStr) {
+    try {
+      validateQuery(
+        parseQuery(tokenize(queryStr)),
+        workflowConfig ? { workflow: workflowConfig } : {},
+      );
+    } catch (err) {
+      if (!(err instanceof QueryValidationError)) throw err;
+      if (!queryFromView) throw err;
+      opts.onWarning?.(err);
+    }
   }
 
   // Hide archived tasks by default. Saved views are respected as authored,

@@ -6,3 +6,5 @@ export type { ComparisonOp,QueryNode, QueryValue } from "./parser.js";
 export { ParseError,parseQuery } from "./parser.js";
 export type { Token, TokenType } from "./tokenizer.js";
 export { tokenize, TokenizeError } from "./tokenizer.js";
+export type { ValidateQueryOptions } from "./validate.js";
+export { QUERYABLE_FIELDS, QueryValidationError, validateQuery } from "./validate.js";

@@ -3,7 +3,11 @@ import type { Token, TokenType } from "./tokenizer.js";
 export type ComparisonOp = "=" | "!=" | "<" | "<=" | ">" | ">=" | "~" | "in" | "not in";
 
 export type QueryNode =
-  | { type: "comparison"; field: string; op: ComparisonOp; value: QueryValue }
+  // `position` is the offset of the field token, carried so semantic
+  // validation (validateQuery) can point at the offending field the
+  // same way TokenizeError/ParseError point at syntax problems.
+  // Optional so hand-built ASTs in tests don't have to fake offsets.
+  | { type: "comparison"; field: string; op: ComparisonOp; value: QueryValue; position?: number }
   | { type: "and"; left: QueryNode; right: QueryNode }
   | { type: "or"; left: QueryNode; right: QueryNode }
   | { type: "not"; operand: QueryNode };
@@ -136,7 +140,7 @@ class Parser {
     }
 
     const value = this.parseValue(op);
-    return { type: "comparison", field: fieldTok.value, op, value };
+    return { type: "comparison", field: fieldTok.value, op, value, position: fieldTok.position };
   }
 
   private parseValue(op: ComparisonOp): QueryValue {
