@@ -156,7 +156,16 @@ function validateComparison(
   const { field, position } = node;
   const pos = position ?? 0;
 
-  // `relationship.<type>` — the suffix is a user-configured relationship
+  // `relationship.type` and `relationship.target` address an edge's own
+  // fields and are always valid, whatever kinds the workflow declares.
+  // They are reserved: a workflow kind named `type` is still reachable
+  // via `relationship.<kind> = <target>` for every *other* kind, and the
+  // reserved reading wins here.
+  if (field === "relationship.type" || field === "relationship.target") {
+    return;
+  }
+
+  // `relationship.<kind>` — the suffix is a user-configured relationship
   // key, so it's only checkable with workflow config in hand.
   if (field.startsWith("relationship.")) {
     const relType = field.slice("relationship.".length);
@@ -170,7 +179,10 @@ function validateComparison(
       throw new QueryValidationError(
         `unknown relationship type "${relType}"`,
         pos,
-        suggest(relType, known),
+        // `type`/`target` are always available, so offer them alongside
+        // the configured kinds rather than letting a near-miss suggest
+        // only kinds.
+        suggest(relType, [...known, "type", "target"]),
       );
     }
     return;
