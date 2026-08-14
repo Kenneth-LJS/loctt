@@ -87,7 +87,7 @@ Goal: a working list view inside the real chrome. By the end you can
 load the app, see your tasks, sort/filter/paginate them by URL state,
 and click into any task (which routes to a stub for now).
 
-### M1.1 · App shell layout ⬜
+### M1.1 · App shell layout ✅
 - Two-column shell: collapsible left sidebar + main pane
 - Header: logo, current-user avatar + menu (Switch user, Settings,
   Theme toggle), `+` create-task button (stub)
@@ -122,7 +122,7 @@ and click into any task (which routes to a stub for now).
   persists, active route highlighted; schema banner renders for each
   non-current kind; `GET /api/recents` route (mock core)
 
-### M1.2 · List view — table + columns ⬜
+### M1.2 · List view — table + columns ✅
 - Route `/list` (and `/` redirects)
 - Table: key, project, title, status, priority, type, assignee,
   labels, due, updated
