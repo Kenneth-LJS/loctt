@@ -337,6 +337,54 @@ describe("saveWorkflowConfig — symmetric round-trip", () => {
   });
 });
 
+describe("saveWorkflowConfig — cross-field validation (B9)", () => {
+  // Zod validates each entry independently, so it cannot see that two
+  // entries in a collection collide. That is what validateWorkflowConfig
+  // is for, and until this it had exactly one production caller:
+  // `loctt doctor`. Invalid config could be written and was only
+  // reported afterwards, by a command the user had to think to run.
+  it("rejects a duplicate relationship key instead of writing it", async () => {
+    const wf = await loadWorkflowConfig(locttDir);
+    const first = wf.relationships[0];
+    expect(first).toBeDefined();
+    const dup: WorkflowConfig = {
+      ...wf,
+      relationships: [...wf.relationships, { ...first! }],
+    };
+
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await expect(saveWorkflowConfig(locttDir, dup)).rejects.toThrow(
+      /duplicate relationship key/,
+    );
+
+    // The on-disk config must be untouched, not partially written.
+    const reloaded = await loadWorkflowConfig(locttDir);
+    expect(reloaded.relationships).toHaveLength(wf.relationships.length);
+  });
+
+  it("rejects duplicates in every validated collection", async () => {
+    const wf = await loadWorkflowConfig(locttDir);
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+
+    const cases: ReadonlyArray<[string, WorkflowConfig, RegExp]> = [
+      ["statuses", { ...wf, statuses: [...wf.statuses, { ...wf.statuses[0]! }] }, /duplicate status key/],
+      ["priorities", { ...wf, priorities: [...wf.priorities, { ...wf.priorities[0]! }] }, /duplicate priority key/],
+      ["task_types", { ...wf, task_types: [...wf.task_types, { ...wf.task_types[0]! }] }, /duplicate task_type key/],
+    ];
+
+    for (const [name, cfg, pattern] of cases) {
+      await expect(saveWorkflowConfig(locttDir, cfg), name).rejects.toThrow(pattern);
+    }
+  });
+
+  it("still saves a valid config", async () => {
+    // Guards against the rejection being over-broad.
+    const wf = await loadWorkflowConfig(locttDir);
+    const { saveWorkflowConfig } = await import("./workflow-write.js");
+    await expect(saveWorkflowConfig(locttDir, wf)).resolves.toBeUndefined();
+  });
+});
+
 describe("saveWorkflowConfig auto-clear", () => {
   it("drops timeline.dependency_relationship when the referenced key is gone", async () => {
     const wf = await loadWorkflowConfig(locttDir);
@@ -597,24 +645,27 @@ describe("applyWorkflowEdit — priorities", () => {
 
 describe("applyWorkflowEdit — task_types", () => {
   it("rewrites tasks when a task_type is removed and remap supplied", async () => {
-    // The default workflow has only one task_type (`task`), so we
-    // first add a second type to delete it later.
+    // Add a task_type not in the shipped default, so it can be
+    // deleted below. `chore` is deliberately not one of the five
+    // seeded types (story, bug, task, spike, feature) — appending a
+    // key that already exists would be invalid config, which
+    // saveWorkflowConfig now rejects.
     const wf0 = await loadWorkflowConfig(locttDir);
-    const withBug: WorkflowConfig = {
+    const withChore: WorkflowConfig = {
       ...wf0,
-      task_types: [...wf0.task_types, { key: "bug", label: "Bug" }],
+      task_types: [...wf0.task_types, { key: "chore", label: "Chore" }],
     };
     const { saveWorkflowConfig } = await import("./workflow-write.js");
-    await saveWorkflowConfig(locttDir, withBug);
+    await saveWorkflowConfig(locttDir, withChore);
 
-    await seedTaskWithField("task_type", "bug");
+    await seedTaskWithField("task_type", "chore");
 
     const next: WorkflowConfig = {
-      ...withBug,
-      task_types: withBug.task_types.filter(t => t.key !== "bug"),
+      ...withChore,
+      task_types: withChore.task_types.filter(t => t.key !== "chore"),
     };
     const result = await applyWorkflowEdit(locttDir, next, {
-      task_types: { bug: "task" },
+      task_types: { chore: "task" },
     });
     expect(result.rewrittenTaskCount).toBe(1);
     const tasks = await loadAllTasks(locttDir);
@@ -623,56 +674,56 @@ describe("applyWorkflowEdit — task_types", () => {
 
   it("clears task_type when remap target is null", async () => {
     const wf0 = await loadWorkflowConfig(locttDir);
-    const withBug: WorkflowConfig = {
+    const withChore: WorkflowConfig = {
       ...wf0,
-      task_types: [...wf0.task_types, { key: "bug", label: "Bug" }],
+      task_types: [...wf0.task_types, { key: "chore", label: "Chore" }],
     };
     const { saveWorkflowConfig } = await import("./workflow-write.js");
-    await saveWorkflowConfig(locttDir, withBug);
-    await seedTaskWithField("task_type", "bug");
+    await saveWorkflowConfig(locttDir, withChore);
+    await seedTaskWithField("task_type", "chore");
 
     const next: WorkflowConfig = {
-      ...withBug,
-      task_types: withBug.task_types.filter(t => t.key !== "bug"),
+      ...withChore,
+      task_types: withChore.task_types.filter(t => t.key !== "chore"),
     };
-    await applyWorkflowEdit(locttDir, next, { task_types: { bug: null } });
+    await applyWorkflowEdit(locttDir, next, { task_types: { chore: null } });
     const tasks = await loadAllTasks(locttDir);
     expect(tasks[0]?.frontmatter.task_type).toBeUndefined();
   });
 
   it("rejects deletion of in-use task_type without remap", async () => {
     const wf0 = await loadWorkflowConfig(locttDir);
-    const withBug: WorkflowConfig = {
+    const withChore: WorkflowConfig = {
       ...wf0,
-      task_types: [...wf0.task_types, { key: "bug", label: "Bug" }],
+      task_types: [...wf0.task_types, { key: "chore", label: "Chore" }],
     };
     const { saveWorkflowConfig } = await import("./workflow-write.js");
-    await saveWorkflowConfig(locttDir, withBug);
-    await seedTaskWithField("task_type", "bug");
+    await saveWorkflowConfig(locttDir, withChore);
+    await seedTaskWithField("task_type", "chore");
 
     const next: WorkflowConfig = {
-      ...withBug,
-      task_types: withBug.task_types.filter(t => t.key !== "bug"),
+      ...withChore,
+      task_types: withChore.task_types.filter(t => t.key !== "chore"),
     };
     await expect(applyWorkflowEdit(locttDir, next, {})).rejects.toThrow(/in use/);
   });
 
   it("rejects task_type remap targeting a key not in the new config", async () => {
     const wf0 = await loadWorkflowConfig(locttDir);
-    const withBug: WorkflowConfig = {
+    const withChore: WorkflowConfig = {
       ...wf0,
-      task_types: [...wf0.task_types, { key: "bug", label: "Bug" }],
+      task_types: [...wf0.task_types, { key: "chore", label: "Chore" }],
     };
     const { saveWorkflowConfig } = await import("./workflow-write.js");
-    await saveWorkflowConfig(locttDir, withBug);
-    await seedTaskWithField("task_type", "bug");
+    await saveWorkflowConfig(locttDir, withChore);
+    await seedTaskWithField("task_type", "chore");
 
     const next: WorkflowConfig = {
-      ...withBug,
-      task_types: withBug.task_types.filter(t => t.key !== "bug"),
+      ...withChore,
+      task_types: withChore.task_types.filter(t => t.key !== "chore"),
     };
     await expect(applyWorkflowEdit(locttDir, next, {
-      task_types: { bug: "nonexistent" },
+      task_types: { chore: "nonexistent" },
     })).rejects.toThrow(/not present in the new config/);
   });
 });

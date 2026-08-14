@@ -32,6 +32,7 @@ import {
   pruneListViewForRemovedCustomFields,
   saveListViewConfig,
 } from "./list-view.js";
+import { validateWorkflowConfig } from "./validation.js";
 import {
   loadWorkflowConfig,
   parseWorkflowConfig,
@@ -86,6 +87,21 @@ export async function saveWorkflowConfig(
   // validation errors rather than corrupting on-disk state.
   const yaml = serializeWorkflowConfigAsYaml(cleaned);
   parseWorkflowConfig(yaml);
+  // The schema validates each entry on its own, so it cannot see that
+  // two entries in a collection collide. Cross-entry rules live in
+  // `validateWorkflowConfig`, which until now had a single production
+  // caller — `loctt doctor` — meaning invalid config could be written
+  // and was only reported afterwards, by a command the user had to
+  // think to run.
+  //
+  // `cleaned` is the final config: `executeWorkflowRemap` calls this
+  // once at the end of a remap, never with an intermediate state.
+  const errors = validateWorkflowConfig(cleaned);
+  if (errors.length > 0) {
+    throw new WorkflowConfigError(
+      `invalid workflow config: ${errors.map(e => `${e.field}: ${e.message}`).join("; ")}`,
+    );
+  }
   await writeYamlAtomically(getWorkflowConfigPath(locttDir), buildPlainObject(cleaned));
 }
 
