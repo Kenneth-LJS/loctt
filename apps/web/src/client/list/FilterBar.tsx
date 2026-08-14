@@ -1,0 +1,286 @@
+import type { WorkflowConfig } from "@loctt/contracts";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
+
+import {
+  useLabels,
+  useMilestones,
+  useProjects,
+  useSprints,
+  useUsers,
+} from "../api/hooks/sidebarData.ts";
+import { useWorkflow } from "../api/hooks/useWorkflow.ts";
+import type { ListSearch } from "../router/listSearch.ts";
+import { FilterDropdown, type FilterOption } from "./FilterDropdown.tsx";
+import { SaveViewDialog } from "./SaveViewDialog.tsx";
+
+/**
+ * The list view's filter bar (M1.3). Renders a dropdown per facet
+ * (Project, Status, Priority, Type, Assignee, Label, Milestone, Sprint,
+ * plus any workflow custom fields), the active filters as removable
+ * chips, a "Show archived" toggle, and "Save as view".
+ *
+ * The URL is the single source of truth: every control reads its state
+ * from the typed search params and writes back through `navigate`, so
+ * back/forward and bookmarking work for free. Changing any filter
+ * resets `page` so you don't land on an out-of-range page.
+ */
+
+/** Filter facets backed by a fixed URL param + a data source. */
+type FacetKey =
+  | "project" | "status" | "priority" | "type"
+  | "assignee" | "labels" | "milestone" | "sprint";
+
+const FACET_LABELS: Record<FacetKey, string> = {
+  project: "Project",
+  status: "Status",
+  priority: "Priority",
+  type: "Type",
+  assignee: "Assignee",
+  labels: "Label",
+  milestone: "Milestone",
+  sprint: "Sprint",
+};
+
+export function FilterBar() {
+  const search = useSearch({ from: "/list" });
+  const navigate = useNavigate({ from: "/list" });
+
+  const projects = useProjects();
+  const users = useUsers();
+  const labels = useLabels();
+  const milestones = useMilestones();
+  const sprints = useSprints();
+  const workflow = useWorkflow();
+
+  const [saveOpen, setSaveOpen] = useState(false);
+
+  const options = useMemo(
+    () =>
+      buildFacetOptions({
+        projects: projects.data?.items ?? [],
+        users: users.data?.items ?? [],
+        labels: labels.data?.items ?? [],
+        milestones: milestones.data?.items ?? [],
+        sprints: sprints.data?.items ?? [],
+        workflow: workflow.data,
+      }),
+    [projects.data, users.data, labels.data, milestones.data, sprints.data, workflow.data],
+  );
+
+  const customFields = workflow.data?.custom_fields ?? [];
+
+  const setFilter = (key: string, next: string[]): void => {
+    void navigate({
+      search: prev => ({ ...prev, [key]: next.length > 0 ? next : undefined, page: undefined }),
+    });
+  };
+
+  const facetOf = (key: FacetKey): readonly string[] =>
+    (search[key] as readonly string[] | undefined) ?? [];
+
+  const customFilters = readCustomFilters(search);
+
+  const activeChips = buildChips(search, options, customFields);
+
+  const clearAll = (): void => {
+    void navigate({
+      search: prev => {
+        const next: Record<string, unknown> = { ...prev };
+        for (const k of [...FACET_KEYS, "q", "page"]) next[k] = undefined;
+        for (const k of Object.keys(next)) if (k.startsWith("field.")) next[k] = undefined;
+        return next as typeof prev;
+      },
+    });
+  };
+
+  const hasActive = activeChips.length > 0;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {FACET_KEYS.map(key => (
+          <FilterDropdown
+            key={key}
+            label={FACET_LABELS[key]}
+            options={options[key]}
+            selected={facetOf(key)}
+            onChange={next => setFilter(key, next)}
+          />
+        ))}
+
+        {customFields.map(cf =>
+          cf.type === "enum" && cf.values && cf.values.length > 0 ? (
+            <FilterDropdown
+              key={cf.key}
+              label={cf.label}
+              options={cf.values.map(v => ({ value: v.key, label: v.label }))}
+              selected={customFilters[cf.key] ?? []}
+              onChange={next => setFilter(`field.${cf.key}`, next)}
+            />
+          ) : null,
+        )}
+
+        <div className="flex-1" />
+
+        <label className="inline-flex cursor-pointer items-center gap-1.5 text-[13px] text-text-secondary">
+          <input
+            type="checkbox"
+            checked={search.archived === true}
+            onChange={e =>
+              void navigate({
+                search: prev => ({ ...prev, archived: e.target.checked ? true : undefined, page: undefined }),
+              })
+            }
+          />
+          Show archived
+        </label>
+
+        <button
+          type="button"
+          onClick={() => setSaveOpen(true)}
+          className="inline-flex h-8 items-center gap-1 rounded-md border border-border-default bg-bg-surface px-2.5 text-[13px] text-text-secondary hover:bg-bg-muted"
+        >
+          ⭑ Save as view
+        </button>
+      </div>
+
+      {hasActive ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {activeChips.map(chip => (
+            <span
+              key={`${chip.key}:${chip.value}`}
+              className="inline-flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-[12px] text-accent"
+            >
+              <span className="text-accent/70">{chip.facetLabel}:</span>
+              {chip.label}
+              <button
+                type="button"
+                aria-label={`Remove ${chip.facetLabel} ${chip.label}`}
+                onClick={() => {
+                  const current = chipValues(search, chip.key);
+                  const next = current.filter(v => v !== chip.value);
+                  void navigate({
+                    search: prev => ({
+                      ...prev,
+                      [chip.key]: next.length > 0 ? next : undefined,
+                      page: undefined,
+                    }),
+                  });
+                }}
+                className="ml-0.5 text-accent/70 hover:text-accent"
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+          <button
+            type="button"
+            onClick={clearAll}
+            className="rounded px-1.5 py-0.5 text-[12px] text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
+          >
+            Clear all
+          </button>
+        </div>
+      ) : null}
+
+      {saveOpen ? <SaveViewDialog search={search} onClose={() => setSaveOpen(false)} /> : null}
+    </div>
+  );
+}
+
+const FACET_KEYS: readonly FacetKey[] = [
+  "project", "status", "priority", "type", "assignee", "labels", "milestone", "sprint",
+];
+
+interface FacetOptions {
+  project: FilterOption[];
+  status: FilterOption[];
+  priority: FilterOption[];
+  type: FilterOption[];
+  assignee: FilterOption[];
+  labels: FilterOption[];
+  milestone: FilterOption[];
+  sprint: FilterOption[];
+}
+
+interface NamedEntity {
+  readonly id: string;
+  readonly name: string;
+  readonly archived?: boolean | undefined;
+}
+
+function buildFacetOptions(input: {
+  projects: readonly NamedEntity[];
+  users: readonly NamedEntity[];
+  labels: readonly NamedEntity[];
+  milestones: readonly NamedEntity[];
+  sprints: readonly NamedEntity[];
+  workflow: WorkflowConfig | undefined;
+}): FacetOptions {
+  const live = <T extends { archived?: boolean | undefined }>(xs: readonly T[]): readonly T[] =>
+    xs.filter(x => x.archived !== true);
+  return {
+    project: live(input.projects).map(p => ({ value: p.id, label: p.name })),
+    status: (input.workflow?.statuses ?? []).map(s => ({ value: s.key, label: s.label })),
+    priority: (input.workflow?.priorities ?? []).map(p => ({ value: p.key, label: p.label })),
+    type: (input.workflow?.task_types ?? []).map(t => ({ value: t.key, label: t.label })),
+    // Assignee includes archived users (greyed) so you can still filter
+    // historical assignments.
+    assignee: input.users.map(u => ({ value: u.id, label: u.archived ? `${u.name} (archived)` : u.name })),
+    labels: live(input.labels).map(l => ({ value: l.id, label: l.name })),
+    milestone: live(input.milestones).map(m => ({ value: m.id, label: m.name })),
+    sprint: live(input.sprints).map(s => ({ value: s.id, label: s.name })),
+  };
+}
+
+function readCustomFilters(search: Partial<ListSearch>): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [k, v] of Object.entries(search)) {
+    if (k.startsWith("field.")) {
+      const key = k.slice("field.".length);
+      out[key] = Array.isArray(v) ? (v as string[]) : typeof v === "string" ? v.split(",") : [];
+    }
+  }
+  return out;
+}
+
+interface Chip {
+  key: string; // URL param key (facet key or `field.<key>`)
+  facetLabel: string;
+  value: string;
+  label: string;
+}
+
+function buildChips(
+  search: Partial<ListSearch>,
+  options: FacetOptions,
+  customFields: WorkflowConfig["custom_fields"],
+): Chip[] {
+  const chips: Chip[] = [];
+  const labelOf = (opts: readonly FilterOption[], value: string): string =>
+    opts.find(o => o.value === value)?.label ?? value;
+
+  for (const key of FACET_KEYS) {
+    for (const value of search[key] ?? []) {
+      chips.push({ key, facetLabel: FACET_LABELS[key], value, label: labelOf(options[key], value) });
+    }
+  }
+  const custom = readCustomFilters(search);
+  for (const cf of customFields) {
+    for (const value of custom[cf.key] ?? []) {
+      const label = cf.values?.find(v => v.key === value)?.label ?? value;
+      chips.push({ key: `field.${cf.key}`, facetLabel: cf.label, value, label });
+    }
+  }
+  return chips;
+}
+
+/** Current values for a chip's URL key (facet array or custom field). */
+function chipValues(search: Partial<ListSearch>, key: string): string[] {
+  if (key.startsWith("field.")) {
+    return readCustomFilters(search)[key.slice("field.".length)] ?? [];
+  }
+  const v: unknown = (search as Record<string, unknown>)[key];
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}

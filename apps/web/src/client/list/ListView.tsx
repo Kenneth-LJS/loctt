@@ -19,6 +19,7 @@ import {
   TypeBadge,
 } from "./cells.tsx";
 import { resolveColumns } from "./columns.ts";
+import { FilterBar } from "./FilterBar.tsx";
 import { isOverdue, relativeTime, shortDate } from "./format.ts";
 import { buildLookups } from "./lookups.ts";
 
@@ -79,7 +80,8 @@ export function ListView() {
   const items = tasks.data?.items ?? [];
 
   return (
-    <div className="p-6">
+    <div className="flex flex-col gap-4 p-6">
+      <FilterBar />
       <div className="overflow-hidden rounded-md border border-border-subtle bg-bg-surface">
         <table aria-busy={tasks.isLoading} className="w-full border-separate border-spacing-0 text-[13px]">
           <thead>
