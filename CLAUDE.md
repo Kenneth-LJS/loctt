@@ -14,6 +14,8 @@ Local task tracker — CLI tool, MCP server, and GUI for managing tasks stored a
 User-facing documentation lives in `docs/`. Developer documentation lives in `docs/dev/`. Cross-reference before implementing:
 - `docs/dev/architecture.md` — monorepo layout, data model, task identity
 - `docs/dev/schema-reference.md` — file formats (task.md, workflow.yaml, etc.)
+- `docs/dev/invariants.md` — **rules a change must not break** (project identity, key allocation, sprint state). Check against this before touching those areas
+- `docs/dev/decisions.md` — locked design decisions, incl. things deliberately NOT built
 - `docs/user/cli/reference.md` — CLI commands
 - `docs/user/mcp/reference.md` — MCP tools and agent guidelines
 
@@ -23,13 +25,15 @@ Key points:
 - Stored enum values use config `key`s, not human labels
 - Task body is free markdown; no schema-enforced structure
 - MCP uses structured tools for metadata — never edit frontmatter directly
-- Git-backed mode is optional, uses sparse worktree on `loctt` branch
+- Git-backed mode is optional; publishes to a `loctt` branch (configurable) via a temporary worktree
 
 ## Commands
 
 ```bash
 npm run build        # Build all workspaces (tsc + tsup for CLI/MCP)
-npm run test         # Run tests across all workspaces (vitest)
+npm run test         # Workspace unit tests only (vitest) — does NOT cover e2e/integration
+npm run test:integration  # CLI binary + MCP stdio against a real tracker
+npm run test:e2e     # Full user journeys
 npm run typecheck    # Type-check all workspaces
 npm run lint         # Lint all workspaces (eslint)
 npm run lint:fix     # Lint and auto-fix
@@ -63,6 +67,64 @@ Follow `.claude/housekeeping.md` for all work. Key principles:
 4. THEN implement
 
 No quick fixes. No workarounds without discussion.
+
+## Disagreeing with a decision
+
+**If you think a decision rests on a false premise, say so BEFORE the
+decision is made — never after.**
+
+Raising an objection after the user has chosen is worthless. It doesn't
+give them a real say, and it lets you claim you mentioned it. If you catch
+yourself writing "recorded for the record", "worth flagging", or "noted
+with that understood" *after* an answer, you have already failed — go back
+and ask the question properly.
+
+Concretely:
+
+- Put the objection in the question, before they answer. If a premise is
+  shaky ("users will be familiar with this", "this is the fast option"),
+  state plainly why you doubt it and what it costs, as part of asking.
+- Put the cost in the option's own description, not in prose afterwards.
+- If you only realise mid-work, **stop and ask** — do not finish and
+  append a caveat.
+- Once they've decided *with your objection in front of them*, implement
+  it. Don't re-raise. Repeating a point you already made is its own
+  failure.
+
+The user's decision is final. Your job is to make sure it's an informed
+one *at the moment it's made*.
+
+## Recording decisions
+
+**Never infer approval from an adjacent answer.** If you asked a question
+and the user replied about something else — raised a concern, changed
+scope, asked a follow-up — that question is still open. Re-ask it before
+recording anything.
+
+Specifically:
+
+- An answer to "what scope?" is not an answer to "what shape?".
+- A user picking option A in one question does not settle a different
+  question you asked in the same breath.
+- If you find yourself writing a decision into a doc that the user never
+  stated in those terms, stop and ask.
+
+When you do record a decision, record *what the user said*, not your
+recommendation of it. If your recommendation differed, it does not go in
+the file as the decision.
+
+## Reporting your own work
+
+- **"Decided" is not "done".** Never describe work as complete, built, or
+  handled when only a decision was recorded. Say exactly what exists:
+  code, tests, docs, or a note.
+- When summarising a session, separate **implemented** from **recorded**
+  from **still open**. If you are unsure which a thing is, check the code
+  before writing the summary.
+- Defects you introduce go in the summary as prominently as defects you
+  found. Do not bury them.
+- Verify claims against source before repeating them. An earlier finding —
+  yours or an agent's — is a claim, not a fact.
 
 ## Testing Philosophy
 
