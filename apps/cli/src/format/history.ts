@@ -34,6 +34,19 @@ export function readLinkMeta(meta: unknown): { type: string; target: string } {
   return { type: "(unknown)", target: "(unknown)" };
 }
 
+/**
+ * Renders `(by X)` for a comment event whose original author differs
+ * from the acting user — i.e. someone edited or deleted a comment
+ * that wasn't theirs. Returns an empty string when the two match, or
+ * when either is missing, so the common self-edit case stays terse.
+ */
+function formatOriginalAuthor(entry: HistoryEntry): string {
+  const author = (entry.meta as { author?: unknown } | undefined)?.author;
+  if (typeof author !== "string") return "";
+  if (entry.actor === undefined || entry.actor === author) return "";
+  return ` (author: ${author})`;
+}
+
 export function formatHistoryEntry(entry: HistoryEntry): string {
   const ts = entry.timestamp;
   switch (entry.kind) {
@@ -61,6 +74,16 @@ export function formatHistoryEntry(entry: HistoryEntry): string {
     }
     case "body_edited":
       return `${ts}  body edited`;
+    // Activity only — no comment body is captured, matching
+    // `body_edited`. The acting user lives on `entry.actor`; `meta.author`
+    // is the comment's original author, shown only when it differs, so
+    // an edit of someone else's comment is visible in the log.
+    case "comment_added":
+      return `${ts}  comment added`;
+    case "comment_edited":
+      return `${ts}  comment edited${formatOriginalAuthor(entry)}`;
+    case "comment_deleted":
+      return `${ts}  comment deleted${formatOriginalAuthor(entry)}`;
     default:
       return `${ts}  ${entry.kind}`;
   }

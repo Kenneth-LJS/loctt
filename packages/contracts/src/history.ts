@@ -9,6 +9,13 @@
  * - `link_added` / `link_removed` — relationship added/removed
  * - `body_edited` — body content changed (no content captured)
  * - `attachment_added` / `attachment_removed` — file attached/detached
+ * - `comment_added` / `comment_edited` / `comment_deleted` — comment
+ *   lifecycle. Anyone may edit or delete anyone's comment (LocTT is
+ *   local and unauthenticated, so there's no trust boundary to
+ *   enforce), which is exactly why the action is logged: `actor` says
+ *   who changed it and `meta.author` who originally wrote it, so an
+ *   edit of someone else's comment stays traceable. No comment body is
+ *   captured, matching `body_edited`.
  */
 export type HistoryKind =
   | "created"
@@ -22,7 +29,10 @@ export type HistoryKind =
   | "link_removed"
   | "body_edited"
   | "attachment_added"
-  | "attachment_removed";
+  | "attachment_removed"
+  | "comment_added"
+  | "comment_edited"
+  | "comment_deleted";
 
 /** A single history/activity entry for a task. */
 export interface HistoryEntry {

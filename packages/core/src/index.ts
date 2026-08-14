@@ -278,6 +278,7 @@ export {
   deleteComment,
   editComment,
   extractMentions,
+  formatCommentEditors,
   listComments,
   postComment,
 } from "./task/index.js";
