@@ -119,7 +119,7 @@ describe("FilterBar", () => {
     });
   });
 
-  it("selecting a second value on a facet accumulates (in [...])", async () => {
+  it("selecting a second value on a facet accumulates (in (...))", async () => {
     const router = await mountFilterBar("?status=in_progress");
     fireEvent.click(screen.getByRole("button", { name: "Filter Status" }));
     fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Done" }));

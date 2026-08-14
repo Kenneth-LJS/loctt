@@ -1,3 +1,4 @@
+import { parseQuery, tokenize } from "@loctt/core";
 import { describe, expect, it } from "vitest";
 
 import { addDays, BUILTIN_FILTERS } from "./builtinFilters.ts";
@@ -30,7 +31,7 @@ describe("built-in filter resolution", () => {
   it("'Assigned to me' embeds the current user id and excludes closed tasks", () => {
     const search = byId("assigned-to-me").resolve(ctx);
     expect(search?.q).toContain('assignee = "u_ken"');
-    expect(search?.q).toContain("status.category not in [completed, discarded]");
+    expect(search?.q).toContain("status.category not in (completed, discarded)");
   });
 
   it("'Assigned to me' is unresolvable without a current user", () => {
@@ -48,10 +49,30 @@ describe("built-in filter resolution", () => {
   });
 
   it("'High priority' matches high or critical", () => {
-    expect(byId("high-priority").resolve(ctx)?.q).toContain("priority in [high, critical]");
+    expect(byId("high-priority").resolve(ctx)?.q).toContain("priority in (high, critical)");
   });
 
   it("'Mentions me' is deferred (never resolves) until comments land", () => {
     expect(byId("mentions-me").resolve(ctx)).toBeNull();
+  });
+
+  // Every assertion above uses `toContain` on a substring the code was
+  // written to produce, so all five built-ins shipped emitting
+  // `in [...]` — a form the grammar has no `[` token for — while this
+  // suite stayed green. Parsing each resolved query tests it against
+  // the real tokenizer rather than against our own expectations.
+  it("every built-in resolves to a query the DSL can actually parse", () => {
+    const resolvable = BUILTIN_FILTERS
+      .map(f => ({ id: f.id, search: f.resolve(ctx) }))
+      .filter((r): r is { id: string; search: { q?: string } } => r.search !== null);
+
+    // Guards against this passing vacuously if resolution regresses.
+    expect(resolvable.length).toBeGreaterThanOrEqual(4);
+
+    for (const { id, search } of resolvable) {
+      const q = search.q;
+      if (q === undefined) continue;
+      expect(() => parseQuery(tokenize(q)), `built-in "${id}": ${q}`).not.toThrow();
+    }
   });
 });
