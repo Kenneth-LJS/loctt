@@ -70,11 +70,17 @@ export const PutWorkflowRequestSchema = z.object({
 export type PutWorkflowRequest = z.infer<typeof PutWorkflowRequestSchema>;
 
 /**
- * Body of `POST /api/init`. Mirrors core's `InitOptions`.
+ * Body of `POST /api/init`.
+ *
+ * `projectLabel` maps to core's `InitOptions.projectName` — the name
+ * of the starting project. There is deliberately no `projectKey`:
+ * `projects.yaml` stores `{id, name, prefix}` with no slug field, so
+ * a key could never be honoured. It was previously declared here and
+ * silently discarded; being absent from a `.strict()` schema means a
+ * caller sending it now gets a validation error instead.
  */
 export const InitRequestSchema = z.object({
   prefix: z.string().optional(),
-  projectKey: z.string().optional(),
   projectLabel: z.string().optional(),
   docs: z.boolean().optional(),
 }).strict();

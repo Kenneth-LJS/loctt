@@ -1402,8 +1402,7 @@ export function createWebApp(options: WebAppOptions) {
     try {
       const result = await initLoctt(root, {
         ...(r.prefix !== undefined ? { prefix: r.prefix } : {}),
-        ...(r.projectKey !== undefined ? { projectKey: r.projectKey } : {}),
-        ...(r.projectLabel !== undefined ? { projectLabel: r.projectLabel } : {}),
+        ...(r.projectLabel !== undefined ? { projectName: r.projectLabel } : {}),
         ...(r.docs !== undefined ? { docs: r.docs } : {}),
       });
       json(res, { locttDir: result.locttDir, created: result.created.length }, 201);

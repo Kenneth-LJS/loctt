@@ -61,7 +61,11 @@ export async function main(): Promise<void> {
     }
 
     switch (command) {
-      case "init":   await initCmd.run(args, root);   break;
+      // Wrapped so init's unknown-option UsageError maps to EXIT.USAGE
+      // like every other command's. The neighbours below are not
+      // wrapped because they throw no UsageError today; wrapping them
+      // is a separate change with its own exit-code implications.
+      case "init":   await runCommand(() => initCmd.run(args, root));   break;
       case "info":   await infoCmd.run(args, root);   break;
       case "doctor": await doctorCmd.run(args, root); break;
       case "views":  await viewsCmd.run(args, root);  break;
