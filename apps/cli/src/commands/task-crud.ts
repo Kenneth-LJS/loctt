@@ -107,6 +107,13 @@ export async function list(args: string[], root: string): Promise<void> {
     ...(queriesConfig !== undefined ? { queriesConfig } : {}),
     ...(workflowConfig !== undefined ? { workflowConfig } : {}),
     ctx: buildListContext(tasks),
+    // A saved view referencing a since-deleted custom field still
+    // runs (breaking existing trackers would be worse), but the
+    // results are narrower than the view's author intended — so say
+    // so. stderr keeps the task list on stdout pipeable.
+    onWarning: err => {
+      console.error(`Warning: saved view "${view ?? ""}" — ${err.message}`);
+    },
   });
 
   if (result.length === 0) {

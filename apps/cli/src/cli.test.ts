@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -1030,5 +1030,63 @@ describe("CLI schema guard exemption for init", () => {
     process.argv = ["node", "loctt", "init"];
     await main();
     expect(process.exitCode).toBeUndefined();
+  });
+});
+
+describe("CLI list — stale saved view warning", () => {
+  let root: string;
+  let originalArgv: string[];
+  let logSpy: MockInstance;
+  let errSpy: MockInstance;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-cli-warn-"));
+    originalArgv = process.argv;
+    vi.spyOn(process, "cwd").mockImplementation(() => root);
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    process.exitCode = undefined;
+    await initLoctt(root);
+    // A view referencing a custom field that doesn't exist — the
+    // shape a tracker ends up in after the field is deleted.
+    await writeFile(
+      join(root, ".loctt", "config", "queries.yaml"),
+      "queries:\n"
+      + "  - id: 01HSV0000000000000STALE3\n"
+      + "    name: stale\n"
+      + "    query: fields.deleted_field = x\n",
+      "utf-8",
+    );
+  });
+
+  afterEach(async () => {
+    process.argv = originalArgv;
+    vi.restoreAllMocks();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  // The view still runs (breaking existing trackers would be worse),
+  // but silently returning fewer results reads as "nothing matches".
+  it("warns on stderr and still runs the view", async () => {
+    process.argv = ["node", "loctt", "list", "--view", "stale"];
+    await main();
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("unknown custom field"));
+    expect(logSpy).toHaveBeenCalledWith("No tasks found.");
+    // Warning is advisory, not a failure.
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("does not warn for a healthy view", async () => {
+    await writeFile(
+      join(root, ".loctt", "config", "queries.yaml"),
+      "queries:\n"
+      + "  - id: 01HSV0000000000000FINE01\n"
+      + "    name: fine\n"
+      + "    query: status != done\n",
+      "utf-8",
+    );
+    process.argv = ["node", "loctt", "list", "--view", "fine"];
+    await main();
+    expect(errSpy).not.toHaveBeenCalledWith(expect.stringContaining("Warning:"));
   });
 });

@@ -92,6 +92,11 @@ export const TOOLS: readonly ToolDef[] = [
       const view = args["view"] as string | undefined;
       const limit = args["limit"] as number | undefined;
       const includeArchived = args["include_archived"] as boolean | undefined;
+      // A saved view referencing a since-deleted custom field runs
+      // anyway, but matches less than its author intended. An agent
+      // has no stderr to read, so surface it in the response — a bare
+      // short list would otherwise read as a definitive answer.
+      const warnings: string[] = [];
       const result = listTasks({
         tasks,
         options: {
@@ -104,6 +109,7 @@ export const TOOLS: readonly ToolDef[] = [
         ...(queriesConfig !== undefined ? { queriesConfig } : {}),
         ...(workflowConfig !== undefined ? { workflowConfig } : {}),
         ctx: buildListContext(tasks),
+        onWarning: err => warnings.push(err.message),
       });
       const summary = result.map(t => ({
         key: t.frontmatter.key,
@@ -111,7 +117,12 @@ export const TOOLS: readonly ToolDef[] = [
         status: t.frontmatter.status,
         priority: t.frontmatter.priority,
       }));
-      return text(JSON.stringify(summary, null, 2));
+      const body = JSON.stringify(summary, null, 2);
+      return text(
+        warnings.length > 0
+          ? `Warning: saved view "${view ?? ""}" — ${warnings.join("; ")}\nResults may be incomplete.\n\n${body}`
+          : body,
+      );
     },
   },
   {
