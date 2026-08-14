@@ -66,13 +66,13 @@ relationships:
     label: Blocks
     inverse: is_blocked_by
     inverse_label: Is blocked by
-    structural: true
+    graph: acyclic
     ranked: true
   - key: parent
     label: Parent
     inverse: child
     inverse_label: Child
-    structural: true
+    graph: tree
     ranked: true
   - key: clones
     label: Clones

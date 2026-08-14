@@ -41,7 +41,7 @@ relationships:
     label: Parent
     inverse: child
     inverse_label: Child
-    structural: true
+    graph: tree
   - key: blocks
     label: Blocks
     inverse: is_blocked_by
@@ -87,7 +87,7 @@ describe("parseWorkflowConfig", () => {
       label: "Parent",
       inverse: "child",
       inverse_label: "Child",
-      structural: true,
+      graph: "tree",
     });
     expect(config.relationships[1]).toEqual({
       key: "blocks",

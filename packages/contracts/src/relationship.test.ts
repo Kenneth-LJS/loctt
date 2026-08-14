@@ -68,17 +68,17 @@ describe("RelationshipDefSchema — directional", () => {
     })).toThrow(/declare it as symmetric/);
   });
 
-  it("preserves structural + ranked on a directional rel", () => {
+  it("preserves graph + ranked on a directional rel", () => {
     const parsed = RelationshipDefSchema.parse({
       key: "parent",
       label: "Parent",
       kind: "directional",
       inverse: "child",
       inverse_label: "Child",
-      structural: true,
+      graph: "tree",
       ranked: true,
     });
-    expect(parsed.structural).toBe(true);
+    expect(parsed.graph).toBe("tree");
     expect(parsed.ranked).toBe(true);
   });
 });
@@ -155,15 +155,15 @@ describe("RelationshipDefSchema — symmetric", () => {
     })).toThrow(/must omit 'inverse_label'/);
   });
 
-  it("preserves structural and ranked flags on symmetric rels", () => {
+  it("preserves graph and ranked flags on symmetric rels", () => {
     const parsed = RelationshipDefSchema.parse({
       key: "siblings",
       label: "Siblings",
       kind: "symmetric",
-      structural: true,
+      graph: "none",
       ranked: true,
     });
-    expect(parsed.structural).toBe(true);
+    expect(parsed.graph).toBe("none");
     expect(parsed.ranked).toBe(true);
   });
 });

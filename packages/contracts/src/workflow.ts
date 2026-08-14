@@ -65,10 +65,38 @@ export const RelationshipKindSchema = z.enum(["directional", "symmetric"]);
 export type RelationshipKind = z.infer<typeof RelationshipKindSchema>;
 
 /**
+ * Constraints on the shape of a relationship's graph, ordered by
+ * increasing strictness.
+ *
+ * - `none` — no restriction. The default when omitted.
+ * - `acyclic` — cycles are rejected at link time.
+ * - `tree` — cycles are rejected **and** this kind may be drawn as a
+ *   tree axis.
+ *
+ * Replaces the former `structural: boolean`, which silently did two
+ * unrelated jobs: gating cycle detection (correctly, per relationship)
+ * and picking the tree axis (via `find(r => r.structural)`, first match
+ * only). The shipped default marked both `blocks` and `parent`
+ * structural with `blocks` declared first, so tree traversal walked
+ * blocking edges.
+ *
+ * An enum rather than two booleans because the useful combinations are
+ * exactly these three: a tree axis that permits cycles has no coherent
+ * rendering, and expressing it as `hierarchy: true, acyclic: false`
+ * would need a validation rule to forbid what the type should not
+ * permit in the first place.
+ */
+export const RelationshipGraphSchema = z.enum(["none", "acyclic", "tree"]);
+export type RelationshipGraph = z.infer<typeof RelationshipGraphSchema>;
+
+/**
  * A single relationship type definition from workflow.yaml.
  *
  * `kind` defaults to `"directional"` when omitted. The UI groups
  * both directions under a single heading when `kind: "symmetric"`.
+ *
+ * `graph` defaults to `"none"` when omitted, so only constrained kinds
+ * carry the field.
  */
 export const RelationshipDefSchema = z.object({
   key: z.string().min(1),
@@ -76,7 +104,7 @@ export const RelationshipDefSchema = z.object({
   kind: RelationshipKindSchema.optional(),
   inverse: z.string().min(1).optional(),
   inverse_label: z.string().min(1).optional(),
-  structural: z.boolean().optional(),
+  graph: RelationshipGraphSchema.optional(),
   ranked: z.boolean().optional(),
   icon: IconStringSchema.optional(),
   color: HexColor.optional(),

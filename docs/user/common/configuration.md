@@ -81,11 +81,12 @@ relationships:
     label: Parent
     inverse: child
     inverse_label: Child
-    structural: true
+    graph: tree
   - key: blocks
     label: Blocks
     inverse: is_blocked_by
     inverse_label: Is blocked by
+    graph: acyclic
   - key: relates_to
     label: Relates to
     kind: symmetric
@@ -93,8 +94,22 @@ relationships:
 
 Each relationship defines a forward key/label and an inverse. When you `link T-1 blocks T-2`, LocTT stores both the `blocks` edge on T-1 and the `is_blocked_by` edge on T-2.
 
-Setting `structural: true` marks a relationship for tree display and
-makes it participate in cycle detection.
+`graph` constrains the shape of a relationship's graph:
+
+| Value | Meaning |
+|---|---|
+| `none` | No restriction. The default when omitted. |
+| `acyclic` | Cycles are rejected when linking. |
+| `tree` | Cycles are rejected **and** this relationship may be drawn as a tree axis. |
+
+The shipped default gives `parent` `graph: tree` and `blocks`
+`graph: acyclic` — a blocking cycle is a deadlock worth refusing, but
+nobody draws a tree of blocking edges. Any number of relationships may
+be `tree`; views pick which axis to draw rather than the config
+deciding for them.
+
+Symmetric relationships are never `tree`: a symmetric edge is a
+two-node cycle by definition.
 
 A relationship is either **directional** — it declares `inverse` and
 `inverse_label`, and linking writes an edge on both tasks — or

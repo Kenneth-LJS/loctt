@@ -304,7 +304,7 @@ export async function runDoctor(
           .join("; ");
         const more = cycles.length > 2 ? ` (+${cycles.length - 2} more)` : "";
         checks.push({
-          name: "structural cycles",
+          name: "relationship cycles",
           status: "warn",
           message: `${cycles.length} cycle(s) found: ${sample}${more}`,
         });

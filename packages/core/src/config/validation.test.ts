@@ -15,7 +15,7 @@ const config: WorkflowConfig = {
   ],
   task_types: [{ key: "task", label: "Task" }],
   relationships: [
-    { key: "parent", label: "Parent", inverse: "child", inverse_label: "Child", structural: true },
+    { key: "parent", label: "Parent", inverse: "child", inverse_label: "Child", graph: "tree" },
     { key: "blocks", label: "Blocks", inverse: "is_blocked_by", inverse_label: "Is blocked by" },
   ],
   custom_fields: [
