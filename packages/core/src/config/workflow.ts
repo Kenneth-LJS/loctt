@@ -18,9 +18,15 @@ export class WorkflowConfigError extends Error {
 
 /**
  * Parses and validates raw YAML content into a WorkflowConfig.
- * The schema validates shapes; per-collection uniqueness checks
- * still live in `validateWorkflowConfig` (callers that want them
- * should run the validator after parsing).
+ *
+ * The schema validates the shape of each entry. Per-collection
+ * uniqueness checks live in `validateWorkflowConfig`, because Zod
+ * validates entries independently and cannot see two entries collide.
+ *
+ * Reads do not run those checks: a config that is already on disk is
+ * reported by `loctt doctor` rather than made unloadable. Every
+ * *write* runs them — `saveWorkflowConfig` rejects rather than
+ * persisting a config `doctor` would flag.
  */
 export function parseWorkflowConfig(yamlContent: string): WorkflowConfig {
   const raw: unknown = safeParseYaml(yamlContent, "workflow.yaml");
