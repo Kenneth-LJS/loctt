@@ -709,3 +709,42 @@ describe("web server security", () => {
     });
   });
 });
+
+describe("GET /api/info — workspace today", () => {
+  let root: string;
+  let app: ReturnType<typeof createWebApp>;
+  let base: string;
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-web-tz-"));
+    // A workspace ahead of UTC, so a UTC-derived date would visibly
+    // differ from the correct answer for part of each day.
+    await initLoctt(root, { timezone: "Asia/Singapore" });
+    app = createWebApp({ root, port: 0 });
+    await app.start();
+    const addr = app.server.address();
+    const port = typeof addr === "object" && addr ? addr.port : app.port;
+    base = `http://127.0.0.1:${port}`;
+  });
+
+  afterAll(async () => {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  // The browser can't read calendar.yaml and its own clock answers in
+  // the viewer's zone, so the server sends the workspace date.
+  it("returns today in the workspace timezone, not UTC", async () => {
+    const res = await fetch(`${base}/api/info`);
+    expect(res.status).toBe(200);
+    const body = await res.json() as { today: string };
+    expect(body.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // Compare against the zone's own answer rather than hardcoding a
+    // date, so this doesn't rot at midnight.
+    const expected = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Singapore",
+      year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+    expect(body.today).toBe(expected);
+  });
+});

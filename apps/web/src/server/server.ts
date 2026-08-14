@@ -119,6 +119,7 @@ import {
   sync,
   TaskNotFoundError,
   TaskUpdateError,
+  todayInZone,
   unarchiveTask,
   unarchiveUser,
   unlinkTask,
@@ -136,6 +137,19 @@ import type { ParsedFilePart } from "./multipart.js";
 import { parseMultipartFile } from "./multipart.js";
 
 const DEFAULT_PORT = 4321;
+
+/**
+ * Today's date (`YYYY-MM-DD`) in the workspace timezone from
+ * calendar.yaml. Falls back to UTC when the config is missing or
+ * unreadable, matching `loadCalendarConfig`'s own default.
+ */
+async function workspaceToday(locttDir: string): Promise<string> {
+  try {
+    return todayInZone((await loadCalendarConfig(locttDir)).timezone);
+  } catch {
+    return todayInZone();
+  }
+}
 
 /**
  * Renders a workspace root for *display* in the UI footer without
@@ -375,6 +389,81 @@ function assertPersisted<T>(entity: T | undefined, kind: string, key: string): T
 }
 
 const VALID_REF_RE = /^[A-Za-z0-9_-]+$/;
+
+/**
+ * Renders a filter value as a DSL atom. Bare identifiers
+ * (`[A-Za-z0-9_.-]+`) — which all ids and workflow keys are — pass
+ * through unquoted; anything else is double-quoted with `"`/`\`
+ * escaped, so a value can never break out of its atom and inject query
+ * structure. This is the single chokepoint that makes
+ * {@link buildStructuredQuery} injection-safe.
+ */
+function dslAtom(value: string): string {
+  if (/^[A-Za-z0-9_.-]+$/.test(value)) return value;
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+/**
+ * The structured list filters, mapping a URL search-param name to the
+ * task field its values constrain. Each param is a comma-separated
+ * list; multiple values on one field are OR-ed (`field in [a, b]`),
+ * and fields are AND-ed together. Custom fields arrive as
+ * `field.<key>` and map to `fields.<key>`.
+ */
+const STRUCTURED_FILTER_FIELDS: Readonly<Record<string, string>> = {
+  project: "project",
+  status: "status",
+  priority: "priority",
+  type: "task_type",
+  assignee: "assignee",
+  reporter: "reporter",
+  labels: "labels",
+  milestone: "milestone",
+  sprint: "sprint",
+};
+
+/**
+ * Combines the free-text `query` param with the structured filter
+ * params into a single DSL query string, AND-ing every active filter.
+ * Returns `undefined` when nothing is set (so the caller passes no
+ * query at all and core's defaults apply).
+ *
+ * Multi-value fields become `field in [a, b]`; a single value becomes
+ * `field = a`. Custom-field params (`field.<key>=…`) map to
+ * `fields.<key>`. All values flow through {@link dslAtom}, so
+ * user-supplied ids/keys can't inject query structure.
+ */
+function buildStructuredQuery(url: URL, baseQuery: string | undefined): string | undefined {
+  const clauses: string[] = [];
+  if (baseQuery !== undefined && baseQuery.trim().length > 0) {
+    clauses.push(`(${baseQuery})`);
+  }
+
+  const addClause = (field: string, raw: string): void => {
+    const values = raw.split(",").map(v => v.trim()).filter(Boolean);
+    const first = values[0];
+    if (first === undefined) return;
+    if (values.length === 1) {
+      clauses.push(`${field} = ${dslAtom(first)}`);
+    } else {
+      clauses.push(`${field} in [${values.map(dslAtom).join(", ")}]`);
+    }
+  };
+
+  for (const [param, field] of Object.entries(STRUCTURED_FILTER_FIELDS)) {
+    const raw = url.searchParams.get(param);
+    if (raw !== null) addClause(field, raw);
+  }
+  // Custom-field filters arrive as `field.<key>=v1,v2`.
+  for (const [key, raw] of url.searchParams.entries()) {
+    if (key.startsWith("field.") && key.length > "field.".length) {
+      addClause(`fields.${key.slice("field.".length)}`, raw);
+    }
+  }
+
+  if (clauses.length === 0) return undefined;
+  return clauses.join(" and ");
+}
 
 /**
  * Validates a captured ref / key / id from a route capture.
@@ -622,6 +711,11 @@ export function createWebApp(options: WebAppOptions) {
         : null,
       schemaStatus: info.schemaStatus,
       cwd: displayPath(root),
+      // Workspace-timezone today, so the client's date-dependent
+      // filters ("Overdue", "Due this week") agree with what the same
+      // query returns through the CLI rather than following the
+      // viewer's browser zone.
+      today: await workspaceToday(locttDir),
     };
     json(res, response);
   };
@@ -1461,15 +1555,26 @@ export function createWebApp(options: WebAppOptions) {
     const page = parsePagination(url, res);
     if (!page) return;
     const tasks = await loadAllTasks(locttDir);
-    const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
+    const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
 
-    // Sugar: `?project=<key>` filters to that project. Passed as a
-    // structured option so query-parser specials in the value (e.g.
-    // a project key containing whitespace or operators) cannot
-    // confuse the parser.
-    const projectFilter = url.searchParams.get("project") ?? undefined;
-    const baseQuery = url.searchParams.get("query") ?? undefined;
     const view = url.searchParams.get("view") ?? undefined;
+    const includeArchived = url.searchParams.get("archived") === "true";
+    // Fold the free-text `query` and the structured filter params
+    // (project/status/priority/type/assignee/…, plus custom
+    // `field.<key>`) into one DSL query, AND-ing every active filter.
+    // When a saved view is in play we leave its query untouched (views
+    // are authored as-is) and apply `?project=` via core's dedicated
+    // structured project option instead.
+    const baseQuery = url.searchParams.get("query") ?? undefined;
+    const effectiveQuery = view !== undefined
+      ? baseQuery
+      : buildStructuredQuery(url, baseQuery);
+    // Only relevant alongside a view (otherwise project rides in the
+    // DSL above). Passed as a structured option so a project key with
+    // query-parser specials can't confuse the parser.
+    const projectFilter = view !== undefined
+      ? (url.searchParams.get("project") ?? undefined)
+      : undefined;
     // Single-column sort from `?sort=<field>&dir=asc|desc`. The list
     // view drives this off the clicked column header. `dir` defaults to
     // ascending and rejects anything else so a bad URL doesn't silently
@@ -1491,10 +1596,12 @@ export function createWebApp(options: WebAppOptions) {
     // `total` then reflects the true matching count and the page
     // slice happens in `paginated()` below.
     const params: ListTasksRequest = {
-      ...(baseQuery !== undefined ? { query: baseQuery } : {}),
+      ...(effectiveQuery !== undefined ? { query: effectiveQuery } : {}),
       ...(view !== undefined ? { view } : {}),
       ...(projectFilter !== undefined ? { project: projectFilter } : {}),
       ...(sort !== undefined ? { sort } : {}),
+      ...(includeArchived ? { includeArchived: true } : {}),
+      ...(today !== undefined ? { today } : {}),
       limit: Number.MAX_SAFE_INTEGER,
     };
 
@@ -1521,14 +1628,21 @@ export function createWebApp(options: WebAppOptions) {
     const columns = columnsParam ? columnsParam.split(",").map(c => c.trim()).filter(Boolean) : undefined;
 
     const tasks = await loadAllTasks(locttDir);
-    const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
+    const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
     const baseQuery = url.searchParams.get("query") ?? undefined;
     const view = url.searchParams.get("view") ?? undefined;
     const projectFilter = url.searchParams.get("project") ?? undefined;
+    // Export mirrors the list view's filter resolution so a CSV/JSON
+    // reflects exactly the rows the user is looking at. (archived is
+    // applied below via filterForExport, so it's excluded here.)
+    const effectiveQuery = view !== undefined
+      ? baseQuery
+      : buildStructuredQuery(url, baseQuery);
     const params: ListTasksRequest = {
-      ...(baseQuery !== undefined ? { query: baseQuery } : {}),
+      ...(effectiveQuery !== undefined ? { query: effectiveQuery } : {}),
       ...(view !== undefined ? { view } : {}),
       ...(projectFilter !== undefined ? { project: projectFilter } : {}),
+      ...(today !== undefined ? { today } : {}),
       limit: Number.MAX_SAFE_INTEGER,
     };
     const result = listTasks({

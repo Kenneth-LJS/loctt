@@ -6,6 +6,7 @@ import {
   useProjects,
   useUsers,
 } from "../api/hooks/sidebarData.ts";
+import { useInfo } from "../api/hooks/useInfo.ts";
 import { tasksParamsFromSearch, useTasks } from "../api/hooks/useTasks.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import {
@@ -39,6 +40,7 @@ export function ListView() {
   const users = useUsers();
   const labels = useLabels();
   const workflow = useWorkflow();
+  const info = useInfo();
   const userSettings = useUserSettings();
 
   const columns = useMemo(
@@ -69,7 +71,11 @@ export function ListView() {
   };
 
   const now = Date.now();
-  const today = new Date(now).toISOString().slice(0, 10);
+  // Workspace timezone, from the server — not the browser's clock, so
+  // the overdue highlight agrees with the "Overdue" sidebar filter and
+  // with the same query run through the CLI. Falls back to the UTC
+  // date only while `/api/info` is still in flight.
+  const today = info.data?.today ?? new Date(now).toISOString().slice(0, 10);
   const items = tasks.data?.items ?? [];
 
   return (

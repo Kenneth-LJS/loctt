@@ -3,8 +3,10 @@ import { ulid } from "ulid";
 
 import type { ArchivedGuardConfigs } from "../config/archived-guard.js";
 import { assertNotArchivedReferences } from "../config/archived-guard.js";
+import { loadCalendarConfig } from "../config/calendar.js";
 import { validateTaskAgainstWorkflow } from "../config/validation.js";
 import { withStateLock } from "../state/lock.js";
+import { todayInZone } from "../utils/today.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 import { lookupTask, TaskNotFoundError } from "./lookup.js";
@@ -47,8 +49,18 @@ function isCompletedStatus(
   return wf.statuses.find(s => s.key === statusKey)?.category === "completed";
 }
 
-function todayDateString(): string {
-  return new Date().toISOString().slice(0, 10);
+/**
+ * Today's date (`YYYY-MM-DD`) in the workspace timezone, for
+ * `completed_date`. See the same helper in update.ts — resolving in
+ * UTC stamps yesterday's date on anything completed before local
+ * morning in an ahead-of-UTC workspace.
+ */
+async function todayDateString(locttDir: string): Promise<string> {
+  try {
+    return todayInZone((await loadCalendarConfig(locttDir)).timezone);
+  } catch {
+    return todayInZone();
+  }
 }
 
 function validateChanges(changes: readonly SetFieldsEntry[]): void {
@@ -90,6 +102,10 @@ async function runBulk(
 ): Promise<BulkResult> {
   const { locttDir, taskRefs, changes, workflowConfig, archivedGuard } = opts;
   const now = new Date().toISOString();
+  // Resolved once for the whole batch, like `now` — a bulk run that
+  // straddles midnight must stamp one date across every task, not
+  // split the batch across two days.
+  const today = await todayDateString(locttDir);
   const succeeded: string[] = [];
   const failed: { taskId: string; error: string }[] = [];
 
@@ -98,7 +114,7 @@ async function runBulk(
       const task = await lookupTask(locttDir, ref);
       const id = task.frontmatter.id;
       const updated = await applyOneTask({
-        locttDir, taskId: id, changes, now, workflowConfig, archivedGuard, bulkOpId,
+        locttDir, taskId: id, changes, now, today, workflowConfig, archivedGuard, bulkOpId,
       });
       if (updated) succeeded.push(id);
     } catch (err) {
@@ -117,11 +133,12 @@ async function applyOneTask(args: {
   taskId: string;
   changes: readonly SetFieldsEntry[];
   now: string;
+  today: string;
   workflowConfig: WorkflowConfig | undefined;
   archivedGuard: ArchivedGuardConfigs | undefined;
   bulkOpId: string;
 }): Promise<boolean> {
-  const { locttDir, taskId, changes, now, workflowConfig, archivedGuard, bulkOpId } = args;
+  const { locttDir, taskId, changes, now, today, workflowConfig, archivedGuard, bulkOpId } = args;
   const task = await readTask(locttDir, taskId);
   const patch: Record<string, unknown> = { ...task.frontmatter };
   let statusChanged = false;
@@ -190,7 +207,7 @@ async function applyOneTask(args: {
   if (statusChanged) {
     const wasCompleted = isCompletedStatus(task.frontmatter.status, workflowConfig);
     const isNowCompleted = isCompletedStatus(newStatus, workflowConfig);
-    if (isNowCompleted && !wasCompleted) patch["completed_date"] = todayDateString();
+    if (isNowCompleted && !wasCompleted) patch["completed_date"] = today;
     else if (!isNowCompleted && wasCompleted) delete patch["completed_date"];
   }
   patch["updated_at"] = now;

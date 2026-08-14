@@ -378,6 +378,66 @@ describe("listTasks — semantic query validation", () => {
   });
 });
 
+describe("listTasks — `today` resolves in the workspace timezone", () => {
+  // Was: `today` resolved via toISOString() (always UTC), so in a
+  // UTC+8 workspace every query for the eight hours after local
+  // midnight used yesterday's boundary and silently dropped tasks
+  // due today.
+  const dated: Task[] = [
+    makeTask("D-1", { due_date: "2026-08-13" }),
+    makeTask("D-2", { due_date: "2026-08-14" }),
+  ];
+
+  it("uses the supplied date rather than the process clock", () => {
+    // Singapore has already rolled over to the 14th while UTC is
+    // still on the 13th. With today = 14th, D-1 is overdue.
+    const overdue = listTasks({
+      tasks: dated,
+      options: { query: "due_date < today", today: "2026-08-14" },
+    });
+    expect(overdue.map(t => t.frontmatter.key)).toEqual(["D-1"]);
+
+    // Same tasks, same query, UTC's answer — D-1 is not yet overdue.
+    const utc = listTasks({
+      tasks: dated,
+      options: { query: "due_date < today", today: "2026-08-13" },
+    });
+    expect(utc).toEqual([]);
+  });
+
+  it("resolves `today` inside an `in` list too", () => {
+    const due = listTasks({
+      tasks: dated,
+      options: { query: "due_date in (today)", today: "2026-08-14" },
+    });
+    expect(due.map(t => t.frontmatter.key)).toEqual(["D-2"]);
+  });
+
+  it("falls back to the UTC date when no today is supplied", () => {
+    // Not asserting a specific date — just that the path still works
+    // and doesn't throw without the new option.
+    expect(() => listTasks({
+      tasks: dated,
+      options: { query: "due_date < today" },
+    })).not.toThrow();
+  });
+});
+
+describe("listTasks — workflow config reaches the evaluator", () => {
+  // `status.category` needs workflow config in EvalContext. It was
+  // never passed through from listTasks, so category queries silently
+  // matched nothing in every list surface.
+  it("resolves status.category through the supplied workflow config", () => {
+    const result = listTasks({
+      tasks,
+      options: { query: "status.category = completed" },
+      workflowConfig: config,
+    });
+    expect(result.map(t => t.frontmatter.key)).toEqual(["T-3"]);
+  });
+});
+
+
 describe("listTasks — view + ad hoc query", () => {
   // `--view` and `--query` can be passed together. The query is then
   // the user's own typing, so a typo in it must still throw rather

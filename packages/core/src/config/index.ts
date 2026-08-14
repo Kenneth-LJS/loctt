@@ -8,6 +8,7 @@ export {
 export {
   CalendarConfigError,
   calendarConfigExists,
+  detectMachineTimezone,
   getCalendarConfigPath,
   loadCalendarConfig,
   parseCalendarConfig,
@@ -85,22 +86,46 @@ export {
 
 import type { QueriesConfig,WorkflowConfig } from "@loctt/contracts";
 
+import { todayInZone } from "../utils/today.js";
+import { loadCalendarConfig } from "./calendar.js";
 import { loadQueriesConfig } from "./queries.js";
 import { loadWorkflowConfig } from "./workflow.js";
 
 export interface OptionalConfigs {
   workflowConfig?: WorkflowConfig;
   queriesConfig?: QueriesConfig;
+  /**
+   * Today's date (`YYYY-MM-DD`) in the workspace timezone from
+   * calendar.yaml. Pass to `listTasks` as `options.today` so the
+   * `today` literal in queries resolves against the workspace zone
+   * rather than UTC.
+   *
+   * Resolved here so every list surface gets it from one place and
+   * they can't drift apart on what "today" means.
+   */
+  today?: string;
 }
 
-/** Loads workflow and queries configs, returning undefined for either on failure. */
+/**
+ * Loads workflow and queries configs, returning undefined for either
+ * on failure, plus the workspace-timezone `today`.
+ */
 export async function loadOptionalConfigs(locttDir: string): Promise<OptionalConfigs> {
   let workflowConfig: WorkflowConfig | undefined;
   let queriesConfig: QueriesConfig | undefined;
   try { workflowConfig = await loadWorkflowConfig(locttDir); } catch { /* ok */ }
   try { queriesConfig = await loadQueriesConfig(locttDir); } catch { /* ok */ }
+  // loadCalendarConfig defaults to UTC when the file is absent, so
+  // this always resolves; the catch covers a malformed file.
+  let today: string;
+  try {
+    today = todayInZone((await loadCalendarConfig(locttDir)).timezone);
+  } catch {
+    today = todayInZone();
+  }
   return {
     ...(workflowConfig !== undefined ? { workflowConfig } : {}),
     ...(queriesConfig !== undefined ? { queriesConfig } : {}),
+    today,
   };
 }

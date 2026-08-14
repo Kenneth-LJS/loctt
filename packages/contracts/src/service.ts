@@ -58,6 +58,13 @@ export interface ListTasksRequest {
    * (views are respected as authored).
    */
   readonly project?: string;
+  /**
+   * Include archived tasks. When false/omitted, core ANDs
+   * `archived != true` onto the effective query (unless the query
+   * already mentions `archived`). Drives the list view's "Show
+   * archived" toggle.
+   */
+  readonly includeArchived?: boolean;
 }
 
 /**
@@ -135,6 +142,20 @@ export interface TrackerInfoResponse {
    * layout. Informational — never used to drive a filesystem operation.
    */
   readonly cwd: string;
+  /**
+   * Today's date (`YYYY-MM-DD`) in the **workspace** timezone from
+   * calendar.yaml, resolved server-side.
+   *
+   * The browser can't read calendar.yaml, and its own clock answers in
+   * the viewer's local zone — which would make "Overdue" mean
+   * something different per machine and disagree with the same query
+   * run through the CLI. Sent here so every surface shares one
+   * definition of today.
+   *
+   * A long-lived tab will see this go stale at workspace midnight; it
+   * refreshes whenever tracker info is refetched.
+   */
+  readonly today: string;
 }
 
 /**

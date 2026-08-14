@@ -15,6 +15,19 @@ export interface EvalContext {
    * enum-like fields (status/priority/task_type) returns undefined.
    */
   readonly workflow?: WorkflowConfig;
+  /**
+   * Today's date as `YYYY-MM-DD` in the workspace timezone, used to
+   * resolve the `today` literal (`due_date < today`).
+   *
+   * Passed in rather than computed here so the evaluator stays pure —
+   * no clock, no config I/O — and so every task in one list call
+   * compares against the same date even if evaluation straddles
+   * midnight. Callers derive it with `todayInZone(calendar.timezone)`.
+   *
+   * Defaults to the UTC date when absent, which is the pre-existing
+   * behaviour and correct for UTC workspaces.
+   */
+  readonly today?: string;
 }
 
 /**
@@ -88,7 +101,10 @@ function descend(value: unknown, path: readonly string[]): unknown {
  * "today" resolves to today's date as YYYY-MM-DD.
  * Returns undefined for list values — callers handle lists explicitly.
  */
-function resolvePrimitive(qv: QueryValue): string | number | boolean | undefined {
+function resolvePrimitive(
+  qv: QueryValue,
+  ctx: EvalContext = {},
+): string | number | boolean | undefined {
   switch (qv.type) {
     case "string":
       return qv.value;
@@ -98,10 +114,10 @@ function resolvePrimitive(qv: QueryValue): string | number | boolean | undefined
       return qv.value;
     case "date":
       return qv.value;
-    case "today": {
-      const now = new Date();
-      return now.toISOString().slice(0, 10);
-    }
+    case "today":
+      // Workspace timezone, supplied by the caller. Falls back to the
+      // UTC date — see EvalContext.today.
+      return ctx.today ?? new Date().toISOString().slice(0, 10);
     case "list":
       return undefined;
   }
@@ -316,13 +332,13 @@ export function evaluateQuery(
     case "comparison": {
       // Handle special aliases
       if (node.field === "text") {
-        const resolved = resolvePrimitive(node.value);
+        const resolved = resolvePrimitive(node.value, ctx);
         if (resolved === undefined) return false;
         return evaluateTextAlias(fm, node.op, String(resolved), ctx);
       }
 
       if (node.field === "parent") {
-        const resolved = resolvePrimitive(node.value);
+        const resolved = resolvePrimitive(node.value, ctx);
         if (resolved === undefined) return false;
         return evaluateParentAlias(fm, node.op, resolved, ctx);
       }
@@ -338,13 +354,13 @@ export function evaluateQuery(
           const items = resolveList(node.value);
           if (!items) return false;
           const listValues = items.map(v => {
-            const p = resolvePrimitive(v);
+            const p = resolvePrimitive(v, ctx);
             return p !== undefined ? String(p) : "";
           });
           const hasMatch = rels.some(r => listValues.includes(r.target));
           return node.op === "in" ? hasMatch : !hasMatch;
         }
-        const resolved = resolvePrimitive(node.value);
+        const resolved = resolvePrimitive(node.value, ctx);
         if (resolved === undefined) return false;
         return rels.some(r => compareValues(r.target, node.op, resolved));
       }
@@ -360,7 +376,7 @@ export function evaluateQuery(
         const items = resolveList(node.value);
         if (!items) return false;
         const rhs = items
-          .map(v => resolvePrimitive(v))
+          .map(v => resolvePrimitive(v, ctx))
           .filter((p): p is string | number | boolean => p !== undefined)
           .map(p => String(p));
         const fieldArr = toComparableArray(fieldVal);
@@ -375,7 +391,7 @@ export function evaluateQuery(
         return node.op === "in" ? matches : !matches;
       }
 
-      const resolved = resolvePrimitive(node.value);
+      const resolved = resolvePrimitive(node.value, ctx);
       if (resolved === undefined) return false;
       return compareValues(fieldVal, node.op, resolved);
     }

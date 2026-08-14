@@ -43,6 +43,16 @@ export interface ListOptions {
    * views are respected as authored.
    */
   readonly project?: string;
+  /**
+   * Today's date as `YYYY-MM-DD` in the workspace timezone, used to
+   * resolve the `today` literal in queries. Callers derive it with
+   * `todayInZone(calendar.timezone)`.
+   *
+   * Resolved once per list call rather than per task, so a list that
+   * straddles midnight compares every task against the same date.
+   * Defaults to the UTC date when absent.
+   */
+  readonly today?: string;
 }
 
 /** Full options bag for listTasks. */
@@ -218,6 +228,8 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
       const evalCtx: EvalContext = {
         ...(body !== undefined ? { body } : {}),
         ...(ctx.resolveKey !== undefined ? { resolveKey: ctx.resolveKey } : {}),
+        ...(workflowConfig !== undefined ? { workflow: workflowConfig } : {}),
+        ...(options.today !== undefined ? { today: options.today } : {}),
       };
       return evaluateQuery(ast, task.frontmatter, evalCtx);
     });

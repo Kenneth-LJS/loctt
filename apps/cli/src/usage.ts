@@ -17,6 +17,8 @@ Global options:
 
 Commands:
   init [--prefix <prefix>] [--project-key <key>] [--project-label <label>] [--no-docs]
+                                   [--timezone <IANA tz>]  Workspace timezone; defaults to this
+                                   machine's zone. Decides what "today" means in queries.
   info
   doctor [--rebuild-index]         Run diagnostic checks; with --rebuild-index, rebuild
                                    the key-lookup cache after out-of-band frontmatter edits

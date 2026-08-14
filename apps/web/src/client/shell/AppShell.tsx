@@ -14,9 +14,12 @@ import { useSidebarCollapse } from "./useSidebarCollapse.ts";
  * than overlapping it.
  *
  * Routed page content renders through `<Outlet />` in the main pane.
- * `today` is computed once here and threaded into the sidebar so the
- * date-relative built-in filters ("Due this week", "Overdue") and
- * their counts share a single stable value for the render.
+ * `today` comes from the server in the workspace timezone and is
+ * threaded into the sidebar so the date-relative built-in filters
+ * ("Due this week", "Overdue") and their counts share a single stable
+ * value for the render. Deriving it from the browser clock instead
+ * would answer in the viewer's local zone, so the same filter could
+ * disagree with the CLI or with a colleague in another timezone.
  */
 export function AppShell({
   info,
@@ -28,7 +31,7 @@ export function AppShell({
   readonly children?: ReactNode;
 }) {
   const { collapsed, toggle } = useSidebarCollapse();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = info.today;
 
   return (
     <div className="flex h-screen flex-col">

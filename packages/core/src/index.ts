@@ -45,6 +45,7 @@ export {
 export {
   CalendarConfigError,
   calendarConfigExists,
+  detectMachineTimezone,
   getCalendarConfigPath,
   loadCalendarConfig,
   parseCalendarConfig,
@@ -181,7 +182,9 @@ export type { ComparisonOp,QueryNode, QueryValue } from "./query/index.js";
 export type { EvalContext } from "./query/index.js";
 export type { ListContext,ListOptions, ListTasksOptions } from "./query/index.js";
 export type { ListTasksResult } from "./query/index.js";
+export type { ValidateQueryOptions } from "./query/index.js";
 export { tokenize, TokenizeError } from "./query/index.js";
+export { QUERYABLE_FIELDS, QueryValidationError, validateQuery } from "./query/index.js";
 export { ParseError,parseQuery } from "./query/index.js";
 export { evaluateQuery } from "./query/index.js";
 export { buildListContext, DEFAULT_LIST_LIMIT, listTasks, listTasksPaginated, resolveView } from "./query/index.js";
@@ -354,6 +357,7 @@ export {
   UserProfileError,
   writeCurrentUserId,
 } from "./users/index.js";
+export { todayInZone } from "./utils/today.js";
 export type { CreateViewInput, DeleteViewOptions, EditViewInput } from "./views/index.js";
 export {
   archiveView,

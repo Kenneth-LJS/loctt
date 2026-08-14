@@ -1,11 +1,13 @@
-import { access,mkdtemp, readFile, rm } from "node:fs/promises";
+import { access,mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
+import { detectMachineTimezone, loadCalendarConfig } from "../config/calendar.js";
 import { parseQueriesConfig } from "../config/queries.js";
 import { parseWorkflowConfig } from "../config/workflow.js";
+import { resolveLocttDir } from "../paths/index.js";
 import { parseState } from "../state/state.js";
 import { initLoctt } from "./init.js";
 
@@ -136,5 +138,77 @@ describe("initLoctt", () => {
     expect(Number.isInteger(n)).toBe(true);
     expect(n).toBeGreaterThanOrEqual(1);
     expect(result.created.some(f => f.endsWith(".schema-version"))).toBe(true);
+  });
+});
+
+describe("initLoctt — calendar.yaml", () => {
+  // The timezone decides what "today" means for `due_date < today`,
+  // so it's recorded at init as an explicit committed value rather
+  // than re-detected per machine on every read.
+  it("writes calendar.yaml with the machine timezone by default", async () => {
+    const root = await mkdtemp(join(tmpdir(), "loctt-init-tz-"));
+    try {
+      await initLoctt(root, { docs: false });
+      const cfg = await loadCalendarConfig(resolveLocttDir(root));
+      expect(cfg.timezone).toBe(detectMachineTimezone());
+      expect(cfg.working_days).toEqual([1, 2, 3, 4, 5]);
+      expect(cfg.holidays).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("honours an explicit --timezone", async () => {
+    const root = await mkdtemp(join(tmpdir(), "loctt-init-tz-"));
+    try {
+      await initLoctt(root, { docs: false, timezone: "Asia/Singapore" });
+      const cfg = await loadCalendarConfig(resolveLocttDir(root));
+      expect(cfg.timezone).toBe("Asia/Singapore");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // serializeCalendarConfig doesn't validate, so without this check
+  // init would write a calendar.yaml that every later load rejects.
+  it("rejects an unknown timezone before creating anything", async () => {
+    const root = await mkdtemp(join(tmpdir(), "loctt-init-tz-"));
+    try {
+      await expect(
+        initLoctt(root, { docs: false, timezone: "Not/AZone" }),
+      ).rejects.toThrow(/invalid timezone/);
+      // Staging is atomic — a rejected init leaves no .loctt behind.
+      await expect(stat(resolveLocttDir(root))).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports calendar.yaml among the created files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "loctt-init-tz-"));
+    try {
+      const result = await initLoctt(root, { docs: false });
+      expect(result.created.some(p => p.endsWith("calendar.yaml"))).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("loadCalendarConfig — absent file", () => {
+  // calendar.yaml is workspace-shared and committed, so the fallback
+  // must not vary by machine: two people on one tracker have to get
+  // the same answer from the same saved view.
+  it("defaults to UTC rather than the machine timezone", async () => {
+    const root = await mkdtemp(join(tmpdir(), "loctt-cal-absent-"));
+    try {
+      await initLoctt(root, { docs: false });
+      const locttDir = resolveLocttDir(root);
+      await rm(join(locttDir, "config", "calendar.yaml"), { force: true });
+      const cfg = await loadCalendarConfig(locttDir);
+      expect(cfg.timezone).toBe("UTC");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
