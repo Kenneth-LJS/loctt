@@ -37,11 +37,11 @@ The downside: every task update is a commit on your main branch. If you reorder 
 
 LocTT can sync your tasks through Git **without** putting them on your main branch. You run `loctt git enable`, and from then on:
 
-- `loctt publish` pushes your task state to a dedicated `.loctt` branch in the same repo
-- `loctt sync` pulls task state from that branch into your working copy
+- `loctt git publish` pushes your task state to a dedicated `loctt` branch in the same repo
+- `loctt git sync` pulls task state from that branch into your working copy
 - Your main branch stays clean — `.loctt/` is gitignored in normal day-to-day work
 
-Think of the `.loctt` branch like GitHub Pages' `gh-pages` branch: same repo, parallel history, separate purpose. Your code lives on `main`; your tasks live on `.loctt`. They share infrastructure but not commit history.
+Think of the `loctt` branch like GitHub Pages' `gh-pages` branch: same repo, parallel history, separate purpose. Your code lives on `main`; your tasks live on `loctt`. They share infrastructure but not commit history.
 
 Good for:
 - Teams who want shared tasks without polluting code history
@@ -58,12 +58,12 @@ Perfectly valid. Add `.loctt/` to `.gitignore` and use LocTT as a purely local t
 
 ## Why publish/sync exists at all
 
-The first time you see `loctt publish` and `loctt sync`, it's reasonable to ask: "isn't this just `git push` and `git pull` with extra steps?"
+The first time you see `loctt git publish` and `loctt git sync`, it's reasonable to ask: "isn't this just `git push` and `git pull` with extra steps?"
 
 Sort of, but not quite. The reason LocTT has its own sync commands is that **the local data you work with and the data that gets shared are intentionally different things**. Specifically:
 
 - Your local `.loctt/` includes machine-specific state — which user you're acting as, whether git sync is enabled on _this_ machine, which commit you last synced from. None of that should be shared.
-- The shared `.loctt` branch contains only the tracker's "public" state — tasks, config, users, etc.
+- The shared `loctt` branch contains only the tracker's "public" state — tasks, config, users, etc.
 - When you publish or sync, LocTT decides what crosses the boundary, handles key collisions (what if two people created `T-42` at the same time?), and runs the 3-way merge.
 
 You _could_ do this with raw Git if you wanted. The publish/sync commands just make it routine instead of fiddly.

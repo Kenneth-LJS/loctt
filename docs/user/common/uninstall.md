@@ -36,11 +36,12 @@ If you added `.loctt/` to your `.gitignore`, remove that line.
 
 ## 5. Remove git sync branch
 
-If you enabled git sync, a `.loctt` branch exists in your repo. To remove it:
+If you enabled git sync, a `loctt` branch exists in your repo (or whatever
+you set `git.branch` to). To remove it:
 
 ```bash
-git branch -D .loctt              # Delete local branch
-git push origin --delete .loctt   # Delete remote branch (if pushed)
+git branch -D loctt              # Delete local branch
+git push origin --delete loctt   # Delete remote branch (if pushed)
 ```
 
 ## 6. Uninstall the CLI

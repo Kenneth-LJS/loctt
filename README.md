@@ -52,7 +52,7 @@ That's what LocTT is.
 - **MCP server** — AI agents read and manage tasks through structured tools
 
 **Optional Git sync**
-- Publish task state to a dedicated `.loctt` branch
+- Publish task state to a dedicated `loctt` branch
 - Pull changes from other machines, with automatic 3-way reconciliation
 - Detects and resolves key collisions across machines
 
@@ -230,9 +230,10 @@ Everything is customizable in `.loctt/config/workflow.yaml`: statuses, prioritie
 - [Features](docs/user/features.md) — feature tour with links to each interface (Web UI, MCP, CLI)
 
 **By interface:**
-- [Web UI features](docs/user/ui/features.md)
-- [MCP features](docs/user/mcp/features.md) and [MCP reference](docs/user/mcp/reference.md)
-- [CLI features](docs/user/cli/features.md) and [CLI reference](docs/user/cli/reference.md)
+- [Features](docs/user/features.md) — what LocTT does, and which interfaces support each capability
+- [CLI reference](docs/user/cli/reference.md)
+- [MCP reference](docs/user/mcp/reference.md)
+- [Web UI spec](docs/user/ui/features.md) — the target UI; only the list view ships today
 
 **Cross-cutting:**
 - [Configuration](docs/user/common/configuration.md)

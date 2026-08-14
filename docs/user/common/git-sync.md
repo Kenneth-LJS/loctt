@@ -10,7 +10,9 @@ loctt git disable    # Disable git sync
 loctt git status     # Show sync status
 ```
 
-Git-backed mode uses a dedicated `loctt` branch managed through a sparse worktree. Do not manually modify this branch.
+Git-backed mode uses a dedicated `loctt` branch, managed through a temporary
+worktree under `.loctt/local/`. Your own branch, working tree, and checked-out
+files are never touched. Do not manually modify the `loctt` branch.
 
 ## Operations
 
@@ -20,7 +22,18 @@ Git-backed mode uses a dedicated `loctt` branch managed through a sparse worktre
 loctt git publish
 ```
 
-Pushes local `.loctt/` state into the canonical `loctt` branch. If both local and remote state changed since the last sync, reconciliation runs automatically before the push.
+Mirrors local `.loctt/` state onto the `loctt` branch — local is canonical,
+so anything on the branch that is not in `.loctt/` is removed.
+
+If the branch already exists and holds content LocTT did not write, the first
+publish **refuses** rather than overwriting it, and tells you which files are
+in the way. Either pick a different branch:
+
+```
+loctt config set git.branch loctt-tasks
+```
+
+…or delete the existing branch if it is no longer needed.
 
 ### Sync
 
@@ -32,38 +45,62 @@ Pulls canonical `loctt` branch state into the local workspace. If the remote has
 
 ## How Sync Works
 
-Both `publish` and `sync` use a 3-way comparison:
+`sync` uses a 3-way comparison, per file:
 
-- **Base** — state at the last synced commit
+- **Base** — state at the last synced commit (`last_synced_commit`)
 - **Local** — current local `.loctt/` state
 - **Remote** — current `loctt` branch state
 
+The base is what makes the difference between "the branch deleted this file"
+and "I created this file locally" — the two look identical without it. When
+no base is available (a first sync, or rewritten history), sync will not
+delete anything it cannot prove was deleted deliberately.
+
+Per file, sync:
+
+- **takes the branch version** when only the branch changed it, or when the
+  file is new on the branch
+- **keeps the local version** when only you changed it, when you created it
+  since the last sync, or when it is identical either way
+- **deletes it locally** when the branch deleted it since the base
+- **stops with a conflict** when both sides changed the same file differently
+
+`.schema-version` is never taken from the branch. Schema changes travel
+through `loctt migrate`, so a machine running a newer LocTT cannot push a
+version bump onto one running an older release.
+
 ### Conflict Resolution
 
-Reconciliation runs automatically when both sides diverged. If only one side changed a field, that side wins. If both changed to the same value, the shared value wins. If both changed differently, it's a conflict — see below for the per-field handling.
+When both sides changed the same file since the last sync, `sync` **aborts
+without writing anything** and names the conflicting files. Your local files
+are left exactly as they were.
 
-**Auto-mergeable fields:**
-- `relationships` — merged by union of `(type, target)` pairs
-- `key_history` — merged by union
-- Custom fields — merged when different field keys were changed
+Resolve by making one side match the other — edit locally, or check out the
+`loctt` branch and edit there — then re-run `loctt git sync`.
 
-**Conflict fields** (when changed differently on both sides):
-- `title`, `status`, `parent`, `task_type`, `priority`
-- `start_date`, `due_date`
-- Same custom field key changed to different values
-
-When a true conflict exists, `publish` / `sync` exits with a clear error pointing at the conflicting tasks and fields. Resolve by editing the values on one side to match the other, then re-run.
+> **Field-level merging is not implemented yet.** The plan is for two edits
+> to *different fields of the same task* to merge automatically
+> (`relationships` and `key_history` by union, disjoint custom fields
+> side-by-side), with only same-field disagreements reported as conflicts.
+> Today any two edits to the same file conflict, even when they touch
+> unrelated fields. The merge helpers exist in `packages/core/src/git/reconcile.ts`
+> but are not yet wired into the sync path.
 
 ### Rekeying
 
-After reconciliation, if multiple tasks claim the same key, a rekey pass runs:
+> **Not implemented yet.** `rekeyCollisions` exists in
+> `packages/core/src/git/reconcile.ts` and is unit-tested, but no sync path
+> calls it. Until it is wired up, two clones that each create a task while
+> offline can both claim the same key; the second one to sync will hit a
+> conflict on `state.yaml` rather than being rekeyed automatically.
+
+The intended behaviour, once reconciliation lands: if multiple tasks claim
+the same key after a merge, a rekey pass runs.
 
 1. Tasks are grouped by conflicting key
 2. The task with the earlier `created_at` keeps the key (ULID `id` breaks ties)
 3. Remaining tasks get new keys from `state.yaml`
 4. Old keys are preserved in `key_history` and remain searchable
-
-Both `publish` and `sync` print a summary before rekeying or applying reconciled changes.
 
 ## Local Sync State
 

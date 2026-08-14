@@ -30,7 +30,7 @@ features use the on-disk conventions documented here so that:
 | Block KaTeX | `$$\nexpr\n$$` | LocTT extension |
 | Superscript | `^text^` | Pandoc-style |
 | Subscript | `~text~` | Pandoc-style (single tilde — distinct from `~~strikethrough~~`) |
-| Mention | `@user:<uuid>` | LocTT extension; renderer resolves to display name |
+| Mention | `@user:<uuid>` | LocTT extension; renderer resolves to display name. **Spec only — see below** |
 | Task reference | `T-123` | Autolinked at render time. No on-disk syntax — bare keys are detected and linked |
 | Image embed | `![alt](attachments/<name>)` | Standard markdown |
 | Video / audio embed | `![alt](attachments/<name>)` | Standard markdown image syntax; renderer dispatches by MIME |
@@ -106,18 +106,39 @@ extension syntax), the editor:
 
 This prevents the editor from silently dropping content on save.
 
+> **Mention parsing does not match this spec.** The implemented regex
+> (`packages/core/src/task/comments.ts:51`) is `/@([\w\-.]+)/g` — it has no
+> `:`, so `@user:01J...` captures the literal token `user` rather than the
+> id, and the raw token is then stored as if it were a user id. It also
+> matches inside email addresses and code spans. Treat the table row above
+> as the target; the parser needs fixing to reach it.
+
 ## Save semantics
 
-The editor uses an explicit **Save** button — no autosave. One Save
-click sends one `POST /api/tasks/:ref/body` request, producing one
-`body_edited` history entry. The editor surfaces:
+The editor **autosaves** after roughly 1.5s of idle typing, and also on
+blur. `Ctrl/Cmd+S` forces an immediate save.
 
-- A "unsaved changes" indicator while typing.
-- A warn-on-navigate-away when there are unsaved changes.
-- `Ctrl/Cmd+S` keyboard shortcut.
+Each save sends one `POST /api/tasks/:ref/body` request. Consecutive
+`body_edited` history entries by the same actor within a 15-minute window
+are **coalesced into one entry**
+(`packages/core/src/task/history.ts:12`, `COALESCEABLE_KINDS` at `:24`),
+so a long editing session produces one activity row rather than dozens.
+
+The editor surfaces:
+
+- A saving / saved indicator.
+- A warn-on-navigate-away while a save is in flight or has failed.
+- `Ctrl/Cmd+S` to save immediately.
 
 Markdown source mode and WYSIWYG mode share the same backing buffer
-and Save flow.
+and save flow.
+
+> An earlier revision of this document specified an explicit Save button
+> with no autosave. That contradicted both the history-coalescing window
+> (which has nothing to coalesce under explicit save — it would merge two
+> deliberate saves minutes apart) and the UI acceptance criteria in
+> `docs/dev/ui-test-cases/flow-tasks.md`. Autosave is the intended
+> behaviour.
 
 ## Features dropped (not representable in markdown)
 

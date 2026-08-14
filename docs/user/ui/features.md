@@ -1,6 +1,6 @@
 # Web UI features
 
-A narrative tour of LocTT features through the web UI. For the same features through other interfaces, see [CLI features](../cli/features.md) or [MCP features](../mcp/features.md).
+A narrative tour of LocTT features through the web UI. For the same features through other interfaces, see [Features](../features.md).
 
 Start the UI with `loctt ui`. By default it serves on [http://localhost:4321](http://localhost:4321) and opens a browser window. Press Ctrl-C in the terminal to stop. Pass `--no-open` to skip the browser launch, or `--port <n>` to use a different port.
 
@@ -22,7 +22,7 @@ Concurrent edits are append-friendly — the UI fetches the latest body before s
 
 ## Relationships
 
-The detail panel has a **Relationships** section showing all incoming and outgoing links grouped by kind (`blocks`, `depends_on`, `parent`, custom kinds). Add a link with **+ Add link**, pick the kind, then start typing a task title or key to autocomplete the target.
+The detail panel has a **Relationships** section showing all incoming and outgoing links grouped by kind (`blocks`, `parent`, `relates_to`, custom kinds). Add a link with **+ Add link**, pick the kind, then start typing a task title or key to autocomplete the target.
 
 Drag-and-drop on the board to reorder subtasks under a parent — the order is persisted via the relationship rank.
 
@@ -106,7 +106,7 @@ To add or edit a custom field, edit `.loctt/config/workflow.yaml`. The UI picks 
 **Settings → Git sync** has the controls:
 
 - **Enable / Disable** — turn git-backed mode on or off
-- **Publish** — push local state to the `.loctt` branch
+- **Publish** — push local state to the `loctt` branch
 - **Sync** — pull remote state
 - **Status** — last synced commit, drift indicators
 

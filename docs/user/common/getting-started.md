@@ -32,7 +32,7 @@ Whether to commit `.loctt/` depends on your setup:
 
 **Committing `.loctt/` (shared tasks):** If your team should see the tasks, commit the directory. This works well for small teams or solo projects where tasks are part of the repo.
 
-**Using git sync instead:** If you enable [git sync](git-sync.md), task data lives on a dedicated `.loctt` branch — not in your working tree. In this case, add `.loctt/` to `.gitignore` so the local working copy doesn't get committed to your main branch:
+**Using git sync instead:** If you enable [git sync](git-sync.md), task data lives on a dedicated `loctt` branch — not in your working tree. In this case, add `.loctt/` to `.gitignore` so the local working copy doesn't get committed to your main branch:
 
 ```gitignore
 .loctt/

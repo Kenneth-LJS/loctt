@@ -588,7 +588,7 @@ No parameters. Returns JSON array of `{key, value, type, description}` for every
 
 ### `enable_git`
 
-Enables git-backed mode for this tracker. Sets up a dedicated `loctt` branch on a sparse worktree. One-time infrastructure setup — only call when explicitly asked. No parameters.
+Enables git-backed mode for this tracker. Sets up a dedicated `loctt` branch, published via a temporary worktree. One-time infrastructure setup — only call when explicitly asked. No parameters.
 
 ### `disable_git`
 
