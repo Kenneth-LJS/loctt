@@ -72,4 +72,36 @@ describe("GET /api/tasks (sort + pagination)", () => {
     expect(items).toHaveLength(2);
     expect(total).toBe(3);
   });
+
+  it("applies a structured status filter (single value)", async () => {
+    // Set one task's status so a status filter narrows the set. The
+    // default workflow's first status is the create-time default; move
+    // "Cherry" to a different status, then filter to it.
+    const all = await list("sort=title&dir=asc");
+    const cherry = all.items.find(t => t.title === "Cherry");
+    const otherStatus = (await (await fetch(`${base}/api/workflow`)).json() as {
+      statuses: { key: string }[];
+    }).statuses.find(s => s.key !== cherry?.status)?.key;
+    expect(otherStatus).toBeDefined();
+    await fetch(`${base}/api/tasks/${cherry!.key}/set`, {
+      method: "POST",
+      headers: csrf,
+      body: JSON.stringify({ field: "status", value: otherStatus }),
+    });
+
+    const filtered = await list(`status=${otherStatus}`);
+    expect(filtered.items.map(t => t.title)).toEqual(["Cherry"]);
+  });
+
+  it("excludes archived tasks by default, includes them with archived=true", async () => {
+    const all = await list("sort=title&dir=asc");
+    const apple = all.items.find(t => t.title === "Apple");
+    await fetch(`${base}/api/tasks/${apple!.key}/archive`, { method: "POST", headers: csrf });
+
+    const visible = await list("");
+    expect(visible.items.map(t => t.title)).not.toContain("Apple");
+
+    const withArchived = await list("archived=true");
+    expect(withArchived.items.map(t => t.title)).toContain("Apple");
+  });
 });

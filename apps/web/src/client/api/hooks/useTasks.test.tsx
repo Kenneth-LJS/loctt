@@ -35,23 +35,31 @@ function calledUrl(): string {
 }
 
 describe("tasksParamsFromSearch", () => {
-  it("maps q/view/sort/dir and the first project entry", () => {
+  it("maps q/view/sort/dir and the multi-value filters", () => {
     const params = tasksParamsFromSearch({
       q: "text ~ bug",
       view: "v1",
       project: ["p_web", "p_api"],
+      status: ["in_progress"],
       sort: "priority",
       dir: "desc",
       page: 2,
+      archived: true,
     });
     expect(params).toEqual({
       query: "text ~ bug",
       view: "v1",
-      project: "p_web", // single until M1.3 multi-select
+      project: ["p_web", "p_api"],
+      status: ["in_progress"],
       sort: "priority",
       dir: "desc",
       page: 2,
+      archived: true,
     });
+  });
+
+  it("drops empty filter arrays", () => {
+    expect(tasksParamsFromSearch({ project: [], status: ["x"] })).toEqual({ status: ["x"] });
   });
 
   it("omits absent params", () => {
@@ -80,6 +88,18 @@ describe("useTasks", () => {
     const url = calledUrl();
     expect(url).toContain("limit=50");
     expect(url).toContain("offset=0");
+  });
+
+  it("sends structured filters as comma-joined params plus archived", async () => {
+    const { result } = renderHook(
+      () => useTasks({ status: ["a", "b"], project: ["p1"], archived: true }),
+      { wrapper: wrapper() },
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const url = calledUrl();
+    expect(url).toContain("status=a%2Cb"); // a,b
+    expect(url).toContain("project=p1");
+    expect(url).toContain("archived=true");
   });
 
   it("url-encodes the query param", async () => {
