@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -579,5 +579,48 @@ describe("MCP executeTool", () => {
       const body = await getTaskJson("T-1");
       expect(body).not.toHaveProperty("relationships");
     });
+  });
+});
+
+describe("list_tasks — stale saved view warning", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-mcp-warn-"));
+    await initLoctt(root);
+    await writeFile(
+      join(resolveLocttDir(root), "config", "queries.yaml"),
+      "queries:\n"
+      + "  - id: 01HSV0000000000000STALE4\n"
+      + "    name: stale\n"
+      + "    query: fields.deleted_field = x\n",
+      "utf-8",
+    );
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  // An agent has no stderr to read. A bare short list would read as a
+  // definitive answer, so the incompleteness goes in the response.
+  it("surfaces the warning in the response body", async () => {
+    const result = await executeTool(root, "list_tasks", { view: "stale" });
+    const body = JSON.stringify(result);
+    expect(body).toContain("unknown custom field");
+    expect(body).toContain("Results may be incomplete");
+  });
+
+  it("returns a clean body for a healthy view", async () => {
+    await writeFile(
+      join(resolveLocttDir(root), "config", "queries.yaml"),
+      "queries:\n"
+      + "  - id: 01HSV0000000000000FINE02\n"
+      + "    name: fine\n"
+      + "    query: status != done\n",
+      "utf-8",
+    );
+    const result = await executeTool(root, "list_tasks", { view: "fine" });
+    expect(JSON.stringify(result)).not.toContain("Results may be incomplete");
   });
 });
