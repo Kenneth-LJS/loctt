@@ -257,22 +257,46 @@ which the shipped default violated and nothing enforced. That claim has
 already been corrected to describe reality; this item replaces the
 mechanism.
 
-**DECIDED — drop `structural`, add `hierarchy`.**
+**DECIDED — drop `structural`, add a `graph` enum.**
 
-- `hierarchy: boolean` on `RelationshipDef`, replacing `structural`
-  entirely.
-- **Any number of kinds may be `hierarchy: true.`**
-- `hierarchy` gates **both** effects: this kind may be drawn as a tree,
-  **and** cycles are forbidden on it. Both shipped kinds qualify — a
-  `parent` cycle is nonsense and a `blocks` cycle is a deadlock.
-- Shipped default: `blocks` and `parent` both `hierarchy: true`.
-  Symmetric kinds like `relates_to` are never hierarchy — a cycle there is
-  meaningless.
+Revised during phase 2. The earlier `hierarchy: boolean` decision coupled
+two separable things: forbidding cycles, and being drawable as a tree.
+`blocks` wants the first and not the second — a blocks cycle is a
+deadlock, but nobody draws a blocks tree. A single boolean forces them
+together; two booleans make the incoherent combination
+(`hierarchy` without `acyclic`) expressible and needing validation.
+
+An enum makes it unspellable instead:
+
+```yaml
+graph: none      # no restriction (default; omit the field)
+graph: acyclic   # cycles rejected
+graph: tree      # cycles rejected AND drawable as a tree axis
+```
+
+- `graph?: "none" | "acyclic" | "tree"` on `RelationshipDef`, replacing
+  `structural` entirely.
+- **Optional.** Absent means `none`, so the four unconstrained shipped
+  kinds (`relates_to`, `clones`, `duplicates`, `causes`) need no line —
+  the field appears only where a constraint exists, matching how `ranked`
+  and `inverse` already behave.
+- **Any number of kinds may be `tree`.** The axis is chosen per view, not
+  by config order.
+- Shipped default: `parent` → `tree`, `blocks` → `acyclic`. So `blocks`
+  keeps its deadlock protection but no longer pollutes the tree-axis
+  picker.
+- **Hard break, no compatibility shim.** `structural` is rejected with an
+  error naming `graph` and the value to use. The schema is `.strict()`, so
+  an unknown key already fails; the message makes the fix obvious. No
+  external users, so no migration — consistent with 0b and item 0.
 
 **Tree axis is a view parameter, not config.** Tree/board/timeline views
-take the relationship key to draw; `getChildren` / `buildTree` take it as
-an argument instead of searching config for the first match. No new
-workflow-level setting.
+take the relationship key to draw; `getChildren` / `getParents` /
+`buildTree` take it as a **required** argument instead of searching config
+for the first match. No default: an omitted axis is a compile error rather
+than a silent guess, which is the failure mode this item exists to remove.
+All three are exported from core but called from no production code today,
+so making it required costs only test signatures.
 
 **UI consequence:** with no `hierarchy` relationship defined, a tree view
 is impossible — **disable the button with a tooltip** explaining that no
@@ -280,6 +304,13 @@ hierarchy relationship is configured, rather than rendering an empty tree.
 
 **Also fixes:** the `parent` alias hardcoding `"parent"`
 (`evaluator.ts:305`) gets a config-driven source — already noted in item 0.
+
+**Verified before starting:** `parseWorkflowConfig(defaultWorkflowYaml())`
+→ `relationships.find(r => r.structural).key === "blocks"`, so on a
+default tracker `getChildren` really does return blocked tasks rather than
+children. Not user-visible yet: `getChildren`, `getParents` and
+`buildTree` are exported from core and called from **no production code** —
+only tests. This is fix-before-first-use, not a live defect.
 
 ### 0d. Delete the superseded root planning docs — ✅ DONE (`781e9a1`)
 **Blocked by:** committing the extraction first. **Size:** trivial.
