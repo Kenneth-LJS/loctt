@@ -640,43 +640,62 @@ the explaining cases: **SHL-32 (silent) is wrong** and gets corrected;
 **PRU-14 and NEW-16**, which assert preference drift is silently dropped,
 also contradict P7 and need correcting. One rule, no exceptions.
 
-### 0l. 15 further UI contradictions — recorded, pending review
-**Blocked by:** your sign-off on each. **Size:** small (doc edits).
+### 0l. 15 UI contradictions — ✅ ALL RESOLVED
+**Blocked by:** nothing. **Size:** small (doc edits) + two spawned items.
 
-A fresh independent sweep of all 18 flow docs found 15 more beyond the two
-already resolved. Full evidence with quoted text from both sides is in
+Reviewed one by one. Evidence in
 `scratchpad/ui-contradictions-sweep.md`.
 
-**Blockers:**
+**A correction on method.** I first presented N1/N4/N6 as "settled by
+code". That conflated *what is true today* with *what is right*. Re-judged
+on merit, two of the three flipped:
 
-| # | Contradiction | Recommended |
+| # | Contradiction | Resolution |
 |---|---|---|
-| **N1** | `.schema-version` missing gets three different answers — SHL-34 vs XS-33 vs SET-30 — with a `kind` name collision (`unknown` is already SHL-38's) and different next actions. SHL-34 explicitly forbids offering reinitialize "which would risk data"; the others offer `loctt init`. | **SHL-34** — it carries the reasoned justification and the four-remedies framing |
-| **N3** | BLK-12 says a bulk op clears the selection; ERR-13/ERR-25 say failures are retained so the user can retry exactly those. | **ERR-13** — reasons from the `BulkResult` contract |
-| **N4** | SHL-13 says an outdated tracker stays navigable; XS-34/XS-35 say data views stay gated. | **SHL-13** — NEW-41 and SET-15 both presuppose it, making XS-34/35 the outlier |
+| **N1** | `.schema-version` missing: SHL-34 vs XS-33 vs SET-30 | **SHL-34.** Banner + `loctt migrate`, never reinitialize — a `.loctt/` holding tasks but no version file is *damaged*, not empty, and routing it to an init wizard risks destroying data. **The code is wrong** → item 0n. |
+| **N2** | Four schema kinds or five | **Five**: `missing`, `future`, `outdated`, `unknown`, + the sentinel (a blocking screen, not a banner kind). Fix §C.1's heading, A11Y-32's count, repoint ERR-32 at SHL-34–38. |
+| **N3** | Selection after a bulk op | **Clear on full success; retain the failed subset otherwise.** `BulkResult` splits `succeeded`/`failed` precisely because partial success is normal. BLK-12/BLK-39 get the qualifier; BLK-48 reworded to be about *reapplying* a stale selection. |
+| **N4** | Outdated tracker browsable or gated | **Neither doc was right.** `server.ts:2089` 409s *every* `/api/` route on mismatch. Spec: shell and nav render, banner always visible, every data request 409s as an explained error. Rewrite SHL-13 and XS-34/35. |
+| **N5** | Does `c` open create | **`n` only.** Drop `c` from A11Y-1 and A11Y-11. One binding, one action. |
+| **N6** | `name`+`id` vs `label`+`key` | **`{id, name}`.** Not merely what the code does: MSL/SPR build real behaviour on id-identity (non-uniqueness, reference counts, remaps) while the other side is status/priority boilerplate. **BLK-8's "writes the config `key`" would produce wrong frontmatter.** |
+| **N7** | Project column vs `list_columns` | **Scope-driven exception.** Shown/hidden by active project scope regardless of `list_columns`; the stored setting is never mutated. Explicit carve-out added to LST-6 and LST-2. |
+| **N8** | Back from `/list` | Add "while in-app history remains" to SHL-15, matching LST-11. Behaviours already compatible; only the wording was over-broad. |
+| **N9** | "Load more" vs numbered pages | **Append (LST-13).** Rewrite BLK-19: after Load more the header checkbox governs all 100 loaded rows, indeterminate at 50/100. Keep LST-30 as URL-robustness, not a UI affordance. |
+| **N10** | Body-editor pre-fetch | **Conditional write** — one PUT carrying its base version, rejected server-side on mismatch. Satisfies XS-13, keeps TSK-15's "one save fires" literally true, and has no GET→PUT race window. |
+| **N11** | WIP over-cap indicator | Add A11Y-30's warning-glyph requirement to BRD-6; "colour/weight" alone is a weak non-colour carrier. |
+| **N12** | Zero-count badge | Drop "or is suppressed by a stated rule" from VUE-1 — no such rule exists anywhere, and it makes SHL-7 and ONB-9 untestable. |
+| **N13** | Inline label colour | Inline creation assigns a colour automatically (deterministic from the name). Otherwise MSL-22's drift surface fires on the app's own writes. |
+| **N14** | Symmetric relationship config | **`kind: "symmetric"`** is a real discriminator with a `superRefine` enforcing it. REL-3 right; SET-5's checkbox and SET-4's flag list wrong — the latter is rewritten by 0c anyway. |
+| **N15** | Bulk-archive Undo durability | Add A11Y-36's durable-fallback requirement to BLK-10. The fallback already exists (TSK-23/LST-12); only the assertion was missing. |
 
-**Majors:** N2 (four schema kinds or five), **N6** (`name`+`id` vs
-`label`+`key` for milestones/labels/sprints — **already settled by code:
-all three are `{id, name}`; the docs using `label`/`key` are simply wrong,
-same stale key-era vocabulary as the reference docs**), N5 (`c` create
-shortcut absent from flow-task-create's exhaustive entry-point list), N7
-(project column vs `list_columns`), N8 (Back from `/list`), N9 ("Load
-more" vs numbered pages — BLK-19 asserts a page-2 header checkbox that
-cannot exist under append-style loading), N10 (body editor pre-fetch).
+**Fallout still to apply:** CMT-5 inherits CMT-4's ownership premise and
+under-specifies the edited marker; SET-4 uses SET-3's read-only "mirror"
+vocabulary and needs an editability bullet.
 
-**Minors:** N11 (WIP over-cap copy), N12 (zero-count badge), N13 (inline
-label colour), N14 (symmetric relationship config — likely the same
-`symmetric: true` vs `kind: symmetric` staleness), N15 (bulk-archive Undo
-durability).
+### 0n. SchemaBanner mishandles the `missing` kind
+**Blocked by:** nothing. **Size:** small. **Spawned by 0l/N1.**
 
-**Fallout from the resolved pair:** CMT-5 also inherits CMT-4's ownership
-premise and under-specifies the edited-marker (CMT-35 defines two
-different renderings). SET-16/SET-28/SET-34 survive SET-3's removal
-unchanged; **SET-4 uses SET-3's read-only "mirror" vocabulary** and needs
-an editability bullet.
+`SchemaBanner.tsx:22` returns `null` for `missing`, so the case at `:74` is
+**unreachable dead code**. Its docstring says missing "means an
+uninitialized tracker, which the bootstrap routes to the init wizard" —
+but `/init` is `<Stub name="/init" />` (`router/index.tsx:74`), so nothing
+routes anywhere.
 
-**Clean seams** (checked, consistent — need not be re-swept):
-board-vs-timeline drag semantics, onboarding-vs-list empty states.
+Per N1, `missing` on a `.loctt/` that holds tasks is a *damaged* tracker.
+It must show SHL-34's banner pointing at `loctt migrate`, and must not
+offer reinitialize.
+
+- Remove `missing` from the early return so `:74` becomes live
+- Correct the docstring
+- Confirm no `/init` redirect exists for this state
+
+### 0o. Pre-existing dependency vulnerabilities
+**Blocked by:** nothing. **Size:** unknown until triaged.
+
+`npm audit` in `apps/web` reports 8 (1 low, 5 high, 2 critical) — all in
+`concurrently`/`shell-quote`, `sharp`, `vite`, `postcss`, `esbuild`,
+`undici`. **None from TipTap**, which was installed clean. Noted so the
+count is not mistaken for fallout from this session.
 
 ### 1. `TaskResponse` carries resolved relationships
 **Blocked by:** nothing. **Blocks:** B14, and the UI relationships panel.
@@ -802,9 +821,15 @@ These leave no code trace, so the doc is the only record.
 **All resolved.** Every question from the original §4 has a decision, each
 recorded as a queue item in §2.
 
-One batch remains for review rather than decision: **item 0l** lists 15
-further UI contradictions with recommended resolutions and evidence. You
-asked to review those as a list rather than one at a time.
+**Item 0l is now resolved too** — all 15 contradictions walked through
+one at a time, each with a recorded decision. Two spawned new queue items
+(0n, 0o).
+
+**TipTap is installed** (`@tiptap/core`, `react`, `starter-kit`, and the
+four table packages, all 3.30.1), unblocking item 5 (B5 lossy-content
+guardrail). CodeMirror 6 and Playwright are still absent — both are still
+listed as stack, and four milestone gates have E2E bullets depending on
+Playwright.
 
 ---
 
