@@ -384,7 +384,9 @@ first-run, and the v1 polish (keyboard, errors, a11y) is done.
 - Loading + empty + error states swept across every view
 - a11y: focus traps in modals, aria-labels on icon buttons
 - Lighthouse pass on main views
-- README update; delete `temp-ui-mockups/`
+- README update. **Keep `temp-ui-mockups/`** — it is a design reference,
+  not scaffolding, and `tokens.css` is the upstream source of the app's
+  design tokens. See `temp-ui-mockups/README.md`.
 - **E2E**: full v1 happy-path
 
 ### 🚦 Milestone 4 review (v1 cut)
