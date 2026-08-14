@@ -263,3 +263,89 @@ describe("nested field access (CW-9)", () => {
     expect(evaluateQuery(query("status.category = in_progress"), weird, ctx)).toBe(false);
   });
 });
+
+/**
+ * `relationship.type` / `relationship.target` address an edge's own
+ * fields; `relationship.<kind>` filters by kind and compares the target.
+ * Both forms are documented in query-language.md.
+ */
+describe("relationship field queries", () => {
+  const relCtx = { resolveKey: (id: string) => (id === "01BBB" ? "T-10" : undefined) };
+
+  function relFm(rels: { type: string; target: string }[]): TaskFrontmatter {
+    return {
+      id: "01AAA", key: "T-1", title: "t",
+      created_at: "2026-01-01", updated_at: "2026-01-01",
+      relationships: rels,
+    } as TaskFrontmatter;
+  }
+
+  it("matches an edge by its type", () => {
+    const t = relFm([{ type: "blocks", target: "01BBB" }]);
+    expect(evaluateQuery(query("relationship.type = blocks"), t, relCtx)).toBe(true);
+    expect(evaluateQuery(query("relationship.type = parent"), t, relCtx)).toBe(false);
+  });
+
+  it("matches a target by key as well as stored id", () => {
+    const t = relFm([{ type: "blocks", target: "01BBB" }]);
+    expect(evaluateQuery(query("relationship.target = T-10"), t, relCtx)).toBe(true);
+    expect(evaluateQuery(query('relationship.target = "01BBB"'), t, relCtx)).toBe(true);
+  });
+
+  it("a symmetric edge matches from either side", () => {
+    // A holds relates_to -> B; B holds relates_to -> A. Neither is
+    // "source": each task stores its own outbound edge.
+    const a = relFm([{ type: "relates_to", target: "01BBB" }]);
+    const b = {
+      ...relFm([{ type: "relates_to", target: "01AAA" }]),
+      id: "01BBB", key: "T-10",
+    } as TaskFrontmatter;
+    const node = query("relationship.type = relates_to");
+    expect(evaluateQuery(node, a, relCtx)).toBe(true);
+    expect(evaluateQuery(node, b, relCtx)).toBe(true);
+  });
+
+  it("a directional edge matches only the side that holds it", () => {
+    const blocker = relFm([{ type: "blocks", target: "01BBB" }]);
+    const blocked = {
+      ...relFm([{ type: "blocked_by", target: "01AAA" }]),
+      id: "01BBB",
+    } as TaskFrontmatter;
+    const node = query("relationship.type = blocks");
+    expect(evaluateQuery(node, blocker, relCtx)).toBe(true);
+    expect(evaluateQuery(node, blocked, relCtx)).toBe(false);
+  });
+
+  it("!= means no edge matches, not some edge differs", () => {
+    const t = relFm([
+      { type: "blocks", target: "01BBB" },
+      { type: "parent", target: "01CCC" },
+    ]);
+    expect(evaluateQuery(query("relationship.type != blocks"), t, relCtx)).toBe(false);
+    expect(evaluateQuery(query("relationship.type != clones"), t, relCtx)).toBe(true);
+  });
+
+  it("supports in / not in", () => {
+    const t = relFm([{ type: "blocks", target: "01BBB" }]);
+    expect(evaluateQuery(query("relationship.type in (blocks, parent)"), t, relCtx)).toBe(true);
+    expect(evaluateQuery(query("relationship.type not in (clones, parent)"), t, relCtx)).toBe(true);
+  });
+
+  it("a task with no edges matches only negations", () => {
+    const t = relFm([]);
+    expect(evaluateQuery(query("relationship.type = blocks"), t, relCtx)).toBe(false);
+    expect(evaluateQuery(query("relationship.type != blocks"), t, relCtx)).toBe(true);
+  });
+
+  it("still supports the relationship.<kind> = <target> form", () => {
+    const t = relFm([{ type: "blocks", target: "01BBB" }]);
+    expect(evaluateQuery(query('relationship.blocks = "01BBB"'), t, relCtx)).toBe(true);
+    expect(evaluateQuery(query('relationship.blocks = "01ZZZ"'), t, relCtx)).toBe(false);
+  });
+
+  it("combines type and target on the same task", () => {
+    const t = relFm([{ type: "blocks", target: "01BBB" }]);
+    const node = query("relationship.type = blocks and relationship.target = T-10");
+    expect(evaluateQuery(node, t, relCtx)).toBe(true);
+  });
+});

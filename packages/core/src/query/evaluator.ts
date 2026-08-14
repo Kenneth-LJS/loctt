@@ -318,6 +318,52 @@ function evaluateParentAlias(
 }
 
 /**
+ * Evaluates `relationship.type` / `relationship.target` — the edge's own
+ * fields, as documented in query-language.md.
+ *
+ * Targets are compared against the task's **key** as well as its stored
+ * id, so `relationship.target = T-10` works with the reference a user
+ * actually types. Storage is by ULID; keys are the human-facing form.
+ *
+ * Note the asymmetry with negation: `!=` and `not in` mean "no edge
+ * matches", not "some edge doesn't match" — a task with both a `blocks`
+ * and a `parent` edge should not satisfy `relationship.type != blocks`.
+ */
+function evaluateRelationshipField(
+  fm: TaskFrontmatter,
+  field: "type" | "target",
+  op: string,
+  value: string | number | boolean | undefined,
+  listValues: string[] | undefined,
+  ctx: EvalContext,
+): boolean {
+  const rels = fm.relationships ?? [];
+  if (rels.length === 0) return op === "!=" || op === "not in";
+
+  const candidates = (rel: { type: string; target: string }): string[] => {
+    if (field === "type") return [rel.type];
+    // A target may be addressed by stored id or by current key.
+    const key = ctx.resolveKey?.(rel.target);
+    return key ? [rel.target, key] : [rel.target];
+  };
+
+  if (op === "in" || op === "not in") {
+    if (!listValues) return false;
+    const hasMatch = rels.some(r => candidates(r).some(c => listValues.includes(c)));
+    return op === "in" ? hasMatch : !hasMatch;
+  }
+
+  if (value === undefined) return false;
+
+  if (op === "!=") {
+    // "no edge matches", not "some edge differs"
+    return !rels.some(r => candidates(r).some(c => compareValues(c, "=", value)));
+  }
+
+  return rels.some(r => candidates(r).some(c => compareValues(c, op, value)));
+}
+
+/**
  * Evaluates a parsed query AST against a task's frontmatter.
  * Returns true if the task matches the query.
  *
@@ -343,7 +389,35 @@ export function evaluateQuery(
         return evaluateParentAlias(fm, node.op, resolved, ctx);
       }
 
-      // Handle relationship-based query: relationship.type syntax
+      // `relationship.type` and `relationship.target` address the edge's
+      // own fields rather than naming a kind. A workflow may legitimately
+      // declare a relationship kind called `type` or `target`; these
+      // reserved readings win, and `relationship.<kind>` still reaches the
+      // rest. See evaluateRelationshipField for the resolution order.
+      if (node.field === "relationship.type" || node.field === "relationship.target") {
+        const resolved = resolvePrimitive(node.value, ctx);
+        const items = node.op === "in" || node.op === "not in"
+          ? resolveList(node.value)?.map(v => {
+              const p = resolvePrimitive(v, ctx);
+              return p !== undefined ? String(p) : "";
+            })
+          : undefined;
+        if (node.op === "in" || node.op === "not in") {
+          if (!items) return false;
+        } else if (resolved === undefined) {
+          return false;
+        }
+        return evaluateRelationshipField(
+          fm,
+          node.field === "relationship.type" ? "type" : "target",
+          node.op,
+          resolved,
+          items,
+          ctx,
+        );
+      }
+
+      // Handle relationship-by-kind query: relationship.<kind> = <target>
       if (node.field.startsWith("relationship.")) {
         const relType = node.field.slice("relationship.".length);
         const rels = (fm.relationships ?? []).filter(r => r.type === relType);
