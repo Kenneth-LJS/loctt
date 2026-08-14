@@ -51,7 +51,53 @@ export type UsersList = z.infer<typeof UsersListSchema>;
  * not existence; if the referenced project has been deleted, callers
  * fall back gracefully and doctor reports the dangling reference.
  */
+/**
+ * Fields a board card can display, in the order `card_layout` lists them.
+ *
+ * The set is closed so a typo in hand-edited YAML is caught at load rather
+ * than silently rendering nothing. Title is always shown and is therefore
+ * not a member.
+ */
+export const CARD_LAYOUT_FIELDS = [
+  "key",
+  "status",
+  "priority",
+  "task_type",
+  "assignee",
+  "labels",
+  "due_date",
+  "estimate",
+  "milestone",
+  "sprint",
+] as const;
+export type CardLayoutField = (typeof CARD_LAYOUT_FIELDS)[number];
+
+/**
+ * Board-card field layout (CW-17): an **ordered array**, not a visibility
+ * map. Position in the array is the render order, so one field carries
+ * both concerns and drag-to-reorder (Q6) needs no second setting.
+ *
+ * Absent means "use the default layout". An explicit empty array means
+ * "show nothing but the title" — a deliberate choice, distinct from
+ * absence.
+ *
+ * Duplicates are rejected: a field appearing twice has no meaningful
+ * render order.
+ */
+export const CardLayoutSchema = z
+  .array(z.enum(CARD_LAYOUT_FIELDS))
+  .refine(fields => new Set(fields).size === fields.length, {
+    message: "card_layout must not repeat a field",
+  });
+export type CardLayout = z.infer<typeof CardLayoutSchema>;
+
+/** Body editor mode, persisted per user (D17). */
+export const EditorModeSchema = z.enum(["wysiwyg", "source"]);
+export type EditorMode = z.infer<typeof EditorModeSchema>;
+
 export const UserSettingsSchema = z.object({
   default_project: z.string().min(1).optional(),
+  card_layout: CardLayoutSchema.optional(),
+  editor_mode: EditorModeSchema.optional(),
 }).passthrough();
 export type UserSettings = z.infer<typeof UserSettingsSchema>;

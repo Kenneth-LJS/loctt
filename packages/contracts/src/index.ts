@@ -113,8 +113,18 @@ export {
   TaskFrontmatterSchema,
   TaskRelationshipSchema,
 } from "./task.js";
-export type { UserProfile, UserSettings, UsersList } from "./users.js";
+export type {
+  CardLayout,
+  CardLayoutField,
+  EditorMode,
+  UserProfile,
+  UserSettings,
+  UsersList,
+} from "./users.js";
 export {
+  CARD_LAYOUT_FIELDS,
+  CardLayoutSchema,
+  EditorModeSchema,
   UserProfileSchema,
   UserSettingsSchema,
   UsersListSchema,
