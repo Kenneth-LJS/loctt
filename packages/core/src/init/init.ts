@@ -2,6 +2,13 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { IanaTimezone } from "@loctt/contracts";
+
+import {
+  detectMachineTimezone,
+  getCalendarConfigPath,
+  serializeCalendarConfig,
+} from "../config/calendar.js";
 import { getProjectsConfigPath } from "../config/projects.js";
 import {
   getDocsDir,
@@ -32,6 +39,17 @@ export interface InitOptions {
   readonly projectName?: string;
   /** Whether to generate helper docs. Defaults to true. */
   readonly docs?: boolean;
+  /**
+   * Workspace IANA timezone written into calendar.yaml. Defaults to
+   * the initializing machine's zone.
+   *
+   * Recorded explicitly at init rather than detected on every read:
+   * calendar.yaml is workspace-shared and committed, so "today" must
+   * mean the same thing to everyone on the tracker. A caller can pass
+   * an explicit zone when the initializing machine isn't where the
+   * team actually works.
+   */
+  readonly timezone?: string;
 }
 
 export interface InitResult {
@@ -48,6 +66,16 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
   const prefix = options.prefix ?? "T-";
   const projectName = options.projectName ?? "Tasks";
   const genDocs = options.docs ?? true;
+  // Validate before staging anything: serializeCalendarConfig doesn't
+  // check, so an unknown zone would otherwise write a calendar.yaml
+  // that every subsequent load rejects.
+  const timezone = options.timezone ?? detectMachineTimezone();
+  const tzCheck = IanaTimezone.safeParse(timezone);
+  if (!tzCheck.success) {
+    throw new Error(
+      `invalid timezone "${timezone}": ${tzCheck.error.issues.map(i => i.message).join("; ")}`,
+    );
+  }
 
   if (prefix.length === 0) {
     throw new Error(`prefix must be non-empty`);
@@ -86,6 +114,22 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
 
     await writeFile(join(stageDir, "config", "queries.yaml"), defaultQueriesYaml(), "utf-8");
     created.push(getQueriesConfigPath(locttDir));
+
+    // Calendar. The timezone is semantic, not just Gantt shading — it
+    // decides what "today" means for `due_date < today` — so it's
+    // recorded here as an explicit committed value rather than being
+    // re-detected per machine on every read.
+    await writeFile(
+      join(stageDir, "config", "calendar.yaml"),
+      serializeCalendarConfig({
+        timezone,
+        first_day_of_week: 1,
+        working_days: [1, 2, 3, 4, 5],
+        holidays: [],
+      }),
+      "utf-8",
+    );
+    created.push(getCalendarConfigPath(locttDir));
 
     // Starting project list. From this point on the tracker has
     // multi-project support: more projects can be added via

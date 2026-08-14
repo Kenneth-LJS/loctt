@@ -2,8 +2,10 @@ import type { HistoryEntry, Task, TaskFrontmatter, WorkflowConfig } from "@loctt
 
 import type { ArchivedGuardConfigs } from "../config/archived-guard.js";
 import { assertNotArchivedReferences } from "../config/archived-guard.js";
+import { loadCalendarConfig } from "../config/calendar.js";
 import { validateTaskAgainstWorkflow } from "../config/validation.js";
 import { withStateLock } from "../state/lock.js";
+import { todayInZone } from "../utils/today.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 import { readField, toFrontmatter, toMutable } from "./mutable.js";
@@ -135,12 +137,21 @@ function isCompletedStatus(
 }
 
 /**
- * Returns today's date in ISO `YYYY-MM-DD` form. Used for
- * `completed_date` so the field reads as a calendar date rather
- * than a precise instant.
+ * Returns today's date in ISO `YYYY-MM-DD` form, in the workspace
+ * timezone. Used for `completed_date` so the field reads as a
+ * calendar date rather than a precise instant.
+ *
+ * Resolving in UTC would stamp yesterday's date on anything completed
+ * before 08:00 local in a UTC+8 workspace — and `completed_date`
+ * feeds burndown and "done this week" queries, so the off-by-one
+ * propagates.
  */
-function todayDateString(): string {
-  return new Date().toISOString().slice(0, 10);
+async function todayDateString(locttDir: string): Promise<string> {
+  try {
+    return todayInZone((await loadCalendarConfig(locttDir)).timezone);
+  } catch {
+    return todayInZone();
+  }
 }
 
 /** Options bag for setField. */
@@ -211,7 +222,7 @@ async function setFieldLocked(opts: SetFieldOptions): Promise<Task> {
       const wasCompleted = isCompletedStatus(task.frontmatter.status, workflowConfig);
       const isNowCompleted = isCompletedStatus(value, workflowConfig);
       if (isNowCompleted && !wasCompleted) {
-        patch["completed_date"] = todayDateString();
+        patch["completed_date"] = await todayDateString(opts.locttDir);
       } else if (!isNowCompleted && wasCompleted) {
         delete patch["completed_date"];
       }
@@ -454,7 +465,7 @@ async function setFieldsLocked(opts: SetFieldsOptions): Promise<Task> {
     const wasCompleted = isCompletedStatus(task.frontmatter.status, workflowConfig);
     const isNowCompleted = isCompletedStatus(newStatus, workflowConfig);
     if (isNowCompleted && !wasCompleted) {
-      patch["completed_date"] = todayDateString();
+      patch["completed_date"] = await todayDateString(opts.locttDir);
     } else if (!isNowCompleted && wasCompleted) {
       delete patch["completed_date"];
     }

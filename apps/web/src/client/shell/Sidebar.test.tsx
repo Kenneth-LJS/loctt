@@ -29,6 +29,7 @@ const INFO: TrackerInfoResponse = {
   nextKey: "WEB-8",
   schemaStatus: { kind: "current", version: 3 },
   cwd: "~/PDev/loctt",
+  today: "2026-08-14",
 };
 
 /** Routes a request path to a canned JSON body for the stubbed fetch. */

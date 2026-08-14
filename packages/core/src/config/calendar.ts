@@ -47,16 +47,24 @@ export function serializeCalendarConfig(config: CalendarConfig): string {
 }
 
 /**
- * Loads calendar.yaml. Returns a sensible default (system timezone
- * detected at parse, Mon-Fri working week, no holidays) when the
- * file is absent. Calendar is purely cosmetic for the timeline view
- * so a missing file shouldn't block anything.
+ * Loads calendar.yaml. Returns defaults (UTC, Mon-Fri working week,
+ * no holidays) when the file is absent; a missing file shouldn't
+ * block anything.
+ *
+ * The absent-file timezone is **UTC, not the machine's zone**. This
+ * config is workspace-shared and committed, so resolving it from
+ * whichever machine happened to read it would make query results
+ * ("due before today") vary by who ran them. `loctt init` writes the
+ * initializing machine's zone into the file, which makes it an
+ * explicit recorded value rather than an ambient one — so this
+ * fallback only applies to trackers created before that, or with the
+ * file deleted.
  */
 export async function loadCalendarConfig(locttDir: string): Promise<CalendarConfig> {
   const path = getCalendarConfigPath(locttDir);
   if (!(await fileExists(path))) {
     return {
-      timezone: defaultTimezone(),
+      timezone: "UTC",
       first_day_of_week: 1,
       working_days: [1, 2, 3, 4, 5],
       holidays: [],
@@ -83,7 +91,17 @@ export async function calendarConfigExists(locttDir: string): Promise<boolean> {
   return fileExists(getCalendarConfigPath(locttDir));
 }
 
-function defaultTimezone(): string {
+/**
+ * The machine's IANA timezone, or `"UTC"` when the runtime can't
+ * report one.
+ *
+ * Only for `loctt init`, which writes the result into calendar.yaml
+ * as an explicit, committed value. Do **not** call this to resolve
+ * "today" at read time: this config is workspace-shared, so deriving
+ * it per-machine would make the same saved view return different
+ * results for different people.
+ */
+export function detectMachineTimezone(): string {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   } catch {

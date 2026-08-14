@@ -86,7 +86,7 @@ export const TOOLS: readonly ToolDef[] = [
     },
     handler: async ({ locttDir }, args) => {
       const tasks = await loadAllTasks(locttDir);
-      const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
+      const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
       const projectFilter = args["project"] as string | undefined;
       const baseQuery = args["query"] as string | undefined;
       const view = args["view"] as string | undefined;
@@ -105,6 +105,7 @@ export const TOOLS: readonly ToolDef[] = [
           ...(limit !== undefined ? { limit } : {}),
           ...(projectFilter !== undefined ? { project: projectFilter } : {}),
           ...(includeArchived !== undefined ? { includeArchived } : {}),
+          ...(today !== undefined ? { today } : {}),
         },
         ...(queriesConfig !== undefined ? { queriesConfig } : {}),
         ...(workflowConfig !== undefined ? { workflowConfig } : {}),

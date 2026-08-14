@@ -13,11 +13,15 @@ export async function run(args: string[], root: string): Promise<void> {
   const projectKey = getArg(args, "--project-key");
   const projectLabel = getArg(args, "--project-label");
   const docs = !hasFlag(args, "--no-docs");
+  // Workspace timezone. Defaults to this machine's zone, recorded into
+  // calendar.yaml so it stays the same for everyone on the tracker.
+  const timezone = getArg(args, "--timezone");
   const result = await initLoctt(root, {
     prefix,
     docs,
     ...(projectKey ? { projectKey } : {}),
     ...(projectLabel ? { projectLabel } : {}),
+    ...(timezone ? { timezone } : {}),
   });
   console.log(`Initialized .loctt at ${result.locttDir}`);
   console.log(`Created ${result.created.length} files`);

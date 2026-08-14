@@ -76,7 +76,7 @@ export async function create(args: string[], root: string): Promise<void> {
 export async function list(args: string[], root: string): Promise<void> {
   const locttDir = resolveLocttDir(root);
   const tasks = await loadAllTasks(locttDir);
-  const { workflowConfig, queriesConfig } = await loadOptionalConfigs(locttDir);
+  const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
 
   let limit: number | undefined;
   const limitArg = getArg(args, "--limit");
@@ -103,6 +103,7 @@ export async function list(args: string[], root: string): Promise<void> {
       ...(limit !== undefined ? { limit } : {}),
       ...(projectFilter !== undefined ? { project: projectFilter } : {}),
       includeArchived: hasFlag(args, "--archived"),
+      ...(today !== undefined ? { today } : {}),
     },
     ...(queriesConfig !== undefined ? { queriesConfig } : {}),
     ...(workflowConfig !== undefined ? { workflowConfig } : {}),
