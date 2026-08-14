@@ -26,22 +26,21 @@ Set up a new `.loctt/` directory with default configuration in the current
 working directory. Does not require an existing tracker.
 
 ```
-loctt init [--prefix <prefix>] [--project-key <key>] [--project-label <label>]
+loctt init [--prefix <prefix>] [--project-label <label>]
            [--timezone <iana-tz>] [--no-docs]
 ```
 
 | Flag | Description |
 |---|---|
 | `--prefix <prefix>` | Key prefix for the initial project (default: `T-`) |
-| `--project-key <key>` | Key of the initial project (default derived from prefix) |
-| `--project-label <label>` | Human label for the initial project |
+| `--project-label <label>` | Name of the starting project (default: `Tasks`) |
 | `--timezone <iana-tz>` | Workspace timezone written to `calendar.yaml` (default: this machine's zone) |
 | `--no-docs` | Skip generating helper docs in `.loctt/docs/` |
 
 Example:
 
 ```
-loctt init --prefix BUG- --project-key bugs --project-label "Bug tracker"
+loctt init --prefix BUG- --project-label "Bug tracker"
 ```
 
 The workspace timezone decides what `today` means in queries such as
@@ -661,7 +660,7 @@ loctt user current
 ### Set up multiple projects
 
 ```
-loctt init --prefix WEB- --project-key web --project-label "Website"
+loctt init --prefix WEB- --project-label "Website"
 loctt project create api --prefix API- --label "API service"
 loctt project create infra --prefix INF- --label "Infra" --default
 loctt project list

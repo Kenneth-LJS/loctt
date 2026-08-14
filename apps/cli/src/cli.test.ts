@@ -649,6 +649,37 @@ describe("CLI commands", () => {
   });
 
   describe("CLI flag handling edge cases", () => {
+    it("init rejects the removed --project-key (exit 2)", async () => {
+      // Removing a flag from the parser is not enough on its own: the
+      // parser ignores what it doesn't recognize, so a script still
+      // passing --project-key would exit 0 while silently doing
+      // something other than what it says.
+      const errSpy = vi.mocked(console.error);
+      errSpy.mockClear();
+      process.exitCode = undefined;
+      process.argv = ["node", "loctt", "init", "--project-key", "bugs"];
+      await main();
+      expect(process.exitCode).toBe(2);
+      const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(stderr).toMatch(/unknown option --project-key/);
+      // The message must name what is accepted, or the user has to go
+      // read the docs that told them to pass the flag in the first place.
+      expect(stderr).toMatch(/--project-label/);
+    });
+
+    it("init still accepts every documented flag", async () => {
+      process.exitCode = undefined;
+      process.argv = [
+        "node", "loctt", "init",
+        "--prefix", "BUG-",
+        "--project-label", "Bug tracker",
+        "--timezone", "UTC",
+        "--no-docs",
+      ];
+      await main();
+      expect(process.exitCode).toBeUndefined();
+    });
+
     it("body --set and --append are mutually exclusive (exit 2)", async () => {
       await initLoctt(root);
       process.argv = ["node", "loctt", "create", "t"];

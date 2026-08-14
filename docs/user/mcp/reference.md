@@ -20,8 +20,7 @@ Bootstraps a new tracker at the server's working directory. Only call when the u
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `prefix` | string | no | Key prefix for tasks (default `T-`) |
-| `project_key` | string | no | Initial project key/slug (default `task`) |
-| `project_label` | string | no | Initial project label / display name (default `Task`) |
+| `project_label` | string | no | Name of the starting project (default `Tasks`) |
 | `no_docs` | boolean | no | If true, skip generating helper docs |
 
 Returns: prose summary with the resolved `.loctt` directory and the count of files written.

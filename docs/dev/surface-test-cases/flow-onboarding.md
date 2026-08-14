@@ -9,35 +9,39 @@ Gaps only. See [README.md](README.md) for conventions.
 
 ## A. Init options
 
-### ONB-C1 · blocker · P4 P10 · CLI MCP
+### ONB-C1 · blocker · P4 P10 · CLI MCP — **resolved**
 **Every accepted init option is honoured, or rejected.**
-`--project-key` and `--project-label` are silently discarded on **all
-three** surfaces — `apps/mcp/src/tools/tracker.ts:86-92` and
-`apps/web/src/server/server.ts:1405-1406` do the same conditional spread as
-the CLI. `InitRequestSchema` (`packages/contracts/src/service-schemas.ts:75-80`)
-*declares* both as public API while its docstring claims it "Mirrors core's
-`InitOptions`" — it does not, and because it is `.strict()` it rejects
-unknown keys while accepting and dropping these two. Verified:
-`initLoctt({projectLabel:"Bug tracker"})` yields `name: "Tasks"`. The worked
-example at `docs/user/cli/reference.md:44` is a command where two of three
-flags are no-ops. Zero tests repo-wide mention any spelling of the option.
+`--project-key` and `--project-label` were silently discarded on all three
+surfaces: core's option is `projectName`, and every surface passed
+`projectLabel`, which `InitOptions` does not have. A conditional spread is
+not excess-property-checked, so this cost nothing at the type level despite
+`strict` and `exactOptionalPropertyTypes` both being on.
+
+Resolved as recommended — `--project-key` removed (`projects.yaml` stores
+`{id, name, prefix}` with no slug, so it could never be honoured);
+`--project-label` implemented, mapping to `projectName`.
 
 - Running the reference's exact example yields
   `projects[0].name === "Bug tracker"`, not `"Tasks"`.
+  → `tests/integration/cli/init.test.ts`
 - `projects[0].prefix` is `BUG-`, proving the prefix path still works.
-- `state.yaml`'s `keys[<project id>].prefix` is `BUG-` and the id matches
-  `projects[0].id`.
+  → `tests/integration/mcp/init.test.ts`
+- `state.yaml` is keyed by the project id from `projects.yaml`.
+  → `tests/integration/mcp/init.test.ts`
 - MCP `init` with `project_label` produces the same project name.
-- Every key in the MCP tool's declared `inputSchema` maps to a field core
-  actually reads — no declared parameter is discarded.
-- If `--project-key` is *removed* rather than implemented (recommended —
-  `projects.yaml` has no slug field), passing it exits non-zero with an
-  unknown-option message and it no longer appears in `usage.ts` or the
-  reference. Either resolution is fine; silently accepting is not.
+  → `tests/integration/mcp/init.test.ts`
+- `--project-key` now exits 2 with an unknown-option message naming the
+  accepted flags, and appears in neither `usage.ts` nor the reference.
+  → `apps/cli/src/cli.test.ts`
 
 **Given** an empty directory, **when** the documented init example runs on
 each surface, **then** the project carries the given label and no accepted
 flag is discarded.
+
+**Note:** the CLI only validates unknown flags where a command opts in via
+`rejectUnknownFlags`. `init` does; other commands still ignore unrecognized
+flags silently. Extending that is a separate change — several commands take
+pass-through arguments that must not be rejected.
 
 ### ONB-C2 · major · P10 · CLI MCP
 **`--timezone` works everywhere init works.** It is CLI-only; MCP and web

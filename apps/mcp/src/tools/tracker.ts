@@ -66,8 +66,7 @@ export const TOOLS: readonly ToolDef[] = [
     description: "Bootstraps a new loctt tracker at the server's working directory if .loctt/ doesn't exist yet. Only call when explicitly asked to set up a new tracker — this is a one-time operation, not a routine task action.",
     inputSchema: {
       prefix: z.string().optional().describe("Key prefix for tasks (default 'T-')."),
-      project_key: z.string().optional().describe("Initial project key (slug; default 'task')."),
-      project_label: z.string().optional().describe("Initial project label (display name; default 'Task')."),
+      project_label: z.string().optional().describe("Name of the starting project (default 'Tasks')."),
       no_docs: z.boolean().optional().describe("If true, skip generating helper docs."),
     },
     // init runs *before* a tracker exists, so the schema-version
@@ -83,13 +82,11 @@ export const TOOLS: readonly ToolDef[] = [
         // doesn't exist — proceed
       }
       const prefix = args["prefix"] as string | undefined;
-      const projectKey = args["project_key"] as string | undefined;
       const projectLabel = args["project_label"] as string | undefined;
       const noDocs = (args["no_docs"] as boolean | undefined) ?? false;
       const result = await initLoctt(root, {
         ...(prefix !== undefined ? { prefix } : {}),
-        ...(projectKey !== undefined ? { projectKey } : {}),
-        ...(projectLabel !== undefined ? { projectLabel } : {}),
+        ...(projectLabel !== undefined ? { projectName: projectLabel } : {}),
         docs: !noDocs,
       });
       return text(`Initialized .loctt at ${result.locttDir}\nCreated ${result.created.length} files`);

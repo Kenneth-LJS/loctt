@@ -97,6 +97,36 @@ export function stripCwdArg(args: string[]): string[] {
   return out;
 }
 
+/**
+ * Throws a {@link UsageError} naming any `--flag` in `args` that isn't
+ * in `allowed`. Positionals, everything after `--`, and the global
+ * `--cwd` are ignored.
+ *
+ * Exists because a removed-but-still-documented flag is indistinguishable
+ * from a working one when the parser ignores what it doesn't recognize:
+ * `--project-key` was dropped from init, and without this an old script
+ * passing it would keep exiting 0 while doing something different from
+ * what its author wrote.
+ *
+ * Opt-in per command rather than global — some commands take
+ * pass-through arguments that must not be validated here.
+ */
+export function rejectUnknownFlags(args: string[], allowed: readonly string[]): void {
+  const known = new Set(allowed.map(f => f.replace(/^--?/, "")));
+  known.add("cwd");
+  for (const a of args) {
+    if (a === "--") break;
+    if (a === undefined || !a.startsWith("--")) continue;
+    const name = a.slice(2).split("=")[0];
+    if (name === undefined || name.length === 0) continue;
+    if (!known.has(name)) {
+      throw new UsageError(
+        `unknown option --${name}. Accepted: ${allowed.map(f => `--${f.replace(/^--?/, "")}`).join(", ")}.`,
+      );
+    }
+  }
+}
+
 const TRUTHY_FLAG_SUFFIXES = new Set(["true", "1", "yes", "on"]);
 const FALSY_FLAG_SUFFIXES = new Set(["false", "0", "no", "off"]);
 
