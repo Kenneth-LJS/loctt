@@ -90,7 +90,16 @@ export const TOOLS: readonly ToolDef[] = [
         lines.push(`Remote fetch failed: ${result.fetchError}`);
       }
       if (result.updated) {
-        lines.push("Synced loctt branch into local workspace");
+        // Report the shape of the change, not just that one happened —
+        // an agent needs to know whether files were removed.
+        const parts: string[] = [];
+        if (result.copied) parts.push(`${result.copied} file(s) updated`);
+        if (result.deleted) parts.push(`${result.deleted} file(s) removed`);
+        lines.push(
+          parts.length > 0
+            ? `Synced loctt branch into local workspace: ${parts.join(", ")}`
+            : "Synced loctt branch into local workspace",
+        );
       } else {
         lines.push("Already up to date");
       }
