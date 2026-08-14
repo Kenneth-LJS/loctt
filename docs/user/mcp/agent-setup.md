@@ -116,7 +116,7 @@ If you use relationships in specific ways, document them.
 
 - Use `parent`/`child` for breaking work into subtasks
 - Use `blocks` when one task literally cannot proceed until another is done
-- Use `depends_on` for softer dependencies (would benefit from, but not blocked)
+- Use `relates_to` for a soft association (related work, but not blocking)
 ```
 
 ## Full example

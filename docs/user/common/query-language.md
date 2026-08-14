@@ -70,12 +70,49 @@ today` compares dates, not instants.
 
 ## Relationship Filtering
 
-Queries can filter on relationship edges (type and target task):
+Queries can filter on a task's relationship edges. Two forms:
 
 ```
-relationship.type = blocks
-relationship.target = T-10
+relationship.type = blocks         # has an edge of this kind
+relationship.target = T-10         # has an edge pointing at this task
+relationship.blocks = T-10         # has a blocks edge to T-10
 ```
+
+`relationship.type` and `relationship.target` are reserved names that
+address an edge's own fields. `relationship.<kind>` names a kind directly
+and compares the target.
+
+### One edge, or any two edges?
+
+`relationship.<kind> = <target>` requires a **single edge** to match both
+the kind and the target. Combining the reserved names with `and` does
+not — each side is an independent filter over all the task's edges, so
+two *different* edges can satisfy them.
+
+Given a task with `blocks → T-20` and `parent → T-10`:
+
+| Query | Matches | Why |
+|---|---|---|
+| `relationship.blocks = T-10` | no | no single edge is *(blocks, T-10)* |
+| `relationship.type = blocks and relationship.target = T-10` | **yes** | one edge is `blocks`, another targets T-10 |
+
+Use the `relationship.<kind> = <target>` form when you mean "this specific
+edge".
+
+Targets match on either the stored ULID or the current key, so
+`relationship.target = T-10` works with the reference you actually type.
+
+**Each task stores its own outbound edges.** Linking `A blocks B` writes a
+`blocks` edge on A and a `blocked_by` edge on B, so:
+
+- `relationship.type = blocks` matches **A only** — B holds `blocked_by`.
+- For a symmetric kind (`kind: symmetric`, e.g. `relates_to`) both tasks
+  hold the same edge type, so both match. There is no source/target
+  distinction to worry about.
+
+Negation means *no* edge matches, not *some* edge differs — a task with
+both a `blocks` and a `parent` edge does **not** satisfy
+`relationship.type != blocks`.
 
 ## Saved Views
 
@@ -83,13 +120,15 @@ Define reusable queries in `.loctt/config/queries.yaml`:
 
 ```yaml
 queries:
-  - name: recent-open
+  - id: 01JCQ8ZKB4D6F8H0K2M4P6R8T0
+    name: recent-open
     query: archived != true and status != done
     sort:
       - field: updated_at
         direction: desc
 
-  - name: blocked
+  - id: 01JCQ8ZKD6G8J0L2N4Q6S8U0W2
+    name: blocked
     query: archived != true and status = blocked
     sort:
       - field: priority

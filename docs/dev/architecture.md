@@ -198,6 +198,6 @@ All three apps call `requireSupportedSchema` at startup and individual command b
 
 ## Git Integration
 
-Git-backed mode is optional. When enabled, LocTT publishes task data to a dedicated `.loctt` branch via a sparse worktree. Local-only files (`local/`, `.current-user`, `users/<id>/settings.yaml`) are gitignored and never published. See [git-sync.md](../user/common/git-sync.md).
+Git-backed mode is optional. When enabled, LocTT publishes task data to a dedicated `loctt` branch (configurable via `git.branch`) using a temporary worktree under `.loctt/local/`. Local-only files (`local/`, `.current-user`, `users/<id>/settings.yaml`) are gitignored and never published. See [git-sync.md](../user/common/git-sync.md).
 
 LocTT works fine without Git — purely local by default.

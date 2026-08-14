@@ -184,7 +184,7 @@ There is no enforced body schema.
 
 ## workflow.yaml
 
-Located at `.loctt/config/workflow.yaml`. Defines all configurable workflow values for the tracker. All sections except `key` are arrays. Missing `priorities`, `relationships`, and `custom_fields` are filled with `[]` on read for back-compat.
+Located at `.loctt/config/workflow.yaml`. Defines all configurable workflow values for the tracker. All sections except `key` are arrays, and all are **required** — the schema is `.strict()`, so a missing section is a parse error, not an empty default.
 
 ```yaml
 key:
@@ -237,8 +237,7 @@ relationships:
     ranked: true
   - key: relates_to
     label: Relates to
-    inverse: relates_to
-    inverse_label: Relates to
+    kind: symmetric
 
 custom_fields:
   - key: owner_team
@@ -320,10 +319,18 @@ estimation:
 |---|---|---|---|
 | `key` | string | yes | Forward relationship key |
 | `label` | string | yes | Forward display label |
-| `inverse` | string | yes | Inverse relationship key |
-| `inverse_label` | string | yes | Inverse display label |
-| `structural` | boolean | no | When `true`, used for tree display (e.g. `parent`/`child`). At most one structural relationship pair |
+| `kind` | `"symmetric"` | no | Declares the relationship symmetric. Mutually exclusive with `inverse` |
+| `inverse` | string | for directional | Inverse relationship key. Required unless `kind: symmetric`. Setting it equal to `key` is rejected — use `kind: symmetric` |
+| `inverse_label` | string | for directional | Inverse display label |
+| `structural` | boolean | no | When `true`, participates in tree display and cycle detection |
 | `ranked` | boolean | no | When `true`, edges of this type carry a `rank` lexorank string for ordering |
+
+> **`structural` is not limited to one pair.** The shipped default marks
+> both `blocks` and `parent` structural
+> (`packages/core/src/init/defaults.ts:69,75`), and nothing enforces a
+> limit. An earlier revision of this table claimed "at most one structural
+> relationship pair"; that was never true of the default config and was
+> never validated.
 
 ### `custom_fields[]`
 
@@ -589,28 +596,35 @@ Located at `.loctt/state.yaml`. Tracks per-project key-allocation counters. Upda
 
 ```yaml
 keys:
-  backend:
+  01KZYW8Q2M4N6P8R0T2V4X6Z8A:
     prefix: BACKEND-
     next_number: 124
-  web:
+  01KZYW8Q4P6R8T0V2X4Z6B8D0F:
     prefix: WEB-
     next_number: 87
 retired_keys:
-  experiments:
+  01KZYW8Q6R8T0V2X4Z6B8D0F2H:
     prefix: EXP-
     next_number: 42
 ```
 
-`retired_keys` holds counters for hard-deleted projects. Re-creating a project with the same key restores numbering from where it left off, so historical references in `key_history` cannot be re-used by a fresh task.
+Counters are keyed by the project's **ULID `id`**, not its name or prefix —
+`projects.yaml` has no slug field.
+
+`retired_keys` holds counters for hard-deleted projects, so historical
+references in `key_history` cannot be re-used by a fresh task. Note that
+re-creating a project does **not** automatically restore its retired
+counter (`packages/core/src/projects/manage.ts:176-188`); the entry is kept
+as a record, not as a restore point.
 
 ### Top-level
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `keys` | map | yes | Active counters keyed by project key |
+| `keys` | map | yes | Active counters keyed by project **id** (ULID) |
 | `retired_keys` | map | no | Counters preserved after hard-delete. Omitted when empty |
 
-### Each entry (`keys.<project>` and `retired_keys.<project>`)
+### Each entry (`keys.<project-id>` and `retired_keys.<project-id>`)
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -640,7 +654,7 @@ git:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `enabled` | boolean | yes | Whether git-backed sync is active |
-| `branch` | string | yes | Branch name used for the sparse worktree (default `loctt`) |
+| `branch` | string | yes | Branch name task data is published to (default `loctt`) |
 | `remote` | string | yes | Git remote name (default `origin`) |
 | `auto_push` | boolean | yes | Push changes after each mutating operation |
 | `auto_fetch` | boolean | yes | Fetch from remote at the start of operations |
@@ -715,22 +729,35 @@ The serializer writes fields in this order: `id`, `name`, `timezone`, then optio
 
 ## users/&lt;id&gt;/settings.yaml
 
-Located at `.loctt/users/<ulid>/settings.yaml`. Per-user, per-checkout UI settings. Schema-less by design — keys are owned by the UI (theme, default view, sort prefs, card layout, sidebar pins, default project override, etc.). Stored as YAML for hand-editability. Returned as `{}` when absent or empty. **Gitignored** via `.loctt/.gitignore`.
+Located at `.loctt/users/<ulid>/settings.yaml`. Per-user, per-checkout UI settings. Stored as YAML for hand-editability. Returned as `{}` when absent or empty. **Gitignored** via `.loctt/.gitignore`.
+
+Mostly UI-owned and passed through unvalidated, so the UI can add keys without a contract change. Three fields **are** validated, because core reads them or their shape is easy to get wrong by hand:
 
 ```yaml
 theme: dark
 default_view: 01HV3JQX5R7Y8Z2N4M6P8K0T1A
 default_project: backend
+card_layout: [priority, assignee, due_date]
+editor_mode: source
 sidebar:
   pinned_views:
     - 01HV3JQX5R7Y8Z2N4M6P8K0T1A
     - 01HV3JR1WV9N2K4M6P8R0T1Y3B
-card_layout:
-  show_assignee: true
-  show_due_date: true
 ```
 
-No fields are required; no schema is enforced. The writer round-trips the value through YAML to ensure it produces a valid YAML object.
+### Validated fields
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `default_project` | string | no | Project the CLI creates into when `--project` is absent. Validated as a non-empty string; existence is *not* checked — a dangling reference falls back to the workspace default and is reported by `loctt doctor` |
+| `card_layout` | array of field names | no | Which fields a board card shows, **in render order**. Absent means the default layout; an explicit `[]` means title only |
+| `editor_mode` | `wysiwyg` \| `source` | no | Which body-editor mode to restore |
+
+`card_layout` accepts: `key`, `status`, `priority`, `task_type`, `assignee`, `labels`, `due_date`, `estimate`, `milestone`, `sprint`. A repeated field is rejected — a field listed twice has no meaningful position.
+
+> `card_layout` is an **ordered array**, not a map of booleans. Position carries render order, so visibility and ordering are one setting rather than two. An earlier revision specified `{show_assignee: true, …}`; that form is now rejected so a hand-edited file using it fails loudly rather than rendering an empty card.
+
+Every other key is passed through unchanged and survives a load → save round trip.
 
 ---
 

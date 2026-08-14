@@ -86,15 +86,20 @@ relationships:
     label: Blocks
     inverse: is_blocked_by
     inverse_label: Is blocked by
-  - key: depends_on
-    label: Depends on
-    inverse: required_by
-    inverse_label: Required by
+  - key: relates_to
+    label: Relates to
+    kind: symmetric
 ```
 
 Each relationship defines a forward key/label and an inverse. When you `link T-1 blocks T-2`, LocTT stores both the `blocks` edge on T-1 and the `is_blocked_by` edge on T-2.
 
-Setting `structural: true` marks a relationship for tree display (used by `parent`/`child`).
+Setting `structural: true` marks a relationship for tree display and
+makes it participate in cycle detection.
+
+A relationship is either **directional** — it declares `inverse` and
+`inverse_label`, and linking writes an edge on both tasks — or
+**symmetric**, declared with `kind: symmetric` and no `inverse`. Declaring
+an `inverse` equal to the key is rejected; use `kind: symmetric` instead.
 
 ## Custom Fields
 
@@ -102,17 +107,17 @@ Declare custom fields to add project-specific metadata to tasks.
 
 ```yaml
 custom_fields:
-  - key: sprint
-    label: Sprint
+  - key: risk
+    label: Risk
     type: enum
     multi: false
     searchable: true
     values:
-      - key: sprint_1
-        label: Sprint 1
+      - key: low
+        label: Low
         value: 1
-      - key: sprint_2
-        label: Sprint 2
+      - key: high
+        label: High
         value: 2
 
   - key: team
@@ -140,11 +145,16 @@ custom_fields:
 
 ### Properties
 
-| Property | Description |
-|---|---|
-| `multi` | Allow multiple values |
-| `searchable` | Include in full-text search (default: `true`) |
-| `values` | For `enum` type: allowed values with `key`, `label`, optional `value` |
+| Property | Required | Description |
+|---|---|---|
+| `multi` | yes | Allow multiple values |
+| `searchable` | yes | Whether the field is exposed to the query DSL |
+| `values` | for `enum` | Allowed values with `key`, `label`, optional `value` |
+
+> `searchable` has **no default** — omitting it is a parse error. The
+> normative field-by-field spec is
+> [schema-reference.md](../../dev/schema-reference.md#custom-fields); this
+> page shows usage only.
 
 Custom field values are stored under `fields:` in task frontmatter, separate from built-in fields:
 
@@ -161,13 +171,15 @@ Saved queries live in `.loctt/config/queries.yaml`:
 
 ```yaml
 queries:
-  - name: my-tasks
+  - id: 01JCQ8ZK7YV3W5N2M4P6R8T0XA
+    name: my-tasks
     query: assignee = "alice" and status != done
     sort:
       - field: priority
         direction: desc
 
-  - name: overdue
+  - id: 01JCQ8ZK9B2H4K6M8P0R2T4V6X
+    name: overdue
     query: due_date < today and status != done
     sort:
       - field: due_date
@@ -175,6 +187,10 @@ queries:
 ```
 
 Use them with `loctt list --view my-tasks` or the `list_tasks` MCP tool.
+
+`id` is required and must be unique — it is how a view stays addressable
+when two views share a name. Views created through LocTT get one
+automatically; hand-written entries need one supplied.
 
 See [query-language.md](query-language.md) for query syntax.
 
