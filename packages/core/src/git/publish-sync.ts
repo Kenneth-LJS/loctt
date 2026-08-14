@@ -1,11 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { cp, readdir,rm } from "node:fs/promises";
-import { join } from "node:path";
+import { cp, mkdir, readdir,rm } from "node:fs/promises";
+import { dirname,join } from "node:path";
 
 import type { SyncState } from "@loctt/contracts";
 
 import { getLocalDir } from "../paths/index.js";
 import { loadSyncState, saveSyncState } from "../state/sync.js";
+import type { SyncPlan } from "./three-way.js";
+import { LOCAL_OWNED,NEVER_MIRROR, planSync } from "./three-way.js";
 
 async function mirrorDir(
   srcDir: string,
@@ -34,6 +36,98 @@ export class GitSyncError extends Error {
     super(message);
     this.name = "GitSyncError";
   }
+}
+
+/**
+ * Raised when local and branch state both changed the same file since the
+ * last sync. Carries the offending paths so callers can name them.
+ */
+export class GitConflictError extends GitSyncError {
+  readonly paths: readonly string[];
+  constructor(paths: readonly string[]) {
+    const list = paths.slice(0, 10).map(p => `  - ${p}`).join("\n");
+    const more = paths.length > 10 ? `\n  …and ${paths.length - 10} more` : "";
+    super(
+      `sync aborted: ${paths.length} file(s) changed both locally and on the branch since the last sync:\n${list}${more}\n\n` +
+        "Nothing was written — your local files are untouched. Resolve by making one side match the other " +
+        "(edit locally, or check out the branch and edit there), then re-run 'loctt git sync'.",
+    );
+    this.name = "GitConflictError";
+    this.paths = paths;
+  }
+}
+
+/**
+ * Applies a {@link SyncPlan} to the local workspace.
+ *
+ * Only paths the plan explicitly marks `copy` or `delete` are touched;
+ * everything else is left exactly as it was. This is the safety property
+ * the old blind mirror lacked.
+ */
+async function applyPlan(
+  plan: SyncPlan,
+  incomingDir: string,
+  localDir: string,
+): Promise<void> {
+  for (const { path } of plan.deletes) {
+    await rm(join(localDir, path), { recursive: true, force: true });
+  }
+  for (const { path } of plan.copies) {
+    const dest = join(localDir, path);
+    await mkdir(dirname(dest), { recursive: true });
+    await rm(dest, { recursive: true, force: true });
+    await cp(join(incomingDir, path), dest, { recursive: true, force: true });
+  }
+  // Deleting files can strand their directories. A task whose files are all
+  // gone must leave no directory behind, or it still shows up in listings
+  // (and reads as a corrupt task rather than an absent one).
+  await pruneEmptyDirs(plan.deletes.map(d => d.path), localDir);
+}
+
+/**
+ * Removes directories left empty by deletions, walking upward from each
+ * deleted path. Stops at `rootDir` and at the first non-empty parent.
+ */
+async function pruneEmptyDirs(
+  deletedPaths: readonly string[],
+  rootDir: string,
+): Promise<void> {
+  const candidates = new Set<string>();
+  for (const p of deletedPaths) {
+    let dir = dirname(p);
+    while (dir && dir !== "." && dir !== "/") {
+      candidates.add(dir);
+      dir = dirname(dir);
+    }
+  }
+  // Deepest first, so a parent is only considered after its children.
+  const ordered = [...candidates].sort((a, b) => b.split("/").length - a.split("/").length);
+  for (const rel of ordered) {
+    const abs = join(rootDir, rel);
+    const entries = await readdir(abs).catch(() => undefined);
+    if (entries !== undefined && entries.length === 0) {
+      await rm(abs, { recursive: true, force: true });
+    }
+  }
+}
+
+/**
+ * True when `branch` holds content that did not come from a LocTT publish.
+ *
+ * A publish mirrors `.loctt/` to the branch root, so a LocTT-owned branch
+ * has a recognisable shape. Adopting an unrelated branch would delete
+ * whatever was there, so callers refuse rather than guess.
+ */
+function branchHasForeignContent(root: string, branch: string): string[] {
+  const listed = gitSafe(["ls-tree", "--name-only", branch], root);
+  if (!listed) return [];
+  const entries = listed.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  if (entries.length === 0) return [];
+  const locttShaped = new Set([
+    "config", "tasks", "users", "state.yaml", "docs",
+    ".gitignore", ".schema-version",
+  ]);
+  return entries.filter(e => !locttShaped.has(e));
 }
 
 function git(args: string[], cwd: string): string {
@@ -88,6 +182,21 @@ export interface FetchResult {
 }
 
 /**
+ * What a sync actually did. The counts let callers report the change
+ * rather than a bare "Synced" — a success message that names nothing is
+ * indistinguishable from a sync that quietly destroyed work.
+ */
+export interface SyncOutcome {
+  readonly updated: boolean;
+  /** Files taken from the branch. */
+  readonly copied?: number;
+  /** Files removed locally because the branch deleted them. */
+  readonly deleted?: number;
+  /** Files left alone (identical, local-only, or locally-owned). */
+  readonly kept?: number;
+}
+
+/**
  * Maps git stderr patterns to friendlier auth-error messages.
  * Returns `undefined` when the stderr doesn't match a known auth pattern,
  * letting callers fall through to the raw stderr tail.
@@ -122,6 +231,22 @@ export async function commitToLocttBranch(
   }
 
   const branch = syncState.git.branch;
+
+  // Adopting a branch that already holds unrelated content would delete it:
+  // the mirror below removes every branch entry not present in .loctt/.
+  // Only refuse on first publish — once we have published, the branch is ours.
+  if (syncState.git.last_synced_commit === undefined && branchExists(root, branch)) {
+    const foreign = branchHasForeignContent(root, branch);
+    if (foreign.length > 0) {
+      throw new GitSyncError(
+        `refusing to publish: branch '${branch}' already exists and holds content LocTT did not write ` +
+          `(${foreign.slice(0, 5).join(", ")}${foreign.length > 5 ? ", …" : ""}). ` +
+          `Publishing would delete it. Choose a different branch with ` +
+          `'loctt config set git.branch <name>', or delete '${branch}' if it is no longer needed.`,
+      );
+    }
+  }
+
   ensureBranch(root, branch);
 
   const worktreeDir = join(getLocalDir(locttDir), ".worktree-publish");
@@ -130,7 +255,10 @@ export async function commitToLocttBranch(
   try {
     git(["worktree", "add", worktreeDir, branch], root);
 
-    await mirrorDir(locttDir, worktreeDir, new Set(["local", ".git"]));
+    // Publish is intentionally a one-way mirror: local is canonical for the
+    // branch. Local-owned files are withheld so they never reach the branch
+    // and so cannot be mirrored back onto another clone (see LOCAL_OWNED).
+    await mirrorDir(locttDir, worktreeDir, new Set([...NEVER_MIRROR, ...LOCAL_OWNED]));
 
     git(["add", "-A"], worktreeDir);
 
@@ -277,7 +405,7 @@ export async function pullFromLocttBranch(
   locttDir: string,
   root: string,
   preloadedState?: SyncState,
-): Promise<{ updated: boolean }> {
+): Promise<SyncOutcome> {
   const syncState = preloadedState ?? await loadSyncState(locttDir);
   if (!syncState.git.enabled) {
     throw new GitSyncError("Git-backed mode is not enabled");
@@ -299,7 +427,23 @@ export async function pullFromLocttBranch(
   try {
     git(["worktree", "add", worktreeDir, branch], root);
 
-    await mirrorDir(worktreeDir, locttDir, new Set(["local", ".git"]));
+    // 3-way, not a blind mirror. `last_synced_commit` is the base: without
+    // it we cannot tell "the branch deleted this" from "I created this
+    // locally", so planSync keeps anything it cannot prove is a deletion.
+    const plan = await planSync({
+      root,
+      incomingDir: worktreeDir,
+      localDir: locttDir,
+      baseCommit: syncState.git.last_synced_commit,
+    });
+
+    if (plan.conflicts.length > 0) {
+      // Abort before writing anything — a partially-applied sync is worse
+      // than none, and the user still has both versions intact.
+      throw new GitConflictError(plan.conflicts.map(c => c.path));
+    }
+
+    await applyPlan(plan, worktreeDir, locttDir);
 
     const updated: SyncState = {
       git: {
@@ -309,7 +453,12 @@ export async function pullFromLocttBranch(
     };
     await saveSyncState(locttDir, updated);
 
-    return { updated: true };
+    return {
+      updated: plan.copies.length > 0 || plan.deletes.length > 0,
+      copied: plan.copies.length,
+      deleted: plan.deletes.length,
+      kept: plan.keeps.length,
+    };
   } finally {
     try {
       gitSafe(["worktree", "remove", worktreeDir, "--force"], root);
@@ -331,7 +480,7 @@ export async function pullFromLocttBranch(
 export async function sync(
   locttDir: string,
   root: string,
-): Promise<{ updated: boolean; fetched?: boolean; fetchError?: string }> {
+): Promise<SyncOutcome & { fetched?: boolean; fetchError?: string }> {
   const syncState = await loadSyncState(locttDir);
   if (!syncState.git.enabled) {
     throw new GitSyncError("Git-backed mode is not enabled");
@@ -359,5 +508,9 @@ export async function sync(
   }
 
   const result = await pullFromLocttBranch(locttDir, root, syncState);
-  return { updated: result.updated, ...(fetched !== undefined ? { fetched } : {}), ...(fetchError ? { fetchError } : {}) };
+  return {
+    ...result,
+    ...(fetched !== undefined ? { fetched } : {}),
+    ...(fetchError ? { fetchError } : {}),
+  };
 }

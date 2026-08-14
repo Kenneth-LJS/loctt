@@ -62,7 +62,13 @@ export async function run(args: string[], root: string): Promise<void> {
         console.log("Fetched from remote");
       }
       if (result.updated) {
-        console.log("Synced loctt branch into local workspace");
+        // Name what changed: a bare "Synced" is indistinguishable from a
+        // sync that quietly removed local work.
+        const parts: string[] = [];
+        if (result.copied) parts.push(`${result.copied} updated`);
+        if (result.deleted) parts.push(`${result.deleted} removed`);
+        const detail = parts.length > 0 ? ` (${parts.join(", ")})` : "";
+        console.log(`Synced loctt branch into local workspace${detail}`);
       } else {
         console.log("Already up to date");
       }
