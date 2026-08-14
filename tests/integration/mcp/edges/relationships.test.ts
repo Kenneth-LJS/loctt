@@ -63,7 +63,7 @@ describe("MCP link_tasks relationship edge cases (stdio)", () => {
     });
   });
 
-  it("returns isError for a structural cycle", async () => {
+  it("returns isError for a cycle on a graph: tree relationship", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "A"], { cwd: root });
       await runCli(["create", "B"], { cwd: root });
@@ -77,14 +77,18 @@ describe("MCP link_tasks relationship edge cases (stdio)", () => {
         expect(ok2.isError).toBeFalsy();
         const bad = await client.callTool("link_tasks", { ref: "T-3", type: "parent", target: "T-1" });
         expect(bad.isError).toBe(true);
-        expect(bad.content[0]?.text ?? "").toContain("cannot create cycle in structural relationship 'parent'");
+        expect(bad.content[0]?.text ?? "").toContain("cannot create cycle in relationship 'parent'");
       } finally {
         await client.close();
       }
     });
   });
 
-  it("allows a non-structural cycle (blocks)", async () => {
+  it("allows a cycle on a graph: none relationship (relates_to)", async () => {
+    // Was written against `blocks`, which the shipped default has always
+    // constrained (`structural: true` at b4f0fbf, `graph: acyclic` now),
+    // so it asserted a premise the config never held and was already
+    // failing before the graph rename.
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "A"], { cwd: root });
       await runCli(["create", "B"], { cwd: root });
@@ -92,11 +96,11 @@ describe("MCP link_tasks relationship edge cases (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const ok1 = await client.callTool("link_tasks", { ref: "T-1", type: "blocks", target: "T-2" });
+        const ok1 = await client.callTool("link_tasks", { ref: "T-1", type: "relates_to", target: "T-2" });
         expect(ok1.isError).toBeFalsy();
-        const ok2 = await client.callTool("link_tasks", { ref: "T-2", type: "blocks", target: "T-3" });
+        const ok2 = await client.callTool("link_tasks", { ref: "T-2", type: "relates_to", target: "T-3" });
         expect(ok2.isError).toBeFalsy();
-        const ok3 = await client.callTool("link_tasks", { ref: "T-3", type: "blocks", target: "T-1" });
+        const ok3 = await client.callTool("link_tasks", { ref: "T-3", type: "relates_to", target: "T-1" });
         expect(ok3.isError).toBeFalsy();
       } finally {
         await client.close();

@@ -229,7 +229,7 @@ relationships:
     label: Parent
     inverse: child
     inverse_label: Child
-    structural: true
+    graph: tree
   - key: blocks
     label: Blocks
     inverse: is_blocked_by
@@ -322,15 +322,22 @@ estimation:
 | `kind` | `"symmetric"` | no | Declares the relationship symmetric. Mutually exclusive with `inverse` |
 | `inverse` | string | for directional | Inverse relationship key. Required unless `kind: symmetric`. Setting it equal to `key` is rejected — use `kind: symmetric` |
 | `inverse_label` | string | for directional | Inverse display label |
-| `structural` | boolean | no | When `true`, participates in tree display and cycle detection |
+| `graph` | `"none"` \| `"acyclic"` \| `"tree"` | no | Graph-shape constraint. `none` (default when omitted) imposes nothing; `acyclic` rejects cycles at link time; `tree` rejects cycles **and** marks the relationship drawable as a tree axis |
 | `ranked` | boolean | no | When `true`, edges of this type carry a `rank` lexorank string for ordering |
 
-> **`structural` is not limited to one pair.** The shipped default marks
-> both `blocks` and `parent` structural
-> (`packages/core/src/init/defaults.ts:69,75`), and nothing enforces a
-> limit. An earlier revision of this table claimed "at most one structural
-> relationship pair"; that was never true of the default config and was
-> never validated.
+> **`graph` replaced `structural: boolean`.** The old flag silently did
+> two unrelated jobs: gating cycle detection (per relationship, correctly)
+> and picking the tree axis — via `find(r => r.structural)`, first match
+> only. The shipped default marked both `blocks` and `parent` structural
+> with `blocks` declared first, so tree traversal walked *blocking* edges.
+>
+> `graph` splits the two. Any number of relationships may be `tree`;
+> the axis to draw is a view parameter, passed to `buildTree` /
+> `getChildren` / `getParents` as a required argument rather than
+> searched for in config.
+>
+> `structural` is rejected outright — the error names `graph` and the
+> value to use. There is no compatibility shim.
 
 ### `custom_fields[]`
 

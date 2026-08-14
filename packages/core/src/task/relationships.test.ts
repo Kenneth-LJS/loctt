@@ -51,8 +51,8 @@ describe("relationships", () => {
     relationships: [
       { key: "blocks", label: "Blocks", inverse: "blocked_by", inverse_label: "Blocked by" },
       { key: "blocked_by", label: "Blocked by", inverse: "blocks", inverse_label: "Blocks" },
-      { key: "parent", label: "Parent", inverse: "child", inverse_label: "Child", structural: true },
-      { key: "child", label: "Child", inverse: "parent", inverse_label: "Parent", structural: true },
+      { key: "parent", label: "Parent", inverse: "child", inverse_label: "Child", graph: "tree" },
+      { key: "child", label: "Child", inverse: "parent", inverse_label: "Parent", graph: "tree" },
       { key: "related_to", label: "Related to", kind: "symmetric" },
     ],
     custom_fields: [],
@@ -195,7 +195,7 @@ describe("relationships", () => {
     });
   });
 
-  describe("structural cycle detection", () => {
+  describe("cycle detection on graph-constrained relationships", () => {
     const seedC: Task = {
       frontmatter: {
         id: "c",
@@ -207,22 +207,22 @@ describe("relationships", () => {
       body: "",
     };
 
-    it("rejects a direct cycle on a structural relationship", async () => {
+    it("rejects a direct cycle on a graph: tree relationship", async () => {
       await seedAB();
       await linkTask({ locttDir, taskId: "a", type: "parent", target: "b", workflowConfig: workflow });
       await expect(
         linkTask({ locttDir, taskId: "b", type: "parent", target: "a", workflowConfig: workflow }),
-      ).rejects.toThrow(/cannot create cycle in structural relationship 'parent'/);
+      ).rejects.toThrow(/cannot create cycle in relationship 'parent'/);
     });
 
-    it("rejects an indirect cycle on a structural relationship", async () => {
+    it("rejects an indirect cycle on a graph: tree relationship", async () => {
       await seedAB();
       await writeTask(locttDir, "c", seedC);
       await linkTask({ locttDir, taskId: "a", type: "parent", target: "b", workflowConfig: workflow });
       await linkTask({ locttDir, taskId: "b", type: "parent", target: "c", workflowConfig: workflow });
       await expect(
         linkTask({ locttDir, taskId: "c", type: "parent", target: "a", workflowConfig: workflow }),
-      ).rejects.toThrow(/cannot create cycle in structural relationship 'parent'/);
+      ).rejects.toThrow(/cannot create cycle in relationship 'parent'/);
     });
 
     it("allows multiple children of the same parent (no cycle)", async () => {
@@ -274,7 +274,7 @@ describe("relationships", () => {
       priorities: [],
       task_types: [],
       relationships: [
-        { key: "parent", label: "Parent", inverse: "child", inverse_label: "Child", structural: true },
+        { key: "parent", label: "Parent", inverse: "child", inverse_label: "Child", graph: "tree" },
       ],
       custom_fields: [],
     };
@@ -289,7 +289,7 @@ describe("relationships", () => {
       // a workflow entry whose `key === "child"`.
       await expect(
         linkTask({ locttDir, taskId: "a", type: "child", target: "b", workflowConfig: inverseOnlyWorkflow }),
-      ).rejects.toThrow(/cannot create cycle in structural relationship 'parent'/);
+      ).rejects.toThrow(/cannot create cycle in relationship 'parent'/);
     });
 
     it("rejects an indirect cycle when the final link uses the inverse key", async () => {
@@ -302,7 +302,7 @@ describe("relationships", () => {
       // which closes the chain.
       await expect(
         linkTask({ locttDir, taskId: "a", type: "child", target: "c", workflowConfig: inverseOnlyWorkflow }),
-      ).rejects.toThrow(/cannot create cycle in structural relationship 'parent'/);
+      ).rejects.toThrow(/cannot create cycle in relationship 'parent'/);
     });
   });
 

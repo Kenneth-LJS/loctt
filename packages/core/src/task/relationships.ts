@@ -108,7 +108,7 @@ function removeEdge(
 }
 
 /**
- * For a structural relationship of canonical key `canonicalType`,
+ * For a cycle-constrained relationship of canonical key `canonicalType`,
  * check whether adding the edge `sourceId -[canonicalType]-> targetId`
  * would form a cycle. Walks outgoing canonical-direction edges from
  * `targetId` (DFS over `frontmatter.relationships[].target` filtered
@@ -201,7 +201,7 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
   }
 
   // Wrap the read-modify-write in the tracker-wide state lock so the
-  // structural-cycle check, the forward write, and the inverse write
+  // cycle check, the forward write, and the inverse write
   // all happen against the same snapshot. Without the lock, two
   // concurrent linkTask calls could each see "no cycle yet" and both
   // commit, producing a cycle.
@@ -232,13 +232,15 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
       }
     }
 
-    // Cycle detection for structural relationships only. The user
+    // Cycle detection for cycle-constrained relationships only. The user
     // may pass either the forward (`r.key`) or inverse (`r.inverse`)
     // direction as `type`; resolve to the canonical direction first
     // so the walk runs against the right end of the edge.
     if (workflowConfig) {
       const resolved = resolveRelationshipDef(workflowConfig, type);
-      if (resolved?.def.structural) {
+      // `graph: acyclic` and `graph: tree` both forbid cycles; the
+      // difference is only whether the kind may be drawn as a tree.
+      if (resolved !== undefined && (resolved.def.graph === "acyclic" || resolved.def.graph === "tree")) {
         // When the caller passed the inverse, the canonical edge is
         // target → source; swap before walking so the cycle search
         // starts from the right node.
@@ -279,7 +281,7 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
             }
           }
           throw new RelationshipError(
-            `cannot create cycle in structural relationship '${resolved.def.key}': ${keys.join(" -> ")}`,
+            `cannot create cycle in relationship '${resolved.def.key}' (graph: ${resolved.def.graph}): ${keys.join(" -> ")}`,
           );
         }
       }

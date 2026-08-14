@@ -32,6 +32,22 @@ export function formatZodIssues(prefix: string, err: z.ZodError): string {
     .join("; ");
 }
 
+/**
+ * Fields removed from a schema, mapped to what replaced them.
+ *
+ * `.strict()` rejects an unknown key before any `superRefine` runs, so
+ * a removed field cannot explain itself from inside its own schema —
+ * the rejection happens first. This is where the explanation goes.
+ *
+ * Keyed by bare field name rather than full path: these names are
+ * distinctive enough that a collision would be a naming problem in its
+ * own right.
+ */
+const REMOVED_FIELD_HINTS: Readonly<Record<string, string>> = {
+  structural:
+    "'structural' was replaced by 'graph': use graph: tree for a hierarchy (cycles rejected, drawable as a tree axis), or graph: acyclic to reject cycles only.",
+};
+
 interface ZodLikeIssue {
   readonly code: string;
   readonly message: string;
@@ -109,11 +125,18 @@ function stableMessage(issue: z.ZodIssue): string {
       return issue.message || `has an invalid format`;
     }
     case "unrecognized_keys": {
-      const keys = Array.isArray(i.keys)
-        ? (i.keys as unknown[]).map(k => JSON.stringify(k)).join(", ")
-        : "";
+      const rawKeys = Array.isArray(i.keys) ? (i.keys as unknown[]) : [];
+      const keys = rawKeys.map(k => JSON.stringify(k)).join(", ");
+      // A removed-and-replaced field is the common case behind an
+      // unrecognized key in a hand-edited config. The bare "has
+      // unrecognized key(s)" leaves the reader to guess the new
+      // spelling, so name it where we know one.
+      const hints = rawKeys
+        .map(k => (typeof k === "string" ? REMOVED_FIELD_HINTS[k] : undefined))
+        .filter((h): h is string => h !== undefined);
+      const hint = hints.length > 0 ? ` — ${hints.join(" ")}` : "";
       return keys.length > 0
-        ? `has unrecognized key(s): ${keys}`
+        ? `has unrecognized key(s): ${keys}${hint}`
         : `has unrecognized keys`;
     }
     case "custom":

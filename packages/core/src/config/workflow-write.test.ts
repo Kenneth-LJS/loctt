@@ -322,7 +322,7 @@ describe("saveWorkflowConfig — symmetric round-trip", () => {
       ...wf,
       relationships: [
         ...wf.relationships.filter(r => r.key !== "relates_to"),
-        { key: "siblings", label: "Siblings", kind: "symmetric", structural: true },
+        { key: "siblings", label: "Siblings", kind: "symmetric", graph: "none" },
       ],
     };
     const { saveWorkflowConfig } = await import("./workflow-write.js");
@@ -333,7 +333,7 @@ describe("saveWorkflowConfig — symmetric round-trip", () => {
     expect(sym?.kind).toBe("symmetric");
     expect(sym?.inverse).toBeUndefined();
     expect(sym?.inverse_label).toBeUndefined();
-    expect(sym?.structural).toBe(true);
+    expect(sym?.graph).toBeUndefined();
   });
 });
 
