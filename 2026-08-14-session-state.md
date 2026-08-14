@@ -65,8 +65,8 @@ written. See §2 item 0.
 
 Ordered. Dependencies are stated because three items are blocked.
 
-**Phase 2 progress:** 0i, 0e, 0d done. Working order is live bugs first,
-then by dependency — next up 0c (hierarchy), which item 0 depends on.
+**Phase 2 progress:** 0i, 0e, 0d, 0m, 0l, 0c done. Working order is live bugs first,
+then by dependency — next up 0b (status default), then item 0.
 
 ### 0. Relationship query syntax — redesign (Tier 0 + Tier 1)
 **Blocked by:** nothing. **Size:** small-medium.
@@ -235,8 +235,14 @@ already has atomic-with-backup machinery.)
 
 **Also:** correct both doc claims to describe the `default: true` rule.
 
-### 0c. Replace `structural` with `hierarchy`
+### 0c. Replace `structural` with `graph` — ✅ DONE (`8619235`)
 **Blocked by:** nothing. **Size:** small-medium.
+
+**Outcome:** `graph: none | acyclic | tree` shipped. Axis is a required
+argument to `getChildren`/`getParents`/`buildTree`; `buildTree` returns
+`{edges, cycles}`. Two of the four pre-existing integration failures were
+fixed on the way — they asserted `blocks` cycles are allowed, which the
+shipped config has never permitted. Integration failures 3 → 1.
 
 **Problem.** `structural: true` silently does two unrelated jobs:
 
@@ -357,7 +363,7 @@ children. Not user-visible yet: `getChildren`, `getParents` and
 `buildTree` are exported from core and called from **no production code** —
 only tests. This is fix-before-first-use, not a live defect.
 
-### 0m. B9 — cross-field config validation never runs on a write
+### 0m. B9 — cross-field config validation never runs on a write — ✅ DONE (`5398e8f`)
 **Blocked by:** nothing. **Blocks:** 0b, and the config-vs-data warning in
 0c. **Size:** small-medium.
 
