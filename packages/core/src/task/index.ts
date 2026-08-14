@@ -20,6 +20,7 @@ export {
   deleteComment,
   editComment,
   extractMentions,
+  formatCommentEditors,
   listComments,
   postComment,
 } from "./comments.js";
