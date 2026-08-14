@@ -29,13 +29,35 @@ describe("listSearchSchema", () => {
     expect(parsed.limit).toBe(50);
   });
 
-  it("rejects zero or negative page numbers", () => {
-    expect(() => listSearchSchema.parse({ page: "0" })).toThrow();
-    expect(() => listSearchSchema.parse({ page: "-1" })).toThrow();
+  // These previously threw. validateSearch runs on every navigation and
+  // the client has no errorComponent, so a throw broke the entire /list
+  // route rather than just pagination. The bound is still enforced —
+  // it's applied by clamping instead of rejecting.
+  it("clamps zero or negative page numbers up to the first page", () => {
+    expect(listSearchSchema.parse({ page: "0" }).page).toBe(1);
+    expect(listSearchSchema.parse({ page: "-1" }).page).toBe(1);
   });
 
   it("caps the limit at 200 to avoid runaway queries", () => {
-    expect(() => listSearchSchema.parse({ limit: "9999" })).toThrow();
+    expect(listSearchSchema.parse({ limit: "9999" }).limit).toBe(200);
+    expect(listSearchSchema.parse({ limit: "200" }).limit).toBe(200);
+    expect(listSearchSchema.parse({ limit: "0" }).limit).toBe(1);
+  });
+
+  it("falls back to undefined for non-numeric page/limit rather than throwing", () => {
+    expect(listSearchSchema.parse({ page: "abc" }).page).toBeUndefined();
+    expect(listSearchSchema.parse({ limit: "" }).limit).toBeUndefined();
+    expect(listSearchSchema.parse({ page: " " }).page).toBeUndefined();
+    expect(listSearchSchema.parse({ limit: "Infinity" }).limit).toBeUndefined();
+  });
+
+  it("truncates fractional page numbers instead of failing the route", () => {
+    expect(listSearchSchema.parse({ page: "2.7" }).page).toBe(2);
+  });
+
+  it("accepts real numbers for page/limit (in-memory state, not from the URL)", () => {
+    expect(listSearchSchema.parse({ page: 3, limit: 25 }).page).toBe(3);
+    expect(listSearchSchema.parse({ page: 3, limit: 25 }).limit).toBe(25);
   });
 
   it("enforces the dir enum", () => {
