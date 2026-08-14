@@ -298,9 +298,54 @@ than a silent guess, which is the failure mode this item exists to remove.
 All three are exported from core but called from no production code today,
 so making it required costs only test signatures.
 
-**UI consequence:** with no `hierarchy` relationship defined, a tree view
+**UI consequence:** with no `graph: tree` relationship defined, a tree view
 is impossible — **disable the button with a tooltip** explaining that no
-hierarchy relationship is configured, rather than rendering an empty tree.
+tree relationship is configured, rather than rendering an empty tree.
+
+#### Cycles can reach a tree axis regardless of the flag
+
+The cycle guard at `relationships.ts:241` is **link-time only** and reads
+the config as it stands at that moment. Three routes get a cycle past it,
+and only the first involves anyone doing something questionable:
+
+1. **Config flip** — set `graph: none`, create `A → B → A`, set it back to
+   `tree`. Each step is individually legal.
+2. **Direct file edit** — `task.md` is text.
+3. **Git sync** — two people each add half a cycle offline and the merge
+   produces one. *Nobody performed an invalid operation.* This became more
+   reachable with the 3-way sync landed in `95fd0e8`.
+
+The docstring at `traversal.ts:126` already acknowledges 2 and 3.
+
+**Verified behaviour on a cycle today** (`A ⇄ B`, axis `parent`):
+
+| | Result |
+|---|---|
+| `buildTree` | Completes — single pass, no recursion, no hang |
+| Roots (`tree.get("")`) | **Empty** — every node has a parent |
+| The cycle | Present in the map, intact |
+
+So core does not crash. The trap is downstream: a renderer starting from
+roots shows **an empty tree with no explanation**, and one walking from an
+arbitrary node **recurses forever**. `buildTree` hands back a map that
+looks fine and is not.
+
+**DECIDED — three rulings:**
+
+- **`buildTree` detects and reports cycles.** It returns the adjacency map
+  *plus* the cycles found, so a caller cannot forget to ask. Costs one
+  extra O(n) DFS over the map it already built — the same walk
+  `findStructuralCycles` does. Leaving it to the caller is the shape that
+  produced this defect in the first place.
+- **The tree view renders the acyclic part and banners the cycle**,
+  naming the tasks involved and linking to them. The user keeps a usable
+  view and learns exactly what to fix. Refusing to render would take a
+  whole tree away over one bad edge that may have arrived via a merge the
+  user never made. Consistent with P7 and with 0k.
+- **Setting `graph: tree` on a relationship whose data already contains a
+  cycle warns but is allowed.** Blocking would strand a user who wants the
+  guard active *while* they clean up. This is a rule spanning config and
+  task data, so it needs the write path to run it — **B9**.
 
 **Also fixes:** the `parent` alias hardcoding `"parent"`
 (`evaluator.ts:305`) gets a config-driven source — already noted in item 0.
@@ -311,6 +356,37 @@ default tracker `getChildren` really does return blocked tasks rather than
 children. Not user-visible yet: `getChildren`, `getParents` and
 `buildTree` are exported from core and called from **no production code** —
 only tests. This is fix-before-first-use, not a live defect.
+
+### 0m. B9 — cross-field config validation never runs on a write
+**Blocked by:** nothing. **Blocks:** 0b, and the config-vs-data warning in
+0c. **Size:** small-medium.
+
+Two validators exist and only the weaker one guards writes:
+
+| | Checks | Runs on write? |
+|---|---|---|
+| `parseWorkflowConfig` (Zod) | Shape of each entry, unknown keys | ✅ `workflow-write.ts:88` |
+| `validateWorkflowConfig` | Rules **spanning** entries — duplicate keys, dangling references | ❌ only `doctor.ts:78` |
+
+Zod validates each relationship independently, so it cannot see that two
+entries collide. That is what `validateWorkflowConfig` is for, and it has
+exactly one production caller: `loctt doctor`.
+
+**Demonstrated:** built a config with a duplicate `blocks` relationship,
+confirmed `validateWorkflowConfig` returns errors for it, called
+`saveWorkflowConfig` — and `workflow.yaml` came back with `key: blocks`
+twice. `doctor` reports it only afterwards.
+
+**Why it matters beyond tidiness:** every rule of the form "exactly one X"
+or "this must reference a real Y" is unenforceable at write time. 0b's
+"exactly one status has `default: true`" is precisely that shape, which is
+why 0b is blocked here.
+
+**Fix:** call `validateWorkflowConfig` inside `saveWorkflowConfig` and
+reject on errors. Check the callers first — `workflow-write.ts` performs
+per-collection remaps, so a save that is mid-remap may transiently look
+invalid; validation must run against the final config, not an
+intermediate.
 
 ### 0d. Delete the superseded root planning docs — ✅ DONE (`781e9a1`)
 **Blocked by:** committing the extraction first. **Size:** trivial.
