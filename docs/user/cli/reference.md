@@ -26,7 +26,8 @@ Set up a new `.loctt/` directory with default configuration in the current
 working directory. Does not require an existing tracker.
 
 ```
-loctt init [--prefix <prefix>] [--project-key <key>] [--project-label <label>] [--no-docs]
+loctt init [--prefix <prefix>] [--project-key <key>] [--project-label <label>]
+           [--timezone <iana-tz>] [--no-docs]
 ```
 
 | Flag | Description |
@@ -34,6 +35,7 @@ loctt init [--prefix <prefix>] [--project-key <key>] [--project-label <label>] [
 | `--prefix <prefix>` | Key prefix for the initial project (default: `T-`) |
 | `--project-key <key>` | Key of the initial project (default derived from prefix) |
 | `--project-label <label>` | Human label for the initial project |
+| `--timezone <iana-tz>` | Workspace timezone written to `calendar.yaml` (default: this machine's zone) |
 | `--no-docs` | Skip generating helper docs in `.loctt/docs/` |
 
 Example:
@@ -41,6 +43,19 @@ Example:
 ```
 loctt init --prefix BUG- --project-key bugs --project-label "Bug tracker"
 ```
+
+The workspace timezone decides what `today` means in queries such as
+`due_date < today`, so it is recorded in `calendar.yaml` at init rather
+than read from whichever machine runs a command. Pass `--timezone` when
+the initializing machine isn't where the team actually works:
+
+```
+loctt init --timezone Asia/Singapore
+```
+
+An unrecognized zone is rejected before anything is written. Trackers
+created before this flag existed have no `calendar.yaml` and fall back
+to UTC; add the file to set a zone.
 
 ### `loctt info`
 
@@ -65,7 +80,7 @@ loctt doctor [--rebuild-index]
 |---|---|
 | `--rebuild-index` | After running checks, rebuild the key-lookup cache from a full task scan |
 
-The key-lookup cache (`.loctt/state/key-index.yaml`) is normally kept current by
+The key-lookup cache (`.loctt/local/key-index.yaml`) is normally kept current by
 LocTT itself: every create / git-sync rekey updates it, and ordinary lookups
 fold-in any task directories that appeared out-of-band (e.g. via `git pull`).
 The one drift case LocTT cannot auto-detect is a manual frontmatter edit that
@@ -331,6 +346,12 @@ loctt list [--query <q>] [--view <v>] [--limit <n>] [--archived] [--project <key
 
 `--project` and `--query` compose: the resulting filter is
 `(<query>) and project = <key>`.
+
+A query naming an unknown field or invalid enum value exits with an
+error instead of printing "No tasks found." — see
+[Errors](../common/query-language.md#errors). A saved view referencing a
+deleted custom field is the exception: it warns on stderr, still runs,
+and exits 0, so `loctt list --view x | …` keeps working.
 
 Examples:
 

@@ -544,7 +544,13 @@ The schema enforces `end_date >= start_date`. The parser additionally enforces u
 
 ## calendar.yaml
 
-Located at `.loctt/config/calendar.yaml`. Optional. Used by the timeline/Gantt view for shading. Purely cosmetic — there is no business-day math. When the file is absent the loader returns sensible defaults: detected system timezone (or `UTC`), Monday-first week, Mon–Fri working days, no holidays.
+Located at `.loctt/config/calendar.yaml`. Optional, but written by `loctt init`.
+
+`first_day_of_week`, `working_days`, and `holidays` are cosmetic — they drive timeline/Gantt shading and there is no business-day math anywhere.
+
+**`timezone` is not cosmetic.** It defines what `today` means in queries (`due_date < today`) and what date is stamped on `completed_date`, across the CLI, MCP, and web UI. Because this file is workspace-shared and committed, everyone on a tracker resolves those the same way regardless of which machine runs the command.
+
+When the file is absent the loader returns UTC, Monday-first week, Mon–Fri working days, no holidays. The UTC default is deliberate: deriving it from the reading machine would make the same saved view return different results for different people. `loctt init` writes the initializing machine's zone into the file, so the fallback only affects trackers created before that or with the file removed.
 
 ```yaml
 timezone: Asia/Singapore
@@ -563,7 +569,7 @@ Weekday indices are `0..6` with `0 = Sunday`. `holidays` must be present (use `[
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `timezone` | IanaTimezone | yes | Workspace-shared IANA timezone (today-marker, weekend shading). Per-user timezones live on user profiles |
+| `timezone` | IanaTimezone | yes | Workspace-shared IANA timezone. Resolves `today` in queries and `completed_date`, plus the timeline today-marker. Per-user timezones live on user profiles and do not affect queries |
 | `first_day_of_week` | integer 0..6 | yes | First column in week views; `0 = Sunday` |
 | `working_days` | integer[] | yes | Each entry is `0..6`; entries are the weekdays considered working days |
 | `holidays` | array | yes | List of non-working dates |

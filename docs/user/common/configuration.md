@@ -177,3 +177,37 @@ queries:
 Use them with `loctt list --view my-tasks` or the `list_tasks` MCP tool.
 
 See [query-language.md](query-language.md) for query syntax.
+
+## Calendar
+
+`.loctt/config/calendar.yaml` holds the workspace timezone and the
+working-week shading used by the timeline view:
+
+```yaml
+timezone: Asia/Singapore
+first_day_of_week: 1
+working_days: [1, 2, 3, 4, 5]
+holidays:
+  - date: 2026-01-01
+    label: New Year's Day
+```
+
+Weekday indices are `0..6` with `0 = Sunday`. `holidays` must be
+present — use `[]` for none.
+
+**`timezone` affects query results.** It decides what `today` means in
+queries like the `overdue` view above, and what date is recorded in
+`completed_date` when a task moves to a completed status. Because the
+file is shared and committed, everyone on the tracker gets the same
+answer regardless of which machine they run from — a colleague eight
+hours ahead sees the same tasks in `overdue` that you do.
+
+`first_day_of_week`, `working_days`, and `holidays` are display-only.
+
+`loctt init` writes this file using the initializing machine's timezone;
+pass `--timezone` to choose a different one. A tracker with no
+`calendar.yaml` falls back to UTC rather than the local machine's zone,
+so results don't silently vary per machine.
+
+Per-user timezones on user profiles are separate and do not affect
+queries.

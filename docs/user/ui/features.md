@@ -30,9 +30,17 @@ Drag-and-drop on the board to reorder subtasks under a parent — the order is p
 
 The detail panel has an **Attachments** section. Drag files in from your desktop or click **Upload** to browse. Each attachment shows a thumbnail (for images) or an icon, with the filename and size. Click to download; the trash icon detaches and deletes.
 
+## Comments
+
+Comments show their author and timestamp. **Anyone can edit or delete anyone's comment** — LocTT is local and unauthenticated, and you switch identity from a menu, so there is no ownership to enforce.
+
+Edits are attributed instead. A comment edited by someone else keeps its original author and gains an "Edited by …" note listing the editors; editing your own comment shows a plain "Edited". Every comment added, edited, or deleted also appears in the activity log with who did it, so an unexpected change is traceable.
+
 ## Activity log
 
-The **Activity** tab in the detail panel shows the task's full audit trail in reverse-chronological order: who did what, when. Field changes show before-and-after values. Link, body, archive, and assignment events each have their own iconography so the log scans quickly.
+The **Activity** tab in the detail panel shows the task's full audit trail in reverse-chronological order: who did what, when. Field changes show before-and-after values. Link, body, archive, comment, and assignment events each have their own iconography so the log scans quickly.
+
+Comment entries record that a comment was added, edited, or deleted, and by whom — never the comment text itself, so the log doesn't become a second copy of the conversation. When someone edits another person's comment, the entry names both.
 
 ## Archive and delete
 
