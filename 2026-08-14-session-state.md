@@ -761,10 +761,17 @@ and saving silently loses them.
 - Tables need no fallback; `@tiptap/extension-table` handles them
 
 ### 6. SV-3 — saved-view basic mode covers all DSL fields
-**Blocked by:** the view editor UI (not built). **Unblocked technically** —
-its dependency was the `relationship.<type>` evaluator bug, now fixed.
-Chip builder covers every queryable field including custom fields and
-`relationship.*`.
+**Blocked by:** the view editor UI (not built).
+
+**Server half done.** `POST /api/views` and `editView` now validate the
+query before persisting (`6536462`) — previously any string was
+accepted, and because `loadQueriesConfig` rejects the whole file on one
+bad entry, a single malformed view took every other view with it. That
+was M1.3's recorded defect.
+
+**Still blocked:** the chip builder itself. `/settings/$section` renders
+`<Stub>`, so there is no editor to put chips in. The DSL side is ready —
+every queryable field including custom fields and `has_link(...)`.
 
 ### 7. SV-2, SV-4, B14 — UI-dependent
 **Blocked by:** views that do not exist. `/board`, `/timeline`,
