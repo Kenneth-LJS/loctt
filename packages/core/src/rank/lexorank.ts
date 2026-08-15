@@ -202,22 +202,51 @@ export function evenlySpacedRanks(count: number): string[] {
   }
   // Wider counts: fall back to two-digit ranks. Layout: aa, ab,
   // ac, … reserving aa-style spacing.
-  const totalSlots = BASE * BASE;
-  if (count > totalSlots) {
-    throw new Error(`evenlySpacedRanks: count too large (${count} > ${totalSlots})`);
+  // Ranks ending in '0' are unusable: such a rank is a phantom prefix of
+  // any longer rank sharing its leading digits, which breaks `between`
+  // descents into matching zero pads. So a width-w slot space holds
+  // BASE^(w-1) * (BASE-1) usable ranks — every combination of leading
+  // digits, times the non-zero final digits.
+  //
+  // Deriving the final digit directly, rather than taking `slot % BASE`
+  // and clamping 0 up to 1, is the fix. The clamp collapsed two adjacent
+  // slots onto one rank once `stride` floored to 1 (count > 648), so a
+  // rebalance wrote duplicate board_rank values and the next
+  // before/after drag resolved its anchor against the wrong card.
+  //
+  // Width grows with count instead of capping at two digits: the callers
+  // pass a live collection size, so a hard ceiling would turn a drag on a
+  // large board into a thrown error. Longer ranks cost a few bytes and
+  // sort identically.
+  // Widen while the count would fill more than half the space, so the
+  // ranks always occupy a middle band. Packing them edge to edge would
+  // put the first rank at the bottom of the space and the last above
+  // MAX, leaving a head or tail insert nowhere to go — the property the
+  // single-digit branch above protects with its centred `start`.
+  let width = 2;
+  let usableSlots = BASE * (BASE - 1);
+  while (usableSlots / 2 < count) {
+    width += 1;
+    usableSlots *= BASE;
   }
-  const stride = Math.floor(totalSlots / count);
+
+  // Centre the band: skip a quarter of the space at each end, and spread
+  // the ranks across the middle half. Integer arithmetic throughout — the
+  // result must be exactly reproducible, and floats would round two
+  // neighbours onto one slot at large counts, which is the bug being
+  // fixed here.
+  const span = Math.floor(usableSlots / 2);
+  const offset = Math.floor(usableSlots / 4);
   for (let i = 0; i < count; i += 1) {
-    const slot = i * stride + Math.floor(stride / 2);
-    const hi = Math.floor(slot / BASE);
-    let lo = slot % BASE;
-    // Avoid a trailing '0' digit. A two-digit rank ending in '0'
-    // is a phantom prefix of any longer rank starting with the
-    // same hi digit and would break `between` descents into
-    // matching zero pads. Clamp to 1 (effectively "halfway through
-    // the slot, not at its boundary").
-    if (lo === 0) lo = 1;
-    out.push(ALPHABET.charAt(hi) + ALPHABET.charAt(lo));
+    let slot = offset + Math.floor((i * span + Math.floor(span / 2)) / count);
+    // Least-significant digit is 1..BASE-1, never 0.
+    const digits = [ALPHABET.charAt((slot % (BASE - 1)) + 1)];
+    slot = Math.floor(slot / (BASE - 1));
+    for (let d = 1; d < width; d += 1) {
+      digits.unshift(ALPHABET.charAt(slot % BASE));
+      slot = Math.floor(slot / BASE);
+    }
+    out.push(digits.join(""));
   }
   return out;
 }
