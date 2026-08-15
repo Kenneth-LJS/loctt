@@ -43,19 +43,60 @@ export interface Comment {
 }
 
 /**
- * Pattern for `@<user-id-or-name-token>` mentions inside comment text.
- * The trailing boundary is non-greedy: stops at whitespace, punctuation,
- * or end-of-string. The token is opaque to the parser — resolution
- * against the user list happens above, via the optional resolver.
+ * Pattern for `@user:<id>` mentions inside comment text.
+ *
+ * The `user:` prefix is required, matching the documented syntax in
+ * `docs/dev/markdown-extensions.md`. The previous pattern was
+ * `/@([\w\-.]+)/g` — no colon — so `@user:01J…` captured the literal
+ * token `user`, which was then stored as if it were a user id. Every
+ * mention in a tracker collapsed to the same meaningless value.
+ *
+ * `(?<![\w.@-])` refuses to match when the `@` is preceded by a word
+ * character, so `bob@example.com` is not a mention. Without it an
+ * email address yielded `example.com` as a mention token.
  */
-const MENTION_RE = /@([\w\-.]+)/g;
+const MENTION_RE = /(?<![\w.@-])@user:([\w-]+)/g;
+
+/**
+ * Spans of `body` that are code, and so must not be scanned.
+ *
+ * A mention inside a fence or a code span is documentation of the
+ * syntax, not a mention — notifying someone because their id appeared
+ * in a code sample is a false positive the author cannot avoid except
+ * by not writing the example.
+ */
+function codeSpans(body: string): readonly [number, number][] {
+  const spans: [number, number][] = [];
+  // Fenced blocks first: a ``` fence may legitimately contain
+  // backticks, so single-backtick scanning must not see inside it.
+  const fenceRe = /^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?^[ \t]*\1[^\n]*$/gm;
+  for (const m of body.matchAll(fenceRe)) {
+    if (m.index !== undefined) spans.push([m.index, m.index + m[0].length]);
+  }
+  const inFence = (i: number): boolean => spans.some(([a, b]) => i >= a && i < b);
+  for (const m of body.matchAll(/`[^`\n]*`/g)) {
+    if (m.index !== undefined && !inFence(m.index)) {
+      spans.push([m.index, m.index + m[0].length]);
+    }
+  }
+  return spans;
+}
 
 /**
  * Extracts mention tokens from comment body text.
  *
- * Tokens are de-duplicated in document order. The resolver, when
- * provided, maps each token to a user id; tokens that don't resolve are
- * dropped (mentions are best-effort — a typo shouldn't fail the post).
+ * Recognises `@user:<id>` only — the documented syntax. Tokens are
+ * de-duplicated in document order.
+ *
+ * The resolver, when provided, maps each captured id to a canonical
+ * user id; tokens that don't resolve are dropped, because mentions are
+ * best-effort and a typo shouldn't fail the post. Without a resolver
+ * the captured id is returned as-is.
+ *
+ * Mentions inside code spans and fenced blocks are ignored: an id in a
+ * code sample is documentation, and notifying someone for it is a
+ * false positive the author cannot avoid except by not writing the
+ * example.
  */
 export function extractMentions(
   body: string,
@@ -63,9 +104,13 @@ export function extractMentions(
 ): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
+  const skip = codeSpans(body);
   for (const m of body.matchAll(MENTION_RE)) {
     const token = m[1];
     if (!token) continue;
+    if (m.index !== undefined && skip.some(([a, b]) => m.index! >= a && m.index! < b)) {
+      continue;
+    }
     const resolved = resolver ? resolver(token) : token;
     if (!resolved || seen.has(resolved)) continue;
     seen.add(resolved);
