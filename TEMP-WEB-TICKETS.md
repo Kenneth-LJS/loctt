@@ -105,7 +105,7 @@ Goal: a working list view inside the real chrome. By the end you can
 load the app, see your tasks, sort/filter/paginate them by URL state,
 and click into any task (which routes to a stub for now).
 
-### M1.1 · App shell layout ⚠️
+### M1.1 · App shell layout ✅
 - Two-column shell: collapsible left sidebar + main pane
 - Header: logo, current-user avatar + menu (Switch user, Settings,
   Theme toggle), `+` create-task button (stub)
@@ -140,14 +140,14 @@ and click into any task (which routes to a stub for now).
   persists, active route highlighted; schema banner renders for each
   non-current kind; `GET /api/recents` route (mock core)
 
-> **⚠️ Was ✅ while broken.** All five built-in resolvers embedded
+> **Was ⚠️ (built but broken).** All five built-in resolvers embedded
 > `status.category not in [completed, discarded]`, and the tokenizer has
 > no `[` token — so every count badge and click-through errored at
-> runtime. The "5 built-ins are fully live" claim above was false.
-> Fixed in `36c8872`; the marker stays until the milestone is re-reviewed
-> against a running app.
+> runtime. Fixed in `36c8872`. Re-verified against a running app: the
+> built-in DSL and `?priority=high,critical` both return 200 with
+> results, so the mark is now ✅.
 
-### M1.2 · List view — table + columns ⚠️
+### M1.2 · List view — table + columns ✅
 - Route `/list` (and `/` redirects)
 - Table: key, project, title, status, priority, type, assignee,
   labels, due, updated
@@ -159,12 +159,13 @@ and click into any task (which routes to a stub for now).
 - **Tests**: `GET /api/tasks` route (mock core); useTasks hook; sort
   header click toggles direction
 
-> **⚠️ Was ✅ while broken.** Its own data path carried the same
+> **Was ⚠️ (built but broken).** Its own data path carried the same
 > bracket-list defect (`server.ts` `buildStructuredQuery`), so
 > `GET /api/tasks?status=a,b` returned 500. Only the single-value path
-> was tested. Fixed in `36c8872`.
+> was tested. Fixed in `36c8872`, re-verified against a running app.
+> LST-1 and LST-2 are now covered by Playwright specs in `tests/ui/`.
 
-### M1.3 · List view — filter bar + URL state ⚠️
+### M1.3 · List view — filter bar + URL state ✅
 - Filter dropdowns: Project, Status, Priority, Type, Assignee, Label,
   Milestone, Sprint, + custom-field picker
 - Active filters render as removable chips
@@ -183,9 +184,10 @@ and click into any task (which routes to a stub for now).
 > `FilterDropdown.tsx`, `useCreateView.ts`, `ui/Modal.tsx`), so the
 > ticket understated the work — but `buildDsl.ts` emitted the same
 > unparseable bracket list, and `buildDsl.test.ts` asserted the broken
-> output, keeping the suite green. Bracket defect fixed in `36c8872`.
-> **Still open:** `POST /api/views` does not validate the query
-> (`server.ts`), so a malformed saved view still persists silently.
+> output, keeping the suite green. Bracket defect fixed in `36c8872`;
+> query validation on `POST /api/views` fixed in `6536462` (core's
+> `createView` rejects a bad query, and the route surfaces it as a
+> field-level error on `query`). Both re-verified, so the mark is ✅.
 
 ### M1.4 · List view — pagination + bulk-bar + export ⬜
 - Pagination using `total` from `/api/tasks`; "Showing 1–50 of 128 ·
