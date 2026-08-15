@@ -146,9 +146,11 @@ export interface ConfigResponse {
 /**
  * Schema-version status surfaced to the UI so it can render a
  * read-only banner blocking writes when the on-disk schema doesn't
- * match what the running CLI/UI knows. Migration is CLI-only (run
- * `loctt migrate`); the UI surfaces the state but doesn't initiate
- * the migration.
+ * match what the running CLI/UI knows.
+ *
+ * Migration is reachable from every surface: `loctt migrate`, the MCP
+ * `migrate_schema` tool, and `POST /api/migrate` behind the banner's
+ * confirm flow. It was CLI-only when this comment was first written.
  */
 export type SchemaStatusResponse =
   | { readonly kind: "current"; readonly version: number }
@@ -226,4 +228,43 @@ export interface BulkResponse {
   readonly bulk_op_id: string;
   readonly succeeded: readonly string[];
   readonly failed: readonly { readonly taskId: string; readonly error: string }[];
+}
+
+/** One migration step in a plan or result. */
+export interface MigrationStepResponse {
+  readonly from: number;
+  readonly to: number;
+  readonly description: string;
+  /** True when the step is non-trivially destructive. */
+  readonly risky?: boolean;
+}
+
+/**
+ * `GET /api/migrate/plan` — what a migration would do, without doing
+ * it.
+ *
+ * Exists so the UI can show preview-then-confirm rather than a bare
+ * button: migration rewrites task frontmatter across the whole
+ * tracker, and `steps` is where a `risky` step becomes visible before
+ * the user commits.
+ */
+export interface MigrationPlanResponse {
+  readonly from: number;
+  readonly to: number;
+  readonly steps: readonly MigrationStepResponse[];
+  /** Number of task files the migration would rewrite. */
+  readonly taskCount: number;
+}
+
+/** `POST /api/migrate` — what a migration actually did. */
+export interface MigrateResponse {
+  readonly from: number;
+  readonly to: number;
+  readonly steps: readonly MigrationStepResponse[];
+  /**
+   * Where the pre-migration backup was written. Absent only when no
+   * steps ran (already current). The framework never deletes backups,
+   * so this is the user's rollback path.
+   */
+  readonly backupPath?: string;
 }

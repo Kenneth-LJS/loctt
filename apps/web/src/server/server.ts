@@ -13,6 +13,8 @@ import type {
   DoctorCheckResponse,
   LinkRequest,
   ListTasksRequest,
+  MigrateResponse,
+  MigrationPlanResponse,
   RecentTaskResponse,
   TaskResponse,
   TrackerInfoResponse,
@@ -100,7 +102,9 @@ import {
   lookupById,
   lookupTask,
   MAX_AVATAR_BYTES,
+  migrateToCurrent,
   MilestoneError,
+  planMigration,
   ProjectError,
   publish,
   readBurndownSeries,
@@ -2084,8 +2088,62 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
+  /**
+   * Migration (C1). Was CLI-only: the schema banner told the user to
+   * go run `loctt migrate` in a terminal, which is the one remedy the
+   * UI could not offer for the state it was reporting.
+   *
+   * Two endpoints, preview then confirm. Migration rewrites task
+   * frontmatter across the whole tracker and a step may be marked
+   * risky, so a bare button would ask the user to accept an unseen
+   * change.
+   */
+  const handleMigratePlan: RouteHandler = async ({ res, locttDir }) => {
+    try {
+      const plan = await planMigration(locttDir);
+      const tasks = await loadAllTasks(locttDir);
+      json(res, {
+        from: plan.from,
+        to: plan.to,
+        steps: plan.steps.map(st => ({
+          from: st.from,
+          to: st.to,
+          description: st.description,
+          ...(st.risky === true ? { risky: true } : {}),
+        })),
+        taskCount: tasks.length,
+      } satisfies MigrationPlanResponse);
+    } catch (err) {
+      // SchemaVersionError (missing file) and SchemaTooNewError both
+      // mean "no migration can help", which is a 409 rather than a
+      // server fault — the same code the schema guard uses.
+      error(res, (err as Error).message, 409);
+    }
+  };
+
+  const handleMigrate: RouteHandler = async ({ res, locttDir }) => {
+    try {
+      const result = await migrateToCurrent(locttDir);
+      json(res, {
+        from: result.from,
+        to: result.to,
+        steps: result.steps.map(st => ({
+          from: st.from,
+          to: st.to,
+          description: st.description,
+          ...(st.risky === true ? { risky: true } : {}),
+        })),
+        ...(result.backupPath !== undefined ? { backupPath: result.backupPath } : {}),
+      } satisfies MigrateResponse);
+    } catch (err) {
+      error(res, (err as Error).message, 409);
+    }
+  };
+
   const routes: readonly Route[] = [
     { method: "GET", pattern: "/api/info", handler: handleInfo },
+    { method: "GET", pattern: "/api/migrate/plan", handler: handleMigratePlan },
+    { method: "POST", pattern: "/api/migrate", handler: handleMigrate },
     { method: "GET", pattern: "/api/doctor", handler: handleDoctor },
     { method: "GET", pattern: "/api/config", handler: handleConfig },
     { method: "GET", pattern: "/api/projects", handler: handleListProjects },
@@ -2190,6 +2248,11 @@ export function createWebApp(options: WebAppOptions) {
       if (
         path.startsWith("/api/") &&
         path !== "/api/init" &&
+        // Migration is the remedy for a mismatch, so it cannot be
+        // gated behind one. Both endpoints re-check the version
+        // themselves and refuse when no migration applies.
+        path !== "/api/migrate" &&
+        path !== "/api/migrate/plan" &&
         (await trackerDirExists(locttDir))
       ) {
         try {

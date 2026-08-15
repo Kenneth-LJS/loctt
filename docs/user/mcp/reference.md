@@ -156,6 +156,30 @@ Allowlist matches `update_task`: writable built-ins and declared custom fields. 
 
 Returns: `Updated <KEY>: unset <field>`.
 
+### `migrate_schema`
+
+Upgrade the tracker's on-disk schema to the version this build
+understands.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `confirm` | boolean | no | Omitted/`false` previews the plan; `true` performs the migration |
+
+**Preview first.** Migration rewrites task frontmatter across the whole
+tracker and individual steps may be marked `[RISKY]`. Call without
+`confirm` to get the plan, show it to the user, and only then call with
+`confirm: true`.
+
+A backup is written before any step runs and is never deleted — the
+response names its path.
+
+Like `init`, this tool is exempt from the schema-version guard: it is
+the remedy for a mismatch, so gating it behind one would make an
+outdated tracker unfixable from this surface.
+
+Returns: the plan (`v<from> → v<to>`, one line per step) or the result
+(`Migrated v<from> → v<to>` plus the backup path).
+
 ### `bulk_update_tasks`
 
 Set or clear one field across many tasks in a single operation.
