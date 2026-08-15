@@ -148,7 +148,13 @@ export async function show(args: string[], root: string): Promise<void> {
       const display = r.missing
         ? `${r.target.slice(0, 8)}… (deleted)`
         : r.resolvedKey ?? r.target;
-      console.log(`  ${r.type} → ${display}`);
+      // Title and status make the line readable on its own — "blocks
+      // T-2" says less than "blocks T-2  Fix login  [in_progress]".
+      const detail = r.missing
+        ? ""
+        : [r.resolvedTitle, r.resolvedStatus ? `[${r.resolvedStatus}]` : undefined]
+            .filter(Boolean).join("  ");
+      console.log(`  ${r.type} → ${display}${detail ? `  ${detail}` : ""}`);
     }
   }
   if (model.attachments.length > 0) {
