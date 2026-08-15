@@ -51,11 +51,50 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 
 | Phase | State | Notes |
 |---|---|---|
-| 1 · Partition | 🔵 | Started 2026-08-15. Partitioning agent running. |
-| 2 · Measure | ⬜ | |
+| 1 · Partition | ⛔ | Partition **done** — all 21 tickets carry a `Cases:` line, gate passes. Halted on what it exposed: 28 cases assert two views no ticket builds. See *Blocker* below. |
+| 2 · Measure | ⬜ | Not started. Not blocked by Phase 1 — could run first if the blocker takes time to resolve. |
 | 3 · Surface gaps | ⬜ | 68 cases outstanding |
 | 4 · Structural audit | ⬜ | |
 | 5 · UI build | ⬜ | M1.4 is 🔵 from earlier work, predating this plan |
+
+### ⛔ Blocker — two specified views have no ticket
+
+The partition placed 837 of 869 UI cases cleanly. **32 could not be
+placed**, 10 of them blockers. Four are one-off dependency gaps; the other
+28 are one structural problem, found independently by three agents that
+were working on separate milestones and could not see each other's output:
+
+| Cases | What they specify | What exists |
+|---|---|---|
+| 15 `SPR-*` (M3) — 4 blockers | A **sprints overview**: one column per sprint, ordered by start date; drag between columns writes the task's `sprint` field | Only `/sprints/$key` **detail**, in M4.7 |
+| 13 `MSL-*` (M4) — 4 blockers | A **Milestones view** (row per milestone, target date, progress bar) and a **milestone detail route** | Only the Settings → Milestones management panel, in M4.3 |
+
+Verified directly against the prose and the code, not taken from the agent
+reports: `SPR-1` says *"The sprints view renders one column per
+non-archived sprint"*; `MSL-1` says *"The Milestones view lists every
+non-archived milestone with its target date and progress bar"*. No
+`/sprints` overview or `/milestones` route appears in any of the 21
+tickets, and `apps/web/src/client/routes/` contains only `Stub.tsx`.
+
+The sprint split is clearly deliberate in the spec: every M3-tagged `SPR`
+case is about the overview, every M4-tagged one about the detail. So the
+spec assumes an overview the ticket list never planned.
+
+**This is a scope decision, and the plan reserves it.** The options are to
+add tickets for the two views, fold them into M4.7/M4.3, or accept that 28
+cases ship unverifiable. An agent may not choose among those.
+
+The other four unplaceable cases:
+
+- **ERR-3, ERR-4** (M1, blockers) — need an in-flight single-field write
+  whose outcome is unknown. No M1 ticket has an editable field; task
+  detail is M2.
+- **ERR-23** (M2) — needs the create modal's partial-failure path (M3.4).
+- **PRU-4** (M1) — asserts create-modal defaults (pre-select, key preview,
+  submit). M1.1 ships that button as an explicit stub.
+
+These four are milestone-tag problems rather than missing tickets: the
+behaviour is ticketed, just later than the case's tag implies.
 
 **As of 2026-08-15**, before any phase has run:
 
