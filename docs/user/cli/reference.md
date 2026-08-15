@@ -141,6 +141,13 @@ Prefixes must be unique across projects, so a prefix already in use is
 rejected. Because this rewrites every task in the project it asks for
 confirmation; `--yes` skips the prompt.
 
+Because the rewrite spans every task in the project, it records what it is
+doing before it starts. If it is interrupted — the process is killed, the
+machine loses power — the next LocTT command finishes the remaining tasks
+and reports that it did so. Nothing is left half-renamed, and re-running is
+safe: a task already carrying the new prefix is skipped. If that recovery
+cannot complete, `loctt doctor` reports the pending rename.
+
 The most common reason to need it: two trackers that were initialised
 separately and later synced through the same remote both minted `T-` keys.
 The merge assigns one of them a provisional prefix to keep prefixes unique —

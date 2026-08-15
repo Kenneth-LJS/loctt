@@ -42,6 +42,8 @@ Keys (`P-1`, `Q10`, …) come from the v1 decision register; see
 |---|---|---|
 | **Q22** | Recents are machine-local and gitignored (`.loctt/users/<id>/recents.yaml`) — never published. | Publishing them leaks one machine's browsing history into a shared branch. |
 | — | `.loctt/local/` and `.schema-version` are never mirrored by git sync. | Mirroring `.schema-version` lets a newer clone brick an older one with no recovery path. |
+| — | A crash sentinel is either **resumable** (finish it at boot) or **fatal** (refuse to boot) — never ignored. `prefix-rename.yaml` is resumable; `.schema-migration-in-progress` is fatal, because completing a migration needs the backup it records. | A sentinel nothing acts on is worse than none: it records that the tracker is inconsistent and then lets every command run against it anyway. |
+| — | Resumable recovery never throws out of the boot hook. Failure is reported and the command proceeds. | Throwing takes away the tools to diagnose the tracker — including `doctor`, whose job is to explain the very state that is failing. |
 
 ## Editor
 

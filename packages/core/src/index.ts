@@ -169,6 +169,7 @@ export type { CreateProjectInput, ProjectByNameResult } from "./projects/index.j
 export {
   completeInterruptedPrefixRename,
   readPrefixRenameState,
+  recoverInterruptedPrefixRename,
   setProjectPrefix,
 } from "./projects/index.js";
 export {

@@ -17,5 +17,6 @@ export type { SetPrefixResult } from "./prefix.js";
 export {
   completeInterruptedPrefixRename,
   readPrefixRenameState,
+  recoverInterruptedPrefixRename,
   setProjectPrefix,
 } from "./prefix.js";

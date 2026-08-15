@@ -342,6 +342,8 @@ Prefixes must be unique across projects; one already in use is rejected. This re
 
 Returns a summary naming the project and how many tasks were renamed. `ProjectError` when the prefix is already in use or the project is unknown.
 
+If a rename is interrupted partway, the next tool call finishes it before running — silently, since the repair is not what you asked for. Should that recovery fail, the call returns an error instead of task keys that may be stale; `loctt doctor` reports the pending rename.
+
 ### `archive_project` / `unarchive_project`
 
 | Parameter | Type | Required | Description |
