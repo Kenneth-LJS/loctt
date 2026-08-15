@@ -92,6 +92,65 @@ constructing a shape that cannot occur. They are green because their
 fixture ids sort the same way as their dates. That is a coincidence, not
 an assertion.
 
+### `list --project <name>` reports "No tasks found." and exits 0
+
+The most damaging finding in the audit, because it **fails successfully**.
+Reproduced against a temp tracker holding two tasks in project `Web`:
+
+```
+list                        → T2 task two / T1 task one
+list --project Web          → No tasks found.        exit 0
+list --project <ULID>       → T2 task two / T1 task one
+list --project TotallyMadeUp → No tasks found.       exit 0
+```
+
+The raw string goes to the query layer, which matches on ULID per P-2, so
+a name can never match. A real project with tasks and a project that does
+not exist are **byte-identical** in output and exit code.
+
+`duplicate` at least errors. This one hands back a confident empty answer,
+so a script filtering by project name silently processes nothing, and a
+user concludes the project is empty.
+
+Second violation of P-3 in the same binary. `move` resolves names
+correctly, so the CLI is inconsistent with itself in three places.
+
+### `duplicate --project <name>` violates P-3; `move` in the same binary does not
+
+Invariant P-3: "CLI and MCP accept a project **name** (erroring on
+ambiguity) or a ULID." Reproduced against a temp tracker with projects
+`Web` and `Backend`:
+
+```
+move T1 Backend                  → Moved T1 → B1                    exit 0
+duplicate T2 --project Backend   → Error: no key allocation state
+                                     for entity type "Backend"      exit 1
+duplicate T2 --project <ULID>    → Created B2: second (copy)        exit 0
+```
+
+Two problems, not one:
+
+- **The name is rejected**, so `duplicate` takes a ULID where every
+  sibling command takes a name. P-4 says a ULID is never shown to a
+  user — this command requires the user to supply one.
+- **The error leaks key-allocation internals** instead of naming the
+  problem. A user who typed a project that does not exist gets a
+  byte-identical message, so "wrong format" and "no such project" are
+  indistinguishable.
+
+`core/task/duplicate.ts:87` writes `overrides.project` straight into the
+slot that expects an id. `move.ts` takes an id too, but its CLI handler
+resolves the name first; `duplicate`'s does not. So the fix is at the
+surface, and the same gap exists on MCP's `duplicate_task`.
+
+**Correction to an earlier reading in this session.** I first reported
+that `move --project Web` failed too. It does — but `move` takes the
+project as a *positional* argument (`loctt move <task> <project>`), so
+that invocation was mine being wrong, not the CLI. `move` is correct.
+I also briefly read both as exiting 0 while printing an error; that was
+`head` in the pipeline capturing the exit code rather than the CLI. Exit
+codes are right: 1 on failure, 0 on success.
+
 ### Unknown flags are silently ignored on every task command
 
 Found in Phase 2, verified by running the built CLI:
