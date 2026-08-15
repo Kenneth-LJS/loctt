@@ -50,9 +50,19 @@ describe("MCP tool registry", () => {
     }
   });
 
-  it("only `init` is exempt from the schema guard", () => {
+  it("exactly two tools are exempt from the schema guard", () => {
+    // Deliberately an allowlist, not a rule: an exemption lets a tool
+    // run against a tracker whose layout this build may not
+    // understand, so each one must be justified here.
+    //
+    //   init           — runs before a tracker exists at all
+    //   migrate_schema — IS the remedy for a mismatch; gating it
+    //                    behind one makes an outdated tracker
+    //                    unfixable from this surface
+    //
+    // Anything else appearing in this list is a bug.
     const exempt = tools.filter(t => t.exemptFromSchemaGuard === true);
-    expect(exempt.map(t => t.name)).toEqual(["init"]);
+    expect(exempt.map(t => t.name).sort()).toEqual(["init", "migrate_schema"]);
   });
 
   it("lookupTool returns the same instance listed", () => {

@@ -216,6 +216,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "migrate_schema",
+            },
+            {
+              "hasDescription": true,
               "name": "publish_to_git",
             },
             {

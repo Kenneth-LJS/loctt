@@ -8,7 +8,7 @@
 
 import { access } from "node:fs/promises";
 
-import { getTrackerInfo, initLoctt, resolveLocttDir, runDoctor } from "@loctt/core";
+import { getTrackerInfo, initLoctt, migrateToCurrent, planMigration, resolveLocttDir, runDoctor } from "@loctt/core";
 import { z } from "zod";
 
 import { errorResult, text } from "../runtime/errors.js";
@@ -90,6 +90,53 @@ export const TOOLS: readonly ToolDef[] = [
         docs: !noDocs,
       });
       return text(`Initialized .loctt at ${result.locttDir}\nCreated ${result.created.length} files`);
+    },
+  },
+  {
+    name: "migrate_schema",
+    description:
+      "Upgrade the tracker's on-disk schema to the version this build " +
+      "understands. Call with confirm: false (or omit it) FIRST to preview " +
+      "what would change — migration rewrites task frontmatter across the " +
+      "whole tracker and some steps are marked risky. Only call with " +
+      "confirm: true once the user has seen the plan and agreed. A backup " +
+      "is written before any step runs and is never deleted.",
+    inputSchema: {
+      confirm: z.boolean().optional()
+        .describe("false/omitted previews the plan; true performs the migration."),
+    },
+    // Exempt for the same reason as `init`: this is the remedy for a
+    // schema mismatch, so gating it behind one would make an outdated
+    // tracker unfixable from this surface.
+    exemptFromSchemaGuard: true,
+    handler: async ({ root }, args) => {
+      const locttDir = resolveLocttDir(root);
+      const confirm = (args["confirm"] as boolean | undefined) ?? false;
+      try {
+        if (!confirm) {
+          const plan = await planMigration(locttDir);
+          if (plan.steps.length === 0) {
+            return text(`Already at schema v${plan.to}. Nothing to migrate.`);
+          }
+          const lines = [
+            `Plan: v${plan.from} → v${plan.to} (${plan.steps.length} step(s)).`,
+            "Re-run with confirm: true to apply.",
+          ];
+          for (const st of plan.steps) {
+            lines.push(`  v${st.from}→v${st.to}: ${st.description}${st.risky === true ? "  [RISKY]" : ""}`);
+          }
+          return text(lines.join("\n"));
+        }
+        const result = await migrateToCurrent(locttDir);
+        if (result.steps.length === 0) {
+          return text(`Already at schema v${result.to}. Nothing to migrate.`);
+        }
+        const lines = [`Migrated v${result.from} → v${result.to}.`];
+        if (result.backupPath !== undefined) lines.push(`Backup: ${result.backupPath}`);
+        return text(lines.join("\n"));
+      } catch (err) {
+        return errorResult((err as Error).message);
+      }
     },
   },
 ];
