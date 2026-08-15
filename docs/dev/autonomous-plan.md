@@ -53,8 +53,8 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 |---|---|---|
 | 1 · Partition | ⛔ | Partition **done** — all 21 tickets carry a `Cases:` line, gate passes. Halted on what it exposed: 28 cases assert two views no ticket builds. See *Blocker* below. |
 | 2 · Measure | ⛔ | Measurement **done** — report at `scratchpad/phase2-coverage-report.md`. Halted: the reference docs are stale for exactly the untested region, so they cannot serve as the spec for Phase 3. See *Blocker 2*. |
-| 3 · Surface gaps | ⬜ | 68 cases outstanding |
-| 4 · Structural audit | ⬜ | |
+| 3 · Surface gaps | ⬜ | 68 cases outstanding. Blocked by Blocker 2 for the entity region; the rest is writable. |
+| 4 · Structural audit | 🔵 | Wave 1 running (5 slices, ~11k lines), **report-only** — no auto-fixes applied. See *Why 4 is running before 3*. |
 | 5 · UI build | ⬜ | M1.4 is 🔵 from earlier work, predating this plan |
 
 ### ⛔ Blocker — two specified views have no ticket
@@ -100,6 +100,26 @@ behaviour is ticketed, just later than the case's tag implies.
 partitioning agent had scoped its search to M1, where no editable field
 exists, and stopped there rather than looking forward. 30 remain
 unplaceable, 28 of them the two missing views.
+
+### Why 4 is running before 3
+
+The plan orders 3 before 4 "because a restructure needs a net". That
+argument is about **changing code**, not about reading it. Phase 4 splits
+cleanly in two:
+
+- **Read and report** — needs no net. Findings go to a file for triage.
+- **Apply the auto-fixes** — needs the net, and is what the ordering rule
+  protects.
+
+With Phase 3 blocked on stale reference docs, the reporting half was run
+now and **no fix of any kind was applied**, including the provable-only
+ones the plan permits. Every agent was told report-only explicitly.
+
+Applying anything still waits for Phase 3, per the original order.
+
+Slices were also re-cut: the plan estimated `core/task` at 2,400 lines; it
+is **4,399**, past the size where an agent reads rather than skims. It was
+split into 1a (writes, ~1,700) and 1b (reads, ~2,400).
 
 ### ⛔ Blocker 2 — the reference docs are stale where coverage is thinnest
 
