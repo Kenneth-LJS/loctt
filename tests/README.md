@@ -48,13 +48,22 @@ Test workspaces are created via `mkdtemp(repoRoot/tests/workspace/loctt-)`. They
 ## How to run
 
 ```bash
-npm run test                 # unit + thin integration (existing)
+npm run test                 # unit + thin integration (existing) + tools
 npm run test:integration     # builds CLI/MCP, runs tests/integration
 npm run test:e2e             # builds CLI/MCP, runs tests/e2e
+npm run test:ui              # builds, runs the Playwright specs in tests/ui
 npm run test:perf            # opt-in, runs tests/perf — does NOT rebuild
 ```
 
-`pretest:integration` and `pretest:e2e` run `npm run build` so the spawned CLI/MCP binaries are current.
+`pretest:integration`, `pretest:e2e` and `pretest:ui` run `npm run build` so the spawned CLI/MCP binaries are current.
+
+**Never run two of these suites concurrently.** Each `pretest` hook runs
+`tsc --build`, which empties and rewrites `dist/` — and `integration`,
+`e2e`, `ui` and `perf` all spawn `apps/cli/dist/index.js`. A build started
+by one suite while another is running replaces the binary mid-run, and the
+second suite fails in scattered, unrelated-looking ways (~30 failures
+across ~16 files, none reproducible in isolation). The failures are an
+artifact of the race, not a defect. Run the suites one at a time.
 
 **`test:perf` does not have a pretest hook by design.** `concurrent-create.test.ts` spawns the bundled CLI binary, so when iterating on CLI / MCP / core source you must `npm run build` first. The other perf tests use core APIs in-process and don't need the build.
 
