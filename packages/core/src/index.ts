@@ -164,7 +164,13 @@ export {
   resolveLocttDir,
 } from "./paths/index.js";
 export type { DeleteProjectOptions } from "./projects/index.js";
+export type { SetPrefixResult } from "./projects/index.js";
 export type { CreateProjectInput, ProjectByNameResult } from "./projects/index.js";
+export {
+  completeInterruptedPrefixRename,
+  readPrefixRenameState,
+  setProjectPrefix,
+} from "./projects/index.js";
 export {
   archiveProject,
   createProject,

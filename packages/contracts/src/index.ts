@@ -107,6 +107,7 @@ export {
 export type {
   KeyAllocationState,
   LocttState,
+  PrefixRenameState,
   ReconcileState,
   SyncState,
 } from "./state.js";
@@ -117,6 +118,7 @@ export {
   DEFAULT_GIT_REMOTE,
   KeyAllocationStateSchema,
   LocttStateSchema,
+  PrefixRenameStateSchema,
   ReconcileStateSchema,
   SyncStateSchema,
 } from "./state.js";
