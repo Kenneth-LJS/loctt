@@ -15,6 +15,7 @@
     "cases:index": "tsx tools/case-index/main.ts",
     "cases:check": "tsx tools/case-index/main.ts --check",
     "cases:coverage": "tsx tools/coverage/main.ts",
+    "cases:partition": "tsx tools/partition/main.ts",
     "pretest:integration": "npm run build",
     "test:integration": "vitest run --config tests/vitest.integration.config.ts",
     "pretest:e2e": "npm run build",

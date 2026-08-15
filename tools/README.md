@@ -25,6 +25,7 @@ the tests actually tag.
 npm run cases:index       # regenerate docs/dev/case-index.json
 npm run cases:check       # fail if the committed index is stale
 npm run cases:coverage    # report which cases have tests
+npm run cases:partition   # report which cases have a ticket
 ```
 
 Gating forms:
@@ -34,6 +35,35 @@ npm run cases:coverage -- --require LST-3,LST-4   # per-ticket gate
 npm run cases:coverage -- --milestone M1          # scope the uncovered list
 npm run cases:coverage -- --tree surface --severity blocker
 ```
+
+## The partition gate
+
+`cases:coverage --require` only checks that the cases a ticket *names* are
+tagged. It cannot see a case no ticket ever named. `cases:partition` closes
+that hole: it reads the `Cases:` line out of each ticket in
+`TEMP-WEB-TICKETS.md` and checks every UI case lands in exactly one.
+
+```bash
+npm run cases:partition            # report
+npm run cases:partition -- --check # exit 1 on any failure
+```
+
+| Failure | Why it is fatal |
+|---|---|
+| A ticket has no `Cases:` line | It picks its own list at build time, and passes an exam it set |
+| A UI case is in no ticket | It will never be built, and nothing records that |
+| A case is in two tickets | Both pass `--require` while each assumes the other built it |
+| A ticket names an ID not in the index | The ticket invented a requirement |
+| A surface case sits in a UI ticket | Surface cases are scheduled by severity, not by milestone |
+
+A case the partitioning agent cannot place goes under a `## Unplaceable
+cases` heading with a reason, and the gate accepts it. That is the point:
+an explicit "I could not place this" is recoverable, a silent omission is
+not.
+
+What the gate does **not** judge is whether a case sits with the *right*
+ticket — not mechanically decidable, and why the partition gets reviewed
+by an agent that did not author it.
 
 ## Tagging a test
 
