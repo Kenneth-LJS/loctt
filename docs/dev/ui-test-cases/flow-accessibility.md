@@ -226,6 +226,7 @@ minority of these.
 - The available targets are announced as the user moves through them.
 - Committing announces the result ("Moved WEB-12 to In progress, position 2"), and cancelling restores the original position.
 - The resulting write is the same one the drag produces — an atomic status + `board_rank` update, not a status-only change.
+- **Re-read the task file** to confirm the atomic write landed, pairing with BRD-9's disk check — the keyboard path must not be verified more weakly than the pointer path.
 
 ### A11Y-29 · M4 · blocker · P8
 **Relationship reorder and timeline resize have keyboard alternatives.** On a task with several ranked relationships, and on a timeline bar.

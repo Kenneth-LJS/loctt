@@ -58,6 +58,7 @@ This case previously asserted the panels were read-only. That was an early draft
 
 - Dragging a status to a new position shows a live drop indicator and lands where it was dropped.
 - The new order is written to `workflow.yaml` in that order; `loctt config show` reflects it.
+- The order survives a **cold reload** of the app, not just the next render — client state that outlives a refetch but not a refresh is the failure mode this guards.
 - The board's column order and every status dropdown in the app follow the new order on next render.
 - Reordering priorities recomputes `value` from position, so sorting by priority in the list matches the new order without a manual edit.
 
@@ -106,6 +107,7 @@ This case previously asserted the panels were read-only. That was an early draft
 - The editor lists the available card fields with visible/hidden state and a drag handle for order.
 - Dragging assignee above labels and hiding due date changes every board card on the next render, in that order, with no due date.
 - The layout is saved per user; a second user's board is unaffected.
+- **The write landed in `settings.yaml`**: re-read the file and confirm the new `card_layout` array, in order. SET-11 checks disk for its panel; this one asserted only the render.
 - The editor shows a live card preview so the effect is visible before leaving the panel.
 
 ### SET-13 · M4 · major · P1 P7

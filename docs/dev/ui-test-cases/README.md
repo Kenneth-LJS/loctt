@@ -71,6 +71,28 @@ so it can be *violated* — that's what makes it able to generate test
 cases. Where a principle names violations, those are real failure modes
 to test for, not illustrations.
 
+## Writing a case that asserts a write
+
+**A case asserting a write must assert the far end** — the file on
+disk, or a read-back through a different surface. Asserting that the UI
+*sent* something is not asserting that anything *happened*.
+
+Two live bugs hid in exactly that gap:
+
+- **LST-16** checked that `field.team=platform` reached the URL and a
+  chip appeared. It never checked the result set narrowed.
+  `useTasks.ts` stripped every `field.*` key, so the case passed while
+  the filter did nothing.
+- **VUE-6** checked that `queries.yaml` gained an entry and the view
+  ran. It never re-read the file. `config/queries.ts` rejects the
+  **entire file** on one bad entry, so a malformed save silently
+  destroyed every other view.
+
+This was inconsistency rather than house style — adjacent cases got it
+right. TML-9 and TML-11 read the file and TML-10 did not; BRD-9 checked
+disk and BRD-10 checked only the payload; PRU-13 checked disk and
+PRU-27 checked only the request.
+
 ## P1 — The files are the truth; the UI is a lens
 
 `.loctt/` is the source of truth, and the CLI and MCP can write to it

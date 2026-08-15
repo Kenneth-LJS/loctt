@@ -148,6 +148,7 @@ group (ranked) with 4 targets; drag the 4th to position 2.
   reload.
 - Only the dragged edge's `rank` is rewritten; the other three edges'
   ranks are untouched.
+- Compare the other three edges' `rank` values **before and after**, byte for byte. Asserting only the rendered order would pass if every rank were rewritten.
 - The new rank sorts strictly between its neighbours and does not end in
   `0`.
 - The reorder writes to the source task only — the targets' inverse

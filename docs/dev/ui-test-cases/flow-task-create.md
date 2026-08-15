@@ -95,6 +95,7 @@ editor (as opposed to the compact one here) is
 - The task is created.
 - The modal stays open.
 - Project and type retain their values.
+- **The cleared fields are absent from the second task's frontmatter** — priority, assignee and labels do not carry over. Checking only that the form looks empty misses a stale value still posted.
 - The title is empty and has focus, so the next title can be typed without touching the mouse.
 - Priority, assignee, labels, dates, and body are cleared — carrying an assignee or a due date silently into the next task is the specific failure this case guards against.
 - Submitting again creates a second distinct task with the next key in sequence.

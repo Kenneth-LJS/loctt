@@ -54,6 +54,7 @@ it from a query that legitimately matches nothing (P4).
 ### VUE-6 · M1 · blocker · P1 P10
 **"Save as view" in basic mode writes to `queries.yaml` and is immediately usable elsewhere.** Build a filter in the bar, save it as `my-open-bugs`.
 - A new entry appears in `.loctt/config/queries.yaml` with a generated ULID `id`, the given `name`, and a `query` string.
+- **`queries.yaml` still parses as a whole after the write.** `config/queries.ts` rejects the entire file on one bad entry, so a malformed save silently destroys every other view — re-read the file, do not just check the new entry is present.
 - `loctt list --view my-open-bugs` returns the same tasks the UI showed — same count, same keys.
 - The MCP `list_tasks` tool with that view parameter returns the same set.
 - The view appears in the sidebar's saved-view group without a restart.
@@ -107,6 +108,7 @@ it from a query that legitimately matches nothing (P4).
 ### VUE-14 · M1 · major · P1
 **A view applied from the sidebar sets URL state matching its saved query.**
 - Clicking a saved view narrows the list and the URL reflects the view.
+- The URL carries the **specific params** the view implies, named explicitly — and a cold load of that URL returns the same rows as the click did.
 - The filter bar shows the view's predicates as chips where expressible; where not expressible, it shows the raw query with an indication that it is a DSL view.
 - Modifying a chip is presented as diverging from the saved view (e.g. a "modified" indicator), not as silently rewriting the saved view.
 
