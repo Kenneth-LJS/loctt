@@ -24,7 +24,7 @@
     "test:ui": "playwright test --config tests/ui/playwright.config.ts",
     "llm:verify": "tsx tests/llm/lib/runner.ts",
     "clean": "npm run clean --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p tools && tsc --noEmit -p tests/ui",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p tools && tsc --noEmit -p tests && tsc --noEmit -p tests/ui",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },

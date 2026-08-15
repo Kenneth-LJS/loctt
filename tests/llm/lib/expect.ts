@@ -108,7 +108,9 @@ function inverseOf(workflow: WorkflowConfig, type: string): string {
   // one direction with an `inverse` pointing at the other. So `type` may
   // appear as either `key` or `inverse`.
   const direct = workflow.relationships.find(r => r.key === type);
-  if (direct) return direct.inverse;
+  // A symmetric relationship declares no `inverse` — it folds onto
+  // itself, so the inverse edge carries the same key.
+  if (direct) return direct.inverse ?? direct.key;
   const reverse = workflow.relationships.find(r => r.inverse === type);
   if (reverse) return reverse.key;
   fail(`relationship type "${type}" is not defined in workflow.yaml`);
