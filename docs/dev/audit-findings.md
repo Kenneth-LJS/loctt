@@ -216,6 +216,25 @@ was asserting the bug, and the commit must say so.
 ---
 
 
+## Fixed so far
+
+Group A and E items, each with a test shown to fail first and killed by
+mutation of the specific behaviour.
+
+| Finding | Commit | Note |
+|---|---|---|
+| Coalescing window rolled unbounded | `71cdd78` | Decided rolling **capped at 60 min**; `invariants.md` Q18/D4 now states it |
+| `evenlySpacedRanks` duplicate ranks ≥ 649 | `df54107` | Also widens past two digits instead of throwing; capacity is 1260, not the 1296 claimed |
+| `list --project <name>` returned nothing | `dac7060` | P-3 |
+| `duplicate --project <name>` leaked an allocator internal | `dac7060` | P-3 |
+| Unknown flags ignored on every task command | `d1eb66e` | Removed `--hard` from 3 tests that were asserting the bug |
+
+**Found while fixing, not yet addressed:** the non-interactive refusal
+message is duplicated verbatim in `confirmInteractive` and
+`confirmHardDelete` (`apps/cli/src/runtime/confirm.ts:32,61`). Mutating
+one leaves the other masking it — which cost real time here, since a
+mutation that appeared to survive had simply hit the wrong copy.
+
 ## Triage grouping
 
 124 findings. The category tags the agents used (`bug` 57, `abstraction`
