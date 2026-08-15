@@ -306,3 +306,90 @@ export interface CommentResponse {
    */
   readonly editors?: readonly string[];
 }
+
+/**
+ * What the user's data looks like after a failed request.
+ *
+ * `flow-error-handling.md` ERR-18 requires every write-path failure to
+ * make this claim explicitly: a user who cannot tell whether their edit
+ * landed has to go and check the file, and one who assumes wrongly walks
+ * away having lost work. `unknown` is a legitimate answer — ERR-4 asks
+ * for it by name when a request is cut off mid-flight — but silence is
+ * not.
+ */
+export type ErrorDataState = "saved" | "not_saved" | "unknown";
+
+/** How the user can recover, rendered as a control rather than prose (ERR-15). */
+export type ErrorRecoveryKind = "retry" | "reload" | "command" | "none";
+
+export interface ErrorRecovery {
+  readonly kind: ErrorRecoveryKind;
+  /**
+   * For `command`: the exact shell command to run, e.g. `loctt migrate`.
+   * Rendered copyable, because the user has to retype it into a terminal.
+   */
+  readonly command?: string;
+}
+
+/** One item's failure within a partially-successful operation (ERR-13). */
+export interface ErrorItemFailure {
+  /** The user-facing key (`T-12`), never the ULID — ERR-16. */
+  readonly ref: string;
+  readonly message: string;
+}
+
+/**
+ * The API's error envelope.
+ *
+ * A bare `{error: string}` cannot satisfy P4: the UI has to know *where*
+ * to render a failure (ERR-14 puts field errors at the field), *what to
+ * tell the user about their data* (ERR-18), and *what control to offer*
+ * (ERR-15) — none of which survive being flattened into prose.
+ *
+ * `message` is the headline and is written for the user: no ZodError, no
+ * ENOENT, no stack traces (ERR-16). `detail` carries the technical text
+ * for a "Show details" affordance, which is where such things are
+ * allowed to appear.
+ */
+export interface ErrorResponse {
+  /**
+   * Stable machine-readable cause. The UI branches on this rather than
+   * matching message text, so copy can be reworded without breaking
+   * behaviour.
+   */
+  readonly code: ErrorCode;
+  /** User-facing headline: what failed and why, in the user's terms. */
+  readonly message: string;
+  /**
+   * The field the failure belongs to, when it belongs to one — so the UI
+   * can render it at the input rather than only in a toast (ERR-14).
+   */
+  readonly field?: string;
+  /** Present on write paths. Omitted on reads, where nothing was at stake. */
+  readonly data_state?: ErrorDataState;
+  readonly recovery?: ErrorRecovery;
+  /** Per-item failures, so a bulk result can name each one (ERR-13). */
+  readonly failures?: readonly ErrorItemFailure[];
+  /** Technical detail for a "Show details" affordance — never the headline. */
+  readonly detail?: string;
+}
+
+/**
+ * Error causes the UI branches on.
+ *
+ * `unknown` is the P4 exception: permitted only when the cause genuinely
+ * cannot be determined, and still required to carry `data_state` and a
+ * recovery. If it shows up on a routine path that is a bug in the error
+ * handling, not an acceptable outcome.
+ */
+export type ErrorCode =
+  | "validation_failed"
+  | "not_found"
+  | "conflict"
+  | "archived_reference"
+  | "config_invalid"
+  | "schema_mismatch"
+  | "git_failed"
+  | "io_failed"
+  | "partial_failure"
+  | "unknown";

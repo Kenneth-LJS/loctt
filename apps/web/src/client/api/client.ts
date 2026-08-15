@@ -15,6 +15,8 @@
  * (the API server serves both the SPA bundle and the routes).
  */
 
+import type { ErrorResponse } from "@loctt/contracts";
+
 const CLIENT_HEADER = "X-Loctt-Client";
 const CLIENT_NAME = "web";
 
@@ -22,18 +24,51 @@ export class ApiError extends Error {
   readonly status: number;
   readonly body: unknown;
   readonly endpoint: string;
+  /**
+   * The server's structured error envelope, when it sent one.
+   *
+   * Components branch on this rather than matching `message` text: the
+   * field a failure belongs to decides *where* it renders (ERR-14), the
+   * data state decides *what the user is told about their edit*
+   * (ERR-18), and the recovery decides *which control to offer*
+   * (ERR-15). Undefined when the failure never reached the API — an
+   * unreachable server, an HTML error page from something upstream.
+   */
+  readonly envelope: ErrorResponse | undefined;
 
   constructor(message: string, opts: {
     status: number;
     body: unknown;
     endpoint: string;
+    envelope?: ErrorResponse | undefined;
   }) {
     super(message);
     this.name = "ApiError";
     this.status = opts.status;
     this.body = opts.body;
     this.endpoint = opts.endpoint;
+    this.envelope = opts.envelope;
   }
+
+  /** Convenience for the common `err.envelope?.code` branch. */
+  get code(): ErrorResponse["code"] | undefined {
+    return this.envelope?.code;
+  }
+}
+
+/**
+ * Narrows a parsed response body to the error envelope.
+ *
+ * Only `code` and `message` are required — a body carrying neither is
+ * some other server's error page, not ours, and is left as raw `body`.
+ */
+function asEnvelope(body: unknown): ErrorResponse | undefined {
+  if (body === null || typeof body !== "object") return undefined;
+  const candidate = body as Partial<ErrorResponse>;
+  if (typeof candidate.code !== "string" || typeof candidate.message !== "string") {
+    return undefined;
+  }
+  return candidate as ErrorResponse;
 }
 
 type Method = "GET" | "POST" | "PUT" | "DELETE";
@@ -66,6 +101,11 @@ async function parseBody(res: Response): Promise<unknown> {
 }
 
 function errorMessage(endpoint: string, status: number, body: unknown): string {
+  // The envelope's `message` is the user-facing headline; prefer it over
+  // the legacy `error` string, which it duplicates today but need not
+  // once call sites carry richer copy.
+  const envelope = asEnvelope(body);
+  if (envelope !== undefined) return envelope.message;
   // Prefer a server-supplied error string when present
   if (body !== null && typeof body === "object" && "error" in body) {
     const err = (body as { error?: unknown }).error;
@@ -98,6 +138,7 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
       status: res.status,
       body,
       endpoint,
+      envelope: asEnvelope(body),
     });
   }
   return body as T;

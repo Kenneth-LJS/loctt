@@ -12,6 +12,8 @@ import type {
   ConfigResponse,
   CreateTaskRequest,
   DoctorCheckResponse,
+  ErrorCode,
+  ErrorResponse,
   LinkRequest,
   ListTasksRequest,
   MigrateResponse,
@@ -159,6 +161,7 @@ import {
   withStateLock,
   writeTaskBody,
 } from "@loctt/core";
+import { ZodError } from "zod";
 
 import { contentDispositionAttachment } from "./content-disposition.js";
 import type { ParsedFilePart } from "./multipart.js";
@@ -260,8 +263,52 @@ function json(res: import("node:http").ServerResponse, data: unknown, status = 2
   res.end(JSON.stringify(data));
 }
 
-function error(res: import("node:http").ServerResponse, message: string, status = 400): void {
-  json(res, { error: message }, status);
+/**
+ * Default cause for a status code, used when a call site does not name one.
+ *
+ * Inferring beats defaulting everything to `unknown`: `unknown` is P4's
+ * rare exception, reserved for causes that genuinely cannot be determined,
+ * and a UI that sees it on a routine 404 learns nothing.
+ */
+function codeForStatus(status: number): ErrorCode {
+  if (status === 404) return "not_found";
+  if (status === 409) return "conflict";
+  if (status === 400 || status === 422) return "validation_failed";
+  if (status >= 500) return "io_failed";
+  return "unknown";
+}
+
+/**
+ * Writes the API error envelope.
+ *
+ * `message` stays the first parameter and the only required one, so the
+ * ~100 existing call sites keep working while carrying a `code` inferred
+ * from their status. Anything a call site can say more precisely — the
+ * field at fault, whether the write landed, how to recover — it passes in
+ * `extra`, and those are the parts P4 needs that prose cannot carry.
+ *
+ * `error` is still emitted alongside `message` because the client's
+ * `errorMessage()` reads it; dropping it would silently degrade every
+ * message the UI shows today.
+ */
+function error(
+  res: import("node:http").ServerResponse,
+  message: string,
+  status = 400,
+  extra: Omit<Partial<ErrorResponse>, "message"> = {},
+): void {
+  const envelope: ErrorResponse & { readonly error: string } = {
+    code: extra.code ?? codeForStatus(status),
+    message,
+    // Retained for the existing client error path, which reads `error`.
+    error: message,
+    ...(extra.field !== undefined ? { field: extra.field } : {}),
+    ...(extra.data_state !== undefined ? { data_state: extra.data_state } : {}),
+    ...(extra.recovery !== undefined ? { recovery: extra.recovery } : {}),
+    ...(extra.failures !== undefined ? { failures: extra.failures } : {}),
+    ...(extra.detail !== undefined ? { detail: extra.detail } : {}),
+  };
+  json(res, envelope, status);
 }
 
 /**
@@ -320,13 +367,23 @@ async function parseJsonBodyWithSchema<S extends import("zod").ZodTypeAny>(
   const raw = await parseJsonBody<unknown>(req, res);
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
-    const detail = parsed.error.issues
-      .map(i => `${i.path.length > 0 ? `${i.path.join(".")}: ` : ""}${i.message}`)
-      .join("; ");
-    error(res, `invalid request body: ${detail}`, 400);
+    error(res, `invalid request body: ${zodIssueSummary(parsed.error)}`, 400);
     throw new HandledRequestError();
   }
   return parsed.data;
+}
+
+/**
+ * Renders zod issues as prose: `due_date: must be YYYY-MM-DD`.
+ *
+ * ERR-16 keeps validator jargon out of user-facing copy, so the issue
+ * *messages* are joined and the surrounding `ZodError` structure — codes,
+ * paths as arrays, the JSON dump — is dropped.
+ */
+function zodIssueSummary(err: ZodError): string {
+  return err.issues
+    .map(i => `${i.path.length > 0 ? `${i.path.join(".")}: ` : ""}${i.message}`)
+    .join("; ");
 }
 
 /** Default page size when a list endpoint is called without `?limit`. */
@@ -2095,8 +2152,41 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, projectTaskFrontmatter(updated.frontmatter));
     } catch (err) {
-      if (err instanceof TaskUpdateError) { error(res, err.message, 400); return; }
-      if (err instanceof ArchivedReferenceError) { error(res, err.message, 400); return; }
+      // A rejected single-field write is the path ERR-14 and ERR-18 are
+      // written about: the UI renders it at the input rather than in a
+      // toast, and tells the user their edit did not land. Both need the
+      // field name and the data state, which prose alone cannot carry.
+      if (err instanceof TaskUpdateError) {
+        error(res, err.message, 400, {
+          code: "validation_failed",
+          field: request.field,
+          data_state: "not_saved",
+          recovery: { kind: "retry" },
+        });
+        return;
+      }
+      if (err instanceof ArchivedReferenceError) {
+        error(res, err.message, 400, {
+          code: "archived_reference",
+          field: request.field,
+          data_state: "not_saved",
+          recovery: { kind: "none" },
+        });
+        return;
+      }
+      // Frontmatter shape is validated on write, so a bad value reaches
+      // here as a raw ZodError. Left unhandled it became a 500 carrying a
+      // serialized validator dump — a known cause reported as unknown
+      // (ERR-31) with jargon in the headline (ERR-16).
+      if (err instanceof ZodError) {
+        error(res, zodIssueSummary(err), 400, {
+          code: "validation_failed",
+          field: request.field,
+          data_state: "not_saved",
+          recovery: { kind: "retry" },
+        });
+        return;
+      }
       throw err;
     }
   };
@@ -2532,7 +2622,19 @@ export function createWebApp(options: WebAppOptions) {
       // Tag the log line with method+path+req-id so an operator
       // looking at a stack trace can find which request triggered it.
       console.error(`[req ${reqId}] ${req.method ?? "?"} ${path}`, err);
-      error(res, "Internal server error", 500);
+      // ERR-30: an unattributable failure may say so, but must still state
+      // what was attempted, what state the data is in, and what to do
+      // next. A read never put data at stake; a write that died in here
+      // did so at an unknown point, so `unknown` is the honest claim
+      // rather than a guess in either direction.
+      const method = req.method ?? "GET";
+      const isRead = method === "GET" || method === "HEAD";
+      error(res, `The server failed while handling ${method} ${path}.`, 500, {
+        code: "unknown",
+        ...(isRead ? {} : { data_state: "unknown" as const }),
+        recovery: { kind: isRead ? "retry" : "reload" },
+        detail: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
