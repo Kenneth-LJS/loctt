@@ -13,3 +13,9 @@ export {
   setDefaultProject,
   unarchiveProject,
 } from "./manage.js";
+export type { SetPrefixResult } from "./prefix.js";
+export {
+  completeInterruptedPrefixRename,
+  readPrefixRenameState,
+  setProjectPrefix,
+} from "./prefix.js";

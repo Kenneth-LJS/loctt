@@ -47,3 +47,24 @@ export const ReconcileStateSchema = z.object({
   started_at: z.string().min(1),
 }).strict();
 export type ReconcileState = z.infer<typeof ReconcileStateSchema>;
+
+/**
+ * Sentinel written while a project's key prefix is being changed.
+ *
+ * The rewrite spans `projects.yaml`, `state.yaml`, every task in the
+ * project, and the key index — far more than one atomic write can cover.
+ * The state lock is released when the process exits, so it cannot
+ * protect a crash partway: without this file the tracker would be left
+ * with some tasks on the old prefix and some on the new, and nothing to
+ * say a rename was ever in flight.
+ *
+ * Present only mid-rename. Its existence means "finish me", and doing so
+ * is idempotent — a task already carrying `to` is skipped.
+ */
+export const PrefixRenameStateSchema = z.object({
+  project_id: z.string().min(1),
+  from: z.string().min(1),
+  to: z.string().min(1),
+  started_at: z.string().min(1),
+}).strict();
+export type PrefixRenameState = z.infer<typeof PrefixRenameStateSchema>;

@@ -15,6 +15,7 @@ const QUERIES_FILE = "queries.yaml";
 const LIST_VIEW_FILE = "list-view.yaml";
 const SYNC_FILE = "sync.yaml";
 const RECONCILE_FILE = "reconcile.yaml";
+const PREFIX_RENAME_FILE = "prefix-rename.yaml";
 const KEY_INDEX_FILE = "key-index.yaml";
 const JOURNAL_FILE = "journal.yaml";
 const SCHEMA_VERSION_FILE = ".schema-version";
@@ -142,6 +143,18 @@ export function getSyncStatePath(locttDir: string): string {
 /** Returns the path to .loctt/local/reconcile.yaml. */
 export function getReconcileStatePath(locttDir: string): string {
   return join(locttDir, LOCAL_DIR, RECONCILE_FILE);
+}
+
+/**
+ * Returns the path to .loctt/local/prefix-rename.yaml — the sentinel
+ * present only while a project's key prefix is being rewritten.
+ *
+ * Lives under `local/` because it describes an operation on this
+ * checkout, not shared tracker state: publishing a half-finished rename
+ * to the branch would hand the sentinel to every other clone.
+ */
+export function getPrefixRenameStatePath(locttDir: string): string {
+  return join(locttDir, LOCAL_DIR, PREFIX_RENAME_FILE);
 }
 
 /** Returns the path to the docs directory: .loctt/docs/ */
