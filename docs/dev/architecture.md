@@ -198,6 +198,40 @@ All three apps call `requireSupportedSchema` at startup and individual command b
 
 ## Git Integration
 
-Git-backed mode is optional. When enabled, LocTT publishes task data to a dedicated `loctt` branch (configurable via `git.branch`) using a temporary worktree under `.loctt/local/`. Local-only files (`local/`, `.current-user`, `users/<id>/settings.yaml`) are gitignored and never published. See [git-sync.md](../user/common/git-sync.md).
+Git-backed mode is optional; LocTT works fine without it, purely local by
+default. When enabled, task data is published to a dedicated `loctt`
+branch (configurable via `git.branch`) through a temporary worktree under
+`.loctt/local/`, so the user's own working tree and checked-out branch are
+never touched. Local-only files (`local/`, `.current-user`,
+`users/<id>/settings.yaml`) are gitignored and never published. The
+user-facing behaviour is described in
+[git-sync.md](../user/common/git-sync.md).
 
-LocTT works fine without Git — purely local by default.
+The subsystem lives in `packages/core/src/git/`:
+
+| Module | Responsibility |
+|---|---|
+| `git-mode.ts` | `enableGit` / `disableGit` / `getGitStatus` — turning the mode on and reporting its state |
+| `publish-sync.ts` | The worktree lifecycle, commit, push, fetch, and the `publish` / `pullFromLocttBranch` entry points |
+| `three-way.ts` | `planSync` — file-level 3-way classification producing a plan, plus the `NEVER_MIRROR` / `LOCAL_OWNED` path sets |
+| `reconcile.ts` | Content-level merges: `rekeyCollisions`, `mergeRelationships`, `mergeKeyHistory` |
+
+**Publish and sync are asymmetric, deliberately.** Publish mirrors local
+state onto the branch — a one-way copy is correct there, because local is
+the authority for what it just wrote. Sync does *not* mirror in reverse:
+it runs `planSync` over the local tree, the branch tree, and the last
+synced commit, and acts only on differences it can attribute. A file
+present locally but absent on the branch is "created locally", not
+"deleted remotely", so it survives.
+
+That asymmetry is load-bearing. Sync was previously a blind
+last-writer-wins mirror in both directions, which produced four
+reproduced data-loss paths — discarded field edits, unrecoverably deleted
+offline tasks, and an overwritten `.schema-version` that bricked the
+tracker. `planSync` exists to make those unrepresentable; see
+[invariants.md](invariants.md) before changing it.
+
+`reconcile.ts`'s content-level merges are wired for relationships and key
+history. `rekeyCollisions` — for two clones independently allocating the
+same key — is implemented and unit-tested but has no production caller
+yet; key collisions across clones remain an open case.
