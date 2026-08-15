@@ -65,11 +65,12 @@ written. See §2 item 0.
 
 Ordered. Dependencies are stated because three items are blocked.
 
-**Phase 2 progress:** 0i, 0e, 0d, 0m, 0l, 0c, 0b, 0, 0n done. **All four
+**Phase 2 progress:** ALL 0-series items done (0, 0b–0n). Remaining:
+items 1–11, which are feature builds rather than fixes. **All four
 previously-recorded pre-existing test failures are fixed** — each was a
 stale fixture, not a defect. Full suite green: 1,621 unit, 150
 integration, 20 e2e. Working order is live bugs first,
-then by dependency — next up the doc items (0f, 0j, 0g, 0h, 0k).
+then by dependency. The 0-series is complete; 1–11 remain.
 
 ### 0. Relationship query syntax — ✅ DONE (`1a2b77d`)
 **Blocked by:** nothing. **Size:** small-medium.
@@ -462,7 +463,7 @@ of the option.
 entirely — `projects.yaml` has no slug field, so it can never be honoured
 — and **implement `--project-label`** so the documented example works.
 
-### 0f. Correct `TEMP-WEB-TICKETS.md` status marks
+### 0f. Correct `TEMP-WEB-TICKETS.md` status marks — ✅ DONE (`d53dc45`)
 **Blocked by:** nothing. **Size:** trivial (edits), pending verification.
 
 This is the one planning doc being **kept**, so a wrong tick misleads
@@ -485,7 +486,7 @@ milestone-1 review gate both read this file.
 M1.2, and any ticked M2–M4 items). Results pending; corrections to be
 applied from that verification.
 
-### 0g. Resolve UI test-case contradictions
+### 0g. Resolve UI test-case contradictions — ✅ DONE (`ab2645c`)
 **Blocked by:** nothing. **Size:** small (doc edits).
 
 **CMT-4 vs CMT-35 — CMT-35 wins.** "Anyone may edit or delete anyone's
@@ -509,7 +510,7 @@ earlier pass found six (the two above plus the sidebar-pin four-way, the
 ERR-13/BLK-38 rollback pair, BLK-28/BLK-38 atomicity, and SHL-37 making
 A11Y-49 untestable). Results pending; those six also need resolving.
 
-### 0h. Fix the 21 UI cases that stop at the UI boundary
+### 0h. Fix the 21 UI cases that stop at the UI boundary — ✅ DONE (`9fd94da`)
 **Blocked by:** nothing. **Size:** small (one bullet per case).
 
 **The pattern.** A case asserts the UI *emitted* something — a URL param,
@@ -603,7 +604,7 @@ fix landing three times in three shapes.
 all five resolvers include `status.category not in [completed, discarded]`,
 so count badges and click-through both error at runtime.
 
-### 0j. `TEMP-WEB-TICKETS.md` — verification results
+### 0j. `TEMP-WEB-TICKETS.md` — verification results — ✅ DONE (`d53dc45`)
 **Blocked by:** nothing. **Size:** trivial.
 
 **No phantom ✅.** Every ticked item has real code behind it — the CW-17
@@ -632,7 +633,7 @@ relies on it.
 is no longer CLI-only. M4.5's acceptance criteria are pinned to the
 `relationship.*` grammar being redesigned in item 0.
 
-### 0k. UI principle rulings
+### 0k. UI principle rulings — ✅ DONE (`ab2645c`)
 **Blocked by:** nothing. **Size:** small (README + case edits).
 
 **P1 — optimistic rendering is allowed, but must be visually distinct and
