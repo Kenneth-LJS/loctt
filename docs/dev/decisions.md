@@ -62,19 +62,21 @@ decision, not a bug fix.
 
 ## 2. Resolved — scheduled for build
 
-Every item here was decided, then fell out of the plan. All have now been
-given a disposition.
+Every item here was decided, then fell out of the plan. **Status column
+updated 2026-08-15**: six of the eight are now built. The two that
+remain are blocked on UI routes that render stubs, not on any further
+decision.
 
 | Key | Decision | Disposition |
 |---|---|---|
-| **D2 / B2** | **Global search** in the header — `text ~ q` DSL, no full-text index. | **Build now.** No longer milestone-gated. |
-| **B5** | **Lossy-content guardrail** — detect constructs WYSIWYG cannot represent, warn, and force source mode for that task. | **Build.** The spec already exists in [markdown-extensions.md](markdown-extensions.md#lossy-content-guardrail); it was never implemented. Custom TipTap nodes cover LocTT's own extensions (KaTeX, `^sup^`, `~sub~`, mentions, `![[attachments/x]]`) so those stay visually editable; footnotes and unregistered raw HTML trigger the fallback. Tables need no fallback — `@tiptap/extension-table` handles them. |
-| **CW-4** | Bulk ops: `bulkLink`, `bulkUnsetField`, CLI `loctt set T-1,T-2 …`, MCP `bulk_update_tasks`. | **Build in full**, plus HTTP bulk routes — the existing `bulkSetFields` / `bulkArchive` currently reach no surface at all. |
-| **SV-2** | Saved-view editor reachable from list/board/timeline filter bars, sidebar, view pickers, and Settings. | **Build all entry points.** Endpoints and UI made obsolete by this work get removed rather than left dangling. |
-| **SV-3** | Basic mode covers **all** DSL fields, including custom fields and `relationship.<type>`. | **Build.** Blocked on first fixing the `relationship.<type>` vs `.target` evaluator bug — otherwise the chip builder emits queries that cannot match. |
-| **SV-4** | Sort rows inline below filter rows, drag-reorderable for sort priority. | **Build.** |
-| **B14** | Relationship rows show each target's live status. | **Build.** Requires `TaskResponse` to carry resolved relationships first — it currently drops them (`packages/contracts/src/service.ts:97-107`). |
-| **D17** | Editor mode (WYSIWYG vs source) persists per user via `UserSettings`. | **Build**, alongside CW-17. |
+| **D2 / B2** | **Global search** in the header — `text ~ q` DSL, no full-text index. | ✅ **Built** (`216698b`). `GET /api/search`. Exposed two live bugs: body search matched nothing on any surface (no caller supplied `getBody`), and `searchable: false` was ignored. The header box itself still needs the shell. |
+| **B5** | **Lossy-content guardrail** — detect constructs WYSIWYG cannot represent, warn, and force source mode for that task. | ✅ **Detection, API field and TipTap nodes built** (`83c5b82`). The banner and mode-forcing need the body editor, which does not exist. |
+| **CW-4** | Bulk ops: `bulkLink`, `bulkUnsetField`, CLI `loctt set T-1,T-2 …`, MCP `bulk_update_tasks`. | ✅ **Built** (`b0ef10a`). Four HTTP routes, CLI comma-refs, MCP tool. **`bulkUnsetField` was not needed** — `bulkSetFields` already treats `value: undefined` as a clear; the gap was that no surface could express it, since JSON has no `undefined`. Each surface maps `null → undefined`. |
+| **SV-2** | Saved-view editor reachable from list/board/timeline filter bars, sidebar, view pickers, and Settings. | ⛔ **Blocked on UI.** Needs the editor to have entry points to. |
+| **SV-3** | Basic mode covers **all** DSL fields, including custom fields and link predicates. | ⛔ **Blocked on UI.** The named dependency is gone: `relationship.*` was replaced wholesale by `has_link()` / `link_count()` (`1a2b77d`), and saved-view queries are now validated before persisting (`6536462`). What remains is the chip builder, and `/settings/$section` is a stub. |
+| **SV-4** | Sort rows inline below filter rows, drag-reorderable for sort priority. | ⛔ **Blocked on UI.** |
+| **B14** | Relationship rows show each target's live status. | ⛔ **Blocked on UI.** Its dependency is done: `TaskResponse` now carries resolved relationships including each target's live title and status (`e376634`). What remains is the panel, and `/tasks/$key` is a stub. |
+| **D17** | Editor mode (WYSIWYG vs source) persists per user via `UserSettings`. | ✅ **Schema built** (`e25b4bc`), alongside CW-17. UI wiring needs the editor. |
 
 ## 3. Superseded — do not re-apply
 
