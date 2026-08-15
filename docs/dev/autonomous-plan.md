@@ -52,7 +52,7 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 | Phase | State | Notes |
 |---|---|---|
 | 1 · Partition | ⛔ | Partition **done** — all 21 tickets carry a `Cases:` line, gate passes. Halted on what it exposed: 28 cases assert two views no ticket builds. See *Blocker* below. |
-| 2 · Measure | ⬜ | Not started. Not blocked by Phase 1 — could run first if the blocker takes time to resolve. |
+| 2 · Measure | ⛔ | Measurement **done** — report at `scratchpad/phase2-coverage-report.md`. Halted: the reference docs are stale for exactly the untested region, so they cannot serve as the spec for Phase 3. See *Blocker 2*. |
 | 3 · Surface gaps | ⬜ | 68 cases outstanding |
 | 4 · Structural audit | ⬜ | |
 | 5 · UI build | ⬜ | M1.4 is 🔵 from earlier work, predating this plan |
@@ -95,6 +95,65 @@ The other four unplaceable cases:
 
 These four are milestone-tag problems rather than missing tickets: the
 behaviour is ticketed, just later than the case's tag implies.
+
+**After the review**, ERR-3 and ERR-4 came off this list to M2.2 — the
+partitioning agent had scoped its search to M1, where no editable field
+exists, and stopped there rather than looking forward. 30 remain
+unplaceable, 28 of them the two missing views.
+
+### ⛔ Blocker 2 — the reference docs are stale where coverage is thinnest
+
+Phase 2 measured **CLI 17/49 covered, 12 partial, 20 uncovered** and
+**MCP 26/75 covered, 11 partial, 38 uncovered**. Coverage is bimodal and
+the split is not random:
+
+- **The task surface is genuinely well tested** — create, list, show,
+  set, unset, body, log, link, archive, delete, attach, comments, config,
+  git, with real error paths and edge cases. It does not need work.
+- **The entity surface is close to untested at the surface layer** —
+  users, labels, milestones, sprints. `loctt user`, `loctt label`,
+  `loctt calendar` and `loctt rerank` appear in no test file in the repo.
+  30 MCP tools appear only in a schema-contract test that snapshots tool
+  *names* and never calls them. Registration is not behaviour.
+
+**The blocker is that the docs drifted in exactly that region.** Verified
+directly: `mcp/reference.md:451` documents `create_label` as taking
+required `key` + `label`, while `apps/mcp/src/tools/label.ts:33` ships
+`name` + optional `color`, and `createLabel` in core takes `name`. The
+CLI reference documents no `loctt label` command at all.
+
+That makes Phase 3 unexecutable over this region. Transcribing cases from
+the docs produces cases for an API that does not exist; writing them from
+the code is precisely the self-grading failure this plan exists to
+prevent. The plan also forbids an agent editing the reference docs.
+
+Sizing for the rest, once the docs are settled: **~25–35 integration
+tests** — one Phase 4 slice, not a UI build.
+
+### Two green tests asserting behaviour that does not exist
+
+Found while measuring, then verified by running the built CLI directly:
+
+- **`tests/e2e/03-cli-full-lifecycle.test.ts:55`** passes `--hard`.
+  `cli/reference.md:621` states "There is no `--hard` flag", and there is
+  none in `apps/cli/src`. It passes because `--yes` alone does the work.
+- **`tests/e2e/10-error-paths.test.ts:39`** is titled "delete on an
+  already-archived task without `--hard` exits non-zero". Its comment says
+  the first bare `delete` archives. It does not: bare `delete` exits 2 on
+  the non-TTY confirmation gate and the task survives. The test would
+  still pass with the already-archived check deleted entirely.
+
+**Underlying defect:** unknown flags are silently ignored on every task
+command. Verified by running `list --bogus`, `show T1 --bogus`,
+`archive T1 --bogus`, `delete T1 --bogus --yes` — all exit 0 and proceed.
+`init` rejects unknown options, so the CLI is inconsistent with itself.
+A typo'd flag on an irreversible command is accepted.
+
+Fixing that is a behaviour change and outside both phases' remit, so it is
+recorded rather than done. It belongs in Phase 3 or 4 with a case behind
+it. The two tests should be corrected in the same change — per
+`CLAUDE.md`, a fix that requires editing a green test means that test was
+asserting the bug, and the commit must say so.
 
 ### Per-ticket coverage, now that the partition exists
 
