@@ -132,7 +132,7 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 - The query string as typed is what appears in the URL search params, so copy-paste between the URL and the terminal is lossless.
 
 ### XS-16 · M1 · blocker · P10
-**A query the CLI accepts is accepted by the UI.** Take each documented construct from [query-language.md](../../user/common/query-language.md) — `=`, `!=`, `<`, `<=`, `>`, `>=`, `in`, `not in`, `~`, `and`, `or`, `not`, parentheses, `text`, `parent`, `relationship.type`, `relationship.target`, `today`, `true`/`false`, quoted and bare values — and paste each into the UI search box.
+**A query the CLI accepts is accepted by the UI.** Take each documented construct from [query-language.md](../../user/common/query-language.md) — `=`, `!=`, `<`, `<=`, `>`, `>=`, `in`, `not in`, `~`, `and`, `or`, `not`, parentheses, `text`, `parent`, `has_link(...)`, `link_count(...)`, `today`, `true`/`false`, quoted and bare values — and paste each into the UI search box.
 
 - Every one parses in the UI and returns the same result set as `loctt list --query` with the same string.
 - No construct produces a UI parse error that the CLI accepts, and none silently returns zero results where the CLI returns rows.

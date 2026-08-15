@@ -1,4 +1,5 @@
 import type { WorkflowConfig } from "@loctt/contracts";
+import { relationshipTypeKeys } from "@loctt/contracts";
 
 import type { QueryNode } from "./parser.js";
 
@@ -146,6 +147,9 @@ export function validateQuery(node: QueryNode, opts: ValidateQueryOptions = {}):
     case "comparison":
       validateComparison(node, opts);
       return;
+    case "has_link":
+      validateRelationshipKind(node.kind, node.position ?? 0, opts);
+      return;
   }
 }
 
@@ -156,35 +160,21 @@ function validateComparison(
   const { field, position } = node;
   const pos = position ?? 0;
 
-  // `relationship.type` and `relationship.target` address an edge's own
-  // fields and are always valid, whatever kinds the workflow declares.
-  // They are reserved: a workflow kind named `type` is still reachable
-  // via `relationship.<kind> = <target>` for every *other* kind, and the
-  // reserved reading wins here.
-  if (field === "relationship.type" || field === "relationship.target") {
-    return;
+  // The old `relationship.*` grammar is gone. Catch it here so the
+  // message names the replacement rather than reporting an unknown
+  // field.
+  if (field === "relationship" || field.startsWith("relationship.")) {
+    throw new QueryValidationError(
+      `"${field}" is no longer supported — use has_link("<kind>"), `
+      + `has_link("<kind>", "<target>"), or link_count("<kind>")`,
+      pos,
+      [],
+    );
   }
 
-  // `relationship.<kind>` — the suffix is a user-configured relationship
-  // key, so it's only checkable with workflow config in hand.
-  if (field.startsWith("relationship.")) {
-    const relType = field.slice("relationship.".length);
-    const wf = opts.workflow;
-    if (!wf) return;
-    const known = (wf.relationships ?? []).map(r => r.key);
-    if (relType.length === 0) {
-      throw new QueryValidationError(`"relationship." needs a relationship type`, pos, known);
-    }
-    if (!known.includes(relType)) {
-      throw new QueryValidationError(
-        `unknown relationship type "${relType}"`,
-        pos,
-        // `type`/`target` are always available, so offer them alongside
-        // the configured kinds rather than letting a near-miss suggest
-        // only kinds.
-        suggest(relType, [...known, "type", "target"]),
-      );
-    }
+  // link_count("child") > 3 — validate the kind, not the field name.
+  if (node.call?.name === "link_count") {
+    validateRelationshipKind(node.call.kind, pos, opts);
     return;
   }
 
@@ -292,6 +282,37 @@ function validateEnumValue(
         suggest(v.value, known),
       );
     }
+  }
+}
+
+/**
+ * Validates a relationship kind named in `has_link(...)` /
+ * `link_count(...)`.
+ *
+ * Accepts **both directions** via `relationshipTypeKeys`, which returns
+ * the forward key and the inverse. The previous validator mapped
+ * `r => r.key` only, so `is_blocked_by` failed validation even though
+ * the evaluator handled it — rejecting exactly the reverse-direction
+ * queries that make link querying worth having. `linkTask` writes the
+ * inverse edge on the target, so both directions are real stored data.
+ */
+function validateRelationshipKind(
+  kind: string | undefined,
+  pos: number,
+  opts: ValidateQueryOptions,
+): void {
+  if (kind === undefined) return;
+  const wf = opts.workflow;
+  // Without config there is nothing to check against; a caller that has
+  // not loaded a workflow still gets field-name validation elsewhere.
+  if (!wf) return;
+  const known = (wf.relationships ?? []).flatMap(relationshipTypeKeys);
+  if (!known.includes(kind)) {
+    throw new QueryValidationError(
+      `unknown relationship type "${kind}"`,
+      pos,
+      suggest(kind, known),
+    );
   }
 }
 

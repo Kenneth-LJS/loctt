@@ -208,8 +208,10 @@ Type `status = in_progress and priority = high` and press Enter.
   does **not** match on attachment filenames or contents.
 - `parent = WEB-3` accepts the user-facing key and matches children of
   that task.
-- `relationship.type = blocks` and `relationship.target = T-10` both
-  parse and filter on edges.
+- `has_link("blocks")` and `has_link("blocks", "T-10")` both parse and
+  filter on edges, and the two-argument form matches only a task whose
+  *same* edge satisfies both — not one edge of that kind plus a
+  different edge to that target.
 - `fields.story_points > 3` filters on a declared custom field.
 - A custom field declared `searchable: false` is excluded from `text`
   matches but is still directly queryable by `fields.<key>`.

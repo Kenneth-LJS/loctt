@@ -205,19 +205,85 @@ describe("array-valued field comparison (labels)", () => {
   });
 });
 
-describe("relationship-based query filtering", () => {
-  it("filters by relationship type and target", () => {
-    expect(evaluateQuery(query("relationship.blocks = blocked_id"), task)).toBe(true);
-    expect(evaluateQuery(query("relationship.blocks = other"), task)).toBe(false);
+describe("has_link / link_count", () => {
+  it("has_link(kind) tests existence of that kind", () => {
+    expect(evaluateQuery(query('has_link("blocks")'), task)).toBe(true);
+    expect(evaluateQuery(query('has_link("parent")'), task)).toBe(true);
+    expect(evaluateQuery(query('has_link("depends_on")'), task)).toBe(false);
   });
 
-  it("handles != for relationships", () => {
-    expect(evaluateQuery(query("relationship.blocks != other"), task)).toBe(true);
+  it("has_link() with no args tests for any link at all", () => {
+    expect(evaluateQuery(query("has_link()"), task)).toBe(true);
+    const orphan: TaskFrontmatter = { ...task, relationships: [] };
+    expect(evaluateQuery(query("has_link()"), orphan)).toBe(false);
+    expect(evaluateQuery(query("not has_link()"), orphan)).toBe(true);
   });
 
-  it("handles missing relationship type", () => {
-    expect(evaluateQuery(query("relationship.depends_on = x"), task)).toBe(false);
-    expect(evaluateQuery(query("relationship.depends_on != x"), task)).toBe(true);
+  it("has_link(kind, target) matches a single edge on both", () => {
+    expect(evaluateQuery(query('has_link("blocks", "blocked_id")'), task)).toBe(true);
+    expect(evaluateQuery(query('has_link("blocks", "other")'), task)).toBe(false);
+  });
+
+  it("the same-edge trap is not expressible", () => {
+    // THE defect this syntax replaces. The task blocks `blocked_id` and
+    // has parent `parent_id`. Under the old grammar,
+    //   relationship.type = blocks and relationship.target = parent_id
+    // matched — two independent existential filters satisfied by two
+    // DIFFERENT edges — while reading as "blocks parent_id", which is
+    // false. has_link takes both in one call, so one edge must satisfy
+    // both and the false reading cannot be written.
+    expect(evaluateQuery(query('has_link("blocks", "parent_id")'), task)).toBe(false);
+    expect(evaluateQuery(query('has_link("parent", "parent_id")'), task)).toBe(true);
+  });
+
+  it("negation means no edge matches, not some edge differs", () => {
+    // Under the old Form A, `!=` meant "some edge differs", so a task
+    // with two edges satisfied almost any inequality.
+    expect(evaluateQuery(query('not has_link("blocks", "other")'), task)).toBe(true);
+    expect(evaluateQuery(query('not has_link("blocks", "blocked_id")'), task)).toBe(false);
+  });
+
+  it("resolves a target by current key, not only stored id", () => {
+    // The old Form A compared the raw ULID and never called
+    // resolveKey, so the documented example could not match any task.
+    const ctx: EvalContext = {
+      resolveKey: (id: string) => (id === "blocked_id" ? "T-10" : undefined),
+    };
+    expect(evaluateQuery(query('has_link("blocks", "T-10")'), task, ctx)).toBe(true);
+    expect(evaluateQuery(query('has_link("blocks", "T-99")'), task, ctx)).toBe(false);
+  });
+
+  it("link_count counts edges of a kind", () => {
+    const many: TaskFrontmatter = {
+      ...task,
+      relationships: [
+        { type: "child", target: "a" },
+        { type: "child", target: "b" },
+        { type: "child", target: "c" },
+        { type: "blocks", target: "d" },
+      ],
+    };
+    expect(evaluateQuery(query('link_count("child") > 2'), many)).toBe(true);
+    expect(evaluateQuery(query('link_count("child") > 3'), many)).toBe(false);
+    expect(evaluateQuery(query('link_count("child") = 3'), many)).toBe(true);
+    expect(evaluateQuery(query('link_count("blocks") = 1'), many)).toBe(true);
+  });
+
+  it("link_count with no kind counts every edge", () => {
+    expect(evaluateQuery(query("link_count() = 2"), task)).toBe(true);
+  });
+
+  it("link_count is 0 for an absent kind", () => {
+    expect(evaluateQuery(query('link_count("depends_on") = 0'), task)).toBe(true);
+  });
+
+  it("the old relationship.* grammar errors with a message naming the new form", () => {
+    // A hard break: silently matching nothing would be worse than an
+    // error, since the old spelling is in saved views and scripts.
+    expect(() => evaluateQuery(query("relationship.blocks = blocked_id"), task))
+      .toThrow(/has_link/);
+    expect(() => evaluateQuery(query("relationship.type = blocks"), task))
+      .toThrow(/no longer supported/);
   });
 });
 
@@ -265,11 +331,12 @@ describe("nested field access (CW-9)", () => {
 });
 
 /**
- * `relationship.type` / `relationship.target` address an edge's own
- * fields; `relationship.<kind>` filters by kind and compares the target.
- * Both forms are documented in query-language.md.
+ * Direction and edge-shape behaviour of has_link. Both directions of a
+ * link are queryable as plain predicates because `linkTask` writes the
+ * forward edge on A and the inverse on B — "what blocks T-2" is a
+ * forward lookup on the inverse key, which in Jira needs ScriptRunner.
  */
-describe("relationship field queries", () => {
+describe("has_link — directions and edge shapes", () => {
   const relCtx = { resolveKey: (id: string) => (id === "01BBB" ? "T-10" : undefined) };
 
   function relFm(rels: { type: string; target: string }[]): TaskFrontmatter {
@@ -280,72 +347,89 @@ describe("relationship field queries", () => {
     } as TaskFrontmatter;
   }
 
-  it("matches an edge by its type", () => {
-    const t = relFm([{ type: "blocks", target: "01BBB" }]);
-    expect(evaluateQuery(query("relationship.type = blocks"), t, relCtx)).toBe(true);
-    expect(evaluateQuery(query("relationship.type = parent"), t, relCtx)).toBe(false);
+  it("queries the inverse direction as a plain predicate", () => {
+    // The stored inverse edge on the target task.
+    const fm = relFm([{ type: "is_blocked_by", target: "01BBB" }]);
+    expect(evaluateQuery(query('has_link("is_blocked_by")'), fm, relCtx)).toBe(true);
+    expect(evaluateQuery(query('has_link("is_blocked_by", "T-10")'), fm, relCtx)).toBe(true);
+    expect(evaluateQuery(query('has_link("blocks")'), fm, relCtx)).toBe(false);
   });
 
-  it("matches a target by key as well as stored id", () => {
-    const t = relFm([{ type: "blocks", target: "01BBB" }]);
-    expect(evaluateQuery(query("relationship.target = T-10"), t, relCtx)).toBe(true);
-    expect(evaluateQuery(query('relationship.target = "01BBB"'), t, relCtx)).toBe(true);
+  it("matches a target by stored id as well as current key", () => {
+    const fm = relFm([{ type: "blocks", target: "01BBB" }]);
+    expect(evaluateQuery(query('has_link("blocks", "01BBB")'), fm, relCtx)).toBe(true);
+    expect(evaluateQuery(query('has_link("blocks", "T-10")'), fm, relCtx)).toBe(true);
   });
 
-  it("a symmetric edge matches from either side", () => {
-    // A holds relates_to -> B; B holds relates_to -> A. Neither is
-    // "source": each task stores its own outbound edge.
-    const a = relFm([{ type: "relates_to", target: "01BBB" }]);
-    const b = {
-      ...relFm([{ type: "relates_to", target: "01AAA" }]),
-      id: "01BBB", key: "T-10",
-    } as TaskFrontmatter;
-    const node = query("relationship.type = relates_to");
-    expect(evaluateQuery(node, a, relCtx)).toBe(true);
-    expect(evaluateQuery(node, b, relCtx)).toBe(true);
-  });
-
-  it("a directional edge matches only the side that holds it", () => {
-    const blocker = relFm([{ type: "blocks", target: "01BBB" }]);
-    const blocked = {
-      ...relFm([{ type: "blocked_by", target: "01AAA" }]),
-      id: "01BBB",
-    } as TaskFrontmatter;
-    const node = query("relationship.type = blocks");
-    expect(evaluateQuery(node, blocker, relCtx)).toBe(true);
-    expect(evaluateQuery(node, blocked, relCtx)).toBe(false);
-  });
-
-  it("!= means no edge matches, not some edge differs", () => {
-    const t = relFm([
-      { type: "blocks", target: "01BBB" },
-      { type: "parent", target: "01CCC" },
+  it("distinguishes several edges of the same kind", () => {
+    const fm = relFm([
+      { type: "blocks", target: "x" },
+      { type: "blocks", target: "y" },
     ]);
-    expect(evaluateQuery(query("relationship.type != blocks"), t, relCtx)).toBe(false);
-    expect(evaluateQuery(query("relationship.type != clones"), t, relCtx)).toBe(true);
-  });
-
-  it("supports in / not in", () => {
-    const t = relFm([{ type: "blocks", target: "01BBB" }]);
-    expect(evaluateQuery(query("relationship.type in (blocks, parent)"), t, relCtx)).toBe(true);
-    expect(evaluateQuery(query("relationship.type not in (clones, parent)"), t, relCtx)).toBe(true);
+    expect(evaluateQuery(query('has_link("blocks", "x")'), fm)).toBe(true);
+    expect(evaluateQuery(query('has_link("blocks", "y")'), fm)).toBe(true);
+    expect(evaluateQuery(query('has_link("blocks", "z")'), fm)).toBe(false);
+    expect(evaluateQuery(query('link_count("blocks") = 2'), fm)).toBe(true);
   });
 
   it("a task with no edges matches only negations", () => {
-    const t = relFm([]);
-    expect(evaluateQuery(query("relationship.type = blocks"), t, relCtx)).toBe(false);
-    expect(evaluateQuery(query("relationship.type != blocks"), t, relCtx)).toBe(true);
+    const fm = relFm([]);
+    expect(evaluateQuery(query('has_link("blocks")'), fm)).toBe(false);
+    expect(evaluateQuery(query('not has_link("blocks")'), fm)).toBe(true);
+    expect(evaluateQuery(query("not has_link()"), fm)).toBe(true);
+    expect(evaluateQuery(query('link_count("blocks") = 0'), fm)).toBe(true);
   });
 
-  it("still supports the relationship.<kind> = <target> form", () => {
-    const t = relFm([{ type: "blocks", target: "01BBB" }]);
-    expect(evaluateQuery(query('relationship.blocks = "01BBB"'), t, relCtx)).toBe(true);
-    expect(evaluateQuery(query('relationship.blocks = "01ZZZ"'), t, relCtx)).toBe(false);
+  it("composes with and / or / not like any other predicate", () => {
+    const fm = relFm([
+      { type: "blocks", target: "x" },
+      { type: "parent", target: "p" },
+    ]);
+    expect(evaluateQuery(query('has_link("blocks") and has_link("parent")'), fm)).toBe(true);
+    expect(evaluateQuery(query('has_link("blocks") and has_link("clones")'), fm)).toBe(false);
+    expect(evaluateQuery(query('has_link("clones") or has_link("parent")'), fm)).toBe(true);
+    expect(evaluateQuery(query('not has_link("clones")'), fm)).toBe(true);
   });
 
-  it("combines type and target on the same task", () => {
-    const t = relFm([{ type: "blocks", target: "01BBB" }]);
-    const node = query("relationship.type = blocks and relationship.target = T-10");
-    expect(evaluateQuery(node, t, relCtx)).toBe(true);
+  it("a kind named like a grammar word is queryable", () => {
+    // Kind names sit in quoted value position, so a workspace may name
+    // a relationship `type`, `target` or `count` without colliding.
+    // This is the main reason the function form beat a field form.
+    const fm = relFm([{ type: "type", target: "x" }, { type: "count", target: "y" }]);
+    expect(evaluateQuery(query('has_link("type")'), fm)).toBe(true);
+    expect(evaluateQuery(query('has_link("count", "y")'), fm)).toBe(true);
+    expect(evaluateQuery(query('has_link("target")'), fm)).toBe(false);
+  });
+});
+
+describe("parent alias reads the configured hierarchy kind", () => {
+  function fm(rels: { type: string; target: string }[]): TaskFrontmatter {
+    return {
+      id: "01AAA", key: "T-1", title: "t",
+      created_at: "2026-01-01", updated_at: "2026-01-01",
+      relationships: rels,
+    } as TaskFrontmatter;
+  }
+
+  const wfWith = (key: string, graph: "tree" | "none") => ({
+    key: { prefix: "T-" },
+    statuses: [], priorities: [], task_types: [],
+    relationships: [{ key, label: key, inverse: `${key}_of`, inverse_label: "x", graph }],
+    custom_fields: [],
+  } as unknown as NonNullable<EvalContext["workflow"]>);
+
+  it("follows a renamed hierarchy relationship", () => {
+    // Hardcoding the literal "parent" meant a workspace that renamed
+    // its hierarchy kind saw the alias silently stop matching while
+    // still passing validation.
+    const task = fm([{ type: "belongs_to", target: "T-5" }]);
+    const ctx: EvalContext = { workflow: wfWith("belongs_to", "tree") };
+    expect(evaluateQuery(query("parent = T-5"), task, ctx)).toBe(true);
+  });
+
+  it("falls back to the literal kind with no tree relationship configured", () => {
+    const task = fm([{ type: "parent", target: "T-5" }]);
+    expect(evaluateQuery(query("parent = T-5"), task)).toBe(true);
+    expect(evaluateQuery(query("parent = T-9"), task)).toBe(false);
   });
 });

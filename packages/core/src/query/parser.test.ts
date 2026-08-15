@@ -140,3 +140,56 @@ describe("parseQuery", () => {
     expect(() => parseQuery(tokens)).toThrow(ParseError);
   });
 });
+
+describe("function-call syntax (has_link / link_count)", () => {
+  const p = (s: string) => parseQuery(tokenize(s));
+
+  it("parses has_link with 0, 1 and 2 arguments", () => {
+    expect(p("has_link()")).toEqual({ type: "has_link", position: 0 });
+    expect(p('has_link("blocks")')).toMatchObject({ type: "has_link", kind: "blocks" });
+    expect(p('has_link("blocks", "T-2")')).toMatchObject({
+      type: "has_link", kind: "blocks", target: "T-2",
+    });
+  });
+
+  it("accepts unquoted kind names too", () => {
+    // Convenience for the common case; quoting is what makes an
+    // arbitrary kind name safe, not what makes it parse.
+    expect(p("has_link(blocks)")).toMatchObject({ type: "has_link", kind: "blocks" });
+  });
+
+  it("rejects too many arguments, naming the arity", () => {
+    expect(() => p('has_link("a", "b", "c")')).toThrow(/takes 0–2 argument/);
+    expect(() => p('link_count("a", "b") > 1')).toThrow(/takes 0–1 argument/);
+  });
+
+  it("parses link_count as a comparison with a call on the left", () => {
+    expect(p('link_count("child") > 3')).toMatchObject({
+      type: "comparison",
+      field: "link_count",
+      op: ">",
+      call: { name: "link_count", kind: "child" },
+      value: { type: "number", value: 3 },
+    });
+  });
+
+  it("requires link_count to be compared", () => {
+    expect(() => p('link_count("child")')).toThrow(/must be compared/);
+  });
+
+  it("rejects an unknown function by name", () => {
+    expect(() => p('has_links("x")')).toThrow(/unknown function "has_links"/);
+  });
+
+  it("composes with and / or / not", () => {
+    const node = p('has_link("blocks") and not has_link("parent")');
+    expect(node.type).toBe("and");
+  });
+
+  it("does not mistake a parenthesised group for a call", () => {
+    // `(status = done)` starts with LPAREN, not FIELD LPAREN.
+    expect(p("(status = done)").type).toBe("comparison");
+    // A field followed by a space and an operator is still a field.
+    expect(p("status = done").type).toBe("comparison");
+  });
+});
