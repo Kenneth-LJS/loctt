@@ -184,8 +184,17 @@ export function coalesceHistory(
       next.bulk_op_id === undefined &&
       withinCoalesceWindow(last.timestamp, next.timestamp)
     ) {
-      // Roll the existing entry's timestamp forward; drop the new entry.
-      result[result.length - 1] = { ...last, timestamp: next.timestamp };
+      // Roll the existing entry's timestamp forward and drop the new
+      // row — but span the whole burst: `before` stays the state at the
+      // start of the burst, `after` advances to the latest. Keeping
+      // `last.after` would leave the entry describing only the first
+      // keystroke of the burst, so replaying it would restore a body the
+      // user never stopped at.
+      result[result.length - 1] = {
+        ...last,
+        timestamp: next.timestamp,
+        ...("after" in next ? { after: next.after } : {}),
+      };
       continue;
     }
     result.push(next);

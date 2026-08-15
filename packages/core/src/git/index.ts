@@ -11,7 +11,7 @@ export {
   pushLocttBranch,
   sync,
 } from "./publish-sync.js";
-export type { RekeyResult } from "./reconcile.js";
+export type { RekeyOutcome, RekeyResult, RekeySkip } from "./reconcile.js";
 export { mergeKeyHistory,mergeRelationships, rekeyCollisions } from "./reconcile.js";
 export type { Disposition, PathPlan, SyncPlan } from "./three-way.js";
 export { LOCAL_OWNED, NEVER_MIRROR, planSync } from "./three-way.js";

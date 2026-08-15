@@ -133,7 +133,13 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
   };
 
   await writeTask(locttDir, id, task);
-  await appendHistory(locttDir, id, [{ timestamp: now, kind: "created" }]);
+  // Record what the task was created as (M3), so history reconstructs
+  // the task's whole life rather than starting from its first edit.
+  // Without this, replaying history from `created` yields nothing to
+  // apply the later field changes to.
+  await appendHistory(locttDir, id, [
+    { timestamp: now, kind: "created", after: { frontmatter, body: task.body } },
+  ]);
   // Invalidate any in-process "key not found" verdicts cached by
   // lookupByKey — the new task's key/key_history may now resolve.
   clearLookupCaches(locttDir);

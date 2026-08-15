@@ -256,13 +256,28 @@ describe("comment attribution", () => {
       expect(del?.meta?.author).toBe("u_alice");
     });
 
-    it("captures no comment body — activity only, matching body_edited", async () => {
-      const posted = await postComment({ locttDir, taskId, body: "secret text" });
-      await editComment({ locttDir, taskId, commentId: posted.id, body: "other secret" });
+    // Was "captures no comment body — activity only, matching
+    // body_edited", asserting the absence this now records. M3 reverses
+    // that: an entry that names an event without its content cannot
+    // reconstruct anything, and for a deletion the words are otherwise
+    // gone from the tracker entirely.
+    it("captures the comment text on add, edit and delete", async () => {
+      const posted = await postComment({ locttDir, taskId, body: "first text" });
+      await editComment({ locttDir, taskId, commentId: posted.id, body: "second text" });
+      await deleteComment({ locttDir, taskId, commentId: posted.id });
+
       const entries = await readHistory(locttDir, taskId);
-      const serialized = JSON.stringify(entries);
-      expect(serialized).not.toContain("secret text");
-      expect(serialized).not.toContain("other secret");
+      const added = entries.find(e => e.kind === "comment_added");
+      const edited = entries.find(e => e.kind === "comment_edited");
+      const deleted = entries.find(e => e.kind === "comment_deleted");
+
+      expect(added?.after).toBe("first text");
+      // An edit records both sides, so the prior wording survives.
+      expect(edited?.before).toBe("first text");
+      expect(edited?.after).toBe("second text");
+      // A delete is destructive — `before` is the only remaining copy.
+      expect(deleted?.before).toBe("second text");
+      expect(deleted?.after).toBeUndefined();
     });
   });
 

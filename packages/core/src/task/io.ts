@@ -85,7 +85,15 @@ async function updateTaskBody(
     const assembled = assembleTaskFile(updated, newBody);
     await writeFileAtomically(filePath, assembled);
     clearLookupCaches(locttDir);
-    await appendHistory(locttDir, taskId, [{ timestamp: now, kind: "body_edited" }]);
+    // Carry the body itself (M3): without it history records *that* the
+    // body changed and never *to what*, so nothing can reconstruct a
+    // prior version — and the git-sync merge rule (M2) that resolves a
+    // contested field by taking the later write depends on being able to.
+    // Coalescing keeps this to one snapshot per editing burst rather
+    // than one per keystroke.
+    await appendHistory(locttDir, taskId, [
+      { timestamp: now, kind: "body_edited", before: body, after: newBody },
+    ]);
   });
 }
 

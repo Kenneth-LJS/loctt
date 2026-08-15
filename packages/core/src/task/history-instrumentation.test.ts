@@ -249,9 +249,11 @@ describe("history instrumentation", () => {
       expect(history).toEqual([
         expect.objectContaining({ kind: "body_edited" }),
       ]);
-      // Verify no content is captured
-      expect(history[0]).not.toHaveProperty("before");
-      expect(history[0]).not.toHaveProperty("after");
+      // Was asserting the *absence* of before/after. M3 reverses that:
+      // without the text, history records that the body changed and
+      // never to what, so no prior version can be reconstructed.
+      expect(history[0]?.before).toBe(seed.body);
+      expect(history[0]?.after).toBe("Updated body.\n");
     });
   });
 
@@ -272,6 +274,12 @@ describe("history instrumentation", () => {
       expect(history).toEqual([
         expect.objectContaining({ kind: "created" }),
       ]);
+      // M3: the entry carries what the task was created as, so replaying
+      // history has a starting state to apply later changes to. Without
+      // it, `created` marks a point in time and nothing more.
+      const after = history[0]?.after as { frontmatter?: { title?: string }; body?: string };
+      expect(after.frontmatter?.title).toBe("New task");
+      expect(after.body).toBe("");
     });
   });
 });
