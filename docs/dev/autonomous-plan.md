@@ -54,7 +54,7 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 | 1 · Partition | ⛔ | Partition **done** — all 21 tickets carry a `Cases:` line, gate passes. Halted on what it exposed: 28 cases assert two views no ticket builds. See *Blocker* below. |
 | 2 · Measure | ⛔ | Measurement **done** — report at `scratchpad/phase2-coverage-report.md`. Halted: the reference docs are stale for exactly the untested region, so they cannot serve as the spec for Phase 3. See *Blocker 2*. |
 | 3 · Surface gaps | ⬜ | 68 cases outstanding. Blocked by Blocker 2 for the entity region; the rest is writable. |
-| 4 · Structural audit | 🔵 | Wave 1 **done**: 81 findings over ~11k lines of `core`, in [`audit-findings.md`](audit-findings.md). Report-only — nothing fixed. Wave 2 (`contracts`, `cli`, `mcp`, ~7.7k lines) not started. |
+| 4 · Structural audit | ⛔ | Reading **done**: 8 slices, ~18,700 lines, **124 findings** in [`audit-findings.md`](audit-findings.md). Report-only — nothing fixed. Awaiting triage; the fixes wait on Phase 3's net. |
 | 5 · UI build | ⬜ | M1.4 is 🔵 from earlier work, predating this plan |
 
 ### ⛔ Blocker — two specified views have no ticket
