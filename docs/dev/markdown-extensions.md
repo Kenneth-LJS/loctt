@@ -30,7 +30,7 @@ features use the on-disk conventions documented here so that:
 | Block KaTeX | `$$\nexpr\n$$` | LocTT extension |
 | Superscript | `^text^` | Pandoc-style |
 | Subscript | `~text~` | Pandoc-style (single tilde — distinct from `~~strikethrough~~`) |
-| Mention | `@user:<uuid>` | LocTT extension; renderer resolves to display name. **Spec only — see below** |
+| Mention | `@user:<id>` | LocTT extension; renderer resolves to display name |
 | Task reference | `T-123` | Autolinked at render time. No on-disk syntax — bare keys are detected and linked |
 | Image embed | `![alt](attachments/<name>)` | Standard markdown |
 | Video / audio embed | `![alt](attachments/<name>)` | Standard markdown image syntax; renderer dispatches by MIME |
@@ -134,12 +134,12 @@ registered route rendering a stub), so there is no component to hang
 them on. When that editor lands it must read `lossyConstructs` rather
 than re-detecting.
 
-> **Mention parsing does not match this spec.** The implemented regex
-> (`packages/core/src/task/comments.ts:51`) is `/@([\w\-.]+)/g` — it has no
-> `:`, so `@user:01J...` captures the literal token `user` rather than the
-> id, and the raw token is then stored as if it were a user id. It also
-> matches inside email addresses and code spans. Treat the table row above
-> as the target; the parser needs fixing to reach it.
+Mention parsing (`extractMentions`, `packages/core/src/task/comments.ts`)
+requires the `user:` prefix, refuses to fire when the `@` follows a word
+character (so `bob@example.com` is not a mention), and skips code spans
+and fenced blocks — an id in a code sample is documentation, and
+notifying someone for it is a false positive the author cannot avoid
+except by not writing the example.
 
 ## Save semantics
 

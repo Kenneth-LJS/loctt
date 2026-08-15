@@ -34,17 +34,63 @@ afterEach(async () => {
 });
 
 describe("extractMentions", () => {
-  it("returns tokens in document order, deduped", () => {
-    expect(extractMentions("hi @alice and @bob and @alice again")).toEqual(["alice", "bob"]);
+  it("captures the id from the documented @user:<id> form", () => {
+    // The old pattern had no colon, so `@user:01J…` captured the
+    // literal token `user` — every mention in a tracker collapsed to
+    // the same meaningless value, then stored as if it were a user id.
+    expect(extractMentions("cc @user:u_alice")).toEqual(["u_alice"]);
   });
 
-  it("uses the resolver to map tokens to user ids", () => {
+  it("returns ids in document order, deduped", () => {
+    expect(extractMentions("hi @user:alice and @user:bob and @user:alice again"))
+      .toEqual(["alice", "bob"]);
+  });
+
+  it("uses the resolver to map ids to canonical user ids", () => {
     const resolve = (t: string) => ({ alice: "u_alice", bob: "u_bob" }[t]);
-    expect(extractMentions("ping @alice and @ghost", resolve)).toEqual(["u_alice"]);
+    expect(extractMentions("ping @user:alice and @user:ghost", resolve)).toEqual(["u_alice"]);
   });
 
   it("returns empty list when no mentions", () => {
     expect(extractMentions("nothing here")).toEqual([]);
+  });
+
+  it("ignores a bare @token without the user: prefix", () => {
+    // `@alice` is not the documented syntax. Accepting it is what let
+    // an email address register as a mention.
+    expect(extractMentions("hi @alice")).toEqual([]);
+  });
+
+  it("does not fire inside an email address", () => {
+    // Previously yielded `example.com` as a mention token.
+    expect(extractMentions("mail bob@example.com about it")).toEqual([]);
+    expect(extractMentions("bob@user:alice")).toEqual([]);
+  });
+
+  it("ignores mentions inside an inline code span", () => {
+    // An id in a code sample is documentation. Notifying someone for
+    // it is a false positive the author cannot avoid except by not
+    // writing the example.
+    expect(extractMentions("write `@user:alice` to mention")).toEqual([]);
+  });
+
+  it("ignores mentions inside a fenced block", () => {
+    expect(extractMentions("```\n@user:alice\n```")).toEqual([]);
+  });
+
+  it("still catches a real mention alongside a code sample", () => {
+    expect(extractMentions("use `@user:bob` — and really, @user:alice"))
+      .toEqual(["alice"]);
+  });
+
+  it("catches a mention at the very start of the body", () => {
+    // The lookbehind must not reject a leading @.
+    expect(extractMentions("@user:alice please look")).toEqual(["alice"]);
+  });
+
+  it("stops the id at punctuation", () => {
+    expect(extractMentions("thanks @user:alice!")).toEqual(["alice"]);
+    expect(extractMentions("(@user:alice)")).toEqual(["alice"]);
   });
 });
 
@@ -60,7 +106,7 @@ describe("comments lifecycle", () => {
 
   it("postComment captures mentions when a resolver is supplied", async () => {
     const c = await postComment({
-      locttDir, taskId, body: "ping @bob",
+      locttDir, taskId, body: "ping @user:bob",
       mentionResolver: t => ({ bob: "u_bob" }[t]),
     });
     expect(c.mentions).toEqual(["u_bob"]);
@@ -81,7 +127,7 @@ describe("comments lifecycle", () => {
 
   it("editComment recomputes mentions on edit", async () => {
     const c = await postComment({
-      locttDir, taskId, body: "@alice",
+      locttDir, taskId, body: "@user:alice",
       mentionResolver: t => ({ alice: "u_alice" }[t]),
     });
     expect(c.mentions).toEqual(["u_alice"]);
