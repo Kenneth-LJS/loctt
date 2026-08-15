@@ -65,14 +65,18 @@ written. See §2 item 0.
 
 Ordered. Dependencies are stated because three items are blocked.
 
-**Phase 2 progress:** 0i, 0e, 0d, 0m, 0l, 0c, 0b done. **All four
+**Phase 2 progress:** 0i, 0e, 0d, 0m, 0l, 0c, 0b, 0 done. **All four
 previously-recorded pre-existing test failures are fixed** — each was a
 stale fixture, not a defect. Full suite green: 1,621 unit, 150
 integration, 20 e2e. Working order is live bugs first,
-then by dependency — next up item 0 (relationship query syntax).
+then by dependency — next up 0n, then the doc items.
 
-### 0. Relationship query syntax — redesign (Tier 0 + Tier 1)
+### 0. Relationship query syntax — ✅ DONE (`1a2b77d`)
 **Blocked by:** nothing. **Size:** small-medium.
+
+**Outcome:** `has_link()` / `link_count()` shipped. Also fixed the
+`validate.ts` inverse-key rejection and the hardcoded `parent` alias. A
+new test parses every example in the docs Relationship Filtering section.
 
 **DECIDED:** scope is **Tier 0 + Tier 1 only** — per-task predicates and
 local counts. No subqueries, no recursion (see "Explicitly out").
