@@ -16,10 +16,15 @@ The server side is done: `FsAccessError` names permission and disk-full
 failures, and the web API returns them as `io_failed` with a
 `not_saved` claim and a retry control.
 
-What remains is client-side and needs the body editor, so it lands with
-M2.3: both cases require the user's typed content to **stay in the
-editor** when a save fails, so they can copy it out. Nothing may clear
-the buffer on failure.
+What remains is client-side and needs the body editor: both cases require
+the user's typed content to **stay in the editor** when a save fails, so
+they can copy it out. Nothing may clear the buffer on failure.
+
+**They are not both M2.** The spec tags **ERR-12 as M2** (blocker, disk
+full) and **ERR-11 as M4** (major, read-only or wrong-ownership
+`.loctt/`). An earlier version of this entry said both landed with M2.3;
+that contradicted the flow doc, which is the specification. ERR-12 lands
+with M2.3; ERR-11 lands in M4.
 
 Cases: ERR-11, ERR-12 in
 [`ui-test-cases/flow-error-handling.md`](ui-test-cases/flow-error-handling.md).
