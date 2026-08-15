@@ -118,6 +118,172 @@ describe("API error envelope", () => {
     expect(envelope.code).not.toBe("unknown");
   });
 
+  // @verifies ERR-16, ERR-31
+  it("a bad value on create is a stated validation failure, not a serialized validator dump", async () => {
+    // Same leak as the set path: frontmatter is validated on write, so a
+    // rejected value arrives as a raw ZodError. Unhandled it became a 500
+    // whose body carried the serialized issue array.
+    const res = await fetch(`${base}/api/tasks`, {
+      method: "POST",
+      headers: csrf,
+      body: JSON.stringify({ title: "Bad due date", due_date: "not-a-date" }),
+    });
+
+    expect(res.status).toBe(400);
+    const envelope = (await res.json()) as ErrorResponse;
+
+    expect(envelope.code).toBe("validation_failed");
+    expect(envelope.data_state).toBe("not_saved");
+    expect(envelope.message).not.toContain("ZodError");
+    expect(envelope.message).not.toContain('"path":');
+  });
+
+  // @verifies ERR-13
+  it("a partly-failing bulk set names each failure with its own ref and reason", async () => {
+    // One real task and two refs that cannot resolve, so the split is
+    // unambiguous. ERR-13 requires the result to state the numbers and
+    // attribute each failure separately — not one collapsed message.
+    const res = await fetch(`${base}/api/tasks/bulk/set`, {
+      method: "POST",
+      headers: csrf,
+      body: JSON.stringify({
+        refs: [taskKey, "T-90001", "T-90002"],
+        changes: [{ field: "priority", value: "high" }],
+      }),
+    });
+
+    // Partial failure is not a failed request: the batch ran, and the
+    // per-item split lives in a 200 body rather than an error envelope.
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      succeeded: string[];
+      failed: { taskId: string; error: string }[];
+    };
+
+    expect(body.succeeded).toHaveLength(1);
+    expect(body.failed).toHaveLength(2);
+    // Each failure carries its own ref and its own reason.
+    expect(body.failed.map(f => f.taskId).sort()).toEqual(["T-90001", "T-90002"]);
+    for (const f of body.failed) {
+      expect(f.error.length).toBeGreaterThan(0);
+    }
+
+    // ERR-13: the success is not rolled back. Verify against disk.
+    const after = await fetch(`${base}/api/tasks/${taskKey}`);
+    const task = (await after.json()) as { frontmatter: { priority?: string } };
+    expect(task.frontmatter.priority).toBe("high");
+  });
+
+  // @verifies ERR-25
+  it("a bulk set that fails for every item still reports zero applied", async () => {
+    const res = await fetch(`${base}/api/tasks/bulk/set`, {
+      method: "POST",
+      headers: csrf,
+      body: JSON.stringify({
+        refs: ["T-90003", "T-90004"],
+        changes: [{ field: "priority", value: "high" }],
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      succeeded: string[];
+      failed: { taskId: string; error: string }[];
+    };
+
+    // ERR-25: nothing was applied, and that reads differently from a
+    // partial success because `succeeded` is empty rather than short.
+    expect(body.succeeded).toEqual([]);
+    expect(body.failed).toHaveLength(2);
+  });
+
+  // @verifies ERR-14, ERR-18, ERR-22
+  it("a request-shape rejection points at the field it belongs to", async () => {
+    // `refs` must be a non-empty array of strings. ERR-22 says this is
+    // presented as a field problem, not a protocol one.
+    const res = await fetch(`${base}/api/tasks/bulk/archive`, {
+      method: "POST",
+      headers: csrf,
+      body: JSON.stringify({ refs: "not-an-array", archive: true }),
+    });
+
+    expect(res.status).toBe(400);
+    const envelope = (await res.json()) as ErrorResponse;
+
+    expect(envelope.code).toBe("validation_failed");
+    expect(envelope.field).toBe("refs");
+    expect(envelope.data_state).toBe("not_saved");
+    expect(envelope.message).not.toContain("ZodError");
+  });
+
+  // @verifies ERR-18
+  it("a confirmation guard says the delete did not happen, and disk agrees", async () => {
+    const res = await fetch(`${base}/api/tasks/${taskKey}`, {
+      method: "DELETE",
+      headers: csrf,
+    });
+
+    expect(res.status).toBe(400);
+    const envelope = (await res.json()) as ErrorResponse;
+
+    expect(envelope.data_state).toBe("not_saved");
+    // ERR-14: the guard is attributable to the confirmation control.
+    expect(envelope.field).toBe("confirm");
+
+    // The claim must match disk: the task is still there.
+    const after = await fetch(`${base}/api/tasks/${taskKey}`);
+    expect(after.status).toBe(200);
+  });
+
+  // @verifies ERR-7, ERR-18
+  it("a write against a task that no longer exists says nothing was saved", async () => {
+    const res = await fetch(`${base}/api/tasks/T-90005/set`, {
+      method: "POST",
+      headers: csrf,
+      body: JSON.stringify({ field: "priority", value: "high" }),
+    });
+
+    expect(res.status).toBe(404);
+    const envelope = (await res.json()) as ErrorResponse;
+
+    expect(envelope.code).toBe("not_found");
+    expect(envelope.data_state).toBe("not_saved");
+    // ERR-7: the list the user clicked from is stale, so reload is the
+    // control that reconciles it with disk.
+    expect(envelope.recovery?.kind).toBe("reload");
+  });
+
+  // @verifies ERR-15
+  it("a failure whose fix is a CLI command carries the exact command", async () => {
+    // `initLoctt` creates a default user, so this branch is only
+    // reachable with the users directory emptied. Doing that for real
+    // beats asserting nothing on a tracker that always has a user.
+    const emptyRoot = await mkdtemp(join(tmpdir(), "loctt-web-nousers-"));
+    const emptyApp = createWebApp({ root: emptyRoot, port: 0 });
+    try {
+      await initLoctt(emptyRoot);
+      await rm(join(emptyRoot, ".loctt", "users"), { recursive: true, force: true });
+      await emptyApp.start();
+      const addr = emptyApp.server.address();
+      const p = typeof addr === "object" && addr ? addr.port : emptyApp.port;
+
+      const res = await fetch(`http://127.0.0.1:${p}/api/user/current`);
+
+      expect(res.status).toBe(404);
+      const envelope = (await res.json()) as ErrorResponse;
+
+      expect(envelope.code).toBe("not_found");
+      expect(envelope.recovery?.kind).toBe("command");
+      // ERR-15: the exact command, copyable — not prose telling the user
+      // to "create a user first". A wrong command here is worse than
+      // none, so this pins the real CLI spelling.
+      expect(envelope.recovery?.command).toContain("loctt user create");
+    } finally {
+      await emptyApp.stop().catch(() => undefined);
+      await rm(emptyRoot, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the legacy `error` field so existing clients keep their message", async () => {
     const res = await fetch(`${base}/api/tasks/NOPE-999`, { method: "GET" });
     const body = (await res.json()) as ErrorResponse & { error?: string };

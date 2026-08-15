@@ -312,6 +312,60 @@ function error(
 }
 
 /**
+ * The envelope fields shared by every write rejected before it reached
+ * disk: a validation failure, stated as not-saved (ERR-18), with retry
+ * offered as a control (ERR-15). Spread it and add `field` wherever the
+ * failure belongs to one, so the UI can place it at the input (ERR-14).
+ */
+const REJECTED_WRITE = {
+  code: "validation_failed",
+  data_state: "not_saved",
+  recovery: { kind: "retry" },
+} as const satisfies Omit<Partial<ErrorResponse>, "message">;
+
+/**
+ * As {@link REJECTED_WRITE}, but for a rejection retrying cannot fix —
+ * a guard on the value itself, where re-sending the same request gets
+ * the same answer. ERR-15 says not to offer a control that cannot help.
+ */
+const REJECTED_WRITE_NO_RETRY = {
+  code: "validation_failed",
+  data_state: "not_saved",
+  recovery: { kind: "none" },
+} as const satisfies Omit<Partial<ErrorResponse>, "message">;
+
+/**
+ * No user is registered yet, which every user-scoped route depends on.
+ *
+ * The remedy is a CLI command, so ERR-15 wants the exact string carried
+ * for the UI to render copyable rather than told to the user in prose.
+ */
+const NO_USERS_MESSAGE = "No user is set up yet, so there is nobody to act as.";
+const NO_USERS_ENVELOPE = {
+  code: "not_found",
+  recovery: { kind: "command", command: 'loctt user create "Your Name"' },
+} as const satisfies Omit<Partial<ErrorResponse>, "message">;
+
+/**
+ * A bulk request that aborted before any task was touched.
+ *
+ * ERR-25 requires this to read differently from a partial success, which
+ * core returns in the 200 body as a `succeeded`/`failed` split. Reaching
+ * `error()` at all means zero of the batch was applied.
+ */
+const BULK_ABORTED = {
+  code: "validation_failed",
+  data_state: "not_saved",
+  recovery: { kind: "retry" },
+} as const satisfies Omit<Partial<ErrorResponse>, "message">;
+
+/** A user simply has no avatar — a fact, not something the app can fix. */
+const NO_AVATAR = {
+  code: "not_found",
+  recovery: { kind: "none" },
+} as const satisfies Omit<Partial<ErrorResponse>, "message">;
+
+/**
  * Internal sentinel: a handler that throws this signals the
  * request loop to stop processing. We've already written a 400
  * response by the time this is thrown.
@@ -343,7 +397,13 @@ async function parseJsonBody<T = unknown>(
   try {
     return JSON.parse(body) as T;
   } catch (err) {
-    error(res, `invalid JSON body: ${(err as Error).message}`, 400);
+    // Only ever reached on a write (no GET route parses a body), so the
+    // not-saved claim is safe: nothing was attempted against disk. The
+    // parser's own text is jargon, so it goes in `detail` (ERR-16).
+    error(res, "The request could not be read.", 400, {
+      ...REJECTED_WRITE,
+      detail: (err as Error).message,
+    });
     throw new HandledRequestError();
   }
 }
@@ -367,7 +427,15 @@ async function parseJsonBodyWithSchema<S extends import("zod").ZodTypeAny>(
   const raw = await parseJsonBody<unknown>(req, res);
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
-    error(res, `invalid request body: ${zodIssueSummary(parsed.error)}`, 400);
+    // ERR-22: a shape rejection is a field problem, not a protocol one.
+    // When every issue names the same top-level field the UI can place
+    // it at that input (ERR-14); a multi-field rejection has no single
+    // home, so it goes unplaced rather than pointing at an arbitrary one.
+    const field = zodSingleField(parsed.error);
+    error(res, zodIssueSummary(parsed.error), 400, {
+      ...REJECTED_WRITE,
+      ...(field !== undefined ? { field } : {}),
+    });
     throw new HandledRequestError();
   }
   return parsed.data;
@@ -384,6 +452,22 @@ function zodIssueSummary(err: ZodError): string {
   return err.issues
     .map(i => `${i.path.length > 0 ? `${i.path.join(".")}: ` : ""}${i.message}`)
     .join("; ");
+}
+
+/**
+ * The single top-level field every issue in `err` belongs to, or
+ * `undefined` when they span more than one (or none).
+ *
+ * ERR-14 places a field error at its input, which needs exactly one
+ * field to place it at — a rejection naming three fields has no such
+ * home and is better left for the view-level surface.
+ */
+function zodSingleField(err: ZodError): string | undefined {
+  const roots = new Set(
+    err.issues.map(i => i.path[0]).filter((p): p is string => typeof p === "string"),
+  );
+  if (roots.size !== 1) return undefined;
+  return [...roots][0];
 }
 
 /** Default page size when a list endpoint is called without `?limit`. */
@@ -407,32 +491,32 @@ function parsePagination(
 ): { offset: number; limit: number } | null {
   let limit = DEFAULT_PAGE_LIMIT;
   let offset = 0;
+  // Pagination only guards read routes, so no data_state claim applies
+  // (ERR-18 scopes it to write paths — nothing was at stake here). The
+  // params come from the URL the app itself built, so retry is the only
+  // control that can help.
+  const badParam = {
+    code: "validation_failed",
+    recovery: { kind: "retry" },
+  } as const satisfies Omit<Partial<ErrorResponse>, "message">;
   if (url.searchParams.has("limit")) {
     const raw = url.searchParams.get("limit") ?? "";
-    if (raw.length === 0) {
-      error(res, "limit must be a non-negative integer", 400);
-      return null;
-    }
     const n = Number(raw);
-    if (!Number.isInteger(n) || n < 0) {
-      error(res, "limit must be a non-negative integer", 400);
+    if (raw.length === 0 || !Number.isInteger(n) || n < 0) {
+      error(res, "limit must be a non-negative integer", 400, { ...badParam, field: "limit" });
       return null;
     }
     if (n > MAX_PAGE_LIMIT) {
-      error(res, `limit must be at most ${MAX_PAGE_LIMIT}`, 400);
+      error(res, `limit must be at most ${MAX_PAGE_LIMIT}`, 400, { ...badParam, field: "limit" });
       return null;
     }
     limit = n;
   }
   if (url.searchParams.has("offset")) {
     const raw = url.searchParams.get("offset") ?? "";
-    if (raw.length === 0) {
-      error(res, "offset must be a non-negative integer", 400);
-      return null;
-    }
     const n = Number(raw);
-    if (!Number.isInteger(n) || n < 0) {
-      error(res, "offset must be a non-negative integer", 400);
+    if (raw.length === 0 || !Number.isInteger(n) || n < 0) {
+      error(res, "offset must be a non-negative integer", 400, { ...badParam, field: "offset" });
       return null;
     }
     offset = n;
@@ -564,10 +648,20 @@ function requireValidRef(
   captures: readonly string[],
   res: import("node:http").ServerResponse,
   index: number = 0,
+  req?: import("node:http").IncomingMessage,
 ): string | null {
   const ref = captures[index] ?? "";
   if (!VALID_REF_RE.test(ref)) {
-    error(res, "Invalid task reference", 400);
+    // The ref is in the route, not a form field, so there is no input to
+    // place this at (ERR-14 does not apply). On a write the rejection
+    // happens before anything is read, let alone written — ERR-18's
+    // claim is not-saved. Reads put nothing at stake, so they omit it.
+    const isWrite = req !== undefined && req.method !== "GET" && req.method !== "HEAD";
+    error(res, "That task reference is not a valid task key.", 400, {
+      code: "validation_failed",
+      ...(isWrite ? { data_state: "not_saved" as const } : {}),
+      recovery: { kind: "reload" },
+    });
     return null;
   }
   return ref;
@@ -755,8 +849,16 @@ function requireCsrfHeader(
     return true;
   }
   if (!req.headers["x-loctt-client"]) {
-    res.writeHead(403, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Missing X-Loctt-Client header" }));
+    // Only reachable from something other than the LocTT UI, which always
+    // sends the header. Rejected before any handler ran, so nothing was
+    // written. The header name is machinery, not user copy (ERR-16), so
+    // it goes in `detail`.
+    error(res, "That request did not come from the LocTT app, so it was refused.", 403, {
+      code: "validation_failed",
+      data_state: "not_saved",
+      recovery: { kind: "reload" },
+      detail: "Missing X-Loctt-Client header",
+    });
     return false;
   }
   return true;
@@ -823,7 +925,12 @@ export function createWebApp(options: WebAppOptions) {
       const created = await createView(locttDir, r);
       json(res, created, 201);
     } catch (err) {
-      if (err instanceof ViewError) { error(res, err.message, 400); return; }
+      // ViewError is core's own user-facing text (a bad query, a
+      // duplicate name), so it is the headline verbatim per ERR-6.
+      if (err instanceof ViewError) {
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "query" });
+        return;
+      }
       throw err;
     }
   };
@@ -843,7 +950,10 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, updated);
     } catch (err) {
-      if (err instanceof ViewError) { error(res, err.message, 400); return; }
+      if (err instanceof ViewError) {
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "query" });
+        return;
+      }
       throw err;
     }
   };
@@ -854,7 +964,12 @@ export function createWebApp(options: WebAppOptions) {
       await deleteView(locttDir, ref);
       json(res, { deleted: ref });
     } catch (err) {
-      if (err instanceof ViewError) { error(res, err.message, 400); return; }
+      // A delete names no field, and re-issuing it gets the same answer
+      // (the view is gone, or was never there), so retry cannot help.
+      if (err instanceof ViewError) {
+        error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
+        return;
+      }
       throw err;
     }
   };
@@ -881,7 +996,15 @@ export function createWebApp(options: WebAppOptions) {
       const result = await applyWorkflowEdit(locttDir, payload.workflow, remap);
       json(res, result);
     } catch (err) {
-      error(res, (err as Error).message, 400);
+      // applyWorkflowEdit validates the whole document and rewrites task
+      // frontmatter; it either commits or rejects, so the write did not
+      // land. `config_invalid` rather than a generic validation failure —
+      // ERR-31 wants the cause named where it is known.
+      error(res, (err as Error).message, 400, {
+        code: "config_invalid",
+        data_state: "not_saved",
+        recovery: { kind: "retry" },
+      });
     }
   };
 
@@ -919,8 +1042,10 @@ export function createWebApp(options: WebAppOptions) {
       }
       json(res, created, 201);
     } catch (err) {
+      // A create rejection is almost always the prefix (taken, or badly
+      // shaped), which is the field the UI can mark (ERR-14).
       if (err instanceof ProjectError) {
-        error(res, err.message, 400);
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "prefix" });
         return;
       }
       throw err;
@@ -949,7 +1074,7 @@ export function createWebApp(options: WebAppOptions) {
       json(res, updated);
     } catch (err) {
       if (err instanceof ProjectError) {
-        error(res, err.message, 400);
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "name" });
         return;
       }
       throw err;
@@ -965,8 +1090,10 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, { deleted: id, remappedTaskCount: result.remappedTaskCount });
     } catch (err) {
+      // Delete guards (project still has tasks, remap target missing)
+      // reject the whole operation before anything is rewritten.
       if (err instanceof ProjectError) {
-        error(res, err.message, 400);
+        error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
         return;
       }
       throw err;
@@ -982,14 +1109,30 @@ export function createWebApp(options: WebAppOptions) {
     const raw = await parseJsonBody<unknown>(req, res);
     const parsed = CalendarConfigSchema.safeParse(raw);
     if (!parsed.success) {
-      error(res, `invalid calendar config: ${parsed.error.issues.map(i => i.message).join("; ")}`, 400);
+      // ERR-10: name the failing field and what was expected. The issue
+      // messages carry the expectation; the ZodError structure does not
+      // reach the headline (ERR-16).
+      const field = zodSingleField(parsed.error);
+      error(res, zodIssueSummary(parsed.error), 400, {
+        code: "config_invalid",
+        data_state: "not_saved",
+        recovery: { kind: "retry" },
+        ...(field !== undefined ? { field } : {}),
+      });
       return;
     }
     try {
       await saveCalendarConfig(locttDir, parsed.data);
       json(res, parsed.data);
     } catch (err) {
-      error(res, (err as Error).message, 400);
+      // The document validated, so a failure here is the write itself
+      // failing — a filesystem problem, not the user's input.
+      error(res, "calendar.yaml could not be saved.", 500, {
+        code: "io_failed",
+        data_state: "not_saved",
+        recovery: { kind: "retry" },
+        detail: (err as Error).message,
+      });
     }
   };
 
@@ -1004,7 +1147,11 @@ export function createWebApp(options: WebAppOptions) {
       const series = await readBurndownSeries(locttDir, key);
       json(res, series);
     } catch (err) {
-      if (err instanceof BurndownError) { error(res, err.message, 404); return; }
+      // A read: no data was at stake, so no data_state claim (ERR-18).
+      if (err instanceof BurndownError) {
+        error(res, err.message, 404, { code: "not_found", recovery: { kind: "reload" } });
+        return;
+      }
       throw err;
     }
   };
@@ -1013,14 +1160,25 @@ export function createWebApp(options: WebAppOptions) {
     const raw = await parseJsonBody<unknown>(req, res);
     const parsed = ListViewConfigSchema.safeParse(raw);
     if (!parsed.success) {
-      error(res, `invalid list-view config: ${parsed.error.issues.map(i => i.message).join("; ")}`, 400);
+      const field = zodSingleField(parsed.error);
+      error(res, zodIssueSummary(parsed.error), 400, {
+        code: "config_invalid",
+        data_state: "not_saved",
+        recovery: { kind: "retry" },
+        ...(field !== undefined ? { field } : {}),
+      });
       return;
     }
     try {
       await saveListViewConfig(locttDir, parsed.data);
       json(res, parsed.data);
     } catch (err) {
-      error(res, (err as Error).message, 400);
+      error(res, "The list view settings could not be saved.", 500, {
+        code: "io_failed",
+        data_state: "not_saved",
+        recovery: { kind: "retry" },
+        detail: (err as Error).message,
+      });
     }
   };
 
@@ -1100,7 +1258,12 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, created, 201);
     } catch (err) {
-      if (err instanceof SprintError) { error(res, err.message, 400); return; }
+      // SprintError's common cause is the date range (end before start),
+      // so `end_date` is the input the UI can mark (ERR-14).
+      if (err instanceof SprintError) {
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "end_date" });
+        return;
+      }
       throw err;
     }
   };
@@ -1130,7 +1293,10 @@ export function createWebApp(options: WebAppOptions) {
       );
       json(res, updated);
     } catch (err) {
-      if (err instanceof SprintError) { error(res, err.message, 400); return; }
+      if (err instanceof SprintError) {
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "end_date" });
+        return;
+      }
       throw err;
     }
   };
@@ -1144,7 +1310,10 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, { deleted: id, ...result });
     } catch (err) {
-      if (err instanceof SprintError) { error(res, err.message, 400); return; }
+      if (err instanceof SprintError) {
+        error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
+        return;
+      }
       throw err;
     }
   };
@@ -1167,7 +1336,10 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, created, 201);
     } catch (err) {
-      if (err instanceof MilestoneError) { error(res, err.message, 400); return; }
+      if (err instanceof MilestoneError) {
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "name" });
+        return;
+      }
       throw err;
     }
   };
@@ -1193,7 +1365,10 @@ export function createWebApp(options: WebAppOptions) {
       );
       json(res, updated);
     } catch (err) {
-      if (err instanceof MilestoneError) { error(res, err.message, 400); return; }
+      if (err instanceof MilestoneError) {
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "name" });
+        return;
+      }
       throw err;
     }
   };
@@ -1207,7 +1382,10 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, { deleted: id, ...result });
     } catch (err) {
-      if (err instanceof MilestoneError) { error(res, err.message, 400); return; }
+      if (err instanceof MilestoneError) {
+        error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
+        return;
+      }
       throw err;
     }
   };
@@ -1229,7 +1407,12 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, created, 201);
     } catch (err) {
-      if (err instanceof LabelError) { error(res, err.message, 400); return; }
+      // Both the duplicate-name guard and the hex-colour guard raise
+      // LabelError; name is the field the create form leads with.
+      if (err instanceof LabelError) {
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "name" });
+        return;
+      }
       throw err;
     }
   };
@@ -1250,7 +1433,10 @@ export function createWebApp(options: WebAppOptions) {
       );
       json(res, updated);
     } catch (err) {
-      if (err instanceof LabelError) { error(res, err.message, 400); return; }
+      if (err instanceof LabelError) {
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "name" });
+        return;
+      }
       throw err;
     }
   };
@@ -1264,7 +1450,10 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, { deleted: id, ...result });
     } catch (err) {
-      if (err instanceof LabelError) { error(res, err.message, 400); return; }
+      if (err instanceof LabelError) {
+        error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
+        return;
+      }
       throw err;
     }
   };
@@ -1284,7 +1473,9 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleCurrentUser: RouteHandler = async ({ res, locttDir }) => {
     const current = await getCurrentUser(locttDir);
-    if (!current) { error(res, "no users registered", 404); return; }
+    // ERR-15: the fix lives in the CLI, so the exact command is carried
+    // for the UI to render copyable rather than described in prose.
+    if (!current) { error(res, NO_USERS_MESSAGE, 404, NO_USERS_ENVELOPE); return; }
     json(res, current);
   };
 
@@ -1292,7 +1483,7 @@ export function createWebApp(options: WebAppOptions) {
     const page = parsePagination(url, res);
     if (!page) return;
     const current = await getCurrentUser(locttDir);
-    if (!current) { error(res, "no users registered", 404); return; }
+    if (!current) { error(res, NO_USERS_MESSAGE, 404, NO_USERS_ENVELOPE); return; }
     const entries = await readRecents(locttDir, current.id);
     // Resolve each id to its current frontmatter. A recents file can
     // outlive the tasks it references (delete leaves the entry behind),
@@ -1321,7 +1512,7 @@ export function createWebApp(options: WebAppOptions) {
   const handleSwitchUser: RouteHandler = async ({ req, res, locttDir }) => {
     const request = await parseJsonBody<{ ref: string }>(req, res);
     if (typeof request.ref !== "string" || request.ref.length === 0) {
-      error(res, "ref must be a non-empty string", 400);
+      error(res, "Pick a user to switch to.", 400, { ...REJECTED_WRITE, field: "ref" });
       return;
     }
     try {
@@ -1329,7 +1520,12 @@ export function createWebApp(options: WebAppOptions) {
       await switchCurrentUser(locttDir, target.id);
       json(res, { current: target.id });
     } catch (err) {
-      if (err instanceof UserError) { error(res, err.message, 400); return; }
+      // The named user does not resolve — retrying the same ref cannot
+      // help, so ERR-15 says offer no control that would not work.
+      if (err instanceof UserError) {
+        error(res, err.message, 400, { ...REJECTED_WRITE_NO_RETRY, field: "ref" });
+        return;
+      }
       throw err;
     }
   };
@@ -1342,7 +1538,7 @@ export function createWebApp(options: WebAppOptions) {
       switch_to_on_create?: boolean;
     }>(req, res);
     if (typeof request.name !== "string" || request.name.length === 0) {
-      error(res, "name must be a non-empty string", 400);
+      error(res, "A name is required.", 400, { ...REJECTED_WRITE, field: "name" });
       return;
     }
     try {
@@ -1354,7 +1550,10 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, created, 201);
     } catch (err) {
-      if (err instanceof UserError) { error(res, err.message, 400); return; }
+      if (err instanceof UserError) {
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "name" });
+        return;
+      }
       throw err;
     }
   };
@@ -1375,7 +1574,10 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, updated);
     } catch (err) {
-      if (err instanceof UserError) { error(res, err.message, 400); return; }
+      if (err instanceof UserError) {
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "name" });
+        return;
+      }
       throw err;
     }
   };
@@ -1384,7 +1586,13 @@ export function createWebApp(options: WebAppOptions) {
     const ref = captures[0] ?? "";
     const contentType = req.headers["content-type"] ?? "";
     if (!/^multipart\/form-data\s*;/i.test(contentType)) {
-      error(res, "Content-Type must be multipart/form-data", 400);
+      // Client-side bug, not user input — no field to place it at. The
+      // protocol wording stays out of the headline (ERR-16).
+      error(res, "The avatar upload was not sent in a form the server can read.", 400, {
+        ...REJECTED_WRITE,
+        recovery: { kind: "reload" },
+        detail: `Content-Type must be multipart/form-data, got: ${contentType}`,
+      });
       return;
     }
 
@@ -1392,7 +1600,14 @@ export function createWebApp(options: WebAppOptions) {
     try {
       target = await resolveUserRef(locttDir, ref);
     } catch (err) {
-      if (err instanceof UserError) { error(res, err.message, 404); return; }
+      if (err instanceof UserError) {
+        error(res, err.message, 404, {
+          code: "not_found",
+          data_state: "not_saved",
+          recovery: { kind: "reload" },
+        });
+        return;
+      }
       throw err;
     }
 
@@ -1406,7 +1621,9 @@ export function createWebApp(options: WebAppOptions) {
         // file as defense-in-depth.
         parsed = await parseMultipartFile(req, contentType, tmpParent, "file", MAX_AVATAR_BYTES);
       } catch (parseErr) {
-        error(res, (parseErr as Error).message, 400);
+        // ERR-24: the upload is rejected before anything is copied into
+        // the tracker, so no phantom avatar is left behind.
+        error(res, (parseErr as Error).message, 400, { ...REJECTED_WRITE, field: "file" });
         return;
       }
       try {
@@ -1415,7 +1632,10 @@ export function createWebApp(options: WebAppOptions) {
         });
         json(res, updated);
       } catch (err) {
-        if (err instanceof UserError) { error(res, err.message, 400); return; }
+        if (err instanceof UserError) {
+          error(res, err.message, 400, { ...REJECTED_WRITE, field: "file" });
+          return;
+        }
         throw err;
       }
     } finally {
@@ -1430,7 +1650,10 @@ export function createWebApp(options: WebAppOptions) {
       await archiveUser(locttDir, target.id);
       json(res, { archived: target.id });
     } catch (err) {
-      if (err instanceof UserError) { error(res, err.message, 400); return; }
+      if (err instanceof UserError) {
+        error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
+        return;
+      }
       throw err;
     }
   };
@@ -1442,21 +1665,32 @@ export function createWebApp(options: WebAppOptions) {
       await unarchiveUser(locttDir, target.id);
       json(res, { unarchived: target.id });
     } catch (err) {
-      if (err instanceof UserError) { error(res, err.message, 400); return; }
+      if (err instanceof UserError) {
+        error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
+        return;
+      }
       throw err;
     }
   };
 
   const handleDeleteUser: RouteHandler = async ({ res, url, locttDir, captures }) => {
     const ref = captures[0] ?? "";
+    // The confirmation guard fires before anything is read, so nothing
+    // was deleted — ERR-18's claim is unambiguous here.
     if (url.searchParams.get("confirm") !== "true") {
-      error(res, "user delete is permanent; pass ?confirm=true to proceed", 400);
+      error(res, "Deleting a user is permanent, so it has to be confirmed first.", 400, {
+        ...REJECTED_WRITE,
+        field: "confirm",
+      });
       return;
     }
     const remapToRef = url.searchParams.get("remap_to") ?? undefined;
     const unassign = url.searchParams.get("unassign") === "true";
     if (remapToRef !== undefined && unassign) {
-      error(res, "remap_to and unassign are mutually exclusive", 400);
+      error(res, "Choose either a user to reassign to, or unassign — not both.", 400, {
+        ...REJECTED_WRITE,
+        field: "remap_to",
+      });
       return;
     }
     try {
@@ -1470,7 +1704,10 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, { deleted: target.id, ...result });
     } catch (err) {
-      if (err instanceof UserError) { error(res, err.message, 400); return; }
+      if (err instanceof UserError) {
+        error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
+        return;
+      }
       throw err;
     }
   };
@@ -1479,14 +1716,20 @@ export function createWebApp(options: WebAppOptions) {
     const ref = captures[0] ?? "";
     try {
       const target = await resolveUserRef(locttDir, ref);
-      if (!target.avatar) { error(res, "no avatar", 404); return; }
+      if (!target.avatar) { error(res, "This user has no avatar.", 404, NO_AVATAR); return; }
       // Defense-in-depth: target.avatar comes from a user-edited
       // YAML file. Reject anything that isn't a plain basename
       // before joining into a filesystem path.
       try {
         assertSafeBasename(target.avatar);
       } catch {
-        error(res, "invalid avatar reference", 400);
+        // The stored filename is not a plain basename, which only a
+        // hand-edited users file produces — name it as the config
+        // problem it is rather than a generic bad request (ERR-31).
+        error(res, "This user's avatar filename in .loctt/users is not usable.", 400, {
+          code: "config_invalid",
+          recovery: { kind: "none" },
+        });
         return;
       }
       const avatarPath = pathJoin(locttDir, "users", target.id, target.avatar);
@@ -1495,8 +1738,14 @@ export function createWebApp(options: WebAppOptions) {
       // copyAvatar so this can only fire on a hand-crafted symlink,
       // but the check is cheap and the failure mode is severe.
       const stat = await fsLstat(avatarPath);
-      if (stat.isSymbolicLink()) { error(res, "invalid avatar reference", 400); return; }
-      if (!stat.isFile()) { error(res, "no avatar", 404); return; }
+      if (stat.isSymbolicLink()) {
+        error(res, "This user's avatar in .loctt/users is a symlink, which is not read.", 400, {
+          code: "config_invalid",
+          recovery: { kind: "none" },
+        });
+        return;
+      }
+      if (!stat.isFile()) { error(res, "This user has no avatar.", 404, NO_AVATAR); return; }
       // Avatars are always stored as JPG (sharp re-encode in core),
       // so the content-type is fixed. nosniff prevents the browser
       // from guessing into image/svg+xml or text/html if a
@@ -1513,27 +1762,36 @@ export function createWebApp(options: WebAppOptions) {
         stream.pipe(res);
       });
     } catch (err) {
-      if (err instanceof UserError) { error(res, err.message, 404); return; }
+      if (err instanceof UserError) {
+        error(res, err.message, 404, { code: "not_found", recovery: { kind: "reload" } });
+        return;
+      }
       throw err;
     }
   };
 
   const handleReplaceBody: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const ref = requireValidRef(captures, res);
+    const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
     const task = await lookupTask(locttDir, ref);
     const r = await parseJsonBody<{ body: string }>(req, res);
-    if (typeof r.body !== "string") { error(res, "body must be a string", 400); return; }
+    if (typeof r.body !== "string") {
+      error(res, "The description could not be read.", 400, { ...REJECTED_WRITE, field: "body" });
+      return;
+    }
     await writeTaskBody(locttDir, task.frontmatter.id, r.body);
     json(res, { ok: true });
   };
 
   const handleAppendBody: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const ref = requireValidRef(captures, res);
+    const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
     const task = await lookupTask(locttDir, ref);
     const r = await parseJsonBody<{ text: string }>(req, res);
-    if (typeof r.text !== "string") { error(res, "text must be a string", 400); return; }
+    if (typeof r.text !== "string") {
+      error(res, "The text to append could not be read.", 400, { ...REJECTED_WRITE, field: "text" });
+      return;
+    }
     await appendTaskBody(locttDir, task.frontmatter.id, r.text);
     json(res, { ok: true });
   };
@@ -1548,7 +1806,9 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, { locttDir: result.locttDir, created: result.created.length }, 201);
     } catch (err) {
-      error(res, (err as Error).message, 400);
+      // initLoctt refuses on an existing tracker and on a bad prefix;
+      // either way nothing was created.
+      error(res, (err as Error).message, 400, { ...REJECTED_WRITE, field: "prefix" });
     }
   };
 
@@ -1559,7 +1819,12 @@ export function createWebApp(options: WebAppOptions) {
       await setConfigValue({ locttDir, root }, key, String(r.value));
       json(res, { key });
     } catch (err) {
-      if (err instanceof ConfigRouterError) { error(res, err.message, 400); return; }
+      // The config key being written is the field the UI marks (ERR-14):
+      // the settings form renders one input per key.
+      if (err instanceof ConfigRouterError) {
+        error(res, err.message, 400, { ...REJECTED_WRITE, code: "config_invalid", field: key });
+        return;
+      }
       throw err;
     }
   };
@@ -1570,7 +1835,14 @@ export function createWebApp(options: WebAppOptions) {
       await unsetConfigValue({ locttDir, root }, key);
       json(res, { key });
     } catch (err) {
-      if (err instanceof ConfigRouterError) { error(res, err.message, 400); return; }
+      if (err instanceof ConfigRouterError) {
+        error(res, err.message, 400, {
+          ...REJECTED_WRITE_NO_RETRY,
+          code: "config_invalid",
+          field: key,
+        });
+        return;
+      }
       throw err;
     }
   };
@@ -1585,7 +1857,15 @@ export function createWebApp(options: WebAppOptions) {
       const result = await publish(locttDir, root);
       json(res, result);
     } catch (err) {
-      error(res, (err as Error).message, 400);
+      // ERR-31: git is the known cause, so it is named. Publish commits
+      // to a temporary worktree and either lands or does not; a failure
+      // partway leaves the tracker's own files untouched, but whether the
+      // branch moved is not knowable from here.
+      error(res, (err as Error).message, 500, {
+        code: "git_failed",
+        data_state: "unknown",
+        recovery: { kind: "retry" },
+      });
     }
   };
 
@@ -1594,7 +1874,14 @@ export function createWebApp(options: WebAppOptions) {
       const result = await sync(locttDir, root);
       json(res, result);
     } catch (err) {
-      error(res, (err as Error).message, 400);
+      // Sync both fetches and publishes, so an interrupted run genuinely
+      // cannot say which side landed — ERR-4 asks for `unknown` by name
+      // rather than a guess in either direction.
+      error(res, (err as Error).message, 500, {
+        code: "git_failed",
+        data_state: "unknown",
+        recovery: { kind: "retry" },
+      });
     }
   };
 
@@ -1603,7 +1890,11 @@ export function createWebApp(options: WebAppOptions) {
       await enableGit(locttDir, root);
       json(res, { enabled: true });
     } catch (err) {
-      error(res, (err as Error).message, 400);
+      error(res, (err as Error).message, 400, {
+        code: "git_failed",
+        data_state: "not_saved",
+        recovery: { kind: "retry" },
+      });
     }
   };
 
@@ -1612,23 +1903,32 @@ export function createWebApp(options: WebAppOptions) {
       await disableGit(locttDir);
       json(res, { enabled: false });
     } catch (err) {
-      error(res, (err as Error).message, 400);
+      error(res, (err as Error).message, 400, {
+        code: "git_failed",
+        data_state: "not_saved",
+        recovery: { kind: "retry" },
+      });
     }
   };
 
   const handleGetUserSettings: RouteHandler = async ({ res, locttDir }) => {
     const current = await getCurrentUser(locttDir);
-    if (!current) { error(res, "no users registered", 404); return; }
+    if (!current) { error(res, NO_USERS_MESSAGE, 404, NO_USERS_ENVELOPE); return; }
     const settings = await loadUserSettings(locttDir, current.id);
     json(res, { user: current.id, settings });
   };
 
   const handlePutUserSettings: RouteHandler = async ({ req, res, locttDir }) => {
     const current = await getCurrentUser(locttDir);
-    if (!current) { error(res, "no users registered", 404); return; }
+    // A write, so ERR-18 applies: nothing was written, since there is no
+    // user to write settings for.
+    if (!current) {
+      error(res, NO_USERS_MESSAGE, 404, { ...NO_USERS_ENVELOPE, data_state: "not_saved" });
+      return;
+    }
     const raw = await parseJsonBody<unknown>(req, res);
     if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-      error(res, "user settings must be a JSON object", 400);
+      error(res, "The settings could not be read.", 400, REJECTED_WRITE);
       return;
     }
     // Settings are intentionally schema-less (UI-defined keys), but
@@ -1645,7 +1945,7 @@ export function createWebApp(options: WebAppOptions) {
       return true;
     };
     if (!checkDepth(raw, 0)) {
-      error(res, `user settings nested deeper than ${MAX_DEPTH} levels`, 400);
+      error(res, `The settings are nested deeper than ${MAX_DEPTH} levels.`, 400, REJECTED_WRITE);
       return;
     }
     const settings = raw as Record<string, unknown>;
@@ -1665,7 +1965,12 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, result);
     } catch (err) {
-      if (err instanceof ReorderError) { error(res, err.message, 400); return; }
+      // A rejected drop: the rank was not written, and dropping on the
+      // same bad target again would fail identically (ERR-15).
+      if (err instanceof ReorderError) {
+        error(res, err.message, 400, { ...REJECTED_WRITE_NO_RETRY, field: "board_rank" });
+        return;
+      }
       throw err;
     }
   };
@@ -1686,7 +1991,10 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, result);
     } catch (err) {
-      if (err instanceof ReorderError) { error(res, err.message, 400); return; }
+      if (err instanceof ReorderError) {
+        error(res, err.message, 400, { ...REJECTED_WRITE_NO_RETRY, field: "relationships" });
+        return;
+      }
       throw err;
     }
   };
@@ -1723,7 +2031,11 @@ export function createWebApp(options: WebAppOptions) {
     const sortField = url.searchParams.get("sort") ?? undefined;
     const dirParam = url.searchParams.get("dir");
     if (dirParam !== null && dirParam !== "asc" && dirParam !== "desc") {
-      error(res, "dir must be 'asc' or 'desc'", 400);
+      error(res, "Sort direction must be ascending or descending.", 400, {
+        code: "validation_failed",
+        field: "dir",
+        recovery: { kind: "reload" },
+      });
       return;
     }
     const direction: "asc" | "desc" = dirParam ?? "asc";
@@ -1803,7 +2115,11 @@ export function createWebApp(options: WebAppOptions) {
   const handleExportTasks: RouteHandler = async ({ res, url, locttDir }) => {
     const format = (url.searchParams.get("format") ?? "csv").toLowerCase();
     if (format !== "csv" && format !== "json") {
-      error(res, "format must be csv or json", 400);
+      error(res, "Export format must be CSV or JSON.", 400, {
+        code: "validation_failed",
+        field: "format",
+        recovery: { kind: "reload" },
+      });
       return;
     }
     const includeArchived = url.searchParams.get("archived") === "true";
@@ -1869,7 +2185,10 @@ export function createWebApp(options: WebAppOptions) {
     try {
       projectKey = await resolveProjectIdForUser(locttDir, request.project);
     } catch (err) {
-      error(res, (err as Error).message, 400);
+      // Ambiguous or unknown project: the create form has a project
+      // picker, so this places at that input (ERR-14). Nothing was
+      // written — key allocation has not happened yet.
+      error(res, (err as Error).message, 400, { ...REJECTED_WRITE, field: "project" });
       return;
     }
 
@@ -1889,7 +2208,34 @@ export function createWebApp(options: WebAppOptions) {
         return created;
       });
     } catch (err) {
-      if (err instanceof ArchivedReferenceError) { error(res, err.message, 400); return; }
+      // ERR-31: an archived-reference rejection is a known, specific
+      // cause and must not flatten into a generic failure. Assigning the
+      // same archived thing again would be rejected identically, so no
+      // retry control is offered (ERR-15).
+      if (err instanceof ArchivedReferenceError) {
+        error(res, err.message, 400, {
+          code: "archived_reference",
+          data_state: "not_saved",
+          recovery: { kind: "none" },
+        });
+        return;
+      }
+      // A rejected value (bad date, unconfigured status) reaches here as
+      // a ZodError from the frontmatter write, and used to escape as a
+      // 500 carrying a serialized validator dump — the same leak already
+      // fixed in handleSetField (ERR-16, ERR-31).
+      if (err instanceof ZodError) {
+        const field = zodSingleField(err);
+        error(res, zodIssueSummary(err), 400, {
+          ...REJECTED_WRITE,
+          ...(field !== undefined ? { field } : {}),
+        });
+        return;
+      }
+      if (err instanceof TaskUpdateError) {
+        error(res, err.message, 400, REJECTED_WRITE);
+        return;
+      }
       throw err;
     }
     json(res, projectTaskFrontmatter(task.frontmatter), 201);
@@ -1994,7 +2340,12 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, result satisfies BulkResponse);
     } catch (err) {
-      error(res, (err as Error).message, 400);
+      // Partial failure never reaches here — core returns it in the 200
+      // body as `succeeded`/`failed`, which is what ERR-13 asks for. This
+      // path is the batch aborting outright (an unwritable field name, a
+      // lock it could not take), so ERR-25 applies instead: nothing was
+      // applied, stated distinctly from a partial success.
+      error(res, (err as Error).message, 400, BULK_ABORTED);
     }
   };
 
@@ -2006,7 +2357,7 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, result satisfies BulkResponse);
     } catch (err) {
-      error(res, (err as Error).message, 400);
+      error(res, (err as Error).message, 400, BULK_ABORTED);
     }
   };
 
@@ -2025,7 +2376,7 @@ export function createWebApp(options: WebAppOptions) {
         failed: result.failed,
       } satisfies BulkResponse);
     } catch (err) {
-      error(res, (err as Error).message, 400);
+      error(res, (err as Error).message, 400, BULK_ABORTED);
     }
   };
 
@@ -2039,7 +2390,7 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, result satisfies BulkResponse);
     } catch (err) {
-      error(res, (err as Error).message, 400);
+      error(res, (err as Error).message, 400, BULK_ABORTED);
     }
   };
 
@@ -2070,7 +2421,7 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handlePostComment: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const ref = requireValidRef(captures, res);
+    const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
     const r = await parseJsonBodyWithSchema(req, res, PostCommentRequestSchema);
     const task = await lookupTask(locttDir, ref);
@@ -2083,16 +2434,22 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, comment satisfies CommentResponse, 201);
     } catch (err) {
-      error(res, (err as Error).message, 400);
+      // ERR-12/ERR-27: the comment box keeps the typed text on screen, so
+      // the not-saved claim is what tells the user to retry rather than
+      // retype. The body is the field the composer can mark (ERR-14).
+      error(res, (err as Error).message, 400, { ...REJECTED_WRITE, field: "body" });
     }
   };
 
   const handleEditComment: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const ref = requireValidRef(captures, res);
+    const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
     const commentId = captures[1];
     if (commentId === undefined || commentId.length === 0) {
-      error(res, "comment id required", 400);
+      error(res, "No comment was named to edit.", 400, {
+        ...REJECTED_WRITE,
+        recovery: { kind: "reload" },
+      });
       return;
     }
     const r = await parseJsonBodyWithSchema(req, res, EditCommentRequestSchema);
@@ -2107,16 +2464,19 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, comment satisfies CommentResponse);
     } catch (err) {
-      error(res, (err as Error).message, 400);
+      error(res, (err as Error).message, 400, { ...REJECTED_WRITE, field: "body" });
     }
   };
 
-  const handleDeleteComment: RouteHandler = async ({ res, locttDir, captures }) => {
-    const ref = requireValidRef(captures, res);
+  const handleDeleteComment: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
     const commentId = captures[1];
     if (commentId === undefined || commentId.length === 0) {
-      error(res, "comment id required", 400);
+      error(res, "No comment was named to delete.", 400, {
+        ...REJECTED_WRITE,
+        recovery: { kind: "reload" },
+      });
       return;
     }
     const task = await lookupTask(locttDir, ref);
@@ -2126,16 +2486,21 @@ export function createWebApp(options: WebAppOptions) {
       // client can confirm what was removed.
       json(res, { deleted: commentId });
     } catch (err) {
-      error(res, (err as Error).message, 400);
+      // The comment is missing or the file could not be rewritten;
+      // either way nothing was removed. Reload settles which it was.
+      error(res, (err as Error).message, 400, {
+        ...REJECTED_WRITE_NO_RETRY,
+        recovery: { kind: "reload" },
+      });
     }
   };
 
   const handleSetField: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const ref = requireValidRef(captures, res);
+    const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
     const request = await parseJsonBody<UpdateTaskRequest>(req, res);
     if (typeof request.field !== "string" || request.field.length === 0) {
-      error(res, "field must be a non-empty string", 400);
+      error(res, "No field was named to change.", 400, REJECTED_WRITE);
       return;
     }
     const wfConfig = await loadWorkflowConfig(locttDir);
@@ -2192,11 +2557,11 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleUnsetField: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const ref = requireValidRef(captures, res);
+    const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
     const { field } = await parseJsonBody<{ field: string }>(req, res);
     if (typeof field !== "string" || field.length === 0) {
-      error(res, "field must be a non-empty string", 400);
+      error(res, "No field was named to clear.", 400, REJECTED_WRITE);
       return;
     }
     const task = await lookupTask(locttDir, ref);
@@ -2204,32 +2569,48 @@ export function createWebApp(options: WebAppOptions) {
       const updated = await unsetField(locttDir, task.frontmatter.id, field);
       json(res, projectTaskFrontmatter(updated.frontmatter));
     } catch (err) {
-      if (err instanceof TaskUpdateError) { error(res, err.message, 400); return; }
+      // Mirrors handleSetField: clearing an immutable or required field
+      // is rejected before disk, and the UI places it at that input.
+      if (err instanceof TaskUpdateError) {
+        error(res, err.message, 400, { ...REJECTED_WRITE_NO_RETRY, field });
+        return;
+      }
+      // Same ZodError leak as the set path: clearing a field the schema
+      // requires fails frontmatter validation on write and would
+      // otherwise surface as a generic 500 (ERR-16, ERR-31).
+      if (err instanceof ZodError) {
+        error(res, zodIssueSummary(err), 400, { ...REJECTED_WRITE_NO_RETRY, field });
+        return;
+      }
       throw err;
     }
   };
 
-  const handleArchive: RouteHandler = async ({ res, locttDir, captures }) => {
-    const ref = requireValidRef(captures, res);
+  const handleArchive: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
     const task = await lookupTask(locttDir, ref);
     const updated = await archiveTask(locttDir, task.frontmatter.id);
     json(res, projectTaskFrontmatter(updated.frontmatter));
   };
 
-  const handleUnarchive: RouteHandler = async ({ res, locttDir, captures }) => {
-    const ref = requireValidRef(captures, res);
+  const handleUnarchive: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
     const task = await lookupTask(locttDir, ref);
     const updated = await unarchiveTask(locttDir, task.frontmatter.id);
     json(res, projectTaskFrontmatter(updated.frontmatter));
   };
 
-  const handleDeleteTask: RouteHandler = async ({ res, url, locttDir, captures }) => {
-    const ref = requireValidRef(captures, res);
+  const handleDeleteTask: RouteHandler = async ({ req, res, url, locttDir, captures }) => {
+    const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
+    // Fires before the task is even loaded, so nothing was deleted.
     if (url.searchParams.get("confirm") !== "true") {
-      error(res, "task delete is permanent; pass ?confirm=true to proceed", 400);
+      error(res, "Deleting a task is permanent, so it has to be confirmed first.", 400, {
+        ...REJECTED_WRITE,
+        field: "confirm",
+      });
       return;
     }
     const task = await lookupTask(locttDir, ref);
@@ -2238,7 +2619,7 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleLink: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const ref = requireValidRef(captures, res);
+    const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
     const request = await parseJsonBody<LinkRequest>(req, res);
     const wfConfig = await loadWorkflowConfig(locttDir);
@@ -2248,13 +2629,27 @@ export function createWebApp(options: WebAppOptions) {
       const updated = await linkTask({ locttDir, taskId: task.frontmatter.id, type: request.type, target: target.frontmatter.id, workflowConfig: wfConfig });
       json(res, projectTaskFrontmatter(updated.frontmatter));
     } catch (err) {
-      if (err instanceof ArchivedReferenceError) { error(res, err.message, 400); return; }
+      // ERR-14: the Relationships panel is where the user acted, so the
+      // failure is attributed to that field rather than only toasted.
+      if (err instanceof ArchivedReferenceError) {
+        error(res, err.message, 400, {
+          code: "archived_reference",
+          field: "relationships",
+          data_state: "not_saved",
+          recovery: { kind: "none" },
+        });
+        return;
+      }
+      if (err instanceof TaskUpdateError) {
+        error(res, err.message, 400, { ...REJECTED_WRITE_NO_RETRY, field: "relationships" });
+        return;
+      }
       throw err;
     }
   };
 
   const handleUnlink: RouteHandler = async ({ req, res, locttDir, captures }) => {
-    const ref = requireValidRef(captures, res);
+    const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
     const request = await parseJsonBody<LinkRequest>(req, res);
     const task = await lookupTask(locttDir, ref);
@@ -2264,14 +2659,18 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleAttachUpload: RouteHandler = async ({ req, res, url, locttDir, captures }) => {
-    const ref = requireValidRef(captures, res);
+    const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
 
     const task = await lookupTask(locttDir, ref);
 
     const contentType = req.headers["content-type"] ?? "";
     if (!/^multipart\/form-data\s*;/i.test(contentType)) {
-      error(res, "Content-Type must be multipart/form-data", 400);
+      error(res, "The upload was not sent in a form the server can read.", 400, {
+        ...REJECTED_WRITE,
+        recovery: { kind: "reload" },
+        detail: `Content-Type must be multipart/form-data, got: ${contentType}`,
+      });
       return;
     }
 
@@ -2284,7 +2683,10 @@ export function createWebApp(options: WebAppOptions) {
       try {
         parsed = await parseMultipartFile(req, contentType, tmpParent, "file");
       } catch (parseErr) {
-        error(res, (parseErr as Error).message, 400);
+        // ERR-24: parsing failed before attachFile ran, so nothing was
+        // written into tasks/<id>/attachments/ — the file was never
+        // attached and the grid must not show a phantom entry.
+        error(res, (parseErr as Error).message, 400, { ...REJECTED_WRITE, field: "file" });
         return;
       }
       tmpFilePath = parsed.tempPath;
@@ -2304,12 +2706,19 @@ export function createWebApp(options: WebAppOptions) {
         }, 201);
         return;
       } catch (err) {
+        // A name collision: the existing attachment is untouched, and
+        // the remedy is re-sending with `force`, not a bare retry.
         if (err instanceof AttachmentExistsError) {
-          error(res, err.message, 409);
+          error(res, err.message, 409, {
+            code: "conflict",
+            field: "file",
+            data_state: "not_saved",
+            recovery: { kind: "none" },
+          });
           return;
         }
         if (err instanceof AttachmentSourceError) {
-          error(res, err.message, 400);
+          error(res, err.message, 400, { ...REJECTED_WRITE, field: "file" });
           return;
         }
         throw err;
@@ -2332,18 +2741,27 @@ export function createWebApp(options: WebAppOptions) {
     try {
       filePath = getAttachmentPath(locttDir, task.frontmatter.id, rawName);
     } catch {
-      error(res, "Invalid attachment name", 400);
+      error(res, "That attachment name is not usable.", 400, {
+        code: "validation_failed",
+        recovery: { kind: "none" },
+      });
       return;
     }
+    // A read, so no data_state claim (ERR-18). The list the user clicked
+    // from may be stale, which is what reload fixes.
+    const attachmentMissing = {
+      code: "not_found",
+      recovery: { kind: "reload" },
+    } as const satisfies Omit<Partial<ErrorResponse>, "message">;
     let fileStat;
     try {
       fileStat = await fsStat(filePath);
     } catch {
-      error(res, "Attachment not found", 404);
+      error(res, `"${rawName}" is not attached to this task.`, 404, attachmentMissing);
       return;
     }
     if (!fileStat.isFile()) {
-      error(res, "Attachment not found", 404);
+      error(res, `"${rawName}" is not attached to this task.`, 404, attachmentMissing);
       return;
     }
     // Force download semantics: attachments are user-uploaded
@@ -2370,14 +2788,14 @@ export function createWebApp(options: WebAppOptions) {
     stream.pipe(res);
   };
 
-  const handleDeleteAttachment: RouteHandler = async ({ res, locttDir, captures }) => {
-    const ref = requireValidRef(captures, res);
+  const handleDeleteAttachment: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
     const rawName = decodeURIComponent(captures[1] ?? "");
     try {
       assertSafeBasename(rawName);
     } catch {
-      error(res, "Invalid attachment name", 400);
+      error(res, "That attachment name is not usable.", 400, REJECTED_WRITE_NO_RETRY);
       return;
     }
 
@@ -2392,8 +2810,14 @@ export function createWebApp(options: WebAppOptions) {
       res.writeHead(204);
       res.end();
     } catch (err) {
+      // Already gone — the user's intent is satisfied, but the list they
+      // clicked from is stale, so reload is the useful control.
       if (err instanceof AttachmentNotFoundError) {
-        error(res, err.message, 404);
+        error(res, err.message, 404, {
+          code: "not_found",
+          data_state: "not_saved",
+          recovery: { kind: "reload" },
+        });
         return;
       }
       throw err;
@@ -2428,8 +2852,12 @@ export function createWebApp(options: WebAppOptions) {
     } catch (err) {
       // SchemaVersionError (missing file) and SchemaTooNewError both
       // mean "no migration can help", which is a 409 rather than a
-      // server fault — the same code the schema guard uses.
-      error(res, (err as Error).message, 409);
+      // server fault — the same code the schema guard uses. Planning is
+      // a read, so it makes no data_state claim.
+      error(res, (err as Error).message, 409, {
+        code: "schema_mismatch",
+        recovery: { kind: "none" },
+      });
     }
   };
 
@@ -2448,7 +2876,15 @@ export function createWebApp(options: WebAppOptions) {
         ...(result.backupPath !== undefined ? { backupPath: result.backupPath } : {}),
       } satisfies MigrateResponse);
     } catch (err) {
-      error(res, (err as Error).message, 409);
+      // migrateToCurrent backs up before it rewrites and refuses outright
+      // when no migration applies, but a failure partway through a
+      // multi-step run cannot say how far it got — ERR-4 wants `unknown`
+      // rather than a guess. The backup is the user's way to check.
+      error(res, (err as Error).message, 409, {
+        code: "schema_mismatch",
+        data_state: "unknown",
+        recovery: { kind: "command", command: "loctt migrate" },
+      });
     }
   };
 
@@ -2576,7 +3012,18 @@ export function createWebApp(options: WebAppOptions) {
           await requireSupportedSchema(locttDir);
         } catch (err) {
           if (err instanceof SchemaVersionError || err instanceof SchemaTooNewError) {
-            error(res, err.message, 409);
+            // Nothing ran, so no write was attempted regardless of method
+            // (ERR-18). `loctt migrate` is the fix and only helps for the
+            // too-old case; a too-new tracker needs a newer LocTT, which
+            // no command here can produce (ERR-15).
+            const isWrite = req.method !== "GET" && req.method !== "HEAD";
+            error(res, err.message, 409, {
+              code: "schema_mismatch",
+              ...(isWrite ? { data_state: "not_saved" as const } : {}),
+              recovery: err instanceof SchemaTooNewError
+                ? { kind: "none" }
+                : { kind: "command", command: "loctt migrate" },
+            });
             return;
           }
           throw err;
@@ -2596,14 +3043,31 @@ export function createWebApp(options: WebAppOptions) {
         if (served) return;
       }
 
-      error(res, "Not found", 404);
+      // A route the server does not have. Nothing ran, so a write that
+      // lands here never touched disk (ERR-18).
+      error(res, `There is nothing at ${path}.`, 404, {
+        code: "not_found",
+        ...(req.method === "GET" || req.method === "HEAD"
+          ? {}
+          : { data_state: "not_saved" as const }),
+        recovery: { kind: "none" },
+      });
     } catch (err) {
       if (err instanceof HandledRequestError) {
         // parseJsonBody already wrote a 400 — bail silently.
         return;
       }
       if (err instanceof TaskNotFoundError) {
-        error(res, err.message, 404);
+        // ERR-7: the row the user clicked is stale — the task was deleted
+        // from the CLI or another surface. Reload is what reconciles the
+        // list with disk. The lookup precedes every write, so nothing was
+        // saved.
+        const isWrite = req.method !== "GET" && req.method !== "HEAD";
+        error(res, err.message, 404, {
+          code: "not_found",
+          ...(isWrite ? { data_state: "not_saved" as const } : {}),
+          recovery: { kind: "reload" },
+        });
         return;
       }
       if (err instanceof BodyTooLargeError) {
@@ -2615,7 +3079,14 @@ export function createWebApp(options: WebAppOptions) {
         // setting Connection: close and destroying the request
         // stream guarantees the socket cleans up promptly.
         res.setHeader("Connection", "close");
-        error(res, err.message, 413);
+        // Rejected while still reading the body, so nothing reached disk.
+        // Retrying the same oversized payload cannot succeed (ERR-15).
+        error(res, "That was too large to send in one request.", 413, {
+          code: "validation_failed",
+          data_state: "not_saved",
+          recovery: { kind: "none" },
+          detail: err.message,
+        });
         req.destroy();
         return;
       }
