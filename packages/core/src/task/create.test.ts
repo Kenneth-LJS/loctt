@@ -33,11 +33,91 @@ describe("createTask", () => {
     expect(task.frontmatter.key).toBe("T-1");
     expect(task.frontmatter.id).toMatch(/^[0-9A-Z]{26}$/);
     expect(task.frontmatter.created_at).toBeTruthy();
+    // No workflowConfig passed, so there is no default to resolve. With
+    // config present the default status IS assigned — see the
+    // default-status cases below.
     expect(task.frontmatter.status).toBeUndefined();
     expect(task.body).toBe("");
 
     // State should be updated
     expect(state.keys["task"]?.next_number).toBe(2);
+  });
+
+  describe("default status (0b)", () => {
+    // A task created without a status used to have no `status` key at
+    // all — and a task with no status matches neither `status = backlog`
+    // nor `status != done`, so it was invisible to ordinary filtering.
+    // All three surfaces funnel through createTask, so all three
+    // produced them.
+    async function wf() {
+      const { parseWorkflowConfig } = await import("../config/workflow.js");
+      const { defaultWorkflowYaml } = await import("../init/defaults.js");
+      return parseWorkflowConfig(defaultWorkflowYaml("T-"));
+    }
+
+    it("assigns the default status when none is given", async () => {
+      const task = await createTask({
+        locttDir,
+        state: makeState(),
+        options: { project: "task", title: "No status" },
+        workflowConfig: await wf(),
+      });
+      expect(task.frontmatter.status).toBe("backlog");
+    });
+
+    it("does not override an explicit status", async () => {
+      const task = await createTask({
+        locttDir,
+        state: makeState(),
+        options: { project: "task", title: "Explicit", status: "in_progress" },
+        workflowConfig: await wf(),
+      });
+      expect(task.frontmatter.status).toBe("in_progress");
+    });
+
+    it("follows the config's default rather than list order", async () => {
+      // The old documented rules were "the first status" and "the first
+      // pending status" — neither implemented. Marking a later status
+      // default proves position no longer decides.
+      const base = await wf();
+      const config = {
+        ...base,
+        statuses: base.statuses.map(s =>
+          s.key === "backlog"
+            ? { key: s.key, label: s.label, category: s.category }
+            : s.key === "wont_do"
+              ? { ...s, default: true as const }
+              : s,
+        ),
+      };
+      const task = await createTask({
+        locttDir,
+        state: makeState(),
+        options: { project: "task", title: "Reordered" },
+        workflowConfig: config,
+      });
+      expect(task.frontmatter.status).toBe("wont_do");
+    });
+
+    it("the created task is reachable by an ordinary status filter", async () => {
+      // The point of the fix: the task must be findable, not merely
+      // carry a key.
+      const config = await wf();
+      const task = await createTask({
+        locttDir,
+        state: makeState(),
+        options: { project: "task", title: "Findable" },
+        workflowConfig: config,
+      });
+      const { evaluateQuery } = await import("../query/evaluator.js");
+      const { parseQuery } = await import("../query/parser.js");
+      const { tokenize } = await import("../query/tokenizer.js");
+      const run = (q: string) =>
+        evaluateQuery(parseQuery(tokenize(q)), task.frontmatter, { workflow: config });
+
+      expect(run("status = backlog")).toBe(true);
+      expect(run("status != done")).toBe(true);
+    });
   });
 
   it("creates a task with optional fields", async () => {

@@ -28,6 +28,25 @@ describe("MCP create_task (stdio)", () => {
     });
   });
 
+  it("a task created with no status gets the same default as the CLI", async () => {
+    // Cross-surface parity: all three funnel through createTask, so all
+    // three produced status-less tasks. This asserts MCP agrees with
+    // the CLI rather than trusting the shared call site.
+    await withTmpLoctt(async ({ root }) => {
+      const client = await startMcpClient(root);
+      try {
+        const created = await client.callTool("create_task", { title: "no status" });
+        expect(created.isError).toBeFalsy();
+
+        const shown = await client.callTool("get_task", { ref: "T-1" });
+        expect(shown.isError).toBeFalsy();
+        expect(shown.content[0]?.text ?? "").toContain("backlog");
+      } finally {
+        await client.close();
+      }
+    });
+  });
+
   it("lists the loctt tools over stdio", async () => {
     await withTmpLoctt(async ({ root }) => {
       const client = await startMcpClient(root);

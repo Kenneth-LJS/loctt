@@ -12,8 +12,14 @@ describe("MCP get_workflow_config (stdio)", () => {
 
         expect(result.isError).toBeFalsy();
         const text = result.content[0]?.text ?? "";
-        expect(text).toContain("not_started");
+        // `not_started` was renamed to `backlog` in the shipped default;
+        // this assertion outlived it and had been failing since.
+        expect(text).toContain("backlog");
         expect(text).toContain("in_progress");
+        // The default-status flag must reach the agent: without it an
+        // agent cannot know which status a task created without one
+        // will land in.
+        expect(text).toContain("\"default\": true");
       } finally {
         await client.close();
       }

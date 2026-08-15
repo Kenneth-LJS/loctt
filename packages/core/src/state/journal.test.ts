@@ -676,7 +676,7 @@ describe("journal recovery — remap_workflow", () => {
   it("replays a remap_workflow entry that lost the workflow save", async () => {
     // Stage the world such that:
     //   - workflow.yaml still has `blocks` AND `in_progress`
-    //   - a journal entry says "drop blocks, remap not_started → in_progress"
+    //   - a journal entry says "drop blocks, remap wont_do → in_progress"
     //   - no task or config rewrites have happened yet
     // Then trigger recovery and verify the new workflow.yaml is
     // saved and the task was rewritten.
@@ -686,12 +686,10 @@ describe("journal recovery — remap_workflow", () => {
 
     const prevWf = await loadWorkflowConfig(locttDir);
 
-    // Add a task in the not_started status so the remap touches it.
+    // Add a task so the remap has something to touch.
     const [taskId] = await seedTasks(TASK_PROJECT_ID, 1);
     if (taskId === undefined) throw new Error("test setup");
-    // (No need to set status; default is undefined. We'll use a more
-    // realistic case: drop the `blocks` relationship, since the
-    // default workflow has it.)
+    // Drop the `blocks` relationship, which the default workflow has.
 
     const next = {
       ...prevWf,
@@ -762,17 +760,17 @@ describe("journal recovery — remap_workflow", () => {
     const prevWf = await loadWorkflowConfig(locttDir);
 
     // Create 3 tasks; set first two to a different status manually
-    // (simulating a partial rewrite where status `not_started` is
+    // (simulating a partial rewrite where status `wont_do` is
     // being remapped to `done`).
     const ids = await seedTasks(TASK_PROJECT_ID, 3);
     const { readTask, writeTask } = await import("../task/io.js");
     // Status field defaults to undefined on seed, so set them to
-    // not_started first.
+    // wont_do first.
     for (const id of ids) {
       const t = await readTask(locttDir, id);
       await writeTask(locttDir, id, {
         ...t,
-        frontmatter: { ...t.frontmatter, status: "not_started" },
+        frontmatter: { ...t.frontmatter, status: "wont_do" },
       });
     }
     // Simulate partial pre-recovery state: first two are already done.
@@ -786,14 +784,14 @@ describe("journal recovery — remap_workflow", () => {
 
     const next = {
       ...prevWf,
-      statuses: prevWf.statuses.filter(s => s.key !== "not_started"),
+      statuses: prevWf.statuses.filter(s => s.key !== "wont_do"),
     };
     const entry: JournalEntry = {
       id: "01TEST_WF_RECOVERY_MID_LOOP",
       kind: "remap_workflow",
       started_at: "2026-05-12T10:00:00Z",
       next,
-      remap: { statuses: { not_started: "done" } },
+      remap: { statuses: { wont_do: "done" } },
     } as JournalEntry;
     await writeJournalEntries([entry]);
 

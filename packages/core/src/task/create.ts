@@ -1,4 +1,5 @@
 import type { LocttState,Task, TaskFrontmatter, WorkflowConfig } from "@loctt/contracts";
+import { defaultStatus } from "@loctt/contracts";
 import { ulid } from "ulid";
 
 import type { ArchivedGuardConfigs } from "../config/archived-guard.js";
@@ -65,6 +66,18 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
   const key = allocateKey(state, options.project);
   const now = new Date().toISOString();
 
+  // Status is effectively mandatory on a created task. Omitting it
+  // used to leave the key off entirely, and a task with no `status`
+  // matches neither `status = backlog` nor `status != done` — so it
+  // was invisible to ordinary filtering on every surface, since all
+  // three funnel through here.
+  //
+  // Without workflow config there is nothing to resolve a default
+  // from, so the caller keeps the old behaviour rather than getting a
+  // guess.
+  const resolvedStatus = options.status
+    ?? (workflowConfig ? defaultStatus(workflowConfig)?.key : undefined);
+
   // Normalize parent option into a relationship edge
   const relationships: { type: string; target: string }[] = [];
   if (options.parent !== undefined) {
@@ -78,7 +91,7 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
     title: options.title,
     created_at: now,
     updated_at: now,
-    ...(options.status !== undefined ? { status: options.status } : {}),
+    ...(resolvedStatus !== undefined ? { status: resolvedStatus } : {}),
     ...(options.task_type !== undefined ? { task_type: options.task_type } : {}),
     ...(options.priority !== undefined ? { priority: options.priority } : {}),
     ...(options.labels !== undefined ? { labels: [...options.labels] } : {}),

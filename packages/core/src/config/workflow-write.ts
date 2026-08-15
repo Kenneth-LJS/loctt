@@ -721,6 +721,10 @@ function serializeStatus(s: StatusDef): Record<string, unknown> {
     key: s.key,
     label: s.label,
     category: s.category,
+    // Must survive the round-trip: dropping it would leave the config
+    // with no default status, which the schema then rejects on the very
+    // next read — a write that bricks its own output.
+    ...(s.default === true ? { default: true } : {}),
     ...iconColorSpread(s),
   };
 }
