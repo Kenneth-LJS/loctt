@@ -24,6 +24,7 @@ import {
   AttachmentNotFoundError,
   AttachmentSourceError,
   BurndownError,
+  FsAccessError,
   LabelError,
   MilestoneError,
   ProjectError,
@@ -80,6 +81,10 @@ export const KNOWN_DOMAIN_ERRORS: ReadonlyArray<new (...args: never[]) => Error>
   AttachmentNotFoundError,
   AttachmentSourceError,
   BurndownError,
+  // A filesystem failure the user can act on — an unwritable .loctt/, a
+  // full disk. Its message already names the cause and the remedy, so
+  // it is a domain error (exit 1), not an unexpected crash.
+  FsAccessError,
   LabelError,
   MilestoneError,
   ProjectError,

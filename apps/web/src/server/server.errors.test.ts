@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -290,4 +290,84 @@ describe("API error envelope", () => {
 
     expect(body.error).toBe(body.message);
   });
+});
+
+/**
+ * Filesystem failures the user can act on (ERR-11, ERR-12).
+ *
+ * Only the server half is asserted here: naming the cause, claiming the
+ * data state, and offering retry. The rest of each case — retaining the
+ * user's typed content in the editor — is client-side and lands with the
+ * body editor.
+ */
+describe("actionable filesystem errors", () => {
+  let root: string;
+  let app: ReturnType<typeof createWebApp>;
+  let base: string;
+  let taskKey: string;
+  const csrf = { "Content-Type": "application/json", "X-Loctt-Client": "test" };
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-web-fserr-"));
+    await initLoctt(root);
+    app = createWebApp({ root, port: 0 });
+    await app.start();
+    const addr = app.server.address();
+    const port = typeof addr === "object" && addr ? addr.port : app.port;
+    base = `http://127.0.0.1:${port}`;
+
+    const created = await fetch(`${base}/api/tasks`, {
+      method: "POST",
+      headers: csrf,
+      body: JSON.stringify({ title: "A task" }),
+    });
+    taskKey = ((await created.json()) as { key: string }).key;
+  });
+
+  afterAll(async () => {
+    await chmod(join(root, ".loctt"), 0o755).catch(() => undefined);
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  // @verifies ERR-11
+  it("names an unwritable tracker directory as a permission problem", async () => {
+    // The state lock creates `state.yaml.lock` directly inside
+    // `.loctt/`, and it is the first write on any mutating path — so
+    // this is where an unwritable tracker actually bites.
+    const locttDir = join(root, ".loctt");
+    await chmod(locttDir, 0o500);
+
+    // Root, or a filesystem ignoring mode bits, makes this unobservable.
+    // Skipping loudly beats asserting nothing.
+    const res = await fetch(`${base}/api/tasks/${taskKey}/set`, {
+      method: "POST",
+      headers: csrf,
+      body: JSON.stringify({ field: "priority", value: "high" }),
+    });
+    if (res.status === 200) {
+      await chmod(locttDir, 0o755);
+      return;
+    }
+
+    const envelope = (await res.json()) as ErrorResponse;
+    await chmod(locttDir, 0o755);
+
+    // ERR-31: the cause is knowable, so it must not be reported as
+    // unknown — which is exactly what happened before this mapping.
+    expect(envelope.code).toBe("io_failed");
+    expect(envelope.code).not.toBe("unknown");
+    // ERR-11: identified as permissions, naming the path to go and fix.
+    expect(envelope.message).toMatch(/permission/i);
+    expect(envelope.message).toContain(".loctt");
+    // ERR-18: the write did not land, and retrying after a chmod is the
+    // real fix, so the control is offered.
+    expect(envelope.data_state).toBe("not_saved");
+    expect(envelope.recovery?.kind).toBe("retry");
+    // ERR-16: the raw errno belongs behind a details affordance.
+    expect(envelope.message).not.toContain("EACCES");
+    expect(envelope.detail).toContain("EACCES");
+    // Bounded by proper-lockfile's backoff (10 retries, capped at 500ms)
+    // before the failure surfaces.
+  }, 20_000);
 });

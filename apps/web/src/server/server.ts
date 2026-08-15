@@ -87,6 +87,7 @@ import {
   exportTasksToJSON,
   filterForExport,
   findLossyConstructs,
+  FsAccessError,
   getAttachmentPath,
   getCurrentUser,
   getGitStatus,
@@ -3100,6 +3101,19 @@ export function createWebApp(options: WebAppOptions) {
       // rather than a guess in either direction.
       const method = req.method ?? "GET";
       const isRead = method === "GET" || method === "HEAD";
+      // A filesystem failure the user can act on — an unwritable
+      // .loctt/, a full disk. ERR-31 forbids reporting a knowable cause
+      // as unknown, and ERR-11/ERR-12 want these named: only the user
+      // can fix a permission or free up space.
+      if (err instanceof FsAccessError) {
+        error(res, err.message, 500, {
+          code: "io_failed",
+          ...(isRead ? {} : { data_state: "not_saved" as const }),
+          recovery: { kind: "retry" },
+          detail: `${err.code}: ${err.path}`,
+        });
+        return;
+      }
       error(res, `The server failed while handling ${method} ${path}.`, 500, {
         code: "unknown",
         ...(isRead ? {} : { data_state: "unknown" as const }),

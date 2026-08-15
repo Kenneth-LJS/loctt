@@ -4,6 +4,8 @@ import { dirname } from "node:path";
 
 import { stringify as stringifyYaml } from "yaml";
 
+import { withFsErrors } from "./fs-errors.js";
+
 /**
  * Atomically writes a YAML file at the given path. Serializes the
  * value via `yaml.stringify`, writes to a temp file in the same
@@ -19,10 +21,16 @@ export async function writeYamlAtomically(
   path: string,
   value: unknown,
 ): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const tmpPath = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
-  await writeFile(tmpPath, stringifyYaml(value), "utf-8");
-  await rename(tmpPath, path);
+  // Serialize before entering the fs wrapper: a YAML stringify failure
+  // is a bug in the value, not a filesystem problem, and must not be
+  // reported to the user as one.
+  const contents = stringifyYaml(value);
+  await withFsErrors(path, async () => {
+    await mkdir(dirname(path), { recursive: true });
+    const tmpPath = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+    await writeFile(tmpPath, contents, "utf-8");
+    await rename(tmpPath, path);
+  });
 }
 
 /**
@@ -33,8 +41,10 @@ export async function writeFileAtomically(
   path: string,
   contents: string,
 ): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const tmpPath = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
-  await writeFile(tmpPath, contents, "utf-8");
-  await rename(tmpPath, path);
+  await withFsErrors(path, async () => {
+    await mkdir(dirname(path), { recursive: true });
+    const tmpPath = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+    await writeFile(tmpPath, contents, "utf-8");
+    await rename(tmpPath, path);
+  });
 }

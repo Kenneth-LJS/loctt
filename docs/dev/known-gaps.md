@@ -10,21 +10,16 @@ things that merely might be wrong. Delete an entry when it is fixed.
 
 ## Code
 
-### Filesystem errors are reported as unknown
+### ERR-11 / ERR-12 have a client half that is not built
 
-`EACCES` (unwritable `.loctt/`) and `ENOSPC` (disk full) reach the web
-server as generic errors and land in the ERR-30 handler, which states
-the data state and a recovery but names the cause as unknown.
+The server side is done: `FsAccessError` names permission and disk-full
+failures, and the web API returns them as `io_failed` with a
+`not_saved` claim and a retry control.
 
-ERR-31 says a cause the app *knows* must never be reported as unknown,
-and this one is knowable — the errno is right there. It is also the case
-where naming it matters most, since only the user can fix a permission
-or a full disk.
-
-The fix belongs in `packages/core`, where those errnos surface, not in
-`apps/web/src/server/server.ts`: the CLI and MCP have the same blind
-spot, and mapping it once serves all three. Map to `io_failed` with copy
-naming the path.
+What remains is client-side and needs the body editor, so it lands with
+M2.3: both cases require the user's typed content to **stay in the
+editor** when a save fails, so they can copy it out. Nothing may clear
+the buffer on failure.
 
 Cases: ERR-11, ERR-12 in
 [`ui-test-cases/flow-error-handling.md`](ui-test-cases/flow-error-handling.md).
