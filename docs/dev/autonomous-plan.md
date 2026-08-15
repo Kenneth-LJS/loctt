@@ -96,16 +96,38 @@ The other four unplaceable cases:
 These four are milestone-tag problems rather than missing tickets: the
 behaviour is ticketed, just later than the case's tag implies.
 
-**As of 2026-08-15**, before any phase has run:
+### Per-ticket coverage, now that the partition exists
 
-- **Case coverage: 46 / 937** tagged, by 84 `@verifies` tags.
-- **Tickets:** 3 ✅ (M1.1, M1.2, M1.3) · 1 🔵 (M1.4) · 17 ⬜.
+Computable for the first time after Phase 1 — previously there was no
+mapping from a ticket to the cases it owed.
+
+```
+M1.1   0/75    M2.1  0/21    M3.1  0/27    M4.1  3/47   M4.5  0/22
+M1.2  10/67    M2.2  0/41    M3.2  0/24    M4.2  0/25   M4.6  0/23
+M1.3   3/44    M2.3  0/15    M3.3  0/50    M4.3  0/74   M4.7  0/23
+M1.4  26/59    M2.4  0/38    M3.4  0/41    M4.4  0/6    M4.8  1/64
+               M2.5  0/51
+```
+
+**M1.1, M1.2 and M1.3 are marked ✅ in `TEMP-WEB-TICKETS.md` and are at
+0/75, 10/67 and 3/44.** Those ticks were awarded before any ticket
+declared its cases, so they record "the bullets were built", not "the
+cases are verified". Both readings are legitimate for what was known at
+the time; they are not interchangeable now.
+
+This is input for the 🚦 Milestone 1 gate, which is a human decision and
+has not been run. An agent must not silently re-mark those tickets.
+
+**As of 2026-08-15**, with Phase 1 complete and halted:
+
+- **Case coverage: 46 / 937** tagged, by 84 `@verifies` tags — unchanged
+  by Phase 1, which wrote no tests.
+- **Tickets:** 3 ✅ (M1.1, M1.2, M1.3) · 1 🔵 (M1.4) · 17 ⬜, all 21 now
+  declaring their cases. See the caveat on those ✅ marks above.
 - **Suites, all green:** 1,894 unit · 193 integration · 20 e2e · 35
-  Playwright · 15 LLM scenarios.
+  Playwright · 15 LLM scenarios. Phase 1 added 7 tests for the partition
+  parser (tools suite: 12 → 19).
 - **The 🚦 Milestone 1 review gate has not been run.**
-
-Nothing in this plan has been executed. The only change made when it was
-written was creating this file.
 
 ### Verified, so it need not be re-derived
 
