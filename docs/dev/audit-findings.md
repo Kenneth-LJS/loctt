@@ -228,6 +228,7 @@ mutation of the specific behaviour.
 | `list --project <name>` returned nothing | `dac7060` | P-3 |
 | `duplicate --project <name>` leaked an allocator internal | `dac7060` | P-3 |
 | Unknown flags ignored on every task command | `d1eb66e` | Removed `--hard` from 3 tests that were asserting the bug |
+| `mergeTask` was whole-record LWW, not per-field | `62f6438` | Resolved from history; hand-edits scoped out by decision, `merge_resolved` records any fallback |
 
 **Found while fixing, not yet addressed:** the non-interactive refusal
 message is duplicated verbatim in `confirmInteractive` and
