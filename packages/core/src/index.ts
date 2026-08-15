@@ -108,6 +108,14 @@ export {
   sync,
 } from "./git/index.js";
 export { mergeKeyHistory,mergeRelationships, rekeyCollisions } from "./git/index.js";
+export {
+  assignProvisionalPrefixes,
+  deriveKeyState,
+  mergeById,
+  mergeComments,
+  mergeHistory,
+  mergeTask,
+} from "./git/merge.js";
 export type { InitOptions, InitResult } from "./init/index.js";
 export { initLoctt } from "./init/index.js";
 export type { CreateLabelInput, DeleteLabelOptions, LabelByNameResult } from "./labels/index.js";

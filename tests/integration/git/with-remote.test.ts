@@ -119,17 +119,17 @@ describe("git-backed CLI lifecycle (with remote)", () => {
 });
 
 /**
- * Two clones that both create a task cannot merge today: sync aborts on
- * the files they both wrote. That abort is the current contract — it is
- * what stands between the user and the four reproduced data-loss paths
- * that `planSync` was built to close.
+ * Two clones that both create a task now merge (decisions.md §6, M1–M4).
  *
- * These pin it. When field-level merging lands (decisions.md §6, M1–M4)
- * these tests are expected to change; until then a green suite must not
- * be reachable by quietly restoring a destructive mirror.
+ * This test previously asserted the opposite — that sync aborts — and
+ * said in its own comment that it was expected to change when
+ * field-level merging landed. It has. What it pins now is that the merge
+ * keeps *both* tasks and leaves no ambiguity behind: two projects
+ * minting `T-` is exactly the state `createProject` believes impossible,
+ * so the merge has to resolve it rather than write it out.
  */
 describe("two clones that both create a task", () => {
-  it("aborts the sync and writes nothing, naming the files that clashed", async () => {
+  it("merges both tasks and leaves keys unambiguous", async () => {
     await withGitLocttRemote(async ({ root, remoteRepo }) => {
       expect((await runCli(["git", "enable"], { cwd: root })).exitCode).toBe(0);
       expect((await runCli(["create", "alice task"], { cwd: root })).exitCode).toBe(0);
@@ -145,20 +145,30 @@ describe("two clones that both create a task", () => {
         expect((await runCli(["create", "bob task"], { cwd: other })).exitCode).toBe(0);
 
         const sync = await runCli(["git", "sync"], { cwd: other, env: gitEnv });
+        expect(sync.exitCode).toBe(0);
 
-        // Refused, not merged, and not half-applied.
-        expect(sync.exitCode).not.toBe(0);
-        expect(sync.stderr).toMatch(/sync aborted/i);
-        // The user is told which files clashed — `state.yaml` is the one
-        // both sides always touch when each allocates a key.
-        expect(sync.stderr).toContain("state.yaml");
-        expect(sync.stderr).toMatch(/nothing was written/i);
-
-        // Bob's own task is untouched and still the only one he has:
-        // aborting must not partially import Alice's side.
+        // Both survive — the whole point of the merge.
         const list = await runCli(["list"], { cwd: other });
         expect(list.stdout).toContain("bob task");
-        expect(list.stdout).not.toContain("alice task");
+        expect(list.stdout).toContain("alice task");
+
+        // And neither key is ambiguous. Both trackers minted `T-`, so
+        // one project takes a provisional prefix; without that, two
+        // tasks would answer to `T-1`.
+        const keys = [...list.stdout.matchAll(/^(\S+)\s/gm)].map(m => m[1]);
+        expect(new Set(keys).size).toBe(keys.length);
+
+        // Each key resolves to exactly one task, including the one that
+        // was renumbered.
+        for (const key of keys) {
+          const show = await runCli(["show", key ?? ""], { cwd: other });
+          expect(show.exitCode).toBe(0);
+        }
+
+        // The tracker is left in a state doctor considers healthy — a
+        // merge that needs a manual repair afterwards has not finished.
+        const doctor = await runCli(["doctor"], { cwd: other });
+        expect(doctor.stdout).not.toMatch(/not in index/);
       } finally {
         await rm(other, { recursive: true, force: true }).catch(() => {});
       }

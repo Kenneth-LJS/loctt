@@ -1,11 +1,21 @@
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, readdir,rm } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile,rm } from "node:fs/promises";
 import { dirname,join } from "node:path";
 
-import type { SyncState } from "@loctt/contracts";
+import type { SyncState, Task } from "@loctt/contracts";
 
+import { loadProjectsConfig } from "../config/projects.js";
 import { getLocalDir } from "../paths/index.js";
+import { rebuildKeyIndex } from "../state/key-index.js";
+import { appendKeyHistory } from "../state/keys.js";
+import { loadState, saveState } from "../state/state.js";
 import { loadSyncState, saveSyncState } from "../state/sync.js";
+import { parseFrontmatter, splitTaskFile } from "../task/frontmatter.js";
+import { writeTask } from "../task/io.js";
+import { loadAllTasks } from "../task/load-all.js";
+import { rekeyCollisions } from "./reconcile.js";
+import type { ResolveResult } from "./resolve-conflicts.js";
+import { applyResolution, resolveConflicts } from "./resolve-conflicts.js";
 import type { SyncPlan } from "./three-way.js";
 import { LOCAL_OWNED,NEVER_MIRROR, planSync } from "./three-way.js";
 
@@ -64,6 +74,143 @@ export class GitConflictError extends GitSyncError {
  * everything else is left exactly as it was. This is the safety property
  * the old blind mirror lacked.
  */
+/**
+ * The tasks as they will exist once this sync lands: local tasks, with
+ * merged versions substituted and incoming-only tasks added.
+ *
+ * Built from the plan rather than by re-reading the tree after writing,
+ * because nothing has been written yet — the counters have to be
+ * derivable *before* anything lands, so an abort leaves no trace.
+ */
+async function mergedTaskSet(
+  plan: SyncPlan,
+  firstPass: ResolveResult,
+  incomingDir: string,
+  localDir: string,
+): Promise<Task[]> {
+  const byPath = new Map<string, Task>();
+
+  const readAt = async (dir: string, rel: string): Promise<Task | undefined> => {
+    try {
+      const raw = await readFile(join(dir, rel), "utf-8");
+      const { rawYaml, body } = splitTaskFile(raw);
+      return { frontmatter: parseFrontmatter(rawYaml), body };
+    } catch {
+      return undefined;
+    }
+  };
+
+  // Everything local, as the baseline.
+  for (const rel of await listTaskFiles(localDir)) {
+    const t = await readAt(localDir, rel);
+    if (t) byPath.set(rel, t);
+  }
+  // Tasks the branch is bringing in.
+  for (const p of plan.copies) {
+    if (!/^tasks\/[^/]+\/task\.md$/.test(p.path)) continue;
+    const t = await readAt(incomingDir, p.path);
+    if (t) byPath.set(p.path, t);
+  }
+  // Merged versions win over both.
+  for (const m of firstPass.merged) {
+    if (!/^tasks\/[^/]+\/task\.md$/.test(m.path)) continue;
+    const { rawYaml, body } = splitTaskFile(m.content);
+    byPath.set(m.path, { frontmatter: parseFrontmatter(rawYaml), body });
+  }
+  // Tasks the branch deleted are not part of the result.
+  for (const d of plan.deletes) byPath.delete(d.path);
+
+  return [...byPath.values()];
+}
+
+/** Relative paths of every `tasks/<id>/task.md` under a tracker dir. */
+async function listTaskFiles(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  let entries: string[];
+  try {
+    entries = await readdir(join(dir, "tasks"));
+  } catch {
+    return out;
+  }
+  for (const id of entries) out.push(`tasks/${id}/task.md`);
+  return out;
+}
+
+/**
+ * Restores the two invariants a merge can break: one prefix per
+ * project, one key per task.
+ *
+ * Ordered deliberately. Prefixes are fixed first, because rekeying a
+ * task allocates from its project's prefix — doing it the other way
+ * round hands out keys from a prefix that is about to change. Both
+ * passes are derived from what is on disk, so two clones running this
+ * on the same merged tree reach the same answer.
+ */
+async function normaliseAfterMerge(
+  locttDir: string,
+): Promise<{ rekeyed: number; reprefixed: number }> {
+  // projects.yaml already carries unique prefixes — the resolver assigns
+  // provisional ones before writing, because the schema rejects a
+  // duplicate on read and an invalid file cannot be loaded to fix.
+  // What is left is the tasks, whose keys still carry the *old* prefix.
+  const config = await loadProjectsConfig(locttDir);
+  const state = await loadState(locttDir);
+  const tasks = await loadAllTasks(locttDir);
+
+  let rekeyed = 0;
+  let reprefixed = 0;
+
+  for (const p of config.projects) {
+    // A task whose key does not start with its project's prefix is one
+    // the resolver re-prefixed underneath it.
+    const stale = tasks.filter(
+      t => t.frontmatter.project === p.id && !t.frontmatter.key.startsWith(p.prefix),
+    );
+    if (stale.length === 0) continue;
+    reprefixed += 1;
+
+    for (const t of stale) {
+      // Keep the number, replace the prefix — the same rule set-prefix
+      // follows, so a reference like "the third one" survives.
+      const suffix = /(\d+)$/.exec(t.frontmatter.key)?.[1] ?? "";
+      if (suffix === "") continue;
+      await writeTask(locttDir, t.frontmatter.id, {
+        ...t,
+        frontmatter: {
+          ...t.frontmatter,
+          key: `${p.prefix}${suffix}`,
+          key_history: [...appendKeyHistory(t.frontmatter.key_history, t.frontmatter.key)],
+        },
+      });
+      rekeyed += 1;
+    }
+
+    const entry = state.keys[p.id];
+    if (entry) {
+      state.keys[p.id] = { prefix: p.prefix, next_number: entry.next_number };
+    }
+  }
+
+  // Any key collisions left (two tasks in the *same* project sharing a
+  // key) are the rekey pass's job.
+  const after = await loadAllTasks(locttDir);
+  const outcome = rekeyCollisions(after, state);
+  for (const r of outcome.rekeyed) {
+    const t = after.find(x => x.frontmatter.id === r.taskId);
+    if (!t) continue;
+    await writeTask(locttDir, r.taskId, {
+      ...t,
+      frontmatter: { ...t.frontmatter, key: r.newKey, key_history: [...r.keyHistory] },
+    });
+    rekeyed += 1;
+  }
+
+  await saveState(locttDir, state);
+  await rebuildKeyIndex(locttDir);
+
+  return { rekeyed, reprefixed };
+}
+
 async function applyPlan(
   plan: SyncPlan,
   incomingDir: string,
@@ -194,6 +341,19 @@ export interface SyncOutcome {
   readonly deleted?: number;
   /** Files left alone (identical, local-only, or locally-owned). */
   readonly kept?: number;
+  /**
+   * Files both sides changed that were merged field-by-field rather
+   * than aborted on (decisions M1-M4).
+   */
+  readonly merged?: number;
+  /** Tasks renumbered because the merge left them sharing a key. */
+  readonly rekeyed?: number;
+  /**
+   * Projects given a provisional prefix because the merge left two
+   * claiming the same one. The user is expected to replace these with
+   * `loctt project set-prefix`.
+   */
+  readonly reprefixed?: number;
 }
 
 /**
@@ -437,13 +597,52 @@ export async function pullFromLocttBranch(
       baseCommit: syncState.git.last_synced_commit,
     });
 
-    if (plan.conflicts.length > 0) {
+    // Field-level merge (decisions M1-M4). A path both sides changed is
+    // no longer fatal by itself: task frontmatter merges per field,
+    // history and comments union, and config lists union by id. Only
+    // paths with no rule — or one side that will not parse — still
+    // abort.
+    // Two passes. The first merges everything except state.yaml; the
+    // second derives the counters from the task set that results (M1),
+    // which cannot be known until the tasks themselves have merged.
+    const firstPass = await resolveConflicts(plan.conflicts, worktreeDir, locttDir);
+    const resolution = firstPass.unresolved.some(c => c.path === "state.yaml")
+      ? await resolveConflicts(
+        plan.conflicts,
+        worktreeDir,
+        locttDir,
+        await mergedTaskSet(plan, firstPass, worktreeDir, locttDir),
+      )
+      : firstPass;
+    if (resolution.unresolved.length > 0) {
       // Abort before writing anything — a partially-applied sync is worse
       // than none, and the user still has both versions intact.
-      throw new GitConflictError(plan.conflicts.map(c => c.path));
+      throw new GitConflictError(resolution.unresolved.map(c => c.path));
     }
 
     await applyPlan(plan, worktreeDir, locttDir);
+    // After applyPlan: the merged content must win over whatever the
+    // plan copied for that path.
+    await applyResolution(resolution, locttDir);
+
+    // NORMALISE. Merging can leave two projects sharing a prefix (two
+    // independently-init'ed trackers both mint `T-`), and tasks sharing
+    // a key. Neither is a state the rest of the codebase tolerates:
+    // `createProject` enforces prefix uniqueness, and a duplicate key
+    // makes `loctt show T-1` ambiguous. Runs unconditionally after a
+    // merge, because a merge is the only way to reach either state.
+    const normalised = resolution.merged.length > 0
+      ? await normaliseAfterMerge(locttDir)
+      : { rekeyed: 0, reprefixed: 0 };
+
+    // The key index maps key -> task id and is local, so it is never
+    // synced. Any sync that added or rewrote a task file leaves it
+    // stale — including one that only *copied* tasks, which never
+    // reaches normaliseAfterMerge. Rebuilding here rather than there
+    // covers both paths.
+    if (plan.copies.length > 0 || plan.deletes.length > 0 || resolution.merged.length > 0) {
+      await rebuildKeyIndex(locttDir);
+    }
 
     const updated: SyncState = {
       git: {
@@ -454,10 +653,16 @@ export async function pullFromLocttBranch(
     await saveSyncState(locttDir, updated);
 
     return {
-      updated: plan.copies.length > 0 || plan.deletes.length > 0,
+      updated:
+        plan.copies.length > 0 ||
+        plan.deletes.length > 0 ||
+        resolution.merged.length > 0,
       copied: plan.copies.length,
       deleted: plan.deletes.length,
       kept: plan.keeps.length,
+      merged: resolution.merged.length,
+      ...(normalised.rekeyed > 0 ? { rekeyed: normalised.rekeyed } : {}),
+      ...(normalised.reprefixed > 0 ? { reprefixed: normalised.reprefixed } : {}),
     };
   } finally {
     try {

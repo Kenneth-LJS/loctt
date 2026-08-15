@@ -63,50 +63,73 @@ Per file, sync:
 - **keeps the local version** when only you changed it, when you created it
   since the last sync, or when it is identical either way
 - **deletes it locally** when the branch deleted it since the base
-- **stops with a conflict** when both sides changed the same file differently
+- **merges it** when both sides changed the same file and LocTT has a rule
+  for that file type (see below)
+- **stops with a conflict** when both sides changed the same file and there
+  is no rule for it
 
 `.schema-version` is never taken from the branch. Schema changes travel
 through `loctt migrate`, so a machine running a newer LocTT cannot push a
 version bump onto one running an older release.
 
-### Conflict Resolution
+### Merging and conflicts
 
-When both sides changed the same file since the last sync, `sync` **aborts
-without writing anything** and names the conflicting files. Your local files
-are left exactly as they were.
+When both sides changed the same file since the last sync, LocTT merges it
+where it can:
 
-Resolve by making one side match the other — edit locally, or check out the
-`loctt` branch and edit there — then re-run `loctt git sync`.
+| File | How it merges |
+|---|---|
+| A task's `task.md` | Field by field. The version with the later `updated_at` wins any field the two disagree on. `relationships` and `key_history` are **unioned** instead — each entry was added deliberately, so neither side's is dropped. |
+| `_history.yaml` | Unioned. Both sides' entries are kept and ordered into one timeline. |
+| `_comments.yaml` | Unioned by comment id. A **deletion beats a concurrent edit** — if one clone deleted a comment and another edited it, it stays deleted. |
+| `config/projects.yaml`, `config/queries.yaml` | Unioned by entry id, so neither side's additions are lost. |
+| `state.yaml` | Key counters are recomputed from the tasks that exist after the merge, rather than being merged arithmetically. |
 
-> **Field-level merging is not implemented yet.** The plan is for two edits
-> to *different fields of the same task* to merge automatically
-> (`relationships` and `key_history` by union, disjoint custom fields
-> side-by-side), with only same-field disagreements reported as conflicts.
-> Today any two edits to the same file conflict, even when they touch
-> unrelated fields. The merge helpers exist in `packages/core/src/git/reconcile.ts`
-> but are not yet wired into the sync path.
+**The losing body is never thrown away.** When two clones edited the same
+task's markdown, the newer one becomes the task body and the older is
+written beside it as `task.local.md` or `task.incoming.md`. Delete that
+file once you have taken what you need from it.
 
-### Rekeying
+Anything without a rule — `config/workflow.yaml` most notably — still
+**aborts without writing anything** and names the file. Your local files
+are left exactly as they were. Resolve by making one side match the other,
+then re-run `loctt git sync`.
 
-> **Not implemented yet, and blocked on field-level merging above.**
-> `rekeyCollisions` exists in `packages/core/src/git/reconcile.ts` and is
-> unit-tested, but no sync path calls it — and none can yet. Two clones
-> that each create a task both bump `state.yaml`, so sync aborts on that
-> file before task keys are ever compared. There is no point at which a
-> merged task set exists for a rekey pass to scan, so wiring it up alone
-> would not help. Field-level merging has to land first.
->
-> In the meantime the second clone to sync sees a conflict naming
-> `state.yaml` and nothing is written. Resolve it the same way as any
-> other conflict.
+Workflow config is deliberately not merged: statuses and priorities are
+referenced by every task, so combining two divergent vocabularies could
+leave tasks pointing at a status the merged config does not define.
 
-The intended behaviour, once reconciliation lands: if multiple tasks claim
-the same key after a merge, a rekey pass runs.
+### Duplicate keys and prefixes
+
+Two trackers that were `loctt init`ed separately both mint `T-` keys, so
+merging them would otherwise produce two projects claiming the same key
+space and two tasks answering to `T-1`.
+
+After a merge LocTT repairs both automatically:
+
+- One project keeps its prefix (the one created first); the others get a
+  **provisional prefix** — `T-` becomes `T2-`, and so on.
+- Every task in a re-prefixed project is renamed, keeping its number:
+  `T-3` becomes `T2-3`. The old key is kept in `key_history`, so
+  `loctt show T-3` still resolves.
+- If two tasks in the *same* project still share a key, the one created
+  later is renumbered.
+
+Provisional prefixes are meant to be replaced, not lived with:
+
+```
+loctt project set-prefix "Design work" DESIGN-
+```
+
+The rekey pass, in detail:
 
 1. Tasks are grouped by conflicting key
 2. The task with the earlier `created_at` keeps the key (ULID `id` breaks ties)
 3. Remaining tasks get new keys from `state.yaml`
 4. Old keys are preserved in `key_history` and remain searchable
+
+Every step is derived from what is on disk, so two clones running the same
+sync reach the same result rather than diverging.
 
 ## Local Sync State
 
