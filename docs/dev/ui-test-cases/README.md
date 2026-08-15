@@ -82,6 +82,15 @@ never hold state that exists only in the browser.
 minutes later; a body save clobbering a teammate's paragraph; a saved
 view that exists in the UI but not in `queries.yaml`.
 
+**Optimistic rendering is allowed, with two conditions.** Dragging a
+card should feel immediate, so the UI may render an unsaved change
+before the server confirms it. But it must be **visually distinct**
+while pending, and it must **not survive a reload** — a reload always
+shows server truth. Rendering unsaved state as though it were saved is
+the actual violation, and a case that permits "tentative" rendering
+without requiring the visual distinction also passes when that happens.
+See BRD-43, BRD-48, TML-44.
+
 ## P2 — The URL is the view
 
 Any view reachable by clicking is reachable by pasting a URL — filters,
@@ -154,7 +163,17 @@ with a visible explanation.
 
 **Violations:** a task referencing a deleted status rendering as blank;
 the sidebar crashing because a pinned view was removed from
-`queries.yaml`.
+`queries.yaml`; a pinned view *vanishing silently* because it was
+removed from `queries.yaml`.
+
+**No carve-out for per-user preference drift.** "Surfaced" means the
+same thing whether the drift is in shared config or in one user's
+settings: a pinned view deleted from `queries.yaml` tells the user it
+was removed rather than disappearing. Silently pruning a preference is
+still drift the user cannot account for. This resolves the
+SHL-32 / SET-13 / SET-27 / XS-28 disagreement in favour of the
+explaining cases — SHL-32, PRU-14 and NEW-16 asserted silent dropping
+and are corrected.
 
 ## P8 — Frequent paths are fast and keyboard-reachable
 

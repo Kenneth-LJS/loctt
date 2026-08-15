@@ -120,10 +120,11 @@ project counters during git sync is in
 ### B1. Project resolution
 
 ### PRU-14 · M4 · major · P7
-**A user default pointing at a deleted project is silently ignored.** Alice's `settings.yaml` has `default_project: archive_me`; that project has since been hard-deleted. Workspace default is `backend`.
+**A user default pointing at a deleted project falls through, and the dead value is surfaced somewhere.** Alice's `settings.yaml` has `default_project: archive_me`; that project has since been hard-deleted. Workspace default is `backend`.
 
 - Opening the create modal as Alice pre-selects **Backend** — the workspace default — and does not error, blank the field, or show "archive_me" as a ghost option.
-- No warning banner fires for this case; falling through is the designed behaviour, not drift to be surfaced.
+- **The create modal itself stays quiet**: no banner, no toast. Blocking or interrupting a create over a stale preference would be worse than falling through.
+- But the dead value is not invisible. It is surfaced where preferences are managed — Settings → My preferences shows the default as unresolvable, naming `archive_me` — and by `loctt doctor`. P7 admits no carve-out for per-user preference drift; it only requires that the surfacing be proportionate and in the right place.
 - Setting a new personal default from preferences replaces the dead value in `settings.yaml`.
 
 ### PRU-15 · M4 · major · P7 P10

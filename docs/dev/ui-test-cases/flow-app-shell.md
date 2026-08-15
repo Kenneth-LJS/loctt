@@ -241,11 +241,18 @@ config changing underneath a live session is
 - Toggling the sidebar in one window does not visibly fight with the other on the next reload (whether state is shared or per-port, the behaviour is consistent and not oscillating).
 
 ### SHL-32 · M1 · major · P7
-**A saved view referenced by a sidebar pin but deleted from `queries.yaml` degrades quietly.** Delete a pinned saved view from the config while the UI is open, then refresh.
+**A saved view referenced by a sidebar pin but deleted from `queries.yaml` degrades with a visible explanation.** Delete a pinned saved view from the config while the UI is open, then refresh.
 
-- The stale entry is dropped from the sidebar rather than rendering as a broken item or crashing the group.
+This case previously asserted the entry was dropped silently. P7 admits
+no carve-out for per-user preference drift (see README): a pin that
+vanishes without explanation is drift the user cannot account for, even
+when they made the edit themselves — they may have edited a different
+view, or on a different machine.
+
+- The stale entry does not render as a broken item and does not crash the group.
+- The user is told the pinned view was removed — inline in the group, naming the view, and dismissible. Dismissing removes the pin.
 - The rest of the Saved filters group renders normally.
-- No error toast fires — a config the user edited themselves is not an error condition.
+- **No error toast fires** — this is an explanation, not an error. A config the user edited themselves is not an error condition, but it is not invisible either.
 
 ### SHL-33 · M1 · minor · P3
 **A workflow with an unusual number of statuses does not distort the shell.** Configure ten statuses.
