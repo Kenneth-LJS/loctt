@@ -95,16 +95,44 @@ on the UI side.
 ## Lossy-content guardrail
 
 When the editor opens a task, it parses the body. If parsing finds
-constructs that can't be represented in the WYSIWYG node tree
-(arbitrary HTML outside the allowlist, unknown directives, malformed
-extension syntax), the editor:
+constructs that can't be represented in the WYSIWYG node tree, the
+editor:
 
 1. Refuses to enter WYSIWYG mode for that body.
 2. Shows a banner: *"This task body contains markdown features that
    can't be edited visually. Edit in source mode."*
 3. Forces source-mode editing for the rest of the session on that task.
 
-This prevents the editor from silently dropping content on save.
+This prevents the editor from silently dropping content on save: TipTap
+removes any node its schema does not recognise, so a visual save would
+delete the content while reporting success.
+
+**Only two things trigger it: footnotes, and HTML tags outside the
+allowlist.** Every LocTT extension — inline and block KaTeX, `^sup^`,
+`~sub~`, mentions, attachment embeds — has a custom TipTap node
+(`apps/web/src/client/editor/extensions.ts`), so those stay *visually
+editable* rather than being detected and banished to source mode. A
+detector that over-reports pushes users into source mode for content
+the editor handles perfectly well, which trains them to ignore the
+banner.
+
+Detection lives in core (`packages/core/src/markdown/lossy.ts`,
+`findLossyConstructs`), not in the editor: it is pure text analysis so
+it is testable without a browser, and the CLI and MCP can warn about
+the same bodies without importing an editor. `GET /api/tasks/:ref`
+carries the result as `lossyConstructs`, so every client applies one
+rule instead of each reimplementing it.
+
+Code fences and inline code spans are skipped — a `<div>` inside a
+fence is sample text, and a body documenting HTML must stay visually
+editable.
+
+**Status.** Detection, the API field and the TipTap node definitions
+are implemented and tested. The banner and the mode-forcing are not:
+the body editor itself does not exist yet (`/tasks/$key` is a
+registered route rendering a stub), so there is no component to hang
+them on. When that editor lands it must read `lossyConstructs` rather
+than re-detecting.
 
 > **Mention parsing does not match this spec.** The implemented regex
 > (`packages/core/src/task/comments.ts:51`) is `/@([\w\-.]+)/g` — it has no

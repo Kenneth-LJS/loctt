@@ -86,6 +86,37 @@ describe("GET /api/tasks/:ref relationships", () => {
     expect(target.relationships[0]?.resolvedKey).toBe("T-1");
   });
 
+  it("flags body constructs the visual editor cannot represent (B5)", async () => {
+    // Detected server-side so every client applies one rule. TipTap
+    // drops unregistered nodes, so opening this body visually and
+    // saving would delete the footnote with no warning.
+    const res = await fetch(`${base}/api/tasks`, {
+      method: "POST", headers: csrf,
+      body: JSON.stringify({ title: "Has a footnote", body: "A claim[^1].\n\n[^1]: note" }),
+    });
+    const { key } = await res.json() as { key: string };
+    const task = await get(key);
+    expect(task.lossyConstructs).toHaveLength(2);
+    expect(task.lossyConstructs[0]?.kind).toBe("footnote");
+  });
+
+  it("reports nothing lossy for a body using LocTT's own syntax", () => {
+    // KaTeX, super/subscript, mentions and attachment embeds all have
+    // TipTap nodes, so they round-trip and must NOT force source mode.
+    // Over-reporting trains users to ignore the banner.
+    return (async () => {
+      const res = await fetch(`${base}/api/tasks`, {
+        method: "POST", headers: csrf,
+        body: JSON.stringify({
+          title: "Rich but safe",
+          body: "$e^{i\\pi}$ and x^2^ and H~2~O\n\n![d](attachments/a.png)",
+        }),
+      });
+      const { key } = await res.json() as { key: string };
+      expect((await get(key)).lossyConstructs).toEqual([]);
+    })();
+  });
+
   it("returns an empty array for a task with no edges", async () => {
     const res = await fetch(`${base}/api/tasks`, {
       method: "POST", headers: csrf, body: JSON.stringify({ title: "Lonely" }),

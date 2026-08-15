@@ -123,6 +123,8 @@ export {
   resolveLabelIdFromInput,
   unarchiveLabel,
 } from "./labels/index.js";
+export type { LossyConstruct } from "./markdown/index.js";
+export { findLossyConstructs, requiresSourceMode } from "./markdown/index.js";
 export type { CreateMilestoneInput, DeleteMilestoneOptions, MilestoneByNameResult } from "./milestones/index.js";
 export {
   archiveMilestone,
