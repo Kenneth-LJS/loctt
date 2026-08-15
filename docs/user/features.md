@@ -198,6 +198,12 @@ setting. **UI** — switching only.
 Projects are addressed by ULID `id` internally; `name` is a mutable display
 label and is not unique.
 
+Prefixes **are** unique across projects, since they partition the key space.
+Changing one renames every task in the project (`T-3` → `WEB-3`, numbers
+preserved), with old keys kept in `key_history` so existing references keep
+resolving — so it is a deliberate operation, `loctt project set-prefix`,
+rather than an ordinary field edit.
+
 ## Users
 
 Profiles with name, email, timezone, and avatar, used for assignee and
