@@ -807,12 +807,18 @@ Wired now:
 | `duplicateTask` | `loctt duplicate`, MCP `duplicate_task` |
 | `moveTaskToProject` | `loctt move`, MCP `move_task` |
 
-**Left deliberately:** `setFields` (multi-field atomic write) still has
-no direct caller. `bulkSetFields` covers the same ground — but it
-*reimplements* the patch logic rather than reusing `setFields`, which is
-real duplication. Refactoring bulk onto setFields is worthwhile and is a
-larger change than this item, touching the path shipped in item 2. It
-should be its own item rather than folded in here.
+**`setFields` duplication — ✅ RESOLVED.** `bulkSetFields` used to
+reimplement the patch logic; it now delegates to a shared
+`setFieldsLocked`, and the guard is shared as `assertChangesWritable`.
+The two had already drifted, and the refactor exposed it:
+
+| Case | `setFields` | `bulkSetFields` (before) |
+|---|---|---|
+| Unset a custom field that is not set | threw | skipped silently |
+| Write `updated_at` directly | refused | **allowed** — a real bug |
+
+`bulk.ts` lost ~100 lines. 15 parity tests now assert the two agree on
+what may be written and what a write produces.
 
 ### 11. Milestone progress
 Does not exist anywhere in `packages` or `apps`. Ten UI cases unbacked.
