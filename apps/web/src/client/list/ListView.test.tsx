@@ -111,6 +111,7 @@ afterEach(() => {
 });
 
 describe("ListView", () => {
+  // @verifies LST-2
   it("renders the row with resolved labels for enum/id values", async () => {
     await mountList();
     const row = (await screen.findByText("First task")).closest("tr") as HTMLElement;
@@ -124,6 +125,7 @@ describe("ListView", () => {
     expect(cells.getByText("frontend")).toBeTruthy(); // label name
   });
 
+  // @verifies LST-2
   it("renders all ten column headers", async () => {
     await mountList();
     for (const h of ["Key", "Project", "Title", "Status", "Priority", "Type", "Assignee", "Labels", "Due", "Updated"]) {
@@ -131,6 +133,7 @@ describe("ListView", () => {
     }
   });
 
+  // @verifies LST-3
   it("clicking a sortable header sorts ascending, then toggles to descending", async () => {
     const router = await mountList();
 

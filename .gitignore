@@ -3,5 +3,9 @@ dist/
 *.tsbuildinfo
 .loctt/local/
 
+# Playwright run artifacts (traces, screenshots, HTML report)
+test-results/
+playwright-report/
+
 # Machine-specific Claude config (if created)
 .claude/agent-env.md
