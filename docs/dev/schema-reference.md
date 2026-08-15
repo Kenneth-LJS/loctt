@@ -23,10 +23,12 @@ All YAML files are written atomically (via `writeFileAtomically` / `writeYamlAto
       sprints.yaml            # sprints (optional)
       calendar.yaml           # workspace timezone & working week (optional)
       queries.yaml            # saved views
+      list-view.yaml          # which filter chips the list view offers (optional)
     tasks/
       <ulid>/
         task.md               # frontmatter + body
         _history.yaml         # change log (see history docs)
+        _comments.yaml        # comment thread (optional; absent until the first comment)
         attachments/          # arbitrary task-attached files
     users/
       <ulid>/
@@ -422,6 +424,83 @@ queries:
 |---|---|---|---|
 | `field` | string | yes | Field name to sort by |
 | `direction` | enum | yes | One of `asc`, `desc` |
+
+---
+
+## list-view.yaml
+
+Located at `.loctt/config/list-view.yaml`. Optional — absent means every
+built-in chip and every declared custom field is offered. Committed, so
+the choice is shared across the team; per-user preferences live in
+`users/<id>/settings.yaml` instead.
+
+Controls which fields the list view offers as filter chips. It does not
+restrict what can be *queried* — the DSL still reaches every field — only
+what the UI surfaces as a one-click chip.
+
+```yaml
+filters:
+  visible:
+    - status
+    - priority
+    - assignee
+  # hidden:
+  #   - reporter
+```
+
+### `filters`
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `visible` | string[] | no | Explicit allowlist. When present, only these render as chips |
+| `hidden` | string[] | no | Denylist applied to the default set |
+
+Both are optional and both reject duplicates within themselves. A key may
+not appear in **both** lists: "hidden wins" would be a silent resolution
+of what is almost always a typo, so it is a validation error instead.
+
+Each entry must be either a built-in field key — `status`, `priority`,
+`type`, `assignee`, `reporter`, `labels`, `milestone`, `sprint`,
+`project` — or the `key` of a declared `workflow.yaml` custom field.
+`loctt doctor` reports entries that match neither.
+
+---
+
+## tasks/&lt;ulid&gt;/_comments.yaml
+
+The task's comment thread. Optional — the file is absent until the first
+comment is posted, and it is created alongside the task's other files
+rather than in a separate store.
+
+```yaml
+comments:
+  - id: 01J8ZQ3X9WTB7N2K5V6E4RA0YM
+    author: 01J8ZQ2M1KDP4C7H3F8S9TB5XN
+    body: "Blocked on @user:01J8ZQ4N7VGE2R5T8Y1U3I6O9P confirming the API shape."
+    created_at: 2026-03-04T09:12:44.000Z
+    mentions:
+      - 01J8ZQ4N7VGE2R5T8Y1U3I6O9P
+```
+
+### `comments[]`
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | ULID | yes | Comment identity |
+| `author` | ULID | yes | User who posted it |
+| `body` | string | yes | Markdown. `@user:<id>` mentions per [markdown-extensions.md](markdown-extensions.md) |
+| `created_at` | ISO-8601 | yes | |
+| `updated_at` | ISO-8601 | no | Set on edit |
+| `edited` | `true` | no | Present once edited; never `false` |
+| `mentions` | ULID[] | no | User ids parsed from `body`, deduplicated |
+| `editors` | ULID[] | no | Users **other than** `author` who have edited, in first-edit order |
+
+`editors` is a provenance trail, not a permission record — LocTT has no
+roles, so anyone may edit anyone's comment. A self-edit sets `edited`
+with no `editors` entry, which renders as a bare "Edited". The field is
+denormalized from `_history.yaml`, which records one `comment_edited`
+entry per edit and stays authoritative; this copy exists so rendering a
+thread does not require joining against history.
 
 ---
 

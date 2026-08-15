@@ -24,19 +24,15 @@ the buffer on failure.
 Cases: ERR-11, ERR-12 in
 [`ui-test-cases/flow-error-handling.md`](ui-test-cases/flow-error-handling.md).
 
-## Documentation
+## Code
 
-### Two live file formats are unspecified
+### Key collisions across clones are unhandled
 
-`list-view.yaml` and `_comments.yaml` both ship and are both absent from
-[`schema-reference.md`](schema-reference.md), including its directory
-layout block. A user hand-editing either has nothing to check against.
+`rekeyCollisions` in `packages/core/src/git/reconcile.ts` is implemented
+and unit-tested but has no production caller. Two clones that
+independently allocate the same key while offline will both keep it, and
+sync does not detect the clash.
 
-### `architecture.md`'s git section understates the subsystem
-
-[`architecture.md`](architecture.md) gives git integration three lines
-covering publish only, for a ten-module subsystem. `three-way.ts` and
-the reconciliation lifecycle go unmentioned. Both `README.md` and
-[`git-sync.md`](../user/common/git-sync.md) are ahead of it, so a
-contributor reading the architecture doc gets the least accurate
-picture.
+The rest of git sync's reconciliation is wired — `planSync` guards the
+data-loss paths, and relationship and key-history merges run — so this
+is a specific open case, not a missing subsystem.

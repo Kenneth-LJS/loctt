@@ -16,6 +16,7 @@ import {
   AttachmentNotFoundError,
   AttachmentSourceError,
   BurndownError,
+  FsAccessError,
   LabelError,
   MilestoneError,
   ProjectError,
@@ -60,6 +61,10 @@ export function isKnownDomainError(err: unknown): err is Error {
     || err instanceof AttachmentNotFoundError
     || err instanceof AttachmentSourceError
     || err instanceof BurndownError
+    // An unwritable .loctt/ or a full disk. Its message already names
+    // the cause and the remedy, so an agent can act on it — that makes
+    // it a domain error, not a server fault to rethrow.
+    || err instanceof FsAccessError
     || err instanceof LabelError
     || err instanceof MilestoneError
     || err instanceof ProjectError
