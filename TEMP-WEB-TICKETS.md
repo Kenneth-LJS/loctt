@@ -103,7 +103,7 @@ load the app, see your tasks, sort/filter/paginate them by URL state,
 and click into any task (which routes to a stub for now).
 
 ### M1.1 · App shell layout ✅
-Cases: SHL-1, SHL-2, SHL-3, SHL-4, SHL-5, SHL-6, SHL-7, SHL-8, SHL-9, SHL-10, SHL-11, SHL-12, SHL-13, SHL-14, SHL-15, SHL-16, SHL-17, SHL-18, SHL-19, SHL-20, SHL-21, SHL-22, SHL-23, SHL-24, SHL-25, SHL-26, SHL-27, SHL-28, SHL-29, SHL-30, SHL-31, SHL-32, SHL-33, SHL-34, SHL-35, SHL-36, SHL-37, SHL-38, SHL-39, SHL-40, SHL-41, SHL-42, SHL-43, SHL-44, VUE-1, VUE-2, VUE-16, VUE-24, VUE-30, ONB-9, ONB-10, ONB-13, ONB-14, ONB-23, ONB-34, ERR-28, ERR-29, ERR-34, ERR-35, ERR-36, ERR-37, XS-2, XS-3, XS-28, XS-33, XS-34, XS-35, XS-37, XS-61, XS-62, XS-32, MSL-19, PRU-1, PRU-2, PRU-3
+Cases: SHL-1, SHL-2, SHL-3, SHL-4, SHL-5, SHL-6, SHL-7, SHL-8, SHL-9, SHL-10, SHL-11, SHL-12, SHL-13, SHL-14, SHL-15, SHL-16, SHL-17, SHL-18, SHL-19, SHL-20, SHL-21, SHL-22, SHL-23, SHL-24, SHL-25, SHL-26, SHL-27, SHL-28, SHL-29, SHL-30, SHL-31, SHL-32, SHL-33, SHL-34, SHL-35, SHL-36, SHL-37, SHL-38, SHL-39, SHL-40, SHL-41, SHL-42, SHL-43, SHL-44, VUE-1, VUE-2, VUE-16, VUE-24, ONB-9, ONB-10, ONB-13, ONB-14, ONB-23, ONB-34, ERR-28, ERR-29, ERR-34, ERR-35, ERR-36, ERR-37, XS-2, XS-3, XS-28, XS-33, XS-34, XS-35, XS-37, XS-61, XS-62, XS-32, PRU-2
 - Two-column shell: collapsible left sidebar + main pane
 - Header: logo, current-user avatar + menu (Switch user, Settings,
   Theme toggle), `+` create-task button (stub)
@@ -146,7 +146,7 @@ Cases: SHL-1, SHL-2, SHL-3, SHL-4, SHL-5, SHL-6, SHL-7, SHL-8, SHL-9, SHL-10, SH
 > results, so the mark is now ✅.
 
 ### M1.2 · List view — table + columns ✅
-Cases: LST-1, LST-2, LST-3, LST-4, LST-5, LST-6, LST-7, LST-8, LST-18, LST-19, LST-20, LST-21, LST-22, LST-23, LST-24, LST-25, LST-26, LST-27, LST-28, LST-36, LST-37, LST-39, LST-47, LST-48, LST-51, ONB-8, ONB-12, ONB-25, ONB-26, ONB-24, ONB-33, ERR-1, ERR-2, ERR-5, ERR-6, ERR-9, ERR-10, ERR-14, ERR-15, ERR-16, ERR-17, ERR-18, ERR-19, ERR-20, ERR-21, ERR-22, ERR-30, ERR-31, ERR-39, ERR-40, ERR-41, ERR-42, ERR-7, ERR-8, XS-1, XS-5, XS-22, XS-24, XS-39, XS-40, XS-56, MSL-5, MSL-20, MSL-21, MSL-22, MSL-23, MSL-26
+Cases: LST-1, LST-2, LST-3, LST-4, LST-5, LST-6, LST-7, LST-8, LST-19, LST-20, LST-21, LST-22, LST-23, LST-24, LST-25, LST-26, LST-27, LST-28, LST-36, LST-37, LST-39, LST-47, LST-51, ONB-8, ONB-12, ONB-26, ONB-24, ONB-33, ERR-1, ERR-2, ERR-5, ERR-6, ERR-9, ERR-10, ERR-14, ERR-15, ERR-16, ERR-17, ERR-18, ERR-19, ERR-20, ERR-21, ERR-22, ERR-30, ERR-31, ERR-39, ERR-40, ERR-41, ERR-42, XS-1, XS-5, XS-22, XS-24, XS-39, XS-40, XS-56, MSL-21, MSL-22, MSL-23, MSL-26, PRU-3
 - Route `/list` (and `/` redirects)
 - Table: key, project, title, status, priority, type, assignee,
   labels, due, updated
@@ -165,7 +165,7 @@ Cases: LST-1, LST-2, LST-3, LST-4, LST-5, LST-6, LST-7, LST-8, LST-18, LST-19, L
 > LST-1 and LST-2 are now covered by Playwright specs in `tests/ui/`.
 
 ### M1.3 · List view — filter bar + URL state ✅
-Cases: LST-9, LST-10, LST-11, LST-12, LST-14, LST-15, LST-16, LST-17, LST-29, LST-31, LST-32, LST-33, LST-34, LST-40, LST-41, LST-42, LST-44, LST-45, LST-46, LST-50, LST-52, VUE-3, VUE-4, VUE-5, VUE-6, VUE-7, VUE-13, VUE-14, VUE-15, XS-15, XS-16, XS-17, XS-18, XS-20, XS-21, XS-23, XS-29, XS-30, XS-59, XS-60, MSL-6, MSL-7, MSL-30, MSL-36
+Cases: LST-9, LST-10, LST-11, LST-12, LST-14, LST-15, LST-16, LST-17, LST-29, LST-31, LST-32, LST-33, LST-34, LST-40, LST-41, LST-42, LST-44, LST-45, LST-46, LST-50, LST-52, VUE-3, VUE-4, VUE-5, VUE-6, VUE-7, VUE-13, VUE-14, VUE-15, XS-15, XS-16, XS-17, XS-18, XS-20, XS-21, XS-23, XS-29, XS-30, XS-59, XS-60, MSL-6, MSL-7, MSL-30, MSL-36, MSL-19
 - Filter dropdowns: Project, Status, Priority, Type, Assignee, Label,
   Milestone, Sprint, + custom-field picker
 - Active filters render as removable chips
@@ -190,7 +190,7 @@ Cases: LST-9, LST-10, LST-11, LST-12, LST-14, LST-15, LST-16, LST-17, LST-29, LS
 > field-level error on `query`). Both re-verified, so the mark is ✅.
 
 ### M1.4 · List view — pagination + bulk-bar + export 🔵
-Cases: LST-13, LST-30, LST-35, LST-38, LST-43, LST-49, BLK-1, BLK-2, BLK-3, BLK-4, BLK-5, BLK-6, BLK-7, BLK-8, BLK-9, BLK-10, BLK-11, BLK-12, BLK-13, BLK-14, BLK-15, BLK-16, BLK-17, BLK-18, BLK-19, BLK-20, BLK-21, BLK-22, BLK-23, BLK-24, BLK-25, BLK-26, BLK-27, BLK-28, BLK-29, BLK-30, BLK-31, BLK-32, BLK-33, BLK-34, BLK-35, BLK-36, BLK-37, BLK-38, BLK-39, BLK-40, BLK-41, BLK-42, BLK-43, BLK-44, BLK-45, BLK-46, BLK-47, BLK-48, ERR-13, ERR-25, ERR-26, XS-6, XS-19
+Cases: LST-13, LST-30, LST-35, LST-38, LST-43, LST-49, BLK-1, BLK-2, BLK-3, BLK-4, BLK-5, BLK-6, BLK-7, BLK-8, BLK-9, BLK-10, BLK-11, BLK-12, BLK-13, BLK-14, BLK-15, BLK-16, BLK-17, BLK-18, BLK-19, BLK-20, BLK-21, BLK-22, BLK-23, BLK-24, BLK-25, BLK-26, BLK-27, BLK-28, BLK-29, BLK-30, BLK-31, BLK-32, BLK-33, BLK-34, BLK-35, BLK-36, BLK-37, BLK-38, BLK-39, BLK-40, BLK-41, BLK-42, BLK-43, BLK-44, BLK-45, BLK-46, BLK-47, BLK-48, ERR-13, ERR-25, ERR-26, XS-6, XS-19, LST-18, LST-48, ONB-25
 - ✅ Pagination using `total` from `/api/tasks`; "Showing 1–50 of 128 ·
   Load more" pattern. Covers LST-13, LST-17, LST-30, LST-35, LST-43,
   LST-49 — Playwright specs in `tests/ui/flow-list.spec.ts`
@@ -228,7 +228,7 @@ Goal: clicking a task opens the full detail view. You can edit every
 field inline, write the description body, post comments, see history.
 
 ### M2.1 · Task detail — read shell ⬜
-Cases: TSK-1, TSK-2, TSK-3, TSK-19, TSK-20, TSK-21, TSK-22, TSK-23, TSK-24, TSK-25, TSK-40, TSK-43, TSK-44, TSK-45, TSK-50, TSK-51, TSK-52, TSK-53, TSK-54, XS-51, XS-58
+Cases: TSK-1, TSK-2, TSK-3, TSK-19, TSK-20, TSK-21, TSK-22, TSK-23, TSK-24, TSK-43, TSK-44, TSK-45, TSK-50, TSK-51, TSK-52, TSK-53, TSK-54, XS-51, XS-58, ERR-8, ERR-7
 - Route `/tasks/$key` (real component, replacing the stub)
 - Breadcrumb (All tasks › Project) + title + chips (key, archived
   badge)
@@ -242,7 +242,7 @@ Cases: TSK-1, TSK-2, TSK-3, TSK-19, TSK-20, TSK-21, TSK-22, TSK-23, TSK-24, TSK-
   fires once per mount
 
 ### M2.2 · Task detail — meta panel edits ⬜
-Cases: TSK-4, TSK-5, TSK-6, TSK-7, TSK-8, TSK-9, TSK-10, TSK-11, TSK-12, TSK-13, TSK-14, TSK-26, TSK-28, TSK-29, TSK-30, TSK-31, TSK-32, TSK-33, TSK-34, TSK-36, TSK-37, TSK-39, TSK-41, TSK-42, TSK-46, TSK-47, TSK-49, TSK-55, TSK-56, ERR-43, XS-4, XS-7, XS-8, XS-10, XS-26, XS-27, XS-42, XS-46, XS-53, XS-54, XS-57
+Cases: TSK-4, TSK-5, TSK-6, TSK-7, TSK-8, TSK-9, TSK-10, TSK-11, TSK-12, TSK-13, TSK-14, TSK-26, TSK-28, TSK-29, TSK-30, TSK-31, TSK-32, TSK-33, TSK-34, TSK-36, TSK-37, TSK-39, TSK-41, TSK-42, TSK-46, TSK-47, TSK-49, TSK-55, TSK-56, ERR-43, XS-4, XS-7, XS-8, XS-10, XS-26, XS-27, XS-42, XS-46, XS-54, XS-57, ERR-3, ERR-4, VUE-30
 - All meta rows inline-editable via `setField` / `setFields`:
   - Status, Priority, Type (dropdowns)
   - Assignee, Reporter (user picker; archived users greyed +
@@ -260,7 +260,7 @@ Cases: TSK-4, TSK-5, TSK-6, TSK-7, TSK-8, TSK-9, TSK-10, TSK-11, TSK-12, TSK-13,
   right payload and rolls back on error
 
 ### M2.3 · Task detail — body editor (TipTap + CodeMirror) ⬜
-Cases: TSK-15, TSK-16, TSK-17, TSK-18, TSK-27, TSK-35, TSK-38, TSK-48, ERR-12, ERR-27, XS-11, XS-12, XS-13, XS-14, XS-65
+Cases: TSK-15, TSK-16, TSK-17, TSK-18, TSK-27, TSK-35, TSK-38, TSK-48, ERR-12, ERR-27, XS-11, XS-12, XS-13, XS-14, XS-65, TSK-40, TSK-25
 - TipTap rich editor (default mode), mode toggle to CodeMirror 6
   raw markdown
 - Auto-save on 1.5s idle + on blur; coalesced `body_edited` history
@@ -272,7 +272,7 @@ Cases: TSK-15, TSK-16, TSK-17, TSK-18, TSK-27, TSK-35, TSK-38, TSK-48, ERR-12, E
   mode toggle preserves content; mention picker filters by query
 
 ### M2.4 · Task detail — comments + activity ⬜
-Cases: CMT-1, CMT-2, CMT-3, CMT-4, CMT-5, CMT-6, CMT-7, CMT-8, CMT-9, CMT-10, CMT-11, CMT-12, CMT-13, CMT-14, CMT-15, CMT-16, CMT-17, CMT-18, CMT-19, CMT-20, CMT-21, CMT-22, CMT-23, CMT-24, CMT-25, CMT-26, CMT-27, CMT-28, CMT-29, CMT-30, CMT-31, CMT-32, CMT-33, CMT-34, CMT-35, CMT-36, CMT-37, CMT-38
+Cases: CMT-1, CMT-2, CMT-3, CMT-4, CMT-5, CMT-6, CMT-7, CMT-8, CMT-9, CMT-10, CMT-11, CMT-12, CMT-13, CMT-14, CMT-15, CMT-16, CMT-17, CMT-18, CMT-19, CMT-20, CMT-21, CMT-22, CMT-23, CMT-24, CMT-25, CMT-26, CMT-27, CMT-28, CMT-29, CMT-30, CMT-31, CMT-32, CMT-33, CMT-34, CMT-35, CMT-36, CMT-37, CMT-38, XS-53
 - Comments section per CW-14: list (oldest-first), composer (TipTap),
   edit/delete on own comments, @mention autocomplete, mentions as
   chips
@@ -309,7 +309,7 @@ Goal: alternative views work, and the universal "+ Add task" creates
 tasks from anywhere.
 
 ### M3.1 · Board view ⬜
-Cases: BRD-1, BRD-2, BRD-3, BRD-4, BRD-5, BRD-6, BRD-7, BRD-8, BRD-14, BRD-15, BRD-16, BRD-17, BRD-18, BRD-19, BRD-20, BRD-21, BRD-22, BRD-23, BRD-24, BRD-33, BRD-39, BRD-40, BRD-45, BRD-46, BRD-47, BRD-48, ONB-11
+Cases: BRD-1, BRD-2, BRD-3, BRD-4, BRD-5, BRD-6, BRD-7, BRD-8, BRD-14, BRD-15, BRD-16, BRD-17, BRD-18, BRD-19, BRD-20, BRD-21, BRD-22, BRD-23, BRD-24, BRD-33, BRD-39, BRD-40, BRD-45, BRD-46, BRD-47, BRD-48, ONB-11, MSL-5, MSL-20
 - Route `/board`
 - Status chips bar (toggle visibility), persists in user settings
 - Columns from `workflow.boards.columns` if set, else 1-status-per-col
@@ -330,7 +330,7 @@ Cases: BRD-9, BRD-10, BRD-11, BRD-12, BRD-13, BRD-25, BRD-26, BRD-27, BRD-28, BR
   board_rank in one call; intra-column posts board_rank only
 
 ### M3.3 · Timeline view ⬜
-Cases: TML-1, TML-2, TML-3, TML-4, TML-5, TML-6, TML-7, TML-8, TML-9, TML-10, TML-11, TML-12, TML-13, TML-14, TML-15, TML-16, TML-17, TML-18, TML-19, TML-20, TML-21, TML-22, TML-23, TML-24, TML-25, TML-26, TML-27, TML-28, TML-29, TML-30, TML-31, TML-32, TML-33, TML-34, TML-35, TML-36, TML-37, TML-38, TML-39, TML-40, TML-41, TML-42, TML-43, TML-44, TML-45, TML-46, TML-47, TML-48, TML-49, TML-50
+Cases: TML-1, TML-2, TML-3, TML-4, TML-5, TML-6, TML-7, TML-8, TML-9, TML-10, TML-11, TML-12, TML-13, TML-14, TML-15, TML-16, TML-17, TML-18, TML-19, TML-20, TML-21, TML-22, TML-23, TML-24, TML-25, TML-26, TML-27, TML-28, TML-29, TML-30, TML-31, TML-32, TML-33, TML-34, TML-35, TML-36, TML-37, TML-38, TML-39, TML-40, TML-41, TML-42, TML-43, TML-44, TML-45, TML-46, TML-47, TML-48, TML-49, TML-50, PRU-1
 - Route `/timeline`
 - Zoom day/week/month (default from workflow.timeline CW-1 or
   saved-view CW-2)
@@ -373,7 +373,7 @@ Goal: settings panels work end-to-end, the init wizard handles
 first-run, and the v1 polish (keyboard, errors, a11y) is done.
 
 ### M4.1 · Settings shell + Projects + Users (with profile pics, CW-20) ⬜
-Cases: SET-1, SET-2, SET-32, SET-42, PRU-5, PRU-6, PRU-7, PRU-8, PRU-9, PRU-10, PRU-11, PRU-12, PRU-13, PRU-15, PRU-16, PRU-17, PRU-18, PRU-19, PRU-20, PRU-21, PRU-22, PRU-23, PRU-24, PRU-25, PRU-26, PRU-27, PRU-28, PRU-29, PRU-30, PRU-31, PRU-32, PRU-33, PRU-34, PRU-35, PRU-36, PRU-37, PRU-38, PRU-39, PRU-40, PRU-41, PRU-42, PRU-43, PRU-44, PRU-45, PRU-46, XS-55, XS-63
+Cases: SET-32, SET-42, PRU-5, PRU-6, PRU-7, PRU-8, PRU-9, PRU-10, PRU-11, PRU-12, PRU-13, PRU-15, PRU-16, PRU-17, PRU-18, PRU-19, PRU-20, PRU-21, PRU-22, PRU-23, PRU-24, PRU-25, PRU-26, PRU-27, PRU-28, PRU-29, PRU-30, PRU-31, PRU-32, PRU-33, PRU-34, PRU-35, PRU-36, PRU-37, PRU-38, PRU-39, PRU-40, PRU-41, PRU-42, PRU-43, PRU-44, PRU-45, PRU-46, XS-55, XS-63
 - Route `/settings/$section`; nav grouped (Workspace/Workflow/Data/
   Tracker/Personal)
 - Projects panel: CRUD with reference-count badge (CW-8), delete with
@@ -386,7 +386,7 @@ Cases: SET-1, SET-2, SET-32, SET-42, PRU-5, PRU-6, PRU-7, PRU-8, PRU-9, PRU-10, 
   compressor (jpeg in → smaller jpeg/webp, dimensions clamped)
 
 ### M4.2 · Settings — workflow panels ⬜
-Cases: SET-3, SET-4, SET-5, SET-6, SET-7, SET-8, SET-9, SET-10, SET-16, SET-17, SET-18, SET-19, SET-20, SET-21, SET-22, SET-23, SET-24, SET-25, SET-28, SET-33, SET-34, SET-35, SET-36, SET-41, XS-31
+Cases: SET-3, SET-4, SET-5, SET-6, SET-7, SET-8, SET-9, SET-10, SET-16, SET-17, SET-18, SET-19, SET-20, SET-21, SET-22, SET-23, SET-24, SET-25, SET-28, SET-33, SET-34, SET-35, SET-36, SET-41, XS-31, SET-1
 - Statuses + Priorities + Task types + Relationships (C.10.3–C.10.6);
   drag-reorder; symmetric flag UX per CW-15
 - Custom fields + Estimation + Calendar (C.10.7–C.10.9); type locked
@@ -395,7 +395,7 @@ Cases: SET-3, SET-4, SET-5, SET-6, SET-7, SET-8, SET-9, SET-10, SET-16, SET-17, 
   priority value auto-computed from position
 
 ### M4.3 · Settings — data panels ⬜
-Cases: SET-14, SET-15, SET-29, SET-30, SET-31, SET-37, SET-38, SET-40, MSL-8, MSL-9, MSL-10, MSL-11, MSL-12, MSL-13, MSL-14, MSL-27, MSL-28, MSL-31, MSL-32, MSL-33, MSL-34, MSL-37, GIT-1, GIT-2, GIT-3, GIT-4, GIT-5, GIT-6, GIT-7, GIT-8, GIT-9, GIT-10, GIT-11, GIT-12, GIT-13, GIT-14, GIT-15, GIT-16, GIT-17, GIT-18, GIT-19, GIT-20, GIT-21, GIT-22, GIT-23, GIT-24, GIT-25, GIT-26, GIT-27, GIT-28, GIT-29, GIT-30, GIT-31, GIT-32, GIT-33, GIT-34, GIT-35, GIT-36, GIT-37, GIT-38, VUE-25, VUE-26, VUE-27, VUE-36, VUE-38, XS-36, XS-38, XS-41, XS-43, XS-44, XS-45, XS-48, XS-50, XS-66
+Cases: SET-14, SET-15, SET-29, SET-30, SET-31, SET-37, SET-38, SET-40, MSL-8, MSL-9, MSL-10, MSL-11, MSL-12, MSL-13, MSL-14, MSL-27, MSL-28, MSL-31, MSL-32, MSL-33, MSL-34, MSL-37, GIT-1, GIT-2, GIT-3, GIT-4, GIT-5, GIT-6, GIT-7, GIT-8, GIT-9, GIT-10, GIT-11, GIT-12, GIT-13, GIT-14, GIT-15, GIT-16, GIT-17, GIT-18, GIT-19, GIT-20, GIT-21, GIT-22, GIT-23, GIT-24, GIT-25, GIT-26, GIT-27, GIT-28, GIT-29, GIT-30, GIT-31, GIT-32, GIT-33, GIT-34, GIT-35, GIT-36, GIT-37, GIT-38, VUE-25, VUE-26, VUE-27, VUE-36, XS-36, XS-38, XS-41, XS-43, XS-44, XS-45, XS-48, XS-50, XS-66
 - Labels + Milestones + Sprints (C.10.10–C.10.12); reference counts;
   sprint → burndown link
 - Saved views + General + Board columns + Timeline defaults
@@ -411,7 +411,7 @@ Cases: SET-14, SET-15, SET-29, SET-30, SET-31, SET-37, SET-38, SET-40, MSL-8, MS
   migrate happy-path returns schema to `current` + banner clears
 
 ### M4.4 · Settings — personal + keyboard ⬜
-Cases: SET-11, SET-12, SET-13, SET-26, SET-27, PRU-14
+Cases: SET-11, SET-12, SET-13, SET-26, SET-27, PRU-14, SET-2, VUE-38
 - My preferences + Card layout + Sidebar pins + Keyboard reference
   (C.10.19–C.10.22); theme picker; card layout drag editor (CW-17);
   sidebar pins drag list with stale-entry sweep
@@ -476,8 +476,6 @@ in the cases. Listing them explicitly is what stops them being silently
 dropped; `npm run cases:partition` fails if one is neither placed nor
 listed here.
 
-- ERR-3 — needs a field-level optimistic write to roll back; no M1 ticket builds an editable field (task detail is M2), and the bulk path in M1.4 is not optimistic-per-field.
-- ERR-4 — same: requires an in-flight single-field write whose outcome is unknown; the only M1 write paths are bulk (ERR-25 covers the bulk equivalent) and save-as-view.
 - ERR-23 — its scenario is a create-task submit that half-applies; no M2 ticket builds the create modal (M3), so nothing in M2 makes this verifiable
 - SPR-1 — the sprints overview route is not built by any M3 ticket; M3.1 builds `/board` from `workflow.boards`, not a sprint-column view.
 - SPR-2 — same: sprint-column highlight/collapse belongs to a sprints view no M3 ticket creates.
