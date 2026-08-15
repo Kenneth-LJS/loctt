@@ -65,8 +65,11 @@ written. See §2 item 0.
 
 Ordered. Dependencies are stated because three items are blocked.
 
-**Phase 2 progress:** 0i, 0e, 0d, 0m, 0l, 0c done. Working order is live bugs first,
-then by dependency — next up 0b (status default), then item 0.
+**Phase 2 progress:** 0i, 0e, 0d, 0m, 0l, 0c, 0b done. **All four
+previously-recorded pre-existing test failures are fixed** — each was a
+stale fixture, not a defect. Full suite green: 1,621 unit, 150
+integration, 20 e2e. Working order is live bugs first,
+then by dependency — next up item 0 (relationship query syntax).
 
 ### 0. Relationship query syntax — redesign (Tier 0 + Tier 1)
 **Blocked by:** nothing. **Size:** small-medium.
@@ -195,8 +198,8 @@ doc lines. **This is the cheapest moment this will ever be.**
 Core JQL has *no* link-traversal function at all. T0+T1 exceeds what most
 Jira installations can do.
 
-### 0b. Status is mandatory, with an explicit default
-**Blocked by:** B9 (validateWorkflowConfig never runs on a write path) —
+### 0b. Status is mandatory, with an explicit default — ✅ DONE (`d7e240c`)
+**Blocked by:** ~~B9~~ (done, `5398e8f`) (validateWorkflowConfig never runs on a write path) —
 the "exactly one default" rule needs a live validator to enforce it.
 **Size:** small-medium.
 
