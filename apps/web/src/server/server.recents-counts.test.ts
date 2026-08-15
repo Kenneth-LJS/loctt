@@ -100,6 +100,43 @@ describe("recents and reference counts", () => {
       expect(items.find(l => l.id === created.id)?.taskCount).toBe(1);
     });
 
+    it("reports milestone progress with ?progress=true", async () => {
+      // Computed from status CATEGORY, never a status key: a tracker
+      // may rename or delete `done` entirely (MSL-3).
+      const ms = await (await fetch(`${base}/api/milestones`, {
+        method: "POST", headers: csrf, body: JSON.stringify({ name: "v1" }),
+      })).json() as { id: string };
+
+      const a = await mk("shipped");
+      const b = await mk("outstanding");
+      const c = await mk("abandoned");
+      for (const [key, status] of [[a.key, "done"], [b.key, "backlog"], [c.key, "wont_do"]] as const) {
+        await fetch(`${base}/api/tasks/${key}/set`, {
+          method: "POST", headers: csrf,
+          body: JSON.stringify({ field: "milestone", value: ms.id }),
+        });
+        await fetch(`${base}/api/tasks/${key}/set`, {
+          method: "POST", headers: csrf,
+          body: JSON.stringify({ field: "status", value: status }),
+        });
+      }
+
+      const items = ((await (await fetch(`${base}/api/milestones?progress=true`)).json()) as
+        { items: { id: string; progress: { done: number; total: number; discarded: number } }[] }).items;
+      const p = items.find(m => m.id === ms.id)?.progress;
+      // 1 done, 1 outstanding, 1 discarded → 1/2, not 1/3.
+      expect(p).toMatchObject({ done: 1, total: 2, discarded: 1 });
+    });
+
+    it("omits progress unless asked", async () => {
+      await fetch(`${base}/api/milestones`, {
+        method: "POST", headers: csrf, body: JSON.stringify({ name: "v1" }),
+      });
+      const items = ((await (await fetch(`${base}/api/milestones`)).json()) as
+        { items: Record<string, unknown>[] }).items;
+      expect(items[0]).not.toHaveProperty("progress");
+    });
+
     it("reports zero for an unused entity rather than omitting it", async () => {
       await fetch(`${base}/api/labels`, {
         method: "POST", headers: csrf, body: JSON.stringify({ name: "unused" }),

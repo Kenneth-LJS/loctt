@@ -113,8 +113,10 @@ import {
   MAX_AVATAR_BYTES,
   migrateToCurrent,
   MilestoneError,
+  milestoneProgress,
   planMigration,
   postComment,
+  type Progress,
   ProjectError,
   publish,
   pushRecent,
@@ -139,6 +141,7 @@ import {
   setDefaultProject,
   setField,
   SprintError,
+  sprintProgress,
   switchCurrentUser,
   sync,
   TaskNotFoundError,
@@ -984,11 +987,41 @@ export function createWebApp(options: WebAppOptions) {
     return items.map(i => ({ ...i, taskCount: counts[i.id] ?? 0 }));
   }
 
+  /**
+   * Attaches `progress` to milestones or sprints when `?progress=true`.
+   *
+   * Opt-in for the same reason as counts: it scans every task, and the
+   * sidebar lists these on every page load without needing it.
+   *
+   * The shape comes from core's `computeProgress` rather than being
+   * derived here, so the Milestones view, the milestone detail and any
+   * sidebar readout cannot show three different denominators for one
+   * milestone (MSL-3).
+   */
+  async function withProgress<T extends { readonly id: string }>(
+    locttDir: string,
+    url: URL,
+    field: "milestone" | "sprint",
+    items: readonly T[],
+  ): Promise<readonly (T | (T & { progress: Progress }))[]> {
+    if (url.searchParams.get("progress") !== "true") return items;
+    const workflow = await loadWorkflowConfig(locttDir);
+    const ids = items.map(i => i.id);
+    const byId = field === "milestone"
+      ? await milestoneProgress(locttDir, ids, workflow)
+      : await sprintProgress(locttDir, ids, workflow);
+    return items.map(i => ({
+      ...i,
+      progress: byId[i.id] ?? { done: 0, total: 0, discarded: 0, fraction: 0 },
+    }));
+  }
+
   const handleListSprints: RouteHandler = async ({ res, url, locttDir }) => {
     const page = parsePagination(url, res);
     if (!page) return;
     const cfg = await loadSprintsConfig(locttDir);
-    const items = await withCounts(locttDir, url, "sprint", cfg.sprints);
+    const counted = await withCounts(locttDir, url, "sprint", cfg.sprints);
+    const items = await withProgress(locttDir, url, "sprint", counted);
     json(res, paginated(items, page.offset, page.limit));
   };
 
@@ -1063,7 +1096,8 @@ export function createWebApp(options: WebAppOptions) {
     const page = parsePagination(url, res);
     if (!page) return;
     const cfg = await loadMilestonesConfig(locttDir);
-    const items = await withCounts(locttDir, url, "milestone", cfg.milestones);
+    const counted = await withCounts(locttDir, url, "milestone", cfg.milestones);
+    const items = await withProgress(locttDir, url, "milestone", counted);
     json(res, paginated(items, page.offset, page.limit));
   };
 

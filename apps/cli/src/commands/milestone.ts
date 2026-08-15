@@ -4,6 +4,8 @@ import {
   deleteMilestone,
   editMilestone,
   loadMilestonesConfig,
+  loadWorkflowConfig,
+  milestoneProgress,
   resolveLocttDir,
   resolveMilestoneIdFromInput,
   unarchiveMilestone,
@@ -25,13 +27,30 @@ export async function run(args: string[], root: string): Promise<void> {
     case "list": {
       const includeArchived = hasFlag(args, "--all");
       const showIds = hasFlag(args, "--ids");
+      const showProgress = hasFlag(args, "--progress");
       const cfg = await loadMilestonesConfig(locttDir);
-      for (const m of cfg.milestones) {
-        if (!includeArchived && m.archived === true) continue;
+      const shown = cfg.milestones.filter(m => includeArchived || m.archived !== true);
+
+      // Opt-in: progress scans every task, and `milestone list` is
+      // otherwise a config read.
+      let progress: Record<string, { done: number; total: number; discarded: number }> = {};
+      if (showProgress) {
+        const workflow = await loadWorkflowConfig(locttDir);
+        progress = await milestoneProgress(locttDir, shown.map(m => m.id), workflow);
+      }
+
+      for (const m of shown) {
         const arch = m.archived === true ? " (archived)" : "";
         const due = m.target_date ? `  due ${m.target_date}` : "";
         const idCol = showIds ? `\t${m.id}` : "";
-        console.log(`${m.name}${idCol}${due}${arch}`);
+        const p = progress[m.id];
+        // Name the excluded discarded tasks where the number is shown:
+        // silently shrinking a denominator is as confusing as leaving
+        // dead work in it.
+        const prog = p
+          ? `  ${p.done}/${p.total}${p.discarded > 0 ? ` (${p.discarded} discarded, excluded)` : ""}`
+          : "";
+        console.log(`${m.name}${idCol}${due}${prog}${arch}`);
       }
       break;
     }

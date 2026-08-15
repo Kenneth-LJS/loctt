@@ -46,11 +46,23 @@ is testing the wrong thing.
 > whose remaining work is all discarded reads `4 / 4` — done — rather
 > than stalling below 100% forever.
 >
-> Not yet implemented; milestone progress is M4.3 work. Two things it
-> needs when built: the exclusion should live in a shared core helper
-> rather than each surface filtering for itself (this test case fails on
-> cross-surface inconsistency), and the UI must state the rule — silently
-> shrinking the denominator fails the first bullet just as ambiguity does.
+> **Implemented.** `computeProgress` / `milestoneProgress` /
+> `sprintProgress` live in `packages/core/src/task/progress.ts`, so the
+> exclusion is applied once rather than by each surface — this case
+> fails on cross-surface inconsistency, and three independent filters
+> would eventually produce three denominators.
+>
+> Reachable as `?progress=true` on `GET /api/milestones` and
+> `/api/sprints`, MCP `list_milestones` with `progress: true`, and
+> `loctt milestone list --progress`. Opt-in on all three: computing it
+> scans every task, and the sidebar renders these lists on every page
+> load without needing it.
+>
+> `Progress` carries `discarded` alongside `done`/`total` so a surface
+> can state the rule; the CLI prints "(2 discarded, excluded)" next to
+> the number. Silently shrinking the denominator fails the first bullet
+> just as ambiguity does. **The UI half is still unbuilt** — the
+> Milestones view is a stub — so the bar itself does not exist yet.
 
 ### MSL-4 · M4 · major · P2
 **Clicking a milestone opens its task list.**
