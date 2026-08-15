@@ -20,16 +20,13 @@ milestone run sequentially with a code-review agent between each.
 - **Theme**: light / dark / system
 
 > **Stack drift — check before relying on this list.** As of
-> 2026-08-15: **TipTap is installed** (`@tiptap/*` 3.30.1, including the
-> table extensions). **CodeMirror 6 and Playwright are not.**
+> 2026-08-15: **TipTap** (`@tiptap/*` 3.30.1), **CodeMirror 6**, and
+> **Playwright** are all installed.
 >
-> Playwright matters beyond the editor: several milestone gates below
-> carry an `**E2E**` bullet, and `npm run test:e2e` runs **vitest**
-> against CLI-driven journeys (`tests/e2e/`), not a browser. Those
-> bullets therefore describe tooling that is neither installed nor
-> wired. Either install and wire Playwright, or reword the gates to
-> match what actually runs — do not read them as satisfied by the
-> current `test:e2e`.
+> Two commands, two meanings: `npm run test:e2e` runs **vitest** against
+> CLI-driven journeys (`tests/e2e/`), while `npm run test:ui` runs
+> **Playwright** against a real browser and a real `loctt ui` server
+> (`tests/ui/`). The `**E2E**` bullets below mean the latter.
 
 ## Layout
 
@@ -196,13 +193,18 @@ and click into any task (which routes to a stub for now).
 - ✅ Row checkboxes; select-all in header. Covers BLK-1, BLK-2, BLK-3,
   BLK-4, BLK-18. Bar shows count + scope + Clear; actions below are
   still unbuilt, so it carries no action buttons yet
-- Sticky bulk-bar on ≥1 selection: Set status / priority / assignee /
-  milestone / sprint, Move to project (CW-13 bulk), Archive,
-  Delete (typed confirm), Clear (×)
-- Export menu (CW-21): CSV + JSON via `/api/tasks/export` with the
-  current filter state applied
-- **Tests**: bulk endpoints (mocked core); selection state + bar
-  visibility; export route content-type + filename
+- 🔵 Sticky bulk-bar: Set status / priority, Archive, Delete (typed
+  confirm), Clear (×) — covers BLK-5, 10, 11, 12, 13, 38, 39, 40.
+  **Not built**: Set assignee / milestone / sprint (BLK-7, 8), Move to
+  project (BLK-9, 26), Undo after archive (BLK-10's undo bullet)
+- ✅ Export menu (CW-21): CSV + JSON via `/api/tasks/export` with the
+  current filter state applied. Covers BLK-14, 15, 16, 33, 35, 37
+- **Tests**: bulk endpoints against a real tracker (not mocked);
+  selection state + bar visibility; export route content-type + filename
+
+**All 13 BLK blockers are covered. 29 major/minor BLK cases are not** —
+chiefly the remaining Set-field pickers, Move to project, undo, and the
+concurrency/scale cases (BLK-22, 23, 24, 34, 41, 42). M1.4 is not done.
 - **E2E**: open /list → filter by High priority → export CSV → verify
   download. Playwright is now installed (`npm run test:ui`); the
   bulk/export specs still need writing.

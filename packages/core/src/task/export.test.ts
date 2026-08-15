@@ -97,3 +97,39 @@ describe("filterForExport", () => {
     expect(filterForExport([a, b], true)).toEqual([a, b]);
   });
 });
+
+/**
+ * @verifies BLK-33
+ *
+ * RFC 4180 escaping. A CSV that reimports as different data than it
+ * exported is worse than one that fails to open.
+ */
+describe("CSV escaping (RFC 4180)", () => {
+  it("doubles embedded quotes and quotes the cell", () => {
+    const csv = exportTasksToCSV([task({ title: 'Fix "quoted", comma' })]);
+    expect(csv).toContain('"Fix ""quoted"", comma"');
+  });
+
+  it("keeps a newline inside the quoted cell rather than splitting the row", () => {
+    const csv = exportTasksToCSV([task({}, "line one\nline two")], {
+      includeBody: true,
+    });
+    expect(csv).toContain('"line one\nline two"');
+    // Header + one data row. A split row would make this 3.
+    const rows = csv.trimEnd().split("\n").length;
+    // The body's own newline is inside quotes, so a naive line count
+    // sees 3 physical lines for 2 logical rows — assert on the parsed
+    // shape instead.
+    expect(rows).toBe(3);
+    expect(csv.match(/^T-1,/gm)).toHaveLength(1);
+  });
+
+  it("does not collapse a label containing a comma into two labels", () => {
+    // `["a,b", "c"]` joined on "," is `a,b,c`, which reimports as three
+    // labels — the export has silently changed the data. BLK-33
+    // forbids exactly this.
+    const csv = exportTasksToCSV([task({ labels: ["a,b", "c"] })]);
+    const cell = csv.trimEnd().split("\n")[1]?.split(",").slice(7).join(",") ?? "";
+    expect(cell).not.toContain("a,b,c");
+  });
+});
