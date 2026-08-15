@@ -86,7 +86,10 @@ describe("validateQuery — valid queries pass", () => {
     "fields.component ~ api",
     "status.category = completed",
     "priority.value > 1",
-    "relationship.blocks = T-9",
+    'has_link("blocks")',
+    'has_link("blocks", "T-9")',
+    'has_link()',
+    'link_count("blocks") > 2',
     "not (status = done)",
     "status = done or (priority = high and task_type = bug)",
   ])("accepts %s", query => {
@@ -171,15 +174,44 @@ describe("validateQuery — dotted paths", () => {
   });
 });
 
-describe("validateQuery — relationships", () => {
+describe("validateQuery — link functions", () => {
   it("rejects an unknown relationship type", () => {
-    const err = expectInvalid("relationship.blokcs = T-9");
+    const err = expectInvalid('has_link("blokcs")');
     expect(err.message).toContain('unknown relationship type "blokcs"');
     expect(err.suggestions).toContain("blocks");
   });
 
-  it("accepts a configured relationship type", () => {
-    expect(() => validateQuery(q("relationship.blocks = T-9"), { workflow })).not.toThrow();
+  it("accepts a configured forward key", () => {
+    expect(() => validateQuery(q('has_link("blocks")'), { workflow })).not.toThrow();
+  });
+
+  it("accepts the INVERSE key", () => {
+    // The previous validator mapped `r => r.key` only, so this failed
+    // validation even though the evaluator handled it — rejecting
+    // exactly the reverse-direction queries that make link querying
+    // worth having. `linkTask` writes the inverse edge on the target,
+    // so `blocked_by` is real stored data, not a synonym.
+    expect(() => validateQuery(q('has_link("blocked_by")'), { workflow })).not.toThrow();
+    expect(() => validateQuery(q('has_link("blocked_by", "T-1")'), { workflow })).not.toThrow();
+    expect(() => validateQuery(q('link_count("blocked_by") > 0'), { workflow })).not.toThrow();
+  });
+
+  it("validates the kind inside link_count too", () => {
+    const err = expectInvalid('link_count("blokcs") > 1');
+    expect(err.message).toContain('unknown relationship type "blokcs"');
+  });
+
+  it("accepts the no-argument forms", () => {
+    expect(() => validateQuery(q("has_link()"), { workflow })).not.toThrow();
+    expect(() => validateQuery(q("link_count() = 0"), { workflow })).not.toThrow();
+  });
+
+  it("rejects the superseded relationship.* grammar by name", () => {
+    for (const bad of ["relationship.blocks = T-9", "relationship.type = blocks", "relationship.target = T-1"]) {
+      const err = expectInvalid(bad);
+      expect(err.message).toContain("no longer supported");
+      expect(err.message).toContain("has_link");
+    }
   });
 });
 
@@ -198,7 +230,15 @@ describe("validateQuery — without workflow config", () => {
     expect(() => validateQuery(q("fields.anything = x"))).not.toThrow();
   });
 
-  it("does not check relationship types", () => {
-    expect(() => validateQuery(q("relationship.whatever = T-1"))).not.toThrow();
+  it("does not check relationship kinds", () => {
+    expect(() => validateQuery(q('has_link("whatever")'))).not.toThrow();
+    expect(() => validateQuery(q('link_count("whatever") > 0'))).not.toThrow();
+  });
+
+  it("still rejects the removed relationship.* grammar", () => {
+    // Not a config-dependent check: the grammar is gone regardless of
+    // whether a workflow is loaded, so the error must still name the
+    // replacement rather than deferring.
+    expect(() => validateQuery(q("relationship.whatever = T-1"))).toThrow(/has_link/);
   });
 });

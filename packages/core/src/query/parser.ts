@@ -7,7 +7,35 @@ export type QueryNode =
   // validation (validateQuery) can point at the offending field the
   // same way TokenizeError/ParseError point at syntax problems.
   // Optional so hand-built ASTs in tests don't have to fake offsets.
-  | { type: "comparison"; field: string; op: ComparisonOp; value: QueryValue; position?: number }
+  | {
+      type: "comparison";
+      field: string;
+      op: ComparisonOp;
+      value: QueryValue;
+      position?: number;
+      /**
+       * Set when the left-hand side is `link_count(kind)` rather than a
+       * frontmatter field. `field` is then the literal `"link_count"`,
+       * which is not a queryable field name, so an evaluator that
+       * ignores this reads no value rather than a wrong one.
+       */
+      call?: { readonly name: "link_count"; readonly kind?: string };
+    }
+  /**
+   * `has_link()` / `has_link(kind)` / `has_link(kind, target)`.
+   *
+   * Arity picks the question: no args tests "any link at all", one
+   * tests existence of a kind, two test a **single edge** matching
+   * both. There is deliberately no way to express kind and target as
+   * separate conditions — that is what let
+   * `relationship.type = blocks and relationship.target = T-10` match
+   * two *different* edges while reading as though it matched one.
+   *
+   * Kind names sit in quoted value position, never as field or
+   * sub-field names, so a workspace may name a relationship `type`,
+   * `target` or `count` without colliding with the grammar.
+   */
+  | { type: "has_link"; kind?: string; target?: string; position?: number }
   | { type: "and"; left: QueryNode; right: QueryNode }
   | { type: "or"; left: QueryNode; right: QueryNode }
   | { type: "not"; operand: QueryNode };
@@ -122,12 +150,111 @@ class Parser {
       return node;
     }
 
-    // Must be a comparison: field op value
+    // Must be a comparison: field op value, or a function call.
     if (tok.type === "FIELD") {
+      // A FIELD immediately followed by `(` is a call, not a field.
+      // The tokenizer already emits FIELD LPAREN … RPAREN for these,
+      // so no tokenizer change is needed.
+      if (this.tokens[this.pos + 1]?.type === "LPAREN") {
+        return this.parseCall();
+      }
       return this.parseComparison();
     }
 
     throw new ParseError(`expected field name or "(" but got "${tok.value}"`, tok.position);
+  }
+
+  /**
+   * `has_link(...)` — a predicate in its own right — or
+   * `link_count(...)`, which yields a number and must be compared.
+   */
+  private parseCall(): QueryNode {
+    const nameTok = this.advance();
+    const name = nameTok.value;
+
+    if (name === "has_link") {
+      const args = this.parseCallArgs(name, 0, 2);
+      const [kind, target] = args;
+      return {
+        type: "has_link",
+        ...(kind !== undefined ? { kind } : {}),
+        ...(target !== undefined ? { target } : {}),
+        position: nameTok.position,
+      };
+    }
+
+    if (name === "link_count") {
+      const args = this.parseCallArgs(name, 0, 1);
+      const [kind] = args;
+      // Check for end-of-input first: `advance()` would raise its own
+      // "unexpected end of query", losing the guidance about what this
+      // function needs.
+      const opTok = this.peek();
+      if (opTok === undefined) {
+        throw new ParseError(
+          `${name}(...) yields a number and must be compared, e.g. ${name}("child") > 3`,
+          this.endPosition(),
+        );
+      }
+      this.advance();
+      const op = OP_TOKEN_MAP[opTok.type];
+      if (op === undefined) {
+        throw new ParseError(
+          `${name}(...) yields a number and must be compared, e.g. ${name}("child") > 3`,
+          opTok.position,
+        );
+      }
+      const value = this.parseValue(op);
+      return {
+        type: "comparison",
+        field: name,
+        op,
+        value,
+        position: nameTok.position,
+        call: { name: "link_count", ...(kind !== undefined ? { kind } : {}) },
+      };
+    }
+
+    throw new ParseError(
+      `unknown function "${name}". Available: has_link(kind?, target?), link_count(kind?)`,
+      nameTok.position,
+    );
+  }
+
+  /**
+   * Parses `( "a", "b" )` into its string arguments.
+   *
+   * Arguments must be strings: a bare word would put relationship kind
+   * names back into identifier position, which is the collision the
+   * function form exists to avoid. Numbers and booleans are rejected
+   * for the same reason — a kind is always a name.
+   */
+  private parseCallArgs(fn: string, min: number, max: number): string[] {
+    this.expect("LPAREN");
+    const args: string[] = [];
+    if (this.peek()?.type !== "RPAREN") {
+      for (;;) {
+        const tok = this.advance();
+        if (tok.type !== "STRING" && tok.type !== "FIELD") {
+          throw new ParseError(
+            `${fn}(...) takes quoted names, got "${tok.value}"`,
+            tok.position,
+          );
+        }
+        args.push(tok.value);
+        if (this.peek()?.type !== "COMMA") break;
+        this.advance();
+      }
+    }
+    const close = this.peek();
+    this.expect("RPAREN");
+    if (args.length < min || args.length > max) {
+      throw new ParseError(
+        `${fn}(...) takes ${min === max ? `${min}` : `${min}–${max}`} argument(s), got ${args.length}`,
+        close?.position ?? this.endPosition(),
+      );
+    }
+    return args;
   }
 
   private parseComparison(): QueryNode {

@@ -75,7 +75,7 @@ it from a query that legitimately matches nothing (P4).
 ### VUE-9 · M4 · major · P8
 **A syntax-help popover documents the grammar without leaving the editor.**
 - It covers operators (`=`, `!=`, `<`, `<=`, `>`, `>=`, `in`, `not in`, `~`), `and`/`or`/`not`, parentheses, and the `text`, `today`, `parent` aliases.
-- It covers `relationship.type` / `relationship.target`, `fields.*` custom fields, and `status.category`.
+- It covers `has_link(...)` / `link_count(...)`, `fields.*` custom fields, and `status.category`.
 - It is dismissible with `Esc` and does not discard the query in progress.
 
 ### VUE-10 · M4 · blocker · P10
@@ -132,7 +132,7 @@ it from a query that legitimately matches nothing (P4).
 - `loctt list --view` produces the identical order.
 
 ### VUE-18 · M4 · major · P10
-**A DSL query using every operator and nested parentheses parses and runs.** e.g. `(status in (in_progress, blocked) or priority >= 3) and not (text ~ "spike") and due_date <= today and relationship.type = blocks and parent = T-5`.
+**A DSL query using every operator and nested parentheses parses and runs.** e.g. `(status in (in_progress, blocked) or priority >= 3) and not (text ~ "spike") and due_date <= today and has_link("blocks") and parent = T-5`.
 - It parses without error and returns a set matching the same string run through `loctt list --query`.
 - Basic mode is correctly disabled for it (VUE-11).
 - Saving and reloading the view preserves the query string **byte-for-byte** — no reformatting that changes semantics, no stripped parentheses.

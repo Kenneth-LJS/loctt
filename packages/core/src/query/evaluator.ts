@@ -293,16 +293,30 @@ function evaluateTextAlias(
 }
 
 /**
- * Handles the "parent" alias — resolves parent relationship target ID to a key
- * for comparison. e.g. `parent = T-5` checks if the task's parent rel target has key T-5.
+ * Handles the `parent` alias — `parent = T-5` asks whether the task's
+ * hierarchy edge points at T-5. Kept because it is core JQL and we
+ * already match its spelling.
+ *
+ * The kind is read from config rather than hardcoded to the literal
+ * `"parent"`: a workspace that renames its hierarchy relationship would
+ * otherwise see this alias silently stop matching while still passing
+ * validation. The first `graph: tree` relationship is the hierarchy;
+ * with none configured, and only then, the literal name is the last
+ * resort so an in-memory config without `graph` still behaves.
  */
+function hierarchyKind(ctx: EvalContext): string {
+  const tree = ctx.workflow?.relationships.find(r => r.graph === "tree");
+  return tree?.key ?? "parent";
+}
+
 function evaluateParentAlias(
   fm: TaskFrontmatter,
   op: string,
   value: string | number | boolean,
   ctx: EvalContext,
 ): boolean {
-  const parentRel = (fm.relationships ?? []).find(r => r.type === "parent");
+  const kind = hierarchyKind(ctx);
+  const parentRel = (fm.relationships ?? []).find(r => r.type === kind);
   if (!parentRel) {
     return op === "!=" ? true : false;
   }
@@ -318,49 +332,42 @@ function evaluateParentAlias(
 }
 
 /**
- * Evaluates `relationship.type` / `relationship.target` — the edge's own
- * fields, as documented in query-language.md.
+ * Evaluates `has_link(kind?, target?)`.
  *
- * Targets are compared against the task's **key** as well as its stored
- * id, so `relationship.target = T-10` works with the reference a user
- * actually types. Storage is by ULID; keys are the human-facing form.
+ * Arity picks the question:
+ *  - `has_link()`               — any link at all
+ *  - `has_link(kind)`           — any edge of that kind
+ *  - `has_link(kind, target)`   — a **single** edge matching both
  *
- * Note the asymmetry with negation: `!=` and `not in` mean "no edge
- * matches", not "some edge doesn't match" — a task with both a `blocks`
- * and a `parent` edge should not satisfy `relationship.type != blocks`.
+ * The two-argument form is why this replaced `relationship.type` /
+ * `relationship.target`: those were two independent existential
+ * filters, so a task with `blocks → T-20` and `parent → T-10` satisfied
+ * `relationship.type = blocks and relationship.target = T-10` while
+ * having no edge that blocks T-10. One call, one edge, no trap.
+ *
+ * Targets match against the task's stored id **or** its current key, so
+ * a user can write the reference they actually see. Storage is by ULID.
+ *
+ * Both directions are queryable as plain predicates because `linkTask`
+ * writes the forward edge on A and the inverse on B, so "what blocks
+ * T-2" is a forward lookup on the inverse key.
  */
-function evaluateRelationshipField(
+function evaluateHasLink(
   fm: TaskFrontmatter,
-  field: "type" | "target",
-  op: string,
-  value: string | number | boolean | undefined,
-  listValues: string[] | undefined,
+  kind: string | undefined,
+  target: string | undefined,
   ctx: EvalContext,
 ): boolean {
   const rels = fm.relationships ?? [];
-  if (rels.length === 0) return op === "!=" || op === "not in";
-
-  const candidates = (rel: { type: string; target: string }): string[] => {
-    if (field === "type") return [rel.type];
-    // A target may be addressed by stored id or by current key.
-    const key = ctx.resolveKey?.(rel.target);
-    return key ? [rel.target, key] : [rel.target];
-  };
-
-  if (op === "in" || op === "not in") {
-    if (!listValues) return false;
-    const hasMatch = rels.some(r => candidates(r).some(c => listValues.includes(c)));
-    return op === "in" ? hasMatch : !hasMatch;
-  }
-
-  if (value === undefined) return false;
-
-  if (op === "!=") {
-    // "no edge matches", not "some edge differs"
-    return !rels.some(r => candidates(r).some(c => compareValues(c, "=", value)));
-  }
-
-  return rels.some(r => candidates(r).some(c => compareValues(c, op, value)));
+  return rels.some(r => {
+    if (kind !== undefined && r.type !== kind) return false;
+    if (target === undefined) return true;
+    if (r.target === target) return true;
+    // Compare against the current key too — a key may have changed, and
+    // key_history means an old key can still resolve.
+    const key = ctx.resolveKey?.(r.target);
+    return key !== undefined && key === target;
+  });
 }
 
 /**
@@ -389,54 +396,25 @@ export function evaluateQuery(
         return evaluateParentAlias(fm, node.op, resolved, ctx);
       }
 
-      // `relationship.type` and `relationship.target` address the edge's
-      // own fields rather than naming a kind. A workflow may legitimately
-      // declare a relationship kind called `type` or `target`; these
-      // reserved readings win, and `relationship.<kind>` still reaches the
-      // rest. See evaluateRelationshipField for the resolution order.
-      if (node.field === "relationship.type" || node.field === "relationship.target") {
-        const resolved = resolvePrimitive(node.value, ctx);
-        const items = node.op === "in" || node.op === "not in"
-          ? resolveList(node.value)?.map(v => {
-              const p = resolvePrimitive(v, ctx);
-              return p !== undefined ? String(p) : "";
-            })
-          : undefined;
-        if (node.op === "in" || node.op === "not in") {
-          if (!items) return false;
-        } else if (resolved === undefined) {
-          return false;
-        }
-        return evaluateRelationshipField(
-          fm,
-          node.field === "relationship.type" ? "type" : "target",
-          node.op,
-          resolved,
-          items,
-          ctx,
+      // The old `relationship.<kind>` / `relationship.type` /
+      // `relationship.target` forms are gone, replaced by has_link().
+      // A clear error beats silently matching nothing.
+      if (node.field === "relationship" || node.field.startsWith("relationship.")) {
+        throw new Error(
+          `"${node.field}" is no longer supported. Use has_link("<kind>") to test for a link, `
+          + `has_link("<kind>", "<target>") for a specific edge, or link_count("<kind>") for a count.`,
         );
       }
 
-      // Handle relationship-by-kind query: relationship.<kind> = <target>
-      if (node.field.startsWith("relationship.")) {
-        const relType = node.field.slice("relationship.".length);
-        const rels = (fm.relationships ?? []).filter(r => r.type === relType);
-        if (rels.length === 0) {
-          return node.op === "!=" || node.op === "not in";
-        }
-        if (node.op === "in" || node.op === "not in") {
-          const items = resolveList(node.value);
-          if (!items) return false;
-          const listValues = items.map(v => {
-            const p = resolvePrimitive(v, ctx);
-            return p !== undefined ? String(p) : "";
-          });
-          const hasMatch = rels.some(r => listValues.includes(r.target));
-          return node.op === "in" ? hasMatch : !hasMatch;
-        }
+      // link_count("child") > 3 — the left side is a call, not a field.
+      if (node.call?.name === "link_count") {
+        const kind = node.call.kind;
+        const count = (fm.relationships ?? [])
+          .filter(r => kind === undefined || r.type === kind)
+          .length;
         const resolved = resolvePrimitive(node.value, ctx);
         if (resolved === undefined) return false;
-        return rels.some(r => compareValues(r.target, node.op, resolved));
+        return compareValues(count, node.op, resolved);
       }
 
       const fieldVal = node.field.includes(".")
@@ -469,6 +447,9 @@ export function evaluateQuery(
       if (resolved === undefined) return false;
       return compareValues(fieldVal, node.op, resolved);
     }
+
+    case "has_link":
+      return evaluateHasLink(fm, node.kind, node.target, ctx);
 
     case "and":
       return evaluateQuery(node.left, fm, ctx) && evaluateQuery(node.right, fm, ctx);

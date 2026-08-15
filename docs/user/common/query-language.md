@@ -70,49 +70,74 @@ today` compares dates, not instants.
 
 ## Relationship Filtering
 
-Queries can filter on a task's relationship edges. Two forms:
+Two functions cover link queries:
 
 ```
-relationship.type = blocks         # has an edge of this kind
-relationship.target = T-10         # has an edge pointing at this task
-relationship.blocks = T-10         # has a blocks edge to T-10
+has_link("blocks")                 # blocks something
+has_link("blocked_by")             # is blocked by something
+has_link("blocks", "T-2")          # blocks T-2 specifically
+has_link()                         # has any link at all
+not has_link()                     # orphan — no links
+link_count("child") > 3            # more than 3 children
+parent = T-5                       # child of T-5
 ```
 
-`relationship.type` and `relationship.target` are reserved names that
-address an edge's own fields. `relationship.<kind>` names a kind directly
-and compares the target.
+Arity picks the question. `has_link(kind)` tests whether an edge of that
+kind exists; `has_link(kind, target)` tests for a **single edge matching
+both**.
 
-### One edge, or any two edges?
+### One edge, not two
 
-`relationship.<kind> = <target>` requires a **single edge** to match both
-the kind and the target. Combining the reserved names with `and` does
-not — each side is an independent filter over all the task's edges, so
-two *different* edges can satisfy them.
+That two-argument form is the point. There is deliberately no way to
+write the kind and the target as separate conditions, because doing so
+reads as one edge and means something else.
 
 Given a task with `blocks → T-20` and `parent → T-10`:
 
 | Query | Matches | Why |
 |---|---|---|
-| `relationship.blocks = T-10` | no | no single edge is *(blocks, T-10)* |
-| `relationship.type = blocks and relationship.target = T-10` | **yes** | one edge is `blocks`, another targets T-10 |
+| `has_link("blocks", "T-10")` | no | no single edge is *(blocks, T-10)* |
+| `has_link("blocks") and has_link("parent", "T-10")` | yes | and it says so plainly — two separate facts |
 
-Use the `relationship.<kind> = <target>` form when you mean "this specific
-edge".
+The older `relationship.type = blocks and relationship.target = T-10`
+matched the task above while appearing to mean "blocks T-10". That form
+is removed; queries using it fail with an error naming the replacement.
+
+### Kind names are values, not fields
+
+Kinds are always quoted arguments, never part of the field name. A
+workspace may therefore name a relationship `type`, `target`, `count` or
+anything else without colliding with the grammar — `has_link("type")` is
+an ordinary query.
 
 Targets match on either the stored ULID or the current key, so
-`relationship.target = T-10` works with the reference you actually type.
+`has_link("blocks", "T-10")` works with the reference you actually type.
+
+### Both directions are queryable
 
 **Each task stores its own outbound edges.** Linking `A blocks B` writes a
-`blocks` edge on A and a `blocked_by` edge on B, so:
+`blocks` edge on A **and** a `blocked_by` edge on B. So "what blocks T-2"
+is an ordinary forward lookup on the inverse key:
 
-- `relationship.type = blocks` matches **A only** — B holds `blocked_by`.
+- `has_link("blocks")` matches **A only** — B holds `blocked_by`.
+- `has_link("blocked_by", "T-2")` finds the tasks blocked by T-2.
 - For a symmetric kind (`kind: symmetric`, e.g. `relates_to`) both tasks
   hold the same edge type, so both match. There is no source/target
   distinction to worry about.
 
-Negation means *no* edge matches, not *some* edge differs — a task with
-both a `blocks` and a `parent` edge does **not** satisfy
-`relationship.type != blocks`.
+Negation composes as normal: `not has_link("blocks", "T-2")` is true when
+no edge blocks T-2.
+
+### Not supported
+
+These need either a subquery or a graph walk, and are deliberately out of
+scope so evaluation stays per-task:
+
+| Question | Why not |
+|---|---|
+| "blocks anything still open" | needs a subquery |
+| "everything transitively blocked by T-1" | needs a graph walk |
+| "epics with at least one blocked child" | needs a cross-task rollup |
 
 ## Saved Views
 
