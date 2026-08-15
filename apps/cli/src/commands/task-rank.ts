@@ -1,6 +1,6 @@
 import { reorderBoardRank, reorderRelationship, resolveLocttDir } from "@loctt/core";
 
-import { getArg } from "../runtime/args.js";
+import { getArg, rejectUnknownFlags } from "../runtime/args.js";
 import { UsageError } from "../runtime/errors.js";
 
 /**
@@ -8,7 +8,16 @@ import { UsageError } from "../runtime/errors.js";
  * sibling among a relationship's targets. Pass at most one of
  * `--before` or `--after`; without either, the edge moves to the end.
  */
+/**
+ * Accepted flags per command. `getArg`/`hasFlag` are pure extractors and
+ * cannot notice a flag nobody asked about, so without this an unknown
+ * option is silently dropped and the command runs without it.
+ */
+const RERANK_FLAGS: readonly string[] = ["--after", "--before"];
+const BOARD_RERANK_FLAGS: readonly string[] = ["--after", "--before"];
+
 export async function rerank(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, RERANK_FLAGS);
   const source = args[1];
   const relationship = args[2];
   const target = args[3];
@@ -42,6 +51,7 @@ export async function rerank(args: string[], root: string): Promise<void> {
  * column. Same `--before` / `--after` mutex as `rerank`.
  */
 export async function boardRerank(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, BOARD_RERANK_FLAGS);
   const task = args[1];
   if (!task) {
     throw new UsageError(

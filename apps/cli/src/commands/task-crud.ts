@@ -28,7 +28,7 @@ import {
 } from "@loctt/core";
 
 import { formatHistoryEntry } from "../format/history.js";
-import { getArg, hasFlag } from "../runtime/args.js";
+import { getArg, hasFlag, rejectUnknownFlags } from "../runtime/args.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, UsageError } from "../runtime/errors.js";
 import { assertWorkflowEnumKey } from "../runtime/workflow-assert.js";
@@ -39,7 +39,29 @@ import { assertWorkflowEnumKey } from "../runtime/workflow-assert.js";
  * routes via these names.
  */
 
+/**
+ * Accepted flags per command, so an unrecognised one is refused rather
+ * than dropped. The parser's extractors (`getArg`/`hasFlag`) are pure
+ * lookups and cannot notice a flag nobody asked about, so a typo used to
+ * mean the command ran without it — `delete T-1 --hard --yes` deleted,
+ * and two e2e tests passed `--hard` for years while the reference doc
+ * said no such flag exists.
+ *
+ * `rejectUnknownFlags` adds `--cwd` itself and stops at `--`.
+ */
+const TASK_CREATE_FLAGS: readonly string[] = ["--project", "--status", "--priority", "--type"];
+const TASK_LIST_FLAGS: readonly string[] = ["--limit", "--project", "--archived", "--query", "--view"];
+const TASK_SHOW_FLAGS: readonly string[] = [];
+const TASK_DUPLICATE_FLAGS: readonly string[] = ["--title", "--project"];
+const TASK_MOVE_FLAGS: readonly string[] = [];
+const TASK_SET_FLAGS: readonly string[] = [];
+const TASK_UNSET_FLAGS: readonly string[] = [];
+const TASK_DELETE_CMD_FLAGS: readonly string[] = ["--yes"];
+const TASK_BODY_FLAGS: readonly string[] = ["--set", "--append"];
+const TASK_LOG_FLAGS: readonly string[] = ["--limit"];
+
 export async function create(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, TASK_CREATE_FLAGS);
   const title = args[1];
   if (!title) throw new UsageError("missing title", "loctt create <title>");
   const locttDir = resolveLocttDir(root);
@@ -80,6 +102,7 @@ export async function create(args: string[], root: string): Promise<void> {
 }
 
 export async function list(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, TASK_LIST_FLAGS);
   const locttDir = resolveLocttDir(root);
   const tasks = await loadAllTasks(locttDir);
   const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
@@ -148,6 +171,7 @@ export async function list(args: string[], root: string): Promise<void> {
 }
 
 export async function show(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, TASK_SHOW_FLAGS);
   const ref = args[1];
   if (!ref) throw new UsageError("missing task ref", "loctt show <task>");
   const locttDir = resolveLocttDir(root);
@@ -196,6 +220,7 @@ export async function show(args: string[], root: string): Promise<void> {
  * `duplicateTask`'s contract — so the copy starts unlinked.
  */
 export async function duplicate(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, TASK_DUPLICATE_FLAGS);
   const ref = args[1];
   if (!ref) {
     throw new UsageError("missing args", "loctt duplicate <task> [--title <t>] [--project <p>]");
@@ -243,6 +268,7 @@ export async function duplicate(args: string[], root: string): Promise<void> {
  * bookmark or a link written before the move keeps working.
  */
 export async function move(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, TASK_MOVE_FLAGS);
   const ref = args[1];
   const project = args[2];
   if (!ref || !project) {
@@ -271,6 +297,7 @@ export async function move(args: string[], root: string): Promise<void> {
 }
 
 export async function set(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, TASK_SET_FLAGS);
   const ref = args[1];
   const field = args[2];
   const value = args[3];
@@ -341,6 +368,7 @@ function reportBulk(
 }
 
 export async function unset(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, TASK_UNSET_FLAGS);
   const ref = args[1];
   const field = args[2];
   if (!ref || !field) {
@@ -376,6 +404,7 @@ export async function unset(args: string[], root: string): Promise<void> {
  * surfaces as a domain error, not as bubbling unhandled.
  */
 export async function deleteCmd(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, TASK_DELETE_CMD_FLAGS);
   const ref = args[1];
   if (!ref) {
     throw new UsageError("missing task ref", "loctt delete <task> [--yes]");
@@ -395,6 +424,7 @@ export async function deleteCmd(args: string[], root: string): Promise<void> {
 }
 
 export async function body(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, TASK_BODY_FLAGS);
   const ref = args[1];
   if (!ref) {
     throw new UsageError(
@@ -426,6 +456,7 @@ export async function body(args: string[], root: string): Promise<void> {
 }
 
 export async function log(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, TASK_LOG_FLAGS);
   const ref = args[1];
   if (!ref) {
     throw new UsageError("missing task ref", "loctt log <task> [--limit <n>]");

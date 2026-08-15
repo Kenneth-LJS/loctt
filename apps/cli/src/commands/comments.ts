@@ -10,6 +10,7 @@ import {
   resolveLocttDir,
 } from "@loctt/core";
 
+import { rejectUnknownFlags } from "../runtime/args.js";
 import { UsageError } from "../runtime/errors.js";
 
 /**
@@ -30,7 +31,18 @@ async function resolver(locttDir: string) {
 }
 
 /** `loctt comment <task> <body>` */
+/**
+ * Accepted flags per command. `getArg`/`hasFlag` are pure extractors and
+ * cannot notice a flag nobody asked about, so without this an unknown
+ * option is silently dropped and the command runs without it.
+ */
+const ADD_FLAGS: readonly string[] = [];
+const LIST_FLAGS: readonly string[] = [];
+const EDIT_FLAGS: readonly string[] = [];
+const REMOVE_FLAGS: readonly string[] = [];
+
 export async function add(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, ADD_FLAGS);
   const ref = args[1];
   const body = args.slice(2).filter(a => !a.startsWith("--")).join(" ");
   if (!ref || body.trim().length === 0) {
@@ -52,6 +64,7 @@ export async function add(args: string[], root: string): Promise<void> {
 
 /** `loctt comments <task>` */
 export async function list(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, LIST_FLAGS);
   const ref = args[1];
   if (!ref) throw new UsageError("missing args", "loctt comments <task>");
   const locttDir = resolveLocttDir(root);
@@ -74,6 +87,7 @@ export async function list(args: string[], root: string): Promise<void> {
 
 /** `loctt comment-edit <task> <comment-id> <body>` */
 export async function edit(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, EDIT_FLAGS);
   const ref = args[1];
   const commentId = args[2];
   const body = args.slice(3).filter(a => !a.startsWith("--")).join(" ");
@@ -94,6 +108,7 @@ export async function edit(args: string[], root: string): Promise<void> {
 
 /** `loctt comment-delete <task> <comment-id>` */
 export async function remove(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, REMOVE_FLAGS);
   const ref = args[1];
   const commentId = args[2];
   if (!ref || !commentId) {

@@ -2,7 +2,7 @@ import { isAbsolute, resolve as resolvePath } from "node:path";
 
 import { attachFile, AttachmentExistsError, detachFile, lookupTask, resolveLocttDir } from "@loctt/core";
 
-import { hasFlag } from "../runtime/args.js";
+import { hasFlag, rejectUnknownFlags } from "../runtime/args.js";
 import { UsageError } from "../runtime/errors.js";
 
 /**
@@ -12,7 +12,16 @@ import { UsageError } from "../runtime/errors.js";
  * hint so `runCommand`'s canonical domain-error formatting picks
  * it up. The hint is CLI-specific (MCP just passes `force: true`).
  */
+/**
+ * Accepted flags per command. `getArg`/`hasFlag` are pure extractors and
+ * cannot notice a flag nobody asked about, so without this an unknown
+ * option is silently dropped and the command runs without it.
+ */
+const ATTACH_FLAGS: readonly string[] = ["--force"];
+const DETACH_FLAGS: readonly string[] = [];
+
 export async function attach(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, ATTACH_FLAGS);
   const ref = args[1];
   const filePath = args[2];
   if (!ref || !filePath) {
@@ -54,6 +63,7 @@ export async function attach(args: string[], root: string): Promise<void> {
  * `assertSafeBasename` is the second layer.
  */
 export async function detach(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, DETACH_FLAGS);
   const ref = args[1];
   const name = args[2];
   if (!ref || !name) {
