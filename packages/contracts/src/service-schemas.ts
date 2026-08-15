@@ -135,3 +135,15 @@ export const BulkLinkRequestSchema = z.object({
   target: z.string().min(1),
 }).strict();
 export type BulkLinkRequest = z.infer<typeof BulkLinkRequestSchema>;
+
+/** Body of `POST /api/tasks/:ref/comments`. */
+export const PostCommentRequestSchema = z.object({
+  body: z.string().min(1),
+}).strict();
+export type PostCommentRequest = z.infer<typeof PostCommentRequestSchema>;
+
+/** Body of `PUT /api/tasks/:ref/comments/:id`. */
+export const EditCommentRequestSchema = z.object({
+  body: z.string().min(1),
+}).strict();
+export type EditCommentRequest = z.infer<typeof EditCommentRequestSchema>;

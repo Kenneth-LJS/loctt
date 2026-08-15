@@ -8,6 +8,7 @@ import { pipeline } from "node:stream/promises";
 
 import type {
   BulkResponse,
+  CommentResponse,
   ConfigResponse,
   CreateTaskRequest,
   DoctorCheckResponse,
@@ -27,9 +28,11 @@ import {
   BulkSetRequestSchema,
   CalendarConfigSchema,
   CreateViewRequestSchema,
+  EditCommentRequestSchema,
   EditViewRequestSchema,
   InitRequestSchema,
   ListViewConfigSchema,
+  PostCommentRequestSchema,
   projectTaskFrontmatter,
   PutWorkflowRequestSchema,
 } from "@loctt/contracts";
@@ -45,6 +48,7 @@ import {
   AttachmentNotFoundError,
   AttachmentSourceError,
   buildListContext,
+  buildMentionResolver,
   buildShowModel,
   bulkArchive,
   bulkLink,
@@ -59,6 +63,7 @@ import {
   createTask,
   createUser,
   createView,
+  deleteComment,
   deleteLabel,
   deleteMilestone,
   deleteProject,
@@ -68,6 +73,7 @@ import {
   deleteView,
   detachFile,
   disableGit,
+  editComment,
   editLabel,
   editMilestone,
   editProject,
@@ -85,6 +91,7 @@ import {
   initLoctt,
   LabelError,
   linkTask,
+  listComments,
   listTasks,
   loadAllTasks,
   loadAllUsers,
@@ -106,6 +113,7 @@ import {
   migrateToCurrent,
   MilestoneError,
   planMigration,
+  postComment,
   ProjectError,
   publish,
   readBurndownSeries,
@@ -512,6 +520,8 @@ const USER_ARCHIVE_RE = /^\/api\/users\/([^/]+)\/archive$/;
 const USER_UNARCHIVE_RE = /^\/api\/users\/([^/]+)\/unarchive$/;
 const USER_AVATAR_RE = /^\/api\/users\/([^/]+)\/avatar$/;
 const TASK_ACTIVITY_RE = /^\/api\/tasks\/([^/]+)\/activity$/;
+const TASK_COMMENTS_RE = /^\/api\/tasks\/([^/]+)\/comments$/;
+const TASK_COMMENT_ID_RE = /^\/api\/tasks\/([^/]+)\/comments\/([^/]+)$/;
 const TASK_SET_RE = /^\/api\/tasks\/([^/]+)\/set$/;
 const TASK_UNSET_RE = /^\/api\/tasks\/([^/]+)\/unset$/;
 const TASK_ARCHIVE_RE = /^\/api\/tasks\/([^/]+)\/archive$/;
@@ -1903,6 +1913,93 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
+  /**
+   * Comments (item 9).
+   *
+   * packages/core/src/task/comments.ts implemented post/list/edit/
+   * delete with zero production callers — no CLI command, no MCP tool,
+   * no HTTP route — while ui/features.md described comments as shipped
+   * and 38 UI cases were written against them.
+   *
+   * There is deliberately no ownership check on edit or delete. LocTT
+   * has no roles or permissions (Q25) and users switch identity freely
+   * from a menu, so an ownership guard would be the product's only
+   * permission rule while protecting nothing. The requirement is
+   * traceability: `editors` records who touched someone else's
+   * comment (CMT-35).
+   */
+  const commentResolver = async (locttDir: string) =>
+    buildMentionResolver(await loadAllUsers(locttDir));
+
+  const handleListComments: RouteHandler = async ({ res, locttDir, captures }) => {
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
+    const task = await lookupTask(locttDir, ref);
+    const comments = await listComments(locttDir, task.frontmatter.id);
+    json(res, comments satisfies readonly CommentResponse[]);
+  };
+
+  const handlePostComment: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
+    const r = await parseJsonBodyWithSchema(req, res, PostCommentRequestSchema);
+    const task = await lookupTask(locttDir, ref);
+    try {
+      const comment = await postComment({
+        locttDir,
+        taskId: task.frontmatter.id,
+        body: r.body,
+        mentionResolver: await commentResolver(locttDir),
+      });
+      json(res, comment satisfies CommentResponse, 201);
+    } catch (err) {
+      error(res, (err as Error).message, 400);
+    }
+  };
+
+  const handleEditComment: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
+    const commentId = captures[1];
+    if (commentId === undefined || commentId.length === 0) {
+      error(res, "comment id required", 400);
+      return;
+    }
+    const r = await parseJsonBodyWithSchema(req, res, EditCommentRequestSchema);
+    const task = await lookupTask(locttDir, ref);
+    try {
+      const comment = await editComment({
+        locttDir,
+        taskId: task.frontmatter.id,
+        commentId,
+        body: r.body,
+        mentionResolver: await commentResolver(locttDir),
+      });
+      json(res, comment satisfies CommentResponse);
+    } catch (err) {
+      error(res, (err as Error).message, 400);
+    }
+  };
+
+  const handleDeleteComment: RouteHandler = async ({ res, locttDir, captures }) => {
+    const ref = requireValidRef(captures, res);
+    if (ref === null) return;
+    const commentId = captures[1];
+    if (commentId === undefined || commentId.length === 0) {
+      error(res, "comment id required", 400);
+      return;
+    }
+    const task = await lookupTask(locttDir, ref);
+    try {
+      await deleteComment({ locttDir, taskId: task.frontmatter.id, commentId });
+      // Matches handleDeleteTask: a JSON body rather than 204, so a
+      // client can confirm what was removed.
+      json(res, { deleted: commentId });
+    } catch (err) {
+      error(res, (err as Error).message, 400);
+    }
+  };
+
   const handleSetField: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = requireValidRef(captures, res);
     if (ref === null) return;
@@ -2240,6 +2337,10 @@ export function createWebApp(options: WebAppOptions) {
     { method: "POST", pattern: USER_UNARCHIVE_RE, handler: handleUnarchiveUser },
     { method: "GET", pattern: USER_AVATAR_RE, handler: handleGetAvatar },
     { method: "POST", pattern: USER_AVATAR_RE, handler: handleUploadAvatar },
+    { method: "GET", pattern: TASK_COMMENTS_RE, handler: handleListComments },
+    { method: "POST", pattern: TASK_COMMENTS_RE, handler: handlePostComment },
+    { method: "PUT", pattern: TASK_COMMENT_ID_RE, handler: handleEditComment },
+    { method: "DELETE", pattern: TASK_COMMENT_ID_RE, handler: handleDeleteComment },
     { method: "GET", pattern: "/api/search", handler: handleSearch },
     { method: "GET", pattern: "/api/tasks", handler: handleListTasks },
     { method: "GET", pattern: "/api/tasks/export", handler: handleExportTasks },

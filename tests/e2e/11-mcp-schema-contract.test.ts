@@ -80,6 +80,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "delete_comment",
+            },
+            {
+              "hasDescription": true,
               "name": "delete_label",
             },
             {
@@ -113,6 +117,10 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "doctor",
+            },
+            {
+              "hasDescription": true,
+              "name": "edit_comment",
             },
             {
               "hasDescription": true,
@@ -184,6 +192,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "list_comments",
+            },
+            {
+              "hasDescription": true,
               "name": "list_config_values",
             },
             {
@@ -217,6 +229,10 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "migrate_schema",
+            },
+            {
+              "hasDescription": true,
+              "name": "post_comment",
             },
             {
               "hasDescription": true,
