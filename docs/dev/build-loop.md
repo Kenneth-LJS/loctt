@@ -24,9 +24,20 @@ Three defences, in order of how much they carry:
 2. **Case IDs are checkable.** A test claims cases by ID; a fabricated ID
    fails the build. The agent cannot invent a requirement it then
    satisfies.
-3. **The specs must be shown to fail.** A transcribed case is not
-   accepted until the behaviour it covers has been broken and the spec
-   observed going red.
+3. **Every new test must be shown to fail.** Not just the Playwright
+   specs — unit tests too. Break the behaviour the test covers, watch
+   that specific test go red, restore. A test that still passes with the
+   behaviour deleted asserts nothing, and green is exactly how it hides.
+
+   This is not hypothetical. In one session it caught an unmount test
+   asserting `dom.isConnected === false` — which React makes true whether
+   or not the cleanup ran — and a cursor test whose stated subject was a
+   guard it never reached. Both were written by an agent that believed
+   they worked, and both passed.
+
+   Where a branch genuinely cannot be reached from a test, say so in the
+   comment rather than writing a test that implies coverage it does not
+   have.
 
 ## Per ticket
 
@@ -72,6 +83,24 @@ at step 8.
 `dist/`, which the others spawn — a concurrent build surfaces as ~30
 scattered failures that do not reproduce in isolation. See
 [`tests/README.md`](../../tests/README.md#how-to-run).
+
+## Before calling a failure "pre-existing"
+
+Prove it, and prove it against a tree that holds only your own changes:
+
+```bash
+git stash -u && <run the failing suite>; git stash pop
+```
+
+A clean-tree run is only evidence if the tree was actually clean. When
+more than one agent is working, stashing removes *your* changes and
+leaves theirs, so their in-flight breakage reads as "already broken at
+HEAD" — which is precisely the excuse an agent needs to stop
+investigating. If that is possible, check out HEAD into a separate
+directory and run there instead.
+
+"Pre-existing" is a claim about someone else's work. Hold it to the same
+standard as a claim about your own.
 
 ## What blocks the loop
 
