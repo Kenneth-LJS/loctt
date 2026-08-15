@@ -71,8 +71,9 @@ describe("perf: 10 parallel CLI create processes", () => {
       for (const dir of taskDirs) {
         const text = await readFile(path.join(locttDir, "tasks", dir, "task.md"), "utf8");
         const m = text.match(/^key:\s*(\S+)/m);
-        if (!m) throw new Error(`no key in task.md for ${dir}`);
-        keys.push(m[1]);
+        const key = m?.[1];
+        if (key === undefined) throw new Error(`no key in task.md for ${dir}`);
+        keys.push(key);
       }
 
       const uniqueKeys = new Set(keys);
@@ -80,10 +81,15 @@ describe("perf: 10 parallel CLI create processes", () => {
 
       // state.yaml must parse cleanly and reflect that at least PARALLELISM+1
       // numbers have been consumed.
+      // Key allocation is per project, keyed by the project's id — not by
+      // a literal entity type. A fresh tracker has exactly one project,
+      // so its counter is the one every create consumed from.
       const state = await loadState(locttDir);
-      const taskKeyState = state.keys["task"];
+      const counters = Object.values(state.keys);
+      expect(counters).toHaveLength(1);
+      const taskKeyState = counters[0];
       expect(taskKeyState).toBeDefined();
-      expect(taskKeyState!.next_number).toBeGreaterThanOrEqual(PARALLELISM + 1);
+      expect(taskKeyState?.next_number).toBeGreaterThanOrEqual(PARALLELISM + 1);
 
       // Keys should be exactly T-1..T-PARALLELISM in some order.
       const numbers = keys
