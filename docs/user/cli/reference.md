@@ -373,24 +373,49 @@ Example: `loctt show T-1`
 
 ### `loctt set`
 
-Set a field on a task. Works for both built-in fields (`status`, `priority`,
-`assignee`, `due_date`, etc.) and custom fields.
+Set a field on one task, or on several at once. Works for both built-in
+fields (`status`, `priority`, `assignee`, `due_date`, etc.) and custom
+fields.
 
 ```
-loctt set <task> <field> <value>
+loctt set <task>[,<task>...] <field> <value>
 ```
 
-Example: `loctt set T-12 status doing`
+Examples:
+
+```
+loctt set T-12 status doing
+loctt set T-1,T-2,T-5 status done
+```
+
+With more than one task the change runs as a single bulk operation:
+one lock for the whole batch, and every history entry stamped with a
+shared `bulk_op_id` so the change reads as one action rather than N
+unrelated edits.
+
+A task that fails (unknown ref, invalid value) is reported individually
+and does **not** abort the rest; the command exits non-zero when any
+task failed, so a script cannot mistake a partial success for a
+complete one. Batches are capped at 500 tasks.
 
 ### `loctt unset`
 
-Remove a field from a task.
+Remove a field from one task, or from several at once.
 
 ```
-loctt unset <task> <field>
+loctt unset <task>[,<task>...] <field>
 ```
 
-Example: `loctt unset T-12 due_date`
+Examples:
+
+```
+loctt unset T-12 due_date
+loctt unset T-1,T-2 due_date
+```
+
+Multi-task behaviour matches `loctt set` — one bulk operation, a shared
+`bulk_op_id`, per-task failure reporting, and a non-zero exit if any
+task failed.
 
 ### `loctt body`
 

@@ -56,6 +56,7 @@ export {
 export type {
   AttachmentResponse,
   AttachResultResponse,
+  BulkResponse,
   ConfigResponse,
   CreateTaskRequest,
   DoctorCheckResponse,
@@ -75,6 +76,10 @@ export type {
   PutWorkflowRequest,
 } from "./service-schemas.js";
 export {
+  BulkArchiveRequestSchema,
+  BulkLinkRequestSchema,
+  BulkMoveRequestSchema,
+  BulkSetRequestSchema,
   CreateViewRequestSchema,
   EditViewRequestSchema,
   InitRequestSchema,

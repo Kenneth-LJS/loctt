@@ -210,3 +210,20 @@ export interface DoctorCheckResponse {
   readonly status: "ok" | "warn" | "error";
   readonly message: string;
 }
+
+/**
+ * Result of a bulk operation.
+ *
+ * Partial success is the normal outcome, not an exception — one bad
+ * ref does not abort the batch. `succeeded` and `failed` are reported
+ * separately so a UI can retain exactly the failures for retry
+ * (ERR-13) rather than clearing the whole selection.
+ *
+ * `bulk_op_id` is shared by every history entry the operation
+ * produced, so an activity feed can group them as one action.
+ */
+export interface BulkResponse {
+  readonly bulk_op_id: string;
+  readonly succeeded: readonly string[];
+  readonly failed: readonly { readonly taskId: string; readonly error: string }[];
+}

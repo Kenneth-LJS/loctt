@@ -85,3 +85,53 @@ export const InitRequestSchema = z.object({
   docs: z.boolean().optional(),
 }).strict();
 export type InitRequest = z.infer<typeof InitRequestSchema>;
+
+/**
+ * Task references for a bulk operation. Ids or keys; each is resolved
+ * at the time of the lock.
+ *
+ * Capped so one request cannot hold the tracker-wide state lock
+ * indefinitely — every bulk op runs under a single lock, which is what
+ * makes the batch consistent but also makes an unbounded batch a
+ * denial of service against every other writer.
+ */
+const BulkTaskRefsSchema = z.array(z.string().min(1)).min(1).max(500);
+
+/**
+ * Body of `POST /api/tasks/bulk/set`.
+ *
+ * `value: null` clears the field. JSON has no `undefined`, which is
+ * what core's `SetFieldsEntry` uses for an unset, so the route maps
+ * null → undefined. That mapping is the only reason a separate
+ * "bulk unset" endpoint is unnecessary.
+ */
+export const BulkSetRequestSchema = z.object({
+  refs: BulkTaskRefsSchema,
+  changes: z.array(z.object({
+    field: z.string().min(1),
+    value: z.unknown(),
+  })).min(1),
+}).strict();
+export type BulkSetRequest = z.infer<typeof BulkSetRequestSchema>;
+
+/** Body of `POST /api/tasks/bulk/archive`. */
+export const BulkArchiveRequestSchema = z.object({
+  refs: BulkTaskRefsSchema,
+  archive: z.boolean(),
+}).strict();
+export type BulkArchiveRequest = z.infer<typeof BulkArchiveRequestSchema>;
+
+/** Body of `POST /api/tasks/bulk/move`. */
+export const BulkMoveRequestSchema = z.object({
+  refs: BulkTaskRefsSchema,
+  project: z.string().min(1),
+}).strict();
+export type BulkMoveRequest = z.infer<typeof BulkMoveRequestSchema>;
+
+/** Body of `POST /api/tasks/bulk/link`. */
+export const BulkLinkRequestSchema = z.object({
+  refs: BulkTaskRefsSchema,
+  type: z.string().min(1),
+  target: z.string().min(1),
+}).strict();
+export type BulkLinkRequest = z.infer<typeof BulkLinkRequestSchema>;
