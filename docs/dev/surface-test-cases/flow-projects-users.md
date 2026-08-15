@@ -149,7 +149,7 @@ of the documented project-resolution chain has no writer.
 **Given** the reference documents the tool, **when** an agent enumerates
 tools, **then** it is present, or the documentation no longer claims it.
 
-### PRU-C9 · minor · P4 P10 · CLI
+### PRU-C9 · minor · P4 P10 · CLI — **resolved**
 **Documented-but-absent flags are rejected, not ignored.**
 `docs/user/cli/reference.md:116-121` documents a `--label` flag the CLI
 never reads, so the worked example silently creates a project named `web`
@@ -163,3 +163,63 @@ and discards the label.
 
 **Given** the reference documents a `--label` flag, **when** a user copies
 the example verbatim, **then** the flag is honoured or rejected explicitly.
+
+Resolved by correcting the reference: the block documented `<key>` and
+`--label` throughout, both pre-migration vocabulary. It now documents
+`<name|id>` and `--name`, matching what the CLI reads.
+
+### PRU-C10 · blocker · P1 P10 · CLI MCP
+**Changing a prefix renames every task in the project, and nothing else.**
+`set-prefix` rewrites `projects.yaml`, `state.yaml`, every task's `key`,
+and the key index. A partial application leaves the tracker claiming one
+prefix while its tasks carry another.
+
+- A project with tasks `T-1`, `T-2`, `T-3` set to prefix `WEB-` yields
+  `WEB-1`, `WEB-2`, `WEB-3` — **numbers preserved**, nothing renumbered.
+- Each renamed task's `key_history` gains its previous key, so
+  `loctt show T-2` still resolves after the change.
+- `state.yaml`'s counter for that project carries the new prefix and the
+  **same** `next_number` — the next task created is `WEB-4`, never
+  `WEB-1`.
+- Tasks in *other* projects are untouched: keys, `key_history` and
+  `updated_at` all unchanged.
+- Both surfaces report how many tasks were renamed.
+
+**Given** a project with three tasks, **when** its prefix is changed,
+**then** all three carry the new prefix at their original numbers and the
+old keys still resolve.
+
+### PRU-C11 · blocker · P4 P10 · CLI MCP
+**A prefix already in use is rejected before anything is written.**
+Prefix uniqueness is enforced at `createProject`
+(`projects/manage.ts:199`), so it is an invariant the whole codebase may
+rely on — a second door that bypasses it would break that assumption
+silently.
+
+- Setting project B's prefix to project A's exits non-zero (CLI) /
+  returns `isError` (MCP), and the message names the prefix and the
+  project already holding it.
+- No task is renamed and `projects.yaml` is byte-identical afterwards.
+- Setting a project's prefix to the one it already has is a no-op that
+  succeeds without rewriting tasks — not an error.
+
+**Given** two projects, **when** one is set to the other's prefix,
+**then** the attempt is refused and no file changed.
+
+### PRU-C12 · blocker · P1 · CLI MCP
+**An interrupted prefix change is completed, not left half-applied.**
+The rewrite spans every task in the project, so a crash partway leaves
+some tasks renamed and some not. The state lock is released on process
+exit and protects nothing here.
+
+- A crash after some tasks are renamed leaves a sentinel recording the
+  project and the from/to prefixes.
+- The next LocTT command detects it and finishes the remaining tasks
+  rather than reporting a healthy tracker.
+- Completion is idempotent: a task already carrying the new prefix is
+  skipped, never renamed twice or given a duplicate `key_history` entry.
+- `loctt doctor` reports the interrupted state while the sentinel exists.
+
+**Given** a prefix change interrupted mid-rewrite, **when** any command
+next runs, **then** the change is completed and no task is left on the
+old prefix.

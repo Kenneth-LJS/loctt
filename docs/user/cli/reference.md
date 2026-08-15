@@ -112,16 +112,39 @@ space — each project has its own prefix and counter.
 
 ```
 loctt project list [--all]
-loctt project create <key> --prefix <prefix> [--label <label>] [--default]
-loctt project edit <key> --label <label>
-loctt project archive <key>
-loctt project unarchive <key>
-loctt project delete <key> [--remap-to <other-key>] [--yes]
-loctt project set-default <key|->
+loctt project create <name> --prefix <prefix> [--default]
+loctt project edit <name|id> --name <new-name>
+loctt project set-prefix <name|id> <new-prefix> [--yes]
+loctt project archive <name|id>
+loctt project unarchive <name|id>
+loctt project delete <name|id> [--remap-to <other>] [--yes]
+loctt project set-default <name|id|->
 ```
+
+Projects are referenced by name (when unambiguous) or by their internal id.
 
 `list` hides archived projects unless `--all` is passed. The workspace default
 project is marked with `*`.
+
+### Changing a project's prefix
+
+`set-prefix` rewrites the project's key prefix and **renames every task in
+it** — `T-3` becomes `WEB-3`. The number is preserved, so nothing is
+renumbered, and each task's previous key is kept in `key_history` so old
+references keep resolving.
+
+```
+loctt project set-prefix Tasks WEB-
+```
+
+Prefixes must be unique across projects, so a prefix already in use is
+rejected. Because this rewrites every task in the project it asks for
+confirmation; `--yes` skips the prompt.
+
+The most common reason to need it: two trackers that were initialised
+separately and later synced through the same remote both minted `T-` keys.
+The merge assigns one of them a provisional prefix to keep prefixes unique —
+`set-prefix` is how you replace that with a real one.
 
 `archive` is the reversible (soft) variant — the project becomes hidden from
 default lists but its references are preserved.

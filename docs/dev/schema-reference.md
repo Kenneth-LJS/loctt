@@ -541,7 +541,7 @@ The schema enforces:
 |---|---|---|---|
 | `key` | SlugKey | yes | Immutable internal identifier |
 | `label` | string | yes | Human display name (editable) |
-| `prefix` | string | yes | Task-key prefix (e.g. `BACKEND-`); immutable after creation |
+| `prefix` | string | yes | Task-key prefix (e.g. `BACKEND-`). Unique across projects. Changeable only via `loctt project set-prefix`, which renames every task in the project |
 | `archived` | boolean | no | When `true`, project is hidden but tasks remain accessible |
 
 Hard-deleting a project moves its counter to `state.yaml`'s `retired_keys` so re-creating it resumes numbering.

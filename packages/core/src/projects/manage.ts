@@ -238,9 +238,13 @@ export async function createProject(
 }
 
 /**
- * Edits an existing project. Only `name` is mutable. Attempting to
- * change `id` or `prefix` via this API is rejected at the schema
- * layer (the inputs are typed to forbid it).
+ * Edits an existing project's name.
+ *
+ * `id` is immutable — tasks reference it. `prefix` is excluded here not
+ * because it cannot change, but because changing it is not a config edit:
+ * the prefix is duplicated into `state.yaml`'s counter and into every
+ * task's `key`, so a rewrite of all three has to happen as one
+ * transaction. {@link setProjectPrefix} does that.
  */
 export async function editProject(
   locttDir: string,

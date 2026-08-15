@@ -322,12 +322,25 @@ Returns: `Created project <key>`. `ProjectError` on validation failures.
 
 ### `edit_project`
 
-Edit an existing project. Only `label` is mutable — `key` and `prefix` are immutable after creation.
+Edit an existing project's name. `id` is immutable; the prefix has its own tool (`set_project_prefix`) because changing it rewrites every task in the project.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Project key |
-| `label` | string | yes | New label |
+| `project` | string | yes | Project id or name |
+| `name` | string | yes | New name |
+
+### `set_project_prefix`
+
+Change a project's key prefix, renaming every task in it — `T-3` becomes `WEB-3`. The number is preserved, so nothing is renumbered, and each task's previous key is appended to `key_history` so old references keep resolving.
+
+Prefixes must be unique across projects; one already in use is rejected. This rewrites every task in the project, so prefer it deliberately rather than as a cosmetic change.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project` | string | yes | Project id or name |
+| `prefix` | string | yes | New prefix, e.g. `WEB-` |
+
+Returns a summary naming the project and how many tasks were renamed. `ProjectError` when the prefix is already in use or the project is unknown.
 
 ### `archive_project` / `unarchive_project`
 

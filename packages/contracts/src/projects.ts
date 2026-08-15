@@ -11,7 +11,9 @@ import { z } from "zod";
  *  - `name` is the human display name. Editable. Not unique
  *    (disambiguated by id when ambiguous).
  *  - `prefix` is the task-key prefix (e.g. `BACKEND-`, `WEB-`).
- *    Immutable after creation.
+ *    Unique across projects. Not editable through `editProject`,
+ *    because changing it has to rename every task in the project —
+ *    `setProjectPrefix` does that as one transaction.
  *  - `archived` hides the project; hard-delete (with explicit
  *    remap) moves the counter to LocttState.retired_keys.
  */

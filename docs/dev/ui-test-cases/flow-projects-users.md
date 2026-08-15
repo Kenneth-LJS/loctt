@@ -48,10 +48,11 @@ project counters during git sync is in
 ### PRU-5 · M4 · blocker · P1 P10
 **Creating a project from Settings → Projects.** Settings → Projects panel, no project named "Docs" exists.
 
-- The create form asks for label, key, and prefix; key and prefix are marked as permanent at the point of entry, not after the fact.
+- The create form asks for a name and a prefix. The prefix is marked as *changeable only by renaming every task in the project* — not as permanent, which is no longer true, and not silently, which would understate the cost.
+- A prefix already used by another project is rejected at entry, naming the project holding it. Prefixes are unique tracker-wide.
 - Saving writes the project into `.loctt/config/projects.yaml`; `loctt project list` in a terminal shows it immediately.
 - The new project appears in the top-bar switcher without a page reload.
-- The first task created in it gets key `<PREFIX>1` — the counter starts fresh in `state.yaml` under `keys.docs`.
+- The first task created in it gets key `<PREFIX>1` — the counter starts fresh in `state.yaml`, keyed by the project's id.
 
 ### PRU-6 · M4 · major · P1 P3
 **Renaming a project changes only its label.** Project `backend` is labelled "Backend".
@@ -347,3 +348,27 @@ project counters during git sync is in
 - The failure names the state lock, says the write did not complete, and states that POSIX advisory locks are not reliable on iCloud/Dropbox/NFS/SMB/OneDrive.
 - It recommends moving the tracker to a local disk rather than only offering Retry.
 - The panel does not show the project as created and then have it vanish on the next fetch.
+
+### PRU-44 · M4 · major · P1 P5
+**Changing a project's prefix renames every task in it, and says so before doing it.** Settings → Projects → a project with three tasks `T-1`–`T-3`.
+
+- The prefix field is editable, not disabled — but editing it does not save on blur like the name does.
+- Confirming states the blast radius in numbers: how many tasks will be renamed, and that their old keys will keep resolving.
+- After saving, the task list shows `WEB-1`, `WEB-2`, `WEB-3` — numbers preserved, nothing renumbered.
+- Pasting an old key (`T-2`) into search still resolves to the same task, via `key_history`.
+- The change is visible in `.loctt/config/projects.yaml` and in every task file on disk, not only in the browser.
+
+### PRU-45 · M4 · major · P4
+**A prefix already in use is refused at the field, before anything is written.** Two projects exist; set one's prefix to the other's.
+
+- The error renders at the prefix input, not only in a toast, and names the project already holding it (P4, ERR-14).
+- No task is renamed and the panel still shows the original prefix after dismissing the error.
+- Re-entering the project's *own* current prefix is accepted as a no-op rather than reported as a collision.
+
+### PRU-46 · M4 · major · P4 P6
+**A prefix change interrupted server-side is surfaced, not silently half-applied.** Kill the server mid-rewrite, then reload.
+
+- The projects panel shows the project as mid-rename rather than reporting a healthy tracker.
+- The message says which prefix it was moving from and to, and that some tasks may still carry the old one.
+- A control completes the change; it does not require dropping to the CLI.
+- After completion the list shows every task on the new prefix, with none left behind.
