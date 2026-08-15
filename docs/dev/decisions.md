@@ -107,3 +107,34 @@ against.
 |---|---|
 | **C1** | **Migration is no longer CLI-only.** The UI gets `POST /api/migrate` and a working "Migrate now" button on the schema banner, gated behind a preview-then-confirm flow showing what will change, how many files, and where the backup lands. MCP gains a migrate tool so agents are not stuck either. The "migration is CLI-only" comment in `packages/contracts/src/service.ts` is now wrong and must be updated when this lands. |
 | **CW-17** | **`card_layout` is an ordered array** — `[priority, assignee, due_date]` — carrying visibility *and* order, satisfying Q6's drag-to-reorder. Now defined in `UserSettingsSchema` with contract tests. |
+
+## 6. Git-sync merge semantics (decided 2026-08-15, not yet built)
+
+Sync today aborts on any file changed on both sides since the last sync.
+Nothing is lost, but two clones that each create a task cannot merge at
+all — they both bump `state.yaml`, so sync stops before task files are
+even compared. That is why `rekeyCollisions` has no caller: there is no
+point at which a merged task set exists for it to scan.
+
+These decisions define what replaces the blanket abort. **None is built.**
+
+| # | Decision | Rationale |
+|---|---|---|
+| **M1** | **Key counters are not merged arithmetically.** After a merge, collect the tasks that exist, renumber only those whose keys collide — ordered by `created_at`, ULID `id` breaking ties — and derive the counter from the result. | Merging counters by `max` under-reserves: base 5, A creates 3, B creates 8 gives 11 new tasks but a counter of 13, so the rekey pass reissues keys that already exist. Deriving from the tasks cannot disagree with what is on disk, and needs no base commit. Non-colliding keys are left alone — renumbering a key someone already referenced is gratuitous churn. |
+| **M2** | **A contested frontmatter field takes the later `updated_at`.** No conflict schema, no user-facing resolution state. | Viable *only because* of M3: history records `before`/`after` per field, so losing a merge race is recoverable by reading history rather than being data loss. Clock skew makes this a nuisance (someone must notice and revert), not a loss. |
+| **M3** | **Every history entry records enough to reconstruct the state it changed.** Not just `body_edited` — `created` carries the initial frontmatter and body; `body_edited` carries before/after body (one snapshot per coalesced burst, not per keystroke); `comment_added`/`_edited`/`_deleted` carry the comment text. `archived`/`unarchived` are exempt: the kind fully describes the transition. | Today only `field_change`, `custom_field_change`, and the link/attachment kinds record content. The rest store a timestamp and nothing else, so history says *that* something happened and never *what it was*. This is the prerequisite for M2 — without it "history is the recovery path" is false. `comment_deleted` is the sharpest case: a hard delete with no record of the text, unrecoverable by any means. Independently this is what makes a body diff in the activity feed, and version restore, possible at all. |
+| **M4** | **The body is last-write-wins for the live value, but the losing version is written to a sibling file** rather than silently dropped. | Even with M3, silently replacing someone's paragraphs is a bad experience — they may not notice for days, and history is a place you have to think to look. The body is the field where not noticing costs most. |
+
+**Size, decided:** recording content makes `_history.yaml` grow with
+content rather than event count, and it is read in full on every append
+and every activity-feed render. Accepted as-is for now — bodies are
+usually small and git compresses them well. **Capping the snapshot was
+rejected**: a truncated entry cannot reconstruct, which is the guarantee
+being added. If it bites, the escape hatch is splitting content into
+`_history/<entry-id>.yaml` loaded on demand, keeping the feed fast and
+reconstruction exact.
+
+**Not a decision, recorded because it was checked:** history coalescing
+is already actor-scoped (`coalesceHistory` compares `last.actor ===
+next.actor`) and tested. A burst only collapses within one user's own
+edits; two users' edits never merge into one entry.

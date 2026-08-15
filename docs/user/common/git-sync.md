@@ -88,11 +88,17 @@ Resolve by making one side match the other — edit locally, or check out the
 
 ### Rekeying
 
-> **Not implemented yet.** `rekeyCollisions` exists in
-> `packages/core/src/git/reconcile.ts` and is unit-tested, but no sync path
-> calls it. Until it is wired up, two clones that each create a task while
-> offline can both claim the same key; the second one to sync will hit a
-> conflict on `state.yaml` rather than being rekeyed automatically.
+> **Not implemented yet, and blocked on field-level merging above.**
+> `rekeyCollisions` exists in `packages/core/src/git/reconcile.ts` and is
+> unit-tested, but no sync path calls it — and none can yet. Two clones
+> that each create a task both bump `state.yaml`, so sync aborts on that
+> file before task keys are ever compared. There is no point at which a
+> merged task set exists for a rekey pass to scan, so wiring it up alone
+> would not help. Field-level merging has to land first.
+>
+> In the meantime the second clone to sync sees a conflict naming
+> `state.yaml` and nothing is written. Resolve it the same way as any
+> other conflict.
 
 The intended behaviour, once reconciliation lands: if multiple tasks claim
 the same key after a merge, a rekey pass runs.
