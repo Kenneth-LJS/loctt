@@ -9,6 +9,7 @@ import {
 import { useInfo } from "../api/hooks/useInfo.ts";
 import { tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
+import { BulkBar } from "./BulkBar.tsx";
 import {
   AssigneeCell,
   Dash,
@@ -23,6 +24,7 @@ import { FilterBar } from "./FilterBar.tsx";
 import { isOverdue, relativeTime, shortDate } from "./format.ts";
 import { buildLookups } from "./lookups.ts";
 import { Pagination } from "./Pagination.tsx";
+import { useSelection } from "./useSelection.ts";
 
 /**
  * The list view's table (M1.2). Reads URL search state for sort +
@@ -95,6 +97,19 @@ export function ListView() {
   // reads of the same feed, which the fixture cannot currently stage.
   const total = pages[pages.length - 1]?.total ?? 0;
 
+  // The result-set identity, for BLK-18. Everything the server reads
+  // except how far we have paged — loading page 2 must not clear a
+  // selection, but changing a filter must.
+  const resultSetKey = useMemo(() => {
+    const { page: _page, ...rest } = params;
+    return JSON.stringify(rest);
+  }, [params]);
+  const selection = useSelection(resultSetKey);
+
+  const allOnPageSelected =
+    items.length > 0 && items.every(t => selection.isSelected(t.id));
+  const someOnPageSelected = items.some(t => selection.isSelected(t.id));
+
   // Restore the page count from the URL, then keep the URL in step as
   // the user loads more, so the view is reproducible in a new tab
   // (LST-17). Guarded on the count actually changing: writing the same
@@ -134,6 +149,25 @@ export function ListView() {
         <table aria-busy={tasks.isLoading} className="w-full border-separate border-spacing-0 text-[13px]">
           <thead>
             <tr>
+              <th className="sticky top-0 w-9 border-b border-border-subtle bg-bg-canvas px-3 py-2 dark:bg-bg-surface">
+                <input
+                  type="checkbox"
+                  aria-label="Select all on this page"
+                  checked={allOnPageSelected}
+                  ref={el => {
+                    // Indeterminate is not an attribute — it only
+                    // exists as a DOM property. BLK-3 requires the
+                    // header to be *checked*, not indeterminate, once
+                    // every visible row is selected.
+                    if (el) el.indeterminate = someOnPageSelected && !allOnPageSelected;
+                  }}
+                  onChange={() => {
+                    if (allOnPageSelected) selection.clear();
+                    else selection.selectAll(items.map(t => t.id));
+                  }}
+                  className="cursor-pointer align-middle accent-accent"
+                />
+              </th>
               {columns.map(col => {
                 const isSorted = sortField === col.id;
                 return (
@@ -163,10 +197,10 @@ export function ListView() {
           </thead>
           <tbody>
             {tasks.isLoading ? (
-              <SkeletonRows columns={columns.length} />
+              <SkeletonRows columns={columns.length + 1} />
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-3 py-8 text-center text-text-tertiary">
+                <td colSpan={columns.length + 1} className="px-3 py-8 text-center text-text-tertiary">
                   No tasks match these filters.
                 </td>
               </tr>
@@ -175,12 +209,32 @@ export function ListView() {
                 <tr
                   key={task.id}
                   onClick={() => void navigate({ to: "/tasks/$key", params: { key: task.key } })}
+                  aria-selected={selection.isSelected(task.id)}
                   className={[
                     "cursor-pointer [&>td]:border-b [&>td]:border-border-subtle [&>td]:px-3 [&>td]:py-2.5",
                     "hover:[&>td]:bg-bg-muted last:[&>td]:border-b-0",
                     task.archived ? "opacity-50" : "",
+                    // Background *and* a left border, not colour alone
+                    // (BLK-1) — the checked box is the third signal.
+                    selection.isSelected(task.id)
+                      ? "[&>td]:bg-accent/10 [&>td:first-child]:border-l-2 [&>td:first-child]:border-l-accent"
+                      : "",
                   ].join(" ")}
                 >
+                  <td className="align-middle">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${task.key}`}
+                      checked={selection.isSelected(task.id)}
+                      // The checkbox is the one hit area in the row that
+                      // does not navigate (BLK-1). Stopping propagation
+                      // on click covers the mouse; keyboard Space fires
+                      // change without a row click at all.
+                      onClick={e => e.stopPropagation()}
+                      onChange={() => selection.toggle(task.id)}
+                      className="cursor-pointer align-middle accent-accent"
+                    />
+                  </td>
                   {columns.map(col => (
                     <td key={col.id} className="align-middle">
                       <Cell colId={col.id} task={task} lookups={lookups} now={now} today={today} />
@@ -192,6 +246,15 @@ export function ListView() {
           </tbody>
         </table>
       </div>
+      <BulkBar
+        count={selection.count}
+        scopeLabel={
+          allOnPageSelected && items.length > 1
+            ? `${String(items.length)} on this page selected`
+            : undefined
+        }
+        onClear={selection.clear}
+      />
       <Pagination
         loaded={items.length}
         total={total}
