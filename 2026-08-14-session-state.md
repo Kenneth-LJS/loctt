@@ -65,11 +65,11 @@ written. See §2 item 0.
 
 Ordered. Dependencies are stated because three items are blocked.
 
-**Phase 2 progress:** 0i, 0e, 0d, 0m, 0l, 0c, 0b, 0 done. **All four
+**Phase 2 progress:** 0i, 0e, 0d, 0m, 0l, 0c, 0b, 0, 0n done. **All four
 previously-recorded pre-existing test failures are fixed** — each was a
 stale fixture, not a defect. Full suite green: 1,621 unit, 150
 integration, 20 e2e. Working order is live bugs first,
-then by dependency — next up 0n, then the doc items.
+then by dependency — next up the doc items (0f, 0j, 0g, 0h, 0k).
 
 ### 0. Relationship query syntax — ✅ DONE (`1a2b77d`)
 **Blocked by:** nothing. **Size:** small-medium.
@@ -685,7 +685,7 @@ on merit, two of the three flipped:
 under-specifies the edited marker; SET-4 uses SET-3's read-only "mirror"
 vocabulary and needs an editability bullet.
 
-### 0n. SchemaBanner mishandles the `missing` kind
+### 0n. SchemaBanner mishandles the `missing` kind — ✅ DONE (`4d30416`)
 **Blocked by:** nothing. **Size:** small. **Spawned by 0l/N1.**
 
 `SchemaBanner.tsx:22` returns `null` for `missing`, so the case at `:74` is
