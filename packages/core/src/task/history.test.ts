@@ -280,6 +280,47 @@ describe("history actor attribution", () => {
       expect(entries[0]?.after).toBe("typed");
     });
 
+    it("caps a rolling burst at 60 minutes", async () => {
+      // The window rolls — each merged save advances it — so a chain of
+      // sub-15-minute gaps would otherwise collapse forever. Five saves
+      // 14 minutes apart span 56 minutes and stay one entry; the sixth
+      // crosses the 60-minute cap and starts a fresh one.
+      const base = Date.parse("2026-05-21T10:00:00Z");
+      const at = (min: number): string => new Date(base + min * 60_000).toISOString();
+
+      for (const m of [0, 14, 28, 42, 56]) {
+        await appendHistory(locttDir, "t1", [{ timestamp: at(m), kind: "body_edited" }]);
+      }
+      expect(await readHistory(locttDir, "t1")).toHaveLength(1);
+
+      // 70 min from the burst start, only 14 from the last save.
+      await appendHistory(locttDir, "t1", [{ timestamp: at(70), kind: "body_edited" }]);
+      const entries = await readHistory(locttDir, "t1");
+      expect(entries).toHaveLength(2);
+      // The capped entry keeps the burst's own span, not the new save's.
+      expect(entries[0]?.timestamp).toBe(at(56));
+      expect(entries[1]?.timestamp).toBe(at(70));
+    });
+
+    it("measures the cap from the burst start, not the last save", async () => {
+      // Guards the difference between the two readings: with the cap
+      // measured from the previous entry it would never trigger, since
+      // every individual gap is under 15 minutes.
+      const base = Date.parse("2026-05-21T10:00:00Z");
+      const at = (min: number): string => new Date(base + min * 60_000).toISOString();
+
+      for (let m = 0; m <= 84; m += 12) {
+        await appendHistory(locttDir, "t1", [{ timestamp: at(m), kind: "body_edited" }]);
+      }
+      // 0..84 in 12-min steps: every gap is 12 min, so a per-gap-only
+      // rule yields one entry. The cap splits it at the 60-min boundary.
+      const entries = await readHistory(locttDir, "t1");
+      expect(entries.length).toBeGreaterThan(1);
+      for (const e of entries) {
+        expect(e.kind).toBe("body_edited");
+      }
+    });
+
     it("starts a fresh entry when the window expires", async () => {
       const t0 = "2026-05-21T10:00:00Z";
       const t1 = "2026-05-21T10:20:00Z"; // 20 min later — past the window

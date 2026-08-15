@@ -20,6 +20,25 @@ import { getHistoryFilePath } from "../paths/index.js";
  */
 export const BODY_EDITED_COALESCE_WINDOW_MS = 15 * 60 * 1000;
 
+/**
+ * The longest span a single coalesced entry may cover.
+ *
+ * The 15-minute window rolls, so without a ceiling a chain of
+ * sub-window edits collapses forever: five saves 14 minutes apart used
+ * to become one entry spanning 56 minutes, and nothing bounded it. Every
+ * intermediate body state inside such a span is unrecoverable, which
+ * breaks M2's claim that a lost merge race can be read back out of
+ * history.
+ *
+ * Measured from the burst's *start*, not the previous save — a per-gap
+ * rule can never fire, since every gap in a burst is under the window by
+ * definition.
+ */
+export const BODY_EDITED_COALESCE_MAX_SPAN_MS = 60 * 60 * 1000;
+
+/** Where a coalesced entry records the timestamp its burst began at. */
+const BURST_START_META = "coalesce_started_at";
+
 /** Kinds eligible for coalescing in appendHistory. */
 const COALESCEABLE_KINDS: ReadonlySet<HistoryKind> = new Set(["body_edited"]);
 
@@ -182,7 +201,8 @@ export function coalesceHistory(
       last.actor === next.actor &&
       last.bulk_op_id === undefined &&
       next.bulk_op_id === undefined &&
-      withinCoalesceWindow(last.timestamp, next.timestamp)
+      withinCoalesceWindow(last.timestamp, next.timestamp) &&
+      withinMaxSpan(burstStart(last), next.timestamp)
     ) {
       // Roll the existing entry's timestamp forward and drop the new
       // row — but span the whole burst: `before` stays the state at the
@@ -195,9 +215,17 @@ export function coalesceHistory(
       // state to adopt, so it must behave like a missing key. Otherwise
       // it would erase the burst's `after` and the entry would replay to
       // nothing.
+      // Stamp where the burst began the first time an entry coalesces,
+      // so the cap is measured against the span rather than the gap.
+      // Kept in `meta` rather than as a new top-level field: `meta` is
+      // already the documented home for kind-specific extras, and
+      // widening HistoryEntry would change the on-disk shape for every
+      // entry ever written.
+      const started = burstStart(last);
       result[result.length - 1] = {
         ...last,
         timestamp: next.timestamp,
+        meta: { ...last.meta, [BURST_START_META]: started },
         ...(next.after !== undefined ? { after: next.after } : {}),
       };
       continue;
@@ -212,4 +240,20 @@ function withinCoalesceWindow(a: string, b: string): boolean {
   const tb = Date.parse(b);
   if (Number.isNaN(ta) || Number.isNaN(tb)) return false;
   return Math.abs(tb - ta) <= BODY_EDITED_COALESCE_WINDOW_MS;
+}
+
+/**
+ * When the entry's burst began. An entry that has never coalesced is its
+ * own start, so a first merge measures from the original save.
+ */
+function burstStart(entry: HistoryEntry): string {
+  const stamped = entry.meta?.[BURST_START_META];
+  return typeof stamped === "string" ? stamped : entry.timestamp;
+}
+
+function withinMaxSpan(start: string, next: string): boolean {
+  const ts = Date.parse(start);
+  const tn = Date.parse(next);
+  if (Number.isNaN(ts) || Number.isNaN(tn)) return false;
+  return Math.abs(tn - ts) <= BODY_EDITED_COALESCE_MAX_SPAN_MS;
 }
