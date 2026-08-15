@@ -108,9 +108,8 @@ export function extractMentions(
   for (const m of body.matchAll(MENTION_RE)) {
     const token = m[1];
     if (!token) continue;
-    if (m.index !== undefined && skip.some(([a, b]) => m.index! >= a && m.index! < b)) {
-      continue;
-    }
+    const at = m.index;
+    if (at !== undefined && skip.some(([a, b]) => at >= a && at < b)) continue;
     const resolved = resolver ? resolver(token) : token;
     if (!resolved || seen.has(resolved)) continue;
     seen.add(resolved);
