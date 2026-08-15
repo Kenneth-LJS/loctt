@@ -332,6 +332,7 @@ header opens the modal specified in
 **Losing the connection mid-drop does not leave the card visually moved.** Kill the server between mouse-up and the response.
 
 - The card is not left rendered in the destination column while the file still says otherwise — either it reverts, or it is clearly marked as unsaved/pending with the destination shown as tentative.
+- **A reload shows server truth**: the pending state does not survive it. Optimistic rendering that outlives a refresh is the browser presenting its own state as fact (P1).
 - The message says the move was not saved, names the task, and says what to do (retry when the server is back).
 - On reconnect, the board's rendered state matches disk exactly — no stale optimistic position survives the recovery.
 
@@ -362,7 +363,7 @@ header opens the modal specified in
 - The board does not render with an empty or default layout as if the user's saved preference were gone.
 - The error states that the layout preference was not saved and what the board is currently showing.
 
-### BRD-48 · M3 · minor · P4
+### BRD-48 · M3 · minor · P1 P4
 **A chip-visibility write that fails is reported, and the discrepancy is visible.** Toggle a column off while the settings endpoint is failing.
 
 - The column hides optimistically, then either reverts with an explanation or stays hidden with a clear "not saved — will reset on reload" note.

@@ -135,7 +135,7 @@ editor (as opposed to the compact one here) is
 **A user default pointing at a deleted project is silently ignored and resolution falls through.** `default_project: archive_me`, a project that has since been hard-deleted; `projects.yaml#default` is `backend`.
 
 - The modal pre-fills `backend`, not `archive_me`.
-- **No error is shown for the stale preference** — this must not error, per the documented resolution semantics.
+- **No error is shown for the stale preference** — this must not error, per the documented resolution semantics. "No error" is not "no trace": the dangling value is surfaced in Settings → My preferences and by `loctt doctor` (PRU-14), just not here, where it would interrupt a create.
 - The dangling preference is not silently rewritten in `settings.yaml` by merely opening the modal; it stays on disk for `loctt doctor` to report.
 - Creating succeeds and the task lands in `backend`.
 

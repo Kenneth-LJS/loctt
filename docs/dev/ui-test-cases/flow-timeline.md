@@ -336,6 +336,7 @@ only the timeline reading and writing that data.
 **Connection loss mid-drop is honest about what was saved.** Kill the server between release and response.
 
 - The bar either reverts or is marked as pending/unsaved with clearly tentative styling — it is never rendered as a settled new position while the server holds the old one.
+- **A reload shows server truth**: the pending state does not survive it (P1).
 - The message states what was attempted, that it was not saved, and to retry when the connection returns.
 - After reconnect and refetch, the rendered geometry matches the dates on disk exactly.
 

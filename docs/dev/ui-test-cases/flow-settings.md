@@ -28,27 +28,30 @@ the Saved views panel is in [flow-saved-views.md](flow-saved-views.md).
 - Every panel reachable from the nav resolves — no nav item routes to a 404 or an unimplemented placeholder at M4 close.
 
 ### SET-3 · M4 · blocker · P1 P3
-**Workflow panels mirror `workflow.yaml` read-only.** Settings → Workflow → Statuses, on a tracker with six statuses.
+**Workflow panels render `workflow.yaml` faithfully and are editable.** Settings → Workflow → Statuses, on a tracker with six statuses.
+
+This case previously asserted the panels were read-only. That was an early draft superseded and never removed: SET-5, SET-6, SET-8, SET-9, SET-16, SET-17, SET-19, SET-21 and SET-34 all assume editing, and `PUT /api/workflow` plus `config/workflow-write.ts` exist to support it.
 
 - All six statuses render in file order, each showing its `label`, its `key`, and its `category` (`pending` / `active` / `completed` / `discarded`).
-- No status is presented as editable — no inline text inputs, no delete buttons.
-- The panel shows the absolute path of the file it is mirroring (`.loctt/config/workflow.yaml`) and states that changes are made by editing that YAML.
+- Exactly one status is marked as the default, and the marker is visible — it decides where new tasks land.
+- The panel shows the absolute path of the file it reflects (`.loctt/config/workflow.yaml`), so a user editing YAML directly knows where to look.
 - Editing the file in a terminal and refreshing the panel shows the new set — the panel is a lens, not a cache.
+- Edits made in the panel are written back through `PUT /api/workflow`; see SET-16/SET-19 for the remap flow when a key in use is removed.
 
 ### SET-4 · M4 · major · P3
 **Priorities, task types, and relationships each mirror their config faithfully.**
 
 - Priorities show `label`, `key`, and `value`, sorted by `value`; a tracker with two priorities renders two rows and a tracker with seven renders seven — nothing assumes a fixed count.
 - Task types show `label` and `key` with no invented semantics attached (no "epic" special-casing).
-- Relationships show forward `label`/`key`, `inverse`/`inverse_label`, and flags (`structural`, `ranked`) as explicit indicators rather than unlabelled icons.
+- Relationships show forward `label`/`key`, `inverse`/`inverse_label`, `graph` (`none` / `acyclic` / `tree`) and `ranked` as explicit indicators rather than unlabelled icons. `graph` replaced the former `structural` boolean; `symmetric` is not among these — it is `kind: symmetric`, a separate discriminator (SET-5).
 - A relationship configured with a custom key like `duplicates` appears with the user's own labels — nothing hardcodes `blocks` / `depends_on`.
 
 ### SET-5 · M4 · major · P3
-**Symmetric relationships fold to one row.** A relationship with the same forward and inverse key (e.g. `related_to`).
+**Symmetric relationships fold to one row.** A relationship declared `kind: symmetric` (e.g. `related_to`). The discriminator is the `kind` field, not an inferred same-key inverse and not a separate `symmetric` boolean — the schema rejects a symmetric relationship whose `inverse` differs from its `key`.
 
 - It renders as a single row marked symmetric, not as two rows that look like a duplicate config entry.
 - The inverse label fields are hidden or shown as "same as forward" rather than blank inputs, so the row does not read as misconfigured.
-- Where the panel exposes a symmetric checkbox (editable relationship UX), ticking it hides the inverse key/label fields in the same interaction; unticking restores them with their previous values, not blanks.
+- Where the panel exposes a symmetric checkbox (editable relationship UX), ticking it hides the inverse key/label fields in the same interaction; unticking restores them with their previous values, not blanks. The checkbox is a control over `kind` (`symmetric` vs `directional`) — it does not write a separate `symmetric` boolean, which the schema has no field for.
 
 ### SET-6 · M4 · major · P1 P8
 **Drag-reorder persists where the panel supports it.** Reordering statuses in a panel that allows it.

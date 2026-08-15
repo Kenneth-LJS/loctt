@@ -52,26 +52,41 @@ three days.
   shows the source the user typed, not the rendered HTML.
 
 ### CMT-4 · M2 · blocker · P5
-**Edit and delete are offered only on the current user's own
-comments.** As user Ken, view a task with comments from Ken and from
+**Edit and delete are offered on every comment, not only the current
+user's own.** As user Ken, view a task with comments from Ken and from
 Ana.
-- Ken's comments show edit and delete controls.
-- Ana's comments show neither.
-- Switching the active user to Ana flips which comments carry the
-  controls.
-- No control on Ana's comment is merely visually hidden while remaining
-  keyboard-reachable or clickable.
+
+This case previously asserted the opposite. It was dropped in favour of
+CMT-35: LocTT has no roles or permissions by deliberate decision (Q25),
+users switch identity freely from a menu, and `comments.ts` already
+stores an `editors` provenance array — a field that only makes sense if
+someone other than the author can edit. An ownership check would have
+been the product's only permission rule, guarding nothing.
+
+- Both Ken's and Ana's comments show edit and delete controls.
+- Switching the active user changes attribution on a subsequent edit,
+  not which controls are present.
+- The requirement is traceability, not refusal — see CMT-35 for what an
+  edit of someone else's comment must record.
 
 ### CMT-5 · M2 · major · P5
-**Editing one's own comment marks it edited.**
+**Editing a comment marks it edited.** Any comment, not only the
+current user's — CMT-4's ownership premise is gone.
 - Edit opens the raw body in place, prefilled.
 - Saving updates the body, sets `updated_at`, and sets `edited: true`.
 - The comment renders an "edited" marker with the edit time available.
+  **Which marker depends on who edited:** editing one's own comment
+  renders the plain "edited" marker; editing someone else's renders
+  the author primarily with "Edited by \<editor\>" secondary, per
+  CMT-35. The two are different renderings, not alternatives.
+- Verified by re-reading the comments file, not only the rendered list.
 - Cancelling discards changes and leaves the stored body untouched.
 - `Esc` cancels the edit.
 
 ### CMT-6 · M2 · major · P5
-**Deleting one's own comment confirms once and removes it.**
+**Deleting a comment confirms once and removes it.** Applies to any
+comment, not only the current user's — CMT-4's ownership premise is
+gone.
 - A confirmation names what's being deleted (a comment, with a preview
   or its timestamp).
 - No typed confirmation — a comment is a smaller blast radius than a
