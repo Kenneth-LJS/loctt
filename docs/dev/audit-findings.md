@@ -1,0 +1,154 @@
+# Audit findings
+
+Phase 4 of [`autonomous-plan.md`](autonomous-plan.md). Five agents, one
+slice each, ~11,000 lines of `packages/core`, read in full rather than
+skimmed.
+
+**This run was report-only.** No fix was applied — not even the
+provable-only ones the plan permits — because Phase 3 has not run and the
+plan orders the test net first. Everything below awaits triage.
+
+**81 findings.** The counts below are the agents'; the *verified* section
+is mine — I re-derived those independently before recording them, since an
+agent's finding is a claim, not a fact.
+
+| Slice | Scope | Findings |
+|---|---|---|
+| 1a | `core/task` writes — update, create, bulk, move, duplicate, io | 12 |
+| 1b | `core/task` reads — comments, relationships, traversal, history | 14 |
+| 2 | `core/git` — merge, three-way, publish-sync, reconcile | 19 |
+| 3 | `core/config` + `core/schema` | 12 |
+| 4 | `core/query` + `core/rank` | 24 |
+
+---
+
+## Verified independently
+
+I reproduced these four myself rather than taking the report. Each is
+stated with the evidence, so the next reader need not re-derive it.
+
+### `evenlySpacedRanks` emits duplicate ranks from count 649
+
+`packages/core/src/rank/lexorank.ts:209`. Executed:
+
+```
+count=  500  emitted=500  unique=500  ok
+count=  649  emitted=649  unique=631  DUPLICATES: 18
+count=  700  emitted=700  unique=680  DUPLICATES: 20
+count= 1296  emitted=1296  unique=1260  DUPLICATES: 36
+```
+
+`reorderBoardRank` calls this with every ranked task in the tracker, so a
+rebalance writes duplicate `board_rank` to disk; a later before/after drag
+resolves its anchor by `indexOf` and positions against the wrong task.
+
+**The existing test stops at 500.** It is green and cannot fail here.
+
+### The body-edit coalescing window rolls instead of being fixed
+
+`packages/core/src/task/history.ts:199` sets `timestamp: next.timestamp`,
+and `withinCoalesceWindow` then measures the following gap from that rolled
+value. The window restarts on every coalesce, with no upper bound.
+
+Executed — five saves 14 minutes apart, spanning 56 minutes:
+
+```
+resulting entries: 1
+  2026-08-15T09:56:00.000Z  before=v0 after=v5
+```
+
+Invariant Q18/D4 specifies a 15-minute window. States v1–v4 are
+unrecoverable, and the entry is stamped 09:56 while claiming the 09:00
+`before`.
+
+**None of the five coalescing tests can catch this**: each measures a
+single gap against the already-rolled timestamp. The burst test spans
+14.5 minutes, inside the window under either reading.
+
+### `assignProvisionalPrefixes` sorts on a field that does not exist
+
+`packages/core/src/git/merge.ts:283` sorts on `created_at`.
+`ProjectDefSchema` (`packages/contracts/src/projects.ts:20`) is `.strict()`
+with `id`/`name`/`prefix`/`archived`; `created_at` appears **zero** times in
+that file. So `(a.created_at ?? "")` is always `""` and the sort collapses
+to the ULID tiebreak.
+
+Executed — a project created in 2000 versus one created in 2099:
+
+```
+aaa (created 2000) : T-
+bbb (created 2099) : T2-
+```
+
+The result follows the id alphabetically, not the date. Swap the ids and
+the 2099 project wins. The documented "earlier project keeps the prefix"
+rule never fires.
+
+In practice ULIDs are time-ordered, so the outcome usually coincides with
+the intent — which is why nothing surfaced it.
+
+**All four tests at `merge.test.ts:257` pass an explicit `created_at`**,
+constructing a shape that cannot occur. They are green because their
+fixture ids sort the same way as their dates. That is a coincidence, not
+an assertion.
+
+### Unknown flags are silently ignored on every task command
+
+Found in Phase 2, verified by running the built CLI:
+
+```
+list --bogus            → exit 0, lists normally
+show T1 --bogus         → exit 0, shows normally
+archive T1 --bogus      → exit 0, archives
+delete T1 --bogus --yes → exit 0, DELETES
+```
+
+`init` rejects unknown options ("Error: unknown option --project.
+Accepted: …"), so the CLI is inconsistent with itself. A typo'd flag on an
+irreversible command is accepted and the command proceeds.
+
+This is why `tests/e2e/03-cli-full-lifecycle.test.ts:55` passes `--hard` —
+a flag `cli/reference.md:621` explicitly says does not exist — and stays
+green.
+
+---
+
+## A pattern worth naming
+
+Four findings above share one shape: **a green test whose bound, fixture,
+or measurement sits just short of the failure.**
+
+- the rank test stops at 500; duplicates start at 649
+- the coalescing tests measure one gap; the bug needs a chain
+- the prefix tests supply a field the schema forbids
+- the `--hard` test passes an argument the parser ignores
+
+`CLAUDE.md` records fourteen prior tests that encoded a bug as intended
+behaviour. These are not those — they assert *something* true. They simply
+cannot fail for the case that matters, which is harder to see and just as
+load-bearing when someone refactors underneath them.
+
+Per `CLAUDE.md`: a fix that requires editing a green test means that test
+was asserting the bug, and the commit must say so.
+
+---
+
+## Slice reports
+
+Full findings, with file:line, blast radius, size and confidence:
+
+- [`audit-slice-1a.md`](audit/audit-slice-1a.md)
+- [`audit-slice-1b.md`](audit/audit-slice-1b.md)
+- [`audit-slice-2.md`](audit/audit-slice-2.md)
+- [`audit-slice-3.md`](audit/audit-slice-3.md)
+- [`audit-slice-4.md`](audit/audit-slice-4.md)
+
+Each report also carries a "checked and found sound" section — things an
+agent nearly reported and then disproved. Those are kept deliberately, so
+a re-reader does not spend the same time reaching the same non-finding.
+
+## Not yet triaged
+
+Nothing here has been fixed or scheduled. The plan routes escalated
+findings through a human, and the auto-fixable subset waits on Phase 3's
+test net.
