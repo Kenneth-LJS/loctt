@@ -268,6 +268,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "set_project_prefix",
+            },
+            {
+              "hasDescription": true,
               "name": "switch_user",
             },
             {

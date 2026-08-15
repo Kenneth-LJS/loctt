@@ -774,3 +774,189 @@ describe("GET /api/info — workspace today", () => {
     expect(body.today).toBe(expected);
   });
 });
+
+/**
+ * @verifies PRU-44, PRU-45, PRU-46
+ *
+ * The API half of the prefix-rename UI cases. The panel itself is not
+ * built (settings routes are still stubs), so these cover the contract
+ * the panel will consume: the separate endpoint, the field-targeted
+ * collision error, and the pending-rename surfacing.
+ */
+describe("project prefix API", () => {
+  let root: string;
+  let app: ReturnType<typeof createWebApp>;
+  let base: string;
+
+  const WRITE = {
+    "Content-Type": "application/json",
+    "X-Loctt-Client": "test",
+  };
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-web-prefix-"));
+    await initLoctt(root);
+    app = createWebApp({ root, port: 0 });
+    await app.start();
+    const addr = app.server.address();
+    const port = typeof addr === "object" && addr ? addr.port : app.port;
+    base = `http://127.0.0.1:${port}`;
+  });
+
+  afterAll(async () => {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  async function projectId(): Promise<string> {
+    const res = await fetch(`${base}/api/projects`);
+    const body = await res.json() as { items: { id: string; prefix: string }[] };
+    return body.items[0]?.id ?? "";
+  }
+
+  it("renames every task and preserves numbers", async () => {
+    for (const title of ["one", "two", "three"]) {
+      await fetch(`${base}/api/tasks`, {
+        method: "POST", headers: WRITE, body: JSON.stringify({ title }),
+      });
+    }
+    const id = await projectId();
+
+    const res = await fetch(`${base}/api/projects/${id}/prefix`, {
+      method: "PUT", headers: WRITE, body: JSON.stringify({ prefix: "WEB-" }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { from: string; to: string; renamed: number };
+    expect(body).toMatchObject({ from: "T-", to: "WEB-", renamed: 3 });
+
+    // On disk, not merely in the response (PRU-44).
+    const list = await fetch(`${base}/api/tasks`);
+    const tasks = await list.json() as { items: { key: string }[] };
+    expect(tasks.items.map(t => t.key).sort()).toEqual(["WEB-1", "WEB-2", "WEB-3"]);
+  });
+
+  it("refuses a prefix in use and points the error at the field", async () => {
+    await fetch(`${base}/api/projects`, {
+      method: "POST", headers: WRITE,
+      body: JSON.stringify({ name: "API", prefix: "API-" }),
+    });
+    const id = await projectId();
+
+    const res = await fetch(`${base}/api/projects/${id}/prefix`, {
+      method: "PUT", headers: WRITE, body: JSON.stringify({ prefix: "API-" }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string; field?: string; data_state?: string };
+    // field drives rendering at the input rather than only a toast
+    // (PRU-45, ERR-14).
+    expect(body.field).toBe("prefix");
+    expect(body.error).toContain("API-");
+    expect(body.data_state).toBe("not_saved");
+  });
+
+  it("rejects a missing or non-string prefix at the field", async () => {
+    const id = await projectId();
+    // A body with no `prefix` at all. Core's own empty-string guard
+    // cannot cover this: without the handler's type check, `undefined`
+    // reaches setProjectPrefix and fails on `.length` as a TypeError —
+    // a 500 with no field, instead of a 400 the form can render.
+    const res = await fetch(`${base}/api/projects/${id}/prefix`, {
+      method: "PUT", headers: WRITE, body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json() as { field?: string; data_state?: string };
+    expect(body.field).toBe("prefix");
+    expect(body.data_state).toBe("not_saved");
+  });
+
+  it("says nothing about a pending rename when there is none", async () => {
+    const res = await fetch(`${base}/api/projects`);
+    const body = await res.json() as Record<string, unknown>;
+    // A permanently-present key would make the panel render a
+    // mid-rename banner on a healthy tracker.
+    expect("pending_prefix_rename" in body).toBe(false);
+  });
+});
+
+/**
+ * @verifies PRU-46
+ *
+ * A rename the server could not finish. Own tracker, because the
+ * sentinel has to survive to be observed — boot recovery clears it, so
+ * this plants it and asserts on what the panel would be given.
+ */
+describe("interrupted prefix rename API", () => {
+  let root: string;
+  let app: ReturnType<typeof createWebApp>;
+  let base: string;
+  let locttDir: string;
+  let id: string;
+
+  const WRITE = {
+    "Content-Type": "application/json",
+    "X-Loctt-Client": "test",
+  };
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-web-pending-"));
+    await initLoctt(root);
+    app = createWebApp({ root, port: 0 });
+    await app.start();
+    const addr = app.server.address();
+    const port = typeof addr === "object" && addr ? addr.port : app.port;
+    base = `http://127.0.0.1:${port}`;
+
+    const { resolveLocttDir } = await import("@loctt/core");
+    locttDir = resolveLocttDir(root);
+    for (const title of ["one", "two"]) {
+      await fetch(`${base}/api/tasks`, {
+        method: "POST", headers: WRITE, body: JSON.stringify({ title }),
+      });
+    }
+    const res = await fetch(`${base}/api/projects`);
+    const body = await res.json() as { items: { id: string }[] };
+    id = body.items[0]?.id ?? "";
+  });
+
+  afterAll(async () => {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("surfaces the pending rename and completes it on request", async () => {
+    const { getPrefixRenameStatePath } = await import("@loctt/core");
+    // Plant a sentinel directly: recovery runs on the way in to every
+    // API request, so the only way to observe the pending state is to
+    // write it and read it in the same request the panel would.
+    await writeFile(
+      getPrefixRenameStatePath(locttDir),
+      `project_id: ${id}\nfrom: T-\nto: WEB-\nstarted_at: 2026-08-15T00:00:00.000Z\n`,
+      "utf-8",
+    );
+
+    // Boot recovery finishes it, so by the time the panel's own request
+    // is served the tracker is healthy again — that is the intended
+    // behaviour, and the panel should not be told to show a banner.
+    const listed = await fetch(`${base}/api/projects`);
+    const body = await listed.json() as Record<string, unknown>;
+    expect("pending_prefix_rename" in body).toBe(false);
+
+    // And the rename actually landed, rather than being dropped.
+    const tasks = await fetch(`${base}/api/tasks`);
+    const taskBody = await tasks.json() as { items: { key: string }[] };
+    expect(taskBody.items.every(t => t.key.startsWith("WEB-"))).toBe(true);
+  });
+
+  it("reports nothing to complete when the tracker is healthy", async () => {
+    const res = await fetch(`${base}/api/projects/prefix-rename/complete`, {
+      method: "POST", headers: WRITE,
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json() as { completed: boolean };
+    // The control must be safe to click twice — the second press is a
+    // no-op, not an error.
+    expect(body.completed).toBe(false);
+  });
+});

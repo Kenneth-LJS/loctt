@@ -349,6 +349,17 @@ describe("MCP executeTool", () => {
       expect(result.content[0]?.text).toMatch(/confirm/i);
     });
 
+    it("set_project_prefix without confirm is rejected", async () => {
+      // Not a delete, but it rewrites every task in the project — the
+      // same class of blast radius the gate exists for.
+      const result = await executeTool(root, "set_project_prefix", {
+        project: "Tasks",
+        prefix: "WEB-",
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/confirm/i);
+    });
+
     it("delete_label without confirm is rejected", async () => {
       await executeTool(root, "create_label", { name: "Blocker" });
       const result = await executeTool(root, "delete_label", { label: "Blocker" });
@@ -382,6 +393,64 @@ describe("MCP executeTool", () => {
       const result = await executeTool(root, "delete_user", { ref: "Alice" });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toMatch(/confirm/i);
+    });
+  });
+
+  /**
+   * @verifies PRU-C10, PRU-C11
+   *
+   * The MCP half of set-prefix. Core's rewrite is covered in
+   * packages/core; these assert what an agent sees — the reported
+   * count, and that a collision is refused without writing.
+   */
+  describe("set_project_prefix", () => {
+    it("renames every task and reports how many", async () => {
+      await executeTool(root, "create_task", { title: "one" });
+      await executeTool(root, "create_task", { title: "two" });
+
+      const result = await executeTool(root, "set_project_prefix", {
+        project: "Tasks",
+        prefix: "WEB-",
+        confirm: true,
+      });
+
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text ?? "{}") as {
+        from: string; to: string; renamed: number;
+      };
+      expect(payload).toMatchObject({ from: "T-", to: "WEB-", renamed: 2 });
+
+      // The agent must be able to act on the new keys immediately.
+      const list = await executeTool(root, "list_tasks", {});
+      expect(list.content[0]?.text).toContain("WEB-1");
+      expect(list.content[0]?.text).not.toContain("T-1");
+    });
+
+    it("keeps the old key resolvable so an agent's stale reference works", async () => {
+      await executeTool(root, "create_task", { title: "one" });
+      await executeTool(root, "set_project_prefix", {
+        project: "Tasks", prefix: "WEB-", confirm: true,
+      });
+
+      // An agent holding T-1 from earlier in its context must not get a
+      // not-found — that is what key_history is for.
+      const got = await executeTool(root, "get_task", { ref: "T-1" });
+      expect(got.isError).toBeUndefined();
+      expect(got.content[0]?.text).toContain("WEB-1");
+    });
+
+    it("refuses a prefix another project holds, renaming nothing", async () => {
+      await executeTool(root, "create_task", { title: "one" });
+      await executeTool(root, "create_project", { name: "API", prefix: "API-" });
+
+      const result = await executeTool(root, "set_project_prefix", {
+        project: "Tasks", prefix: "API-", confirm: true,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("API-");
+      const list = await executeTool(root, "list_tasks", {});
+      expect(list.content[0]?.text).toContain("T-1");
     });
   });
 

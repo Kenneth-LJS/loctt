@@ -138,8 +138,15 @@ loctt project set-prefix Tasks WEB-
 ```
 
 Prefixes must be unique across projects, so a prefix already in use is
-rejected. Because this rewrites every task in the project it asks for
-confirmation; `--yes` skips the prompt.
+rejected — before anything is written, so a refused change leaves the
+tracker byte-identical. Setting a project's own current prefix is a no-op
+that succeeds, not a collision.
+
+Because this rewrites every task in the project it asks for confirmation,
+stating how many tasks will be renamed; `--yes` skips the prompt. In a
+non-interactive shell without `--yes` it exits `2` (usage) rather than
+renaming unasked — so a script that forgot the flag fails loudly instead
+of appearing to succeed.
 
 Because the rewrite spans every task in the project, it records what it is
 doing before it starts. If it is interrupted — the process is killed, the

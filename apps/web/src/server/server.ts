@@ -18,6 +18,7 @@ import type {
   ListTasksRequest,
   MigrateResponse,
   MigrationPlanResponse,
+  PrefixRenameState,
   RecentTaskResponse,
   TaskResponse,
   TrackerInfoResponse,
@@ -57,6 +58,7 @@ import {
   bulkMoveTasksToProject,
   bulkSetFields,
   BurndownError,
+  completeInterruptedPrefixRename,
   ConfigRouterError,
   countTasksByReferences,
   createLabel,
@@ -125,6 +127,7 @@ import {
   pushRecent,
   readBurndownSeries,
   readHistory,
+  readPrefixRenameState,
   readRecents,
   recoverInterruptedPrefixRename,
   reorderBoardRank,
@@ -144,6 +147,7 @@ import {
   setConfigValue,
   setDefaultProject,
   setField,
+  setProjectPrefix,
   SprintError,
   sprintProgress,
   switchCurrentUser,
@@ -670,6 +674,7 @@ function requireValidRef(
 }
 const TASK_REF_RE = /^\/api\/tasks\/([^/]+)$/;
 const PROJECT_KEY_RE = /^\/api\/projects\/([^/]+)$/;
+const PROJECT_PREFIX_RE = /^\/api\/projects\/([^/]+)\/prefix$/;
 const LABEL_KEY_RE = /^\/api\/labels\/([^/]+)$/;
 const MILESTONE_KEY_RE = /^\/api\/milestones\/([^/]+)$/;
 const SPRINT_KEY_RE = /^\/api\/sprints\/([^/]+)$/;
@@ -1022,10 +1027,51 @@ export function createWebApp(options: WebAppOptions) {
     const page = parsePagination(url, res);
     if (!page) return;
     const cfg = await loadProjectsConfig(locttDir);
+    // A sentinel surviving to here means boot recovery could not finish
+    // it. The panel has to say so rather than render a healthy tracker
+    // whose task keys may be half-migrated (PRU-46).
+    let pendingPrefixRename: PrefixRenameState | undefined;
+    try {
+      pendingPrefixRename = await readPrefixRenameState(locttDir);
+    } catch {
+      // An unreadable sentinel is itself reported by doctor; it must not
+      // take down the projects list, which is where the user would go
+      // to understand the problem.
+    }
     json(res, {
       ...paginated(cfg.projects, page.offset, page.limit),
       default: cfg.default ?? null,
+      ...(pendingPrefixRename !== undefined
+        ? { pending_prefix_rename: pendingPrefixRename }
+        : {}),
     });
+  };
+
+  /**
+   * Completes a prefix rename that boot recovery could not finish, so
+   * the user has a control in the panel and is not sent to the CLI
+   * (PRU-46).
+   */
+  const handleCompletePrefixRename: RouteHandler = async ({ res, locttDir }) => {
+    try {
+      const result = await completeInterruptedPrefixRename(locttDir);
+      if (!result) {
+        json(res, { completed: false });
+        return;
+      }
+      json(res, {
+        completed: true,
+        from: result.from,
+        to: result.to,
+        renamed: result.renamed,
+      });
+    } catch (err) {
+      if (err instanceof ProjectError) {
+        error(res, err.message, 400, REJECTED_WRITE);
+        return;
+      }
+      throw err;
+    }
   };
 
   const handleCreateProject: RouteHandler = async ({ req, res, locttDir }) => {
@@ -1077,6 +1123,42 @@ export function createWebApp(options: WebAppOptions) {
     } catch (err) {
       if (err instanceof ProjectError) {
         error(res, err.message, 400, { ...REJECTED_WRITE, field: "name" });
+        return;
+      }
+      throw err;
+    }
+  };
+
+  /**
+   * Prefix changes get their own endpoint rather than riding along with
+   * `PUT /api/projects/:id`. The name field saves on blur; a prefix
+   * change rewrites every task in the project, so it must be a
+   * deliberate, separately-confirmed request (PRU-44) — not something a
+   * stray blur can trigger.
+   */
+  const handleSetProjectPrefix: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const id = captures[0] ?? "";
+    const request = await parseJsonBody<{ prefix?: string }>(req, res);
+    if (typeof request.prefix !== "string" || request.prefix.length === 0) {
+      error(res, `A prefix is required.`, 400, {
+        ...REJECTED_WRITE,
+        field: "prefix",
+      });
+      return;
+    }
+    try {
+      const result = await setProjectPrefix(locttDir, id, request.prefix);
+      json(res, {
+        id,
+        from: result.from,
+        to: result.to,
+        renamed: result.renamed,
+      });
+    } catch (err) {
+      if (err instanceof ProjectError) {
+        // field: "prefix" so the client renders this at the input that
+        // caused it rather than only in a toast (PRU-45, ERR-14).
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "prefix" });
         return;
       }
       throw err;
@@ -2904,6 +2986,8 @@ export function createWebApp(options: WebAppOptions) {
     { method: "POST", pattern: "/api/projects", handler: handleCreateProject },
     { method: "PUT", pattern: PROJECT_KEY_RE, handler: handleUpdateProject },
     { method: "DELETE", pattern: PROJECT_KEY_RE, handler: handleDeleteProject },
+    { method: "PUT", pattern: PROJECT_PREFIX_RE, handler: handleSetProjectPrefix },
+    { method: "POST", pattern: "/api/projects/prefix-rename/complete", handler: handleCompletePrefixRename },
     { method: "GET", pattern: "/api/labels", handler: handleListLabels },
     { method: "POST", pattern: "/api/labels", handler: handleCreateLabel },
     { method: "PUT", pattern: LABEL_KEY_RE, handler: handleUpdateLabel },
