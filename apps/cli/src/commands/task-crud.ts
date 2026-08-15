@@ -11,6 +11,7 @@ import {
   loadAllTasks,
   loadArchivedGuardConfigs,
   loadOptionalConfigs,
+  loadProjectsConfig,
   loadState,
   lookupTask,
   moveTaskToProject,
@@ -18,6 +19,7 @@ import {
   readTaskBody,
   resolveLocttDir,
   resolveProjectIdForUser,
+  resolveProjectIdFromInput,
   saveState,
   setField,
   unsetField,
@@ -91,11 +93,25 @@ export async function list(args: string[], root: string): Promise<void> {
     }
   }
 
-  // `--project <key>` is a structured filter; passing it as
-  // an option keeps user-supplied project keys away from the
-  // query parser so values containing operators or spaces
-  // can't break parsing.
-  const projectFilter = getArg(args, "--project");
+  // `--project <name|id>` is a structured filter; passing it as an option
+  // keeps user-supplied values away from the query parser so ones
+  // containing operators or spaces can't break parsing.
+  //
+  // Resolve it to an id rather than forwarding the raw string: tasks
+  // reference their project by ULID (P-2), so a name could never match
+  // and the command reported "No tasks found." with exit 0 — identical
+  // to a project that genuinely has no tasks, and to one that does not
+  // exist at all. `resolveProjectIdFromInput` is the id-or-name
+  // primitive, and unlike `resolveProjectIdForUser` it applies no
+  // defaulting: an absent filter means every project, not the default one.
+  const projectArg = getArg(args, "--project");
+  let projectFilter: string | undefined;
+  if (projectArg !== undefined) {
+    const projectsConfig = await loadProjectsConfig(locttDir);
+    projectFilter = resolveProjectIdFromInput(projectsConfig, projectArg, {
+      includeArchived: hasFlag(args, "--archived"),
+    });
+  }
   const baseQuery = getArg(args, "--query");
 
   const view = getArg(args, "--view");
@@ -188,7 +204,17 @@ export async function duplicate(args: string[], root: string): Promise<void> {
   const { workflowConfig } = await loadOptionalConfigs(locttDir);
   const archivedGuard = await loadArchivedGuardConfigs(locttDir);
   const title = getArg(args, "--title");
-  const project = getArg(args, "--project");
+  // Resolve a name to an id before handing it to core (P-3). Forwarding
+  // the raw string put a name into the slot `allocateKey` expects an id
+  // in, so `--project Backend` failed with `no key allocation state for
+  // entity type "Backend"` — an allocator internal that named neither
+  // the flag nor the remedy, and that a nonexistent project produced
+  // byte-identically. `create` and `move` have always resolved first.
+  const projectArg = getArg(args, "--project");
+  const project =
+    projectArg === undefined
+      ? undefined
+      : resolveProjectIdFromInput(await loadProjectsConfig(locttDir), projectArg);
 
   const created = await withStateLock(locttDir, async () => {
     const state = await loadState(locttDir);
