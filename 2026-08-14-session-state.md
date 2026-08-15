@@ -47,7 +47,7 @@ detail lives.
   `docs/dev/surface-test-cases/` (65 CLI+MCP cases in 10 files).
 - **Audits:** `FEATURE-AUDIT.md`, `DOCS-AUDIT.md`, `PROPOSED-UI-CASES.md`.
 
-### Known defect in the above
+### Known defect in the above — ✅ FIXED (`1a2b77d`)
 
 `docs/user/common/query-language.md` — I documented
 `relationship.blocks = T-10` and
@@ -711,14 +711,14 @@ offer reinitialize.
 `undici`. **None from TipTap**, which was installed clean. Noted so the
 count is not mistaken for fallout from this session.
 
-### 1. `TaskResponse` carries resolved relationships
+### 1. `TaskResponse` carries resolved relationships — ✅ DONE (`e376634`)
 **Blocked by:** nothing. **Blocks:** B14, and the UI relationships panel.
 `handleGetTask` builds the full show model — including `resolveRelationships`,
 which resolves targets to current keys and flags missing ones — then
 discards it. `TaskResponse` (`contracts/service.ts:97-107`) has no
 relationships field, so the documented Relationships panel is unbuildable.
 
-### 2. CW-4 — bulk operations
+### 2. CW-4 — bulk operations — ✅ DONE (`b0ef10a`)
 **Blocked by:** nothing. **Size:** large.
 Core has `bulkSetFields` and `bulkArchive` only, and **no HTTP bulk route
 exists at all** (`grep -c bulk apps/web/src/server/server.ts` → 0), so even
@@ -731,7 +731,7 @@ those reach no surface. Decided: build in full.
   `bulk_op_id` (which *does* have a producer — `task/bulk.ts:95`,
   `task/move.ts:139`; the earlier claim that it had none was wrong).
 
-### 3. C1 — migration reachable from UI and MCP
+### 3. C1 — migration reachable from UI and MCP — ✅ DONE (`09ede18`)
 **Blocked by:** nothing. **Size:** medium.
 Decided: no longer CLI-only.
 - `POST /api/migrate` + `MigrateResponse` contract + `useMigrate` hook
@@ -742,12 +742,12 @@ Decided: no longer CLI-only.
 - Update the now-wrong "migration is CLI-only" comment at
   `packages/contracts/src/service.ts:117-119`
 
-### 4. D2 — global search
+### 4. D2 — global search — ✅ DONE (`216698b`)
 **Blocked by:** nothing for the API half; the header box needs the shell.
 Decided: build now, not milestone-gated. `text ~ q` DSL, no full-text
 index. The app-shell header spec currently has no search affordance.
 
-### 5. B5 — lossy-content guardrail
+### 5. B5 — lossy-content guardrail — ✅ DONE, except the banner (`83c5b82`)
 **Blocked by:** nothing. **Size:** medium. **This is a data-loss risk.**
 Spec already exists at `docs/dev/markdown-extensions.md` §Lossy-content
 guardrail; never implemented. TipTap drops any node not in its registered
@@ -783,14 +783,14 @@ every queryable field including custom fields and `has_link(...)`.
 - **B14**: relationship rows show each target's live status. Needs item 1
   first.
 
-### 8. Mention parsing
+### 8. Mention parsing — ✅ DONE (`eba92ee`)
 **Blocked by:** nothing. `markdown-extensions.md:33` specifies
 `@user:<uuid>`; `MENTION_RE` (`task/comments.ts:51`) is `/@([\w\-.]+)/g` —
 no `:`, so every mention collapses to the literal token `user`, which is
 then stored as if it were a user id. Also fires inside email addresses and
 code spans. Doc now flags this as a known gap.
 
-### 9. Comments reach no surface
+### 9. Comments reach no surface — ✅ DONE (`67b3800`)
 **Blocked by:** nothing. **Size:** large.
 `packages/core/src/task/comments.ts` implements post/list/edit/delete with
 **zero production callers** — no CLI command, no MCP tool, no HTTP route.
@@ -906,7 +906,14 @@ Playwright.
 | `docs/dev/invariants.md` | Rules a change must not break, with "what breaks if violated". |
 | `docs/dev/surface-test-cases/` | 65 CLI+MCP test cases, 10 files, mirroring `ui-test-cases/` filenames. |
 
-### Pre-existing failures (not caused by this session)
+### Pre-existing failures — ✅ ALL FIXED
+
+All four were stale fixtures, not defects. See `8619235` (two `blocks`
+cycle tests asserting a premise the shipped config never held) and
+`d7e240c` (a status renamed before this session, and an e2e seeding two
+statuses that do not exist).
+
+Original list, for the record:
 
 Verified against a clean `b4f0fbf` worktree — these fail there too:
 
