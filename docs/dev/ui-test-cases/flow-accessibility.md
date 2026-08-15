@@ -20,11 +20,14 @@ minority of these.
 ### A.1 Shortcuts
 
 ### A11Y-1 · M4 · major · P8
-**`c` and `n` both open the create-task modal.** From `/list` with no field focused, press `c`; close it; press `n`.
+**`n` opens the create-task modal.** From `/list` with no field focused, press `n`.
 
-- Both keys open the same create-task modal.
+- `n` opens the create-task modal.
 - The modal opens with focus in the title field, so typing begins immediately.
-- Neither key fires while a text input, textarea, or rich-text editor has focus — typing the letter `c` into a task title must insert `c`.
+- `n` does not fire while a text input, textarea, or rich-text editor has focus — typing the letter `n` into a task title must insert `n`.
+- **`c` is not bound.** Pressing `c` with no field focused does nothing;
+  it must not open the modal. One binding, one action — a second alias
+  is a key that cannot then be used for anything else.
 
 ### A11Y-2 · M4 · major · P8
 **`/` focuses the search box.** From any view, press `/`.
@@ -92,7 +95,7 @@ minority of these.
 - The result count change is announced (A11Y-25).
 
 ### A11Y-11 · M4 · blocker · P8
-**Creating a task is fully keyboard-operable end to end.** Press `c`, fill every field, submit, all without a pointer.
+**Creating a task is fully keyboard-operable end to end.** Press `n`, fill every field, submit, all without a pointer.
 
 - Every field including the label multi-select, the date pickers, and the body editor is reachable and editable by keyboard.
 - The date picker allows typed date entry — a calendar grid that can only be clicked is a blocker.

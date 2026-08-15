@@ -426,7 +426,7 @@ first-run, and the v1 polish (keyboard, errors, a11y) is done.
 - **Tests**: burndown route shape; metadata edits persist
 
 ### M4.8 · Polish + v1 cut ⬜
-- Keyboard shortcuts (c, /, g l/b/t, ?, Esc, [, t per C.10.22)
+- Keyboard shortcuts (n, /, g l/b/t, ?, Esc, [, t per C.10.22)
 - Toast provider + top-level error boundary + API error toasts
 - Loading + empty + error states swept across every view
 - a11y: focus traps in modals, aria-labels on icon buttons
