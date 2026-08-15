@@ -85,9 +85,79 @@ const routeTree = rootRoute.addChildren([
   initRoute,
 ]);
 
+/**
+ * Search params are serialized as flat `key=value` pairs, with arrays
+ * comma-joined — `?status=in_progress,done`, per LST-9.
+ *
+ * TanStack's default stringifier JSON-encodes anything non-primitive,
+ * which turns a one-value filter into `?status=%5B%22done%22%5D`. That
+ * round-trips through its own parser, so nothing breaks — but it is not
+ * the documented format, it is unpleasant to share, and `listSearch.ts`
+ * already defines the CSV form its `csv` schema parses. Wiring it here
+ * rather than per-route keeps one format across the app.
+ *
+ * Parsing stays permissive: values arrive as plain strings and each
+ * route's `validateSearch` splits and coerces them. A value that
+ * happens to contain a comma survives, because splitting is the
+ * schema's job, not the router's.
+ */
+function stringifySearch(search: Record<string, unknown>): string {
+  const sp = new URLSearchParams();
+  for (const [key, value] of Object.entries(search)) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      if (value.length === 0) continue;
+      sp.set(key, value.map(String).join(","));
+    } else if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+      sp.set(key, String(value));
+    } else {
+      // Objects have no useful flat form. JSON-encode rather than emit
+      // "[object Object]", so an unexpected shape is at least
+      // recoverable by the parser below.
+      sp.set(key, JSON.stringify(value));
+    }
+  }
+  // URLSearchParams percent-encodes commas (`%2C`), which round-trips
+  // correctly but defeats the point: LST-9 asks for a URL a human can
+  // read and share. A comma is legal unencoded in a query string
+  // (RFC 3986 sub-delims), so restore it. Only the separator is
+  // touched — a comma *inside* a value was encoded by the same call and
+  // is indistinguishable here, which is why values containing commas
+  // are not a supported filter shape.
+  const qs = sp.toString().replace(/%2C/g, ",");
+  return qs.length > 0 ? `?${qs}` : "";
+}
+
+function parseSearch(searchStr: string): Record<string, unknown> {
+  const sp = new URLSearchParams(
+    searchStr.startsWith("?") ? searchStr.slice(1) : searchStr,
+  );
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of sp.entries()) {
+    // A JSON-encoded value from a previously-shared URL still parses,
+    // so old links keep working.
+    if (value.startsWith("[") || value.startsWith("{")) {
+      try {
+        out[key] = JSON.parse(value);
+        continue;
+      } catch {
+        // Not JSON after all — fall through and keep the raw string.
+      }
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
 export const router = createRouter({
   routeTree,
   defaultPreload: "intent",
+  stringifySearch,
+  parseSearch,
 });
 
 // Augment the router-wide type so `useNavigate`, `<Link>`, etc. infer

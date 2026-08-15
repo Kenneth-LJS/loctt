@@ -111,6 +111,29 @@ describe("listSearchSchema", () => {
   });
 });
 
+describe("csv de-duplication", () => {
+  // @verifies LST-34
+  it("collapses repeated values in a CSV param", () => {
+    const parsed = listSearchSchema.parse({ status: "done,done,in_progress" });
+    // One entry per distinct value: the chip row renders one chip per
+    // entry, so a repeat here is a duplicate chip with a duplicate key.
+    expect(parsed.status).toEqual(["done", "in_progress"]);
+  });
+
+  // @verifies LST-34
+  it("collapses repeats arriving as an array", () => {
+    const parsed = listSearchSchema.parse({ labels: ["a", "a", "b"] });
+    expect(parsed.labels).toEqual(["a", "b"]);
+  });
+
+  it("preserves the first-seen order", () => {
+    const parsed = listSearchSchema.parse({ status: "in_progress,done,in_progress" });
+    // Order is what the chip row and the URL both show; re-sorting
+    // would churn the URL on every interaction.
+    expect(parsed.status).toEqual(["in_progress", "done"]);
+  });
+});
+
 describe("serializeListSearch", () => {
   it("emits a string-keyed record suitable for URLSearchParams", () => {
     const out = serializeListSearch({
