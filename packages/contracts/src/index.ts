@@ -62,6 +62,7 @@ export type {
   DoctorCheckResponse,
   LinkRequest,
   ListTasksRequest,
+  LossyConstructResponse,
   MigrateResponse,
   MigrationPlanResponse,
   MigrationStepResponse,

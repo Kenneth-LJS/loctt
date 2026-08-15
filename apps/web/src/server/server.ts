@@ -77,6 +77,7 @@ import {
   exportTasksToCSV,
   exportTasksToJSON,
   filterForExport,
+  findLossyConstructs,
   getAttachmentPath,
   getCurrentUser,
   getGitStatus,
@@ -1779,6 +1780,13 @@ export function createWebApp(options: WebAppOptions) {
         name: a.name,
         size: a.size,
         ...(a.mime !== undefined ? { mime: a.mime } : {}),
+      })),
+      // Detected server-side so every client applies one rule rather
+      // than each editor reimplementing it (B5).
+      lossyConstructs: findLossyConstructs(model.task.body).map(c => ({
+        kind: c.kind,
+        line: c.line,
+        excerpt: c.excerpt,
       })),
       // buildShowModel already resolved these; the response used to
       // drop them, leaving the Relationships panel with no data.

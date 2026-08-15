@@ -126,6 +126,17 @@ export interface TaskResponse {
   readonly body: string;
   readonly attachments: readonly AttachmentResponse[];
   /**
+   * Constructs in the body that the WYSIWYG editor cannot represent
+   * (B5). Empty when the body is safe to edit visually.
+   *
+   * Computed server-side so every client applies the same rule. TipTap
+   * drops nodes its schema does not recognise, so an editor that opens
+   * one of these bodies visually and saves it deletes the content
+   * silently — the user sees a successful save and loses a footnote.
+   */
+  readonly lossyConstructs: readonly LossyConstructResponse[];
+
+  /**
    * Relationship edges with targets resolved to their current key,
    * title and status.
    *
@@ -267,4 +278,13 @@ export interface MigrateResponse {
    * so this is the user's rollback path.
    */
   readonly backupPath?: string;
+}
+
+
+/** A body construct the visual editor cannot represent (B5). */
+export interface LossyConstructResponse {
+  readonly kind: "footnote" | "raw_html";
+  /** 1-based line number. */
+  readonly line: number;
+  readonly excerpt: string;
 }
