@@ -71,7 +71,11 @@ const csv = z
   .transform(v => {
     if (v === undefined) return undefined;
     const arr = Array.isArray(v) ? v : v.split(",");
-    const trimmed = arr.map(s => s.trim()).filter(Boolean);
+    // De-duplicated here rather than at each consumer (LST-34). The
+    // server tolerates repeats — `status in (done, done)` matches each
+    // task once — so the result set looks correct while the chip row
+    // renders the value twice, with a duplicate React key.
+    const trimmed = [...new Set(arr.map(s => s.trim()).filter(Boolean))];
     return trimmed.length > 0 ? trimmed : undefined;
   });
 
@@ -124,6 +128,15 @@ export type ListSearch = z.infer<typeof listSearchSchema>;
  *
  * The schema's input type accepts comma strings *or* arrays; round-
  * tripping uses arrays in memory and CSV in the URL.
+ */
+/**
+ * @deprecated Not wired to anything. The router's own `stringifySearch`
+ * (router/index.tsx) is what actually produces list URLs; this
+ * duplicates that logic and returns a record rather than a query
+ * string. It had tests and no caller while the real URLs were being
+ * JSON-encoded — which is how the CSV format in LST-9 drifted
+ * unnoticed. Kept only so its tests keep documenting the intended
+ * shape; delete it once nothing references it.
  */
 export function serializeListSearch(search: Partial<ListSearch>): Record<string, string> {
   const out: Record<string, string> = {};

@@ -81,6 +81,55 @@ test.describe("LST — list view", () => {
   });
 });
 
+test.describe("LST — filter URL format", () => {
+  // @verifies LST-9
+  test("LST-9: a filter writes stored keys, comma separated", async ({ page, tracker }) => {
+    await tracker.seed([
+      { title: "Doing it", fields: { status: "in_progress" } },
+      { title: "Finished", fields: { status: "done" } },
+      { title: "Waiting" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+
+    await page.getByRole("button", { name: "Filter Status" }).click();
+    await page.getByRole("menuitemcheckbox", { name: /In progress/ }).click();
+    await page.getByRole("menuitemcheckbox", { name: "Done" }).click();
+
+    // Stored keys, comma separated — not a JSON array, and not labels.
+    await expect(page).toHaveURL(/[?&]status=in_progress,done(&|$)/);
+
+    // And the filter actually narrows the set.
+    const rows = page.getByRole("row").filter({ hasNot: page.getByRole("columnheader") });
+    await expect(rows).toHaveCount(2);
+  });
+
+  // @verifies LST-34
+  test("LST-34: duplicates in a CSV param are de-duplicated", async ({ page, tracker }) => {
+    await tracker.seed([
+      { title: "Done one", fields: { status: "done" } },
+      { title: "Doing it", fields: { status: "in_progress" } },
+      { title: "Waiting" },
+    ]);
+
+    await page.goto(`${tracker.baseURL}/list?status=done,done,in_progress`);
+
+    // The chip row shows two statuses, not three. This is the client's
+    // own job: the server de-duplicates naturally (`status in (done,
+    // done, ...)` matches each task once), so a row-count assertion
+    // alone would pass even with the duplicate still in the URL state.
+    await expect(page.getByRole("button", { name: /^Remove Status/ })).toHaveCount(2);
+
+    // Each matching task appears once, not twice.
+    const rows = page.getByRole("row").filter({ hasNot: page.getByRole("columnheader") });
+    await expect(rows).toHaveCount(2);
+
+    // Interacting with the dropdown must not re-append the duplicate.
+    await page.getByRole("button", { name: "Filter Status" }).click();
+    await page.getByRole("menuitemcheckbox", { name: /Backlog/ }).click();
+    await expect(page).not.toHaveURL(/done,done/);
+  });
+});
+
 test.describe("LST — pagination", () => {
   /**
    * 60 tasks against a page size of 50: enough for exactly two pages,
