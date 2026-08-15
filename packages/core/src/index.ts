@@ -279,6 +279,7 @@ export type {
   MoveTaskResult,
 } from "./task/index.js";
 export {
+  buildMentionResolver,
   CommentError,
   deleteComment,
   editComment,

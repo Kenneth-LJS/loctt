@@ -386,3 +386,38 @@ export async function deleteComment(opts: DeleteCommentOptions): Promise<void> {
   });
   await recordCommentEvent(opts.locttDir, opts.taskId, "comment_deleted", removed, opts.actor);
 }
+
+/**
+ * Builds the mention resolver `postComment` / `editComment` expect,
+ * from a user list loaded once by the caller.
+ *
+ * The hook is synchronous by design — it runs once per mention inside
+ * the comments lock — so the user list has to be read up front. Doing
+ * it here rather than in each surface means the CLI, MCP and HTTP all
+ * resolve `@user:<id>` the same way instead of three near-identical
+ * lookups drifting apart.
+ *
+ * Accepts an id or an exact name. Deliberately no prefix matching,
+ * unlike `resolveUserRef`: a mention is written once and read by
+ * everyone, so an ambiguous prefix silently resolving to whoever
+ * happens to sort first is worse than not resolving at all. An
+ * unresolved mention is dropped, which is the documented best-effort
+ * behaviour — a typo must not fail the post.
+ */
+export function buildMentionResolver(
+  users: readonly { readonly id: string; readonly name: string }[],
+): (token: string) => string | undefined {
+  const byId = new Map<string, string>();
+  const byName = new Map<string, string[]>();
+  for (const u of users) {
+    byId.set(u.id, u.id);
+    byName.set(u.name, [...(byName.get(u.name) ?? []), u.id]);
+  }
+  return (token: string) => {
+    const byIdHit = byId.get(token);
+    if (byIdHit !== undefined) return byIdHit;
+    const named = byName.get(token);
+    // Exactly one match, or nothing: an ambiguous name is not resolved.
+    return named !== undefined && named.length === 1 ? named[0] : undefined;
+  };
+}

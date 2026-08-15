@@ -57,6 +57,7 @@ export type {
   AttachmentResponse,
   AttachResultResponse,
   BulkResponse,
+  CommentResponse,
   ConfigResponse,
   CreateTaskRequest,
   DoctorCheckResponse,
@@ -85,8 +86,10 @@ export {
   BulkMoveRequestSchema,
   BulkSetRequestSchema,
   CreateViewRequestSchema,
+  EditCommentRequestSchema,
   EditViewRequestSchema,
   InitRequestSchema,
+  PostCommentRequestSchema,
   PutWorkflowRequestSchema,
 } from "./service-schemas.js";
 export type { SprintDef, SprintsConfig, SprintState } from "./sprints.js";

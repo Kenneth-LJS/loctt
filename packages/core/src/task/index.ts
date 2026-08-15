@@ -16,6 +16,7 @@ export type {
   PostCommentOptions,
 } from "./comments.js";
 export {
+  buildMentionResolver,
   CommentError,
   deleteComment,
   editComment,

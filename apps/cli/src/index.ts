@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { requireSupportedSchema, resolveLocttDir } from "@loctt/core";
 
 import * as calendarCmd from "./commands/calendar.js";
+import * as commentsCmd from "./commands/comments.js";
 import * as configCmd from "./commands/config.js";
 import * as doctorCmd from "./commands/doctor.js";
 import * as gitCmd from "./commands/git.js";
@@ -78,6 +79,10 @@ export async function main(): Promise<void> {
       case "unset":     await runCommand(() => taskCrudCmd.unset(args, root));     break;
       case "body":      await runCommand(() => taskCrudCmd.body(args, root));      break;
       case "log":       await runCommand(() => taskCrudCmd.log(args, root));       break;
+      case "comment":        await runCommand(() => commentsCmd.add(args, root));    break;
+      case "comments":       await runCommand(() => commentsCmd.list(args, root));   break;
+      case "comment-edit":   await runCommand(() => commentsCmd.edit(args, root));   break;
+      case "comment-delete": await runCommand(() => commentsCmd.remove(args, root)); break;
       case "delete":    await runCommand(() => taskCrudCmd.deleteCmd(args, root)); break;
       case "archive":   await runCommand(() => taskArchiveCmd.archive(args, root));   break;
       case "unarchive": await runCommand(() => taskArchiveCmd.unarchive(args, root)); break;

@@ -288,3 +288,21 @@ export interface LossyConstructResponse {
   readonly line: number;
   readonly excerpt: string;
 }
+
+/** A comment as returned by the API. */
+export interface CommentResponse {
+  readonly id: string;
+  readonly author: string;
+  readonly body: string;
+  readonly created_at: string;
+  readonly updated_at?: string;
+  readonly edited?: true;
+  readonly mentions?: readonly string[];
+  /**
+   * Users other than `author` who have edited this comment. Anyone may
+   * edit anyone's comment — LocTT has no roles — so this is the
+   * provenance trail rather than a permission record. Renderers show
+   * the author primarily and these as "Edited by X".
+   */
+  readonly editors?: readonly string[];
+}

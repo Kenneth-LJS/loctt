@@ -156,6 +156,22 @@ Allowlist matches `update_task`: writable built-ins and declared custom fields. 
 
 Returns: `Updated <KEY>: unset <field>`.
 
+### Comment tools
+
+| Tool | Parameters | Description |
+|---|---|---|
+| `list_comments` | `ref` | A task's comments in creation order, with author, body, timestamps, resolved mentions, and `editors` when someone other than the author edited |
+| `post_comment` | `ref`, `body` | Adds a comment as the current user |
+| `edit_comment` | `ref`, `comment_id`, `body` | Replaces a body; preserves the author and appends the editor |
+| `delete_comment` | `ref`, `comment_id` | Removes a comment; recorded in the activity log |
+
+Mentions written as `@user:<id>` resolve against the user list; an
+unresolvable mention is dropped rather than failing the post.
+
+**No ownership checks.** Anyone may edit or delete anyone's comment —
+LocTT has no roles or permissions. `editors` is a provenance trail, not
+a permission record.
+
 ### `migrate_schema`
 
 Upgrade the tracker's on-disk schema to the version this build

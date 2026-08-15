@@ -398,6 +398,27 @@ and does **not** abort the rest; the command exits non-zero when any
 task failed, so a script cannot mistake a partial success for a
 complete one. Batches are capped at 500 tasks.
 
+### `loctt comment` / `loctt comments`
+
+Add and read task comments.
+
+```
+loctt comment <task> <body>
+loctt comments <task>
+loctt comment-edit <task> <comment-id> <body>
+loctt comment-delete <task> <comment-id>
+```
+
+Mentions written as `@user:<id>` are resolved against the user list and
+recorded on the comment. An unresolvable mention is dropped rather than
+failing the post — a typo should not lose the comment.
+
+**Anyone may edit or delete anyone's comment.** LocTT has no roles or
+permissions and users switch identity freely, so an ownership check
+would be the product's only permission rule while protecting nothing.
+Editing someone else's comment preserves the original author and
+records the editor, so the change is traceable rather than refused.
+
 ### `loctt unset`
 
 Remove a field from one task, or from several at once.
