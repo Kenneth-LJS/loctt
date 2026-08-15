@@ -246,7 +246,8 @@ the Saved views panel is in [flow-saved-views.md](flow-saved-views.md).
 **Migrate is offered for `outdated` only.** The banner also fires for `future` and `unknown`.
 
 - For `future` (`.schema-version` is greater than the app's), there is no Migrate button — the banner says the tracker was written by a newer LocTT and the action is to upgrade LocTT.
-- For `unknown`/missing, the banner says the tracker may be uninitialized or legacy and points at `loctt init` or `loctt migrate` rather than offering an in-app migrate.
+- For `missing`, the banner says the tracker is unrecognized and points at `loctt migrate` (SHL-34). It does **not** offer `loctt init` or reinitialize — a `.loctt/` holding tasks but no version file is damaged, not empty.
+- For `unknown` (a version present but unreadable, SHL-38), the banner reports the unreadable value rather than guessing a remedy.
 - Offering Migrate on those kinds would risk a downgrade write; the button's absence is the assertion.
 
 ### SET-31 · M4 · blocker · P4 P7

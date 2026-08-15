@@ -14,12 +14,18 @@ import type { SchemaStatusResponse } from "@loctt/contracts";
  *    the app, not migrate (you can't downgrade a schema).
  *  - `unknown`  — couldn't read/parse the version; show the message.
  *
- * `current` and `missing` render nothing: current is the happy path,
- * and missing means an uninitialized tracker, which the bootstrap
- * routes to the init wizard rather than a banner.
+ * `missing` — no `.schema-version` at all. Shown as a banner pointing at
+ * `loctt migrate`, and deliberately NOT offering reinitialize: a
+ * `.loctt/` that holds tasks but no version file is a *damaged*
+ * tracker, not an empty one, so routing it to an init wizard risks
+ * destroying real data. Only `current` renders nothing.
+ *
+ * This previously returned null for `missing` on the theory that the
+ * bootstrap routed it to `/init` — which is a stub, so nothing routed
+ * anywhere and the case below was unreachable.
  */
 export function SchemaBanner({ status }: { status: SchemaStatusResponse }) {
-  if (status.kind === "current" || status.kind === "missing") return null;
+  if (status.kind === "current") return null;
 
   const { tone, title, detail } = describe(status);
 
@@ -70,10 +76,19 @@ function describe(status: SchemaStatusResponse): {
         title: "Schema version unreadable.",
         detail: status.message,
       };
-    case "current":
     case "missing":
-      // Unreachable: the caller returns null for these before calling
-      // describe(). Kept in the switch for exhaustiveness.
+      return {
+        tone: "danger",
+        title: "Not a recognized tracker.",
+        detail:
+          "The data directory has no `.schema-version`, so its layout can't be "
+          + "confirmed. Run `loctt migrate` to stamp and upgrade it. Do not "
+          + "reinitialize — a directory holding tasks is a damaged tracker, not "
+          + "an empty one, and reinitializing would risk the data.",
+      };
+    case "current":
+      // Unreachable: the caller returns null for `current` before
+      // calling describe(). Kept in the switch for exhaustiveness.
       throw new Error(`describe() called for non-banner kind: ${status.kind}`);
   }
 }

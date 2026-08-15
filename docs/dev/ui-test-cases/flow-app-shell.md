@@ -108,7 +108,7 @@ config changing underneath a live session is
 **The schema banner appears above the shell when the schema is not `current`.** Serve a tracker whose `.schema-version` is behind.
 
 - The banner renders above the header/shell, spanning full width, and is visible without scrolling on every route.
-- The rest of the app remains navigable — the banner informs, it does not blank the page.
+- The rest of the app remains navigable — the banner informs, it does not blank the page. **Navigable is not readable:** the server's schema guard returns 409 for every `/api/` route while the mismatch stands, so each view renders its shell and then an explained error rather than data. A user can move around and read the explanation; they cannot see or change tasks.
 - On a `current` tracker the banner is absent entirely and reclaims no vertical space.
 
 ### SHL-14 · M1 · blocker · P8
