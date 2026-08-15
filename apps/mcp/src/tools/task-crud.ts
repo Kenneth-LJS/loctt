@@ -59,6 +59,10 @@ export const TOOLS: readonly ToolDef[] = [
         relationships: model.relationships.map(r => ({
           type: r.type,
           target: r.missing ? r.target : r.resolvedKey ?? r.target,
+          // Title and status save the agent a get_task per edge to
+          // learn what a linked task actually is.
+          ...(r.resolvedTitle !== undefined ? { title: r.resolvedTitle } : {}),
+          ...(r.resolvedStatus !== undefined ? { status: r.resolvedStatus } : {}),
           ...(r.missing ? { missing: true } : {}),
         })),
         attachments: model.attachments.map(a => ({

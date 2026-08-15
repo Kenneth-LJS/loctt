@@ -1723,6 +1723,16 @@ export function createWebApp(options: WebAppOptions) {
         size: a.size,
         ...(a.mime !== undefined ? { mime: a.mime } : {}),
       })),
+      // buildShowModel already resolved these; the response used to
+      // drop them, leaving the Relationships panel with no data.
+      relationships: model.relationships.map(r => ({
+        type: r.type,
+        target: r.target,
+        ...(r.resolvedKey !== undefined ? { resolvedKey: r.resolvedKey } : {}),
+        ...(r.resolvedTitle !== undefined ? { resolvedTitle: r.resolvedTitle } : {}),
+        ...(r.resolvedStatus !== undefined ? { resolvedStatus: r.resolvedStatus } : {}),
+        missing: r.missing,
+      })),
     };
     json(res, response);
   };

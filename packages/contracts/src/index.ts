@@ -62,6 +62,7 @@ export type {
   LinkRequest,
   ListTasksRequest,
   RecentTaskResponse,
+  ResolvedRelationshipResponse,
   SchemaStatusResponse,
   TaskResponse,
   TrackerInfoResponse,

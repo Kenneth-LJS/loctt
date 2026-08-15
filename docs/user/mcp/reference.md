@@ -78,7 +78,7 @@ Get a task by key or ID, optionally including the markdown body.
 | `ref` | string | yes | Task key (e.g. `T-1`) or ID |
 | `include_body` | boolean | no | Include markdown body (default `true`) |
 
-Returns JSON: all frontmatter fields, plus `relationships` (each as `{type, target, missing?}` — `target` is rendered as a user-facing key like `T-2` when resolvable; deleted targets carry `missing: true` and retain the raw ID), `attachments` (each as `{name, size, mime?}` — `mime` is derived from the filename extension and is omitted when the extension is unknown; consumers should treat its absence as `application/octet-stream`), and `body` when requested. The `relationships` key is omitted when empty.
+Returns JSON: all frontmatter fields, plus `relationships` (each as `{type, target, title?, status?, missing?}` — `target` is rendered as a user-facing key like `T-2` when resolvable, and `title`/`status` carry the target's live values so you need not call `get_task` per edge; deleted targets carry `missing: true`, retain the raw ID, and omit `title`/`status`), `attachments` (each as `{name, size, mime?}` — `mime` is derived from the filename extension and is omitted when the extension is unknown; consumers should treat its absence as `application/octet-stream`), and `body` when requested. The `relationships` key is omitted when empty.
 
 ### `list_tasks`
 

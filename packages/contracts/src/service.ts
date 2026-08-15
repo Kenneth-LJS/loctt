@@ -93,6 +93,27 @@ export interface AttachmentResponse {
   readonly mime?: string;
 }
 
+/**
+ * A relationship edge with its target resolved for display.
+ *
+ * `target` stays the stored ULID; `resolvedKey` is the target's current
+ * user-facing key. `missing` marks an edge whose target no longer
+ * exists — the id is kept so the UI can say what is dangling rather
+ * than dropping the row.
+ *
+ * Title and status are resolved per request rather than denormalized
+ * onto the edge: a copy stored on the edge would go stale the moment
+ * the target changed.
+ */
+export interface ResolvedRelationshipResponse {
+  readonly type: string;
+  readonly target: string;
+  readonly resolvedKey?: string;
+  readonly resolvedTitle?: string;
+  readonly resolvedStatus?: string;
+  readonly missing: boolean;
+}
+
 /** Task response for API. */
 export interface TaskResponse {
   /**
@@ -104,6 +125,16 @@ export interface TaskResponse {
   readonly frontmatter: TaskFrontmatterPublic;
   readonly body: string;
   readonly attachments: readonly AttachmentResponse[];
+  /**
+   * Relationship edges with targets resolved to their current key,
+   * title and status.
+   *
+   * `handleGetTask` already built this via `resolveRelationships` and
+   * then discarded it, so the documented Relationships panel had no
+   * data to render and B14 (each row showing its target's live status)
+   * was unbuildable.
+   */
+  readonly relationships: readonly ResolvedRelationshipResponse[];
 }
 
 /** Config response for API. */

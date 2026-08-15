@@ -31,6 +31,17 @@ export interface ResolvedRelationship {
   readonly target: string;
   readonly resolvedKey?: string;
   readonly missing: boolean;
+  /**
+   * The target's live title and status, carried so a relationships
+   * panel can show what a linked task actually is without issuing one
+   * request per edge. Absent when `missing` is true.
+   *
+   * Read at resolve time rather than stored on the edge: a copy on the
+   * edge would go stale the moment the target changed, which is the
+   * kind of drift P1 exists to prevent.
+   */
+  readonly resolvedTitle?: string;
+  readonly resolvedStatus?: string;
 }
 
 /** A structured task summary for display. */
@@ -93,7 +104,15 @@ export async function resolveRelationships(
     rels.map(async r => {
       try {
         const target = await lookupById(locttDir, r.target);
-        return { type: r.type, target: r.target, resolvedKey: target.frontmatter.key, missing: false };
+        const status = target.frontmatter.status;
+        return {
+          type: r.type,
+          target: r.target,
+          resolvedKey: target.frontmatter.key,
+          resolvedTitle: target.frontmatter.title,
+          ...(status !== undefined ? { resolvedStatus: status } : {}),
+          missing: false,
+        };
       } catch (err) {
         // Only treat genuinely-missing tasks as "missing"; let real I/O
         // errors (permission, disk) propagate so the caller sees them.

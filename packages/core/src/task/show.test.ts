@@ -157,6 +157,10 @@ describe("task show model", () => {
       type: "blocks",
       target: "target-id",
       resolvedKey: "T-2",
+      // Title and status come along so a relationships panel can show
+      // what a linked task is without a request per edge. Resolved per
+      // call rather than stored on the edge, which would go stale.
+      resolvedTitle: "Target",
       missing: false,
     });
   });
