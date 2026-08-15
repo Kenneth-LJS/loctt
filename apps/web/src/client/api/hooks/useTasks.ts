@@ -1,5 +1,5 @@
 import type { TaskFrontmatterPublic } from "@loctt/contracts";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
 import type { ListSearch } from "../../router/listSearch.ts";
 import { apiClient } from "../client.ts";
@@ -68,10 +68,15 @@ export function tasksParamsFromSearch(search: Partial<ListSearch>): TasksQueryPa
   };
 }
 
-function buildQueryString(params: TasksQueryParams): string {
+/**
+ * `offset` overrides the page-derived one. The infinite feed asks for
+ * an absolute offset per page; the single-page hook derives it from
+ * `page`. Both end up as the same `?limit&offset` the server reads.
+ */
+function buildQueryString(params: TasksQueryParams & { offset?: number }): string {
   const limit = params.limit ?? DEFAULT_LIST_LIMIT;
   const page = params.page ?? 1;
-  const offset = (page - 1) * limit;
+  const offset = params.offset ?? (page - 1) * limit;
   const sp = new URLSearchParams();
   sp.set("limit", String(limit));
   sp.set("offset", String(offset));
@@ -100,6 +105,51 @@ export function useTasks(params: TasksQueryParams) {
     queryKey: ["tasks", params],
     queryFn: ({ signal }) =>
       apiClient.get<TasksPage>(`/api/tasks?${buildQueryString(params)}`, { signal }),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * The list view's paginated feed. "Load more" appends rows in place
+ * rather than replacing the page, so this accumulates pages under one
+ * query key.
+ *
+ * Why infinite rather than a page counter in the URL: LST-13 wants
+ * rows 51–100 *appended* to 1–50, and LST-35 wants a page-2 response
+ * that lost a race to never appear. Both fall out of the query key —
+ * changing a filter builds a different key, so the superseded request
+ * resolves into the old key's cache where nothing reads it. A manual
+ * `[...rows, ...next]` merge has to re-derive that, and gets it wrong
+ * the moment two responses overlap.
+ *
+ * `page` in the URL is deliberately *not* part of this key. It seeds
+ * how many pages to restore (LST-17) and is rewritten as the user
+ * loads more; folding it into the key would make every "Load more" a
+ * cache miss and discard the rows already on screen.
+ */
+export function useTasksFeed(params: TasksQueryParams) {
+  const limit = params.limit ?? DEFAULT_LIST_LIMIT;
+  // Strip `page`: it seeds the initial page count, not the identity of
+  // the feed. Two views differing only by how far they have scrolled
+  // are the same feed.
+  const { page: _page, ...feedParams } = params;
+
+  return useInfiniteQuery({
+    queryKey: ["tasks-feed", feedParams],
+    initialPageParam: 0,
+    queryFn: ({ pageParam, signal }) =>
+      apiClient.get<TasksPage>(
+        `/api/tasks?${buildQueryString({ ...feedParams, limit, offset: pageParam })}`,
+        { signal },
+      ),
+    getNextPageParam: (last: TasksPage) => {
+      const loaded = last.offset + last.items.length;
+      // A short page means the server had nothing more, even if `total`
+      // disagrees — trusting `total` alone would loop forever against a
+      // tracker mutating underneath us.
+      if (last.items.length === 0) return undefined;
+      return loaded < last.total ? loaded : undefined;
+    },
     placeholderData: keepPreviousData,
   });
 }
