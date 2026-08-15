@@ -189,9 +189,10 @@ and click into any task (which routes to a stub for now).
 > `createView` rejects a bad query, and the route surfaces it as a
 > field-level error on `query`). Both re-verified, so the mark is ✅.
 
-### M1.4 · List view — pagination + bulk-bar + export ⬜
-- Pagination using `total` from `/api/tasks`; "Showing 1–50 of 128 ·
-  Load more" pattern
+### M1.4 · List view — pagination + bulk-bar + export 🔵
+- ✅ Pagination using `total` from `/api/tasks`; "Showing 1–50 of 128 ·
+  Load more" pattern. Covers LST-13, LST-17, LST-30, LST-35, LST-43,
+  LST-49 — Playwright specs in `tests/ui/flow-list.spec.ts`
 - Row checkboxes; select-all in header
 - Sticky bulk-bar on ≥1 selection: Set status / priority / assignee /
   milestone / sprint, Move to project (CW-13 bulk), Archive,
@@ -201,8 +202,8 @@ and click into any task (which routes to a stub for now).
 - **Tests**: bulk endpoints (mocked core); selection state + bar
   visibility; export route content-type + filename
 - **E2E**: open /list → filter by High priority → export CSV → verify
-  download. *(Needs Playwright, which is not installed — see the stack
-  note. `npm run test:e2e` will not cover this.)*
+  download. Playwright is now installed (`npm run test:ui`); the
+  bulk/export specs still need writing.
 
 ### 🚦 Milestone 1 review
 - App shell matches the mockup; list view fully functional —

@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 
 import {
   useLabels,
@@ -7,7 +7,7 @@ import {
   useUsers,
 } from "../api/hooks/sidebarData.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
-import { tasksParamsFromSearch, useTasks } from "../api/hooks/useTasks.ts";
+import { tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import {
   AssigneeCell,
@@ -22,6 +22,7 @@ import { resolveColumns } from "./columns.ts";
 import { FilterBar } from "./FilterBar.tsx";
 import { isOverdue, relativeTime, shortDate } from "./format.ts";
 import { buildLookups } from "./lookups.ts";
+import { Pagination } from "./Pagination.tsx";
 
 /**
  * The list view's table (M1.2). Reads URL search state for sort +
@@ -35,7 +36,7 @@ export function ListView() {
   const navigate = useNavigate({ from: "/list" });
 
   const params = tasksParamsFromSearch(search);
-  const tasks = useTasks(params);
+  const tasks = useTasksFeed(params);
 
   const projects = useProjects();
   const users = useUsers();
@@ -77,7 +78,54 @@ export function ListView() {
   // with the same query run through the CLI. Falls back to the UTC
   // date only while `/api/info` is still in flight.
   const today = info.data?.today ?? new Date(now).toISOString().slice(0, 10);
-  const items = tasks.data?.items ?? [];
+
+  // Flatten the accumulated pages. Rows 51–100 append to 1–50 rather
+  // than replacing them (LST-13); a page that lost a race to a filter
+  // change resolved into a different query key and is not here.
+  const items = useMemo(
+    () => (tasks.data?.pages ?? []).flatMap(p => p.items),
+    [tasks.data],
+  );
+  const pages = tasks.data?.pages ?? [];
+  // Newest page's total. A filter change cannot be what makes these
+  // differ — it builds a new query key, so the feed restarts with one
+  // page — but a task created or deleted between page 1 and page 3
+  // does, and then page 1's total is simply out of date. Not covered by
+  // a spec: reproducing it needs a write landing between two paged
+  // reads of the same feed, which the fixture cannot currently stage.
+  const total = pages[pages.length - 1]?.total ?? 0;
+
+  // Restore the page count from the URL, then keep the URL in step as
+  // the user loads more, so the view is reproducible in a new tab
+  // (LST-17). Guarded on the count actually changing: writing the same
+  // value would loop through navigate → render → effect.
+  const loadedPages = pages.length;
+  const restoreTo = search.page ?? 1;
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = tasks;
+  useEffect(() => {
+    // Destructured above rather than depending on `tasks`: the query
+    // object is a fresh reference every render, so depending on it
+    // would re-run this on every render including its own.
+    if (
+      loadedPages > 0 &&
+      loadedPages < restoreTo &&
+      hasNextPage &&
+      !isFetchingNextPage
+    ) {
+      void fetchNextPage();
+    }
+  }, [loadedPages, restoreTo, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  useEffect(() => {
+    if (loadedPages === 0) return;
+    const urlPage = search.page ?? 1;
+    if (loadedPages > urlPage) {
+      void navigate({
+        search: prev => ({ ...prev, page: loadedPages }),
+        replace: true,
+      });
+    }
+  }, [loadedPages, search.page, navigate]);
 
   return (
     <div className="flex flex-col gap-4 p-6">
@@ -144,6 +192,18 @@ export function ListView() {
           </tbody>
         </table>
       </div>
+      <Pagination
+        loaded={items.length}
+        total={total}
+        hasMore={tasks.hasNextPage}
+        isLoadingMore={tasks.isFetchingNextPage}
+        error={
+          tasks.isFetchNextPageError
+            ? "Could not load more tasks."
+            : undefined
+        }
+        onLoadMore={() => void tasks.fetchNextPage()}
+      />
     </div>
   );
 }
