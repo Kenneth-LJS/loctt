@@ -398,14 +398,29 @@ export interface SetFieldsOptions {
   readonly archivedGuard?: ArchivedGuardConfigs;
 }
 
-export async function setFields(opts: SetFieldsOptions): Promise<Task> {
-  if (opts.changes.length === 0) {
-    throw new TaskUpdateError("setFields requires at least one change");
+/**
+ * Validates a change set for {@link setFields} and
+ * {@link bulkSetFields}.
+ *
+ * Shared so the two cannot drift on what may be written. They already
+ * had: bulk's own copy omitted the required-field check, so a bulk
+ * caller could overwrite `updated_at` directly — a field the
+ * single-task API refuses precisely because it is stamped
+ * automatically.
+ *
+ * `label` names the caller so the error reads correctly on both paths.
+ */
+export function assertChangesWritable(
+  changes: readonly SetFieldsEntry[],
+  label: string,
+): void {
+  if (changes.length === 0) {
+    throw new TaskUpdateError(`${label} requires at least one change`);
   }
   const seen = new Set<string>();
-  for (const c of opts.changes) {
+  for (const c of changes) {
     if (seen.has(c.field)) {
-      throw new TaskUpdateError(`duplicate field in setFields: "${c.field}"`);
+      throw new TaskUpdateError(`duplicate field in ${label}: "${c.field}"`);
     }
     seen.add(c.field);
     if (USER_IMMUTABLE_FIELDS.has(c.field)) {
@@ -416,17 +431,48 @@ export async function setFields(opts: SetFieldsOptions): Promise<Task> {
         `cannot set auto-managed field "${c.field}" directly`,
       );
     }
-    if (c.value === undefined && (c.field === "title" || c.field === "updated_at")) {
+    if (c.field === "updated_at") {
+      throw new TaskUpdateError(
+        `cannot set "updated_at" directly; it is stamped on every write`,
+      );
+    }
+    if (c.value === undefined && c.field === "title") {
       throw new TaskUpdateError(`cannot unset required field "${c.field}"`);
     }
   }
+}
+
+export async function setFields(opts: SetFieldsOptions): Promise<Task> {
+  assertChangesWritable(opts.changes, "setFields");
   return withStateLock(opts.locttDir, () => setFieldsLocked(opts));
 }
 
-async function setFieldsLocked(opts: SetFieldsOptions): Promise<Task> {
+/**
+ * The write itself, assuming the state lock is already held and the
+ * change set already validated.
+ *
+ * Exported for {@link bulkSetFields}, which holds one lock across a
+ * whole batch and therefore cannot call `setFields` (withStateLock is
+ * not re-entrant). Sharing this rather than reimplementing it is what
+ * keeps the two paths honest — they previously diverged on unsetting
+ * a missing custom field, on writing `updated_at`, and on how history
+ * entries were built.
+ *
+ * `now` and `today` are injected so a batch stamps one timestamp and
+ * one date across every task, rather than splitting a run that
+ * straddles midnight. `bulkOpId`, when given, is attached to every
+ * history entry so an activity feed can group them as one action.
+ */
+export async function setFieldsLocked(
+  opts: SetFieldsOptions & {
+    readonly now?: string;
+    readonly today?: string;
+    readonly bulkOpId?: string;
+  },
+): Promise<Task> {
   const { locttDir, taskId, changes, workflowConfig, archivedGuard } = opts;
   const task = await readTask(locttDir, taskId);
-  const now = new Date().toISOString();
+  const now = opts.now ?? new Date().toISOString();
   const patch = toMutable(task.frontmatter);
   let statusChanged = false;
   let newStatus: unknown = task.frontmatter.status;
@@ -473,7 +519,7 @@ async function setFieldsLocked(opts: SetFieldsOptions): Promise<Task> {
     const wasCompleted = isCompletedStatus(task.frontmatter.status, workflowConfig);
     const isNowCompleted = isCompletedStatus(newStatus, workflowConfig);
     if (isNowCompleted && !wasCompleted) {
-      patch["completed_date"] = await todayDateString(opts.locttDir);
+      patch["completed_date"] = opts.today ?? await todayDateString(opts.locttDir);
     } else if (!isNowCompleted && wasCompleted) {
       delete patch["completed_date"];
     }
@@ -504,8 +550,12 @@ async function setFieldsLocked(opts: SetFieldsOptions): Promise<Task> {
       : buildSetFieldHistory(task.frontmatter, field, value, now);
     historyEntries.push(...entries);
   }
-  if (historyEntries.length > 0) {
-    await appendHistory(locttDir, taskId, historyEntries);
+  const bulkOpId = opts.bulkOpId;
+  const stamped: HistoryEntry[] = bulkOpId === undefined
+    ? historyEntries
+    : historyEntries.map(e => ({ ...e, bulk_op_id: bulkOpId }));
+  if (stamped.length > 0) {
+    await appendHistory(locttDir, taskId, stamped);
   }
 
   return updatedTask;
