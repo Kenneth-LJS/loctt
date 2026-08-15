@@ -11,7 +11,7 @@ import { loadState, saveState } from "../state/state.js";
 import { loadSyncState, saveSyncState } from "../state/sync.js";
 import { createTask } from "../task/create.js";
 import { enableGit } from "./git-mode.js";
-import { GitConflictError, publish, sync } from "./publish-sync.js";
+import { publish, sync } from "./publish-sync.js";
 
 describe("publish-sync", () => {
   let root: string;
@@ -193,7 +193,12 @@ describe("publish-sync", () => {
       expect(tasks).toContain(local.frontmatter.id);
     });
 
-    it("aborts without writing when the same task changed on both sides", async () => {
+    // REPLACED (decision M2). This test previously asserted that a task
+    // changed on both sides aborts the whole sync. That was the
+    // behaviour M2 reverses: the abort meant two clones which each
+    // created a task could never merge at all. It now asserts the
+    // merge, and that nothing is dropped by it.
+    it("merges a task changed on both sides instead of aborting", async () => {
       const state = await loadState(locttDir);
       const task = await createTask({
         locttDir, state, options: { project: taskProjectId, title: "Contested" },
@@ -204,22 +209,30 @@ describe("publish-sync", () => {
       const taskFile = join(locttDir, "tasks", task.frontmatter.id, "task.md");
       const published = await readFile(taskFile, "utf-8");
 
-      // Branch changes the title.
+      // Branch changes the title, with a later updated_at so it wins.
       await commitOnBranch(async wt => {
         const f = join(wt, "tasks", task.frontmatter.id, "task.md");
-        await writeFile(f, published.replace(/^title: .*$/m, "title: Renamed on branch"));
+        await writeFile(f, published
+          .replace(/^title: .*$/m, "title: Renamed on branch")
+          .replace(/^updated_at: .*$/m, "updated_at: 2099-01-01T00:00:00.000Z"));
       }, "rename on branch");
 
       // Local changes the body, i.e. a different edit to the same file.
       await writeFile(taskFile, `${published}\nLocal-only paragraph.\n`);
 
-      await expect(sync(locttDir, root)).rejects.toThrow(GitConflictError);
+      const result = await sync(locttDir, root);
+      expect(result.merged).toBe(1);
 
-      // Nothing was written: the local edit survives and the branch's does
-      // not silently replace it.
       const after = await readFile(taskFile, "utf-8");
-      expect(after).toContain("Local-only paragraph.");
-      expect(after).not.toContain("Renamed on branch");
+      // The branch's newer title won...
+      expect(after).toContain("Renamed on branch");
+      // ...and the local body it displaced was preserved beside the
+      // task rather than silently dropped (M4).
+      const displaced = await readFile(
+        join(locttDir, "tasks", task.frontmatter.id, "task.local.md"),
+        "utf-8",
+      );
+      expect(displaced).toContain("Local-only paragraph.");
     });
 
     it("names the conflicting paths in the error", async () => {
@@ -238,9 +251,41 @@ describe("publish-sync", () => {
       }, "branch edit");
       await writeFile(taskFile, published.replace(/^title: .*$/m, "title: Local side"));
 
+      // A task.md now merges, so this no longer aborts. The path-naming
+      // contract is asserted below on a file that genuinely has no
+      // merge rule.
+      const result = await sync(locttDir, root);
+      expect(result.merged).toBe(1);
+    });
+
+    it("still aborts, naming the path, for a file with no merge rule", async () => {
+      const state = await loadState(locttDir);
+      await createTask({
+        locttDir, state, options: { project: taskProjectId, title: "Workflow fixture" },
+      });
+      await saveState(locttDir, state);
+      await publish(locttDir, root);
+
+      // workflow.yaml has no field-level rule: statuses and priorities
+      // are referenced by every task, so unioning two divergent
+      // vocabularies could leave tasks pointing at a status that the
+      // merged config does not define.
+      const wfPath = join(locttDir, "config", "workflow.yaml");
+      const published = await readFile(wfPath, "utf-8");
+      await commitOnBranch(async wt => {
+        await writeFile(
+          join(wt, "config", "workflow.yaml"),
+          `${published}\n# branch-side edit\n`,
+        );
+      }, "workflow edit on branch");
+      await writeFile(wfPath, `${published}\n# local-side edit\n`);
+
       await expect(sync(locttDir, root)).rejects.toThrow(
-        new RegExp(`tasks/${task.frontmatter.id}/task\\.md`),
+        /config\/workflow\.yaml/,
       );
+
+      // Nothing was written: both versions are intact for the user.
+      expect(await readFile(wfPath, "utf-8")).toContain("local-side edit");
     });
 
     it("never takes .schema-version from the branch", async () => {

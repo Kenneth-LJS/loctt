@@ -69,13 +69,18 @@ export async function rebuildKeyIndex(locttDir: string): Promise<KeyIndex> {
   const tasks = await loadAllTasks(locttDir);
   const entries: Record<string, string> = {};
 
+  // Historical keys first, live keys second, so a live key always wins.
+  // After a two-tracker merge one task can hold `T-1` while another
+  // carries `T-1` in its history — writing them in one pass lets the
+  // historical entry shadow the live one, and `loctt show T-1` then
+  // resolves to the wrong task.
+  for (const task of tasks) {
+    for (const oldKey of task.frontmatter.key_history ?? []) {
+      entries[oldKey] = task.frontmatter.id;
+    }
+  }
   for (const task of tasks) {
     entries[task.frontmatter.key] = task.frontmatter.id;
-    if (task.frontmatter.key_history) {
-      for (const oldKey of task.frontmatter.key_history) {
-        entries[oldKey] = task.frontmatter.id;
-      }
-    }
   }
 
   const index: KeyIndex = { entries };

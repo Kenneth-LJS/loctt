@@ -28,53 +28,33 @@ Cases: ERR-11, ERR-12 in
 
 ### History records that something happened, not what it was
 
-Only `field_change`, `custom_field_change`, and the link/attachment
-kinds record content. These record a timestamp and nothing else:
+**Resolved 2026-08-15** (M3). `created` now carries the initial
+frontmatter and body, `body_edited` carries before/after, and the comment
+kinds carry their text — including `comment_deleted`, which previously
+hard-deleted with no record anywhere.
 
-| Kind | Missing |
-|---|---|
-| `created` | The initial frontmatter and body |
-| `body_edited` | The body, before or after — `task/io.ts` appends the kind alone |
-| `comment_added` | The comment text (`meta` carries only id and author) |
-| `comment_edited` | Both old and new text |
-| `comment_deleted` | The deleted text — a hard delete with no record anywhere |
-
-So history cannot reconstruct a prior state, which makes "read the
-history and put it back" false for bodies and comments. `comment_deleted`
-is the sharpest: the text is unrecoverable by any means.
-
-Decided as **M3** in [decisions.md](decisions.md); not built.
+This was the prerequisite for M2: "a lost merge race is recoverable from
+history" is only true if history records what was lost.
 
 ### Two clones that both create a task cannot sync at all
 
-Sync aborts when any file changed on both sides since the last sync.
-Two clones that each create a task both bump `state.yaml`, so sync stops
-there — before task files are compared. Reproduced: the second clone to
-sync gets `sync aborted: 3 file(s) changed both locally and on the
-branch`, naming `projects.yaml`, `queries.yaml` and `state.yaml`.
+**Resolved 2026-08-15.** Field-level merging is built
+(`git/merge.ts`, `git/resolve-conflicts.ts`, and the normalise pass in
+`publish-sync.ts`), implementing M1–M4 plus the per-file-type rules.
 
-Nothing is lost — the abort is the safe behaviour `planSync` was built
-for after four reproduced data-loss paths. But the merge never happens.
+Two clones that each create a task now merge: both tasks survive, the
+second project takes a provisional prefix (`T-` → `T2-`) so keys stay
+unambiguous, and `rekeyCollisions` is finally called. Pinned by
+`tests/integration/git/with-remote.test.ts`.
 
-This is why `rekeyCollisions` has no caller: there is no point in the
-sync path where a merged task set exists for it to scan. **Wiring it up
-alone would produce a function that still never fires.** What is needed
-first is field-level merging — `state.yaml` counters, relationships and
-disjoint fields merging rather than conflicting. The merge helpers
-(`mergeRelationships`, `mergeKeyHistory`) exist and are unit-tested;
-nothing calls them either.
-
-Decided as **M1**–**M4** in [decisions.md](decisions.md); not built.
+Files with no merge rule — `workflow.yaml` most notably — still abort,
+naming the path.
 
 ### `rekeyCollisions` is also broken
 
-Separately from having no caller, it cannot work as written.
-`reconcile.ts:43` reads `state.keys["task"]`, but keys are allocated per
-project under the project's ULID — so the lookup returns `undefined` and
-the loop's `continue` silently rekeys nothing.
-
-Its unit tests pass because they build fixtures in the pre-migration
-shape (`keys: { task: … }`), which no real tracker has had since the
-key→id migration. Same failure mode as the fourteen tests the
-2026-08-14 session found: green, thorough, and encoding a world that no
-longer exists.
+**Resolved 2026-08-15.** It read `state.keys["task"]` while keys are
+allocated per project under the project's ULID, so the lookup returned
+`undefined` and the loop silently rekeyed nothing. It now allocates from
+`task.frontmatter.project`, and its fixtures were rebuilt in the
+post-migration shape — the old ones encoded a world that had not existed
+since the key→id migration.
