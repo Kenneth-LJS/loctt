@@ -219,29 +219,35 @@ loctt user delete alex --remap-to bo
 `loctt label <subcommand>` manages labels (free-form tags).
 
 ```
-loctt label list [--all]
-loctt label create <key> [--label <label>] [--color <hex>]
-loctt label edit <key> [--label <label>] [--color <hex|->]
-loctt label archive <key>
-loctt label unarchive <key>
-loctt label delete <key> [--remap-to <other>] [--yes]
+loctt label list [--all] [--ids]
+loctt label create <name> [--color <hex>]
+loctt label edit <name|id> [--name <new>] [--color <hex|->]
+loctt label archive <name|id>
+loctt label unarchive <name|id>
+loctt label delete <name|id> [--remap-to <other>] [--yes]
 ```
 
-`edit --color -` clears an existing color.
+Labels are identified by a generated ULID `id` and a mutable, non-unique
+`name`. There is no user-authored key — refer to a label by name, or by id
+when two share a name. `--ids` prints ids alongside names.
+
+`edit --color -` clears an existing color. `edit --name` renames; the
+positional argument selects which label to rename.
 
 `archive` is the reversible (soft) variant.
 
-`delete` permanently removes the label. Without `--remap-to`, the key is
+`delete` permanently removes the label. Without `--remap-to`, it is
 dropped from every task that has it; with `--remap-to <other>`, it's replaced.
 Always prompts for confirmation; pass `--yes` to skip the prompt.
 
 Examples:
 
 ```
-loctt label create blocker --label "Blocker" --color "#cc0000"
-loctt label edit blocker --color -
-loctt label archive blocker          # soft, reversible
-loctt label delete blocker --remap-to high-priority --yes
+loctt label create "Blocker" --color "#cc0000"
+loctt label edit "Blocker" --color -
+loctt label edit "Blocker" --name "Blocked"
+loctt label archive "Blocker"        # soft, reversible
+loctt label delete "Blocker" --remap-to "High priority" --yes
 ```
 
 ## Milestones
@@ -282,10 +288,10 @@ remaps it to `--remap-to <other>`). Always prompts for confirmation; pass
 Examples:
 
 ```
-loctt milestone create v1 --label "Version 1.0" --target-date 2026-06-30
-loctt milestone edit v1 --target-date -
-loctt milestone archive v0           # soft, reversible
-loctt milestone delete v0 --remap-to v1 --yes
+loctt milestone create "Version 1.0" --target-date 2026-06-30
+loctt milestone edit "Version 1.0" --target-date -
+loctt milestone archive "Version 0.9"   # soft, reversible
+loctt milestone delete "Version 0.9" --remap-to "Version 1.0" --yes
 ```
 
 ## Sprints
@@ -293,15 +299,20 @@ loctt milestone delete v0 --remap-to v1 --yes
 `loctt sprint <subcommand>` manages sprints.
 
 ```
-loctt sprint list [--all]
-loctt sprint create <key> --start <YYYY-MM-DD> --end <YYYY-MM-DD> [--state <active|completed|future>] [--label <l>] [--goal <g>]
-loctt sprint edit <key> [--label <l>] [--start <d>] [--end <d>] [--state <s>] [--goal <g|->] [--force]
-loctt sprint archive <key>
-loctt sprint unarchive <key>
-loctt sprint delete <key> [--remap-to <other>] [--yes]
+loctt sprint list [--all] [--ids]
+loctt sprint create <name> --start <YYYY-MM-DD> --end <YYYY-MM-DD> [--state <active|completed|future>] [--goal <g>]
+loctt sprint edit <name|id> [--name <new>] [--start <d>] [--end <d>] [--state <s>] [--goal <g|->] [--force]
+loctt sprint archive <name|id>
+loctt sprint unarchive <name|id>
+loctt sprint delete <name|id> [--remap-to <other>] [--yes]
 ```
 
-`create --state` defaults to `future`. `edit --goal -` clears the sprint goal.
+Sprints are identified by a generated ULID `id` and a mutable, non-unique
+`name`. There is no user-authored key — refer to a sprint by name, or by id
+when two share a name.
+
+`create --state` defaults to `future`. `edit --goal -` clears the sprint
+goal. `edit --name` renames; the positional argument selects which sprint.
 
 `edit --force` is required to re-open a completed sprint (move it from
 `completed` back to `active` or `future`).
@@ -315,9 +326,9 @@ to skip.
 Examples:
 
 ```
-loctt sprint create s24 --start 2026-05-01 --end 2026-05-14 --state active --goal "Ship login flow"
-loctt sprint edit s24 --state completed
-loctt sprint edit s24 --state active --force
+loctt sprint create "Sprint 24" --start 2026-05-01 --end 2026-05-14 --state active --goal "Ship login flow"
+loctt sprint edit "Sprint 24" --state completed
+loctt sprint edit "Sprint 24" --state active --force
 ```
 
 ### `loctt sprint burndown`
@@ -328,7 +339,7 @@ changes (tasks joining or leaving the sprint mid-run) appear as visible
 steps in the output.
 
 ```
-loctt sprint burndown <key> [--format <table|json>]
+loctt sprint burndown <name|id> [--format <table|json>]
 ```
 
 Defaults to a text table; pass `--format json` for piping. Y-axis unit is
@@ -339,7 +350,7 @@ chosen automatically from `workflow.yaml#estimation`:
 - `custom_enum` with `weights` → sum of weights
 - everything else → count of incomplete tasks
 
-Example: `loctt sprint burndown sprint_2026.q1 --format json`
+Example: `loctt sprint burndown "2026 Q1" --format json`
 
 ## Calendar
 

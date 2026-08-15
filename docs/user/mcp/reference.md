@@ -7,7 +7,7 @@ LocTT's MCP server provides structured tools for AI agents to manage tasks via t
 - **Always use structured tools.** Never edit `task.md` frontmatter or any `.loctt/` config file directly via raw filesystem writes. The body of a task is editable only via `replace_task_body` and `append_task_body`.
 - **Use `get_workflow_config` and the `*_list` tools to discover valid values.** Statuses, priorities, task types, relationship types, projects, labels, milestones, sprints, and users all live in config — read them before writing.
 - **`delete_*` tools are hard-only and irreversible.** Every `delete_*` tool (`delete_task`, `delete_project`, `delete_label`, `delete_milestone`, `delete_sprint`, `delete_user`) requires `confirm: true`. For the reversible (soft) variant, use the matching `archive_*` tool — that's the same operation as the old soft path. `unarchive_*` brings them back.
-- **Schema-version guard.** Every tool except `init` first calls `requireSupportedSchema`. If the tracker's `.schema-version` is missing or doesn't match this server, every route refuses with a clear error pointing at `loctt migrate`. There is no MCP tool that runs the migration — the user must invoke the CLI command.
+- **Schema-version guard.** Every tool except `init` first calls `requireSupportedSchema`. If the tracker's `.schema-version` is missing or doesn't match this server, every route refuses with a clear error pointing at `loctt migrate`. The one exception is `migrate_schema`, which runs the migration over MCP; `loctt migrate` does the same from the CLI.
 - **Archived semantics.** Archived entities (projects, labels, milestones, sprints, users, tasks) are hidden from default listings but remain valid references on existing tasks. Pass `include_archived: true` (or the equivalent flag) to surface them.
 - **Validation failures are real.** If a structured operation rejects a value, do not bypass it by editing files; surface the error and ask the user.
 
@@ -305,18 +305,21 @@ Returns: `Detached <name> from <KEY>`. Errors via `AttachmentNotFoundError` when
 
 ### `list_projects`
 
-No parameters. Returns JSON `{projects: [...], default: <key|null>}` from `projects.yaml`.
+No parameters. Returns JSON `{projects: [...], default: <id|null>}` from `projects.yaml`. `default` is a project **id** (ULID), not a name.
 
 ### `create_project`
 
-Create a new project. Project keys are immutable; prefixes must be unique across the tracker.
+Create a new project. Prefixes must be unique across the tracker, and a project's prefix is immutable after creation except via `set_project_prefix`.
+
+A project is `{id, name, prefix}`. There is no slug: `id` is a ULID minted at creation and `name` is mutable display text.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Slug (lowercase letters, digits, hyphen, underscore) |
-| `label` | string | yes | Human-readable label |
+| `name` | string | yes | Human-readable display name |
 | `prefix` | string | yes | Task-key prefix, e.g. `BACKEND-` |
 | `make_default` | boolean | no | If true, also set as workspace default |
+
+Returns JSON `{id, name, prefix}`.
 
 Returns: `Created project <key>`. `ProjectError` on validation failures.
 
@@ -351,21 +354,48 @@ If a rename is interrupted partway, the next tool call finishes it before runnin
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Project key |
+| `project` | string | yes | Project id or name |
 
 `archive_project` is the reversible (soft) variant of `delete_project`.
 
 ### `delete_project`
 
-Permanently removes the project from `projects.yaml`. For projects with tasks, `remap_to` is **required** to migrate them to another project. Cannot delete the only project. The counter is preserved in `retired_keys` so a later create with the same key resumes numbering. **Always requires `confirm: true`.** Use `archive_project` for the reversible variant.
+Permanently removes the project from `projects.yaml`. For projects with tasks, `remap_to` is **required** to migrate them to another project. Cannot delete the only project. The counter is preserved in `retired_keys` so a later create with the same prefix resumes numbering. **Always requires `confirm: true`.** Use `archive_project` for the reversible variant.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Project key |
+| `project` | string | yes | Project id or name to delete |
 | `confirm` | boolean | yes | Must be `true` to proceed |
-| `remap_to` | string | no | Target project key for tasks in the deleted project |
+| `remap_to` | string | no | Target project (id or name) for tasks in the deleted project |
 
-Returns JSON `{key, remappedTaskCount}`.
+Returns JSON `{id, remappedTaskCount}`.
+
+### `move_task`
+
+Move one or more tasks to another project. The key is reallocated under the target project; the old key is retired into `key_history` and stays resolvable, so existing references keep working. Pass several refs to move them as one operation.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `refs` | string[] | yes | Task keys or ids, 1–500 |
+| `project` | string | yes | Target project id or name |
+
+Returns a per-task summary of moved and failed refs with old → new keys.
+
+### `duplicate_task`
+
+Create a copy of a task with a fresh key. Copies title (suffixed `(copy)` unless overridden), status, priority, type, assignee, reporter, dates, estimate, milestone, sprint, labels, custom fields and body. Deliberately does **not** copy relationships, attachments, or archived state — the copy starts unlinked and active.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ref` | string | yes | Task key or id to copy |
+| `title` | string | no | Title for the copy; defaults to `<source> (copy)` |
+| `project` | string | no | Target project; defaults to the source's |
+
+> **Known defect.** `project` here accepts only a project **id**, unlike every
+> sibling tool. `move_task` resolves a name through `resolveProjectIdForUser`;
+> `duplicate_task` does not, so a name fails with a raw internal message
+> (`no key allocation state for entity type "<name>"`). This contradicts P-3
+> and is recorded in [`audit-findings.md`](../../dev/audit-findings.md).
 
 ### `set_default_project`
 
@@ -373,7 +403,7 @@ Set or clear the workspace default project.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | no | Project key to set as default; omit to clear |
+| `project` | string | no | Project id or name to set as default; omit to clear |
 
 ## Users
 
@@ -446,72 +476,84 @@ Returns JSON `{deleted: <id>, ...result}`. Errors: `delete_user requires confirm
 
 ### `list_labels`
 
-No parameters. Returns the full labels config JSON.
+No parameters. Returns the full labels config JSON. Each label is `{id, name, color?}`; `id` is a ULID.
 
 ### `create_label`
 
+Names are **not unique** — two labels may share a name and are disambiguated by `id`.
+
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Slug (immutable) |
-| `label` | string | yes | Display name |
+| `name` | string | yes | Display name |
 | `color` | string | no | Color value |
+
+Returns JSON `{id, name}`.
 
 ### `edit_label`
 
-The key is immutable.
+The `id` is immutable; `name` is mutable display text.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Label key |
-| `label` | string | no | New display name |
+| `label` | string | yes | Which label to edit — id or name |
+| `name` | string | no | New display name |
 | `color` | string \| null | no | Pass `null` to clear |
+
+Note the two parameters are distinct: `label` selects, `name` renames.
 
 ### `archive_label` / `unarchive_label`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Label key |
+| `label` | string | yes | Label id or name |
 
 ### `delete_label`
 
-Permanently removes the entry from `labels.yaml`; the key is dropped from every task's `labels` array (or remapped via `remap_to`). **Always requires `confirm: true`.** Use `archive_label` for the reversible variant.
+Permanently removes the entry from `labels.yaml`; the id is dropped from every task's `labels` array (or remapped via `remap_to`). **Always requires `confirm: true`.** Use `archive_label` for the reversible variant.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Label key |
+| `label` | string | yes | Label id or name |
 | `confirm` | boolean | yes | Must be `true` to proceed |
-| `remap_to` | string | no | Target label key for affected tasks |
+| `remap_to` | string | no | Target label (id or name) for affected tasks |
 
-Returns JSON `{key, ...result}`.
+Returns JSON `{id, ...result}`.
 
 ## Milestones
 
 ### `list_milestones`
 
-No parameters. Returns the full milestones config JSON.
+Returns the full milestones config JSON. Each milestone is `{id, name, target_date?}`; `id` is a ULID.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `progress` | boolean | no | Include per-milestone progress counts |
 
 ### `create_milestone`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Milestone key |
-| `label` | string | yes | Display name |
+| `name` | string | yes | Display name |
 | `target_date` | string | no | `YYYY-MM-DD` |
+
+Returns JSON `{id, name}`.
 
 ### `edit_milestone`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Milestone key |
-| `label` | string | no | New display name |
+| `milestone` | string | yes | Which milestone to edit — id or name |
+| `name` | string | no | New display name |
 | `target_date` | string \| null | no | Pass `null` to clear |
 | `archived` | boolean | no | Archived flag |
+
+Note the two parameters are distinct: `milestone` selects, `name` renames.
 
 ### `archive_milestone` / `unarchive_milestone`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Milestone key |
+| `milestone` | string | yes | Milestone id or name |
 
 ### `delete_milestone`
 
@@ -519,28 +561,29 @@ Permanently removes the entry from `milestones.yaml`; the `milestone` field on e
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Milestone key |
+| `milestone` | string | yes | Milestone id or name |
 | `confirm` | boolean | yes | Must be `true` to proceed |
-| `remap_to` | string | no | Target milestone key for affected tasks |
+| `remap_to` | string | no | Target milestone (id or name) for affected tasks |
 
-Returns JSON `{key, ...result}`.
+Returns JSON `{id, ...result}`.
 
 ## Sprints
 
 ### `list_sprints`
 
-No parameters. Returns the full sprints config JSON.
+No parameters. Returns the full sprints config JSON. Each sprint is `{id, name, start_date, end_date, state, goal?}`; `id` is a ULID.
 
 ### `create_sprint`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Sprint key |
-| `label` | string | yes | Display name |
+| `name` | string | yes | Display name |
 | `start_date` | string | yes | `YYYY-MM-DD` |
 | `end_date` | string | yes | `YYYY-MM-DD` |
 | `state` | enum | yes | `active` \| `completed` \| `future` |
 | `goal` | string | no | Sprint goal |
+
+Returns JSON `{id, name}`.
 
 ### `edit_sprint`
 
@@ -548,19 +591,21 @@ Edit a sprint. Re-opening a completed sprint (state `completed` → `active` or 
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Sprint key |
-| `label` | string | no | New display name |
+| `sprint` | string | yes | Which sprint to edit — id or name |
+| `name` | string | no | New display name |
 | `start_date` | string | no | `YYYY-MM-DD` |
 | `end_date` | string | no | `YYYY-MM-DD` |
 | `state` | enum | no | `active` \| `completed` \| `future` |
 | `goal` | string \| null | no | Pass `null` to clear |
 | `force` | boolean | no | Override the block on re-opening a completed sprint |
 
+Note the two parameters are distinct: `sprint` selects, `name` renames.
+
 ### `archive_sprint` / `unarchive_sprint`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Sprint key |
+| `sprint` | string | yes | Sprint id or name |
 
 ### `delete_sprint`
 
@@ -568,11 +613,11 @@ Permanently removes the entry from `sprints.yaml`; the `sprint` field on each af
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Sprint key |
+| `sprint` | string | yes | Sprint id or name |
 | `confirm` | boolean | yes | Must be `true` to proceed |
-| `remap_to` | string | no | Target sprint key for affected tasks |
+| `remap_to` | string | no | Target sprint (id or name) for affected tasks |
 
-Returns JSON `{key, ...result}`.
+Returns JSON `{id, ...result}`.
 
 ## Calendar
 
