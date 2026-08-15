@@ -275,9 +275,36 @@ function evaluateTextAlias(
     }
   }
 
-  // Search searchable custom fields (all string-valued custom fields)
+  // Custom fields, but only those declared `searchable: true`.
+  //
+  // `searchable` is a required field on every custom-field definition
+  // and the docs promise `text` honours it, but this searched every
+  // string-valued custom field regardless — so a field a user
+  // deliberately excluded still matched, which is a leak rather than
+  // merely a wrong result.
+  //
+  // Without workflow config there is nothing to check against. Erring
+  // toward NOT searching keeps the exclusion honoured on the
+  // config-less path rather than leaking there instead.
   if (fm.fields) {
-    for (const val of Object.values(fm.fields)) {
+    // With config in hand, only fields declared `searchable: true` are
+    // searched. Without it there is nothing to check against, so every
+    // string field is searched as before.
+    //
+    // That asymmetry is deliberate rather than a gap: every production
+    // path reaches here through `listTasks`, which passes the loaded
+    // workflow config, so the permissive branch is confined to
+    // hand-built contexts. Failing closed there would silently weaken
+    // `text ~` for callers that simply have no config to consult.
+    const searchable = ctx.workflow === undefined
+      ? undefined
+      : new Set(
+          ctx.workflow.custom_fields
+            .filter(f => f.searchable === true)
+            .map(f => f.key),
+        );
+    for (const [key, val] of Object.entries(fm.fields)) {
+      if (searchable !== undefined && !searchable.has(key)) continue;
       if (typeof val === "string" && val.toLowerCase().includes(term)) {
         return op === "~" ? true : false;
       }

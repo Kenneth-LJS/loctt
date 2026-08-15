@@ -160,6 +160,13 @@ search. Full grammar in [query-language.md](common/query-language.md).
 The same grammar works on every interface — a query that runs in the CLI
 runs in the UI's filter bar and in `list_tasks`.
 
+**Global search** (`GET /api/search?q=…`) is the same grammar rather than
+a second engine: it builds `text ~ "<q>"` and runs the ordinary
+evaluator, so the search box and a hand-typed query cannot disagree. It
+searches the title, built-in text fields, the task body, and custom
+fields declared `searchable: true`. There is no full-text index — the
+corpus is a directory of markdown files.
+
 ## Saved views
 
 Named queries stored in `.loctt/config/queries.yaml` and invoked by name.

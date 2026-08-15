@@ -433,3 +433,48 @@ describe("parent alias reads the configured hierarchy kind", () => {
     expect(evaluateQuery(query("parent = T-9"), task)).toBe(false);
   });
 });
+
+describe("text ~ honours `searchable`", () => {
+  function wf(searchable: boolean): NonNullable<EvalContext["workflow"]> {
+    return {
+      key: { prefix: "T-" },
+      statuses: [], priorities: [], task_types: [], relationships: [],
+      custom_fields: [
+        { key: "notes", label: "Notes", type: "string", multi: false, searchable },
+      ],
+    } as unknown as NonNullable<EvalContext["workflow"]>;
+  }
+
+  const fm = {
+    id: "a", key: "T-1", title: "nothing in the title",
+    created_at: "2026-01-01", updated_at: "2026-01-01",
+    fields: { notes: "needle" },
+  } as TaskFrontmatter;
+
+  it("matches a custom field declared searchable", () => {
+    expect(evaluateQuery(query('text ~ needle'), fm, { workflow: wf(true) })).toBe(true);
+  });
+
+  it("does NOT match a custom field declared searchable: false", () => {
+    // `searchable` is required on every custom-field definition and the
+    // docs promise `text` honours it, but every string-valued custom
+    // field was searched regardless — so a field the user deliberately
+    // excluded still matched. That is a leak, not just a wrong result.
+    expect(evaluateQuery(query('text ~ needle'), fm, { workflow: wf(false) })).toBe(false);
+  });
+
+  it("searches every string custom field when no workflow config is given", () => {
+    // Deliberate asymmetry: with no config there is nothing to check
+    // `searchable` against. Every production path reaches the evaluator
+    // through listTasks, which passes the loaded config, so this
+    // permissive branch is confined to hand-built contexts — failing
+    // closed here would weaken `text ~` for callers that simply have no
+    // config to consult, without protecting any real workspace.
+    expect(evaluateQuery(query('text ~ needle'), fm)).toBe(true);
+  });
+
+  it("still searches the title regardless of custom-field config", () => {
+    const titled = { ...fm, title: "has a needle" } as TaskFrontmatter;
+    expect(evaluateQuery(query('text ~ needle'), titled, { workflow: wf(false) })).toBe(true);
+  });
+});
