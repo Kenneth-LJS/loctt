@@ -139,8 +139,32 @@ the split is not random:
 **The blocker is that the docs drifted in exactly that region.** Verified
 directly: `mcp/reference.md:451` documents `create_label` as taking
 required `key` + `label`, while `apps/mcp/src/tools/label.ts:33` ships
-`name` + optional `color`, and `createLabel` in core takes `name`. The
-CLI reference documents no `loctt label` command at all.
+`name` + optional `color`, and `createLabel` in core takes `name`.
+
+The CLI reference has the same drift. `cli/reference.md:217` documents
+`loctt label create <key> [--label <label>]`; the shipped command takes a
+name and ignores `--label` entirely. **The doc's own example succeeds
+while doing the wrong thing** — verified by running it verbatim:
+
+```
+$ loctt label create blocker --label "Blocker" --color "#cc0000"
+Created label "blocker" (id 01M031MN…)
+```
+
+The label is named `blocker`; "Blocker" is discarded silently. That is
+worse than a doc that errors, because nothing signals the divergence.
+
+**Correction:** an earlier version of this section said the CLI reference
+documents no `loctt label` command at all. It does — at
+`cli/reference.md:217`, under a `##` heading, which a grep for `###`
+missed. The drift is worse than the absence I claimed.
+
+**Scale of the drift, from the slice-9 map:** 17 of 75 MCP tools have
+parameter-level drift, 2 tools are undocumented (`move_task`,
+`duplicate_task`), and one guideline is self-contradictory. By region:
+Milestones 6/6 drifted, Projects 6/8, Labels 5/6, Sprints 4/7. **Users
+(7 tools) is clean** and is the one entity family Phase 3 could transcribe
+today. The task, tracker, config, git and rank regions are accurate.
 
 That makes Phase 3 unexecutable over this region. Transcribing cases from
 the docs produces cases for an API that does not exist; writing them from
