@@ -193,7 +193,9 @@ and click into any task (which routes to a stub for now).
 - ✅ Pagination using `total` from `/api/tasks`; "Showing 1–50 of 128 ·
   Load more" pattern. Covers LST-13, LST-17, LST-30, LST-35, LST-43,
   LST-49 — Playwright specs in `tests/ui/flow-list.spec.ts`
-- Row checkboxes; select-all in header
+- ✅ Row checkboxes; select-all in header. Covers BLK-1, BLK-2, BLK-3,
+  BLK-4, BLK-18. Bar shows count + scope + Clear; actions below are
+  still unbuilt, so it carries no action buttons yet
 - Sticky bulk-bar on ≥1 selection: Set status / priority / assignee /
   milestone / sprint, Move to project (CW-13 bulk), Archive,
   Delete (typed confirm), Clear (×)

@@ -42,7 +42,16 @@ test.describe("LST — list view", () => {
 
     await page.goto(`${tracker.baseURL}/list`);
 
-    const headers = page.getByRole("columnheader");
+    // The ten *data* columns the case names, in order. Sliced past the
+    // selection column: LST-2 lists the columns the table shows for a
+    // task, and BLK-3 requires a header select-all checkbox alongside
+    // them. Asserting on every columnheader made this test forbid an
+    // affordance LST-2 says nothing about.
+    const allHeaders = page.getByRole("columnheader");
+    // Eleven cells: the ten data columns plus the select-all checkbox
+    // BLK-3 requires. The slice below asserts the ten by name.
+    await expect(allHeaders).toHaveCount(11);
+    const headers = page.locator("thead th").nth(0).locator("xpath=following-sibling::th");
     await expect(headers).toHaveText([
       /Key/,
       /Project/,
@@ -67,7 +76,8 @@ test.describe("LST — list view", () => {
     // Asserted on the cell rather than the row: adjacent cell text
     // concatenates in the row's accessible text, which would let a
     // neighbouring column satisfy a row-level match.
-    await expect(row.getByRole("cell").first()).toHaveText(/^[A-Z][A-Z0-9]*-\d+$/);
+    // nth(1), not first(): cell 0 is the selection checkbox (BLK-1).
+    await expect(row.getByRole("cell").nth(1)).toHaveText(/^[A-Z][A-Z0-9]*-\d+$/);
     // The ULID appears nowhere in the row.
     await expect(row).not.toContainText(/[0-9A-HJKMNP-TV-Z]{26}/);
 
@@ -75,7 +85,8 @@ test.describe("LST — list view", () => {
     // dash) — not "Invalid Date", and not today's date. Due is the 9th
     // of the ten columns.
     const undated = page.getByRole("row").filter({ hasText: "Undated task" });
-    const dueCell = undated.getByRole("cell").nth(8);
+    // Due is the 9th data column, shifted one by the selection cell.
+    const dueCell = undated.getByRole("cell").nth(9);
     await expect(dueCell).toHaveText("—");
     await expect(undated).not.toContainText("Invalid Date");
   });
@@ -290,5 +301,206 @@ test.describe("LST — pagination", () => {
       const count = await rows.count();
       await expect(footer).toHaveText(`Showing 1–${String(count)} of 60`);
     }
+  });
+});
+
+test.describe("BLK — selection", () => {
+  const THREE = [
+    { title: "Alpha", fields: { status: "in_progress" } },
+    { title: "Beta", fields: { status: "done" } },
+    { title: "Gamma" },
+  ];
+
+  // @verifies BLK-1
+  test("BLK-1: a row checkbox selects one task and does not navigate", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed(THREE);
+    await page.goto(`${tracker.baseURL}/list`);
+
+    const rows = page.getByRole("row").filter({ hasNot: page.getByRole("columnheader") });
+    const alpha = rows.filter({ hasText: "Alpha" });
+    const box = alpha.getByRole("checkbox");
+
+    await box.click();
+
+    // Exactly one selected, and no navigation away from /list.
+    await expect(box).toBeChecked();
+    await expect(rows.filter({ hasText: "Beta" }).getByRole("checkbox")).not.toBeChecked();
+    await expect(page).toHaveURL(/\/list/);
+
+    // Selected treatment is more than colour: aria-selected marks it
+    // programmatically, and the box itself is checked.
+    await expect(alpha).toHaveAttribute("aria-selected", "true");
+
+    // Clicking again deselects, still without navigating.
+    await box.click();
+    await expect(box).not.toBeChecked();
+    await expect(page).toHaveURL(/\/list/);
+
+    // Clicking elsewhere in the row DOES navigate — the checkbox is the
+    // only non-navigating hit area.
+    await alpha.getByRole("cell").nth(2).click();
+    await expect(page).toHaveURL(/\/tasks\//);
+  });
+
+  // @verifies BLK-1
+  test("BLK-1: the checkbox is keyboard reachable and Space toggles it", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed(THREE);
+    await page.goto(`${tracker.baseURL}/list`);
+
+    const box = page
+      .getByRole("row")
+      .filter({ hasText: "Alpha" })
+      .getByRole("checkbox");
+
+    await box.focus();
+    await expect(box).toBeFocused();
+    await page.keyboard.press("Space");
+
+    await expect(box).toBeChecked();
+    // Space must not also fire the row's navigation.
+    await expect(page).toHaveURL(/\/list/);
+  });
+
+  // @verifies BLK-2
+  test("BLK-2: the bar is absent at zero and counts selected rows", async ({ page, tracker }) => {
+    await tracker.seed(THREE);
+    await page.goto(`${tracker.baseURL}/list`);
+
+    const bar = page.getByRole("region", { name: "Bulk actions" });
+    // Absent from the DOM, not merely invisible — a hidden bar is still
+    // tabbable and still announced.
+    await expect(bar).toHaveCount(0);
+
+    const rows = page.getByRole("row").filter({ hasNot: page.getByRole("columnheader") });
+    await rows.filter({ hasText: "Alpha" }).getByRole("checkbox").click();
+    await expect(bar).toContainText("1 task selected");
+
+    await rows.filter({ hasText: "Beta" }).getByRole("checkbox").click();
+    await expect(bar).toContainText("2 tasks selected");
+
+    // The count is of selected rows — not the three on the page, and
+    // not the filter total.
+    await expect(bar).not.toContainText("3 tasks selected");
+  });
+
+  // @verifies BLK-3
+  test("BLK-3: select-all takes the visible page and says so", async ({ page, tracker }) => {
+    // 60 tasks, page size 50: select-all must claim 50, never 60.
+    await tracker.seed(Array.from({ length: 60 }, (_, i) => ({ title: `Task ${i + 1}` })));
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–50 of 60")).toBeVisible();
+
+    const header = page.getByRole("checkbox", { name: "Select all on this page" });
+    await header.click();
+
+    const bar = page.getByRole("region", { name: "Bulk actions" });
+    await expect(bar).toContainText("50 tasks selected");
+    // Must not imply the whole match set.
+    await expect(bar).not.toContainText("60 tasks selected");
+    // Scope stated explicitly alongside the count.
+    await expect(bar).toContainText("50 on this page selected");
+
+    // Checked, not indeterminate, once every visible row is selected.
+    await expect(header).toBeChecked();
+    await expect(header).toHaveJSProperty("indeterminate", false);
+
+    // Unchecking clears everything and removes the bar.
+    await header.click();
+    await expect(bar).toHaveCount(0);
+  });
+
+  // @verifies BLK-4
+  test("BLK-4: nothing claims a scope wider than the visible page", async ({ page, tracker }) => {
+    await tracker.seed(Array.from({ length: 60 }, (_, i) => ({ title: `Task ${i + 1}` })));
+    await page.goto(`${tracker.baseURL}/list`);
+    // Wait for the page to load before select-all: clicking the header
+    // against an empty table selects nothing and the bar never appears.
+    await expect(page.getByText("Showing 1–50 of 60")).toBeVisible();
+    await page.getByRole("checkbox", { name: "Select all on this page" }).click();
+    const barReady = page.getByRole("region", { name: "Bulk actions" });
+    await expect(barReady).toContainText("50 tasks selected");
+
+    // "Select all N matching" is not built. BLK-4 permits that — but
+    // then no control may claim the larger scope.
+    const bar = page.getByRole("region", { name: "Bulk actions" });
+    await expect(bar).not.toContainText("60 matching");
+    await expect(bar).not.toContainText("All 60");
+    await expect(page.getByRole("button", { name: /Select all 60/ })).toHaveCount(0);
+  });
+
+  // @verifies BLK-18
+  test("BLK-18: changing a filter clears the selection", async ({ page, tracker }) => {
+    await tracker.seed(THREE);
+    await page.goto(`${tracker.baseURL}/list`);
+
+    const rows = page.getByRole("row").filter({ hasNot: page.getByRole("columnheader") });
+    await rows.filter({ hasText: "Alpha" }).getByRole("checkbox").click();
+    const bar = page.getByRole("region", { name: "Bulk actions" });
+    await expect(bar).toContainText("1 task selected");
+
+    await page.getByRole("button", { name: "Filter Status" }).click();
+    await page.getByRole("menuitemcheckbox", { name: "Done" }).click();
+
+    // Cleared, not silently carried: a bar still claiming a selection
+    // would be operating on a row the user can no longer see.
+    await expect(bar).toHaveCount(0);
+
+    // And going back does not resurrect it out of thin air.
+    await page.goBack();
+    await expect(page.getByRole("row").filter({ hasText: "Alpha" })).toBeVisible();
+    await expect(bar).toHaveCount(0);
+  });
+
+  // @verifies BLK-3
+  test("BLK-3: select-all covers the loaded rows, not a stale superset", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed(Array.from({ length: 60 }, (_, i) => ({ title: `Task ${i + 1}` })));
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–50 of 60")).toBeVisible();
+
+    const header = page.getByRole("checkbox", { name: "Select all on this page" });
+    const bar = page.getByRole("region", { name: "Bulk actions" });
+
+    // Select the first 50, then load the rest and select again. The
+    // second select-all must describe the 60 now rendered — not 50, and
+    // not 110 from unioning the two rounds.
+    await header.click();
+    await expect(bar).toContainText("50 tasks selected");
+
+    await page.getByRole("button", { name: "Load more" }).click();
+    await expect(page.getByText("Showing 1–60 of 60")).toBeVisible();
+
+    // Now partial: 50 of 60 selected, so the header is indeterminate.
+    await expect(header).toHaveJSProperty("indeterminate", true);
+
+    await header.click();
+    await expect(bar).toContainText("60 tasks selected");
+    await expect(bar).not.toContainText("110");
+  });
+
+  // @verifies BLK-18
+  test("BLK-18: loading another page keeps the selection", async ({ page, tracker }) => {
+    await tracker.seed(Array.from({ length: 60 }, (_, i) => ({ title: `Task ${i + 1}` })));
+    await page.goto(`${tracker.baseURL}/list`);
+
+    const rows = page.getByRole("row").filter({ hasNot: page.getByRole("columnheader") });
+    await rows.first().getByRole("checkbox").click();
+    const bar = page.getByRole("region", { name: "Bulk actions" });
+    await expect(bar).toContainText("1 task selected");
+
+    await page.getByRole("button", { name: "Load more" }).click();
+    await expect(page.getByText("Showing 1–60 of 60")).toBeVisible();
+
+    // Paging is not a result-set change — clearing here would make the
+    // selection unusable on any list longer than one page.
+    await expect(bar).toContainText("1 task selected");
   });
 });
