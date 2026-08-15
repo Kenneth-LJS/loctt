@@ -215,6 +215,119 @@ was asserting the bug, and the commit must say so.
 
 ---
 
+
+## Triage grouping
+
+124 findings. The category tags the agents used (`bug` 57, `abstraction`
+18, `duplication` 14, `comment` 13, `dead-code` 7, `layering` 6,
+`doc-drift` 4, `naming` 3) sort by *shape*, which is not how you decide
+what to fix. Below they are grouped by **what goes wrong for a user**.
+
+### A · Silent wrong answers — 9 findings
+
+The tracker reports success and the result is wrong. Nothing errors,
+nothing logs, no exit code changes. These cost the most to discover
+later, because by then the wrong data is upstream of other decisions.
+
+| Finding | Where |
+|---|---|
+| `list --project <name>` returns "No tasks found." with tasks present | cli |
+| `evenlySpacedRanks` emits duplicate ranks ≥ 649 → drags anchor to the wrong card | rank |
+| Coalescing window rolls, collapsing an unbounded edit chain into one entry | task/history |
+| `assignProvisionalPrefixes` sorts on a field the schema forbids | git/merge |
+| `mergeTask` is whole-record LWW, not the per-field merge M2 promises | git/merge |
+| `rekeyCollisions`' `skipped` list is discarded by its only caller | git |
+| Query: `NaN` literals, `link_count(…) in (…)`, empty `in ()`, `text =` all match nothing | query |
+| A `type: enum` custom field with no `values` accepts anything | config |
+| Priority `value` never recomputed 1..N (D20) — `order by priority` wrong | config |
+
+**Fix these first.** Six are one-line-ish; the merge ones are not.
+
+### B · Data at risk — 4 findings
+
+Recoverable, but the recovery is manual and undocumented.
+
+- A crashed publish/sync leaves a registered git worktree with no
+  recovery path; `git worktree prune` appears nowhere in the codebase.
+- `projects.yaml` resolves its list and its scalars in opposite
+  directions, and the comment describes the opposite of the code.
+- `mergeHistory` / `mergeComments` cast unvalidated YAML straight to
+  their types.
+- The fatal `.schema-migration-in-progress` sentinel is bypassed on the
+  only path that can reach it, against `invariants.md:45`.
+
+### C · Invariant violations — 5 findings
+
+Each contradicts a rule in `invariants.md` or `decisions.md`.
+
+- **P-3** twice: `list --project <name>` and `duplicate --project <name>`.
+- **D20**: priority `value` unenforced.
+- **Q18/D4**: the coalescing window.
+- **M2**: `mergeTask` promises per-field merging and does not deliver.
+
+Overlaps A and B — listed separately because an invariant break is a
+decision to revisit, not only a bug to fix.
+
+### D · Bad errors — 8 findings
+
+The operation fails correctly; the message does not help.
+
+- `duplicate --project Backend` leaks `no key allocation state for
+  entity type "Backend"`, and a nonexistent project gives the identical
+  message.
+- The tokenizer's catch-all names only the offending character, so
+  `status in [a, b]` says `unexpected character "["` with no hint that
+  lists use parentheses.
+- `readTask` surfaces a raw `ENOENT` for a missing task.
+- `UsageError` in an unwrapped command exits 1 where its wrapped
+  siblings exit 2, for identical error text.
+- `user current` prints its failure to stdout while exiting 1.
+
+### E · Missing validation — 6 findings
+
+Input that should be rejected is accepted.
+
+- Unknown flags ignored on every task command, `delete` included.
+- `PATCH /api/tasks/:ref` has `value: unknown` and no Zod validator.
+- `HistoryEntry` has no schema; `_history.yaml` is cast, never validated.
+- Duplicate `custom_fields[].values[].key` passes both layers.
+- `CalendarConfig.working_days` accepts empty arrays and duplicates.
+- `ProjectsConfig.default` may point at an archived project.
+
+### F · Tests that cannot fail — 6 findings
+
+Green, and blind to the case that matters. Per `CLAUDE.md`, fixing the
+behaviour under these means editing a green test, and the commit must say
+that test was asserting the bug.
+
+- `lexorank.test.ts` bounds counts at 500; duplicates start at 649.
+- The five coalescing tests each measure one gap; the bug needs a chain.
+- All four `assignProvisionalPrefixes` tests pass a `created_at` the
+  schema forbids.
+- Two e2e tests pass `--hard`, a flag that does not exist.
+- `list.test.ts:131` fixtures lack `fields`, so the prototype-chain
+  hazard it covers is never reached.
+- `lexorank.test.ts:57` bounds growth at `< 120` where actual is ~101.
+
+### G · Cosmetic — 13 auto-fixable, ~79 remaining
+
+13 findings are provable-no-behaviour-change (comment corrections, an
+unused export, a single-line wrapper, dead code with zero references).
+The plan permits an agent to apply exactly these, **after** Phase 3's
+test net exists.
+
+The rest are abstraction, duplication and naming: real, low-urgency,
+and the right thing to fold into work that touches those files anyway
+rather than a sweep of their own.
+
+### Suggested order
+
+1. **A**, highest first — the six cheap ones are a day's work
+2. **F**, alongside A — the tests must change with the behaviour
+3. **B** and **C** — need decisions, not just fixes
+4. **E**, then **D**
+5. **G** last, or opportunistically
+
 ## Slice reports
 
 Full findings, with file:line, blast radius, size and confidence:

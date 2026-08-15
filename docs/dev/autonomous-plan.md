@@ -52,8 +52,8 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 | Phase | State | Notes |
 |---|---|---|
 | 1 · Partition | ⛔ | Partition **done** — all 21 tickets carry a `Cases:` line, gate passes. Halted on what it exposed: 28 cases assert two views no ticket builds. See *Blocker* below. |
-| 2 · Measure | ⛔ | Measurement **done** — report at `scratchpad/phase2-coverage-report.md`. Halted: the reference docs are stale for exactly the untested region, so they cannot serve as the spec for Phase 3. See *Blocker 2*. |
-| 3 · Surface gaps | ⬜ | 68 cases outstanding. Blocked by Blocker 2 for the entity region; the rest is writable. |
+| 2 · Measure | ✅ | Measured (CLI 17/49, MCP 26/75) and the blocker it raised is **cleared**: both reference docs corrected to the shipped API, every example executed. See *Blocker 2, resolved*. |
+| 3 · Surface gaps | ⬜ | **Unblocked.** 68 cases outstanding; the entity region is now transcribable. Next action. |
 | 4 · Structural audit | ⛔ | Reading **done**: 8 slices, ~18,700 lines, **124 findings** in [`audit-findings.md`](audit-findings.md). Report-only — nothing fixed. Awaiting triage; the fixes wait on Phase 3's net. |
 | 5 · UI build | ⬜ | M1.4 is 🔵 from earlier work, predating this plan |
 
@@ -121,7 +121,7 @@ Slices were also re-cut: the plan estimated `core/task` at 2,400 lines; it
 is **4,399**, past the size where an agent reads rather than skims. It was
 split into 1a (writes, ~1,700) and 1b (reads, ~2,400).
 
-### ⛔ Blocker 2 — the reference docs are stale where coverage is thinnest
+### ✅ Blocker 2 — RESOLVED 2026-08-16: reference docs corrected
 
 Phase 2 measured **CLI 17/49 covered, 12 partial, 20 uncovered** and
 **MCP 26/75 covered, 11 partial, 38 uncovered**. Coverage is bimodal and
@@ -166,10 +166,18 @@ Milestones 6/6 drifted, Projects 6/8, Labels 5/6, Sprints 4/7. **Users
 (7 tools) is clean** and is the one entity family Phase 3 could transcribe
 today. The task, tracker, config, git and rank regions are accurate.
 
-That makes Phase 3 unexecutable over this region. Transcribing cases from
-the docs produces cases for an API that does not exist; writing them from
-the code is precisely the self-grading failure this plan exists to
-prevent. The plan also forbids an agent editing the reference docs.
+**Resolved.** The user authorised correcting the docs. Both references now
+match the shipped API: 17 MCP tools fixed across Projects, Labels,
+Milestones and Sprints, `move_task` and `duplicate_task` documented for the
+first time, the self-contradictory migration guideline removed, and the CLI
+label and sprint sections rewritten to `<name|id>` / `--name`.
+
+Every corrected example was executed against a temp tracker, and a
+mechanical doc-vs-schema diff over all 75 tools now reports no parameter
+drift. Phase 3 can transcribe the entity region.
+
+The code was right and the docs wrong: `ProjectDefSchema` is `.strict()`
+with no slug, and P-1 forbids adding one.
 
 Sizing for the rest, once the docs are settled: **~25–35 integration
 tests** — one Phase 4 slice, not a UI build.
