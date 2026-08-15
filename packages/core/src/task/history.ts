@@ -190,10 +190,15 @@ export function coalesceHistory(
       // `last.after` would leave the entry describing only the first
       // keystroke of the burst, so replaying it would restore a body the
       // user never stopped at.
+      // `next.after !== undefined` rather than `"after" in next`: an
+      // entry carrying an explicit `undefined` is not offering a newer
+      // state to adopt, so it must behave like a missing key. Otherwise
+      // it would erase the burst's `after` and the entry would replay to
+      // nothing.
       result[result.length - 1] = {
         ...last,
         timestamp: next.timestamp,
-        ...("after" in next ? { after: next.after } : {}),
+        ...(next.after !== undefined ? { after: next.after } : {}),
       };
       continue;
     }

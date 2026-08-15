@@ -260,6 +260,26 @@ describe("history actor attribution", () => {
       expect(entries[0]?.after).toBe("finished");
     });
 
+    it("does not let a later entry erase the burst's `after`", async () => {
+      // A coalesceable entry carrying no newer state must not blank out
+      // what the burst had reached. Guarding on `"after" in next` would
+      // treat an explicit `undefined` as a value to adopt, leaving the
+      // merged entry replaying to nothing.
+      const t0 = "2026-05-21T10:00:00Z";
+      const t1 = "2026-05-21T10:05:00Z";
+      await appendHistory(locttDir, "t1", [
+        { timestamp: t0, kind: "body_edited", before: "original", after: "typed" },
+      ]);
+      await appendHistory(locttDir, "t1", [
+        { timestamp: t1, kind: "body_edited", after: undefined },
+      ]);
+
+      const entries = await readHistory(locttDir, "t1");
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.before).toBe("original");
+      expect(entries[0]?.after).toBe("typed");
+    });
+
     it("starts a fresh entry when the window expires", async () => {
       const t0 = "2026-05-21T10:00:00Z";
       const t1 = "2026-05-21T10:20:00Z"; // 20 min later — past the window
