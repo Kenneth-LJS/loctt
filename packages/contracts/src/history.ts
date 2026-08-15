@@ -32,7 +32,20 @@ export type HistoryKind =
   | "attachment_removed"
   | "comment_added"
   | "comment_edited"
-  | "comment_deleted";
+  | "comment_deleted"
+  /**
+   * Written by git-sync when a merge could not resolve a field from
+   * history and fell back to whole-record last-write-wins. Carries the
+   * field name, the value that lost, the value that won, and which side
+   * won in `meta`.
+   *
+   * Exists so that fallback is auditable. History is the merge's only
+   * evidence (M2), so a field it cannot explain — a hand-edit, or a task
+   * predating M3 — is resolved by recency, and without this entry the
+   * losing value would be inferable only by reading two clones' files
+   * side by side.
+   */
+  | "merge_resolved";
 
 /** A single history/activity entry for a task. */
 export interface HistoryEntry {

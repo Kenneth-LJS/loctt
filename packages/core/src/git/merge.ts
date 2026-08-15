@@ -39,6 +39,13 @@ export interface MergeOutcome<T> {
    * worth keeping (M4). The caller writes it beside the file.
    */
   readonly displaced?: { readonly label: string; readonly content: string };
+  /**
+   * `merge_resolved` entries for fields the merge could not resolve from
+   * history and had to settle by whole-record recency. The caller
+   * appends them to `_history.yaml`, so a fallback is auditable rather
+   * than a silent choice between two values.
+   */
+  readonly historyAdditions?: readonly HistoryEntry[];
 }
 
 /**
@@ -71,18 +78,34 @@ export function laterWins<T>(
 export function mergeTask(
   local: Task,
   incoming: Task,
+  /**
+   * The union of both sides' history entries (M2). Frontmatter carries
+   * no per-field timestamps — `updated_at` is stamped per write — but
+   * history does: every `field_change` names its field and when it
+   * happened, and `created` carries the whole initial frontmatter (M3).
+   * So the winning value for a field is the latest entry naming it, and
+   * a field only one side touched keeps that side's value rather than
+   * being dropped because a *different* field was contested.
+   *
+   * History is the merge's only evidence. A hand-edit writes none, so a
+   * field it cannot explain falls back to whole-record recency for that
+   * field alone — see decisions.md, "M2 scope".
+   */
+  mergedHistory: readonly HistoryEntry[] = [],
 ): MergeOutcome<Task> {
   const lf = local.frontmatter;
   const inf = incoming.frontmatter;
 
-  // Whole-record recency, used for every scalar field. Per-field
-  // timestamps do not exist — `updated_at` is stamped per write, so the
-  // finest available granularity is "this version is newer".
+  // Whole-record recency. Still the rule for the body, and the fallback
+  // for any field history cannot explain.
   const winner = laterWins(local, incoming, lf.updated_at, inf.updated_at);
   const loser = winner === local ? incoming : local;
 
+  const resolved = resolveFieldsFromHistory(local, incoming, winner, mergedHistory);
+
   const frontmatter: Task["frontmatter"] = {
     ...winner.frontmatter,
+    ...resolved.fields,
     // Sets, not scalars: each member was added by someone who meant it,
     // so a union loses nothing and last-write-wins would drop the other
     // side's edges entirely.
@@ -103,6 +126,9 @@ export function mergeTask(
   };
 
   const merged: Task = { frontmatter, body: winner.body };
+  const additions = resolved.fallbacks.length > 0
+    ? { historyAdditions: resolved.fallbacks }
+    : {};
 
   // Only worth preserving when the loser's body is actually different
   // and non-empty — writing a sibling file for an identical body is
@@ -110,13 +136,88 @@ export function mergeTask(
   if (loser.body.trim().length > 0 && loser.body !== winner.body) {
     return {
       merged,
+      ...additions,
       displaced: {
         label: winner === local ? "incoming" : "local",
         content: loser.body,
       },
     };
   }
-  return { merged };
+  return { merged, ...additions };
+}
+
+/**
+ * Fields the two sides disagree on, resolved one at a time from history.
+ *
+ * Only scalar frontmatter: `relationships` and `key_history` are sets
+ * with their own union rules, and the identity fields never differ
+ * between two versions of one task.
+ */
+const NON_SCALAR_FIELDS: ReadonlySet<string> = new Set([
+  "relationships", "key_history", "id", "created_at", "updated_at",
+]);
+
+function resolveFieldsFromHistory(
+  local: Task,
+  incoming: Task,
+  winner: Task,
+  history: readonly HistoryEntry[],
+): { fields: Record<string, unknown>; fallbacks: HistoryEntry[] } {
+  const lf = local.frontmatter as unknown as Record<string, unknown>;
+  const inf = incoming.frontmatter as unknown as Record<string, unknown>;
+  const wf = winner.frontmatter as unknown as Record<string, unknown>;
+  const fields: Record<string, unknown> = {};
+  const fallbacks: HistoryEntry[] = [];
+
+  const contested = [...new Set([...Object.keys(lf), ...Object.keys(inf)])].filter(
+    k => !NON_SCALAR_FIELDS.has(k) && !Object.is(lf[k], inf[k]),
+  );
+  if (contested.length === 0) return { fields, fallbacks };
+
+  // `created` carries the whole initial frontmatter (M3), so it is the
+  // earliest evidence for every field the task was born with. Without
+  // it, a field never edited since creation looks unexplained.
+  const born = history.find(e => e.kind === "created");
+  const initial = ((born?.after as { frontmatter?: Record<string, unknown> } | undefined)
+    ?.frontmatter) ?? {};
+
+  for (const field of contested) {
+    let latest: { timestamp: string; value: unknown } | undefined;
+    if (born !== undefined && field in initial) {
+      latest = { timestamp: born.timestamp, value: initial[field] };
+    }
+    for (const e of history) {
+      if (e.field !== field) continue;
+      if (e.kind !== "field_change" && e.kind !== "custom_field_change") continue;
+      // Strictly later: a tie keeps the earlier-scanned entry, so two
+      // clones scanning the same union agree.
+      if (latest === undefined || e.timestamp > latest.timestamp) {
+        latest = { timestamp: e.timestamp, value: e.after };
+      }
+    }
+
+    if (latest !== undefined) {
+      fields[field] = latest.value;
+      continue;
+    }
+
+    // Unexplained: a hand-edit, or a task predating M3. Resolve by
+    // whole-record recency for this field alone and say so in history,
+    // or the losing value is only recoverable by reading both clones.
+    const won = wf[field];
+    const lost = winner === local ? inf[field] : lf[field];
+    fields[field] = won;
+    fallbacks.push({
+      timestamp: winner.frontmatter.updated_at,
+      kind: "merge_resolved",
+      field,
+      before: lost ?? null,
+      after: won ?? null,
+      meta: { took: winner === local ? "local" : "incoming", reason: "no history for field" },
+    });
+  }
+
+  return { fields, fallbacks };
 }
 
 /**

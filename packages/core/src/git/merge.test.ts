@@ -57,6 +57,105 @@ describe("mergeTask", () => {
     expect(mergeTask(local, incoming).merged.frontmatter.title).toBe("Incoming");
   });
 
+  it("keeps both sides' edits when they touched different fields", () => {
+    // The case whole-record LWW lost: A set status, B set assignee,
+    // neither touched the other's field. Taking the newer record whole
+    // dropped A's status even though nothing contested it — the common
+    // shape when two people work one task.
+    const local = task({
+      status: "in_progress",
+      assignee: "u-ken",
+      updated_at: "2026-01-02T00:00:00.000Z",
+    });
+    const incoming = task({
+      status: "backlog",
+      assignee: "u-sara",
+      updated_at: "2026-01-03T00:00:00.000Z",
+    });
+    const history: HistoryEntry[] = [
+      { timestamp: "2026-01-02T00:00:00.000Z", kind: "field_change", field: "status",
+        before: "backlog", after: "in_progress" },
+      { timestamp: "2026-01-03T00:00:00.000Z", kind: "field_change", field: "assignee",
+        before: "u-ken", after: "u-sara" },
+    ];
+
+    const out = mergeTask(local, incoming, history);
+    expect(out.merged.frontmatter.status).toBe("in_progress");
+    expect(out.merged.frontmatter.assignee).toBe("u-sara");
+  });
+
+  it("takes the later entry when both sides changed the same field", () => {
+    const local = task({ status: "in_progress", updated_at: "2026-01-02T00:00:00.000Z" });
+    const incoming = task({ status: "done", updated_at: "2026-01-03T00:00:00.000Z" });
+    const history: HistoryEntry[] = [
+      { timestamp: "2026-01-03T00:00:00.000Z", kind: "field_change", field: "status",
+        before: "backlog", after: "done" },
+      { timestamp: "2026-01-02T00:00:00.000Z", kind: "field_change", field: "status",
+        before: "backlog", after: "in_progress" },
+    ];
+
+    // Deliberately out of order in the array: recency decides, not
+    // position, or the answer depends on which clone wrote last.
+    expect(mergeTask(local, incoming, history).merged.frontmatter.status).toBe("done");
+  });
+
+  it("reads `created` as evidence for a field never edited since", () => {
+    // M3 makes `created` carry the whole initial frontmatter, so a field
+    // set at birth and never touched is explained. Without this it looks
+    // unexplained and falls back to recency — which would drop it when
+    // the winning record happens not to carry the field at all.
+    const local = task({ status: "backlog", updated_at: "2026-01-02T00:00:00.000Z" });
+    const incoming = task({ status: "backlog", title: "Renamed", updated_at: "2026-01-03T00:00:00.000Z" });
+    const history: HistoryEntry[] = [
+      { timestamp: "2026-01-01T00:00:00.000Z", kind: "created",
+        after: { frontmatter: { status: "backlog", title: "Original" }, body: "" } },
+      { timestamp: "2026-01-03T00:00:00.000Z", kind: "field_change", field: "title",
+        before: "Original", after: "Renamed" },
+    ];
+
+    const out = mergeTask(local, incoming, history);
+    expect(out.merged.frontmatter.status).toBe("backlog");
+    expect(out.merged.frontmatter.title).toBe("Renamed");
+    expect(out.historyAdditions ?? []).toHaveLength(0);
+  });
+
+  it("falls back to whole-record LWW for a field history cannot explain", () => {
+    // Hand-edits are out of scope (see decisions.md M2 scope): they
+    // write no history, so the merge has no evidence and resolves by
+    // recency for that field alone rather than aborting.
+    const local = task({ title: "Local hand-edit", updated_at: "2026-01-02T00:00:00.000Z" });
+    const incoming = task({ title: "Incoming hand-edit", updated_at: "2026-01-03T00:00:00.000Z" });
+
+    const out = mergeTask(local, incoming, []);
+    expect(out.merged.frontmatter.title).toBe("Incoming hand-edit");
+  });
+
+  it("records a merge_resolved entry naming the field it had to guess", () => {
+    const local = task({ title: "Local", updated_at: "2026-01-02T00:00:00.000Z" });
+    const incoming = task({ title: "Incoming", updated_at: "2026-01-03T00:00:00.000Z" });
+
+    const out = mergeTask(local, incoming, []);
+    const entry = out.historyAdditions?.find(e => e.kind === "merge_resolved");
+    expect(entry).toBeDefined();
+    expect(entry?.field).toBe("title");
+    expect(entry?.before).toBe("Local");
+    expect(entry?.after).toBe("Incoming");
+  });
+
+  it("does not record merge_resolved when history explained the field", () => {
+    const local = task({ status: "in_progress", updated_at: "2026-01-02T00:00:00.000Z" });
+    const incoming = task({ status: "done", updated_at: "2026-01-03T00:00:00.000Z" });
+    const history: HistoryEntry[] = [
+      { timestamp: "2026-01-02T00:00:00.000Z", kind: "field_change", field: "status",
+        before: "backlog", after: "in_progress" },
+      { timestamp: "2026-01-03T00:00:00.000Z", kind: "field_change", field: "status",
+        before: "backlog", after: "done" },
+    ];
+
+    const out = mergeTask(local, incoming, history);
+    expect(out.historyAdditions?.some(e => e.kind === "merge_resolved")).toBeFalsy();
+  });
+
   it("unions relationships instead of letting one side win", () => {
     const local = task({
       updated_at: "2026-01-02T00:00:00.000Z",

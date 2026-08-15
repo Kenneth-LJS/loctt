@@ -10,6 +10,7 @@ import { resolveLocttDir } from "../paths/index.js";
 import { loadState, saveState } from "../state/state.js";
 import { loadSyncState, saveSyncState } from "../state/sync.js";
 import { createTask } from "../task/create.js";
+import { setField } from "../task/update.js";
 import { enableGit } from "./git-mode.js";
 import { publish, sync } from "./publish-sync.js";
 
@@ -198,6 +199,102 @@ describe("publish-sync", () => {
     // behaviour M2 reverses: the abort meant two clones which each
     // created a task could never merge at all. It now asserts the
     // merge, and that nothing is dropped by it.
+    it("writes the merge_resolved entry to history, not just to memory", async () => {
+      // A fallback resolution is only auditable if it reaches disk.
+      //
+      // The field must be one history genuinely cannot explain, i.e. one
+      // absent at creation: `created` carries the whole initial
+      // frontmatter (M3), so a hand-edit to a field the task was born
+      // with resolves to the birth value instead of falling back. That
+      // is the documented consequence of hand-editing (decisions.md,
+      // "M2 scope") — here we need the other case.
+      const state = await loadState(locttDir);
+      const task = await createTask({
+        locttDir, state, options: { project: taskProjectId, title: "Contested" },
+      });
+      await saveState(locttDir, state);
+      await publish(locttDir, root);
+
+      const dir = join(locttDir, "tasks", task.frontmatter.id);
+      const published = await readFile(join(dir, "task.md"), "utf-8");
+      // Both sides hand-add `assignee`, which no history entry mentions.
+      const withAssignee = (raw: string, who: string, updatedAt?: string): string => {
+        const out = raw.replace(/^title: .*$/m, m => `${m}\nassignee: ${who}`);
+        return updatedAt === undefined
+          ? out
+          : out.replace(/^updated_at: .*$/m, `updated_at: ${updatedAt}`);
+      };
+
+      await commitOnBranch(async wt => {
+        await writeFile(join(wt, "tasks", task.frontmatter.id, "task.md"),
+          withAssignee(published, "u-branch", "2099-01-01T00:00:00.000Z"));
+      }, "hand-add on branch");
+      await writeFile(join(dir, "task.md"), withAssignee(published, "u-local"));
+
+      await sync(locttDir, root);
+
+      const history = await readFile(join(dir, "_history.yaml"), "utf-8");
+      expect(history).toContain("merge_resolved");
+      expect(history).toContain("assignee");
+      // The losing value is the whole point of the entry.
+      expect(history).toContain("u-local");
+    });
+
+    it("keeps both sides' structured edits to different fields", async () => {
+      // What whole-record LWW lost, end to end. Branch sets status and
+      // records it; local sets priority through the real write path.
+      // Neither touched the other's field, so both must survive — the
+      // newer record used to take the whole task with it.
+      const state = await loadState(locttDir);
+      const task = await createTask({
+        locttDir, state, options: { project: taskProjectId, title: "Contested" },
+      });
+      await saveState(locttDir, state);
+      // This fixture's createTask writes no `status`, so set one through
+      // the real path first — otherwise the branch edit below has no
+      // line to replace and the test silently exercises nothing.
+      await setField({
+        locttDir, taskId: task.frontmatter.id, field: "status", value: "backlog",
+      });
+      await publish(locttDir, root);
+
+      const dir = join(locttDir, "tasks", task.frontmatter.id);
+      const publishedTask = await readFile(join(dir, "task.md"), "utf-8");
+      const publishedHistory = await readFile(join(dir, "_history.yaml"), "utf-8");
+
+      await commitOnBranch(async wt => {
+        const f = join(wt, "tasks", task.frontmatter.id, "task.md");
+        await writeFile(f, publishedTask
+          .replace(/^status: .*$/m, "status: in_progress")
+          .replace(/^updated_at: .*$/m, "updated_at: 2099-01-01T00:00:00.000Z"));
+        await writeFile(
+          join(wt, "tasks", task.frontmatter.id, "_history.yaml"),
+          `${publishedHistory}- timestamp: 2099-01-01T00:00:00.000Z\n  kind: field_change\n  field: status\n  before: backlog\n  after: in_progress\n`,
+        );
+      }, "status on branch");
+
+      await setField({
+        locttDir,
+        taskId: task.frontmatter.id,
+        field: "priority",
+        value: "high",
+      });
+
+      await sync(locttDir, root);
+
+      const after = await readFile(join(dir, "task.md"), "utf-8");
+      // eslint-disable-next-line no-console
+      console.log("MERGED TASK:\n" + after);
+      // eslint-disable-next-line no-console
+      const h = await readFile(join(dir, "_history.yaml"), "utf-8");
+      // eslint-disable-next-line no-console
+      console.log("HAS status field_change:", h.includes("field: status"), "| entries:", (h.match(/^- timestamp/gm) ?? []).length);
+      // The branch's status won its own field...
+      expect(after).toContain("status: in_progress");
+      // ...and the local priority was not dropped along with the record.
+      expect(after).toContain("priority: high");
+    });
+
     it("merges a task changed on both sides instead of aborting", async () => {
       const state = await loadState(locttDir);
       const task = await createTask({
@@ -209,12 +306,22 @@ describe("publish-sync", () => {
       const taskFile = join(locttDir, "tasks", task.frontmatter.id, "task.md");
       const published = await readFile(taskFile, "utf-8");
 
-      // Branch changes the title, with a later updated_at so it wins.
+      // Branch renames the task, as a structured write would: the
+      // frontmatter changes AND history records it. Editing only the
+      // file is a hand-edit, which M2 explicitly does not cover — the
+      // merge has no evidence it happened and `created` still says
+      // "Contested".
+      const historyFile = join(locttDir, "tasks", task.frontmatter.id, "_history.yaml");
+      const publishedHistory = await readFile(historyFile, "utf-8");
       await commitOnBranch(async wt => {
         const f = join(wt, "tasks", task.frontmatter.id, "task.md");
         await writeFile(f, published
           .replace(/^title: .*$/m, "title: Renamed on branch")
           .replace(/^updated_at: .*$/m, "updated_at: 2099-01-01T00:00:00.000Z"));
+        await writeFile(
+          join(wt, "tasks", task.frontmatter.id, "_history.yaml"),
+          `${publishedHistory}- timestamp: 2099-01-01T00:00:00.000Z\n  kind: field_change\n  field: title\n  before: Contested\n  after: Renamed on branch\n`,
+        );
       }, "rename on branch");
 
       // Local changes the body, i.e. a different edit to the same file.
