@@ -1,0 +1,102 @@
+# The build loop
+
+How a ticket in [`TEMP-WEB-TICKETS.md`](../../TEMP-WEB-TICKETS.md) gets
+built, verified and closed — by an agent, without a human in the middle.
+
+The design constraint is that **the agent never decides whether it is
+done.** Every gate below is a command that exits non-zero. An agent can
+be wrong about whether it satisfied a case; it cannot be wrong about
+whether `npm run cases:coverage -- --require …` exited 0.
+
+## Why the gates exist
+
+The 2026-08-14 session found fourteen tests that encoded a bug as
+intended behaviour — present, passing, asserting what the code produced
+rather than what the case required. That is the failure mode an agent
+writing both implementation and tests reproduces by construction.
+
+Three defences, in order of how much they carry:
+
+1. **The case doc precedes the test.** The acceptance criteria were
+   written before the code and are not editable as part of building the
+   ticket. An agent that finds a case inconvenient must escalate, not
+   rewrite.
+2. **Case IDs are checkable.** A test claims cases by ID; a fabricated ID
+   fails the build. The agent cannot invent a requirement it then
+   satisfies.
+3. **The specs must be shown to fail.** A transcribed case is not
+   accepted until the behaviour it covers has been broken and the spec
+   observed going red.
+
+## Per ticket
+
+```
+ 1. PLAN       Read the ticket. Look up its cases in docs/dev/case-index.json.
+               Restate each in one line and name the ones this ticket satisfies.
+               GATE  npm run cases:coverage -- --require <ids>   (must FAIL here —
+                     nothing is tagged yet; this proves the IDs are real)
+
+ 2. IMPLEMENT  Build the ticket. Do not edit the flow docs.
+
+ 3. UNIT       Tests alongside the implementation, each tagged `// @verifies <ID>`.
+               GATE  npm run test && npm run typecheck && npm run lint
+
+ 4. REVIEW-1   Cheap review: does the implementation match the cases it claims?
+               Wrong-shape work is caught before specs are written against it.
+
+ 5. E2E        Transcribe the ticket's UI cases into tests/ui/*.spec.ts.
+               Break the behaviour, watch each spec go red, restore.
+               GATE  npm run test:ui
+
+ 6. REVIEW-2   Deep review (/review) on the diff.
+
+ 7. FIX        Loop 3–6 until clean.
+
+ 8. VERIFY     GATE  npm run cases:coverage -- --require <ids>   (must PASS now)
+               GATE  npm run cases:check                          (index not stale)
+
+ 9. SURFACE    Run the matching surface cases for CLI + MCP in this domain.
+               GATE  npm run test:integration
+
+10. COMMIT     One squashed commit. Update the ticket's status mark.
+```
+
+Step 1's gate is deliberately inverted: requiring the IDs *before*
+writing anything proves they exist in the index. An agent that
+hallucinates `LST-99` finds out in the first thirty seconds rather than
+at step 8.
+
+## Running the suites
+
+**Never run two suites concurrently.** Each `pretest` hook rebuilds
+`dist/`, which the others spawn — a concurrent build surfaces as ~30
+scattered failures that do not reproduce in isolation. See
+[`tests/README.md`](../../tests/README.md#how-to-run).
+
+## What blocks the loop
+
+The agent stops and escalates, rather than proceeding, when:
+
+- **Two cases contradict each other.** Fifteen such contradictions were
+  found by human review in one session; they are where an unsupervised
+  agent produces confident garbage. Escalate, do not adjudicate.
+- **A case cannot pass because something it depends on does not exist.**
+  Record it against the missing thing; do not write a spec that asserts
+  a weaker claim so it can pass.
+- **A case appears wrong.** The docs are the specification. An agent
+  that may rewrite the spec to match its code has no specification.
+
+## Milestone gates stay human
+
+The 🚦 marks in `TEMP-WEB-TICKETS.md` are review gates for the user, not
+for the loop. Everything between them is automatable; the gates
+themselves are where the accumulated judgement calls get checked by
+someone who can overrule them.
+
+## Scheduling the surface cases
+
+The 65 CLI/MCP cases are **gaps only**, ordered by severity, not by
+milestone — the CLI and MCP already exist. Binding them to UI tickets
+would stall UI work behind unrelated fixes. The exception is the P10
+parity cases, which assert that a concept means the same thing across
+surfaces: those belong to the UI ticket that introduces the concept.

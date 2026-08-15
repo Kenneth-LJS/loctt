@@ -16,6 +16,8 @@ User-facing documentation lives in `docs/`. Developer documentation lives in `do
 - `docs/dev/schema-reference.md` — file formats (task.md, workflow.yaml, etc.)
 - `docs/dev/invariants.md` — **rules a change must not break** (project identity, key allocation, sprint state). Check against this before touching those areas
 - `docs/dev/decisions.md` — locked design decisions, incl. things deliberately NOT built
+- `docs/dev/build-loop.md` — **how a web-UI ticket gets built and verified**; the gates that decide "done"
+- `docs/dev/ui-test-cases/` + `docs/dev/surface-test-cases/` — acceptance criteria (931 cases). Indexed in `docs/dev/case-index.json`; see `tools/README.md`
 - `docs/user/cli/reference.md` — CLI commands
 - `docs/user/mcp/reference.md` — MCP tools and agent guidelines
 
