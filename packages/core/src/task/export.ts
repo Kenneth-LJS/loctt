@@ -77,7 +77,20 @@ function csvEscape(s: string): string {
 function csvCell(value: unknown): string {
   if (value === undefined || value === null) return "";
   if (Array.isArray(value)) {
-    return csvEscape(value.map(v => primitiveString(v)).join(","));
+    // A plain comma join is ambiguous the moment an element contains a
+    // comma: `["a,b", "c"]` becomes `a,b,c`, which reimports as three
+    // values (BLK-33). Elements that could be confused with the
+    // separator are JSON-quoted so the boundary survives a round trip;
+    // ordinary values stay bare, so the common case still reads as
+    // `bug,ui` in a spreadsheet.
+    const needsQuoting = value.some(
+      v => typeof v === "string" && /[",]/.test(v),
+    );
+    const parts = value.map(v => {
+      const s = primitiveString(v);
+      return needsQuoting ? JSON.stringify(s) : s;
+    });
+    return csvEscape(parts.join(","));
   }
   if (typeof value === "object") return csvEscape(JSON.stringify(value));
   return csvEscape(primitiveString(value));

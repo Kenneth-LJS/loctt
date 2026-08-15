@@ -13,7 +13,7 @@ import {
   useBulkSet,
 } from "../api/hooks/useBulk.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
-import { tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
+import { buildQueryString, tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { BulkBar } from "./BulkBar.tsx";
 import {
@@ -27,6 +27,7 @@ import {
 } from "./cells.tsx";
 import { resolveColumns } from "./columns.ts";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog.tsx";
+import { ExportMenu } from "./ExportMenu.tsx";
 import { FilterBar } from "./FilterBar.tsx";
 import { isOverdue, relativeTime, shortDate } from "./format.ts";
 import { buildLookups } from "./lookups.ts";
@@ -185,7 +186,10 @@ export function ListView() {
 
   return (
     <div className="flex flex-col gap-4 p-6">
-      <FilterBar />
+      <div className="flex items-center justify-between gap-3">
+        <FilterBar />
+        <ExportMenu total={total} queryString={buildQueryString(params)} />
+      </div>
       <div className="overflow-hidden rounded-md border border-border-subtle bg-bg-surface">
         <table aria-busy={tasks.isLoading} className="w-full border-separate border-spacing-0 text-[13px]">
           <thead>

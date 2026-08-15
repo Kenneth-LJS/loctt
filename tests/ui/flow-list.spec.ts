@@ -691,3 +691,198 @@ test.describe("BLK — bulk actions", () => {
     await expect(status).toContainText("T-99999");
   });
 });
+
+test.describe("BLK — refused bulk op", () => {
+  // @verifies BLK-40
+  test("BLK-40: a refused bulk set names the field and keeps the selection", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }, { title: "Two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    await page.locator("tbody input[type=checkbox]").first().check();
+
+    // Rewrite the outgoing change to an auto-managed field, which core
+    // refuses for the whole batch rather than per task.
+    await page.route(/\/api\/tasks\/bulk\/set/, async route => {
+      const body = route.request().postDataJSON() as { refs: string[] };
+      await route.continue({
+        postData: JSON.stringify({
+          refs: body.refs,
+          changes: [{ field: "updated_at", value: "2020-01-01T00:00:00Z" }],
+        }),
+      });
+    });
+
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "Done" }).click();
+
+    const bar = page.getByRole("region", { name: "Bulk actions" });
+    const status = bar.getByRole("status");
+    // Names the field and why it cannot be set.
+    await expect(status).toContainText("updated_at");
+    await expect(status).toContainText(/stamped on every write/);
+    // Nothing was applied, and the selection survives so the user can
+    // choose a different action.
+    await expect(status).toContainText(/Nothing was updated/);
+    await expect(bar).toContainText("1 task selected");
+  });
+});
+
+test.describe("BLK — export", () => {
+  const MIXED = [
+    { title: 'Fix "quoted", comma', fields: { priority: "high" } },
+    { title: "High two", fields: { priority: "high" } },
+    { title: "Low one", fields: { priority: "low" } },
+  ];
+
+  // @verifies BLK-16
+  test("BLK-16: the menu states the count and offers both formats", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed(MIXED);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+
+    await page.getByRole("button", { name: "Export" }).click();
+    const menu = page.getByRole("menu", { name: "Export" });
+
+    // The filter total, stated before committing.
+    await expect(menu).toContainText("Export 3 tasks");
+    await expect(menu.getByRole("menuitem", { name: "CSV" })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "JSON" })).toBeVisible();
+  });
+
+  // @verifies BLK-16
+  test("BLK-16: the count follows the filter, not the page", async ({ page, tracker }) => {
+    await tracker.seed(MIXED);
+    await page.goto(`${tracker.baseURL}/list?priority=high`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    await page.getByRole("button", { name: "Export" }).click();
+    await expect(page.getByRole("menu", { name: "Export" })).toContainText("Export 2 tasks");
+  });
+
+  // @verifies BLK-14
+  test("BLK-14: CSV carries the filter and the same rows as the screen", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed(MIXED);
+    await page.goto(`${tracker.baseURL}/list?priority=high`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // The keys on screen, to compare against — not merely the count.
+    const onScreen = await page.getByRole("cell", { name: /^[A-Z]+-\d+$/ }).allTextContents();
+
+    await page.getByRole("button", { name: "Export" }).click();
+    const href = await page.getByRole("menuitem", { name: "CSV" }).getAttribute("href");
+    expect(href).toContain("priority=high");
+
+    const res = await page.request.get(`${tracker.baseURL}${href ?? ""}`);
+    expect(res.headers()["content-type"]).toContain("text/csv");
+    expect(res.headers()["content-disposition"]).toContain("attachment");
+
+    const csv = await res.text();
+    const lines = csv.trimEnd().split("\n");
+    // Stable header order, then one row per matching task.
+    expect(lines[0]?.startsWith("key,id,title")).toBe(true);
+    for (const key of onScreen) {
+      expect(csv).toContain(key);
+    }
+  });
+
+  // @verifies BLK-14
+  test("BLK-14: export follows the filter, not the selection", async ({ page, tracker }) => {
+    await tracker.seed(MIXED);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+
+    // Select one row; the export must still carry all three.
+    await page.locator("tbody input[type=checkbox]").first().check();
+
+    await page.getByRole("button", { name: "Export" }).click();
+    await expect(page.getByRole("menu", { name: "Export" })).toContainText("Export 3 tasks");
+    const href = await page.getByRole("menuitem", { name: "CSV" }).getAttribute("href");
+    const res = await page.request.get(`${tracker.baseURL}${href ?? ""}`);
+    const lines = (await res.text()).trimEnd().split("\n");
+    // Header + 3 data rows, not header + 1.
+    expect(lines.length).toBeGreaterThanOrEqual(4);
+  });
+
+  // @verifies BLK-15
+  test("BLK-15: JSON is native-typed and uses stored keys", async ({ page, tracker }) => {
+    await tracker.seed(MIXED);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+
+    await page.getByRole("button", { name: "Export" }).click();
+    const href = await page.getByRole("menuitem", { name: "JSON" }).getAttribute("href");
+
+    const res = await page.request.get(`${tracker.baseURL}${href ?? ""}`);
+    expect(res.headers()["content-type"]).toContain("application/json");
+    expect(res.headers()["content-disposition"]).toContain("attachment");
+
+    const body = await res.json() as { priority?: string; labels?: unknown }[];
+    expect(Array.isArray(body)).toBe(true);
+    // Stored keys, not rendered labels — the JSON is data.
+    const priorities = body.map(t => t.priority).filter(Boolean);
+    expect(priorities).toContain("high");
+    expect(priorities).not.toContain("High");
+  });
+
+  // @verifies BLK-33
+  test("BLK-33: CSV escapes quotes and commas in a title", async ({ page, tracker }) => {
+    await tracker.seed(MIXED);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+
+    await page.getByRole("button", { name: "Export" }).click();
+    const href = await page.getByRole("menuitem", { name: "CSV" }).getAttribute("href");
+    const csv = await (await page.request.get(`${tracker.baseURL}${href ?? ""}`)).text();
+
+    // Doubled quotes, whole cell wrapped — and the row is not split.
+    expect(csv).toContain('"Fix ""quoted"", comma"');
+    expect(csv.trimEnd().split("\n")).toHaveLength(4);
+  });
+
+  // @verifies BLK-35
+  test("BLK-35: zero matches disables export rather than promising a file", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed(MIXED);
+    await page.goto(`${tracker.baseURL}/list?priority=critical`);
+    await expect(page.getByText("No tasks match these filters.")).toBeVisible();
+
+    // Either an empty file or a disabled control — never a "0 tasks
+    // exported" success next to a file the user did not get.
+    await expect(page.getByRole("button", { name: "Export" })).toBeDisabled();
+  });
+
+  // @verifies BLK-37
+  test("BLK-37: the export URL reproduces the identical file", async ({ page, tracker }) => {
+    await tracker.seed(MIXED);
+    await page.goto(`${tracker.baseURL}/list?priority=high`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    await page.getByRole("button", { name: "Export" }).click();
+    const href = await page.getByRole("menuitem", { name: "CSV" }).getAttribute("href");
+
+    // Byte-for-byte, not row counts: a filter dropped server-side gives
+    // a same-sized file with different rows.
+    const first = await (await page.request.get(`${tracker.baseURL}${href ?? ""}`)).text();
+    const second = await (await page.request.get(`${tracker.baseURL}${href ?? ""}`)).text();
+    expect(second).toBe(first);
+
+    // And the filter really is in the URL, not only in React state.
+    expect(href).toContain("priority=high");
+    const unfiltered = await (await page.request.get(
+      `${tracker.baseURL}/api/tasks/export?format=csv`,
+    )).text();
+    expect(unfiltered).not.toBe(first);
+  });
+});

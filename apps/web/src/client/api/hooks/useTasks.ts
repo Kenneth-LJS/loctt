@@ -69,11 +69,16 @@ export function tasksParamsFromSearch(search: Partial<ListSearch>): TasksQueryPa
 }
 
 /**
+ * Exported so the export menu builds its URL from the *same* function
+ * the list request uses (BLK-37). Two builders drift, and a filter
+ * dropped from one of them yields a same-sized file with different
+ * rows — which is exactly what that case warns about.
+ *
  * `offset` overrides the page-derived one. The infinite feed asks for
  * an absolute offset per page; the single-page hook derives it from
  * `page`. Both end up as the same `?limit&offset` the server reads.
  */
-function buildQueryString(params: TasksQueryParams & { offset?: number }): string {
+export function buildQueryString(params: TasksQueryParams & { offset?: number }): string {
   const limit = params.limit ?? DEFAULT_LIST_LIMIT;
   const page = params.page ?? 1;
   const offset = params.offset ?? (page - 1) * limit;
