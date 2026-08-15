@@ -8,7 +8,7 @@ import { loadProjectsConfig } from "../config/projects.js";
 import { initLoctt } from "../init/init.js";
 import { resolveLocttDir } from "../paths/index.js";
 import { loadState, saveState, withStateLock } from "../state/index.js";
-import { bulkArchive, bulkSetFields } from "./bulk.js";
+import { bulkArchive, bulkDelete, bulkSetFields } from "./bulk.js";
 import { createTask } from "./create.js";
 import { readHistory } from "./history.js";
 import { lookupTask } from "./lookup.js";
@@ -146,3 +146,67 @@ describe("bulkArchive", () => {
     expect(after).toBe(before);
   });
 });
+
+describe("bulkDelete", () => {
+  it("removes every task directory, not just the task.md", async () => {
+    const { existsSync } = await import("node:fs");
+    const { getTaskDir, getHistoryFilePath } = await import("../paths/index.js");
+    const a = await seed("A");
+    const b = await seed("B");
+    const keep = await seed("Keep");
+
+    // Give one task a history file so we can prove the whole directory
+    // goes, not only the markdown.
+    expect(existsSync(getHistoryFilePath(locttDir, a))).toBe(true);
+
+    const result = await bulkDelete({ locttDir, taskRefs: [a, b] });
+
+    expect(result.succeeded).toEqual([a, b]);
+    expect(result.failed).toEqual([]);
+    expect(existsSync(getTaskDir(locttDir, a))).toBe(false);
+    expect(existsSync(getTaskDir(locttDir, b))).toBe(false);
+    // Unselected tasks are untouched.
+    expect(existsSync(getTaskDir(locttDir, keep))).toBe(true);
+  });
+
+  it("accepts keys as well as ids", async () => {
+    const { existsSync } = await import("node:fs");
+    const a = await seed("A");
+    const task = await lookupTask(locttDir, a);
+    const { getTaskDir } = await import("../paths/index.js");
+
+    // The UI sends whatever the row carries; a key must resolve to the
+    // id whose directory is removed.
+    const result = await bulkDelete({ locttDir, taskRefs: [task.frontmatter.key] });
+
+    expect(result.succeeded).toEqual([a]);
+    expect(existsSync(getTaskDir(locttDir, a))).toBe(false);
+  });
+
+  it("reports an unknown ref as failed and still deletes the rest", async () => {
+    const { existsSync } = await import("node:fs");
+    const a = await seed("A");
+    const { getTaskDir } = await import("../paths/index.js");
+
+    const result = await bulkDelete({ locttDir, taskRefs: [a, "T-9999"] });
+
+    // Partial failure, not an aborted batch: BLK-38 needs each failure
+    // named individually.
+    expect(result.succeeded).toEqual([a]);
+    expect(result.failed).toEqual([{ taskId: "T-9999", error: "task not found" }]);
+    expect(existsSync(getTaskDir(locttDir, a))).toBe(false);
+  });
+
+  it("stops resolving the deleted key afterwards", async () => {
+    const a = await seed("A");
+    const task = await lookupTask(locttDir, a);
+    await bulkDelete({ locttDir, taskRefs: [a] });
+
+    // The key must not resolve once the directory is gone. Note this
+    // does not exercise the cache clear in bulkDelete: the lookup cache
+    // is negative-only, so a deletion can never leave a stale hit for
+    // this to catch.
+    await expect(lookupTask(locttDir, task.frontmatter.key)).rejects.toThrow();
+  });
+});
+

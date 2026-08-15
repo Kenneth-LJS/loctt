@@ -88,6 +88,7 @@ export type {
 } from "./service-schemas.js";
 export {
   BulkArchiveRequestSchema,
+  BulkDeleteRequestSchema,
   BulkLinkRequestSchema,
   BulkMoveRequestSchema,
   BulkSetRequestSchema,

@@ -26,6 +26,7 @@ import type {
 } from "@loctt/contracts";
 import {
   BulkArchiveRequestSchema,
+  BulkDeleteRequestSchema,
   BulkLinkRequestSchema,
   BulkMoveRequestSchema,
   BulkSetRequestSchema,
@@ -54,6 +55,7 @@ import {
   buildMentionResolver,
   buildShowModel,
   bulkArchive,
+  bulkDelete,
   bulkLink,
   bulkMoveTasksToProject,
   bulkSetFields,
@@ -2445,6 +2447,23 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
+  /**
+   * Permanent removal. The typed confirmation is enforced by the
+   * schema, so a request without `confirm: "DELETE"` is a 400 before
+   * core is reached — the server does not assume the client asked.
+   */
+  const handleBulkDelete: RouteHandler = async ({ req, res, locttDir }) => {
+    const r = await parseJsonBodyWithSchema(req, res, BulkDeleteRequestSchema);
+    try {
+      const result = await bulkDelete({ locttDir, taskRefs: r.refs });
+      json(res, result satisfies BulkResponse);
+    } catch (err) {
+      // As with the other bulk routes: per-task failures come back in
+      // the 200 body, so reaching here means nothing was deleted.
+      error(res, (err as Error).message, 400, BULK_ABORTED);
+    }
+  };
+
   const handleBulkMove: RouteHandler = async ({ req, res, locttDir }) => {
     const r = await parseJsonBodyWithSchema(req, res, BulkMoveRequestSchema);
     try {
@@ -2981,6 +3000,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "GET", pattern: "/api/projects", handler: handleListProjects },
     { method: "POST", pattern: "/api/tasks/bulk/set", handler: handleBulkSet },
     { method: "POST", pattern: "/api/tasks/bulk/archive", handler: handleBulkArchive },
+    { method: "POST", pattern: "/api/tasks/bulk/delete", handler: handleBulkDelete },
     { method: "POST", pattern: "/api/tasks/bulk/move", handler: handleBulkMove },
     { method: "POST", pattern: "/api/tasks/bulk/link", handler: handleBulkLink },
     { method: "POST", pattern: "/api/projects", handler: handleCreateProject },

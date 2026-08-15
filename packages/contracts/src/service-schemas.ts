@@ -121,6 +121,20 @@ export const BulkArchiveRequestSchema = z.object({
 }).strict();
 export type BulkArchiveRequest = z.infer<typeof BulkArchiveRequestSchema>;
 
+/**
+ * Body of `POST /api/tasks/bulk/delete`.
+ *
+ * `confirm` must be the literal string "DELETE". The UI already gates
+ * this behind a typed confirmation (BLK-11); requiring it in the body
+ * too means a stray or replayed POST cannot permanently remove tasks,
+ * and the server is not relying on the client having asked.
+ */
+export const BulkDeleteRequestSchema = z.object({
+  refs: BulkTaskRefsSchema,
+  confirm: z.literal("DELETE"),
+}).strict();
+export type BulkDeleteRequest = z.infer<typeof BulkDeleteRequestSchema>;
+
 /** Body of `POST /api/tasks/bulk/move`. */
 export const BulkMoveRequestSchema = z.object({
   refs: BulkTaskRefsSchema,

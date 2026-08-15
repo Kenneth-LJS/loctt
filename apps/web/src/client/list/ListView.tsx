@@ -1,11 +1,17 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   useLabels,
   useProjects,
   useUsers,
 } from "../api/hooks/sidebarData.ts";
+import {
+  describeBulkResult,
+  useBulkArchive,
+  useBulkDelete,
+  useBulkSet,
+} from "../api/hooks/useBulk.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
 import { tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
@@ -20,6 +26,7 @@ import {
   TypeBadge,
 } from "./cells.tsx";
 import { resolveColumns } from "./columns.ts";
+import { DeleteConfirmDialog } from "./DeleteConfirmDialog.tsx";
 import { FilterBar } from "./FilterBar.tsx";
 import { isOverdue, relativeTime, shortDate } from "./format.ts";
 import { buildLookups } from "./lookups.ts";
@@ -109,6 +116,40 @@ export function ListView() {
   const allOnPageSelected =
     items.length > 0 && items.every(t => selection.isSelected(t.id));
   const someOnPageSelected = items.some(t => selection.isSelected(t.id));
+
+  const bulkSet = useBulkSet();
+  const bulkArchive = useBulkArchive();
+  const bulkDelete = useBulkDelete();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [bulkResult, setBulkResult] = useState<
+    { message: string; failures: readonly string[] } | undefined
+  >(undefined);
+
+  const busy = bulkSet.isPending || bulkArchive.isPending || bulkDelete.isPending;
+  const refs = [...selection.selected];
+
+  const runBulk = async (
+    run: () => Promise<import("@loctt/contracts").BulkResponse>,
+    verb: string,
+    clearSelection: boolean,
+  ): Promise<void> => {
+    // Clear the previous outcome first: leaving "5 tasks updated" on
+    // screen while the next action runs would misreport what just
+    // happened.
+    setBulkResult(undefined);
+    try {
+      const result = await run();
+      setBulkResult(describeBulkResult(result, verb));
+      if (clearSelection) selection.clear();
+    } catch (err) {
+      // The batch never ran (BLK-39): distinct from a partial failure,
+      // and the selection survives so the user can retry it.
+      setBulkResult({
+        message: `Nothing was ${verb} — the operation could not run.`,
+        failures: [(err as Error).message],
+      });
+    }
+  };
 
   // Restore the page count from the URL, then keep the URL in step as
   // the user loads more, so the view is reproducible in a new tab
@@ -253,8 +294,40 @@ export function ListView() {
             ? `${String(items.length)} on this page selected`
             : undefined
         }
+        workflow={workflow.data}
+        busy={busy}
+        result={bulkResult}
         onClear={selection.clear}
+        onSetField={(field, value) => {
+          void runBulk(
+            () => bulkSet.mutateAsync({ refs, field, value }),
+            "updated",
+            false,
+          );
+        }}
+        onArchive={() => {
+          void runBulk(
+            () => bulkArchive.mutateAsync({ refs, archive: true }),
+            "archived",
+            true,
+          );
+        }}
+        onDeleteRequested={() => { setConfirmingDelete(true); }}
       />
+      {confirmingDelete && (
+        <DeleteConfirmDialog
+          count={selection.count}
+          onCancel={() => { setConfirmingDelete(false); }}
+          onConfirm={() => {
+            setConfirmingDelete(false);
+            void runBulk(
+              () => bulkDelete.mutateAsync({ refs }),
+              "deleted",
+              true,
+            );
+          }}
+        />
+      )}
       <Pagination
         loaded={items.length}
         total={total}

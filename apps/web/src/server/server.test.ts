@@ -960,3 +960,105 @@ describe("interrupted prefix rename API", () => {
     expect(body.completed).toBe(false);
   });
 });
+
+/**
+ * @verifies BLK-12, BLK-39
+ *
+ * Bulk delete's API contract. The typed confirmation is enforced here
+ * as well as in the UI, and partial failure is distinguished from a
+ * batch that never ran.
+ */
+describe("bulk delete API", () => {
+  let root: string;
+  let app: ReturnType<typeof createWebApp>;
+  let base: string;
+
+  const WRITE = {
+    "Content-Type": "application/json",
+    "X-Loctt-Client": "test",
+  };
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-web-bulkdel-"));
+    await initLoctt(root);
+    app = createWebApp({ root, port: 0 });
+    await app.start();
+    const addr = app.server.address();
+    const port = typeof addr === "object" && addr ? addr.port : app.port;
+    base = `http://127.0.0.1:${port}`;
+  });
+
+  afterAll(async () => {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  async function makeTask(title: string): Promise<string> {
+    const res = await fetch(`${base}/api/tasks`, {
+      method: "POST", headers: WRITE, body: JSON.stringify({ title }),
+    });
+    const body = await res.json() as { key: string };
+    return body.key;
+  }
+
+  it("refuses without the typed confirmation, deleting nothing", async () => {
+    const key = await makeTask("survivor");
+
+    const res = await fetch(`${base}/api/tasks/bulk/delete`, {
+      method: "POST", headers: WRITE,
+      body: JSON.stringify({ refs: [key] }),
+    });
+
+    expect(res.status).toBe(400);
+    // Still there: the gate is the server's, not merely the dialog's.
+    const check = await fetch(`${base}/api/tasks/${key}`);
+    expect(check.status).toBe(200);
+  });
+
+  it("refuses a wrong confirmation string", async () => {
+    const key = await makeTask("also survives");
+    const res = await fetch(`${base}/api/tasks/bulk/delete`, {
+      method: "POST", headers: WRITE,
+      body: JSON.stringify({ refs: [key], confirm: "delete" }),
+    });
+    expect(res.status).toBe(400);
+    expect((await fetch(`${base}/api/tasks/${key}`)).status).toBe(200);
+  });
+
+  it("deletes on a correct confirmation and reports what went", async () => {
+    const a = await makeTask("doomed a");
+    const b = await makeTask("doomed b");
+
+    const res = await fetch(`${base}/api/tasks/bulk/delete`, {
+      method: "POST", headers: WRITE,
+      body: JSON.stringify({ refs: [a, b], confirm: "DELETE" }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { succeeded: string[]; failed: unknown[] };
+    expect(body.succeeded).toHaveLength(2);
+    expect(body.failed).toEqual([]);
+    expect((await fetch(`${base}/api/tasks/${a}`)).status).toBe(404);
+  });
+
+  it("names each failure individually rather than aborting the batch", async () => {
+    const good = await makeTask("real one");
+
+    const res = await fetch(`${base}/api/tasks/bulk/delete`, {
+      method: "POST", headers: WRITE,
+      body: JSON.stringify({ refs: [good, "T-99999"], confirm: "DELETE" }),
+    });
+
+    // 200 with a populated `failed`, not a 400 (BLK-39): the good one
+    // really was deleted, and saying "nothing happened" would be a lie.
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      succeeded: string[];
+      failed: { taskId: string; error: string }[];
+    };
+    expect(body.succeeded).toHaveLength(1);
+    expect(body.failed).toHaveLength(1);
+    expect(body.failed[0]?.taskId).toBe("T-99999");
+    expect(body.failed[0]?.error).toMatch(/not found/i);
+  });
+});
