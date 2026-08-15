@@ -264,11 +264,13 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 ### Schema version drift
 
 ### XS-33 · M1 · blocker · P4 P7
-**`.schema-version` missing: the UI says the tracker is uninitialized or legacy and points at the fix.** Delete `.schema-version` and load the UI.
+**`.schema-version` missing: the UI says the tracker is unrecognized and points at `loctt migrate`.** Delete `.schema-version` and load the UI.
 
-- The server refuses to serve tracker data (`requireSupportedSchema` fails) and the UI shows the schema banner with the `unknown` kind rather than an empty list.
-- The banner names the missing file by path and says the tracker is either uninitialized or predates schema versioning.
-- It offers a concrete next step, not a generic retry — run `loctt init` for an uninitialized directory, or `loctt migrate` for a legacy one, with wording that lets the user tell which they have.
+- The server refuses to serve tracker data (`requireSupportedSchema` fails) and the UI shows the schema banner with the **`missing`** kind rather than an empty list. `missing` and `unknown` are distinct kinds in `SchemaStatusResponse`: `unknown` is an unreadable/unparseable version (SHL-38), not an absent one.
+- The banner names the missing file by path and says the tracker's layout cannot be confirmed.
+- It offers a concrete next step, not a generic retry: run `loctt migrate` to stamp and upgrade.
+- **It does not offer `loctt init` or reinitialize.** A `.loctt/` holding tasks but no version file is a *damaged* tracker, not an empty one; reinitializing is the one path that can destroy real data. Only a wholly absent or empty `.loctt/` routes to onboarding (ONB-1/ONB-16).
+- The app does not route to `/init` — the directory is not uninitialized.
 - No "Migrate now" button is offered for this kind in M4; migration is not the mechanical fix for a missing file.
 
 ### XS-34 · M1 · blocker · P4 P7 P10
@@ -277,7 +279,7 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 - The banner shows the `future` kind and states both numbers: the version on disk and the version this LocTT understands.
 - The message says the tracker was written by a **newer** LocTT and that the fix is to upgrade LocTT — explicitly *not* to run a migration.
 - No "Migrate now" button is offered for this kind at any milestone, including M4. Offering one here would be wrong: there is no forward migration path and no downgrade.
-- The app does not show a partially-populated list; data views stay gated behind the banner.
+- The app shell and navigation still render; the banner is always visible. Every `/api/` request returns 409 while the mismatch stands (`server.ts` schema guard), so data views show an explained error rather than a spinner, an empty list, or partial content.
 
 ### XS-35 · M1 · blocker · P4 P7
 **Recorded version less than current: run `loctt migrate`.** Write a `.schema-version` below `CURRENT_SCHEMA_VERSION` and load the UI.
@@ -285,7 +287,7 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 - The banner shows the `outdated` kind and states both numbers.
 - Through M1–M3 the banner tells the user to run `loctt migrate` in the terminal, quoting the exact command — the M1.1 banner is read-only by design.
 - The command shown is copyable, and the message says a backup of `.loctt/` is taken automatically so the user knows the risk profile before running it.
-- Data views stay gated; the UI does not attempt to read tasks against a schema it does not understand.
+- The app shell and navigation still render under the banner; gating is enforced server-side, not by the client. Every `/api/` request returns 409 while the mismatch stands, so the UI never reads tasks against a schema it does not understand — and never silently shows partial data either.
 
 ### XS-36 · M4 · blocker · P4 P7
 **The M4 "Migrate now" button runs the real migration and clears the banner.** With an `outdated` schema in M4, click Migrate now.

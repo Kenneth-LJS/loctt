@@ -17,9 +17,24 @@ describe("SchemaBanner", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("renders nothing for a missing (uninitialized) tracker", () => {
-    const { container } = render(<SchemaBanner status={{ kind: "missing" }} />);
-    expect(container.firstChild).toBeNull();
+  it("banners a missing .schema-version and points at `loctt migrate`", () => {
+    // Previously rendered nothing, on the theory that the bootstrap
+    // routed this to the init wizard — which is a stub, so nothing
+    // routed anywhere and the user saw an unexplained broken app.
+    render(<SchemaBanner status={{ kind: "missing" }} />);
+    const alert = screen.getByRole("alert");
+    expect(alert.getAttribute("data-kind")).toBe("missing");
+    expect(alert.textContent).toContain("loctt migrate");
+  });
+
+  it("does not offer to reinitialize a tracker with a missing version", () => {
+    // A .loctt/ holding tasks but no version file is a DAMAGED tracker,
+    // not an empty one. Offering init/reinitialize here is the one path
+    // that can destroy real data, so the copy must not suggest it.
+    render(<SchemaBanner status={{ kind: "missing" }} />);
+    const text = screen.getByRole("alert").textContent ?? "";
+    expect(text).not.toMatch(/loctt init/);
+    expect(text).toMatch(/not reinitialize|Do not\s+reinitialize/i);
   });
 
   it("warns and points at `loctt migrate` for an outdated schema", () => {
