@@ -56,6 +56,7 @@ import {
   bulkSetFields,
   BurndownError,
   ConfigRouterError,
+  countTasksByReferences,
   createLabel,
   createMilestone,
   createProject,
@@ -116,6 +117,7 @@ import {
   postComment,
   ProjectError,
   publish,
+  pushRecent,
   readBurndownSeries,
   readHistory,
   readRecents,
@@ -140,6 +142,7 @@ import {
   switchCurrentUser,
   sync,
   TaskNotFoundError,
+  type TaskReferenceKind,
   TaskUpdateError,
   todayInZone,
   unarchiveTask,
@@ -961,11 +964,32 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
+  /**
+   * Attaches `taskCount` to config entities when `?counts=true`.
+   *
+   * Opt-in rather than always-on: counting scans every task, and the
+   * sidebar renders these lists on every page load. Settings panels
+   * that show "3 tasks use this label" ask for it; the sidebar does
+   * not. `countTasksByReferences` batches the whole list into one
+   * scan rather than one per entity.
+   */
+  async function withCounts<T extends { readonly id: string }>(
+    locttDir: string,
+    url: URL,
+    kind: TaskReferenceKind,
+    items: readonly T[],
+  ): Promise<readonly (T | (T & { taskCount: number }))[]> {
+    if (url.searchParams.get("counts") !== "true") return items;
+    const counts = await countTasksByReferences(locttDir, kind, items.map(i => i.id));
+    return items.map(i => ({ ...i, taskCount: counts[i.id] ?? 0 }));
+  }
+
   const handleListSprints: RouteHandler = async ({ res, url, locttDir }) => {
     const page = parsePagination(url, res);
     if (!page) return;
     const cfg = await loadSprintsConfig(locttDir);
-    json(res, paginated(cfg.sprints, page.offset, page.limit));
+    const items = await withCounts(locttDir, url, "sprint", cfg.sprints);
+    json(res, paginated(items, page.offset, page.limit));
   };
 
   const handleCreateSprint: RouteHandler = async ({ req, res, locttDir }) => {
@@ -1039,7 +1063,8 @@ export function createWebApp(options: WebAppOptions) {
     const page = parsePagination(url, res);
     if (!page) return;
     const cfg = await loadMilestonesConfig(locttDir);
-    json(res, paginated(cfg.milestones, page.offset, page.limit));
+    const items = await withCounts(locttDir, url, "milestone", cfg.milestones);
+    json(res, paginated(items, page.offset, page.limit));
   };
 
   const handleCreateMilestone: RouteHandler = async ({ req, res, locttDir }) => {
@@ -1100,7 +1125,8 @@ export function createWebApp(options: WebAppOptions) {
     const page = parsePagination(url, res);
     if (!page) return;
     const cfg = await loadLabelsConfig(locttDir);
-    json(res, paginated(cfg.labels, page.offset, page.limit));
+    const items = await withCounts(locttDir, url, "label", cfg.labels);
+    json(res, paginated(items, page.offset, page.limit));
   };
 
   const handleCreateLabel: RouteHandler = async ({ req, res, locttDir }) => {
@@ -1783,6 +1809,19 @@ export function createWebApp(options: WebAppOptions) {
     if (ref === null) return;
     const task = await lookupTask(locttDir, ref);
     const model = await buildShowModel(locttDir, task);
+    // "Recently viewed" is written here, on task-detail fetch. The read
+    // route (GET /api/recents) shipped without this, so the sidebar
+    // group was permanently empty — a list nothing wrote to.
+    //
+    // Failure is swallowed deliberately: not recording a recent view is
+    // a cosmetic loss, and failing the task fetch over it would trade a
+    // missing sidebar entry for an unopenable task.
+    try {
+      const current = await getCurrentUser(locttDir);
+      if (current) await pushRecent(locttDir, current.id, task.frontmatter.id);
+    } catch {
+      // ignored — see above
+    }
     const response: TaskResponse = {
       frontmatter: projectTaskFrontmatter(model.task.frontmatter),
       body: model.task.body,

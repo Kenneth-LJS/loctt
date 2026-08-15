@@ -14,10 +14,12 @@
 import {
   buildListContext,
   buildShowModel,
+  bulkMoveTasksToProject,
   bulkSetFields,
   createTask,
   DEFAULT_LIST_LIMIT,
   deleteTask,
+  duplicateTask,
   listTasks,
   loadAllTasks,
   loadArchivedGuardConfigs,
@@ -238,6 +240,75 @@ export const TOOLS: readonly ToolDef[] = [
       const field = args["field"] as string;
       const updated = await unsetField(locttDir, task.frontmatter.id, field);
       return text(`Updated ${updated.frontmatter.key}: unset ${field}`);
+    },
+  },
+  {
+    name: "move_task",
+    description:
+      "Move one or more tasks to another project. The key is reallocated " +
+      "under the target project; the old key is retired into key_history " +
+      "and stays resolvable, so existing references keep working. Pass " +
+      "several refs to move them as one operation.",
+    inputSchema: {
+      refs: z.array(z.string()).min(1).max(500).describe("Task keys or IDs"),
+      project: z.string().describe("Target project key or ID"),
+    },
+    handler: async ({ locttDir }, args) => {
+      const refs = args["refs"] as string[];
+      const project = args["project"] as string;
+      try {
+        const targetProjectId = await resolveProjectIdForUser(locttDir, project);
+        const result = await bulkMoveTasksToProject({
+          locttDir, taskRefs: refs, targetProjectId,
+        });
+        const lines = [`Moved ${result.succeeded.length}, failed ${result.failed.length}`];
+        for (const s of result.succeeded) lines.push(`  ${s.oldKey} → ${s.newKey}`);
+        for (const f of result.failed) lines.push(`  ${f.taskId}: ${f.error}`);
+        return text(lines.join("\n"));
+      } catch (err) {
+        return errorResult((err as Error).message);
+      }
+    },
+  },
+  {
+    name: "duplicate_task",
+    description:
+      "Create a copy of a task with a fresh key. Copies title (suffixed " +
+      "\"(copy)\" unless overridden), status, priority, type, assignee, " +
+      "reporter, dates, estimate, milestone, sprint, labels, custom fields " +
+      "and body. Deliberately does NOT copy relationships, attachments, or " +
+      "archived state — the copy starts unlinked and active.",
+    inputSchema: {
+      ref: z.string().describe("Task key or ID to copy"),
+      title: z.string().optional().describe("Title for the copy; defaults to '<source> (copy)'"),
+      project: z.string().optional().describe("Target project; defaults to the source's"),
+    },
+    handler: async ({ locttDir }, args) => {
+      const { workflowConfig } = await loadOptionalConfigs(locttDir);
+      const archivedGuard = await loadArchivedGuardConfigs(locttDir);
+      const title = args["title"] as string | undefined;
+      const project = args["project"] as string | undefined;
+      try {
+        const created = await withStateLock(locttDir, async () => {
+          const state = await loadState(locttDir);
+          const task = await duplicateTask({
+            locttDir,
+            state,
+            sourceRef: args["ref"] as string,
+            ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+            archivedGuard,
+            overrides: {
+              ...(title !== undefined ? { title } : {}),
+              ...(project !== undefined ? { project } : {}),
+            },
+          });
+          await saveState(locttDir, state);
+          return task;
+        });
+        return text(`Created ${created.frontmatter.key}: ${created.frontmatter.title}`);
+      } catch (err) {
+        return errorResult((err as Error).message);
+      }
     },
   },
   {
