@@ -7,6 +7,37 @@ import * as lockfile from "proper-lockfile";
 import { getStateFilePath } from "../paths/index.js";
 import { isMigrationLocked } from "../schema/lock.js";
 import { SchemaVersionError } from "../schema/version.js";
+import { rethrowFsError } from "../utils/fs-errors.js";
+
+/** Shared lock settings, so the two acquire sites cannot drift apart. */
+const LOCK_OPTIONS = {
+  retries: { retries: 10, factor: 2, minTimeout: 50, maxTimeout: 500 },
+  stale: 10_000,
+  realpath: false,
+} as const;
+
+/**
+ * Acquires the state lock, naming filesystem failures the user can fix.
+ *
+ * The lock is the *first* write on nearly every mutating path — it
+ * creates a `.lock` directory beside `state.yaml` — so an unwritable
+ * `.loctt/` surfaces here rather than at the eventual file write. Left
+ * unmapped it reached every front-end as a raw `EACCES`, which is
+ * ERR-11's complaint and ERR-31's prohibition.
+ *
+ * `proper-lockfile` preserves the underlying errno, so the shared
+ * mapper recognises it unchanged. Retrying is pointless for these —
+ * a permission or a full disk will not clear between attempts — but the
+ * backoff is bounded and the alternative is inspecting errnos before
+ * deciding to retry, which would duplicate the mapper's job.
+ */
+async function acquireStateLock(target: string): Promise<() => Promise<void>> {
+  try {
+    return await lockfile.lock(target, LOCK_OPTIONS);
+  } catch (err) {
+    rethrowFsError(err, target);
+  }
+}
 
 /**
  * Per-async-context flag that records whether the current call
@@ -154,11 +185,7 @@ export async function withStateLock<T>(
   // the `.lock` directory next to state.yaml even on the first call
   // (before init has written state.yaml itself).
   await mkdir(dirname(target), { recursive: true });
-  const release = await lockfile.lock(target, {
-    retries: { retries: 10, factor: 2, minTimeout: 50, maxTimeout: 500 },
-    stale: 10_000,
-    realpath: false,
-  });
+  const release = await acquireStateLock(target);
   try {
     // Post-acquire re-check: closes the TOCTOU window between the
     // pre-check above and the OS lock acquire. A migration that
@@ -214,11 +241,7 @@ export async function withStateLockForMigration<T>(
 ): Promise<T> {
   const target = getStateFilePath(locttDir);
   await mkdir(dirname(target), { recursive: true });
-  const release = await lockfile.lock(target, {
-    retries: { retries: 10, factor: 2, minTimeout: 50, maxTimeout: 500 },
-    stale: 10_000,
-    realpath: false,
-  });
+  const release = await acquireStateLock(target);
   let released = false;
   const releaseEarly = async (): Promise<void> => {
     if (released) return;

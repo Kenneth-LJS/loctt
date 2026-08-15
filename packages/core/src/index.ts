@@ -362,6 +362,8 @@ export {
   UserProfileError,
   writeCurrentUserId,
 } from "./users/index.js";
+export type { FsFailureKind } from "./utils/fs-errors.js";
+export { FsAccessError, rethrowFsError, withFsErrors } from "./utils/fs-errors.js";
 export { todayInZone } from "./utils/today.js";
 export type { CreateViewInput, DeleteViewOptions, EditViewInput } from "./views/index.js";
 export {
