@@ -101,6 +101,54 @@ describe("evenlySpacedRanks", () => {
     }
   });
 
+  it("stays unique and strictly increasing at every count it accepts", () => {
+    // `stride` floors to 1 once count passes 648 (BASE*BASE/2), so
+    // `Math.floor(stride / 2)` became 0 and the `lo === 0 -> 1` clamp
+    // collapsed adjacent slots onto the same rank. reorderBoardRank
+    // rebalances with one rank per ranked task in the tracker, so a
+    // large board wrote duplicate board_rank to disk, and the next
+    // before/after drag resolved its anchor by indexOf and positioned
+    // against the wrong card.
+    for (const count of [648, 649, 700, 1000, 1259, 1260, 1261, 5000, 46656]) {
+      const r = evenlySpacedRanks(count);
+      expect(r).toHaveLength(count);
+      expect(new Set(r).size).toBe(count);
+      for (let i = 1; i < r.length; i += 1) {
+        expect(compare(r[i - 1]!, r[i]!)).toBe(-1);
+      }
+      for (const v of r) expect(v.endsWith("0")).toBe(false);
+    }
+  });
+
+  it("leaves insert room before the first rank and after the last", () => {
+    // Ranks are centred in the slot space so a later insert at either
+    // end has somewhere to go. Without the centring offset the first
+    // rank sits at the very bottom, and `between(MIN, first)` has to
+    // grow a longer rank immediately on the next head insert.
+    for (const count of [5, 100, 700]) {
+      const r = evenlySpacedRanks(count);
+      expect(compare(MIN, r[0]!)).toBe(-1);
+      expect(compare(r[r.length - 1]!, MAX)).toBe(-1);
+      // There is at least one representable rank below the first.
+      expect(between(MIN, r[0]!).length).toBeLessThanOrEqual(r[0]!.length);
+    }
+  });
+
+  it("widens the rank instead of failing once two digits run out", () => {
+    // Two digits hold BASE*(BASE-1) = 1260 usable ranks. The old code
+    // claimed 1296 and met it by silently repeating ranks. Both callers
+    // pass a live collection size, so refusing would turn a drag on a
+    // large board into a thrown error — width grows instead.
+    // Widening happens at half capacity, not at the brim, so the ranks
+    // keep a centred band with insert room at both ends: two digits hold
+    // 1260 usable ranks and are used up to 630.
+    expect(evenlySpacedRanks(630).every(r => r.length === 2)).toBe(true);
+    expect(evenlySpacedRanks(631).every(r => r.length === 3)).toBe(true);
+    const big = evenlySpacedRanks(5000);
+    expect(new Set(big).size).toBe(5000);
+    expect(big.every(r => r.length === 3)).toBe(true);
+  });
+
   it("returns the requested number of strictly increasing ranks", () => {
     const r = evenlySpacedRanks(10);
     expect(r).toHaveLength(10);
