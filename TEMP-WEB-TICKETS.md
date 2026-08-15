@@ -19,6 +19,18 @@ milestone run sequentially with a code-review agent between each.
   both modes are first-class in v1
 - **Theme**: light / dark / system
 
+> **Stack drift — check before relying on this list.** As of
+> 2026-08-15: **TipTap is installed** (`@tiptap/*` 3.30.1, including the
+> table extensions). **CodeMirror 6 and Playwright are not.**
+>
+> Playwright matters beyond the editor: several milestone gates below
+> carry an `**E2E**` bullet, and `npm run test:e2e` runs **vitest**
+> against CLI-driven journeys (`tests/e2e/`), not a browser. Those
+> bullets therefore describe tooling that is neither installed nor
+> wired. Either install and wire Playwright, or reword the gates to
+> match what actually runs — do not read them as satisfied by the
+> current `test:e2e`.
+
 ## Layout
 
 The web app and its API live in one workspace at `apps/web/`:
@@ -65,8 +77,14 @@ boundaries.
 
 - ⬜ not started
 - 🔵 in progress
-- ✅ done
+- ⚠️ built but defective — the code exists and does not work
+- ✅ done **and working**
 - 🚦 review milestone (user review gate)
+
+`⚠️` exists because the ✅/⬜ binary is what let "built but broken"
+hide: three tickets were ticked or untracked while their code shipped a
+defect. With `⚠️` available, `✅` can mean what a reader assumes it
+means.
 
 ---
 
@@ -87,7 +105,7 @@ Goal: a working list view inside the real chrome. By the end you can
 load the app, see your tasks, sort/filter/paginate them by URL state,
 and click into any task (which routes to a stub for now).
 
-### M1.1 · App shell layout ✅
+### M1.1 · App shell layout ⚠️
 - Two-column shell: collapsible left sidebar + main pane
 - Header: logo, current-user avatar + menu (Switch user, Settings,
   Theme toggle), `+` create-task button (stub)
@@ -122,7 +140,14 @@ and click into any task (which routes to a stub for now).
   persists, active route highlighted; schema banner renders for each
   non-current kind; `GET /api/recents` route (mock core)
 
-### M1.2 · List view — table + columns ✅
+> **⚠️ Was ✅ while broken.** All five built-in resolvers embedded
+> `status.category not in [completed, discarded]`, and the tokenizer has
+> no `[` token — so every count badge and click-through errored at
+> runtime. The "5 built-ins are fully live" claim above was false.
+> Fixed in `36c8872`; the marker stays until the milestone is re-reviewed
+> against a running app.
+
+### M1.2 · List view — table + columns ⚠️
 - Route `/list` (and `/` redirects)
 - Table: key, project, title, status, priority, type, assignee,
   labels, due, updated
@@ -134,7 +159,12 @@ and click into any task (which routes to a stub for now).
 - **Tests**: `GET /api/tasks` route (mock core); useTasks hook; sort
   header click toggles direction
 
-### M1.3 · List view — filter bar + URL state ⬜
+> **⚠️ Was ✅ while broken.** Its own data path carried the same
+> bracket-list defect (`server.ts` `buildStructuredQuery`), so
+> `GET /api/tasks?status=a,b` returned 500. Only the single-value path
+> was tested. Fixed in `36c8872`.
+
+### M1.3 · List view — filter bar + URL state ⚠️
 - Filter dropdowns: Project, Status, Priority, Type, Assignee, Label,
   Milestone, Sprint, + custom-field picker
 - Active filters render as removable chips
@@ -148,6 +178,15 @@ and click into any task (which routes to a stub for now).
 - **Tests**: filter URL serializer; chip remove updates URL; API
   request reflects active filters; built-in click sets expected state
 
+> **⚠️ Was ⬜ while built.** All six bullets were implemented and
+> untracked (`FilterBar.tsx`, `buildDsl.ts`, `SaveViewDialog.tsx`,
+> `FilterDropdown.tsx`, `useCreateView.ts`, `ui/Modal.tsx`), so the
+> ticket understated the work — but `buildDsl.ts` emitted the same
+> unparseable bracket list, and `buildDsl.test.ts` asserted the broken
+> output, keeping the suite green. Bracket defect fixed in `36c8872`.
+> **Still open:** `POST /api/views` does not validate the query
+> (`server.ts`), so a malformed saved view still persists silently.
+
 ### M1.4 · List view — pagination + bulk-bar + export ⬜
 - Pagination using `total` from `/api/tasks`; "Showing 1–50 of 128 ·
   Load more" pattern
@@ -160,7 +199,8 @@ and click into any task (which routes to a stub for now).
 - **Tests**: bulk endpoints (mocked core); selection state + bar
   visibility; export route content-type + filename
 - **E2E**: open /list → filter by High priority → export CSV → verify
-  download
+  download. *(Needs Playwright, which is not installed — see the stack
+  note. `npm run test:e2e` will not cover this.)*
 
 ### 🚦 Milestone 1 review
 - App shell matches the mockup; list view fully functional —
@@ -352,12 +392,17 @@ first-run, and the v1 polish (keyboard, errors, a11y) is done.
   (C.10.19–C.10.22); theme picker; card layout drag editor (CW-17);
   sidebar pins drag list with stale-entry sweep
 - **Tests**: card layout reorder persists per user; sidebar pins
-  silently drop deleted-view references
+  **surface** deleted-view references rather than dropping them
+  silently — P7 admits no carve-out for per-user preference drift
+  (resolved in 0k), so a pinned view deleted from `queries.yaml` tells
+  the user it was removed.
 
 ### M4.5 · Saved-view editor — advanced DSL mode ⬜
 - Raw DSL textbox with live parse-error markers
-- Syntax-help popover (text, today, parent, relationship.*, fields.*,
-  status.category per CW-9)
+- Syntax-help popover (text, today, parent, `has_link(...)`,
+  `link_count(...)`, fields.*, status.category per CW-9). The
+  `relationship.*` grammar this originally named was removed in
+  `1a2b77d`; the editor must not offer it.
 - Basic → Advanced is lossless; Advanced → Basic disabled when not
   expressible visually
 - Editing a built-in opens with the built-in's DSL pre-populated
