@@ -201,4 +201,39 @@ describe("runDoctor", () => {
     expect(idx?.entries["T-RENAMED"]).toBe("01XYZ");
     expect(idx?.entries["T-1"]).toBeUndefined();
   });
+
+  // @verifies PRU-C12
+  // The doctor half of C12 — the recovery half lives in
+  // projects/prefix.test.ts.
+  it("reports a pending prefix rename", async () => {
+    await initLoctt(root);
+    const { resolveLocttDir, getPrefixRenameStatePath } =
+      await import("../paths/index.js");
+    const { writeYamlAtomically } = await import("../utils/atomic-yaml.js");
+    const locttDir = resolveLocttDir(root);
+    await writeYamlAtomically(getPrefixRenameStatePath(locttDir), {
+      project_id: "some-project",
+      from: "T-",
+      to: "WEB-",
+      started_at: "2026-08-15T00:00:00.000Z",
+    });
+
+    const checks = await runDoctor(root);
+
+    // Every surface finishes this at boot, so doctor seeing one means
+    // recovery is stuck — the user needs to be told, not left with an
+    // unexplained half-renamed tracker.
+    const check = checks.find(c => c.name === "prefix rename");
+    expect(check?.status).toBe("warn");
+    expect(check?.message).toContain("T-");
+    expect(check?.message).toContain("WEB-");
+  });
+
+  it("says nothing about prefix rename when none is pending", async () => {
+    await initLoctt(root);
+    const checks = await runDoctor(root);
+    // A permanent entry would train users to ignore the row that
+    // matters.
+    expect(checks.find(c => c.name === "prefix rename")).toBeUndefined();
+  });
 });

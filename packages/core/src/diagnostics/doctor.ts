@@ -10,6 +10,7 @@ import { getSprintsConfigPath,loadSprintsConfig } from "../config/sprints.js";
 import { validateTaskAgainstWorkflow,validateWorkflowConfig } from "../config/validation.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
 import { getConfigDir, getListViewConfigPath, getQueriesConfigPath, getStateFilePath, getTasksDir, getUsersDir, getWorkflowConfigPath, resolveLocttDir } from "../paths/index.js";
+import { readPrefixRenameState } from "../projects/prefix.js";
 import { loadKeyIndex, rebuildKeyIndex } from "../state/key-index.js";
 import { loadState } from "../state/state.js";
 import { readTask } from "../task/io.js";
@@ -317,6 +318,30 @@ export async function runDoctor(
   // Key-index integrity. The index is a cache LocTT maintains; the
   // only on-disk drift case is out-of-band edits to a task's `key`
   // / `key_history` (vim, scripts), which LocTT cannot auto-detect
+  // A prefix rename that died partway leaves a sentinel behind. It is
+  // resumable and every surface finishes it at boot, so reaching doctor
+  // with one still present means recovery itself is failing — report it
+  // before the key index check, whose drift it would explain.
+  try {
+    const pending = await readPrefixRenameState(locttDir);
+    if (pending) {
+      checks.push({
+        name: "prefix rename",
+        status: "warn",
+        message:
+          `interrupted rename of project ${pending.project_id} ` +
+          `from '${pending.from}' to '${pending.to}' (started ` +
+          `${pending.started_at}) — run any loctt command to finish it`,
+      });
+    }
+  } catch (err) {
+    checks.push({
+      name: "prefix rename",
+      status: "error",
+      message: `unreadable sentinel: ${(err as Error).message}`,
+    });
+  }
+
   // because the indexed task id is still present. Surface drift
   // here so the user knows to rerun with --rebuild-index.
   if (await fileExists(getTasksDir(locttDir))) {

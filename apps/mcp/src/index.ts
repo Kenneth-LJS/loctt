@@ -13,7 +13,11 @@
 
 import { access } from "node:fs/promises";
 
-import { requireSupportedSchema, resolveLocttDir } from "@loctt/core";
+import {
+  recoverInterruptedPrefixRename,
+  requireSupportedSchema,
+  resolveLocttDir,
+} from "@loctt/core";
 import { z } from "zod";
 
 import { listRegisteredTools, lookupTool, stripHandler } from "./registry.js";
@@ -93,6 +97,19 @@ export async function executeTool(
       await requireSupportedSchema(locttDir);
     } catch (err) {
       return errorResult((err as Error).message);
+    }
+    // Finish an interrupted prefix rename before the tool reads any
+    // task key. Success is deliberately silent — the agent asked for a
+    // tool result, not a repair log — but a failure is surfaced,
+    // because every key the tool goes on to report would be suspect.
+    const { error: recoveryError } =
+      await recoverInterruptedPrefixRename(locttDir);
+    if (recoveryError) {
+      return errorResult(
+        `A prefix rename was interrupted and could not be finished: ` +
+        `${recoveryError.message}. Task keys may be inconsistent until ` +
+        `it completes; run \`loctt doctor\` for detail.`,
+      );
     }
   }
 

@@ -182,6 +182,31 @@ export async function setProjectPrefix(
 }
 
 /**
+ * Boot hook: finishes an interrupted rename before a command runs.
+ *
+ * Unlike the schema-migration sentinel — which refuses to boot, because
+ * a half-migrated tracker needs a human and a backup — a half-renamed
+ * one repairs itself: `completeInterruptedPrefixRename` is idempotent
+ * and needs nothing the sentinel does not already record. Refusing to
+ * boot here would strand the user on a condition the code can fix.
+ *
+ * Never throws. A tracker with a stuck rename is degraded, not unusable,
+ * and failing every command on it would take away the tools to
+ * investigate — including `doctor`, which reports the pending rename.
+ * The returned error is for callers that want to warn.
+ */
+export async function recoverInterruptedPrefixRename(
+  locttDir: string,
+): Promise<{ recovered?: SetPrefixResult; error?: Error }> {
+  try {
+    const recovered = await completeInterruptedPrefixRename(locttDir);
+    return recovered ? { recovered } : {};
+  } catch (err) {
+    return { error: err instanceof Error ? err : new Error(String(err)) };
+  }
+}
+
+/**
  * Finishes a rename interrupted partway, if one was.
  *
  * Returns the completed rename, or undefined when there was nothing to

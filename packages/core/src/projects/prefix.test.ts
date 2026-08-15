@@ -1,10 +1,10 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { loadProjectsConfig } from "../config/projects.js";
+import { getProjectsConfigPath, loadProjectsConfig } from "../config/projects.js";
 import { initLoctt } from "../init/init.js";
 import { getPrefixRenameStatePath, resolveLocttDir } from "../paths/index.js";
 import { loadState } from "../state/state.js";
@@ -16,6 +16,7 @@ import { createProject, ProjectError, resolveProjectIdForUser } from "./manage.j
 import {
   completeInterruptedPrefixRename,
   readPrefixRenameState,
+  recoverInterruptedPrefixRename,
   setProjectPrefix,
 } from "./prefix.js";
 
@@ -216,6 +217,56 @@ describe("completeInterruptedPrefixRename", () => {
 
   it("returns undefined when no rename is pending", async () => {
     expect(await completeInterruptedPrefixRename(locttDir)).toBeUndefined();
+  });
+
+  it("reports a rename it could not finish, instead of throwing", async () => {
+    const project = await resolveProjectIdForUser(locttDir);
+    await seed(1, project);
+    await writeYamlAtomically(getPrefixRenameStatePath(locttDir), {
+      project_id: project,
+      from: "T-",
+      to: "WEB-",
+      started_at: new Date().toISOString(),
+    });
+    // Corrupt projects.yaml so recovery cannot complete. Every surface
+    // calls this on the way in, so a throw here would fail every
+    // command against the tracker — including the ones that diagnose it.
+    await writeFile(getProjectsConfigPath(locttDir), "projects: [oh no\n");
+
+    const { recovered, error } = await recoverInterruptedPrefixRename(locttDir);
+
+    expect(recovered).toBeUndefined();
+    expect(error).toBeInstanceOf(Error);
+    // Sentinel survives: dropping it would lose the only record of what
+    // the half-finished rename was trying to do.
+    expect(
+      await readFile(getPrefixRenameStatePath(locttDir), "utf-8"),
+    ).toContain("WEB-");
+  });
+
+  it("reports the rename it finished so a surface can say so", async () => {
+    const project = await resolveProjectIdForUser(locttDir);
+    await seed(2, project);
+    await writeYamlAtomically(getPrefixRenameStatePath(locttDir), {
+      project_id: project,
+      from: "T-",
+      to: "WEB-",
+      started_at: new Date().toISOString(),
+    });
+
+    const { recovered, error } = await recoverInterruptedPrefixRename(locttDir);
+
+    expect(error).toBeUndefined();
+    expect(recovered?.renamed).toBe(2);
+    expect(recovered?.to).toBe("WEB-");
+  });
+
+  it("stays quiet when there is nothing to recover", async () => {
+    const { recovered, error } = await recoverInterruptedPrefixRename(locttDir);
+    // Both undefined: this runs before every command, so anything else
+    // would make surfaces announce a repair that never happened.
+    expect(recovered).toBeUndefined();
+    expect(error).toBeUndefined();
   });
 
   it("clears a sentinel whose project no longer exists", async () => {

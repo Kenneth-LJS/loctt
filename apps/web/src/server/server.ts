@@ -126,6 +126,7 @@ import {
   readBurndownSeries,
   readHistory,
   readRecents,
+  recoverInterruptedPrefixRename,
   reorderBoardRank,
   ReorderError,
   reorderRelationship,
@@ -3028,6 +3029,29 @@ export function createWebApp(options: WebAppOptions) {
             return;
           }
           throw err;
+        }
+
+        // Finish an interrupted prefix rename before any handler reads a
+        // task key. Silent on success; a failure is a 500 rather than a
+        // degraded response, because every key the request would go on
+        // to return could be stale.
+        const { error: recoveryError } =
+          await recoverInterruptedPrefixRename(locttDir);
+        if (recoveryError) {
+          const isWrite = req.method !== "GET" && req.method !== "HEAD";
+          error(
+            res,
+            `A project prefix rename was interrupted and could not be ` +
+            `finished, so task keys may be inconsistent.`,
+            500,
+            {
+              code: "io_failed",
+              ...(isWrite ? { data_state: "not_saved" as const } : {}),
+              recovery: { kind: "command", command: "loctt doctor" },
+              detail: recoveryError.message,
+            },
+          );
+          return;
         }
       }
 

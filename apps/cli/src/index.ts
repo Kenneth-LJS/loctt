@@ -1,7 +1,11 @@
 import { resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { requireSupportedSchema, resolveLocttDir } from "@loctt/core";
+import {
+  recoverInterruptedPrefixRename,
+  requireSupportedSchema,
+  resolveLocttDir,
+} from "@loctt/core";
 
 import * as calendarCmd from "./commands/calendar.js";
 import * as commentsCmd from "./commands/comments.js";
@@ -55,6 +59,23 @@ export async function main(): Promise<void> {
       const locttDir = resolveLocttDir(root);
       if (await dirExists(locttDir)) {
         await requireSupportedSchema(locttDir);
+        // Finish any rename that died partway before the command reads
+        // a task key. Runs after the schema guard: recovery rewrites
+        // task files, which is only safe once the schema is known good.
+        const { recovered, error: recoveryError } =
+          await recoverInterruptedPrefixRename(locttDir);
+        if (recovered) {
+          process.stderr.write(
+            `Finished an interrupted prefix rename: ` +
+            `${recovered.from} → ${recovered.to} ` +
+            `(${recovered.renamed} task(s) renamed).\n`,
+          );
+        } else if (recoveryError) {
+          process.stderr.write(
+            `Warning: could not finish an interrupted prefix rename: ` +
+            `${recoveryError.message}\nRun \`loctt doctor\` for detail.\n`,
+          );
+        }
       }
       // If the directory doesn't exist, the command will fail
       // naturally via its own existence check (e.g. resolveLocttDir
