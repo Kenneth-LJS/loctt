@@ -5,8 +5,9 @@ way as [../ui-test-cases/](../ui-test-cases/): observable behaviour, not
 call syntax, so they survive refactors.
 
 These are **gaps only** — behaviour already covered by an existing test is
-not restated. See [../../../FEATURE-AUDIT.md](../../../FEATURE-AUDIT.md)
-for the finding behind each case and for the existing-coverage maps.
+not restated. Each case states the finding behind it inline, including the
+source location it was found at; the audit document they were originally
+extracted from has been deleted as stale.
 
 ## How to read a case
 

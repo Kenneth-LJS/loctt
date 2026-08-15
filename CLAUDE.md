@@ -17,6 +17,7 @@ User-facing documentation lives in `docs/`. Developer documentation lives in `do
 - `docs/dev/invariants.md` — **rules a change must not break** (project identity, key allocation, sprint state). Check against this before touching those areas
 - `docs/dev/decisions.md` — locked design decisions, incl. things deliberately NOT built
 - `docs/dev/build-loop.md` — **how a web-UI ticket gets built and verified**; the gates that decide "done"
+- `docs/dev/known-gaps.md` — understood defects not yet fixed; check before reporting one as new
 - `docs/dev/ui-test-cases/` + `docs/dev/surface-test-cases/` — acceptance criteria (931 cases). Indexed in `docs/dev/case-index.json`; see `tools/README.md`
 - `docs/user/cli/reference.md` — CLI commands
 - `docs/user/mcp/reference.md` — MCP tools and agent guidelines
@@ -134,3 +135,11 @@ the file as the decision.
 - Mock only external dependencies (file system, network, timers), never business logic
 - Present test strategy before implementing
 - Each test should answer: "what regression would this catch?"
+- **A new test must be shown to fail.** Break the behaviour it covers,
+  watch that test go red, restore. A test that still passes with the
+  behaviour deleted asserts nothing — and green is exactly how that hides.
+- **If a fix requires editing a green test, that test was asserting the
+  bug.** Say so in the commit message. This repo has shipped fourteen
+  such tests: present, passing, and encoding the wrong behaviour. The
+  other three rules above are hygiene; none of them catches an
+  expectation that is simply wrong.

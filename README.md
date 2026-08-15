@@ -243,9 +243,20 @@ Everything is customizable in `.loctt/config/workflow.yaml`: statuses, prioritie
 - [Uninstall](docs/user/common/uninstall.md)
 
 **For contributors:**
-- [Architecture](docs/dev/architecture.md)
-- [Schema Reference](docs/dev/schema-reference.md)
-- [Development](docs/dev/development.md)
+- [Architecture](docs/dev/architecture.md) — monorepo layout, data model, task identity
+- [Schema Reference](docs/dev/schema-reference.md) — file formats (`task.md`, `workflow.yaml`, …)
+- [Development](docs/dev/development.md) — building, running, and testing locally
+- [Invariants](docs/dev/invariants.md) — rules a change must not break
+- [Decisions](docs/dev/decisions.md) — locked design decisions, including what is deliberately not built
+- [Markdown extensions](docs/dev/markdown-extensions.md) — what the body editor must round-trip
+- [Build loop](docs/dev/build-loop.md) — how a web-UI ticket gets built and verified
+- [Known gaps](docs/dev/known-gaps.md) — understood defects not yet fixed
+
+**Acceptance criteria** — 931 cases describing observable behaviour, one
+file per flow. They are the specification the web UI is built against:
+- [UI test cases](docs/dev/ui-test-cases/) — 18 flow docs, plus the P1–P10 principles in its [README](docs/dev/ui-test-cases/README.md)
+- [CLI & MCP test cases](docs/dev/surface-test-cases/) — 10 flow docs, gaps only
+- [`case-index.json`](docs/dev/case-index.json) — the machine-readable index; see [tools/README.md](tools/README.md) for the coverage gate
 
 ## License
 

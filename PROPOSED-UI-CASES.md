@@ -14,7 +14,9 @@ Three kinds of item:
 3. **Proposed new cases** — gaps with suggested IDs, appended to each
    file's existing numbering. No renumbering anywhere.
 
-See [`FEATURE-AUDIT.md`](FEATURE-AUDIT.md) for the findings behind each.
+Each item states the finding behind it inline. (The audit document these
+were extracted from was deleted once its blockers were fixed; see
+`git log` for `FEATURE-AUDIT.md` if the original wording is needed.)
 
 ---
 
@@ -158,7 +160,7 @@ exactly what a spec should do.
 Two structural observations:
 
 **The tree assumes the API it needs exists.** 7 of 18 flows cannot be
-backed today (see FEATURE-AUDIT.md §4). That is not a flaw in the docs —
+backed today. That is not a flaw in the docs —
 they were written as a target — but the M-tags imply a build order that
 the API gaps do not currently support. Worth a pass to check each flow's
 milestone against whether its endpoints are in that milestone too.
@@ -169,4 +171,4 @@ both stop one step short of the assertion that would have caught a real
 bug. The pattern to watch for: a case that checks the UI *emitted*
 something, without checking the far end *accepted* it. This is the same
 failure mode as the three test suites that encode bugs as expectations
-(FEATURE-AUDIT.md §1).
+that the 2026-08-14/15 sessions found.
