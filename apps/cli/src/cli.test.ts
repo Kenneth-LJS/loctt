@@ -9,6 +9,24 @@ import { afterEach,beforeEach, describe, expect, it, vi } from "vitest";
 
 import { main } from "./index.js";
 
+/**
+ * Captures what a confirm prompt actually asked. ESM will not let us
+ * spy on `createInterface` after the fact, so the module is mocked;
+ * `promptAnswer` drives the reply and `promptQuestion` records the
+ * question a test wants to assert on.
+ */
+let promptQuestion = "";
+let promptAnswer = "n";
+vi.mock("node:readline/promises", () => ({
+  createInterface: () => ({
+    question: (q: string) => {
+      promptQuestion = q;
+      return Promise.resolve(promptAnswer);
+    },
+    close: () => {},
+  }),
+}));
+
 describe("CLI entry point", () => {
   it("exports an async main function", () => {
     expect(typeof main).toBe("function");
@@ -1119,5 +1137,132 @@ describe("CLI list — stale saved view warning", () => {
     process.argv = ["node", "loctt", "list", "--view", "fine"];
     await main();
     expect(errSpy).not.toHaveBeenCalledWith(expect.stringContaining("Warning:"));
+  });
+});
+
+/**
+ * @verifies PRU-C10, PRU-C11
+ *
+ * `loctt project set-prefix`. The core rewrite is covered in
+ * packages/core/src/projects/prefix.test.ts; these cover the CLI's own
+ * contract — the confirmation, the blast radius it states, and the exit
+ * codes a script depends on.
+ */
+describe("project set-prefix", () => {
+  let root: string;
+  let originalArgv: string[];
+  let logSpy: MockInstance;
+  let errSpy: MockInstance;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-setprefix-"));
+    originalArgv = process.argv;
+    vi.spyOn(process, "cwd").mockImplementation(() => root);
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    process.exitCode = undefined;
+    await initLoctt(root);
+  });
+
+  afterEach(async () => {
+    process.argv = originalArgv;
+    vi.restoreAllMocks();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  async function seed(n: number): Promise<void> {
+    for (let i = 0; i < n; i += 1) {
+      process.argv = ["node", "loctt", "create", `task ${i}`];
+      await main();
+    }
+    logSpy.mockClear();
+  }
+
+  it("renames every task, preserving numbers", async () => {
+    await seed(3);
+    process.argv = ["node", "loctt", "project", "set-prefix", "Tasks", "WEB-", "--yes"];
+    await main();
+
+    const locttDir = resolveLocttDir(root);
+    // Old key still resolves, and resolves to the renamed task — the
+    // whole point of keeping key_history.
+    const t2 = await lookupByKey(locttDir, "T-2");
+    expect(t2.frontmatter.key).toBe("WEB-2");
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Renamed 3 task(s)"));
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("states the blast radius in numbers before doing it", async () => {
+    await seed(3);
+    // Drive the real prompt: PRU-C10 requires the confirmation to name
+    // how many tasks will be renamed, so the question text is the
+    // subject here, not the refusal. Answering "n" leaves the tracker
+    // untouched.
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    promptAnswer = "n";
+    process.argv = ["node", "loctt", "project", "set-prefix", "Tasks", "WEB-"];
+    await main();
+
+    // The count, both prefixes, and the promise that old keys survive.
+    expect(promptQuestion).toContain("3 task(s)");
+    expect(promptQuestion).toContain("T-");
+    expect(promptQuestion).toContain("WEB-");
+    expect(promptQuestion).toContain("key_history");
+
+    // Declining is a clean exit, and nothing was renamed.
+    expect(process.exitCode).toBe(0);
+    const locttDir = resolveLocttDir(root);
+    const t1 = await lookupByKey(locttDir, "T-1");
+    expect(t1.frontmatter.key).toBe("T-1");
+  });
+
+  it("refuses without --yes when not a TTY, rather than renaming unasked", async () => {
+    await seed(2);
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    process.argv = ["node", "loctt", "project", "set-prefix", "Tasks", "WEB-"];
+    await main();
+
+    // USAGE, not SUCCESS: the script forgot the flag. A script that
+    // read this as success would think the rename happened.
+    expect(process.exitCode).toBe(2);
+    const locttDir = resolveLocttDir(root);
+    const t1 = await lookupByKey(locttDir, "T-1");
+    expect(t1.frontmatter.key).toBe("T-1");
+  });
+
+  it("rejects a prefix another project holds, and renames nothing", async () => {
+    await seed(2);
+    process.argv = ["node", "loctt", "project", "create", "API", "--prefix", "API-"];
+    await main();
+
+    process.argv = ["node", "loctt", "project", "set-prefix", "Tasks", "API-", "--yes"];
+    await main();
+
+    expect(process.exitCode).toBe(1);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("API-"));
+    const locttDir = resolveLocttDir(root);
+    const t1 = await lookupByKey(locttDir, "T-1");
+    expect(t1.frontmatter.key).toBe("T-1");
+  });
+
+  it("treats a project's own prefix as a no-op, not a collision", async () => {
+    await seed(1);
+    process.argv = ["node", "loctt", "project", "set-prefix", "Tasks", "T-", "--yes"];
+    await main();
+
+    // Succeeds. Reporting this as a collision would be wrong — the
+    // prefix is not in use by *another* project.
+    expect(process.exitCode).toBeUndefined();
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("already uses prefix"));
+    const locttDir = resolveLocttDir(root);
+    const t1 = await lookupByKey(locttDir, "T-1");
+    expect(t1.frontmatter.key_history).toBeUndefined();
+  });
+
+  it("is a usage error without a prefix argument", async () => {
+    process.argv = ["node", "loctt", "project", "set-prefix", "Tasks"];
+    await main();
+    expect(process.exitCode).toBe(2);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("set-prefix"));
   });
 });

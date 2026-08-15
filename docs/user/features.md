@@ -202,7 +202,10 @@ Prefixes **are** unique across projects, since they partition the key space.
 Changing one renames every task in the project (`T-3` → `WEB-3`, numbers
 preserved), with old keys kept in `key_history` so existing references keep
 resolving — so it is a deliberate operation, `loctt project set-prefix`,
-rather than an ordinary field edit.
+rather than an ordinary field edit. The same operation is available to
+agents as the MCP tool `set_project_prefix` and over HTTP as
+`PUT /api/projects/:id/prefix`; all three confirm before rewriting, and
+all three refuse a prefix another project already holds.
 
 ## Users
 

@@ -3,10 +3,12 @@ import {
   createProject,
   deleteProject,
   editProject,
+  loadAllTasks,
   loadProjectsConfig,
   resolveLocttDir,
   resolveProjectIdFromInput,
   setDefaultProject,
+  setProjectPrefix,
   unarchiveProject,
 } from "@loctt/core";
 
@@ -82,6 +84,59 @@ export async function run(args: string[], root: string): Promise<void> {
       });
       break;
     }
+    case "set-prefix": {
+      const ref = args[2];
+      const newPrefix = args[3];
+      if (!ref || !newPrefix) {
+        console.error(`Error: missing project ref or prefix`);
+        console.error(`Usage: loctt project set-prefix <name|id> <new-prefix> [--yes]`);
+        process.exitCode = EXIT.USAGE;
+        break;
+      }
+
+      // Resolve and count before prompting: the confirmation has to
+      // state the blast radius in numbers (PRU-C10), and "this will
+      // rename some tasks" is not a number. Resolution errors surface
+      // here rather than after the user has already said yes.
+      let id: string;
+      let affected: number;
+      let currentPrefix: string;
+      try {
+        const cfg = await loadProjectsConfig(locttDir);
+        id = resolveProjectIdFromInput(cfg, ref);
+        const project = cfg.projects.find(p => p.id === id);
+        currentPrefix = project?.prefix ?? "";
+        const tasks = await loadAllTasks(locttDir);
+        affected = tasks.filter(t => t.frontmatter.project === id).length;
+      } catch (err) {
+        console.error(`Error: ${(err as Error).message}`);
+        process.exitCode = EXIT.RUNTIME;
+        break;
+      }
+
+      // Setting the prefix a project already has changes nothing, so
+      // there is no blast radius to confirm (PRU-C11).
+      if (currentPrefix === newPrefix) {
+        console.log(`Project ${ref} already uses prefix ${newPrefix}; nothing to do`);
+        break;
+      }
+
+      const outcome = await confirmHardDelete(
+        args,
+        `Rename ${affected} task(s) in ${ref} from ${currentPrefix} to ${newPrefix}? ` +
+        `Numbers are preserved (${currentPrefix}1 becomes ${newPrefix}1) and old keys ` +
+        `keep resolving via key_history.`,
+      );
+      if (outcome !== "yes") { process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS; break; }
+
+      await runCommand(async () => {
+        const result = await setProjectPrefix(locttDir, id, newPrefix);
+        console.log(
+          `Renamed ${result.renamed} task(s) from ${result.from} to ${result.to}`,
+        );
+      });
+      break;
+    }
     case "delete": {
       const ref = args[2];
       const remapTo = getArg(args, "--remap-to");
@@ -143,7 +198,7 @@ export async function run(args: string[], root: string): Promise<void> {
       break;
     }
     default:
-      console.error(`Usage: loctt project <list|create|edit|archive|unarchive|delete|set-default> ...`);
+      console.error(`Usage: loctt project <list|create|edit|set-prefix|archive|unarchive|delete|set-default> ...`);
       process.exitCode = EXIT.USAGE;
       break;
   }

@@ -20,6 +20,7 @@ import {
   loadProjectsConfig,
   resolveProjectIdFromInput,
   setDefaultProject,
+  setProjectPrefix,
   unarchiveProject,
 } from "@loctt/core";
 import { z } from "zod";
@@ -62,7 +63,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "edit_project",
-    description: "Edit an existing project. Only `name` is mutable — `id` and `prefix` are immutable. The `project` parameter accepts either an id or a name.",
+    description: "Edit an existing project's name. `id` is immutable. The prefix has its own tool (`set_project_prefix`) because changing it rewrites every task in the project. The `project` parameter accepts either an id or a name.",
     inputSchema: {
       project: z.string().describe("Project id or name"),
       name: z.string().describe("New name"),
@@ -72,6 +73,34 @@ export const TOOLS: readonly ToolDef[] = [
       const id = resolveProjectIdFromInput(cfg, args["project"] as string);
       await editProject(locttDir, id, { name: args["name"] as string });
       return text(`Updated project ${id}`);
+    },
+  },
+  {
+    name: "set_project_prefix",
+    description:
+      "Change a project's key prefix, renaming every task in it — T-3 becomes WEB-3. " +
+      "Numbers are preserved, so nothing is renumbered, and each task's previous key is " +
+      "appended to key_history so old references keep resolving. Prefixes must be unique " +
+      "across projects; one already in use is rejected before anything is written. " +
+      "Setting a project's own current prefix is a no-op. Requires `confirm: true` " +
+      "because it rewrites every task in the project.",
+    inputSchema: {
+      project: z.string().describe("Project id or name"),
+      prefix: z.string().describe("New prefix, e.g. WEB-"),
+      confirm: z.boolean().optional().describe("Required: must be true to proceed"),
+    },
+    handler: async ({ locttDir }, args) => {
+      const blocked = requireConfirm(args, "set_project_prefix");
+      if (blocked) return blocked;
+      const cfg = await loadProjectsConfig(locttDir);
+      const id = resolveProjectIdFromInput(cfg, args["project"] as string);
+      const result = await setProjectPrefix(locttDir, id, args["prefix"] as string);
+      return text(JSON.stringify({
+        id,
+        from: result.from,
+        to: result.to,
+        renamed: result.renamed,
+      }, null, 2));
     },
   },
   {

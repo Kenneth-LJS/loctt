@@ -147,6 +147,7 @@ export {
   getHistoryFilePath,
   getKeyIndexPath,
   getLocalDir,
+  getPrefixRenameStatePath,
   getQueriesConfigPath,
   getReconcileStatePath,
   getSchemaMigrationInProgressPath,
