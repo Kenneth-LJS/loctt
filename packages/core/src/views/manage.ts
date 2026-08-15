@@ -1,10 +1,14 @@
-import type { QueriesConfig, SavedQuery } from "@loctt/contracts";
+import type { QueriesConfig, SavedQuery, WorkflowConfig } from "@loctt/contracts";
 import { ulid } from "ulid";
 
 import {
   loadQueriesConfig,
   saveQueriesConfig,
 } from "../config/queries.js";
+import { loadWorkflowConfig } from "../config/workflow.js";
+import { parseQuery } from "../query/parser.js";
+import { tokenize } from "../query/tokenizer.js";
+import { validateQuery } from "../query/validate.js";
 import { withStateLock } from "../state/index.js";
 
 export class ViewError extends Error {
@@ -29,6 +33,34 @@ export function findView(config: QueriesConfig, ref: string): SavedQuery {
   throw new ViewError(`unknown view: ${ref}`);
 }
 
+/**
+ * Rejects a saved-view query that cannot be parsed or references
+ * something that does not exist.
+ *
+ * Validating on write matters more here than for an ad-hoc query.
+ * `loadQueriesConfig` rejects the ENTIRE file when one entry is
+ * malformed, so a single bad view does not merely fail to run — it
+ * takes every other saved view with it on the next read. A view is
+ * also written once and run many times, often by someone other than
+ * its author.
+ *
+ * Workflow config is optional: without it, field names are still
+ * checked and enum *values* are deferred rather than guessed at.
+ */
+async function assertQueryValid(locttDir: string, query: string): Promise<void> {
+  let workflow: WorkflowConfig | undefined;
+  try {
+    workflow = await loadWorkflowConfig(locttDir);
+  } catch {
+    // No usable workflow config — validate what we can without it.
+  }
+  try {
+    validateQuery(parseQuery(tokenize(query)), workflow ? { workflow } : {});
+  } catch (err) {
+    throw new ViewError(`invalid query: ${(err as Error).message}`);
+  }
+}
+
 export interface CreateViewInput {
   readonly name: string;
   readonly query: string;
@@ -40,6 +72,7 @@ export async function createView(
   locttDir: string,
   input: CreateViewInput,
 ): Promise<SavedQuery> {
+  await assertQueryValid(locttDir, input.query);
   return withStateLock(locttDir, async () => {
     const config = await loadQueriesConfig(locttDir);
     const created: SavedQuery = {
@@ -66,6 +99,9 @@ export async function editView(
   ref: string,
   changes: EditViewInput,
 ): Promise<SavedQuery> {
+  if (changes.query !== undefined) {
+    await assertQueryValid(locttDir, changes.query);
+  }
   return withStateLock(locttDir, async () => {
     const config = await loadQueriesConfig(locttDir);
     const existing = findView(config, ref);
