@@ -26,13 +26,55 @@ Cases: ERR-11, ERR-12 in
 
 ## Code
 
-### Key collisions across clones are unhandled
+### History records that something happened, not what it was
 
-`rekeyCollisions` in `packages/core/src/git/reconcile.ts` is implemented
-and unit-tested but has no production caller. Two clones that
-independently allocate the same key while offline will both keep it, and
-sync does not detect the clash.
+Only `field_change`, `custom_field_change`, and the link/attachment
+kinds record content. These record a timestamp and nothing else:
 
-The rest of git sync's reconciliation is wired — `planSync` guards the
-data-loss paths, and relationship and key-history merges run — so this
-is a specific open case, not a missing subsystem.
+| Kind | Missing |
+|---|---|
+| `created` | The initial frontmatter and body |
+| `body_edited` | The body, before or after — `task/io.ts` appends the kind alone |
+| `comment_added` | The comment text (`meta` carries only id and author) |
+| `comment_edited` | Both old and new text |
+| `comment_deleted` | The deleted text — a hard delete with no record anywhere |
+
+So history cannot reconstruct a prior state, which makes "read the
+history and put it back" false for bodies and comments. `comment_deleted`
+is the sharpest: the text is unrecoverable by any means.
+
+Decided as **M3** in [decisions.md](decisions.md); not built.
+
+### Two clones that both create a task cannot sync at all
+
+Sync aborts when any file changed on both sides since the last sync.
+Two clones that each create a task both bump `state.yaml`, so sync stops
+there — before task files are compared. Reproduced: the second clone to
+sync gets `sync aborted: 3 file(s) changed both locally and on the
+branch`, naming `projects.yaml`, `queries.yaml` and `state.yaml`.
+
+Nothing is lost — the abort is the safe behaviour `planSync` was built
+for after four reproduced data-loss paths. But the merge never happens.
+
+This is why `rekeyCollisions` has no caller: there is no point in the
+sync path where a merged task set exists for it to scan. **Wiring it up
+alone would produce a function that still never fires.** What is needed
+first is field-level merging — `state.yaml` counters, relationships and
+disjoint fields merging rather than conflicting. The merge helpers
+(`mergeRelationships`, `mergeKeyHistory`) exist and are unit-tested;
+nothing calls them either.
+
+Decided as **M1**–**M4** in [decisions.md](decisions.md); not built.
+
+### `rekeyCollisions` is also broken
+
+Separately from having no caller, it cannot work as written.
+`reconcile.ts:43` reads `state.keys["task"]`, but keys are allocated per
+project under the project's ULID — so the lookup returns `undefined` and
+the loop's `continue` silently rekeys nothing.
+
+Its unit tests pass because they build fixtures in the pre-migration
+shape (`keys: { task: … }`), which no real tracker has had since the
+key→id migration. Same failure mode as the fourteen tests the
+2026-08-14 session found: green, thorough, and encoding a world that no
+longer exists.
