@@ -41,8 +41,10 @@ describe("web server security", () => {
         body: JSON.stringify({ title: "csrf test" }),
       });
       expect(res.status).toBe(403);
-      const body = await res.json() as { error: string };
-      expect(body.error).toContain("X-Loctt-Client");
+      const body = await res.json() as { error: string; detail?: string };
+      // The header name is machinery, not user copy (ERR-16), so it is
+      // carried in `detail` rather than the headline.
+      expect(body.detail).toContain("X-Loctt-Client");
     });
 
     it("rejects DELETE without X-Loctt-Client header", async () => {
@@ -313,8 +315,11 @@ describe("web server security", () => {
         body: "{ not: 'json' ",
       });
       expect(res.status).toBe(400);
-      const body = await res.json() as { error: string };
-      expect(body.error).toMatch(/invalid JSON/i);
+      const body = await res.json() as { error: string; code?: string; detail?: string };
+      // The parser's own message is jargon and lives in `detail`; the
+      // headline stays plain (ERR-16).
+      expect(body.code).toBe("validation_failed");
+      expect(body.detail).toMatch(/JSON/i);
     });
 
     it("returns 400 when PUT /api/user-settings gets unparseable JSON", async () => {
@@ -324,8 +329,11 @@ describe("web server security", () => {
         body: "{",
       });
       expect(res.status).toBe(400);
-      const body = await res.json() as { error: string };
-      expect(body.error).toMatch(/invalid JSON/i);
+      const body = await res.json() as { error: string; code?: string; detail?: string };
+      // The parser's own message is jargon and lives in `detail`; the
+      // headline stays plain (ERR-16).
+      expect(body.code).toBe("validation_failed");
+      expect(body.detail).toMatch(/JSON/i);
     });
 
     it("returns 400 when PUT /api/user-settings gets a non-object", async () => {
@@ -335,8 +343,9 @@ describe("web server security", () => {
         body: JSON.stringify(["not", "an", "object"]),
       });
       expect(res.status).toBe(400);
-      const body = await res.json() as { error: string };
-      expect(body.error).toMatch(/object/i);
+      const body = await res.json() as { error: string; code?: string; data_state?: string };
+      expect(body.code).toBe("validation_failed");
+      expect(body.data_state).toBe("not_saved");
     });
 
     it("returns 400 (not 500) when POST /api/tasks gets unparseable JSON", async () => {
@@ -346,8 +355,11 @@ describe("web server security", () => {
         body: "{",
       });
       expect(res.status).toBe(400);
-      const body = await res.json() as { error: string };
-      expect(body.error).toMatch(/invalid JSON/i);
+      const body = await res.json() as { error: string; code?: string; detail?: string };
+      // The parser's own message is jargon and lives in `detail`; the
+      // headline stays plain (ERR-16).
+      expect(body.code).toBe("validation_failed");
+      expect(body.detail).toMatch(/JSON/i);
     });
 
     it("returns 400 when POST /api/projects gets unparseable JSON", async () => {
@@ -357,8 +369,11 @@ describe("web server security", () => {
         body: "{",
       });
       expect(res.status).toBe(400);
-      const body = await res.json() as { error: string };
-      expect(body.error).toMatch(/invalid JSON/i);
+      const body = await res.json() as { error: string; code?: string; detail?: string };
+      // The parser's own message is jargon and lives in `detail`; the
+      // headline stays plain (ERR-16).
+      expect(body.code).toBe("validation_failed");
+      expect(body.detail).toMatch(/JSON/i);
     });
 
     it("returns 400 when PUT /api/user-settings nests too deeply", async () => {
@@ -562,8 +577,11 @@ describe("web server security", () => {
         headers: csrfHeaders,
       });
       expect(res.status).toBe(400);
-      const body = await res.json() as { error: string };
-      expect(body.error).toMatch(/confirm=true/);
+      const body = await res.json() as { error: string; field?: string; data_state?: string };
+      // The query-param spelling is not user copy; the guard identifies
+      // itself with a `confirm` field pointer instead (ERR-14).
+      expect(body.field).toBe("confirm");
+      expect(body.data_state).toBe("not_saved");
     });
 
     it("rejects /api/tasks/:ref without ?confirm=true", async () => {
@@ -578,8 +596,11 @@ describe("web server security", () => {
         headers: csrfHeaders,
       });
       expect(res.status).toBe(400);
-      const body = await res.json() as { error: string };
-      expect(body.error).toMatch(/confirm=true/);
+      const body = await res.json() as { error: string; field?: string; data_state?: string };
+      // The query-param spelling is not user copy; the guard identifies
+      // itself with a `confirm` field pointer instead (ERR-14).
+      expect(body.field).toBe("confirm");
+      expect(body.data_state).toBe("not_saved");
     });
 
     it("returns 400 when PUT /api/calendar gets a payload that fails schema validation", async () => {
@@ -594,8 +615,12 @@ describe("web server security", () => {
         }),
       });
       expect(res.status).toBe(400);
-      const body = await res.json() as { error: string };
-      expect(body.error).toMatch(/invalid calendar config/i);
+      const body = await res.json() as { error: string; code?: string; field?: string };
+      // ERR-10: the failing field and what was expected must survive into
+      // the message; the old generic prefix discarded both.
+      expect(body.code).toBe("config_invalid");
+      expect(body.field).toBe("timezone");
+      expect(body.error).toMatch(/timezone/i);
     });
 
     it("GET /api/list-view returns {} on a fresh tracker", async () => {
@@ -629,8 +654,9 @@ describe("web server security", () => {
         }),
       });
       expect(res.status).toBe(400);
-      const body = await res.json() as { error: string };
-      expect(body.error).toMatch(/invalid list-view config/i);
+      const body = await res.json() as { error: string; code?: string };
+      expect(body.code).toBe("config_invalid");
+      expect(body.error).toMatch(/duplicate/i);
     });
 
     it("GET /api/sprints/:id/burndown returns the series for a known sprint", async () => {
