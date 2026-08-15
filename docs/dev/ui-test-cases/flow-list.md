@@ -52,6 +52,10 @@ URL.** Click the "priority" header.
   no other header shows an indicator simultaneously (sort is single-key).
 - Clicking the same header again flips to `dir=desc` and the indicator
   reverses.
+- **The request carried the sort** — the API call includes `sort` and
+  `dir`. Asserting only the rendered order lets a client-side sort of
+  the current page pass, which is a different feature and wrong past
+  page one.
 - Reloading the page with that URL reproduces the same order and the
   same indicator position.
 - Priority ordering follows the `value` field from `workflow.yaml`
@@ -128,7 +132,10 @@ typed search param.** Open Status, tick two statuses.
 - The same holds for Project, Priority, Type, Assignee, Label,
   Milestone, and Sprint, each writing its own param
   (`project`, `priority`, `type`, `assignee`, `labels`, `milestone`,
-  `sprint`).
+  `sprint`) **and each narrowing the result set** — the row-count check
+  above applies to all nine facets, not only `status`. A param that
+  reaches the URL and is then dropped server-side passes a
+  param-only assertion.
 - Domain entities (project, assignee, label, milestone, sprint) are
   filtered by their stored identifier while displaying labels, so
   renaming a label in settings does not break an existing bookmarked
@@ -223,6 +230,7 @@ Type `status = in_progress and priority = high` and press Enter.
 - The "+ Filter" picker offers `team` alongside the built-in facets,
   labelled with the field's `label`.
 - Selecting a value writes `field.team=platform` to the URL.
+- **The result set narrows to tasks whose `team` is `platform`** — not merely that the param and the chip appear. `useTasks` stripped every `field.*` key, so this case passed while the filter did nothing.
 - The resulting chip is removable like any built-in chip.
 - The picker only offers fields permitted by `list-view.yaml`
   `filters.visible` / `hidden` when that config is present.
@@ -233,6 +241,8 @@ two filters, a sort, and load a second page.
 
 - Copying the URL into a new tab reproduces the identical view:
   same chips, same sort indicator, same number of rows loaded.
+- The reproduced view shows the **same rows**, compared by key — not
+  merely the same row *count*, which two different filters can share.
 - The recipient's own column layout applies (per LST-6) while the
   filter/sort state is exactly the sender's.
 - Changing one facet leaves the others untouched in the URL.

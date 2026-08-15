@@ -36,6 +36,7 @@ three days.
 **The composer posts a comment without leaving the page.**
 - The composer sits below the list, always visible without hunting.
 - Submitting appends the comment to the bottom of the list immediately.
+- **Reloading the page still shows the comment** — only the failure path checked disk, so an accepted-and-dropped write passed the happy path.
 - The composer clears and stays focused so a second comment can be typed
   without re-clicking.
 - The posted comment's author is the current user from the user menu —

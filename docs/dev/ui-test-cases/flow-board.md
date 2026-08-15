@@ -90,6 +90,7 @@ header opens the modal specified in
 
 - The request payload contains `board_rank` and no `status` key at all — not `status` set to its existing value.
 - The card renders in its new position immediately and stays there after the refetch settles.
+- **Re-read `task.md` from disk**: `board_rank` holds the new value and `status` is unchanged. BRD-9 checks disk for the cross-column case; this one checked only the payload plus a client re-render, so a request that was accepted and dropped would pass.
 - Reordering does not touch `updated_at` semantics differently from any other field edit — the task shows as updated, consistent with the CLI's behaviour for the same operation.
 
 ### BRD-11 · M3 · major · P8

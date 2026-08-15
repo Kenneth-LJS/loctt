@@ -88,6 +88,7 @@ only the timeline reading and writing that data.
 
 - Only `start_date` is written; `due_date` is untouched.
 - The bar's right edge does not move by even one pixel-column during the drag.
+- **Re-read the task file**: `start_date` holds the new value and `due_date` is byte-identical to before. TML-9 and TML-11 both read the file; this case did not.
 
 ### TML-11 · M3 · blocker · P1 P8
 **Dragging a bar's body shifts both dates by the same delta in one write.** Drag a 5-day bar four days later.

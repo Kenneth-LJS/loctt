@@ -70,6 +70,7 @@ is testing the wrong thing.
 - The filter appears as a removable chip in the filter bar — the user can see *why* rows matched and remove it.
 - The URL updates to include the label filter; back removes it and restores the prior result set.
 - The filter serializes to the same label predicate the CLI accepts, so the equivalent `loctt list` query returns the same tasks.
+- The CLI returns **the same tasks**, compared by key — not merely that it accepts the predicate without error.
 
 ### MSL-7 · M1 · major · P2
 **Clicking a second label adds to the filter rather than replacing it.**
@@ -81,6 +82,7 @@ is testing the wrong thing.
 **Creating a label in Settings → Labels writes to `labels.yaml`.**
 - The new label gets a generated ULID `id`; the user is never asked to supply one.
 - The entry appears in `.loctt/config/labels.yaml` with `name` and `color`.
+- **`labels.yaml` still parses as a whole** after the write. One malformed entry can make the loader reject the entire file, silently taking every other label with it.
 - The label is immediately offered in task label pickers and in the list filter bar.
 - `loctt label list` shows it without a restart.
 

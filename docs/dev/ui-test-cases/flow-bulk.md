@@ -173,6 +173,7 @@ Select 12 tasks and choose Delete.
 - The request goes to `/api/tasks/export` carrying the same filter
   parameters as the `/api/tasks` request behind the current view.
 - The downloaded file contains exactly 37 data rows plus one header row.
+- The 37 exported rows are **the same 37 tasks**, compared by key against the on-screen set — not merely the same count.
 - The response carries `Content-Type: text/csv` and a
   `Content-Disposition: attachment` filename.
 - The header row lists the export columns in a stable order.
@@ -407,6 +408,7 @@ included.**
 **An export URL is reproducible.**
 - The `/api/tasks/export` request's query string encodes the filter such
   that pasting it produces the identical file.
+- Compare the two exports' **content**, byte for byte, not just their row counts — a filter dropped server-side yields a same-sized file with different rows.
 - No filter state that affects the export lives only in React state.
 
 ## C. Error cases

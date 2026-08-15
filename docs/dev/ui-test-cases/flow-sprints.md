@@ -45,6 +45,7 @@ comes from `workflow.yaml#estimation` and resolves to one of
 ### SPR-4 · M3 · blocker · P1 P10
 **Dragging a task card from one sprint column to another reassigns the task's sprint.**
 - The card moves to the target column and the source and target counts both update.
+- **The overview's column counts change after a refetch**, not only the optimistic in-place update — a write accepted and dropped leaves the counts right until the next load.
 - The task's frontmatter `sprint` field is written with the target sprint's **`id`**, not its `name`.
 - `loctt show <key>` in the CLI reports the new sprint immediately — the change is on disk, not just in the browser.
 - Exactly one write is issued per drop; dropping a card back where it started issues no write at all.

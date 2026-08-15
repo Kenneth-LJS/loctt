@@ -27,6 +27,7 @@ project counters during git sync is in
 - Copying that URL into a second browser tab opens the list already scoped to Web, with the switcher reading "Web".
 - Pressing back returns to the previous scope (**All projects**) and the list re-widens to include both projects; forward re-narrows.
 - Reloading the scoped URL produces the same rows in the same order — nothing about the scope is held only in React state.
+- **The server actually filtered**: the returned set excludes tasks from other projects, rather than the client narrowing a full response. Compare against a task known to be outside the scope.
 
 ### PRU-3 · M1 · major · P2 P9
 **"All projects" mode shows the project column so rows are distinguishable.** Two tasks with the same title, "Fix login", exist — one in each project.
@@ -230,6 +231,7 @@ project counters during git sync is in
 - The posted payload is a small fraction of the original — an order of magnitude smaller for a typical photo — verifiable from the request size.
 - The UI does not freeze during compression; either it completes fast enough to be imperceptible or it shows progress, but it never presents an unexplained frozen dialog.
 - The rendered avatar is not visibly stretched — the aspect ratio of the source is preserved by the clamp.
+- **Check what landed on disk** at `users/<id>/avatar.<ext>`: its dimensions and byte size match what was posted. PRU-13 checks disk; this case asserted only the request, so a server that stored the original would pass.
 
 ### PRU-28 · M4 · minor · P9
 **An avatar smaller than the cap is not upscaled.** A 64×64 PNG.
