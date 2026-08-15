@@ -65,7 +65,7 @@ today` compares dates, not instants.
 
 | Alias | Description |
 |---|---|
-| `text` | Full-text search across all searchable fields (title, built-in text fields, searchable custom fields). Does not include attachment contents or filenames. |
+| `text` | Substring search across the title, built-in text fields, the task **body**, and custom fields declared `searchable: true`. A custom field with `searchable: false` is excluded — it stays directly queryable by `fields.<key>`. Does not include attachment contents or filenames. |
 | `parent` | Filter by parent task — accepts task keys (e.g., `parent = T-5`) |
 
 ## Relationship Filtering

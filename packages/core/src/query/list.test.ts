@@ -2,7 +2,7 @@ import type { QueriesConfig, Task, WorkflowConfig } from "@loctt/contracts";
 import { describe, expect,it } from "vitest";
 
 import { QueriesConfigError } from "../config/queries.js";
-import { listTasks, listTasksPaginated, resolveView } from "./list.js";
+import { buildListContext, listTasks, listTasksPaginated, resolveView } from "./list.js";
 import { QueryValidationError } from "./validate.js";
 
 const config: WorkflowConfig = {
@@ -469,5 +469,40 @@ describe("listTasks — view + ad hoc query", () => {
       onWarning: err => warnings.push(err),
     })).not.toThrow();
     expect(warnings).toHaveLength(1);
+  });
+});
+
+describe("buildListContext", () => {
+  function mk(id: string, key: string, title: string, body: string): Task {
+    return {
+      frontmatter: {
+        id, key, title,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      } as Task["frontmatter"],
+      body,
+    };
+  }
+
+  it("supplies getBody so `text ~` reaches the body", () => {
+    // Body search was documented and implemented in the evaluator, but
+    // no caller ever supplied getBody — so it matched nothing on every
+    // surface. The bodies are already on the tasks being listed.
+    const tasks = [
+      mk("a", "T-1", "nothing", "the body mentions a pelican"),
+      mk("b", "T-2", "nothing either", "no birds here"),
+    ];
+    const result = listTasks({
+      tasks,
+      options: { query: 'text ~ "pelican"' },
+      ctx: buildListContext(tasks),
+    });
+    expect(result.map(t => t.frontmatter.key)).toEqual(["T-1"]);
+  });
+
+  it("still resolves ids to keys", () => {
+    const tasks = [mk("a", "T-1", "x", "")];
+    expect(buildListContext(tasks).resolveKey?.("a")).toBe("T-1");
+    expect(buildListContext(tasks).resolveKey?.("nope")).toBeUndefined();
   });
 });

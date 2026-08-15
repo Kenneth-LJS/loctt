@@ -1628,6 +1628,50 @@ export function createWebApp(options: WebAppOptions) {
     json(res, paginated(frontmatters, page.offset, page.limit));
   };
 
+  /**
+   * `GET /api/search?q=<text>` (D2).
+   *
+   * Deliberately not a new matching engine: it builds `text ~ "<q>"`
+   * and runs the existing evaluator, so the header box and a hand-typed
+   * DSL query agree by construction. No full-text index — the corpus is
+   * a directory of markdown files that the list route already loads in
+   * full for every request.
+   *
+   * `q` is passed as a structured value rather than interpolated into
+   * a query string, so a search for `foo") or (status = done` cannot
+   * inject query structure.
+   */
+  const handleSearch: RouteHandler = async ({ res, url, locttDir }) => {
+    const page = parsePagination(url, res);
+    if (!page) return;
+    const q = (url.searchParams.get("q") ?? "").trim();
+    if (q.length === 0) {
+      // An empty search is not an error and is not "everything" —
+      // returning the whole tracker for a stray keystroke would be a
+      // surprising and expensive answer.
+      json(res, paginated([], page.offset, page.limit));
+      return;
+    }
+
+    const tasks = await loadAllTasks(locttDir);
+    const { workflowConfig, today } = await loadOptionalConfigs(locttDir);
+    const includeArchived = url.searchParams.get("archived") === "true";
+
+    const result = listTasks({
+      tasks,
+      options: {
+        query: `text ~ ${JSON.stringify(q)}`,
+        ...(includeArchived ? { includeArchived: true } : {}),
+        ...(today !== undefined ? { today } : {}),
+        limit: Number.MAX_SAFE_INTEGER,
+      },
+      ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+      ctx: buildListContext(tasks),
+    });
+    const frontmatters = result.map(t => projectTaskFrontmatter(t.frontmatter));
+    json(res, paginated(frontmatters, page.offset, page.limit));
+  };
+
   const handleExportTasks: RouteHandler = async ({ res, url, locttDir }) => {
     const format = (url.searchParams.get("format") ?? "csv").toLowerCase();
     if (format !== "csv" && format !== "json") {
@@ -2188,6 +2232,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "POST", pattern: USER_UNARCHIVE_RE, handler: handleUnarchiveUser },
     { method: "GET", pattern: USER_AVATAR_RE, handler: handleGetAvatar },
     { method: "POST", pattern: USER_AVATAR_RE, handler: handleUploadAvatar },
+    { method: "GET", pattern: "/api/search", handler: handleSearch },
     { method: "GET", pattern: "/api/tasks", handler: handleListTasks },
     { method: "GET", pattern: "/api/tasks/export", handler: handleExportTasks },
     { method: "POST", pattern: "/api/tasks", handler: handleCreateTask },
