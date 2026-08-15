@@ -240,6 +240,26 @@ describe("history actor attribution", () => {
       expect(entries[0]?.timestamp).toBe(t2);
     });
 
+    it("spans the whole burst — `before` from the first edit, `after` from the last", async () => {
+      // A coalesced entry keeps the earlier row and drops the newer one,
+      // so `after` has to be advanced explicitly. Left alone, the entry
+      // would describe only the burst's first keystroke, and replaying
+      // it would restore a body the user never stopped at.
+      const t0 = "2026-05-21T10:00:00Z";
+      const t1 = "2026-05-21T10:05:00Z";
+      await appendHistory(locttDir, "t1", [
+        { timestamp: t0, kind: "body_edited", before: "original", after: "half-typed" },
+      ]);
+      await appendHistory(locttDir, "t1", [
+        { timestamp: t1, kind: "body_edited", before: "half-typed", after: "finished" },
+      ]);
+
+      const entries = await readHistory(locttDir, "t1");
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.before).toBe("original");
+      expect(entries[0]?.after).toBe("finished");
+    });
+
     it("starts a fresh entry when the window expires", async () => {
       const t0 = "2026-05-21T10:00:00Z";
       const t1 = "2026-05-21T10:20:00Z"; // 20 min later — past the window

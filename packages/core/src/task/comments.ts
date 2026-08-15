@@ -230,14 +230,21 @@ async function recordCommentEvent(
   locttDir: string,
   taskId: string,
   kind: "comment_added" | "comment_edited" | "comment_deleted",
-  comment: Pick<Comment, "id" | "author">,
+  comment: Pick<Comment, "id" | "author" | "body">,
   explicitActor?: string,
+  /** The comment's text before this event; only an edit has one. */
+  previousBody?: string,
 ): Promise<void> {
   try {
     await appendHistory(locttDir, taskId, [{
       timestamp: new Date().toISOString(),
       kind,
       meta: { comment_id: comment.id, author: comment.author },
+      // Carry the text (M3). A deletion is the load-bearing case: it is
+      // a hard delete, so without `before` the words are gone from the
+      // tracker entirely, recoverable by no means at all.
+      ...(previousBody !== undefined ? { before: previousBody } : {}),
+      ...(kind !== "comment_deleted" ? { after: comment.body } : {}),
       // Only set when the caller named an author explicitly; otherwise
       // leave it for appendHistory to resolve from the current user.
       ...(explicitActor !== undefined ? { actor: explicitActor } : {}),
@@ -332,7 +339,9 @@ export async function editComment(opts: EditCommentOptions): Promise<Comment> {
   const editor = opts.actor
     ?? (await readCurrentUserId(opts.locttDir).catch(() => undefined)) ?? undefined;
 
-  const updated = await withCommentsLock(opts.locttDir, opts.taskId, async () => {
+  // `previousBody` is captured inside the lock and returned alongside the
+  // result: the pre-edit text only exists there, and history needs it.
+  const { updated, previousBody } = await withCommentsLock(opts.locttDir, opts.taskId, async () => {
     const existing = await readFileOrEmpty(opts.locttDir, opts.taskId);
     const idx = existing.findIndex(c => c.id === opts.commentId);
     if (idx === -1) throw new CommentError(`unknown comment id: ${opts.commentId}`);
@@ -355,13 +364,20 @@ export async function editComment(opts: EditCommentOptions): Promise<Comment> {
     const next = [...existing];
     next[idx] = updated;
     await writeCommentsAtomically(opts.locttDir, opts.taskId, next);
-    return updated;
+    return { updated, previousBody: prev.body };
   });
   // `updated.author` is the *original* author, preserved by the spread
   // above — so editing someone else's comment records both parties.
   // Pass the already-resolved editor so the history actor and the
   // comment's `editors` list can't disagree about who did this.
-  await recordCommentEvent(opts.locttDir, opts.taskId, "comment_edited", updated, editor);
+  await recordCommentEvent(
+    opts.locttDir,
+    opts.taskId,
+    "comment_edited",
+    updated,
+    editor,
+    previousBody,
+  );
   return updated;
 }
 
@@ -384,7 +400,16 @@ export async function deleteComment(opts: DeleteCommentOptions): Promise<void> {
     await writeCommentsAtomically(opts.locttDir, opts.taskId, next);
     return target;
   });
-  await recordCommentEvent(opts.locttDir, opts.taskId, "comment_deleted", removed, opts.actor);
+  // The deleted text is `removed.body` — recorded as `before` so a hard
+  // delete leaves a recoverable trace.
+  await recordCommentEvent(
+    opts.locttDir,
+    opts.taskId,
+    "comment_deleted",
+    removed,
+    opts.actor,
+    removed.body,
+  );
 }
 
 /**

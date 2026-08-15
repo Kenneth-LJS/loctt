@@ -94,7 +94,7 @@ export type { CheckStatus,DiagnosticCheck } from "./diagnostics/index.js";
 export { getTrackerInfo } from "./diagnostics/index.js";
 export { runDoctor } from "./diagnostics/index.js";
 export type { FetchResult, GitStatusResult, PushResult } from "./git/index.js";
-export type { RekeyResult } from "./git/index.js";
+export type { RekeyOutcome, RekeyResult, RekeySkip } from "./git/index.js";
 export {
   commitToLocttBranch,
   disableGit,
