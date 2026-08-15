@@ -49,4 +49,4 @@ Keys (`P-1`, `Q10`, …) come from the v1 decision register; see
 
 | Key | Invariant | What breaks if violated |
 |---|---|---|
-| **Q18 / D4** | The body editor autosaves on idle + blur; `body_edited` history entries coalesce within a 15-minute same-actor window. | Under explicit-save the coalescing window would merge two deliberate saves minutes apart into one history entry. |
+| **Q18 / D4** | The body editor autosaves on idle + blur; `body_edited` history entries coalesce within a 15-minute same-actor window. **The window rolls** — each merged save advances it — **but an entry spans at most 60 minutes**, after which a fresh entry starts even if edits continue. | Under explicit-save the coalescing window would merge two deliberate saves minutes apart into one history entry. Without the 60-minute cap the rolling window never closes: sub-15-minute edits collapse indefinitely, and every intermediate body state inside that span is unrecoverable — which breaks the M2 guarantee that a lost merge race is recoverable from history. |
