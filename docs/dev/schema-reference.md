@@ -112,7 +112,7 @@ The top of every `task.md` is a YAML block delimited by `---`. The schema is `pa
 | `created_at` | ISO 8601 timestamp | yes | Creation timestamp |
 | `updated_at` | ISO 8601 timestamp | yes | Last modification timestamp |
 | `project` | string | no | Project key the task belongs to |
-| `status` | string | no | Workflow status key (defaults to first `pending` status when absent) |
+| `status` | string | no | Workflow status key. A task created without one gets the status marked `default: true` in `workflow.yaml`, so in practice every created task carries a status |
 | `status_updated_at` | ISO 8601 | no | Set automatically when `status` changes |
 | `task_type` | string | no | Task type key from workflow |
 | `priority` | string | no | Priority key from workflow |
@@ -290,6 +290,18 @@ estimation:
 | `key` | string | yes | Status key (stored in task frontmatter) |
 | `label` | string | yes | Display label |
 | `category` | enum | yes | One of `pending`, `active`, `completed`, `discarded` |
+| `default` | boolean | no | Marks the status a task gets when created without one. **Exactly one status must have it** |
+
+> **`default` is explicit, not positional.** Earlier docs claimed the
+> default was "the first status in `workflow.yaml`" (CLI reference) and
+> "the first `pending` status" (this table). Neither was implemented —
+> a task created without a status had no `status` key at all, matching
+> neither `status = backlog` nor `status != done`, so it was invisible
+> to ordinary filtering.
+>
+> A config with no default, or with two, is rejected at parse time. The
+> default status therefore cannot be deleted without first reassigning
+> the flag — deleting it would produce a file the next read refuses.
 
 | Category | Meaning |
 |---|---|

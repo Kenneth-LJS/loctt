@@ -315,7 +315,7 @@ loctt create <title> [--project <key>] [--status <s>] [--priority <p>] [--type <
 | Flag | Description |
 |---|---|
 | `--project <key>` | Target project. Required if no workspace default is set and there are multiple projects. |
-| `--status <s>` | Initial status. Defaults to the first status in `workflow.yaml`. |
+| `--status <s>` | Initial status. Defaults to the status marked `default: true` in `workflow.yaml`. |
 | `--priority <p>` | Priority key |
 | `--type <t>` | Task type key |
 

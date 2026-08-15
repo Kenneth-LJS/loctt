@@ -20,15 +20,42 @@ export type IconString = z.infer<typeof IconStringSchema>;
 export const StatusCategorySchema = z.enum(["pending", "active", "completed", "discarded"]);
 export type StatusCategory = z.infer<typeof StatusCategorySchema>;
 
-/** A single status definition from workflow.yaml. */
+/**
+ * A single status definition from workflow.yaml.
+ *
+ * `default: true` marks the status assigned to a task created without
+ * one. Exactly one status must carry it — enforced across the
+ * collection by {@link WorkflowConfigSchema}, since a single def
+ * cannot see its siblings.
+ *
+ * It is explicit config rather than an implicit rule ("the first
+ * status", "the first pending status") because both of those were
+ * documented, neither was implemented, and reordering the list would
+ * silently change which status new tasks get.
+ */
 export const StatusDefSchema = z.object({
   key: z.string().min(1),
   label: z.string().min(1),
   category: StatusCategorySchema,
+  default: z.boolean().optional(),
   icon: IconStringSchema.optional(),
   color: HexColor.optional(),
 }).strict();
 export type StatusDef = z.infer<typeof StatusDefSchema>;
+
+/**
+ * Returns the status a task gets when created without one.
+ *
+ * Total rather than optional-returning: `WorkflowConfigSchema` rejects
+ * any config without exactly one default, so by the time a config
+ * exists this cannot fail. The fallback to the first status exists
+ * only for configs built in memory by tests that bypass parsing.
+ */
+export function defaultStatus(config: {
+  readonly statuses: readonly StatusDef[];
+}): StatusDef | undefined {
+  return config.statuses.find(s => s.default === true) ?? config.statuses[0];
+}
 
 /** A single priority definition from workflow.yaml. */
 export const PriorityDefSchema = z.object({
@@ -408,5 +435,27 @@ export const WorkflowConfigSchema = z.object({
   estimation: EstimationConfigSchema.optional(),
   boards: BoardsConfigSchema.optional(),
   timeline: TimelineConfigSchema.optional(),
-}).strict();
+}).strict().superRefine((config, ctx) => {
+  // Exactly one default status. A per-def check cannot see siblings,
+  // so this is the only place the rule can live.
+  //
+  // Rejecting rather than auto-correcting: silently rewriting config
+  // the user did not touch is worse than a clear error, and picking
+  // "the first one" is what made the previous implicit rule fragile.
+  const defaults = config.statuses.filter(s => s.default === true);
+  if (config.statuses.length > 0 && defaults.length === 0) {
+    ctx.addIssue({
+      code: "custom",
+      message: `must have exactly one status with 'default: true' — none does. Add it to the status new tasks should start in.`,
+      path: ["statuses"],
+    });
+  }
+  if (defaults.length > 1) {
+    ctx.addIssue({
+      code: "custom",
+      message: `must have exactly one status with 'default: true', but ${defaults.length} do: ${defaults.map(s => s.key).join(", ")}.`,
+      path: ["statuses"],
+    });
+  }
+});
 export type WorkflowConfig = z.infer<typeof WorkflowConfigSchema>;

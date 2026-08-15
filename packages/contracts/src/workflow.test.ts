@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   BoardsConfigSchema,
+  defaultStatus,
   EstimationConfigSchema,
   IconStringSchema,
   PriorityDefSchema,
@@ -362,10 +363,61 @@ describe("TimelineConfig", () => {
 });
 
 describe("WorkflowConfig integration", () => {
+  describe("default status (0b)", () => {
+    function cfg(statuses: unknown[]) {
+      return {
+        key: { prefix: "T-" },
+        statuses,
+        priorities: [],
+        task_types: [],
+        relationships: [],
+        custom_fields: [],
+      };
+    }
+
+    it("accepts exactly one default", () => {
+      const parsed = WorkflowConfigSchema.parse(cfg([
+        { key: "a", label: "A", category: "pending", default: true },
+        { key: "b", label: "B", category: "active" },
+      ]));
+      expect(parsed.statuses[0]?.default).toBe(true);
+    });
+
+    it("rejects no default", () => {
+      // The rule cannot live on StatusDefSchema: a single def cannot
+      // see its siblings.
+      expect(() => WorkflowConfigSchema.parse(cfg([
+        { key: "a", label: "A", category: "pending" },
+        { key: "b", label: "B", category: "active" },
+      ]))).toThrow(/none does/);
+    });
+
+    it("rejects two defaults, naming them", () => {
+      expect(() => WorkflowConfigSchema.parse(cfg([
+        { key: "a", label: "A", category: "pending", default: true },
+        { key: "b", label: "B", category: "active", default: true },
+      ]))).toThrow(/but 2 do: a, b/);
+    });
+
+    it("allows an empty status list", () => {
+      // Nothing to default to. A config with no statuses is degenerate
+      // but not this rule's business.
+      expect(() => WorkflowConfigSchema.parse(cfg([]))).not.toThrow();
+    });
+
+    it("defaultStatus() returns the marked status regardless of position", () => {
+      const parsed = WorkflowConfigSchema.parse(cfg([
+        { key: "a", label: "A", category: "pending" },
+        { key: "b", label: "B", category: "active", default: true },
+      ]));
+      expect(defaultStatus(parsed)?.key).toBe("b");
+    });
+  });
+
   it("accepts boards + timeline + estimation weights together", () => {
     const parsed = WorkflowConfigSchema.parse({
       key: { prefix: "T-" },
-      statuses: [{ key: "doing", label: "Doing", category: "active" }],
+      statuses: [{ key: "doing", label: "Doing", category: "active", default: true }],
       priorities: [{ key: "high", label: "High" }],
       task_types: [{ key: "bug", label: "Bug" }],
       relationships: [

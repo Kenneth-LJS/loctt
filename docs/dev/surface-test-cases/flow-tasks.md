@@ -102,25 +102,36 @@ request body.
 read back, **then** either all six are present or the call failed naming the
 unsupported one — never a silent drop.
 
-### TSK-C6 · major · P3 P10 · CLI MCP
-**Created tasks get the documented default status — or the doc stops
-promising one.** `docs/user/cli/reference.md:322` promises `--status`
-"defaults to the first status in workflow.yaml"; nothing implements it, and
-a created task has no `status:` key at all. *Needs a product decision
-before this case can be written as pass/fail.*
+### TSK-C6 · major · P3 P10 · CLI MCP — **resolved**
+**Created tasks get the default status.** Two docs promised two
+*different* implicit rules — "the first status in `workflow.yaml`"
+(CLI reference) and "the first `pending` status" (schema reference) —
+and neither was implemented. A task created without a status had no
+`status` key at all, so it matched neither `status = backlog` nor
+`status != done` and was invisible to ordinary filtering. All three
+surfaces funnel through `createTask`, so all three produced them.
 
-- `loctt create "x"` with no `--status` yields frontmatter whose `status`
-  is the first status key in `workflow.yaml` — **or** the reference no
-  longer claims a default.
-- If defaulted, MCP `create_task` and `POST /api/tasks` default
-  identically: a task created any way lands in the same column.
-- If defaulted, the task matches `loctt list --query 'status = <first>'`.
-- If not defaulted, `loctt show` renders a status-less task without an
-  empty `Status:` line.
+Resolved by making the default **explicit config**: exactly one status
+carries `default: true`, rejected at parse time otherwise. Position no
+longer decides, so reordering the list cannot silently change which
+status new tasks get.
 
-**Given** a workflow whose first status is `backlog`, **when** a task is
-created with no status on each surface, **then** all three agree — either
-all `backlog`, or all absent and the doc corrected.
+- `loctt create "x"` with no `--status` yields frontmatter whose
+  `status` is the key marked `default: true`.
+  → `tests/integration/cli/create.test.ts`
+- MCP `create_task` and `POST /api/tasks` default identically: a task
+  created any way lands in the same column.
+  → `tests/integration/mcp/create.test.ts`
+- The created task matches `loctt list --query 'status = backlog'` —
+  reachable by an ordinary filter, not merely carrying a key.
+  → `packages/core/src/task/create.test.ts`
+- Marking a later status default changes the result, proving position
+  is not what decides.
+  → `packages/core/src/task/create.test.ts`
+
+**Given** a workflow whose default status is `backlog`, **when** a task
+is created with no status on each surface, **then** all three produce
+`backlog`.
 
 ---
 

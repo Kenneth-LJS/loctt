@@ -44,14 +44,17 @@ async function makeTaskWithStatus(status: string): Promise<void> {
 
 describe("applyWorkflowEdit", () => {
   it("rewrites tasks when a status is removed and remap supplied", async () => {
-    await makeTaskWithStatus("backlog");
+    // Uses `wont_do`, not `backlog`: `backlog` is the default status and
+    // deleting it is refused outright (see the default-status case
+    // below), so removing it here would fail for an unrelated reason.
+    await makeTaskWithStatus("wont_do");
     const wf = await loadWorkflowConfig(locttDir);
     const next: WorkflowConfig = {
       ...wf,
-      statuses: wf.statuses.filter(s => s.key !== "backlog"),
+      statuses: wf.statuses.filter(s => s.key !== "wont_do"),
     };
     const result = await applyWorkflowEdit(locttDir, next, {
-      statuses: { backlog: "in_progress" },
+      statuses: { wont_do: "in_progress" },
     });
     expect(result.rewrittenTaskCount).toBe(1);
     const tasks = await loadAllTasks(locttDir);
@@ -59,15 +62,60 @@ describe("applyWorkflowEdit", () => {
   });
 
   it("clears the field when remap target is null", async () => {
-    await makeTaskWithStatus("backlog");
+    await makeTaskWithStatus("wont_do");
     const wf = await loadWorkflowConfig(locttDir);
     const next: WorkflowConfig = {
       ...wf,
-      statuses: wf.statuses.filter(s => s.key !== "backlog"),
+      statuses: wf.statuses.filter(s => s.key !== "wont_do"),
     };
-    await applyWorkflowEdit(locttDir, next, { statuses: { backlog: null } });
+    await applyWorkflowEdit(locttDir, next, { statuses: { wont_do: null } });
     const tasks = await loadAllTasks(locttDir);
     expect(tasks[0]?.frontmatter.status).toBeUndefined();
+  });
+
+  it("refuses to delete the default status", async () => {
+    // Deleting it would leave the config with no default, so the very
+    // next read would reject the file the write just produced.
+    const wf = await loadWorkflowConfig(locttDir);
+    const def = wf.statuses.find(st => st.default === true);
+    expect(def?.key).toBe("backlog");
+
+    const next: WorkflowConfig = {
+      ...wf,
+      statuses: wf.statuses.filter(st => st.key !== def!.key),
+    };
+    await expect(
+      applyWorkflowEdit(locttDir, next, { statuses: { [def!.key]: "in_progress" } }),
+    ).rejects.toThrow(/exactly one status with 'default: true'/);
+  });
+
+  it("allows moving the default to another status", async () => {
+    // The default is reassignable — only leaving zero (or two) is refused.
+    const wf = await loadWorkflowConfig(locttDir);
+    const next: WorkflowConfig = {
+      ...wf,
+      statuses: wf.statuses.map(st =>
+        st.key === "backlog"
+          ? { key: st.key, label: st.label, category: st.category }
+          : st.key === "in_progress"
+            ? { ...st, default: true as const }
+            : st,
+      ),
+    };
+    await applyWorkflowEdit(locttDir, next);
+    const reloaded = await loadWorkflowConfig(locttDir);
+    expect(reloaded.statuses.find(st => st.default === true)?.key).toBe("in_progress");
+  });
+
+  it("refuses two default statuses", async () => {
+    const wf = await loadWorkflowConfig(locttDir);
+    const next: WorkflowConfig = {
+      ...wf,
+      statuses: wf.statuses.map(st =>
+        st.key === "in_progress" ? { ...st, default: true as const } : st,
+      ),
+    };
+    await expect(applyWorkflowEdit(locttDir, next)).rejects.toThrow(/but 2 do/);
   });
 
   it("rejects deletion of in-use status without remap", async () => {
@@ -367,7 +415,10 @@ describe("saveWorkflowConfig — cross-field validation (B9)", () => {
     const { saveWorkflowConfig } = await import("./workflow-write.js");
 
     const cases: ReadonlyArray<[string, WorkflowConfig, RegExp]> = [
-      ["statuses", { ...wf, statuses: [...wf.statuses, { ...wf.statuses[0]! }] }, /duplicate status key/],
+      // Duplicate a NON-default status: cloning the default would trip
+      // the exactly-one-default rule first and never reach the
+      // duplicate-key check this case is about.
+      ["statuses", { ...wf, statuses: [...wf.statuses, { ...wf.statuses[1]! }] }, /duplicate status key/],
       ["priorities", { ...wf, priorities: [...wf.priorities, { ...wf.priorities[0]! }] }, /duplicate priority key/],
       ["task_types", { ...wf, task_types: [...wf.task_types, { ...wf.task_types[0]! }] }, /duplicate task_type key/],
     ];

@@ -22,6 +22,7 @@ statuses:
   - key: backlog
     label: Backlog
     category: pending
+    default: true
   - key: in_progress
     label: In progress
     category: active

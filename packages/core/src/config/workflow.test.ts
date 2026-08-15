@@ -11,6 +11,7 @@ statuses:
   - key: not_started
     label: Not started
     category: pending
+    default: true
   - key: in_progress
     label: In progress
     category: active
@@ -76,7 +77,7 @@ describe("parseWorkflowConfig", () => {
 
     expect(config.key.prefix).toBe("T-");
     expect(config.statuses).toHaveLength(4);
-    expect(config.statuses[0]).toEqual({ key: "not_started", label: "Not started", category: "pending" });
+    expect(config.statuses[0]).toEqual({ key: "not_started", label: "Not started", category: "pending", default: true });
     expect(config.priorities).toHaveLength(3);
     expect(config.priorities[2]).toEqual({ key: "high", label: "High", value: 3 });
     expect(config.task_types).toHaveLength(1);
@@ -110,6 +111,7 @@ statuses:
   - key: open
     label: Open
     category: pending
+    default: true
 priorities:
   - key: normal
     label: Normal
@@ -133,6 +135,7 @@ statuses:
   - key: open
     label: Open
     category: pending
+    default: true
 priorities:
   - key: normal
     label: Normal
@@ -163,6 +166,7 @@ statuses:
   - key: open
     label: Open
     category: invalid_cat
+    default: true
 priorities: []
 task_types: []
 relationships: []
