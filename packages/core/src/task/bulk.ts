@@ -10,6 +10,7 @@ import { todayInZone } from "../utils/today.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 import { lookupTask, TaskNotFoundError } from "./lookup.js";
+import { linkTask } from "./relationships.js";
 import {
   AUTO_MANAGED_FIELDS,
   BUILTIN_OPTIONAL_FIELDS,
@@ -287,4 +288,76 @@ export async function bulkArchive(opts: BulkArchiveOptions): Promise<BulkResult>
     }
     return { bulk_op_id: bulkOpId, succeeded, failed };
   });
+}
+
+
+export interface BulkLinkOptions {
+  readonly locttDir: string;
+  /** Source tasks; each gets an edge to `target`. */
+  readonly taskRefs: readonly string[];
+  readonly type: string;
+  readonly target: string;
+  readonly workflowConfig?: WorkflowConfig;
+}
+
+/**
+ * Links many source tasks to one target under a shared `bulk_op_id`.
+ *
+ * **Not atomic, unlike the other bulk operations.** `linkTask` takes
+ * the tracker state lock itself and `withStateLock` is not re-entrant,
+ * so a batch-level lock would throw rather than nest. Each link is
+ * therefore committed independently: a failure part-way leaves earlier
+ * links in place, and `failed` reports which did not land.
+ *
+ * That is the right trade here — each edge is independently valid, and
+ * the alternative (reimplementing linkTask's cycle check and inverse
+ * write inside one lock) would duplicate the logic most likely to
+ * drift.
+ */
+export async function bulkLink(opts: BulkLinkOptions): Promise<BulkResult> {
+  const bulkOpId = ulid();
+  const succeeded: string[] = [];
+  const failed: { taskId: string; error: string }[] = [];
+
+  // `linkTask` stores edges by id, so the target ref must be resolved
+  // once up front. Passing a key straight through fails per-source with
+  // an ENOENT naming the key as though it were an id — an error that
+  // reads like a missing file rather than an unresolved reference.
+  let targetId: string;
+  try {
+    targetId = (await lookupTask(opts.locttDir, opts.target)).frontmatter.id;
+  } catch {
+    // One unresolvable target fails the whole batch, since every edge
+    // would fail identically. Reported per source so the shape stays
+    // consistent with the other bulk results.
+    return {
+      bulk_op_id: bulkOpId,
+      succeeded: [],
+      failed: opts.taskRefs.map(r => ({
+        taskId: r,
+        error: `link target "${opts.target}" not found`,
+      })),
+    };
+  }
+
+  for (const ref of opts.taskRefs) {
+    try {
+      const task = await lookupTask(opts.locttDir, ref);
+      await linkTask({
+        locttDir: opts.locttDir,
+        taskId: task.frontmatter.id,
+        type: opts.type,
+        target: targetId,
+        ...(opts.workflowConfig ? { workflowConfig: opts.workflowConfig } : {}),
+      });
+      succeeded.push(task.frontmatter.id);
+    } catch (err) {
+      if (err instanceof TaskNotFoundError) {
+        failed.push({ taskId: ref, error: "task not found" });
+      } else {
+        failed.push({ taskId: ref, error: (err as Error).message });
+      }
+    }
+  }
+  return { bulk_op_id: bulkOpId, succeeded, failed };
 }

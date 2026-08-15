@@ -2,6 +2,7 @@ import {
   appendTaskBody,
   buildListContext,
   buildShowModel,
+  bulkSetFields,
   createTask,
   deleteTask,
   listTasks,
@@ -183,8 +184,22 @@ export async function set(args: string[], root: string): Promise<void> {
   if (field === "status" || field === "priority" || field === "task_type") {
     assertWorkflowEnumKey(workflowConfig, field, value);
   }
-  const task = await lookupTask(locttDir, ref);
   const archivedGuard = await loadArchivedGuardConfigs(locttDir);
+  const refs = splitRefs(ref);
+
+  if (refs.length > 1) {
+    const result = await bulkSetFields({
+      locttDir,
+      taskRefs: refs,
+      changes: [{ field, value }],
+      ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+      archivedGuard,
+    });
+    reportBulk(`Set ${field} = ${value}`, result);
+    return;
+  }
+
+  const task = await lookupTask(locttDir, refs[0] as string);
   await setField({
     locttDir,
     taskId: task.frontmatter.id,
@@ -196,6 +211,34 @@ export async function set(args: string[], root: string): Promise<void> {
   console.log(`Set ${field} = ${value} on ${task.frontmatter.key}`);
 }
 
+/**
+ * Splits `T-1,T-2` into refs. A single ref is the overwhelmingly
+ * common case and keeps the single-task code path, which reports a
+ * friendlier message than a one-item bulk result.
+ *
+ * Empty segments are dropped so a trailing comma is not an error.
+ */
+function splitRefs(raw: string): string[] {
+  return raw.split(",").map(r => r.trim()).filter(Boolean);
+}
+
+/**
+ * Prints a bulk result. Failures are listed individually and set a
+ * non-zero exit code, so a script does not read a partial success as
+ * a complete one.
+ */
+function reportBulk(
+  action: string,
+  result: { succeeded: readonly string[]; failed: readonly { taskId: string; error: string }[] },
+): void {
+  console.log(`${action} on ${result.succeeded.length} task(s)`);
+  if (result.failed.length > 0) {
+    console.error(`${result.failed.length} failed:`);
+    for (const f of result.failed) console.error(`  ${f.taskId}: ${f.error}`);
+    process.exitCode = EXIT.RUNTIME;
+  }
+}
+
 export async function unset(args: string[], root: string): Promise<void> {
   const ref = args[1];
   const field = args[2];
@@ -203,7 +246,23 @@ export async function unset(args: string[], root: string): Promise<void> {
     throw new UsageError("missing args", "loctt unset <task> <field>");
   }
   const locttDir = resolveLocttDir(root);
-  const task = await lookupTask(locttDir, ref);
+  const refs = splitRefs(ref);
+
+  if (refs.length > 1) {
+    // `value: undefined` is core's spelling for a clear, so the same
+    // bulk primitive covers unset — no second bulk function needed.
+    const { workflowConfig } = await loadOptionalConfigs(locttDir);
+    const result = await bulkSetFields({
+      locttDir,
+      taskRefs: refs,
+      changes: [{ field, value: undefined }],
+      ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+    });
+    reportBulk(`Unset ${field}`, result);
+    return;
+  }
+
+  const task = await lookupTask(locttDir, refs[0] as string);
   await unsetField(locttDir, task.frontmatter.id, field);
   console.log(`Unset ${field} on ${task.frontmatter.key}`);
 }

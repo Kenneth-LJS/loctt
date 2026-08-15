@@ -313,6 +313,16 @@ export async function unsetField(
   taskId: string,
   field: string,
 ): Promise<Task> {
+  assertUnsettable(field);
+  return withStateLock(locttDir, () => unsetFieldLocked(locttDir, taskId, field));
+}
+
+/**
+ * Rejects fields that must not be cleared. Shared with
+ * {@link bulkUnsetField} so the two paths cannot drift — a field the
+ * single-task API refuses must not become clearable in bulk.
+ */
+export function assertUnsettable(field: string): void {
   if (USER_IMMUTABLE_FIELDS.has(field) || field === "title" || field === "updated_at") {
     throw new TaskUpdateError(`cannot unset required field "${field}"`);
   }
@@ -322,8 +332,6 @@ export async function unsetField(
       `it is updated automatically based on status changes`,
     );
   }
-
-  return withStateLock(locttDir, () => unsetFieldLocked(locttDir, taskId, field));
 }
 
 async function unsetFieldLocked(

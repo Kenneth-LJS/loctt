@@ -7,6 +7,7 @@ import { join as pathJoin, normalize as pathNormalize, resolve as pathResolve, s
 import { pipeline } from "node:stream/promises";
 
 import type {
+  BulkResponse,
   ConfigResponse,
   CreateTaskRequest,
   DoctorCheckResponse,
@@ -18,6 +19,10 @@ import type {
   UpdateTaskRequest,
 } from "@loctt/contracts";
 import {
+  BulkArchiveRequestSchema,
+  BulkLinkRequestSchema,
+  BulkMoveRequestSchema,
+  BulkSetRequestSchema,
   CalendarConfigSchema,
   CreateViewRequestSchema,
   EditViewRequestSchema,
@@ -39,6 +44,10 @@ import {
   AttachmentSourceError,
   buildListContext,
   buildShowModel,
+  bulkArchive,
+  bulkLink,
+  bulkMoveTasksToProject,
+  bulkSetFields,
   BurndownError,
   ConfigRouterError,
   createLabel,
@@ -1754,6 +1763,90 @@ export function createWebApp(options: WebAppOptions) {
     json(res, { entries: sliced, total: reversed.length });
   };
 
+  /**
+   * Bulk operations (CW-4).
+   *
+   * Core had bulkSetFields/bulkArchive/bulkMoveTasksToProject and no
+   * HTTP route reached any of them, so the documented bulk bar had no
+   * backend at all.
+   *
+   * All four return the same `{bulk_op_id, succeeded, failed}` split.
+   * Partial success is the normal outcome — a bad ref does not abort
+   * the batch — and the split is what lets a UI retain exactly the
+   * failures for retry rather than clearing the selection (ERR-13).
+   *
+   * Status is always 200, including when every task failed: the batch
+   * itself was processed. Per-task outcomes live in the body.
+   */
+  const handleBulkSet: RouteHandler = async ({ req, res, locttDir }) => {
+    const r = await parseJsonBodyWithSchema(req, res, BulkSetRequestSchema);
+    const wfConfig = await loadWorkflowConfig(locttDir);
+    const archivedGuard = await loadArchivedGuardConfigs(locttDir);
+    try {
+      const result = await bulkSetFields({
+        locttDir,
+        taskRefs: r.refs,
+        // JSON has no `undefined`, and core reads `undefined` as
+        // "clear this field". Mapping null → undefined here is what
+        // makes a separate bulk-unset endpoint unnecessary.
+        changes: r.changes.map(c => ({
+          field: c.field,
+          value: c.value === null ? undefined : c.value,
+        })),
+        workflowConfig: wfConfig,
+        archivedGuard,
+      });
+      json(res, result satisfies BulkResponse);
+    } catch (err) {
+      error(res, (err as Error).message, 400);
+    }
+  };
+
+  const handleBulkArchive: RouteHandler = async ({ req, res, locttDir }) => {
+    const r = await parseJsonBodyWithSchema(req, res, BulkArchiveRequestSchema);
+    try {
+      const result = await bulkArchive({
+        locttDir, taskRefs: r.refs, archive: r.archive,
+      });
+      json(res, result satisfies BulkResponse);
+    } catch (err) {
+      error(res, (err as Error).message, 400);
+    }
+  };
+
+  const handleBulkMove: RouteHandler = async ({ req, res, locttDir }) => {
+    const r = await parseJsonBodyWithSchema(req, res, BulkMoveRequestSchema);
+    try {
+      const projectId = await resolveProjectIdForUser(locttDir, r.project);
+      const result = await bulkMoveTasksToProject({
+        locttDir, taskRefs: r.refs, targetProjectId: projectId,
+      });
+      // Move reports key changes per task; flatten to the shared shape
+      // so every bulk route answers identically.
+      json(res, {
+        bulk_op_id: result.bulk_op_id,
+        succeeded: result.succeeded.map(x => x.taskId),
+        failed: result.failed,
+      } satisfies BulkResponse);
+    } catch (err) {
+      error(res, (err as Error).message, 400);
+    }
+  };
+
+  const handleBulkLink: RouteHandler = async ({ req, res, locttDir }) => {
+    const r = await parseJsonBodyWithSchema(req, res, BulkLinkRequestSchema);
+    const wfConfig = await loadWorkflowConfig(locttDir);
+    try {
+      const result = await bulkLink({
+        locttDir, taskRefs: r.refs, type: r.type, target: r.target,
+        workflowConfig: wfConfig,
+      });
+      json(res, result satisfies BulkResponse);
+    } catch (err) {
+      error(res, (err as Error).message, 400);
+    }
+  };
+
   const handleSetField: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = requireValidRef(captures, res);
     if (ref === null) return;
@@ -1996,6 +2089,10 @@ export function createWebApp(options: WebAppOptions) {
     { method: "GET", pattern: "/api/doctor", handler: handleDoctor },
     { method: "GET", pattern: "/api/config", handler: handleConfig },
     { method: "GET", pattern: "/api/projects", handler: handleListProjects },
+    { method: "POST", pattern: "/api/tasks/bulk/set", handler: handleBulkSet },
+    { method: "POST", pattern: "/api/tasks/bulk/archive", handler: handleBulkArchive },
+    { method: "POST", pattern: "/api/tasks/bulk/move", handler: handleBulkMove },
+    { method: "POST", pattern: "/api/tasks/bulk/link", handler: handleBulkLink },
     { method: "POST", pattern: "/api/projects", handler: handleCreateProject },
     { method: "PUT", pattern: PROJECT_KEY_RE, handler: handleUpdateProject },
     { method: "DELETE", pattern: PROJECT_KEY_RE, handler: handleDeleteProject },

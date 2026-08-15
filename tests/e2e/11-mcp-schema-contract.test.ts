@@ -52,6 +52,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "bulk_update_tasks",
+            },
+            {
+              "hasDescription": true,
               "name": "create_label",
             },
             {

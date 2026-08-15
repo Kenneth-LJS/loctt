@@ -14,6 +14,7 @@
 import {
   buildListContext,
   buildShowModel,
+  bulkSetFields,
   createTask,
   DEFAULT_LIST_LIMIT,
   deleteTask,
@@ -237,6 +238,45 @@ export const TOOLS: readonly ToolDef[] = [
       const field = args["field"] as string;
       const updated = await unsetField(locttDir, task.frontmatter.id, field);
       return text(`Updated ${updated.frontmatter.key}: unset ${field}`);
+    },
+  },
+  {
+    name: "bulk_update_tasks",
+    description:
+      "Set or clear one field across many tasks in a single operation. " +
+      "Prefer this over repeated update_task calls when changing the same " +
+      "field on several tasks: it runs under one lock, stamps every " +
+      "history entry with a shared bulk_op_id so the change reads as one " +
+      "action, and reports per-task outcomes instead of failing at the " +
+      "first bad ref. Omit `value` (or pass null) to CLEAR the field. " +
+      "Same field allowlist as update_task.",
+    inputSchema: {
+      refs: z.array(z.string()).min(1).max(500)
+        .describe("Task keys or IDs. Capped at 500 — one bulk op holds the tracker lock for its whole run."),
+      field: z.string(),
+      value: z.unknown().optional()
+        .describe("The value to set. Omit or pass null to clear the field."),
+    },
+    handler: async ({ locttDir }, args) => {
+      const refs = args["refs"] as string[];
+      const field = args["field"] as string;
+      const raw = args["value"];
+      const { workflowConfig } = await loadOptionalConfigs(locttDir);
+      const archivedGuard = await loadArchivedGuardConfigs(locttDir);
+      const result = await bulkSetFields({
+        locttDir,
+        taskRefs: refs,
+        // null and omitted both mean "clear" — core reads `undefined`
+        // as the unset, and JSON cannot carry undefined.
+        changes: [{ field, value: raw === null ? undefined : raw }],
+        ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+        archivedGuard,
+      });
+      const lines = [
+        `${result.succeeded.length} updated, ${result.failed.length} failed (bulk_op_id ${result.bulk_op_id})`,
+      ];
+      for (const f of result.failed) lines.push(`  ${f.taskId}: ${f.error}`);
+      return text(lines.join("\n"));
     },
   },
   {

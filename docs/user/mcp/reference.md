@@ -156,6 +156,30 @@ Allowlist matches `update_task`: writable built-ins and declared custom fields. 
 
 Returns: `Updated <KEY>: unset <field>`.
 
+### `bulk_update_tasks`
+
+Set or clear one field across many tasks in a single operation.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `refs` | string[] | yes | Task keys or IDs, 1–500 |
+| `field` | string | yes | Field to set or clear |
+| `value` | any | no | Value to set. Omit or pass `null` to **clear** the field |
+
+Prefer this over repeated `update_task` calls when changing the same
+field on several tasks. It runs under one lock, stamps every history
+entry with a shared `bulk_op_id` so the change reads as one action, and
+reports per-task outcomes rather than stopping at the first bad ref.
+
+Allowlist matches `update_task`.
+
+Batches are capped at 500: one bulk operation holds the tracker-wide
+state lock for its whole run, so an unbounded batch would block every
+other writer.
+
+Returns: `<n> updated, <m> failed (bulk_op_id <ULID>)`, followed by one
+line per failure. A failed task never aborts the rest.
+
 ### `delete_task`
 
 Permanently removes the task directory. Use `archive_task` for the reversible (soft) variant. **Always requires `confirm: true`.**

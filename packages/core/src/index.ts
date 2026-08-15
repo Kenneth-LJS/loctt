@@ -313,7 +313,7 @@ export {
   USER_IMMUTABLE_FIELDS,
   WRITABLE_BUILTIN_FIELDS,
 } from "./task/index.js";
-export { bulkArchive, bulkSetFields } from "./task/index.js";
+export { bulkArchive, bulkLink, bulkSetFields } from "./task/index.js";
 export { countTasksByReference, countTasksByReferences } from "./task/index.js";
 export {
   DEFAULT_EXPORT_COLUMNS,
