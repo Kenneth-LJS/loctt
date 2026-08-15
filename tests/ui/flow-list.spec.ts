@@ -504,3 +504,190 @@ test.describe("BLK — selection", () => {
     await expect(bar).toContainText("1 task selected");
   });
 });
+
+test.describe("BLK — bulk actions", () => {
+  const FIVE = Array.from({ length: 5 }, (_, i) => ({ title: `Task ${i + 1}` }));
+
+  async function selectFirst(page: import("@playwright/test").Page, n: number): Promise<void> {
+    const boxes = page.locator("tbody input[type=checkbox]");
+    for (let i = 0; i < n; i += 1) await boxes.nth(i).check();
+  }
+
+  // @verifies BLK-5
+  test("BLK-5: Set status offers configured labels and applies to all selected", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed(FIVE);
+    await page.goto(`${tracker.baseURL}/list`);
+    await selectFirst(page, 3);
+
+    await page.getByRole("button", { name: "Set status" }).click();
+    const menu = page.getByRole("menu", { name: "Set status" });
+    // Config order, config labels — not a hardcoded triple.
+    await expect(menu.getByRole("menuitem")).toHaveText([
+      "Backlog", "In progress", "Done", "Won't do",
+    ]);
+
+    await menu.getByRole("menuitem", { name: "In progress" }).click();
+
+    const bar = page.getByRole("region", { name: "Bulk actions" });
+    await expect(bar.getByRole("status")).toHaveText("3 tasks updated");
+
+    // Rows show the new label without a reload.
+    await expect(page.getByRole("cell", { name: "In progress" })).toHaveCount(3);
+  });
+
+  // @verifies BLK-5
+  test("BLK-5: the stored value is the key, not the label", async ({ page, tracker }) => {
+    await tracker.seed(FIVE);
+    await page.goto(`${tracker.baseURL}/list`);
+    await selectFirst(page, 1);
+
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "In progress" }).click();
+    await expect(page.getByRole("region", { name: "Bulk actions" }).getByRole("status"))
+      .toHaveText("1 task updated");
+
+    // Read it back through the API rather than the DOM: the label is
+    // what the table renders, the key is what must be on disk.
+    const res = await page.request.get(`${tracker.baseURL}/api/tasks?limit=50`);
+    const body = await res.json() as { items: { status: string }[] };
+    expect(body.items.filter(t => t.status === "in_progress")).toHaveLength(1);
+  });
+
+  // @verifies BLK-10
+  test("BLK-10: Archive is one click with no typed confirmation", async ({ page, tracker }) => {
+    await tracker.seed(FIVE);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–5 of 5")).toBeVisible();
+    await selectFirst(page, 2);
+
+    await page.getByRole("button", { name: "Archive", exact: true }).click();
+
+    // Demanding a typed confirm for a reversible action is itself the
+    // violation — no dialog may appear.
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // Rows leave the default view and the total drops.
+    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+  });
+
+  // @verifies BLK-11
+  test("BLK-11: Delete demands an exact typed confirmation", async ({ page, tracker }) => {
+    await tracker.seed(FIVE);
+    await page.goto(`${tracker.baseURL}/list`);
+    await selectFirst(page, 2);
+
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("Permanently delete 2 tasks");
+    await expect(dialog).toContainText("cannot be undone");
+    // Archive named as the reversible alternative, at the moment of
+    // the decision.
+    await expect(dialog).toContainText("archive");
+
+    // Focus is the input, never the destructive button.
+    const input = dialog.getByLabel("Type DELETE to confirm");
+    await expect(input).toBeFocused();
+
+    const confirmBtn = dialog.getByRole("button", { name: /^Delete 2 tasks$/ });
+    await expect(confirmBtn).toBeDisabled();
+
+    // Near-misses do not enable it.
+    await input.fill("delete");
+    await expect(confirmBtn).toBeDisabled();
+    await input.fill("DELETE");
+    await expect(confirmBtn).toBeEnabled();
+  });
+
+  // @verifies BLK-11
+  test("BLK-11: Esc closes the dialog with nothing deleted", async ({ page, tracker }) => {
+    await tracker.seed(FIVE);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–5 of 5")).toBeVisible();
+    await selectFirst(page, 2);
+
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    // Nothing removed, and the selection survives so the user can retry.
+    await expect(page.getByText("Showing 1–5 of 5")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Bulk actions" }))
+      .toContainText("2 tasks selected");
+  });
+
+  // @verifies BLK-12
+  test("BLK-12: a confirmed delete removes the tasks and reports honestly", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed(FIVE);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–5 of 5")).toBeVisible();
+    await selectFirst(page, 2);
+
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    await page.getByRole("dialog").getByLabel("Type DELETE to confirm").fill("DELETE");
+    await page.getByRole("dialog").getByRole("button", { name: /^Delete 2 tasks$/ }).click();
+
+    // Total drops by exactly the number deleted...
+    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+    // ...the selection is cleared and the bar goes...
+    await expect(page.getByRole("region", { name: "Bulk actions" })).toHaveCount(0);
+    // ...and no Undo is offered for an irreversible action.
+    await expect(page.getByRole("button", { name: /Undo/i })).toHaveCount(0);
+  });
+
+  // @verifies BLK-13
+  test("BLK-13: Clear empties the selection without mutating anything", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed(FIVE);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–5 of 5")).toBeVisible();
+    await selectFirst(page, 2);
+
+    await page.getByRole("button", { name: "Clear selection" }).click();
+
+    await expect(page.getByRole("region", { name: "Bulk actions" })).toHaveCount(0);
+    // Header returns to unchecked, and nothing changed on disk.
+    await expect(page.getByRole("checkbox", { name: "Select all on this page" }))
+      .not.toBeChecked();
+    await expect(page.getByText("Showing 1–5 of 5")).toBeVisible();
+  });
+
+  // @verifies BLK-38, BLK-39
+  test("BLK-38/39: a partial failure names each failure and is not called success", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed(FIVE);
+    await page.goto(`${tracker.baseURL}/list`);
+    await selectFirst(page, 2);
+
+    // Rewrite the outgoing batch to include a ref that cannot resolve,
+    // so the server returns 200 with a populated `failed`.
+    await page.route(/\/api\/tasks\/bulk\/set/, async route => {
+      const body = route.request().postDataJSON() as { refs: string[] };
+      await route.continue({
+        postData: JSON.stringify({ ...body, refs: [...body.refs, "T-99999"] }),
+      });
+    });
+
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "Done" }).click();
+
+    const status = page.getByRole("region", { name: "Bulk actions" }).getByRole("status");
+    // Not "3 tasks updated": the count of successes is stated with the
+    // failures alongside, and the failure is named individually.
+    await expect(status).toContainText("2 tasks updated, 1 failed");
+    await expect(status).toContainText("T-99999");
+  });
+});

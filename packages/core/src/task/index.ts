@@ -8,7 +8,7 @@ export {
   detachFile,
 } from "./attachments.js";
 export type { BulkArchiveOptions, BulkResult, BulkSetFieldsOptions } from "./bulk.js";
-export { bulkArchive, bulkLink, bulkSetFields } from "./bulk.js";
+export { bulkArchive, bulkDelete, bulkLink, bulkSetFields } from "./bulk.js";
 export type {
   Comment,
   DeleteCommentOptions,
