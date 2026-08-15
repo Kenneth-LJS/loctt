@@ -790,11 +790,29 @@ code spans. Doc now flags this as a known gap.
 `docs/user/ui/features.md` describes comments as shipped and
 `flow-comments-activity.md` has 38 UI cases with no backend.
 
-### 10. Other unwired core APIs
-`duplicateTask`, `moveTaskToProject`, `bulkMoveTasksToProject`,
-`setFields`, `validateQuery`, `countTasksByReference`, `pushRecent` — all
-exported, tested, and reachable from nothing. `GET /api/recents` reads a
-list nothing writes.
+### 10. Other unwired core APIs — ✅ MOSTLY DONE
+**Two of the seven listed were wrong**, verified against source:
+
+- **`validateQuery` was already wired** — `query/list.ts:220` calls it,
+  so every list request validates. The audit claim was false.
+- **`bulkMoveTasksToProject`** got its surface in item 2
+  (`POST /api/tasks/bulk/move`).
+
+Wired now:
+
+| API | Surface |
+|---|---|
+| `pushRecent` | `handleGetTask` — `GET /api/recents` read a list nothing wrote, so "Recently viewed" was permanently empty |
+| `countTasksByReference(s)` | `?counts=true` on labels/milestones/sprints. Opt-in because counting scans every task and the sidebar renders these lists on every page load |
+| `duplicateTask` | `loctt duplicate`, MCP `duplicate_task` |
+| `moveTaskToProject` | `loctt move`, MCP `move_task` |
+
+**Left deliberately:** `setFields` (multi-field atomic write) still has
+no direct caller. `bulkSetFields` covers the same ground — but it
+*reimplements* the patch logic rather than reusing `setFields`, which is
+real duplication. Refactoring bulk onto setFields is worthwhile and is a
+larger change than this item, touching the path shipped in item 2. It
+should be its own item rather than folded in here.
 
 ### 11. Milestone progress
 Does not exist anywhere in `packages` or `apps`. Ten UI cases unbacked.

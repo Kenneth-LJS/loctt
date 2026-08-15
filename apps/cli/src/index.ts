@@ -79,6 +79,8 @@ export async function main(): Promise<void> {
       case "unset":     await runCommand(() => taskCrudCmd.unset(args, root));     break;
       case "body":      await runCommand(() => taskCrudCmd.body(args, root));      break;
       case "log":       await runCommand(() => taskCrudCmd.log(args, root));       break;
+      case "duplicate":      await runCommand(() => taskCrudCmd.duplicate(args, root)); break;
+      case "move":           await runCommand(() => taskCrudCmd.move(args, root));      break;
       case "comment":        await runCommand(() => commentsCmd.add(args, root));    break;
       case "comments":       await runCommand(() => commentsCmd.list(args, root));   break;
       case "comment-edit":   await runCommand(() => commentsCmd.edit(args, root));   break;

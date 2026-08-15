@@ -120,6 +120,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "duplicate_task",
+            },
+            {
+              "hasDescription": true,
               "name": "edit_comment",
             },
             {
@@ -229,6 +233,10 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "migrate_schema",
+            },
+            {
+              "hasDescription": true,
+              "name": "move_task",
             },
             {
               "hasDescription": true,

@@ -2,15 +2,18 @@ import {
   appendTaskBody,
   buildListContext,
   buildShowModel,
+  bulkMoveTasksToProject,
   bulkSetFields,
   createTask,
   deleteTask,
+  duplicateTask,
   listTasks,
   loadAllTasks,
   loadArchivedGuardConfigs,
   loadOptionalConfigs,
   loadState,
   lookupTask,
+  moveTaskToProject,
   readHistory,
   readTaskBody,
   resolveLocttDir,
@@ -167,6 +170,78 @@ export async function show(args: string[], root: string): Promise<void> {
   if (model.task.body.trim()) {
     console.log(`\n${model.task.body}`);
   }
+}
+
+/**
+ * `loctt duplicate <task> [--title <t>] [--project <p>]`
+ *
+ * Copies field values and body to a new task with a fresh key.
+ * Relationships and attachments are deliberately not copied — see
+ * `duplicateTask`'s contract — so the copy starts unlinked.
+ */
+export async function duplicate(args: string[], root: string): Promise<void> {
+  const ref = args[1];
+  if (!ref) {
+    throw new UsageError("missing args", "loctt duplicate <task> [--title <t>] [--project <p>]");
+  }
+  const locttDir = resolveLocttDir(root);
+  const { workflowConfig } = await loadOptionalConfigs(locttDir);
+  const archivedGuard = await loadArchivedGuardConfigs(locttDir);
+  const title = getArg(args, "--title");
+  const project = getArg(args, "--project");
+
+  const created = await withStateLock(locttDir, async () => {
+    const state = await loadState(locttDir);
+    const task = await duplicateTask({
+      locttDir,
+      state,
+      sourceRef: ref,
+      ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+      archivedGuard,
+      overrides: {
+        ...(title !== undefined ? { title } : {}),
+        ...(project !== undefined ? { project } : {}),
+      },
+    });
+    await saveState(locttDir, state);
+    return task;
+  });
+  console.log(`Created ${created.frontmatter.key}: ${created.frontmatter.title}`);
+}
+
+/**
+ * `loctt move <task>[,<task>...] <project>`
+ *
+ * Moving reallocates the key under the target project, so the task's
+ * old key is retired into `key_history` and stays resolvable — a
+ * bookmark or a link written before the move keeps working.
+ */
+export async function move(args: string[], root: string): Promise<void> {
+  const ref = args[1];
+  const project = args[2];
+  if (!ref || !project) {
+    throw new UsageError("missing args", "loctt move <task>[,<task>...] <project>");
+  }
+  const locttDir = resolveLocttDir(root);
+  const targetProjectId = await resolveProjectIdForUser(locttDir, project);
+  const refs = splitRefs(ref);
+
+  if (refs.length > 1) {
+    const result = await bulkMoveTasksToProject({ locttDir, taskRefs: refs, targetProjectId });
+    console.log(`Moved ${result.succeeded.length} task(s) to ${project}`);
+    for (const s of result.succeeded) console.log(`  ${s.oldKey} → ${s.newKey}`);
+    if (result.failed.length > 0) {
+      console.error(`${result.failed.length} failed:`);
+      for (const f of result.failed) console.error(`  ${f.taskId}: ${f.error}`);
+      process.exitCode = EXIT.RUNTIME;
+    }
+    return;
+  }
+
+  const result = await moveTaskToProject({
+    locttDir, taskRef: refs[0] as string, targetProjectId,
+  });
+  console.log(`Moved ${result.oldKey} → ${result.newKey}`);
 }
 
 export async function set(args: string[], root: string): Promise<void> {
