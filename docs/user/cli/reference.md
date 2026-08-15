@@ -212,16 +212,29 @@ loctt label delete blocker --remap-to high-priority --yes
 `loctt milestone <subcommand>` manages milestones.
 
 ```
-loctt milestone list [--all]
-loctt milestone create <key> [--label <label>] [--target-date <YYYY-MM-DD>]
-loctt milestone edit <key> [--label <label>] [--target-date <YYYY-MM-DD|->] [--archived <true|false>]
-loctt milestone archive <key>
-loctt milestone unarchive <key>
-loctt milestone delete <key> [--remap-to <other>] [--yes]
+loctt milestone list [--all] [--ids] [--progress]
+loctt milestone create <name> [--target-date <YYYY-MM-DD>]
+loctt milestone edit <name|id> [--name <new>] [--target-date <YYYY-MM-DD|->] [--archived <true|false>]
+loctt milestone archive <name|id>
+loctt milestone unarchive <name|id>
+loctt milestone delete <name|id> [--remap-to <other>] [--yes]
 ```
+
+Milestones are identified by a generated ULID `id` and a mutable,
+non-unique `name`. There is no user-authored key — refer to a milestone
+by name, or by id when two share a name.
 
 `edit --target-date -` clears the target date. `--archived` accepts only the
 literal strings `true` or `false`.
+
+`--progress` adds a `done/total` readout per milestone. It is computed
+from status **category**, not from any status key, so renaming or
+deleting `done` does not break it. **Discarded tasks are excluded from
+the denominator** — a milestone whose remaining work has all been
+abandoned reads `4/4` rather than stalling below 100% forever — and the
+excluded count is named next to the number.
+
+It is opt-in because computing it scans every task.
 
 `archive` is the reversible (soft) variant.
 

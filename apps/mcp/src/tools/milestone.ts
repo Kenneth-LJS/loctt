@@ -10,6 +10,8 @@ import {
   deleteMilestone,
   editMilestone,
   loadMilestonesConfig,
+  loadWorkflowConfig,
+  milestoneProgress,
   resolveMilestoneIdFromInput,
   unarchiveMilestone,
 } from "@loctt/core";
@@ -22,11 +24,29 @@ import type { ToolDef } from "../types.js";
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "list_milestones",
-    description: "List milestones defined in milestones.yaml. Each milestone has an internal id (ULID) and a display name.",
-    inputSchema: {},
-    handler: async ({ locttDir }) => {
+    description:
+      "List milestones defined in milestones.yaml. Each milestone has an " +
+      "internal id (ULID) and a display name. Pass progress: true to " +
+      "include done/total per milestone — computed from status CATEGORY " +
+      "(so a renamed or deleted `done` status does not break it), with " +
+      "discarded tasks excluded from the denominator so abandoned work " +
+      "does not stall a milestone below 100% forever.",
+    inputSchema: {
+      progress: z.boolean().optional()
+        .describe("Include done/total per milestone. Scans every task, so opt in only when needed."),
+    },
+    handler: async ({ locttDir }, args) => {
       const cfg = await loadMilestonesConfig(locttDir);
-      return text(JSON.stringify(cfg, null, 2));
+      if (args["progress"] !== true) {
+        return text(JSON.stringify(cfg, null, 2));
+      }
+      const workflow = await loadWorkflowConfig(locttDir);
+      const byId = await milestoneProgress(
+        locttDir, cfg.milestones.map(m => m.id), workflow,
+      );
+      return text(JSON.stringify({
+        milestones: cfg.milestones.map(m => ({ ...m, progress: byId[m.id] })),
+      }, null, 2));
     },
   },
   {

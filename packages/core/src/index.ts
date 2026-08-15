@@ -278,6 +278,7 @@ export type {
   MoveTaskOptions,
   MoveTaskResult,
 } from "./task/index.js";
+export type { MilestoneProgressOptions, Progress } from "./task/index.js";
 export {
   buildMentionResolver,
   CommentError,
@@ -328,6 +329,7 @@ export { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./tas
 export { bulkMoveTasksToProject, MoveTaskError,moveTaskToProject } from "./task/index.js";
 export { linkTask, RelationshipError,unlinkTask } from "./task/index.js";
 export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./task/index.js";
+export { computeProgress, milestoneProgress, sprintProgress } from "./task/index.js";
 export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserSettings } from "./users/index.js";
 export type { RecentEntry } from "./users/index.js";
 export {

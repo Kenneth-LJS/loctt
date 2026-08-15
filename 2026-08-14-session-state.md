@@ -820,8 +820,25 @@ The two had already drifted, and the refactor exposed it:
 `bulk.ts` lost ~100 lines. 15 parity tests now assert the two agree on
 what may be written and what a write produces.
 
-### 11. Milestone progress
-Does not exist anywhere in `packages` or `apps`. Ten UI cases unbacked.
+### 11. Milestone progress — ✅ DONE
+`computeProgress` / `milestoneProgress` / `sprintProgress` in
+`packages/core/src/task/progress.ts`, reachable as `?progress=true`
+(HTTP), `progress: true` (MCP `list_milestones`), and
+`loctt milestone list --progress`.
+
+Both load-bearing rules are implemented and tested: progress comes from
+status **category**, never a status key, and **discarded tasks are
+excluded from the denominator** — so a milestone whose remaining work
+was abandoned reads `4/4` rather than stalling forever. `Progress`
+carries `discarded` so a surface can state the rule rather than
+silently shrinking the number.
+
+Opt-in everywhere: computing it scans every task.
+
+**UI half still unbuilt** — the Milestones view is a stub, so the bar
+itself does not exist. Also fixed on the way: the CLI milestone docs
+still used `<key>`/`--label`, which N6 settled as `{id, name}`; the code
+never had them.
 
 ---
 
