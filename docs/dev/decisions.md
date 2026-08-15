@@ -138,7 +138,7 @@ does not define.
 | # | Decision | Rationale |
 |---|---|---|
 | **M1** ✅ | **Key counters are not merged arithmetically.** After a merge, collect the tasks that exist, renumber only those whose keys collide — ordered by `created_at`, ULID `id` breaking ties — and derive the counter from the result. | Merging counters by `max` under-reserves: base 5, A creates 3, B creates 8 gives 11 new tasks but a counter of 13, so the rekey pass reissues keys that already exist. Deriving from the tasks cannot disagree with what is on disk, and needs no base commit. Non-colliding keys are left alone — renumbering a key someone already referenced is gratuitous churn. |
-| **M2** 🔵 | **A contested frontmatter field should be resolved per field, not per record.** Whole-record last-write-wins drops an uncontested field because a *different* field was contested — the common case when two people work one task. Frontmatter has no per-field timestamps (`updated_at` is stamped per write), but **history does**: `field_change` / `custom_field_change` name their field and carry `before`/`after`, `created` carries the whole initial frontmatter (M3), and `_history.yaml` is unioned on merge. Where a field cannot be resolved from history it falls back to whole-record recency **for that field alone**, recording a `merge_resolved` entry naming the field, both values and the side taken, so the fallback is auditable. **Not yet implemented — see the open problem below.** | Shipped behaviour today is whole-record LWW (`merge.ts` `mergeTask`), which is what the rationale for M3 already assumed was not the case. Clock skew can still order two edits wrongly: accepted as a nuisance, not a loss, as before — both values remain in history. |
+| **M2** ✅ | **A contested frontmatter field should be resolved per field, not per record.** Whole-record last-write-wins drops an uncontested field because a *different* field was contested — the common case when two people work one task. Frontmatter has no per-field timestamps (`updated_at` is stamped per write), but **history does**: `field_change` / `custom_field_change` name their field and carry `before`/`after`, `created` carries the whole initial frontmatter (M3), and `_history.yaml` is unioned on merge. Where a field cannot be resolved from history — a hand-edit, or a task predating M3 — it falls back to whole-record recency **for that field alone**, recording a `merge_resolved` entry naming the field, both values and the side taken, so the fallback is auditable. Hand-edits are explicitly out of scope; see below. | Shipped behaviour today is whole-record LWW (`merge.ts` `mergeTask`), which is what the rationale for M3 already assumed was not the case. Clock skew can still order two edits wrongly: accepted as a nuisance, not a loss, as before — both values remain in history. |
 | **M3** ✅ | **Every history entry records enough to reconstruct the state it changed.** Not just `body_edited` — `created` carries the initial frontmatter and body; `body_edited` carries before/after body (one snapshot per coalesced burst, not per keystroke); `comment_added`/`_edited`/`_deleted` carry the comment text. `archived`/`unarchived` are exempt: the kind fully describes the transition. | Today only `field_change`, `custom_field_change`, and the link/attachment kinds record content. The rest store a timestamp and nothing else, so history says *that* something happened and never *what it was*. This is the prerequisite for M2 — without it "history is the recovery path" is false. `comment_deleted` is the sharpest case: a hard delete with no record of the text, unrecoverable by any means. Independently this is what makes a body diff in the activity feed, and version restore, possible at all. |
 | **M4** ✅ | **The body is last-write-wins for the live value, but the losing version is written to a sibling file** rather than silently dropped. | Even with M3, silently replacing someone's paragraphs is a bad experience — they may not notice for days, and history is a place you have to think to look. The body is the field where not noticing costs most. |
 
@@ -151,36 +151,41 @@ being added. If it bites, the escape hatch is splitting content into
 `_history/<entry-id>.yaml` loaded on demand, keeping the feed fast and
 reconstruction exact.
 
-### M2's open problem: history does not see hand-edits
+### M2 scope: history is the record, hand-edits are not covered
 
-An attempt at the above was reverted, because "the latest history entry
-naming the field wins" is wrong on its own:
+**Decided.** Merge resolution trusts `_history.yaml`. A frontmatter value
+that no history entry explains is not a case the merge owes a correct
+answer to.
 
-- **History records structured writes only.** A task edited by hand on
-  disk — legitimate, LocTT is file-first — writes no entry. So a rule
-  that trusts history silently discards hand-edits in favour of the last
-  value some tool wrote, which can be arbitrarily old.
-- **Excluding `created` does not help.** It carries the initial
-  frontmatter (M3), so a field never edited since creation *is*
-  explained by it — but treating it as evidence means a hand-edit loses
-  to the birth value, which is worse than the bug being fixed.
+Hand-editing a `task.md` on disk is still supported for everything else —
+LocTT is file-first and always will be — but a hand-edit writes no
+history entry, so a *merge* has no evidence it happened. Someone who
+edits by hand and then syncs a divergent clone should expect that field
+to resolve by whole-record recency, and may lose the edit. The
+`merge_resolved` entry records it when that happens.
 
-Both readings were tried; each breaks a different case. The rule needs
-**two** signals, not one: history says what the last structured write
-set, and comparing each side's frontmatter against that tells you
-whether that side was hand-edited since. Roughly:
+This is what makes the rule tractable: with hand-edits out of scope, the
+winning value for a field is simply the latest entry naming it, and
+`created` (which M3 makes carry the whole initial frontmatter) is
+legitimate evidence for a field never edited since.
 
-| Local vs its history | Incoming vs its history | Take |
-|---|---|---|
-| matches | matches | later history entry for the field |
-| diverges (hand-edit) | matches | local |
-| matches | diverges (hand-edit) | incoming |
-| diverges | diverges | whole-record recency + `merge_resolved` |
+An earlier attempt tried to detect hand-edits by comparing each side's
+frontmatter against what its own history predicted. That is a two-signal
+rule and it was more machinery than the guarantee is worth.
 
-Not implemented. The table is a sketch and has not been checked against
-the merge tests, three-way's base tree (which may make the hand-edit
-detection cheaper), or the case where one side's `_history.yaml` is
-itself missing.
+**Two consequences, both intended:**
+
+- A hand-edit to a field the task was **born with** (anything in
+  `created`'s frontmatter) is reverted to the last value history knows,
+  **with no `merge_resolved` entry** — history *can* explain the field,
+  just not with the hand-edited value.
+- A hand-edit to a field **added later** and never written structurally
+  is genuinely unexplained, so it falls back to whole-record recency and
+  *does* record a `merge_resolved` entry.
+
+Both only apply to a task being merged, i.e. changed on both sides since
+the last sync. A hand-edit that never meets a conflicting change is
+untouched.
 
 **Not a decision, recorded because it was checked:** history coalescing
 is already actor-scoped (`coalesceHistory` compares `last.actor ===

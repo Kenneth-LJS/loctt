@@ -103,6 +103,8 @@ export async function resolveConflicts(
   const merged: { path: string; content: string }[] = [];
   const displaced: { path: string; content: string }[] = [];
   const unresolved: PathPlan[] = [];
+  /** `merge_resolved` entries owed to a `_history.yaml`, folded in after the loop. */
+  const pendingHistory = new Map<string, HistoryEntry[]>();
 
   for (const conflict of conflicts) {
     const localPath = join(localDir, conflict.path);
@@ -122,15 +124,38 @@ export async function resolveConflicts(
 
     try {
       if (isTaskFile(conflict.path)) {
-        const out = mergeTask(readTaskFile(localRaw), readTaskFile(incomingRaw));
+        // Per-field resolution reads the union of both sides' history
+        // (M2). Read the sibling `_history.yaml` directly rather than
+        // waiting for it to appear as its own conflict: the task can
+        // conflict while the history file does not, and every field
+        // would then fall back for want of evidence sitting on disk.
+        const dir = conflict.path.slice(0, -basename(conflict.path).length);
+        const historyPath = `${dir}_history.yaml`;
+        const localHistory = (parseYaml(
+          (await readIfPresent(join(localDir, historyPath))) ?? "",
+        ) ?? []) as HistoryEntry[];
+        const incomingHistory = (parseYaml(
+          (await readIfPresent(join(incomingDir, historyPath))) ?? "",
+        ) ?? []) as HistoryEntry[];
+        const history = mergeHistory(localHistory, incomingHistory);
+
+        const out = mergeTask(readTaskFile(localRaw), readTaskFile(incomingRaw), history);
         merged.push({
           path: conflict.path,
           content: assembleTaskFile(out.merged.frontmatter, out.merged.body),
         });
+        // Buffer rather than push: `_history.yaml` may also arrive as
+        // its own conflict in this same loop, and two entries for one
+        // path would both write and double-count.
+        if (out.historyAdditions !== undefined && out.historyAdditions.length > 0) {
+          pendingHistory.set(historyPath, [
+            ...(pendingHistory.get(historyPath) ?? []),
+            ...out.historyAdditions,
+          ]);
+        }
         if (out.displaced) {
           // Beside the task, not inside it: task.md's frontmatter is
           // schema-checked, and a second body cannot live there.
-          const dir = conflict.path.slice(0, -basename(conflict.path).length);
           displaced.push({
             path: `${dir}task.${out.displaced.label}.md`,
             content: out.displaced.content,
@@ -217,6 +242,25 @@ export async function resolveConflicts(
         reason: `could not merge: ${(err as Error).message}`,
       });
     }
+  }
+
+  // Fold fallback entries in after the loop, so a `_history.yaml` that
+  // was also its own conflict is amended in place rather than written
+  // twice — one merged entry per path.
+  for (const [path, additions] of pendingHistory) {
+    const existing = merged.find(m => m.path === path);
+    if (existing !== undefined) {
+      const current = (parseYaml(existing.content) ?? []) as HistoryEntry[];
+      merged[merged.indexOf(existing)] = {
+        path,
+        content: stringifyYaml(mergeHistory(current, additions)),
+      };
+      continue;
+    }
+    const onDisk = (parseYaml(
+      (await readIfPresent(join(localDir, path))) ?? "",
+    ) ?? []) as HistoryEntry[];
+    merged.push({ path, content: stringifyYaml(mergeHistory(onDisk, additions)) });
   }
 
   return { merged, displaced, unresolved };
