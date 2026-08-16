@@ -12,7 +12,7 @@ import {
 import { getLocalDir,getSyncStatePath } from "../paths/index.js";
 import { loadSyncState,saveSyncState } from "../state/sync.js";
 import { fileExists } from "../utils/fs.js";
-import { branchExists, branchHasForeignContent } from "./publish-sync.js";
+import { branchExists, branchHasForeignContent, branchHeadCommit, countLocalChanges, remoteExists } from "./publish-sync.js";
 
 export interface GitStatusResult {
   readonly enabled: boolean;
@@ -22,6 +22,27 @@ export interface GitStatusResult {
   readonly autoFetch: boolean;
   readonly lastSyncedCommit?: string;
   readonly isGitRepo: boolean;
+  /**
+   * Whether a remote is configured at all, as distinct from its name
+   * (GIT-C6). `remote` always holds a name because it defaults to
+   * `origin` — so a UI reading only the name would announce a remote on
+   * a repo that has none, and offer a push that cannot work.
+   */
+  readonly remoteConfigured: boolean;
+  /**
+   * Local files that differ from the branch — work this machine has that
+   * a publish would send. Undefined when it cannot be determined (git
+   * mode off, no branch yet, or not a repo), which is distinct from
+   * zero: "nothing to publish" and "cannot tell" must not render alike.
+   */
+  readonly localChanges?: number;
+  /**
+   * Whether the branch has moved since the last sync — work a sync would
+   * bring in. Undefined when undeterminable, as above.
+   */
+  readonly remoteChanges?: boolean;
+  /** Branch head, so a caller can show what a sync would move to. */
+  readonly branchCommit?: string;
 }
 
 function isGitRepo(root: string): boolean {
@@ -155,11 +176,36 @@ export async function getGitStatus(locttDir: string, root: string): Promise<GitS
       autoPush: DEFAULT_GIT_AUTO_PUSH,
       autoFetch: DEFAULT_GIT_AUTO_FETCH,
       isGitRepo: gitRepo,
+      // Git mode is off, so nothing is configured and no drift is
+      // computable. Both drift fields stay absent rather than 0 — the
+      // caller must be able to tell "nothing pending" from "cannot say".
+      remoteConfigured: false,
     };
   }
 
   try {
     const state = await loadSyncState(locttDir);
+
+    // Drift, in both directions (GIT-C6). Without these a caller has a
+    // config echo and cannot render "N local changes, M remote changes"
+    // without re-deriving everything itself.
+    //
+    // Only computed when git mode is on and we are in a repo: outside
+    // that, "0 changes" would be a claim we have not checked.
+    let localChanges: number | undefined;
+    let remoteChanges: boolean | undefined;
+    let branchCommit: string | undefined;
+    if (state.git.enabled && gitRepo && branchExists(root, state.git.branch)) {
+      localChanges = countLocalChanges(root, locttDir, state.git.branch);
+      branchCommit = branchHeadCommit(root, state.git.branch);
+      // The branch moved since we last reconciled with it. Undefined
+      // rather than false when either side is unknown — a never-synced
+      // tracker has no baseline to compare against.
+      remoteChanges = branchCommit === undefined
+        ? undefined
+        : branchCommit !== state.git.last_synced_commit;
+    }
+
     return {
       enabled: state.git.enabled,
       branch: state.git.branch,
@@ -170,6 +216,13 @@ export async function getGitStatus(locttDir: string, root: string): Promise<GitS
         ? { lastSyncedCommit: state.git.last_synced_commit }
         : {}),
       isGitRepo: gitRepo,
+      // `remote` always carries a name because it defaults to `origin`,
+      // so a UI reading only the name would announce a remote on a repo
+      // that has none — and offer a push that cannot work.
+      remoteConfigured: gitRepo && remoteExists(root, state.git.remote),
+      ...(localChanges !== undefined ? { localChanges } : {}),
+      ...(remoteChanges !== undefined ? { remoteChanges } : {}),
+      ...(branchCommit !== undefined ? { branchCommit } : {}),
     };
   } catch {
     return {
@@ -179,6 +232,7 @@ export async function getGitStatus(locttDir: string, root: string): Promise<GitS
       autoPush: DEFAULT_GIT_AUTO_PUSH,
       autoFetch: DEFAULT_GIT_AUTO_FETCH,
       isGitRepo: gitRepo,
+      remoteConfigured: false,
     };
   }
 }

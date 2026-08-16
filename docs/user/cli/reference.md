@@ -717,6 +717,15 @@ loctt git sync
 auto-push / auto-fetch settings, whether the working directory is a git repo,
 and the last synced commit (if any).
 
+It also reports drift in both directions: `Local changes` counts files not yet
+published, and `Remote changes` says whether the branch has moved since the last
+sync. Both lines are omitted when they could not be determined — git mode off,
+or no branch yet — rather than printed as zero.
+
+The remote line marks the remote as `(not configured)` when no such remote
+exists. The name still shows, because it defaults to `origin` whether or not one
+is set up.
+
 `publish` commits any local changes to the `loctt` branch (and pushes if
 auto-push is on). `sync` pulls the latest `loctt` branch into the workspace.
 

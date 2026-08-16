@@ -744,13 +744,17 @@ Disables git-backed mode. Local task data is preserved. No parameters.
 
 ### `get_git_status`
 
-No parameters. Returns JSON `{enabled, branch, remote, auto_push, auto_fetch, in_git_repo, last_synced_commit}` (the last entry is `null` when nothing has synced yet).
+No parameters. Returns JSON `{enabled, branch, remote, remote_configured, auto_push, auto_fetch, in_git_repo, last_synced_commit, local_changes, remote_changes, branch_commit}`.
+
+`remote` always carries a name because it defaults to `origin`; `remote_configured` says whether one actually exists, and only that predicts whether a push can work.
+
+`local_changes` counts files not yet published, `remote_changes` says whether the branch moved since the last sync. Both are `null` when they could not be determined (git mode off, no branch yet) — which is not the same as zero, and should not be reported to the user as "nothing pending".
 
 ### `publish_to_git`
 
 Commits the current task state to the local `loctt` branch and (if `remote` and `auto_push` are set) pushes to the remote. Only call when the user has indicated they want to share or sync — not speculatively after routine edits. No parameters.
 
-Output is prose: which of `Published local state to loctt branch` / `No changes to publish`, and whether the push succeeded or `Published locally; remote push failed: <reason>`.
+Output is prose: which of `Published local state to <branch> branch` / `No changes to publish`, and whether the push succeeded or `Published locally; remote push failed: <reason>`. The branch is named from config — it is not always `loctt`.
 
 ### `sync_from_git`
 
