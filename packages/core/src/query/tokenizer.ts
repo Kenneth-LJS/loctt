@@ -175,6 +175,17 @@ export function tokenize(input: string): Token[] {
       continue;
     }
 
+    // `status in [a, b]` is the most-repeated mistake against this DSL —
+    // it shipped three times on three separate code paths. The bare
+    // "unexpected character" told a user who wrote a list the way most
+    // languages write one nothing about how to write it here.
+    if (ch === "[" || ch === "]") {
+      throw new TokenizeError(
+        `unexpected character "${ch}" — lists use parentheses, e.g. status in (backlog, done)`,
+        i,
+      );
+    }
+
     throw new TokenizeError(`unexpected character "${ch}"`, i);
   }
 

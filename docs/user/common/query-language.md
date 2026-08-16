@@ -86,6 +86,12 @@ Arity picks the question. `has_link(kind)` tests whether an edge of that
 kind exists; `has_link(kind, target)` tests for a **single edge matching
 both**.
 
+`link_count(kind)` yields a number, so it takes the numeric operators —
+`=`, `!=`, `<`, `<=`, `>`, `>=`. Comparing it against a list
+(`link_count("child") in (1, 2)`) is rejected: it could never match, and
+before it was rejected it returned nothing, which looks exactly like
+"no tasks have that many children".
+
 ### One edge, not two
 
 That two-argument form is the point. There is deliberately no way to

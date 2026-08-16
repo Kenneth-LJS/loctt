@@ -153,12 +153,68 @@ export function validateQuery(node: QueryNode, opts: ValidateQueryOptions = {}):
   }
 }
 
+/**
+ * Rejects comparisons that cannot be true for any task.
+ *
+ * These are not semantic errors the evaluator reports — it silently
+ * returns false — so the user sees an empty result and concludes nothing
+ * matched. A query nobody can satisfy is a mistake, and saying so beats
+ * answering it.
+ */
+function assertSatisfiable(
+  node: Extract<QueryNode, { type: "comparison" }>,
+  pos: number,
+): void {
+  const value = node.value;
+  const isList = value.type === "list";
+
+  // `link_count(...)` yields a number; the evaluator resolves a list to
+  // `undefined` and returns false, so `in` / `not in` never hold. `not
+  // in` is the worse of the two: false everywhere reads as "no task
+  // lacks these counts".
+  if (node.call?.name === "link_count" && isList) {
+    throw new QueryValidationError(
+      `link_count(...) compares a number, so "${node.op}" with a list can never match `
+      + `— use =, !=, <, <=, > or >=`,
+      pos,
+      [],
+    );
+  }
+
+  if (value.type === "list" && value.values.length === 0) {
+    throw new QueryValidationError(
+      `an empty list can never match — remove the comparison or give it values`,
+      pos,
+      [],
+    );
+  }
+
+  // `1.2.3` and `3-4` tokenize as numbers and become NaN, and every
+  // comparison against NaN is false.
+  const values = value.type === "list" ? value.values : [value];
+  for (const v of values) {
+    if (v.type === "number" && Number.isNaN(v.value)) {
+      throw new QueryValidationError(
+        `${node.field} was given a value that is not a number`,
+        pos,
+        [],
+      );
+    }
+  }
+}
+
 function validateComparison(
   node: Extract<QueryNode, { type: "comparison" }>,
   opts: ValidateQueryOptions,
 ): void {
   const { field, position } = node;
   const pos = position ?? 0;
+
+  // Reject the shapes that parse, validate, and then match nothing.
+  // Each is accepted end-to-end and evaluates false for every task,
+  // which is indistinguishable from "no tasks matched" — the exact
+  // failure this module exists to prevent.
+  assertSatisfiable(node, pos);
 
   // The old `relationship.*` grammar is gone. Catch it here so the
   // message names the replacement rather than reporting an unknown

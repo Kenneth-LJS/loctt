@@ -98,3 +98,47 @@ describe("tokenize", () => {
     expect(tokens2.length).toBe(3);
   });
 });
+
+describe("tokenize — unexpected characters name the fix, not just the character", () => {
+  /**
+   * `status in [a, b]` is the single most-repeated mistake in this
+   * repo's history: it shipped three times on three separate code paths.
+   * The catch-all said `unexpected character "["` and nothing else, so a
+   * user who wrote a list the way most languages write one got no hint
+   * that this DSL uses parentheses.
+   */
+
+  it("tells the user lists use parentheses", () => {
+    let msg = "";
+    try {
+      tokenize("status in [backlog, done]");
+    } catch (err) {
+      msg = (err as Error).message;
+    }
+    expect(msg).toMatch(/\[/);
+    expect(msg).toMatch(/parenthes/i);
+  });
+
+  it("still reports the position", () => {
+    let pos = -1;
+    try {
+      tokenize("status in [a]");
+    } catch (err) {
+      pos = (err as TokenizeError).position;
+    }
+    expect(pos).toBe(10);
+  });
+
+  it("leaves other unexpected characters reported plainly", () => {
+    // The hint is specific to bracket lists; a stray `@` should not
+    // claim parentheses would fix it.
+    let msg = "";
+    try {
+      tokenize("status = @");
+    } catch (err) {
+      msg = (err as Error).message;
+    }
+    expect(msg).toMatch(/@/);
+    expect(msg).not.toMatch(/parenthes/i);
+  });
+});
