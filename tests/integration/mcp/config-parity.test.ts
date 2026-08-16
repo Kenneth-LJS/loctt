@@ -115,7 +115,12 @@ describe("MCP config parity with the CLI (stdio)", () => {
       try {
         const result = await client.callTool("get_workflow_config", {});
         expect(result.isError).toBeFalsy();
-        const config = JSON.parse(result.content[0]?.text ?? "{}");
+        const config = JSON.parse(result.content[0]?.text ?? "{}") as {
+          boards?: { columns?: Array<{ key: string }> };
+          estimation?: { weights?: Record<string, number> };
+          timeline?: { dependency_relationship?: string };
+          relationships?: Array<{ key: string; kind?: string }>;
+        };
 
         expect(config.boards?.columns?.[0]?.key).toBe("todo");
         expect(config.estimation?.weights).toEqual({ S: 1, M: 3, L: 5 });
@@ -124,9 +129,7 @@ describe("MCP config parity with the CLI (stdio)", () => {
         // Without `kind`, an agent has to infer "symmetric" from the
         // absence of `inverse` — which is also how a malformed
         // directional relationship looks.
-        const relatesTo = config.relationships?.find(
-          (r: { key: string }) => r.key === "relates_to",
-        );
+        const relatesTo = config.relationships?.find(r => r.key === "relates_to");
         expect(relatesTo?.kind).toBe("symmetric");
 
         // The whole object must survive a round-trip, so an agent can

@@ -373,6 +373,10 @@ holidays.
 loctt calendar show
 ```
 
+`show` is the only subcommand. The calendar is read-only from the CLI —
+it is configured in the web UI (`loctt ui`). Any other subcommand prints
+that and exits 2.
+
 ## Task Management
 
 ### `loctt create`
