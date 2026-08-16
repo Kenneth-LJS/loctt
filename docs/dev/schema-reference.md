@@ -510,37 +510,37 @@ Located at `.loctt/config/projects.yaml`. A LocTT tracker hosts one or more proj
 
 ```yaml
 projects:
-  - key: backend
-    label: Backend
+  - id: 01JBQZ4X8N0000000000000030
+    name: Backend
     prefix: BACKEND-
-  - key: web
-    label: Web
+  - id: 01JBQZ4X8N0000000000000031
+    name: Web
     prefix: WEB-
-  - key: legacy
-    label: Legacy
+  - id: 01JBQZ4X8N0000000000000032
+    name: Legacy
     prefix: LEG-
     archived: true
-default: backend
+default: 01JBQZ4X8N0000000000000030
 ```
 
 The schema enforces:
 - At least one project entry.
-- `key` and `prefix` are unique across all projects.
-- `default` (if set) must point at an existing project key.
+- `id` and `prefix` are unique across all projects.
+- `default` (if set) must point at an existing project id.
 
 ### Top-level
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `projects` | array | yes | Project definitions; at least one required |
-| `default` | string | no | Project key used when CLI/MCP callers omit `--project` |
+| `default` | string | no | Project **id** used when CLI/MCP callers omit `--project` |
 
 ### `projects[]`
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `key` | SlugKey | yes | Immutable internal identifier |
-| `label` | string | yes | Human display name (editable) |
+| `id` | ULID | yes | Immutable internal identifier. Never shown to the user (invariant P-4) |
+| `name` | string | yes | Human display name (editable; renaming does not move any task) |
 | `prefix` | string | yes | Task-key prefix (e.g. `BACKEND-`). Unique across projects. Changeable only via `loctt project set-prefix`, which renames every task in the project |
 | `archived` | boolean | no | When `true`, project is hidden but tasks remain accessible |
 
@@ -550,29 +550,29 @@ Hard-deleting a project moves its counter to `state.yaml`'s `retired_keys` so re
 
 ## labels.yaml
 
-Located at `.loctt/config/labels.yaml`. Optional. When absent, the loader returns `{ labels: [] }`. Labels are referenced by `key` from a task's `labels` array.
+Located at `.loctt/config/labels.yaml`. Optional. When absent, the loader returns `{ labels: [] }`. Labels are referenced by `id` (a ULID) from a task's `labels` array; the CLI and MCP accept the `name` and resolve it.
 
 ```yaml
 labels:
-  - key: bug
-    label: Bug
+  - id: 01JBQZ4X8N0000000000000001
+    name: Bug
     color: "#d73a4a"
-  - key: dx
-    label: Developer Experience
+  - id: 01JBQZ4X8N0000000000000002
+    name: Developer Experience
     color: "#1e6fcb"
-  - key: legacy
-    label: Legacy
+  - id: 01JBQZ4X8N0000000000000003
+    name: Legacy
     archived: true
 ```
 
-The parser enforces uniqueness of `key` (in addition to the schema-level shape check).
+The parser enforces uniqueness of `id` (in addition to the schema-level shape check).
 
 ### `labels[]`
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `key` | SlugKey | yes | Immutable identifier referenced from tasks |
-| `label` | string | yes | Display label |
+| `id` | ULID | yes | Immutable identifier referenced from tasks. Never shown to the user |
+| `name` | string | yes | Display name. Renaming does not break task references |
 | `color` | HexColor | no | Optional hex color (`#1e6fcb`, `#f00`, etc.). Stored as written, no normalization |
 | `archived` | boolean | no | Hide from default lists/pickers |
 
@@ -584,23 +584,23 @@ Located at `.loctt/config/milestones.yaml`. Optional. Milestones are named check
 
 ```yaml
 milestones:
-  - key: v1
-    label: v1.0 Release
+  - id: 01JBQZ4X8N0000000000000010
+    name: v1.0 Release
     target_date: 2026-06-30
-  - key: v0_9_beta
-    label: 0.9 Beta
+  - id: 01JBQZ4X8N0000000000000011
+    name: 0.9 Beta
     target_date: 2026-04-15
     archived: true
 ```
 
-The parser enforces uniqueness of `key`.
+The parser enforces uniqueness of `id`.
 
 ### `milestones[]`
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `key` | SlugKey | yes | Immutable identifier |
-| `label` | string | yes | Display label |
+| `id` | ULID | yes | Immutable identifier. Never shown to the user |
+| `name` | string | yes | Display name. Renaming does not break task references |
 | `target_date` | IsoDate | no | Target date (`YYYY-MM-DD`) |
 | `archived` | boolean | no | Hide from pickers without breaking historical references |
 
@@ -612,33 +612,33 @@ Located at `.loctt/config/sprints.yaml`. Optional. Tasks belong to zero or one s
 
 ```yaml
 sprints:
-  - key: sprint_2026.q1
-    label: Q1 Iteration 1
+  - id: 01JBQZ4X8N0000000000000020
+    name: Q1 Iteration 1
     start_date: 2026-01-06
     end_date: 2026-01-19
     state: completed
     goal: Ship the new editor.
-  - key: sprint_2026.q2
-    label: Q2 Iteration 1
+  - id: 01JBQZ4X8N0000000000000021
+    name: Q2 Iteration 1
     start_date: 2026-04-07
     end_date: 2026-04-20
     state: active
-  - key: sprint_archive_2025
-    label: 2025 Archive
+  - id: 01JBQZ4X8N0000000000000022
+    name: 2025 Archive
     start_date: 2025-01-01
     end_date: 2025-12-31
     state: completed
     archived: true
 ```
 
-The schema enforces `end_date >= start_date`. The parser additionally enforces uniqueness of `key`.
+The schema enforces `end_date >= start_date`. The parser additionally enforces uniqueness of `id`.
 
 ### `sprints[]`
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `key` | SprintKey | yes | Immutable identifier (allows dots, e.g. `sprint_2026.q1`) |
-| `label` | string | yes | Display label |
+| `id` | ULID | yes | Immutable identifier. Never shown to the user |
+| `name` | string | yes | Display name. Renaming does not break task references |
 | `start_date` | IsoDate | yes | Sprint window start |
 | `end_date` | IsoDate | yes | Sprint window end (must not be before `start_date`) |
 | `state` | enum | yes | One of `active`, `completed`, `future` |
