@@ -148,7 +148,7 @@ async function listTaskFiles(dir: string): Promise<string[]> {
  */
 async function normaliseAfterMerge(
   locttDir: string,
-): Promise<{ rekeyed: number; reprefixed: number }> {
+): Promise<{ rekeyed: number; reprefixed: number; unresolvedKeys: readonly string[] }> {
   // projects.yaml already carries unique prefixes — the resolver assigns
   // provisional ones before writing, because the schema rejects a
   // duplicate on read and an invalid file cannot be loaded to fix.
@@ -205,10 +205,24 @@ async function normaliseAfterMerge(
     rekeyed += 1;
   }
 
+  // A skipped collision leaves two tasks sharing a key — the exact state
+  // this pass exists to remove. RekeyOutcome's contract says a skip is
+  // "never silently dropped", and the only caller was dropping it, so a
+  // duplicate key looked like a successful merge.
+  if (outcome.skipped.length > 0) {
+    const detail = outcome.skipped
+      .map(s => `${s.key} (${s.taskId}): ${s.reason}`)
+      .join("; ");
+    process.stderr.write(
+      `warning: ${String(outcome.skipped.length)} key collision(s) could not be resolved `
+      + `— ${detail}. Run 'loctt doctor' for detail.\n`,
+    );
+  }
+
   await saveState(locttDir, state);
   await rebuildKeyIndex(locttDir);
 
-  return { rekeyed, reprefixed };
+  return { rekeyed, reprefixed, unresolvedKeys: outcome.skipped.map(s => s.key) };
 }
 
 async function applyPlan(
@@ -354,6 +368,15 @@ export interface SyncOutcome {
    * `loctt project set-prefix`.
    */
   readonly reprefixed?: number;
+  /**
+   * Keys the rekey pass could not resolve, so two tasks still share
+   * them. Present only when non-empty.
+   *
+   * Reported rather than dropped because a duplicate key makes
+   * `loctt show <key>` ambiguous, and a sync that says "merged" while
+   * leaving one behind has told the user it succeeded when it half did.
+   */
+  readonly unresolvedKeys?: readonly string[];
 }
 
 /**
@@ -671,11 +694,16 @@ export async function pullFromLocttBranch(
     // independently-init'ed trackers both mint `T-`), and tasks sharing
     // a key. Neither is a state the rest of the codebase tolerates:
     // `createProject` enforces prefix uniqueness, and a duplicate key
-    // makes `loctt show T-1` ambiguous. Runs unconditionally after a
-    // merge, because a merge is the only way to reach either state.
-    const normalised = resolution.merged.length > 0
+    // makes `loctt show T-1` ambiguous.
+    //
+    // Runs after a merge *or a copy*. The earlier comment said "a merge
+    // is the only way to reach either state", which is wrong for the
+    // case GIT-C2 names: two clones each creating a task offline. The
+    // task exists on only one side, so it is copied rather than merged —
+    // and a copied task can collide on a key just as a merged one can.
+    const normalised = resolution.merged.length > 0 || plan.copies.length > 0
       ? await normaliseAfterMerge(locttDir)
-      : { rekeyed: 0, reprefixed: 0 };
+      : { rekeyed: 0, reprefixed: 0, unresolvedKeys: [] as readonly string[] };
 
     // The key index maps key -> task id and is local, so it is never
     // synced. Any sync that added or rewrote a task file leaves it
@@ -705,6 +733,12 @@ export async function pullFromLocttBranch(
       merged: resolution.merged.length,
       ...(normalised.rekeyed > 0 ? { rekeyed: normalised.rekeyed } : {}),
       ...(normalised.reprefixed > 0 ? { reprefixed: normalised.reprefixed } : {}),
+      // Surfaced, not just warned about: a caller that reports "synced"
+      // while two tasks share a key is telling the user the merge
+      // succeeded when it half did.
+      ...(normalised.unresolvedKeys.length > 0
+        ? { unresolvedKeys: normalised.unresolvedKeys }
+        : {}),
     };
   } finally {
     try {

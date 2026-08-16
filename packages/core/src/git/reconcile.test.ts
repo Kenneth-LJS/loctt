@@ -35,6 +35,51 @@ function stateFor(entries: Record<string, { prefix: string; next: number }>): Lo
   return { keys };
 }
 
+describe("rekeyCollisions — skipped collisions are reported (GIT-C2)", () => {
+  /**
+   * @verifies GIT-C2
+   *
+   * RekeyOutcome's own contract: a skip is "never silently dropped: a
+   * task sharing a key with another is exactly the state the caller
+   * invoked this to remove, so an unreported skip would leave a
+   * duplicate key looking like a successful merge".
+   *
+   * Both reachable skip reasons produce an entry naming the task, the
+   * key, and why — so the caller has something to surface.
+   */
+
+  it("reports a task with no project rather than dropping it", () => {
+    const noProject = makeTask("01B", "T-1", "2026-01-02T00:00:00.000Z");
+    const tasks: Task[] = [
+      makeTask("01A", "T-1", "2026-01-01T00:00:00.000Z"),
+      // No project: there is no counter to allocate a replacement from.
+      { ...noProject, frontmatter: { ...noProject.frontmatter, project: undefined } },
+    ];
+    const state = stateFor({ [WEB]: { prefix: "T-", next: 5 } });
+
+    const outcome = rekeyCollisions(tasks, state);
+
+    expect(outcome.rekeyed).toEqual([]);
+    expect(outcome.skipped).toHaveLength(1);
+    expect(outcome.skipped[0]?.key).toBe("T-1");
+    expect(outcome.skipped[0]?.reason).toMatch(/project/i);
+  });
+
+  it("reports a project with no key counter rather than dropping it", () => {
+    const tasks = [
+      makeTask("01A", "T-1", "2026-01-01T00:00:00.000Z"),
+      makeTask("01B", "T-1", "2026-01-02T00:00:00.000Z", API),
+    ];
+    // Only WEB has a counter, so the API-side collision cannot allocate.
+    const state = stateFor({ [WEB]: { prefix: "T-", next: 5 } });
+
+    const outcome = rekeyCollisions(tasks, state);
+
+    expect(outcome.skipped).toHaveLength(1);
+    expect(outcome.skipped[0]?.reason).toMatch(/no key allocation state/i);
+  });
+});
+
 describe("rekeyCollisions", () => {
   it("does nothing when no collisions", () => {
     const tasks = [makeTask("a", "T-1", "2026-01-01"), makeTask("b", "T-2", "2026-01-02")];
