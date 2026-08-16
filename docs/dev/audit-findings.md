@@ -432,7 +432,10 @@ Closed since that re-verification:
 | MCP `duplicate_task` forwarded an unresolved project name (P-3) | C | `3e39393` |
 | `&&` / `\|\|` / `!` got a bare "unexpected character" | D | this commit |
 | Invalid dates passed the tokenizer's shape regex | E | `0197105` |
-| `comment` silently dropped `--`-prefixed words from a body | E | this commit |
+| `comment` silently dropped `--`-prefixed words from a body | E | `4d14dd3` |
+| Board column naming a nonexistent status | E | this commit |
+| Relationship inverse colliding with a declared relationship | E | this commit |
+| `key_history` accepted empty-string entries (P-7) | E | this commit |
 
 **Still open, and deliberately so** — each needs a decision or belongs
 with unbuilt work rather than a sweep:
@@ -444,9 +447,11 @@ with unbuilt work rather than a sweep:
 - Bare catches in the MCP comment tools and `list_config_values` — a
   malformed config reads as an absent one. (`loadOptionalConfigs` is
   fixed; these two are the same shape on smaller surfaces.)
-- Boards columns and relationship inverses unvalidated against each
-  other.
-- `HistoryEntry` element shape and `key_history` element `.min(1)`.
+- `HistoryEntry` element shape. Deliberately left: history has no Zod
+  schema at all, and adding one is a change to a hot write path that
+  belongs with its own design pass, not a sweep. The array-level guard
+  (CMT-C7) and the merge-path parse check (group B) cover the shapes
+  that actually reached code.
 
 ### G · Cosmetic — 13 auto-fixable, ~79 remaining
 

@@ -266,3 +266,55 @@ describe("validateWorkflowConfig", () => {
     expect(errors[0]?.message).toContain("duplicate custom field key");
   });
 });
+
+describe("cross-referenced workflow config", () => {
+  /** The shipped default, which must stay valid under any new rule. */
+  async function defaultConfig() {
+    const { parseWorkflowConfig } = await import("./workflow.js");
+    const { defaultWorkflowYaml } = await import("../init/defaults.js");
+    return parseWorkflowConfig(defaultWorkflowYaml("T-"));
+  }
+
+  it("accepts the shipped default", async () => {
+    // Guards every rule below from over-reaching: if the default trips
+    // one, the rule is wrong, not the config.
+    expect(validateWorkflowConfig(await defaultConfig())).toEqual([]);
+  });
+
+  it("reports a board column naming a status that does not exist", async () => {
+    const config = {
+      ...(await defaultConfig()),
+      boards: { columns: [{ key: "todo", label: "To Do", statuses: ["gone"] }] },
+    };
+    const errors = validateWorkflowConfig(config as never);
+    // Deleting a status left a column no card can reach, rendering
+    // permanently empty with nothing saying why.
+    expect(errors.map(e => e.message).join(" ")).toMatch(/permanently empty/);
+  });
+
+  it("accepts a board column naming a status that does exist", async () => {
+    const base = await defaultConfig();
+    const first = base.statuses[0]?.key;
+    expect(first).toBeDefined();
+    const config = {
+      ...base,
+      boards: { columns: [{ key: "todo", label: "To Do", statuses: [first as string] }] },
+    };
+    expect(validateWorkflowConfig(config as never)).toEqual([]);
+  });
+
+  it("reports an inverse that is itself a declared relationship", async () => {
+    const base = await defaultConfig();
+    const config = {
+      ...base,
+      relationships: [
+        { key: "blocks", label: "Blocks", inverse: "parent", inverse_label: "Parent" },
+        { key: "parent", label: "Parent", inverse: "child", inverse_label: "Child" },
+      ],
+    };
+    const errors = validateWorkflowConfig(config as never);
+    // Both definitions would write the same edge, and unlinking cannot
+    // tell which one the user meant.
+    expect(errors.map(e => e.message).join(" ")).toMatch(/same edge/);
+  });
+});

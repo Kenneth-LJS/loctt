@@ -74,7 +74,11 @@ export const TaskFrontmatterSchema = z.object({
   archived: z.boolean().optional(),
   archived_at: IsoTimestamp.optional(),
   relationships: z.array(TaskRelationshipSchema).optional(),
-  key_history: z.array(z.string()).optional(),
+  // : an empty string in key_history becomes an empty entry in
+  // the key index, which P-7 relies on to keep old keys resolving. A
+  // lookup for "" is not a lookup anyone makes, but the entry shadows
+  // nothing and the index silently grows a row that can never match.
+  key_history: z.array(z.string().min(1)).optional(),
   // Custom field values are user-defined and shape-varying per workflow
   // config; semantic validation runs in core (validateTaskAgainstWorkflow)
   // against the field's `type`, not at the contract layer.
@@ -139,7 +143,11 @@ export const TaskFrontmatterPublicSchema = z.object({
   archived: z.boolean().optional(),
   archived_at: IsoTimestamp.optional(),
   relationships: z.array(TaskRelationshipSchema).optional(),
-  key_history: z.array(z.string()).optional(),
+  // : an empty string in key_history becomes an empty entry in
+  // the key index, which P-7 relies on to keep old keys resolving. A
+  // lookup for "" is not a lookup anyone makes, but the entry shadows
+  // nothing and the index silently grows a row that can never match.
+  key_history: z.array(z.string().min(1)).optional(),
   fields: z.record(z.string(), z.unknown()).optional(),
   board_rank: z.string().optional(),
 }).strict();

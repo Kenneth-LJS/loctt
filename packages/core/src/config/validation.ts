@@ -280,5 +280,38 @@ export function validateWorkflowConfig(config: WorkflowConfig): readonly Validat
     fieldKeys.add(f.key);
   }
 
+  // Board columns naming a status that no longer exists. The schema
+  // checks a column's own shape and that statuses are not shared
+  // between columns, but nothing checked them against `statuses` — so
+  // deleting a status left a column that renders permanently empty,
+  // with no card able to reach it and nothing saying why.
+  for (const [i, col] of (config.boards?.columns ?? []).entries()) {
+    for (const key of col.statuses) {
+      if (!statusKeys.has(key)) {
+        errors.push({
+          field: `boards.columns[${String(i)}].statuses`,
+          message:
+            `column "${col.key}" lists status "${key}", which is not in `
+            + `statuses — the column would render permanently empty`,
+        });
+      }
+    }
+  }
+
+  // A relationship whose `inverse` names a key that is itself a
+  // declared relationship is a collision: linking would write an edge
+  // the other definition also claims, and unlinking cannot tell which
+  // one the user meant.
+  for (const r of config.relationships) {
+    if (r.inverse !== undefined && r.inverse !== r.key && relKeys.has(r.inverse)) {
+      errors.push({
+        field: "relationships",
+        message:
+          `relationship "${r.key}" declares inverse "${r.inverse}", which is `
+          + `itself a declared relationship — the two would write the same edge`,
+      });
+    }
+  }
+
   return errors;
 }
