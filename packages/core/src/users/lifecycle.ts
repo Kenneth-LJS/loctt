@@ -198,8 +198,11 @@ export async function deleteUser(
 
     if (affected.length > 0) {
       if (options.remapTo === undefined && options.unassign !== true) {
+        // Name the user, not the ULID (P-4): the caller addressed them
+        // by name, and a raw id is not vocabulary they can act on.
+        const profile = await loadUserProfile(locttDir, userId).catch(() => undefined);
         throw new UserError(
-          `user '${userId}' has ${affected.length} task reference(s); ` +
+          `user '${profile?.name ?? userId}' has ${affected.length} task reference(s); ` +
           `pass remapTo or unassign to proceed`,
         );
       }

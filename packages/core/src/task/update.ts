@@ -192,13 +192,27 @@ export interface SetFieldOptions {
  * - If setting `status`, also updates `status_updated_at`.
  */
 /**
- * Maps a milestone/sprint reference to its id, accepting either an id or
- * a name. Other fields pass through untouched.
+ * Maps a milestone/sprint/assignee/reporter reference to its id,
+ * accepting either an id or a name. Other fields pass through untouched.
  *
  * Resolution needs the configs, which the caller already loaded for the
  * archived-reference guard; when it did not pass them the value is left
  * alone rather than the write failing, so a caller that opts out of the
  * guard is no worse off than before.
+ *
+ * `assignee`/`reporter` were originally omitted here, and storing the
+ * name rather than the id silently defeated two separate guards, both of
+ * which compare against ids (PRU-C7):
+ *
+ *  - `deleteUser` filters tasks by `assignee === userId`, matched
+ *    nothing, and so deleted a referenced user without ever asking for
+ *    `remapTo`/`unassign` — leaving tasks pointing at a user that no
+ *    longer exists.
+ *  - the archived-reference guard checks `assignee` against archived
+ *    *user ids*, so a name assigned an archived user unnoticed.
+ *
+ * An unknown user is rejected rather than stored: an unresolvable name
+ * is the same typo whether or not the field happens to be free-text.
  */
 async function resolveEntityRef(
   locttDir: string,
@@ -207,14 +221,23 @@ async function resolveEntityRef(
   guard: ArchivedGuardConfigs | undefined,
 ): Promise<unknown> {
   if (typeof value !== "string" || value === "") return value;
-  if (field !== "milestone" && field !== "sprint") return value;
 
   if (field === "milestone") {
     const cfg = guard?.milestones ?? await loadMilestonesConfig(locttDir);
     return resolveMilestoneIdFromInput(cfg, value, { includeArchived: true });
   }
-  const cfg = guard?.sprints ?? await loadSprintsConfig(locttDir);
-  return resolveSprintIdFromInput(cfg, value, { includeArchived: true });
+  if (field === "sprint") {
+    const cfg = guard?.sprints ?? await loadSprintsConfig(locttDir);
+    return resolveSprintIdFromInput(cfg, value, { includeArchived: true });
+  }
+  if (field === "assignee" || field === "reporter") {
+    // Lazy import for the same reason history.ts uses one: users/manage
+    // pulls users/lifecycle, which imports task/load-all. A static
+    // import here would close that loop at module load.
+    const { resolveUserRef } = await import("../users/manage.js");
+    return (await resolveUserRef(locttDir, value)).id;
+  }
+  return value;
 }
 
 export async function setField(opts: SetFieldOptions): Promise<Task> {
