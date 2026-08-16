@@ -72,3 +72,60 @@ describe("loctt ui --port validation (spawned binary)", () => {
     });
   });
 });
+
+describe("comment bodies are not rewritten (spawned binary)", () => {
+  it("keeps a --prefixed word in a quoted body", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "t"], { cwd: root });
+      const body = "see the --force flag docs";
+      const added = await runCli(["comment", "T-1", body], { cwd: root });
+      expect(added.exitCode).toBe(0);
+
+      const listed = await runCli(["comments", "T-1"], { cwd: root });
+      // The old `.filter(a => !a.startsWith("--"))` dropped any word
+      // beginning with `--`, so this body silently lost one — a content
+      // mutation on a write path, with nothing reported.
+      expect(listed.stdout).toContain("--force");
+      expect(listed.stdout).toContain(body);
+    });
+  });
+
+  it("keeps a --prefixed word through comment-edit", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "t"], { cwd: root });
+      const added = await runCli(["comment", "T-1", "original"], { cwd: root });
+      const id = (added.stdout.match(/[0-9A-HJKMNP-TV-Z]{26}/) ?? [])[0];
+      expect(id).toBeDefined();
+
+      await runCli(["comment-edit", "T-1", id as string, "now with --force"], { cwd: root });
+      const listed = await runCli(["comments", "T-1"], { cwd: root });
+      expect(listed.stdout).toContain("--force");
+    });
+  });
+
+  it("keeps --prefixed words that follow a `--` separator", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "t"], { cwd: root });
+      // `rejectUnknownFlags` stops at `--`, so everything after it
+      // reached the body filter unguarded — this is the path where the
+      // silent drop was actually reachable.
+      await runCli(["comment", "T-1", "--", "before", "--after", "end"], { cwd: root });
+
+      const listed = await runCli(["comments", "T-1"], { cwd: root });
+      expect(listed.stdout).toContain("--after");
+      expect(listed.stdout).toContain("before");
+      expect(listed.stdout).toContain("end");
+    });
+  });
+
+  it("says a command takes no options rather than 'Accepted: .'", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "t"], { cwd: root });
+      // Unquoted, so `--force` parses as a flag. The refusal is correct;
+      // the message was "Accepted: ." which reads as truncated.
+      const result = await runCli(["comment", "T-1", "see", "--force"], { cwd: root });
+      expect(result.exitCode).toBe(2);
+      expect(`${result.stdout}${result.stderr}`).toMatch(/accepts no options/);
+    });
+  });
+});

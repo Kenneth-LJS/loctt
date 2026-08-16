@@ -45,7 +45,14 @@ const REMOVE_FLAGS: readonly string[] = ["--yes"];
 export async function add(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ADD_FLAGS);
   const ref = args[1];
-  const body = args.slice(2).filter(a => !a.startsWith("--")).join(" ");
+  // Every remaining argument is body text. The previous
+  // `.filter(a => !a.startsWith("--"))` silently dropped any word
+  // beginning with `--` — "see the --force flag docs" lost a word on a
+  // write path, with nothing reported. `rejectUnknownFlags` above now
+  // refuses such an invocation outright, so the filter was unreachable;
+  // leaving it in place would quietly corrupt bodies the day the flag
+  // list grows. Quote the body to include leading dashes.
+  const body = args.slice(2).join(" ");
   if (!ref || body.trim().length === 0) {
     throw new UsageError("missing args", "loctt comment <task> <body>");
   }
@@ -108,7 +115,9 @@ export async function edit(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, EDIT_FLAGS);
   const ref = args[1];
   const commentId = args[2];
-  const body = args.slice(3).filter(a => !a.startsWith("--")).join(" ");
+  // Same as `add`: every remaining argument is body text, and the
+  // filter here silently dropped `--`-prefixed words from an edit.
+  const body = args.slice(3).join(" ");
   if (!ref || !commentId || body.trim().length === 0) {
     throw new UsageError("missing args", "loctt comment-edit <task> <comment-id> <body>");
   }

@@ -121,7 +121,11 @@ export function rejectUnknownFlags(args: string[], allowed: readonly string[]): 
     if (name === undefined || name.length === 0) continue;
     if (!known.has(name)) {
       throw new UsageError(
-        `unknown option --${name}. Accepted: ${allowed.map(f => `--${f.replace(/^--?/, "")}`).join(", ")}.`,
+        // "Accepted: ." on a command that takes no flags reads as a
+        // truncated message. Say so instead.
+        allowed.length === 0
+          ? `unknown option --${name}. This command accepts no options.`
+          : `unknown option --${name}. Accepted: ${allowed.map(f => `--${f.replace(/^--?/, "")}`).join(", ")}.`,
       );
     }
   }

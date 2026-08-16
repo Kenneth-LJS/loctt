@@ -431,7 +431,8 @@ Closed since that re-verification:
 | Malformed `workflow.yaml` read as absent, disabling validation | D | this commit |
 | MCP `duplicate_task` forwarded an unresolved project name (P-3) | C | `3e39393` |
 | `&&` / `\|\|` / `!` got a bare "unexpected character" | D | this commit |
-| Invalid dates passed the tokenizer's shape regex | E | this commit |
+| Invalid dates passed the tokenizer's shape regex | E | `0197105` |
+| `comment` silently dropped `--`-prefixed words from a body | E | this commit |
 
 **Still open, and deliberately so** — each needs a decision or belongs
 with unbuilt work rather than a sweep:
@@ -445,7 +446,6 @@ with unbuilt work rather than a sweep:
   fixed; these two are the same shape on smaller surfaces.)
 - Boards columns and relationship inverses unvalidated against each
   other.
-- `comment` drops words after a `--` separator.
 - `HistoryEntry` element shape and `key_history` element `.min(1)`.
 
 ### G · Cosmetic — 13 auto-fixable, ~79 remaining
