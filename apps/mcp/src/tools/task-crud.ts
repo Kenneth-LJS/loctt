@@ -436,9 +436,14 @@ export const TOOLS: readonly ToolDef[] = [
     handler: async ({ locttDir }, args) => {
       const task = await lookupTask(locttDir, args["ref"] as string);
       const entries = await readHistory(locttDir, task.frontmatter.id);
-      entries.reverse();
+      // Copy before reversing (CMT-C8). `readHistory` re-reads and
+      // re-parses the file on every call today, so mutating its result
+      // in place currently harms nothing — but that is a property of
+      // the callee, not a guarantee to this one. The day it memoises,
+      // every second caller would silently see the wrong order.
+      const newestFirst = [...entries].reverse();
       const limit = args["limit"] as number | undefined;
-      const display = limit !== undefined ? entries.slice(0, limit) : entries;
+      const display = limit !== undefined ? newestFirst.slice(0, limit) : newestFirst;
       return text(JSON.stringify(display, null, 2));
     },
   },
