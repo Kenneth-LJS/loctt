@@ -203,22 +203,48 @@ export async function reorderBoardRank(
     const moved = await lookupTask(opts.locttDir, opts.taskRef);
     const priorBoardRank = moved.frontmatter.board_rank;
     const allTasks = await loadAllTasks(opts.locttDir);
+    // A board column is a status, and a rank is only meaningful within
+    // one. Peers used to be *every* ranked task in the tracker, so a
+    // `todo` task could be handed a rank interpolated between two
+    // `doing` tasks — a position that means nothing in the column it
+    // actually renders in (SPR-C2). The docstring said "within its
+    // column" in three places; the code never did it.
+    const column = moved.frontmatter.status;
     const peers = allTasks.flatMap(t => {
       if (t.frontmatter.id === moved.frontmatter.id) return [];
+      if (t.frontmatter.status !== column) return [];
       const rank = t.frontmatter.board_rank;
       if (rank === undefined) return [];
       return [{ id: t.frontmatter.id, rank }];
     });
 
+    /**
+     * Reads an anchor's rank, refusing one from another column.
+     *
+     * Silently accepting it produced a rank derived from tasks the user
+     * cannot see next to the one they moved — the drag looked like it
+     * worked and the card landed somewhere arbitrary.
+     */
+    const anchorRank = async (ref: string, label: string): Promise<string | undefined> => {
+      const t = await lookupTask(opts.locttDir, ref);
+      if (t.frontmatter.status !== column) {
+        throw new ReorderError(
+          `cannot rank ${label} '${ref}': it is in status `
+          + `'${t.frontmatter.status ?? "(none)"}' but ${opts.taskRef} is in `
+          + `'${column ?? "(none)"}'. Board rank is per-column — move the task `
+          + `to that status first, or pick an anchor in its own column.`,
+        );
+      }
+      return t.frontmatter.board_rank;
+    };
+
     let beforeRank: string | undefined;
     let afterRank: string | undefined;
     if (opts.before !== undefined) {
-      const t = await lookupTask(opts.locttDir, opts.before);
-      beforeRank = t.frontmatter.board_rank;
+      beforeRank = await anchorRank(opts.before, "before");
     }
     if (opts.after !== undefined) {
-      const t = await lookupTask(opts.locttDir, opts.after);
-      afterRank = t.frontmatter.board_rank;
+      afterRank = await anchorRank(opts.after, "after");
     }
 
     const newRank = computeNewRank({
