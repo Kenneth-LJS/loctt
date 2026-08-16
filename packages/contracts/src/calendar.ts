@@ -32,5 +32,27 @@ export const CalendarConfigSchema = z.object({
   first_day_of_week: Weekday,
   working_days: z.array(Weekday),
   holidays: z.array(HolidayDefSchema),
-}).strict();
+}).strict().superRefine((cfg, ctx) => {
+  // An empty working week is not a configuration, it is a tracker where
+  // no date calculation can land anywhere. Rejecting it here beats
+  // every consumer having to decide what "no working days" means.
+  if (cfg.working_days.length === 0) {
+    ctx.addIssue({
+      code: "custom",
+      message: "working_days must name at least one day",
+      path: ["working_days"],
+    });
+  }
+  const seen = new Set<number>();
+  for (const [i, d] of cfg.working_days.entries()) {
+    if (seen.has(d)) {
+      ctx.addIssue({
+        code: "custom",
+        message: `duplicate working day ${d}`,
+        path: ["working_days", i],
+      });
+    }
+    seen.add(d);
+  }
+});
 export type CalendarConfig = z.infer<typeof CalendarConfigSchema>;

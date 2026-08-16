@@ -250,6 +250,24 @@ export const CustomFieldDefSchema = z.object({
       path: ["values"],
     });
   }
+  // Two values sharing a key passed both layers. Stored task values are
+  // keys, so a duplicate makes the field ambiguous in exactly the way
+  // that cannot be resolved after the fact: the task says `dup` and the
+  // config offers two different labels for it, with nothing to say
+  // which was meant.
+  if (def.values !== undefined) {
+    const seen = new Set<string>();
+    for (const [i, v] of def.values.entries()) {
+      if (seen.has(v.key)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `duplicate value key '${v.key}' — a task storing it would be ambiguous`,
+          path: ["values", i, "key"],
+        });
+      }
+      seen.add(v.key);
+    }
+  }
 });
 export type CustomFieldDef = z.infer<typeof CustomFieldDefSchema>;
 
