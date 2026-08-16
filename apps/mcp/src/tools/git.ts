@@ -41,7 +41,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "get_git_status",
-    description: "Returns structured JSON describing git-backed mode state (enabled, branch, remote, auto_push, auto_fetch, in_git_repo, last_synced_commit).",
+    description: "Returns structured JSON describing git-backed mode state (enabled, branch, remote, remote_configured, auto_push, auto_fetch, in_git_repo, last_synced_commit) plus drift in both directions: local_changes (files not yet published) and remote_changes (whether the branch moved since the last sync). Both drift fields are null when they could not be determined, which is not the same as zero.",
     inputSchema: {},
     handler: async ({ locttDir, root }) => {
       const status = await getGitStatus(locttDir, root);
@@ -49,23 +49,32 @@ export const TOOLS: readonly ToolDef[] = [
         enabled: status.enabled,
         branch: status.branch,
         remote: status.remote,
+        // `remote` always holds a name (it defaults to `origin`), so an
+        // agent reading only that would report a remote on a repo with
+        // none, and suggest a push that cannot work (GIT-C6).
+        remote_configured: status.remoteConfigured,
         auto_push: status.autoPush,
         auto_fetch: status.autoFetch,
         in_git_repo: status.isGitRepo,
         last_synced_commit: status.lastSyncedCommit ?? null,
+        // null, not 0: "nothing pending" and "could not check" must not
+        // read alike to an agent deciding whether to publish.
+        local_changes: status.localChanges ?? null,
+        remote_changes: status.remoteChanges ?? null,
+        branch_commit: status.branchCommit ?? null,
       };
       return text(JSON.stringify(result, null, 2));
     },
   },
   {
     name: "publish_to_git",
-    description: "Commits the current task state to the local loctt branch and (if remote+auto_push are set) pushes to remote. Call when the user has indicated they want to share or sync tasks — not speculatively after routine task edits.",
+    description: "Commits the current task state to the configured loctt branch (name is user-configurable via git.branch) and (if remote+auto_push are set) pushes to remote. Call when the user has indicated they want to share or sync tasks — not speculatively after routine task edits.",
     inputSchema: {},
     handler: async ({ locttDir, root }) => {
       const result = await publish(locttDir, root);
       const lines: string[] = [];
       if (result.committed) {
-        lines.push("Published local state to loctt branch");
+        lines.push(`Published local state to ${result.branch} branch`);
       } else {
         lines.push("No changes to publish");
       }
@@ -79,7 +88,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "sync_from_git",
-    description: "Pulls the loctt branch state into the local workspace. If a remote is configured and auto_fetch is set, fetches first. Call when the user wants to bring in changes from another machine.",
+    description: "Pulls the configured loctt branch (name is user-configurable via git.branch) state into the local workspace. If a remote is configured and auto_fetch is set, fetches first. Call when the user wants to bring in changes from another machine.",
     inputSchema: {},
     handler: async ({ locttDir, root }) => {
       const result = await sync(locttDir, root);
@@ -97,8 +106,8 @@ export const TOOLS: readonly ToolDef[] = [
         if (result.deleted) parts.push(`${result.deleted} file(s) removed`);
         lines.push(
           parts.length > 0
-            ? `Synced loctt branch into local workspace: ${parts.join(", ")}`
-            : "Synced loctt branch into local workspace",
+            ? `Synced ${result.branch ?? "loctt"} branch into local workspace: ${parts.join(", ")}`
+            : `Synced ${result.branch ?? "loctt"} branch into local workspace`,
         );
       } else {
         lines.push("Already up to date");

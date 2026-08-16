@@ -35,19 +35,38 @@ export async function run(args: string[], root: string): Promise<void> {
       const status = await getGitStatus(locttDir, root);
       console.log(`Enabled: ${status.enabled}`);
       console.log(`Branch: ${status.branch}`);
-      console.log(`Remote: ${status.remote}`);
+      console.log(
+        `Remote: ${status.remoteConfigured ? status.remote : `${status.remote} (not configured)`}`,
+      );
       console.log(`Auto-push: ${status.autoPush}`);
       console.log(`Auto-fetch: ${status.autoFetch}`);
       console.log(`Inside git repo: ${status.isGitRepo}`);
       if (status.lastSyncedCommit) {
         console.log(`Last synced commit: ${status.lastSyncedCommit}`);
       }
+      // Drift, both directions (GIT-C6). Printed only when it could be
+      // determined: "0 local changes" on a tracker we never checked
+      // would be a claim, not a reading.
+      if (status.localChanges !== undefined) {
+        console.log(
+          `Local changes: ${status.localChanges} `
+          + `(${status.localChanges === 0 ? "nothing to publish" : "not yet published"})`,
+        );
+      }
+      if (status.remoteChanges !== undefined) {
+        console.log(
+          `Remote changes: ${status.remoteChanges ? "yes — run 'loctt git sync'" : "none"}`,
+        );
+      }
       break;
     }
     case "publish": {
       const result = await publish(locttDir, root);
       if (result.committed) {
-        console.log("Published local state to loctt branch");
+        // Name the configured branch, not the literal "loctt": the
+        // branch is user-configurable, and this line used to report a
+        // branch that did not exist (GIT-C10).
+        console.log(`Published local state to ${result.branch} branch`);
       } else {
         console.log("No changes to publish");
       }
@@ -83,7 +102,7 @@ export async function run(args: string[], root: string): Promise<void> {
         if (result.copied) parts.push(`${result.copied} updated`);
         if (result.deleted) parts.push(`${result.deleted} removed`);
         const detail = parts.length > 0 ? ` (${parts.join(", ")})` : "";
-        console.log(`Synced loctt branch into local workspace${detail}`);
+        console.log(`Synced ${result.branch ?? "loctt"} branch into local workspace${detail}`);
       } else {
         console.log("Already up to date");
       }

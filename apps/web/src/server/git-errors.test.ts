@@ -20,6 +20,10 @@ import { createWebApp } from "./server.js";
  * `GitConflictError` was also exported from core's git/index.ts but not
  * from the package root, so apps/web could not have distinguished it
  * even if it had tried.
+ *
+ * Both tests carry an explicit timeout: each runs several real git
+ * invocations (init, publish, worktree add/remove) plus an HTTP server,
+ * which overruns the 5s default once the rest of apps/web runs alongside.
  */
 
 function git(cwd: string, ...args: string[]): void {
@@ -101,7 +105,7 @@ async function conflictBothSides(root: string): Promise<void> {
 }
 
 describe("web git error classification", () => {
-  it("reports a merge conflict as 409 with the conflicting paths", async () => {
+  it("reports a merge conflict as 409 with the conflicting paths", { timeout: 30_000 }, async () => {
     const { root, base } = await harness();
     await conflictBothSides(root);
 
@@ -132,7 +136,7 @@ describe("web git error classification", () => {
     expect(body.failures?.map(f => f.ref)).toContain("config/workflow.yaml");
   });
 
-  it("still reports a non-conflict git failure as a retryable 500", async () => {
+  it("still reports a non-conflict git failure as a retryable 500", { timeout: 30_000 }, async () => {
     const { root, base } = await harness();
     // Remove the repository out from under the tracker. Publish then
     // fails for a reason that is genuinely unknown-state (whether the

@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readdirSync } from "node:fs";
 import { cp, mkdir, readdir, readFile,rm } from "node:fs/promises";
 import { dirname,join } from "node:path";
 
@@ -335,6 +336,112 @@ function gitSafe(args: string[], cwd: string): string {
   return result.stdout?.trim() ?? "";
 }
 
+/**
+ * Counts files under `.loctt/` whose content differs from what is on
+ * `branch` — the work a publish would send.
+ *
+ * Compares blob hashes directly rather than going through git's index.
+ * The index route looks tidier but is wrong here: a publish mirrors
+ * `.loctt/` to the *branch root*, so the branch's paths are not the
+ * working tree's paths, and every index-based comparison either reports
+ * the whole tree as changed or silently ignores files git does not
+ * track. Hashing both sides sidesteps the path mismatch entirely.
+ *
+ * Counts modified, added, and removed paths alike — all three are work a
+ * publish would carry. Returns `undefined` when the comparison cannot be
+ * made (no such branch, git unavailable), which callers must keep
+ * distinct from zero.
+ */
+export function countLocalChanges(
+  root: string,
+  locttDir: string,
+  branch: string,
+): number | undefined {
+  if (!branchExists(root, branch)) return undefined;
+
+  const listed = gitSafe(["ls-tree", "-r", "--format=%(objectname) %(path)", branch], root);
+  if (!listed) return undefined;
+
+  const onBranch = new Map<string, string>();
+  for (const line of listed.split(/\r?\n/)) {
+    const sep = line.indexOf(" ");
+    if (sep > 0) onBranch.set(line.slice(sep + 1), line.slice(0, sep));
+  }
+
+  let changed = 0;
+  const seen = new Set<string>();
+  for (const relative of listLocalPublishablePaths(locttDir)) {
+    seen.add(relative);
+    const local = gitSafe(["hash-object", join(locttDir, relative)], root);
+    const remote = onBranch.get(relative);
+    // Absent on the branch counts as changed: it is a file a publish
+    // would add.
+    if (local === "" || remote === undefined || local !== remote) changed += 1;
+  }
+  // Paths the branch has and the workspace no longer does — a publish
+  // would delete them, which is just as much a pending change.
+  for (const relative of onBranch.keys()) {
+    if (!seen.has(relative)) changed += 1;
+  }
+  return changed;
+}
+
+/**
+ * Lists `.loctt/` paths a publish would mirror, relative to `.loctt/`.
+ *
+ * Three things are excluded, and each would otherwise show as drift that
+ * no publish could ever clear:
+ *  - `NEVER_MIRROR` / `LOCAL_OWNED`, the same sets `mirrorDir` uses, so
+ *    this cannot disagree with what publish actually copies;
+ *  - anything `.loctt/.gitignore` excludes (`.current-user`, per-user
+ *    settings), because publish stages with `git add -A` and git drops
+ *    them. Asked of git rather than hardcoded — the ignore file ships in
+ *    `.loctt/` and a user may extend it.
+ */
+function listLocalPublishablePaths(locttDir: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string, prefix: string): void => {
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const relative = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+      if (prefix === "" && (NEVER_MIRROR.has(entry.name) || LOCAL_OWNED.has(entry.name))) {
+        continue;
+      }
+      if (entry.isDirectory()) {
+        walk(join(dir, entry.name), relative);
+      } else if (entry.isFile()) {
+        out.push(relative);
+      }
+    }
+  };
+  walk(locttDir, "");
+  if (out.length === 0) return out;
+
+  // `check-ignore` exits 1 when nothing matched, which is not an error.
+  const checked = spawnSync(
+    "git",
+    ["-C", locttDir, "check-ignore", "--no-index", "--stdin"],
+    { input: out.join("\n"), encoding: "utf-8", stdio: "pipe" },
+  );
+  const ignored = new Set(
+    (checked.stdout ?? "").split(/\r?\n/).map(l => l.trim()).filter(Boolean),
+  );
+  return ignored.size === 0 ? out : out.filter(p => !ignored.has(p));
+}
+
+/**
+ * The commit `branch` points at, or `undefined` if it does not resolve.
+ */
+export function branchHeadCommit(root: string, branch: string): string | undefined {
+  const head = gitSafe(["rev-parse", branch], root);
+  return head === "" ? undefined : head;
+}
+
 export function branchExists(root: string, branch: string): boolean {
   try {
     git(["rev-parse", "--verify", branch], root);
@@ -355,7 +462,15 @@ function ensureBranch(root: string, branch: string): void {
   }
 }
 
-function remoteExists(root: string, remote: string): boolean {
+/**
+ * Whether `remote` is actually configured in this repository.
+ *
+ * Exported for status (GIT-C6): the remote *name* always has a value
+ * because it defaults to `origin`, so "has a name" and "has a remote"
+ * are different questions and only the second one predicts whether a
+ * push can work.
+ */
+export function remoteExists(root: string, remote: string): boolean {
   const out = gitSafe(["remote"], root);
   if (!out) return false;
   return out.split(/\r?\n/).map(s => s.trim()).includes(remote);
@@ -380,6 +495,14 @@ export interface FetchResult {
  */
 export interface SyncOutcome {
   readonly updated: boolean;
+  /**
+   * The branch that was synced. Present so callers can name it rather
+   * than printing the literal "loctt": the branch is user-configurable,
+   * and every message said "loctt branch" regardless of what it actually
+   * was (GIT-C10). Absent on the early returns that never reached a
+   * branch.
+   */
+  readonly branch?: string;
   /** Files taken from the branch. */
   readonly copied?: number;
   /** Files removed locally because the branch deleted them. */
@@ -607,18 +730,22 @@ export function fetchLocttBranch(
 export async function publish(
   locttDir: string,
   root: string,
-): Promise<{ committed: boolean; pushed?: boolean; pushError?: string }> {
+): Promise<{ committed: boolean; branch: string; pushed?: boolean; pushError?: string }> {
   const commitResult = await commitToLocttBranch(locttDir, root);
   const syncState = commitResult.syncState;
+  // Returned on every path so callers can name the branch they actually
+  // wrote to. It is user-configurable, and every success message printed
+  // the literal "loctt" regardless (GIT-C10).
+  const branch = commitResult.branch;
 
   if (!syncState.git.auto_push) {
-    return { committed: commitResult.committed };
+    return { committed: commitResult.committed, branch };
   }
   if (!syncState.git.remote) {
-    return { committed: commitResult.committed };
+    return { committed: commitResult.committed, branch };
   }
   if (!remoteExists(root, syncState.git.remote)) {
-    return { committed: commitResult.committed };
+    return { committed: commitResult.committed, branch };
   }
 
   const pushResult = pushLocttBranch(root, {
@@ -627,7 +754,7 @@ export async function publish(
   });
 
   if (pushResult.pushed) {
-    return { committed: commitResult.committed, pushed: true };
+    return { committed: commitResult.committed, branch, pushed: true };
   }
 
   if (pushResult.error) {
@@ -639,6 +766,7 @@ export async function publish(
   }
   return {
     committed: commitResult.committed,
+    branch,
     pushed: false,
     ...(pushResult.error !== undefined ? { pushError: pushResult.error } : {}),
   };
@@ -669,12 +797,12 @@ export async function pullFromLocttBranch(
 
   const branch = syncState.git.branch;
   if (!branchExists(root, branch)) {
-    return { updated: false };
+    return { updated: false, branch };
   }
 
   const remoteHead = git(["rev-parse", branch], root);
   if (syncState.git.last_synced_commit === remoteHead) {
-    return { updated: false };
+    return { updated: false, branch };
   }
 
   const worktreeDir = join(getLocalDir(locttDir), ".worktree-sync");
@@ -795,6 +923,7 @@ export async function pullFromLocttBranch(
     await clearReconcileState(locttDir);
 
     return {
+      branch,
       updated:
         plan.copies.length > 0 ||
         plan.deletes.length > 0 ||
