@@ -279,8 +279,19 @@ async function applyPlan(
 
 /**
  * Removes directories left empty by deletions, walking upward from each
- * deleted path. Stops at `rootDir` and at the first non-empty parent.
+ * deleted path. Stops at the first non-empty parent, and never removes
+ * a structural directory.
+ *
+ * `KEEP` is the floor the docstring always claimed and the code never
+ * had: syncing away the last task would otherwise delete
+ * `.loctt/tasks/` itself, leaving a tracker whose shape no longer
+ * matches what `init` creates. An empty `tasks/` is a tracker with no
+ * tasks; a missing one is a tracker that looks broken.
  */
+const PRUNE_FLOOR: ReadonlySet<string> = new Set([
+  "tasks", "config", "users", "docs", "local",
+]);
+
 async function pruneEmptyDirs(
   deletedPaths: readonly string[],
   rootDir: string,
@@ -289,6 +300,9 @@ async function pruneEmptyDirs(
   for (const p of deletedPaths) {
     let dir = dirname(p);
     while (dir && dir !== "." && dir !== "/") {
+      // Stop *at* the floor rather than adding it: its own parent is
+      // the .loctt root, which must never be a candidate either.
+      if (PRUNE_FLOOR.has(dir)) break;
       candidates.add(dir);
       dir = dirname(dir);
     }
@@ -312,7 +326,17 @@ async function pruneEmptyDirs(
  * whatever was there, so callers refuse rather than guess.
  */
 export function branchHasForeignContent(root: string, branch: string): string[] {
-  const listed = gitSafe(["ls-tree", "--name-only", branch], root);
+  const { ok, stdout: listed } = gitStatusSafe(["ls-tree", "--name-only", branch], root);
+  // A failed listing is not an empty branch. Returning [] here would
+  // report "safe to adopt" for a branch we could not read, and the
+  // caller's next move is to mirror over it.
+  if (!ok) {
+    throw new GitSyncError(
+      `could not read branch '${branch}' to check for existing content. `
+      + `Refusing to continue: publishing would mirror over whatever is `
+      + `there. Check that the branch exists and the repository is readable.`,
+    );
+  }
   if (!listed) return [];
   const entries = listed.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
   if (entries.length === 0) return [];
@@ -331,9 +355,30 @@ function git(args: string[], cwd: string): string {
   return result.stdout.trim();
 }
 
+/**
+ * Runs git and returns stdout, or `""` when the command fails.
+ *
+ * Callers must treat `""` as "no answer", never as a meaningful empty
+ * result. That distinction matters most in `branchHasForeignContent`,
+ * where an empty listing means "the branch is safe to adopt" — a
+ * transient `ls-tree` failure read as exactly that would disable the
+ * guard which stops a publish deleting someone else's branch. That
+ * caller now checks the status itself via `gitStatusSafe`.
+ */
 function gitSafe(args: string[], cwd: string): string {
+  return gitStatusSafe(args, cwd).stdout;
+}
+
+/**
+ * As {@link gitSafe}, but reports whether git actually succeeded, so a
+ * caller can tell "empty output" from "the command failed".
+ */
+function gitStatusSafe(
+  args: string[],
+  cwd: string,
+): { ok: boolean; stdout: string } {
   const result = spawnSync("git", args, { cwd, encoding: "utf-8", stdio: "pipe" });
-  return result.stdout?.trim() ?? "";
+  return { ok: result.status === 0, stdout: result.stdout?.trim() ?? "" };
 }
 
 /**

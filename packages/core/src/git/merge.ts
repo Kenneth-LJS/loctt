@@ -341,7 +341,20 @@ export function deriveKeyState(
   ])) {
     const l = local.keys[project];
     const i = incoming.keys[project];
-    const prefix = i?.prefix ?? l?.prefix ?? "";
+    // `?? ""` produced an empty prefix when neither side recorded one,
+    // and the derived state is written to state.yaml without a schema
+    // pass — so a tracker could end up unable to boot, from a sync that
+    // reported success. Both sides missing a prefix for a project that
+    // exists in the key map is a state we cannot repair by guessing, so
+    // it is refused rather than papered over.
+    const prefix = i?.prefix ?? l?.prefix;
+    if (prefix === undefined || prefix === "") {
+      throw new Error(
+        `cannot derive key state for project '${project}': neither side `
+        + `records a key prefix. Fix the prefix in state.yaml on one side `
+        + `and sync again.`,
+      );
+    }
     // One past the highest key in use. Never below either side's
     // recorded counter: a task created and then deleted still consumed
     // its number, and reissuing it would collide with a key someone may

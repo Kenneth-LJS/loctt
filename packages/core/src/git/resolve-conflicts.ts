@@ -1,5 +1,5 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 
 import type { HistoryEntry, Task } from "@loctt/contracts";
 import { LocttStateSchema } from "@loctt/contracts";
@@ -302,6 +302,13 @@ export async function applyResolution(
   localDir: string,
 ): Promise<void> {
   for (const f of [...result.merged, ...result.displaced]) {
-    await writeFile(join(localDir, f.path), f.content, "utf-8");
+    const dest = join(localDir, f.path);
+    // `applyPlan` mkdirs before every copy; this path did not, so a
+    // displaced file whose directory does not exist locally threw
+    // ENOENT partway through the loop — leaving some resolutions
+    // applied and some not, which is the one outcome the
+    // abort-before-writing design exists to prevent.
+    await mkdir(dirname(dest), { recursive: true });
+    await writeFile(dest, f.content, "utf-8");
   }
 }
