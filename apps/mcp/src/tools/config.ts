@@ -27,7 +27,13 @@ export const TOOLS: readonly ToolDef[] = [
       const key = args["key"] as string;
       const def = CONFIG_KEYS.find(d => d.key === key);
       if (!def) {
-        return errorResult(`unknown config key '${key}'`);
+        // Same message as core's router (config/router.ts), which the
+        // CLI surfaces. P10: an agent that moves between surfaces must
+        // not be told two different things about one mistake — naming
+        // only the bad key leaves it guessing what a good one is.
+        return errorResult(
+          `unknown config key '${key}'. valid keys: ${CONFIG_KEYS.map(d => d.key).join(", ")}`,
+        );
       }
       const value = await getConfigValue(locttDir, key);
       return text(JSON.stringify({
