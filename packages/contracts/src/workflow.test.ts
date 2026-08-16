@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   BoardsConfigSchema,
+  CustomFieldDefSchema,
   defaultStatus,
   EstimationConfigSchema,
   IconStringSchema,
@@ -247,6 +248,59 @@ describe("EstimationConfig weights", () => {
     expect(message).not.toMatch(/key 'S' is not in preset_values/);
     expect(message).not.toMatch(/key 'M' is not in preset_values/);
     expect(message).not.toMatch(/key 'L' is not in preset_values/);
+  });
+});
+
+describe("CustomFieldDef enum values", () => {
+  /**
+   * `schema-reference.md:365` says `values` is "Required for
+   * `type: enum`". Nothing enforced it: the schema marked it optional,
+   * and core's task-validation branch is guarded
+   * `if (def.type === "enum" && def.values)` — so with `values` absent
+   * the condition is false, no other branch matches, and the value falls
+   * through completely unvalidated.
+   *
+   * A field declared as a closed enum accepted arbitrary strings,
+   * numbers and objects at every surface.
+   */
+
+  const base = { key: "size", label: "Size", multi: false, searchable: false };
+
+  it("rejects an enum field with no values", () => {
+    const r = CustomFieldDefSchema.safeParse({ ...base, type: "enum" });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects an enum field with an empty values list", () => {
+    // An empty list is the same hole with extra steps: nothing can match
+    // it, so either the field is unusable or it is not really an enum.
+    const r = CustomFieldDefSchema.safeParse({ ...base, type: "enum", values: [] });
+    expect(r.success).toBe(false);
+  });
+
+  it("names the field in the error, so a bad workflow.yaml is fixable", () => {
+    const r = CustomFieldDefSchema.safeParse({ ...base, type: "enum" });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues[0]?.path).toContain("values");
+    }
+  });
+
+  it("accepts an enum field that declares its values", () => {
+    const r = CustomFieldDefSchema.safeParse({
+      ...base,
+      type: "enum",
+      values: [{ key: "s", label: "Small" }],
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("leaves non-enum fields free to omit values", () => {
+    // The requirement is conditional; a string field has no values and
+    // must stay valid.
+    for (const type of ["string", "number", "date", "boolean"]) {
+      expect(CustomFieldDefSchema.safeParse({ ...base, type }).success).toBe(true);
+    }
   });
 });
 

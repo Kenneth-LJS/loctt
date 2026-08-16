@@ -236,7 +236,21 @@ export const CustomFieldDefSchema = z.object({
   multi: z.boolean(),
   searchable: z.boolean(),
   values: z.array(CustomFieldValueDefSchema).optional(),
-}).strict();
+}).strict().superRefine((def, ctx) => {
+  // `values` is conditional, the same shape as EstimationConfig's
+  // `preset_values` below. Without this an enum field with no values
+  // parsed cleanly, and core's task-validation branch — guarded
+  // `if (def.type === "enum" && def.values)` — then matched nothing, so
+  // the value went entirely unvalidated. A field declared as a closed
+  // enum accepted arbitrary strings, numbers and objects.
+  if (def.type === "enum" && (def.values === undefined || def.values.length === 0)) {
+    ctx.addIssue({
+      code: "custom",
+      message: `values is required and must be non-empty when type is enum`,
+      path: ["values"],
+    });
+  }
+});
 export type CustomFieldDef = z.infer<typeof CustomFieldDefSchema>;
 
 /** Key prefix configuration from workflow.yaml. */
