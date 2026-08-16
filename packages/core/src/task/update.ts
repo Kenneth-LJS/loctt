@@ -32,6 +32,13 @@ export const USER_IMMUTABLE_FIELDS: ReadonlySet<string> = new Set([
   "id",
   "key",
   "created_at",
+  // Stamped on every write. Hand-writing it forges the field that
+  // git-sync reconciliation, recency sort and the activity feed all
+  // read — and per-field merging leans on it harder still, since
+  // whole-record recency is the fallback whenever history cannot
+  // explain a field. MCP already refused it incidentally, via a
+  // different guard; the CLI and web did not.
+  "updated_at",
   "project",
   "relationships",
   "key_history",
@@ -66,6 +73,7 @@ export const SYSTEM_MUTABLE_VIA: Readonly<Record<string, string>> = {
   id: "never mutated after createTask",
   key: "rekeyCollisions during git-sync reconcile; writes key_history alongside",
   created_at: "never mutated after createTask",
+  updated_at: "stamped by setField/setFields/bulk writes and by git-sync merge",
   project: "deleteProject(hard) remap_project journal handler",
   relationships: "linkTask / unlinkTask (validates against workflow rels)",
   key_history: "rekeyCollisions and key-history append on rekey",
