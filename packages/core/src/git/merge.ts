@@ -369,21 +369,28 @@ export function deriveKeyState(
  * uniqueness. Rekeying alone cannot fix it: allocating the next number
  * from a shared prefix just produces another collision.
  *
- * The project with the earlier `created_at` keeps the prefix (ties
- * broken by id, so both clones agree). The others get `<PREFIX>2-`,
- * `<PREFIX>3-`… — deliberately ugly, because it is meant to be replaced
- * by `loctt project set-prefix` rather than lived with.
+ * The project with the smaller id keeps the prefix; the others get
+ * `<PREFIX>2-`, `<PREFIX>3-`… — deliberately ugly, because they are
+ * meant to be replaced by `loctt project set-prefix` rather than lived
+ * with.
+ *
+ * Ordering by id *is* ordering by creation: a ULID sorts
+ * lexicographically by mint time. An earlier version sorted on
+ * `created_at`, which `ProjectDef` does not have — `ProjectDefSchema` is
+ * `.strict()` with id/name/prefix/archived — so the comparison was
+ * always between two empty strings and only the id tiebreak ever ran.
+ * Adding the field to make that sort work would violate P-1; the id is
+ * the timestamp.
  */
 export function assignProvisionalPrefixes(
-  projects: readonly { id: string; prefix: string; created_at?: string }[],
+  projects: readonly { id: string; prefix: string }[],
 ): Map<string, string> {
   const out = new Map<string, string>();
   const taken = new Set<string>();
 
-  const ordered = [...projects].sort((a, b) => {
-    const cmp = (a.created_at ?? "").localeCompare(b.created_at ?? "");
-    return cmp !== 0 ? cmp : a.id.localeCompare(b.id);
-  });
+  // Deterministic across clones: two of them merging the same set must
+  // reach the same assignment, or they diverge permanently.
+  const ordered = [...projects].sort((a, b) => a.id.localeCompare(b.id));
 
   for (const p of ordered) {
     if (!taken.has(p.prefix)) {
