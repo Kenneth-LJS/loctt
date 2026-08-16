@@ -20,7 +20,15 @@ import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
  */
 describe("CLI exit codes are consistent (spawned binary)", () => {
   // The contract: 2 means "you typed it wrong" on every command.
-  const COMMANDS = ["info", "doctor", "views", "schema", "list", "create"];
+  //
+  // The entity and git/config dispatchers were a second wave: five
+  // exited 1 (validated but unwrapped) and three exited **0** (never
+  // validated at all, so `loctt git publish --frce` reported success).
+  const COMMANDS = [
+    "info", "doctor", "views", "schema", "list", "create",
+    "project", "user", "label", "milestone", "sprint",
+    "git", "config", "calendar",
+  ];
 
   it.each(COMMANDS)("exits 2 on an unknown flag: %s", async (command) => {
     await withTmpLoctt(async ({ root }) => {
@@ -35,8 +43,8 @@ describe("CLI exit codes are consistent (spawned binary)", () => {
     await withTmpLoctt(async ({ root }) => {
       // Guards the fix from over-reaching: rejecting flags must not
       // reject the ordinary invocation.
-      for (const command of ["info", "views", "schema"]) {
-        const result = await runCli([command], { cwd: root });
+      for (const command of ["info", "views", "schema", "project list", "config list"]) {
+        const result = await runCli(command.split(" "), { cwd: root });
         expect(result.exitCode, `${command} without flags`).toBe(0);
       }
     });

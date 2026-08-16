@@ -22,7 +22,13 @@ describe("CLI git publish reports a failed push (spawned binary)", () => {
       // A remote that cannot resolve: the push fails, the commit does not.
       execSync("git remote add origin /nonexistent/definitely-not-a-repo.git", { cwd: root });
 
-      await runCli(["git", "enable", "--remote", "origin"], { cwd: root });
+      // `--remote` was silently discarded here — `git.ts` never read it,
+      // and the remote is configured by `git remote add` above anyway.
+      // It only surfaced when the dispatcher started rejecting unknown
+      // flags, which then left git mode disabled and the publish failing
+      // for an unrelated reason.
+      const enabled = await runCli(["git", "enable"], { cwd: root });
+      expect(enabled.exitCode, "git enable must succeed for this test to mean anything").toBe(0);
       await runCli(["create", "a task"], { cwd: root });
 
       const res = await runCli(["git", "publish"], { cwd: root });

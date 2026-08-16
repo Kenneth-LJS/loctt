@@ -420,4 +420,67 @@ describe("history actor attribution", () => {
     expect(entries[0]?.bulk_op_id).toBe(opId);
     expect(entries[1]?.bulk_op_id).toBe(opId);
   });
+
+  describe("readHistory desc ordering", () => {
+    it("sorts by timestamp rather than reversing the file", async () => {
+      // A file that has been through a git merge is not chronological:
+      // `mergeHistory` concatenates local then incoming, so two timelines
+      // interleave. `reverse()` on that returns entries in no meaningful
+      // order — "the 10 most recent" silently is not.
+      const { writeFile, mkdir } = await import("node:fs/promises");
+      const { dirname } = await import("node:path");
+      const file = getHistoryFilePath(locttDir, "task-merged");
+      await mkdir(dirname(file), { recursive: true });
+      await writeFile(
+        file,
+        [
+          // Local timeline, then incoming — the shape mergeHistory leaves.
+          `- timestamp: "2026-01-01T00:00:00.000Z"\n  kind: created`,
+          `- timestamp: "2026-01-05T00:00:00.000Z"\n  kind: body_edited`,
+          `- timestamp: "2026-01-02T00:00:00.000Z"\n  kind: body_edited`,
+          `- timestamp: "2026-01-04T00:00:00.000Z"\n  kind: body_edited`,
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const page = await readHistory(locttDir, "task-merged", { order: "desc" });
+      const stamps = page.entries.map(e => e.timestamp);
+
+      // Newest first, genuinely.
+      expect(stamps).toEqual([
+        "2026-01-05T00:00:00.000Z",
+        "2026-01-04T00:00:00.000Z",
+        "2026-01-02T00:00:00.000Z",
+        "2026-01-01T00:00:00.000Z",
+      ]);
+    });
+
+    it("returns the newest entries when desc is combined with a limit", async () => {
+      // The assertion that matters to a caller: `limit` slices *after*
+      // ordering, so a reversed-but-unsorted file would hand back the
+      // wrong two entries.
+      const { writeFile, mkdir } = await import("node:fs/promises");
+      const { dirname } = await import("node:path");
+      const file = getHistoryFilePath(locttDir, "task-limited");
+      await mkdir(dirname(file), { recursive: true });
+      await writeFile(
+        file,
+        [
+          `- timestamp: "2026-01-01T00:00:00.000Z"\n  kind: created`,
+          `- timestamp: "2026-01-05T00:00:00.000Z"\n  kind: body_edited`,
+          `- timestamp: "2026-01-02T00:00:00.000Z"\n  kind: body_edited`,
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const page = await readHistory(locttDir, "task-limited", { order: "desc", limit: 2 });
+      expect(page.entries.map(e => e.timestamp)).toEqual([
+        "2026-01-05T00:00:00.000Z",
+        "2026-01-02T00:00:00.000Z",
+      ]);
+    });
+  });
 });
+
