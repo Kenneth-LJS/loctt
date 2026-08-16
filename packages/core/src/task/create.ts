@@ -9,6 +9,7 @@ import { allocateKey } from "../state/keys.js";
 import { appendHistory } from "./history.js";
 import { writeTask } from "./io.js";
 import { clearLookupCaches } from "./lookup-cache.js";
+import { todayDateString } from "./update.js";
 
 /** Options for creating a new task. */
 export interface CreateTaskOptions {
@@ -112,7 +113,14 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
   if (workflowConfig && frontmatter.status !== undefined) {
     const statusDef = workflowConfig.statuses.find(s => s.key === frontmatter.status);
     if (statusDef?.category === "completed") {
-      (frontmatter as { completed_date?: string }).completed_date = now.slice(0, 10);
+      // Workspace timezone, not `now.slice(0, 10)`. The UTC slice stamped
+      // yesterday on anything created-as-done before 08:00 local in a
+      // UTC+8 workspace, and `completed_date` feeds burndown and "done
+      // this week" — so the off-by-one propagated. setField has resolved
+      // this in the workspace zone all along; create did not, and the
+      // same field ended up following two rules.
+      (frontmatter as { completed_date?: string }).completed_date =
+        await todayDateString(locttDir);
     }
   }
 

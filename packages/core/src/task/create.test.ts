@@ -210,4 +210,48 @@ describe("createTask", () => {
     });
     expect(t2.frontmatter.completed_date).toBeUndefined();
   });
+
+  describe("completed_date timezone", () => {
+    it("stamps the workspace date, not the UTC date", async () => {
+      // A zone far enough east that its date differs from UTC for most of
+      // the UTC day. `create.ts` used `now.slice(0, 10)` — the UTC slice —
+      // while setField has always resolved in the workspace zone, so one
+      // field followed two rules and a task created-as-done before 08:00
+      // local recorded yesterday. completed_date feeds burndown and "done
+      // this week", so the off-by-one propagated.
+      const { mkdir, writeFile } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+      await mkdir(join(locttDir, "config"), { recursive: true });
+      await writeFile(
+        join(locttDir, "config/calendar.yaml"),
+        "timezone: Pacific/Kiritimati\nfirst_day_of_week: 1\nworking_days: [1,2,3,4,5]\nholidays: []\n",
+        "utf8",
+      );
+
+      const { parseWorkflowConfig } = await import("../config/workflow.js");
+      const { defaultWorkflowYaml } = await import("../init/defaults.js");
+      const config = parseWorkflowConfig(defaultWorkflowYaml("T-"));
+      const doneStatus = config.statuses.find(st => st.category === "completed");
+      if (doneStatus === undefined) {
+        throw new Error("fixture needs a completed-category status");
+      }
+
+      const created = await createTask({
+        locttDir,
+        state: makeState(),
+        options: { project: "task", title: "Done on creation", status: doneStatus.key },
+        workflowConfig: config,
+      });
+
+      const stamped = created.frontmatter.completed_date;
+      expect(stamped).toBeDefined();
+
+      const inZone = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Pacific/Kiritimati",
+        year: "numeric", month: "2-digit", day: "2-digit",
+      }).format(new Date());
+      expect(stamped).toBe(inZone);
+    });
+  });
 });
+

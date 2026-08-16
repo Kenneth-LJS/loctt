@@ -304,10 +304,23 @@ describe("mergeById", () => {
     expect(mergeById(local, incoming).map(p => p.id).sort()).toEqual(["p1", "p2"]);
   });
 
-  it("takes the incoming version of a shared entry", () => {
+  it("keeps the local version of a shared entry", () => {
+    // This test asserted the opposite until 2026-08-16, and it was
+    // asserting a bug: `projects.yaml` merged its list incoming-wins
+    // here while `resolveConflicts` merged the surrounding scalars
+    // (`default`) local-wins, so one file followed two opposite
+    // policies. A sync could repoint your default project *and* rewrite
+    // the project it now points at, each by a different rule.
     const local = [{ id: "p1", name: "Local name" }];
     const incoming = [{ id: "p1", name: "Incoming name" }];
-    expect(mergeById(local, incoming)).toEqual([{ id: "p1", name: "Incoming name" }]);
+    expect(mergeById(local, incoming)).toEqual([{ id: "p1", name: "Local name" }]);
+  });
+
+  it("still keeps additions from both sides", () => {
+    // The union is the point; local-wins only decides collisions.
+    const local = [{ id: "p1", name: "Mine" }];
+    const incoming = [{ id: "p2", name: "Theirs" }];
+    expect(mergeById(local, incoming).map(p => p.id).sort()).toEqual(["p1", "p2"]);
   });
 });
 
