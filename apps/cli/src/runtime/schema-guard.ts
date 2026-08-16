@@ -37,6 +37,11 @@ export const SCHEMA_GUARD_EXEMPT_COMMANDS: ReadonlySet<string | undefined> = new
   "init",
   "migrate",
   "doctor",
+  // Same reason as doctor: `info` describes the tracker, and a schema
+  // mismatch is one of the things worth describing. Refusing to run
+  // meant the command that answers "what is this tracker" could not
+  // answer it precisely when the answer mattered (ONB-C5).
+  "info",
   "mcp",
   "ui",
   "help",

@@ -11,6 +11,7 @@ import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
  * @verifies PRU-C4
  * @verifies PRU-C6
  * @verifies MSL-C2
+ * @verifies SPR-C3
  *
  * Preconditions on destructive entity operations. All behaved correctly
  * and none was asserted — so a regression here would have shipped
@@ -85,6 +86,32 @@ describe("entity operations enforce their preconditions", () => {
 
       await runCli(["milestone", "unarchive", "v1"], { cwd: root });
       expect(await cfg(root, "milestones.yaml")).not.toMatch(/archived:/);
+    });
+  });
+
+  it("keeps a sprint's id across every edit, and archive round-trips (SPR-C3)", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(
+        ["sprint", "create", "S1", "--start", "2026-05-01", "--end", "2026-05-14", "--state", "active"],
+        { cwd: root },
+      );
+      const idOf = async (): Promise<string> =>
+        /- id: ([0-9A-HJKMNP-TV-Z]{26})/.exec(await cfg(root, "sprints.yaml"))?.[1] ?? "";
+
+      const before = await idOf();
+      expect(before).not.toBe("");
+
+      // Tasks reference sprints by id, so a rename that minted a new one
+      // would detach every task pointing at it.
+      await runCli(["sprint", "edit", "S1", "--name", "S1 renamed"], { cwd: root });
+      await runCli(["sprint", "edit", "S1 renamed", "--state", "completed"], { cwd: root });
+      expect(await idOf()).toBe(before);
+
+      await runCli(["sprint", "archive", "S1 renamed"], { cwd: root });
+      expect(await cfg(root, "sprints.yaml")).toMatch(/archived: true/);
+      await runCli(["sprint", "unarchive", "S1 renamed"], { cwd: root });
+      expect(await cfg(root, "sprints.yaml")).not.toMatch(/archived:/);
+      expect(await idOf()).toBe(before);
     });
   });
 });
