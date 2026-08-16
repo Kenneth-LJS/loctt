@@ -284,6 +284,7 @@ describe("publish-sync", () => {
       expect(result.updated).toBe(true);
     });
 
+    // @verifies GIT-C1
     it("keeps both sides' structured edits to different fields", async () => {
       // What whole-record LWW lost, end to end. Branch sets status and
       // records it; local sets priority through the real write path.

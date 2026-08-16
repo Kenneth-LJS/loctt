@@ -53,6 +53,12 @@ export async function run(args: string[], root: string): Promise<void> {
       }
       if (result.pushed === true) {
         console.log("Pushed to remote");
+      } else if (result.pushError !== undefined) {
+        // Core already warned with the cause and the retry command, and
+        // the local commit is durable. What was missing is the exit
+        // code: reporting success meant a script saw 0 while the work
+        // never left the machine (GIT-C4).
+        process.exitCode = EXIT.RUNTIME;
       }
       break;
     }

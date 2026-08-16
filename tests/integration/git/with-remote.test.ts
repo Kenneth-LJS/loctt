@@ -80,7 +80,7 @@ describe("git-backed CLI lifecycle (with remote)", () => {
     });
   });
 
-  it("unreachable remote: publish exits 0, warns on stderr, local commit is durable", async () => {
+  it("unreachable remote: publish fails loudly, and the local commit is durable", async () => {
     await withGitLocttRemote(async ({ root }) => {
       expect((await runCli(["git", "enable"], { cwd: root })).exitCode).toBe(0);
       await execa("git", ["remote", "set-url", "origin", "/nonexistent/path/repo.git"], { cwd: root });
@@ -88,9 +88,17 @@ describe("git-backed CLI lifecycle (with remote)", () => {
       expect((await runCli(["create", "first"], { cwd: root })).exitCode).toBe(0);
 
       const publish = await runCli(["git", "publish"], { cwd: root });
-      expect(publish.exitCode).toBe(0);
-      expect(publish.stderr.toLowerCase()).toContain("warning");
 
+      // This test was titled "publish exits 0" and asserted exactly
+      // that — encoding GIT-C4's bug as intended behaviour. A push that
+      // never reached the remote reported success, so a script checking
+      // the exit code saw none of it.
+      expect(publish.exitCode).not.toBe(0);
+      expect(publish.stderr.toLowerCase()).toContain("warning");
+      expect(publish.stdout).not.toContain("Pushed to remote");
+
+      // The half that was always right: the local commit stands, so the
+      // user has not lost work and only needs to retry the push.
       const ref = await execa("git", ["rev-parse", "loctt"], { cwd: root });
       expect(ref.stdout).toMatch(/^[0-9a-f]{40}$/);
     });

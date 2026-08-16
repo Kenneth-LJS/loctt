@@ -467,6 +467,23 @@ export async function commitToLocttBranch(
  * Pushes the loctt branch to the configured remote.
  * Never throws — returns a result describing what happened.
  */
+/**
+ * Pulls the meaningful lines out of a git failure.
+ *
+ * Prefers the `fatal:`/`error:` lines, which is where git states the
+ * cause; falls back to the full text. Never a single arbitrary line —
+ * that is how "and the repository exists." became a user-facing reason.
+ */
+function extractGitFailure(stderr: string): string {
+  const text = stderr.trim();
+  if (text === "") return "git push failed";
+  const named = text
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l => /^(fatal|error|remote):/i.test(l));
+  return named.length > 0 ? named.join("; ") : text.replace(/\s*\n\s*/g, " ");
+}
+
 export function pushLocttBranch(
   root: string,
   opts: { remote: string; branch: string },
@@ -490,7 +507,12 @@ export function pushLocttBranch(
   }
   const stderr = (result.stderr ?? "").toString();
   const auth = classifyAuthError(stderr);
-  const reason = auth ?? (stderr.trim().split(/\r?\n/).pop() ?? "git push failed");
+  // Git's failures are multi-line and the *last* line is often the tail
+  // of a sentence: "repository not found" ends with "and the repository
+  // exists.", which on its own explains nothing. Keep the lines that
+  // carry the cause — git prefixes those with "fatal:" or "error:" —
+  // and fall back to the whole thing rather than a fragment of it.
+  const reason = auth ?? extractGitFailure(stderr);
   return { pushed: false, error: reason };
 }
 
