@@ -2,12 +2,13 @@ import { spawnSync } from "node:child_process";
 import { cp, mkdir, readdir, readFile,rm } from "node:fs/promises";
 import { dirname,join } from "node:path";
 
-import type { SyncState, Task } from "@loctt/contracts";
+import type { ReconcileState, SyncState, Task } from "@loctt/contracts";
 
 import { loadProjectsConfig } from "../config/projects.js";
 import { getLocalDir } from "../paths/index.js";
 import { rebuildKeyIndex } from "../state/key-index.js";
 import { appendKeyHistory } from "../state/keys.js";
+import { clearReconcileState, readReconcileState, saveReconcileState } from "../state/reconcile.js";
 import { loadState, saveState } from "../state/state.js";
 import { loadSyncState, saveSyncState } from "../state/sync.js";
 import { parseFrontmatter, splitTaskFile } from "../task/frontmatter.js";
@@ -64,6 +65,36 @@ export class GitConflictError extends GitSyncError {
     );
     this.name = "GitConflictError";
     this.paths = paths;
+  }
+}
+
+/**
+ * Raised when a previous reconciliation left its sentinel behind — it
+ * started writing and never finished.
+ *
+ * Unlike a prefix rename, this is not auto-resumable: the interrupted run
+ * applied an unknown subset of a plan computed against a base commit
+ * whose diff no longer describes the workspace. Finishing it blind could
+ * overwrite local edits, so the message states what was in flight and
+ * gives the user the two commands that can resolve it — re-sync after
+ * checking the workspace, or clear the sentinel to abort.
+ */
+export class GitReconcileInterruptedError extends GitSyncError {
+  readonly state: ReconcileState;
+  constructor(state: ReconcileState) {
+    super(
+      `a previous '${state.mode}' reconciliation was interrupted `
+      + `(started ${state.started_at}, syncing ${state.base_commit.slice(0, 8)} `
+      + `→ ${state.remote_commit.slice(0, 8)}).\n\n`
+      + "Your workspace may hold a partly-applied sync. Compare it against "
+      + "the branch and make it whole, then delete "
+      + ".loctt/local/reconcile.yaml to clear this record — the next "
+      + "'loctt git sync' will re-plan from scratch. Sync will not run "
+      + "while the record is present, because the commit it would plan "
+      + "against no longer describes your files.",
+    );
+    this.name = "GitReconcileInterruptedError";
+    this.state = state;
   }
 }
 
@@ -626,6 +657,16 @@ export async function pullFromLocttBranch(
     throw new GitSyncError("Git-backed mode is not enabled");
   }
 
+  // A sentinel here means the previous reconciliation died between its
+  // first write and its last. The workspace is in neither the old state
+  // nor the new one, so the base commit this run would plan against is a
+  // lie — proceeding would compute a diff from a state that no longer
+  // exists on disk. Name it and stop (GIT-C3).
+  const interrupted = await readReconcileState(locttDir);
+  if (interrupted) {
+    throw new GitReconcileInterruptedError(interrupted);
+  }
+
   const branch = syncState.git.branch;
   if (!branchExists(root, branch)) {
     return { updated: false };
@@ -685,6 +726,33 @@ export async function pullFromLocttBranch(
       throw new GitConflictError(resolution.unresolved.map(c => c.path));
     }
 
+    // Everything above this line is read-only: planning, merging in
+    // memory, and aborting on an unresolvable conflict. Everything below
+    // writes to the workspace, across many files, with no single atomic
+    // point. A crash in that window used to leave a partly-applied sync
+    // with nothing on disk to say so — the next run would compute a
+    // fresh plan against a workspace that was neither the old state nor
+    // the new one (GIT-C3).
+    //
+    // The sentinel records what was in flight and against which commits,
+    // so the next sync can name the interrupted operation instead of
+    // starting over blindly. Written before the first mutation and
+    // cleared after the last one.
+    //
+    // Sync only. `mode: "publish"` exists in the schema but publish does
+    // not write one: it stages into a temporary worktree and commits
+    // there, so an interrupted publish leaves the user's .loctt/
+    // untouched — either the branch moved or it did not, and the next
+    // publish re-derives everything. There is no half-applied workspace
+    // to warn about, and a sentinel that blocked sync for a failed
+    // publish would be a refusal with nothing behind it.
+    await saveReconcileState(locttDir, {
+      mode: "sync",
+      base_commit: syncState.git.last_synced_commit ?? remoteHead,
+      remote_commit: remoteHead,
+      started_at: new Date().toISOString(),
+    });
+
     await applyPlan(plan, worktreeDir, locttDir);
     // After applyPlan: the merged content must win over whatever the
     // plan copied for that path.
@@ -721,6 +789,10 @@ export async function pullFromLocttBranch(
       },
     };
     await saveSyncState(locttDir, updated);
+
+    // Last write of the reconciliation, so the sentinel goes now. Its
+    // absence is the only signal that the workspace is whole.
+    await clearReconcileState(locttDir);
 
     return {
       updated:

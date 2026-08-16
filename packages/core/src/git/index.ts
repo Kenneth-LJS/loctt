@@ -5,6 +5,7 @@ export {
   commitToLocttBranch,
   fetchLocttBranch,
   GitConflictError,
+  GitReconcileInterruptedError,
   GitSyncError,
   publish,
   pullFromLocttBranch,

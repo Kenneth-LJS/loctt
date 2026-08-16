@@ -38,6 +38,28 @@ export async function loadReconcileState(locttDir: string): Promise<ReconcileSta
   return parseReconcileState(content);
 }
 
+/**
+ * Reads the sentinel if one is present, returning `undefined` when it is
+ * not.
+ *
+ * Absence is the normal case — the file exists only between the moment a
+ * reconciliation starts writing and the moment it finishes — so callers
+ * that check on every sync need "no file" to be an answer rather than an
+ * exception. A file that exists but will not parse still throws: that is
+ * a real problem, and treating it as "nothing in progress" would let a
+ * half-applied sync be silently overwritten by the next one.
+ */
+export async function readReconcileState(
+  locttDir: string,
+): Promise<ReconcileState | undefined> {
+  try {
+    return await loadReconcileState(locttDir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw err;
+  }
+}
+
 export async function saveReconcileState(locttDir: string, state: ReconcileState): Promise<void> {
   await writeFileAtomically(getReconcileStatePath(locttDir), serializeReconcileState(state));
 }

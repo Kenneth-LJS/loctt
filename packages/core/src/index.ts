@@ -107,6 +107,7 @@ export {
   // reach of apps/web — the reason every git error there was reported
   // identically.
   GitConflictError,
+  GitReconcileInterruptedError,
   GitSyncError,
   publish,
   pullFromLocttBranch,
@@ -274,7 +275,7 @@ export {
   saveJournal,
 } from "./state/index.js";
 export { loadSyncState, parseSyncState, saveSyncState, serializeSyncState, SyncStateError } from "./state/index.js";
-export { clearReconcileState, loadReconcileState, parseReconcileState, ReconcileStateError,saveReconcileState, serializeReconcileState } from "./state/index.js";
+export { clearReconcileState, loadReconcileState, parseReconcileState, readReconcileState, ReconcileStateError,saveReconcileState, serializeReconcileState } from "./state/index.js";
 export { allocateKey, appendKeyHistory, initKeyAllocation, KeyAllocationError } from "./state/index.js";
 export { addToKeyIndex, loadKeyIndex, lookupKeyInIndex, rebuildKeyIndex, removeFromKeyIndex, saveKeyIndex } from "./state/index.js";
 export { HistoryParseError } from "./task/history.js";
