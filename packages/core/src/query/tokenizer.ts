@@ -129,6 +129,18 @@ export function tokenize(input: string): Token[] {
       const raw = input.slice(start, i);
       // Date pattern: YYYY-MM-DD with optional time
       if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+        // Shape is not validity. `2024-13-45` matched the regex, became
+        // a DATE token, and then compared against nothing — so a typo'd
+        // date returned an empty result that reads as a real answer.
+        const [y, m, d] = raw.slice(0, 10).split("-").map(Number) as [number, number, number];
+        const probe = new Date(Date.UTC(y, m - 1, d));
+        if (
+          probe.getUTCFullYear() !== y
+          || probe.getUTCMonth() !== m - 1
+          || probe.getUTCDate() !== d
+        ) {
+          throw new TokenizeError(`'${raw.slice(0, 10)}' is not a real date`, start);
+        }
         tokens.push({ type: "DATE", value: raw, position: start });
       } else {
         tokens.push({ type: "NUMBER", value: raw, position: start });
@@ -182,6 +194,23 @@ export function tokenize(input: string): Token[] {
     if (ch === "[" || ch === "]") {
       throw new TokenizeError(
         `unexpected character "${ch}" — lists use parentheses, e.g. status in (backlog, done)`,
+        i,
+      );
+    }
+
+    // The C-style boolean operators are what most people reach for
+    // first, and a bare "unexpected character" gives them nothing to
+    // act on — the DSL spells them as words.
+    const BOOLEAN_ALIASES: Record<string, string> = {
+      "&": "and", "|": "or", "!": "not",
+    };
+    const wordForm = BOOLEAN_ALIASES[ch];
+    if (wordForm !== undefined) {
+      const doubled = input.slice(i, i + 2);
+      const typed = doubled === "&&" || doubled === "||" ? doubled : ch;
+      throw new TokenizeError(
+        `unexpected character "${typed}" — use '${wordForm}', e.g. `
+        + `status = done ${wordForm === "not" ? "and not (…)" : `${wordForm} priority = high`}`,
         i,
       );
     }

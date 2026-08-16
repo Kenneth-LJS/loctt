@@ -42,6 +42,13 @@ not archived = true
 (status = done or status = discarded) and priority = high
 ```
 
+The word forms are the only forms. `&&`, `||` and `!` are rejected, with
+a message naming the word to use instead — they are common enough to
+reach for that failing silently on them would be worse than failing.
+
+Dates are validated, not just shape-checked: `2024-13-45` is an error,
+not a query that matches nothing.
+
 ## Values
 
 - Strings: `"quoted"` or bare words (e.g., `in_progress`)
