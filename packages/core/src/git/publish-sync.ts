@@ -279,7 +279,7 @@ async function pruneEmptyDirs(
  * has a recognisable shape. Adopting an unrelated branch would delete
  * whatever was there, so callers refuse rather than guess.
  */
-function branchHasForeignContent(root: string, branch: string): string[] {
+export function branchHasForeignContent(root: string, branch: string): string[] {
   const listed = gitSafe(["ls-tree", "--name-only", branch], root);
   if (!listed) return [];
   const entries = listed.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -304,7 +304,7 @@ function gitSafe(args: string[], cwd: string): string {
   return result.stdout?.trim() ?? "";
 }
 
-function branchExists(root: string, branch: string): boolean {
+export function branchExists(root: string, branch: string): boolean {
   try {
     git(["rev-parse", "--verify", branch], root);
     return true;
