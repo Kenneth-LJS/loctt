@@ -131,7 +131,9 @@ export const TOOLS: readonly ToolDef[] = [
         options: {
           ...(baseQuery !== undefined ? { query: baseQuery } : {}),
           ...(view !== undefined ? { view } : {}),
-          ...(limit !== undefined ? { limit } : {}),
+          // Limit is applied after the offset slice below, not here:
+          // `listTasks` truncates before we can page, so every page
+          // would return the same first `limit` rows (QRY-C5).
           ...(sortField !== undefined ? { sort: [{ field: sortField, direction }] } : {}),
           ...(projectFilter !== undefined ? { project: projectFilter } : {}),
           ...(includeArchived !== undefined ? { includeArchived } : {}),
@@ -142,16 +144,27 @@ export const TOOLS: readonly ToolDef[] = [
         ctx: buildListContext(tasks),
         onWarning: err => warnings.push(err.message),
       });
-      // `listTasks` applies `limit` but not `offset`; slicing after the
-      // sort gives the same answer without changing what `limit` means.
-      const paged = offset !== undefined ? result.slice(offset) : result;
+      // `result` is now the full match set, so it is also the honest
+      // total — a truncated list that does not say it was truncated
+      // reads as a complete answer.
+      const matched = result.length;
+      const effectiveLimit = limit ?? DEFAULT_LIST_LIMIT;
+      const start = offset ?? 0;
+      const paged = result.slice(start, start + effectiveLimit);
       const summary = paged.map(t => ({
         key: t.frontmatter.key,
         title: t.frontmatter.title,
         status: t.frontmatter.status,
         priority: t.frontmatter.priority,
       }));
-      const body = JSON.stringify(summary, null, 2);
+      const truncated = paged.length < matched;
+      const body = JSON.stringify(
+        truncated
+          ? { matched, returned: paged.length, offset: start, tasks: summary }
+          : summary,
+        null,
+        2,
+      );
       return text(
         warnings.length > 0
           ? `Warning: saved view "${view ?? ""}" — ${warnings.join("; ")}\nResults may be incomplete.\n\n${body}`

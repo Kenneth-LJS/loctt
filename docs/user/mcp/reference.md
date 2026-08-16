@@ -50,7 +50,9 @@ Runs diagnostic checks on the tracker. Output is human-prose lines of the form `
 Create a new task. When the tracker has multiple projects, pass `project` to disambiguate; otherwise the server resolves the target project in this order:
 
 1. **Explicit** — the `project` argument, if supplied.
-2. **Per-user default** — the active user's `default_project` (set via `set_user_setting`).
+2. **Per-user default** — the active user's `default_project`, in
+   `.loctt/users/<id>/settings.yaml`. MCP has no tool that writes it —
+   set it from the web's Settings → My preferences, or edit the file.
 3. **Workspace default** — the project marked default in `projects.yaml`.
 4. **Sole project** — used automatically when only one project is configured.
 
@@ -631,6 +633,13 @@ Deliberately absent from MCP, so an agent does not go looking:
   usable here.
 
 Bulk edits *are* available — see `bulk_update_tasks`.
+
+### Reordering
+
+`reorder_relationship` and `reorder_board` live under
+[Relationships and Ranks](#relationships-and-ranks) — they move a task
+within an ordering rather than changing its fields. Both take `before`
+**or** `after`, never both.
 
 ## Calendar
 
