@@ -44,6 +44,19 @@ import {
 import { assertWorkflowEnumKey } from "../runtime/workflow-assert.js";
 import type { ToolDef } from "../types.js";
 
+/**
+ * Spreads `{ key: value }` when the arg is a non-empty string, else
+ * nothing — so an absent optional field stays absent rather than
+ * becoming `undefined`, which exactOptionalPropertyTypes rejects.
+ */
+function optionalString(
+  args: Record<string, unknown>,
+  key: string,
+): Record<string, string> {
+  const v = args[key];
+  return typeof v === "string" && v !== "" ? { [key]: v } : {};
+}
+
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "get_task",
@@ -156,6 +169,18 @@ export const TOOLS: readonly ToolDef[] = [
       priority: z.string().optional(),
       task_type: z.string().optional(),
       body: z.string().optional(),
+      // Core's createTask has accepted these from the start. Exposing a
+      // narrower set meant an agent had to follow every create with
+      // update_task calls, and the CLI accepted a different subset
+      // again (TSK-C5).
+      assignee: z.string().optional().describe("User id or name."),
+      reporter: z.string().optional().describe("User id or name."),
+      due_date: z.string().optional().describe("YYYY-MM-DD"),
+      start_date: z.string().optional().describe("YYYY-MM-DD"),
+      estimate: z.string().optional(),
+      milestone: z.string().optional().describe("Milestone id or name."),
+      sprint: z.string().optional().describe("Sprint id or name."),
+      labels: z.array(z.string()).optional(),
     },
     handler: async ({ locttDir }, args) => {
       const { workflowConfig } = await loadOptionalConfigs(locttDir);
@@ -190,6 +215,14 @@ export const TOOLS: readonly ToolDef[] = [
             ...(status !== undefined ? { status } : {}),
             ...(priority !== undefined ? { priority } : {}),
             ...(taskType !== undefined ? { task_type: taskType } : {}),
+            ...optionalString(args, "assignee"),
+            ...optionalString(args, "reporter"),
+            ...optionalString(args, "due_date"),
+            ...optionalString(args, "start_date"),
+            ...optionalString(args, "estimate"),
+            ...optionalString(args, "milestone"),
+            ...optionalString(args, "sprint"),
+            ...(Array.isArray(args["labels"]) ? { labels: args["labels"] as string[] } : {}),
             ...(body !== undefined ? { body } : {}),
           },
         });

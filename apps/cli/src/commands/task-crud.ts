@@ -49,7 +49,14 @@ import { assertWorkflowEnumKey } from "../runtime/workflow-assert.js";
  *
  * `rejectUnknownFlags` adds `--cwd` itself and stops at `--`.
  */
-const TASK_CREATE_FLAGS: readonly string[] = ["--project", "--status", "--priority", "--type"];
+const TASK_CREATE_FLAGS: readonly string[] = [
+  "--project", "--status", "--priority", "--type",
+  // Core's createTask has accepted these from the start; exposing only
+  // the first four meant a create had to be followed by `set` calls for
+  // the rest, and MCP accepted a different subset again (TSK-C5).
+  "--assignee", "--reporter", "--due", "--start", "--estimate",
+  "--milestone", "--sprint", "--label", "--body",
+];
 const TASK_LIST_FLAGS: readonly string[] = ["--limit", "--project", "--archived", "--query", "--view", "--sort", "--dir", "--offset"];
 const TASK_SHOW_FLAGS: readonly string[] = [];
 const TASK_DUPLICATE_FLAGS: readonly string[] = ["--title", "--project"];
@@ -79,6 +86,21 @@ export async function create(args: string[], root: string): Promise<void> {
   assertWorkflowEnumKey(workflowConfig, "priority", priority);
   assertWorkflowEnumKey(workflowConfig, "task_type", taskType);
 
+  // Repeatable: `--label a --label b`. getArg returns the last, so the
+  // raw argv is scanned for every occurrence.
+  const labels: string[] = [];
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] === "--label" && args[i + 1] !== undefined) labels.push(args[i + 1] as string);
+  }
+  const assignee = getArg(args, "--assignee");
+  const reporter = getArg(args, "--reporter");
+  const dueDate = getArg(args, "--due");
+  const startDate = getArg(args, "--start");
+  const estimate = getArg(args, "--estimate");
+  const milestone = getArg(args, "--milestone");
+  const sprint = getArg(args, "--sprint");
+  const body = getArg(args, "--body");
+
   const archivedGuard = await loadArchivedGuardConfigs(locttDir);
   const task = await withStateLock(locttDir, async () => {
     const state = await loadState(locttDir);
@@ -93,6 +115,15 @@ export async function create(args: string[], root: string): Promise<void> {
         ...(status !== undefined ? { status } : {}),
         ...(priority !== undefined ? { priority } : {}),
         ...(taskType !== undefined ? { task_type: taskType } : {}),
+        ...(assignee !== undefined ? { assignee } : {}),
+        ...(reporter !== undefined ? { reporter } : {}),
+        ...(dueDate !== undefined ? { due_date: dueDate } : {}),
+        ...(startDate !== undefined ? { start_date: startDate } : {}),
+        ...(estimate !== undefined ? { estimate } : {}),
+        ...(milestone !== undefined ? { milestone } : {}),
+        ...(sprint !== undefined ? { sprint } : {}),
+        ...(labels.length > 0 ? { labels } : {}),
+        ...(body !== undefined ? { body } : {}),
       },
     });
     await saveState(locttDir, state);

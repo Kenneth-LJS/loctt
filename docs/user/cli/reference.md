@@ -397,6 +397,12 @@ loctt create "Add login button"
 loctt create "Fix crash on logout" --project web --priority high --type bug
 ```
 
+Every field `createTask` accepts is settable at creation:
+`--assignee`, `--reporter`, `--due`, `--start`, `--estimate`,
+`--milestone`, `--sprint`, `--body`, and `--label` (repeatable). MCP's
+`create_task` takes the same set, so a task created either way carries
+the same fields without a follow-up `set`.
+
 ### `loctt list`
 
 List tasks with optional filtering. Without `--query` or `--view`, lists the
