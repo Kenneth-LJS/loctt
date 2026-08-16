@@ -427,7 +427,9 @@ Closed since that re-verification:
 | `gitSafe` reads a failed `ls-tree` as "branch is clean" | B | this commit |
 | `pruneEmptyDirs` could delete `.loctt/tasks/` itself | B | this commit |
 | `applyResolution` wrote without `mkdir`, unlike `applyPlan` | B | this commit |
-| `deriveKeyState` could emit `prefix: ""` unvalidated | B | this commit |
+| `deriveKeyState` could emit `prefix: ""` unvalidated | B | `cf3c81a` |
+| Malformed `workflow.yaml` read as absent, disabling validation | D | this commit |
+| MCP `duplicate_task` forwarded an unresolved project name (P-3) | C | this commit |
 
 **Still open, and deliberately so** — each needs a decision or belongs
 with unbuilt work rather than a sweep:
@@ -436,10 +438,9 @@ with unbuilt work rather than a sweep:
   (`server.ts:2684`). Belongs with the M2 task-detail work that owns it.
 - `bulkMove` sets `mutated` after writes, so allocator increments
   persist inconsistently on partial failure.
-- MCP `duplicate_task` still takes an unresolved project (P-3); the CLI
-  twin was fixed.
-- Bare catches in `loadOptionalConfigs`, the MCP comment tools, and
-  `list_config_values` — a malformed config reads as an absent one.
+- Bare catches in the MCP comment tools and `list_config_values` — a
+  malformed config reads as an absent one. (`loadOptionalConfigs` is
+  fixed; these two are the same shape on smaller surfaces.)
 - `&&` / `||` / `!` still get a bare "unexpected character".
 - Invalid dates (`2024-13-45`) pass the tokenizer's shape regex.
 - Boards columns and relationship inverses unvalidated against each

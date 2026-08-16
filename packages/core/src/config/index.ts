@@ -110,11 +110,33 @@ export interface OptionalConfigs {
  * Loads workflow and queries configs, returning undefined for either
  * on failure, plus the workspace-timezone `today`.
  */
+/** True when the error is "the file does not exist", not "it will not parse". */
+function isMissingFile(err: unknown): boolean {
+  return (err as NodeJS.ErrnoException)?.code === "ENOENT";
+}
+
 export async function loadOptionalConfigs(locttDir: string): Promise<OptionalConfigs> {
+  // Absent is fine; malformed is not. These catches used to swallow
+  // both, so a `workflow.yaml` that would not parse read as "no
+  // workflow config" — and every downstream check is guarded on the
+  // config being present, so validation silently stopped. `loctt create
+  // --status not_a_real_status` reported success against a broken file.
+  //
+  // ENOENT means the file is not there, which is a supported state for
+  // both of these. Anything else is a file the user has, that we cannot
+  // read, and continuing as though it were absent is the wrong answer.
   let workflowConfig: WorkflowConfig | undefined;
   let queriesConfig: QueriesConfig | undefined;
-  try { workflowConfig = await loadWorkflowConfig(locttDir); } catch { /* ok */ }
-  try { queriesConfig = await loadQueriesConfig(locttDir); } catch { /* ok */ }
+  try {
+    workflowConfig = await loadWorkflowConfig(locttDir);
+  } catch (err) {
+    if (!isMissingFile(err)) throw err;
+  }
+  try {
+    queriesConfig = await loadQueriesConfig(locttDir);
+  } catch (err) {
+    if (!isMissingFile(err)) throw err;
+  }
   // loadCalendarConfig defaults to UTC when the file is absent, so
   // this always resolves; the catch covers a malformed file.
   let today: string;

@@ -30,7 +30,11 @@ async function seeded(root: string): Promise<void> {
     workflow,
     text.replace(
       "custom_fields: []",
-      "custom_fields:\n  - key: points\n    label: Points\n    type: number",
+      // `multi` and `searchable` are required. This fixture omitted
+      // them and passed anyway, because `loadOptionalConfigs` swallowed
+      // the parse error and ran as though there were no workflow config
+      // at all — so these tests were exercising an unconfigured tracker.
+      "custom_fields:\n  - key: points\n    label: Points\n    type: number\n    multi: false\n    searchable: true",
     ),
     "utf8",
   );

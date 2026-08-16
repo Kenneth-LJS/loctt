@@ -24,10 +24,12 @@ import {
   loadAllTasks,
   loadArchivedGuardConfigs,
   loadOptionalConfigs,
+  loadProjectsConfig,
   loadState,
   lookupTask,
   readHistory,
   resolveProjectIdForUser,
+  resolveProjectIdFromInput,
   saveState,
   setField,
   unsetField,
@@ -346,7 +348,17 @@ export const TOOLS: readonly ToolDef[] = [
       const { workflowConfig } = await loadOptionalConfigs(locttDir);
       const archivedGuard = await loadArchivedGuardConfigs(locttDir);
       const title = args["title"] as string | undefined;
-      const project = args["project"] as string | undefined;
+      const projectArg = args["project"] as string | undefined;
+      // Resolve a name to its id (P-3). The CLI twin was fixed earlier;
+      // this one still forwarded the raw string, so an agent passing
+      // "Backend" got `no key allocation state for entity type
+      // "Backend"` — an allocator internal, and identical to what a
+      // nonexistent project produced.
+      let project: string | undefined;
+      if (projectArg !== undefined) {
+        const projectsConfig = await loadProjectsConfig(locttDir);
+        project = resolveProjectIdFromInput(projectsConfig, projectArg);
+      }
       try {
         const created = await withStateLock(locttDir, async () => {
           const state = await loadState(locttDir);
