@@ -340,16 +340,30 @@ The operation fails correctly; the message does not help.
   stderr — `loctt user current | cut -f2` was reading the failure text
   as a user name.
 
-### E · Missing validation — 6 findings
+### E · Missing validation — 6 findings — **all closed**
 
-Input that should be rejected is accepted.
+Input that should be rejected was accepted.
 
-- Unknown flags ignored on every task command, `delete` included.
-- `PATCH /api/tasks/:ref` has `value: unknown` and no Zod validator.
-- `HistoryEntry` has no schema; `_history.yaml` is cast, never validated.
-- Duplicate `custom_fields[].values[].key` passes both layers.
-- `CalendarConfig.working_days` accepts empty arrays and duplicates.
-- `ProjectsConfig.default` may point at an archived project.
+- ✅ Unknown flags ignored on every task command. **Fixed in Phase 3**
+  (`rejectUnknownFlags`), and group D extended it to the last four
+  commands that still ignored them.
+- ✅ `PATCH /api/tasks/:ref` has `value: unknown` and no Zod validator.
+  **Stale**: the web exposes no per-task update route at all — no PATCH
+  routes exist. That endpoint is M2 work; the validator belongs with it.
+- ✅ `HistoryEntry` has no schema; `_history.yaml` is cast, never
+  validated. Closed structurally in group B: the merge path now checks
+  the parse rather than casting, and `readHistory` already threw on a
+  non-array (CMT-C7).
+- ✅ Duplicate `custom_fields[].values[].key` passes both layers. Now
+  rejected — stored task values are keys, so a duplicate is ambiguous
+  in the one way that cannot be resolved after the fact.
+- ✅ `CalendarConfig.working_days` accepts empty arrays and duplicates.
+  Both now rejected; an empty working week is a tracker where no date
+  calculation lands anywhere.
+- ✅ `ProjectsConfig.default` may point at an archived project.
+  Existence was checked, archived was not — new tasks would land in a
+  project hidden from every picker. Archiving a *non-default* project
+  is still allowed.
 
 ### F · Tests that cannot fail — 6 findings — **4 fixed, 2 open**
 

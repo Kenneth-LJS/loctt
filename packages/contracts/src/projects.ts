@@ -59,5 +59,18 @@ export const ProjectsConfigSchema = z.object({
       path: ["default"],
     });
   }
+  // Existing was checked; archived was not. An archived default is a
+  // project hidden from every picker that new tasks land in anyway —
+  // the user cannot see where their work went.
+  const defaultProject = cfg.projects.find(p => p.id === cfg.default);
+  if (defaultProject?.archived === true) {
+    ctx.addIssue({
+      code: "custom",
+      message:
+        `default project '${defaultProject.name}' is archived — new tasks would `
+        + `land in a project hidden from every picker. Unarchive it or pick another default.`,
+      path: ["default"],
+    });
+  }
 });
 export type ProjectsConfig = z.infer<typeof ProjectsConfigSchema>;
