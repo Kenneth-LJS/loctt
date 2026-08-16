@@ -739,6 +739,10 @@ Deliberately absent from the CLI, so you are not left hunting for them:
   spreadsheet round-trip, which is a UI workflow.
 - **Board and timeline ordering** — `rerank` moves a single task; the
   drag-driven reordering those views do is web only.
+- **Creating and editing saved views** — web only. `loctt views` lists
+  them and `list --view <name>` runs them, so a view saved in the UI is
+  usable here; authoring one means editing `queries.yaml` or using the
+  web editor.
 
 Bulk edits are *not* on this list: `set` and `unset` accept
 comma-separated refs and run as one bulk operation (see above).
