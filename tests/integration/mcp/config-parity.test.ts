@@ -140,4 +140,48 @@ describe("MCP config parity with the CLI (stdio)", () => {
       }
     });
   });
+
+  it("marks a config value it could not read, rather than reporting null", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      const { mkdir, writeFile } = await import("node:fs/promises");
+      await mkdir(path.join(root, ".loctt/local"), { recursive: true });
+      await writeFile(path.join(root, ".loctt/local/sync.yaml"), "git: [unclosed\n", "utf8");
+
+      const client = await startMcpClient(root);
+      try {
+        const result = await client.callTool("list_config_values", {});
+        const items = JSON.parse(result.content[0]?.text ?? "[]") as Array<{
+          key: string;
+          value: unknown;
+          unreadable?: string;
+        }>;
+
+        const gitEnabled = items.find(i => i.key === "git.enabled");
+        expect(gitEnabled).toBeDefined();
+        // `value: null` alone reads as "git mode is off", and an agent
+        // acts on that — presenting a malformed sync.yaml as a
+        // deliberate configuration.
+        expect(gitEnabled?.unreadable).toBeDefined();
+      } finally {
+        await client.close();
+      }
+    });
+  });
+
+  it("does not mark readable values as unreadable", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      const client = await startMcpClient(root);
+      try {
+        const result = await client.callTool("list_config_values", {});
+        const items = JSON.parse(result.content[0]?.text ?? "[]") as Array<{
+          unreadable?: string;
+        }>;
+        // Guards against the marker appearing on every key, which would
+        // make it meaningless.
+        expect(items.every(i => i.unreadable === undefined)).toBe(true);
+      } finally {
+        await client.close();
+      }
+    });
+  });
 });

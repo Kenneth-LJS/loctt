@@ -435,18 +435,19 @@ Closed since that re-verification:
 | `comment` silently dropped `--`-prefixed words from a body | E | `4d14dd3` |
 | Board column naming a nonexistent status | E | this commit |
 | Relationship inverse colliding with a declared relationship | E | this commit |
-| `key_history` accepted empty-string entries (P-7) | E | this commit |
+| `key_history` accepted empty-string entries (P-7) | E | `7d68ded` |
+| `bulkMove` persisted allocator increments inconsistently | B | this commit |
+| `list_config_values` reported unreadable config as `null` | D | this commit |
 
 **Still open, and deliberately so** — each needs a decision or belongs
 with unbuilt work rather than a sweep:
 
 - `handleSetField` passes `value` to `setField` unvalidated
   (`server.ts:2684`). Belongs with the M2 task-detail work that owns it.
-- `bulkMove` sets `mutated` after writes, so allocator increments
-  persist inconsistently on partial failure.
-- Bare catches in the MCP comment tools and `list_config_values` — a
-  malformed config reads as an absent one. (`loadOptionalConfigs` is
-  fixed; these two are the same shape on smaller surfaces.)
+- Bare catches in the MCP comment tools. `list_config_values` is fixed;
+  the comment tools' catches turn a real bug into a routine domain error
+  for an agent, which is the same shape on a smaller surface and worth
+  doing with the M2 comment work that touches them.
 - `HistoryEntry` element shape. Deliberately left: history has no Zod
   schema at all, and adding one is a change to a hot write path that
   belongs with its own design pass, not a sweep. The array-level guard
