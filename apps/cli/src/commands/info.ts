@@ -1,6 +1,10 @@
 import type { TrackerInfo } from "@loctt/core";
 import { getTrackerInfo, loadProjectsConfig, resolveLocttDir } from "@loctt/core";
 
+import { rejectUnknownFlags } from "../runtime/args.js";
+
+const ACCEPTED_FLAGS: readonly string[] = [];
+
 /**
  * `loctt info` — prose summary of tracker state. Safe to run before
  * `loctt init`; prints a hint instead.
@@ -31,7 +35,11 @@ function describeSchema(status: TrackerInfo["schemaStatus"]): string {
   }
 }
 
-export async function run(_args: string[], root: string): Promise<void> {
+export async function run(args: string[], root: string): Promise<void> {
+  // Accepts no flags. Without this an unknown one was dropped and the
+  // command exited 0, reporting success for something it never did —
+  // the same defect PRU-C9 fixed on the entity commands.
+  rejectUnknownFlags(args, ACCEPTED_FLAGS);
   const info = await getTrackerInfo(root);
   if (!info.exists) {
     console.log("No .loctt directory found. Run 'loctt init' to get started.");

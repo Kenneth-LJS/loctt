@@ -319,20 +319,26 @@ Each contradicts a rule in `invariants.md` or `decisions.md`.
 Overlaps A and B — listed separately because an invariant break is a
 decision to revisit, not only a bug to fix.
 
-### D · Bad errors — 8 findings
+### D · Bad errors — 8 findings — **all closed**
 
 The operation fails correctly; the message does not help.
 
-- `duplicate --project Backend` leaks `no key allocation state for
-  entity type "Backend"`, and a nonexistent project gives the identical
-  message.
-- The tokenizer's catch-all names only the offending character, so
-  `status in [a, b]` says `unexpected character "["` with no hint that
-  lists use parentheses.
-- `readTask` surfaces a raw `ENOENT` for a missing task.
-- `UsageError` in an unwrapped command exits 1 where its wrapped
-  siblings exit 2, for identical error text.
-- `user current` prints its failure to stdout while exiting 1.
+- ✅ `duplicate --project Backend` leaks `no key allocation state for
+  entity type "Backend"`. **Fixed in Phase 3** — now `unknown project`.
+- ✅ The tokenizer's catch-all names only the offending character.
+  **Fixed in Phase 3** — `[` now names the parenthesised form.
+- ✅ `readTask` surfaces a raw `ENOENT`. **Fixed in Phase 3** — now
+  `task not found: "Q999"`.
+- ✅ `UsageError` in an unwrapped command exits 1 where its wrapped
+  siblings exit 2. **Worse than reported**: `info`, `views` and `schema`
+  did not validate flags at all, so an unknown one was dropped and the
+  command exited **0**. The dispatcher's comment claimed they "throw no
+  UsageError today", which stopped being true when `doctor` gained
+  validation in Phase 3. All four now validate and are wrapped; every
+  command exits 2 on an unknown flag.
+- ✅ `user current` prints its failure to stdout while exiting 1. Now
+  stderr — `loctt user current | cut -f2` was reading the failure text
+  as a user name.
 
 ### E · Missing validation — 6 findings
 

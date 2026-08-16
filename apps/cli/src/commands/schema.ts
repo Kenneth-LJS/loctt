@@ -1,6 +1,10 @@
 import { effectiveInverseKey, effectiveInverseLabel, isSymmetricRelationship } from "@loctt/contracts";
 import { loadOptionalConfigs, resolveLocttDir } from "@loctt/core";
 
+import { rejectUnknownFlags } from "../runtime/args.js";
+
+const ACCEPTED_FLAGS: readonly string[] = [];
+
 /**
  * `loctt schema` — print the workflow config: key prefix, statuses
  * (with category), priorities (with optional numeric value), task
@@ -10,7 +14,11 @@ import { loadOptionalConfigs, resolveLocttDir } from "@loctt/core";
  * Read-only; no validation or mutation. The boundary the user
  * cares about is "show me what my workflow.yaml actually defines."
  */
-export async function run(_args: string[], root: string): Promise<void> {
+export async function run(args: string[], root: string): Promise<void> {
+  // Accepts no flags. Without this an unknown one was dropped and the
+  // command exited 0, reporting success for something it never did —
+  // the same defect PRU-C9 fixed on the entity commands.
+  rejectUnknownFlags(args, ACCEPTED_FLAGS);
   const locttDir = resolveLocttDir(root);
   const { workflowConfig } = await loadOptionalConfigs(locttDir);
   if (!workflowConfig) {
