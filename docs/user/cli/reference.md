@@ -771,6 +771,16 @@ If the schema is already current, prints a no-op message and exits `0`.
 Most other commands refuse to run when the schema is out of date and direct
 you here.
 
+`migrate` only helps when the tracker records a version older than this
+CLI's. Three states it cannot fix, each of which says so rather than
+sending you here:
+
+| State | What to do |
+|---|---|
+| `.schema-version` missing, empty, or not a positive integer | There is no version to migrate *from*. Repair the file by hand, or run `loctt init --repair`. |
+| Tracker is newer than this LocTT | Update LocTT. No local command can produce a newer version. |
+| A previous migration was interrupted | Restore from the backup named in the sentinel file, then remove the sentinel. |
+
 ## Not on this surface
 
 Deliberately absent from the CLI, so you are not left hunting for them:

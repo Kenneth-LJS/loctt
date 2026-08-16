@@ -237,6 +237,7 @@ export {
   readSchemaVersion,
   requireSupportedSchema,
   SchemaTooNewError,
+  SchemaUnmigratableError,
   SchemaVersionError,
   withMigrationLock,
   writeSchemaVersion,

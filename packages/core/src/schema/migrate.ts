@@ -11,6 +11,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   readSchemaVersion,
   SchemaTooNewError,
+  SchemaUnmigratableError,
   SchemaVersionError,
   writeSchemaVersion,
 } from "./version.js";
@@ -46,9 +47,11 @@ export interface MigrationPlan {
 export async function planMigration(locttDir: string): Promise<MigrationPlan> {
   const recorded = await readSchemaVersion(locttDir);
   if (recorded === null) {
-    throw new SchemaVersionError(
+    throw new SchemaUnmigratableError(
       `No .schema-version file found in ${locttDir}. ` +
       `This tracker predates schema versioning and must be re-initialized.`,
+      `Re-initialize the tracker with 'loctt init --repair'. 'loctt migrate' cannot help: `
+      + `there is no recorded version to migrate from.`,
     );
   }
   if (recorded > CURRENT_SCHEMA_VERSION) {
@@ -93,9 +96,11 @@ export async function migrateToCurrent(
   // Pre-check before taking the lock so the no-op fast path is cheap.
   const recorded = await readSchemaVersion(locttDir);
   if (recorded === null) {
-    throw new SchemaVersionError(
+    throw new SchemaUnmigratableError(
       `No .schema-version file found in ${locttDir}. ` +
       `This tracker predates schema versioning and must be re-initialized.`,
+      `Re-initialize the tracker with 'loctt init --repair'. 'loctt migrate' cannot help: `
+      + `there is no recorded version to migrate from.`,
     );
   }
   if (recorded > CURRENT_SCHEMA_VERSION) {
@@ -203,17 +208,20 @@ export async function requireSupportedSchema(locttDir: string): Promise<void> {
   // (typically by restoring from the backup recorded in the sentinel).
   const sentinelPath = getSchemaMigrationInProgressPath(locttDir);
   if (await fileExists(sentinelPath)) {
-    throw new SchemaVersionError(
+    throw new SchemaUnmigratableError(
       `A schema migration was interrupted mid-run. ` +
       `See ${sentinelPath} for the recovery instructions and ` +
       `restore from the backup it references before retrying.`,
+      `Restore from the backup named in ${sentinelPath}, then remove the sentinel.`,
     );
   }
   const recorded = await readSchemaVersion(locttDir);
   if (recorded === null) {
-    throw new SchemaVersionError(
+    throw new SchemaUnmigratableError(
       `No .schema-version file found in ${locttDir}. ` +
       `This tracker predates schema versioning and must be re-initialized.`,
+      `Re-initialize the tracker with 'loctt init --repair'. 'loctt migrate' cannot help: `
+      + `there is no recorded version to migrate from.`,
     );
   }
   if (recorded > CURRENT_SCHEMA_VERSION) {

@@ -47,18 +47,30 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "doctor",
-    description: "Runs diagnostic checks on the tracker. Output is human-prose. Useful for surfacing problems to the user; not designed for chained tool calls. Pass `rebuild_index: true` to also rebuild the key-lookup cache (recovery path for out-of-band frontmatter edits).",
+    description: "Runs diagnostic checks on the tracker. Returns structured JSON {healthy, counts:{ok,warn,error}, checks:[{name,status,message}]} — branch on `healthy` or on a check's `status` rather than reading the messages. `healthy` is false when any check is in error. Pass `rebuild_index: true` to also rebuild the key-lookup cache (recovery path for out-of-band frontmatter edits).",
     inputSchema: {
       rebuild_index: z.boolean().optional().describe("If true, rebuild the on-disk key index after checks. Use after manual frontmatter edits to a task's key or key_history."),
     },
     handler: async ({ root }, args) => {
       const rebuildIndex = args["rebuild_index"] === true;
       const checks = await runDoctor(root, { rebuildIndex });
-      const lines = checks.map(c => {
-        const icon = c.status === "ok" ? "ok" : c.status === "warn" ? "warn" : "error";
-        return `[${icon}] ${c.name}: ${c.message}`;
-      });
-      return text(lines.join("\n"));
+      // Structured, not prose (ONB-C7). An agent deciding whether to
+      // proceed had to substring-match "[error]" in a human sentence —
+      // which silently stops working the moment the wording changes, and
+      // gives a false "healthy" when it does.
+      const counts = {
+        ok: checks.filter(c => c.status === "ok").length,
+        warn: checks.filter(c => c.status === "warn").length,
+        error: checks.filter(c => c.status === "error").length,
+      };
+      return text(JSON.stringify({
+        // Warnings do not make a tracker unhealthy: they name things
+        // worth knowing (a stale key index, a pending rename) that do not
+        // block the next operation. Errors do.
+        healthy: counts.error === 0,
+        counts,
+        checks: checks.map(c => ({ name: c.name, status: c.status, message: c.message })),
+      }, null, 2));
     },
   },
   {
