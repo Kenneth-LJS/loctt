@@ -607,6 +607,13 @@ export async function applyWorkflowEdit(
     // either cleans up the data first or reverts the type change.
     assertCustomFieldTypeChangesAreSafe(prev, next, tasks);
 
+    // Validate before journaling, not just before writing. The journal
+    // entry is the replay instruction: an invalid config recorded there
+    // is re-applied by the next withStateLock caller, so a refused edit
+    // would keep failing every later operation — and the failure names
+    // the *original* mistake, which the user has since moved on from.
+    assertWorkflowConfigValid(next);
+
     // Crash-recovery journal: append an entry carrying the full
     // `next` config + remap directive BEFORE any task or config
     // write. If we crash between writes, the next withStateLock
@@ -656,6 +663,13 @@ async function executeWorkflowRemap(
   // Validate before touching anything. Task rewrites and list-view
   // pruning below are real writes, and a config that will be rejected at
   // the end must not get that far.
+  //
+  // Redundant for applyWorkflowEdit, which now validates before it
+  // journals — but this function is also the journal replay entry point
+  // (registerRecoveryHandler below), and a replay must not trust the
+  // entry it is replaying. Kept deliberately; no test covers the replay
+  // path with an invalid entry because writing one requires corrupting
+  // the journal by hand.
   assertWorkflowConfigValid(next);
 
   const nextStatusKeys = new Set(next.statuses.map(s => s.key));
