@@ -1063,7 +1063,7 @@ describe("applyWorkflowEdit — custom field enum values", () => {
     await expect(applyWorkflowEdit(locttDir, next)).rejects.toThrow();
   });
 
-  it("drops the whole field when the only remaining multi value is dropped", async () => {
+  it("refuses to empty an enum, which would leave it unusable", async () => {
     // Edge case: a multi-enum with one value, that value gets remapped
     // to null. The field should disappear entirely (not be left as []).
     const wf0 = await loadWorkflowConfig(locttDir);
@@ -1091,9 +1091,32 @@ describe("applyWorkflowEdit — custom field enum values", () => {
         f.key === "tags" ? { ...f, values: [] } : f,
       ),
     };
-    await applyWorkflowEdit(locttDir, next, {
+
+    // Emptying an enum is now rejected. It used to be accepted and left
+    // a field declared as a closed enum with nothing that could satisfy
+    // it — unusable, and (because core task-validation is guarded
+    // `type === "enum" && def.values`) matching no branch, so every
+    // later write to that field went unvalidated.
+    //
+    // Nothing in workflow-write removes a custom field definition, so
+    // this was never "dropping the whole field" despite the old name:
+    // only the task value went, and the broken definition stayed on
+    // disk. Removing a field is a separate edit.
+    await expect(applyWorkflowEdit(locttDir, next, {
       custom_fields: { tags: { a: null } },
-    });
+    })).rejects.toThrow(/values is required/);
+
+    // The workflow on disk is unchanged — the invalid edit did not land.
+    const onDisk = await loadWorkflowConfig(locttDir);
+    expect(onDisk?.custom_fields?.[0]?.values).toEqual([{ key: "a", label: "A" }]);
+
+    // NOTE: the task's value *is* already gone at this point.
+    // applyWorkflowEdit rewrites tasks before saveWorkflowConfig
+    // validates, so a rejected edit leaves the task rewrites behind. The
+    // journal makes that recoverable, but the ordering is wrong and is
+    // recorded separately in audit-findings.md. Asserting the current
+    // behaviour rather than the desired one, so this test does not
+    // quietly start passing for the wrong reason once that is fixed.
     const tasks = await loadAllTasks(locttDir);
     expect(tasks[0]?.frontmatter.fields?.["tags"]).toBeUndefined();
   });
