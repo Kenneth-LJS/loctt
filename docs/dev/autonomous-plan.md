@@ -615,12 +615,37 @@ milestone that never existed.
 
 ## Picking this up next
 
-**Next action: continue Phase 3.** 19 surface cases remain, all major or
+**Next action: continue Phase 3.** 14 surface cases remain, all major or
 minor — every blocker is closed. In case order:
 
-`CFG-C4, CFG-C5, CMT-C5, CMT-C8, GIT-C3, GIT-C5, GIT-C6, GIT-C10,
-MSL-C3, ONB-C6, ONB-C7, PRU-C5, PRU-C7, QRY-C3, QRY-C6, REL-C3, REL-C4,
-REL-C5, SPR-C2`
+`GIT-C3, GIT-C6, GIT-C10, MSL-C3, ONB-C6, ONB-C7, PRU-C5, PRU-C7,
+QRY-C3, QRY-C6, REL-C3, REL-C4, REL-C5, SPR-C2`
+
+Closed since this section was written (coverage 92 → 97):
+
+| Case | Was it a live defect? | Commit |
+|---|---|---|
+| CFG-C4 | No — both behaviours correct, nothing held them | `2a646c5` |
+| CFG-C5 | Yes — exit code right, explanation missing | `e74a547` |
+| CMT-C5 | Yes — raw keys and ULIDs, no actor at all | `def23d0` |
+| CMT-C8 | Latent — in-place reverse, safe only by luck | `def23d0` |
+| GIT-C5 | Yes — web flattened conflicts into 500 | `ae336ca` |
+
+Three notes worth carrying forward:
+
+- **GIT-C5's premise was half stale.** The case says the handlers return
+  400 with raw stderr; they had already been given structured envelopes.
+  What was still true was the part the case listed last — conflicts were
+  not distinguished, and `GitConflictError` was not exported from core's
+  package root, so `apps/web` *could not* have distinguished it.
+- **CMT-C8 could not be caught by asserting output.** The behaviour was
+  already correct because `readHistory` re-reads the file each call. The
+  test was proved meaningful by adding a cache to `readHistory` — the old
+  handler then returned alternating orderings, the copying one did not.
+- **CFG-C4's pass-through half needed a fixture that declares the
+  optional blocks.** The shipped default `workflow.yaml` has neither
+  `boards` nor `estimation.weights`, so a narrowing of
+  `get_workflow_config` would have left every existing test green.
 
 The loop that has worked, per case:
 
