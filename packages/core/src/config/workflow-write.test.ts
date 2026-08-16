@@ -42,6 +42,61 @@ async function makeTaskWithStatus(status: string): Promise<void> {
   });
 }
 
+describe("applyWorkflowEdit — priority value (D20)", () => {
+  /**
+   * `value` is what `order by priority` sorts on; it is never displayed.
+   * D20 says a reorder recomputes it as 1..N. Nothing did: no
+   * recomputation existed in core, cli, mcp or web, so the numbers only
+   * ever came from whatever was written to workflow.yaml — including
+   * duplicates, gaps, zero and negatives, all of which make the sort
+   * arbitrary or wrong in a way nobody can see.
+   */
+
+  it("renumbers 1..N in list order when priorities are reordered", async () => {
+    const wf = await loadWorkflowConfig(locttDir);
+    const reversed = [...wf.priorities].reverse();
+
+    await applyWorkflowEdit(locttDir, { ...wf, priorities: reversed });
+
+    const after = await loadWorkflowConfig(locttDir);
+    expect(after.priorities.map(p => p.value)).toEqual(
+      reversed.map((_, i) => i + 1),
+    );
+    // The order itself is preserved — renumbering must not re-sort.
+    expect(after.priorities.map(p => p.key)).toEqual(reversed.map(p => p.key));
+  });
+
+  it("closes gaps and duplicates rather than storing them", async () => {
+    const wf = await loadWorkflowConfig(locttDir);
+    const mangled = wf.priorities.map(p => ({ ...p, value: 5 }));
+
+    await applyWorkflowEdit(locttDir, { ...wf, priorities: mangled });
+
+    const after = await loadWorkflowConfig(locttDir);
+    // Every value distinct, contiguous, starting at 1 — duplicates make
+    // `order by priority` arbitrary between the tied entries.
+    expect(after.priorities.map(p => p.value)).toEqual(
+      mangled.map((_, i) => i + 1),
+    );
+  });
+
+  it("renumbers after a priority is removed", async () => {
+    const wf = await loadWorkflowConfig(locttDir);
+    const fewer = wf.priorities.slice(1);
+
+    await applyWorkflowEdit(
+      locttDir,
+      { ...wf, priorities: fewer },
+      { priorities: { [wf.priorities[0]!.key]: fewer[0]!.key } },
+    );
+
+    const after = await loadWorkflowConfig(locttDir);
+    expect(after.priorities.map(p => p.value)).toEqual(
+      fewer.map((_, i) => i + 1),
+    );
+  });
+});
+
 describe("applyWorkflowEdit", () => {
   it("rewrites tasks when a status is removed and remap supplied", async () => {
     // Uses `wont_do`, not `backlog`: `backlog` is the default status and

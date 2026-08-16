@@ -411,6 +411,16 @@ export async function commitToLocttBranch(
 
   const worktreeDir = join(getLocalDir(locttDir), ".worktree-publish");
   await rm(worktreeDir, { recursive: true, force: true });
+  // `rm` clears the directory; it does not clear git's registration in
+  // .git/worktrees. A hard kill (SIGKILL, power loss) skips the finally
+  // block that would have removed it, leaving a worktree git still
+  // believes exists — and the next `add` then dies with "missing but
+  // already registered worktree", which names a path the user has never
+  // seen. Prune is a no-op when nothing is stale.
+  //
+  // invariants.md: a crash leaves either something the tracker finishes
+  // or something it refuses to boot on, never something it ignores.
+  gitSafe(["worktree", "prune"], root);
 
   try {
     git(["worktree", "add", worktreeDir, branch], root);
@@ -583,6 +593,16 @@ export async function pullFromLocttBranch(
 
   const worktreeDir = join(getLocalDir(locttDir), ".worktree-sync");
   await rm(worktreeDir, { recursive: true, force: true });
+  // `rm` clears the directory; it does not clear git's registration in
+  // .git/worktrees. A hard kill (SIGKILL, power loss) skips the finally
+  // block that would have removed it, leaving a worktree git still
+  // believes exists — and the next `add` then dies with "missing but
+  // already registered worktree", which names a path the user has never
+  // seen. Prune is a no-op when nothing is stale.
+  //
+  // invariants.md: a crash leaves either something the tracker finishes
+  // or something it refuses to boot on, never something it ignores.
+  gitSafe(["worktree", "prune"], root);
 
   try {
     git(["worktree", "add", worktreeDir, branch], root);

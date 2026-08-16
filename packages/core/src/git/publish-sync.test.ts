@@ -240,6 +240,50 @@ describe("publish-sync", () => {
       expect(history).toContain("u-local");
     });
 
+    it("recovers from a worktree left registered by a hard kill", async () => {
+      // Cleanup runs in a finally block with an rm fallback, so ordinary
+      // failures are handled. A SIGKILL or power loss is different:
+      // nothing runs, and git keeps the worktree registered in
+      // .git/worktrees even though the directory is gone. `rm` before
+      // `worktree add` does not clear that registration, so the next
+      // sync died with "missing but already registered worktree" — raw
+      // git plumbing naming a path the user has never seen, for an
+      // operation they would not connect to last week's crash.
+      const state = await loadState(locttDir);
+      const task = await createTask({
+        locttDir, state, options: { project: taskProjectId, title: "Before crash" },
+      });
+      await saveState(locttDir, state);
+      await publish(locttDir, root);
+
+      // The branch must move, or sync returns early on
+      // `last_synced_commit === remoteHead` and never touches a worktree
+      // — which is how an earlier version of this test passed with the
+      // fix removed.
+      const published = await readFile(
+        join(locttDir, "tasks", task.frontmatter.id, "task.md"), "utf-8",
+      );
+      await commitOnBranch(async wt => {
+        await writeFile(join(wt, "tasks", task.frontmatter.id, "task.md"),
+          published.replace(/^title: .*$/m, "title: Renamed on branch")
+            .replace(/^updated_at: .*$/m, "updated_at: 2099-01-01T00:00:00.000Z"));
+      }, "move the branch");
+
+      // Simulate the hard kill: register a worktree, then delete only
+      // the directory, exactly as an interrupted run leaves things.
+      const stale = join(locttDir, "local", ".worktree-sync");
+      execSync(`git worktree add "${stale}" loctt`, { cwd: root, stdio: "ignore" });
+      await rm(stale, { recursive: true, force: true });
+
+      // Precondition: git must actually consider it stale, or this test
+      // proves nothing about prune.
+      expect(execSync("git worktree list", { cwd: root }).toString()).toMatch(/prunable/);
+
+      // Must complete rather than dying on the stale registration.
+      const result = await sync(locttDir, root);
+      expect(result.updated).toBe(true);
+    });
+
     it("keeps both sides' structured edits to different fields", async () => {
       // What whole-record LWW lost, end to end. Branch sets status and
       // records it; local sets priority through the real write path.
