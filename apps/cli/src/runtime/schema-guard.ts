@@ -22,6 +22,13 @@ import { fileURLToPath } from "node:url";
  *  - help/usage commands don't touch the tracker.
  *  - `mcp` and `ui` are long-lived servers that run their own
  *    per-request boot guard.
+ *  - `doctor` explains a tracker that is failing, so the failure must
+ *    not block it. invariants.md: throwing "takes away the tools to
+ *    diagnose the tracker — including `doctor`, whose job is to explain
+ *    the very state that is failing". The CLI's own prefix-rename
+ *    warning says "Run `loctt doctor` for detail", which could not work
+ *    while the guard refused it. Doctor reports the schema mismatch as
+ *    a failing check instead.
  *
  * `undefined` is in the set so `loctt` with no command prints help
  * instead of failing the schema check first.
@@ -29,6 +36,7 @@ import { fileURLToPath } from "node:url";
 export const SCHEMA_GUARD_EXEMPT_COMMANDS: ReadonlySet<string | undefined> = new Set([
   "init",
   "migrate",
+  "doctor",
   "mcp",
   "ui",
   "help",

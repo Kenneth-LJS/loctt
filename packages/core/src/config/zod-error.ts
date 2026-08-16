@@ -171,3 +171,24 @@ function asScalarString(value: unknown, fallback: string): string {
   }
   return fallback;
 }
+
+/**
+ * Formats a caught value if it is a ZodError, else returns null.
+ *
+ * Exists so surfaces without a zod dependency — the CLI — can turn a
+ * validator error into prose without importing zod or knowing its
+ * shape. Printing a ZodError's `.message` raw yields the serialized
+ * issue array, which is what TSK-C1 forbids.
+ */
+export function formatIfZodError(err: unknown, prefix: string): string | null {
+  // Structural check, not `instanceof`: this module imports zod as a
+  // type only, and keeping it that way means core does not pull zod
+  // into every consumer's runtime. A ZodError is identifiable by its
+  // issues array regardless of which zod copy produced it — which also
+  // makes this correct across duplicated installs, where instanceof
+  // silently fails.
+  if (err === null || typeof err !== "object") return null;
+  const issues = (err as { issues?: unknown }).issues;
+  if (!Array.isArray(issues)) return null;
+  return formatZodIssues(prefix, err as z.ZodError);
+}

@@ -327,11 +327,11 @@ describe("publish-sync", () => {
       await sync(locttDir, root);
 
       const after = await readFile(join(dir, "task.md"), "utf-8");
-      // eslint-disable-next-line no-console
+       
       console.log("MERGED TASK:\n" + after);
-      // eslint-disable-next-line no-console
+       
       const h = await readFile(join(dir, "_history.yaml"), "utf-8");
-      // eslint-disable-next-line no-console
+       
       console.log("HAS status field_change:", h.includes("field: status"), "| entries:", (h.match(/^- timestamp/gm) ?? []).length);
       // The branch's status won its own field...
       expect(after).toContain("status: in_progress");

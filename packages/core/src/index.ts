@@ -89,6 +89,7 @@ export {
 export { QueriesConfigError } from "./config/queries.js";
 export type { ValidationError } from "./config/validation.js";
 export { WorkflowConfigError } from "./config/workflow.js";
+export { formatIfZodError } from "./config/zod-error.js";
 export type { SchemaStatus, TrackerInfo } from "./diagnostics/index.js";
 export type { CheckStatus,DiagnosticCheck } from "./diagnostics/index.js";
 export { getTrackerInfo } from "./diagnostics/index.js";

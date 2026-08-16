@@ -11,6 +11,8 @@ import { validateTaskAgainstWorkflow,validateWorkflowConfig } from "../config/va
 import { loadWorkflowConfig } from "../config/workflow.js";
 import { getConfigDir, getListViewConfigPath, getQueriesConfigPath, getStateFilePath, getTasksDir, getUsersDir, getWorkflowConfigPath, resolveLocttDir } from "../paths/index.js";
 import { readPrefixRenameState } from "../projects/prefix.js";
+import { isMigrationLocked } from "../schema/lock.js";
+import { CURRENT_SCHEMA_VERSION, readSchemaVersion } from "../schema/version.js";
 import { loadKeyIndex, rebuildKeyIndex } from "../state/key-index.js";
 import { loadState } from "../state/state.js";
 import { readTask } from "../task/io.js";
@@ -39,6 +41,84 @@ export interface DoctorOptions {
   readonly rebuildIndex?: boolean;
 }
 
+/**
+ * Reports the tracker's schema version against the one this build
+ * supports, and any interrupted migration.
+ *
+ * Separated out because it is the one check that must survive states
+ * the others cannot run in — a tracker this build refuses to open is
+ * exactly when someone runs `doctor`.
+ */
+async function checkSchemaVersion(
+  locttDir: string,
+  checks: DiagnosticCheck[],
+): Promise<void> {
+  const name = "schema version";
+
+  // A migration that died partway is the more urgent problem: the
+  // version on disk may be either side of the change.
+  if (await isMigrationLocked(locttDir)) {
+    checks.push({
+      name,
+      status: "error",
+      message:
+        `an interrupted migration is in progress — `
+        + `.loctt/.schema-migration-in-progress records the backup to restore from. `
+        + `Do not run other commands until it is resolved`,
+    });
+    return;
+  }
+
+  let onDisk: number | null;
+  try {
+    onDisk = await readSchemaVersion(locttDir);
+  } catch (err) {
+    checks.push({
+      name,
+      status: "error",
+      message: `${(err as Error).message} — expected ${String(CURRENT_SCHEMA_VERSION)}`,
+    });
+    return;
+  }
+
+  if (onDisk === null) {
+    // Distinct from "outdated": there is no version to migrate *from*,
+    // so `loctt migrate` is not the answer.
+    checks.push({
+      name,
+      status: "error",
+      message:
+        `no .schema-version file — this tracker predates schema versioning `
+        + `and must be re-initialized (expected ${String(CURRENT_SCHEMA_VERSION)})`,
+    });
+    return;
+  }
+
+  if (onDisk > CURRENT_SCHEMA_VERSION) {
+    checks.push({
+      name,
+      status: "error",
+      message:
+        `on disk ${String(onDisk)}, this build supports ${String(CURRENT_SCHEMA_VERSION)} `
+        + `— update LocTT rather than migrating down`,
+    });
+    return;
+  }
+
+  if (onDisk < CURRENT_SCHEMA_VERSION) {
+    checks.push({
+      name,
+      status: "error",
+      message:
+        `on disk ${String(onDisk)}, this build supports ${String(CURRENT_SCHEMA_VERSION)} `
+        + `— run loctt migrate`,
+    });
+    return;
+  }
+
+  checks.push({ name, status: "ok", message: `${String(onDisk)} (current)` });
+}
+
 /** Runs diagnostic checks on a .loctt tracker. */
 export async function runDoctor(
   root: string,
@@ -53,6 +133,11 @@ export async function runDoctor(
     return checks;
   }
   checks.push({ name: ".loctt directory", status: "ok", message: "exists" });
+
+  // Schema version. Doctor is exempt from the boot guard precisely so it
+  // can report this: every other command refuses to run on a mismatch,
+  // and the guard's message is all the user would otherwise see.
+  await checkSchemaVersion(locttDir, checks);
 
   // Check config directory
   if (!(await fileExists(getConfigDir(locttDir)))) {
