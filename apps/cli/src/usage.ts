@@ -45,6 +45,9 @@ Commands:
   rerank <source> <relationship> <target> [--before <task>] [--after <task>]
   board-rerank <task> [--before <task>] [--after <task>]
   create <title> [--project <key>] [--status <s>] [--priority <p>] [--type <t>]
+                                   [--assignee <u>] [--reporter <u>] [--due <d>]
+                                   [--start <d>] [--estimate <e>] [--milestone <m>]
+                                   [--sprint <s>] [--label <l>]... [--body <text>]
   list [--query <q>] [--view <v>] [--limit <n>] [--archived] [--project <key>]
                                    [--sort <field>] [--dir <asc|desc>] [--offset <n>]
                                    --archived: include archived tasks
