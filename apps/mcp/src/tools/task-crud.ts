@@ -90,6 +90,9 @@ export const TOOLS: readonly ToolDef[] = [
       project: z.string().optional().describe("Filter to a specific project. AND-merges with `query` if both are supplied."),
       limit: z.number().optional().describe(`Max results (default ${DEFAULT_LIST_LIMIT})`),
       include_archived: z.boolean().optional().describe("If true, include archived tasks (default false). Ignored when a query already mentions `archived` or when a saved view is used."),
+      sort: z.string().optional().describe("Field to order by, e.g. priority, due_date, updated_at. Priority orders by its configured value, not alphabetically."),
+      direction: z.enum(["asc", "desc"]).optional().describe("Sort direction (default asc)."),
+      offset: z.number().optional().describe("Rows to skip, for paging past the first `limit`."),
     },
     handler: async ({ locttDir }, args) => {
       const tasks = await loadAllTasks(locttDir);
@@ -99,6 +102,12 @@ export const TOOLS: readonly ToolDef[] = [
       const view = args["view"] as string | undefined;
       const limit = args["limit"] as number | undefined;
       const includeArchived = args["include_archived"] as boolean | undefined;
+      // Core supported both from the start; only the web exposed them,
+      // so an agent wanting "the highest-priority open task" had to
+      // fetch everything and order it itself (QRY-C4).
+      const sortField = args["sort"] as string | undefined;
+      const direction = (args["direction"] as "asc" | "desc" | undefined) ?? "asc";
+      const offset = args["offset"] as number | undefined;
       // A saved view referencing a since-deleted custom field runs
       // anyway, but matches less than its author intended. An agent
       // has no stderr to read, so surface it in the response — a bare
@@ -110,6 +119,7 @@ export const TOOLS: readonly ToolDef[] = [
           ...(baseQuery !== undefined ? { query: baseQuery } : {}),
           ...(view !== undefined ? { view } : {}),
           ...(limit !== undefined ? { limit } : {}),
+          ...(sortField !== undefined ? { sort: [{ field: sortField, direction }] } : {}),
           ...(projectFilter !== undefined ? { project: projectFilter } : {}),
           ...(includeArchived !== undefined ? { includeArchived } : {}),
           ...(today !== undefined ? { today } : {}),
@@ -119,7 +129,10 @@ export const TOOLS: readonly ToolDef[] = [
         ctx: buildListContext(tasks),
         onWarning: err => warnings.push(err.message),
       });
-      const summary = result.map(t => ({
+      // `listTasks` applies `limit` but not `offset`; slicing after the
+      // sort gives the same answer without changing what `limit` means.
+      const paged = offset !== undefined ? result.slice(offset) : result;
+      const summary = paged.map(t => ({
         key: t.frontmatter.key,
         title: t.frontmatter.title,
         status: t.frontmatter.status,

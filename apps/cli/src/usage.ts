@@ -46,6 +46,7 @@ Commands:
   board-rerank <task> [--before <task>] [--after <task>]
   create <title> [--project <key>] [--status <s>] [--priority <p>] [--type <t>]
   list [--query <q>] [--view <v>] [--limit <n>] [--archived] [--project <key>]
+                                   [--sort <field>] [--dir <asc|desc>] [--offset <n>]
                                    --archived: include archived tasks
                                    (hidden by default; saved views are respected as authored)
   show <task>

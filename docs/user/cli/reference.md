@@ -432,6 +432,14 @@ loctt list --query 'status = doing and assignee = me' --project web
 loctt list --archived
 ```
 
+`--sort <field>` orders the result; `--dir asc|desc` sets the direction
+(default `asc`). Sorting by `priority` uses each priority's configured
+`value`, not its key — so `low … critical` rather than alphabetical.
+`--offset <n>` skips rows, for paging past the first `--limit`.
+
+MCP's `list_tasks` takes the same three as `sort`, `direction` and
+`offset`, so a saved ordering reads identically from either surface.
+
 ### `loctt show`
 
 Display a task's full details: metadata, relationships, attachments, and body.
