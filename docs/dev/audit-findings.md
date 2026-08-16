@@ -231,17 +231,8 @@ mutation of the specific behaviour.
 | Four query forms parsed, validated, then matched nothing | `50ebb21` | Also fixes the `[` message, the repo's most-repeated DSL mistake |
 | `assignProvisionalPrefixes` sorted on a phantom field | `378bb4f` | One of its tests was asserting the bug |
 | `type: enum` with no values accepted anything | `73af1d6` | Conditional requirement, matching `preset_values` |
+| `applyWorkflowEdit` wrote tasks before validating the config | *this commit* | Found while fixing the enum hole; a refused edit used to leave task rewrites on disk |
 | `mergeTask` was whole-record LWW, not per-field | `62f6438` | Resolved from history; hand-edits scoped out by decision, `merge_resolved` records any fallback |
-
-**Found while fixing — `applyWorkflowEdit` writes before it validates.**
-`workflow-write.ts:663` rewrites every affected task, prunes list views,
-and *then* calls `saveWorkflowConfig`, which is the only place the new
-config is validated. So a rejected edit leaves the task rewrites on disk.
-Surfaced when tightening the enum schema: the edit now fails, and the
-task's value is already gone. The journal makes it recoverable, but the
-order is backwards — validate the config first, then write. Not fixed
-here; `workflow-write.test.ts` asserts the current behaviour explicitly
-so the test cannot start passing for the wrong reason once it is.
 
 **Found while fixing, not yet addressed:** the non-interactive refusal
 message is duplicated verbatim in `confirmInteractive` and
