@@ -626,6 +626,9 @@ Deliberately absent from MCP, so an agent does not go looking:
 - **Export (CSV / JSON)** — web only. `list_tasks` returns structured
   JSON, which is what an agent wants; export exists for the spreadsheet
   round-trip.
+- **Creating and editing saved views** — web only. `list_views` reads
+  them and `list_tasks` accepts a `view`, so a view saved in the UI is
+  usable here.
 
 Bulk edits *are* available — see `bulk_update_tasks`.
 
