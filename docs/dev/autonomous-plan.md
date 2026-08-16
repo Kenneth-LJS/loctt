@@ -53,7 +53,7 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 |---|---|---|
 | 1 · Partition | ✅ | All 21 tickets carry a `Cases:` line; gate passes. The 28 cases asserting two unticketed views are **resolved as a ticket gap**, not a scope cut — see *Blocker, resolved*. |
 | 2 · Measure | ✅ | Measured (CLI 17/49, MCP 26/75) and the blocker it raised is **cleared**: both reference docs corrected to the shipped API, every example executed. See *Blocker 2, resolved*. |
-| 3 · Surface gaps | 🔵 | **49 of 68 closed**: blockers **23/23**, major **18/29**, minor **8/16**. Surface coverage 46 → 92. See *Phase 3 log*. |
+| 3 · Surface gaps | ✅ | **68 of 68 closed**: blockers 23/23, major 29/29, minor 16/16. Surface coverage 46 → 111. See *Phase 3 log*. |
 | 4 · Structural audit | 🔵 | Reading **done**: 8 slices, ~18,700 lines, **124 findings** in [`audit-findings.md`](audit-findings.md). **Group A (silent wrong answers) is fixed** — 9 of 9, each with a test shown to fail first and killed by mutation. Groups B–G outstanding. |
 | 5 · UI build | ⬜ | M1.4 is 🔵 from earlier work, predating this plan |
 
@@ -615,12 +615,65 @@ milestone that never existed.
 
 ## Picking this up next
 
-**Next action: continue Phase 3.** 8 surface cases remain, all major or
-minor — every blocker is closed. In case order:
+**Next action: Phase 4, groups B–F.** Phase 3 is complete — all 68
+surface cases closed and tagged — and Blocker 1's two missing views are
+ticketed as M3.5 and M4.9.
 
-`PRU-C5, PRU-C7, QRY-C3, QRY-C6, REL-C3, REL-C4, REL-C5, SPR-C2`
+Order from here, agreed with the user:
 
-Closed since this section was written (coverage 92 → 103):
+1. **Phase 4, groups B–F** (~33 findings). Group G (~79 cosmetic) waits
+   until after the UI build: fixing surface polish in code the UI is
+   about to reshape means doing it twice.
+2. **Build M3.5 and M4.9.** Both carry server work despite an initial
+   "frontend-only" claim that was wrong, and both carry an open decision
+   recorded on the ticket.
+3. **Phase 5**, M1.4 → M4.8.
+4. **Phase 4, group G**, last.
+
+Treat the 124 audit findings as a reading queue, not a fix list. Roughly
+a third of Phase 3's "defects" were not defects, and the same rate should
+be expected here — probe the built binary before writing anything.
+
+The loop that worked, per case — unchanged for Phase 4:
+
+1. Read the case in full from its flow doc. The one-line index title is
+   regularly misleading, and several premises are stale because the code
+   moved under them.
+2. **Probe the built CLI/MCP before writing anything.** Roughly a third
+   of cases turned out already correct and needed only a test.
+3. Write the test, watch it fail, fix, then **mutate the fix and watch
+   the test fail again**. This caught several tests of mine that passed
+   while asserting nothing.
+4. All five suites, then commit one case (or a coherent pair) at a time.
+
+### Traps that cost time
+
+- **Every git test runs inside LocTT's own repo.** `withTmpLoctt`
+  creates workspaces under `tests/workspace/`, so `isGitRepo` walks up
+  and finds `.git`. Use `mkdtemp(tmpdir())` for anything git-related.
+- **The MCP server is bundled into the CLI binary.** Rebuild `apps/cli`
+  after touching MCP code, or you are testing a stale binary.
+- **`lint --fix` moves imports between blocks.** It once sorted
+  `ParseError`/`TokenizeError` into the `@loctt/contracts` import, where
+  they do not exist, so `instanceof` threw at runtime. Re-run typecheck
+  after any autofix, and read the diff.
+- **A mutation that does not compile is not a mutation.** Check the build
+  output, not just the test result. Removing a line often orphans a
+  variable and the "mutation" never ran.
+- **The same error string can appear at several call sites.** A blind
+  `replace` aimed at `requireSupportedSchema` edited `planMigration`
+  instead; the source looked right and the runtime did not change. Check
+  which site changed in `dist`.
+- **Real git or HTTP work needs an explicit test timeout.** Two web
+  git-error tests passed alone and timed out at 5s inside the full
+  `apps/web` run. A timeout reads as a product failure — check whether a
+  failing test passes in isolation before believing it.
+- **Fixtures lie quietly.** `makeTasks` passes no workflow config, so
+  tasks start with *no* status; `createTask` needs a project id;
+  `queries.yaml` entries need a ULID `id`. A wrong fixture usually shows
+  up as a passing test, not a failing one.
+
+Closed in this stretch (coverage 92 → 111):
 
 | Case | Was it a live defect? | Commit |
 |---|---|---|
@@ -635,6 +688,14 @@ Closed since this section was written (coverage 92 → 103):
 | MSL-C3 | Yes — schema docs still key-era; CLI half closed earlier | `148efaa` |
 | ONB-C6 | Partly — routes existed; recovery pointed at a refusing command | `f0d9567` |
 | ONB-C7 | Yes — doctor was prose only | `f0d9567` |
+| PRU-C5 | No — name-addressing and ambiguity already correct | `95e1328` |
+| PRU-C7 | Yes — delete_user's guard never fired | `95e1328` |
+| QRY-C3 | No — all ten DSL constructs already run | `0dc287d` |
+| QRY-C6 | Yes — views were unaddressable by id | `0dc287d` |
+| REL-C3 | No — cap correct, untested because the fixture was slow | `ca18244` |
+| REL-C4 | Yes — a file that could be attached and never detached | `ca18244` |
+| REL-C5 | Partly — premise unreachable; handler hardened | `ca18244` |
+| SPR-C2 | Yes — board rank ignored its column | `bda1499` |
 
 Three notes worth carrying forward:
 
