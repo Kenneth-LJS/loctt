@@ -336,7 +336,16 @@ function getTaskFieldValue(task: Task, field: string): unknown {
   if (Object.prototype.hasOwnProperty.call(task.frontmatter, field)) {
     return readField(task.frontmatter, field);
   }
-  if (task.frontmatter.fields && field in task.frontmatter.fields) {
+  // `hasOwnProperty`, not `in`: the line above was narrowed for exactly
+  // this hazard and this one was left behind. `"toString" in fields` is
+  // true on every object, so sorting by a prototype key returned a
+  // *function* as the sort value. The comparator tolerates it today, but
+  // that is luck rather than intent, and a function reaching the YAML
+  // formatter is not.
+  if (
+    task.frontmatter.fields
+    && Object.prototype.hasOwnProperty.call(task.frontmatter.fields, field)
+  ) {
     return task.frontmatter.fields[field];
   }
   return undefined;

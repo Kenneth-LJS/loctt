@@ -365,7 +365,7 @@ Input that should be rejected was accepted.
   project hidden from every picker. Archiving a *non-default* project
   is still allowed.
 
-### F · Tests that cannot fail — 6 findings — **4 fixed, 2 open**
+### F · Tests that cannot fail — 6 findings — **all closed**
 
 Green, and blind to the case that matters. Per `CLAUDE.md`, fixing the
 behaviour under these means editing a green test, and the commit must say
@@ -381,11 +381,18 @@ that test was asserting the bug.
 - ✅ **Three** e2e tests passed `--hard`, not the two originally found;
   all removed, and `10-error-paths.test.ts` rewritten because it passed
   for entirely the wrong reason (`d1eb66e`).
-- ⬜ `list.test.ts:131` fixtures lack a `fields` object, so the
-  prototype-chain hazard it covers is never reached. Verified still
-  open.
-- ⬜ `lexorank.test.ts:57` bounds growth at `< 120` where actual is
-  ~101 — a bound loose enough to pass under real regressions.
+- ✅ `list.test.ts:131` fixtures lack a `fields` object, so the
+  prototype-chain hazard it covers is never reached. **It also found a
+  live defect**: the custom-field branch of `getTaskFieldValue` still
+  used a bare `field in fields`, one line below the `hasOwnProperty`
+  narrowing that was added for exactly this. Sorting by `toString`
+  returned a *function* as the sort value. Guarded, with a mixed fixture
+  (one task with `fields`, one without) that tells the two
+  implementations apart — an all-`fields` fixture cannot, because every
+  task resolves the same function and the comparator calls them equal.
+- ✅ `lexorank.test.ts:57` bounds growth at `< 120`. Actual is **21**,
+  not ~101 as reported — looser still. Tightened to `<= 25`, verified by
+  a midpoint mutation that increases growth without breaking ordering.
 
 ### G · Cosmetic — 13 auto-fixable, ~79 remaining
 
