@@ -353,11 +353,52 @@ describe("deriveKeyState", () => {
   });
 });
 
+describe("assignProvisionalPrefixes — ordering", () => {
+  /**
+   * The function used to sort on `created_at`, which `ProjectDef` does
+   * not have: `ProjectDefSchema` is `.strict()` with id/name/prefix/
+   * archived. So the comparison was always between two empty strings and
+   * only the id tiebreak ever ran — the documented "earlier project
+   * keeps the prefix" rule never fired.
+   *
+   * The four tests below passed an explicit `created_at`, exercising a
+   * shape that cannot come off disk, and agreed with the id order by
+   * coincidence.
+   */
+
+  it("orders by id, which is creation order for a ULID", () => {
+    const earlier = "01JZ0000000000000000000000";
+    const later = "01JZ9999999999999999999999";
+
+    const out = assignProvisionalPrefixes([
+      { id: later, prefix: "T-" },
+      { id: earlier, prefix: "T-" },
+    ]);
+
+    expect(out.get(earlier)).toBe("T-");
+    expect(out.get(later)).toBe("T2-");
+  });
+
+  it("ignores a `created_at` that disagrees with the id order", () => {
+    const a = "01JZ0000000000000000000000";
+    const b = "01JZ9999999999999999999999";
+
+    const out = assignProvisionalPrefixes([
+      // Cast: the field is not on the parameter type, which is the fix.
+      { id: b, prefix: "T-", created_at: "2000-01-01T00:00:00Z" } as unknown as { id: string; prefix: string },
+      { id: a, prefix: "T-", created_at: "2099-01-01T00:00:00Z" } as unknown as { id: string; prefix: string },
+    ]);
+
+    expect(out.get(a)).toBe("T-");
+    expect(out.get(b)).toBe("T2-");
+  });
+});
+
 describe("assignProvisionalPrefixes", () => {
   it("leaves distinct prefixes alone", () => {
     const out = assignProvisionalPrefixes([
-      { id: "a", prefix: "T-", created_at: "2026-01-01T00:00:00Z" },
-      { id: "b", prefix: "API-", created_at: "2026-01-02T00:00:00Z" },
+      { id: "a", prefix: "T-" },
+      { id: "b", prefix: "API-" },
     ]);
     expect(out.get("a")).toBe("T-");
     expect(out.get("b")).toBe("API-");
@@ -366,32 +407,39 @@ describe("assignProvisionalPrefixes", () => {
   it("gives the later project a provisional prefix when two collide", () => {
     // The two-init case: both trackers minted `T-`, and prefixes must be
     // unique or keys are ambiguous.
+    //
+    // The ids are real ULIDs, not the labels "older"/"newer" this used
+    // to pass: those sort as newer < older, the opposite of what the
+    // test claims, and it only agreed because an explicit `created_at`
+    // — a field ProjectDef does not have — decided the order instead.
+    const older = "01JZ0000000000000000000000";
+    const newer = "01JZ9999999999999999999999";
     const out = assignProvisionalPrefixes([
-      { id: "older", prefix: "T-", created_at: "2026-01-01T00:00:00Z" },
-      { id: "newer", prefix: "T-", created_at: "2026-01-02T00:00:00Z" },
+      { id: older, prefix: "T-" },
+      { id: newer, prefix: "T-" },
     ]);
-    expect(out.get("older")).toBe("T-");
-    expect(out.get("newer")).toBe("T2-");
+    expect(out.get(older)).toBe("T-");
+    expect(out.get(newer)).toBe("T2-");
   });
 
   it("is order-independent, so both clones agree", () => {
     const projects = [
-      { id: "newer", prefix: "T-", created_at: "2026-01-02T00:00:00Z" },
-      { id: "older", prefix: "T-", created_at: "2026-01-01T00:00:00Z" },
+      { id: "01JZ9999999999999999999999", prefix: "T-" },
+      { id: "01JZ0000000000000000000000", prefix: "T-" },
     ];
     // Same inputs in the other order must give the same answer, or the
     // two clones diverge permanently.
     const a = assignProvisionalPrefixes(projects);
     const b = assignProvisionalPrefixes([...projects].reverse());
-    expect(a.get("older")).toBe(b.get("older"));
-    expect(a.get("newer")).toBe(b.get("newer"));
+    expect(a.get("01JZ0000000000000000000000")).toBe(b.get("01JZ0000000000000000000000"));
+    expect(a.get("01JZ9999999999999999999999")).toBe(b.get("01JZ9999999999999999999999"));
   });
 
   it("skips a provisional prefix that is itself taken", () => {
     const out = assignProvisionalPrefixes([
-      { id: "a", prefix: "T-", created_at: "2026-01-01T00:00:00Z" },
-      { id: "b", prefix: "T2-", created_at: "2026-01-02T00:00:00Z" },
-      { id: "c", prefix: "T-", created_at: "2026-01-03T00:00:00Z" },
+      { id: "a", prefix: "T-" },
+      { id: "b", prefix: "T2-" },
+      { id: "c", prefix: "T-" },
     ]);
     // `c` cannot take T2-, which `b` already holds.
     expect(out.get("c")).toBe("T3-");
