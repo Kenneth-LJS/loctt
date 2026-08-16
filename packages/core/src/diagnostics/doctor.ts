@@ -344,10 +344,15 @@ export async function runDoctor(
       };
       let danglingCount = 0;
       const samples: string[] = [];
+      // Config drift: a task holding an enum value workflow.yaml no
+      // longer defines. Tracked separately from dangling references
+      // because the remedy differs — restore the key, or remap the
+      // tasks — and because the DSL rejects the deleted literal, so
+      // doctor is the only way to find the affected tasks (CFG-C2).
+      let driftCount = 0;
+      const driftSamples: string[] = [];
       for (const task of tasks) {
         const errors = validateTaskAgainstWorkflow(task.frontmatter, workflowConfig, aux);
-        // Only count reference errors (project/milestone/sprint/labels) here;
-        // workflow-key errors are out of scope for this aggregate view.
         const refErrors = errors.filter(e =>
           e.field === "project"
           || e.field === "milestone"
@@ -360,6 +365,24 @@ export async function runDoctor(
             samples.push(`${task.frontmatter.key}: ${refErrors[0]?.message ?? ""}`);
           }
         }
+        const driftErrors = errors.filter(e =>
+          e.field === "status" || e.field === "priority" || e.field === "task_type",
+        );
+        if (driftErrors.length > 0) {
+          driftCount += driftErrors.length;
+          if (driftSamples.length < 3) {
+            driftSamples.push(`${task.frontmatter.key}: ${driftErrors[0]?.message ?? ""}`);
+          }
+        }
+      }
+      if (driftCount > 0) {
+        checks.push({
+          name: "workflow drift",
+          status: "error",
+          message:
+            `${String(driftCount)} task(s) hold a value workflow.yaml does not define — `
+            + `${driftSamples.join("; ")}. Restore the key, or remap the tasks.`,
+        });
       }
       if (danglingCount > 0) {
         checks.push({

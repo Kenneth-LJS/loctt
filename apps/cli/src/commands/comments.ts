@@ -1,6 +1,6 @@
 import {
-  buildMentionResolver,
-  deleteComment,
+buildMentionResolver,
+  CommentError,    deleteComment,
   editComment,
   formatCommentEditors,
   listComments,
@@ -51,12 +51,29 @@ export async function add(args: string[], root: string): Promise<void> {
   }
   const locttDir = resolveLocttDir(root);
   const task = await lookupTask(locttDir, ref);
-  const comment = await postComment({
-    locttDir,
-    taskId: task.frontmatter.id,
-    body,
-    mentionResolver: await resolver(locttDir),
-  });
+  let comment;
+  try {
+    comment = await postComment({
+      locttDir,
+      taskId: task.frontmatter.id,
+      body,
+      mentionResolver: await resolver(locttDir),
+    });
+  } catch (err) {
+    // Core's message says "pass an explicit author", which is not
+    // something the CLI can do — it has no author flag. Name the command
+    // that actually fixes it, and give the text back: the user typed a
+    // paragraph and should not have to reconstruct it from memory
+    // (CMT-C2).
+    if (err instanceof CommentError && /no current user/i.test(err.message)) {
+      throw new CommentError(
+        `no current user set — run 'loctt user switch <name>' (or `
+        + `'loctt user create <name> --switch') and post again.\n`
+        + `Your comment text was:\n${body}`,
+      );
+    }
+    throw err;
+  }
   console.log(`Added comment ${comment.id} on ${task.frontmatter.key}`);
   if (comment.mentions && comment.mentions.length > 0) {
     console.log(`Mentioned: ${comment.mentions.join(", ")}`);
