@@ -117,6 +117,15 @@ export async function run(args: string[], root: string): Promise<void> {
         const email = getArg(args, "--email");
         const timezone = getArg(args, "--timezone");
         const avatarSourcePath = getArg(args, "--avatar");
+        // An edit that names nothing to change reported "Updated" and
+        // exited 0, which reads as confirmation that a rename landed.
+        if (name === undefined && email === undefined
+            && timezone === undefined && avatarSourcePath === undefined) {
+          throw new UsageError(
+            "nothing to change",
+            "loctt user edit <id-or-name> [--name <n>] [--email <e>] [--timezone <tz>] [--avatar <path>]",
+          );
+        }
         await updateUser(locttDir, target.id, {
           ...(name !== undefined ? { name } : {}),
           ...(email !== undefined ? { email } : {}),

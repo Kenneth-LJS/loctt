@@ -398,6 +398,56 @@ that test was asserting the bug.
   not ~101 as reported — looser still. Tightened to `<= 25`, verified by
   a midpoint mutation that increases growth without breaking ordering.
 
+### Re-verification, 2026-08-16
+
+After A–F were marked closed, an agent re-read all 124 slice-report
+findings against current code. Two things came out of it.
+
+**The slice reports are badly stale** — roughly a third of the
+non-cosmetic findings were already fixed during Phase 3 and never
+struck through. That is expected and not worth correcting entry by
+entry; the group summaries above are the current record.
+
+**Three of my own closures were wrong**, each now corrected in place:
+`projects.yaml` (closed as comment-only; `mergeById` was genuinely
+incoming-wins), the group-E PATCH validator (closed as stale; the route
+exists as POST), and D20 (recorded open; it had been implemented).
+
+Closed since that re-verification:
+
+| Finding | Group | Commit |
+|---|---|---|
+| `completed_date` stamped in UTC, not the workspace zone | A | `c85efd7` |
+| `mergeById` incoming-wins against local-wins scalars | C | `c85efd7` |
+| `readHistory` `desc` reverses rather than sorts | A | `ac6cccb` |
+| 8 more dispatchers exiting 0 or 1 on an unknown flag | D | `ac6cccb` |
+| Rebalance stamping `updated_at` tracker-wide | A | closed by SPR-C2 |
+| No-op `edit` on user/label/milestone/sprint reports success | E | this commit |
+| `ui --port abc` starts on a random port | E | this commit |
+
+**Still open, and deliberately so** — each needs a decision or belongs
+with unbuilt work rather than a sweep:
+
+- `handleSetField` passes `value` to `setField` unvalidated
+  (`server.ts:2684`). Belongs with the M2 task-detail work that owns it.
+- `gitSafe` discards exit status, so a transient `ls-tree` failure reads
+  as "branch is clean" and disables the foreign-content guard.
+- `pruneEmptyDirs` walks ancestors with no floor.
+- `applyResolution` writes without `mkdir`, unlike `applyPlan`.
+- `deriveKeyState` can emit `prefix: ""`, written unvalidated.
+- `bulkMove` sets `mutated` after writes, so allocator increments
+  persist inconsistently on partial failure.
+- MCP `duplicate_task` still takes an unresolved project (P-3); the CLI
+  twin was fixed.
+- Bare catches in `loadOptionalConfigs`, the MCP comment tools, and
+  `list_config_values` — a malformed config reads as an absent one.
+- `&&` / `||` / `!` still get a bare "unexpected character".
+- Invalid dates (`2024-13-45`) pass the tokenizer's shape regex.
+- Boards columns and relationship inverses unvalidated against each
+  other.
+- `comment` drops words after a `--` separator.
+- `HistoryEntry` element shape and `key_history` element `.min(1)`.
+
 ### G · Cosmetic — 13 auto-fixable, ~79 remaining
 
 13 findings are provable-no-behaviour-change (comment corrections, an

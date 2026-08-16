@@ -102,6 +102,12 @@ export async function run(args: string[], root: string): Promise<void> {
         if (archivedArg !== undefined && archivedArg !== "true" && archivedArg !== "false") {
           throw new UsageError(`--archived must be exactly "true" or "false", got: ${archivedArg}`);
         }
+        if (name === undefined && td === undefined && archivedArg === undefined) {
+          throw new UsageError(
+            "nothing to change",
+            "loctt milestone edit <name|id> [--name <new>] [--target-date <YYYY-MM-DD|->] [--archived <true|false>]",
+          );
+        }
         await editMilestone(locttDir, id, {
           ...(name !== undefined ? { name } : {}),
           ...(td !== undefined ? { target_date: td === "-" ? null : td } : {}),

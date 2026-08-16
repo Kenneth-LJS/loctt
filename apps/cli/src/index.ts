@@ -118,7 +118,7 @@ export async function main(): Promise<void> {
       case "unlink":    await runCommand(() => taskLinksCmd.unlink(args, root));   break;
 
       case "mcp": await mcpCmd.run(args, root); break;
-      case "ui":  await uiCmd.run(args, root);  break;
+      case "ui":  await runCommand(() => uiCmd.run(args, root));  break;
 
       case "project": await runCommand(() => projectCmd.run(args, root)); break;
 

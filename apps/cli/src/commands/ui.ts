@@ -1,4 +1,5 @@
 import { getArg, hasFlag, rejectUnknownFlags } from "../runtime/args.js";
+import { UsageError } from "../runtime/errors.js";
 import { resolveClientDir } from "../runtime/schema-guard.js";
 
 /**
@@ -26,7 +27,25 @@ const ACCEPTED_FLAGS: readonly string[] = ["--no-open", "--port"];
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
   const { createWebApp } = await import("@loctt/web");
-  const port = Number(getArg(args, "--port")) || undefined;
+  // `Number(x) || undefined` maps every unparseable value — "abc", "0",
+  // "" — to "pick any free port", so a typo'd `--port` silently started
+  // the server somewhere else and the user's bookmark did not work.
+  // A port they named and did not get is a failure, not a default.
+  const portArg = getArg(args, "--port");
+  // `--port -1` arrives here as undefined: getArg reads a leading `-` as
+  // the next flag, so a negative value looks identical to no flag at
+  // all. Catch present-but-unread explicitly rather than starting on a
+  // random port.
+  if (portArg === undefined && args.includes("--port")) {
+    throw new UsageError("--port needs an integer between 1 and 65535");
+  }
+  let port: number | undefined;
+  if (portArg !== undefined) {
+    port = Number(portArg);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new UsageError(`--port must be an integer between 1 and 65535 (got '${portArg}')`);
+    }
+  }
   const noOpen = hasFlag(args, "--no-open");
   const clientDir = await resolveClientDir();
   const app = createWebApp({

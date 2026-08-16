@@ -97,6 +97,15 @@ export async function run(args: string[], root: string): Promise<void> {
           throw new UsageError("--state must be one of active|completed|future");
         }
         const goalArg = getArg(args, "--goal");
+        // `--force` alone is not a change: it only relaxes a guard on
+        // one, so an edit naming nothing still reported success.
+        if (name === undefined && start === undefined && end === undefined
+            && state === undefined && goalArg === undefined) {
+          throw new UsageError(
+            "nothing to change",
+            "loctt sprint edit <name|id> [--name <n>] [--start <d>] [--end <d>] [--state <s>] [--goal <g|->] [--force]",
+          );
+        }
         await editSprint(locttDir, id, {
           ...(name !== undefined ? { name } : {}),
           ...(start !== undefined ? { start_date: start } : {}),
