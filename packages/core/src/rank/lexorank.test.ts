@@ -64,8 +64,12 @@ describe("between", () => {
       expect(compare(MIN, next)).toBe(-1);
       lowest = next;
     }
-    // Length grows but stays bounded for these many inserts.
-    expect(lowest.length).toBeLessThan(120);
+    // Length grows but stays bounded. The bound was `< 120` against an
+    // actual of 21 — loose enough that a regression could nearly
+    // sextuple rank length and the test would still pass. Held just
+    // above the real figure so a change in growth is visible; if this
+    // ever fails legitimately, the new number is the thing to read.
+    expect(lowest.length).toBeLessThanOrEqual(25);
   });
 
   it("repeated inserts between two adjacent ranks stay strictly ordered", () => {

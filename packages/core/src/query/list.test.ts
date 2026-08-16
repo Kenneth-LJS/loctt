@@ -145,6 +145,73 @@ describe("listTasks", () => {
     ]);
   });
 
+  it("sorts on a prototype key against tasks that carry a fields object", () => {
+    // The test above never reached the hazard it describes: none of the
+    // shared fixtures has a `fields` object, so the custom-field lookup
+    // that `field in fm` would have poisoned was never entered.
+    //
+    // These fixtures do. `toString` and `constructor` exist on every
+    // object's prototype, so an `in` check reports them present and
+    // every task "has" a function as its sort key.
+    const withFields: Task[] = [
+      makeTask("F-1", { fields: { points: 3 } }),
+      makeTask("F-2", { fields: { points: 1 } }),
+      makeTask("F-3", { fields: {} }),
+    ];
+
+    for (const field of ["toString", "constructor", "hasOwnProperty", "valueOf"]) {
+      const result = listTasks({
+        tasks: withFields,
+        options: { sort: [{ field, direction: "asc" }] },
+      });
+      // Every task must see *undefined*, not a function. The custom-field
+      // branch used a bare `in`, so it returned `fields.toString` — a
+      // function — as the sort value.
+      expect(result.map(t => t.frontmatter.key), `sorting by ${field}`)
+        .toEqual(["F-1", "F-2", "F-3"]);
+      // Order across tasks that *all* carry `fields` is weak evidence:
+      // every one resolves the same function, the comparator calls them
+      // equal, and input order survives either way. The discriminating
+      // case is a mix — see the test below.
+    }
+  });
+
+  it("does not resolve a prototype key on some tasks and not others", () => {
+    // This is the fixture that tells the two implementations apart. With
+    // a bare `in`, the task carrying `fields` resolves `toString` to a
+    // function while the task without `fields` stays undefined — and
+    // since undefined is pushed to the end regardless of direction, the
+    // pair comes back reordered. With hasOwnProperty both are undefined
+    // and input order holds.
+    const mixed: Task[] = [
+      makeTask("F-1"),
+      makeTask("F-2", { fields: { points: 1 } }),
+    ];
+
+    for (const direction of ["asc", "desc"] as const) {
+      const result = listTasks({
+        tasks: mixed,
+        options: { sort: [{ field: "toString", direction }] },
+      });
+      expect(result.map(t => t.frontmatter.key), `sorting by toString ${direction}`)
+        .toEqual(["F-1", "F-2"]);
+    }
+  });
+
+  it("still sorts on a real custom field, so the guard is not over-broad", () => {
+    const withFields: Task[] = [
+      makeTask("F-1", { fields: { points: 3 } }),
+      makeTask("F-2", { fields: { points: 1 } }),
+    ];
+    // Custom fields are addressed by bare key in a sort spec, not with
+    // a `fields.` prefix (that form is the query DSL's).
+    const result = listTasks({
+      tasks: withFields,
+      options: { sort: [{ field: "points", direction: "asc" }] },
+    });
+    expect(result.map(t => t.frontmatter.key)).toEqual(["F-2", "F-1"]);
+  });
+
   it("throws for unknown view", () => {
     expect(() => listTasks({ tasks, options: { view: "bogus" }, queriesConfig, workflowConfig: config }))
       .toThrow("unknown view");
