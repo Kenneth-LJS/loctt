@@ -80,6 +80,12 @@ export async function run(args: string[], root: string): Promise<void> {
         const id = resolveLabelIdFromInput(cfg, ref, { includeArchived: true });
         const name = getArg(args, "--name");
         const colorArg = getArg(args, "--color");
+        if (name === undefined && colorArg === undefined) {
+          throw new UsageError(
+            "nothing to change",
+            "loctt label edit <name|id> [--name <new-name>] [--color <hex|->]",
+          );
+        }
         await editLabel(locttDir, id, {
           ...(name !== undefined ? { name } : {}),
           ...(colorArg !== undefined
