@@ -147,8 +147,13 @@ export async function list(args: string[], root: string): Promise<void> {
   if (dirArg !== undefined && dirArg !== "asc" && dirArg !== "desc") {
     throw new UsageError(`--dir must be asc or desc, got: ${dirArg}`);
   }
+  // Narrowed into a typed const rather than asserted inline: the check
+  // above proves the union, but eslint's no-unnecessary-type-assertion
+  // strips an inline `as` and the widened `string` then fails the
+  // ListOptions signature under exactOptionalPropertyTypes.
+  const direction: "asc" | "desc" = dirArg === "desc" ? "desc" : "asc";
   const sort = sortField !== undefined
-    ? [{ field: sortField, direction: (dirArg ?? "asc") }]
+    ? [{ field: sortField, direction }]
     : undefined;
 
   let offset: number | undefined;
