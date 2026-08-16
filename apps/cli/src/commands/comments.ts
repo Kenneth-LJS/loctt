@@ -11,7 +11,8 @@ import {
 } from "@loctt/core";
 
 import { rejectUnknownFlags } from "../runtime/args.js";
-import { UsageError } from "../runtime/errors.js";
+import { confirmHardDelete } from "../runtime/confirm.js";
+import { EXIT, UsageError } from "../runtime/errors.js";
 
 /**
  * `loctt comment` — post, list, edit and delete task comments.
@@ -39,7 +40,7 @@ async function resolver(locttDir: string) {
 const ADD_FLAGS: readonly string[] = [];
 const LIST_FLAGS: readonly string[] = [];
 const EDIT_FLAGS: readonly string[] = [];
-const REMOVE_FLAGS: readonly string[] = [];
+const REMOVE_FLAGS: readonly string[] = ["--yes"];
 
 export async function add(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ADD_FLAGS);
@@ -106,16 +107,31 @@ export async function edit(args: string[], root: string): Promise<void> {
   console.log(`Edited comment ${comment.id} on ${task.frontmatter.key}`);
 }
 
-/** `loctt comment-delete <task> <comment-id>` */
+/** `loctt comment-delete <task> <comment-id> [--yes]` */
 export async function remove(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, REMOVE_FLAGS);
   const ref = args[1];
   const commentId = args[2];
   if (!ref || !commentId) {
-    throw new UsageError("missing args", "loctt comment-delete <task> <comment-id>");
+    throw new UsageError("missing args", "loctt comment-delete <task> <comment-id> [--yes]");
   }
   const locttDir = resolveLocttDir(root);
   const task = await lookupTask(locttDir, ref);
+
+  // Deleting a comment is permanent, like `delete` and every entity
+  // `delete`. It alone had no gate — CMT-C1 says the CLI deletes "behind
+  // a confirmation". M3 keeps the text in history, so this is
+  // recoverable, but a typo'd id should still not silently destroy
+  // someone else's words.
+  const outcome = await confirmHardDelete(
+    args,
+    `Permanently delete comment ${commentId} from ${task.frontmatter.key}?`,
+  );
+  if (outcome !== "yes") {
+    process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS;
+    return;
+  }
+
   await deleteComment({ locttDir, taskId: task.frontmatter.id, commentId });
   console.log(`Deleted comment ${commentId} from ${task.frontmatter.key}`);
 }

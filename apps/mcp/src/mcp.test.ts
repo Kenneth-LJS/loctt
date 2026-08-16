@@ -248,10 +248,15 @@ describe("MCP executeTool", () => {
     });
 
     it("rejects setting updated_at via MCP", async () => {
-      // updated_at is built-in writable via setField but not exposed
-      // in the MCP schema map; without the writability check, it
-      // would silently fall through to the custom-field path and
-      // write `fields.updated_at`.
+      // updated_at is immutable in core (USER_IMMUTABLE_FIELDS), so
+      // every surface refuses it for the same reason. This used to
+      // assert MCP's own "not settable via MCP" guard, which caught it
+      // first only because core let it through — the CLI and web
+      // therefore wrote the field happily (TSK-C2).
+      //
+      // Asserting the outcome rather than which layer produced it: the
+      // requirement is that the write is refused and the message names
+      // the field, not that a particular guard fires.
       await executeTool(root, "create_task", { title: "x" });
       const result = await executeTool(root, "update_task", {
         ref: "T-1",
@@ -259,7 +264,7 @@ describe("MCP executeTool", () => {
         value: "2026-01-01T00:00:00.000Z",
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text ?? "").toMatch(/not settable via MCP/);
+      expect(result.content[0]?.text ?? "").toMatch(/updated_at/);
     });
 
     it("forwards unknown fields to setField, which then defers to the workflow validator", async () => {

@@ -51,13 +51,22 @@ describe("CLI comments (spawned binary)", () => {
     });
   });
 
-  it("deletes a comment", async () => {
+  it("deletes a comment, behind a confirmation", async () => {
     await withTmpLoctt(async ({ root }) => {
       await seed(root);
       const add = await runCli(["comment", "T-1", "doomed"], { cwd: root });
       const id = /Added comment (\S+)/.exec(add.stdout)?.[1];
 
-      const del = await runCli(["comment-delete", "T-1", id!], { cwd: root });
+      // This test passed `comment-delete` with no `--yes` and asserted
+      // exit 0 — encoding the missing gate as intended behaviour.
+      // comment-delete was the only destructive command without one,
+      // while `delete` and every entity delete required it, and CMT-C1
+      // says the CLI deletes "behind a confirmation".
+      const ungated = await runCli(["comment-delete", "T-1", id!], { cwd: root });
+      expect(ungated.exitCode).not.toBe(0);
+      expect((await runCli(["comments", "T-1"], { cwd: root })).stdout).toContain("doomed");
+
+      const del = await runCli(["comment-delete", "T-1", id!, "--yes"], { cwd: root });
       expect(del.exitCode).toBe(0);
 
       const list = await runCli(["comments", "T-1"], { cwd: root });
