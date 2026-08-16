@@ -231,8 +231,17 @@ mutation of the specific behaviour.
 | Four query forms parsed, validated, then matched nothing | `50ebb21` | Also fixes the `[` message, the repo's most-repeated DSL mistake |
 | `assignProvisionalPrefixes` sorted on a phantom field | `378bb4f` | One of its tests was asserting the bug |
 | `type: enum` with no values accepted anything | `73af1d6` | Conditional requirement, matching `preset_values` |
-| `applyWorkflowEdit` wrote tasks before validating the config | *this commit* | Found while fixing the enum hole; a refused edit used to leave task rewrites on disk |
+| `applyWorkflowEdit` wrote tasks before validating the config | `eda711b` | Found while fixing the enum hole; a refused edit used to leave task rewrites on disk |
 | `mergeTask` was whole-record LWW, not per-field | `62f6438` | Resolved from history; hand-edits scoped out by decision, `merge_resolved` records any fallback |
+| Coalesced burst uncapped | `40569fa` | D20 priority renumbering landed in the same commit |
+| Stale git worktree blocked the next sync | `40569fa` | `prune` before each `worktree add` |
+| `applyWorkflowEdit` journaled before validating | `86f96f6` | Second ordering bug behind the first; a refused edit was replayed by the next operation |
+
+**Phase 3 (surface cases) has since fixed more**, tracked in
+[`autonomous-plan.md`](autonomous-plan.md)'s Phase 3 log rather than
+duplicated here — including the burndown summing every sprint, the web
+stranding inverse relationship edges, and milestone/sprint references
+stored as names.
 
 **Found while fixing, not yet addressed:** the non-interactive refusal
 message is duplicated verbatim in `confirmInteractive` and

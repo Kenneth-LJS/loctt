@@ -53,7 +53,7 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 |---|---|---|
 | 1 · Partition | ✅ | All 21 tickets carry a `Cases:` line; gate passes. The 28 cases asserting two unticketed views are **resolved as a ticket gap**, not a scope cut — see *Blocker, resolved*. |
 | 2 · Measure | ✅ | Measured (CLI 17/49, MCP 26/75) and the blocker it raised is **cleared**: both reference docs corrected to the shipped API, every example executed. See *Blocker 2, resolved*. |
-| 3 · Surface gaps | 🔵 | Started 2026-08-16. **5 of 68 closed** (TSK-C2, PRU-C11, CFG-C3, CMT-C1, TSK-C7); surface coverage 46 → 50. Blockers first, in case order. |
+| 3 · Surface gaps | 🔵 | **18 of 68 closed**, including **18 of 23 blockers**. Surface coverage 46 → 61. Remaining blockers: CFG-C2, CMT-C2, CMT-C3, ONB-C1, ONB-C3. See *Phase 3 log*. |
 | 4 · Structural audit | 🔵 | Reading **done**: 8 slices, ~18,700 lines, **124 findings** in [`audit-findings.md`](audit-findings.md). **Group A (silent wrong answers) is fixed** — 9 of 9, each with a test shown to fail first and killed by mutation. Groups B–G outstanding. |
 | 5 · UI build | ⬜ | M1.4 is 🔵 from earlier work, predating this plan |
 
@@ -550,6 +550,40 @@ phase is not finished until it is updated.
 Report what is true rather than what was intended. A phase marked ✅ that
 left work undone is worse than one honestly marked 🔵: the next agent
 builds on the claim, not the code.
+
+## Phase 3 log
+
+Closed, newest first. A case listed here has a `@verifies` tag and a test
+that was shown to fail before the fix.
+
+| Case | Commit | Was it a real defect? |
+|---|---|---|
+| MSL-C1 | `48b2b57` | **Yes.** `set T-1 milestone v1` stored the *name* while identity is a ULID, so milestone progress read 0/0 for a milestone holding tasks. Sprints identical. |
+| SPR-C1 | `1966559` | **Yes.** `inSprint` meant "has *a* sprint", so every burndown in a multi-sprint tracker summed all of them — wrong on all three surfaces at once. |
+| REL-C1 | `1966559` | **Yes, web only.** `handleUnlink` omitted `workflowConfig`, stranding the inverse edge permanently. CLI and MCP were correct. |
+| GIT-C2 | `a7c1451` | **Yes.** The rekey pass ran only after a *merge*, but two clones creating tasks offline produces a *copy* — the one case it was written for. Skipped collisions were also discarded by the caller. |
+| PRU-C1 | `6be19ce` | No — already correct, nothing asserted it. |
+| QRY-C1 | `6be19ce` | No — premise stale, brackets fixed in `36c8872`. Pinned the round trip instead. |
+| GIT-C4 | `82403c2` | **Yes.** The CLI printed "Published local state" and exited 0 when the push failed. |
+| GIT-C1 | `82403c2` | No — covered by the per-field merge in `62f6438`. Tagged. |
+| ONB-C4 | `4b685eb` | **Yes.** `doctor` was blocked by the schema guard, so the one command that explains a broken tracker could not run on one. |
+| TSK-C1 | `4b685eb` | **Yes.** A raw Zod dump instead of prose; MCP already returned prose for the same input. |
+| CFG-C1 | `86f96f6` | **Yes.** A refused workflow edit still left a journal entry, which the next operation replayed. |
+| TSK-C7 | `0f6168e` | Partly — export is web-only, now documented as absent rather than silently missing. |
+| CMT-C1 | `858c212` | **Yes.** Six commands dispatched but absent from `--help`; `comment-delete` had no confirmation. |
+| CFG-C3 | `0fe0a8f` | **Yes, small.** MCP's unknown-key error omitted the valid-key list the CLI gives. |
+| PRU-C11 | `0fe0a8f` | No — already correct, nothing asserted it. |
+| TSK-C2 | `1324a0f` | **Yes.** `updated_at` was hand-writable on CLI and web — the field git-sync, recency sort and the activity feed all read. |
+| PRU-C10, PRU-C12 | earlier | Tagged before this run. |
+
+**Ten of the eighteen were live defects.** Two were stale premises, two
+were correct-but-unasserted, and the rest were partial.
+
+**Five tests were found asserting a bug** and rewritten, each named in
+its commit: the `--hard` trio, `comment-delete` with no confirmation,
+`assignProvisionalPrefixes` ids that sorted opposite to their claim,
+"publish exits 0" on a failed push, and a fixture referencing a
+milestone that never existed.
 
 ## Residual risk
 
