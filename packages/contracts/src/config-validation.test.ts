@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { CalendarConfigSchema } from "./calendar.js";
 import { ProjectsConfigSchema } from "./projects.js";
+import { TaskFrontmatterSchema } from "./task.js";
 import { CustomFieldDefSchema } from "./workflow.js";
 
 /**
@@ -103,5 +104,29 @@ describe("projects default", () => {
       projects: [project(), project({ id: ID_B, name: "Old", prefix: "O-", archived: true })],
       default: ID_A,
     })).not.toThrow();
+  });
+});
+
+describe("key_history entries", () => {
+  const base = {
+    id: "01JBQZ4X8N0000000000000099",
+    key: "T-1",
+    title: "A task",
+    project: ID_A,
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("accepts real prior keys", () => {
+    expect(() => TaskFrontmatterSchema.parse({ ...base, key_history: ["OLD-1", "T-0"] }))
+      .not.toThrow();
+  });
+
+  it("rejects an empty-string entry", () => {
+    // P-7 keeps old keys resolving via the key index. An empty entry
+    // adds a row that can never match anything, in the structure whose
+    // whole job is matching.
+    expect(() => TaskFrontmatterSchema.parse({ ...base, key_history: ["OLD-1", ""] }))
+      .toThrow();
   });
 });
