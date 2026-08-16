@@ -115,7 +115,11 @@ describe("CLI commands", () => {
     // accepts both.
     const errSpy = vi.mocked(console.error);
     errSpy.mockClear();
-    process.argv = ["node", "loctt", "project", "create", "zeta", "--prefix=ZE", "--label=Zeta"];
+    // `--label` was here and is not a flag project create accepts — it
+    // was silently discarded, which is the bug PRU-C9 names. The
+    // subject of this test is the `=value` form, so it uses a flag the
+    // command actually reads.
+    process.argv = ["node", "loctt", "project", "create", "zeta", "--prefix=ZE"];
     await main();
     if (process.exitCode !== undefined) {
       // Surface the CLI's own error message so a future regression

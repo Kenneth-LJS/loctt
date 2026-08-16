@@ -1,6 +1,6 @@
 import { migrateToCurrent, planMigration, resolveLocttDir } from "@loctt/core";
 
-import { hasFlag } from "../runtime/args.js";
+import { hasFlag, rejectUnknownFlags } from "../runtime/args.js";
 import { confirmInteractive } from "../runtime/confirm.js";
 import { EXIT } from "../runtime/errors.js";
 
@@ -12,7 +12,20 @@ import { EXIT } from "../runtime/errors.js";
  * Without `--yes`, prompts before applying — accepts a refusal as
  * EXIT.SUCCESS so scripts don't false-alarm on a clean "no".
  */
+/**
+ * Flags this command family accepts. A union across its
+ * subcommands: they share one argv, so splitting per subcommand
+ * would reject a sibling's valid flag.
+ *
+ * Without this an unrecognised flag was silently dropped — the
+ * reference documented `--label` on project create for a flag the
+ * CLI never read, so the worked example created a project named
+ * `web` and discarded the label (PRU-C9).
+ */
+const ACCEPTED_FLAGS: readonly string[] = ["--dry-run", "--yes"];
+
 export async function run(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, ACCEPTED_FLAGS);
   const locttDir = resolveLocttDir(root);
   const dryRun = hasFlag(args, "--dry-run");
   const skipPrompt = hasFlag(args, "--yes");
