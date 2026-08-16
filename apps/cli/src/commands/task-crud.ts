@@ -50,7 +50,7 @@ import { assertWorkflowEnumKey } from "../runtime/workflow-assert.js";
  * `rejectUnknownFlags` adds `--cwd` itself and stops at `--`.
  */
 const TASK_CREATE_FLAGS: readonly string[] = ["--project", "--status", "--priority", "--type"];
-const TASK_LIST_FLAGS: readonly string[] = ["--limit", "--project", "--archived", "--query", "--view"];
+const TASK_LIST_FLAGS: readonly string[] = ["--limit", "--project", "--archived", "--query", "--view", "--sort", "--dir", "--offset"];
 const TASK_SHOW_FLAGS: readonly string[] = [];
 const TASK_DUPLICATE_FLAGS: readonly string[] = ["--title", "--project"];
 const TASK_MOVE_FLAGS: readonly string[] = [];
@@ -138,12 +138,35 @@ export async function list(args: string[], root: string): Promise<void> {
   const baseQuery = getArg(args, "--query");
 
   const view = getArg(args, "--view");
+
+  // Core supported sort and offset from the start; only the web exposed
+  // them, so an agent wanting "the highest-priority open task" had to
+  // fetch everything and order it itself (QRY-C4).
+  const sortField = getArg(args, "--sort");
+  const dirArg = getArg(args, "--dir");
+  if (dirArg !== undefined && dirArg !== "asc" && dirArg !== "desc") {
+    throw new UsageError(`--dir must be asc or desc, got: ${dirArg}`);
+  }
+  const sort = sortField !== undefined
+    ? [{ field: sortField, direction: (dirArg ?? "asc") }]
+    : undefined;
+
+  let offset: number | undefined;
+  const offsetArg = getArg(args, "--offset");
+  if (offsetArg !== undefined) {
+    offset = Number(offsetArg);
+    if (Number.isNaN(offset) || offset < 0 || !Number.isInteger(offset)) {
+      throw new UsageError("--offset must be a non-negative integer");
+    }
+  }
+
   const result = listTasks({
     tasks,
     options: {
       ...(baseQuery !== undefined ? { query: baseQuery } : {}),
       ...(view !== undefined ? { view } : {}),
       ...(limit !== undefined ? { limit } : {}),
+      ...(sort !== undefined ? { sort } : {}),
       ...(projectFilter !== undefined ? { project: projectFilter } : {}),
       includeArchived: hasFlag(args, "--archived"),
       ...(today !== undefined ? { today } : {}),
@@ -160,10 +183,16 @@ export async function list(args: string[], root: string): Promise<void> {
     },
   });
 
-  if (result.length === 0) {
+  // `listTasks` applies `limit` but not `offset` — only
+  // `listTasksPaginated` does, and switching to it here would change the
+  // `total` semantics the rest of this command relies on. Slicing after
+  // the sort gives the same answer.
+  const page = offset !== undefined ? result.slice(offset) : result;
+
+  if (page.length === 0) {
     console.log("No tasks found.");
   } else {
-    for (const task of result) {
+    for (const task of page) {
       const status = task.frontmatter.status ? ` [${task.frontmatter.status}]` : "";
       console.log(`${task.frontmatter.key}  ${task.frontmatter.title}${status}`);
     }

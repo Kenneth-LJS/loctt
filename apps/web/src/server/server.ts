@@ -121,12 +121,14 @@ import {
   migrateToCurrent,
   MilestoneError,
   milestoneProgress,
+  ParseError,
   planMigration,
   postComment,
   type Progress,
   ProjectError,
   publish,
   pushRecent,
+  QueryValidationError,
   readBurndownSeries,
   readHistory,
   readPrefixRenameState,
@@ -158,6 +160,7 @@ import {
   type TaskReferenceKind,
   TaskUpdateError,
   todayInZone,
+  TokenizeError,
   unarchiveTask,
   unarchiveUser,
   unlinkTask,
@@ -2085,6 +2088,19 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
+  /**
+   * True for the errors a malformed DSL query produces.
+   *
+   * Listed rather than caught broadly: an unexpected throw from the
+   * evaluator is a server fault and must keep surfacing as one, or a
+   * real bug hides behind a 400 that blames the user.
+   */
+  const isQueryError = (err: unknown): boolean =>
+    err instanceof TokenizeError
+    || err instanceof ParseError
+    || err instanceof QueryValidationError
+    || err instanceof ViewError;
+
   const handleListTasks: RouteHandler = async ({ res, url, locttDir }) => {
     const page = parsePagination(url, res);
     if (!page) return;
@@ -2143,13 +2159,30 @@ export function createWebApp(options: WebAppOptions) {
       limit: Number.MAX_SAFE_INTEGER,
     };
 
-    const result = listTasks({
-      tasks,
-      options: params,
-      ...(queriesConfig !== undefined ? { queriesConfig } : {}),
-      ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-      ctx: buildListContext(tasks),
-    });
+    let result;
+    try {
+      result = listTasks({
+        tasks,
+        options: params,
+        ...(queriesConfig !== undefined ? { queriesConfig } : {}),
+        ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+        ctx: buildListContext(tasks),
+      });
+    } catch (err) {
+      // A mistyped query is the user's, not the server's. Without this
+      // it became 500 "Internal server error", discarding the message,
+      // position and suggestions validate.ts carries deliberately — and
+      // telling the user they broke the server (QRY-C2).
+      if (isQueryError(err)) {
+        error(res, (err as Error).message, 400, {
+          code: "validation_failed",
+          field: "query",
+          recovery: { kind: "none" },
+        });
+        return;
+      }
+      throw err;
+    }
     const frontmatters = result.map(t => projectTaskFrontmatter(t.frontmatter));
     json(res, paginated(frontmatters, page.offset, page.limit));
   };
