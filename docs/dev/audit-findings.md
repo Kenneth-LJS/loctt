@@ -280,14 +280,20 @@ Recoverable, but the recovery is manual and undocumented.
 - The fatal `.schema-migration-in-progress` sentinel is bypassed on the
   only path that can reach it, against `invariants.md:45`.
 
-### C · Invariant violations — 5 findings
+### C · Invariant violations — 5 findings — **4 fixed, 1 open**
 
 Each contradicts a rule in `invariants.md` or `decisions.md`.
 
-- **P-3** twice: `list --project <name>` and `duplicate --project <name>`.
-- **D20**: priority `value` unenforced.
-- **Q18/D4**: the coalescing window.
-- **M2**: `mergeTask` promises per-field merging and does not deliver.
+- ✅ **P-3** twice: `list --project <name>` and `duplicate --project
+  <name>` — fixed in `dac7060`.
+- ✅ **Q18/D4**: the coalescing window — fixed in `71cdd78`.
+- ✅ **M2**: `mergeTask` now merges per field — fixed in `62f6438`.
+- ⬜ **D20**: priority `value` is still never recomputed as 1..N.
+  Verified open: no recomputation exists in core, cli, mcp or web, and
+  the schema still permits duplicate, zero, negative and fractional
+  values. **Latent, not live** — the drag-reorder UI that would produce
+  a bad `value` is M4.2 and unbuilt, so the fix belongs with that
+  ticket.
 
 Overlaps A and B — listed separately because an invariant break is a
 decision to revisit, not only a bug to fix.
@@ -318,20 +324,27 @@ Input that should be rejected is accepted.
 - `CalendarConfig.working_days` accepts empty arrays and duplicates.
 - `ProjectsConfig.default` may point at an archived project.
 
-### F · Tests that cannot fail — 6 findings
+### F · Tests that cannot fail — 6 findings — **4 fixed, 2 open**
 
 Green, and blind to the case that matters. Per `CLAUDE.md`, fixing the
 behaviour under these means editing a green test, and the commit must say
 that test was asserting the bug.
 
-- `lexorank.test.ts` bounds counts at 500; duplicates start at 649.
-- The five coalescing tests each measure one gap; the bug needs a chain.
-- All four `assignProvisionalPrefixes` tests pass a `created_at` the
-  schema forbids.
-- Two e2e tests pass `--hard`, a flag that does not exist.
-- `list.test.ts:131` fixtures lack `fields`, so the prototype-chain
-  hazard it covers is never reached.
-- `lexorank.test.ts:57` bounds growth at `< 120` where actual is ~101.
+- ✅ `lexorank.test.ts` bounded counts at 500; duplicates start at 649 —
+  now covers 648…46,656 (`df54107`).
+- ✅ The five coalescing tests each measured one gap; two added that need
+  a chain (`71cdd78`).
+- ✅ All four `assignProvisionalPrefixes` tests passed a `created_at` the
+  schema forbids — one was asserting the bug outright, since its ids
+  sorted opposite to its claim (`378bb4f`).
+- ✅ **Three** e2e tests passed `--hard`, not the two originally found;
+  all removed, and `10-error-paths.test.ts` rewritten because it passed
+  for entirely the wrong reason (`d1eb66e`).
+- ⬜ `list.test.ts:131` fixtures lack a `fields` object, so the
+  prototype-chain hazard it covers is never reached. Verified still
+  open.
+- ⬜ `lexorank.test.ts:57` bounds growth at `< 120` where actual is
+  ~101 — a bound loose enough to pass under real regressions.
 
 ### G · Cosmetic — 13 auto-fixable, ~79 remaining
 
