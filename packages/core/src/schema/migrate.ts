@@ -45,6 +45,20 @@ export interface MigrationPlan {
  * SchemaTooNewError when the tracker is from a newer LocTT.
  */
 export async function planMigration(locttDir: string): Promise<MigrationPlan> {
+  // Same refusal as migrateToCurrent, and for the same reason: a plan
+  // computed over a half-migrated workspace describes work that does not
+  // match what is on disk. `loctt migrate` calls this first and returns
+  // early on an empty plan, so without the check here the sentinel was
+  // reachable but never consulted on the one path that matters.
+  const sentinel = getSchemaMigrationInProgressPath(locttDir);
+  if (await fileExists(sentinel)) {
+    throw new SchemaUnmigratableError(
+      `A schema migration was interrupted mid-run and cannot be resumed. `
+      + `See ${sentinel} for the backup it recorded.`,
+      `Restore .loctt/ from the backup named in ${sentinel}, remove the `
+      + `sentinel, then run 'loctt migrate' again.`,
+    );
+  }
   const recorded = await readSchemaVersion(locttDir);
   if (recorded === null) {
     throw new SchemaUnmigratableError(
@@ -93,6 +107,29 @@ export async function planMigration(locttDir: string): Promise<MigrationPlan> {
 export async function migrateToCurrent(
   locttDir: string,
 ): Promise<MigrationResult> {
+  // A sentinel from a crashed run must stop this path too.
+  //
+  // Every other command refuses via requireSupportedSchema, but `migrate`
+  // is deliberately exempt from that guard — it is the command that
+  // fixes a stale schema. That exemption also let it run straight over a
+  // half-migrated tracker: with the version file already advanced, it
+  // reported "already at v1, nothing to do" and exited 0, on a workspace
+  // whose files were only partly rewritten (invariants.md:45).
+  //
+  // Refusing rather than resuming: the crashed run applied an unknown
+  // subset of one step, so there is no safe point to continue from. The
+  // backup named in the sentinel is the recovery.
+  const sentinel = getSchemaMigrationInProgressPath(locttDir);
+  if (await fileExists(sentinel)) {
+    throw new SchemaUnmigratableError(
+      `A schema migration was interrupted mid-run and cannot be resumed. `
+      + `See ${sentinel} for the backup it recorded.`,
+      `Restore .loctt/ from the backup named in ${sentinel}, remove the `
+      + `sentinel, then run 'loctt migrate' again. Re-running without `
+      + `restoring would migrate a workspace that is only partly rewritten.`,
+    );
+  }
+
   // Pre-check before taking the lock so the no-op fast path is cheap.
   const recorded = await readSchemaVersion(locttDir);
   if (recorded === null) {
