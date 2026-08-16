@@ -51,13 +51,13 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 
 | Phase | State | Notes |
 |---|---|---|
-| 1 · Partition | ⛔ | Partition **done** — all 21 tickets carry a `Cases:` line, gate passes. Halted on what it exposed: 28 cases assert two views no ticket builds. See *Blocker* below. |
+| 1 · Partition | ✅ | All 21 tickets carry a `Cases:` line; gate passes. The 28 cases asserting two unticketed views are **resolved as a ticket gap**, not a scope cut — see *Blocker, resolved*. |
 | 2 · Measure | ✅ | Measured (CLI 17/49, MCP 26/75) and the blocker it raised is **cleared**: both reference docs corrected to the shipped API, every example executed. See *Blocker 2, resolved*. |
 | 3 · Surface gaps | ⬜ | **Unblocked.** 68 cases outstanding; the entity region is now transcribable. Next action. |
 | 4 · Structural audit | ⛔ | Reading **done**: 8 slices, ~18,700 lines, **124 findings** in [`audit-findings.md`](audit-findings.md). Report-only — nothing fixed. Awaiting triage; the fixes wait on Phase 3's net. |
 | 5 · UI build | ⬜ | M1.4 is 🔵 from earlier work, predating this plan |
 
-### ⛔ Blocker — two specified views have no ticket
+### ✅ Blocker — RESOLVED 2026-08-16: two views need tickets, not a scope cut
 
 The partition placed 837 of 869 UI cases cleanly. **32 could not be
 placed**, 10 of them blockers. Four are one-off dependency gaps; the other
@@ -80,9 +80,21 @@ The sprint split is clearly deliberate in the spec: every M3-tagged `SPR`
 case is about the overview, every M4-tagged one about the detail. So the
 spec assumes an overview the ticket list never planned.
 
-**This is a scope decision, and the plan reserves it.** The options are to
-add tickets for the two views, fold them into M4.7/M4.3, or accept that 28
-cases ship unverifiable. An agent may not choose among those.
+**Resolved.** I had weighed `temp-ui-mockups/` as evidence the views were
+never scoped. The user's ruling: *"the temp-ui-mockup should not be used
+as the source of truth for the features."* The mockups are one design
+artifact and an incomplete one; the case docs are the specification.
+
+So these are **specified features with missing tickets** — a gap in
+`TEMP-WEB-TICKETS.md`, not a question about scope. The 28 cases stand.
+
+Direction given: derive the tickets, have an agent review them, then
+build under the normal loop. One adjustment made to that, and agreed in
+the same exchange: the tickets are **derived from the existing cases**,
+not written as fresh requirements. The 28 cases already *are* the
+requirements — authoring a second, agent-written spec beside them is the
+self-grading failure this plan exists to prevent. What is missing is only
+the build-work unit: routes, components, and which cases each owes.
 
 The other four unplaceable cases:
 
