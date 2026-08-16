@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { mkdir } from "node:fs/promises";
 import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -238,6 +239,46 @@ describe("publish-sync", () => {
       expect(history).toContain("assignee");
       // The losing value is the whole point of the entry.
       expect(history).toContain("u-local");
+    });
+
+    it("reports a key collision it could not resolve", async () => {
+      // @verifies GIT-C2
+      //
+      // RekeyOutcome's contract says a skip is "never silently dropped:
+      // a task sharing a key with another is exactly the state the
+      // caller invoked this to remove". The only caller read
+      // outcome.rekeyed and never outcome.skipped, so an unresolvable
+      // collision left two tasks sharing a key while sync reported a
+      // clean merge — and `loctt show <key>` became ambiguous.
+      const state = await loadState(locttDir);
+      const task = await createTask({
+        locttDir, state, options: { project: taskProjectId, title: "Colliding" },
+      });
+      await saveState(locttDir, state);
+      await publish(locttDir, root);
+
+      const dir = join(locttDir, "tasks", task.frontmatter.id);
+      const published = await readFile(join(dir, "task.md"), "utf-8");
+
+      // The branch adds a second task claiming the same key, in a
+      // project this clone has no counter for — so the rekey pass has
+      // nowhere to allocate a replacement from and must skip it.
+      await commitOnBranch(async wt => {
+        const otherId = "01M0COLLIDING000000000000";
+        await mkdir(join(wt, "tasks", otherId), { recursive: true });
+        await writeFile(
+          join(wt, "tasks", otherId, "task.md"),
+          published
+            .replace(/^id: .*$/m, `id: ${otherId}`)
+            .replace(/^project: .*$/m, "project: 01M0NOSUCHPROJECT00000000")
+            .replace(/^title: .*$/m, "title: Collides on key"),
+        );
+      }, "add a colliding task");
+
+      const result = await sync(locttDir, root);
+
+      // Named, not swallowed. The user has to be able to act on it.
+      expect(result.unresolvedKeys ?? []).toContain(task.frontmatter.key);
     });
 
     it("recovers from a worktree left registered by a hard kill", async () => {

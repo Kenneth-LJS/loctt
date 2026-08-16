@@ -67,6 +67,15 @@ export async function run(args: string[], root: string): Promise<void> {
       if (result.fetched === true) {
         console.log("Fetched from remote");
       }
+      // A duplicate key makes `loctt show <key>` ambiguous, so this is
+      // not a detail to leave in a warning stream the user may not read.
+      if (result.unresolvedKeys !== undefined && result.unresolvedKeys.length > 0) {
+        console.error(
+          `Warning: ${String(result.unresolvedKeys.length)} key collision(s) remain unresolved: `
+          + `${result.unresolvedKeys.join(", ")}. Run 'loctt doctor'.`,
+        );
+        process.exitCode = EXIT.RUNTIME;
+      }
       if (result.updated) {
         // Name what changed: a bare "Synced" is indistinguishable from a
         // sync that quietly removed local work.
