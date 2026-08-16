@@ -186,4 +186,36 @@ describe("MCP delete_user guards (stdio)", () => {
       }
     });
   });
+
+  it("resolves a project name on duplicate_task (P-3)", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["project", "create", "Backend", "--prefix", "B"], { cwd: root });
+      await runCli(["create", "original"], { cwd: root });
+
+      const client = await startMcpClient(root);
+      try {
+        const ok = await client.callTool("duplicate_task", {
+          ref: "T-1",
+          project: "Backend",
+        });
+        // The CLI twin was fixed earlier; this one still forwarded the
+        // raw name, so the allocator failed on it.
+        expect(ok.isError).toBeFalsy();
+        expect(ok.content[0]?.text ?? "").not.toMatch(/key allocation state/);
+
+        const bogus = await client.callTool("duplicate_task", {
+          ref: "T-1",
+          project: "NoSuchProject",
+        });
+        expect(bogus.isError).toBe(true);
+        const text = bogus.content[0]?.text ?? "";
+        expect(text).toMatch(/unknown project/i);
+        // An allocator internal is not an answer an agent can act on,
+        // and it was identical for a real project and a bogus one.
+        expect(text).not.toMatch(/key allocation state/);
+      } finally {
+        await client.close();
+      }
+    });
+  });
 });
