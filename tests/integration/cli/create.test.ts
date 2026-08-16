@@ -20,6 +20,7 @@ describe("CLI create (spawned binary)", () => {
     });
   });
 
+  // @verifies TSK-C6
   it("a task created with no --status gets the default status", async () => {
     // Was silently created with no `status` key at all, so it matched
     // neither `status = backlog` nor `status != done` and was invisible

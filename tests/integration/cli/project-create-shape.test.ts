@@ -89,3 +89,58 @@ describe("project create writes a ULID entry and seeds its counter", () => {
     });
   });
 });
+
+/**
+ * @verifies PRU-C2
+ *
+ * Archive sets the flag; unarchive must *remove* it rather than write
+ * `false`, or every consumer has to handle two shapes for one state.
+ * Archiving the default project must also clear `default:`, since a
+ * hidden default is one nothing can resolve.
+ */
+describe("project archive round-trips", () => {
+  const projectsYaml = async (root: string): Promise<string> =>
+    (await import("node:fs/promises")).readFile(
+      path.join(root, ".loctt/config/projects.yaml"), "utf-8",
+    );
+
+  it("sets the flag, then removes it entirely", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["project", "create", "Backend", "--prefix", "B"], { cwd: root });
+
+      await runCli(["project", "archive", "Backend"], { cwd: root });
+      expect(await projectsYaml(root)).toMatch(/archived: true/);
+
+      await runCli(["project", "unarchive", "Backend"], { cwd: root });
+      // Absent, not `false` — two shapes for one state is how consumers
+      // end up disagreeing about what "archived" means.
+      expect(await projectsYaml(root)).not.toMatch(/archived:/);
+    });
+  });
+
+  it("hides an archived project from list, and --all shows it marked", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["project", "create", "Backend", "--prefix", "B"], { cwd: root });
+      await runCli(["project", "archive", "Backend"], { cwd: root });
+
+      const plain = await runCli(["project", "list"], { cwd: root });
+      expect(plain.stdout).not.toContain("Backend");
+
+      const all = await runCli(["project", "list", "--all"], { cwd: root });
+      expect(all.stdout).toContain("Backend");
+      expect(all.stdout).toMatch(/archived/i);
+    });
+  });
+
+  it("re-archiving is a no-op that leaves the file byte-identical", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["project", "create", "Backend", "--prefix", "B"], { cwd: root });
+      await runCli(["project", "archive", "Backend"], { cwd: root });
+      const before = await projectsYaml(root);
+
+      const again = await runCli(["project", "archive", "Backend"], { cwd: root });
+      expect(again.exitCode).toBe(0);
+      expect(await projectsYaml(root)).toBe(before);
+    });
+  });
+});

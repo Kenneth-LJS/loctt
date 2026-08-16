@@ -68,6 +68,12 @@ export const TOOLS: readonly ToolDef[] = [
       prefix: z.string().optional().describe("Key prefix for tasks (default 'T-')."),
       project_label: z.string().optional().describe("Name of the starting project (default 'Tasks')."),
       no_docs: z.boolean().optional().describe("If true, skip generating helper docs."),
+      timezone: z.string().optional().describe(
+        "IANA workspace timezone (e.g. Asia/Singapore). Decides what 'today' "
+        + "means in date queries and is shared by everyone on the tracker, so "
+        + "set it for the team rather than the machine. Defaults to the "
+        + "server's zone.",
+      ),
     },
     // init runs *before* a tracker exists, so the schema-version
     // boot guard would always fail. This is the one tool with the
@@ -84,9 +90,14 @@ export const TOOLS: readonly ToolDef[] = [
       const prefix = args["prefix"] as string | undefined;
       const projectLabel = args["project_label"] as string | undefined;
       const noDocs = (args["no_docs"] as boolean | undefined) ?? false;
+      // ONB-C2: this was CLI-only, so an agent setting up for a team in
+      // another zone silently recorded the server machine's — and the
+      // zone decides what "today" means for every date query.
+      const timezone = args["timezone"] as string | undefined;
       const result = await initLoctt(root, {
         ...(prefix !== undefined ? { prefix } : {}),
         ...(projectLabel !== undefined ? { projectName: projectLabel } : {}),
+        ...(timezone !== undefined ? { timezone } : {}),
         docs: !noDocs,
       });
       return text(`Initialized .loctt at ${result.locttDir}\nCreated ${result.created.length} files`);

@@ -306,16 +306,25 @@ export async function set(args: string[], root: string): Promise<void> {
   }
   const locttDir = resolveLocttDir(root);
   const { workflowConfig } = await loadOptionalConfigs(locttDir);
-  // Pre-validate enum-typed fields against the workflow config
-  // so the CLI can surface a friendly "known values" hint
-  // instead of letting the core throw a generic update error.
-  if (field === "status" || field === "priority" || field === "task_type") {
-    assertWorkflowEnumKey(workflowConfig, field, value);
-  }
   const archivedGuard = await loadArchivedGuardConfigs(locttDir);
   const refs = splitRefs(ref);
 
+  // The enum check used to run first, so `set T-999 status doing` on an
+  // absent task blamed the status vocabulary and exited 2 (usage) rather
+  // than 1 (domain) — sending the user to fix the wrong thing. MCP
+  // already ordered it the other way (TSK-C3).
+  //
+  // Bulk keeps the pre-check: it resolves refs internally and reports
+  // per-task failures, so an unknown enum there is genuinely a usage
+  // error about the whole command rather than about one task.
+  const assertEnum = (): void => {
+    if (field === "status" || field === "priority" || field === "task_type") {
+      assertWorkflowEnumKey(workflowConfig, field, value);
+    }
+  };
+
   if (refs.length > 1) {
+    assertEnum();
     const result = await bulkSetFields({
       locttDir,
       taskRefs: refs,
@@ -328,6 +337,7 @@ export async function set(args: string[], root: string): Promise<void> {
   }
 
   const task = await lookupTask(locttDir, refs[0] as string);
+  assertEnum();
   await setField({
     locttDir,
     taskId: task.frontmatter.id,
