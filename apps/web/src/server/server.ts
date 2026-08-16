@@ -96,6 +96,7 @@ import {
   getCurrentUser,
   getGitStatus,
   getTrackerInfo,
+  GitConflictError,
   initLoctt,
   LabelError,
   linkTask,
@@ -320,6 +321,58 @@ function error(
     ...(extra.detail !== undefined ? { detail: extra.detail } : {}),
   };
   json(res, envelope, status);
+}
+
+/**
+ * Turns a thrown git error into a status and envelope (GIT-C5).
+ *
+ * A merge conflict is not a server fault and not an unknown outcome, but
+ * it used to be reported as both: status 500 with
+ * `data_state: "unknown"`, identical to a failed push. The two need
+ * opposite things from the user — a conflict needs them to go reconcile
+ * two versions of a file, a failed push needs them to try again — and a
+ * `recovery: retry` button on a conflict actively points the wrong way,
+ * since retrying reproduces it exactly.
+ *
+ * `GitConflictError` also carries the conflicting paths, which the old
+ * handler dropped on the floor. They go out as `failures` so the UI can
+ * list the files instead of asking the user to find them.
+ */
+function gitErrorResponse(err: unknown): {
+  status: number;
+  extra: Omit<Partial<ErrorResponse>, "message">;
+  message: string;
+} {
+  if (err instanceof GitConflictError) {
+    return {
+      status: 409,
+      message: err.message,
+      extra: {
+        code: "conflict",
+        // The conflict path aborts before writing anything — the error's
+        // own message promises "your local files are untouched", so
+        // saying "unknown" here would contradict it.
+        data_state: "not_saved",
+        // Retrying re-runs the same comparison and conflicts again.
+        // There is nothing to offer but the manual reconciliation the
+        // message describes.
+        recovery: { kind: "none" },
+        failures: err.paths.map((path: string) => ({
+          ref: path,
+          message: "changed on both sides",
+        })),
+      },
+    };
+  }
+  return {
+    status: 500,
+    message: (err as Error).message,
+    extra: {
+      code: "git_failed",
+      data_state: "unknown",
+      recovery: { kind: "retry" },
+    },
+  };
 }
 
 /**
@@ -1949,12 +2002,10 @@ export function createWebApp(options: WebAppOptions) {
       // ERR-31: git is the known cause, so it is named. Publish commits
       // to a temporary worktree and either lands or does not; a failure
       // partway leaves the tracker's own files untouched, but whether the
-      // branch moved is not knowable from here.
-      error(res, (err as Error).message, 500, {
-        code: "git_failed",
-        data_state: "unknown",
-        recovery: { kind: "retry" },
-      });
+      // branch moved is not knowable from here — except for a conflict,
+      // which aborts before writing and says so (GIT-C5).
+      const { status, message, extra } = gitErrorResponse(err);
+      error(res, message, status, extra);
     }
   };
 
@@ -1965,12 +2016,10 @@ export function createWebApp(options: WebAppOptions) {
     } catch (err) {
       // Sync both fetches and publishes, so an interrupted run genuinely
       // cannot say which side landed — ERR-4 asks for `unknown` by name
-      // rather than a guess in either direction.
-      error(res, (err as Error).message, 500, {
-        code: "git_failed",
-        data_state: "unknown",
-        recovery: { kind: "retry" },
-      });
+      // rather than a guess in either direction. A conflict is the one
+      // case that *can* say: it aborts before applying anything.
+      const { status, message, extra } = gitErrorResponse(err);
+      error(res, message, status, extra);
     }
   };
 

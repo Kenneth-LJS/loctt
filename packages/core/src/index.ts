@@ -102,6 +102,11 @@ export {
   enableGit,
   fetchLocttBranch,
   getGitStatus,
+  // Re-exported so callers can distinguish a conflict from any other git
+  // failure (GIT-C5). It lived in git/index.ts only, which put it out of
+  // reach of apps/web — the reason every git error there was reported
+  // identically.
+  GitConflictError,
   GitSyncError,
   publish,
   pullFromLocttBranch,
