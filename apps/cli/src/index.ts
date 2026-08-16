@@ -2,6 +2,7 @@ import { resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  formatIfZodError,
   recoverInterruptedPrefixRename,
   requireSupportedSchema,
   resolveLocttDir,
@@ -149,6 +150,19 @@ export async function main(): Promise<void> {
         break;
     }
   } catch (err) {
+    // A ZodError's `.message` is the serialized issue array, so printing
+    // it raw gave the user braces, "code" and "path" instead of an
+    // explanation — while MCP returned prose for the same input (P10).
+    // formatZodIssues is the formatter every other layer already uses.
+    //
+    // EXIT.RUNTIME (1) is already the domain-error code the case wants;
+    // only the message was wrong.
+    const zodProse = formatIfZodError(err, "task");
+    if (zodProse !== null) {
+      console.error(`Error: ${zodProse}`);
+      process.exitCode = EXIT.RUNTIME;
+      return;
+    }
     // Print just the message in normal mode; include the stack when
     // LOCTT_DEBUG=1 so triage isn't blind. Non-Error throws (rare)
     // get a defensive stringify.
