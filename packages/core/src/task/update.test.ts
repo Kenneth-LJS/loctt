@@ -235,7 +235,13 @@ describe("setField / unsetField", () => {
 
     it("mixes set and unset (value === undefined) in one call", async () => {
       await seedTask();
-      await setField({ locttDir, taskId: "abc", field: "milestone", value: "m1" });
+      // The milestone is incidental setup, but it has to exist: setField
+      // resolves a milestone reference to its id, and an unknown one is
+      // refused rather than stored blindly (MSL-C1). Storing an
+      // unresolvable name is what made milestone progress report 0/0.
+      const { createMilestone } = await import("../milestones/manage.js");
+      const ms = await createMilestone(locttDir, { name: "m1" });
+      await setField({ locttDir, taskId: "abc", field: "milestone", value: ms.id });
       const updated = await setFields({
         locttDir, taskId: "abc",
         changes: [
