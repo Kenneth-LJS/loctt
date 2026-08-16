@@ -120,21 +120,31 @@ function removeEdge(
  * Throws if the walk hits MAX_VISITS — a graph too large to verify
  * is treated as "refuse to add the link" rather than "looks fine."
  */
+/**
+ * Node budget for a structural cycle check. A graph larger than this is
+ * refused rather than assumed acyclic — "too big to verify" must not
+ * read as "verified fine".
+ *
+ * Exported so a test can build a chain sized to the cap instead of
+ * hardcoding 1001 tasks: at ~1s per link the literal fixture takes
+ * minutes, which is why this guard went untested (REL-C3).
+ */
+export const MAX_CYCLE_CHECK_VISITS = 1000;
+
 async function findStructuralCycle(
   locttDir: string,
   sourceId: string,
   targetId: string,
   canonicalType: string,
 ): Promise<string[] | null> {
-  const MAX_VISITS = 1000;
   const visited = new Set<string>();
   // DFS stack holds [nodeId, pathFromTargetIncludingThisNode]
   const stack: { id: string; path: string[] }[] = [{ id: targetId, path: [targetId] }];
 
   while (stack.length > 0) {
-    if (visited.size > MAX_VISITS) {
+    if (visited.size > MAX_CYCLE_CHECK_VISITS) {
       throw new RelationshipError(
-        `relationship graph too large to verify cycles (>${MAX_VISITS} nodes); split the link or contact a maintainer`,
+        `relationship graph too large to verify cycles (>${MAX_CYCLE_CHECK_VISITS} nodes); split the link or contact a maintainer`,
       );
     }
     const { id, path } = stack.pop() as { id: string; path: string[] };

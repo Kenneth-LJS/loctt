@@ -1,4 +1,4 @@
-import { copyFile, lstat, mkdir, stat, unlink } from "node:fs/promises";
+import { copyFile, lstat, mkdir, rm, stat, unlink } from "node:fs/promises";
 import { basename, isAbsolute, resolve } from "node:path";
 
 import type { HistoryEntry } from "@loctt/contracts";
@@ -158,7 +158,31 @@ export async function attachFile(opts: AttachOptions): Promise<AttachResult> {
   }
 
   // Symlinks at the source were already rejected above via lstat.
-  await copyFile(copySource, dest);
+  //
+  // A destination the filesystem refuses — most often ENAMETOOLONG,
+  // since the task directory's path counts toward the limit even when
+  // the basename alone is legal — must not surface as a raw errno, and
+  // must not leave a truncated file behind for the next `attach --force`
+  // to overwrite silently (REL-C5). copyFile can create the destination
+  // before failing, so the cleanup is not hypothetical.
+  try {
+    await copyFile(copySource, dest);
+  } catch (err) {
+    await rm(dest, { force: true }).catch(() => {
+      // Best-effort: the copy already failed, and a cleanup error must
+      // not replace the message that explains why.
+    });
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENAMETOOLONG") {
+      throw new AttachmentSourceError(
+        `attachment name is too long for the filesystem: "${name}" `
+        + `(${name.length} characters). Most filesystems cap a single name at `
+        + `255 characters, and the task's directory path counts toward the `
+        + `total. Rename the file and attach it again.`,
+      );
+    }
+    throw err;
+  }
 
   const stats = await stat(dest);
   const size = stats.size;

@@ -1,6 +1,6 @@
 import { isAbsolute, resolve as resolvePath } from "node:path";
 
-import { attachFile, AttachmentExistsError, detachFile, lookupTask, resolveLocttDir } from "@loctt/core";
+import { assertSafeBasename, attachFile, AttachmentExistsError, detachFile, lookupTask, resolveLocttDir } from "@loctt/core";
 
 import { hasFlag, rejectUnknownFlags } from "../runtime/args.js";
 import { UsageError } from "../runtime/errors.js";
@@ -69,8 +69,15 @@ export async function detach(args: string[], root: string): Promise<void> {
   if (!ref || !name) {
     throw new UsageError("missing task ref or name", "loctt detach <task> <name>");
   }
-  if (name.includes("/") || name.includes("\\") || name.includes("..")) {
-    throw new UsageError(`<name> must be a plain basename (no path separators or '..')`);
+  // Delegate to core's guard rather than re-deriving the rule. The
+  // hand-rolled check here used `includes("..")`, which refuses any name
+  // with two consecutive dots anywhere — so `notes..txt` could be
+  // attached and then never detached (REL-C4). Traversal is about a `..`
+  // path *segment*, which is what assertSafeBasename tests.
+  try {
+    assertSafeBasename(name);
+  } catch (err) {
+    throw new UsageError((err as Error).message);
   }
   const locttDir = resolveLocttDir(root);
   const task = await lookupTask(locttDir, ref);
