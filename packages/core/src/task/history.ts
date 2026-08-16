@@ -124,7 +124,19 @@ export async function readHistory(
     ? new Set(options.kinds)
     : null;
   const filtered = kindSet ? all.filter(e => kindSet.has(e.kind)) : all;
-  const ordered = options.order === "desc" ? [...filtered].reverse() : filtered;
+  // Sort, not reverse. `reverse()` assumes the file is already in
+  // chronological order, which appendHistory maintains — but
+  // `mergeHistory` concatenates local then incoming, so a file that has
+  // been through a git merge interleaves two timelines. Reversing that
+  // returns entries in no meaningful order, and "the 10 most recent"
+  // silently is not (audit A).
+  //
+  // Ascending is left as the stored order: it is chronological on every
+  // file that has not been merged, and re-sorting it would reorder the
+  // one thing a reader can currently rely on for ties.
+  const ordered = options.order === "desc"
+    ? [...filtered].sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+    : filtered;
   const offset = Math.max(0, options.offset ?? 0);
   const limit = options.limit;
   const sliced = limit === undefined ? ordered.slice(offset) : ordered.slice(offset, offset + limit);

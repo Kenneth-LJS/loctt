@@ -7,6 +7,7 @@ import {
   sync,
 } from "@loctt/core";
 
+import { rejectUnknownFlags } from "../runtime/args.js";
 import { EXIT } from "../runtime/errors.js";
 
 /**
@@ -17,7 +18,13 @@ import { EXIT } from "../runtime/errors.js";
  * when both sides diverged; this surface doesn't expose a separate
  * reconcile command (see docs/user/common/git-sync.md).
  */
+const ACCEPTED_FLAGS: readonly string[] = [];
+
 export async function run(args: string[], root: string): Promise<void> {
+  // Accepts no flags. Without this an unknown one was dropped and the
+  // command exited 0 — `loctt git publish --frce` reported success
+  // while pushing nothing the user asked for.
+  rejectUnknownFlags(args, ACCEPTED_FLAGS);
   const sub = args[1];
   const locttDir = resolveLocttDir(root);
   switch (sub) {

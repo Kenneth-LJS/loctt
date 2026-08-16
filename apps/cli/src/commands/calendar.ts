@@ -1,5 +1,6 @@
 import { loadCalendarConfig, resolveLocttDir } from "@loctt/core";
 
+import { rejectUnknownFlags } from "../runtime/args.js";
 import { EXIT } from "../runtime/errors.js";
 
 /**
@@ -8,7 +9,13 @@ import { EXIT } from "../runtime/errors.js";
  * structure of the other entity commands so adding edit/set in
  * the future doesn't require restructuring.
  */
+const ACCEPTED_FLAGS: readonly string[] = [];
+
 export async function run(args: string[], root: string): Promise<void> {
+  // Accepts no flags. Without this an unknown one was dropped and the
+  // command exited 0 — `loctt git publish --frce` reported success
+  // while pushing nothing the user asked for.
+  rejectUnknownFlags(args, ACCEPTED_FLAGS);
   const sub = args[1];
   const locttDir = resolveLocttDir(root);
   if (sub === "show") {

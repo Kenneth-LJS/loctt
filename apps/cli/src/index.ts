@@ -120,21 +120,21 @@ export async function main(): Promise<void> {
       case "mcp": await mcpCmd.run(args, root); break;
       case "ui":  await uiCmd.run(args, root);  break;
 
-      case "project": await projectCmd.run(args, root); break;
+      case "project": await runCommand(() => projectCmd.run(args, root)); break;
 
-      case "user": await userCmd.run(args, root); break;
+      case "user": await runCommand(() => userCmd.run(args, root)); break;
 
-      case "label": await labelCmd.run(args, root); break;
+      case "label": await runCommand(() => labelCmd.run(args, root)); break;
 
-      case "milestone": await milestoneCmd.run(args, root); break;
-      case "sprint":    await sprintCmd.run(args, root);    break;
-      case "calendar":  await calendarCmd.run(args, root);  break;
+      case "milestone": await runCommand(() => milestoneCmd.run(args, root)); break;
+      case "sprint":    await runCommand(() => sprintCmd.run(args, root));    break;
+      case "calendar":  await runCommand(() => calendarCmd.run(args, root));  break;
 
       case "rerank":       await runCommand(() => taskRankCmd.rerank(args, root));      break;
       case "board-rerank": await runCommand(() => taskRankCmd.boardRerank(args, root)); break;
 
-      case "git":     await gitCmd.run(args, root);     break;
-      case "config":  await configCmd.run(args, root);  break;
+      case "git":     await runCommand(() => gitCmd.run(args, root));     break;
+      case "config":  await runCommand(() => configCmd.run(args, root));  break;
       case "migrate": await migrateCmd.run(args, root); break;
 
       case "--help":

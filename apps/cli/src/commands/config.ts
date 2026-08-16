@@ -6,6 +6,7 @@ import {
   unsetConfigValue,
 } from "@loctt/core";
 
+import { rejectUnknownFlags } from "../runtime/args.js";
 import { EXIT } from "../runtime/errors.js";
 
 /**
@@ -14,7 +15,13 @@ import { EXIT } from "../runtime/errors.js";
  * Pulls the canonical set of keys from core's CONFIG_KEYS so a new
  * key needs zero CLI changes.
  */
+const ACCEPTED_FLAGS: readonly string[] = [];
+
 export async function run(args: string[], root: string): Promise<void> {
+  // Accepts no flags. Without this an unknown one was dropped and the
+  // command exited 0 — `loctt git publish --frce` reported success
+  // while pushing nothing the user asked for.
+  rejectUnknownFlags(args, ACCEPTED_FLAGS);
   const sub = args[1];
   const locttDir = resolveLocttDir(root);
   switch (sub) {

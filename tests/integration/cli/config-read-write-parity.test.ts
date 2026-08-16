@@ -19,7 +19,11 @@ import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
 describe("config read/write parity (CLI + MCP)", () => {
   it("reads back on MCP what the CLI wrote", async () => {
     await withTmpLoctt(async ({ root }) => {
-      await runCli(["git", "enable", "--remote", "origin"], { cwd: root });
+      // `--remote` was passed here and silently discarded — `git.ts`
+      // never read it. It only surfaced when the git dispatcher started
+      // rejecting unknown flags; the flag did nothing, so dropping it
+      // changes nothing about what this test covers.
+      await runCli(["git", "enable"], { cwd: root });
       const set = await runCli(["config", "set", "git.branch", "shared-branch"], { cwd: root });
       expect(set.exitCode).toBe(0);
 
