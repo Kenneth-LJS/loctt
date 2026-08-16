@@ -56,6 +56,16 @@ An unrecognized zone is rejected before anything is written. Trackers
 created before this flag existed have no `calendar.yaml` and fall back
 to UTC; add the file to set a zone.
 
+`--repair` restores files missing from an existing `.loctt/` — the case
+where `config/` was deleted but the tasks survived. It only fills gaps:
+anything still present is left exactly as it is, so a repair cannot cost
+you data. Without it, `init` over an incomplete tracker names what is
+missing and points here.
+
+If `state.yaml` had to be rebuilt, its key counters restart at 1 and
+would reissue keys already on disk — run `loctt doctor --rebuild-index`
+afterwards, which the repair output tells you.
+
 ### `loctt info`
 
 Display tracker status: directory path, task count, configured statuses, and
