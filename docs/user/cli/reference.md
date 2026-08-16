@@ -730,6 +730,19 @@ If the schema is already current, prints a no-op message and exits `0`.
 Most other commands refuse to run when the schema is out of date and direct
 you here.
 
+## Not on this surface
+
+Deliberately absent from the CLI, so you are not left hunting for them:
+
+- **Export (CSV / JSON)** — web only, via the list view's export menu.
+  The CLI's `list --format json` covers scripting; export exists for the
+  spreadsheet round-trip, which is a UI workflow.
+- **Board and timeline ordering** — `rerank` moves a single task; the
+  drag-driven reordering those views do is web only.
+
+Bulk edits are *not* on this list: `set` and `unset` accept
+comma-separated refs and run as one bulk operation (see above).
+
 ## Common patterns
 
 ### Create a task

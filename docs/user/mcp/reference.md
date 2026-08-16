@@ -619,6 +619,16 @@ Permanently removes the entry from `sprints.yaml`; the `sprint` field on each af
 
 Returns JSON `{id, ...result}`.
 
+## Not on this surface
+
+Deliberately absent from MCP, so an agent does not go looking:
+
+- **Export (CSV / JSON)** — web only. `list_tasks` returns structured
+  JSON, which is what an agent wants; export exists for the spreadsheet
+  round-trip.
+
+Bulk edits *are* available — see `bulk_update_tasks`.
+
 ## Calendar
 
 ### `get_calendar`
