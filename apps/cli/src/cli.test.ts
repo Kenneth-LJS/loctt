@@ -1044,13 +1044,28 @@ describe("CLI config subcommands", () => {
     expect(process.exitCode).toBeUndefined();
   });
 
-  it("info fails fast against a tracker with a too-new schema", async () => {
+  it("info reports a too-new schema rather than refusing to run", async () => {
     // Simulate a tracker created by a future LocTT version.
+    //
+    // This test asserted exit 1 — info was blocked by the boot guard
+    // like any write command. ONB-C5 requires the opposite: info's job
+    // is to describe the tracker, and the schema mismatch is one of the
+    // things worth describing. Refusing meant the command that answers
+    // "what is this tracker" could not answer precisely when it
+    // mattered. It is read-only, so reporting costs nothing that
+    // refusing was protecting.
     const { writeFile } = await import("node:fs/promises");
     await writeFile(join(root, ".loctt", ".schema-version"), "999\n", "utf-8");
-    process.argv = ["node", "loctt", "info"];
-    await main();
-    expect(process.exitCode).toBe(1);
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation(m => { logs.push(String(m)); });
+    try {
+      process.argv = ["node", "loctt", "info"];
+      await main();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(process.exitCode).toBeUndefined();
+    expect(logs.join("\n")).toMatch(/999/);
   });
 });
 
