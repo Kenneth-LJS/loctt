@@ -613,6 +613,55 @@ its commit: the `--hard` trio, `comment-delete` with no confirmation,
 "publish exits 0" on a failed push, and a fixture referencing a
 milestone that never existed.
 
+## Picking this up next
+
+**Next action: continue Phase 3.** 19 surface cases remain, all major or
+minor — every blocker is closed. In case order:
+
+`CFG-C4, CFG-C5, CMT-C5, CMT-C8, GIT-C3, GIT-C5, GIT-C6, GIT-C10,
+MSL-C3, ONB-C6, ONB-C7, PRU-C5, PRU-C7, QRY-C3, QRY-C6, REL-C3, REL-C4,
+REL-C5, SPR-C2`
+
+The loop that has worked, per case:
+
+1. Read the case in full from its flow doc — the one-line title in the
+   index is regularly misleading, and several cases' stated premises are
+   now stale because the code moved.
+2. **Probe the built CLI/MCP before writing anything.** Roughly a third
+   of the cases turned out already correct and needed only a test; the
+   rest were live defects. Assuming either way wasted time.
+3. Write the test, watch it fail, fix, then **mutate the fix and watch
+   the test fail again**. This caught four tests of mine that passed
+   while asserting nothing.
+4. `npm run test && test:integration && test:e2e && typecheck && lint`,
+   then commit one case (or a coherent pair) at a time.
+
+### Traps that cost time here
+
+- **Every git test runs inside LocTT's own repo.** `withTmpLoctt`
+  creates workspaces under `tests/workspace/`, so `isGitRepo` walks up
+  and finds `.git`. A test asserting "not a repository" silently proves
+  nothing — use `mkdtemp(tmpdir())` instead. Relevant to the four GIT
+  cases still open.
+- **The MCP server is bundled into the CLI binary.** `apps/mcp/dist` is
+  not what the tests spawn; rebuild `apps/cli` after touching MCP code
+  or you are testing a stale binary.
+- **`npm run lint --fix` moves imports between blocks.** It once sorted
+  `ParseError`/`TokenizeError` into the `@loctt/contracts` import, where
+  they do not exist, so `instanceof` threw at runtime. It also strips an
+  `as "asc" | "desc"` assertion that the integration build then needs.
+  Re-run typecheck after any autofix.
+- **A mutation that does not compile is not a mutation.** Check the
+  build output, not just the test result.
+
+### After Phase 3
+
+Phase 4's remaining groups (B–G, ~112 findings) in
+[`audit-findings.md`](audit-findings.md), which now has the test net
+Phase 3 built underneath it. Group G is ~79 cosmetic items — worth
+leaving until after the UI build, since much of it is in code M2–M4
+rewrites.
+
 ## Residual risk
 
 Phase 1 moves case selection out of build time and a second agent reviews
