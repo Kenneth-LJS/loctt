@@ -45,7 +45,17 @@ export type HistoryKind =
    * losing value would be inferable only by reading two clones' files
    * side by side.
    */
-  | "merge_resolved";
+  | "merge_resolved"
+  /**
+   * A task's ordering changed — `board_rank` from a board drag, or a
+   * relationship's rank from a reorder.
+   *
+   * `field` names which ordering (`board_rank` or the relationship
+   * type); `before`/`after` carry the rank values. Without this kind the
+   * rank paths wrote frontmatter and recorded nothing, so a card moved
+   * across a board left no audit trail (CMT-C6).
+   */
+  | "rank_changed";
 
 /** A single history/activity entry for a task. */
 export interface HistoryEntry {

@@ -1,6 +1,7 @@
 import type { Task, TaskRelationship } from "@loctt/contracts";
 
 import { withStateLock } from "../state/index.js";
+import { appendHistory } from "../task/history.js";
 import { writeTask } from "../task/io.js";
 import { loadAllTasks } from "../task/load-all.js";
 import { lookupTask } from "../task/lookup.js";
@@ -120,6 +121,9 @@ export async function reorderRelationship(
     });
 
     const movedLink = relationships[movedIdx];
+    // Captured before the write, so the history entry can say what the
+    // rank was as well as what it became.
+    const priorRank = movedLink?.rank;
     if (!movedLink) {
       // Can't happen — movedIdx came from this array — but satisfy TS.
       throw new ReorderError("internal: moved relationship vanished");
@@ -157,6 +161,16 @@ export async function reorderRelationship(
       },
     };
     await writeTask(opts.locttDir, source.frontmatter.id, updated);
+    // Every other mutating path records one; without this a reorder was
+    // invisible in the audit trail (CMT-C6).
+    await appendHistory(opts.locttDir, source.frontmatter.id, [{
+      timestamp: new Date().toISOString(),
+      kind: "rank_changed",
+      field: opts.relationshipType,
+      before: priorRank ?? null,
+      after: relationships[movedIdx]?.rank ?? newRank,
+      meta: { target: opts.targetRef },
+    }]);
 
     const finalLink = relationships[movedIdx];
     return { rank: finalLink?.rank ?? newRank, rebalanced };
@@ -187,6 +201,7 @@ export async function reorderBoardRank(
 
   return withStateLock(opts.locttDir, async () => {
     const moved = await lookupTask(opts.locttDir, opts.taskRef);
+    const priorBoardRank = moved.frontmatter.board_rank;
     const allTasks = await loadAllTasks(opts.locttDir);
     const peers = allTasks.flatMap(t => {
       if (t.frontmatter.id === moved.frontmatter.id) return [];
@@ -248,6 +263,18 @@ export async function reorderBoardRank(
       };
       await writeTask(opts.locttDir, t.frontmatter.id, updated);
     }
+
+    // Only the moved task gets an entry. A rebalance rewrites its peers
+    // as a side effect of making room, and recording a "move" on each
+    // would claim the user touched tasks they never saw.
+    await appendHistory(opts.locttDir, moved.frontmatter.id, [{
+      timestamp: new Date().toISOString(),
+      kind: "rank_changed",
+      field: "board_rank",
+      before: priorBoardRank ?? null,
+      after: updateMap.get(moved.frontmatter.id) ?? newRank,
+      ...(rebalanced ? { meta: { rebalanced: true } } : {}),
+    }]);
 
     const finalRank = updateMap.get(moved.frontmatter.id) ?? newRank;
     return { rank: finalRank, rebalanced };
