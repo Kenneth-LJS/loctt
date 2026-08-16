@@ -106,7 +106,7 @@ export async function saveWorkflowConfig(
  * journal, but "refused" should mean nothing happened.
  */
 export function assertWorkflowConfigValid(config: WorkflowConfig): WorkflowConfig {
-  const cleaned = autoClearTimelineDependency(config);
+  const cleaned = renumberPriorities(autoClearTimelineDependency(config));
   // Re-encode and re-parse so any caller-side issues surface as
   // validation errors rather than corrupting on-disk state.
   parseWorkflowConfig(serializeWorkflowConfigAsYaml(cleaned));
@@ -120,6 +120,27 @@ export function assertWorkflowConfigValid(config: WorkflowConfig): WorkflowConfi
     );
   }
   return cleaned;
+}
+
+/**
+ * Returns `config` with priority `value`s renumbered 1..N in list order
+ * (D20).
+ *
+ * `value` is what `order by priority` sorts on and is never displayed,
+ * so a wrong number is invisible until a query returns the wrong order.
+ * Reordering the list is the whole way a user expresses priority rank,
+ * and nothing recomputed the numbers to match: duplicates, gaps, zero
+ * and negatives all persisted, leaving the sort arbitrary between tied
+ * entries.
+ *
+ * Done here rather than in the reorder UI (M4.2, unbuilt) because every
+ * workflow write funnels through `assertWorkflowConfigValid`, so the
+ * invariant holds regardless of which surface made the edit.
+ */
+function renumberPriorities(config: WorkflowConfig): WorkflowConfig {
+  const renumbered = config.priorities.map((p, i) => ({ ...p, value: i + 1 }));
+  const unchanged = renumbered.every((p, i) => p.value === config.priorities[i]?.value);
+  return unchanged ? config : { ...config, priorities: renumbered };
 }
 
 /**
