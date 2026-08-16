@@ -71,6 +71,50 @@ describe("validateQuery — the four cases that must stay distinguishable", () =
   });
 });
 
+describe("validateQuery — queries that would silently match nothing", () => {
+  /**
+   * Each of these parses, validates, and then evaluates false for every
+   * task — indistinguishable from "nothing matched". That is the exact
+   * failure class validate.ts was written to eliminate, and each of
+   * these routed around it.
+   */
+
+  it("rejects `link_count(...) in (...)`, which can never be true", () => {
+    // The evaluator resolves a list to `undefined` and returns false, so
+    // the query is accepted and matches nothing.
+    const err = expectInvalid('link_count("blocks") in (1, 2)');
+    expect(err.message).toMatch(/link_count/);
+  });
+
+  it("rejects `link_count(...) not in (...)`, which is false for every task", () => {
+    // Worse than the positive form: a negation that is false everywhere
+    // reads as "no task lacks these counts", which is never what anyone
+    // meant to ask.
+    expectInvalid('link_count("blocks") not in (1, 2)');
+  });
+
+  it("rejects an empty list, which cannot match", () => {
+    const err = expectInvalid("status in ()");
+    expect(err.message).toMatch(/empty/i);
+  });
+
+  it("rejects a numeric literal that is not a number", () => {
+    // `1.2.3` and `3-4` become NaN, and every comparison against NaN is
+    // false — so the query runs and quietly returns nothing.
+    expectInvalid("estimate = 1.2.3");
+    expectInvalid("estimate = 3-4");
+  });
+
+  it("still accepts the forms these near-misses resemble", () => {
+    // The guard must not swallow the legitimate query next door.
+    validateQuery(q('link_count("blocks") = 2'), { workflow });
+    validateQuery(q('link_count("blocks") > 0'), { workflow });
+    validateQuery(q("status in (backlog, done)"), { workflow });
+    validateQuery(q("estimate = 3"), { workflow });
+    validateQuery(q("estimate = 1.5"), { workflow });
+  });
+});
+
 describe("validateQuery — valid queries pass", () => {
   it.each([
     "status = done",
