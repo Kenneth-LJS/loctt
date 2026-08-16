@@ -24,6 +24,7 @@ describe("MCP init (stdio)", () => {
     }, { init: false });
   });
 
+  // @verifies ONB-C1
   it("honours project_label and prefix, and keys state.yaml to the project id", async () => {
     // project_label reached core as `projectLabel`, which InitOptions
     // does not have, so it was dropped on every surface. This asserts

@@ -30,6 +30,7 @@ describe("CLI init (spawned binary)", () => {
     }, { init: false });
   });
 
+  // @verifies ONB-C1
   it("names the starting project from --project-label", async () => {
     // The flag was read and then dropped: core's option is
     // `projectName`, and every surface passed `projectLabel`, which
