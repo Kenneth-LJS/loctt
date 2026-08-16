@@ -115,14 +115,32 @@ export function buildListContext(tasks: readonly Task[]): ListContext {
 }
 
 /**
- * Resolves a named view from queries config.
- * Returns undefined if the view name is not found.
+ * Resolves a view ref — an id or a unique name — from queries config.
+ * Returns undefined if nothing matches.
+ *
+ * Matching on `name` alone was wrong twice over (QRY-C6). Names are not
+ * unique, so `find` silently picked whichever entry came first and ran a
+ * different view than the caller meant, with exit 0 and no warning. And
+ * because ids were not accepted, the documented escape hatch — "refer by
+ * id instead", which `findView` tells the user — did not work here.
+ *
+ * Ambiguity throws rather than guessing: running the wrong view is worse
+ * than refusing, because nothing about the output says it happened.
  */
 export function resolveView(
   queriesConfig: QueriesConfig,
-  viewName: string,
+  ref: string,
 ): QueriesConfig["queries"][number] | undefined {
-  return queriesConfig.queries.find(q => q.name === viewName);
+  const byId = queriesConfig.queries.find(q => q.id === ref);
+  if (byId) return byId;
+  const byName = queriesConfig.queries.filter(q => q.name === ref);
+  if (byName.length > 1) {
+    throw new Error(
+      `multiple views named '${ref}'; refer by id instead `
+      + `(${byName.map(q => q.id).join(", ")})`,
+    );
+  }
+  return byName[0];
 }
 
 /**
