@@ -272,6 +272,7 @@ export { loadSyncState, parseSyncState, saveSyncState, serializeSyncState, SyncS
 export { clearReconcileState, loadReconcileState, parseReconcileState, ReconcileStateError,saveReconcileState, serializeReconcileState } from "./state/index.js";
 export { allocateKey, appendKeyHistory, initKeyAllocation, KeyAllocationError } from "./state/index.js";
 export { addToKeyIndex, loadKeyIndex, lookupKeyInIndex, rebuildKeyIndex, removeFromKeyIndex, saveKeyIndex } from "./state/index.js";
+export { HistoryParseError } from "./task/history.js";
 export type { AttachOptions, AttachResult, DetachOptions } from "./task/index.js";
 export type { CreateTaskOptions, CreateTaskParams } from "./task/index.js";
 export type { DuplicateTaskOverrides, DuplicateTaskParams } from "./task/index.js";
