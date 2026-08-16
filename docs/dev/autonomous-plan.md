@@ -54,7 +54,7 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 | 1 · Partition | ✅ | All 21 tickets carry a `Cases:` line; gate passes. The 28 cases asserting two unticketed views are **resolved as a ticket gap**, not a scope cut — see *Blocker, resolved*. |
 | 2 · Measure | ✅ | Measured (CLI 17/49, MCP 26/75) and the blocker it raised is **cleared**: both reference docs corrected to the shipped API, every example executed. See *Blocker 2, resolved*. |
 | 3 · Surface gaps | ✅ | **68 of 68 closed**: blockers 23/23, major 29/29, minor 16/16. Surface coverage 46 → 111. See *Phase 3 log*. |
-| 4 · Structural audit | 🔵 | Reading **done**: 8 slices, ~18,700 lines, **124 findings** in [`audit-findings.md`](audit-findings.md). **Group A (silent wrong answers) is fixed** — 9 of 9, each with a test shown to fail first and killed by mutation. Groups B–G outstanding. |
+| 4 · Structural audit | 🔵 | **Groups A–F closed.** Group G (~79 cosmetic) deferred until after the UI build. ~5 findings left open on purpose, each named in [`audit-findings.md`](audit-findings.md) with why — they need the code that owns them (M2 task detail, MCP comment tools) rather than a sweep. |
 | 5 · UI build | ⬜ | M1.4 is 🔵 from earlier work, predating this plan |
 
 ### ✅ Blocker — RESOLVED 2026-08-16: two views need tickets, not a scope cut
@@ -615,20 +615,23 @@ milestone that never existed.
 
 ## Picking this up next
 
-**Next action: Phase 4, groups B–F.** Phase 3 is complete — all 68
-surface cases closed and tagged — and Blocker 1's two missing views are
-ticketed as M3.5 and M4.9.
+**Next action: build M3.5 and M4.9.** Phase 3 is complete (all 68
+surface cases closed), Blocker 1's two missing views are ticketed, and
+Phase 4's groups A–F are closed.
 
 Order from here, agreed with the user:
 
-1. **Phase 4, groups B–F** (~33 findings). Group G (~79 cosmetic) waits
-   until after the UI build: fixing surface polish in code the UI is
-   about to reshape means doing it twice.
-2. **Build M3.5 and M4.9.** Both carry server work despite an initial
+1. **Build M3.5 and M4.9.** Both carry server work despite an initial
    "frontend-only" claim that was wrong, and both carry an open decision
-   recorded on the ticket.
-3. **Phase 5**, M1.4 → M4.8.
-4. **Phase 4, group G**, last.
+   recorded on the ticket — the `$key` route segment in particular needs
+   settling for M4.7 at the same time.
+2. **Phase 5**, M1.4 → M4.8.
+3. **Phase 4, group G** (~79 cosmetic), last — fixing surface polish in
+   code the UI is about to reshape means doing it twice.
+
+Roughly five non-cosmetic findings are left open on purpose. Each is
+named in `audit-findings.md` with why: they need the code that owns them
+(the M2 task-detail handler, the MCP comment tools) rather than a sweep.
 
 Treat the 124 audit findings as a reading queue, not a fix list. Roughly
 a third of Phase 3's "defects" were not defects, and the same rate should
