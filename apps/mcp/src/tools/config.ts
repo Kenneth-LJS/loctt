@@ -71,23 +71,30 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "list_config_values",
-    description: "Lists all known config keys with their current values, types, and descriptions. Returns structured JSON array.",
+    description: "Lists all known config keys with their current values, types, and descriptions. Returns a JSON array of {key, value, type, description}. A key whose value could not be read carries `unreadable` with the reason — treat that as \"unknown\", not as \"not set\": `value` is null in both cases.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       const items = [];
       for (const def of CONFIG_KEYS) {
         let value: string | boolean | null = null;
+        let unreadable: string | undefined;
         try {
           const v = await getConfigValue(locttDir, def.key);
           value = v === undefined ? null : v;
-        } catch {
-          value = null;
+        } catch (err) {
+          // `null` used to cover both "not set" and "we could not read
+          // it". An agent reads `git.enabled: null` as "git mode is
+          // off" and acts on that — so a malformed sync.yaml presented
+          // as a deliberate configuration. Keep null for the value, but
+          // say when it is not an answer.
+          unreadable = (err as Error).message;
         }
         items.push({
           key: def.key,
           value,
           type: def.type,
           description: def.description,
+          ...(unreadable !== undefined ? { unreadable } : {}),
         });
       }
       return text(JSON.stringify(items, null, 2));

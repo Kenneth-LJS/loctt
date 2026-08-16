@@ -117,6 +117,48 @@ describe("bulkMoveTasksToProject", () => {
     }
   });
 
+  it("persists the key counter even when every write fails", async () => {
+    // `performMove` consumes a key from `state` before `writeTask`, so a
+    // failed write leaves the counter incremented in memory regardless.
+    // `mutated` used to be set *after* the write, so whether that
+    // increment survived depended on whether some other task in the
+    // batch happened to succeed — the same failure produced two
+    // different on-disk counters.
+    //
+    // Reissuing a consumed number is the dangerous direction: it
+    // collides with a key the user may still hold in key_history (P-7).
+    // A gap in the sequence is not.
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT-" });
+    const a = await seed("A");
+
+    // Make the task directory unwritable so the write fails after the
+    // key has already been allocated.
+    const { chmod } = await import("node:fs/promises");
+    const { getTaskDir } = await import("../paths/index.js");
+    // `seed` returns the task id, which is what getTaskDir wants.
+    const dir = getTaskDir(locttDir, a);
+    await chmod(dir, 0o500);
+
+    let after: number | undefined;
+    try {
+      const result = await bulkMoveTasksToProject({
+        locttDir, taskRefs: [a], targetProjectId: alt.id,
+      });
+      // If the platform let the write through, this test proves nothing
+      // — fail rather than pass vacuously.
+      expect(result.failed, "expected the write to fail").toHaveLength(1);
+
+      const { loadState } = await import("../state/state.js");
+      after = (await loadState(locttDir)).keys[alt.id]?.next_number;
+    } finally {
+      await chmod(dir, 0o700);
+    }
+
+    // The consumed number is recorded, so the next allocation does not
+    // reissue it.
+    expect(after).toBeGreaterThan(1);
+  });
+
   it("captures per-task failures", async () => {
     const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT-" });
     const a = await seed("A");

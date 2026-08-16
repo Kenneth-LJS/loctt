@@ -157,10 +157,18 @@ export async function bulkMoveTasksToProject(
         const { task, oldKey, newKey, historyEntries } = performMove({
           state, source, targetProjectId: opts.targetProjectId, now, bulkOpId,
         });
+        // `performMove` has already consumed a key from `state`. Mark
+        // the state dirty here rather than after the write: a write that
+        // fails leaves the counter incremented either way, and whether
+        // that increment survived used to depend on whether some *other*
+        // task in the batch happened to succeed. Persisting it always is
+        // the safe direction — a consumed-then-abandoned number is a gap
+        // in the sequence, while reissuing one collides with a key the
+        // user may still hold in key_history (P-7).
+        mutated = true;
         await writeTask(opts.locttDir, task.frontmatter.id, task);
         await appendHistory(opts.locttDir, task.frontmatter.id, historyEntries);
         succeeded.push({ taskId: task.frontmatter.id, oldKey, newKey });
-        mutated = true;
       } catch (err) {
         if (err instanceof TaskNotFoundError) {
           failed.push({ taskId: ref, error: "task not found" });
