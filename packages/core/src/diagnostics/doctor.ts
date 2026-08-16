@@ -14,6 +14,7 @@ import { readPrefixRenameState } from "../projects/prefix.js";
 import { isMigrationLocked } from "../schema/lock.js";
 import { CURRENT_SCHEMA_VERSION, readSchemaVersion } from "../schema/version.js";
 import { loadKeyIndex, rebuildKeyIndex } from "../state/key-index.js";
+import { readReconcileState } from "../state/reconcile.js";
 import { loadState } from "../state/state.js";
 import { readTask } from "../task/io.js";
 import { listTaskIds } from "../task/list-ids.js";
@@ -447,6 +448,33 @@ export async function runDoctor(
       name: "prefix rename",
       status: "error",
       message: `unreadable sentinel: ${(err as Error).message}`,
+    });
+  }
+
+  // An interrupted reconciliation is the one sentinel nothing finishes
+  // automatically: the run applied an unknown subset of a plan whose
+  // base commit no longer describes the workspace, so resuming blind
+  // could overwrite local edits. Sync refuses to run while it is
+  // present, which makes doctor the place that explains why (GIT-C3).
+  try {
+    const pending = await readReconcileState(locttDir);
+    if (pending) {
+      checks.push({
+        name: "reconciliation",
+        status: "error",
+        message:
+          `interrupted '${pending.mode}' reconciliation started ${pending.started_at} `
+          + `(${pending.base_commit.slice(0, 8)} → ${pending.remote_commit.slice(0, 8)}) — `
+          + `your workspace may hold a partly-applied sync. Compare it against the branch, `
+          + `make it whole, then delete .loctt/local/reconcile.yaml. Sync refuses to run `
+          + `until that record is cleared.`,
+      });
+    }
+  } catch (err) {
+    checks.push({
+      name: "reconciliation",
+      status: "error",
+      message: `unreadable reconcile sentinel: ${(err as Error).message}`,
     });
   }
 

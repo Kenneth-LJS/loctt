@@ -6,6 +6,7 @@ import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
 import { initLoctt } from "../init/init.js";
 import { CURRENT_SCHEMA_VERSION, writeSchemaVersion } from "../schema/index.js";
+import { saveReconcileState } from "../state/reconcile.js";
 import { runDoctor } from "./doctor.js";
 import { getTrackerInfo } from "./info.js";
 
@@ -99,6 +100,39 @@ describe("runDoctor", () => {
     expect(errors).toHaveLength(0);
     const okChecks = checks.filter(c => c.status === "ok");
     expect(okChecks.length).toBeGreaterThanOrEqual(5);
+  });
+
+  /**
+   * @verifies GIT-C3
+   *
+   * Sync refuses to run while an interrupted reconciliation is on disk,
+   * so doctor has to be the surface that explains why — otherwise the
+   * user meets a refusal with no way to see what is outstanding.
+   */
+  it("reports an interrupted reconciliation as an error", async () => {
+    await initLoctt(root);
+    const locttDir = join(root, ".loctt");
+    await saveReconcileState(locttDir, {
+      mode: "sync",
+      base_commit: "a".repeat(40),
+      remote_commit: "b".repeat(40),
+      started_at: "2026-01-01T00:00:00.000Z",
+    });
+
+    const checks = await runDoctor(root);
+    const check = checks.find(c => c.name === "reconciliation");
+    // An error, not a warn: unlike a prefix rename, nothing finishes
+    // this automatically and sync stays blocked until it is resolved.
+    expect(check?.status).toBe("error");
+    expect(check?.message).toContain("2026-01-01T00:00:00.000Z");
+    expect(check?.message).toContain("reconcile.yaml");
+  });
+
+  it("says nothing about reconciliation when none is outstanding", async () => {
+    await initLoctt(root);
+    const checks = await runDoctor(root);
+    // A check that always fires would train the user to ignore it.
+    expect(checks.find(c => c.name === "reconciliation")).toBeUndefined();
   });
 
   it("includes task and relationship checks", async () => {

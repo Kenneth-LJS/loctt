@@ -150,3 +150,24 @@ base_commit: abc123
 remote_commit: def456
 started_at: 2026-04-16T14:30:00Z
 ```
+
+### If a sync is interrupted
+
+A sync writes many files and has no single moment where it is atomically
+"done". If it dies partway — a kill, a crash, a power loss — this file is
+left behind, and your workspace holds some of the incoming changes but
+not all of them.
+
+The next `loctt git sync` will refuse to run, and say so:
+
+```
+a previous 'sync' reconciliation was interrupted (started ..., syncing abc12345 → def45678).
+```
+
+It refuses rather than retrying because the commit it would plan against
+no longer describes your files, so a fresh sync could overwrite local
+edits. `loctt doctor` reports the same thing if you want to check later.
+
+To recover: compare your `.loctt/` against the `loctt` branch, make it
+whole, then delete `.loctt/local/reconcile.yaml`. The next sync re-plans
+from scratch.
