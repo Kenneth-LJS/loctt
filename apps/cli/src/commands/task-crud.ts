@@ -58,7 +58,7 @@ const TASK_SET_FLAGS: readonly string[] = [];
 const TASK_UNSET_FLAGS: readonly string[] = [];
 const TASK_DELETE_CMD_FLAGS: readonly string[] = ["--yes"];
 const TASK_BODY_FLAGS: readonly string[] = ["--set", "--append"];
-const TASK_LOG_FLAGS: readonly string[] = ["--limit"];
+const TASK_LOG_FLAGS: readonly string[] = ["--limit", "--offset"];
 
 export async function create(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, TASK_CREATE_FLAGS);
@@ -503,7 +503,7 @@ export async function log(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, TASK_LOG_FLAGS);
   const ref = args[1];
   if (!ref) {
-    throw new UsageError("missing task ref", "loctt log <task> [--limit <n>]");
+    throw new UsageError("missing task ref", "loctt log <task> [--limit <n>] [--offset <n>]");
   }
   let limit: number | undefined;
   const limitArg = getArg(args, "--limit");
@@ -513,12 +513,34 @@ export async function log(args: string[], root: string): Promise<void> {
       throw new UsageError("--limit must be a non-negative integer");
     }
   }
+  // Without offset a long history is reachable only from its newest
+  // end: the older entries are on disk and nothing can display them
+  // (CMT-C4). readHistory has supported offset all along.
+  let offset: number | undefined;
+  const offsetArg = getArg(args, "--offset");
+  // `--offset -1` reaches here as undefined: getArg treats a leading `-`
+  // as the next flag rather than a value, so a bare `--offset` looks
+  // identical to one that was never passed. Catch the present-but-empty
+  // case explicitly rather than silently paging from 0.
+  if (offsetArg === undefined && args.includes("--offset")) {
+    throw new UsageError("--offset needs a non-negative integer value");
+  }
+  if (offsetArg !== undefined) {
+    offset = Number(offsetArg);
+    if (Number.isNaN(offset) || offset < 0 || !Number.isInteger(offset)) {
+      throw new UsageError("--offset must be a non-negative integer");
+    }
+  }
+
   const locttDir = resolveLocttDir(root);
   const task = await lookupTask(locttDir, ref);
 
   const entries = await readHistory(locttDir, task.frontmatter.id);
+  // Reverse first: offset counts from the newest entry, which is what
+  // the display order is and therefore what a pager means by "skip 2".
   const reversed = [...entries].reverse();
-  const display = limit !== undefined ? reversed.slice(0, limit) : reversed;
+  const fromOffset = offset !== undefined ? reversed.slice(offset) : reversed;
+  const display = limit !== undefined ? fromOffset.slice(0, limit) : fromOffset;
 
   if (display.length === 0) {
     console.log("No history entries.");

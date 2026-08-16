@@ -547,6 +547,10 @@ loctt log <task> [--limit <n>]
 
 Example: `loctt log T-12 --limit 20`
 
+`--offset <n>` skips the newest `n` entries, so a long history is
+reachable past its first page — `--limit` alone can only ever show the
+most recent.
+
 ### `loctt attach`
 
 Attach a file to a task. The file is copied into the task's directory under

@@ -58,7 +58,7 @@ Commands:
   unarchive <task>
   delete <task> [--yes]             Permanent removal; use 'archive' for the reversible alternative
   body <task> [--set <text>] [--append <text>]
-  log <task> [--limit <n>]
+  log <task> [--limit <n>] [--offset <n>]
   duplicate <task> [--title <t>] [--project <name|id>]
                                    Copy field values and body to a new key.
                                    Relationships and attachments are not copied.
