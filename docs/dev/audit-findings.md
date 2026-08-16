@@ -276,18 +276,30 @@ later, because by then the wrong data is upstream of other decisions.
 
 **Fix these first.** Six are one-line-ish; the merge ones are not.
 
-### B · Data at risk — 4 findings
+### B · Data at risk — 4 findings — **all closed**
 
-Recoverable, but the recovery is manual and undocumented.
+Recoverable, but the recovery was manual and undocumented.
 
-- A crashed publish/sync leaves a registered git worktree with no
-  recovery path; `git worktree prune` appears nowhere in the codebase.
-- `projects.yaml` resolves its list and its scalars in opposite
-  directions, and the comment describes the opposite of the code.
-- `mergeHistory` / `mergeComments` cast unvalidated YAML straight to
-  their types.
-- The fatal `.schema-migration-in-progress` sentinel is bypassed on the
-  only path that can reach it, against `invariants.md:45`.
+- ✅ A crashed publish/sync leaves a registered git worktree with no
+  recovery path. **Already fixed during Phase 3** — `worktree prune`
+  runs before each `add` on both the publish and sync paths.
+- ✅ `projects.yaml` resolves its list and its scalars in opposite
+  directions, and the comment describes the opposite of the code. **The
+  code was right and the comment was wrong**: `{ ...b, ...a }` is
+  local-wins, which is the rule the user decided on 2026-08-16. Comment
+  corrected; no behaviour change.
+- ✅ `mergeHistory` / `mergeComments` cast unvalidated YAML straight to
+  their types. All six `as HistoryEntry[]` / `as MergeableComment[]`
+  casts replaced with a checked parse that routes a non-list to
+  `unresolved`. An empty file still reads as an empty list — that is a
+  legitimate state, not corruption.
+- ✅ The fatal `.schema-migration-in-progress` sentinel is bypassed on
+  the only path that can reach it. Confirmed live: every ordinary
+  command refused, but `loctt migrate` printed "already at v1, nothing
+  to do" and exited 0 on a tracker holding the sentinel. The check now
+  runs in **both** `planMigration` and `migrateToCurrent` — the CLI
+  calls the former first and returned early on an empty plan, so
+  guarding only the latter would have changed nothing.
 
 ### C · Invariant violations — 5 findings — **4 fixed, 1 open**
 

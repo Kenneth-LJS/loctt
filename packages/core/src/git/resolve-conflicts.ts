@@ -90,6 +90,29 @@ async function readIfPresent(path: string): Promise<string | undefined> {
  * Pure with respect to the filesystem: it reads both versions and
  * returns content to write, so the caller decides when anything lands.
  */
+/**
+ * Parses a YAML list file from one side of a merge.
+ *
+ * The previous `as HistoryEntry[]` / `as MergeableComment[]` casts were
+ * assertions about data this process did not write: the incoming side
+ * comes off a branch another machine published, and a hand-edited or
+ * truncated file reached the merge functions as whatever it happened to
+ * be. A non-array (a map, a scalar, `null` from a file of only
+ * comments) then flowed into `mergeHistory`, which iterates it.
+ *
+ * Throwing routes the path to `unresolved` via the loop's own catch,
+ * which is the honest outcome — a file we cannot read is a file we
+ * cannot merge, and the user still has both versions intact.
+ */
+function parseYamlList<T>(raw: string | undefined, path: string, kind: string): T[] {
+  const parsed: unknown = parseYaml(raw ?? "");
+  if (parsed === null || parsed === undefined) return [];
+  if (!Array.isArray(parsed)) {
+    throw new Error(`${path} is not a list of ${kind} entries`);
+  }
+  return parsed as T[];
+}
+
 export async function resolveConflicts(
   conflicts: readonly PathPlan[],
   incomingDir: string,
@@ -131,12 +154,12 @@ export async function resolveConflicts(
         // would then fall back for want of evidence sitting on disk.
         const dir = conflict.path.slice(0, -basename(conflict.path).length);
         const historyPath = `${dir}_history.yaml`;
-        const localHistory = (parseYaml(
-          (await readIfPresent(join(localDir, historyPath))) ?? "",
-        ) ?? []) as HistoryEntry[];
-        const incomingHistory = (parseYaml(
-          (await readIfPresent(join(incomingDir, historyPath))) ?? "",
-        ) ?? []) as HistoryEntry[];
+        const localHistory = parseYamlList<HistoryEntry>(
+          await readIfPresent(join(localDir, historyPath)), historyPath, "history",
+        );
+        const incomingHistory = parseYamlList<HistoryEntry>(
+          await readIfPresent(join(incomingDir, historyPath)), historyPath, "history",
+        );
         const history = mergeHistory(localHistory, incomingHistory);
 
         const out = mergeTask(readTaskFile(localRaw), readTaskFile(incomingRaw), history);
@@ -165,8 +188,8 @@ export async function resolveConflicts(
       }
 
       if (isHistoryFile(conflict.path)) {
-        const a = (parseYaml(localRaw) ?? []) as HistoryEntry[];
-        const b = (parseYaml(incomingRaw) ?? []) as HistoryEntry[];
+        const a = parseYamlList<HistoryEntry>(localRaw, conflict.path, "history");
+        const b = parseYamlList<HistoryEntry>(incomingRaw, conflict.path, "history");
         merged.push({
           path: conflict.path,
           content: stringifyYaml(mergeHistory(a, b)),
@@ -175,8 +198,8 @@ export async function resolveConflicts(
       }
 
       if (isCommentsFile(conflict.path)) {
-        const a = (parseYaml(localRaw) ?? []) as MergeableComment[];
-        const b = (parseYaml(incomingRaw) ?? []) as MergeableComment[];
+        const a = parseYamlList<MergeableComment>(localRaw, conflict.path, "comment");
+        const b = parseYamlList<MergeableComment>(incomingRaw, conflict.path, "comment");
         merged.push({
           path: conflict.path,
           content: stringifyYaml(mergeComments(a, b)),
@@ -201,8 +224,15 @@ export async function resolveConflicts(
         const a = parseYaml(localRaw) as Record<string, unknown>;
         const b = parseYaml(incomingRaw) as Record<string, unknown>;
         // These files wrap their list in a named key (`projects:`,
-        // `queries:`); merge the list and keep the rest of the incoming
-        // document.
+        // `queries:`). The list is unioned by id; the document's other
+        // keys — `default` on projects.yaml — resolve **local-wins**,
+        // which is what `{ ...b, ...a }` does with `a` local.
+        //
+        // The comment here used to say "keep the rest of the incoming
+        // document", the exact opposite of the code. Local-wins is the
+        // intended rule (decided 2026-08-16): the default project is a
+        // per-checkout working preference, and having a sync silently
+        // repoint it is worse than having two clones disagree.
         const key = conflict.path.includes("projects") ? "projects" : "queries";
         const listA = (a[key] ?? []) as { id: string }[];
         const listB = (b[key] ?? []) as { id: string }[];
@@ -250,16 +280,16 @@ export async function resolveConflicts(
   for (const [path, additions] of pendingHistory) {
     const existing = merged.find(m => m.path === path);
     if (existing !== undefined) {
-      const current = (parseYaml(existing.content) ?? []) as HistoryEntry[];
+      const current = parseYamlList<HistoryEntry>(existing.content, path, "history");
       merged[merged.indexOf(existing)] = {
         path,
         content: stringifyYaml(mergeHistory(current, additions)),
       };
       continue;
     }
-    const onDisk = (parseYaml(
-      (await readIfPresent(join(localDir, path))) ?? "",
-    ) ?? []) as HistoryEntry[];
+    const onDisk = parseYamlList<HistoryEntry>(
+      await readIfPresent(join(localDir, path)), path, "history",
+    );
     merged.push({ path, content: stringifyYaml(mergeHistory(onDisk, additions)) });
   }
 
