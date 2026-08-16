@@ -347,6 +347,7 @@ export { bulkMoveTasksToProject, MoveTaskError,moveTaskToProject } from "./task/
 export { linkTask, RelationshipError,unlinkTask } from "./task/index.js";
 export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./task/index.js";
 export { computeProgress, milestoneProgress, sprintProgress } from "./task/index.js";
+export { bodyToken, StaleBodyWriteError } from "./task/io.js";
 export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserSettings } from "./users/index.js";
 export type { RecentEntry } from "./users/index.js";
 export {

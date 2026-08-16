@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { type Task, TaskFrontmatterSchema } from "@loctt/contracts";
@@ -73,12 +74,24 @@ async function updateTaskBody(
   locttDir: string,
   taskId: string,
   transformer: (body: string) => string,
+  opts: BodyWriteOptions = {},
 ): Promise<void> {
   await withStateLock(locttDir, async () => {
     const filePath = getTaskFilePath(locttDir, taskId);
     const content = await readFile(filePath, "utf-8");
     const { rawYaml, body } = splitTaskFile(content);
     const frontmatter = parseFrontmatter(rawYaml);
+
+    // The lock serialises this call's read-modify-write; it cannot see
+    // that the *caller's* buffer is stale. Two clients that both read
+    // and both write therefore both succeed, and the second silently
+    // discards the first's work (CMT-C3).
+    if (opts.expectedToken !== undefined) {
+      const current = tokenFor(frontmatter.updated_at, body);
+      if (current !== opts.expectedToken) {
+        throw new StaleBodyWriteError(frontmatter.key ?? taskId);
+      }
+    }
     const newBody = transformer(body);
     const now = new Date().toISOString();
     const updated = { ...frontmatter, updated_at: now };
@@ -101,8 +114,61 @@ async function updateTaskBody(
  * Replaces the markdown body of a task while preserving frontmatter.
  * Updates `updated_at` to the current time.
  */
-export async function writeTaskBody(locttDir: string, taskId: string, newBody: string): Promise<void> {
-  await updateTaskBody(locttDir, taskId, () => newBody);
+export async function writeTaskBody(
+  locttDir: string,
+  taskId: string,
+  newBody: string,
+  opts: BodyWriteOptions = {},
+): Promise<void> {
+  await updateTaskBody(locttDir, taskId, () => newBody, opts);
+}
+
+/** Options shared by the body write paths. */
+export interface BodyWriteOptions {
+  /**
+   * A token from a prior {@link bodyToken} read. When given, the write
+   * is refused if the task changed in between. Omit for
+   * last-write-wins, which is what every existing caller gets.
+   */
+  readonly expectedToken?: string;
+}
+
+/**
+ * Rejected because the task moved under the caller.
+ *
+ * States plainly that nothing was written: a client that cannot tell a
+ * refusal from a success will close the tab believing its text landed.
+ */
+export class StaleBodyWriteError extends Error {
+  constructor(readonly ref: string) {
+    super(
+      `${ref} changed since you read it — your text has NOT been saved. `
+      + `Re-read the task, reapply your edit, and write again.`,
+    );
+    this.name = "StaleBodyWriteError";
+  }
+}
+
+/**
+ * A token identifying the task's current body state.
+ *
+ * Derived from `updated_at` plus a body digest rather than stored:
+ * nothing new lands on disk, and any write — body or frontmatter —
+ * invalidates it, which is the conservative direction. A token that
+ * survived an unrelated frontmatter change could let a body write
+ * through that was composed against different metadata.
+ */
+export async function bodyToken(locttDir: string, taskId: string): Promise<string> {
+  const content = await readFile(getTaskFilePath(locttDir, taskId), "utf-8");
+  const { rawYaml, body } = splitTaskFile(content);
+  return tokenFor(parseFrontmatter(rawYaml).updated_at, body);
+}
+
+function tokenFor(updatedAt: string | undefined, body: string): string {
+  return createHash("sha256")
+    .update(`${updatedAt ?? ""}\u0000${body}`)
+    .digest("hex")
+    .slice(0, 16);
 }
 
 /**
