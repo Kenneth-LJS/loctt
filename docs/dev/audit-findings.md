@@ -454,6 +454,54 @@ with unbuilt work rather than a sweep:
   (CMT-C7) and the merge-path parse check (group B) cover the shapes
   that actually reached code.
 
+### Swallowed-error audit, 2026-08-17
+
+Prompted by three instances found and fixed by accident during Phase 4
+(`loadOptionalConfigs`, `list_config_values`, `branchHasForeignContent`).
+Three found that way means the population is larger, so it was audited
+exhaustively: **273 catch sites plus 25 `.catch()` handlers** across
+core, contracts, cli, mcp and web.
+
+**Six unsafe.** The codebase is otherwise disciplined here — most
+catches narrow on `err.code === "ENOENT"` and rethrow.
+
+The shape: a catch turns "I could not read this" into a default value,
+so the caller cannot tell "there is nothing here" from "something
+failed". In every case below the loader already handled genuine absence
+— via `fileExists`, or by returning a documented default — so the catch
+could *only* fire on a real failure, and the default it produced was a
+factual claim about a file nobody had read.
+
+| # | Where | What goes wrong for a user |
+|---|---|---|
+| 1 | `task/comments.ts:130` | Returns `[]` on any read failure, and `postComment` writes `[...existing, comment]` straight back. **Reproduced:** three comments, file made unreadable, post reports success, one comment survives. Deletion is hard — no recovery. |
+| 2 | `config/archived-guard.ts:51` | Three catches leave the configs undefined; `archivedIds(undefined)` is an empty set, so the check is skipped. A malformed `labels.yaml` lets an archived label attach and report success, on every create/update across all three surfaces. |
+| 3 | `git/git-mode.ts:227` | Reports `enabled: false` for a `sync.yaml` it could not parse. The CLI prints `Enabled: false`; an agent may re-enable git mode or skip a publish. |
+| 4 | `users/profile.ts:103` | A corrupt profile is skipped. Narrow — only bites if that user is *also* archived, dropping them from `archivedUserIds` so the guard fails open. |
+| 5 | `mcp/tools/views.ts:38` | `"No saved views configured."` is a positive claim covering ENOENT, syntax error and EACCES alike. An agent may offer to recreate a catalog it could not read. |
+| 6 | `cli/commands/config.ts:69` | Prints `git.enabled = ` (blank), which reads as "not set" — while `config get` on the same file errors loudly. |
+
+**Not a catch, same failure:** `ListView.tsx:244` has no `isError`
+branch, so a failed `/api/tasks` renders as "No tasks match these
+filters." The error is on the query; the UI never reads it. Same gap in
+`Sidebar.tsx`. M2 work, recorded here so it is not rediscovered.
+
+**Structural root cause.** Every config loader (`workflow.ts:45`,
+`queries.ts:114`, `calendar.ts:73`, `labels.ts:59`, `milestones.ts:57`,
+`sprints.ts:60`, `projects.ts:62`, `state/sync.ts:52`) does a bare
+`readFile` + parse, so ENOENT and a parse error reach callers
+indistinguishable. Every *safe* catch narrows on `err.code` by hand; all
+six unsafe ones skipped that step. **Decision V1 removes the root cause**
+— if core owns validation and returns structured errors, the distinction
+comes for free rather than being re-derived at each call site.
+
+**Status: fixed but UNCOMMITTED, awaiting review.** Findings 1, 2, 3, 5
+and 6 are fixed in the working tree with tests, each verified by
+mutation; finding 4 was left as designed (skipping one bad profile beats
+failing every command, and doctor reports it). These were written
+without being asked for — the authorisation covered the audit, not the
+fixes. They are held out of version control until reviewed.
+
 ### G · Cosmetic — 13 auto-fixable, ~79 remaining
 
 13 findings are provable-no-behaviour-change (comment corrections, an
