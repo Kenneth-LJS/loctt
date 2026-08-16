@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -41,6 +41,92 @@ async function makeTaskWithStatus(status: string): Promise<void> {
     await saveState(locttDir, state);
   });
 }
+
+describe("workflow writes are validated before they land (CFG-C1)", () => {
+  /**
+   * @verifies CFG-C1
+   *
+   * validateWorkflowConfig had one caller in the repo — doctor — so
+   * cross-entry rules were reported after the fact by a command the user
+   * had to think to run. `PUT /api/workflow` with a duplicated status
+   * returned 200 and wrote the collision to disk.
+   *
+   * The check now runs on the write path, before anything is touched.
+   */
+
+  it("refuses a duplicate key in each collection, naming the collision", async () => {
+    // Each case reloads the config: applyWorkflowEdit refuses, so disk
+    // is unchanged, but building all three from one in-memory object
+    // would carry the previous case's duplicate into the next and the
+    // wrong rule would fire.
+    const build: [string, (wf: WorkflowConfig) => WorkflowConfig, RegExp][] = [
+      // A non-default status: cloning the default one trips the
+      // "exactly one default" rule first, and this would then pass
+      // without the duplicate-key check existing at all.
+      ["status", wf => ({ ...wf, statuses: [...wf.statuses, { ...wf.statuses[1]!, label: "Dup" }] }),
+        /duplicate status key/],
+      ["priority", wf => ({ ...wf, priorities: [...wf.priorities, { ...wf.priorities[0]!, label: "Dup" }] }),
+        /duplicate priority key/],
+      ["task_type", wf => ({ ...wf, task_types: [...wf.task_types, { ...wf.task_types[0]!, label: "Dup" }] }),
+        /duplicate task_type key/],
+    ];
+
+    for (const [name, mutate, pattern] of build) {
+      const wf = await loadWorkflowConfig(locttDir);
+      await expect(applyWorkflowEdit(locttDir, mutate(wf)), `${name} collision accepted`)
+        .rejects.toThrow(pattern);
+    }
+  });
+
+  it("leaves workflow.yaml byte-identical when it refuses", async () => {
+    const wf = await loadWorkflowConfig(locttDir);
+    const before = await readFile(join(locttDir, "config/workflow.yaml"), "utf-8");
+
+    await expect(applyWorkflowEdit(locttDir, {
+      ...wf,
+      statuses: [...wf.statuses, { ...wf.statuses[1]!, label: "Dup" }],
+    })).rejects.toThrow(/duplicate status key/);
+
+    // A refusal that still wrote would leave a config doctor flags and
+    // nothing else can load.
+    expect(await readFile(join(locttDir, "config/workflow.yaml"), "utf-8")).toBe(before);
+  });
+
+  it("leaves no journal entry behind when it refuses", async () => {
+    // The journal entry is a replay instruction. Recording an invalid
+    // config there means the next withStateLock caller re-applies it,
+    // so one refused edit poisons every later operation — and the error
+    // names the original mistake, long after the user moved on.
+    const wf = await loadWorkflowConfig(locttDir);
+    await expect(applyWorkflowEdit(locttDir, {
+      ...wf,
+      statuses: [...wf.statuses, { ...wf.statuses[1]!, label: "Dup" }],
+    })).rejects.toThrow(/duplicate status key/);
+
+    const journal = await readFile(join(locttDir, "local/journal.yaml"), "utf-8")
+      .catch(() => "");
+    expect(journal).not.toMatch(/remap_workflow/);
+
+    // And an unrelated edit afterwards still works, rather than failing
+    // with the previous edit's error.
+    const fresh = await loadWorkflowConfig(locttDir);
+    await expect(applyWorkflowEdit(locttDir, {
+      ...fresh,
+      priorities: [...fresh.priorities, { ...fresh.priorities[0]!, label: "Dup" }],
+    })).rejects.toThrow(/duplicate priority key/);
+  });
+
+  it("still accepts a valid edit", async () => {
+    // The guard must not reject the ordinary case — a rename shares no
+    // key with anything.
+    const wf = await loadWorkflowConfig(locttDir);
+    const renamed = {
+      ...wf,
+      statuses: wf.statuses.map((s, i) => (i === 0 ? { ...s, label: "Renamed" } : s)),
+    };
+    await expect(applyWorkflowEdit(locttDir, renamed)).resolves.toBeDefined();
+  });
+});
 
 describe("applyWorkflowEdit — priority value (D20)", () => {
   /**
