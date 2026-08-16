@@ -37,7 +37,19 @@ If `.loctt/` is missing, returns a hint to run `loctt init`.
 
 ### `doctor`
 
-Runs diagnostic checks on the tracker. Output is human-prose lines of the form `[ok|warn|error] <name>: <message>`. Useful for surfacing problems to the user; not designed for chained tool calls.
+Runs diagnostic checks on the tracker. Returns JSON:
+
+```json
+{
+  "healthy": true,
+  "counts": { "ok": 14, "warn": 1, "error": 0 },
+  "checks": [{ "name": "workflow.yaml", "status": "ok", "message": "..." }]
+}
+```
+
+Branch on `healthy`, or on an individual check's `status` — not on the message text, which is written for a human and may be reworded.
+
+`healthy` is false when any check is in **error**. Warnings do not make it false: they name things worth knowing (a stale key index, an empty tracker) that do not block the next operation, and a fresh tracker warns.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

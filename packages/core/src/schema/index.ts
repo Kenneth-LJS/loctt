@@ -8,6 +8,7 @@ export {
   CURRENT_SCHEMA_VERSION,
   readSchemaVersion,
   SchemaTooNewError,
+  SchemaUnmigratableError,
   SchemaVersionError,
   writeSchemaVersion,
 } from "./version.js";

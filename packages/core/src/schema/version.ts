@@ -24,6 +24,27 @@ export class SchemaVersionError extends Error {
   }
 }
 
+/**
+ * A schema state `loctt migrate` cannot fix.
+ *
+ * The guard used to offer "run loctt migrate" for every mismatch that
+ * was not `SchemaTooNewError`, which sent the user to a command that
+ * refuses: a missing `.schema-version` needs re-initialization, and an
+ * interrupted migration needs its backup restored. Pointing at a
+ * command that cannot help is worse than offering nothing, because the
+ * user spends a round trip finding out (ONB-C6, ERR-15).
+ *
+ * `remedy` is the sentence to show instead of a command.
+ */
+export class SchemaUnmigratableError extends SchemaVersionError {
+  readonly remedy: string;
+  constructor(message: string, remedy: string) {
+    super(message);
+    this.name = "SchemaUnmigratableError";
+    this.remedy = remedy;
+  }
+}
+
 export class SchemaTooNewError extends SchemaVersionError {
   readonly trackerVersion: number;
   readonly expectedVersion: number;
@@ -50,13 +71,20 @@ export async function readSchemaVersion(locttDir: string): Promise<number | null
   const path = getSchemaVersionPath(locttDir);
   if (!(await fileExists(path))) return null;
   const raw = (await readFile(path, "utf-8")).trim();
+  // A file that exists but does not hold a version is not a migratable
+  // state: there is no version to migrate *from*, so `loctt migrate`
+  // refuses exactly as it does for a missing file (ONB-C6).
+  const REPAIR = `Fix ${SCHEMA_VERSION_FILENAME} by hand (it holds a single `
+    + `positive integer), or re-initialize with 'loctt init --repair'. `
+    + `'loctt migrate' cannot help: there is no readable version to migrate from.`;
   if (raw === "") {
-    throw new SchemaVersionError(`${SCHEMA_VERSION_FILENAME} is empty`);
+    throw new SchemaUnmigratableError(`${SCHEMA_VERSION_FILENAME} is empty`, REPAIR);
   }
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 1) {
-    throw new SchemaVersionError(
+    throw new SchemaUnmigratableError(
       `${SCHEMA_VERSION_FILENAME} must be a positive integer, got: ${raw}`,
+      REPAIR,
     );
   }
   return n;

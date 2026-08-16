@@ -148,6 +148,7 @@ import {
   saveState,
   saveUserSettings,
   SchemaTooNewError,
+  SchemaUnmigratableError,
   SchemaVersionError,
   setConfigValue,
   setDefaultProject,
@@ -3210,12 +3211,22 @@ export function createWebApp(options: WebAppOptions) {
             // too-old case; a too-new tracker needs a newer LocTT, which
             // no command here can produce (ERR-15).
             const isWrite = req.method !== "GET" && req.method !== "HEAD";
+            // Only offer `loctt migrate` when it can actually help.
+            // A too-new tracker needs a newer LocTT; a missing
+            // .schema-version or an interrupted migration needs
+            // something else again, and each carries the sentence that
+            // says what (ONB-C6). Naming a command that refuses costs
+            // the user a round trip to find out.
+            const recovery = err instanceof SchemaTooNewError
+              ? { kind: "none" as const }
+              : err instanceof SchemaUnmigratableError
+                ? { kind: "none" as const }
+                : { kind: "command" as const, command: "loctt migrate" };
             error(res, err.message, 409, {
               code: "schema_mismatch",
               ...(isWrite ? { data_state: "not_saved" as const } : {}),
-              recovery: err instanceof SchemaTooNewError
-                ? { kind: "none" }
-                : { kind: "command", command: "loctt migrate" },
+              recovery,
+              ...(err instanceof SchemaUnmigratableError ? { detail: err.remedy } : {}),
             });
             return;
           }
