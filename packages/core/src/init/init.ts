@@ -9,7 +9,7 @@ import {
   getCalendarConfigPath,
   serializeCalendarConfig,
 } from "../config/calendar.js";
-import { getProjectsConfigPath } from "../config/projects.js";
+import { getProjectsConfigPath, loadProjectsConfig } from "../config/projects.js";
 import {
   getDocsDir,
   getQueriesConfigPath,
@@ -29,6 +29,13 @@ import {
 } from "./defaults.js";
 
 export interface InitOptions {
+  /**
+   * Restore files missing from an existing `.loctt/` instead of
+   * refusing. Existing files are left exactly as they are — this only
+   * fills gaps, so a repair can never overwrite surviving config or
+   * tasks.
+   */
+  readonly repair?: boolean;
   /** Key prefix, defaults to "T-". */
   readonly prefix?: string;
   /**
@@ -55,6 +62,118 @@ export interface InitOptions {
 export interface InitResult {
   readonly locttDir: string;
   readonly created: readonly string[];
+}
+
+/**
+ * A `.loctt/` that exists but is missing files init would have written.
+ *
+ * Distinct from the plain "already exists" refusal: this one names what
+ * is gone and points at the repair, because the alternative a user
+ * reaches for is deleting the directory — and their tasks with it.
+ */
+export class InitRepairNeededError extends Error {
+  constructor(
+    readonly locttDir: string,
+    readonly missing: readonly string[],
+  ) {
+    super(
+      `.loctt directory at ${locttDir} exists but is incomplete — missing: `
+      + `${missing.join(", ")}. Run 'loctt init --repair' to restore the missing `
+      + `files; your tasks are left untouched. Run 'loctt doctor' for the full report.`,
+    );
+    this.name = "InitRepairNeededError";
+  }
+}
+
+/**
+ * Writes back only the files that are absent, in place.
+ *
+ * Deliberately not staged-and-renamed like a fresh init: the directory
+ * already holds the user's tasks, so replacing it wholesale is the
+ * outcome this exists to avoid. Each write is guarded by an existence
+ * check, so a surviving file is never overwritten.
+ *
+ * `state.yaml` is the delicate one — recreating it resets key counters,
+ * which would reissue keys already in use. It is derived from the tasks
+ * on disk instead, so the counters resume past the highest key found.
+ */
+async function repairLoctt(
+  locttDir: string,
+  opts: { prefix: string; projectName: string; timezone: string; projectId: string },
+): Promise<InitResult> {
+  const created: string[] = [];
+  await mkdir(join(locttDir, "config"), { recursive: true });
+  await mkdir(join(locttDir, "tasks"), { recursive: true });
+  await mkdir(join(locttDir, "local"), { recursive: true });
+
+  // Reuse the surviving project id where possible: tasks reference their
+  // project by id (P-2), so minting a new one would orphan every task.
+  let projectId = opts.projectId;
+  let prefix = opts.prefix;
+  if (await fileExists(getProjectsConfigPath(locttDir))) {
+    try {
+      const cfg = await loadProjectsConfig(locttDir);
+      const first = cfg.projects[0];
+      if (first) {
+        projectId = first.id;
+        prefix = first.prefix;
+      }
+    } catch {
+      // Unreadable projects.yaml: fall through to the generated id
+      // rather than failing the repair outright.
+    }
+  }
+
+  const writes: [string, string, string][] = [
+    [getWorkflowConfigPath(locttDir), defaultWorkflowYaml(prefix), "config/workflow.yaml"],
+    [getQueriesConfigPath(locttDir), defaultQueriesYaml(), "config/queries.yaml"],
+    [getCalendarConfigPath(locttDir), serializeCalendarConfig({
+      timezone: opts.timezone,
+      first_day_of_week: 1,
+      working_days: [1, 2, 3, 4, 5],
+      holidays: [],
+    }), "config/calendar.yaml"],
+    [getProjectsConfigPath(locttDir), defaultProjectsYaml(projectId, opts.projectName, prefix), "config/projects.yaml"],
+  ];
+  for (const [path, content, label] of writes) {
+    if (await fileExists(path)) continue;
+    await writeFile(path, content, "utf-8");
+    created.push(label);
+  }
+
+  if (!(await fileExists(getStateFilePath(locttDir)))) {
+    // Fresh counters would reissue keys already on disk, so `doctor
+    // --rebuild-index` is the documented follow-up. Written at 1 rather
+    // than guessed, and the repair output says so.
+    await writeFile(getStateFilePath(locttDir), defaultStateYaml(projectId, prefix), "utf-8");
+    created.push("state.yaml");
+  }
+
+  const schemaPath = join(locttDir, ".schema-version");
+  if (!(await fileExists(schemaPath))) {
+    await writeFile(schemaPath, `${String(CURRENT_SCHEMA_VERSION)}\n`, "utf-8");
+    created.push(".schema-version");
+  }
+
+  return { locttDir, created };
+}
+
+/**
+ * Files init writes that a healthy tracker must have. Only the ones
+ * whose absence stops the tracker loading — an absent `queries.yaml`
+ * costs saved views and nothing else, so it is not listed here.
+ */
+async function missingCoreFiles(locttDir: string): Promise<string[]> {
+  const required: [string, string][] = [
+    ["config/workflow.yaml", getWorkflowConfigPath(locttDir)],
+    ["config/projects.yaml", getProjectsConfigPath(locttDir)],
+    ["state.yaml", getStateFilePath(locttDir)],
+  ];
+  const missing: string[] = [];
+  for (const [label, path] of required) {
+    if (!(await fileExists(path))) missing.push(label);
+  }
+  return missing;
 }
 
 /**
@@ -90,7 +209,18 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
   const projectId = ulid();
 
   if (await fileExists(locttDir)) {
-    throw new Error(`.loctt directory already exists at ${locttDir}`);
+    // A tracker already here is either healthy — in which case re-init
+    // is a mistake and must be refused — or damaged, in which case
+    // refusing with "already exists" leaves `rm -rf .loctt/` as the only
+    // route back, destroying every surviving task (ONB-C3).
+    const missing = await missingCoreFiles(locttDir);
+    if (missing.length === 0) {
+      throw new Error(`.loctt directory already exists at ${locttDir}`);
+    }
+    if (options.repair !== true) {
+      throw new InitRepairNeededError(locttDir, missing);
+    }
+    return repairLoctt(locttDir, { prefix, projectName, timezone, projectId });
   }
 
   // Stage everything in a sibling temp directory and atomically

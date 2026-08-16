@@ -16,7 +16,9 @@ Global options:
                                    working directory.
 
 Commands:
-  init [--prefix <prefix>] [--project-label <label>] [--no-docs]
+  init [--repair] [--prefix <prefix>] [--project-label <label>] [--no-docs]
+                                   --repair: restore files missing from an existing
+                                   .loctt/ without touching what survived
                                    [--timezone <IANA tz>]  Workspace timezone; defaults to this
                                    machine's zone. Decides what "today" means in queries.
   info
