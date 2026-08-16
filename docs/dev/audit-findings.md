@@ -230,7 +230,7 @@ mutation of the specific behaviour.
 | Unknown flags ignored on every task command | `d1eb66e` | Removed `--hard` from 3 tests that were asserting the bug |
 | Four query forms parsed, validated, then matched nothing | `50ebb21` | Also fixes the `[` message, the repo's most-repeated DSL mistake |
 | `assignProvisionalPrefixes` sorted on a phantom field | `378bb4f` | One of its tests was asserting the bug |
-| `type: enum` with no values accepted anything | *this commit* | Conditional requirement, matching `preset_values` |
+| `type: enum` with no values accepted anything | `73af1d6` | Conditional requirement, matching `preset_values` |
 | `mergeTask` was whole-record LWW, not per-field | `62f6438` | Resolved from history; hand-edits scoped out by decision, `merge_resolved` records any fallback |
 
 **Found while fixing — `applyWorkflowEdit` writes before it validates.**
@@ -256,7 +256,7 @@ mutation that appeared to survive had simply hit the wrong copy.
 `doc-drift` 4, `naming` 3) sort by *shape*, which is not how you decide
 what to fix. Below they are grouped by **what goes wrong for a user**.
 
-### A · Silent wrong answers — 9 findings
+### A · Silent wrong answers — 9 findings — **all fixed**
 
 The tracker reports success and the result is wrong. Nothing errors,
 nothing logs, no exit code changes. These cost the most to discover
