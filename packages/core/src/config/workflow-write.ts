@@ -82,11 +82,7 @@ export async function saveWorkflowConfig(
   locttDir: string,
   config: WorkflowConfig,
 ): Promise<void> {
-  const cleaned = autoClearTimelineDependency(config);
-  // Re-encode and re-parse so any caller-side issues surface as
-  // validation errors rather than corrupting on-disk state.
-  const yaml = serializeWorkflowConfigAsYaml(cleaned);
-  parseWorkflowConfig(yaml);
+  const cleaned = assertWorkflowConfigValid(config);
   // The schema validates each entry on its own, so it cannot see that
   // two entries in a collection collide. Cross-entry rules live in
   // `validateWorkflowConfig`, which until now had a single production
@@ -96,13 +92,34 @@ export async function saveWorkflowConfig(
   //
   // `cleaned` is the final config: `executeWorkflowRemap` calls this
   // once at the end of a remap, never with an intermediate state.
+  await writeYamlAtomically(getWorkflowConfigPath(locttDir), buildPlainObject(cleaned));
+}
+
+/**
+ * Runs every check `saveWorkflowConfig` would run, and returns the
+ * cleaned config it would write. Throws on the first problem.
+ *
+ * Separate from the write so a caller can reject a bad config *before*
+ * acting on it. `executeWorkflowRemap` rewrites tasks and prunes list
+ * views on the way to saving, and validating only at the end meant a
+ * refused edit still left those rewrites on disk — recoverable via the
+ * journal, but "refused" should mean nothing happened.
+ */
+export function assertWorkflowConfigValid(config: WorkflowConfig): WorkflowConfig {
+  const cleaned = autoClearTimelineDependency(config);
+  // Re-encode and re-parse so any caller-side issues surface as
+  // validation errors rather than corrupting on-disk state.
+  parseWorkflowConfig(serializeWorkflowConfigAsYaml(cleaned));
+  // The schema validates each entry on its own, so it cannot see that
+  // two entries in a collection collide. Cross-entry rules live in
+  // `validateWorkflowConfig`.
   const errors = validateWorkflowConfig(cleaned);
   if (errors.length > 0) {
     throw new WorkflowConfigError(
       `invalid workflow config: ${errors.map(e => `${e.field}: ${e.message}`).join("; ")}`,
     );
   }
-  await writeYamlAtomically(getWorkflowConfigPath(locttDir), buildPlainObject(cleaned));
+  return cleaned;
 }
 
 /**
@@ -615,6 +632,11 @@ async function executeWorkflowRemap(
   remap: WorkflowRemap,
   tasks: readonly Task[],
 ): Promise<{ rewrittenTaskCount: number }> {
+  // Validate before touching anything. Task rewrites and list-view
+  // pruning below are real writes, and a config that will be rejected at
+  // the end must not get that far.
+  assertWorkflowConfigValid(next);
+
   const nextStatusKeys = new Set(next.statuses.map(s => s.key));
   const nextPriorityKeys = new Set(next.priorities.map(p => p.key));
   const nextTypeKeys = new Set(next.task_types.map(t => t.key));

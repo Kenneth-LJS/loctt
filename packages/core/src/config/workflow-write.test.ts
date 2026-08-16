@@ -1110,14 +1110,10 @@ describe("applyWorkflowEdit — custom field enum values", () => {
     const onDisk = await loadWorkflowConfig(locttDir);
     expect(onDisk?.custom_fields?.[0]?.values).toEqual([{ key: "a", label: "A" }]);
 
-    // NOTE: the task's value *is* already gone at this point.
-    // applyWorkflowEdit rewrites tasks before saveWorkflowConfig
-    // validates, so a rejected edit leaves the task rewrites behind. The
-    // journal makes that recoverable, but the ordering is wrong and is
-    // recorded separately in audit-findings.md. Asserting the current
-    // behaviour rather than the desired one, so this test does not
-    // quietly start passing for the wrong reason once that is fixed.
+    // And neither did the task rewrites. A rejected edit must leave
+    // nothing behind: the config is validated before any task is
+    // touched, so "refused" means refused, not half-applied.
     const tasks = await loadAllTasks(locttDir);
-    expect(tasks[0]?.frontmatter.fields?.["tags"]).toBeUndefined();
+    expect(tasks[0]?.frontmatter.fields?.["tags"]).toEqual(["a"]);
   });
 });
