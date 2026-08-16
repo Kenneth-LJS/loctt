@@ -420,17 +420,30 @@ export function assignProvisionalPrefixes(
  * Unions a config list keyed by entry id (projects, queries).
  *
  * Both sides may have added entries; neither addition should be lost.
- * An entry present on both with different content takes the incoming
- * one — these are small, hand-edited config records where the last
- * write is the intended one, and unlike a task body there is no prose
- * to preserve.
+ * An entry present on both with different content keeps the **local**
+ * version.
+ *
+ * This used to take the incoming one, on the reasoning that these are
+ * small hand-edited records where the last write is the intended one.
+ * That left `projects.yaml` merging its two halves in opposite
+ * directions: the list was incoming-wins here while the surrounding
+ * scalars (`default`) were local-wins in `resolveConflicts`. One file
+ * cannot coherently follow two policies — a sync could repoint your
+ * default project *and* rewrite the project it now points at, each by a
+ * different rule.
+ *
+ * Local-wins is the rule the user settled on (2026-08-16), and it is the
+ * safer default for the same reason it applies to the scalars: a sync is
+ * something you run to bring work in, not something that should silently
+ * replace what is in front of you.
  */
 export function mergeById<T extends { id: string }>(
   local: readonly T[],
   incoming: readonly T[],
 ): T[] {
   const byId = new Map<string, T>();
-  for (const e of local) byId.set(e.id, e);
+  // Incoming first, so a local entry with the same id overwrites it.
   for (const e of incoming) byId.set(e.id, e);
+  for (const e of local) byId.set(e.id, e);
   return [...byId.values()];
 }

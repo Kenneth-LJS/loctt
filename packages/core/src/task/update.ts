@@ -158,7 +158,7 @@ function isCompletedStatus(
  * feeds burndown and "done this week" queries, so the off-by-one
  * propagates.
  */
-async function todayDateString(locttDir: string): Promise<string> {
+export async function todayDateString(locttDir: string): Promise<string> {
   try {
     return todayInZone((await loadCalendarConfig(locttDir)).timezone);
   } catch {

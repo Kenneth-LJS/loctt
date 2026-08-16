@@ -284,10 +284,14 @@ Recoverable, but the recovery was manual and undocumented.
   recovery path. **Already fixed during Phase 3** — `worktree prune`
   runs before each `add` on both the publish and sync paths.
 - ✅ `projects.yaml` resolves its list and its scalars in opposite
-  directions, and the comment describes the opposite of the code. **The
-  code was right and the comment was wrong**: `{ ...b, ...a }` is
-  local-wins, which is the rule the user decided on 2026-08-16. Comment
-  corrected; no behaviour change.
+  directions. **I closed this wrongly the first time** as "comment-only,
+  no behaviour change" — I checked `resolveConflicts` (local-wins for
+  scalars) and not `mergeById`, which set local then overwrote with
+  incoming, making the *list* incoming-wins. One file, two opposite
+  policies: a sync could repoint your default project and rewrite the
+  project it now points at, each by a different rule. `mergeById` is now
+  local-wins, matching the scalars and the 2026-08-16 ruling. A green
+  test asserted the old direction and was rewritten.
 - ✅ `mergeHistory` / `mergeComments` cast unvalidated YAML straight to
   their types. All six `as HistoryEntry[]` / `as MergeableComment[]`
   casts replaced with a checked parse that routes a non-list to
@@ -301,7 +305,7 @@ Recoverable, but the recovery was manual and undocumented.
   calls the former first and returned early on an empty plan, so
   guarding only the latter would have changed nothing.
 
-### C · Invariant violations — 5 findings — **4 fixed, 1 open**
+### C · Invariant violations — 5 findings — **all closed**
 
 Each contradicts a rule in `invariants.md` or `decisions.md`.
 
@@ -309,12 +313,9 @@ Each contradicts a rule in `invariants.md` or `decisions.md`.
   <name>` — fixed in `dac7060`.
 - ✅ **Q18/D4**: the coalescing window — fixed in `71cdd78`.
 - ✅ **M2**: `mergeTask` now merges per field — fixed in `62f6438`.
-- ⬜ **D20**: priority `value` is still never recomputed as 1..N.
-  Verified open: no recomputation exists in core, cli, mcp or web, and
-  the schema still permits duplicate, zero, negative and fractional
-  values. **Latent, not live** — the drag-reorder UI that would produce
-  a bad `value` is M4.2 and unbuilt, so the fix belongs with that
-  ticket.
+- ✅ **D20**: priority `value` recomputed as 1..N. Implemented during
+  Phase 3 as `renumberPriorities` in `workflow-write.ts`, called on
+  every workflow edit; this entry was stale.
 
 Overlaps A and B — listed separately because an invariant break is a
 decision to revisit, not only a bug to fix.
@@ -340,16 +341,19 @@ The operation fails correctly; the message does not help.
   stderr — `loctt user current | cut -f2` was reading the failure text
   as a user name.
 
-### E · Missing validation — 6 findings — **all closed**
+### E · Missing validation — 6 findings — **5 closed, 1 reopened**
 
 Input that should be rejected was accepted.
 
 - ✅ Unknown flags ignored on every task command. **Fixed in Phase 3**
   (`rejectUnknownFlags`), and group D extended it to the last four
   commands that still ignored them.
-- ✅ `PATCH /api/tasks/:ref` has `value: unknown` and no Zod validator.
-  **Stale**: the web exposes no per-task update route at all — no PATCH
-  routes exist. That endpoint is M2 work; the validator belongs with it.
+- ⬜ `PATCH /api/tasks/:ref` has `value: unknown` and no Zod validator.
+  **I closed this wrongly the first time.** I grepped for `PATCH`, found
+  none, and called the finding stale. The route exists as **POST**
+  (`handleSetField`, `server.ts:2684`, routed at `:3142`) and passes
+  `request.value` to `setField` unvalidated. Reopened — belongs with the
+  web work that owns that handler.
 - ✅ `HistoryEntry` has no schema; `_history.yaml` is cast, never
   validated. Closed structurally in group B: the merge path now checks
   the parse rather than casting, and `readHistory` already threw on a
