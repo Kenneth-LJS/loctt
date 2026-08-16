@@ -615,13 +615,13 @@ milestone that never existed.
 
 ## Picking this up next
 
-**Next action: continue Phase 3.** 14 surface cases remain, all major or
+**Next action: continue Phase 3.** 11 surface cases remain, all major or
 minor — every blocker is closed. In case order:
 
-`GIT-C3, GIT-C6, GIT-C10, MSL-C3, ONB-C6, ONB-C7, PRU-C5, PRU-C7,
-QRY-C3, QRY-C6, REL-C3, REL-C4, REL-C5, SPR-C2`
+`MSL-C3, ONB-C6, ONB-C7, PRU-C5, PRU-C7, QRY-C3, QRY-C6, REL-C3, REL-C4,
+REL-C5, SPR-C2`
 
-Closed since this section was written (coverage 92 → 97):
+Closed since this section was written (coverage 92 → 100):
 
 | Case | Was it a live defect? | Commit |
 |---|---|---|
@@ -630,6 +630,9 @@ Closed since this section was written (coverage 92 → 97):
 | CMT-C5 | Yes — raw keys and ULIDs, no actor at all | `def23d0` |
 | CMT-C8 | Latent — in-place reverse, safe only by luck | `def23d0` |
 | GIT-C5 | Yes — web flattened conflicts into 500 | `ae336ca` |
+| GIT-C3 | Yes — reconcile.yaml written by nothing | `6aec16d` |
+| GIT-C6 | Yes — status had no drift at all | `c733582` |
+| GIT-C10 | Partly — operations correct, messages named the wrong branch | `c733582` |
 
 Three notes worth carrying forward:
 
@@ -646,6 +649,23 @@ Three notes worth carrying forward:
   optional blocks.** The shipped default `workflow.yaml` has neither
   `boards` nor `estimation.weights`, so a narrowing of
   `get_workflow_config` would have left every existing test green.
+- **GIT-C10 is the shape to expect from the remaining cases.** Four of
+  its six bullets were already satisfied; only the success messages were
+  wrong. Probing first is what separated "build the feature" from "fix
+  one string" — and the tests still had to cover the correct bullets, or
+  the next change could break them silently.
+- **GIT-C6's local-drift count went through three wrong implementations
+  before a right one.** Publish mirrors `.loctt/` to the *branch root*,
+  so branch paths are not working-tree paths and every index-based
+  comparison (`read-tree`, `diff-index`, `status --porcelain`) either
+  reported the whole tree as changed or dropped untracked files.
+  Comparing blob hashes sidesteps the path mismatch. The exclusion list
+  must come from the same sets publish uses plus `.gitignore`, or the
+  count never reaches zero and means nothing.
+- **Real git work needs explicit test timeouts.** The two web git-error
+  tests passed alone and timed out at 5s inside the full `apps/web` run.
+  A timeout reads as a product failure in the summary line; check whether
+  a failing test passes in isolation before believing it.
 
 The loop that has worked, per case:
 
