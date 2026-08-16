@@ -53,7 +53,7 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 |---|---|---|
 | 1 · Partition | ✅ | All 21 tickets carry a `Cases:` line; gate passes. The 28 cases asserting two unticketed views are **resolved as a ticket gap**, not a scope cut — see *Blocker, resolved*. |
 | 2 · Measure | ✅ | Measured (CLI 17/49, MCP 26/75) and the blocker it raised is **cleared**: both reference docs corrected to the shipped API, every example executed. See *Blocker 2, resolved*. |
-| 3 · Surface gaps | 🔵 | **18 of 68 closed**, including **18 of 23 blockers**. Surface coverage 46 → 61. Remaining blockers: CFG-C2, CMT-C2, CMT-C3, ONB-C1, ONB-C3. See *Phase 3 log*. |
+| 3 · Surface gaps | 🔵 | **23 of 68 closed — every blocker.** Surface coverage 46 → 66. Remaining: 29 major, 16 minor. See *Phase 3 log*. |
 | 4 · Structural audit | 🔵 | Reading **done**: 8 slices, ~18,700 lines, **124 findings** in [`audit-findings.md`](audit-findings.md). **Group A (silent wrong answers) is fixed** — 9 of 9, each with a test shown to fail first and killed by mutation. Groups B–G outstanding. |
 | 5 · UI build | ⬜ | M1.4 is 🔵 from earlier work, predating this plan |
 
@@ -574,9 +574,14 @@ that was shown to fail before the fix.
 | CFG-C3 | `0fe0a8f` | **Yes, small.** MCP's unknown-key error omitted the valid-key list the CLI gives. |
 | PRU-C11 | `0fe0a8f` | No — already correct, nothing asserted it. |
 | TSK-C2 | `1324a0f` | **Yes.** `updated_at` was hand-writable on CLI and web — the field git-sync, recency sort and the activity feed all read. |
+| CMT-C3 | `cce45a3` | **Yes.** Two clients could both read a task and both write it; the second silently discarded the first's paragraphs. Optional token; omitting it keeps last-write-wins. |
+| ONB-C1 | `cce45a3` | No — already resolved in the spec, only untagged. |
+| CFG-C2 | `1b87b8b` | **Yes.** doctor filtered workflow-key errors as "out of scope", so a task holding a deleted status read as ✓ valid — and the DSL rejects the literal, so there was no way to find the affected tasks. |
+| CMT-C2 | `1b87b8b` | **Yes.** "pass an explicit author" is not something the CLI can do, and the typed text was lost. |
+| ONB-C3 | `c55b9d7` | **Yes.** init refused a damaged tracker with "already exists", leaving `rm -rf .loctt/` as the only route back. |
 | PRU-C10, PRU-C12 | earlier | Tagged before this run. |
 
-**Ten of the eighteen were live defects.** Two were stale premises, two
+**Fifteen of the twenty-three were live defects.** Two were stale premises, two
 were correct-but-unasserted, and the rest were partial.
 
 **Five tests were found asserting a bug** and rewritten, each named in
