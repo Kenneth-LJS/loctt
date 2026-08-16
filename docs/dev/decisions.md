@@ -191,3 +191,91 @@ untouched.
 is already actor-scoped (`coalesceHistory` compares `last.actor ===
 next.actor`) and tested. A burst only collapses within one user's own
 edits; two users' edits never merge into one entry.
+
+---
+
+## 7. Validation and error handling (decided 2026-08-17)
+
+### V1 · Core owns validation; surfaces do not re-implement it
+
+**Every validation rule lives in core.** CLI and MCP call into it and
+surface what it returns; neither carries its own copy of a rule about the
+data.
+
+The reason is arithmetic: a rule in core is enforced on three surfaces, a
+rule in the CLI is enforced on one. Today several rules live at a single
+surface — `--state must be one of active|completed|future` in
+`sprint.ts`, `--archived must be exactly "true" or "false"` in
+`milestone.ts` — so MCP and the web either duplicate them or lack them.
+
+This is not hypothetical drift. The CLI's hand-rolled attachment-name
+check used `includes("..")` and rejected the legal name `notes..txt`,
+while core's `assertSafeBasename` (which tests for a `..` path
+*segment*) accepted it. A file could be attached and never detached. The
+CLI now delegates; the duplicated rule was simply wrong.
+
+**Consequences accepted:**
+
+- An audit of what core's entry points actually validate today
+  (`setField`, `createTask`, `bulkSetFields`, the entity create/edit
+  functions). This is an unknown, not a known gap.
+- An audit of which surface-level rules must migrate.
+- Structured errors from core, so CLI and MCP can report cause rather
+  than prose. The web already has this contract in `service.ts`
+  (`code`, `message`, `data_state`, `recovery`); CLI and MCP have exit
+  codes and an `isError` boolean respectively, and an agent cannot
+  branch on cause without matching message text.
+
+**Two cautions recorded at the time of the decision:**
+
+1. Changing MCP's error output is a breaking change to the agent-facing
+   surface, and MCP has no version negotiation. Worth doing once,
+   deliberately — not as a side effect of a refactor.
+2. Whether the code set is the *right* set is only answerable once a UI
+   renders it. Designing an error taxonomy in the abstract risks
+   discovering it has the wrong shape at M2. Prefer extending the web's
+   existing `ErrorCode` union over inventing a parallel one.
+
+### V2 · Malformed history degrades; it never blocks
+
+A hand-edited `_history.yaml` is the user's mistake to own. LocTT does
+its best with what is there and never refuses the file.
+
+- An entry missing `timestamp` is **kept**, placed so it preserves the
+  relative order it already had in the file — not dropped, not sorted to
+  the end, not cause for an error.
+- It must also survive the **merge**. `mergeHistory` builds an identity
+  key from `timestamp` + `kind` + `field`; with no timestamp, distinct
+  entries collapse to one identity and all but one are dropped. That is
+  the real data loss, and it happens before any ordering question. A
+  timestamp-less entry is therefore treated as never equal to anything,
+  so it is always kept.
+
+This supersedes the earlier plan to add `HistoryEntrySchema` and reject
+malformed entries. Rejecting is the wrong direction for a file the user
+may have edited: the recovery path for a bad edit should not be a
+tracker that will not open.
+
+### V3 · Route segments carry the ULID; P-4 is scoped to UI content
+
+`/milestones/<ulid>` and `/sprints/<ulid>`. The address bar is **not**
+the UI for P-4's purposes.
+
+The alternatives were weighed and rejected:
+
+- **A slug from `name`** — readable, but names are neither unique nor
+  immutable, so every saved link breaks on a rename and two milestones
+  sharing a name are indistinguishable.
+- **A new user-chosen `key` field** — consistent with how project
+  prefixes work, and the most expensive: schema change, migration, a new
+  uniqueness rule, and a rename command that rewrites references.
+- **Slug + id** — stable and readable, but the ULID is still on screen
+  and the URL is ugly.
+
+P-4 is unchanged in wording and now explicitly scoped: it governs UI
+*content* — labels, pickers, prose, error messages. A URL is an
+addressing mechanism, not something LocTT displays.
+
+Applies to M4.7's existing `/sprints/$key` as well as the new M3.5 and
+M4.9 routes. `$key` in the flow docs means "the ULID" wherever it
+appears on a milestone or sprint route.
