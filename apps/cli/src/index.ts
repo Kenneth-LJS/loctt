@@ -84,15 +84,17 @@ export async function main(): Promise<void> {
     }
 
     switch (command) {
-      // Wrapped so init's unknown-option UsageError maps to EXIT.USAGE
-      // like every other command's. The neighbours below are not
-      // wrapped because they throw no UsageError today; wrapping them
-      // is a separate change with its own exit-code implications.
+      // All wrapped, so an unknown-option UsageError maps to EXIT.USAGE
+      // (2) the way every other command's does. These four were
+      // unwrapped on the argument that they threw no UsageError — which
+      // stopped being true once they validated their flags: `doctor`
+      // exited 1 for a usage error, and `info` / `views` / `schema`
+      // exited 0 while silently ignoring the flag.
       case "init":   await runCommand(() => initCmd.run(args, root));   break;
-      case "info":   await infoCmd.run(args, root);   break;
-      case "doctor": await doctorCmd.run(args, root); break;
-      case "views":  await viewsCmd.run(args, root);  break;
-      case "schema": await schemaCmd.run(args, root); break;
+      case "info":   await runCommand(() => infoCmd.run(args, root));   break;
+      case "doctor": await runCommand(() => doctorCmd.run(args, root)); break;
+      case "views":  await runCommand(() => viewsCmd.run(args, root));  break;
+      case "schema": await runCommand(() => schemaCmd.run(args, root)); break;
 
       case "create":    await runCommand(() => taskCrudCmd.create(args, root));    break;
       case "list":      await runCommand(() => taskCrudCmd.list(args, root));      break;

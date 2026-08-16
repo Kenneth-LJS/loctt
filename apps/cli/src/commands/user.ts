@@ -57,7 +57,10 @@ export async function run(args: string[], root: string): Promise<void> {
     case "current": {
       const current = await getCurrentUser(locttDir);
       if (!current) {
-        console.log("(no users registered)");
+        // stderr, not stdout: this exits non-zero, so it is a failure,
+        // and a script doing `loctt user current | cut -f2` would
+        // otherwise read "(no users registered)" as if it were a name.
+        console.error("Error: no users registered. Run 'loctt user create <name>'.");
         process.exitCode = EXIT.RUNTIME;
         break;
       }
