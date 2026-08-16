@@ -56,6 +56,17 @@ Commands:
   delete <task> [--yes]             Permanent removal; use 'archive' for the reversible alternative
   body <task> [--set <text>] [--append <text>]
   log <task> [--limit <n>]
+  duplicate <task> [--title <t>] [--project <name|id>]
+                                   Copy field values and body to a new key.
+                                   Relationships and attachments are not copied.
+  move <task>[,<task>...] <project>
+                                   Reallocate the key under another project; the
+                                   old key is retired to key_history and keeps resolving
+  comment <task> <text>            Add a comment as the current user
+  comments <task>                  List a task's comments, oldest first
+  comment-edit <task> <comment-id> <text>
+  comment-delete <task> <comment-id> [--yes]
+                                   Permanent; the text stays in history (M3)
   attach <task> <file-path> [--force]
   detach <task> <name>
   mcp                              Start the MCP server (stdio)
