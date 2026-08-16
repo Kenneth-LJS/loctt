@@ -10,8 +10,11 @@ import {
   listTasks,
   loadAllTasks,
   loadArchivedGuardConfigs,
+  loadLabelsConfig,
+  loadMilestonesConfig,
   loadOptionalConfigs,
   loadProjectsConfig,
+  loadSprintsConfig,
   loadState,
   lookupTask,
   moveTaskToProject,
@@ -235,6 +238,30 @@ export async function list(args: string[], root: string): Promise<void> {
   }
 }
 
+/**
+ * Resolves an entity id to its configured name for display.
+ *
+ * Returns the input unchanged when the entity is missing — a task
+ * pointing at a deleted milestone should show the dangling value rather
+ * than hide the reference entirely.
+ */
+async function nameOfEntity(
+  locttDir: string,
+  kind: "milestones" | "sprints" | "labels",
+  id: string,
+): Promise<string> {
+  try {
+    const cfg = kind === "milestones"
+      ? (await loadMilestonesConfig(locttDir)).milestones
+      : kind === "sprints"
+        ? (await loadSprintsConfig(locttDir)).sprints
+        : (await loadLabelsConfig(locttDir)).labels;
+    return (cfg as { id: string; name: string }[]).find(e => e.id === id)?.name ?? id;
+  } catch {
+    return id;
+  }
+}
+
 export async function show(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, TASK_SHOW_FLAGS);
   const ref = args[1];
@@ -249,7 +276,32 @@ export async function show(args: string[], root: string): Promise<void> {
   if (fm.priority) console.log(`Priority: ${fm.priority}`);
   if (fm.task_type) console.log(`Type: ${fm.task_type}`);
   if (fm.assignee) console.log(`Assignee: ${fm.assignee}`);
+  if (fm.reporter) console.log(`Reporter: ${fm.reporter}`);
+  if (fm.start_date) console.log(`Start: ${fm.start_date}`);
   if (fm.due_date) console.log(`Due: ${fm.due_date}`);
+  if (fm.completed_date) console.log(`Completed: ${fm.completed_date}`);
+  if (fm.estimate !== undefined) console.log(`Estimate: ${String(fm.estimate)}`);
+  // Milestones and sprints are stored by id (P-2); a ULID on screen is
+  // no more useful than the omission this replaces (P-4), so resolve
+  // back to the configured name. Falls back to the raw value when the
+  // entity is gone, which is a drift signal rather than a blank.
+  if (fm.milestone) {
+    console.log(`Milestone: ${await nameOfEntity(locttDir, "milestones", fm.milestone)}`);
+  }
+  if (fm.sprint) {
+    console.log(`Sprint: ${await nameOfEntity(locttDir, "sprints", fm.sprint)}`);
+  }
+  if (fm.labels && fm.labels.length > 0) {
+    const names = await Promise.all(
+      fm.labels.map(l => nameOfEntity(locttDir, "labels", l)),
+    );
+    console.log(`Labels: ${names.join(", ")}`);
+  }
+  if (fm.fields && Object.keys(fm.fields).length > 0) {
+    for (const [k, v] of Object.entries(fm.fields)) {
+      console.log(`${k}: ${String(v)}`);
+    }
+  }
   if (fm.archived) console.log(`Archived: ${fm.archived_at}`);
   if (model.relationships.length > 0) {
     console.log(`Relationships:`);
