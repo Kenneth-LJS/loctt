@@ -601,8 +601,8 @@ Nineteen more closed. The ones that were live defects:
 | TSK-C3 | `5e4074d` | The CLI validated the enum before the lookup, so a typo'd key on a missing task blamed the status vocabulary and exited 2 instead of 1. |
 | ONB-C2 | `5e4074d` | `timezone` was CLI-only, so an agent initialising for a team in another zone recorded the server machine's. |
 | GIT-C7 | `56b02b2` | `git enable` adopted a branch holding foreign content silently; only a later publish refused. |
-| PRU-C9 | `6f4e1a2` | `project create --label` was documented, never read, and silently discarded. **None of the entity commands validated flags** — the earlier fix covered only the task commands. |
-| GIT-C9 | `6f4e1a2` | Verified only after writing a test outside the repo tree: `withTmpLoctt` creates workspaces *inside* LocTT's own git repo, so every git test here sees a `.git` walking up. |
+| PRU-C9 | `2f3a1f6` | `project create --label` was documented, never read, and silently discarded. **None of the entity commands validated flags** — the earlier fix covered only the task commands. |
+| GIT-C9 | `2f3a1f6` | Verified only after writing a test outside the repo tree: `withTmpLoctt` creates workspaces *inside* LocTT's own git repo, so every git test here sees a `.git` walking up. |
 
 **Fifteen of the twenty-three were live defects.** Two were stale premises, two
 were correct-but-unasserted, and the rest were partial.
