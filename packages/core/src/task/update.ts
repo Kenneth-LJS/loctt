@@ -3,7 +3,11 @@ import type { HistoryEntry, Task, TaskFrontmatter, WorkflowConfig } from "@loctt
 import type { ArchivedGuardConfigs } from "../config/archived-guard.js";
 import { assertNotArchivedReferences } from "../config/archived-guard.js";
 import { loadCalendarConfig } from "../config/calendar.js";
+import { loadMilestonesConfig } from "../config/milestones.js";
+import { loadSprintsConfig } from "../config/sprints.js";
 import { validateTaskAgainstWorkflow } from "../config/validation.js";
+import { resolveMilestoneIdFromInput } from "../milestones/manage.js";
+import { resolveSprintIdFromInput } from "../sprints/manage.js";
 import { withStateLock } from "../state/lock.js";
 import { todayInZone } from "../utils/today.js";
 import { appendHistory } from "./history.js";
@@ -187,6 +191,32 @@ export interface SetFieldOptions {
  * - Always updates `updated_at` timestamp.
  * - If setting `status`, also updates `status_updated_at`.
  */
+/**
+ * Maps a milestone/sprint reference to its id, accepting either an id or
+ * a name. Other fields pass through untouched.
+ *
+ * Resolution needs the configs, which the caller already loaded for the
+ * archived-reference guard; when it did not pass them the value is left
+ * alone rather than the write failing, so a caller that opts out of the
+ * guard is no worse off than before.
+ */
+async function resolveEntityRef(
+  locttDir: string,
+  field: string,
+  value: unknown,
+  guard: ArchivedGuardConfigs | undefined,
+): Promise<unknown> {
+  if (typeof value !== "string" || value === "") return value;
+  if (field !== "milestone" && field !== "sprint") return value;
+
+  if (field === "milestone") {
+    const cfg = guard?.milestones ?? await loadMilestonesConfig(locttDir);
+    return resolveMilestoneIdFromInput(cfg, value, { includeArchived: true });
+  }
+  const cfg = guard?.sprints ?? await loadSprintsConfig(locttDir);
+  return resolveSprintIdFromInput(cfg, value, { includeArchived: true });
+}
+
 export async function setField(opts: SetFieldOptions): Promise<Task> {
   if (USER_IMMUTABLE_FIELDS.has(opts.field)) {
     throw new TaskUpdateError(`cannot set immutable field "${opts.field}"`);
@@ -220,7 +250,13 @@ async function setFieldLocked(opts: SetFieldOptions): Promise<Task> {
     updated = { ...task.frontmatter, updated_at: value };
   } else if (BUILTIN_OPTIONAL_FIELDS.has(field)) {
     const patch = toMutable(task.frontmatter);
-    patch[field] = value;
+    // Resolve a milestone/sprint given by name to its id before writing.
+    // Names are mutable and non-unique, so storing one detaches the task
+    // the moment it is renamed — invariants.md says so for sprints, and
+    // milestones have the identical shape. Storing the name also made
+    // every consumer that counts by id (milestone progress, the sprint
+    // burndown) report zero (MSL-C1).
+    patch[field] = await resolveEntityRef(opts.locttDir, field, value, archivedGuard);
     patch["updated_at"] = now;
     if (field === "status") {
       patch["status_updated_at"] = now;
