@@ -615,13 +615,12 @@ milestone that never existed.
 
 ## Picking this up next
 
-**Next action: continue Phase 3.** 11 surface cases remain, all major or
+**Next action: continue Phase 3.** 8 surface cases remain, all major or
 minor — every blocker is closed. In case order:
 
-`MSL-C3, ONB-C6, ONB-C7, PRU-C5, PRU-C7, QRY-C3, QRY-C6, REL-C3, REL-C4,
-REL-C5, SPR-C2`
+`PRU-C5, PRU-C7, QRY-C3, QRY-C6, REL-C3, REL-C4, REL-C5, SPR-C2`
 
-Closed since this section was written (coverage 92 → 100):
+Closed since this section was written (coverage 92 → 103):
 
 | Case | Was it a live defect? | Commit |
 |---|---|---|
@@ -633,6 +632,9 @@ Closed since this section was written (coverage 92 → 100):
 | GIT-C3 | Yes — reconcile.yaml written by nothing | `6aec16d` |
 | GIT-C6 | Yes — status had no drift at all | `c733582` |
 | GIT-C10 | Partly — operations correct, messages named the wrong branch | `c733582` |
+| MSL-C3 | Yes — schema docs still key-era; CLI half closed earlier | `148efaa` |
+| ONB-C6 | Partly — routes existed; recovery pointed at a refusing command | `f0d9567` |
+| ONB-C7 | Yes — doctor was prose only | `f0d9567` |
 
 Three notes worth carrying forward:
 
@@ -666,6 +668,21 @@ Three notes worth carrying forward:
   tests passed alone and timed out at 5s inside the full `apps/web` run.
   A timeout reads as a product failure in the summary line; check whether
   a failing test passes in isolation before believing it.
+- **I wrote a vacuous test and only caught it by mutating.** The
+  guard-exemption test compared a guarded route against an exempt one
+  using a too-new tracker — where both return byte-identical bodies. It
+  passed with the exemption deleted. Rewritten around an empty version
+  file, where the two genuinely differ. Mutation is not a formality.
+- **The same error string appeared at three call sites.** A `replace`
+  aimed at `requireSupportedSchema` silently edited `planMigration`
+  instead, and the runtime behaviour did not change while the source
+  looked right. Check `dist` for *which* site changed, not just that
+  something did.
+- **ONB-C7 replaced a test that asserted the old contract.** It was
+  titled "returns prose diagnostic output" and survived the switch to
+  JSON only because the check names still appear inside it. Per
+  CLAUDE.md, a fix that requires editing a green test means that test was
+  asserting the bug — noted in the commit.
 
 The loop that has worked, per case:
 
