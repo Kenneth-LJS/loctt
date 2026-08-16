@@ -69,6 +69,9 @@ export async function enableGit(locttDir: string, root: string): Promise<void> {
     }
   }
 
+  // Created only once every guard above has passed. A failed enable
+  // that leaves local/ behind is a tracker holding the shape of
+  // git-backed mode without the state to perform it (GIT-C9).
   const localDir = getLocalDir(locttDir);
   await mkdir(localDir, { recursive: true });
 

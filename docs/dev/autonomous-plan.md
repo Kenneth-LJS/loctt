@@ -53,7 +53,7 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 |---|---|---|
 | 1 · Partition | ✅ | All 21 tickets carry a `Cases:` line; gate passes. The 28 cases asserting two unticketed views are **resolved as a ticket gap**, not a scope cut — see *Blocker, resolved*. |
 | 2 · Measure | ✅ | Measured (CLI 17/49, MCP 26/75) and the blocker it raised is **cleared**: both reference docs corrected to the shipped API, every example executed. See *Blocker 2, resolved*. |
-| 3 · Surface gaps | 🔵 | **39 of 68 closed** — every blocker, plus 16 major/minor. Surface coverage 46 → 85. See *Phase 3 log*. |
+| 3 · Surface gaps | 🔵 | **49 of 68 closed**: blockers **23/23**, major **18/29**, minor **8/16**. Surface coverage 46 → 92. See *Phase 3 log*. |
 | 4 · Structural audit | 🔵 | Reading **done**: 8 slices, ~18,700 lines, **124 findings** in [`audit-findings.md`](audit-findings.md). **Group A (silent wrong answers) is fixed** — 9 of 9, each with a test shown to fail first and killed by mutation. Groups B–G outstanding. |
 | 5 · UI build | ⬜ | M1.4 is 🔵 from earlier work, predating this plan |
 
@@ -580,6 +580,29 @@ that was shown to fail before the fix.
 | CMT-C2 | `1b87b8b` | **Yes.** "pass an explicit author" is not something the CLI can do, and the typed text was lost. |
 | ONB-C3 | `c55b9d7` | **Yes.** init refused a damaged tracker with "already exists", leaving `rm -rf .loctt/` as the only route back. |
 | PRU-C10, PRU-C12 | earlier | Tagged before this run. |
+
+### Since the blockers
+
+Nineteen more closed. The ones that were live defects:
+
+| Case | Commit | What was wrong |
+|---|---|---|
+| CMT-C7 | `fec640e` | `readHistory` coerced a non-array to `[]`, so a corrupt `_history.yaml` read as empty — and the next append **overwrote it**. History is M2's recovery path, so silently discarding it removes what makes a lost merge race recoverable. |
+| QRY-C5 | `de865d9` | `limit` applied before `offset`, so every MCP page returned the same rows — paging was impossible. A truncated list also never said so. |
+| PRU-C8 | `de865d9` | `set_user_setting` was documented as step 2 of the project-resolution chain and existed nowhere. |
+| GIT-C8 | `de865d9` | `enable_git` claimed to create a branch on a sparse worktree; it records config, and the branch appears on first publish. |
+| TSK-C8 | `c949426` | `show` promised "full details" and omitted labels, milestone, sprint, estimate, dates and custom fields — all writable, none readable back. |
+| ONB-C5 | `435432f` | `info` never printed the schema status it already computed, and was blocked by the guard from running on the tracker that most needed describing. |
+| CMT-C4 | `cec1927` | `log` had `--limit` and no `--offset`: a long history was reachable only from its newest end. |
+| TSK-C5 | `b6a868b` | `create` accepted four flags on the CLI and five parameters on MCP, while core took thirteen. |
+| QRY-C4 | `ca2c462` | Sort and offset existed in core and only on the web. |
+| QRY-C2 | `ca2c462` | A mistyped query became `500 Internal server error`, discarding the position and suggestions `validate.ts` carries. |
+| CMT-C6 | `b154a62` | Rank changes wrote frontmatter and recorded no history — the one mutating operation with no audit trail. |
+| TSK-C3 | `5e4074d` | The CLI validated the enum before the lookup, so a typo'd key on a missing task blamed the status vocabulary and exited 2 instead of 1. |
+| ONB-C2 | `5e4074d` | `timezone` was CLI-only, so an agent initialising for a team in another zone recorded the server machine's. |
+| GIT-C7 | `56b02b2` | `git enable` adopted a branch holding foreign content silently; only a later publish refused. |
+| PRU-C9 | `6f4e1a2` | `project create --label` was documented, never read, and silently discarded. **None of the entity commands validated flags** — the earlier fix covered only the task commands. |
+| GIT-C9 | `6f4e1a2` | Verified only after writing a test outside the repo tree: `withTmpLoctt` creates workspaces *inside* LocTT's own git repo, so every git test here sees a `.git` walking up. |
 
 **Fifteen of the twenty-three were live defects.** Two were stale premises, two
 were correct-but-unasserted, and the rest were partial.

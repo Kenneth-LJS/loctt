@@ -9,7 +9,7 @@ import {
   unarchiveLabel,
 } from "@loctt/core";
 
-import { getArg, hasFlag } from "../runtime/args.js";
+import { getArg, hasFlag, rejectUnknownFlags } from "../runtime/args.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
 
@@ -19,7 +19,20 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * Label references accepted as either an id (ULID) or a name; the
  * `list` command prints names + ids so users can disambiguate.
  */
+/**
+ * Flags this command family accepts. A union across its
+ * subcommands: they share one argv, so splitting per subcommand
+ * would reject a sibling's valid flag.
+ *
+ * Without this an unrecognised flag was silently dropped — the
+ * reference documented `--label` on project create for a flag the
+ * CLI never read, so the worked example created a project named
+ * `web` and discarded the label (PRU-C9).
+ */
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--color", "--ids", "--name", "--remap-to", "--yes"];
+
 export async function run(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, ACCEPTED_FLAGS);
   const sub = args[1];
   const locttDir = resolveLocttDir(root);
   switch (sub) {
