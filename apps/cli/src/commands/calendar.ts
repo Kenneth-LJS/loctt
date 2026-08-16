@@ -25,7 +25,17 @@ export async function run(args: string[], root: string): Promise<void> {
       }
     }
   } else {
+    // A bare "Usage:" line tells someone who just typed
+    // `calendar set timezone UTC` that they got the syntax wrong, and
+    // sends them looking for the right flags — there aren't any. The
+    // calendar is read-only here, and the message has to say so and
+    // name the surface that can edit it, or the next attempt is the
+    // same one. The wording tracks the MCP `get_calendar` description
+    // (CFG-C5: the two must agree on *where* it is editable).
     console.error(`Usage: loctt calendar show`);
+    console.error(
+      `The calendar is read-only from the CLI — it is configured in the web UI (run 'loctt ui').`,
+    );
     process.exitCode = EXIT.USAGE;
   }
 }
