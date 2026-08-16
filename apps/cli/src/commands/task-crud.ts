@@ -1,3 +1,4 @@
+import type { WorkflowConfig } from "@loctt/contracts";
 import {
   appendTaskBody,
   buildListContext,
@@ -9,6 +10,7 @@ import {
   duplicateTask,
   listTasks,
   loadAllTasks,
+  loadAllUsers,
   loadArchivedGuardConfigs,
   loadLabelsConfig,
   loadMilestonesConfig,
@@ -16,6 +18,7 @@ import {
   loadProjectsConfig,
   loadSprintsConfig,
   loadState,
+  loadWorkflowConfig,
   lookupTask,
   moveTaskToProject,
   readHistory,
@@ -30,6 +33,7 @@ import {
   writeTaskBody,
 } from "@loctt/core";
 
+import type { HistoryDisplayContext } from "../format/history.js";
 import { formatHistoryEntry } from "../format/history.js";
 import { getArg, hasFlag, rejectUnknownFlags } from "../runtime/args.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
@@ -260,6 +264,35 @@ async function nameOfEntity(
   } catch {
     return id;
   }
+}
+
+/**
+ * Loads the workflow config and user roster once per `log` invocation so
+ * the formatter can render labels and display names instead of stored
+ * keys and ULIDs.
+ *
+ * Both loads are best-effort: a tracker whose workflow.yaml is being
+ * edited, or whose users/ directory is unreadable, should still be able
+ * to show its history. The formatter falls back to raw values for
+ * whichever half is missing.
+ */
+async function buildHistoryDisplayContext(
+  locttDir: string,
+): Promise<HistoryDisplayContext> {
+  const ctx: { workflow?: WorkflowConfig; users?: Map<string, string> } = {};
+  try {
+    ctx.workflow = await loadWorkflowConfig(locttDir);
+  } catch {
+    // Leave undefined — raw keys render unmarked, since without the
+    // config we cannot tell a valid key from a drifted one.
+  }
+  try {
+    const users = await loadAllUsers(locttDir);
+    ctx.users = new Map(users.map(u => [u.id, u.name]));
+  } catch {
+    // Leave undefined — actor ids render in place of names.
+  }
+  return ctx;
 }
 
 export async function show(args: string[], root: string): Promise<void> {
@@ -628,8 +661,9 @@ export async function log(args: string[], root: string): Promise<void> {
   if (display.length === 0) {
     console.log("No history entries.");
   } else {
+    const ctx = await buildHistoryDisplayContext(locttDir);
     for (const entry of display) {
-      console.log(formatHistoryEntry(entry));
+      console.log(formatHistoryEntry(entry, ctx));
     }
   }
 }
