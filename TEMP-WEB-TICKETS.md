@@ -359,11 +359,125 @@ Cases: NEW-1, NEW-2, NEW-3, NEW-4, NEW-5, NEW-6, NEW-7, NEW-8, NEW-9, NEW-10, NE
 - **E2E**: open /board → drag card → open /timeline → edge-drag bar →
   hit `n` → create task
 
+### M3.5 · Sprints overview ⬜
+Cases: SPR-1, SPR-2, SPR-3, SPR-4, SPR-5, SPR-6, SPR-15, SPR-17, SPR-19, SPR-20, SPR-24, SPR-27, SPR-31, SPR-32, SPR-36
+- Route `/sprints` — the column view. Distinct from `/sprints/$key`
+  (M4.7), which is one sprint's detail and burndown.
+- **Depends on M3.2**: reuses its drag primitives and drop-target
+  visuals rather than building a second, divergent implementation.
+
+**Columns (SPR-1, SPR-19, SPR-20, SPR-24)**
+- One column per non-archived sprint, ordered by `start_date` ascending
+  with a stable tie-break; header shows `name` (never the ULID), the
+  date window, and a task count
+- The header count equals the number of cards actually rendered. These
+  come from two independent paths — `?counts=true` on `/api/sprints`
+  and the per-column task fetch — so the equality is asserted, not
+  assumed
+- Archived sprints are hidden behind a "show archived" affordance. The
+  API returns `archived` on the def and filters nothing, so this is
+  client-side (same affordance as M4.9's)
+- Presentation keys off `state`, never off whether today falls inside
+  the window; a passed `end_date` on an `active` sprint stays active and
+  the discrepancy shows as an informational hint, never an
+  auto-correction and never a rewrite of `state`
+- Overlapping windows are legal: both columns render, both highlight as
+  active, a task appears in exactly one column, and **no warning implies
+  overlap is invalid** — in particular the SPR-20 hint must not fire on
+  overlap
+- Two sprints sharing a `name` are distinguishable by their date windows
+  (or another shown discriminator); dragging into one assigns that
+  sprint's id and the card lands in the column actually targeted
+
+**Expansion (SPR-2, SPR-3)**
+- `active` expanded and highlighted without relying on colour alone;
+  `future` and `completed` collapsed to header + count
+- Clicking a collapsed header expands it **in place** — no navigation,
+  no column reordering
+- Expansion persists per-user across reload in **both** directions: an
+  expanded `completed` sprint stays expanded and a collapsed `active`
+  one stays collapsed. The default is a default, not an override
+  re-applied every render. Never written to `sprints.yaml`
+- **Needs a `UserSettings` field for column expansion.** No earlier
+  ticket adds one; M4.4 owns `UserSettings` and lands later, so this
+  ticket adds the field
+
+**Drag (SPR-4, SPR-5, SPR-6, SPR-36)**
+- Drop writes `sprint` with the target's **`id`**; dropping where it
+  started issues no write; exactly one write per drop
+- A "No sprint" target clears the field (absent, not `""` or `"none"`),
+  and the task then matches an unset `sprint` in the query language
+  consistently with what the CLI reports. *(SPR-6 permits a card-level
+  "Remove from sprint" affordance instead; the drop target is the
+  choice made here.)*
+- Counts refetch after a drop rather than only updating optimistically
+- **The write is verified on disk**: `loctt show <key>` reports the new
+  sprint immediately, not just the browser
+- A failed write returns the card to its source column, reverts both
+  counts, and errors naming the task, the target sprint, and that the
+  assignment was not saved
+
+**Degradations (SPR-15, SPR-17, SPR-27, SPR-31, SPR-32, SPR-36)**
+- Empty column is a designed state reading `0`, and remains a valid
+  drop target
+- A 400-task column virtualizes while the header shows the true total;
+  dragging a card out completes without visibly re-rendering every card.
+  `MAX_PAGE_LIMIT` is 1000 so one fetch covers it, but
+  `DEFAULT_PAGE_LIMIT` is **100** — the per-column fetch must pass an
+  explicit `?limit`. Relying on the default gives 100 cards under a
+  header reading 400, which is precisely the SPR-17 failure
+- A dangling `sprint` id gets an "unknown sprint" grouping naming the
+  id, and the rest of the view still renders — one bad reference does
+  not blank the page
+- Zero sprints shows an empty state that **points at Settings →
+  Sprints**; a failed fetch shows an error **with a retry**. Never the
+  same state
+- Dropping onto a column whose sprint was deleted underneath the session
+  is rejected, the card returns, the error says the target no longer
+  exists and asks for a refresh, and the stale column is gone on refresh
+
+**Server work (this ticket is NOT frontend-only)**
+- `handleListSprints` does not catch `SprintsConfigError`, so a
+  malformed `sprints.yaml` currently returns a generic 500 with
+  `code: io_failed` + retry — the exact shape SPR-32 reserves for a
+  *failed fetch*, making the two indistinguishable. Needs a caught,
+  named error carrying the file, the offending sprint, and the broken
+  rule (the text exists in the ZodError but never reaches the client)
+- `parseSprintsConfig` is all-or-nothing. SPR-31 asks for valid sprints
+  to still render *if the loader can partially recover* — decide
+  explicitly: either add a lenient parse, or state that it cannot
+  recover and always show the whole-file error. Do not leave it implied
+- SPR-36 needs an existence check on the drop write. The archived-
+  reference guard covers archived entities, not deleted ones, so a
+  write naming a deleted sprint id likely succeeds silently today —
+  verify before building the client half
+- `GET /api/sprints` counts are opt-in via `?counts=true` (progress is
+  not needed here; that is M4.7's burndown)
+
+**Tests**
+- Column ordering by `start_date` with a stable tie-break across reloads
+- Header count equals the cards rendered, with the two paths
+  (`?counts=true` and the per-column fetch) deliberately disagreeing in
+  the fixture if the implementation lets them
+- Drop writes the target's id, exactly one write, and the value is on
+  disk (assert through core, not the browser)
+- Drop-to-unassigned clears rather than empty-strings
+- `state` drives highlight on a sprint whose `end_date` has **passed
+  while `state` is still `active`** — a fixture where state and window
+  agree passes without asserting anything — and the discrepancy hint is
+  present
+- Two overlapping `active` sprints trigger no warning, and the SPR-20
+  hint does not fire on them
+- Malformed `sprints.yaml` is distinguishable from a failed fetch
+- Failed write reverts card and both counts
+
+---
+
 ### 🚦 Milestone 3 review
-- Board, Timeline, Create modal all functional. Filter bar is shared
-  across List + Board + Timeline
-- Out of scope: settings (M4), init wizard (M4), sprint detail (M4),
-  saved-view advanced DSL (M4)
+- Board, Timeline, Create modal, Sprints overview all functional. Filter
+  bar is shared across List + Board + Timeline
+- Out of scope: settings (M4), init wizard (M4), sprint **detail** (M4 —
+  the overview at `/sprints` ships here), saved-view advanced DSL (M4)
 
 ---
 
@@ -460,10 +574,141 @@ Cases: A11Y-1, A11Y-2, A11Y-3, A11Y-4, A11Y-5, A11Y-6, A11Y-7, A11Y-8, A11Y-9, A
 - README update. **Keep `temp-ui-mockups/`** — it is a design reference,
   not scaffolding, and `tokens.css` is the upstream source of the app's
   design tokens. See `temp-ui-mockups/README.md`.
-- **E2E**: full v1 happy-path
 
-### 🚦 Milestone 4 review (v1 cut)
-- All settings panels, init, sprint detail, polish. Ready to ship v1
+### M4.9 · Milestones view + detail ⬜
+Cases: MSL-1, MSL-2, MSL-3, MSL-4, MSL-15, MSL-16, MSL-17, MSL-18, MSL-24, MSL-25, MSL-29, MSL-35, MSL-38
+- Route `/milestones` (list) and the milestone detail route. Distinct
+  from Settings → Milestones (M4.3), which is CRUD management, not a
+  progress surface.
+- **Open decision — the detail route's URL segment.** The flow docs
+  write `/milestones/$key`, but `MilestoneDef` is `{id, name,
+  target_date, archived}` — there is no `key`. `name` is mutable and
+  not unique, and P-4 says the ULID is never shown to the user. M4.7
+  inherits the identical problem for `/sprints/$key`. Decide once, for
+  both, before building either.
+
+**Rows (MSL-1, MSL-16, MSL-17, MSL-18)**
+- One row per non-archived milestone, none omitted or duplicated;
+  `name` never the ULID
+- `target_date` formatted per the workspace calendar, or an explicit
+  "No target date" — never blank, never a bare dash, never today
+- A progress bar plus a `done / total` readout whose fill matches the
+  numbers
+- Ordering stable across reloads: by target date, undated in a defined
+  position after dated, never interleaved randomly. **An undated
+  milestone still shows a working progress bar**
+- Overdue is driven by incomplete tasks existing (category not
+  `completed`/`discarded`), not by the date alone; a 100%-complete past
+  milestone reads completed, not overdue. The flag is additive — **the
+  progress numbers are unchanged by it**
+- At 100% the bar reads full and the readout shows `n / n`
+
+**Progress rule (MSL-2, MSL-3, MSL-15, MSL-29)**
+- Counts by status **category**, not by a `done` key: two
+  `completed`-category statuses both count, and renaming a status's key
+  or label changes nothing
+- Discarded tasks are **excluded from the denominator** (decided
+  2026-08-14; `computeProgress` implements it and returns `discarded`
+  alongside). The rule is stated where the number is shown, and
+  identically on the list, the detail, and any sidebar count
+- **CLI parity**: the same milestone via `loctt list` with a
+  `status.category = completed` predicate returns the same numerator.
+  This is the assertion that catches the UI computing progress
+  independently of core — assert it against the real CLI
+- Zero-task milestone shows "No tasks" — never `NaN`, `0/0`, or
+  `Infinity` — with an empty bar and percent suppressed
+- Recategorising a status in `workflow.yaml` raises the numerator on
+  refresh: **the progress query is invalidated by a workflow config
+  change**; no cached figure survives it
+
+**Drill-in (MSL-4)**
+- Clicking a row opens a task list scoped to that milestone; the URL is
+  pasteable and Back restores scroll and expansion state
+- **The row count equals the milestone's `total`** under the same
+  discarded rule. This does not hold with today's API — see server work
+
+**Archived and degradations (MSL-24, MSL-25, MSL-35, MSL-38)**
+- Archived milestones keep a reachable detail route with a working task
+  list, are excluded from the default view, and are revealed by a "show
+  archived" affordance without unarchiving. *(Picker exclusion is
+  M2.2's milestone dropdown, not this ticket.)*
+- A dangling milestone id must not appear as a phantom row, and if such
+  tasks are dropped from counts that must be visible somewhere —
+  silently vanishing tasks are the failure mode
+- A failed progress computation shows an error affordance **naming the
+  milestone** with a retry, in place of the numbers, while other rows
+  still render their own progress
+- An unknown key in the detail URL is a not-found state linking back to
+  the list, visually distinct from a milestone with zero tasks
+
+**Partition defect to resolve (MSL-24)**
+- MSL-24's first bullet — *"The task detail shows the reference as
+  unresolved, naming the dangling id"* — is a **task-detail**
+  assertion. This ticket builds no task detail, so it cannot verify it.
+  Split MSL-24, or reassign that bullet to the ticket owning task
+  detail, before claiming the case closed here.
+
+**Server work (this ticket is NOT frontend-only)**
+- **MSL-35 is architecturally unavailable today.** `withProgress` calls
+  `milestoneProgress` once for the whole list, and `referenceProgress`
+  does a single corpus scan by design — it either succeeds for every
+  milestone or throws for all of them, and `handleListMilestones` does
+  not catch it, so the whole response 500s. A per-row error with a
+  per-row retry needs either a per-milestone progress endpoint or a
+  partial-success shape (`progress | {error}` per item)
+- **Remove the silent zero fallback.** `withProgress` fills any id
+  missing from the map with `{done:0, total:0, ...}`, producing exactly
+  the `0 / 0` MSL-35 forbids and making a missing computation
+  indistinguishable from a real zero
+- **MSL-4's count equality does not hold.** The drill-in would be
+  `/api/tasks?milestone=<id>`, which returns discarded tasks too, while
+  `progress.total` excludes them — MSL-3's own example (10 tasks →
+  `4 / 8`) would show 10 rows. `STRUCTURED_FILTER_FIELDS` has no
+  category negation, so either the drill-in carries a DSL `query`
+  excluding discarded, or the equality is renegotiated with the case
+- **MSL-24 needs an orphan count.** `referenceProgress` seeds its map
+  with the requested ids only and silently drops tasks pointing at a
+  deleted milestone; the response carries no counter, so "visible
+  somewhere" has nothing to render
+- No `GET /api/milestones/:id` route exists; the detail resolves from
+  the list client-side. Workable — and arguably better for MSL-38 —
+  but state it rather than implying an endpoint
+
+**Unowned dependencies this ticket absorbs**
+- **A workspace-calendar date formatter.** MSL-1 wants `target_date`
+  "formatted per the workspace calendar". `GET /api/calendar` exists but
+  no ticket builds a shared formatter bound to it — M4.2 builds the
+  Calendar settings *panel*, not the formatter. This ticket builds it,
+  as a shared utility rather than a local helper, since the timeline and
+  task detail need the same thing
+- **Scroll restoration on Back.** MSL-4 wants scroll and expansion state
+  restored. Nothing in the TanStack Router setup establishes scroll
+  restoration and M4.8's polish list does not name it. This ticket
+  configures it
+
+**Cross-ticket consistency (with M4.3)**
+- M4.3's MSL-11 requires its reference count agree with MSL-3's
+  progress rule. `countTasksByReferences` and `milestoneProgress` are
+  separate paths with their own archived handling; neither ticket
+  currently owns proving they agree. This ticket asserts it
+
+**Tests**
+- Category-driven numerator survives a status key rename and a label
+  rename
+- Numerator matches `loctt list` with `status.category = completed`
+- Discarded excluded from denominator, and the rule stated on every
+  surface that shows the number
+- Zero-task readout emits no NaN / 0-0 / Infinity
+- Overdue keys off incomplete tasks, not the date; 100% past milestone
+  reads completed
+- Undated milestone still renders progress and sorts to its defined slot
+- Workflow recategorisation invalidates the cached progress figure
+- Dangling id produces no phantom row, **and** the tasks it orphans are
+  visible somewhere rather than silently absent from every count
+- A progress failure shows a named, retryable error while other rows
+  render
+- Row count on the drill-in equals the readout's `total` for a milestone
+  that has discarded tasks — the case where the two diverge today
 
 ---
 
@@ -476,47 +721,10 @@ in the cases. Listing them explicitly is what stops them being silently
 dropped; `npm run cases:partition` fails if one is neither placed nor
 listed here.
 
+The 28 SPR/MSL cases that once sat here are gone: they named two whole
+views the ticket set had never planned, and are now built by M3.5 and
+M4.9. The two below are different in kind — the behaviour *is* ticketed,
+just in a later milestone than the case's own tag implies.
+
 - ERR-23 — its scenario is a create-task submit that half-applies; no M2 ticket builds the create modal (M3), so nothing in M2 makes this verifiable
-- SPR-1 — the sprints overview route is not built by any M3 ticket; M3.1 builds `/board` from `workflow.boards`, not a sprint-column view.
-- SPR-2 — same: sprint-column highlight/collapse belongs to a sprints view no M3 ticket creates.
-- SPR-3 — expand/collapse persistence on a sprints view that no M3 ticket builds.
-- SPR-4 — sprint-to-sprint card drag writes the `sprint` field; M3.2 builds status/board_rank drag on `/board` only.
-- SPR-5 — failure revert for a sprint-reassignment drag that no M3 ticket builds.
-- SPR-6 — "no sprint" drop target on the sprints view.
-- SPR-15 — empty sprint column on the sprints view.
-- SPR-17 — 400-task sprint column scale on the sprints view.
-- SPR-19 — overlapping-sprint column rendering on the sprints view.
-- SPR-20 — active-state sprint column presentation on the sprints view.
-- SPR-24 — duplicate sprint names distinguished as columns on the sprints view.
-- SPR-27 — dangling sprint reference surfaced on sprint surfaces, none built in M3.
-- SPR-31 — malformed `sprints.yaml` error state for the sprints view.
-- SPR-32 — empty-vs-failed load states for the sprints view.
-- SPR-36 — deleted-sprint drop rejection on the sprints view.
-- MSL-1 — asserts a Milestones **view** (one row per milestone with target date + progress bar, stable ordering); no M4 ticket builds a `/milestones` route. M4.3 builds only the Settings → Milestones management panel.
-- MSL-2 — progress counted by status category on that same Milestones view; the surface that renders the numerator does not exist in any M4 ticket.
-- MSL-3 — the discarded-category denominator rule must be stated "where the number is shown" on the Milestones view, milestone detail, and sidebar counts; none of those progress surfaces is an M4 deliverable.
-- MSL-4 — clicking a milestone opens its scoped task list from the Milestones view; the originating view is unbuilt.
-- MSL-15 — zero-task progress readout (no `NaN`/`0/0`) on the Milestones view row; no M4 ticket renders that readout.
-- MSL-16 — "No target date" presentation and undated sort position on the Milestones view.
-- MSL-17 — overdue flag on a Milestones view row.
-- MSL-18 — 100%-complete bar and completion state on a Milestones view row.
-- MSL-24 — dangling milestone id must not appear as a phantom row on the Milestones view; that view is unbuilt.
-- MSL-25 — archived milestone's **detail route** must stay reachable with a "show archived" affordance on the Milestones view; no M4 ticket builds a milestone detail route.
-- MSL-29 — progress numerator changes after a status recategorisation; asserted on the Milestones view's progress figures.
-- MSL-35 — a failed progress computation must show an error affordance in place of the numbers on a Milestones view row.
-- MSL-38 — unknown milestone key in the **detail URL** shows a not-found state; the milestone detail route is not in any M4 ticket.
-- PRU-4 — every assertion is about the create modal (pre-select, key preview, submit); M1.1 ships the + button as a stub and the modal is M3.4
-
----
-
-# Out of scope for v1 (explicit)
-
-- 1-level reply threading on comments
-- Realtime collaboration / live cursors
-- Mobile-first layouts (responsive enough on tablet+; phone deferred)
-- Org/multi-workspace switching
-- Login / auth (local app)
-- Notification center
-- AI features / MCP UI surfaces
-
-Flag if any should move back in.
+- PRU-4 — every assertion is about the create modal (pre-select, key preview, submit); M1.1 ships that button as an explicit stub, so M1 cannot verify it
