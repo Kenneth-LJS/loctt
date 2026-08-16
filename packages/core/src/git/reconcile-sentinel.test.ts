@@ -175,3 +175,46 @@ describe("reconciliation sentinel", () => {
     expect(sawSentinelDuringSync).toBe(true);
   });
 });
+
+describe("directory pruning after a sync", () => {
+  it("does not remove .loctt/tasks when the last task is deleted", async () => {
+    const { root, locttDir } = await tracker();
+
+    // Create a task, publish it, then delete it on the branch so the
+    // next sync propagates the deletion locally.
+    const { loadProjectsConfig } = await import("../config/projects.js");
+    const { loadState, saveState } = await import("../state/state.js");
+    const { createTask } = await import("../task/create.js");
+    const projects = await loadProjectsConfig(locttDir);
+    const project = projects.projects[0]?.id;
+    if (project === undefined) throw new Error("fixture: init created no project");
+    const state = await loadState(locttDir);
+    await createTask({ locttDir, state, options: { project, title: "only task" } });
+    await saveState(locttDir, state);
+    await publish(locttDir, root);
+
+    const worktree = join(root, "..", `wt-prune-${process.pid}`);
+    git(root, "worktree", "add", "-q", worktree, "loctt");
+    try {
+      execFileSync("sh", ["-c", "rm -rf tasks/*"], { cwd: worktree });
+      git(worktree, "add", "-A");
+      git(worktree, "commit", "-m", "delete every task");
+    } finally {
+      git(root, "worktree", "remove", "--force", worktree);
+    }
+
+    await pullFromLocttBranch(locttDir, root);
+
+    // The task's own directory should be gone — an empty task dir reads
+    // as a corrupt task rather than an absent one.
+    const { readdir } = await import("node:fs/promises");
+    const tasksDir = join(locttDir, "tasks");
+    const remaining = await readdir(tasksDir).catch(() => null);
+
+    // But `tasks/` itself must survive. Deleting it leaves a tracker
+    // whose shape no longer matches what `init` creates: an empty
+    // tasks/ is a tracker with no tasks, a missing one looks broken.
+    expect(remaining, ".loctt/tasks must still exist").not.toBeNull();
+    expect(remaining).toEqual([]);
+  });
+});

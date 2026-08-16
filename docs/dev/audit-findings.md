@@ -423,18 +423,17 @@ Closed since that re-verification:
 | 8 more dispatchers exiting 0 or 1 on an unknown flag | D | `ac6cccb` |
 | Rebalance stamping `updated_at` tracker-wide | A | closed by SPR-C2 |
 | No-op `edit` on user/label/milestone/sprint reports success | E | this commit |
-| `ui --port abc` starts on a random port | E | this commit |
+| `ui --port abc` starts on a random port | E | `863203d` |
+| `gitSafe` reads a failed `ls-tree` as "branch is clean" | B | this commit |
+| `pruneEmptyDirs` could delete `.loctt/tasks/` itself | B | this commit |
+| `applyResolution` wrote without `mkdir`, unlike `applyPlan` | B | this commit |
+| `deriveKeyState` could emit `prefix: ""` unvalidated | B | this commit |
 
 **Still open, and deliberately so** — each needs a decision or belongs
 with unbuilt work rather than a sweep:
 
 - `handleSetField` passes `value` to `setField` unvalidated
   (`server.ts:2684`). Belongs with the M2 task-detail work that owns it.
-- `gitSafe` discards exit status, so a transient `ls-tree` failure reads
-  as "branch is clean" and disables the foreign-content guard.
-- `pruneEmptyDirs` walks ancestors with no floor.
-- `applyResolution` writes without `mkdir`, unlike `applyPlan`.
-- `deriveKeyState` can emit `prefix: ""`, written unvalidated.
 - `bulkMove` sets `mutated` after writes, so allocator increments
   persist inconsistently on partial failure.
 - MCP `duplicate_task` still takes an unresolved project (P-3); the CLI
