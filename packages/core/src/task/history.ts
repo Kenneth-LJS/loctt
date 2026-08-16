@@ -64,6 +64,23 @@ export interface ReadHistoryPage {
 }
 
 /**
+ * A `_history.yaml` that is not a list of entries.
+ *
+ * Names the path because the fix is manual: the file has to be opened
+ * and repaired, and a message that only says "invalid history" leaves
+ * the user hunting for which task it belongs to.
+ */
+export class HistoryParseError extends Error {
+  constructor(readonly filePath: string) {
+    super(
+      `${filePath} is not a list of history entries. `
+      + `It has not been modified — open it and repair or remove it.`,
+    );
+    this.name = "HistoryParseError";
+  }
+}
+
+/**
  * Reads all history entries for a task. Returns `[]` if the file does
  * not exist. With options, returns a {@link ReadHistoryPage} with the
  * post-filter total so callers can render "x of y" cursors.
@@ -92,7 +109,15 @@ export async function readHistory(
     return { entries: [], total: 0 };
   }
   const parsed: unknown = parseYaml(content);
-  const all = Array.isArray(parsed) ? (parsed as HistoryEntry[]) : [];
+  // Coercing a non-array to [] made a corrupt file read as an empty
+  // one, and the next append then overwrote it with a single fresh
+  // entry — the original content gone, with nothing said (CMT-C7).
+  // History is the recovery path for M2, so quietly discarding it is
+  // the worst available failure.
+  if (!Array.isArray(parsed)) {
+    throw new HistoryParseError(filePath);
+  }
+  const all = parsed as HistoryEntry[];
   if (options === undefined) return all;
 
   const kindSet = options.kinds && options.kinds.length > 0
