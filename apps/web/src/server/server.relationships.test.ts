@@ -125,3 +125,88 @@ describe("GET /api/tasks/:ref relationships", () => {
     expect((await get(key)).relationships).toEqual([]);
   });
 });
+
+/**
+ * @verifies REL-C1
+ *
+ * `handleUnlink` called `unlinkTask` without `workflowConfig`, so
+ * `findInverseType` returned undefined and the inverse branch was
+ * skipped entirely: the web removed `T-1.blocks→T-2` and stranded
+ * `T-2.blocked_by→T-1` permanently. The CLI and MCP both passed it, and
+ * `handleLink` fourteen lines above does too — so the same tracker
+ * ended up in different states depending on which surface touched it.
+ */
+describe("POST /api/tasks/:ref/unlink removes the inverse edge", () => {
+  let root: string;
+  let app: ReturnType<typeof createWebApp>;
+  let base: string;
+  const csrf = { "Content-Type": "application/json", "X-Loctt-Client": "test" };
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-web-unlink-"));
+    await initLoctt(root);
+    app = createWebApp({ root, port: 0 });
+    await app.start();
+    const addr = app.server.address();
+    base = `http://127.0.0.1:${typeof addr === "object" && addr ? addr.port : app.port}`;
+  });
+
+  afterAll(async () => {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const relsOf = async (ref: string): Promise<{ type: string; target: string }[]> => {
+    const res = await fetch(`${base}/api/tasks/${ref}`);
+    const body = (await res.json()) as { relationships?: { type: string; target: string }[] };
+    return body.relationships ?? [];
+  };
+
+  it("leaves no orphan on the target", async () => {
+    for (const title of ["source", "target"]) {
+      await fetch(`${base}/api/tasks`, {
+        method: "POST", headers: csrf, body: JSON.stringify({ title }),
+      });
+    }
+
+    await fetch(`${base}/api/tasks/T-1/link`, {
+      method: "POST", headers: csrf,
+      body: JSON.stringify({ type: "blocks", target: "T-2" }),
+    });
+    // Precondition: the inverse exists, or the test proves nothing.
+    expect(await relsOf("T-2")).toHaveLength(1);
+
+    const res = await fetch(`${base}/api/tasks/T-1/unlink`, {
+      method: "POST", headers: csrf,
+      body: JSON.stringify({ type: "blocks", target: "T-2" }),
+    });
+    expect(res.status).toBe(200);
+
+    expect(await relsOf("T-1")).toHaveLength(0);
+    // The half that was broken: T-2 kept a blocked_by edge pointing at a
+    // relationship that no longer exists from the other side.
+    expect(await relsOf("T-2")).toHaveLength(0);
+  });
+
+  it("clears both edges when unlinking from the inverse side", async () => {
+    for (const title of ["a", "b"]) {
+      await fetch(`${base}/api/tasks`, {
+        method: "POST", headers: csrf, body: JSON.stringify({ title }),
+      });
+    }
+    await fetch(`${base}/api/tasks/T-3/link`, {
+      method: "POST", headers: csrf,
+      body: JSON.stringify({ type: "blocks", target: "T-4" }),
+    });
+
+    // Removing from the inverse direction must be symmetric with
+    // removing from the forward one.
+    await fetch(`${base}/api/tasks/T-4/unlink`, {
+      method: "POST", headers: csrf,
+      body: JSON.stringify({ type: "is_blocked_by", target: "T-3" }),
+    });
+
+    expect(await relsOf("T-3")).toHaveLength(0);
+    expect(await relsOf("T-4")).toHaveLength(0);
+  });
+});

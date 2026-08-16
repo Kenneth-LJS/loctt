@@ -54,6 +54,100 @@ function mkTask(
   };
 }
 
+describe("computeBurndown counts only the requested sprint (SPR-C1)", () => {
+  /**
+   * @verifies SPR-C1
+   *
+   * `inSprint` was computed as "has *a* sprint" — the task's `sprint`
+   * field was never compared to the sprint being charted. In any tracker
+   * with more than one sprint, every burndown was the sum of all of
+   * them, wrong simultaneously on CLI, MCP and web.
+   *
+   * The 18 tests that existed reused one sprint id for both the sprint
+   * and its tasks, which makes "has a sprint" and "has this sprint"
+   * indistinguishable — thorough, and unable to fail. Every test here
+   * uses two.
+   */
+
+  const ALPHA = "01HXSPRINTALPHA0000000001";
+  const BETA = "01HXSPRINTBETA00000000002";
+
+  const alpha = (): SprintDef => mkSprint({
+    id: ALPHA, name: "Alpha", start_date: "2026-05-04", end_date: "2026-05-08",
+  });
+
+  it("excludes a task belonging to a different sprint", () => {
+    const out = computeBurndown({
+      sprint: alpha(),
+      tasks: [
+        mkTask("A-1", { created_at: "2026-05-01T00:00:00Z", sprint: ALPHA, status: "todo" }),
+        // Beta's task must not count toward Alpha's totals.
+        mkTask("B-1", { created_at: "2026-05-01T00:00:00Z", sprint: BETA, status: "todo" }),
+      ],
+      historiesByTaskId: new Map(),
+      workflow: mkWorkflow(),
+    });
+
+    expect(out.initialTotal).toBe(1);
+  });
+
+  it("excludes a task with no sprint at all", () => {
+    const out = computeBurndown({
+      sprint: alpha(),
+      tasks: [
+        mkTask("A-1", { created_at: "2026-05-01T00:00:00Z", sprint: ALPHA, status: "todo" }),
+        mkTask("N-1", { created_at: "2026-05-01T00:00:00Z", status: "todo" }),
+      ],
+      historiesByTaskId: new Map(),
+      workflow: mkWorkflow(),
+    });
+
+    expect(out.initialTotal).toBe(1);
+  });
+
+  it("follows a task moved between sprints, not merely in or out of one", () => {
+    // The history replay had the same flaw: a `sprint` field change was
+    // read as "still has a sprint", so moving a task from Beta to Alpha
+    // (or away from Alpha) did not change Alpha's totals.
+    const histories = new Map<string, HistoryEntry[]>([
+      ["M-1", [
+        {
+          timestamp: "2026-05-06T00:00:00Z",
+          kind: "field_change",
+          field: "sprint",
+          before: ALPHA,
+          after: BETA,
+        },
+      ]],
+    ]);
+
+    const out = computeBurndown({
+      sprint: alpha(),
+      tasks: [mkTask("M-1", { created_at: "2026-05-01T00:00:00Z", sprint: BETA, status: "todo" })],
+      historiesByTaskId: histories,
+      workflow: mkWorkflow(),
+    });
+
+    // It starts in Alpha and leaves partway: the remaining count must
+    // drop, not hold flat.
+    const first = out.series[0]?.remaining ?? -1;
+    const last = out.series[out.series.length - 1]?.remaining ?? -1;
+    expect(first).toBe(1);
+    expect(last).toBe(0);
+  });
+
+  it("reports the requested sprint's id and window", () => {
+    const out = computeBurndown({
+      sprint: alpha(),
+      tasks: [],
+      historiesByTaskId: new Map(),
+      workflow: mkWorkflow(),
+    });
+    expect(out.sprintId).toBe(ALPHA);
+    expect(out.series).toHaveLength(5);
+  });
+});
+
 describe("computeBurndown — unit: tasks (estimation disabled)", () => {
   it("returns one sample per day across the sprint window inclusive", () => {
     const out = computeBurndown({

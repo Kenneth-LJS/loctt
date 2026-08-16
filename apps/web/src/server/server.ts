@@ -2755,9 +2755,14 @@ export function createWebApp(options: WebAppOptions) {
     const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
     const request = await parseJsonBody<LinkRequest>(req, res);
+    // Without workflowConfig, findInverseType returns undefined and the
+    // inverse branch is skipped: the forward edge goes and its inverse
+    // is stranded permanently. handleLink above passes it; so do the CLI
+    // and MCP (REL-C1).
+    const wfConfig = await loadWorkflowConfig(locttDir);
     const task = await lookupTask(locttDir, ref);
     const target = await lookupTask(locttDir, request.target);
-    const updated = await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: request.type, target: target.frontmatter.id });
+    const updated = await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: request.type, target: target.frontmatter.id, workflowConfig: wfConfig });
     json(res, projectTaskFrontmatter(updated.frontmatter));
   };
 

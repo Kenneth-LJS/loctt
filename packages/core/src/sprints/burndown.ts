@@ -157,7 +157,7 @@ export function computeBurndown(input: ComputeBurndownInput): BurndownSeries {
 
   for (const task of tasks) {
     const history = historiesByTaskId.get(task.frontmatter.id) ?? [];
-    const replay = replayTaskState(task, history);
+    const replay = replayTaskState(task, history, sprint.id);
     days.forEach((day, i) => {
       const state = stateAtEndOfDay(replay, day);
       if (state === null) return;
@@ -261,7 +261,16 @@ interface TaskReplayState {
  * coherent series because the latest frontmatter at least pins the
  * end-state correctly.
  */
-function replayTaskState(task: Task, history: readonly HistoryEntry[]): readonly TaskReplayState[] {
+function replayTaskState(
+  task: Task,
+  history: readonly HistoryEntry[],
+  /**
+   * The sprint being charted. `inSprint` means "in *this* sprint" — it
+   * used to mean "in any sprint", so in a tracker with more than one
+   * every burndown was the sum of all of them (SPR-C1).
+   */
+  sprintId: string,
+): readonly TaskReplayState[] {
   const sorted = [...history].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
   // Derive the state at task creation by walking BACK from the
@@ -289,7 +298,7 @@ function replayTaskState(task: Task, history: readonly HistoryEntry[]): readonly
   // relevant change.
   let status: string | undefined = curStatus;
   let estimate: unknown = curEstimate;
-  let inSprint = curSprint !== undefined && curSprint !== null && curSprint !== "";
+  let inSprint = curSprint === sprintId;
 
   const snapshots: TaskReplayState[] = [
     { inSprint, status, estimate, at: task.frontmatter.created_at },
@@ -300,7 +309,9 @@ function replayTaskState(task: Task, history: readonly HistoryEntry[]): readonly
     if (e.field === "status") {
       status = e.after as typeof status;
     } else if (e.field === "sprint") {
-      inSprint = e.after !== undefined && e.after !== null && e.after !== "";
+      // A move *between* sprints changes membership of this one, which a
+      // truthiness check could never see.
+      inSprint = e.after === sprintId;
     } else if (e.field === "estimate") {
       estimate = e.after;
     } else {
