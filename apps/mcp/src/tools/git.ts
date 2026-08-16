@@ -23,7 +23,7 @@ import type { ToolDef } from "../types.js";
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "enable_git",
-    description: "Enables git-backed mode for this tracker. Sets up a dedicated loctt branch for task data on a sparse worktree. Only call when the user has explicitly asked to share tasks across machines or set up sync — this is one-time infrastructure setup, not a routine task operation.",
+    description: "Enables git-backed mode for this tracker: records the configuration that publish and sync use. The branch itself is created on the first publish, not here. Refuses if the configured branch already exists and holds content LocTT did not write. Only call when the user has explicitly asked to share tasks across machines or set up sync — this is one-time infrastructure setup, not a routine task operation.",
     inputSchema: {},
     handler: async ({ locttDir, root }) => {
       await enableGit(locttDir, root);
