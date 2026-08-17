@@ -530,13 +530,43 @@ export async function setFields(opts: SetFieldsOptions): Promise<Task> {
  * straddles midnight. `bulkOpId`, when given, is attached to every
  * history entry so an activity feed can group them as one action.
  */
+/**
+ * What a deferred `setFieldsLocked` would have written.
+ *
+ * Everything is computed — validation has run, the archived guard has
+ * passed, history is built — but nothing has touched disk. The caller
+ * owns the write, which is what lets a bulk operation stage the whole
+ * set and swap it in atomically (V6).
+ */
+export interface DeferredFieldWrite {
+  readonly task: Task;
+  readonly history: readonly HistoryEntry[];
+}
+
+export function setFieldsLocked(
+  opts: SetFieldsOptions & {
+    readonly now?: string;
+    readonly today?: string;
+    readonly bulkOpId?: string;
+    readonly defer: true;
+  },
+): Promise<DeferredFieldWrite>;
+export function setFieldsLocked(
+  opts: SetFieldsOptions & {
+    readonly now?: string;
+    readonly today?: string;
+    readonly bulkOpId?: string;
+    readonly defer?: false;
+  },
+): Promise<Task>;
 export async function setFieldsLocked(
   opts: SetFieldsOptions & {
     readonly now?: string;
     readonly today?: string;
     readonly bulkOpId?: string;
+    readonly defer?: boolean;
   },
-): Promise<Task> {
+): Promise<Task | DeferredFieldWrite> {
   const { locttDir, taskId, changes, workflowConfig, archivedGuard } = opts;
   const task = await readTask(locttDir, taskId);
   const now = opts.now ?? new Date().toISOString();
@@ -608,7 +638,6 @@ export async function setFieldsLocked(
   }
 
   const updatedTask: Task = { frontmatter: updated, body: task.body };
-  await writeTask(locttDir, taskId, updatedTask);
 
   const historyEntries: HistoryEntry[] = [];
   for (const { field, value } of changes) {
@@ -621,6 +650,17 @@ export async function setFieldsLocked(
   const stamped: HistoryEntry[] = bulkOpId === undefined
     ? historyEntries
     : historyEntries.map(e => ({ ...e, bulk_op_id: bulkOpId }));
+
+  // `defer` lets a bulk caller compute every task's result before any
+  // of them lands, so the whole set can be swapped into place at once
+  // (V6). Everything above — validation, the archived guard, history
+  // construction — has already run, so a deferred result is one that
+  // would have been written.
+  if (opts.defer === true) {
+    return { task: updatedTask, history: stamped };
+  }
+
+  await writeTask(locttDir, taskId, updatedTask);
   if (stamped.length > 0) {
     await appendHistory(locttDir, taskId, stamped);
   }

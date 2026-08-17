@@ -22,6 +22,7 @@ import { loadAllTasks } from "../task/load-all.js";
 import { findStructuralCycles,validateRelationships } from "../task/traversal.js";
 import { loadAllUsers } from "../users/profile.js";
 import { fileExists } from "../utils/fs.js";
+import { checkDataIntegrity } from "./integrity.js";
 
 export type CheckStatus = "ok" | "warn" | "error";
 
@@ -541,6 +542,37 @@ export async function runDoctor(
         message: `check failed: ${(err as Error).message}`,
       });
     }
+  }
+
+  // Data LocTT kept but could not fully interpret (P-11). Keeping a
+  // malformed entry without reporting it means nobody ever learns it is
+  // there, and a year of them makes the ordering meaningless.
+  try {
+    const findings = await checkDataIntegrity(locttDir);
+    if (findings.length === 0) {
+      checks.push({
+        name: "data integrity",
+        status: "ok",
+        message: "no unreadable files or malformed entries found",
+      });
+    } else {
+      for (const f of findings) {
+        checks.push({
+          name: "data integrity",
+          // A malformed entry is a *warning*: the data is intact and
+          // preserved, and the tracker works. Only a file we cannot
+          // read at all is an error.
+          status: f.severity === "unreadable" ? "error" : "warn",
+          message: `${f.path}: ${f.message}`,
+        });
+      }
+    }
+  } catch (err) {
+    checks.push({
+      name: "data integrity",
+      status: "error",
+      message: `check failed: ${(err as Error).message}`,
+    });
   }
 
   if (options.rebuildIndex) {

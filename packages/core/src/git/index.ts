@@ -1,6 +1,7 @@
 export type { GitStatusResult } from "./git-mode.js";
 export { disableGit, enableGit, getGitStatus } from "./git-mode.js";
-export type { FetchResult, PushResult, SyncOutcome } from "./publish-sync.js";
+export type { FetchResult, PreflightReport, PushResult, SyncOutcome } from "./publish-sync.js";
+export { preflight, PreflightError } from "./publish-sync.js";
 export {
   commitToLocttBranch,
   fetchLocttBranch,
