@@ -17,7 +17,7 @@ import {
   sync,
 } from "@loctt/core";
 
-import { text } from "../runtime/errors.js";
+import { errorResult, text } from "../runtime/errors.js";
 import type { ToolDef } from "../types.js";
 
 export const TOOLS: readonly ToolDef[] = [
@@ -45,6 +45,17 @@ export const TOOLS: readonly ToolDef[] = [
     inputSchema: {},
     handler: async ({ locttDir, root }) => {
       const status = await getGitStatus(locttDir, root);
+      // Every field below is a default rather than a reading when
+      // sync.yaml could not be read. `enabled: false` is a plausible
+      // answer, so an agent acts on it — re-enabling git mode, or
+      // skipping a publish — over state nobody checked.
+      if (status.unreadable) {
+        return errorResult(
+          `${status.unreadable.reason}\n\n`
+          + "Git mode status is unknown — this is not the same as git mode being disabled. "
+          + "Do not enable git mode or publish until this file can be read.",
+        );
+      }
       const result = {
         enabled: status.enabled,
         branch: status.branch,

@@ -65,11 +65,25 @@ export async function run(args: string[], root: string): Promise<void> {
       break;
     }
     case "list": {
+      // `.catch(() => undefined)` printed a blank, which reads as "not
+      // set" — while `config get` on the same file exits 1 with the
+      // real cause. The same binary contradicted itself in adjacent
+      // subcommands, and the quieter of the two was the wrong one.
+      let anyUnreadable = false;
       for (const def of CONFIG_KEYS) {
-        const value = await getConfigValue(locttDir, def.key).catch(() => undefined);
-        const display = value === undefined ? "" : String(value);
+        let display: string;
+        try {
+          const value = await getConfigValue(locttDir, def.key);
+          display = value === undefined ? "" : String(value);
+        } catch (err) {
+          anyUnreadable = true;
+          display = `<unreadable: ${err instanceof Error ? err.message : String(err)}>`;
+        }
         console.log(`${def.key} = ${display}`);
       }
+      // A blank line is a legitimate reading (the key is unset); a
+      // failed one is not, so the exit code has to say so.
+      if (anyUnreadable) process.exitCode = EXIT.RUNTIME;
       break;
     }
     default:
