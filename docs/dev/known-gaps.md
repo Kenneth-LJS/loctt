@@ -70,8 +70,8 @@ since the key→id migration.
 
 **Observed 2026-08-17.** A full `npm run test:integration` reported
 5 failures across `git/with-remote.test.ts` and
-`mcp/list-truncation.test.ts`. Both files passed in isolation, and three
-consecutive full runs afterwards were green — so the failures are
+`mcp/list-truncation.test.ts`. Both files passed in isolation, and **four**
+consecutive full runs afterwards were green (392/392 each) — so the failures are
 contention, not a defect in the code under test.
 
 Both files do real subprocess work: `with-remote` runs git against a
