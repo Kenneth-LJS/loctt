@@ -54,7 +54,7 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 | 1 · Partition | ✅ | All 21 tickets carry a `Cases:` line; gate passes. The 28 cases asserting two unticketed views are **resolved as a ticket gap**, not a scope cut — see *Blocker, resolved*. |
 | 2 · Measure | ✅ | Measured (CLI 17/49, MCP 26/75) and the blocker it raised is **cleared**: both reference docs corrected to the shipped API, every example executed. See *Blocker 2, resolved*. |
 | 3 · Surface gaps | ✅ | **68 of 68 closed**: blockers 23/23, major 29/29, minor 16/16. Surface coverage 46 → 111. See *Phase 3 log*. |
-| 4 · Structural audit | 🔵 | **Groups A–F closed.** Group G (~79 cosmetic) deferred until after the UI build. ~5 findings left open on purpose, each named in [`audit-findings.md`](audit-findings.md) with why — they need the code that owns them (M2 task detail, MCP comment tools) rather than a sweep. |
+| 4 · Structural audit | 🔵 | **Groups A–F closed, and the six swallowed-error findings with them** (2026-08-17). Group G (~79 cosmetic) deferred until after the UI build. ~4 findings left open on purpose, each named in [`audit-findings.md`](audit-findings.md) with why — they need the code that owns them (M2 task detail, MCP comment tools) rather than a sweep. |
 | 5 · UI build | ⬜ | M1.4 is 🔵 from earlier work, predating this plan |
 
 ### ✅ Blocker — RESOLVED 2026-08-16: two views need tickets, not a scope cut
@@ -649,49 +649,73 @@ the work above, because two change what that work is:
   change worth doing deliberately; and whether the code set is the right
   one is only answerable once a UI renders it.
 - **V2 · Malformed history degrades, never blocks.** Superseded in scope
-  by **P-11**, which generalises it to every list of entries. **Not yet
-  implemented.**
+  by **P-11**. ✅ implemented for comment threads (`149a07a`); history
+  and the config slices still to follow.
 - **V3 · Route segments carry the ULID.** `/milestones/<ulid>`,
   `/sprints/<ulid>`. The address bar is outside the UI for P-4, which is
   now scoped in `invariants.md` to UI *content*. Settles the open `$key`
   question on M3.5, M4.9 and M4.7.
 - **V4 · Sync pre-flight runs under both `--dry-run` and a real sync**,
-  and a real sync refuses on failure. **Not yet implemented.**
+  and a real sync refuses on failure. ✅ implemented (`f72461a`) — one
+  function backs both, so they cannot drift.
 - **V5 · The validator is maintained by a test, not an instruction.**
   Schema-coverage test over the Zod shapes, plus a reasoned exemption
   list. **Not yet implemented.**
-- **V6 · Multi-file ops get stage-then-swap plus a journal.** Closes the
-  one crash-recovery gap: a bulk op killed partway leaves each file
-  intact and the set half-applied. **Not yet implemented.**
-- **V7 · An unreadable user profile is kept, not skipped.** Supersedes
-  the earlier "leave it as designed" judgement on audit finding 4. The
-  archived guard fails **closed** on a profile it cannot read. **Not yet
-  implemented.**
+- **V6 · Multi-file ops get stage-then-swap plus a journal.** ✅
+  implemented (`f72461a`) as stage → back up → journal → swap → roll
+  back, per the user's scheme. `bulkSetFields` and `bulkArchive` are
+  two-phase; recovery rolls back, never forward.
+- **V7 · An unreadable user profile is kept, not skipped.** ✅
+  implemented (`de107eb`), and extended to labels, milestones and
+  sprints: the guard fails **closed** on any slice it cannot read, for
+  *new* references only — an unreadable file must not freeze every write
+  on a task that already carries the field.
 - **P-11 · Leniency means keeping, never destroying** (`invariants.md`).
-  A malformed entry in a list is *kept and merged*, positioned by its
-  neighbours when its own sort key is unusable. `return []` on a read
-  failure is destruction whenever the next step is a write.
+  ✅ implemented for comment threads (`149a07a`). A malformed entry is
+  kept at its index and survives a post, an edit, or a deletion of
+  either neighbour; an unreadable file is never written over.
 - **P-12 · Validate at the boundary** (`invariants.md`). Cross-file
   dependencies included. Hand-edits and `git pull` are unsupported —
   LocTT warns cheaply, the user owns the outcome. The boundary is the
   gate; P-11 is the floor.
 
-### The next agent's first job
+### ✅ Done 2026-08-17: P-11, P-12, V4, V6, V7 implemented
 
-**Implement P-11**, and close the six swallowed-error findings with it.
+All six swallowed-error findings are **closed**, and four of the nine
+recorded rules now have code. See [`audit-findings.md`](audit-findings.md)
+for the per-finding detail.
 
-Five of those six were fixed and then **reverted** — see
-[`audit-findings.md`](audit-findings.md) for why, and for the file:line
-and reproduction of each. They threw on unreadable input, which is right
-for a file we cannot read at all (we must not overwrite what we could not
-read) and **wrong** for a readable file holding a malformed entry: that
-entry is kept and merged, positioned after whatever preceded it.
+| Rule | State | Commit |
+|---|---|---|
+| **P-11** | ✅ implemented for comment threads | `149a07a` |
+| **V7** | ✅ implemented | `de107eb` |
+| **V4** | ✅ pre-flight under `--dry-run` and real publish | `f72461a` |
+| **V6** | ✅ stage → back up → journal → swap → roll back | `f72461a` |
+| **V1** | ⬜ not started — see the note below |
+| **P-12** | ⬜ not started (V4's pre-flight is the hook it needs) |
+| **V5** | ⬜ not started |
+| **V2** | — absorbed into P-11 |
+| **V3** | — decided; comes due with M3.5/M4.9/M4.7 route work |
 
-`task/comments.ts` is the one to look at first — it needs both halves,
-and the reverted fix had only the first. **V7** settles the sixth
-(`loadAllUsers`).
+**Every finding was re-probed against the built binary first, and none
+was a false positive.** The ~⅓ stale-premise rate from Phase 3 did not
+repeat. Two were worse than recorded, and one (the archived guard) does
+not reproduce through the CLI at all — it needed a core-level test, or
+it would have passed while asserting nothing.
 
-Nothing is retrofitted. P-11 applies from here forward.
+**Read before starting V1:** `utils/read-state.ts` already makes the
+absent / loaded / unreadable distinction that V1's structured errors
+depend on, and six call sites now use it. V1 should **adopt** it, not
+replace it.
+
+**Scope note on P-11.** It is implemented for *comment threads* only.
+History entries and the config slices follow the same shape and do not
+have it yet. `checkDataIntegrity` in `diagnostics/integrity.ts` is where
+each new store gets reported once it does — the severity split
+(`unreadable` blocks a publish, `malformed` never does) is the part to
+preserve.
+
+Nothing was retrofitted. P-11 applies from here forward.
 
 ### A note on how this session went wrong
 

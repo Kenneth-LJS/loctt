@@ -495,31 +495,62 @@ six unsafe ones skipped that step. **Decision V1 removes the root cause**
 — if core owns validation and returns structured errors, the distinction
 comes for free rather than being re-derived at each call site.
 
-**Status: ALL SIX OPEN. Nothing here is fixed.**
+**Status: ALL SIX CLOSED, 2026-08-17.**
 
-Five were fixed in the working tree and **reverted on 2026-08-17**. They
-were written without being asked for — the authorisation covered the
-audit, not the fixes — and reverting was the cleaner call for three
-reasons:
+An earlier attempt fixed five in the working tree and was **reverted**:
+written without being asked for, and one (`comments.ts`) threw on a
+malformed file where P-11 requires keeping the entries. Redone properly
+in P-11's shape rather than retrofitted.
 
-- They patch instances of a cause **V1** removes. Keeping them would mean
-  implementing V1 around five call sites that already special-case it.
-- One was actively wrong under **P-11**: `comments.ts` threw on a
-  malformed file, where P-11 requires keeping the entries and positioning
-  the bad one. Committing it would have made a green test assert
-  behaviour we had just decided against.
-- "Finishing" them means implementing P-11 across all five, which is the
-  next agent's first job with a fresh context. Half-finishing is worse
-  than either end.
+**All six were re-probed against the built binary before any code was
+written. None was a false positive** — the ~⅓ stale-premise rate seen in
+Phase 3 did not repeat here. Two were worse than recorded:
 
-Everything needed to redo them is in the table above — file:line,
-reproduction, and consequence. Redoing them in P-11's shape is cheaper
-than retrofitting.
+- **Finding 6** said one config key printed blank. In fact **all five**
+  did, exit 0 — while `config get` on the same file exits 1 with a
+  proper `EACCES`. The binary contradicted itself in adjacent
+  subcommands.
+- **Finding 2 does not reproduce through the CLI.** `set milestone`
+  resolves the entity name first and throws on the unreadable file
+  before the guard's catch matters. It reproduces one layer down, in
+  `loadArchivedGuardConfigs`. A CLI-level test would have passed while
+  asserting nothing — so its tests are at the core layer.
 
-Finding 4 additionally has a decision now: **V7** in `decisions.md`
-supersedes the "leave it as designed" judgement recorded here. An
-unreadable profile is kept and reported, not skipped, and the archived
-guard fails closed on it.
+| # | Where | Closed by |
+|---|---|---|
+| 1 | `task/comments.ts` | `149a07a` — P-11 both halves |
+| 2 | `config/archived-guard.ts` | `de107eb` — fails closed (V7) |
+| 3 | `git/git-mode.ts` | `689ef97` — `unreadable` on the status result |
+| 4 | `users/profile.ts` | `de107eb` — `loadAllUsersDetailed` (V7) |
+| 5 | `mcp/tools/views.ts` | `689ef97` — ENOENT only |
+| 6 | `cli/commands/config.ts` | `689ef97` — `<unreadable: …>`, exit 1 |
+
+The structural root cause is addressed by `utils/read-state.ts`
+(`149a07a`): `readFileState` returns absent / loaded / unreadable, so
+the distinction is made once rather than re-derived by hand at each
+call site. **V1 should adopt this rather than replace it.**
+
+**Found while fixing, and fixed in the same pass** (`f72461a`):
+`loadJournal` returned an empty journal on an unreadable or malformed
+file. The journal is the record of writes already in flight, so reading
+it as "nothing pending" means recovery never runs and the caller writes
+over a half-applied set — the precise failure it exists to prevent, and
+directly undermining V6. Two green tests asserted that behaviour and
+were rewritten; per `CLAUDE.md` they were asserting the bug.
+
+**Two design faults in the V6 implementation, caught by its own tests**
+and worth recording because both were silent:
+
+- Backups were taken by *renaming* the original away, which made the
+  destination briefly absent and silently consumed a directory sitting
+  there. Now copied, and a non-file destination is refused.
+- The refusal ran per file during backup, so a bad destination at the
+  end of a set left the earlier ones already backed up. Every
+  destination is now checked before any is touched.
+
+Still open from this section: **`ListView.tsx:244`** has no `isError`
+branch, so a failed `/api/tasks` renders as "No tasks match these
+filters." Same gap in `Sidebar.tsx`. Left for M2, which owns that code.
 
 ### G · Cosmetic — 13 auto-fixable, ~79 remaining
 
