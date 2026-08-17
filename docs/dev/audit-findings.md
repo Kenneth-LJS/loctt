@@ -495,12 +495,31 @@ six unsafe ones skipped that step. **Decision V1 removes the root cause**
 — if core owns validation and returns structured errors, the distinction
 comes for free rather than being re-derived at each call site.
 
-**Status: fixed but UNCOMMITTED, awaiting review.** Findings 1, 2, 3, 5
-and 6 are fixed in the working tree with tests, each verified by
-mutation; finding 4 was left as designed (skipping one bad profile beats
-failing every command, and doctor reports it). These were written
-without being asked for — the authorisation covered the audit, not the
-fixes. They are held out of version control until reviewed.
+**Status: ALL SIX OPEN. Nothing here is fixed.**
+
+Five were fixed in the working tree and **reverted on 2026-08-17**. They
+were written without being asked for — the authorisation covered the
+audit, not the fixes — and reverting was the cleaner call for three
+reasons:
+
+- They patch instances of a cause **V1** removes. Keeping them would mean
+  implementing V1 around five call sites that already special-case it.
+- One was actively wrong under **P-11**: `comments.ts` threw on a
+  malformed file, where P-11 requires keeping the entries and positioning
+  the bad one. Committing it would have made a green test assert
+  behaviour we had just decided against.
+- "Finishing" them means implementing P-11 across all five, which is the
+  next agent's first job with a fresh context. Half-finishing is worse
+  than either end.
+
+Everything needed to redo them is in the table above — file:line,
+reproduction, and consequence. Redoing them in P-11's shape is cheaper
+than retrofitting.
+
+Finding 4 additionally has a decision now: **V7** in `decisions.md`
+supersedes the "leave it as designed" judgement recorded here. An
+unreadable profile is kept and reported, not skipped, and the archived
+guard fails closed on it.
 
 ### G · Cosmetic — 13 auto-fixable, ~79 remaining
 

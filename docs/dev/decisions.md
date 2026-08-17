@@ -361,3 +361,37 @@ work that never started replays harmlessly.
 so recovery runs before any locked operation. Extending it is the
 implementation path, but the decision rests on the merits above, not on
 what happens to exist.
+
+### V7 · An unreadable user profile is kept, not skipped
+
+`loadAllUsers` skipped any `profile.yaml` it could not parse. A corrupt
+profile therefore made that user cease to exist for every caller: absent
+from `loctt user list`, absent from pickers, and absent from
+`archivedUserIds` — so if that user was archived, the guard that stops
+assignments to archived users silently let them through.
+
+Skipping *is* discarding, which P-11 forbids. Rather than carve an
+exemption into an invariant agreed the same day, the shape changes:
+
+```
+loadAllUsers → { profiles: UserProfile[], unreadable: Array<{ id, reason }> }
+```
+
+Each caller then decides what unreadable means for its own job, which is
+what P-11's "excluded only from reads that genuinely depend on the broken
+field" requires:
+
+| Caller | Behaviour |
+|---|---|
+| `loctt user list` | Show the entry as `<id> (unreadable: <reason>)`. The user exists; only their name is unrenderable, and vanishing from the list is what hides the problem. |
+| **Archived-reference guard** | **Refuse the assignment.** The guard exists to stop assignments to archived users; if we cannot tell whether they are archived, allowing it is the exact failure it guards against. Refusing is annoying and reversible — allowing is silent and is not. |
+| `getCurrentUser` self-heal | Never select an unreadable profile as the fallback. It decides who the user is attributed as. |
+| History actor rendering | Fall back to the id, which it already does for an unknown actor. No change. |
+
+**Cost, stated plainly:** every `loadAllUsers` caller now decides rather
+than receiving a clean list, and there are several. The current code is
+simpler because it decided — wrongly — for all of them at once.
+
+**Rejected alternative:** leave the skip and write a P-11 exemption for
+user profiles. Defensible on cost, but an invariant that acquires a hole
+on its first day is worth less than the hole saves.
