@@ -92,9 +92,10 @@ export { WorkflowConfigError } from "./config/workflow.js";
 export { formatIfZodError } from "./config/zod-error.js";
 export type { SchemaStatus, TrackerInfo } from "./diagnostics/index.js";
 export type { CheckStatus,DiagnosticCheck } from "./diagnostics/index.js";
+export type { IntegrityFinding, IntegritySeverity } from "./diagnostics/index.js";
 export { getTrackerInfo } from "./diagnostics/index.js";
-export { runDoctor } from "./diagnostics/index.js";
-export type { FetchResult, GitStatusResult, PushResult } from "./git/index.js";
+export { blockingFindings, checkDataIntegrity, runDoctor } from "./diagnostics/index.js";
+export type { FetchResult, GitStatusResult, PreflightReport, PushResult } from "./git/index.js";
 export type { RekeyOutcome, RekeyResult, RekeySkip } from "./git/index.js";
 export {
   commitToLocttBranch,
@@ -109,6 +110,8 @@ export {
   GitConflictError,
   GitReconcileInterruptedError,
   GitSyncError,
+  preflight,
+  PreflightError,
   publish,
   pullFromLocttBranch,
   pushLocttBranch,

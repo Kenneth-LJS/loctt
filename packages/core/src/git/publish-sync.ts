@@ -6,6 +6,8 @@ import { dirname,join } from "node:path";
 import type { ReconcileState, SyncState, Task } from "@loctt/contracts";
 
 import { loadProjectsConfig } from "../config/projects.js";
+import type { IntegrityFinding } from "../diagnostics/integrity.js";
+import { blockingFindings, checkDataIntegrity } from "../diagnostics/integrity.js";
 import { getLocalDir } from "../paths/index.js";
 import { rebuildKeyIndex } from "../state/key-index.js";
 import { appendKeyHistory } from "../state/keys.js";
@@ -769,13 +771,62 @@ export function fetchLocttBranch(
 }
 
 /**
+ * Raised when pre-flight finds data a publish must not carry.
+ *
+ * Only unreadable files block. A malformed *entry* is kept and merged
+ * (P-11), so the data is intact and publishing it is safe — blocking on
+ * one would make a hand-edit typo render the tracker unpublishable,
+ * which is destruction by another route.
+ */
+export class PreflightError extends Error {
+  readonly name = "PreflightError" as const;
+  readonly findings: ReadonlyArray<IntegrityFinding>;
+
+  constructor(findings: ReadonlyArray<IntegrityFinding>) {
+    super(
+      `pre-flight found ${String(findings.length)} problem(s) that must be fixed before publishing:\n`
+      + findings.map(f => `  ${f.path}: ${f.message}`).join("\n"),
+    );
+    this.findings = findings;
+  }
+}
+
+export interface PreflightReport {
+  /** Everything found, blocking or not. */
+  readonly findings: ReadonlyArray<IntegrityFinding>;
+  /** True when a real publish would be refused. */
+  readonly wouldBlock: boolean;
+}
+
+/**
+ * Runs the checks a publish depends on, without publishing (V4).
+ *
+ * The same function backs `--dry-run` and the real thing, so the two
+ * cannot drift: a dry run that passes and a publish that then refuses
+ * would make the dry run worse than useless.
+ */
+export async function preflight(locttDir: string): Promise<PreflightReport> {
+  const findings = await checkDataIntegrity(locttDir);
+  return { findings, wouldBlock: blockingFindings(findings).length > 0 };
+}
+
+/**
  * Publishes local .loctt state to the canonical loctt branch, then optionally
  * pushes to the configured remote. Local commit is durable even if the push fails.
+ *
+ * Refuses up front on anything pre-flight considers blocking (V4). A
+ * file we could not read must not be mirrored to a branch other
+ * machines will sync from — that turns one machine's damage into
+ * everyone's.
  */
 export async function publish(
   locttDir: string,
   root: string,
 ): Promise<{ committed: boolean; branch: string; pushed?: boolean; pushError?: string }> {
+  const report = await preflight(locttDir);
+  if (report.wouldBlock) {
+    throw new PreflightError(blockingFindings(report.findings));
+  }
   const commitResult = await commitToLocttBranch(locttDir, root);
   const syncState = commitResult.syncState;
   // Returned on every path so callers can name the branch they actually

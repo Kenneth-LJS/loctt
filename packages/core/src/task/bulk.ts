@@ -1,20 +1,24 @@
 import { rm } from "node:fs/promises";
 
 import type { Task, WorkflowConfig } from "@loctt/contracts";
+import { TaskFrontmatterSchema } from "@loctt/contracts";
 import { ulid } from "ulid";
 
 import type { ArchivedGuardConfigs } from "../config/archived-guard.js";
 import { loadCalendarConfig } from "../config/calendar.js";
-import { getTaskDir } from "../paths/index.js";
+import { getTaskDir, getTaskFilePath } from "../paths/index.js";
 import { withStateLock } from "../state/lock.js";
+import { stagedSwap } from "../state/staged-swap.js";
 import { todayInZone } from "../utils/today.js";
+import { assembleTaskFile } from "./frontmatter.js";
 import { appendHistory } from "./history.js";
-import { readTask, writeTask } from "./io.js";
+import { readTask } from "./io.js";
 import { lookupTask, TaskNotFoundError } from "./lookup.js";
 import { clearLookupCaches } from "./lookup-cache.js";
 import { linkTask } from "./relationships.js";
 import {
   assertChangesWritable,
+  type DeferredFieldWrite,
   type SetFieldsEntry,
   setFieldsLocked,
 } from "./update.js";
@@ -75,6 +79,15 @@ async function runBulk(
   const succeeded: string[] = [];
   const failed: { taskId: string; error: string }[] = [];
 
+  // Phase 1: compute every task's result without writing any of them.
+  //
+  // A plain write-as-you-go loop killed at task nineteen of forty left
+  // nineteen changed and twenty-one not — every file individually
+  // valid, so nothing to detect and nothing reported. Computing first
+  // means a per-task failure (a missing task, a validation error) is
+  // still reported per task, exactly as before, while the *writes*
+  // become all-or-nothing (V6).
+  const pending: { id: string; write: DeferredFieldWrite }[] = [];
   for (const ref of taskRefs) {
     try {
       const task = await lookupTask(locttDir, ref);
@@ -83,7 +96,7 @@ async function runBulk(
       // is already held by bulkSetFields, and withStateLock is not
       // re-entrant, so this deliberately calls the *Locked form rather
       // than setFields.
-      await setFieldsLocked({
+      const write = await setFieldsLocked({
         locttDir,
         taskId: id,
         changes,
@@ -92,14 +105,43 @@ async function runBulk(
         now,
         today,
         bulkOpId,
+        defer: true,
       });
-      succeeded.push(id);
+      pending.push({ id, write });
     } catch (err) {
       if (err instanceof TaskNotFoundError) {
         failed.push({ taskId: ref, error: "task not found" });
       } else {
         failed.push({ taskId: ref, error: (err as Error).message });
       }
+    }
+  }
+
+  // Phase 2: stage, back up, journal, swap. Either every task.md in
+  // the batch lands or none does.
+  if (pending.length > 0) {
+    // Same shape check `writeTask` performs, run before anything is
+    // staged so an invalid frontmatter cannot reach the swap.
+    for (const p of pending) TaskFrontmatterSchema.parse(p.write.task.frontmatter);
+    await stagedSwap(
+      locttDir,
+      pending.map(p => ({
+        path: getTaskFilePath(locttDir, p.id),
+        content: assembleTaskFile(p.write.task.frontmatter, p.write.task.body),
+      })),
+    );
+    // History follows the swap. It is append-only and best-effort by
+    // design — `appendHistory` already refuses to fail the operation
+    // that triggered it — so it must not run before the writes it
+    // describes have actually landed.
+    // The swap wrote task.md behind writeTask's back, so the lookup
+    // caches it maintains must be dropped by hand.
+    clearLookupCaches(locttDir);
+    for (const p of pending) {
+      if (p.write.history.length > 0) {
+        await appendHistory(locttDir, p.id, [...p.write.history]);
+      }
+      succeeded.push(p.id);
     }
   }
   return { bulk_op_id: bulkOpId, succeeded, failed };
@@ -121,6 +163,11 @@ export async function bulkArchive(opts: BulkArchiveOptions): Promise<BulkResult>
     const now = new Date().toISOString();
     const succeeded: string[] = [];
     const failed: { taskId: string; error: string }[] = [];
+    // Two-phase for the same reason as bulkSetFields (V6): compute
+    // every task, then swap the whole set in. A crash partway through
+    // the old loop left the batch half-archived with nothing to detect
+    // it.
+    const pending: { id: string; task: Task }[] = [];
     for (const ref of opts.taskRefs) {
       try {
         const looked = await lookupTask(opts.locttDir, ref);
@@ -128,6 +175,7 @@ export async function bulkArchive(opts: BulkArchiveOptions): Promise<BulkResult>
         const task = await readTask(opts.locttDir, id);
         const currentlyArchived = task.frontmatter.archived === true;
         if (currentlyArchived === opts.archive) {
+          // Already in the target state: no write, no history entry.
           succeeded.push(id);
           continue;
         }
@@ -140,22 +188,37 @@ export async function bulkArchive(opts: BulkArchiveOptions): Promise<BulkResult>
           delete patch["archived_at"];
         }
         patch["updated_at"] = now;
-        await writeTask(opts.locttDir, id, {
+        const next: Task = {
           frontmatter: patch as unknown as Task["frontmatter"],
           body: task.body,
-        });
-        await appendHistory(opts.locttDir, id, [{
-          timestamp: now,
-          kind: opts.archive ? "archived" : "unarchived",
-          bulk_op_id: bulkOpId,
-        }]);
-        succeeded.push(id);
+        };
+        TaskFrontmatterSchema.parse(next.frontmatter);
+        pending.push({ id, task: next });
       } catch (err) {
         if (err instanceof TaskNotFoundError) {
           failed.push({ taskId: ref, error: "task not found" });
         } else {
           failed.push({ taskId: ref, error: (err as Error).message });
         }
+      }
+    }
+
+    if (pending.length > 0) {
+      await stagedSwap(
+        opts.locttDir,
+        pending.map(p => ({
+          path: getTaskFilePath(opts.locttDir, p.id),
+          content: assembleTaskFile(p.task.frontmatter, p.task.body),
+        })),
+      );
+      clearLookupCaches(opts.locttDir);
+      for (const p of pending) {
+        await appendHistory(opts.locttDir, p.id, [{
+          timestamp: now,
+          kind: opts.archive ? "archived" : "unarchived",
+          bulk_op_id: bulkOpId,
+        }]);
+        succeeded.push(p.id);
       }
     }
     return { bulk_op_id: bulkOpId, succeeded, failed };

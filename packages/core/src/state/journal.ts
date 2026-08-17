@@ -134,6 +134,34 @@ const RemapWorkflowSchema = z.object({
   remap: WorkflowRemapSchema,
 });
 
+/**
+ * A multi-file write in flight (V6).
+ *
+ * Written before the first file is swapped into place and cleared only
+ * after the last one lands, so its presence always means "unfinished".
+ * Recovery rolls back from the recorded backups — see
+ * `staged-swap.ts` for why forward is not an option.
+ */
+const StagedSwapSchema = z.object({
+  id: z.string().min(1),
+  started_at: z.string().min(1),
+  kind: z.literal("staged_swap"),
+  swap: z.object({
+    /** Holds both `staged/` and `backup/`; removed on success. */
+    base_dir: z.string().min(1),
+    files: z.array(z.object({
+      dest: z.string().min(1),
+      backup: z.string().min(1),
+      /**
+       * False when the destination did not exist before this op, in
+       * which case rolling back means deleting it rather than
+       * restoring a backup that was never taken.
+       */
+      had_original: z.boolean(),
+    })),
+  }),
+});
+
 export const JournalEntrySchema = z.discriminatedUnion("kind", [
   RemapProjectSchema,
   RemapLabelSchema,
@@ -141,6 +169,7 @@ export const JournalEntrySchema = z.discriminatedUnion("kind", [
   RemapSprintSchema,
   RemapUserSchema,
   RemapWorkflowSchema,
+  StagedSwapSchema,
 ]);
 export type JournalEntry = z.infer<typeof JournalEntrySchema>;
 
@@ -152,10 +181,37 @@ export type Journal = z.infer<typeof JournalSchema>;
 const EMPTY_JOURNAL: Journal = { entries: [] };
 
 /**
- * Loads the journal from disk. Returns an empty journal if the file
- * doesn't exist or fails to parse — recovery treats both as "nothing
- * pending." A malformed journal is logged-then-discarded by the
- * caller; we don't strand the tracker on a parse error.
+ * Raised when the journal exists and could not be read.
+ *
+ * The journal is the record of writes already in flight. Treating an
+ * unreadable one as empty means recovery never runs and the caller
+ * proceeds to write over a half-applied set — the precise failure the
+ * journal exists to prevent (P-11).
+ */
+export class JournalUnreadableError extends Error {
+  readonly name = "JournalUnreadableError" as const;
+  constructor(path: string, cause: unknown) {
+    super(
+      `${path} could not be read, so LocTT cannot tell whether a previous `
+      + `operation was interrupted. Refusing to continue: proceeding could `
+      + `overwrite a half-applied write. `
+      + `Cause: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause },
+    );
+  }
+}
+
+/**
+ * Loads the journal from disk.
+ *
+ * An **absent** journal is a real state — nothing has ever been in
+ * flight — and returns empty. An **unreadable** or unparseable one
+ * throws: it is the record of writes that may be half-applied, and
+ * discarding it silently is how a crash becomes permanent corruption.
+ *
+ * A shape mismatch is treated the same way. The previous behaviour
+ * logged and returned empty, which meant a single bad entry threw away
+ * every *good* entry beside it.
  */
 export async function loadJournal(locttDir: string): Promise<Journal> {
   const path = getJournalPath(locttDir);
@@ -163,33 +219,21 @@ export async function loadJournal(locttDir: string): Promise<Journal> {
   try {
     content = await readFile(path, "utf-8");
   } catch (err) {
-    // ENOENT is the common "no journal yet" case; treat any other
-    // I/O error as a real failure that the caller's logger should
-    // see, since silently returning an empty journal would discard
-    // pending recovery entries.
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error(`[journal] failed to read ${path}:`, err);
-    }
-    return EMPTY_JOURNAL;
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return EMPTY_JOURNAL;
+    throw new JournalUnreadableError(path, err);
   }
   let raw: unknown;
   try {
     raw = parseYaml(content);
   } catch (err) {
-    // A corrupted YAML file is operator-visible (manual edit gone
-    // wrong, half-written rename). Log so they can fix it; the
-    // empty fallback means startup doesn't deadlock waiting for
-    // recovery entries that can't be parsed.
-    console.error(`[journal] corrupt YAML at ${path}; discarding pending entries:`, err);
-    return EMPTY_JOURNAL;
+    throw new JournalUnreadableError(path, err);
   }
   const parsed = JournalSchema.safeParse(raw);
   if (!parsed.success) {
-    console.error(
-      `[journal] shape mismatch at ${path}; discarding pending entries:`,
-      parsed.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join("; "),
+    throw new JournalUnreadableError(
+      path,
+      new Error(parsed.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join("; ")),
     );
-    return EMPTY_JOURNAL;
   }
   return parsed.data;
 }
@@ -247,7 +291,12 @@ export function removeJournalEntry(journal: Journal, id: string): Journal {
  * these; the workflow handler lives in `config/workflow-write.ts`
  * and walks all tasks for its own remap pass.
  */
-export type TaskRemapEntry = Exclude<JournalEntry, { kind: "remap_workflow" }>;
+// `staged_swap` is excluded alongside `remap_workflow`: neither is a
+// per-task field remap, and both have their own recovery path.
+export type TaskRemapEntry = Exclude<
+  JournalEntry,
+  { kind: "remap_workflow" } | { kind: "staged_swap" }
+>;
 
 export async function replayTaskRemap(locttDir: string, entry: TaskRemapEntry): Promise<void> {
   for (const taskId of entry.task_ids) {

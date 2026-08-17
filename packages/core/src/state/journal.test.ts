@@ -24,6 +24,7 @@ import { loadAllUsers } from "../users/profile.js";
 import type { JournalEntry } from "./journal.js";
 import {
   appendJournalEntry,
+  JournalUnreadableError,
   loadJournal,
   recoverPendingJournal,
   saveJournal,
@@ -468,9 +469,28 @@ describe("journal recovery — defensive cases", () => {
     }
   });
 
-  it("ignores a malformed journal file rather than throwing", async () => {
+  it("refuses to run when the journal cannot be read", async () => {
     await writeFile(getJournalPath(locttDir), "this: is: not: valid: yaml :\n", "utf-8");
-    // recovery should treat the malformed journal as empty.
+    // This test previously asserted the opposite — that a malformed
+    // journal is treated as empty. That was asserting the bug: the
+    // journal is the record of writes already in flight, so reading
+    // it as "nothing pending" means recovery never runs and the
+    // caller proceeds to write over a half-applied set (P-11).
+    await expect(
+      withStateLock(locttDir, () => Promise.resolve()),
+    ).rejects.toThrow(JournalUnreadableError);
+  });
+
+  it("names the journal file, since the user has to repair it by hand", async () => {
+    await writeFile(getJournalPath(locttDir), "this: is: not: valid: yaml :\n", "utf-8");
+    await expect(
+      withStateLock(locttDir, () => Promise.resolve()),
+    ).rejects.toThrow(/journal\.yaml/);
+  });
+
+  it("still treats an absent journal as nothing pending", async () => {
+    // Absent is a real state and must stay distinguishable from a
+    // failure, or every fresh tracker refuses to run.
     await expect(
       withStateLock(locttDir, () => Promise.resolve()),
     ).resolves.toBeUndefined();
@@ -491,9 +511,10 @@ describe("journal recovery — defensive cases", () => {
       stringifyYaml({ entries: [{ id: "x", kind: "no_such_kind", started_at: "t", task_ids: [] }] }),
       "utf-8",
     );
-    // loadJournal returns empty (schema rejection) — verify.
-    const journal = await loadJournal(locttDir);
-    expect(journal.entries).toHaveLength(0);
+    // Previously loadJournal returned empty here, which threw away
+    // every *good* entry sitting beside the bad one. A shape it
+    // cannot validate is a journal it cannot vouch for.
+    await expect(loadJournal(locttDir)).rejects.toThrow(JournalUnreadableError);
   });
 });
 

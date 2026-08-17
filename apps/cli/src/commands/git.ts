@@ -2,6 +2,7 @@ import {
   disableGit,
   enableGit,
   getGitStatus,
+  preflight,
   publish,
   resolveLocttDir,
   sync,
@@ -18,7 +19,8 @@ import { EXIT } from "../runtime/errors.js";
  * when both sides diverged; this surface doesn't expose a separate
  * reconcile command (see docs/user/common/git-sync.md).
  */
-const ACCEPTED_FLAGS: readonly string[] = [];
+// `--dry-run` runs pre-flight and stops (V4).
+const ACCEPTED_FLAGS: readonly string[] = ["--dry-run"];
 
 export async function run(args: string[], root: string): Promise<void> {
   // Accepts no flags. Without this an unknown one was dropped and the
@@ -89,6 +91,31 @@ export async function run(args: string[], root: string): Promise<void> {
       break;
     }
     case "publish": {
+      // V4: the same pre-flight backs `--dry-run` and the real publish,
+      // so a dry run that passes and a publish that then refuses cannot
+      // happen. Reports both severities; only the blocking ones stop a
+      // real publish.
+      if (args.includes("--dry-run")) {
+        const report = await preflight(locttDir);
+        if (report.findings.length === 0) {
+          console.log("Pre-flight found no problems. A publish would proceed.");
+          break;
+        }
+        for (const f of report.findings) {
+          const mark = f.severity === "unreadable" ? "✗" : "⚠";
+          console.log(`${mark} ${f.path}: ${f.message}`);
+        }
+        if (report.wouldBlock) {
+          console.log("\nA publish would be refused until these are fixed.");
+          process.exitCode = EXIT.RUNTIME;
+        } else {
+          // A malformed entry is kept and merged, so publishing it is
+          // safe. Blocking here would make one hand-edit typo render
+          // the tracker unpublishable.
+          console.log("\nA publish would proceed; the entries above are preserved as-is.");
+        }
+        break;
+      }
       const result = await publish(locttDir, root);
       if (result.committed) {
         // Name the configured branch, not the literal "loctt": the
