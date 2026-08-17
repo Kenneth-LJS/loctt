@@ -615,14 +615,7 @@ milestone that never existed.
 
 ## Picking this up next
 
-**First: decide on the uncommitted swallowed-error fixes.** Five sit in
-the working tree with tests, unreviewed — see *Swallowed-error audit* in
-[`audit-findings.md`](audit-findings.md). They were written without
-authorisation (the ask covered the audit, not the fixes), so they are
-held out of version control until reviewed. Keep or revert, then
-continue below.
-
-**Then: build M3.5 and M4.9.** Phase 3 is complete (all 68 surface cases
+**Build M3.5 and M4.9.** Phase 3 is complete (all 68 surface cases
 closed), Blocker 1's two missing views are ticketed, and Phase 4's
 groups A–F are closed.
 
@@ -670,6 +663,10 @@ the work above, because two change what that work is:
 - **V6 · Multi-file ops get stage-then-swap plus a journal.** Closes the
   one crash-recovery gap: a bulk op killed partway leaves each file
   intact and the set half-applied. **Not yet implemented.**
+- **V7 · An unreadable user profile is kept, not skipped.** Supersedes
+  the earlier "leave it as designed" judgement on audit finding 4. The
+  archived guard fails **closed** on a profile it cannot read. **Not yet
+  implemented.**
 - **P-11 · Leniency means keeping, never destroying** (`invariants.md`).
   A malformed entry in a list is *kept and merged*, positioned by its
   neighbours when its own sort key is unusable. `return []` on a read
@@ -681,18 +678,20 @@ the work above, because two change what that work is:
 
 ### The next agent's first job
 
-**Implement P-11**, then reconcile the five uncommitted fixes with it.
+**Implement P-11**, and close the six swallowed-error findings with it.
 
-They currently *throw* on unreadable input. P-11 says throw is right when
-we cannot read a file at all — we must not overwrite what we could not
-read — but wrong for a file we *can* read that holds a malformed entry:
-that entry is kept and merged, positioned after whatever preceded it.
+Five of those six were fixed and then **reverted** — see
+[`audit-findings.md`](audit-findings.md) for why, and for the file:line
+and reproduction of each. They threw on unreadable input, which is right
+for a file we cannot read at all (we must not overwrite what we could not
+read) and **wrong** for a readable file holding a malformed entry: that
+entry is kept and merged, positioned after whatever preceded it.
 
-Concretely, `task/comments.ts` needs both halves: refuse on EACCES,
-keep-and-position on a bad entry. It has only the first.
+`task/comments.ts` is the one to look at first — it needs both halves,
+and the reverted fix had only the first. **V7** settles the sixth
+(`loadAllUsers`).
 
-Nothing here is retrofitted yet. P-11 applies from the handoff forward,
-and to those five fixes when they are reconciled.
+Nothing is retrofitted. P-11 applies from here forward.
 
 ### A note on how this session went wrong
 
