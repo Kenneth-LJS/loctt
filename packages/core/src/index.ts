@@ -390,6 +390,13 @@ export {
 } from "./users/index.js";
 export type { FsFailureKind } from "./utils/fs-errors.js";
 export { FsAccessError, rethrowFsError, withFsErrors } from "./utils/fs-errors.js";
+export type { AbsentFile, FileState, LoadedFile, UnreadableFile } from "./utils/read-state.js";
+export {
+  contentOr,
+  isMissingFile,
+  readFileState,
+  UnreadableFileError,
+} from "./utils/read-state.js";
 export { todayInZone } from "./utils/today.js";
 export type { CreateViewInput, DeleteViewOptions, EditViewInput } from "./views/index.js";
 export {

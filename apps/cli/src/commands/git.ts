@@ -40,6 +40,27 @@ export async function run(args: string[], root: string): Promise<void> {
     }
     case "status": {
       const status = await getGitStatus(locttDir, root);
+      // A sync.yaml we could not read makes every field below a
+      // default rather than a reading. Printing `Enabled: false` here
+      // reports git mode as off for a tracker where it may be on, and
+      // the natural fix — re-enabling — overwrites the state being
+      // recovered.
+      if (status.unreadable) {
+        console.error(`Error: ${status.unreadable.reason}`);
+        console.error(
+          "Git mode status is unknown — this is not the same as git mode being disabled.",
+        );
+        console.log("Enabled: unknown");
+        console.log("Branch: unknown");
+        console.log("Remote: unknown");
+        console.log("Auto-push: unknown");
+        console.log("Auto-fetch: unknown");
+        // Computed from the filesystem, not from the file we could not
+        // read, so it stays a real answer.
+        console.log(`Inside git repo: ${status.isGitRepo}`);
+        process.exitCode = EXIT.RUNTIME;
+        break;
+      }
       console.log(`Enabled: ${status.enabled}`);
       console.log(`Branch: ${status.branch}`);
       console.log(

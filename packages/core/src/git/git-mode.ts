@@ -43,6 +43,25 @@ export interface GitStatusResult {
   readonly remoteChanges?: boolean;
   /** Branch head, so a caller can show what a sync would move to. */
   readonly branchCommit?: string;
+  /**
+   * Set when `sync.yaml` exists and could not be read, in which case
+   * every config-derived field above is a **default, not a reading**.
+   *
+   * The bug this replaces: a bare catch returned a fully-populated
+   * object with `enabled: false`, so `loctt git status` reported git
+   * mode off for a tracker where it was on. That answer is plausible —
+   * "off" is a normal thing to see — so nothing signals it should be
+   * distrusted, and the natural response is to re-enable, which writes
+   * over the state being recovered.
+   *
+   * A caller MUST check this before reporting any field below it. The
+   * absent-file case is handled separately and does not set this: no
+   * sync.yaml genuinely means git mode is off.
+   */
+  readonly unreadable?: {
+    readonly path: string;
+    readonly reason: string;
+  };
 }
 
 function isGitRepo(root: string): boolean {
@@ -224,7 +243,10 @@ export async function getGitStatus(locttDir: string, root: string): Promise<GitS
       ...(remoteChanges !== undefined ? { remoteChanges } : {}),
       ...(branchCommit !== undefined ? { branchCommit } : {}),
     };
-  } catch {
+  } catch (err) {
+    // sync.yaml exists — `fileExists` above already ruled out absence —
+    // so this is a file the user has and we could not read. Reporting
+    // `enabled: false` here states a fact about it that nobody checked.
     return {
       enabled: false,
       branch: DEFAULT_GIT_BRANCH,
@@ -233,6 +255,10 @@ export async function getGitStatus(locttDir: string, root: string): Promise<GitS
       autoFetch: DEFAULT_GIT_AUTO_FETCH,
       isGitRepo: gitRepo,
       remoteConfigured: false,
+      unreadable: {
+        path: syncPath,
+        reason: err instanceof Error ? err.message : String(err),
+      },
     };
   }
 }
