@@ -11,8 +11,10 @@ export type { BulkArchiveOptions, BulkResult, BulkSetFieldsOptions } from "./bul
 export { bulkArchive, bulkDelete, bulkLink, bulkSetFields } from "./bulk.js";
 export type {
   Comment,
+  CommentEntry,
   DeleteCommentOptions,
   EditCommentOptions,
+  MalformedComment,
   PostCommentOptions,
 } from "./comments.js";
 export {
@@ -22,8 +24,11 @@ export {
   editComment,
   extractMentions,
   formatCommentEditors,
+  isMalformedComment,
+  listCommentEntries,
   listComments,
   postComment,
+  validComments,
 } from "./comments.js";
 export type { CountTasksByReferenceOptions, TaskReferenceKind } from "./counts.js";
 export { countTasksByReference, countTasksByReferences } from "./counts.js";

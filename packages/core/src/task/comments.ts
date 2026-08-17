@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import * as lockfile from "proper-lockfile";
@@ -8,6 +8,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { getCommentsFilePath } from "../paths/index.js";
 import { readCurrentUserId } from "../users/current.js";
+import { readFileState, UnreadableFileError } from "../utils/read-state.js";
 import { appendHistory } from "./history.js";
 
 export class CommentError extends Error {
@@ -119,31 +120,119 @@ export function extractMentions(
 }
 
 interface CommentsFile {
-  comments?: Comment[];
+  comments?: unknown;
 }
 
-async function readFileOrEmpty(locttDir: string, taskId: string): Promise<Comment[]> {
+/**
+ * A stored entry that does not have the shape of a comment.
+ *
+ * P-11: a malformed entry is *kept*, not dropped. It stays at its
+ * original index so the surrounding thread keeps its order, and it is
+ * written back untouched — LocTT preserves what it cannot interpret
+ * rather than deciding the user meant to delete it.
+ *
+ * `raw` is the entry exactly as read. Renderers show what they can of
+ * it; `doctor` and sync pre-flight report it so the user can repair the
+ * file by hand.
+ */
+export interface MalformedComment {
+  readonly malformed: true;
+  readonly index: number;
+  readonly raw: unknown;
+}
+
+/** A comment thread as stored: valid comments interleaved with unusable entries. */
+export type CommentEntry = Comment | MalformedComment;
+
+export function isMalformedComment(entry: CommentEntry): entry is MalformedComment {
+  return (entry as MalformedComment).malformed === true;
+}
+
+/**
+ * The fields a comment cannot be rendered or ordered without.
+ *
+ * `created_at` is deliberately *not* required: a comment with an
+ * unparseable timestamp is still a comment, and P-11 positions it by
+ * its neighbours rather than discarding it. Only a missing id, author
+ * or body makes an entry genuinely unusable.
+ */
+function isComment(value: unknown): value is Comment {
+  if (value === null || typeof value !== "object") return false;
+  const c = value as Partial<Comment>;
+  return typeof c.id === "string"
+    && typeof c.author === "string"
+    && typeof c.body === "string";
+}
+
+/**
+ * Reads the thread, distinguishing "no comments" from "could not read".
+ *
+ * The bug this replaces: any read failure returned `[]`, and
+ * `postComment` wrote `[...existing, comment]` straight back — so an
+ * unreadable file turned a three-comment thread into one, reported as
+ * success, with no recovery. Verified 2026-08-17.
+ *
+ * Absent is a real state (no one has commented) and stays an empty
+ * list. Unreadable throws, because every caller's next step is a write
+ * and P-11 forbids overwriting what we could not read.
+ */
+async function readCommentEntries(locttDir: string, taskId: string): Promise<CommentEntry[]> {
   const path = getCommentsFilePath(locttDir, taskId);
-  let content: string;
+  const file = await readFileState(path);
+  if (file.state === "absent") return [];
+  if (file.state === "unreadable") throw new UnreadableFileError(file);
+
+  let parsed: CommentsFile | null;
   try {
-    content = await readFile(path, "utf-8");
-  } catch {
-    return [];
+    parsed = parseYaml(file.content) as CommentsFile | null;
+  } catch (err) {
+    // The file is there and will not parse. Returning `[]` here would
+    // be the same destruction by a different route.
+    throw new CommentError(
+      `${path} could not be parsed as YAML, so LocTT will not modify it: ${(err as Error).message}`,
+    );
   }
-  const parsed = parseYaml(content) as CommentsFile | null;
+
   const list = parsed?.comments;
-  return Array.isArray(list) ? list : [];
+  if (list === undefined || list === null) return [];
+  if (!Array.isArray(list)) {
+    // A `comments:` key that is not a list is a hand-edit we cannot
+    // interpret. Refusing is the only option that keeps the content.
+    throw new CommentError(
+      `${path} has a "comments" key that is not a list, so LocTT will not modify it.`,
+    );
+  }
+
+  // `Array.isArray` narrows to `any[]`; re-typing as `unknown[]` keeps
+  // the entries opaque until `isComment` has vouched for them.
+  return (list as unknown[]).map((entry, index) =>
+    isComment(entry) ? entry : { malformed: true as const, index, raw: entry },
+  );
 }
 
+/** The valid comments only, in file order. For callers that render a thread. */
+export function validComments(entries: ReadonlyArray<CommentEntry>): Comment[] {
+  return entries.filter((e): e is Comment => !isMalformedComment(e));
+}
+
+/**
+ * Writes the thread back, restoring malformed entries verbatim.
+ *
+ * P-11: a malformed entry survives a write that touches its
+ * neighbours. It goes back at the index it was read from, so the
+ * thread's order is unchanged and nothing the user wrote is lost
+ * because LocTT could not interpret it.
+ */
 async function writeCommentsAtomically(
   locttDir: string,
   taskId: string,
-  comments: Comment[],
+  entries: ReadonlyArray<CommentEntry>,
 ): Promise<void> {
   const path = getCommentsFilePath(locttDir, taskId);
   const dir = dirname(path);
   await mkdir(dir, { recursive: true });
   const tmp = `${path}.${randomUUID()}.tmp`;
+  const comments = entries.map(e => (isMalformedComment(e) ? e.raw : e));
   await writeFile(tmp, stringifyYaml({ comments }), "utf-8");
   await rename(tmp, path);
 }
@@ -168,8 +257,28 @@ async function withCommentsLock<T>(
   }
 }
 
+/**
+ * The task's comments, in file order.
+ *
+ * Malformed entries are omitted from the *result* — a renderer has
+ * nothing to show for an entry with no body — but they remain in the
+ * file and survive every write. Use {@link readCommentEntries} via
+ * {@link listCommentEntries} to see them, which is what `doctor` and
+ * sync pre-flight do.
+ *
+ * Throws on an unreadable or unparseable file rather than returning an
+ * empty thread, so a caller cannot mistake a failure for "no comments".
+ */
 export async function listComments(locttDir: string, taskId: string): Promise<Comment[]> {
-  return readFileOrEmpty(locttDir, taskId);
+  return validComments(await readCommentEntries(locttDir, taskId));
+}
+
+/** The thread as stored, malformed entries included. For diagnostics. */
+export async function listCommentEntries(
+  locttDir: string,
+  taskId: string,
+): Promise<CommentEntry[]> {
+  return readCommentEntries(locttDir, taskId);
 }
 
 export interface PostCommentOptions {
@@ -204,7 +313,7 @@ export async function postComment(opts: PostCommentOptions): Promise<Comment> {
     ...(mentions.length > 0 ? { mentions } : {}),
   };
   const created = await withCommentsLock(opts.locttDir, opts.taskId, async () => {
-    const existing = await readFileOrEmpty(opts.locttDir, opts.taskId);
+    const existing = await readCommentEntries(opts.locttDir, opts.taskId);
     await writeCommentsAtomically(opts.locttDir, opts.taskId, [...existing, comment]);
     return comment;
   });
@@ -342,11 +451,16 @@ export async function editComment(opts: EditCommentOptions): Promise<Comment> {
   // `previousBody` is captured inside the lock and returned alongside the
   // result: the pre-edit text only exists there, and history needs it.
   const { updated, previousBody } = await withCommentsLock(opts.locttDir, opts.taskId, async () => {
-    const existing = await readFileOrEmpty(opts.locttDir, opts.taskId);
-    const idx = existing.findIndex(c => c.id === opts.commentId);
+    const existing = await readCommentEntries(opts.locttDir, opts.taskId);
+    // Malformed entries have no id to match, so they can never be the
+    // target — but they keep their slot in `existing` and are written
+    // back by `writeCommentsAtomically`.
+    const idx = existing.findIndex(c => !isMalformedComment(c) && c.id === opts.commentId);
     if (idx === -1) throw new CommentError(`unknown comment id: ${opts.commentId}`);
     const prev = existing[idx];
-    if (!prev) throw new CommentError(`unknown comment id: ${opts.commentId}`);
+    if (prev === undefined || isMalformedComment(prev)) {
+      throw new CommentError(`unknown comment id: ${opts.commentId}`);
+    }
     const mentions = extractMentions(opts.body, opts.mentionResolver);
     const base = {
       ...prev,
@@ -391,9 +505,14 @@ export interface DeleteCommentOptions {
 
 export async function deleteComment(opts: DeleteCommentOptions): Promise<void> {
   const removed = await withCommentsLock(opts.locttDir, opts.taskId, async () => {
-    const existing = await readFileOrEmpty(opts.locttDir, opts.taskId);
-    const target = existing.find(c => c.id === opts.commentId);
-    const next = existing.filter(c => c.id !== opts.commentId);
+    const existing = await readCommentEntries(opts.locttDir, opts.taskId);
+    // A malformed entry is never the target and is never filtered out:
+    // deleting one comment must not take an uninterpretable neighbour
+    // with it (P-11).
+    const target = existing.find(
+      (c): c is Comment => !isMalformedComment(c) && c.id === opts.commentId,
+    );
+    const next = existing.filter(c => isMalformedComment(c) || c.id !== opts.commentId);
     if (next.length === existing.length || !target) {
       throw new CommentError(`unknown comment id: ${opts.commentId}`);
     }
