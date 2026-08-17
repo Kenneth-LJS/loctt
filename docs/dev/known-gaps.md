@@ -63,3 +63,30 @@ allocated per project under the project's ULID, so the lookup returned
 `task.frontmatter.project`, and its fixtures were rebuilt in the
 post-migration shape — the old ones encoded a world that had not existed
 since the key→id migration.
+
+## Tests
+
+### The integration suite is flaky under parallel load
+
+**Observed 2026-08-17.** A full `npm run test:integration` reported
+5 failures across `git/with-remote.test.ts` and
+`mcp/list-truncation.test.ts`. Both files passed in isolation, and three
+consecutive full runs afterwards were green — so the failures are
+contention, not a defect in the code under test.
+
+Both files do real subprocess work: `with-remote` runs git against a
+bare remote, `list-truncation` spawns the MCP server over stdio. Under
+enough parallel load they exceed vitest's 5-second default.
+
+The same shape was already hit and fixed once: `apps/web`'s two
+git-error tests passed alone and timed out inside the full web run, and
+now carry explicit 30s timeouts.
+
+**Why this matters more than an ordinary flake:** a timeout renders as
+`FAIL` in the summary line, indistinguishable from a real regression.
+Anyone running the suite after a change will read it as their fault.
+The fix is the same as before — an explicit timeout on the tests that
+do real I/O — but it should be applied deliberately rather than by
+raising the global default, which would hide genuinely slow tests.
+
+**Before believing an integration failure: re-run the named file alone.**
