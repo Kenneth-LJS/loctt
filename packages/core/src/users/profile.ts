@@ -83,30 +83,76 @@ export async function userExists(locttDir: string, userId: string): Promise<bool
 }
 
 /**
- * Lists all registered users by scanning `.loctt/users/`. Each
- * subdirectory whose name matches a UUID-ish pattern and contains a
- * profile.yaml is included. Bad entries are skipped (caller should
- * run Doctor to surface them).
+ * A user directory whose profile could not be read or parsed.
  *
- * Returns an empty array when the users dir doesn't exist.
+ * V7: kept and reported, never silently dropped. The id is the
+ * directory name, which is the only thing we know about them — and it
+ * is enough for a guard to refuse rather than guess.
  */
-export async function loadAllUsers(locttDir: string): Promise<UserProfile[]> {
+export interface UnreadableUser {
+  /** The directory name, which is the user's id. */
+  readonly id: string;
+  readonly path: string;
+  /** One sentence naming the file and the cause. */
+  readonly reason: string;
+}
+
+export interface AllUsers {
+  readonly profiles: UserProfile[];
+  /**
+   * Users whose profile could not be read. Non-empty means any
+   * archived-state answer is incomplete, so a guard consulting it must
+   * fail closed rather than treat the set as authoritative.
+   */
+  readonly unreadable: UnreadableUser[];
+}
+
+/**
+ * Lists all registered users by scanning `.loctt/users/`, reporting
+ * the ones it could not read rather than dropping them.
+ *
+ * The bug this replaces: a profile that threw was skipped silently,
+ * with a comment claiming Doctor surfaces it. That made the user vanish
+ * from `archivedUserIds`, so the archived guard stopped blocking
+ * assignment to them — it failed *open* on missing information.
+ *
+ * Returns empty lists when the users dir doesn't exist, which is a
+ * real state on a fresh tracker.
+ */
+export async function loadAllUsersDetailed(locttDir: string): Promise<AllUsers> {
   const dir = getUsersDir(locttDir);
-  if (!(await fileExists(dir))) return [];
+  if (!(await fileExists(dir))) return { profiles: [], unreadable: [] };
   const entries = await readdir(dir, { withFileTypes: true });
   const profiles: UserProfile[] = [];
+  const unreadable: UnreadableUser[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     try {
-      const profile = await loadUserProfile(locttDir, entry.name);
-      profiles.push(profile);
-    } catch {
-      // Skip malformed user folders silently — Doctor surfaces them.
+      profiles.push(await loadUserProfile(locttDir, entry.name));
+    } catch (err) {
+      unreadable.push({
+        id: entry.name,
+        path: getUserProfilePath(locttDir, entry.name),
+        reason: err instanceof Error ? err.message : String(err),
+      });
     }
   }
   // Sort by id (ULID = chronological) so callers that need a
   // deterministic pick — e.g. getCurrentUser self-heal — get the
   // same answer across machines and processes.
   profiles.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  return profiles;
+  unreadable.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return { profiles, unreadable };
+}
+
+/**
+ * The readable profiles only.
+ *
+ * Kept for callers that legitimately want "who can I show in a
+ * picker". Anything making a *safety* decision — whether a reference is
+ * archived — must use {@link loadAllUsersDetailed} and account for the
+ * unreadable set, or it fails open on missing information.
+ */
+export async function loadAllUsers(locttDir: string): Promise<UserProfile[]> {
+  return (await loadAllUsersDetailed(locttDir)).profiles;
 }
