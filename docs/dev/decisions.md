@@ -279,3 +279,85 @@ addressing mechanism, not something LocTT displays.
 Applies to M4.7's existing `/sprints/$key` as well as the new M3.5 and
 M4.9 routes. `$key` in the flow docs means "the ULID" wherever it
 appears on a milestone or sprint route.
+
+### V4 · Sync pre-flight runs under both `--dry-run` and a real sync
+
+`loctt git sync --dry-run` runs the full pre-flight: validate every
+touched file, check cross-file dependencies, and report what would merge
+and what would conflict — without applying anything.
+
+**The same pre-flight runs on a real sync, which refuses on failure.**
+Advisory-only would mean nothing stops a sync pushing a broken
+relationship; `--dry-run` is "show me, don't do it", not "the only time
+we check".
+
+A sync can now fail for a reason it previously did not. Given P-12 that
+is the point, not a regression.
+
+This also replaces `doctor` as the primary place malformed data is
+surfaced for the sync path. `doctor` remains the reporter for a locally
+broken file with no sync pending.
+
+### V5 · The validator is maintained by a test, not by an instruction
+
+Four deliverables, and the fourth is load-bearing:
+
+1. **Specs** — the flow docs state the cross-file rules the validator
+   enforces.
+2. **Implementation** — the validator itself.
+3. **Agent and build-loop instructions** — adding a feature requires
+   updating the validator.
+4. **A schema-coverage test that fails when (3) is ignored.**
+
+(3) alone is a rule nobody enforces. This repo has shipped fourteen
+tests that encoded a bug as intended behaviour precisely because
+"someone will remember" is not a mechanism.
+
+**How (4) works.** Enumerate the contracts schemas at runtime — Zod
+exposes `.shape` — and assert every field is either reachable by the
+validator or on an explicit exemption list carrying a one-line reason.
+Add a field without teaching the validator and the test fails naming it.
+A second test asserts every exemption still names a real field, so the
+list cannot rot.
+
+**Its limit, stated honestly:** this proves *coverage*, not
+*correctness*. It cannot tell you the rule is right — only that the
+field is looked at. The failure mode it targets is forgetting entirely,
+which is the one that actually happens.
+
+### V6 · Multi-file operations get stage-then-swap plus a journal
+
+A bulk operation writing 50 tasks and killed at 30 leaves each file
+individually intact and the set half-applied. Atomic rename covers a
+single file; three sentinels cover schema migration, prefix rename and
+sync; nothing covered this.
+
+**Both mechanisms, layered — this is write-ahead log plus atomic
+commit:**
+
+- **Stage-then-swap** writes every file to a temp location, then renames
+  them all. This shrinks the failure window from "50 write cycles" to
+  "50 renames with no I/O between them". It is the more robust of the
+  two: a staged file is invisible until its rename, so there is no
+  moment where a partial write is observable.
+- **A journal entry** naming the affected ids and the intent. Multi-file
+  atomicity does not exist on POSIX, so a crash mid-swap still leaves a
+  partial set — and stage-then-swap alone leaves *no record of what was
+  intended*. The journal is what survives to say so.
+
+**Why not sentinel + backup:** it is the coarsest option — copy
+everything, and on failure hand the user a directory and an apology.
+Right for schema migration, which rewrites everything and cannot be
+reasoned about item by item. Wrong for a bulk op whose items are
+independent.
+
+**What makes the journal cheap here:** LocTT's bulk operations are
+already idempotent — a task carrying the new key is skipped — so replay
+is safe and the journal's own write window stops mattering. An entry for
+work that never started replays harmlessly.
+
+`state/journal.ts` already provides `recoverPendingJournal`,
+`replayTaskRemap` and `removeJournalEntry`, wired into `withStateLock`
+so recovery runs before any locked operation. Extending it is the
+implementation path, but the decision rests on the merits above, not on
+what happens to exist.

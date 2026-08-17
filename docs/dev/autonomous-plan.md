@@ -640,7 +640,10 @@ Roughly five non-cosmetic findings are left open on purpose. Each is
 named in `audit-findings.md` with why: they need the code that owns them
 (the M2 task-detail handler, the MCP comment tools) rather than a sweep.
 
-### Decisions recorded 2026-08-17
+### Decisions recorded 2026-08-17 — read these first
+
+Six, and they change what the work above *is*. `decisions.md` §7 and two
+new invariants.
 
 Three, in [`decisions.md` §7](decisions.md) — read them before starting
 the work above, because two change what that work is:
@@ -652,14 +655,44 @@ the work above, because two change what that work is:
   no version negotiation, so changing its error shape is a breaking
   change worth doing deliberately; and whether the code set is the right
   one is only answerable once a UI renders it.
-- **V2 · Malformed history degrades, never blocks.** A timestamp-less
-  entry keeps its relative position and is treated as never equal to
-  anything, so the merge cannot collapse it. Supersedes the plan to add
-  `HistoryEntrySchema` and reject. **Not yet implemented.**
+- **V2 · Malformed history degrades, never blocks.** Superseded in scope
+  by **P-11**, which generalises it to every list of entries. **Not yet
+  implemented.**
 - **V3 · Route segments carry the ULID.** `/milestones/<ulid>`,
   `/sprints/<ulid>`. The address bar is outside the UI for P-4, which is
   now scoped in `invariants.md` to UI *content*. Settles the open `$key`
   question on M3.5, M4.9 and M4.7.
+- **V4 · Sync pre-flight runs under both `--dry-run` and a real sync**,
+  and a real sync refuses on failure. **Not yet implemented.**
+- **V5 · The validator is maintained by a test, not an instruction.**
+  Schema-coverage test over the Zod shapes, plus a reasoned exemption
+  list. **Not yet implemented.**
+- **V6 · Multi-file ops get stage-then-swap plus a journal.** Closes the
+  one crash-recovery gap: a bulk op killed partway leaves each file
+  intact and the set half-applied. **Not yet implemented.**
+- **P-11 · Leniency means keeping, never destroying** (`invariants.md`).
+  A malformed entry in a list is *kept and merged*, positioned by its
+  neighbours when its own sort key is unusable. `return []` on a read
+  failure is destruction whenever the next step is a write.
+- **P-12 · Validate at the boundary** (`invariants.md`). Cross-file
+  dependencies included. Hand-edits and `git pull` are unsupported —
+  LocTT warns cheaply, the user owns the outcome. The boundary is the
+  gate; P-11 is the floor.
+
+### The next agent's first job
+
+**Implement P-11**, then reconcile the five uncommitted fixes with it.
+
+They currently *throw* on unreadable input. P-11 says throw is right when
+we cannot read a file at all — we must not overwrite what we could not
+read — but wrong for a file we *can* read that holds a malformed entry:
+that entry is kept and merged, positioned after whatever preceded it.
+
+Concretely, `task/comments.ts` needs both halves: refuse on EACCES,
+keep-and-position on a bad entry. It has only the first.
+
+Nothing here is retrofitted yet. P-11 applies from the handoff forward,
+and to those five fixes when they are reconciled.
 
 ### A note on how this session went wrong
 
