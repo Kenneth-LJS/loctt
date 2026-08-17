@@ -7,7 +7,7 @@ import type {
   UserProfile,
 } from "@loctt/contracts";
 
-import { loadAllUsers } from "../users/profile.js";
+import { loadAllUsersDetailed } from "../users/profile.js";
 import { loadLabelsConfig } from "./labels.js";
 import { loadMilestonesConfig } from "./milestones.js";
 import { loadProjectsConfig } from "./projects.js";
@@ -19,12 +19,37 @@ import { loadSprintsConfig } from "./sprints.js";
  * assignee/reporter validation lives in the per-user profiles, not
  * in a single sibling config.
  */
+/** The frontmatter fields the guard checks. */
+export type ArchivedGuardField =
+  | "project"
+  | "milestone"
+  | "sprint"
+  | "assignee"
+  | "reporter"
+  | "labels";
+
+/**
+ * A slice the guard needs and could not read, so it cannot say whether
+ * references in that field are archived.
+ */
+export interface UnreadableSlice {
+  readonly field: ArchivedGuardField;
+  readonly reason: string;
+}
+
 export interface ArchivedGuardConfigs {
   readonly projects?: ProjectsConfig;
   readonly labels?: LabelsConfig;
   readonly milestones?: MilestonesConfig;
   readonly sprints?: SprintsConfig;
   readonly users?: ReadonlyArray<UserProfile>;
+  /**
+   * Slices that could not be read. Empty or absent means every answer
+   * below is authoritative; non-empty means the guard must refuse for
+   * the named fields rather than treat "not in the archived set" as
+   * "not archived" (V7).
+   */
+  readonly unreadable?: ReadonlyArray<UnreadableSlice>;
 }
 
 export class ArchivedReferenceError extends Error {
@@ -35,11 +60,25 @@ export class ArchivedReferenceError extends Error {
 }
 
 /**
- * Best-effort loader for the aux configs the archived guard needs.
- * Missing config slices are treated as "nothing to block against"
- * rather than as errors — a fresh tracker hasn't created the
- * sibling configs yet, but should still be able to create tasks.
- * Centralized so CLI/MCP/HTTP all enforce identical policy.
+ * Loads the aux configs the archived guard needs, recording which
+ * slices it could not read.
+ *
+ * The bug this replaces: three bare catches left the slices undefined,
+ * and `archivedIds(undefined)` is an empty set — so a `labels.yaml`
+ * LocTT could not read let an archived label attach and report success,
+ * on every create and update across all three surfaces. Verified
+ * against core 2026-08-17: the guard blocks with the config intact and
+ * silently allows when it cannot read it.
+ *
+ * A slice that is *absent* still means "nothing to block against" — a
+ * fresh tracker has no `labels.yaml` and must still create tasks. The
+ * loaders already return an empty config for that case, so it never
+ * reaches the catch. Anything that does reach it is a file the user
+ * has and we could not read, and there the honest answer is that we do
+ * not know whether the reference is archived.
+ *
+ * V7: the guard fails **closed** on that. See
+ * {@link assertNotArchivedReferences}.
  */
 export async function loadArchivedGuardConfigs(
   locttDir: string,
@@ -48,16 +87,33 @@ export async function loadArchivedGuardConfigs(
   let labels: Awaited<ReturnType<typeof loadLabelsConfig>> | undefined;
   let milestones: Awaited<ReturnType<typeof loadMilestonesConfig>> | undefined;
   let sprints: Awaited<ReturnType<typeof loadSprintsConfig>> | undefined;
-  try { labels = await loadLabelsConfig(locttDir); } catch { /* ok */ }
-  try { milestones = await loadMilestonesConfig(locttDir); } catch { /* ok */ }
-  try { sprints = await loadSprintsConfig(locttDir); } catch { /* ok */ }
-  const users = await loadAllUsers(locttDir);
+  const unreadable: UnreadableSlice[] = [];
+  const record = (field: ArchivedGuardField, err: unknown): void => {
+    unreadable.push({
+      field,
+      reason: err instanceof Error ? err.message : String(err),
+    });
+  };
+  try { labels = await loadLabelsConfig(locttDir); } catch (err) { record("labels", err); }
+  try { milestones = await loadMilestonesConfig(locttDir); } catch (err) { record("milestone", err); }
+  try { sprints = await loadSprintsConfig(locttDir); } catch (err) { record("sprint", err); }
+
+  const { profiles: users, unreadable: unreadableUsers } =
+    await loadAllUsersDetailed(locttDir);
+  for (const u of unreadableUsers) {
+    // An unreadable profile drops the user from `archivedUserIds`, so
+    // assignee and reporter are both unsafe to answer (V7).
+    unreadable.push({ field: "assignee", reason: `${u.path}: ${u.reason}` });
+    unreadable.push({ field: "reporter", reason: `${u.path}: ${u.reason}` });
+  }
+
   return {
     projects,
     ...(labels !== undefined ? { labels } : {}),
     ...(milestones !== undefined ? { milestones } : {}),
     ...(sprints !== undefined ? { sprints } : {}),
     users,
+    ...(unreadable.length > 0 ? { unreadable } : {}),
   };
 }
 
@@ -101,6 +157,12 @@ function archivedUserIds(
  * Each aux config slice is optional; a missing slice means "skip
  * archived check for that field." Callers should pass whatever they
  * have loaded.
+ *
+ * `aux.unreadable` inverts that for the fields it names: a slice we
+ * could not read means the archived answer is unknown, and the guard
+ * refuses a *new* reference rather than allowing one it cannot vouch
+ * for (V7). Existing references are untouched, so one damaged file
+ * does not freeze the tracker.
  */
 export function assertNotArchivedReferences(
   fm: TaskFrontmatter,
@@ -123,11 +185,32 @@ export function assertNotArchivedReferences(
     { field: "reporter", archived: archivedUserIds(aux.users), kindLabel: "user" },
   ];
 
+  /**
+   * The reason the named field's archived-state is unknown, if it is.
+   *
+   * Checked only where a *new* reference is being introduced: an
+   * unreadable `labels.yaml` must not block a status change on a task
+   * that already carries labels, or one damaged file makes the whole
+   * tracker read-only — which is destruction by another route (P-11).
+   */
+  const unknownFor = (field: ArchivedGuardField): string | undefined =>
+    aux.unreadable?.find(u => u.field === field)?.reason;
+
   for (const { field, archived, kindLabel } of scalar) {
     const next = fm[field];
     if (typeof next !== "string") continue;
     const prior = prev?.[field];
     if (prior === next) continue;
+    const unknown = unknownFor(field);
+    if (unknown !== undefined) {
+      // Fail closed (V7). "Not in the archived set" and "we could not
+      // read the set" are different answers, and only one of them is
+      // safe to act on.
+      errors.push(
+        `cannot set ${field} to "${next}": LocTT could not determine whether that ${kindLabel} is archived (${unknown})`,
+      );
+      continue;
+    }
     if (archived.has(next)) {
       errors.push(
         `cannot assign archived ${kindLabel} "${next}" to ${field}; unarchive it first`,
@@ -140,8 +223,15 @@ export function assertNotArchivedReferences(
   if (fm.labels !== undefined) {
     const archived = archivedIds(aux.labels?.labels);
     const prior = new Set(prev?.labels ?? []);
+    const unknown = unknownFor("labels");
     for (const k of fm.labels) {
       if (prior.has(k)) continue;
+      if (unknown !== undefined) {
+        errors.push(
+          `cannot attach label "${k}": LocTT could not determine whether it is archived (${unknown})`,
+        );
+        continue;
+      }
       if (archived.has(k)) {
         errors.push(
           `cannot attach archived label "${k}"; unarchive it first`,

@@ -1,4 +1,8 @@
-export type { ArchivedGuardConfigs } from "./archived-guard.js";
+export type {
+  ArchivedGuardConfigs,
+  ArchivedGuardField,
+  UnreadableSlice,
+} from "./archived-guard.js";
 export {
   ArchivedReferenceError,
   assertNotArchivedReferences,
