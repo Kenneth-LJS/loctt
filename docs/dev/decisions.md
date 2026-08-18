@@ -226,15 +226,36 @@ CLI now delegates; the duplicated rule was simply wrong.
   codes and an `isError` boolean respectively, and an agent cannot
   branch on cause without matching message text.
 
-**Two cautions recorded at the time of the decision:**
+**Two cautions were recorded at the time of the decision. Both are now
+resolved (2026-08-17):**
 
-1. Changing MCP's error output is a breaking change to the agent-facing
-   surface, and MCP has no version negotiation. Worth doing once,
-   deliberately — not as a side effect of a refactor.
-2. Whether the code set is the *right* set is only answerable once a UI
-   renders it. Designing an error taxonomy in the abstract risks
-   discovering it has the wrong shape at M2. Prefer extending the web's
-   existing `ErrorCode` union over inventing a parallel one.
+1. ~~Changing MCP's error output is a breaking change with no version
+   negotiation.~~ **Settled: proceed.** The user's ruling — *"we're not
+   published yet. we can break existing behaviour for cleanliness."*
+   There are no existing trackers to break.
+2. ~~Whether the code set is the *right* set is only answerable once a
+   UI renders it.~~ **Settled by V8**, which removes the dependency: the
+   shape describes the error rather than its rendering, so it is
+   decidable without a UI. The concern was only ever real for a
+   presentation-shaped taxonomy.
+
+**Sequencing, agreed 2026-08-17.** V1 lands before M2, but only needs to
+land its *server* half first. M2's editable fields all go through
+`handleSetField` (`server.ts:2684`), which today takes an unvalidated
+`value` — the open audit finding. Whatever V1 produces is what M2
+renders in every inline error, so building M2 first means inventing an
+error contract and then reworking it.
+
+Codes accrete rather than being designed up front: start from what the
+surfaces already distinguish, add one when a consumer genuinely needs to
+branch on it.
+
+**Start with the two audits.** They are read-only and they size the rest
+of the work; do them before writing anything.
+
+**Adopt `utils/read-state.ts`, do not replace it.** It already makes the
+absent / loaded / unreadable distinction V1's structured errors depend
+on, and six call sites use it (`149a07a`).
 
 ### V2 · Malformed history degrades; it never blocks
 
@@ -395,3 +416,75 @@ simpler because it decided — wrongly — for all of them at once.
 **Rejected alternative:** leave the skip and write a P-11 exemption for
 user profiles. Defensible on cost, but an invariant that acquires a hole
 on its first day is worth less than the hole saves.
+
+### V8 · Error shape describes the error, not its presentation
+
+**Decided 2026-08-17, after a proposal was rejected.**
+
+I proposed four categories — field-level, operation-level, state-level,
+conflict — named by where the UI should render each. The user rejected
+the premise:
+
+> "the shape shouldnt be 'oh i want this to show error, i want this to
+> be a popup'; i.e. we shouldnt define error codes based on what we want
+> the ui to be -> we should define this on something meaningful to the
+> error type itself"
+
+That is right, and the mistake it corrects is the same one the enum rule
+already forbids elsewhere: storing display intent instead of meaning.
+Encoding "this is a toast" into core makes core guess at a UI, and spends
+the taxonomy on one consumer's layout — so a second consumer, or a
+redesign, finds the vocabulary already committed to somebody else's
+rendering.
+
+**The rule.** Core describes *what went wrong*. Each surface decides
+*what to do about it*.
+
+An error carries:
+
+- **the kind of failure** — a value did not validate, the thing does not
+  exist, the current state forbids it, two writers collided, a file could
+  not be read
+- **what it is about** — which field, which entity, which file
+- **what was expected** — the valid statuses, the conflicting versions
+
+**Consequence: the payload carries the weight, not the code.**
+`UNKNOWN_ENUM_VALUE` with `{field, given, valid}` beats five codes that
+differ only in which field they concern. Fewer codes, richer data.
+
+A UI may still derive its layout from this — an error carrying a field
+name is evidently field-level — but that inference belongs to the UI. It
+is not something core declares, and it does not collapse when the next
+consumer wants something different.
+
+**Open until checked against the spec.** The failure kinds above are
+derived from the code, not from the case docs.
+[`flow-error-handling.md`](ui-test-cases/flow-error-handling.md) — the
+ERR-* cases — is the specification for error behaviour and must be read
+before the set is fixed. If it names different kinds, those win; an
+agent does not adjudicate against the spec.
+
+### V9 · P-11 applies per store, and config is not a log
+
+**Decided 2026-08-17 while extending P-11 past comments.**
+
+P-11 says a malformed entry is kept and merged. That is right for a
+**list of entries** — comments, history — where each row is an
+independent record of something that happened, and dropping one destroys
+a fact.
+
+It is wrong for **config**. A malformed status in `workflow.yaml` is not
+a record of an event; it is a definition other data points at. Keeping a
+broken one means tasks referencing a status that cannot render, and the
+damage spreads to every task that used it.
+
+So:
+
+- **Entry lists** (comments, history) — keep the malformed entry,
+  position it by its neighbours, merge it, report it. Never blocking.
+- **Config** — refuse to write, report the file. The content stays on
+  disk untouched, which is what P-11 protects; what changes is that
+  LocTT will not build on top of a definition it could not read.
+
+Both halves are still P-11: nothing is destroyed in either case. The
+difference is only whether LocTT proceeds around the damage or stops.
