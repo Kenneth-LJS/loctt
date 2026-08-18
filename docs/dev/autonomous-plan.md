@@ -717,6 +717,42 @@ preserve.
 
 Nothing was retrofitted. P-11 applies from here forward.
 
+### The work queue, agreed 2026-08-17
+
+Ordered. Each item's decision is recorded before it is built.
+
+| # | Work | Decision | State |
+|---|---|---|---|
+| 1 | **P-11 for history entries** | P-11, **V9** | ⬜ |
+| 2 | **P-11 for config slices** — refuse and report, not keep-and-merge | **V9** | ⬜ |
+| 3 | **P-12** — cross-file dependency validation at the boundary | P-12 | ⬜ |
+| 4 | **`ListView.tsx` / `Sidebar.tsx`** `isError` branch | — | ⬜ |
+| 5 | **V1's two audits** — what core validates today; which surface rules must move | V1 | ⬜ |
+| 6 | **V1 proper** — validation into core, structured errors | V1, **V8** | ⬜ |
+| 7 | **V5** — the schema-coverage test | V5 | ⬜ |
+| 8 | **M2**, then the rest of Phase 5 | — | ⬜ |
+
+**Why this order.** 1–4 are independent of everything else and close
+known gaps. 5 is read-only and sizes 6. 6 must precede M2, because M2's
+editable fields render whatever V1 produces. 7 must follow 6, or it
+tests an arrangement that is about to change.
+
+**Before designing V1's error set, read
+[`flow-error-handling.md`](ui-test-cases/flow-error-handling.md).** The
+ERR-* cases are the specification for error behaviour. The failure kinds
+sketched in V8 are derived from the code, not from the spec — if the doc
+names different ones, those win. An agent does not adjudicate against
+the spec; it halts and says so.
+
+**Two rejected proposals worth not re-making:**
+
+- Error categories named for where the UI renders them (field-level,
+  toast, full-page). Rejected — see **V8**. Core describes the error;
+  the surface decides the presentation.
+- Keep-and-merge for malformed *config*. Rejected — see **V9**. A
+  config value is a definition other data references, not a record of
+  an event, so LocTT refuses rather than building on it.
+
 ### A note on how this session went wrong
 
 Twice I did more than was asked: I began fixing audit findings when the
