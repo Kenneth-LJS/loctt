@@ -770,3 +770,29 @@ re-checking before/after exclusivity; whether core rejects a negative or
 fractional `limit` anywhere; whether `MilestoneDefSchema` brands
 `target_date` as `IsoDate`; and a comment at `server.ts:1546` claiming a
 hex-colour guard raising `LabelError` that the agent believes inaccurate.
+
+## Status after the 2026-08-17 session
+
+**Groups A–F closed. The six swallowed-error findings closed. All nine
+recorded decisions implemented.**
+
+Still open, deliberately:
+
+- **Group G** — ~79 cosmetic items, deferred until after the UI build.
+  Much of it is in code M2–M4 rewrites, so fixing it now means doing it
+  twice.
+- **MCP comment tools' bare catches.** Same shape as
+  `list_config_values`, which is fixed — a real bug reported to an agent
+  as a routine domain error. Belongs with the M2.4 comment work that
+  touches those tools.
+- **`HistoryEntry` element shape.** History has no Zod schema at all,
+  and adding one is a change to a hot write path that deserves its own
+  design pass. The array-level guard (CMT-C7), the merge-path parse
+  check (group B), and P-11's per-row validation (`e379de8`) cover the
+  shapes that actually reached code.
+
+**Closed since the last status:** `handleSetField`'s unvalidated
+`value`. It was recorded as a finding and was not one — the handler
+delegating everything to core is the *correct* design, and audit B
+identified it as the model the other surfaces should converge on. What
+was missing was core validating the value, which V1 (`e19964f`) does.
