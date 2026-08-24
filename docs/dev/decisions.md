@@ -488,3 +488,53 @@ So:
 
 Both halves are still P-11: nothing is destroyed in either case. The
 difference is only whether LocTT proceeds around the damage or stops.
+
+### V10 · The error contract already exists; V1 adopts it
+
+**Decided 2026-08-17, after reading
+[`flow-error-handling.md`](ui-test-cases/flow-error-handling.md).**
+
+V8 sketched the failure kinds from the code and flagged that the spec
+had to be read before fixing them. It has been. **The spec does not
+contradict V8 — it supersedes the sketch with something more precise,
+already implemented in `packages/contracts/src/service.ts`:**
+
+```
+ErrorResponse { code, message, field?, data_state?, recovery?, failures?, detail? }
+ErrorCode = validation_failed | not_found | conflict | archived_reference
+          | config_invalid | schema_mismatch | git_failed | io_failed
+          | partial_failure | unknown
+```
+
+Ten codes, derived from the ERR-* cases rather than from the code's
+shape. V1 **adopts this envelope**; it does not invent a parallel one.
+
+**What the spec settles that V8 left open:**
+
+- **Core owns the wording.** ERR-6: *"Whatever core says — e.g. 'cannot
+  assign an archived user' — reaches the user in words core chose,
+  because core's error text is already user-facing."* So the migration
+  is not "core throws codes and each surface writes copy". Core writes
+  the sentence; surfaces place it.
+- **`field` decides placement, not a category.** ERR-14 puts a
+  field-level rejection *at the field*. The UI derives that from
+  `field` being present — exactly the inference V8 said belongs to the
+  UI, and the reason a presentation-shaped taxonomy was the wrong idea.
+- **`data_state` is mandatory on writes.** ERR-18: every write-path
+  failure states saved / not saved / unknown. ERR-3 calls this *"the
+  single most important error behaviour in the app"*.
+- **`recovery` is a control, never prose.** ERR-15: "Please try again"
+  with no button is a failing result.
+- **`detail` is the only place jargon may appear.** ERR-16 bars
+  ZodError, ENOENT, EACCES, stack traces and raw ULIDs from the
+  headline — but `.loctt/` paths are explicitly *wanted*, because they
+  are the user's own files.
+- **`unknown` is permitted exactly once.** ERR-30: only when the cause
+  genuinely cannot be determined, and still carrying `data_state` and a
+  recovery. ERR-31 forbids using it to avoid enumerating causes.
+
+**Consequence for the work.** V1's remaining job is mechanical rather
+than a design question: move the surface rules into core, and have core
+throw errors that carry the envelope's fields instead of bare prose.
+The taxonomy question that made V1 look undecidable before a UI existed
+was answered in the case docs the whole time.
