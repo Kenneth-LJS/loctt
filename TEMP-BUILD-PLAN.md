@@ -780,6 +780,14 @@ beats starting all five.
   stores ULIDs and the write paths refuse a reference to something that
   was never created, so a fixture cannot invent `"bug"`.
 
+**M2 extends code that is already well tested, so `build-loop.md` rule
+4 applies throughout:** after adding a case to an existing scan, switch
+or handler, delete your new branch and run that file's tests. If they
+stay green, the coverage you assumed is not there. That rule exists
+because `doctor`'s history reporting could be deleted with all nine
+integrity tests passing — the file was written when the scan covered
+comments only, and nobody extended it.
+
 **Read before building M2.2's error handling:**
 [`flow-error-handling.md`](docs/dev/ui-test-cases/flow-error-handling.md). ERR-14
 puts a field rejection *at the field*; ERR-18 makes the data-state claim
