@@ -9,7 +9,21 @@ import { useCallback, useEffect, useState } from "react";
  * listener is installed once and ignores keystrokes while a text input
  * or textarea is focused, so typing `[` in the search box or a future
  * editor doesn't fold the sidebar.
+ *
+ * **Below `NARROW_PX` the sidebar collapses regardless of the stored
+ * preference.** At 532px the expanded sidebar took 240px and left the
+ * table 165px of a 760px layout — the content the user came for was
+ * the smallest thing on screen. The preference is not overwritten: it
+ * is what the sidebar returns to when there is room again, so a
+ * rotation or a window resize does not silently discard a choice.
+ *
+ * No acceptance case specifies a breakpoint. 900px is chosen as the
+ * width below which a 240px sidebar costs more than it gives, and is
+ * recorded as a proposed case rather than treated as settled.
  */
+
+/** Below this viewport width the sidebar is always collapsed. */
+const NARROW_PX = 900;
 
 const STORAGE_KEY = "tt-sidebar-collapsed";
 
@@ -24,11 +38,18 @@ function isEditableTarget(el: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
 }
 
+function isNarrow(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.innerWidth < NARROW_PX;
+}
+
 export function useSidebarCollapse(): {
   collapsed: boolean;
   toggle: () => void;
 } {
-  const [collapsed, setCollapsed] = useState<boolean>(readStored);
+  const [stored, setCollapsed] = useState<boolean>(readStored);
+  const [narrow, setNarrow] = useState<boolean>(isNarrow);
+  const collapsed = stored || narrow;
 
   const toggle = useCallback(() => {
     setCollapsed(prev => {
@@ -38,6 +59,12 @@ export function useSidebarCollapse(): {
       }
       return next;
     });
+  }, []);
+
+  useEffect(() => {
+    const onResize = (): void => { setNarrow(isNarrow()); };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, []);
 
   useEffect(() => {

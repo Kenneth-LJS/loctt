@@ -169,3 +169,29 @@ describe("bulkMoveTasksToProject", () => {
     expect(result.failed).toHaveLength(1);
   });
 });
+
+describe("move keeps the key index current", () => {
+  // @verifies BLK-9
+  it("resolves the new key after a move, not only the retired one", async () => {
+    const ops = await createProject(locttDir, { name: "Ops", prefix: "OPS" });
+    const id = await seed("Movable");
+    const before = await lookupTask(locttDir, id);
+
+    // Warm the index so the id is already in it. That is the state that
+    // hid this: the index's lazy fold keys off unknown *ids*, and a move
+    // keeps the id — so nothing detected the rekey. `loctt show OPS1`
+    // returned "task not found" for a task just moved to OPS1, while
+    // the retired key still worked, and `doctor` called the index in
+    // sync because the entry count had not changed.
+    await lookupTask(locttDir, before.frontmatter.key);
+
+    const moved = await moveTaskToProject({
+      locttDir, taskRef: before.frontmatter.key, targetProjectId: ops.id,
+    });
+    expect(moved.newKey).not.toBe(before.frontmatter.key);
+
+    expect((await lookupTask(locttDir, moved.newKey)).frontmatter.id).toBe(id);
+    // And the retired key keeps resolving (P-7).
+    expect((await lookupTask(locttDir, before.frontmatter.key)).frontmatter.id).toBe(id);
+  });
+});

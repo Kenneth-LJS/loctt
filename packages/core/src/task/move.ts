@@ -2,7 +2,14 @@ import type { HistoryEntry, LocttState, Task } from "@loctt/contracts";
 import { ulid } from "ulid";
 
 import { loadProjectsConfig } from "../config/projects.js";
-import { loadState, saveState, withStateLock } from "../state/index.js";
+import {
+  addToKeyIndex,
+  loadKeyIndex,
+  loadState,
+  saveKeyIndex,
+  saveState,
+  withStateLock,
+} from "../state/index.js";
 import { allocateKey, appendKeyHistory } from "../state/keys.js";
 import { appendHistory } from "./history.js";
 import { writeTask } from "./io.js";
@@ -39,6 +46,36 @@ async function loadTargetProject(locttDir: string, projectId: string) {
     throw new MoveTaskError(`target project is archived: ${projectId}`);
   }
   return def;
+}
+
+
+/**
+ * Points the key index at a task's new key after a rekey.
+ *
+ * The index's lazy fold keys off unknown **ids**, and a move keeps the
+ * id — so nothing detected the change and `loctt show OPS1` returned
+ * "task not found" for a task LocTT had just moved to OPS1, while the
+ * retired key still resolved. `doctor` reported the index in sync,
+ * because a rekey leaves the entry count unchanged.
+ *
+ * Fixed here rather than in `lookupByKey`: an out-of-band *hand* edit
+ * is documented as unsupported and repaired by `doctor --rebuild-index`
+ * (P-12). This is LocTT's own write path, which owns the invariant it
+ * breaks. Skipped when the index does not exist — it is built lazily,
+ * and creating one here would change when that happens.
+ */
+async function reindexKey(
+  locttDir: string,
+  id: string,
+  oldKey: string,
+  newKey: string,
+): Promise<void> {
+  const index = await loadKeyIndex(locttDir);
+  if (!index) return;
+  // The old key is kept: `key_history` makes it resolvable (P-7).
+  let next = addToKeyIndex(index, newKey, id);
+  next = addToKeyIndex(next, oldKey, id);
+  if (next !== index) await saveKeyIndex(locttDir, next);
 }
 
 function performMove(args: {
@@ -109,6 +146,7 @@ export async function moveTaskToProject(
     });
     await writeTask(opts.locttDir, task.frontmatter.id, task);
     await saveState(opts.locttDir, state);
+    await reindexKey(opts.locttDir, task.frontmatter.id, oldKey, newKey);
     clearLookupCaches(opts.locttDir);
     await appendHistory(opts.locttDir, task.frontmatter.id, historyEntries);
     return { task, oldKey, newKey };
@@ -167,6 +205,7 @@ export async function bulkMoveTasksToProject(
         // user may still hold in key_history (P-7).
         mutated = true;
         await writeTask(opts.locttDir, task.frontmatter.id, task);
+        await reindexKey(opts.locttDir, task.frontmatter.id, oldKey, newKey);
         await appendHistory(opts.locttDir, task.frontmatter.id, historyEntries);
         succeeded.push({ taskId: task.frontmatter.id, oldKey, newKey });
       } catch (err) {

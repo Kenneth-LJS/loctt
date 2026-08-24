@@ -2199,3 +2199,62 @@ async function frontmatterValue(root: string, key: string, field: string): Promi
   }
   return "";
 }
+
+test.describe("ERR — the server dies mid-session", () => {
+  // @verifies ERR-1
+  test("ERR-1: a dead server is stated, not left as rows that answer nothing", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }, { title: "Two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Every subsequent request fails, the way a killed server behaves.
+    await page.route(/\/api\//, route => route.abort("connectionrefused"));
+
+    // The user does the most ordinary thing available: reloads.
+    await page.reload();
+
+    // A server that is down and a tracker that is empty must be
+    // visibly different screens — conflating them reads as data loss.
+    // The shell's boundary catches this before the list renders at all,
+    // which is why the assertion is on the failure being *stated*
+    // rather than on the list's own ErrorState.
+    await expect(page.getByText(/No tasks match these filters/i)).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /went wrong/i }))
+      .toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Failed to fetch/i)).toBeVisible();
+  });
+});
+
+test.describe("SHL — narrow viewports", () => {
+  // @verifies SHL-1
+  test("SHL-1: the sidebar collapses on a narrow viewport and returns when there is room", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+
+    const aside = page.locator("aside");
+    await expect(aside).toHaveAttribute("data-collapsed", "false");
+
+    // Narrow. At 532px the expanded sidebar took 240px and left the
+    // table 165px — the content the user came for was the smallest
+    // thing on screen.
+    await page.setViewportSize({ width: 532, height: 800 });
+    await expect(aside).toHaveAttribute("data-collapsed", "true");
+    // The width transitions over 150ms; poll rather than measure once.
+    await expect
+      .poll(() => aside.evaluate(el => el.getBoundingClientRect().width))
+      .toBeLessThan(80);
+
+    // And it comes back, because the stored preference was never
+    // overwritten — a rotation must not silently discard a choice.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(aside).toHaveAttribute("data-collapsed", "false");
+  });
+});
