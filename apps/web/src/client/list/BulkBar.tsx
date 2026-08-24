@@ -1,4 +1,9 @@
-import type { WorkflowConfig } from "@loctt/contracts";
+import type {
+  MilestoneDef,
+  SprintDef,
+  UserProfile,
+  WorkflowConfig,
+} from "@loctt/contracts";
 import { useState } from "react";
 
 /**
@@ -19,6 +24,9 @@ export function BulkBar({
   count,
   scopeLabel,
   workflow,
+  users,
+  milestones,
+  sprints,
   busy,
   result,
   onClear,
@@ -33,6 +41,14 @@ export function BulkBar({
    */
   readonly scopeLabel?: string | undefined;
   readonly workflow?: WorkflowConfig | undefined;
+  /**
+   * Entity vocabularies for the assignee / milestone / sprint pickers
+   * (BLK-7, BLK-8). Archived entries are filtered out here rather than
+   * by the caller, so every call site gets the same rule.
+   */
+  readonly users?: readonly UserProfile[] | undefined;
+  readonly milestones?: readonly MilestoneDef[] | undefined;
+  readonly sprints?: readonly SprintDef[] | undefined;
   /** Disables every action while one is in flight (BLK-31). */
   readonly busy: boolean;
   /** Outcome of the last action, shown until the next one starts. */
@@ -40,7 +56,12 @@ export function BulkBar({
     | { readonly message: string; readonly failures: readonly string[] }
     | undefined;
   readonly onClear: () => void;
-  readonly onSetField: (field: string, value: string) => void;
+  /**
+   * `null` clears the field. The bulk endpoint maps null to core's
+   * `undefined`, which is why "Unassign" / "No milestone" need no
+   * separate call (BLK-7, BLK-8).
+   */
+  readonly onSetField: (field: string, value: string | null) => void;
   readonly onArchive: () => void;
   readonly onDeleteRequested: () => void;
 }) {
@@ -83,6 +104,33 @@ export function BulkBar({
         options={priorities.map(p => ({ id: p.key, label: p.label }))}
         disabled={busy}
         onPick={v => { onSetField("priority", v); }}
+      />
+      <BulkPicker
+        label="Set assignee"
+        options={active(users).map(u => ({ id: u.id, label: u.name }))}
+        clearLabel="Unassign"
+        disabled={busy}
+        onPick={v => { onSetField("assignee", v); }}
+      />
+      <BulkPicker
+        label="Set milestone"
+        options={active(milestones).map(m => ({ id: m.id, label: m.name }))}
+        clearLabel="No milestone"
+        disabled={busy}
+        onPick={v => { onSetField("milestone", v); }}
+      />
+      <BulkPicker
+        label="Set sprint"
+        options={active(sprints).map(sp => ({
+          id: sp.id,
+          label: sp.name,
+          // BLK-8: state is shown so nobody assigns work to a sprint
+          // that already finished without noticing.
+          hint: sp.state,
+        }))}
+        clearLabel="No sprint"
+        disabled={busy}
+        onPick={v => { onSetField("sprint", v); }}
       />
 
       <button
@@ -135,6 +183,21 @@ export function BulkBar({
 }
 
 /**
+ * Drops archived entries.
+ *
+ * BLK-7 and BLK-8 exclude archived users, milestones and sprints from
+ * the pickers, and the archived-reference guard would refuse them
+ * anyway — offering one produces a rejection the user cannot act on.
+ * Existing references are untouched: archiving hides an entity from
+ * *new* assignments without breaking the tasks already pointing at it.
+ */
+function active<T extends { readonly archived?: boolean | undefined }>(
+  items: readonly T[] | undefined,
+): readonly T[] {
+  return (items ?? []).filter(i => i.archived !== true);
+}
+
+/**
  * A one-shot value picker. Deliberately not `FilterDropdown`: that one
  * is multi-select, holds a selected set, and labels itself "Filter by
  * X" — all wrong for an action that applies one value and is done.
@@ -142,13 +205,28 @@ export function BulkBar({
 function BulkPicker({
   label,
   options,
+  clearLabel,
   disabled,
   onPick,
 }: {
   readonly label: string;
-  readonly options: readonly { id: string; label: string }[];
+  readonly options: readonly {
+    id: string;
+    label: string;
+    /** Secondary text beside the label, e.g. a sprint's state. */
+    hint?: string | undefined;
+  }[];
+  /**
+   * When set, the menu opens with an option that clears the field —
+   * "Unassign", "No milestone", "No sprint" (BLK-7, BLK-8). It picks
+   * `null`, which the bulk endpoint maps to core's "clear this field".
+   *
+   * Offered even when there are no options: clearing a field that
+   * already holds a now-archived value must stay possible.
+   */
+  readonly clearLabel?: string | undefined;
   readonly disabled: boolean;
-  readonly onPick: (value: string) => void;
+  readonly onPick: (value: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -172,10 +250,25 @@ function BulkPicker({
           aria-label={label}
           className="absolute bottom-full left-0 z-20 mb-1 min-w-[160px] rounded-md border border-border-subtle bg-bg-surface py-1 shadow-lg"
         >
+          {clearLabel !== undefined && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onPick(null);
+              }}
+              className="block w-full border-b border-border-subtle px-3 py-1.5 text-left text-[12px] italic text-text-secondary hover:bg-bg-muted"
+            >
+              {clearLabel}
+            </button>
+          )}
           {options.length === 0 ? (
-            <div className="px-3 py-2 text-[12px] italic text-text-tertiary">
-              No options
-            </div>
+            clearLabel === undefined && (
+              <div className="px-3 py-2 text-[12px] italic text-text-tertiary">
+                No options
+              </div>
+            )
           ) : (
             options.map(opt => (
               <button
@@ -189,6 +282,9 @@ function BulkPicker({
                 className="block w-full px-3 py-1.5 text-left text-[12px] text-text-primary hover:bg-bg-muted"
               >
                 {opt.label}
+                {opt.hint !== undefined && (
+                  <span className="ml-1.5 text-text-tertiary">· {opt.hint}</span>
+                )}
               </button>
             ))
           )}
