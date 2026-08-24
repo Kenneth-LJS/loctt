@@ -129,3 +129,36 @@ something to implement while calling it a bug fix.
 while this was failing.** The summary line was read without checking for
 `FAIL` lines above it. Corrected here rather than quietly.
 
+## `rekeyCollisions` skip path — reachable, correct, low value to change
+
+Investigated 2026-08-17 after the GIT-C2 fixture fix, because I had
+claimed the sort produced wrong behaviour on real syncs. **It does not.**
+
+**Two things I got wrong, corrected here so nobody re-derives them:**
+
+- `state.yaml` **is** mirrored by sync. `NEVER_MIRROR` holds only
+  `local/` and `.git`. I had extended the invariant about
+  `.loctt/local/` to `state.yaml`, which is not what it says. Counters
+  therefore propagate, and a synced task's project normally has one.
+- Two tasks in **different** projects cannot collide. Prefixes are
+  unique per project (`ProjectsConfigSchema.superRefine`), so `T1` and
+  `M1` are different strings. Only same-project tasks collide, and they
+  share a counter, so both sides are rekeyable.
+
+**Verified against two real clones:** both created `T1` offline → sync →
+one became `T2`. Two projects independently created with the same
+prefix `X`, both tasks `X1` → sync → one became `X21`. Both resolved,
+`unresolvedKeys` empty.
+
+**The skip path is reachable, but only by hand-editing the branch** to
+add a task whose `project` exists nowhere. When it fires it behaves as
+GIT-C2 specifies: stderr warning naming task and reason, `unresolvedKeys`
+populated, non-zero exit, and `doctor` reporting the dangling project.
+
+**The one real wrinkle, left alone deliberately.** When the unrekeyable
+task sorts *second* (later `created_at`), the collision stays
+unresolved — two tasks keep the same key. Sorting rekeyability first
+would always resolve it, but that contradicts GIT-C2's stated rule
+("the task with the earlier `created_at` keeps the key"), and the input
+only arises from a hand-edited branch, which P-12 already classes as
+unsupported. Not worth a spec change on that evidence.
