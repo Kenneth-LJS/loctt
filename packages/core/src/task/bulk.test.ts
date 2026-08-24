@@ -218,3 +218,31 @@ describe("bulkDelete", () => {
   });
 });
 
+
+describe("bulkArchive reports no-ops on both directions", () => {
+  // @verifies BLK-27
+  it("reports an already-archived task as unchanged", async () => {
+    const a = await seed("One");
+    const b = await seed("Two");
+    await bulkArchive({ locttDir, taskRefs: [a], archive: true });
+
+    const result = await bulkArchive({ locttDir, taskRefs: [a, b], archive: true });
+    expect(result.succeeded).toHaveLength(2);
+    expect(result.unchanged).toEqual([a]);
+    expect(result.failed).toEqual([]);
+  });
+
+  // @verifies BLK-27
+  it("reports a never-archived task as unchanged when unarchiving", async () => {
+    const a = await seed("One");
+    const b = await seed("Two");
+    await bulkArchive({ locttDir, taskRefs: [a], archive: true });
+
+    // One archived, one not. The unarchive path has the same no-op case
+    // as the archive path, and reporting the untouched task as restored
+    // overstates what happened — the whole point of BLK-27.
+    const result = await bulkArchive({ locttDir, taskRefs: [a, b], archive: false });
+    expect(result.succeeded).toHaveLength(2);
+    expect(result.unchanged).toEqual([b]);
+  });
+});

@@ -7,8 +7,10 @@
  * case does not claim has drifted from it.
  */
 
-import { mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+
+import { DEFAULT_EXPORT_COLUMNS } from "@loctt/core";
 
 import { expect, test } from "./fixtures/tracker.ts";
 
@@ -1521,6 +1523,10 @@ test.describe("BLK — bounded and honest failures", () => {
     });
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.locator("tbody tr").first()).toBeVisible();
+    // The count line is the settle signal: select-all on a table
+    // that has not rendered checks nothing, then unchecks itself
+    // when the rows arrive.
+    await expect(page.getByText(/Showing 1–\d+ of \d+/)).toBeVisible();
     await page.getByRole("checkbox", { name: "Select all on this page" }).check();
 
     // The server accepts the request and never answers.
@@ -1551,6 +1557,10 @@ test.describe("BLK — lock contention", () => {
     await tracker.seed([{ title: "One" }, { title: "Two" }]);
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.locator("tbody tr").first()).toBeVisible();
+    // The count line is the settle signal: select-all on a table
+    // that has not rendered checks nothing, then unchecks itself
+    // when the rows arrive.
+    await expect(page.getByText(/Showing 1–\d+ of \d+/)).toBeVisible();
     await page.getByRole("checkbox", { name: "Select all on this page" }).check();
 
     // Hold the state lock the way another LocTT process would.
@@ -1654,5 +1664,496 @@ test.describe("BLK — scale", () => {
     // The page is still usable afterwards — the export did not leave it
     // wedged.
     await expect(page.getByText(`Showing 1–50 of ${String(AT_SCALE)}`)).toBeVisible();
+  });
+});
+
+test.describe("BLK — picker vocabularies", () => {
+  // @verifies BLK-6
+  test("BLK-6: priorities are ordered by value and offer a clear", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    await page.locator("tbody input[type=checkbox]").first().check();
+
+    await page.getByRole("button", { name: "Set priority" }).click();
+    const menu = page.getByRole("menu", { name: "Set priority" });
+    const items = await menu.getByRole("menuitem").allInnerTexts();
+
+    // Clear comes first, then the configured priorities in `value`
+    // order — a ranked list shown in file order makes the user think.
+    expect(items[0]).toContain("Clear priority");
+    const wf = JSON.parse(
+      await (await fetch(`${tracker.baseURL}/api/workflow`)).text(),
+    ) as { priorities: { key: string; label: string; value?: number }[] };
+    const expected = [...wf.priorities]
+      .sort((a, b) => (a.value ?? 0) - (b.value ?? 0))
+      .map(p => p.label);
+    expect(items.slice(1)).toEqual(expected);
+
+    // Clearing unsets rather than writing an empty string.
+    const sent: unknown[] = [];
+    await page.route(/\/api\/tasks\/bulk\/set/, async route => {
+      const body = route.request().postDataJSON() as {
+        changes: { field: string; value: unknown }[];
+      };
+      for (const c of body.changes) if (c.field === "priority") sent.push(c.value);
+      await route.continue();
+    });
+    await menu.getByRole("menuitem", { name: "Clear priority" }).click();
+    await expect(
+      page.getByRole("region", { name: "Bulk actions" }).getByRole("status"),
+    ).toContainText("1 task updated");
+    expect(sent).toEqual([null]);
+  });
+
+  // @verifies BLK-17
+  test("BLK-17: a picker with nothing to offer says why instead of opening onto nothing", async ({
+    page,
+    tracker,
+  }) => {
+    // A fresh tracker has no milestones and no sprints.
+    await tracker.seed([{ title: "One" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    await page.locator("tbody input[type=checkbox]").first().check();
+
+    const bar = page.getByRole("region", { name: "Bulk actions" });
+    const milestone = bar.getByRole("button", { name: "Set milestone" });
+    await expect(milestone).toBeDisabled();
+    await expect(milestone).toHaveAttribute("title", /No milestones defined/);
+    await expect(bar.getByRole("button", { name: "Set sprint" })).toBeDisabled();
+
+    // And it becomes usable once the workspace has one.
+    await tracker.run(["milestone", "create", "v1"]);
+    await page.reload();
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    await page.locator("tbody input[type=checkbox]").first().check();
+    await expect(bar.getByRole("button", { name: "Set milestone" })).toBeEnabled();
+  });
+});
+
+test.describe("BLK — selection across views", () => {
+  // @verifies BLK-19
+  test("BLK-19: paginating keeps the count honest and the header reflects the new page", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seedBulk(120);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–50 of 120")).toBeVisible();
+
+    const selectAll = page.getByRole("checkbox", { name: "Select all on this page" });
+    await selectAll.check();
+    await expect(page.getByText("50 tasks selected")).toBeVisible();
+
+    await page.getByRole("button", { name: /Load more/i }).click();
+    await expect(page.getByText("Showing 1–100 of 120")).toBeVisible();
+
+    // The count is unchanged — the newly loaded rows are not selected —
+    // and the header no longer claims the whole page is checked.
+    await expect(page.getByText("50 tasks selected")).toBeVisible();
+    await expect(selectAll).not.toBeChecked();
+    const checked = await page.locator("tbody input[type=checkbox]:checked").count();
+    expect(checked).toBe(50);
+
+    // Selecting all now covers everything loaded.
+    await selectAll.check();
+    await expect(page.getByText("100 tasks selected")).toBeVisible();
+  });
+
+  // @verifies BLK-20
+  test("BLK-20: sorting moves rows without moving the selection", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Alpha", fields: { priority: "low" } },
+      { title: "Bravo", fields: { priority: "high" } },
+      { title: "Charlie", fields: { priority: "medium" } },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+
+    // Select one task by name, not by row index.
+    const alphaRow = page.locator("tbody tr").filter({ hasText: "Alpha" });
+    await alphaRow.locator("input[type=checkbox]").check();
+    await expect(page.getByText("1 task selected")).toBeVisible();
+
+    await page.getByRole("button", { name: /Priority/i }).first().click();
+    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+
+    // The same task is still checked wherever it landed, and the count
+    // is unchanged — selection is by task id, never by row position.
+    await expect(page.getByText("1 task selected")).toBeVisible();
+    await expect(
+      page.locator("tbody tr").filter({ hasText: "Alpha" }).locator("input[type=checkbox]"),
+    ).toBeChecked();
+    expect(await page.locator("tbody input[type=checkbox]:checked").count()).toBe(1);
+  });
+
+  // @verifies BLK-25
+  test("BLK-25: a bulk op spans projects and rekeys nothing", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["project", "create", "Backend", "--prefix", "BACKEND"]);
+    const seeded = await tracker.seed([{ title: "One" }]);
+    const other = await tracker.run(["create", "Two", "--project", "Backend"]);
+    expect(other).toContain("BACKEND1");
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "Done" }).click();
+
+    // Both projects, not silently scoped to the active one.
+    await expect(
+      page.getByRole("region", { name: "Bulk actions" }).getByRole("status"),
+    ).toContainText("2 tasks updated");
+
+    // Each keeps its own key — a field change rekeys nothing.
+    // Filtered by key rather than title: the row's accessible text
+    // includes the checkbox label, so "One" also matches a row whose
+    // key happens to contain it.
+    const rows = page.locator("tbody tr");
+    await expect(rows.filter({ hasText: String(seeded[0]) })).toContainText("One");
+    await expect(rows.filter({ hasText: "BACKEND1" })).toContainText("Two");
+  });
+});
+
+test.describe("BLK — refused and stale writes", () => {
+  // @verifies BLK-27
+  test("BLK-27: archiving a mixed selection distinguishes changed from already-archived", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([
+      { title: "One" }, { title: "Two" }, { title: "Three" },
+    ]);
+    await tracker.run(["archive", String(seeded[0])]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await page.getByRole("checkbox", { name: "Show archived" }).check();
+    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+    await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+
+    await page.getByRole("button", { name: "Archive", exact: true }).click();
+
+    // Two groups, distinguished. Not "3 tasks archived" — one of them
+    // already was, and saying otherwise overstates the change. Not an
+    // error either: refusing would make archiving a mixed selection
+    // impossible.
+    const status = page.getByRole("status").filter({ hasText: "archived" });
+    await expect(status).toContainText("2 tasks archived");
+    await expect(status).toContainText("1 already archived");
+    await expect(status).not.toContainText("3 tasks archived");
+    await expect(status).not.toContainText("failed");
+  });
+
+  // @verifies BLK-28
+  test("BLK-28: assigning an archived user is refused, and nothing is partially written", async ({
+    page,
+    tracker,
+  }) => {
+    const gone = await tracker.run(["user", "create", "Gone"]);
+    const goneId = /([0-9A-Z]{26})/.exec(gone)?.[1] ?? "";
+    expect(goneId).not.toBe("");
+    const seeded = await tracker.seed([{ title: "One" }, { title: "Two" }]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    // The count line is the settle signal: select-all on a table
+    // that has not rendered checks nothing, then unchecks itself
+    // when the rows arrive.
+    await expect(page.getByText(/Showing 1–\d+ of \d+/)).toBeVisible();
+    await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+
+    // The user is archived after the picker was populated — the stale
+    // vocabulary the case describes.
+    await tracker.run(["user", "archive", "Gone"]);
+
+    await page.getByRole("button", { name: "Set assignee" }).click();
+    await page.getByRole("menu", { name: "Set assignee" })
+      .getByRole("menuitem", { name: "Gone" }).click();
+
+    const status = page.getByRole("region", { name: "Bulk actions" }).getByRole("status");
+    // Zero succeeded, with the reason and what to do.
+    await expect(status).toContainText(/archived/i);
+    await expect(status).toContainText(/unarchive/i);
+    await expect(status).not.toContainText("2 tasks updated");
+
+    // And nothing was written: the whole change set was invalid, so no
+    // task is half-updated.
+    for (const key of seeded) {
+      expect(await tracker.run(["show", String(key)])).not.toContain(goneId);
+    }
+  });
+});
+
+test.describe("BLK — stale vocabulary and export columns", () => {
+  // @verifies BLK-29
+  test("BLK-29: a status deleted between load and apply fails with the key named", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }, { title: "Two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    // The count line is the settle signal: select-all on a table
+    // that has not rendered checks nothing, then unchecks itself
+    // when the rows arrive.
+    await expect(page.getByText(/Showing 1–\d+ of \d+/)).toBeVisible();
+    await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+
+    // The picker holds a status the config no longer has. Rewriting the
+    // outgoing value is the same state the case describes — a menu
+    // opened before the workflow changed underneath it.
+    await page.route(/\/api\/tasks\/bulk\/set/, async route => {
+      const body = route.request().postDataJSON() as {
+        refs: string[]; changes: { field: string; value: unknown }[];
+      };
+      await route.continue({
+        postData: JSON.stringify({
+          ...body,
+          changes: [{ field: "status", value: "deleted_status" }],
+        }),
+      });
+    });
+
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "Done" }).click();
+
+    const status = page.getByRole("region", { name: "Bulk actions" }).getByRole("status");
+    // The unknown key is named — not "invalid value" with nothing to
+    // act on — and nothing was applied.
+    await expect(status).toContainText("deleted_status");
+    await expect(status).not.toContainText("2 tasks updated");
+  });
+
+  // @verifies BLK-29
+  test("BLK-29: a status the workflow no longer defines renders as drift", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([{ title: "Orphan" }, { title: "Fine" }]);
+    // Orphan the first task's status by removing it from the config,
+    // which is what a pulled workflow.yaml does.
+    const tasksDir = path.join(tracker.root, ".loctt", "tasks");
+    for (const id of await readdir(tasksDir)) {
+      const file = path.join(tasksDir, id, "task.md");
+      const text = await readFile(file, "utf8");
+      if (!text.includes(`key: ${String(seeded[0])}`)) continue;
+      await writeFile(file, text.replace(/^status: .+$/m, "status: gone_status"), "utf8");
+    }
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Not blank, and not the same grey as a valid status — the raw key
+    // rendered identically hides that the config moved underneath.
+    const orphanRow = page.locator("tbody tr").filter({ hasText: String(seeded[0]) });
+    await expect(orphanRow).toContainText("gone_status");
+    await expect(orphanRow.getByTitle(/not defined in workflow\.yaml/)).toBeVisible();
+    // The healthy row carries no such marker.
+    await expect(
+      page.locator("tbody tr").filter({ hasText: "Fine" })
+        .getByTitle(/not defined in workflow\.yaml/),
+    ).toHaveCount(0);
+  });
+
+  // @verifies BLK-36
+  test("BLK-36: the default export carries core's columns and no custom fields", async ({
+    page,
+    tracker,
+  }) => {
+    // A task with a custom field, which must not add a column unasked.
+    // Custom fields have to be declared in workflow.yaml before a task
+    // can carry one — a bare `set` is refused.
+    const seeded = await tracker.seed([{ title: "One" }]);
+    const cfg = path.join(tracker.root, ".loctt", "config", "workflow.yaml");
+    await writeFile(
+      cfg,
+      (await readFile(cfg, "utf8")).replace(
+        "custom_fields: []",
+        "custom_fields:\n  - key: team\n    label: Team\n    type: string\n"
+        + "    multi: false\n    searchable: false",
+      ),
+      "utf8",
+    );
+    await tracker.run(["set", String(seeded[0]), "team", "platform"]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: /Export/i }).click();
+    await page.getByRole("menuitem", { name: /CSV/i }).click();
+    const header = (await readFile(await (await download).path(), "utf8"))
+      .split("\n")[0] ?? "";
+
+    // Core owns the default column set; the export must not invent one.
+    expect(header.split(",")).toEqual([...DEFAULT_EXPORT_COLUMNS]);
+    // A sparse per-project custom field is not a default column.
+    expect(header).not.toContain("team");
+    expect(header).not.toContain("fields.");
+  });
+});
+
+test.describe("BLK — failures that must not be silent", () => {
+  // @verifies BLK-21
+  test("BLK-21: shift-click never behaves as select-all", async ({ page, tracker }) => {
+    await tracker.seed([
+      { title: "One" }, { title: "Two" }, { title: "Three" },
+      { title: "Four" }, { title: "Five" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–5 of 5")).toBeVisible();
+
+    const boxes = page.locator("tbody input[type=checkbox]");
+    await boxes.nth(0).check();
+    await boxes.nth(3).click({ modifiers: ["Shift"] });
+
+    // Range selection is optional (the case allows plain-click
+    // behaviour), but the one outcome it rules out is a shift-click
+    // that selects everything.
+    const checked = await page.locator("tbody input[type=checkbox]:checked").count();
+    expect(checked).toBeGreaterThanOrEqual(2);
+    expect(checked).toBeLessThan(5);
+    // Whichever behaviour is implemented, the shift-clicked row itself
+    // is selected and the rows outside the range are not. That is what
+    // separates "plain click" from "select-all", and a count alone
+    // cannot tell them apart.
+    await expect(boxes.nth(3)).toBeChecked();
+    await expect(boxes.nth(4)).not.toBeChecked();
+  });
+
+  // @verifies BLK-43
+  test("BLK-43: a failed export is reported, not just an absent download", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+
+    await page.route(/\/api\/tasks\/export/, async route => {
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "io_failed", message: "disk is full" }),
+      });
+    });
+
+    await page.getByRole("button", { name: /Export/i }).click();
+    await page.getByRole("menuitem", { name: /CSV/i }).click();
+
+    // The absence of a file is not the only signal.
+    const status = page.getByRole("status").filter({ hasText: /export/i });
+    await expect(status).toContainText(/could not|failed/i);
+    await expect(status).toContainText("disk is full");
+    await expect(status.getByRole("button", { name: /Retry|Try again/i })).toBeVisible();
+  });
+
+  // @verifies BLK-48
+  test("BLK-48: a network drop mid-bulk reports unknown state and points at reload", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }, { title: "Two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    // The count line is the settle signal: select-all on a table
+    // that has not rendered checks nothing, then unchecks itself
+    // when the rows arrive.
+    await expect(page.getByText(/Showing 1–\d+ of \d+/)).toBeVisible();
+    await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+
+    // The connection drops after the request left — indistinguishable,
+    // from the client, from a server that received and applied it.
+    await page.route(/\/api\/tasks\/bulk\/archive/, route => route.abort("connectionreset"));
+    await page.getByRole("button", { name: "Archive", exact: true }).click();
+
+    const status = page.getByRole("status").filter({ hasText: /archiv/i });
+    await expect(status).toContainText(/could not|did not/i);
+    // It must not claim either outcome.
+    await expect(status).not.toContainText("2 tasks archived");
+  });
+});
+
+test.describe("BLK — batch cap", () => {
+  // @verifies BLK-47
+  test("BLK-47: selecting past the API's cap states the limit rather than failing opaquely", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seedBulk(600);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–50 of 600")).toBeVisible();
+
+    const selectAll = page.getByRole("checkbox", { name: "Select all on this page" });
+    for (let loaded = 100; loaded <= 550; loaded += 50) {
+      await selectAll.uncheck();
+      await page.getByRole("button", { name: /Load more/i }).click();
+      await expect(
+        page.getByText(`Showing 1–${String(loaded)} of 600`),
+      ).toBeVisible();
+      await selectAll.check();
+    }
+    await expect(page.getByText("550 tasks selected")).toBeVisible();
+
+    // The cap is stated at selection time, before anything is sent —
+    // not left to the server's validator, whose message is jargon
+    // (ERR-16) and which costs a round trip that cannot succeed.
+    const bar = page.getByRole("region", { name: "Bulk actions" });
+    await expect(bar).toContainText("at most 500 tasks at once");
+    await expect(bar).toContainText("550 are selected");
+    // And the actions that would be refused are not offered.
+    await expect(bar.getByRole("button", { name: "Set status" })).toBeDisabled();
+    await expect(bar.getByRole("button", { name: "Archive", exact: true })).toBeDisabled();
+
+    // Dropping back under the cap re-enables them.
+    await selectAll.uncheck();
+    await page.locator("tbody input[type=checkbox]").first().check();
+    await expect(bar.getByRole("button", { name: "Set status" })).toBeEnabled();
+  });
+});
+
+test.describe("BLK — corrupt and archived edges", () => {
+  // @verifies BLK-46
+  test("BLK-46: moving to a project archived mid-flight is refused and burns no key", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["project", "create", "Ops", "--prefix", "OPS"]);
+    const seeded = await tracker.seed([{ title: "One" }]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    await page.locator("tbody input[type=checkbox]").first().check();
+
+    // Archived after the picker was populated.
+    await tracker.run(["project", "archive", "Ops"]);
+
+    await page.getByRole("button", { name: "Move to project" }).click();
+    await page.getByRole("menu", { name: "Move to project" })
+      .getByRole("menuitem", { name: "Ops" }).click();
+
+    const status = page.getByRole("region", { name: "Bulk actions" }).getByRole("status");
+    await expect(status).toContainText(/archiv/i);
+    await expect(status).not.toContainText("1 task moved");
+
+    // The source task is untouched and no OPS number was consumed.
+    const state = await readFile(
+      path.join(tracker.root, ".loctt", "state.yaml"), "utf8",
+    );
+    expect(/prefix: OPS\n\s+next_number: 1/.test(state)).toBe(true);
+    expect(await tracker.run(["show", String(seeded[0])])).toContain(String(seeded[0]));
   });
 });

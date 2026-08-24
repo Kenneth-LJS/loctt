@@ -96,6 +96,34 @@ describe("describeBulkResult", () => {
   });
 
 
+  // @verifies BLK-27
+  it("keeps no-ops out of the count when something else failed", () => {
+    const r = describeBulkResult(
+      {
+        bulk_op_id: "b",
+        succeeded: ["t0", "t1"],
+        unchanged: ["t1"],
+        failed: [{ taskId: "t2", error: "task not found" }],
+      },
+      "archived",
+      id => (id === "t2" ? "T-3" : undefined),
+    );
+    // Not "2 tasks archived, 1 failed": one of the two was already
+    // archived. A failure elsewhere in the batch must not turn a no-op
+    // back into a change.
+    expect(r.message).toBe("1 task archived · 1 already archived, 1 failed");
+  });
+
+  // @verifies BLK-27
+  it("does not say a task that was never archived was 'already restored'", () => {
+    const r = describeBulkResult(
+      { bulk_op_id: "b", succeeded: ["t0", "t1"], unchanged: ["t1"], failed: [] },
+      "restored",
+    );
+    expect(r.message).toBe("1 task restored · 1 was not archived");
+    expect(r.message).not.toContain("already restored");
+  });
+
   it("says nothing moved rather than reporting zero successes", () => {
     const r = describeBulkResult(
       {

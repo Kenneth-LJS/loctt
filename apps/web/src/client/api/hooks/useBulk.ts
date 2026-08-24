@@ -129,8 +129,25 @@ export function describeBulkResult(
     ? `: ${rekeyed.map(m => `${m.old_key} → ${m.new_key}`).join(", ")}`
     : "";
 
+  // BLK-27: a task already in the requested state is a success but not
+  // a change, and saying "6 tasks archived" when three already were
+  // overstates what this call did.
+  const noop = result.unchanged?.length ?? 0;
+  const changed = ok - noop;
+  // "already archived" reads correctly; "already restored" does not —
+  // a task that was never archived was not restored earlier, it simply
+  // was not archived.
+  const noopSuffix = noop > 0
+    ? ` · ${String(noop)} ${verb === "restored"
+        ? `${noop === 1 ? "was" : "were"} not archived`
+        : `already ${verb}`}`
+    : "";
+  const okText = noop > 0
+    ? `${String(changed)} ${noun(changed)} ${verb}${noopSuffix}`
+    : `${String(ok)} ${noun(ok)} ${verb}`;
+
   if (bad === 0) {
-    return { message: `${String(ok)} ${noun(ok)} ${verb}${suffix}`, failures: [] };
+    return { message: `${okText}${suffix}`, failures: [] };
   }
   const failures = result.failed.map(f => {
     const key = keyOf?.(f.taskId) ?? (isUlid(f.taskId) ? undefined : f.taskId);
@@ -141,8 +158,7 @@ export function describeBulkResult(
     // successes as if it were a partial result.
     return { message: `No tasks ${verb}. ${String(bad)} failed.`, failures };
   }
-  return {
-    message: `${String(ok)} ${noun(ok)} ${verb}${suffix}, ${String(bad)} failed`,
-    failures,
-  };
+  // The same count as the clean path: a failure elsewhere in the batch
+  // does not turn a no-op back into a change (BLK-27).
+  return { message: `${okText}${suffix}, ${String(bad)} failed`, failures };
 }

@@ -35,6 +35,13 @@ export interface BulkResult {
   readonly bulk_op_id: string;
   readonly succeeded: string[];
   readonly failed: { taskId: string; error: string }[];
+  /**
+   * Tasks already in the target state, on the routes where that is
+   * possible. A no-op is a success — refusing it would make archiving a
+   * mixed selection impossible — but reporting it as a fresh change
+   * overstates what happened (BLK-27).
+   */
+  readonly unchanged?: string[];
 }
 
 export interface BulkSetFieldsOptions {
@@ -162,6 +169,7 @@ export async function bulkArchive(opts: BulkArchiveOptions): Promise<BulkResult>
   return withStateLock(opts.locttDir, async () => {
     const now = new Date().toISOString();
     const succeeded: string[] = [];
+    const unchanged: string[] = [];
     const failed: { taskId: string; error: string }[] = [];
     // Two-phase for the same reason as bulkSetFields (V6): compute
     // every task, then swap the whole set in. A crash partway through
@@ -176,7 +184,11 @@ export async function bulkArchive(opts: BulkArchiveOptions): Promise<BulkResult>
         const currentlyArchived = task.frontmatter.archived === true;
         if (currentlyArchived === opts.archive) {
           // Already in the target state: no write, no history entry.
+          // Still a success — refusing would make archiving a mixed
+          // selection impossible — but reported apart from the tasks
+          // this call actually changed (BLK-27).
           succeeded.push(id);
+          unchanged.push(id);
           continue;
         }
         const patch = { ...task.frontmatter } as Record<string, unknown>;
@@ -221,7 +233,7 @@ export async function bulkArchive(opts: BulkArchiveOptions): Promise<BulkResult>
         succeeded.push(p.id);
       }
     }
-    return { bulk_op_id: bulkOpId, succeeded, failed };
+    return { bulk_op_id: bulkOpId, succeeded, failed, unchanged };
   });
 }
 

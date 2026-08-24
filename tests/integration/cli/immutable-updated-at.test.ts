@@ -28,8 +28,14 @@ describe("CLI updated_at is not hand-writable (spawned binary)", () => {
       const out = `${set.stdout}${set.stderr}`;
       // The message must name the field and say why, or the user is left
       // guessing which of their fields was the problem.
+      //
+      // "immutable" alone satisfied the old pattern and says nothing
+      // about *why* — which is what this test's own comment asks for,
+      // and what BLK-40 requires. `updated_at` sat in
+      // USER_IMMUTABLE_FIELDS, so the generic guard fired first and the
+      // explanation written for it was unreachable on every path.
       expect(out).toMatch(/updated_at/);
-      expect(out).toMatch(/automatic|immutable|cannot be set/i);
+      expect(out).toMatch(/stamped on every write/);
 
       // And nothing was written.
       const after = await runCli(["show", "T-1"], { cwd: root });

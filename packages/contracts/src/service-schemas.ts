@@ -95,7 +95,16 @@ export type InitRequest = z.infer<typeof InitRequestSchema>;
  * makes the batch consistent but also makes an unbounded batch a
  * denial of service against every other writer.
  */
-const BulkTaskRefsSchema = z.array(z.string().min(1)).min(1).max(500);
+/**
+ * Most tasks one bulk request may carry.
+ *
+ * Exported so a surface can state the limit *before* sending (BLK-47)
+ * rather than letting a validator rejection be the first the user hears
+ * of it — a Zod message is jargon ERR-16 keeps out of user-facing copy.
+ */
+export const MAX_BULK_REFS = 500;
+
+const BulkTaskRefsSchema = z.array(z.string().min(1)).min(1).max(MAX_BULK_REFS);
 
 /**
  * Body of `POST /api/tasks/bulk/set`.

@@ -98,6 +98,22 @@ export function resolveProjectIdFromInput(
       `project name '${input}' is ambiguous — matches ${byName.matches.length} projects (${ids}). Pass the id instead.`,
     );
   }
+  // An *archived* project exists — saying "unknown" sends the user
+  // looking for a typo instead of at the archive, and the recovery is
+  // different: unarchive it, or pick another (BLK-46). Named rather
+  // than echoed as an id, since the caller may have passed a ULID and
+  // P-4 keeps those out of what a surface prints.
+  // Case-sensitive on the name, matching `resolveProjectByName` above.
+  // A looser comparison here would let an archived "Ops" claim an input
+  // that an active "OPS" should have taken.
+  const archived = config.projects.find(
+    p => p.id === input || p.name === input,
+  );
+  if (archived?.archived === true) {
+    throw new ProjectError(
+      `project "${archived.name}" is archived; unarchive it or pick another`,
+    );
+  }
   throw new ProjectError(`unknown project: ${input}`);
 }
 
