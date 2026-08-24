@@ -481,10 +481,10 @@ factual claim about a file nobody had read.
 | 5 | `mcp/tools/views.ts:38` | `"No saved views configured."` is a positive claim covering ENOENT, syntax error and EACCES alike. An agent may offer to recreate a catalog it could not read. |
 | 6 | `cli/commands/config.ts:69` | Prints `git.enabled = ` (blank), which reads as "not set" — while `config get` on the same file errors loudly. |
 
-**Not a catch, same failure:** `ListView.tsx:244` has no `isError`
-branch, so a failed `/api/tasks` renders as "No tasks match these
-filters." The error is on the query; the UI never reads it. Same gap in
-`Sidebar.tsx`. M2 work, recorded here so it is not rediscovered.
+**Not a catch, same failure — since fixed** (`4bb211b`):
+`ListView.tsx` had no `isError` branch, so a failed `/api/tasks`
+rendered as "No tasks match these filters." The error was on the query
+and the UI never read it. Same gap in `Sidebar.tsx`.
 
 **Structural root cause.** Every config loader (`workflow.ts:45`,
 `queries.ts:114`, `calendar.ts:73`, `labels.ts:59`, `milestones.ts:57`,
@@ -548,9 +548,12 @@ and worth recording because both were silent:
   end of a set left the earlier ones already backed up. Every
   destination is now checked before any is touched.
 
-Still open from this section: **`ListView.tsx:244`** has no `isError`
-branch, so a failed `/api/tasks` renders as "No tasks match these
-filters." Same gap in `Sidebar.tsx`. Left for M2, which owns that code.
+**Closed 2026-08-17** (`4bb211b`): `ListView.tsx` and `Sidebar.tsx` had
+no `isError` branch, so a failed `/api/tasks` rendered as "No tasks
+match these filters." Both now render `ErrorState`, and the sidebar
+marks each failed group. This entry stood as open for a day after the
+fix landed — a stale record that would have sent whoever picked up M2
+hunting a bug that was not there.
 
 ### G · Cosmetic — 13 auto-fixable, ~79 remaining
 
@@ -780,11 +783,18 @@ Still open, deliberately:
 
 - **Group G** — ~79 cosmetic items, deferred until after the UI build.
   Much of it is in code M2–M4 rewrites, so fixing it now means doing it
-  twice.
-- **MCP comment tools' bare catches.** Same shape as
-  `list_config_values`, which is fixed — a real bug reported to an agent
-  as a routine domain error. Belongs with the M2.4 comment work that
-  touches those tools.
+  twice. **Caveat: the ~79 are not itemised anywhere** — the count comes
+  from the slice reports, which were never distilled into a list. A
+  deferred group with no enumeration can never be audited or closed, so
+  this needs itemising before it can be worked.
+- ~~**MCP comment tools' bare catches.**~~ **Closed 2026-08-17.** Three
+  `catch (err) { return errorResult(err.message) }` blocks in
+  `apps/mcp/src/tools/comments.ts` turned any throw into a routine
+  domain error. The dispatcher in `index.ts:135` already classifies
+  correctly — errorResult for a known domain error, rethrow for
+  anything else, because masking a real bug hides the diagnosis — and
+  these sat inside it and pre-empted it. Deleted; verified a domain
+  error still reaches the agent as `isError` with its message.
 - **`HistoryEntry` element shape.** History has no Zod schema at all,
   and adding one is a change to a hot write path that deserves its own
   design pass. The array-level guard (CMT-C7), the merge-path parse

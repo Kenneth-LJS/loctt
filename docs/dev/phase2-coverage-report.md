@@ -1,5 +1,16 @@
 # Phase 2 — CLI/MCP coverage measurement
 
+> **SUPERSEDED — historical record only.** This measured the surface in
+> August 2026, *before* Phase 3 closed all 68 surface cases. Its central
+> finding is no longer true: it reports that `loctt user`, `loctt label`,
+> `loctt calendar` and `loctt rerank` "appear in no test file anywhere in
+> the repo", and all four now have dedicated integration tests. The
+> integration suite it sized at 193 tests is now 419.
+>
+> Kept because it is the only record of *why* Phase 3 was scoped as it
+> was, and because its per-command inventory is still a useful map of
+> the surface. **Do not use its numbers.**
+
 Read-only measurement. No file in the repo was modified. No suite was run;
 every claim below comes from reading test sources and the shipped
 command/tool implementations.
