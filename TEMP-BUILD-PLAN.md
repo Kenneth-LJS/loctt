@@ -54,8 +54,9 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 | 1 · Partition | ✅ | All 21 tickets carry a `Cases:` line; gate passes. The 28 cases asserting two unticketed views are **resolved as a ticket gap**, not a scope cut — see *Blocker, resolved*. |
 | 2 · Measure | ✅ | Measured (CLI 17/49, MCP 26/75) and the blocker it raised is **cleared**: both reference docs corrected to the shipped API, every example executed. See *Blocker 2, resolved*. |
 | 3 · Surface gaps | ✅ | **68 of 68 closed**: blockers 23/23, major 29/29, minor 16/16. Surface coverage 46 → 111. See *Phase 3 log*. |
-| 4 · Structural audit | ✅ | **Groups A–F closed, the six swallowed-error findings with them, and the nine recorded decisions implemented** (2026-08-17). Group G (~79 cosmetic) is deliberately deferred until after the UI build — much of it is in code M2–M4 rewrites. Two findings remain open on purpose: the MCP comment tools' bare catches, and `HistoryEntry`'s element shape. Both need the code that owns them rather than a sweep. |
+| 4 · Structural audit | ✅ | **Groups A–F closed, the six swallowed-error findings with them, and the nine recorded decisions implemented** (2026-08-17). The two items previously listed here as open are now closed too: the MCP comment tools' bare catches (`a0677b4`) and `HistoryEntry`'s missing schema (`4fb7e4b`). Group G moves to Phase 6, itemised at 55 rather than the "~79" carried before. |
 | 5 · UI build | 🔵 | M1.1–M1.3 ✅ (but see the caveat on those ticks), M1.4 🔵 from earlier work. **M2.1 is the next ticket** — see *The next agent's first job*. |
+| 6 · Cleanup | ⬜ | Group G's 55 items and the flakiness diagnosis. Deferred deliberately — see *The open items*. |
 
 ### ✅ Blocker — RESOLVED 2026-08-16: two views need tickets, not a scope cut
 
@@ -281,7 +282,14 @@ has not been run. An agent must not silently re-mark those tickets.
 3  Surface gaps     Close the 68 documented surface cases
 4  Structural audit Nine slices across core, contracts, cli, mcp
 5  UI build         M1.4 → M4.8, per build-loop.md
+6  Cleanup          Group G's 55 cosmetic items; the flakiness diagnosis
 ```
+
+**Phase 6 exists so the deferrals have somewhere to live.** Both items
+were being carried as "later" with no phase, which is how a deferral
+becomes a disappearance. Neither can be done sooner: Group G is mostly
+in `apps/web` code M2–M4 rewrites, and the flakiness has not
+reproduced in eight runs, so there is nothing to diagnose yet.
 
 ### Why this order
 
@@ -678,6 +686,53 @@ the work above, because two change what that work is:
   dependencies included. Hand-edits and `git pull` are unsupported —
   LocTT warns cheaply, the user owns the outcome. The boundary is the
   gate; P-11 is the floor.
+
+### The open items, and which phase each belongs to
+
+Five things were left in [`known-gaps.md`](docs/dev/known-gaps.md) and
+[`audit-findings.md`](docs/dev/audit-findings.md) after Phase 4.
+Investigated 2026-08-17 against the code, not taken from the docs.
+
+| # | Item | Phase |
+|---|---|---|
+| 2 | `HistoryEntry` had no schema | **Before Phase 5** — ✅ done, `4fb7e4b` |
+| 3 | ERR-11 / ERR-12 client half | **Phase 5** — ERR-12 in M2.3, ERR-11 in M4 |
+| 4 | `reorderBoardRank` is O(all tasks) per call | **Phase 5** — M3.3, when the board exists |
+| 1 | Group G — 55 cosmetic items | **After Phase 5** |
+| 5 | Integration-suite flakiness | **After Phase 5** — cannot act yet |
+
+**2 · `HistoryEntry` schema — done.** `kind` was never checked against
+its union, so a hand-edited `not_a_real_kind` reached every reader.
+Fixed before the UI starts because M2.4's activity feed switches on
+`kind` to pick an icon and would have had no case for it. The schema is
+in `contracts`, so it covers all three surfaces, not just the web.
+
+**3 · ERR-11 / ERR-12 — is Phase 5, not before it.** Both require the
+user's typed content to stay in the editor when a save fails, so
+neither can be built before the editor exists. The spec tags ERR-12 M2
+(blocker) and ERR-11 M4 (major); build each with its milestone.
+
+**4 · `reorderBoardRank` — M3.3.** `loadAllTasks` runs on *every* drag,
+not only on rebalance — the doc comment at `rank/reorder.ts:190`
+understates it. It does not block Phase 5: nothing calls it
+interactively until M3.3 builds the board, and the right fix depends on
+the shape that ticket chooses. Invisible at a few hundred tasks; you
+would need thousands to feel it. **Measure it in M3.3 rather than
+guessing at a fix now.**
+
+**1 · Group G — after Phase 5**, itemised in
+[`audit/group-g-itemised.md`](docs/dev/audit/group-g-itemised.md). 55
+items, not the "~79" carried before. Deferred because much of it is in
+`apps/web` code M2–M4 rewrites, so tidying now means tidying twice.
+
+**5 · Flakiness — after Phase 5, and currently unactionable.** One run
+reported 5 failures; **eight consecutive runs since have been green**,
+including one with four CPU-saturating processes alongside. The
+recorded diagnosis was wrong — it blamed vitest's 5s default, but the
+integration runner has carried 15s since the harness was built. The
+output was never captured, so nobody knows whether they were even
+timeouts. Raising a timeout that may not be the cause would only hide
+whatever is. **Capture the failure output on the next occurrence.**
 
 ### The next agent's first job — M2.1, the task-detail read shell
 
