@@ -20,7 +20,21 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
-import { errorResult, text } from "../runtime/errors.js";
+import { text } from "../runtime/errors.js";
+/*
+ * These handlers deliberately do not catch.
+ *
+ * Each used to wrap its core call in `try { … } catch (err) { return
+ * errorResult((err as Error).message); }`, which turned *any* throw —
+ * a TypeError, an unexpected I/O fault — into a routine domain error
+ * an agent reads as "your request was rejected."
+ *
+ * The dispatcher in `index.ts` already does this correctly: it returns
+ * an errorResult for a known domain error and rethrows everything else,
+ * because masking a real bug hides the diagnosis. These local catches
+ * sat inside it and pre-empted it, so that discipline never ran for
+ * comments.
+ */
 import type { ToolDef } from "../types.js";
 
 async function resolver(locttDir: string) {
@@ -56,17 +70,13 @@ export const TOOLS: ToolDef[] = [
     },
     handler: async ({ locttDir }, args) => {
       const task = await lookupTask(locttDir, args["ref"] as string);
-      try {
-        const comment = await postComment({
-          locttDir,
-          taskId: task.frontmatter.id,
-          body: args["body"] as string,
-          mentionResolver: await resolver(locttDir),
-        });
-        return text(`Added comment ${comment.id} on ${task.frontmatter.key}`);
-      } catch (err) {
-        return errorResult((err as Error).message);
-      }
+      const comment = await postComment({
+        locttDir,
+        taskId: task.frontmatter.id,
+        body: args["body"] as string,
+        mentionResolver: await resolver(locttDir),
+      });
+      return text(`Added comment ${comment.id} on ${task.frontmatter.key}`);
     },
   },
   {
@@ -83,18 +93,14 @@ export const TOOLS: ToolDef[] = [
     },
     handler: async ({ locttDir }, args) => {
       const task = await lookupTask(locttDir, args["ref"] as string);
-      try {
-        const comment = await editComment({
-          locttDir,
-          taskId: task.frontmatter.id,
-          commentId: args["comment_id"] as string,
-          body: args["body"] as string,
-          mentionResolver: await resolver(locttDir),
-        });
-        return text(`Edited comment ${comment.id} on ${task.frontmatter.key}`);
-      } catch (err) {
-        return errorResult((err as Error).message);
-      }
+      const comment = await editComment({
+        locttDir,
+        taskId: task.frontmatter.id,
+        commentId: args["comment_id"] as string,
+        body: args["body"] as string,
+        mentionResolver: await resolver(locttDir),
+      });
+      return text(`Edited comment ${comment.id} on ${task.frontmatter.key}`);
     },
   },
   {
@@ -108,16 +114,12 @@ export const TOOLS: ToolDef[] = [
     },
     handler: async ({ locttDir }, args) => {
       const task = await lookupTask(locttDir, args["ref"] as string);
-      try {
-        await deleteComment({
-          locttDir,
-          taskId: task.frontmatter.id,
-          commentId: args["comment_id"] as string,
-        });
-        return text(`Deleted comment from ${task.frontmatter.key}`);
-      } catch (err) {
-        return errorResult((err as Error).message);
-      }
+      await deleteComment({
+        locttDir,
+        taskId: task.frontmatter.id,
+        commentId: args["comment_id"] as string,
+      });
+      return text(`Deleted comment from ${task.frontmatter.key}`);
     },
   },
 ];
