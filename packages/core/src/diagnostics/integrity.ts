@@ -17,15 +17,28 @@
  *     and publishing it is safe. **Reported, never blocking** — a
  *     malformed entry must not make a tracker unpublishable, which
  *     would be destruction by another route.
+ *   - `inconsistent` — every file parses, but they disagree with each
+ *     other: a relationship with no matching inverse on its target
+ *     (P-12). Nothing is lost and nothing is at risk, so this is
+ *     **reported, never blocking** — it is a correctness problem for
+ *     the user to resolve, not a reason to refuse their publish.
  */
 
-import { getCommentsFilePath, getHistoryFilePath, getTasksDir } from "../paths/index.js";
+import { loadWorkflowConfig } from "../config/workflow.js";
+import {
+  getCommentsFilePath,
+  getHistoryFilePath,
+  getTaskFilePath,
+  getTasksDir,
+  getWorkflowConfigPath,
+} from "../paths/index.js";
 import { isMalformedComment, listCommentEntries } from "../task/comments.js";
 import { isMalformedHistoryEntry, readHistoryRows } from "../task/history.js";
 import { listTaskIds } from "../task/list-ids.js";
-import { UnreadableFileError } from "../utils/read-state.js";
+import { validateRelationships } from "../task/traversal.js";
+import { isMissingFile, UnreadableFileError } from "../utils/read-state.js";
 
-export type IntegritySeverity = "unreadable" | "malformed";
+export type IntegritySeverity = "unreadable" | "malformed" | "inconsistent";
 
 export interface IntegrityFinding {
   readonly severity: IntegritySeverity;
@@ -108,6 +121,40 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
         message: err instanceof UnreadableFileError
           ? err.message
           : `could not be read: ${messageOf(err)}`,
+      });
+    }
+  }
+
+  // P-12: cross-file agreement. Every file above can parse perfectly
+  // and still disagree with its neighbour — a relationship whose
+  // inverse is missing from the target is invisible from that end.
+  // LocTT writes both sides itself, so a one-sided edge means a
+  // hand-edit or a `git pull`.
+  try {
+    const config = await loadWorkflowConfig(locttDir);
+    for (const err of await validateRelationships(locttDir, config)) {
+      findings.push({
+        severity: "inconsistent",
+        path: getTaskFilePath(locttDir, err.taskId),
+        message: `${err.field}: ${err.message}`,
+      });
+    }
+  } catch (err) {
+    // An **absent** workflow.yaml means there is no relationship
+    // vocabulary to check against — a state doctor already reports
+    // under its own check, and one every fixture without a config is
+    // in. Reporting it here too would fire on every fresh tracker.
+    //
+    // A workflow.yaml that exists and cannot be read is different: the
+    // check silently did not run, and saying nothing would imply it
+    // passed.
+    if (!isMissingFile(err)) {
+      findings.push({
+        severity: "unreadable",
+        path: getWorkflowConfigPath(locttDir),
+        message: err instanceof UnreadableFileError
+          ? err.message
+          : `relationship consistency could not be checked: ${messageOf(err)}`,
       });
     }
   }

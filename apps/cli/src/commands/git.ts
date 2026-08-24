@@ -102,6 +102,7 @@ export async function run(args: string[], root: string): Promise<void> {
           break;
         }
         for (const f of report.findings) {
+          // ✗ blocks; ⚠ is reported and the publish proceeds.
           const mark = f.severity === "unreadable" ? "✗" : "⚠";
           console.log(`${mark} ${f.path}: ${f.message}`);
         }

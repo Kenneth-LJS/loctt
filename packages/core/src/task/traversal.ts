@@ -2,6 +2,7 @@ import type { Task, WorkflowConfig } from "@loctt/contracts";
 import { relationshipTypeKeys } from "@loctt/contracts";
 
 import { loadAllTasks } from "./load-all.js";
+import { findInverseType } from "./relationships.js";
 
 /** Validates that all relationship targets exist and types are valid. */
 export interface RelationshipValidationError {
@@ -20,6 +21,7 @@ export async function validateRelationships(
 ): Promise<readonly RelationshipValidationError[]> {
   const tasks = await loadAllTasks(locttDir);
   const taskIds = new Set(tasks.map(t => t.frontmatter.id));
+  const byId = new Map(tasks.map(t => [t.frontmatter.id, t]));
   const validTypes = new Set(
     config.relationships.flatMap(relationshipTypeKeys),
   );
@@ -41,6 +43,39 @@ export async function validateRelationships(
           taskId: task.frontmatter.id,
           field: `relationships[${i}].target`,
           message: `target task "${rel.target}" does not exist`,
+        });
+        // The inverse check below needs the target to exist.
+        continue;
+      }
+
+      // P-12: a relationship implies its inverse on the target. LocTT
+      // writes both sides itself, so a one-sided edge means the file
+      // was hand-edited or arrived through a `git pull` — and it is
+      // invisible from the other end. The task that blocks something
+      // shows the edge; the task being blocked does not, so nobody
+      // working on it can see why it is stuck.
+      //
+      // Reported, not repaired. Which side the user meant is not
+      // knowable from here: adding the inverse and deleting the
+      // forward edge are both defensible, and guessing writes data
+      // nobody asked for.
+      if (!validTypes.has(rel.type)) continue;
+      const inverse = findInverseType(config, rel.type);
+      if (inverse === undefined) continue;
+      const target = byId.get(rel.target);
+      if (target === undefined) continue;
+      const hasBackEdge = (target.frontmatter.relationships ?? []).some(
+        r => r.type === inverse && r.target === task.frontmatter.id,
+      );
+      if (!hasBackEdge) {
+        errors.push({
+          taskId: task.frontmatter.id,
+          field: `relationships[${i}]`,
+          message:
+            `"${rel.type}" points at "${rel.target}", but that task has no `
+            + `matching "${inverse}" back to this one. The relationship is `
+            + `only visible from one side. Re-run the link, or remove this `
+            + `edge, to make both ends agree.`,
         });
       }
     }

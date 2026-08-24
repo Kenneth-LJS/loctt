@@ -90,3 +90,33 @@ do real I/O — but it should be applied deliberately rather than by
 raising the global default, which would hide genuinely slow tests.
 
 **Before believing an integration failure: re-run the named file alone.**
+
+## `publish-sync` key-collision test fails — pre-existing, 2026-08-17
+
+`src/git/publish-sync.test.ts > reports a key collision it could not
+resolve` asserts `result.unresolvedKeys` contains the colliding key
+after a sync. It gets `[]`.
+
+**Not a regression.** Verified by checkout: it fails at `9dc84ca`, the
+commit before this session's work, and at every commit since. It fails
+in isolation and in the full suite, deterministically — three
+consecutive runs, same result. So it is not the contention flakiness
+recorded above.
+
+The behaviour it covers was real when written (`a7c1451`, GIT-C2): the
+rekey pass ran only after a *merge*, and two clones creating tasks
+offline produces a *copy*. `normaliseAfterMerge` is now gated on
+`resolution.merged.length > 0 || plan.copies.length > 0`, so the
+question is whether the test's scenario still reaches either branch —
+it constructs the collision by committing directly on the branch, which
+may now take a path where neither fires.
+
+**Two possibilities, and they need separating before either is acted
+on:** the guard genuinely no longer covers the case (a live defect in
+the GIT-C2 fix), or the test's scenario stopped reaching the code it
+was written for (a test that no longer asserts what it claims). The
+second is this repo's known failure mode and must not be assumed away.
+
+**I reported the core suite as green several times during 2026-08-17
+while this was failing.** The summary line was read without checking
+for `FAIL` lines above it. Corrected here rather than quietly.
