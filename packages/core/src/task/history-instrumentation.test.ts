@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { LocttState, Task } from "@loctt/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { seedLabels } from "../test-support/entities.js";
 import { createTask } from "./create.js";
 import { readHistory } from "./history.js";
 import { writeTask, writeTaskBody } from "./io.js";
@@ -38,8 +39,22 @@ describe("history instrumentation", () => {
     body: "Body.\n",
   };
 
-  async function seedTask(): Promise<void> {
-    await writeTask(locttDir, "abc", seed);
+  /**
+   * Registers the labels the seed references and writes the task with
+   * their ids.
+   *
+   * `writeTask` bypasses validation, so the seed could hold the raw
+   * name `"bug"`. `setField` now resolves a name to its id, so a diff
+   * between the stored name and a resolved id reported a spurious
+   * add-and-remove. Returns the ids so assertions can name them.
+   */
+  async function seedTask(): Promise<{ bug: string; feature: string }> {
+    const [bug, feature] = await seedLabels(locttDir, "bug", "feature");
+    await writeTask(locttDir, "abc", {
+      ...seed,
+      frontmatter: { ...seed.frontmatter, labels: [bug] },
+    });
+    return { bug, feature };
   }
 
   describe("setField", () => {
@@ -84,25 +99,26 @@ describe("history instrumentation", () => {
     });
 
     it("records label_added and label_removed for label changes", async () => {
-      await seedTask();
-      await setField({ locttDir, taskId: "abc", field: "labels", value: ["feature", "bug"] });
+      const { bug, feature } = await seedTask();
+      await setField({ locttDir, taskId: "abc", field: "labels", value: [feature, bug] });
 
       const history = await readHistory(locttDir, "abc");
-      // "feature" was added, "bug" was already there — only "feature" should be recorded
+      // "feature" was added, "bug" was already there — only "feature"
+      // should be recorded, and by id, since that is what is stored.
       expect(history).toHaveLength(1);
       expect(history).toEqual([
-        expect.objectContaining({ kind: "label_added", after: "feature" }),
+        expect.objectContaining({ kind: "label_added", after: feature }),
       ]);
     });
 
     it("records label_removed when removing a label", async () => {
-      await seedTask();
+      const { bug } = await seedTask();
       await setField({ locttDir, taskId: "abc", field: "labels", value: [] });
 
       const history = await readHistory(locttDir, "abc");
       expect(history).toHaveLength(1);
       expect(history).toEqual([
-        expect.objectContaining({ kind: "label_removed", before: "bug" }),
+        expect.objectContaining({ kind: "label_removed", before: bug }),
       ]);
     });
 
@@ -157,13 +173,13 @@ describe("history instrumentation", () => {
     });
 
     it("records label_removed for each label when unsetting labels", async () => {
-      await seedTask();
+      const { bug } = await seedTask();
       await unsetField(locttDir, "abc", "labels");
 
       const history = await readHistory(locttDir, "abc");
       expect(history).toHaveLength(1);
       expect(history).toEqual([
-        expect.objectContaining({ kind: "label_removed", before: "bug" }),
+        expect.objectContaining({ kind: "label_removed", before: bug }),
       ]);
     });
   });

@@ -3,9 +3,11 @@ import type { HistoryEntry, Task, TaskFrontmatter, WorkflowConfig } from "@loctt
 import type { ArchivedGuardConfigs } from "../config/archived-guard.js";
 import { assertNotArchivedReferences } from "../config/archived-guard.js";
 import { loadCalendarConfig } from "../config/calendar.js";
+import { loadLabelsConfig } from "../config/labels.js";
 import { loadMilestonesConfig } from "../config/milestones.js";
 import { loadSprintsConfig } from "../config/sprints.js";
 import { validateTaskAgainstWorkflow } from "../config/validation.js";
+import { resolveLabelIdFromInput } from "../labels/manage.js";
 import { resolveMilestoneIdFromInput } from "../milestones/manage.js";
 import { resolveSprintIdFromInput } from "../sprints/manage.js";
 import { withStateLock } from "../state/lock.js";
@@ -214,12 +216,27 @@ export interface SetFieldOptions {
  * An unknown user is rejected rather than stored: an unresolvable name
  * is the same typo whether or not the field happens to be free-text.
  */
-async function resolveEntityRef(
+export async function resolveEntityRef(
   locttDir: string,
   field: string,
   value: unknown,
   guard: ArchivedGuardConfigs | undefined,
 ): Promise<unknown> {
+  if (field === "labels") {
+    // Labels are an array, and every element takes the same name-or-id
+    // treatment the scalar fields get below. Without this, turning on
+    // the existence check broke `loctt create one --label bug`: the
+    // name reached the validator, which compares against ids.
+    if (!Array.isArray(value)) return value;
+    const cfg = guard?.labels ?? await loadLabelsConfig(locttDir);
+    // `Array.isArray` narrows to `any[]`; re-typing as `unknown[]`
+    // keeps the elements opaque until the string check vouches for them.
+    return (value as unknown[]).map(v =>
+      typeof v === "string" && v !== ""
+        ? resolveLabelIdFromInput(cfg, v, { includeArchived: true })
+        : v,
+    );
+  }
   if (typeof value !== "string" || value === "") return value;
 
   if (field === "milestone") {
@@ -306,7 +323,16 @@ async function setFieldLocked(opts: SetFieldOptions): Promise<Task> {
   }
 
   if (workflowConfig) {
-    const errors = validateTaskAgainstWorkflow(updated, workflowConfig);
+      // The archived guard's configs are a structural superset of
+      // `AuxConfigs`, and every caller that passes one has already
+      // loaded them — so existence checking costs nothing extra here.
+      //
+      // Without this, nothing on any write path checked that a
+      // referenced project, milestone, sprint or label *exists*. Only
+      // `doctor` passed `aux`, so a task could be written pointing at
+      // an entity that was never created, and the user learned about it
+      // from a diagnostic rather than from the write that caused it.
+    const errors = validateTaskAgainstWorkflow(updated, workflowConfig, archivedGuard);
     if (errors.length > 0) {
       throw new TaskUpdateError(
         `invalid value: ${errors.map(e => `${e.field}: ${e.message}`).join("; ")}`,
@@ -589,7 +615,20 @@ export async function setFieldsLocked(
       if (value === undefined) {
         delete patch[field];
       } else {
-        patch[field] = value;
+        // Resolve a milestone/sprint/assignee *name* to its id, exactly
+        // as `setField` does at :282. Without this, `setFields` — and
+        // `bulkSetFields`, which delegates here — wrote the raw string:
+        //
+        //   loctt set T1     milestone v1  ->  01M0SAA043ZZ1FQS…
+        //   loctt set T1,T2  milestone v1  ->  v1
+        //
+        // Identity is a ULID (P-2), so the name form is unresolvable:
+        // `doctor` reports a dangling reference, milestone progress
+        // reads 0/0, and both the archived guard and `deleteUser`'s
+        // reference scan match on id and so miss it entirely. This is
+        // MSL-C1 (`48b2b57`) reopening on the path that fix did not
+        // cover.
+        patch[field] = await resolveEntityRef(locttDir, field, value, archivedGuard);
       }
       if (field === "status") {
         statusChanged = true;
@@ -626,7 +665,16 @@ export async function setFieldsLocked(
   const updated = toFrontmatter(patch);
 
   if (workflowConfig) {
-    const errors = validateTaskAgainstWorkflow(updated, workflowConfig);
+      // The archived guard's configs are a structural superset of
+      // `AuxConfigs`, and every caller that passes one has already
+      // loaded them — so existence checking costs nothing extra here.
+      //
+      // Without this, nothing on any write path checked that a
+      // referenced project, milestone, sprint or label *exists*. Only
+      // `doctor` passed `aux`, so a task could be written pointing at
+      // an entity that was never created, and the user learned about it
+      // from a diagnostic rather than from the write that caused it.
+    const errors = validateTaskAgainstWorkflow(updated, workflowConfig, archivedGuard);
     if (errors.length > 0) {
       throw new TaskUpdateError(
         `invalid value: ${errors.map(e => `${e.field}: ${e.message}`).join("; ")}`,

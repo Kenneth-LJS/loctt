@@ -105,7 +105,17 @@ export function validateTaskAgainstWorkflow(
     }
   }
 
-  if (aux.labels && fm.labels !== undefined) {
+  if (fm.labels !== undefined && !Array.isArray(fm.labels)) {
+    // Shape before membership. This used to be unreachable because the
+    // labels branch only ran under `aux`, which no write path passed —
+    // so a non-array reached `.entries()` and crashed with
+    // "fm.labels.entries is not a function" instead of saying what was
+    // wrong.
+    errors.push({
+      field: "labels",
+      message: `labels must be an array, got: ${typeof fm.labels}`,
+    });
+  } else if (aux.labels && fm.labels !== undefined) {
     const known = new Set(aux.labels.labels.map(l => l.id));
     for (const [i, k] of fm.labels.entries()) {
       if (!known.has(k)) {
