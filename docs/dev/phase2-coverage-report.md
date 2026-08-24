@@ -338,7 +338,7 @@ the specification for items 1 and 2 is exactly the region that is stale.
   confidence, but a `covered` row could be a `partial` if a title
   overstates its assertions.
 - The 1,290 core / 193 integration / 74 CLI / 61 MCP test counts are taken
-  from the task brief and `autonomous-plan.md`; I did not run the suites to
+  from the task brief and `TEMP-BUILD-PLAN.md`; I did not run the suites to
   confirm them (the brief forbids it), and my file-level reading is
   consistent with them but does not verify the totals.
 - Severities are my judgement against the case docs' vocabulary. I weighted

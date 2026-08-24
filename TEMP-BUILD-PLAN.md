@@ -2,7 +2,7 @@
 
 How LocTT gets to v1 with an agent running unsupervised.
 
-This sits above [`build-loop.md`](build-loop.md), which governs a single
+This sits above [`build-loop.md`](docs/dev/build-loop.md), which governs a single
 ticket. This governs the phases, their order, and what each is allowed to
 decide on its own.
 
@@ -34,7 +34,7 @@ behaviour, with a stable ID:
 view's; `flow-tasks.md` holds task detail's.
 
 **Ticket** — a unit of build work. 21 exist, in
-[`TEMP-WEB-TICKETS.md`](../../TEMP-WEB-TICKETS.md), e.g. `M2.1 · Task
+[`TEMP-WEB-TICKETS.md`](TEMP-WEB-TICKETS.md), e.g. `M2.1 · Task
 detail — read shell`.
 
 A test claims a case with `// @verifies LST-13`.
@@ -350,9 +350,9 @@ script under `tools/`.
 
 No document says what the CLI *should* do case by case, the way
 `flow-list.md` does for the list view. Its specification is
-[`cli/reference.md`](../user/cli/reference.md) — 49 headed sections, one
+[`cli/reference.md`](docs/user/cli/reference.md) — 49 headed sections, one
 per command. The MCP's is
-[`mcp/reference.md`](../user/mcp/reference.md) — 75 sections, one per
+[`mcp/reference.md`](docs/user/mcp/reference.md) — 75 sections, one per
 tool.
 
 Whether the 74 CLI + 61 MCP unit tests, 193 integration tests, 20 e2e
@@ -436,7 +436,7 @@ read in full.
 | 9 | `apps/mcp` | 2,515 |
 
 Five agents in parallel, two waves. Each gets its slice,
-[`invariants.md`](invariants.md), [`decisions.md`](decisions.md), and a
+[`invariants.md`](docs/dev/invariants.md), [`decisions.md`](docs/dev/decisions.md), and a
 fixed finding schema.
 
 A third wave runs one cross-slice pass reading only the nine findings
@@ -487,7 +487,7 @@ lean on it when touching data layout.
 
 ## Phase 5 — The UI build
 
-Per [`build-loop.md`](build-loop.md), M1.4 → M4.8, with:
+Per [`build-loop.md`](docs/dev/build-loop.md), M1.4 → M4.8, with:
 
 - `--require` reading the ticket's `Cases:` line from Phase 1.
 - `/simplify` and a tech-debt sweep at each 🚦, not before — a code-smell
@@ -638,7 +638,7 @@ named in `audit-findings.md` with why: they need the code that owns them
 Six, and they change what the work above *is*. `decisions.md` §7 and two
 new invariants.
 
-Three, in [`decisions.md` §7](decisions.md) — read them before starting
+Three, in [`decisions.md` §7](docs/dev/decisions.md) — read them before starting
 the work above, because two change what that work is:
 
 - **V1 · Core owns validation.** Every CLI and MCP rule migrates into
@@ -726,7 +726,7 @@ beats starting all five.
   was never created, so a fixture cannot invent `"bug"`.
 
 **Read before building M2.2's error handling:**
-[`flow-error-handling.md`](ui-test-cases/flow-error-handling.md). ERR-14
+[`flow-error-handling.md`](docs/dev/ui-test-cases/flow-error-handling.md). ERR-14
 puts a field rejection *at the field*; ERR-18 makes the data-state claim
 mandatory on writes; ERR-3 calls that "the single most important error
 behaviour in the app". Core now supplies all of it — the UI's job is
@@ -735,7 +735,7 @@ placement, not invention.
 ### ✅ Done 2026-08-17: P-11, P-12, V4, V6, V7 implemented
 
 All six swallowed-error findings are **closed**, and four of the nine
-recorded rules now have code. See [`audit-findings.md`](audit-findings.md)
+recorded rules now have code. See [`audit-findings.md`](docs/dev/audit-findings.md)
 for the per-finding detail.
 
 | Rule | State | Commit |
@@ -810,7 +810,7 @@ editable fields render whatever V1 produces. 7 must follow 6, or it
 tests an arrangement that is about to change.
 
 **Before designing V1's error set, read
-[`flow-error-handling.md`](ui-test-cases/flow-error-handling.md).** The
+[`flow-error-handling.md`](docs/dev/ui-test-cases/flow-error-handling.md).** The
 ERR-* cases are the specification for error behaviour. The failure kinds
 sketched in V8 are derived from the code, not from the spec — if the doc
 names different ones, those win. An agent does not adjudicate against
@@ -1008,7 +1008,7 @@ The loop that has worked, per case:
 ### After Phase 3
 
 Phase 4's remaining groups (B–G, ~112 findings) in
-[`audit-findings.md`](audit-findings.md), which now has the test net
+[`audit-findings.md`](docs/dev/audit-findings.md), which now has the test net
 Phase 3 built underneath it. Group G is ~79 cosmetic items — worth
 leaving until after the UI build, since much of it is in code M2–M4
 rewrites.

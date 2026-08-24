@@ -383,7 +383,7 @@ quoted inline. All scratch files were written outside the repo and deleted.
   the entire timeline as non-working with no error to explain it, which by
   `EstimationWeightsSchema`'s own stated reasoning is a config mistake worth rejecting.
 - **Blast radius**: timeline/Gantt rendering, `calendar.yaml` writers, `loctt calendar`
-  (which `autonomous-plan.md` records as appearing in no test file).
+  (which `TEMP-BUILD-PLAN.md` records as appearing in no test file).
 - **Size**: S
 - **Auto-fixable**: no — tightens an on-disk shape.
 - **Confidence**: high (reproduced by execution)
