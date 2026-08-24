@@ -1081,3 +1081,192 @@ test.describe("BLK — entity pickers", () => {
     expect(await frontmatter(tracker.root, "milestone")).toBeUndefined();
   });
 });
+
+test.describe("BLK — move to project", () => {
+  /** Every task's key, newest-first order as the list renders them. */
+  async function keysOnDisk(root: string): Promise<string[]> {
+    const tasksDir = path.join(root, ".loctt", "tasks");
+    const out: string[] = [];
+    for (const id of await readdir(tasksDir)) {
+      const text = await readFile(path.join(tasksDir, id, "task.md"), "utf8");
+      const m = /^key: (.+)$/m.exec(text);
+      if (m?.[1] !== undefined) out.push(m[1].trim());
+    }
+    return out.sort();
+  }
+
+  /** `state.yaml`'s next key number for the OPS-prefixed project. */
+  async function opsNextNumber(root: string): Promise<number> {
+    const text = await readFile(path.join(root, ".loctt", "state.yaml"), "utf8");
+    const m = /prefix: OPS\n\s+next_number: (\d+)/.exec(text);
+    return m?.[1] === undefined ? -1 : Number(m[1]);
+  }
+
+  /** One frontmatter field from the task holding `key`. */
+  async function fieldFor(root: string, key: string, field: string): Promise<string | undefined> {
+    const tasksDir = path.join(root, ".loctt", "tasks");
+    for (const id of await readdir(tasksDir)) {
+      const text = await readFile(path.join(tasksDir, id, "task.md"), "utf8");
+      if (!new RegExp(`^key: ${key}$`, "m").test(text)) continue;
+      return new RegExp(`^${field}: (.+)$`, "m").exec(text)?.[1]?.trim();
+    }
+    return undefined;
+  }
+
+  async function historyFor(root: string, key: string): Promise<string[]> {
+    const tasksDir = path.join(root, ".loctt", "tasks");
+    for (const id of await readdir(tasksDir)) {
+      const text = await readFile(path.join(tasksDir, id, "task.md"), "utf8");
+      if (!new RegExp(`^key: ${key}$`, "m").test(text)) continue;
+      const block = /^key_history:\n((?:\s+- .+\n)+)/m.exec(text);
+      return block?.[1] === undefined
+        ? []
+        : block[1].split("\n").map(l => l.replace(/^\s*- /, "").trim()).filter(Boolean);
+    }
+    return [];
+  }
+
+  // @verifies BLK-9
+  test("BLK-9: moving rekeys, keeps the old key resolvable, and names the new keys", async ({
+    page,
+    tracker,
+  }) => {
+    const backend = await tracker.run(["project", "create", "Backend", "--prefix", "BACKEND"]);
+    const backendId = /([0-9A-Z]{26})/.exec(backend)?.[1] ?? "";
+    expect(backendId).not.toBe("");
+    await tracker.run(["project", "create", "Old", "--prefix", "OLD"]);
+    await tracker.run(["project", "archive", "Old"]);
+    // `seed` returns the assigned keys; the prefix and numbering are the
+    // fixture's, so hardcoding either asserts against the fixture rather
+    // than the move.
+    const seeded = await tracker.seed([{ title: "One" }, { title: "Two" }]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await page.locator("tbody input[type=checkbox]").first().check();
+
+    await page.getByRole("button", { name: "Move to project" }).click();
+    const menu = page.getByRole("menu", { name: "Move to project" });
+    // Non-archived projects only, by label.
+    await expect(menu.getByRole("menuitem", { name: "Backend" })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "Old" })).toHaveCount(0);
+    await menu.getByRole("menuitem", { name: "Backend" }).click();
+
+    // The bar unmounts once the selection clears (BLK-18), so the
+    // outcome is read from the standalone status, not from inside it.
+    const status = page.getByRole("status").filter({ hasText: "moved" });
+    // The result names the new key. "1 task moved" alone is unusable:
+    // the key the user knew no longer exists and nothing says what
+    // replaced it.
+    //
+    // Asserted as one string, not two substrings: `toContainText("BACKEND1")`
+    // plus `toContainText("→")` passes with the arrow reversed, which
+    // reads as moving *from* a key that does not exist yet *to* one that
+    // no longer does. The pairing and its direction are the whole
+    // content of this bullet.
+    await expect(status).toContainText(`${String(seeded[1])} → BACKEND1`);
+
+    const keys = await keysOnDisk(tracker.root);
+    expect(keys).toContain("BACKEND1");
+    // The `project` field itself, not only the key prefix — the two are
+    // written by different lines and a rekey that left `project` stale
+    // would look right in the list and wrong to every query.
+    expect(await fieldFor(tracker.root, "BACKEND1", "project")).toBe(backendId);
+    // The old key is preserved so pasting it still resolves (P-7). The
+    // The list renders newest-first, so the first checkbox is the task
+    // seeded *last*. Both the prefix and the ordering are the fixture's;
+    // hardcoding either asserts against the fixture, not the move.
+    expect(await historyFor(tracker.root, "BACKEND1")).toEqual([seeded[1]]);
+    // And it actually resolves: key_history exists so the key the user
+    // still has in hand keeps working. Reading the YAML proves the entry
+    // was written, not that anything honours it.
+    const resolved = await tracker.run(["show", String(seeded[1])]);
+    expect(resolved).toContain("BACKEND1");
+  });
+
+  // @verifies BLK-31
+  test("BLK-31: a move in flight disables the bar, so a second click cannot issue a second batch", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["project", "create", "Backend", "--prefix", "BACKEND"]);
+    await tracker.seed([{ title: "One" }]);
+
+    // Hold the move open so the in-flight window is observable, and
+    // count how many batches actually reach the server.
+    let calls = 0;
+    let release: (() => void) | undefined;
+    const held = new Promise<void>(r => { release = r; });
+    await page.route(/\/api\/tasks\/bulk\/move/, async route => {
+      calls += 1;
+      await held;
+      await route.continue();
+    });
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await page.locator("tbody input[type=checkbox]").first().check();
+    await page.getByRole("button", { name: "Move to project" }).click();
+    await page.getByRole("menu", { name: "Move to project" })
+      .getByRole("menuitem", { name: "Backend" }).click();
+
+    // Every control is disabled while the batch is in flight, so a
+    // second click cannot start a second one with its own bulk_op_id.
+    const bar = page.getByRole("region", { name: "Bulk actions" });
+    await expect(bar.getByRole("button", { name: "Move to project" })).toBeDisabled();
+    await expect(bar.getByRole("button", { name: "Archive" })).toBeDisabled();
+
+    release?.();
+    await expect(page.getByRole("status").filter({ hasText: "moved" })).toBeVisible();
+    expect(calls).toBe(1);
+  });
+
+  // @verifies BLK-26
+  test("BLK-26: mixed sources rekey from the destination counter, and a same-project move burns nothing", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["project", "create", "Ops", "--prefix", "OPS"]);
+    await tracker.run(["project", "create", "Api", "--prefix", "API"]);
+    // Mixed sources, which is what the case is about: one task in the
+    // default project and one in API, both moving to OPS. A batch that
+    // read the counter from the *source* would produce two different
+    // prefixes here and look correct with a single source.
+    const seeded = await tracker.seed([{ title: "One" }]);
+    const inApi = await tracker.run(["create", "Two", "--project", "Api"]);
+    expect(inApi).toContain("API1");
+    // A task already in the destination. Moving it must be a no-op
+    // success, not a rekey — burning a key number here leaves a
+    // permanent gap in the sequence.
+    const inOps = await tracker.run(["create", "Three", "--project", "Ops"]);
+    expect(inOps).toContain("OPS1");
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+
+    await page.getByRole("button", { name: "Move to project" }).click();
+    await page.getByRole("menu", { name: "Move to project" })
+      .getByRole("menuitem", { name: "Ops" }).click();
+
+    const status = page.getByRole("status").filter({ hasText: "moved" });
+    await expect(status).toContainText("3 tasks moved");
+
+    // Two rekeyed from the OPS counter with no gap and no reuse; the
+    // third kept OPS1.
+    const keys = await keysOnDisk(tracker.root);
+    expect(keys).toEqual(["OPS1", "OPS2", "OPS3"]);
+    // The counter itself, which the case names explicitly. Keys on disk
+    // alone cannot see a number that was allocated and then abandoned —
+    // that leaves a permanent gap in the sequence and reads as correct
+    // until the next create.
+    expect(await opsNextNumber(tracker.root)).toBe(4);
+
+    // The already-in-Ops task is reported as unchanged, not as a rekey.
+    expect(await historyFor(tracker.root, "OPS1")).toEqual([]);
+    await expect(status).not.toContainText("OPS1 →");
+
+    // Each moved task carries its former key, whichever project it came
+    // from. Newest-first ordering: API1 was created last, so it rekeys
+    // first.
+    expect(await historyFor(tracker.root, "OPS2")).toEqual(["API1"]);
+    expect(await historyFor(tracker.root, "OPS3")).toEqual([seeded[0]]);
+  });
+});

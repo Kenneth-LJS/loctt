@@ -1,5 +1,6 @@
 import type {
   MilestoneDef,
+  ProjectDef,
   SprintDef,
   UserProfile,
   WorkflowConfig,
@@ -27,10 +28,12 @@ export function BulkBar({
   users,
   milestones,
   sprints,
+  projects,
   busy,
   result,
   onClear,
   onSetField,
+  onMove,
   onArchive,
   onDeleteRequested,
 }: {
@@ -49,6 +52,8 @@ export function BulkBar({
   readonly users?: readonly UserProfile[] | undefined;
   readonly milestones?: readonly MilestoneDef[] | undefined;
   readonly sprints?: readonly SprintDef[] | undefined;
+  /** Move-to-project options (BLK-9). */
+  readonly projects?: readonly ProjectDef[] | undefined;
   /** Disables every action while one is in flight (BLK-31). */
   readonly busy: boolean;
   /** Outcome of the last action, shown until the next one starts. */
@@ -62,6 +67,8 @@ export function BulkBar({
    * separate call (BLK-7, BLK-8).
    */
   readonly onSetField: (field: string, value: string | null) => void;
+  /** BLK-9: relocates and rekeys every selected task. */
+  readonly onMove: (projectId: string) => void;
   readonly onArchive: () => void;
   readonly onDeleteRequested: () => void;
 }) {
@@ -131,6 +138,13 @@ export function BulkBar({
         clearLabel="No sprint"
         disabled={busy}
         onPick={v => { onSetField("sprint", v); }}
+      />
+
+      <BulkPicker
+        label="Move to project"
+        options={active(projects).map(pr => ({ id: pr.id, label: pr.name }))}
+        disabled={busy}
+        onPick={v => { if (v !== null) onMove(v); }}
       />
 
       <button
