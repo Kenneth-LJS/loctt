@@ -1,5 +1,6 @@
 import type { Task } from "@loctt/contracts";
 
+import { LocttError } from "../errors.js";
 import {
   addToKeyIndex,
   type KeyIndex,
@@ -13,10 +14,17 @@ import { readTask } from "./io.js";
 import { listTaskIds } from "./list-ids.js";
 import { hasNegativeLookup, rememberNegativeLookup } from "./lookup-cache.js";
 
-export class TaskNotFoundError extends Error {
+export class TaskNotFoundError extends LocttError {
+  /** The ref as the user typed it — a key, never a ULID (ERR-16). */
+  readonly ref: string;
+
   constructor(ref: string) {
-    super(`task not found: "${ref}"`);
+    // No `data_state`: nothing was attempted, so there is no claim to
+    // make about the user's data (ERR-18 scopes the requirement to
+    // write paths).
+    super("not_found", `task not found: "${ref}"`);
     this.name = "TaskNotFoundError";
+    this.ref = ref;
   }
 }
 

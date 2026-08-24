@@ -7,6 +7,8 @@ import { loadLabelsConfig } from "../config/labels.js";
 import { loadMilestonesConfig } from "../config/milestones.js";
 import { loadSprintsConfig } from "../config/sprints.js";
 import { validateTaskAgainstWorkflow } from "../config/validation.js";
+import type { LocttErrorOptions } from "../errors.js";
+import { LocttError } from "../errors.js";
 import { resolveLabelIdFromInput } from "../labels/manage.js";
 import { resolveMilestoneIdFromInput } from "../milestones/manage.js";
 import { resolveSprintIdFromInput } from "../sprints/manage.js";
@@ -16,9 +18,15 @@ import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 import { readField, toFrontmatter, toMutable } from "./mutable.js";
 
-export class TaskUpdateError extends Error {
-  constructor(message: string) {
-    super(message);
+export class TaskUpdateError extends LocttError {
+  /**
+   * `data_state` defaults to `not_saved` because every throw site is
+   * before the write — the guards, the enum check and the archived
+   * check all run first. ERR-18 requires the claim, and "not saved" is
+   * the true one here rather than a safe-sounding default.
+   */
+  constructor(message: string, opts: LocttErrorOptions = {}) {
+    super("validation_failed", message, { dataState: "not_saved", ...opts });
     this.name = "TaskUpdateError";
   }
 }

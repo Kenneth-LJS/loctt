@@ -7,6 +7,8 @@ import type {
   UserProfile,
 } from "@loctt/contracts";
 
+import type { LocttErrorOptions } from "../errors.js";
+import { LocttError } from "../errors.js";
 import { loadAllUsersDetailed } from "../users/profile.js";
 import { loadLabelsConfig } from "./labels.js";
 import { loadMilestonesConfig } from "./milestones.js";
@@ -52,10 +54,17 @@ export interface ArchivedGuardConfigs {
   readonly unreadable?: ReadonlyArray<UnreadableSlice>;
 }
 
-export class ArchivedReferenceError extends Error {
-  readonly name = "ArchivedReferenceError" as const;
-  constructor(message: string) {
-    super(message);
+export class ArchivedReferenceError extends LocttError {
+  /**
+   * Its own code, not `validation_failed`. The web used to infer the
+   * code from the HTTP status, so this arrived as a 400 and became
+   * `validation_failed` — indistinguishable from a bad enum value, when
+   * the recovery is entirely different: unarchive the entity, or pick
+   * another one.
+   */
+  constructor(message: string, opts: LocttErrorOptions = {}) {
+    super("archived_reference", message, { dataState: "not_saved", ...opts });
+    this.name = "ArchivedReferenceError";
   }
 }
 
