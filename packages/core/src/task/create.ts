@@ -9,6 +9,7 @@ import { allocateKey } from "../state/keys.js";
 import { appendHistory } from "./history.js";
 import { writeTask } from "./io.js";
 import { clearLookupCaches } from "./lookup-cache.js";
+import { resolveEntityRef } from "./update.js";
 import { todayDateString } from "./update.js";
 
 /** Options for creating a new task. */
@@ -79,6 +80,27 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
   const resolvedStatus = options.status
     ?? (workflowConfig ? defaultStatus(workflowConfig)?.key : undefined);
 
+  // Resolve entity references to ids before they reach frontmatter.
+  // `resolveEntityRef` accepts a name or an id and is the same helper
+  // `setField` uses, so all three write paths now agree on what gets
+  // stored.
+  // The cast is confined here rather than at each call site: every
+  // caller knows the field's own type, and `resolveEntityRef` returns
+  // `unknown` because it handles scalars and arrays alike.
+  const resolveOpt = async <T>(field: string, value: T | undefined): Promise<T | undefined> =>
+    value === undefined
+      ? undefined
+      : (await resolveEntityRef(locttDir, field, value, archivedGuard)) as T;
+  // Spread into a fresh mutable array: `options.labels` is readonly and
+  // frontmatter's is not.
+  const resolvedLabels = options.labels === undefined
+    ? undefined
+    : [...(await resolveOpt("labels", [...options.labels]) ?? [])];
+  const resolvedAssignee = await resolveOpt("assignee", options.assignee);
+  const resolvedReporter = await resolveOpt("reporter", options.reporter);
+  const resolvedMilestone = await resolveOpt("milestone", options.milestone);
+  const resolvedSprint = await resolveOpt("sprint", options.sprint);
+
   // Normalize parent option into a relationship edge
   const relationships: { type: string; target: string }[] = [];
   if (options.parent !== undefined) {
@@ -95,14 +117,19 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
     ...(resolvedStatus !== undefined ? { status: resolvedStatus } : {}),
     ...(options.task_type !== undefined ? { task_type: options.task_type } : {}),
     ...(options.priority !== undefined ? { priority: options.priority } : {}),
-    ...(options.labels !== undefined ? { labels: [...options.labels] } : {}),
-    ...(options.assignee !== undefined ? { assignee: options.assignee } : {}),
-    ...(options.reporter !== undefined ? { reporter: options.reporter } : {}),
+    // Entity references accept a name or an id, exactly as `setField`
+    // does. `createTask` used to write them raw, so `loctt create one
+    // --milestone v1` stored the literal "v1" — a reference that
+    // resolves to nothing, since identity is a ULID (P-2). Nothing
+    // caught it, because no write path passed `aux` to the validator.
+    ...(resolvedLabels !== undefined ? { labels: resolvedLabels } : {}),
+    ...(resolvedAssignee !== undefined ? { assignee: resolvedAssignee } : {}),
+    ...(resolvedReporter !== undefined ? { reporter: resolvedReporter } : {}),
     ...(options.start_date !== undefined ? { start_date: options.start_date } : {}),
     ...(options.due_date !== undefined ? { due_date: options.due_date } : {}),
     ...(options.estimate !== undefined ? { estimate: options.estimate } : {}),
-    ...(options.milestone !== undefined ? { milestone: options.milestone } : {}),
-    ...(options.sprint !== undefined ? { sprint: options.sprint } : {}),
+    ...(resolvedMilestone !== undefined ? { milestone: resolvedMilestone } : {}),
+    ...(resolvedSprint !== undefined ? { sprint: resolvedSprint } : {}),
     ...(options.fields !== undefined ? { fields: options.fields } : {}),
     ...(relationships.length > 0 ? { relationships } : {}),
   };
@@ -125,7 +152,16 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
   }
 
   if (workflowConfig) {
-    const errors = validateTaskAgainstWorkflow(frontmatter, workflowConfig);
+      // The archived guard's configs are a structural superset of
+      // `AuxConfigs`, and every caller that passes one has already
+      // loaded them — so existence checking costs nothing extra here.
+      //
+      // Without this, nothing on any write path checked that a
+      // referenced project, milestone, sprint or label *exists*. Only
+      // `doctor` passed `aux`, so a task could be written pointing at
+      // an entity that was never created, and the user learned about it
+      // from a diagnostic rather than from the write that caused it.
+    const errors = validateTaskAgainstWorkflow(frontmatter, workflowConfig, archivedGuard);
     if (errors.length > 0) {
       throw new Error(`invalid task: ${errors.map(e => `${e.field}: ${e.message}`).join("; ")}`);
     }

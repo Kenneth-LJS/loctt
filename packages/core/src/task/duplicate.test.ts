@@ -8,6 +8,7 @@ import { loadProjectsConfig } from "../config/projects.js";
 import { initLoctt } from "../init/init.js";
 import { resolveLocttDir } from "../paths/index.js";
 import { loadState, saveState, withStateLock } from "../state/index.js";
+import { seedLabels, seedMilestone, seedSprint, seedUser } from "../test-support/entities.js";
 import { createTask } from "./create.js";
 import { duplicateTask } from "./duplicate.js";
 import { readHistory } from "./history.js";
@@ -50,11 +51,20 @@ async function dup(srcRef: string, overrides?: Parameters<typeof duplicateTask>[
 
 describe("duplicateTask — basics", () => {
   it("copies field values from the source to the duplicate", async () => {
+    // Every entity reference has to resolve: frontmatter stores ULIDs
+    // (P-2) and the write paths refuse a reference to something that
+    // was never created. This test is about copy semantics, so the
+    // entities are setup rather than the subject.
+    const [a, b] = await seedLabels(locttDir, "a", "b");
+    const u1 = await seedUser(locttDir, "u1");
+    const u2 = await seedUser(locttDir, "u2");
+    const v1 = await seedMilestone(locttDir, "v1");
+    const s12 = await seedSprint(locttDir, "s12");
     const srcId = await seed({
       project: projectId, title: "Original", status: "backlog", priority: "high",
-      task_type: "task", labels: ["a", "b"], assignee: "u1", reporter: "u2",
+      task_type: "task", labels: [a, b], assignee: u1, reporter: u2,
       start_date: "2026-05-01", due_date: "2026-05-15", estimate: "5",
-      milestone: "v1", sprint: "s12",
+      milestone: v1, sprint: s12,
       fields: { impact: "medium" },
       body: "Hello world\n",
     });
@@ -64,14 +74,14 @@ describe("duplicateTask — basics", () => {
     expect(copy.frontmatter.status).toBe("backlog");
     expect(copy.frontmatter.priority).toBe("high");
     expect(copy.frontmatter.task_type).toBe("task");
-    expect(copy.frontmatter.labels).toEqual(["a", "b"]);
-    expect(copy.frontmatter.assignee).toBe("u1");
-    expect(copy.frontmatter.reporter).toBe("u2");
+    expect(copy.frontmatter.labels).toEqual([a, b]);
+    expect(copy.frontmatter.assignee).toBe(u1);
+    expect(copy.frontmatter.reporter).toBe(u2);
     expect(copy.frontmatter.start_date).toBe("2026-05-01");
     expect(copy.frontmatter.due_date).toBe("2026-05-15");
     expect(copy.frontmatter.estimate).toBe("5");
-    expect(copy.frontmatter.milestone).toBe("v1");
-    expect(copy.frontmatter.sprint).toBe("s12");
+    expect(copy.frontmatter.milestone).toBe(v1);
+    expect(copy.frontmatter.sprint).toBe(s12);
     expect(copy.frontmatter.fields).toEqual({ impact: "medium" });
     expect(copy.body).toBe("Hello world\n");
   });
@@ -132,7 +142,9 @@ describe("duplicateTask — overrides", () => {
   });
 
   it("override null clears a scalar field on the copy", async () => {
-    const srcId = await seed({ project: projectId, title: "T", assignee: "u1", milestone: "v1" });
+    const u1 = await seedUser(locttDir, "u1");
+    const v1 = await seedMilestone(locttDir, "v1");
+    const srcId = await seed({ project: projectId, title: "T", assignee: u1, milestone: v1 });
     const copyId = await dup(srcId, { assignee: null, milestone: null });
     const copy = await lookupTask(locttDir, copyId);
     expect(copy.frontmatter.assignee).toBeUndefined();
@@ -140,10 +152,11 @@ describe("duplicateTask — overrides", () => {
   });
 
   it("override labels replaces the entire array", async () => {
-    const srcId = await seed({ project: projectId, title: "T", labels: ["a", "b"] });
-    const copyId = await dup(srcId, { labels: ["c"] });
+    const [a, b, c] = await seedLabels(locttDir, "a", "b", "c");
+    const srcId = await seed({ project: projectId, title: "T", labels: [a, b] });
+    const copyId = await dup(srcId, { labels: [c] });
     const copy = await lookupTask(locttDir, copyId);
-    expect(copy.frontmatter.labels).toEqual(["c"]);
+    expect(copy.frontmatter.labels).toEqual([c]);
   });
 
   it("override body replaces the source body", async () => {
@@ -166,15 +179,16 @@ describe("duplicateTask — overrides", () => {
 
 describe("duplicateTask — labels deep-copy", () => {
   it("the copy's labels array is independent from the source's", async () => {
-    const srcId = await seed({ project: projectId, title: "T", labels: ["a"] });
+    const [a, b] = await seedLabels(locttDir, "a", "b");
+    const srcId = await seed({ project: projectId, title: "T", labels: [a] });
     const copyId = await dup(srcId);
     // Mutate the copy's labels via setField — source must not change.
     const { setField } = await import("./update.js");
-    await setField({ locttDir, taskId: copyId, field: "labels", value: ["a", "b"] });
+    await setField({ locttDir, taskId: copyId, field: "labels", value: [a, b] });
     const src = await lookupTask(locttDir, srcId);
     const copy = await lookupTask(locttDir, copyId);
-    expect(src.frontmatter.labels).toEqual(["a"]);
-    expect(copy.frontmatter.labels).toEqual(["a", "b"]);
+    expect(src.frontmatter.labels).toEqual([a]);
+    expect(copy.frontmatter.labels).toEqual([a, b]);
   });
 });
 

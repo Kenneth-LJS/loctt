@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { LocttState } from "@loctt/contracts";
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
+import { seedLabel, seedSprint } from "../test-support/entities.js";
 import { createTask } from "./create.js";
 import { readTask } from "./io.js";
 import { listTaskIds } from "./list-ids.js";
@@ -122,20 +123,23 @@ describe("createTask", () => {
 
   it("creates a task with optional fields", async () => {
     const state = makeState();
+    const urgent = await seedLabel(locttDir, "urgent");
     const task = await createTask({ locttDir, state, options: {
       project: "task",
       title: "Full task",
       status: "in_progress",
       priority: "high",
       task_type: "task",
-      labels: ["urgent"],
+      labels: [urgent],
       fields: { sprint: "sprint_1" },
       body: "Some description.\n",
     } });
 
     expect(task.frontmatter.status).toBe("in_progress");
     expect(task.frontmatter.priority).toBe("high");
-    expect(task.frontmatter.labels).toEqual(["urgent"]);
+    // Stored as the id: references are ULIDs (P-2), and `createTask`
+    // resolves a name to one rather than writing it through.
+    expect(task.frontmatter.labels).toEqual([urgent]);
     expect(task.frontmatter.fields).toEqual({ sprint: "sprint_1" });
     expect(task.body).toBe("Some description.\n");
   });
@@ -171,14 +175,17 @@ describe("createTask", () => {
 
   it("persists sprint when supplied", async () => {
     const state = makeState();
+    const sprintId = await seedSprint(locttDir, "sprint_1");
     const task = await createTask({
       locttDir,
       state,
       options: { project: "task", title: "with sprint", sprint: "sprint_1" },
     });
-    expect(task.frontmatter.sprint).toBe("sprint_1");
+    // The name resolves to an id on the way in, and survives the round
+    // trip as that id.
+    expect(task.frontmatter.sprint).toBe(sprintId);
     const round = await readTask(locttDir, task.frontmatter.id);
-    expect(round.frontmatter.sprint).toBe("sprint_1");
+    expect(round.frontmatter.sprint).toBe(sprintId);
   });
 
   it("auto-stamps completed_date when created directly into a completed-category status", async () => {

@@ -62,6 +62,11 @@ describe("bulkSetFields", () => {
 
   it("records per-task failures without aborting the batch", async () => {
     const a = await seed("A");
+    // The assignee must resolve. `bulkSetFields` delegates to
+    // `setFieldsLocked`, which used to write the raw string — so this
+    // fixture's `"u1"` reached disk as a reference to nobody.
+    const { createUser } = await import("../users/lifecycle.js");
+    await createUser(locttDir, { name: "u1" });
     const result = await bulkSetFields({
       locttDir, taskRefs: [a, "NONEXISTENT-9999"],
       changes: [{ field: "assignee", value: "u1" }],
@@ -83,6 +88,8 @@ describe("bulkSetFields", () => {
 
   it("supports multiple changes in one bulk call", async () => {
     const a = await seed("A");
+    const { createUser } = await import("../users/lifecycle.js");
+    const user = await createUser(locttDir, { name: "u1" });
     const result = await bulkSetFields({
       locttDir, taskRefs: [a],
       changes: [
@@ -93,7 +100,8 @@ describe("bulkSetFields", () => {
     expect(result.succeeded).toEqual([a]);
     const t = await lookupTask(locttDir, a);
     expect(t.frontmatter.priority).toBe("high");
-    expect(t.frontmatter.assignee).toBe("u1");
+    // The id, not the name — bulk now resolves it like the single path.
+    expect(t.frontmatter.assignee).toBe(user.id);
   });
 
   it("rejects empty taskRefs is OK — returns empty result", async () => {

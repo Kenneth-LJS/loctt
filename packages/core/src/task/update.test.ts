@@ -218,6 +218,12 @@ describe("setField / unsetField", () => {
   describe("setFields", () => {
     it("applies multiple set changes in one write with a single updated_at", async () => {
       await seedTask();
+      // The user has to exist. `setFields` used to write the raw string
+      // without resolving it, so `"u1"` reached disk as a reference to
+      // nobody — this test asserted that bug. `setField` has rejected an
+      // unknown user since MSL-C1; the two paths now agree.
+      const { createUser } = await import("../users/lifecycle.js");
+      const user = await createUser(locttDir, { name: "u1" });
       const updated = await setFields({
         locttDir, taskId: "abc",
         changes: [
@@ -227,7 +233,8 @@ describe("setField / unsetField", () => {
         ],
       });
       expect(updated.frontmatter.priority).toBe("high");
-      expect(updated.frontmatter.assignee).toBe("u1");
+      // Stored as the id, not the name — identity is a ULID (P-2).
+      expect(updated.frontmatter.assignee).toBe(user.id);
       expect(updated.frontmatter.title).toBe("Renamed");
       const loaded = await readTask(locttDir, "abc");
       expect(loaded.frontmatter.updated_at).toBe(updated.frontmatter.updated_at);
@@ -255,6 +262,9 @@ describe("setField / unsetField", () => {
 
     it("appends history entries for each change", async () => {
       await seedTask();
+      // As above: the assignee must resolve, or the write is refused.
+      const { createUser } = await import("../users/lifecycle.js");
+      await createUser(locttDir, { name: "u1" });
       await setFields({
         locttDir, taskId: "abc",
         changes: [

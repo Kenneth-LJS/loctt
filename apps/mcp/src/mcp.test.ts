@@ -223,6 +223,13 @@ describe("MCP executeTool", () => {
     });
 
     it("accepts a valid labels array", async () => {
+      // The labels have to exist. This case is about the *shape* check
+      // accepting an array, but the write behind it stores label ids
+      // (P-2) and refuses a reference to a label that was never
+      // created — so inventing names here would fail for an unrelated
+      // reason and stop testing what it names.
+      await executeTool(root, "create_label", { name: "bug" });
+      await executeTool(root, "create_label", { name: "urgent" });
       await executeTool(root, "create_task", { title: "x" });
       const result = await executeTool(root, "update_task", {
         ref: "T-1",

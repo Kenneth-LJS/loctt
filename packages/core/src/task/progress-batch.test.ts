@@ -29,6 +29,20 @@ describe("milestoneProgress", () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  /**
+   * Registers a milestone by name and returns its id.
+   *
+   * `setFields` resolves a milestone reference to its id and refuses an
+   * unknown one, so these fixtures can no longer invent `"m1"`. They
+   * used to write the raw name straight to frontmatter — the state
+   * MSL-C1 was closed to prevent, where progress reads 0/0 because the
+   * lookup is by id.
+   */
+  async function milestone(name: string): Promise<string> {
+    const { createMilestone } = await import("../milestones/manage.js");
+    return (await createMilestone(locttDir, { name })).id;
+  }
+
   async function mk(title: string, fields: Record<string, unknown>): Promise<string> {
     const id = await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);
@@ -45,13 +59,15 @@ describe("milestoneProgress", () => {
 
   it("groups tasks by milestone in one scan", async () => {
     const wf = await loadWorkflowConfig(locttDir);
-    await mk("a", { milestone: "m1", status: "done" });
-    await mk("b", { milestone: "m1" });
-    await mk("c", { milestone: "m2", status: "done" });
+    const m1 = await milestone("m1");
+    const m2 = await milestone("m2");
+    await mk("a", { milestone: m1, status: "done" });
+    await mk("b", { milestone: m1 });
+    await mk("c", { milestone: m2, status: "done" });
 
-    const p = await milestoneProgress(locttDir, ["m1", "m2"], wf);
-    expect(p["m1"]).toMatchObject({ done: 1, total: 2 });
-    expect(p["m2"]).toMatchObject({ done: 1, total: 1 });
+    const p = await milestoneProgress(locttDir, [m1, m2], wf);
+    expect(p[m1]).toMatchObject({ done: 1, total: 2 });
+    expect(p[m2]).toMatchObject({ done: 1, total: 1 });
   });
 
   it("returns a zeroed entry for a milestone with no tasks", async () => {
@@ -64,31 +80,35 @@ describe("milestoneProgress", () => {
 
   it("ignores tasks belonging to another milestone", async () => {
     const wf = await loadWorkflowConfig(locttDir);
-    await mk("a", { milestone: "m1", status: "done" });
-    await mk("b", { milestone: "other", status: "done" });
-    expect((await milestoneProgress(locttDir, ["m1"], wf))["m1"]?.total).toBe(1);
+    const m1 = await milestone("m1");
+    const other = await milestone("other");
+    await mk("a", { milestone: m1, status: "done" });
+    await mk("b", { milestone: other, status: "done" });
+    expect((await milestoneProgress(locttDir, [m1], wf))[m1]?.total).toBe(1);
   });
 
   it("excludes archived tasks by default and includes them on request", async () => {
     // Must match countTasksByReference: the two numbers sit side by
     // side in Settings and cannot disagree about what they counted.
     const wf = await loadWorkflowConfig(locttDir);
-    await mk("live", { milestone: "m1" });
-    const gone = await mk("gone", { milestone: "m1" });
+    const m1 = await milestone("m1");
+    await mk("live", { milestone: m1 });
+    const gone = await mk("gone", { milestone: m1 });
     // `archived` is not settable via setFields — it has its own API.
     const { bulkArchive } = await import("./bulk.js");
     await bulkArchive({ locttDir, taskRefs: [gone], archive: true });
 
-    expect((await milestoneProgress(locttDir, ["m1"], wf))["m1"]?.total).toBe(1);
-    const withArchived = await milestoneProgress(locttDir, ["m1"], wf, { includeArchived: true });
-    expect(withArchived["m1"]?.total).toBe(2);
+    expect((await milestoneProgress(locttDir, [m1], wf))[m1]?.total).toBe(1);
+    const withArchived = await milestoneProgress(locttDir, [m1], wf, { includeArchived: true });
+    expect(withArchived[m1]?.total).toBe(2);
   });
 
   it("excludes discarded from the denominator end to end", async () => {
     const wf = await loadWorkflowConfig(locttDir);
-    await mk("shipped", { milestone: "m1", status: "done" });
-    await mk("dropped", { milestone: "m1", status: "wont_do" });
-    const p = (await milestoneProgress(locttDir, ["m1"], wf))["m1"];
+    const m1 = await milestone("m1");
+    await mk("shipped", { milestone: m1, status: "done" });
+    await mk("dropped", { milestone: m1, status: "wont_do" });
+    const p = (await milestoneProgress(locttDir, [m1], wf))[m1];
     expect(p).toMatchObject({ done: 1, total: 1, discarded: 1, fraction: 1 });
   });
 });
