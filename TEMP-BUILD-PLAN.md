@@ -55,7 +55,7 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 | 2 · Measure | ✅ | Measured (CLI 17/49, MCP 26/75) and the blocker it raised is **cleared**: both reference docs corrected to the shipped API, every example executed. See *Blocker 2, resolved*. |
 | 3 · Surface gaps | ✅ | **68 of 68 closed**: blockers 23/23, major 29/29, minor 16/16. Surface coverage 46 → 111. See *Phase 3 log*. |
 | 4 · Structural audit | ✅ | **Groups A–F closed, the six swallowed-error findings with them, and the nine recorded decisions implemented** (2026-08-17). The two items previously listed here as open are now closed too: the MCP comment tools' bare catches (`a0677b4`) and `HistoryEntry`'s missing schema (`4fb7e4b`). Group G moves to Phase 6, itemised at 55 rather than the "~79" carried before. |
-| 5 · UI build | 🔵 | M1.1–M1.3 ✅ (but see the caveat on those ticks), M1.4 🔵 from earlier work. **M2.1 is the next ticket** — see *The next agent's first job*. |
+| 5 · UI build | 🔵 | M1.1–M1.3 ✅ (but see the caveat on those ticks), M1.4 🔵. **M1.4 is the next ticket** — its 29 open major/minor BLK cases, then the 🚦 M1 gate. See *M1.4's remaining work*. |
 | 6 · Cleanup | ⬜ | Group G's 55 items and the flakiness diagnosis. Deferred deliberately — see *The open items*. |
 
 ### ✅ Blocker — RESOLVED 2026-08-16: two views need tickets, not a scope cut
@@ -623,23 +623,67 @@ milestone that never existed.
 
 ## Picking this up next
 
-**Build M3.5 and M4.9.** Phase 3 is complete (all 68 surface cases
-closed), Blocker 1's two missing views are ticketed, and Phase 4's
-groups A–F are closed.
+**Finish M1.4, then Phase 5 in ticket order.** Decided 2026-08-24,
+replacing the "build M3.5 and M4.9 first" ordering that stood here.
 
-Order from here, agreed with the user:
+1. **M1.4** — the 29 open major/minor BLK cases. All 13 blockers are
+   already covered; the ticket is 🔵, not ✅.
+2. **🚦 Milestone 1**, then **M2.1 → M4.9** in ticket order. M3.5 sits
+   after M3.4; M4.9 after M4.8.
+3. **Phase 6** — Group G's 55 cosmetic items, last.
 
-1. **Build M3.5 and M4.9.** Both carry server work despite an initial
-   "frontend-only" claim that was wrong, and both carry an open decision
-   recorded on the ticket — the `$key` route segment in particular needs
-   settling for M4.7 at the same time.
-2. **Phase 5**, M1.4 → M4.8.
-3. **Phase 4, group G** (~79 cosmetic), last — fixing surface polish in
-   code the UI is about to reshape means doing it twice.
+### Why M3.5 and M4.9 are no longer front-loaded
+
+Two reasons were recorded for building them first. **Both are gone.**
+
+- *"Both carry server work."* **Verified false 2026-08-24.** Every route
+  exists: `GET/POST /api/sprints`, `GET/POST /api/milestones`, both
+  `PUT`/`DELETE` by id, and `GET /api/sprints/<id>/burndown`. Both list
+  handlers already take `?progress=true` and run `withProgress`, and
+  `computeProgress` in `core/task/progress.ts` already answers the hard
+  cases: it counts by status **category** (MSL-2), reports `discarded`
+  separately with `total` excluding it (MSL-3), and guards the zero
+  denominator (MSL-15). SPR-4's "write the id, not the name" was fixed
+  in `5c81d96`. **Both tickets are client-side only.**
+- *"An open `$key` route decision."* Settled by **V3** — route segments
+  carry the ULID.
+
+The one open question found while checking — where SPR-3's per-user
+expand/collapse state lives — is settled by **V12**: `localStorage`, no
+server work.
 
 Roughly five non-cosmetic findings are left open on purpose. Each is
 named in `audit-findings.md` with why: they need the code that owns them
 (the M2 task-detail handler, the MCP comment tools) rather than a sweep.
+
+### M1.4's remaining work, sized 2026-08-24
+
+Read from the cases, not from the ticket bullets. The server is **done**
+— all five bulk routes exist (`set`, `archive`, `delete`, `move`,
+`link`), `moveTaskToProject` is in core, `key_history` is in the task
+schema, and `BulkResponse` already splits `succeeded`/`failed` with
+`ErrorItemFailure` for naming each one. This is client work.
+
+| Group | Cases | What it needs |
+|---|---|---|
+| Set assignee / milestone / sprint | BLK-7, 8 | Pickers in the shape of the built status/priority ones. Exclude archived; offer clear/none; write the config **key**. |
+| Move to project | BLK-9, 26 | Old key into `key_history`; result **names the new keys**, not a count; a task already in the destination is a **no-op success, not a rekey** — it must not burn a key number. |
+| Undo after archive | BLK-10 | **V11.** Remove the typed confirm; lightweight confirm with cancel focused; in-memory undo. |
+| Concurrency + scale | BLK-22, 23, 24, 34, 41, 42 | Honesty, mostly. |
+
+**BLK-10 is a removal as well as an addition.** M1.4 shipped bulk
+Archive behind a typed confirm; the case says demanding one is itself a
+violation, because archive is reversible.
+
+**BLK-41 is the one to design deliberately.** A hung bulk request must
+state **unknown** — not success, not failure — and per P4's rare
+exception must say all three: what was attempted, what state the data
+is in, what to do. The envelope already carries `data_state` and
+`recovery`; the UI has to render the unknown case rather than falling
+back to a failure toast.
+
+**BLK-22 must not say "8 tasks updated"** when one task vanished. Report
+7 succeeded, 1 failed, naming the missing key.
 
 ### Decisions recorded 2026-08-17 — read these first
 
@@ -734,11 +778,12 @@ output was never captured, so nobody knows whether they were even
 timeouts. Raising a timeout that may not be the cause would only hide
 whatever is. **Capture the failure output on the next occurrence.**
 
-### The next agent's first job — M2.1, the task-detail read shell
+### After M1.4 — M2.1, the task-detail read shell
 
 **Everything in the work queue above is done.** Nine decisions and two
 invariants have code; all seven suites are green with zero FAIL lines.
-Item 8 is the UI build, and M2.1 is where it starts.
+Item 8 is the UI build. **M1.4 comes first** (see above); M2.1 is where
+the new tickets start.
 
 **The API is already built.** Every route M2 needs exists and is
 tested: `set`, `unset`, comments (GET/POST/PUT/DELETE), activity, link,

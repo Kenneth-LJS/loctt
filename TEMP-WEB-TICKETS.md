@@ -198,9 +198,16 @@ Cases: LST-13, LST-30, LST-35, LST-38, LST-43, LST-49, BLK-1, BLK-2, BLK-3, BLK-
   BLK-4, BLK-18. Bar shows count + scope + Clear; actions below are
   still unbuilt, so it carries no action buttons yet
 - 🔵 Sticky bulk-bar: Set status / priority, Archive, Delete (typed
-  confirm), Clear (×) — covers BLK-5, 10, 11, 12, 13, 38, 39, 40.
+  confirm), Clear (×) — covers BLK-5, 11, 12, 13, 38, 39, 40.
   **Not built**: Set assignee / milestone / sprint (BLK-7, 8), Move to
-  project (BLK-9, 26), Undo after archive (BLK-10's undo bullet)
+  project (BLK-9, 26), Undo after archive (BLK-10)
+- ⚠️ **BLK-10 is a removal as well as an addition.** Archive currently
+  ships behind a typed confirm; the case says demanding one is itself a
+  violation, because archive is reversible. It wants a lightweight
+  "Archive 6 tasks?" with **cancel focused by default**, plus an Undo in
+  the success message. Delete keeps its typed confirm — that one is not
+  reversible. Undo is **in-memory only (V11)**: it dies on reload, and
+  there is no expiry to configure.
 - ✅ Export menu (CW-21): CSV + JSON via `/api/tasks/export` with the
   current filter state applied. Covers BLK-14, 15, 16, 33, 35, 37
 - **Tests**: bulk endpoints against a real tracker (not mocked);
@@ -365,6 +372,13 @@ Cases: SPR-1, SPR-2, SPR-3, SPR-4, SPR-5, SPR-6, SPR-15, SPR-17, SPR-19, SPR-20,
   (M4.7), which is one sprint's detail and burndown.
 - **Depends on M3.2**: reuses its drag primitives and drop-target
   visuals rather than building a second, divergent implementation.
+- **No server work.** Verified 2026-08-24: `GET/POST /api/sprints`,
+  `PUT`/`DELETE` by id, `?counts=true`, `?progress=true` and
+  `/api/sprints/<id>/burndown` all exist, and SPR-4's "write the id,
+  not the name" was fixed in `5c81d96`. **Client-side only.**
+- **SPR-3's expand/collapse state: `localStorage` (V12).** Per-browser,
+  not per-user — accepted; no store existed and the state is one column
+  being open.
 
 **Columns (SPR-1, SPR-19, SPR-20, SPR-24)**
 - One column per non-archived sprint, ordered by `start_date` ascending
@@ -580,12 +594,16 @@ Cases: MSL-1, MSL-2, MSL-3, MSL-4, MSL-15, MSL-16, MSL-17, MSL-18, MSL-24, MSL-2
 - Route `/milestones` (list) and the milestone detail route. Distinct
   from Settings → Milestones (M4.3), which is CRUD management, not a
   progress surface.
-- **Open decision — the detail route's URL segment.** The flow docs
+- **Route segment: settled by V3.** `/milestones/<ulid>`. The flow docs
   write `/milestones/$key`, but `MilestoneDef` is `{id, name,
-  target_date, archived}` — there is no `key`. `name` is mutable and
-  not unique, and P-4 says the ULID is never shown to the user. M4.7
-  inherits the identical problem for `/sprints/$key`. Decide once, for
-  both, before building either.
+  target_date, archived}` — there is no `key`. P-4 is scoped to UI
+  *content*, so the address bar may carry the ULID. Same for M4.7's
+  `/sprints/<ulid>`.
+- **No server work.** Verified 2026-08-24: `GET/POST /api/milestones`,
+  `PUT`/`DELETE` by id, and `?progress=true` all exist.
+  `computeProgress` already counts by status **category** (MSL-2),
+  reports `discarded` separately with `total` excluding it (MSL-3), and
+  guards the zero denominator (MSL-15). **Client-side only.**
 
 **Rows (MSL-1, MSL-16, MSL-17, MSL-18)**
 - One row per non-archived milestone, none omitted or duplicated;
