@@ -54,8 +54,8 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 | 1 · Partition | ✅ | All 21 tickets carry a `Cases:` line; gate passes. The 28 cases asserting two unticketed views are **resolved as a ticket gap**, not a scope cut — see *Blocker, resolved*. |
 | 2 · Measure | ✅ | Measured (CLI 17/49, MCP 26/75) and the blocker it raised is **cleared**: both reference docs corrected to the shipped API, every example executed. See *Blocker 2, resolved*. |
 | 3 · Surface gaps | ✅ | **68 of 68 closed**: blockers 23/23, major 29/29, minor 16/16. Surface coverage 46 → 111. See *Phase 3 log*. |
-| 4 · Structural audit | 🔵 | **Groups A–F closed, and the six swallowed-error findings with them** (2026-08-17). Group G (~79 cosmetic) deferred until after the UI build. ~4 findings left open on purpose, each named in [`audit-findings.md`](audit-findings.md) with why — they need the code that owns them (M2 task detail, MCP comment tools) rather than a sweep. |
-| 5 · UI build | ⬜ | M1.4 is 🔵 from earlier work, predating this plan |
+| 4 · Structural audit | ✅ | **Groups A–F closed, the six swallowed-error findings with them, and the nine recorded decisions implemented** (2026-08-17). Group G (~79 cosmetic) is deliberately deferred until after the UI build — much of it is in code M2–M4 rewrites. Two findings remain open on purpose: the MCP comment tools' bare catches, and `HistoryEntry`'s element shape. Both need the code that owns them rather than a sweep. |
+| 5 · UI build | 🔵 | M1.1–M1.3 ✅ (but see the caveat on those ticks), M1.4 🔵 from earlier work. **M2.1 is the next ticket** — see *The next agent's first job*. |
 
 ### ✅ Blocker — RESOLVED 2026-08-16: two views need tickets, not a scope cut
 
@@ -679,6 +679,59 @@ the work above, because two change what that work is:
   LocTT warns cheaply, the user owns the outcome. The boundary is the
   gate; P-11 is the floor.
 
+### The next agent's first job — M2.1, the task-detail read shell
+
+**Everything in the work queue above is done.** Nine decisions and two
+invariants have code; all seven suites are green with zero FAIL lines.
+Item 8 is the UI build, and M2.1 is where it starts.
+
+**The API is already built.** Every route M2 needs exists and is
+tested: `set`, `unset`, comments (GET/POST/PUT/DELETE), activity, link,
+unlink, attachments, archive. Verified by reading the route table in
+`apps/web/src/server/server.ts:3150`ff. **M2 is client-side work.**
+
+What exists on the client: `apps/web/src/client/routes/` contains only
+`Stub.tsx`. There is no task-detail hook — `api/hooks/` has
+`useTasks.ts` for the list and nothing for a single task.
+
+**Size honestly.** M2 is 166 cases across five tickets and is several
+sessions, not one:
+
+| Ticket | Cases | Work |
+|---|---|---|
+| M2.1 read shell | 21 | Route, layout, breadcrumb, More menu |
+| M2.2 meta edits | 43 | 11 inline-editable field types, optimistic updates |
+| M2.3 body editor | 17 | TipTap + CodeMirror, autosave, mentions |
+| M2.4 comments + activity | 39 | Composer, edit/delete, activity collapse, paging |
+| M2.5 relationships + attachments | 51 | Grouped panel, drag-reorder, upload grid |
+
+Take **one ticket at a time** through `build-loop.md`. Finishing M2.1
+beats starting all five.
+
+**Dependencies are already installed** — TipTap 3.30, CodeMirror 6,
+`@tiptap/extension-table`. No package work needed.
+
+**Reuse rather than rebuild:**
+
+- `apps/web/src/client/ui/ErrorState.tsx` (`4bb211b`) renders a failure
+  from the server's envelope — headline, data state, recovery control,
+  details affordance. Task detail needs it for ERR-7 (404 naming the
+  key) and ERR-8 (a hand-typed key that never existed).
+- `ApiError.envelope` carries `code`, `field`, `data_state`,
+  `recovery`. **Branch on `code`, never on message text** — the whole
+  point of V1 is that copy can be reworded without breaking behaviour.
+- `packages/core/src/test-support/entities.ts` — `seedLabel`,
+  `seedUser`, `seedMilestone`, `seedSprint` return **ids**. Frontmatter
+  stores ULIDs and the write paths refuse a reference to something that
+  was never created, so a fixture cannot invent `"bug"`.
+
+**Read before building M2.2's error handling:**
+[`flow-error-handling.md`](ui-test-cases/flow-error-handling.md). ERR-14
+puts a field rejection *at the field*; ERR-18 makes the data-state claim
+mandatory on writes; ERR-3 calls that "the single most important error
+behaviour in the app". Core now supplies all of it — the UI's job is
+placement, not invention.
+
 ### ✅ Done 2026-08-17: P-11, P-12, V4, V6, V7 implemented
 
 All six swallowed-error findings are **closed**, and four of the nine
@@ -927,6 +980,30 @@ The loop that has worked, per case:
   Re-run typecheck after any autofix.
 - **A mutation that does not compile is not a mutation.** Check the
   build output, not just the test result.
+
+### Traps that cost time in the 2026-08-17 session
+
+- **`npm run test` reports a summary line, not a verdict.** I called the
+  core suite green five times while a test was failing, because I read
+  `Tests 1443 passed` without checking for `FAIL` lines above it. Grep
+  for `FAIL` explicitly; a count of zero is the only clean result.
+- **`git stash` leaves untracked files behind.** Stashing to get a
+  baseline left a new test file in place, which broke the build and made
+  the baseline meaningless. Use `git stash push -u`, and check
+  `git status --short` is empty before trusting the result.
+- **`npx tsc --build` is not `npm run build`.** The CLI binary is
+  bundled separately, so a core change verified through `tsc` alone
+  tests a stale binary. Deleting `dist/` also poisons tsc's incremental
+  state — recover with `npx tsc --build --force`.
+- **A shell probe can lie in both directions.** An `awk` fixture told me
+  the CLI stored a name when it stored a ULID, and I nearly reported a
+  defect that did not exist. Read the raw file, not a parsed summary.
+- **`withTmpLoctt` does not guarantee the `T` prefix.** A test assuming
+  `T1` asserted against a task-not-found instead of the behaviour it
+  named. Read the key from the create output.
+- **An empty directory can be renamed over on macOS.** A fixture using
+  one as a "failure" never failed, so the test asserted nothing. Use a
+  non-empty directory, or a file where a parent must be created.
 
 ### After Phase 3
 
