@@ -1,6 +1,7 @@
 import type { WorkflowConfig } from "@loctt/contracts";
 import { relationshipTypeKeys } from "@loctt/contracts";
 
+import { LocttError } from "../errors.js";
 import type { QueryNode } from "./parser.js";
 
 /**
@@ -17,14 +18,22 @@ import type { QueryNode } from "./parser.js";
  * matching the parse errors. `suggestions` holds near-miss candidates
  * for a "did you mean" hint — possibly empty.
  */
-export class QueryValidationError extends Error {
+export class QueryValidationError extends LocttError {
   constructor(
     message: string,
     public readonly position: number,
     public readonly suggestions: readonly string[] = [],
   ) {
     const hint = suggestions.length > 0 ? ` — did you mean ${suggestions.map(s => `"${s}"`).join(" or ")}?` : "";
-    super(`${message} at position ${position}${hint}`);
+    // A mistyped query is a known, nameable cause — the position and
+    // any suggestions are right here. Left as a bare `Error` it reached
+    // a surface as `unknown`, which ERR-31 forbids: the generic handler
+    // is for causes that genuinely cannot be determined, not a
+    // convenience for ones nobody wired up.
+    super("validation_failed", `${message} at position ${position}${hint}`, {
+      field: "query",
+      recovery: { kind: "retry" },
+    });
     this.name = "QueryValidationError";
   }
 }

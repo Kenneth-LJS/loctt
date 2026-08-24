@@ -1,3 +1,4 @@
+import { LocttError } from "../errors.js";
 import type { Token, TokenType } from "./tokenizer.js";
 
 export type ComparisonOp = "=" | "!=" | "<" | "<=" | ">" | ">=" | "~" | "in" | "not in";
@@ -48,9 +49,17 @@ export type QueryValue =
   | { type: "today" }
   | { type: "list"; values: readonly QueryValue[] };
 
-export class ParseError extends Error {
+export class ParseError extends LocttError {
   constructor(message: string, public readonly position: number) {
-    super(`${message} at position ${position}`);
+    // A mistyped query is a known, nameable cause — the position and
+    // any suggestions are right here. Left as a bare `Error` it reached
+    // a surface as `unknown`, which ERR-31 forbids: the generic handler
+    // is for causes that genuinely cannot be determined, not a
+    // convenience for ones nobody wired up.
+    super("validation_failed", `${message} at position ${position}`, {
+      field: "query",
+      recovery: { kind: "retry" },
+    });
     this.name = "ParseError";
   }
 }

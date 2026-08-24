@@ -781,12 +781,35 @@ recorded decisions implemented.**
 
 Still open, deliberately:
 
-- **Group G** — ~79 cosmetic items, deferred until after the UI build.
-  Much of it is in code M2–M4 rewrites, so fixing it now means doing it
-  twice. **Caveat: the ~79 are not itemised anywhere** — the count comes
-  from the slice reports, which were never distilled into a list. A
-  deferred group with no enumeration can never be audited or closed, so
-  this needs itemising before it can be worked.
+- **Group G — now itemised**, in
+  [`audit/group-g-itemised.md`](audit/group-g-itemised.md). The count
+  was carried as "~79" with no list anywhere, so it could never be
+  audited or closed. Extracting from the slice reports — which do carry
+  a `Category` per finding — gives **55**, not 79. Still deferred until
+  after the UI build for the original reason: much of it is in code
+  M2–M4 rewrites. The difference is that it can now be checked off.
+
+- **10 findings belonged to no group at all** — 6 `layering`, 4
+  `doc-drift` — and the summary's category counts hid that, because
+  A–F covered `bug` and G was described as "cosmetic". Neither is
+  cosmetic. Reviewed 2026-08-17:
+  - **Fixed**: the three query error classes extended bare `Error`, so
+    a mistyped query reached a surface as `unknown` — the code ERR-31
+    reserves for causes that genuinely cannot be determined. They now
+    carry `validation_failed` and `field: "query"`. This was a V1 gap
+    the V1 work missed.
+  - **Already fixed by Phase 3's doc corrections**: the four
+    `doc-drift` findings against `mcp/reference.md`.
+  - **Left open, and named here rather than in an unenumerated group**:
+    `reorderBoardRank` is O(all tasks) per call (`rank/reorder.ts:190`);
+    `create_project` is not atomic when `make_default: true`
+    (`mcp/tools/project.ts:53`); `info` re-reads config rather than
+    using `getTrackerInfo` (`cli/commands/info.ts:24`);
+    `findStructuralCycles` is not re-exported so `doctor` reaches past
+    the barrel (`diagnostics/doctor.ts:19`); `PATCH /api/tasks/:ref` has
+    no request schema (`contracts/src/service-schemas.ts:1`) — though
+    that route is POST, so the finding may be stale in the same way an
+    earlier one was.
 - ~~**MCP comment tools' bare catches.**~~ **Closed 2026-08-17.** Three
   `catch (err) { return errorResult(err.message) }` blocks in
   `apps/mcp/src/tools/comments.ts` turned any throw into a routine
