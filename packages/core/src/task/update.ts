@@ -42,6 +42,10 @@ export class TaskUpdateError extends LocttError {
  * their own boundaries and produce clearer errors than waiting for
  * `setField` to throw.
  */
+/** Shared so the two write paths cannot drift apart. */
+const UPDATED_AT_REFUSAL =
+  `cannot set "updated_at" directly; it is stamped on every write`;
+
 export const USER_IMMUTABLE_FIELDS: ReadonlySet<string> = new Set([
   "id",
   "key",
@@ -266,6 +270,12 @@ export async function resolveEntityRef(
 }
 
 export async function setField(opts: SetFieldOptions): Promise<Task> {
+  if (opts.field === "updated_at") {
+    // Both write paths, one message. `updated_at` is in
+    // USER_IMMUTABLE_FIELDS, so the generic guard fired first on each
+    // of them and the reason never reached the user (BLK-40).
+    throw new TaskUpdateError(UPDATED_AT_REFUSAL);
+  }
   if (USER_IMMUTABLE_FIELDS.has(opts.field)) {
     throw new TaskUpdateError(`cannot set immutable field "${opts.field}"`);
   }
@@ -524,17 +534,18 @@ export function assertChangesWritable(
       throw new TaskUpdateError(`duplicate field in ${label}: "${c.field}"`);
     }
     seen.add(c.field);
+    if (c.field === "updated_at") {
+      // Before the generic immutable guard, not after it. BLK-40
+      // requires the refusal to say *why*, and `completed_date` next
+      // door already did.
+      throw new TaskUpdateError(UPDATED_AT_REFUSAL);
+    }
     if (USER_IMMUTABLE_FIELDS.has(c.field)) {
       throw new TaskUpdateError(`cannot set immutable field "${c.field}"`);
     }
     if (AUTO_MANAGED_FIELDS.has(c.field)) {
       throw new TaskUpdateError(
         `cannot set auto-managed field "${c.field}" directly`,
-      );
-    }
-    if (c.field === "updated_at") {
-      throw new TaskUpdateError(
-        `cannot set "updated_at" directly; it is stamped on every write`,
       );
     }
     if (c.value === undefined && c.field === "title") {

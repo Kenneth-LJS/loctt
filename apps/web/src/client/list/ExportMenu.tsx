@@ -8,10 +8,12 @@ import { useState } from "react";
  * is what the count promises. If an "export selected" action is ever
  * added it has to be a separate, differently-labelled control.
  *
- * The link is a real `<a download>` rather than a fetch-then-blob: the
- * URL is the export (BLK-37), so it can be copied, bookmarked and
+ * The `href` is the export URL, so it can be copied, bookmarked and
  * replayed, and nothing that affects the file lives only in React
- * state.
+ * state (BLK-37). A plain click is intercepted and fetched instead:
+ * an `<a download>` cannot report a failure — a 500 produces no file
+ * and no event, so the only signal is a download that never arrives
+ * (BLK-43). A *modified* click is left to the browser.
  */
 export function ExportMenu({
   total,
@@ -30,14 +32,53 @@ export function ExportMenu({
    * so this is a hint that the request is out, not a progress bar the
    * page could not honestly draw.
    *
-   * Cleared on a timer because a plain `<a download>` fires no
-   * completion event; the alternative is a state that never resolves.
+   * The fetch owns the lifetime, so this clears when the request
+   * settles rather than on a guessed timer.
    */
   const [pending, setPending] = useState(false);
 
-  const startPending = (): void => {
+  const [failure, setFailure] = useState<{ format: "csv" | "json"; reason: string } | undefined>(
+    undefined,
+  );
+
+  /**
+   * Runs the export as a fetch and hands the result to the browser.
+   *
+   * A plain `<a download>` cannot report failure: a 500 produces no
+   * file and no event, so the only signal is a download that never
+   * appears (BLK-43). The `href` stays on the anchor so the URL is
+   * still copyable and replayable (BLK-37) — this intercepts the click
+   * rather than replacing the link.
+   */
+  const run = async (format: "csv" | "json"): Promise<void> => {
+    setOpen(false);
+    setFailure(undefined);
     setPending(true);
-    setTimeout(() => { setPending(false); }, 3_000);
+    try {
+      const res = await fetch(href(format));
+      if (!res.ok) {
+        const body = await res.json().catch(() => undefined) as
+          { message?: string } | undefined;
+        setFailure({
+          format,
+          reason: body?.message ?? `the server returned ${String(res.status)}`,
+        });
+        return;
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `loctt-tasks.${format}`;
+      a.click();
+      // Revoked on the next turn: the browser has not necessarily
+      // committed the blob fetch by the time click() returns, and a
+      // 5,000-row export is where that gap is widest.
+      setTimeout(() => { URL.revokeObjectURL(url); }, 0);
+    } catch (err) {
+      setFailure({ format, reason: (err as Error).message });
+    } finally {
+      setPending(false);
+    }
   };
 
   const href = (format: "csv" | "json"): string => {
@@ -81,7 +122,15 @@ export function ExportMenu({
             role="menuitem"
             href={href("csv")}
             download
-            onClick={() => { setOpen(false); startPending(); }}
+            onClick={e => {
+              // A modified click is the user asking the browser to
+              // handle the URL — new tab, new window, download-as. The
+              // href is still the export (BLK-37), so let it through
+              // rather than hijacking it into a same-tab blob.
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+              e.preventDefault();
+              void run("csv");
+            }}
             className="block px-3 py-1.5 text-[12px] text-text-primary no-underline hover:bg-bg-muted"
           >
             CSV
@@ -90,12 +139,30 @@ export function ExportMenu({
             role="menuitem"
             href={href("json")}
             download
-            onClick={() => { setOpen(false); startPending(); }}
+            onClick={e => {
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+              e.preventDefault();
+              void run("json");
+            }}
             className="block px-3 py-1.5 text-[12px] text-text-primary no-underline hover:bg-bg-muted"
           >
             JSON
           </a>
         </div>
+      )}
+
+      {failure !== undefined && (
+        <span role="status" className="ml-2 text-[12px] text-danger-fg">
+          The {failure.format.toUpperCase()} export could not be created:
+          {" "}{failure.reason}
+          <button
+            type="button"
+            onClick={() => { void run(failure.format); }}
+            className="ml-2 rounded-md border border-border-subtle px-2 py-0.5 text-[12px] font-medium text-text-secondary hover:bg-bg-muted"
+          >
+            Retry
+          </button>
+        </span>
       )}
     </div>
   );

@@ -251,6 +251,11 @@ export interface BulkResponse {
    *
    * Absent on routes that do not rekey.
    */
+  /**
+   * Tasks that were already in the requested state — an archive of a
+   * task that is archived. A success, but not a change (BLK-27).
+   */
+  readonly unchanged?: readonly string[];
   readonly moved?: readonly {
     readonly taskId: string;
     readonly old_key: string;

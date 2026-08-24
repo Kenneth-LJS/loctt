@@ -28,9 +28,25 @@ const STATUS_CATEGORY_CLASS: Record<string, string> = {
 export function StatusBadge({ def, raw }: { def: StatusDef | undefined; raw: string | undefined }) {
   if (raw === undefined) return <Dash />;
   const cls = def ? STATUS_CATEGORY_CLASS[def.category] ?? "" : "";
+  // A status the workflow no longer defines is drift, not an ordinary
+  // uncategorised value (BLK-29). Rendering the raw key in the same
+  // grey as a valid status makes the two indistinguishable, so the user
+  // cannot tell a config change happened underneath their tasks. Marked
+  // with a glyph and a title, not colour alone.
+  const orphaned = def === undefined;
   return (
-    <span className={["inline-flex items-center rounded-md px-1.5 py-0.5 text-[12px] font-medium", cls || "bg-bg-muted text-text-secondary"].join(" ")}>
+    <span
+      title={orphaned ? `"${raw}" is not defined in workflow.yaml` : undefined}
+      className={[
+        "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] font-medium",
+        orphaned
+          ? "border border-dashed border-danger-fg/50 text-danger-fg"
+          : cls || "bg-bg-muted text-text-secondary",
+      ].join(" ")}
+    >
+      {orphaned && <span aria-hidden="true">⚠</span>}
       {def?.label ?? raw}
+      {orphaned && <span className="sr-only"> (unknown status)</span>}
     </span>
   );
 }

@@ -97,6 +97,7 @@ export {
   EditCommentRequestSchema,
   EditViewRequestSchema,
   InitRequestSchema,
+  MAX_BULK_REFS,
   PostCommentRequestSchema,
   PutWorkflowRequestSchema,
 } from "./service-schemas.js";

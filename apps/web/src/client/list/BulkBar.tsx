@@ -5,6 +5,7 @@ import type {
   UserProfile,
   WorkflowConfig,
 } from "@loctt/contracts";
+import { MAX_BULK_REFS } from "@loctt/contracts";
 import { useState } from "react";
 
 /**
@@ -87,6 +88,21 @@ export function BulkBar({
   // inventing options.
   const statuses = workflow?.statuses ?? [];
   const priorities = workflow?.priorities ?? [];
+  // Over the cap, every action would be refused by the server. Offering
+  // them anyway is a click that can only fail.
+  const overCap = count > MAX_BULK_REFS;
+  /**
+   * BLK-6: by `value` when present, alphabetically when not. Config
+   * order is the wrong default here — a priority list is ranked, and
+   * showing Low above Critical because that is how the file happens to
+   * read is a picker the user has to think about.
+   */
+  const orderedPriorities = [...priorities].sort((a, b) => {
+    if (a.value !== undefined && b.value !== undefined) return a.value - b.value;
+    if (a.value !== undefined) return -1;
+    if (b.value !== undefined) return 1;
+    return a.label.localeCompare(b.label);
+  });
 
   return (
     <div
@@ -99,6 +115,16 @@ export function BulkBar({
         if (e.key === "Escape") onClear();
       }}
     >
+      {count > MAX_BULK_REFS && (
+        <p role="status" className="w-full text-[12px] text-danger-fg">
+          {/* Stated at selection time, before anything is sent (BLK-47).
+              Letting the server's validator be the first mention leaks
+              its own jargon to the user (ERR-16) and wastes a round
+              trip on a request that cannot succeed. */}
+          Bulk actions apply to at most {MAX_BULK_REFS} tasks at once —
+          {" "}{count} are selected. Clear some, or act in batches.
+        </p>
+      )}
       <p aria-live="polite" className="text-[13px] font-medium text-text-primary">
         {/* Singular at one, plural above — the count is of selected
             rows, never the page size or the filter total. */}
@@ -111,31 +137,34 @@ export function BulkBar({
       <BulkPicker
         label="Set status"
         options={statuses.map(s => ({ id: s.key, label: s.label }))}
-        disabled={busy}
+        disabled={busy || overCap}
         onPick={v => { onSetField("status", v); }}
       />
       <BulkPicker
         label="Set priority"
-        options={priorities.map(p => ({ id: p.key, label: p.label }))}
-        disabled={busy}
+        options={orderedPriorities.map(p => ({ id: p.key, label: p.label }))}
+        clearLabel="Clear priority"
+        disabled={busy || overCap}
         onPick={v => { onSetField("priority", v); }}
       />
       <BulkPicker
         label="Set assignee"
         options={active(users).map(u => ({ id: u.id, label: u.name }))}
         clearLabel="Unassign"
-        disabled={busy}
+        disabled={busy || overCap}
         onPick={v => { onSetField("assignee", v); }}
       />
       <BulkPicker
         label="Set milestone"
+        emptyReason="No milestones defined — add one in Settings → Milestones"
         options={active(milestones).map(m => ({ id: m.id, label: m.name }))}
         clearLabel="No milestone"
-        disabled={busy}
+        disabled={busy || overCap}
         onPick={v => { onSetField("milestone", v); }}
       />
       <BulkPicker
         label="Set sprint"
+        emptyReason="No sprints defined — add one in Settings → Sprints"
         options={active(sprints).map(sp => ({
           id: sp.id,
           label: sp.name,
@@ -144,21 +173,22 @@ export function BulkBar({
           hint: sp.state,
         }))}
         clearLabel="No sprint"
-        disabled={busy}
+        disabled={busy || overCap}
         onPick={v => { onSetField("sprint", v); }}
       />
 
       <BulkPicker
         label="Move to project"
+        emptyReason="Only one project — create another in Settings → Projects"
         options={active(projects).map(pr => ({ id: pr.id, label: pr.name }))}
-        disabled={busy}
+        disabled={busy || overCap}
         onPick={v => { if (v !== null) onMove(v); }}
       />
 
       <button
         type="button"
         onClick={onArchive}
-        disabled={busy}
+        disabled={busy || overCap}
         className="rounded-md border border-border-subtle px-2.5 py-1 text-[12px] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
       >
         Archive
@@ -167,7 +197,7 @@ export function BulkBar({
       <button
         type="button"
         onClick={onDeleteRequested}
-        disabled={busy}
+        disabled={busy || overCap}
         className="rounded-md border border-danger-fg/40 px-2.5 py-1 text-[12px] font-medium text-danger-fg hover:bg-danger-fg/10 disabled:opacity-50"
       >
         Delete
@@ -249,6 +279,7 @@ function BulkPicker({
   label,
   options,
   clearLabel,
+  emptyReason,
   disabled,
   onPick,
 }: {
@@ -268,6 +299,15 @@ function BulkPicker({
    * already holds a now-archived value must stay possible.
    */
   readonly clearLabel?: string | undefined;
+  /**
+   * Shown in place of the options when the workspace has none (BLK-17).
+   *
+   * A picker that opens onto nothing looks broken; one that says why,
+   * and where to fix it, is a workspace that has not been set up yet.
+   * The trigger is disabled so the state is reachable without a click
+   * that leads nowhere.
+   */
+  readonly emptyReason?: string | undefined;
   readonly disabled: boolean;
   readonly onPick: (value: string | null) => void;
 }) {
@@ -280,7 +320,8 @@ function BulkPicker({
         aria-label={label}
         aria-expanded={open}
         aria-haspopup="menu"
-        disabled={disabled}
+        disabled={disabled || (emptyReason !== undefined && options.length === 0)}
+        title={options.length === 0 ? emptyReason : undefined}
         onClick={() => { setOpen(o => !o); }}
         className="rounded-md border border-border-subtle px-2.5 py-1 text-[12px] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
       >
@@ -306,7 +347,11 @@ function BulkPicker({
               {clearLabel}
             </button>
           )}
-          {options.length === 0 ? (
+          {options.length === 0 && emptyReason !== undefined ? (
+            <div className="px-3 py-2 text-[12px] italic text-text-tertiary">
+              {emptyReason}
+            </div>
+          ) : options.length === 0 ? (
             clearLabel === undefined && (
               <div className="px-3 py-2 text-[12px] italic text-text-tertiary">
                 No options

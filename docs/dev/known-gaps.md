@@ -107,3 +107,46 @@ would always resolve it, but that contradicts GIT-C2's stated rule
 ("the task with the earlier `created_at` keeps the key"), and the input
 only arises from a hand-edited branch, which P-12 already classes as
 unsupported. Not worth a spec change on that evidence.
+
+## One malformed `task.md` breaks the whole list (BLK-44 deferred)
+
+**Found 2026-08-25 while building M1.4 subsection 5. Verified against
+the built CLI, not inferred.**
+
+A single task whose frontmatter will not parse takes down every read
+that goes through `loadAllTasks`:
+
+```
+$ loctt list
+Error: Implicit keys of flow sequence pairs need to be on a single line
+```
+
+The web list shows the error state and the export button disables at
+`total === 0`, so one corrupt file makes the tracker look empty on
+every surface at once.
+
+**This is a P-11 violation** — leniency means keeping, never
+destroying, and here one unreadable neighbour destroys access to
+everything else. `readCommentEntries` and `readHistoryRows` already
+have the keep-and-report shape; task files do not.
+
+**Deferred deliberately.** The fix is in
+`packages/core/src/task/load-all.ts:61`, one line at the change point:
+
+```ts
+return mapWithLimit(ids, READ_CONCURRENCY, id => readTask(locttDir, id));
+```
+
+but the return type is what every consumer reads, so making it
+partial-tolerant is a data-shape change to the layer all three surfaces
+depend on — the "escalate by rule" case in `TEMP-BUILD-PLAN.md`, not
+something a UI ticket decides.
+
+**BLK-44 is not tagged**, and its last bullet points at a broken-task
+indicator "see flow-list.md" that **does not exist there** — no case in
+`flow-list.md` specifies it. So the case names a dependency that was
+never written. Both need settling together.
+
+**Related and already fixed:** BLK-29's drift indicator (a *status* the
+workflow no longer defines) shipped in the same subsection. The same
+visual treatment is what a broken *task* row would want.
