@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { ProjectsConfig } from "@loctt/contracts";
@@ -9,6 +8,7 @@ import { z } from "zod";
 import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
+import { readFileState, UnreadableFileError } from "../utils/read-state.js";
 import { safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
@@ -59,8 +59,15 @@ export function serializeProjectsConfig(config: ProjectsConfig): string {
 
 export async function loadProjectsConfig(locttDir: string): Promise<ProjectsConfig> {
   const path = getProjectsConfigPath(locttDir);
-  const content = await readFile(path, "utf-8");
-  return parseProjectsConfig(content);
+  // Rethrown as a named cause rather than a bare errno: these throw on
+  // absence too (deliberately — the file is required), so the caller
+  // needs to know which file and why.
+  const file = await readFileState(path);
+  if (file.state === "unreadable") throw new UnreadableFileError(file);
+  if (file.state === "absent") {
+    throw Object.assign(new Error(`ENOENT: no such file or directory, open '${path}'`), { code: "ENOENT", path: path });
+  }
+  return parseProjectsConfig(file.content);
 }
 
 export async function saveProjectsConfig(

@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 
 import type { ListViewConfig } from "@loctt/contracts";
 import { ListViewConfigSchema } from "@loctt/contracts";
@@ -6,7 +5,7 @@ import { z } from "zod";
 
 import { getListViewConfigPath } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
-import { fileExists } from "../utils/fs.js";
+import { readFileState, UnreadableFileError } from "../utils/read-state.js";
 import { coerceYaml, safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
@@ -45,10 +44,15 @@ export function parseListViewConfig(yamlContent: string): ListViewConfig {
  */
 export async function loadListViewConfig(locttDir: string): Promise<ListViewConfig> {
   const path = getListViewConfigPath(locttDir);
-  if (!(await fileExists(path))) return {};
-  const raw = await readFile(path, "utf-8");
-  if (raw.trim() === "") return {};
-  return parseListViewConfig(raw);
+  // Absent is a supported state; unreadable is not. V9: a config value
+  // is a definition other data references, not a record of an event, so
+  // LocTT refuses rather than building on one it could not read. The
+  // file is never written over, which is what P-11 protects.
+  const file = await readFileState(path);
+  if (file.state === "unreadable") throw new UnreadableFileError(file);
+  if (file.state === "absent") return {};
+  if (file.content.trim() === "") return {};
+  return parseListViewConfig(file.content);
 }
 
 /**

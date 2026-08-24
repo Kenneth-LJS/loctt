@@ -1,10 +1,10 @@
-import { readFile } from "node:fs/promises";
 
 import type { WorkflowConfig } from "@loctt/contracts";
 import { WorkflowConfigSchema } from "@loctt/contracts";
 import { z } from "zod";
 
 import { getWorkflowConfigPath } from "../paths/index.js";
+import { readFileState, UnreadableFileError } from "../utils/read-state.js";
 import { safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
@@ -42,6 +42,13 @@ export function parseWorkflowConfig(yamlContent: string): WorkflowConfig {
 
 export async function loadWorkflowConfig(locttDir: string): Promise<WorkflowConfig> {
   const filePath = getWorkflowConfigPath(locttDir);
-  const content = await readFile(filePath, "utf-8");
-  return parseWorkflowConfig(content);
+  // Rethrown as a named cause rather than a bare errno: these throw on
+  // absence too (deliberately — the file is required), so the caller
+  // needs to know which file and why.
+  const file = await readFileState(filePath);
+  if (file.state === "unreadable") throw new UnreadableFileError(file);
+  if (file.state === "absent") {
+    throw Object.assign(new Error(`ENOENT: no such file or directory, open '${filePath}'`), { code: "ENOENT", path: filePath });
+  }
+  return parseWorkflowConfig(file.content);
 }

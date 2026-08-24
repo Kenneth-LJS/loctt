@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { CalendarConfig } from "@loctt/contracts";
@@ -9,6 +8,7 @@ import { z } from "zod";
 import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
+import { readFileState, UnreadableFileError } from "../utils/read-state.js";
 import { coerceYaml, safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
@@ -62,7 +62,13 @@ export function serializeCalendarConfig(config: CalendarConfig): string {
  */
 export async function loadCalendarConfig(locttDir: string): Promise<CalendarConfig> {
   const path = getCalendarConfigPath(locttDir);
-  if (!(await fileExists(path))) {
+  // Absent is a supported state; unreadable is not. V9: a config value
+  // is a definition other data references, not a record of an event, so
+  // LocTT refuses rather than building on one it could not read. The
+  // file is never written over, which is what P-11 protects.
+  const file = await readFileState(path);
+  if (file.state === "unreadable") throw new UnreadableFileError(file);
+  if (file.state === "absent") {
     return {
       timezone: "UTC",
       first_day_of_week: 1,
@@ -70,8 +76,7 @@ export async function loadCalendarConfig(locttDir: string): Promise<CalendarConf
       holidays: [],
     };
   }
-  const raw = await readFile(path, "utf-8");
-  return parseCalendarConfig(raw);
+  return parseCalendarConfig(file.content);
 }
 
 export async function saveCalendarConfig(

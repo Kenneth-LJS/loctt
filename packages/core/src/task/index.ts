@@ -50,8 +50,19 @@ export {
   splitTaskFile,
   TaskParseError,
 } from "./frontmatter.js";
-export type { ReadHistoryOptions, ReadHistoryPage } from "./history.js";
-export { appendHistory, readHistory } from "./history.js";
+export type {
+  HistoryRow,
+  MalformedHistoryEntry,
+  ReadHistoryOptions,
+  ReadHistoryPage,
+} from "./history.js";
+export {
+  appendHistory,
+  isMalformedHistoryEntry,
+  readHistory,
+  readHistoryRows,
+  validHistory,
+} from "./history.js";
 export {
   appendTaskBody,
   readTask,

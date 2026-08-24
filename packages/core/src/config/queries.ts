@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 
 import type { QueriesConfig, SavedQuery } from "@loctt/contracts";
 import { SavedQuerySchema } from "@loctt/contracts";
@@ -9,6 +8,7 @@ import { getQueriesConfigPath } from "../paths/index.js";
 import { ParseError, parseQuery } from "../query/parser.js";
 import { tokenize, TokenizeError } from "../query/tokenizer.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
+import { readFileState, UnreadableFileError } from "../utils/read-state.js";
 import { safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
@@ -111,6 +111,13 @@ export async function saveQueriesConfig(
 
 export async function loadQueriesConfig(locttDir: string): Promise<QueriesConfig> {
   const filePath = getQueriesConfigPath(locttDir);
-  const content = await readFile(filePath, "utf-8");
-  return parseQueriesConfig(content);
+  // Rethrown as a named cause rather than a bare errno: these throw on
+  // absence too (deliberately — the file is required), so the caller
+  // needs to know which file and why.
+  const file = await readFileState(filePath);
+  if (file.state === "unreadable") throw new UnreadableFileError(file);
+  if (file.state === "absent") {
+    throw Object.assign(new Error(`ENOENT: no such file or directory, open '${filePath}'`), { code: "ENOENT", path: filePath });
+  }
+  return parseQueriesConfig(file.content);
 }

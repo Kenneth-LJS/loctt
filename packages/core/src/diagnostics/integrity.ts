@@ -19,8 +19,9 @@
  *     would be destruction by another route.
  */
 
-import { getCommentsFilePath, getTasksDir } from "../paths/index.js";
+import { getCommentsFilePath, getHistoryFilePath, getTasksDir } from "../paths/index.js";
 import { isMalformedComment, listCommentEntries } from "../task/comments.js";
+import { isMalformedHistoryEntry, readHistoryRows } from "../task/history.js";
 import { listTaskIds } from "../task/list-ids.js";
 import { UnreadableFileError } from "../utils/read-state.js";
 
@@ -37,9 +38,11 @@ export interface IntegrityFinding {
 /**
  * Scans every task's comment thread.
  *
- * Comments are the first store to gain P-11's keep-and-merge
- * behaviour, so they are the first this reports on. History and the
- * config slices follow the same shape when they gain it.
+ * Comments and history both carry P-11's keep-and-merge behaviour, and
+ * both are reported here. Config is deliberately **not** — see V9: a
+ * config value is a definition other data references rather than a
+ * record of an event, so LocTT refuses to write rather than building
+ * around the damage.
  */
 export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFinding[]> {
   const findings: IntegrityFinding[] = [];
@@ -78,6 +81,30 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
       findings.push({
         severity: "unreadable",
         path,
+        message: err instanceof UnreadableFileError
+          ? err.message
+          : `could not be read: ${messageOf(err)}`,
+      });
+    }
+
+    const historyPath = getHistoryFilePath(locttDir, taskId);
+    try {
+      for (const row of await readHistoryRows(locttDir, taskId)) {
+        if (!isMalformedHistoryEntry(row)) continue;
+        findings.push({
+          severity: "malformed",
+          path: historyPath,
+          message:
+            `history entry ${String(row.index + 1)} cannot be read as an entry `
+            + `(an entry needs a timestamp and a kind). It has been kept in place `
+            + `and is preserved by every write and every merge; repair it by hand `
+            + `to have it appear in the activity log again.`,
+        });
+      }
+    } catch (err) {
+      findings.push({
+        severity: "unreadable",
+        path: historyPath,
         message: err instanceof UnreadableFileError
           ? err.message
           : `could not be read: ${messageOf(err)}`,
