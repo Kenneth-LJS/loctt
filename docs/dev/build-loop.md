@@ -39,6 +39,20 @@ Three defences, in order of how much they carry:
    comment rather than writing a test that implies coverage it does not
    have.
 
+4. **Extending code someone else tested? Mutate their tests too.** Rule
+   3 covers the tests you write. It does not catch a test file that
+   quietly stopped covering its subject when the code beneath it grew.
+
+   `diagnostics/integrity.test.ts` was written when the scan checked
+   comments. History scanning was added beside it later and the test
+   file was never extended — so `doctor`'s entire history-reporting path
+   could be deleted with all nine tests still green. Nobody wrote a bad
+   test; the code outgrew a good one.
+
+   The check is cheap: after adding a case to an existing scan, switch
+   loop or handler, delete your new branch and run that file's tests. If
+   they pass, the coverage you assumed is not there.
+
 ## Per ticket
 
 ```
