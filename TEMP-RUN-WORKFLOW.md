@@ -282,6 +282,20 @@ fixed here because they were sized already.
 A milestone gate covers the milestone, not the last ticket in it. M1's
 gate walks the shell and list built in M1.1–M1.3 as well.
 
+**Expect M1's gate report to be long.** M1.1–M1.3 are marked ✅ but sit
+at 0/75, 10/67 and 3/44 cases covered. Those ticks were awarded before
+any ticket declared its cases, so they record "the bullets were built",
+not "the cases are verified" — both readings were legitimate at the
+time and they are not interchangeable now. The gate is the first thing
+to walk that code against its cases, so findings there are expected
+rather than a surprise, and they are M1.4-adjacent work: fixed and
+re-gated under the normal rule, not escalated.
+
+**One consequence worth stating.** If the gate finds enough in
+M1.1–M1.3 to constitute a ticket's worth of work, that is a finding
+about the ✅ marks, not a reason to halt. Record it, fix it, and note in
+the run log that the marks were re-earned rather than assumed.
+
 ---
 
 ## Known state at the start
