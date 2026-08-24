@@ -97,6 +97,50 @@ describe("a malformed entry is reported but does not block", () => {
   });
 });
 
+describe("history rows are reported too, not only comments", () => {
+  it("reports a row with an unrecognised kind", async () => {
+    await seed(["first"]);
+    const historyPath = join(dir, "tasks", TASK_ID, "_history.yaml");
+    const rows = parseYaml(await readFile(historyPath, "utf-8")) as unknown[];
+    rows.push({ timestamp: "2026-09-01T00:00:00.000Z", kind: "not_a_real_kind" });
+    await writeFile(historyPath, stringifyYaml(rows), "utf-8");
+
+    // History reporting was added after this file was written and was
+    // never covered here: suppressing it entirely left all nine tests
+    // green. Found by mutation 2026-08-17.
+    const findings = await checkDataIntegrity(dir);
+    const history = findings.filter(f => f.path.endsWith("_history.yaml"));
+    expect(history).toHaveLength(1);
+    expect(history[0]?.severity).toBe("malformed");
+    expect(history[0]?.message).toContain("history entry 2");
+  });
+
+  it("does not block a publish on one", async () => {
+    // Same rule as a malformed comment: the row is kept and merged, so
+    // the data is intact and publishing it is safe.
+    await seed(["first"]);
+    const historyPath = join(dir, "tasks", TASK_ID, "_history.yaml");
+    const rows = parseYaml(await readFile(historyPath, "utf-8")) as unknown[];
+    rows.push({ timestamp: "2026-09-01T00:00:00.000Z", kind: "not_a_real_kind" });
+    await writeFile(historyPath, stringifyYaml(rows), "utf-8");
+
+    expect(blockingFindings(await checkDataIntegrity(dir))).toEqual([]);
+  });
+
+  it("reports an unreadable history file as blocking", async () => {
+    await seed(["first"]);
+    const historyPath = join(dir, "tasks", TASK_ID, "_history.yaml");
+    await chmod(historyPath, 0o000);
+
+    const findings = await checkDataIntegrity(dir);
+    const history = findings.filter(f => f.path.endsWith("_history.yaml"));
+    expect(history[0]?.severity).toBe("unreadable");
+    expect(blockingFindings(findings)).toHaveLength(1);
+
+    await chmod(historyPath, 0o644);
+  });
+});
+
 describe("an unreadable file is reported and blocks", () => {
   it("reports the file it could not read", async () => {
     await seed(["first"]);
