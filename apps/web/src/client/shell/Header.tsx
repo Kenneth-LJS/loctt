@@ -21,15 +21,25 @@ import { Menu, MenuItem } from "../ui/Menu.tsx";
 export function Header({
   currentUser,
   onToggleSidebar,
+  canToggleSidebar = true,
 }: {
   readonly currentUser: UserProfile;
   readonly onToggleSidebar: () => void;
+  /**
+   * False below the sidebar's breakpoint, where it cannot expand.
+   * Disabled rather than silently inert: the click used to be stored
+   * and surface later at a wide width, which reads as the app changing
+   * state on its own.
+   */
+  readonly canToggleSidebar?: boolean;
 }) {
   return (
     <header className="col-span-2 flex h-12 items-center gap-3 border-b border-border-subtle bg-bg-surface px-4">
       <button
         type="button"
         onClick={onToggleSidebar}
+        disabled={!canToggleSidebar}
+        title={canToggleSidebar ? undefined : "The sidebar stays collapsed at this width"}
         aria-label="Toggle sidebar"
         className="grid h-8 w-8 place-items-center rounded-md text-text-secondary hover:bg-bg-muted hover:text-text-primary"
       >
