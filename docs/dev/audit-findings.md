@@ -590,3 +590,83 @@ a re-reader does not spend the same time reaching the same non-finding.
 Nothing here has been fixed or scheduled. The plan routes escalated
 findings through a human, and the auto-fixable subset waits on Phase 3's
 test net.
+
+## V1 audit A — core validation survey, 2026-08-17
+
+Read-only survey of what `packages/core` validates on its write paths,
+run as input to V1. Two findings are live defects; the rest is the
+factual picture V1 needs.
+
+### 🔴 `setFields` does not resolve entity names — MSL-C1, reopened on the bulk path
+
+`resolveEntityRef` (`task/update.ts:217`) converts a milestone / sprint /
+assignee **name** to its ULID before writing. It has exactly one call
+site — `update.ts:282`, inside `setField`. **`setFieldsLocked` does not
+call it**, so `setFields` and `bulkSetFields` write the raw string.
+
+Reproduced against the built binary. Same command, same field; the only
+difference is how many task refs:
+
+```
+loctt set T1 milestone v1        -> milestone: 01M0SAA043ZZ1FQS1VFF8QRYM9
+loctt set T1,T2 milestone v1     -> milestone: v1
+```
+
+`doctor` then reports `2 dangling reference(s) — unknown milestone "v1"`.
+
+This is **MSL-C1 reopening**. That case was closed in Phase 3 (`48b2b57`)
+because identity is a ULID and storing the name made milestone progress
+read 0/0. The fix landed in `setField` only; `setFields` was not
+covered, and `bulkSetFields` delegates straight to it (`bulk.ts:99`).
+
+All three surfaces reach it: `apps/web/src/server/server.ts:2497`,
+`apps/mcp/src/tools/task-crud.ts:408`, `apps/cli/src/commands/task-crud.ts:478`
+and `:544`. The CLI routes to bulk whenever more than one ref is given
+(`task-crud.ts:476`), so `loctt set T1,T2 …` is enough.
+
+It also defeats two guards that match on id: the archived-reference
+check, and `deleteUser`'s reference scan.
+
+### 🔴 No write path checks that a referenced entity exists
+
+`validateTaskAgainstWorkflow` (`config/validation.ts:33`) takes an
+optional `aux` parameter that adds existence checks for project,
+milestone, sprint and labels (`validation.ts:78-118`). Verified by
+grep: the only caller passing it is `diagnostics/doctor.ts:357`. The
+three write paths — `create.ts:128`, `update.ts:309`, `update.ts:629` —
+all pass two arguments.
+
+So a task can be written referencing a milestone, sprint, project or
+label that does not exist. `assertLabelIdsRegistered`
+(`labels/manage.ts:88`) documents itself as "used by createTask/setField"
+and is called by neither.
+
+### The V1 picture
+
+- **52 error classes in core; 4 carry structured data.** Only
+  `UnreadableFileError`, `SwapRollbackError`, the two attachment errors
+  and `StaleBodyWriteError` have fields beyond a message. Every
+  write-path error — `TaskUpdateError`, `RelationshipError`,
+  `CommentError`, `ArchivedReferenceError`, the five entity errors — is
+  message-only.
+- **`ErrorResponse` is never constructed in core.** Its only
+  construction site in the repo is `apps/web/src/server/server.ts:311`.
+- **`ValidationError` is `{field, message}`** (`validation.ts:11`) —
+  already half the envelope, missing `code`, `data_state`, `recovery`.
+- **`createTask` throws a bare `Error`** (`create.ts:130`), the only
+  surveyed entry point callers cannot `instanceof`.
+- **Raw `z.ZodError` escapes** from `writeTask` (`task/io.ts:41`) and
+  `bulk.ts:125`/`:195` — the one structured failure core produces, and
+  it is thrown untranslated. ERR-16 bars it from user-facing copy.
+- **`workflowConfig` and `archivedGuard` are optional everywhere.**
+  Omitting them silently skips all enum and archived validation.
+- **Sprint state is a hardcoded local set** (`sprints/manage.ts:28-32`),
+  not read from config, unlike every other enum.
+- **`bulkSetFields` flattens error classes to strings** (`bulk.ts:115`)
+  in `BulkResult.failed`, losing the class before any surface sees it.
+
+Agent-reported, not re-verified here: `linkTask` will write an edge to a
+nonexistent task when `blockArchivedTarget: false` and no inverse is
+defined; `postComment` creates the task directory for a nonexistent
+task id rather than erroring. Both are plausible from the code but were
+not reproduced.
