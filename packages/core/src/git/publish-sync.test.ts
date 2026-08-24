@@ -263,6 +263,20 @@ describe("publish-sync", () => {
       // The branch adds a second task claiming the same key, in a
       // project this clone has no counter for — so the rekey pass has
       // nowhere to allocate a replacement from and must skip it.
+      //
+      // `created_at` must be LATER than the local task's, or the skip
+      // path is never reached. The fixture used to copy the published
+      // file wholesale, giving both tasks an identical `created_at`;
+      // the tiebreak then fell to the id, and the hardcoded
+      // `01M0COLLIDING…` sorts *before* a real ULID. So the colliding
+      // task won the key, the local task was rekeyed — successfully,
+      // because its project does have a counter — and `skipped` was
+      // empty. The test asserted an outcome its own fixture made
+      // unreachable.
+      //
+      // Per GIT-C2: "the task with the earlier created_at keeps the
+      // key". The later one is the one that must be rekeyed, and here
+      // it is the one that cannot be.
       await commitOnBranch(async wt => {
         const otherId = "01M0COLLIDING000000000000";
         await mkdir(join(wt, "tasks", otherId), { recursive: true });
@@ -271,6 +285,7 @@ describe("publish-sync", () => {
           published
             .replace(/^id: .*$/m, `id: ${otherId}`)
             .replace(/^project: .*$/m, "project: 01M0NOSUCHPROJECT00000000")
+            .replace(/^created_at: .*$/m, "created_at: 2099-01-01T00:00:00.000Z")
             .replace(/^title: .*$/m, "title: Collides on key"),
         );
       }, "add a colliding task");
