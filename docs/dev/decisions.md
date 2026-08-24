@@ -560,3 +560,47 @@ than a design question: move the surface rules into core, and have core
 throw errors that carry the envelope's fields instead of bare prose.
 The taxonomy question that made V1 look undecidable before a UI existed
 was answered in the case docs the whole time.
+
+### V11 · Bulk undo is in-memory and dies with the page
+
+**Decided 2026-08-24 by Ken.** BLK-10 requires an Undo affordance in
+the success message after a bulk archive. The list of just-archived
+task ids lives **in memory only** — no store, no persistence.
+
+Reloading or navigating away loses the undo. That is accepted: archive
+is reversible by other routes (toggle "Show archived", unarchive), so
+the undo is a convenience over the immediately-preceding action, not a
+recovery mechanism.
+
+**What this settles for M1.4.** BLK-10 is not only an addition. It also
+*removes* the typed-confirmation dialog currently shipped on bulk
+Archive — the case is explicit that demanding one is itself a
+violation, because archive is reversible. At most a lightweight
+"Archive 6 tasks?" with **cancel focused by default**.
+
+Nothing persists, so there is no expiry to configure and no journal
+entry. The undo affordance disappears with the success message.
+
+### V12 · Per-user UI state lives in `localStorage`
+
+**Decided 2026-08-24 by Ken.** SPR-3 requires a sprint column's
+expand/collapse to survive a reload, per-user, explicitly *not* written
+to `sprints.yaml`. No per-user UI-state store existed:
+
+- `sprints.yaml` — shared config; the case forbids it.
+- `list-view.yaml` — committed and shared across the team, so it is the
+  wrong scope even though it is the closest existing thing.
+- `.loctt/local/` — right scope (never mirrored to git), but everything
+  there is machine state (`sync.yaml`, `journal.yaml`,
+  `key-index.yaml`); there is no UI-preferences file.
+
+**`localStorage`.** No server work, no contract, no route pair.
+
+**The cost, accepted:** it is per-browser, not per-user. The same
+person on a second machine gets the defaults back. SPR-3 is a `major`
+case, not a blocker, and the state it holds is a column being open —
+losing it costs one click.
+
+**Consequence.** M3.5 needs no server work of any kind. The earlier
+claim in `TEMP-BUILD-PLAN.md` that M3.5 and M4.9 "carry server work"
+is wrong on both counts — see the note there.
