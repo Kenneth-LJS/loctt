@@ -77,6 +77,30 @@ writing anything proves they exist in the index. An agent that
 hallucinates `LST-99` finds out in the first thirty seconds rather than
 at step 8.
 
+## Adding a field to a schema
+
+A new field on `TaskFrontmatterSchema` — or any contracts schema the
+validator covers — needs a write-path check, or an explicit exemption
+saying why it does not.
+
+**You do not have to remember this.**
+`packages/core/src/config/schema-coverage.test.ts` enumerates the schema
+at runtime and fails naming the field:
+
+```
+add a check for these, or exempt them with a reason: brand_new_field
+```
+
+Exempt a field only when nothing about its *value* can be wrong — not
+when writing the rule is inconvenient. The exemption carries a one-line
+reason, and a second test fails if that reason names a field that no
+longer exists, so the list cannot rot.
+
+**What this does not prove.** Coverage, not correctness: it says the
+field is looked at, not that the rule is right. The failure mode it
+targets is forgetting entirely, which is the one that actually happens
+(V5).
+
 ## Running the suites
 
 **Never run two suites concurrently.** Each `pretest` hook rebuilds
