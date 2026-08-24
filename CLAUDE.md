@@ -27,6 +27,10 @@ deleted when the build lands:
 
 - `TEMP-BUILD-PLAN.md` — the phased plan: four phases of fixes, then
   Phase 5, the UI build. **Read this first** to know where the work is.
+  Its Status table is the run log, updated after every commit.
+- `TEMP-RUN-WORKFLOW.md` — **how the Phase 5 run executes**: sections and
+  subsections, which agents are fresh, the section gate, and the only
+  two things that stop the run. Read second.
   It governs `build-loop.md`, which governs one ticket.
 - `TEMP-WEB-TICKETS.md` — the 23 build tickets and the cases each owes
 - `PROPOSED-UI-CASES.md` — flow-doc contradictions awaiting a decision
