@@ -129,6 +129,33 @@ Written after every subsection commit, per
 |---|---|---|---|---|
 | M1.4 | 1 · entity pickers | `2ca36cb` | BLK-7, BLK-8 | Coverage 111 → 113. Six mutations; two of my tests were vacuous and a fresh review agent found two more. |
 | M1.4 | 2 · move to project | `e541456` | BLK-9, BLK-26, BLK-31 | Coverage 113 → 116. Found a live API defect and introduced one regression; review caught eight things. |
+| M1.4 | 3 · archive undo | `6b16801` | BLK-10 | The ticket's premise was wrong — archive never had a typed confirm. Undo + archived badge built instead. Fixed an intermittent I introduced in subsection 2. |
+
+**Carried forward from subsection 3:**
+
+- **The ticket said archive shipped behind a typed confirm. It did
+  not** — and I had repeated that into this plan without checking.
+  Archive has been one click since `bd62543`, asserted since then.
+  What BLK-10 actually still wanted was the Undo and the badge.
+  *A ticket bullet is a claim, not a fact; probe it like any other.*
+- **A boolean return discarded what the caller needed.** `runBulk`
+  returning "did anything succeed" made Undo restore the refs *sent*,
+  so a partial archive un-archived a task the batch had failed on.
+  Returning the succeeded ids is both simpler and correct.
+- **An action that clears the selection unmounts its own result.**
+  Fixed properly here by sharing one `BulkResult` between the bar and
+  the standalone region, after a vacuous test forced the issue.
+- **Select-all before the table renders checks nothing**, then
+  unchecks itself when rows arrive. Surfaces only under full-suite
+  load as "Clicking the checkbox did not change its state". Row
+  checkboxes auto-wait via the locator; select-all does not. Every new
+  test now waits for `tbody tr` first.
+- **An intermittent is not a flake until it is diagnosed.** This one
+  passed alone 4/4 and failed roughly 1 run in 3 in the suite. Capture
+  the error text before concluding anything.
+- **A mutation that does not compile is not a mutation** — cost a
+  build cycle again, and a careless `git checkout --` afterwards threw
+  away an unrelated fix in the same file.
 
 **Carried forward from subsection 2:**
 
