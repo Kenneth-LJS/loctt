@@ -120,6 +120,37 @@ partitioning agent had scoped its search to M1, where no editable field
 exists, and stopped there rather than looking forward. 30 remain
 unplaceable, 28 of them the two missing views.
 
+### Phase 5 run log
+
+Written after every subsection commit, per
+[`TEMP-RUN-WORKFLOW.md`](TEMP-RUN-WORKFLOW.md). Newest last.
+
+| Ticket | Subsection | Commit | Cases | Notes |
+|---|---|---|---|---|
+| M1.4 | 1 · entity pickers | `2ca36cb` | BLK-7, BLK-8 | Coverage 111 → 113. Six mutations; two of my tests were vacuous and a fresh review agent found two more. See below. |
+
+**Carried forward from subsection 1:**
+
+- **BLK-8's "write the config `key`" is a stale premise, not a
+  contradiction.** `MilestoneDef` and `SprintDef` are `{id, name, …}`
+  and strict — there is no `key`. The prose predates `48b2b57`. BLK-7
+  asks for the ULID explicitly, so the spec's intent is consistent.
+- **`/api/users` filters archived server-side; `/api/milestones` and
+  `/api/sprints` do not.** So a test asserting the *user* picker
+  excludes archived passes whether the client filters or not. Force the
+  archived entry into the payload with `page.route` to make it real.
+- **Disk state cannot distinguish "sent the name" from "sent the id".**
+  `resolveEntityRef` resolves names on write, so frontmatter reads
+  identically either way. Assert the wire value.
+- **`loctt show` renders the resolved name**, so it cannot prove
+  identity either. Read frontmatter off disk.
+- **`npm run test:ui` rebuilds; `npx playwright test` does not.** A spec
+  run directly against a stale bundle fails for the wrong reason.
+- **UserProfile's field is `name`, not `display_name`.** Typecheck did
+  not catch the wrong one; the rendered menuitem was simply blank.
+- **BLK-40 fails and is expected to.** Pre-existing, scheduled into
+  subsection 5.
+
 ### Why 4 is running before 3
 
 The plan orders 3 before 4 "because a restructure needs a net". That
