@@ -1,3 +1,4 @@
+import { LocttError } from "../errors.js";
 export type TokenType =
   | "FIELD"
   | "STRING"
@@ -27,9 +28,14 @@ export interface Token {
   readonly position: number;
 }
 
-export class TokenizeError extends Error {
+export class TokenizeError extends LocttError {
   constructor(message: string, public readonly position: number) {
-    super(`${message} at position ${position}`);
+    // As ParseError: a known cause with a position, so it must not
+    // reach a surface as `unknown` (ERR-31).
+    super("validation_failed", `${message} at position ${position}`, {
+      field: "query",
+      recovery: { kind: "retry" },
+    });
     this.name = "TokenizeError";
   }
 }

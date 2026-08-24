@@ -7,15 +7,18 @@
  * - `label_added` / `label_removed` — label list changed
  * - `archived` / `unarchived` — archive state toggled
  * - `link_added` / `link_removed` — relationship added/removed
- * - `body_edited` — body content changed (no content captured)
+ * - `body_edited` — body content changed; `before` and `after` carry
+ *   the full text, which is what makes a lost merge race recoverable
  * - `attachment_added` / `attachment_removed` — file attached/detached
  * - `comment_added` / `comment_edited` / `comment_deleted` — comment
  *   lifecycle. Anyone may edit or delete anyone's comment (LocTT is
  *   local and unauthenticated, so there's no trust boundary to
  *   enforce), which is exactly why the action is logged: `actor` says
  *   who changed it and `meta.author` who originally wrote it, so an
- *   edit of someone else's comment stays traceable. No comment body is
- *   captured, matching `body_edited`.
+ *   edit of someone else's comment stays traceable. The text is
+ *   captured too: `after` on add and edit, `before` on edit and
+ *   delete. Deletion is the load-bearing case — it is a hard delete,
+ *   so without `before` the words are gone from the tracker entirely.
  */
 export type HistoryKind =
   | "created"

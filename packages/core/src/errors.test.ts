@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { ArchivedReferenceError } from "./config/archived-guard.js";
 import { errorEnvelope, LocttError } from "./errors.js";
+import { ParseError } from "./query/parser.js";
+import { TokenizeError } from "./query/tokenizer.js";
+import { QueryValidationError } from "./query/validate.js";
 import { TaskNotFoundError } from "./task/lookup.js";
 import { TaskUpdateError } from "./task/update.js";
 
@@ -80,6 +83,34 @@ describe("the envelope a surface serialises", () => {
     const envelope = err.toEnvelope();
     expect(envelope.message).not.toContain("ZodError");
     expect(envelope.detail).toContain("ZodError");
+  });
+});
+
+describe("a mistyped query is a known cause, not an unknown one", () => {
+  it("carries validation_failed rather than falling through to unknown", () => {
+    // These three extended bare `Error`, so a typo'd query reached the
+    // UI as `unknown` — the generic handler ERR-31 reserves for causes
+    // that genuinely cannot be determined. The position and the
+    // suggestions are right there in the error.
+    expect(errorEnvelope(new TokenizeError("unexpected character", 4)).code)
+      .toBe("validation_failed");
+    expect(errorEnvelope(new ParseError("expected a value", 9)).code)
+      .toBe("validation_failed");
+    expect(errorEnvelope(new QueryValidationError("unknown field", 0, ["status"])).code)
+      .toBe("validation_failed");
+  });
+
+  it("names the query as the field, so the UI renders at the input", () => {
+    // ERR-14: the rejection belongs at the query box, not in a toast.
+    expect(errorEnvelope(new ParseError("expected a value", 9)).field).toBe("query");
+  });
+
+  it("keeps the position and suggestions the message already carried", () => {
+    const err = new QueryValidationError("unknown field", 0, ["status"]);
+    expect(err.position).toBe(0);
+    expect(err.suggestions).toEqual(["status"]);
+    // The hint survives the migration — it is the most useful part.
+    expect(err.message).toMatch(/did you mean "status"/);
   });
 });
 
