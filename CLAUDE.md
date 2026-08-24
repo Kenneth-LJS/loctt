@@ -22,6 +22,16 @@ User-facing documentation lives in `docs/`. Developer documentation lives in `do
 - `docs/user/cli/reference.md` — CLI commands
 - `docs/user/mcp/reference.md` — MCP tools and agent guidelines
 
+**Working state, not documentation.** These are temporary and are
+deleted when the build lands:
+
+- `TEMP-BUILD-PLAN.md` — the phased plan: four phases of fixes, then
+  Phase 5, the UI build. **Read this first** to know where the work is.
+  It governs `build-loop.md`, which governs one ticket.
+- `TEMP-WEB-TICKETS.md` — the 23 build tickets and the cases each owes
+- `PROPOSED-UI-CASES.md` — flow-doc contradictions awaiting a decision
+  from Ken; nothing here has been applied
+
 Key points:
 - Tasks use `id` (internal, ULID) and `key` (user-facing, e.g. `T-123`)
 - Status, priority, task_type, relationships are configurable in `.loctt/config/workflow.yaml`

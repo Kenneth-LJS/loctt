@@ -1,6 +1,6 @@
 # Audit findings
 
-Phase 4 of [`autonomous-plan.md`](autonomous-plan.md). Eight agents, one slice each, ~18,700 lines read in full rather than
+Phase 4 of [`TEMP-BUILD-PLAN.md`](../../TEMP-BUILD-PLAN.md). Eight agents, one slice each, ~18,700 lines read in full rather than
 skimmed: `packages/core` in wave 1, then `contracts`, `cli` and `mcp`.
 
 **This run was report-only.** No fix was applied — not even the
@@ -238,7 +238,7 @@ mutation of the specific behaviour.
 | `applyWorkflowEdit` journaled before validating | `86f96f6` | Second ordering bug behind the first; a refused edit was replayed by the next operation |
 
 **Phase 3 (surface cases) has since fixed more**, tracked in
-[`autonomous-plan.md`](autonomous-plan.md)'s Phase 3 log rather than
+[`TEMP-BUILD-PLAN.md`](../../TEMP-BUILD-PLAN.md)'s Phase 3 log rather than
 duplicated here — including the burndown summing every sprint, the web
 stranding inverse relationship edges, and milestone/sprint references
 stored as names.
