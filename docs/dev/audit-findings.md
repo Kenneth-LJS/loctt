@@ -448,11 +448,7 @@ with unbuilt work rather than a sweep:
   the comment tools' catches turn a real bug into a routine domain error
   for an agent, which is the same shape on a smaller surface and worth
   doing with the M2 comment work that touches them.
-- `HistoryEntry` element shape. Deliberately left: history has no Zod
-  schema at all, and adding one is a change to a hot write path that
-  belongs with its own design pass, not a sweep. The array-level guard
-  (CMT-C7) and the merge-path parse check (group B) cover the shapes
-  that actually reached code.
+- ~~`HistoryEntry` element shape.~~ **Closed 2026-08-17** (`4fb7e4b`).
 
 ### Swallowed-error audit, 2026-08-17
 
@@ -818,11 +814,19 @@ Still open, deliberately:
   anything else, because masking a real bug hides the diagnosis — and
   these sat inside it and pre-empted it. Deleted; verified a domain
   error still reaches the agent as `isError` with its message.
-- **`HistoryEntry` element shape.** History has no Zod schema at all,
-  and adding one is a change to a hot write path that deserves its own
-  design pass. The array-level guard (CMT-C7), the merge-path parse
-  check (group B), and P-11's per-row validation (`e379de8`) cover the
-  shapes that actually reached code.
+- ~~**`HistoryEntry` element shape.**~~ **Closed 2026-08-17**
+  (`4fb7e4b`). It was carried as "deserves its own design pass", which
+  was true but became the reason it never happened. `kind` was checked
+  only for being a *string*, so a hand-edited `not_a_real_kind` reached
+  every reader — and M2.4's activity feed switches on `kind` to pick an
+  icon, so it had to land before the UI.
+
+  `HistoryKind` is now derived from `HISTORY_KINDS`, so the union and
+  the schema cannot drift. The schema is `.passthrough()` and leaves
+  `before`/`after` unconstrained: a row from a newer LocTT stays
+  readable, and arbitrary field transitions are not rejected. P-11 is
+  intact — a rejected row is still kept, still merged, and now reported
+  by `doctor`, which was itself untested until `40be50c`.
 
 **Closed since the last status:** `handleSetField`'s unvalidated
 `value`. It was recorded as a finding and was not one — the handler
