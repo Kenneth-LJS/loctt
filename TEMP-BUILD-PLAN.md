@@ -129,8 +129,33 @@ Written after every subsection commit, per
 |---|---|---|---|---|
 | M1.4 | 1 · entity pickers | `2ca36cb` | BLK-7, BLK-8 | Coverage 111 → 113. Six mutations; two of my tests were vacuous and a fresh review agent found two more. |
 | M1.4 | 2 · move to project | `e541456` | BLK-9, BLK-26, BLK-31 | Coverage 113 → 116. Found a live API defect and introduced one regression; review caught eight things. |
+| M1.4 | 5 · remaining BLK cases | `9cae899` | BLK-6, 17, 19-21, 25, 27-29, 36, 40, 43, 46-48 | **M1.4 complete.** Four live defects incl. BLK-40, red since it was written. UI suite 65/65 for the first time. |
 | M1.4 | 4 · concurrency + scale | `c4812bb` | BLK-22, 23, 24, 34, 41, 42 | Three live defects: ULID in a failure message, raw proper-lockfile error, unbounded hung request. Review found six more. |
 | M1.4 | 3 · archive undo | `6b16801` | BLK-10 | The ticket's premise was wrong — archive never had a typed confirm. Undo + archived badge built instead. Fixed an intermittent I introduced in subsection 2. |
+
+**Carried forward from subsection 5:**
+
+- **`updated_at` had an unreachable error message.** It was in
+  `USER_IMMUTABLE_FIELDS`, so the generic guard fired first and the
+  explanation written for it never ran — on any path, on any surface.
+  *Guard order decides which message wins; a specific case must precede
+  the general one.*
+- **An archived entity reported as "unknown"** sends the user hunting a
+  typo. `resolveProjectIdFromInput` fell through to unknown for
+  archived projects, and echoed a ULID while doing it.
+- **A test's pattern can be looser than its own comment.** The
+  integration test asked for "say why" and accepted `/immutable/`,
+  which says nothing about why. It was asserting the bug.
+- **`<a download>` cannot report failure** — no file, no event. Export
+  now fetches, but a *modified* click still goes to the browser so
+  BLK-37's copyable URL survives.
+- **The select-all race was mine, twice.** Five call sites clicked the
+  header checkbox before the table rendered. `tbody tr` visibility is
+  not enough; wait for the count line.
+- **BLK-44 is deferred and recorded in `known-gaps.md`.** One malformed
+  `task.md` breaks every read through `loadAllTasks` — a P-11
+  violation needing a data-shape change to core. The case also points
+  at a broken-task indicator in `flow-list.md` that was never written.
 
 **Carried forward from subsection 4:**
 
