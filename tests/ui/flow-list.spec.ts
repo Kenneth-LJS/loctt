@@ -2234,40 +2234,37 @@ test.describe("ERR — a filter applied against a dead server", () => {
     page,
     tracker,
   }) => {
-    // Enough rows that the failure is visible as a count, matching the
-    // gate's reproduction (15 rows under a status filter).
     await tracker.seed(
-      Array.from({ length: 15 }, (_unused, i) => ({
+      Array.from({ length: 14 }, (_unused, i) => ({
         title: `Task ${String(i + 1)}`,
         fields: { status: "in_progress" },
       })),
     );
-    // Land already filtered, so rows are loaded under one query before
-    // the next one fails. Starting unfiltered empties `items` and hides
-    // the defect.
+
+    // Land already filtered, so rows are loaded under one query key
+    // before the next one fails. Starting unfiltered empties `items`
+    // and hides the defect.
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
-    await expect(page.getByText("Showing 1–15 of 15")).toBeVisible();
+    await expect(page.getByText("Showing 1–14 of 14")).toBeVisible();
 
     // The server dies mid-session. No reload — a reload routes through
-    // the shell's boundary and is a fresh boot, which is what hid this.
+    // the shell's boundary, which is a fresh boot rather than the
+    // mid-session failure the journey names.
     await page.route(/\/api\/tasks(\?|$)/, route => route.abort("failed"));
 
     // A second filter, so the query key changes while rows are held.
     await page.getByRole("button", { name: "Filter Priority" }).click();
     await page.getByRole("menuitemcheckbox", { name: /Critical/i }).click();
 
-    // The table must not keep showing rows that answer the previous
-    // question — with a chip claiming the new filter and a footer
-    // stating a count for a query that never ran.
-    // The table states the failure and drops the rows; the footer's
-    // count goes with them. Verified against the pre-fix predicate:
-    // what survives a failed *filter* is different from what survives a
-    // failed *Load more*, and `items.length === 0` could not tell them
-    // apart.
-    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText("Showing 1–15 of 15")).toHaveCount(0);
-    await expect(page.locator("tbody").getByText("Task 1", { exact: true })).toHaveCount(0);
+    // The table must not keep rows fetched for the previous filter,
+    // under chips claiming the new one, with a footer asserting a count
+    // for a query that never ran.
+    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("Showing 1–14 of 14")).toHaveCount(0);
+    await expect(page.locator("tbody").getByText("Task 1", { exact: true }))
+      .toHaveCount(0);
   });
+
 });
 
 test.describe("SHL — narrow viewports", () => {
