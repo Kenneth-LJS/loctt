@@ -148,6 +148,11 @@ the file as the decision.
 - **A new test must be shown to fail.** Break the behaviour it covers,
   watch that test go red, restore. A test that still passes with the
   behaviour deleted asserts nothing — and green is exactly how that hides.
+- **Extending code someone else tested? Mutate their tests too.** The
+  rule above covers tests you write. It misses a test file that stopped
+  covering its subject when the code beneath it grew — nobody wrote a
+  bad test; the code outgrew a good one. Delete your new branch and run
+  that file: if it stays green, the coverage you assumed is not there.
 - **If a fix requires editing a green test, that test was asserting the
   bug.** Say so in the commit message. This repo has shipped fourteen
   such tests: present, passing, and encoding the wrong behaviour. The
