@@ -15,6 +15,7 @@ import {
 import { useInfo } from "../api/hooks/useInfo.ts";
 import { buildQueryString, tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
+import { ErrorState } from "../ui/ErrorState.tsx";
 import { BulkBar } from "./BulkBar.tsx";
 import {
   AssigneeCell,
@@ -243,6 +244,27 @@ export function ListView() {
           <tbody>
             {tasks.isLoading ? (
               <SkeletonRows columns={columns.length + 1} />
+            ) : tasks.isError && items.length === 0 ? (
+              // Without this branch a failed /api/tasks fell through to
+              // the empty state below and rendered "No tasks match these
+              // filters." A server that is down and a tracker that is
+              // empty must be visibly different screens — conflating
+              // them reads as data loss (ERR-1).
+              //
+              // Gated on having no rows: a *Load more* that fails also
+              // sets `isError`, and replacing the table there would
+              // discard the 50 rows already on screen. LST-49 requires
+              // those to survive, with the failure reported by the
+              // pagination control instead.
+              <tr>
+                <td colSpan={columns.length + 1} className="p-0">
+                  <ErrorState
+                    error={tasks.error}
+                    context="Loading tasks"
+                    onRetry={() => { void tasks.refetch(); }}
+                  />
+                </td>
+              </tr>
             ) : items.length === 0 ? (
               <tr>
                 <td colSpan={columns.length + 1} className="px-3 py-8 text-center text-text-tertiary">

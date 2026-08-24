@@ -138,16 +138,61 @@ function ViewSwitcher({ collapsed }: { collapsed: boolean }) {
   );
 }
 
+/**
+ * A sidebar group whose data could not be loaded.
+ *
+ * Every group used `data?.items ?? []`, so a failed fetch rendered as an
+ * empty group — indistinguishable from a tracker that genuinely has no
+ * projects, no labels, no sprints. ERR-1's rule is the same here as in
+ * the list: a failure and an absence must not look alike.
+ *
+ * Deliberately compact rather than the full `ErrorState`. The sidebar is
+ * a narrow column and six groups can fail at once; a headline, a data
+ * state and a Retry button per group would bury the navigation this
+ * component exists to provide. Retry is offered on the marker itself,
+ * which is the control ERR-15 asks for.
+ */
+function GroupError({ collapsed, onRetry }: { collapsed: boolean; onRetry: () => void }) {
+  if (collapsed) {
+    return (
+      <div
+        role="alert"
+        title="Could not load — click to retry"
+        onClick={onRetry}
+        className="mx-auto my-1 cursor-pointer text-[11px] text-danger-fg"
+      >
+        !
+      </div>
+    );
+  }
+  return (
+    <div role="alert" className="px-2 py-1 text-[12px] text-text-tertiary">
+      Could not load.{" "}
+      <button
+        type="button"
+        onClick={onRetry}
+        className="underline hover:text-text-primary"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
 function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
   const projects = useProjects();
   const activeProjects = useRouterState({
     select: s => (s.location.search as { project?: string[] }).project ?? [],
   });
   const items = (projects.data?.items ?? []).filter(p => p.archived !== true);
+  const failed = projects.isError;
   const defaultProjectId = projects.data?.default ?? null;
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Projects</GroupLabel>
+      {failed && (
+        <GroupError collapsed={collapsed} onRetry={() => { void projects.refetch(); }} />
+      )}
       {items.map(p => {
         const active = activeProjects.includes(p.id);
         return (
@@ -197,10 +242,14 @@ function SavedFiltersGroup({
   const views = useViews();
   const counts = useBuiltinCounts(BUILTIN_FILTERS, { currentUserId, today });
   const userViews = views.data?.queries ?? [];
+  const failed = views.isError;
 
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Saved filters</GroupLabel>
+      {failed && (
+        <GroupError collapsed={collapsed} onRetry={() => { void views.refetch(); }} />
+      )}
 
       {BUILTIN_FILTERS.map(f => {
         const search = f.resolve({ currentUserId, today });
@@ -269,10 +318,16 @@ function SavedFiltersGroup({
 function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
   const milestones = useMilestones();
   const items = (milestones.data?.items ?? []).filter(m => m.archived !== true);
-  if (items.length === 0) return null;
+  const failed = milestones.isError;
+  // A failed fetch must not make the group vanish — that is the
+  // same conflation as rendering it empty (ERR-1).
+  if (items.length === 0 && !failed) return null;
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Milestones</GroupLabel>
+      {failed && (
+        <GroupError collapsed={collapsed} onRetry={() => { void milestones.refetch(); }} />
+      )}
       {items.map(m => (
         <Link
           key={m.id}
@@ -296,10 +351,16 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
   const items = (sprints.data?.items ?? []).filter(
     s => s.archived !== true && s.state !== "completed",
   );
-  if (items.length === 0) return null;
+  const failed = sprints.isError;
+  // A failed fetch must not make the group vanish — that is the
+  // same conflation as rendering it empty (ERR-1).
+  if (items.length === 0 && !failed) return null;
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Sprints</GroupLabel>
+      {failed && (
+        <GroupError collapsed={collapsed} onRetry={() => { void sprints.refetch(); }} />
+      )}
       {items.map(s => (
         <Link
           key={s.id}
@@ -325,10 +386,16 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
 function LabelsGroup({ collapsed }: { collapsed: boolean }) {
   const labels = useLabels();
   const items = (labels.data?.items ?? []).filter(l => l.archived !== true);
-  if (items.length === 0) return null;
+  const failed = labels.isError;
+  // A failed fetch must not make the group vanish — that is the
+  // same conflation as rendering it empty (ERR-1).
+  if (items.length === 0 && !failed) return null;
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Labels</GroupLabel>
+      {failed && (
+        <GroupError collapsed={collapsed} onRetry={() => { void labels.refetch(); }} />
+      )}
       {items.map(l => (
         <Link
           key={l.id}
@@ -349,10 +416,14 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
 function RecentsGroup({ collapsed }: { collapsed: boolean }) {
   const recents = useRecents();
   const items = recents.data?.items ?? [];
+  const failed = recents.isError;
   if (collapsed) return null;
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Recently viewed</GroupLabel>
+      {failed && (
+        <GroupError collapsed={collapsed} onRetry={() => { void recents.refetch(); }} />
+      )}
       {items.length === 0 ? (
         <div className="px-2.5 py-1 text-[12px] italic text-text-tertiary">No recent tasks</div>
       ) : (
