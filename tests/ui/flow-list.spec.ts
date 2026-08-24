@@ -2309,3 +2309,47 @@ test.describe("SHL — narrow viewports", () => {
     await expect(page.getByRole("button", { name: /Toggle sidebar/i })).toBeEnabled();
   });
 });
+
+test.describe("ERR — the browser reports offline", () => {
+  // @verifies ERR-1
+  test("ERR-1: a loopback server stays usable when the browser thinks it is offline", async ({
+    page,
+    context,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }, { title: "Two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // `context.setOffline` flips the browser's own online flag, which
+    // killing the server process never does — and that flag is what
+    // decides whether a failed query settles into an error or pauses
+    // forever. The server here is untouched and reachable on loopback:
+    // a laptop with Wi-Fi off is exactly this state.
+    await context.setOffline(true);
+
+    // An in-page filter change rather than a reload: `setOffline` blocks
+    // the document fetch too, and the question here is whether the app
+    // stops issuing XHRs, not whether Chromium will load a page.
+    await page.getByRole("button", { name: "Filter Status" }).click();
+    await page.getByRole("menuitemcheckbox", { name: /In progress/i }).click();
+
+    // The request still goes out and still answers, because a localhost
+    // app must not take the browser's word for whether its own server
+    // is reachable.
+    //
+    // **This spec does not pin the fix**: it passes with
+    // `networkMode: "online"` too, because Chromium's offline flag and
+    // TanStack's `onlineManager` are not the same thing — the manager
+    // seeds from `navigator.onLine` at import time and only updates on
+    // the window's online/offline events, which fire here after the
+    // client already exists. `ListView.paused.test.tsx` is the guard;
+    // it drives `onlineManager` directly and goes red without
+    // `networkMode: "always"`. This one is kept because it exercises a
+    // real browser in a state the unit test can only simulate.
+    await expect(page.getByText(/Showing 1–\d+ of \d+/)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/No tasks match these filters/i)).toHaveCount(0);
+
+    await context.setOffline(false);
+  });
+});
