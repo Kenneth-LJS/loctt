@@ -7,6 +7,9 @@
  * case does not claim has drifted from it.
  */
 
+import { readdir, readFile } from "node:fs/promises";
+import path from "node:path";
+
 import { expect, test } from "./fixtures/tracker.ts";
 
 test.describe("LST — list view", () => {
@@ -884,5 +887,197 @@ test.describe("BLK — export", () => {
       `${tracker.baseURL}/api/tasks/export?format=csv`,
     )).text();
     expect(unfiltered).not.toBe(first);
+  });
+});
+
+test.describe("BLK — entity pickers", () => {
+  async function selectOne(page: import("@playwright/test").Page): Promise<void> {
+    await page.locator("tbody input[type=checkbox]").first().check();
+  }
+
+  /**
+   * Reads a frontmatter field straight off disk.
+   *
+   * `loctt show` renders the *resolved* name, so it prints "v1" whether
+   * the file stores the ULID or the literal string — exactly the
+   * distinction BLK-7 and BLK-8 turn on. P1: the files are the truth.
+   */
+  async function frontmatter(root: string, field: string): Promise<string | undefined> {
+    const tasksDir = path.join(root, ".loctt", "tasks");
+    for (const id of await readdir(tasksDir)) {
+      const text = await readFile(path.join(tasksDir, id, "task.md"), "utf8");
+      const m = new RegExp(`^${field}: (.+)$`, "m").exec(text);
+      if (m?.[1] !== undefined) return m[1].trim();
+    }
+    return undefined;
+  }
+
+  // @verifies BLK-7
+  test("BLK-7: the assignee picker lists active users, stores the ULID, and offers Unassign", async ({
+    page,
+    tracker,
+  }) => {
+    const ann = await tracker.run(["user", "create", "Ann"]);
+    await tracker.run(["user", "create", "Gone"]);
+    // Archiving hides an entity from *new* assignments; it does not
+    // break tasks already pointing at it.
+    await tracker.run(["user", "archive", "Gone"]);
+    const annId = /([0-9A-Z]{26})/.exec(ann)?.[1] ?? "";
+    expect(annId).not.toBe("");
+
+    await tracker.seed([{ title: "One" }]);
+
+    // Hand the client the archived user anyway (see the comment on the
+    // assertion below).
+    await page.route(/\/api\/users(\?|$)/, async route => {
+      const res = await route.fetch();
+      const body = await res.json() as { items: { name: string }[] };
+      expect(body.items.map(u => u.name)).not.toContain("Gone");
+      await route.fulfill({
+        response: res,
+        json: {
+          ...body,
+          items: [...body.items, { id: "01ARCHIVED0000000000000000", name: "Gone", archived: true }],
+        },
+      });
+    });
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await selectOne(page);
+
+    await page.getByRole("button", { name: "Set assignee" }).click();
+    const menu = page.getByRole("menu", { name: "Set assignee" });
+    // Listed by display name, never the ULID.
+    await expect(menu.getByRole("menuitem", { name: "Ann" })).toBeVisible();
+    // The archived user is not offered: the archived-reference guard
+    // would refuse it, so offering it produces a rejection the user
+    // cannot act on.
+    //
+    // `/api/users` already excludes archived by default, so asserting
+    // against the live response proves nothing about this component —
+    // it passes whether the client filters or not. Forcing the archived
+    // user into the payload is what makes the assertion real: the
+    // picker must drop it even when the server hands it over, which is
+    // also the honest contract, since ?include_archived=true is one
+    // query-param away.
+    await expect(menu.getByRole("menuitem", { name: "Gone" })).toHaveCount(0);
+    await expect(menu.getByRole("menuitem", { name: "Unassign" })).toBeVisible();
+
+    // Capture what the client sends. Disk alone cannot decide this:
+    // core resolves a name to its ULID on write (resolveEntityRef), so
+    // frontmatter reads identically whether the picker sent "Ann" or
+    // the id. The case constrains the *stored value*, and the only part
+    // of that this component owns is the value it puts on the wire.
+    const sent: unknown[] = [];
+    await page.route(/\/api\/tasks\/bulk\/set/, async route => {
+      const body = route.request().postDataJSON() as {
+        changes: { field: string; value: unknown }[];
+      };
+      for (const c of body.changes) if (c.field === "assignee") sent.push(c.value);
+      await route.continue();
+    });
+
+    await menu.getByRole("menuitem", { name: "Ann" }).click();
+    const status = page.getByRole("region", { name: "Bulk actions" }).getByRole("status");
+    await expect(status).toContainText("1 task updated");
+    expect(sent).toEqual([annId]);
+    expect(await frontmatter(tracker.root, "assignee")).toBe(annId);
+
+    // Unassign clears it rather than writing an empty string.
+    await selectOne(page);
+    await page.getByRole("button", { name: "Set assignee" }).click();
+    await page.getByRole("menu", { name: "Set assignee" })
+      .getByRole("menuitem", { name: "Unassign" }).click();
+    await expect(status).toContainText("1 task updated");
+    // `null`, not "": the endpoint maps null to core's "clear this
+    // field", while an empty string is a value core would try to
+    // resolve.
+    expect(sent).toEqual([annId, null]);
+    expect(await frontmatter(tracker.root, "assignee")).toBeUndefined();
+  });
+
+  // @verifies BLK-8
+  test("BLK-8: milestone and sprint pickers exclude archived, offer a clear, and show sprint state", async ({
+    page,
+    tracker,
+  }) => {
+    const v1 = await tracker.run(["milestone", "create", "v1"]);
+    await tracker.run(["milestone", "create", "old"]);
+    await tracker.run(["milestone", "archive", "old"]);
+    const v1Id = /([0-9A-Z]{26})/.exec(v1)?.[1] ?? "";
+    expect(v1Id).not.toBe("");
+
+    const s1 = await tracker.run([
+      "sprint", "create", "S1",
+      "--start", "2026-01-01", "--end", "2026-01-14", "--state", "active",
+    ]);
+    await tracker.run([
+      "sprint", "create", "S0",
+      "--start", "2025-01-01", "--end", "2025-01-14", "--state", "completed",
+    ]);
+    // An archived sprint, distinct from a completed one. `/api/sprints`
+    // does not filter archived server-side the way `/api/users` does,
+    // so the picker's own filter is the only thing keeping this out —
+    // and without a fixture for it, nothing pins that.
+    await tracker.run([
+      "sprint", "create", "Sold",
+      "--start", "2024-01-01", "--end", "2024-01-14", "--state", "completed",
+    ]);
+    await tracker.run(["sprint", "archive", "Sold"]);
+
+    await tracker.seed([{ title: "One" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await selectOne(page);
+
+    await page.getByRole("button", { name: "Set milestone" }).click();
+    const mMenu = page.getByRole("menu", { name: "Set milestone" });
+    await expect(mMenu.getByRole("menuitem", { name: "v1" })).toBeVisible();
+    await expect(mMenu.getByRole("menuitem", { name: "old" })).toHaveCount(0);
+    await expect(mMenu.getByRole("menuitem", { name: "No milestone" })).toBeVisible();
+    // See BLK-7 on why the wire value is asserted and not just disk.
+    const sent: Record<string, unknown[]> = { milestone: [], sprint: [] };
+    await page.route(/\/api\/tasks\/bulk\/set/, async route => {
+      const body = route.request().postDataJSON() as {
+        changes: { field: string; value: unknown }[];
+      };
+      for (const c of body.changes) sent[c.field]?.push(c.value);
+      await route.continue();
+    });
+
+    await mMenu.getByRole("menuitem", { name: "v1" }).click();
+
+    const status = page.getByRole("region", { name: "Bulk actions" }).getByRole("status");
+    await expect(status).toContainText("1 task updated");
+    // The id, not the name — MSL-C1 moved identity to the ULID because
+    // storing the name broke milestone progress.
+    expect(sent["milestone"]).toEqual([v1Id]);
+    expect(await frontmatter(tracker.root, "milestone")).toBe(v1Id);
+
+    // Sprint options carry their state, so nobody assigns work to a
+    // sprint that already finished without seeing it.
+    await selectOne(page);
+    await page.getByRole("button", { name: "Set sprint" }).click();
+    const sMenu = page.getByRole("menu", { name: "Set sprint" });
+    await expect(sMenu.getByRole("menuitem", { name: /S1.*active/ })).toBeVisible();
+    await expect(sMenu.getByRole("menuitem", { name: /S0.*completed/ })).toBeVisible();
+    await expect(sMenu.getByRole("menuitem", { name: "No sprint" })).toBeVisible();
+    // Archived is not the same as completed: S0 is completed and offered,
+    // Sold is archived and must not be.
+    await expect(sMenu.getByRole("menuitem", { name: /Sold/ })).toHaveCount(0);
+    const s1Id = /([0-9A-Z]{26})/.exec(s1)?.[1] ?? "";
+    expect(s1Id).not.toBe("");
+    await sMenu.getByRole("menuitem", { name: /S1/ }).click();
+    await expect(status).toContainText("1 task updated");
+    // The id on the wire, for the same reason as milestone above.
+    expect(sent["sprint"]).toEqual([s1Id]);
+    expect(await frontmatter(tracker.root, "sprint")).toBe(s1Id);
+
+    // The clear option actually clears.
+    await selectOne(page);
+    await page.getByRole("button", { name: "Set milestone" }).click();
+    await page.getByRole("menu", { name: "Set milestone" })
+      .getByRole("menuitem", { name: "No milestone" }).click();
+    await expect(status).toContainText("1 task updated");
+    expect(await frontmatter(tracker.root, "milestone")).toBeUndefined();
   });
 });

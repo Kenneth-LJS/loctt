@@ -3,7 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   useLabels,
+  useMilestones,
   useProjects,
+  useSprints,
   useUsers,
 } from "../api/hooks/sidebarData.ts";
 import {
@@ -52,6 +54,10 @@ export function ListView() {
   const projects = useProjects();
   const users = useUsers();
   const labels = useLabels();
+  // Only the bulk bar's pickers need these (BLK-7, BLK-8); the table
+  // cells resolve milestone and sprint through their own columns.
+  const milestones = useMilestones();
+  const sprints = useSprints();
   const workflow = useWorkflow();
   const info = useInfo();
   const userSettings = useUserSettings();
@@ -321,6 +327,9 @@ export function ListView() {
             : undefined
         }
         workflow={workflow.data}
+        users={users.data?.items}
+        milestones={milestones.data?.items}
+        sprints={sprints.data?.items}
         busy={busy}
         result={bulkResult}
         onClear={selection.clear}
