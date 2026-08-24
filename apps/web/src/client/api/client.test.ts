@@ -39,6 +39,59 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("apiRequest deadlines", () => {
+  /** A fetch that honours the signal it is given and never resolves. */
+  function hangingFetch(): void {
+    vi.mocked(globalThis.fetch).mockImplementationOnce(
+      (_url, init) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      }),
+    );
+  }
+
+  // @verifies BLK-41
+  it("reports its own deadline as an unknown outcome", async () => {
+    hangingFetch();
+    const err = await apiRequest("/api/tasks/bulk/archive", {
+      method: "POST", body: {}, timeoutMs: 10,
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).envelope?.data_state).toBe("unknown");
+    // Reload, not retry: retrying a write that may have landed is how
+    // one archive becomes two.
+    expect((err as ApiError).envelope?.recovery?.kind).toBe("reload");
+  });
+
+  // @verifies BLK-41
+  it("does not report a caller's own abort as unknown, even once the deadline has passed", async () => {
+    // The fetch rejects on the caller's abort, but only reaches the
+    // catch block after the deadline has also elapsed. That ordering is
+    // the bug: `AbortSignal.timeout` keeps running once the caller
+    // aborts, so a check of `deadline.aborted` in the catch block reads
+    // true and reports a routine unmount as "LocTT cannot tell whether
+    // this was saved". Real code hits this whenever the microtask queue
+    // is busy between the rejection and the handler.
+    const caller = new AbortController();
+    vi.mocked(globalThis.fetch).mockImplementationOnce(
+      (_url, init) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          setTimeout(() => { reject(new DOMException("aborted", "AbortError")); }, 30);
+        });
+      }),
+    );
+    const p = apiRequest("/api/tasks/bulk/archive", {
+      method: "POST", body: {}, timeoutMs: 10, signal: caller.signal,
+    }).catch((e: unknown) => e);
+    caller.abort();
+    const err = await p;
+
+    expect(err).toBeInstanceOf(Error);
+    expect((err as ApiError).envelope?.data_state).not.toBe("unknown");
+  });
+});
+
 describe("apiRequest", () => {
   it("sends the X-Loctt-Client header on every request", async () => {
     mockFetchOnce({ body: { ok: true } });

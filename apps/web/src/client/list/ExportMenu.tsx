@@ -23,6 +23,22 @@ export function ExportMenu({
   readonly queryString: string;
 }) {
   const [open, setOpen] = useState(false);
+  /**
+   * BLK-34: a 5,000-row export takes seconds, and a menu that closes
+   * with no other change looks like nothing happened. The browser owns
+   * the download — which is why the list stays browsable throughout —
+   * so this is a hint that the request is out, not a progress bar the
+   * page could not honestly draw.
+   *
+   * Cleared on a timer because a plain `<a download>` fires no
+   * completion event; the alternative is a state that never resolves.
+   */
+  const [pending, setPending] = useState(false);
+
+  const startPending = (): void => {
+    setPending(true);
+    setTimeout(() => { setPending(false); }, 3_000);
+  };
 
   const href = (format: "csv" | "json"): string => {
     const sp = new URLSearchParams(queryString);
@@ -47,7 +63,7 @@ export function ExportMenu({
         onClick={() => { setOpen(o => !o); }}
         className="rounded-md border border-border-subtle px-2.5 py-1 text-[12px] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
       >
-        Export ▾
+        {pending ? "Preparing…" : "Export ▾"}
       </button>
 
       {open && (
@@ -65,7 +81,7 @@ export function ExportMenu({
             role="menuitem"
             href={href("csv")}
             download
-            onClick={() => { setOpen(false); }}
+            onClick={() => { setOpen(false); startPending(); }}
             className="block px-3 py-1.5 text-[12px] text-text-primary no-underline hover:bg-bg-muted"
           >
             CSV
@@ -74,7 +90,7 @@ export function ExportMenu({
             role="menuitem"
             href={href("json")}
             download
-            onClick={() => { setOpen(false); }}
+            onClick={() => { setOpen(false); startPending(); }}
             className="block px-3 py-1.5 text-[12px] text-text-primary no-underline hover:bg-bg-muted"
           >
             JSON

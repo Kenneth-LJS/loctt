@@ -62,14 +62,39 @@ describe("describeBulkResult", () => {
       {
         bulk_op_id: "b",
         succeeded: ["t0"],
-        failed: [{ taskId: "T-9", error: "task not found" }],
+        failed: [{ taskId: "t9", error: "task not found" }],
         ...moved([["WEB-1", "OPS-1"]]),
       },
       "moved",
+      id => (id === "t9" ? "T-9" : undefined),
     );
     expect(r.message).toBe("1 task moved: WEB-1 → OPS-1, 1 failed");
+    // Named by its key: the selection holds ids, and an id means
+    // nothing to the user (P-4).
     expect(r.failures).toEqual(["T-9: task not found"]);
   });
+
+  // @verifies BLK-22
+  it("never puts a bare ULID in the message when a key cannot be resolved", () => {
+    const r = describeBulkResult(
+      {
+        bulk_op_id: "b",
+        succeeded: [],
+        failed: [{ taskId: "01ARCHVED00000000000000000", error: "task not found" }],
+      },
+      "updated",
+      () => undefined,
+    );
+    // P-4 keeps ULIDs out of UI content. A failure on a task that is no
+    // longer on the loaded page still has to be reported — described,
+    // not named with an id that means nothing to the user.
+    expect(r.failures[0]).not.toContain("01ARCHVED");
+    // A non-ULID ref is echoed instead: it is whatever the caller sent,
+    // and naming it is the most useful thing available.
+    expect(r.failures[0]).toContain("no longer listed");
+    expect(r.failures[0]).toContain("task not found");
+  });
+
 
   it("says nothing moved rather than reporting zero successes", () => {
     const r = describeBulkResult(

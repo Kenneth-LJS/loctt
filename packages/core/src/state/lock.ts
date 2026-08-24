@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 
 import * as lockfile from "proper-lockfile";
 
+import { LocttError } from "../errors.js";
 import { getStateFilePath } from "../paths/index.js";
 import { isMigrationLocked } from "../schema/lock.js";
 import { SchemaVersionError } from "../schema/version.js";
@@ -31,10 +32,52 @@ const LOCK_OPTIONS = {
  * backoff is bounded and the alternative is inspecting errnos before
  * deciding to retry, which would duplicate the mapper's job.
  */
+/**
+ * Another LocTT process is writing, and the retries did not outlast it.
+ *
+ * `proper-lockfile` throws `ELOCKED` with "Lock file is already being
+ * held" — its own internals, naming neither the cause nor anything the
+ * user can do (BLK-42, ERR-16). Contention is also not a filesystem
+ * failure: it clears on its own, which is why this does not reach
+ * `rethrowFsError`.
+ *
+ * `retry` rather than `none`, deliberately. The git-conflict envelope
+ * next door carries `none` because retrying reproduces it exactly;
+ * here the opposite is true, and BLK-42's last bullet says so:
+ * "Retrying after the lock clears succeeds." The message carries the
+ * *timing* — wait, then try again — because `ErrorRecoveryKind` has no
+ * "wait" and offering no control at all would leave the user with a
+ * transient failure and nothing to do about it.
+ */
+class StateLockedError extends LocttError {
+  constructor(detail: string) {
+    super(
+      "conflict",
+      "another LocTT process is writing to this tracker; wait for it to "
+      + "finish and try again",
+      {
+        // Nothing was attempted: the lock is taken before any write.
+        dataState: "not_saved",
+        recovery: { kind: "retry" },
+        detail,
+      },
+    );
+    this.name = "StateLockedError";
+  }
+}
+
+function isLocked(err: unknown): boolean {
+  return typeof err === "object" && err !== null
+    && (err as { code?: unknown }).code === "ELOCKED";
+}
+
 async function acquireStateLock(target: string): Promise<() => Promise<void>> {
   try {
     return await lockfile.lock(target, LOCK_OPTIONS);
   } catch (err) {
+    if (isLocked(err)) {
+      throw new StateLockedError(err instanceof Error ? err.message : String(err));
+    }
     rethrowFsError(err, target);
   }
 }

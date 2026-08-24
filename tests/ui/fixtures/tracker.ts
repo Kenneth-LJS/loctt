@@ -11,7 +11,7 @@
  * on disk, so the files have to be real.
  */
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,6 +38,18 @@ export interface TrackerFixture {
   run(args: readonly string[]): Promise<string>;
   /** Creates tasks in order, returning the assigned keys (`T-1`, `T-2`, …). */
   seed(tasks: readonly SeedTask[]): Promise<string[]>;
+  /**
+   * Writes `count` minimal tasks straight to disk, bypassing the CLI.
+   *
+   * `seed` spawns one `loctt create` per task at ~250ms each, so the
+   * scale cases (BLK-24, BLK-34) would take twenty minutes. These files
+   * are the same shape `create` writes.
+   *
+   * **It does not advance `state.yaml`'s key counter**, so a `create`
+   * after `seedBulk` will collide. Use it for read/scale specs only —
+   * anything that writes should use `seed`.
+   */
+  seedBulk(count: number, prefix?: string): Promise<void>;
 }
 
 /**
@@ -150,7 +162,31 @@ export const test = base.extend<{ tracker: TrackerFixture }>({
 
     try {
       await waitForReady(baseURL, 15_000);
-      await use({ root, baseURL, run, seed });
+      const seedBulk = async (count: number, prefix = "BULK"): Promise<void> => {
+        const projectId = /^\s{2}([0-9A-Z]{26}):/m.exec(
+          await readFile(path.join(root, ".loctt", "state.yaml"), "utf8"),
+        )?.[1];
+        if (projectId === undefined) throw new Error("no project in state.yaml");
+        const stamp = "2026-01-01T00:00:00.000Z";
+        await Promise.all(
+          Array.from({ length: count }, async (_unused, i) => {
+            // Monotonic, unique, and 26 chars — enough to satisfy the
+            // readers without pulling ulid() into the fixture.
+            const id = `01M${String(i).padStart(23, "0")}`;
+            const dir = path.join(root, ".loctt", "tasks", id);
+            await mkdir(dir, { recursive: true });
+            await writeFile(
+              path.join(dir, "task.md"),
+              `---\nid: ${id}\nkey: ${prefix}-${String(i + 1)}\n`
+              + `title: Bulk task ${String(i + 1)}\ncreated_at: ${stamp}\n`
+              + `updated_at: ${stamp}\nproject: ${projectId}\nstatus: backlog\n---\n`,
+              "utf8",
+            );
+          }),
+        );
+      };
+
+      await use({ root, baseURL, run, seed, seedBulk });
     } finally {
       await killAndWait(child);
       await rm(root, { recursive: true, force: true }).catch((err: unknown) => {

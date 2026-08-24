@@ -7,7 +7,7 @@
  * case does not claim has drifted from it.
  */
 
-import { readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { expect, test } from "./fixtures/tracker.ts";
@@ -1445,5 +1445,214 @@ test.describe("BLK — archive undo", () => {
     await expect(bar.getByRole("status")).toContainText("1 task updated");
     await expect(bar).toBeVisible();
     await expect(page.getByRole("button", { name: "Undo" })).toHaveCount(0);
+  });
+});
+
+test.describe("BLK — concurrency and scale", () => {
+  // @verifies BLK-22
+  test("BLK-22: a task deleted by another process is named as a failure, not counted as a success", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([
+      { title: "One" }, { title: "Two" }, { title: "Three" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+    await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+
+    // Another process removes one of the selected tasks after it was
+    // selected and before the batch runs.
+    await tracker.run(["delete", String(seeded[0]), "--yes"]);
+
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "Done" }).click();
+
+    const status = page.getByRole("region", { name: "Bulk actions" }).getByRole("status");
+    // Not "3 tasks updated": the count is honest and the failure is
+    // named individually with the reason core gave.
+    await expect(status).toContainText("2 tasks updated, 1 failed");
+    await expect(status).toContainText(String(seeded[0]));
+    await expect(status).toContainText("not found");
+    await expect(status).not.toContainText("3 tasks updated");
+  });
+
+  // @verifies BLK-23
+  test("BLK-23: a bulk write does not clobber a field the CLI changed mid-selection", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([{ title: "One" }, { title: "Two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+
+    // The CLI changes a field the bulk op was never asked to touch.
+    await tracker.run(["set", String(seeded[0]), "priority", "high"]);
+
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "Done" }).click();
+    await expect(
+      page.getByRole("region", { name: "Bulk actions" }).getByRole("status"),
+    ).toContainText("2 tasks updated");
+
+    // The status change landed on both, and the CLI's priority survived
+    // — a read-modify-write of the whole record would have lost it.
+    const shown = await tracker.run(["show", String(seeded[0])]);
+    expect(shown).toContain("high");
+    expect(shown.toLowerCase()).toContain("done");
+  });
+});
+
+test.describe("BLK — bounded and honest failures", () => {
+  // @verifies BLK-41
+  test("BLK-41: a bulk request that never returns says the outcome is unknown", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }, { title: "Two" }]);
+    // Shorten the client deadline so the spec does not wait 30s. The
+    // production value is 30s; Playwright's clock control does not reach
+    // AbortSignal.timeout, so the deadline itself has to be short.
+    await page.addInitScript(() => {
+      (globalThis as { __LOCTT_BULK_TIMEOUT_MS__?: number }).__LOCTT_BULK_TIMEOUT_MS__ = 500;
+    });
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+
+    // The server accepts the request and never answers.
+    await page.route(/\/api\/tasks\/bulk\/archive/, () => {
+      // Deliberately never resolved: the request is in flight until the
+      // client's own deadline fires.
+    });
+    await page.getByRole("button", { name: "Archive", exact: true }).click();
+
+    const status = page.getByRole("status").filter({ hasText: "did not respond" });
+    // All three, per P4's rare exception: what was attempted, what state
+    // the data is in, what to do.
+    await expect(status).toContainText("2 tasks");
+    await expect(status).toContainText("Some may have been archived");
+    await expect(status).toContainText("Reload");
+    // And neither of the two claims it cannot support.
+    await expect(status).not.toContainText("Nothing was archived");
+    await expect(status).not.toContainText("2 tasks archived");
+  });
+});
+
+test.describe("BLK — lock contention", () => {
+  // @verifies BLK-42
+  test("BLK-42: a bulk op blocked by the state lock names the contention and what to do", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }, { title: "Two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+
+    // Hold the state lock the way another LocTT process would.
+    await mkdir(path.join(tracker.root, ".loctt", "state.yaml.lock"), { recursive: true });
+
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "Done" }).click();
+
+    const status = page.getByRole("region", { name: "Bulk actions" }).getByRole("status");
+    // Names the contention and advises waiting.
+    await expect(status).toContainText("another LocTT process is writing");
+    await expect(status).toContainText(/wait|try again/i);
+    // No proper-lockfile internals and no stack trace (ERR-16).
+    await expect(status).not.toContainText("Lock file is already being held");
+    await expect(status).not.toContainText("ELOCKED");
+
+    // Retrying once the lock clears succeeds.
+    await rm(path.join(tracker.root, ".loctt", "state.yaml.lock"), { recursive: true });
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "Done" }).click();
+    await expect(status).toContainText("2 tasks updated");
+  });
+});
+
+test.describe("BLK — scale", () => {
+  const AT_SCALE = 5_000;
+
+  // @verifies BLK-24
+  test("BLK-24: select-all on a page stays responsive at 5,000 tasks", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seedBulk(AT_SCALE);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+
+    // Page size is 50; the filter behind it holds 5,000.
+    await expect(page.getByText(`Showing 1–50 of ${String(AT_SCALE)}`)).toBeVisible();
+
+    const selectAll = page.getByRole("checkbox", { name: "Select all on this page" });
+    const started = Date.now();
+    await selectAll.check();
+    // The count updates on the toggle itself, not after a debounce long
+    // enough to look broken.
+    await expect(page.getByText("50 tasks selected")).toBeVisible({ timeout: 2_000 });
+    expect(Date.now() - started).toBeLessThan(2_000);
+
+    // Load more and select again, up to the 500 the case names. The
+    // bullet is about the *selection* degrading, not the filter size,
+    // so stopping at 100 would leave the curve it targets untested.
+    for (let loaded = 100; loaded <= 500; loaded += 50) {
+      await selectAll.uncheck();
+      await page.getByRole("button", { name: /Load more/i }).click();
+      await expect(
+        page.getByText(`Showing 1–${String(loaded)} of ${String(AT_SCALE)}`),
+      ).toBeVisible();
+      const round = Date.now();
+      await selectAll.check();
+      await expect(
+        page.getByText(`${String(loaded)} tasks selected`),
+      ).toBeVisible({ timeout: 2_000 });
+      // Each toggle stays sub-second-ish at every size — no drift into
+      // multi-second checkbox toggles as the selection grows.
+      expect(Date.now() - round).toBeLessThan(3_000);
+    }
+  });
+
+  // @verifies BLK-34
+  test("BLK-34: exporting 5,000 rows completes with every row present", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seedBulk(AT_SCALE);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: /Export/i }).click();
+    await page.getByRole("menuitem", { name: /CSV/i }).click();
+
+    // A pending state, so a multi-second export does not look like a
+    // menu that closed and did nothing.
+    await expect(page.getByRole("button", { name: /Export/i }))
+      .toContainText("Preparing");
+
+    const file = await (await download).path();
+    const text = await readFile(file, "utf8");
+    // Header plus one line per task. These fixtures have no body and no
+    // labels, so no field can hold an embedded newline and a line count
+    // is exact here — the case's "allowing for quoted embedded
+    // newlines" caveat is about real data, and CSV quoting is covered
+    // by the round-trip test in the export suite rather than at scale.
+    const rows = text.trimEnd().split("\n").length;
+    expect(rows).toBe(AT_SCALE + 1);
+    // Every row actually made it, not just the right count of something.
+    expect(text).toContain("Bulk task 1,");
+    expect(text).toContain(`Bulk task ${String(AT_SCALE)},`);
+
+    // The page is still usable afterwards — the export did not leave it
+    // wedged.
+    await expect(page.getByText(`Showing 1–50 of ${String(AT_SCALE)}`)).toBeVisible();
   });
 });
