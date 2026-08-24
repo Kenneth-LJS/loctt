@@ -432,6 +432,44 @@ const BULK_ABORTED = {
   recovery: { kind: "retry" },
 } as const satisfies Omit<Partial<ErrorResponse>, "message">;
 
+/**
+ * Reports a batch that aborted outright.
+ *
+ * Most causes are the user's input and map to `validation_failed`, but
+ * lock contention is not: another process is writing, nothing was
+ * attempted, and the fix is to wait rather than to change anything
+ * (BLK-42). Core states that itself via `LocttError`, so the envelope
+ * is taken from the error rather than re-derived here (V1, V8).
+ */
+/**
+ * HTTP status for an error core attributed.
+ *
+ * 400 is only right when the *request* was wrong. A held lock is a
+ * conflict, a schema mismatch or an unreadable file is the server's
+ * problem, and reporting either as "Bad Request" blames the user for
+ * something they did not do (ERR-31).
+ */
+function statusForCode(code: ErrorCode): number {
+  switch (code) {
+    case "not_found": return 404;
+    case "conflict": return 409;
+    case "io_failed":
+    case "schema_mismatch":
+    case "git_failed":
+    case "unknown": return 500;
+    default: return 400;
+  }
+}
+
+function bulkAborted(res: Parameters<typeof error>[0], err: unknown): void {
+  if (err instanceof LocttError) {
+    const env = err.toEnvelope();
+    error(res, env.message, statusForCode(err.code), env);
+    return;
+  }
+  error(res, (err as Error).message, 400, BULK_ABORTED);
+}
+
 /** A user simply has no avatar — a fact, not something the app can fix. */
 const NO_AVATAR = {
   code: "not_found",
@@ -2522,7 +2560,7 @@ export function createWebApp(options: WebAppOptions) {
       // path is the batch aborting outright (an unwritable field name, a
       // lock it could not take), so ERR-25 applies instead: nothing was
       // applied, stated distinctly from a partial success.
-      error(res, (err as Error).message, 400, BULK_ABORTED);
+      bulkAborted(res, err);
     }
   };
 
@@ -2534,7 +2572,7 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, result satisfies BulkResponse);
     } catch (err) {
-      error(res, (err as Error).message, 400, BULK_ABORTED);
+      bulkAborted(res, err);
     }
   };
 
@@ -2551,7 +2589,7 @@ export function createWebApp(options: WebAppOptions) {
     } catch (err) {
       // As with the other bulk routes: per-task failures come back in
       // the 200 body, so reaching here means nothing was deleted.
-      error(res, (err as Error).message, 400, BULK_ABORTED);
+      bulkAborted(res, err);
     }
   };
 
@@ -2578,7 +2616,7 @@ export function createWebApp(options: WebAppOptions) {
         })),
       } satisfies BulkResponse);
     } catch (err) {
-      error(res, (err as Error).message, 400, BULK_ABORTED);
+      bulkAborted(res, err);
     }
   };
 
@@ -2592,7 +2630,7 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, result satisfies BulkResponse);
     } catch (err) {
-      error(res, (err as Error).message, 400, BULK_ABORTED);
+      bulkAborted(res, err);
     }
   };
 

@@ -81,6 +81,17 @@ interface RequestOptions {
   readonly headers?: Record<string, string>;
   /** AbortSignal forwarded to fetch. */
   readonly signal?: AbortSignal;
+  /**
+   * Abort after this many ms and report the outcome as *unknown*.
+   *
+   * A write that never returns is the one case where the UI genuinely
+   * cannot say whether it landed — the request left, and silence is not
+   * evidence either way (BLK-41). Spinning forever is worse than
+   * saying so: the user cannot act, and reloading is exactly the thing
+   * that would tell them. Reads do not need this; there is nothing at
+   * stake in an unanswered GET.
+   */
+  readonly timeoutMs?: number;
 }
 
 async function parseBody(res: Response): Promise<unknown> {
@@ -117,6 +128,27 @@ function errorMessage(endpoint: string, status: number, body: unknown): string {
   return `${endpoint} responded with ${status}`;
 }
 
+function isAbort(err: unknown): boolean {
+  // `AbortSignal.timeout` rejects with `TimeoutError`, not `AbortError`
+  // — and `AbortSignal.any` propagates whichever fired. Matching only
+  // AbortError silently missed every deadline.
+  return err instanceof Error
+    && (err.name === "TimeoutError" || err.name === "AbortError");
+}
+
+/**
+ * Adds a deadline without discarding a caller's own signal — React
+ * Query passes one for unmount cancellation, and dropping it would
+ * leave requests running after the component is gone.
+ */
+function withTimeout(init: RequestInit, deadline: AbortSignal | undefined): RequestInit {
+  if (deadline === undefined) return init;
+  return {
+    ...init,
+    signal: init.signal ? AbortSignal.any([init.signal, deadline]) : deadline,
+  };
+}
+
 export async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const method: Method = options.method ?? "GET";
   const headers: Record<string, string> = {
@@ -131,7 +163,58 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
     ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
     ...(options.signal !== undefined ? { signal: options.signal } : {}),
   };
-  const res = await fetch(endpoint, init);
+  let res: Response;
+  // A dedicated controller rather than `AbortSignal.timeout`, so the
+  // deadline is distinguishable *after the fact*. `timeout()` keeps
+  // running once the caller aborts, so a component that unmounts at
+  // 10ms under a 30s deadline later reads as timed-out — and the user
+  // gets "LocTT cannot tell whether this was saved" for a routine
+  // navigation.
+  const deadlineCtl = new AbortController();
+  let timedOut = false;
+  const timer = options.timeoutMs === undefined
+    ? undefined
+    : setTimeout(() => {
+        timedOut = true;
+        deadlineCtl.abort();
+      }, options.timeoutMs);
+  // Stop the clock the instant the caller aborts. Without this the
+  // deadline keeps running and can fire in the gap between fetch
+  // rejecting and this function's catch block, so an unmount at 10ms
+  // under a 30s deadline reports as a timeout — telling the user LocTT
+  // cannot say whether their write saved, for a routine navigation.
+  options.signal?.addEventListener("abort", () => {
+    if (timer !== undefined) clearTimeout(timer);
+  }, { once: true });
+  try {
+    res = await fetch(endpoint, withTimeout(init, timer === undefined ? undefined : deadlineCtl.signal));
+  } catch (err) {
+    // Only *our* deadline means the outcome is unknown. A caller's own
+    // abort — React Query cancelling on unmount — is a cancellation,
+    // and reporting that as "we cannot tell whether this saved" would
+    // be alarming and wrong.
+    if (isAbort(err) && timedOut) {
+      // Not success, not failure. Per P4's rare exception the caller
+      // must say all three things: what was attempted, what state the
+      // data is in, and what to do — so the envelope carries
+      // `data_state: "unknown"` and a reload, not a retry. Retrying a
+      // write that may have landed is how one archive becomes two.
+      throw new ApiError(`${endpoint} did not respond`, {
+        status: 0,
+        body: undefined,
+        endpoint,
+        envelope: {
+          code: "unknown",
+          message: "the server did not respond, so LocTT cannot tell whether this was saved",
+          data_state: "unknown",
+          recovery: { kind: "reload" },
+        },
+      });
+    }
+    throw err;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
   const body = await parseBody(res);
   if (!res.ok) {
     throw new ApiError(errorMessage(endpoint, res.status, body), {

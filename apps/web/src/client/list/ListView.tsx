@@ -1,6 +1,7 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 
+import { ApiError } from "../api/client.ts";
 import {
   useLabels,
   useMilestones,
@@ -150,6 +151,14 @@ export function ListView() {
     || bulkMove.isPending;
   const refs = [...selection.selected];
 
+  // The selection holds task ids; a failure has to name the key
+  // (BLK-22). Built from the loaded page, which is where every
+  // selectable row came from.
+  const keyById = useMemo(
+    () => new Map(items.map(t => [t.id, t.key])),
+    [items],
+  );
+
   /**
    * BLK-10: undo lives in the success message, where the user is
    * already reading the outcome — not as a separate step they have to
@@ -191,13 +200,31 @@ export function ListView() {
     setUndoableArchive([]);
     try {
       const result = await run();
-      setBulkResult(describeBulkResult(result, verb));
+      setBulkResult(describeBulkResult(result, verb, id => keyById.get(id)));
       if (clearSelection) selection.clear();
       // The ids that actually changed, not a yes/no. An Undo built from
       // the refs *sent* would un-archive a task the batch failed on —
       // one the user may have archived deliberately earlier.
       return result.succeeded;
     } catch (err) {
+      const envelope = err instanceof ApiError ? err.envelope : undefined;
+      if (envelope?.data_state === "unknown") {
+        // BLK-41: the request left and nothing came back, so LocTT
+        // cannot say whether it landed. Claiming either way is the
+        // failure — "nothing was archived" is a lie if half of them
+        // were. P4's rare exception: state all three things, and offer
+        // a reload rather than a retry, because retrying a write that
+        // may have succeeded is how one archive becomes two.
+        setBulkResult({
+          message:
+            `LocTT sent ${String(refs.length)} `
+            + `${refs.length === 1 ? "task" : "tasks"} to be ${verb} and the `
+            + `server did not respond. Some may have been ${verb}. Reload to `
+            + `see the current state, then retry the rest.`,
+          failures: [],
+        });
+        return [];
+      }
       // The batch never ran (BLK-39): distinct from a partial failure,
       // and the selection survives so the user can retry it.
       setBulkResult({
