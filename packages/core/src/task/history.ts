@@ -3,6 +3,7 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import type { HistoryEntry, HistoryKind } from "@loctt/contracts";
+import { HistoryEntrySchema } from "@loctt/contracts";
 import * as lockfile from "proper-lockfile";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
@@ -119,9 +120,17 @@ export function isMalformedHistoryEntry(row: HistoryRow): row is MalformedHistor
  * survives a merge rather than collapsing into a neighbour.
  */
 function isHistoryEntry(value: unknown): value is HistoryEntry {
-  if (value === null || typeof value !== "object") return false;
-  const e = value as Partial<HistoryEntry>;
-  return typeof e.timestamp === "string" && typeof e.kind === "string";
+  // Was a two-field hand-check: `timestamp` and `kind` are strings.
+  // `kind` was never tested against its union, so a hand-edited
+  // `not_a_real_kind` reached every reader — `loctt log` printed it
+  // verbatim, and a UI that switches on `kind` for an icon has no case
+  // for it.
+  //
+  // The schema is `.passthrough()`, so a row carrying extra keys is
+  // still readable; it rejects on a missing timestamp, or a `kind`
+  // outside the 17. Rejecting here does **not** discard the row —
+  // `readHistoryRows` keeps it and marks it malformed (P-11).
+  return HistoryEntrySchema.safeParse(value).success;
 }
 
 /** The readable entries only, in file order. */

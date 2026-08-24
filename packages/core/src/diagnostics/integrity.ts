@@ -109,7 +109,7 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
           path: historyPath,
           message:
             `history entry ${String(row.index + 1)} cannot be read as an entry `
-            + `(an entry needs a timestamp and a kind). It has been kept in place `
+            + `(it needs a timestamp and a recognised kind). It has been kept in place `
             + `and is preserved by every write and every merge; repair it by hand `
             + `to have it appear in the activity log again.`,
         });

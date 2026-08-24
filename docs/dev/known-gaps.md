@@ -57,9 +57,20 @@ problem.
 **Why this matters more than an ordinary flake:** a timeout renders as
 `FAIL` in the summary line, indistinguishable from a real regression.
 Anyone running the suite after a change will read it as their fault.
+**Attempted reproduction, 2026-08-17: could not.** Three consecutive
+full runs, then a fourth with four CPU-saturating processes running
+alongside. All four were 419/419 with zero failures. Combined with the
+four green runs recorded at the time of the original observation, that
+is eight clean runs against one bad one.
+
 **No fix has been applied**, and none should be until the cause is
 known — raising a timeout that may not be the problem would just hide
-whatever is. Capture the failure output on the next occurrence.
+whatever is. Capture the failure output on the next occurrence; one
+real failure message settles it.
+
+**The practical risk today is misreading, not breakage.** A timeout
+renders as `FAIL` identically to a regression, so someone will think
+they broke something. That is the reason this entry stays.
 
 **Before believing an integration failure: re-run the named file alone.**
 

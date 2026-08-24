@@ -144,6 +144,52 @@ describe("a malformed entry is kept and merged, not dropped", () => {
   });
 });
 
+describe("an unrecognised kind is malformed, not readable", () => {
+  it("excludes it from readHistory", async () => {
+    await seed(["created"]);
+    const raw = await readRaw();
+    // A hand-edit is the realistic source: `kind` is a closed union of
+    // 17 values, and nothing LocTT writes produces anything else.
+    raw.push({ timestamp: "2026-09-01T00:00:00.000Z", kind: "not_a_real_kind" });
+    await writeFile(historyPath(), stringifyYaml(raw), "utf-8");
+
+    // Before the schema, `isHistoryEntry` checked only that `kind` was
+    // a *string*, so this rendered in `loctt log` and would reach a UI
+    // that switches on kind for an icon with no case for it.
+    const entries = await readHistory(dir, TASK_ID);
+    expect(entries.map(e => e.kind)).toEqual(["created"]);
+  });
+
+  it("keeps it in the file and reports it (P-11)", async () => {
+    await seed(["created"]);
+    const raw = await readRaw();
+    raw.push({ timestamp: "2026-09-01T00:00:00.000Z", kind: "not_a_real_kind" });
+    await writeFile(historyPath(), stringifyYaml(raw), "utf-8");
+
+    // Rejecting decides what is *readable*, never what is allowed to
+    // exist — the row survives and `readHistoryRows` marks it.
+    const rows = await readHistoryRows(dir, TASK_ID);
+    expect(rows).toHaveLength(2);
+    expect(rows.filter(isMalformedHistoryEntry)).toHaveLength(1);
+  });
+
+  it("still accepts a row carrying a field this build does not know", async () => {
+    await seed(["created"]);
+    const raw = await readRaw();
+    // `.passthrough()`: a file written by a newer LocTT must stay
+    // readable, or an upgrade in one clone makes history unreadable in
+    // another.
+    raw.push({
+      timestamp: "2026-09-01T00:00:00.000Z",
+      kind: "created",
+      some_future_field: "x",
+    });
+    await writeFile(historyPath(), stringifyYaml(raw), "utf-8");
+
+    expect(await readHistory(dir, TASK_ID)).toHaveLength(2);
+  });
+});
+
 describe("mergeHistory keeps entries it cannot key (V2)", () => {
   it("does not collapse two timestamp-less entries into one", () => {
     const local = [{ kind: "created", note: "a" }] as never[];
