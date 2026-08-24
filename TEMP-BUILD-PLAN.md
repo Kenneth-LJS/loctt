@@ -129,11 +129,45 @@ Written after every subsection commit, per
 |---|---|---|---|---|
 | M1.4 | 1 · entity pickers | `2ca36cb` | BLK-7, BLK-8 | Coverage 111 → 113. Six mutations; two of my tests were vacuous and a fresh review agent found two more. |
 | M1.4 | 2 · move to project | `e541456` | BLK-9, BLK-26, BLK-31 | Coverage 113 → 116. Found a live API defect and introduced one regression; review caught eight things. |
+| 🚦 M1 | root cause | `72b1a5d` | ERR-1, ERR-2 | A **fable agent** found what three rounds missed: a paused query, not a predicate. See below. |
+| 🚦 M1 | gate round 3 | `ecd2f8b` | — | **FAIL.** One blocker, mine, from round 2's fix. My predicate made the error branch unreachable. |
 | 🚦 M1 | gate round 2 | `12d93c8` | — | Confirmed 3 of 4 round-1 fixes. Found the stale-filter guard, plus two bugs in my own responsive change. Still **FAIL** pending round 3. |
 | 🚦 M1 | gate round 1 | `6a8cb49`, `a395023` | — | **FAIL.** 4 blockers: every entity filter 400'd, moved keys did not resolve, no responsive handling, one non-reproducing. |
 | M1.4 | 5 · remaining BLK cases | `9cae899` | BLK-6, 17, 19-21, 25, 27-29, 36, 40, 43, 46-48 | **M1.4 complete.** Four live defects incl. BLK-40, red since it was written. UI suite 65/65 for the first time. |
 | M1.4 | 4 · concurrency + scale | `c4812bb` | BLK-22, 23, 24, 34, 41, 42 | Three live defects: ULID in a failure message, raw proper-lockfile error, unbounded hung request. Review found six more. |
 | M1.4 | 3 · archive undo | `6b16801` | BLK-10 | The ticket's premise was wrong — archive never had a typed confirm. Undo + archived badge built instead. Fixed an intermittent I introduced in subsection 2. |
+
+**The M1 gate loop, and why it did not converge**
+
+Three rounds, three FAILs, and **two of the three found regressions I
+had introduced fixing the previous round**. The pattern was not bad
+luck; it was debugging at the wrong layer.
+
+- **Every fix was keyed on `isError`, and in the failing state
+  `isError` is false — permanently.** TanStack's retryer checks
+  `onlineManager.isOnline()` between the first failure and the retry
+  and, if the browser reports offline, pauses the query *indefinitely*:
+  `status` stays "pending", the error is never recorded. One mechanism
+  produced all three screens the gate reported.
+- **I never captured the observer state where it failed.** All three
+  predicates were reasoned out from intuition about a third-party
+  state machine. One `console.log` of `status`/`fetchStatus`/
+  `isPlaceholderData` in the gate's repro would have ended it at round
+  two.
+- **"Reproduces first try" versus "cannot reproduce" is an environment
+  difference, and I never diffed the environments.** Playwright and
+  jsdom are always online; the gate's harness was not. My
+  warm-cache-versus-fresh-page diagnosis was wrong, and every spec I
+  wrote against it was doomed.
+- **I used the gate as a debugger.** A gate is for verdicts. Each
+  iteration cost ~35 minutes and every miss looked like whack-a-mole.
+  `ListView.paused.test.tsx` reproduces the same bug in ~50ms by
+  driving `onlineManager` directly with the production client config.
+
+**The rule this leaves:** when a fix depends on a third-party state
+machine, dump that machine's actual state at the failure *before*
+writing the fix, and build the fast reproduction before the second
+attempt — not the fourth.
 
 **Carried forward from the M1 gate:**
 
