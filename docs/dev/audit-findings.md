@@ -670,3 +670,103 @@ nonexistent task when `blockArchivedTarget: false` and no inverse is
 defined; `postComment` creates the task directory for a nonexistent
 task id rather than erroring. Both are plausible from the code but were
 not reproduced.
+
+## V1 audit B — surface-level validation survey, 2026-08-17
+
+Which rules about the DATA live in the surfaces rather than in core.
+Interface concerns — arity, usage strings, unknown-flag rejection,
+CLI boolean-literal parsing, HTTP routing — are excluded by design.
+
+### Diverging: the same rule, implemented differently
+
+**Sprint `state` — four hand-maintained copies, and three different
+messages for the same input.** Verified by running each:
+
+```
+CORE : state must be one of active|completed|future, got: bogus
+CLI  : --state must be one of active|completed|future
+MCP  : Invalid enum value. Expected 'active' | 'completed' | 'future', received 'bogus'
+```
+
+Only core names what was given. Copies at `apps/cli/src/commands/sprint.ts:65`
+and `:96` (literal `!==` chains), `apps/mcp/src/tools/sprint.ts:43` and
+`:68` (`z.enum`), core at `packages/core/src/sprints/manage.ts:28-32`.
+The web has **no** check — its union is a TypeScript annotation on
+`parseJsonBody`, erased at runtime — so it is the only surface already
+doing the right thing.
+
+Core's state-*transition* rule (`manage.ts:45-49`, reopening a completed
+sprint needs `force`) is correctly centralised and duplicated nowhere.
+Only membership is duplicated.
+
+**status / priority / task_type** — `assertWorkflowEnumKey` exists twice
+with near-identical bodies: `apps/cli/src/runtime/workflow-assert.ts:23`
+(throws `UsageError`) and `apps/mcp/src/runtime/workflow-assert.ts:22`
+(returns `errorResult`). Both re-derive the key list from `WorkflowConfig`
+themselves. The web has none and delegates to core.
+
+**Relationship type** — CLI only (`workflow-assert.ts:44`). MCP's copy of
+the same file deliberately omits it, so a bad relationship key gets a
+friendly key list on the CLI and core's raw message on MCP and web.
+
+**Date shape** — MCP restates core's regex byte-for-byte
+(`apps/mcp/src/runtime/fields.ts:33`, same pattern and message as
+`packages/contracts/src/task.ts:13`). Its own comment admits the copy.
+Net rejection is the same; the *ordering* differs — MCP rejects before
+task lookup, the others at write time.
+
+**Pagination bounds — three different rules.** CLI requires a
+non-negative integer with no cap (`task-crud.ts:151`); web adds
+`limit <= 1000` (`server.ts:570`, cap at `:541`); MCP has
+`z.number().optional()` and checks nothing (`task-crud.ts:106`). So
+`limit: -1` is rejected by two surfaces and accepted by one;
+`limit: 100000` is rejected by one and accepted by two.
+
+**Sort direction** — all three enforce it separately, with different
+wording, and both CLI and web silently coerce anything not `desc` to
+`asc` *after* the guard.
+
+**Attachment source path** — a genuine behavioural fork. MCP rejects a
+relative path outright (`task-files.ts:36`); the CLI resolves it against
+cwd (`task-files.ts:35`); core resolves it too (`attachments.ts:99`).
+MCP's rationale — the server's cwd is not the agent's — is defensible,
+but it is expressed as a value-legality rejection of input core accepts.
+
+### On one surface only, with no core home
+
+- **User-settings nesting depth ≤ 8** — web only (`server.ts:2077`).
+  Any other write path bypasses it.
+- **Task-ref character class** `/^[A-Za-z0-9_-]+$/` — web only
+  (`server.ts:625`), used by ~15 handlers. A ref with a dot is a 400 on
+  the web and a not-found on CLI/MCP. Partly a traversal guard, so
+  partly an interface concern.
+- **Export format `csv|json`** — web only (`server.ts:2285`).
+- **Milestone `target_date` format** — appears to be checked *nowhere*.
+  `createSprint` calls `assertIsoDate` (`sprints/manage.ts:104`);
+  `createMilestone` does not (`milestones/manage.ts:73-117`). Agent
+  flagged this as uncertain and it is **not verified here.**
+
+### Already correct — do not "fix" these
+
+- **`handleSetField`** (`server.ts:2683`) does no value validation at
+  all: it checks a field was named, then delegates entirely to core and
+  translates three typed error classes. **This is the model** the other
+  surfaces should converge on — noteworthy because an earlier audit
+  entry listed its unvalidated `value` as a finding. The unvalidated
+  `value` is the *correct* design; what was missing is core validating
+  it, which is exactly V1.
+- Every web entity create/edit handler delegates cleanly.
+- `apps/cli/src/commands/config.ts` pulls its key vocabulary from core's
+  `CONFIG_KEYS` rather than restating it.
+- `assertSafeBasename` is now called from core at all three surfaces —
+  the `includes("..")` regression is genuinely closed.
+- Attachment and avatar size caps import core's constants rather than
+  restating the numbers.
+
+### Not verified
+
+Agent-reported and not reproduced: core's rank module possibly not
+re-checking before/after exclusivity; whether core rejects a negative or
+fractional `limit` anywhere; whether `MilestoneDefSchema` brands
+`target_date` as `IsoDate`; and a comment at `server.ts:1546` claiming a
+hex-colour guard raising `LabelError` that the agent believes inaccurate.
