@@ -215,7 +215,13 @@ Per milestone. The named list is the floor, not the ceiling.
 
 ## What stops the run
 
-Two things. Everything else, I fix and continue.
+**Default: fix it.** If something is broken and the fix is known, make
+it — then re-run the failing tests *and* the tests around whatever the
+fix touched, to confirm the fix landed and nothing regressed. That
+second half is not optional: a fix verified only by the test that
+failed is a fix that has not been checked for blast radius.
+
+Only two things stop the run.
 
 **1. A design decision that is genuinely Ken's.** Not "which of two
 equivalent shapes" — that is mine. Genuinely his means: it changes what
@@ -231,7 +237,9 @@ not adjudicate.
 
 | Situation | Action |
 |---|---|
-| Gate finds a defect | Fix, re-gate |
+| Gate finds a defect | Fix, re-run the failing tests plus the ones around what changed, re-gate |
+| A defect sits in a ticket already marked ✅ | Fix it anyway. A ✅ that predates its cases records "the bullets were built", not "the cases pass" |
+| The gate finds behaviour **no case covers** | Record it as a proposed case; do **not** build it. Deciding what it should do is writing spec, which is the one thing an agent may not do |
 | A case's premise is stale | Test the correct behaviour, note it |
 | A green test asserts a bug | Rewrite it, **say so in the commit** |
 | Two equivalent implementations | Pick one, note why |
