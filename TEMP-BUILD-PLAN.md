@@ -6,6 +6,12 @@ This sits above [`build-loop.md`](docs/dev/build-loop.md), which governs a singl
 ticket. This governs the phases, their order, and what each is allowed to
 decide on its own.
 
+**For Phase 5, read [`TEMP-RUN-WORKFLOW.md`](TEMP-RUN-WORKFLOW.md) next.**
+It settles how the run executes — sections, subsections, which agents
+must be fresh, what the section gate is, and the only two things that
+stop an unsupervised run. The Status table below is that run's log,
+updated after every subsection commit rather than at section end.
+
 ## The problem this solves
 
 An agent that writes the requirement, the test, and the implementation
