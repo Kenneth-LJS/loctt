@@ -116,6 +116,7 @@ import {
   loadState,
   loadUserSettings,
   loadWorkflowConfig,
+  LocttError,
   lookupById,
   lookupTask,
   MAX_AVATAR_BYTES,
@@ -277,11 +278,18 @@ function json(res: import("node:http").ServerResponse, data: unknown, status = 2
 }
 
 /**
- * Default cause for a status code, used when a call site does not name one.
+ * Last-resort cause for a status code.
  *
- * Inferring beats defaulting everything to `unknown`: `unknown` is P4's
- * rare exception, reserved for causes that genuinely cannot be determined,
- * and a UI that sees it on a routine 404 learns nothing.
+ * A **guess**, and only correct by coincidence: an archived-reference
+ * rejection arrives as a 400 and becomes `validation_failed`, which is
+ * indistinguishable from a bad enum value even though the recovery is
+ * entirely different — unarchive the entity, versus pick a valid value.
+ *
+ * Since V1, core states its own cause and `errorFromThrown` reads it.
+ * This remains for the ~100 call sites that pass a bare string, where a
+ * status-shaped guess still beats defaulting everything to `unknown` —
+ * P4 reserves that for causes that genuinely cannot be determined, and
+ * a UI seeing it on a routine 404 learns nothing.
  */
 function codeForStatus(status: number): ErrorCode {
   if (status === 404) return "not_found";
@@ -2705,29 +2713,29 @@ export function createWebApp(options: WebAppOptions) {
     } catch (err) {
       // A rejected single-field write is the path ERR-14 and ERR-18 are
       // written about: the UI renders it at the input rather than in a
-      // toast, and tells the user their edit did not land. Both need the
-      // field name and the data state, which prose alone cannot carry.
-      if (err instanceof TaskUpdateError) {
-        error(res, err.message, 400, {
-          code: "validation_failed",
-          field: request.field,
-          data_state: "not_saved",
-          recovery: { kind: "retry" },
-        });
-        return;
-      }
-      if (err instanceof ArchivedReferenceError) {
-        error(res, err.message, 400, {
-          code: "archived_reference",
-          field: request.field,
-          data_state: "not_saved",
-          recovery: { kind: "none" },
+      // toast, and tells the user their edit did not land. Both need
+      // the field name and the data state, which prose cannot carry.
+      //
+      // V1: core states its own cause, so the three hand-written
+      // branches that used to live here — one per error class, each
+      // restating a code the class already knew — are gone. Adding a
+      // new error class in core no longer needs a matching branch here.
+      //
+      // `field` is filled in from the request when core did not name
+      // one: core knows *what* was wrong, this handler knows *which
+      // input* the user typed into.
+      if (err instanceof LocttError) {
+        const envelope = err.toEnvelope();
+        error(res, envelope.message, 400, {
+          ...envelope,
+          field: envelope.field ?? request.field,
+          recovery: envelope.recovery ?? { kind: "retry" },
         });
         return;
       }
       // Frontmatter shape is validated on write, so a bad value reaches
-      // here as a raw ZodError. Left unhandled it became a 500 carrying a
-      // serialized validator dump — a known cause reported as unknown
+      // here as a raw ZodError. Left unhandled it became a 500 carrying
+      // a serialized validator dump — a known cause reported as unknown
       // (ERR-31) with jargon in the headline (ERR-16).
       if (err instanceof ZodError) {
         error(res, zodIssueSummary(err), 400, {

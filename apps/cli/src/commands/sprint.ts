@@ -1,3 +1,4 @@
+import type { SprintState } from "@loctt/contracts";
 import {
   archiveSprint,
   createSprint,
@@ -62,15 +63,22 @@ export async function run(args: string[], root: string): Promise<void> {
             "loctt sprint create <name> --start <YYYY-MM-DD> --end <YYYY-MM-DD> [--state <active|completed|future>] [--goal <g>]",
           );
         }
-        if (state !== "active" && state !== "completed" && state !== "future") {
-          throw new UsageError("--state must be one of active|completed|future");
-        }
+        // V1: core checks the state enum and names the value it got.
+        // The CLI used to repeat the list here, so the same rejected
+        // input produced three different sentences across CLI, MCP and
+        // core — and only core's said what was actually passed.
+        //
+        // The cast is the cost of deleting the copy: `createSprint`
+        // takes `SprintState`, and core validates before it is used.
         const goal = getArg(args, "--goal");
         const def = await createSprint(locttDir, {
           name,
           start_date: start,
           end_date: end,
-          state,
+          // Cast, not check: the CLI's job is parsing text, core's is
+          // deciding whether the value is legal (V1). `createSprint`
+          // rejects anything outside the enum and names what it got.
+          state: state as SprintState,
           ...(goal !== undefined ? { goal } : {}),
         });
         console.log(`Created sprint "${name}" (id ${def.id})`);
@@ -93,9 +101,7 @@ export async function run(args: string[], root: string): Promise<void> {
         const end = getArg(args, "--end");
         const state = getArg(args, "--state");
         const force = hasFlag(args, "--force");
-        if (state !== undefined && state !== "active" && state !== "completed" && state !== "future") {
-          throw new UsageError("--state must be one of active|completed|future");
-        }
+        // As above: core owns the enum check (V1).
         const goalArg = getArg(args, "--goal");
         // `--force` alone is not a change: it only relaxes a guard on
         // one, so an edit naming nothing still reported success.
@@ -110,7 +116,7 @@ export async function run(args: string[], root: string): Promise<void> {
           ...(name !== undefined ? { name } : {}),
           ...(start !== undefined ? { start_date: start } : {}),
           ...(end !== undefined ? { end_date: end } : {}),
-          ...(state !== undefined ? { state } : {}),
+          ...(state !== undefined ? { state: state as SprintState } : {}),
           ...(goalArg !== undefined ? { goal: goalArg === "-" ? null : goalArg } : {}),
           ...(force ? { force: true } : {}),
         });

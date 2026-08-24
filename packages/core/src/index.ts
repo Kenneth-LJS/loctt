@@ -95,6 +95,8 @@ export type { CheckStatus,DiagnosticCheck } from "./diagnostics/index.js";
 export type { IntegrityFinding, IntegritySeverity } from "./diagnostics/index.js";
 export { getTrackerInfo } from "./diagnostics/index.js";
 export { blockingFindings, checkDataIntegrity, runDoctor } from "./diagnostics/index.js";
+export type { LocttErrorOptions } from "./errors.js";
+export { errorEnvelope, LocttError } from "./errors.js";
 export type { FetchResult, GitStatusResult, PreflightReport, PushResult } from "./git/index.js";
 export type { RekeyOutcome, RekeyResult, RekeySkip } from "./git/index.js";
 export {

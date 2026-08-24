@@ -6,14 +6,16 @@ import * as lockfile from "proper-lockfile";
 import { ulid } from "ulid";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
+import type { LocttErrorOptions } from "../errors.js";
+import { LocttError } from "../errors.js";
 import { getCommentsFilePath } from "../paths/index.js";
 import { readCurrentUserId } from "../users/current.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
 import { appendHistory } from "./history.js";
 
-export class CommentError extends Error {
-  constructor(message: string) {
-    super(message);
+export class CommentError extends LocttError {
+  constructor(message: string, opts: LocttErrorOptions = {}) {
+    super("validation_failed", message, { dataState: "not_saved", ...opts });
     this.name = "CommentError";
   }
 }

@@ -1,15 +1,21 @@
 import type { HistoryEntry, Task, TaskFrontmatter, TaskRelationship, WorkflowConfig } from "@loctt/contracts";
 import { effectiveInverseKey, isSymmetricRelationship, relationshipTypeKeys } from "@loctt/contracts";
 
+import type { LocttErrorOptions } from "../errors.js";
+import { LocttError } from "../errors.js";
 import { withStateLock } from "../state/lock.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 import { lookupById, TaskNotFoundError } from "./lookup.js";
 import { toFrontmatter, toMutable } from "./mutable.js";
 
-export class RelationshipError extends Error {
-  constructor(message: string) {
-    super(message);
+export class RelationshipError extends LocttError {
+  constructor(message: string, opts: LocttErrorOptions = {}) {
+    super("validation_failed", message, {
+      field: "relationships",
+      dataState: "not_saved",
+      ...opts,
+    });
     this.name = "RelationshipError";
   }
 }
