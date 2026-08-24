@@ -91,32 +91,41 @@ raising the global default, which would hide genuinely slow tests.
 
 **Before believing an integration failure: re-run the named file alone.**
 
-## `publish-sync` key-collision test fails — pre-existing, 2026-08-17
+## ✅ `publish-sync` key-collision test — diagnosed and fixed, 2026-08-17
 
 `src/git/publish-sync.test.ts > reports a key collision it could not
-resolve` asserts `result.unresolvedKeys` contains the colliding key
-after a sync. It gets `[]`.
+resolve` failed deterministically, at `9dc84ca` and every commit since.
+Recorded here first with two possibilities; the second was correct.
 
-**Not a regression.** Verified by checkout: it fails at `9dc84ca`, the
-commit before this session's work, and at every commit since. It fails
-in isolation and in the full suite, deterministically — three
-consecutive runs, same result. So it is not the contention flakiness
-recorded above.
+**The test's fixture never reached the code it asserted.** It built the
+colliding task by copying the published one, so both carried an
+identical `created_at`. The tiebreak then fell to the ULID `id`, and the
+hardcoded `01M0COLLIDING…` sorts *before* a real ULID — so the colliding
+task sorted first and kept the key, and the **local** task was rekeyed.
+That rekey succeeded, because the local task's project does have a
+counter. `skipped` was therefore empty and `unresolvedKeys` was empty,
+which is exactly what the assertion caught.
 
-The behaviour it covers was real when written (`a7c1451`, GIT-C2): the
-rekey pass ran only after a *merge*, and two clones creating tasks
-offline produces a *copy*. `normaliseAfterMerge` is now gated on
-`resolution.merged.length > 0 || plan.copies.length > 0`, so the
-question is whether the test's scenario still reaches either branch —
-it constructs the collision by committing directly on the branch, which
-may now take a path where neither fires.
+The production code was correct throughout. Fixed by stamping the
+colliding task with a later `created_at`, which is what GIT-C2
+specifies: *"the task with the earlier `created_at` keeps the key."*
+The later task is the one that must be rekeyed, and in this scenario it
+is the one that cannot be.
 
-**Two possibilities, and they need separating before either is acted
-on:** the guard genuinely no longer covers the case (a live defect in
-the GIT-C2 fix), or the test's scenario stopped reaching the code it
-was written for (a test that no longer asserts what it claims). The
-second is this repo's known failure mode and must not be assumed away.
+**Both halves of GIT-C2 are now genuinely covered**, verified by
+mutation: dropping `outcome.skipped` at the caller fails it, and gating
+`normaliseAfterMerge` on merges only (excluding the copy path) fails it.
+Neither could fail against the old fixture.
+
+**A wrong turn worth recording.** I first "fixed" this by sorting
+unrekeyable tasks first, so the task that cannot be rekeyed keeps the
+key. That contradicts GIT-C2's stated rule, and the plan doc is explicit
+that an agent never adjudicates against the spec. Reverted. The
+reasoning was not unreasonable — letting the unrekeyable side win is
+arguably the better outcome — but it is a **decision for the user**, not
+something to implement while calling it a bug fix.
 
 **I reported the core suite as green several times during 2026-08-17
-while this was failing.** The summary line was read without checking
-for `FAIL` lines above it. Corrected here rather than quietly.
+while this was failing.** The summary line was read without checking for
+`FAIL` lines above it. Corrected here rather than quietly.
+
