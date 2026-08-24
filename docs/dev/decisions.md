@@ -198,6 +198,14 @@ edits; two users' edits never merge into one entry.
 
 ### V1 · Core owns validation; surfaces do not re-implement it
 
+**✅ Implemented 2026-08-17 (`e19964f`).** `LocttError` carries `code`,
+`field`, `dataState`, `recovery` and `detail`; ten error classes
+migrated keeping their names, so `instanceof` still works. The web's
+three hand-written translation branches are gone, and the CLI's two
+sprint-state copies with them. MCP's `z.enum` stays: it is the tool
+schema an agent reads, not only a runtime check.
+
+
 **Every validation rule lives in core.** CLI and MCP call into it and
 surface what it returns; neither carries its own copy of a rule about the
 data.
@@ -321,6 +329,11 @@ broken file with no sync pending.
 
 ### V5 · The validator is maintained by a test, not by an instruction
 
+**✅ Implemented 2026-08-17 (`761df3e`).** `schema-coverage.test.ts`,
+plus the instruction in `build-loop.md`. Verified in both directions:
+adding a schema field, and removing a guard, each fail naming the field.
+
+
 Four deliverables, and the fourth is load-bearing:
 
 1. **Specs** — the flow docs state the cross-file rules the validator
@@ -419,6 +432,9 @@ on its first day is worth less than the hole saves.
 
 ### V8 · Error shape describes the error, not its presentation
 
+**✅ Implemented 2026-08-17 (`e19964f`)**, in the shape V10 settled.
+
+
 **Decided 2026-08-17, after a proposal was rejected.**
 
 I proposed four categories — field-level, operation-level, state-level,
@@ -466,6 +482,9 @@ agent does not adjudicate against the spec.
 
 ### V9 · P-11 applies per store, and config is not a log
 
+**✅ Implemented 2026-08-17 (`e379de8`).**
+
+
 **Decided 2026-08-17 while extending P-11 past comments.**
 
 P-11 says a malformed entry is kept and merged. That is right for a
@@ -490,6 +509,9 @@ Both halves are still P-11: nothing is destroyed in either case. The
 difference is only whether LocTT proceeds around the damage or stops.
 
 ### V10 · The error contract already exists; V1 adopts it
+
+**✅ Implemented 2026-08-17 (`e19964f`).**
+
 
 **Decided 2026-08-17, after reading
 [`flow-error-handling.md`](ui-test-cases/flow-error-handling.md).**

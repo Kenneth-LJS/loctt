@@ -723,14 +723,33 @@ Ordered. Each item's decision is recorded before it is built.
 
 | # | Work | Decision | State |
 |---|---|---|---|
-| 1 | **P-11 for history entries** | P-11, **V9** | ⬜ |
-| 2 | **P-11 for config slices** — refuse and report, not keep-and-merge | **V9** | ⬜ |
-| 3 | **P-12** — cross-file dependency validation at the boundary | P-12 | ⬜ |
-| 4 | **`ListView.tsx` / `Sidebar.tsx`** `isError` branch | — | ⬜ |
-| 5 | **V1's two audits** — what core validates today; which surface rules must move | V1 | ⬜ |
-| 6 | **V1 proper** — validation into core, structured errors | V1, **V8** | ⬜ |
-| 7 | **V5** — the schema-coverage test | V5 | ⬜ |
-| 8 | **M2**, then the rest of Phase 5 | — | ⬜ |
+| 1 | **P-11 for history entries** | P-11, **V9** | ✅ `e379de8` |
+| 2 | **P-11 for config slices** — refuse and report | **V9** | ✅ `e379de8` |
+| 3 | **P-12** — inverse-relationship validation | P-12 | ✅ `17fae3f` |
+| 4 | **`ListView.tsx` / `Sidebar.tsx`** `isError` branch | ERR-1 | ✅ `4bb211b` |
+| 5 | **V1's two audits** | V1 | ✅ `79cf58f`, `d7a3b65` |
+| 6 | **V1 proper** — core states its own cause | V1, **V8**, **V10** | ✅ `e19964f` |
+| 7 | **V5** — the schema-coverage test | V5 | ✅ `761df3e` |
+| 8 | **M2**, then the rest of Phase 5 | — | ⬜ ← next |
+
+**Found and fixed along the way**, each reproduced against the built
+binary before any code was written:
+
+- **GIT-C2's test never reached the code it asserted** (`55d891c`). Its
+  fixture gave both tasks an identical `created_at`, so the tiebreak
+  fell to the id and the *local* task was rekeyed — successfully. The
+  case had been unverified since `a7c1451`.
+- **`setFields` did not resolve entity names** (`5c81d96`). `loctt set
+  T1 milestone v1` stored the ULID; `loctt set T1,T2 milestone v1`
+  stored `"v1"`. MSL-C1 reopening on the path its Phase 3 fix missed.
+- **No write path checked an entity exists** (`5c81d96`). Only `doctor`
+  passed `aux`. `createTask` never resolved names at all.
+
+**Investigated and closed as not-a-defect:** the `rekeyCollisions` skip
+path (`6da4188`). I had claimed it produced wrong behaviour on real
+syncs; two-clone testing showed it does not, and two of my supporting
+facts were wrong — `state.yaml` *is* mirrored, and tasks in different
+projects cannot collide because prefixes are unique.
 
 **Why this order.** 1–4 are independent of everything else and close
 known gaps. 5 is read-only and sizes 6. 6 must precede M2, because M2's
