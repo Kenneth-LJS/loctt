@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { LabelsConfig } from "@loctt/contracts";
@@ -9,6 +8,7 @@ import { z } from "zod";
 import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
+import { readFileState, UnreadableFileError } from "../utils/read-state.js";
 import { safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
@@ -55,9 +55,19 @@ export function serializeLabelsConfig(config: LabelsConfig): string {
 
 export async function loadLabelsConfig(locttDir: string): Promise<LabelsConfig> {
   const path = getLabelsConfigPath(locttDir);
-  if (!(await fileExists(path))) return { labels: [] };
-  const raw = await readFile(path, "utf-8");
-  return parseLabelsConfig(raw);
+  // Absent is a supported state — a fresh tracker has not written this
+  // file yet. Unreadable is not, and the two used to be one code path:
+  // `fileExists` then `readFile` is two syscalls where the second can
+  // still fail, and the failure surfaced as a bare errno.
+  //
+  // V9: config is not a log. A definition LocTT could not read is not
+  // kept and merged like a comment — other data references it, so
+  // LocTT refuses rather than building on top of it. The file itself is
+  // never written over, which is what P-11 protects.
+  const file = await readFileState(path);
+  if (file.state === "unreadable") throw new UnreadableFileError(file);
+  if (file.state === "absent") return { labels: [] };
+  return parseLabelsConfig(file.content);
 }
 
 export async function saveLabelsConfig(

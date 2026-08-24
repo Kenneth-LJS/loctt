@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import type { HistoryEntry, HistoryKind } from "@loctt/contracts";
@@ -7,6 +7,7 @@ import * as lockfile from "proper-lockfile";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { getHistoryFilePath } from "../paths/index.js";
+import { readFileState, UnreadableFileError } from "../utils/read-state.js";
 
 /**
  * Coalesce window for body_edited entries by the same actor. Auto-save
@@ -85,6 +86,68 @@ export class HistoryParseError extends Error {
  * not exist. With options, returns a {@link ReadHistoryPage} with the
  * post-filter total so callers can render "x of y" cursors.
  */
+
+/**
+ * A stored history row that does not have the shape of an entry.
+ *
+ * P-11: kept, not dropped. It stays at its index, is written back
+ * verbatim by every append, and merges normally. It is excluded only
+ * from reads that genuinely need the field it lacks — filtering by
+ * `kind`, ordering by `timestamp`.
+ */
+export interface MalformedHistoryEntry {
+  readonly malformed: true;
+  readonly index: number;
+  readonly raw: unknown;
+}
+
+/** A history file as stored: readable entries interleaved with unusable rows. */
+export type HistoryRow = HistoryEntry | MalformedHistoryEntry;
+
+export function isMalformedHistoryEntry(row: HistoryRow): row is MalformedHistoryEntry {
+  return (row as MalformedHistoryEntry).malformed === true;
+}
+
+/**
+ * The fields an entry cannot be filtered or ordered without.
+ *
+ * `timestamp` is required here, unlike a comment's `created_at`,
+ * because history's whole contract is chronological: `readHistory`
+ * sorts on it and `mergeHistory` builds its identity key from it. A row
+ * without one cannot take part in either — but it is still kept
+ * (V2/P-11), which is what `mergeHistory` treats as never-equal so it
+ * survives a merge rather than collapsing into a neighbour.
+ */
+function isHistoryEntry(value: unknown): value is HistoryEntry {
+  if (value === null || typeof value !== "object") return false;
+  const e = value as Partial<HistoryEntry>;
+  return typeof e.timestamp === "string" && typeof e.kind === "string";
+}
+
+/** The readable entries only, in file order. */
+export function validHistory(rows: ReadonlyArray<HistoryRow>): HistoryEntry[] {
+  return rows.filter((r): r is HistoryEntry => !isMalformedHistoryEntry(r));
+}
+
+/**
+ * Every row as stored, malformed ones included. For diagnostics and for
+ * writers that must preserve what they could not interpret.
+ */
+export async function readHistoryRows(
+  locttDir: string,
+  taskId: string,
+): Promise<HistoryRow[]> {
+  const filePath = getHistoryFilePath(locttDir, taskId);
+  const file = await readFileState(filePath);
+  if (file.state === "unreadable") throw new UnreadableFileError(file);
+  if (file.state === "absent") return [];
+  const parsed: unknown = parseYaml(file.content);
+  if (!Array.isArray(parsed)) throw new HistoryParseError(filePath);
+  return (parsed as unknown[]).map((entry, index) =>
+    isHistoryEntry(entry) ? entry : { malformed: true as const, index, raw: entry },
+  );
+}
+
 export async function readHistory(
   locttDir: string,
   taskId: string,
@@ -101,14 +164,17 @@ export async function readHistory(
 ): Promise<HistoryEntry[] | ReadHistoryPage> {
   const filePath = getHistoryFilePath(locttDir, taskId);
 
-  let content: string;
-  try {
-    content = await readFile(filePath, "utf-8");
-  } catch {
+  // Absent is a real state — a task with no history yet. Unreadable is
+  // not: returning [] there is a claim about a file nobody read, and
+  // `appendHistory` writes `[...existing, entry]` straight back, so the
+  // claim destroys the file it was guessing about (P-11).
+  const file = await readFileState(filePath);
+  if (file.state === "unreadable") throw new UnreadableFileError(file);
+  if (file.state === "absent") {
     if (options === undefined) return [];
     return { entries: [], total: 0 };
   }
-  const parsed: unknown = parseYaml(content);
+  const parsed: unknown = parseYaml(file.content);
   // Coercing a non-array to [] made a corrupt file read as an empty
   // one, and the next append then overwrote it with a single fresh
   // entry — the original content gone, with nothing said (CMT-C7).
@@ -117,13 +183,26 @@ export async function readHistory(
   if (!Array.isArray(parsed)) {
     throw new HistoryParseError(filePath);
   }
-  const all = parsed as HistoryEntry[];
-  if (options === undefined) return all;
+  // Entries are validated per row rather than cast wholesale. P-11: an
+  // entry LocTT cannot interpret is *kept* — it stays at its index, is
+  // written back verbatim by appendHistory, and merges normally. What
+  // it does not do is participate in operations that need the field it
+  // is missing.
+  // `Array.isArray` narrows to `any[]`; re-typing as `unknown[]` keeps
+  // the rows opaque until `isHistoryEntry` has vouched for them.
+  const all = (parsed as unknown[]).map((entry, index) =>
+    isHistoryEntry(entry) ? entry : { malformed: true as const, index, raw: entry },
+  );
+  if (options === undefined) return validHistory(all);
 
+  // Filtering, sorting and paging operate on the readable entries: a
+  // malformed one has no `kind` to match and no `timestamp` to order
+  // by. It is still in the file, and `readHistoryEntries` reports it.
+  const readable = validHistory(all);
   const kindSet = options.kinds && options.kinds.length > 0
     ? new Set(options.kinds)
     : null;
-  const filtered = kindSet ? all.filter(e => kindSet.has(e.kind)) : all;
+  const filtered = kindSet ? readable.filter(e => kindSet.has(e.kind)) : readable;
   // Sort, not reverse. `reverse()` assumes the file is already in
   // chronological order, which appendHistory maintains — but
   // `mergeHistory` concatenates local then incoming, so a file that has
@@ -141,6 +220,30 @@ export async function readHistory(
   const limit = options.limit;
   const sliced = limit === undefined ? ordered.slice(offset) : ordered.slice(offset, offset + limit);
   return { entries: sliced, total: filtered.length };
+}
+
+/**
+ * Puts malformed rows back where they were, around the rewritten
+ * entries.
+ *
+ * `coalesceHistory` may merge or extend the readable entries, so the
+ * result is not index-aligned with the original file. Each malformed
+ * row is therefore reinserted at its recorded index, which keeps it
+ * with the neighbours it had — the positioning rule P-11 states for an
+ * entry whose own sort key is unusable.
+ */
+function reinsertMalformed(
+  rows: ReadonlyArray<HistoryRow>,
+  entries: ReadonlyArray<HistoryEntry>,
+): unknown[] {
+  const malformed = rows.filter(isMalformedHistoryEntry);
+  if (malformed.length === 0) return [...entries];
+  const out: unknown[] = [...entries];
+  // Ascending, so each insert lands before the later ones shift.
+  for (const m of [...malformed].sort((a, b) => a.index - b.index)) {
+    out.splice(Math.min(m.index, out.length), 0, m.raw);
+  }
+  return out;
 }
 
 /**
@@ -196,10 +299,17 @@ export async function appendHistory(
     realpath: false,
   });
   try {
-    const existing = await readHistory(locttDir, taskId);
-    const merged = coalesceHistory(existing, stamped);
+    // Read *rows*, not entries: `readHistory` returns only the readable
+    // ones, so appending on top of it would silently drop every
+    // malformed row the file holds. P-11 — a row LocTT could not
+    // interpret survives a write that touches its neighbours.
+    const rows = await readHistoryRows(locttDir, taskId);
+    const merged = coalesceHistory(validHistory(rows), stamped);
+    // Malformed rows go back at their original index, so the file's
+    // order is unchanged and nothing the user wrote is lost.
+    const out = reinsertMalformed(rows, merged);
     const tmpPath = `${filePath}.${randomUUID()}.tmp`;
-    await writeFile(tmpPath, stringifyYaml(merged), "utf-8");
+    await writeFile(tmpPath, stringifyYaml(out), "utf-8");
     await rename(tmpPath, filePath);
   } finally {
     await release().catch(() => {

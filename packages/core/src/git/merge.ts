@@ -238,13 +238,26 @@ export function mergeHistory(
 ): HistoryEntry[] {
   const seen = new Set<string>();
   const out: HistoryEntry[] = [];
+  const unkeyed: HistoryEntry[] = [];
   for (const e of [...local, ...incoming]) {
+    // An entry with no timestamp cannot be de-duplicated: its key would
+    // be "\0\0\0", so every such entry across both sides collapses into
+    // one and the rest are dropped. That is real data loss, and it
+    // happens before any ordering question — so a timestamp-less entry
+    // is treated as never equal to anything and always kept (V2/P-11).
+    if (typeof e.timestamp !== "string" || e.timestamp.length === 0) {
+      unkeyed.push(e);
+      continue;
+    }
     const key = [e.timestamp, e.kind, e.actor ?? "", e.field ?? ""].join("\0");
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(e);
   }
   out.sort((a, b) => (a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0));
+  // Appended rather than sorted in: there is no key to sort them by,
+  // and inventing a position would be a claim about when they happened.
+  out.push(...unkeyed);
   return out;
 }
 
