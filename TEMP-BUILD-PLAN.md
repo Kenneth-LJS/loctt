@@ -127,7 +127,38 @@ Written after every subsection commit, per
 
 | Ticket | Subsection | Commit | Cases | Notes |
 |---|---|---|---|---|
-| M1.4 | 1 · entity pickers | `2ca36cb` | BLK-7, BLK-8 | Coverage 111 → 113. Six mutations; two of my tests were vacuous and a fresh review agent found two more. See below. |
+| M1.4 | 1 · entity pickers | `2ca36cb` | BLK-7, BLK-8 | Coverage 111 → 113. Six mutations; two of my tests were vacuous and a fresh review agent found two more. |
+| M1.4 | 2 · move to project | `e541456` | BLK-9, BLK-26, BLK-31 | Coverage 113 → 116. Found a live API defect and introduced one regression; review caught eight things. |
+
+**Carried forward from subsection 2:**
+
+- **`handleBulkMove` discarded the key changes.** Core returns
+  `{taskId, oldKey, newKey}`; the web flattened it to `taskId`, so
+  BLK-9's "name the new keys" was unsatisfiable from the client. The
+  pattern to watch: a handler flattening a richer core result to a
+  shared response shape silently drops what a case needs.
+- **Core's no-op move is already correct** — a task already in the
+  destination keeps its key and burns no number. I had flagged this as
+  the risky part of the subsection; it was already right.
+- **I regressed BLK-31.** `busy` never included `bulkMove.isPending`,
+  so nothing was disabled during a move. A passing case broke because
+  the new action was not added to an existing list — exactly what
+  build-loop rule 4 is for, applied to a *variable* rather than a test.
+- **Clearing the selection destroys the result message.** The bar
+  unmounts at zero selection and the outcome lived inside it. Any
+  action that clears needs its result rendered outside. Archive had
+  the same latent hole.
+- **Two substrings are not one assertion.** `toContainText("BACKEND1")`
+  plus `toContainText("→")` passes with the arrow reversed.
+- **`keysOnDisk` cannot see a burned counter.** A number allocated and
+  abandoned leaves keys looking correct and a gap in the sequence.
+  Read `state.yaml`.
+- **The fixture's prefix is `T-` and the list renders newest-first.**
+  `seed()` returns the real keys; the first checkbox is the task seeded
+  *last*. Both burned a test iteration.
+- **`npx playwright test` skips the build; `npm run test:ui` does not**
+  (`pretest:ui` runs `npm run build`). The review agent reported a
+  false vacuous-test result from a stale `dist/`.
 
 **Carried forward from subsection 1:**
 
