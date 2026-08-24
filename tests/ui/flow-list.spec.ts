@@ -943,6 +943,8 @@ test.describe("BLK — entity pickers", () => {
     });
 
     await page.goto(`${tracker.baseURL}/list`);
+    // Rows first: a click before the table renders lands on nothing.
+    await expect(page.locator("tbody tr").first()).toBeVisible();
     await selectOne(page);
 
     await page.getByRole("button", { name: "Set assignee" }).click();
@@ -1027,6 +1029,8 @@ test.describe("BLK — entity pickers", () => {
 
     await tracker.seed([{ title: "One" }]);
     await page.goto(`${tracker.baseURL}/list`);
+    // Rows first: a click before the table renders lands on nothing.
+    await expect(page.locator("tbody tr").first()).toBeVisible();
     await selectOne(page);
 
     await page.getByRole("button", { name: "Set milestone" }).click();
@@ -1142,6 +1146,8 @@ test.describe("BLK — move to project", () => {
     const seeded = await tracker.seed([{ title: "One" }, { title: "Two" }]);
 
     await page.goto(`${tracker.baseURL}/list`);
+    // Rows first: a click before the table renders lands on nothing.
+    await expect(page.locator("tbody tr").first()).toBeVisible();
     await page.locator("tbody input[type=checkbox]").first().check();
 
     await page.getByRole("button", { name: "Move to project" }).click();
@@ -1203,6 +1209,8 @@ test.describe("BLK — move to project", () => {
     });
 
     await page.goto(`${tracker.baseURL}/list`);
+    // Rows first: a click before the table renders lands on nothing.
+    await expect(page.locator("tbody tr").first()).toBeVisible();
     await page.locator("tbody input[type=checkbox]").first().check();
     await page.getByRole("button", { name: "Move to project" }).click();
     await page.getByRole("menu", { name: "Move to project" })
@@ -1240,6 +1248,13 @@ test.describe("BLK — move to project", () => {
     expect(inOps).toContain("OPS1");
 
     await page.goto(`${tracker.baseURL}/list`);
+    // Rows first: a click before the table renders lands on nothing.
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    // Wait for the rows before selecting. Select-all on a table that has
+    // not rendered yet checks nothing and then unchecks itself when the
+    // rows arrive — which surfaces as "Clicking the checkbox did not
+    // change its state", intermittently and only under load.
+    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
     await page.getByRole("checkbox", { name: "Select all on this page" }).check();
 
     await page.getByRole("button", { name: "Move to project" }).click();
@@ -1268,5 +1283,167 @@ test.describe("BLK — move to project", () => {
     // first.
     expect(await historyFor(tracker.root, "OPS2")).toEqual(["API1"]);
     expect(await historyFor(tracker.root, "OPS3")).toEqual([seeded[0]]);
+  });
+});
+
+test.describe("BLK — archive undo", () => {
+  // @verifies BLK-10
+  test("BLK-10: archive offers an Undo that restores every task it archived", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "One" }, { title: "Two" }, { title: "Three" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    // Rows first: a click before the table renders lands on nothing.
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+    await page.locator("tbody input[type=checkbox]").first().check();
+    await page.locator("tbody input[type=checkbox]").nth(1).check();
+
+    await page.getByRole("button", { name: "Archive", exact: true }).click();
+
+    // Still no typed confirm — archive is reversible, so demanding one
+    // is itself the violation.
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    // The rows leave the default view and the total drops.
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    // Undo is offered in the success message, where the user is already
+    // looking.
+    const status = page.getByRole("status").filter({ hasText: "archived" });
+    await expect(status).toContainText("2 tasks archived");
+    const undo = status.getByRole("button", { name: "Undo" });
+    await expect(undo).toBeVisible();
+
+    // And it restores all of them, not just the last.
+    await undo.click();
+    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+    await expect(
+      page.getByRole("status").filter({ hasText: "restored" }),
+    ).toContainText("2 tasks restored");
+  });
+
+  // @verifies BLK-10
+  test("BLK-10: a partial archive undoes only what it archived", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }, { title: "Two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    // Rows first: a click before the table renders lands on nothing.
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    await page.locator("tbody input[type=checkbox]").first().check();
+    await page.locator("tbody input[type=checkbox]").nth(1).check();
+
+    // Fail one of the two selected tasks rather than injecting a ref
+    // the client never held: the bug is the client undoing what it
+    // *sent* instead of what succeeded, and an injected ref is absent
+    // from both sets, so it cannot tell them apart.
+    const unarchived: string[][] = [];
+    await page.route(/\/api\/tasks\/bulk\/archive/, async route => {
+      const body = route.request().postDataJSON() as { refs: string[]; archive: boolean };
+      if (!body.archive) {
+        unarchived.push(body.refs);
+        await route.continue();
+        return;
+      }
+      // Report the second ref as failed while archiving the first.
+      const res = await route.fetch({
+        postData: JSON.stringify({ ...body, refs: body.refs.slice(0, 1) }),
+      });
+      const json = await res.json() as { succeeded: string[]; failed: unknown[] };
+      await route.fulfill({
+        response: res,
+        json: {
+          ...json,
+          failed: [{ taskId: body.refs[1], error: "task not found" }],
+        },
+      });
+    });
+
+    await page.getByRole("button", { name: "Archive", exact: true }).click();
+    const status = page.getByRole("status").filter({ hasText: "archived" });
+    await expect(status).toContainText("1 task archived, 1 failed");
+
+    // Undo restores the one that was archived — not the one that
+    // failed. Restoring the failure would un-archive a task this batch
+    // never touched, which the user may have archived deliberately.
+    await status.getByRole("button", { name: "Undo" }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "restored" }),
+    ).toContainText("1 task restored");
+    // Exactly the archived one went back on the wire. Sending both
+    // would un-archive a task this batch never touched — one the user
+    // may have archived deliberately earlier.
+    expect(unarchived).toHaveLength(1);
+    expect(unarchived[0]).toHaveLength(1);
+    // And the undo is spent: offering it twice would restore nothing
+    // while claiming to have worked.
+    await expect(page.getByRole("button", { name: "Undo" })).toHaveCount(0);
+  });
+
+  // @verifies BLK-10
+  test("BLK-10: the archived tasks are visible under Show archived", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }, { title: "Two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    // Rows first: a click before the table renders lands on nothing.
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    await page.locator("tbody input[type=checkbox]").first().check();
+    await page.getByRole("button", { name: "Archive", exact: true }).click();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    await page.getByRole("checkbox", { name: "Show archived" }).check();
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    // With a badge, not a dimmed row: opacity alone is invisible to a
+    // screen reader and to anyone the contrast drop does not reach.
+    //
+    // Asserted against the row that carries it, not a page-wide count:
+    // "one Archived badge exists" is also true when the badge is on the
+    // wrong row.
+    // The list renders newest-first, so the first checkbox archived
+    // "Two", not "One".
+    const rows = page.locator("tbody tr");
+    await expect(rows.filter({ hasText: "Two" })).toContainText("Archived");
+    await expect(rows.filter({ hasText: "One" })).not.toContainText("Archived");
+  });
+
+  // @verifies BLK-10
+  test("BLK-10: a later action supersedes the undo rather than leaving it stale", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }, { title: "Two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    // Rows first: a click before the table renders lands on nothing.
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    await page.locator("tbody input[type=checkbox]").first().check();
+    await page.getByRole("button", { name: "Archive", exact: true }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "archived" })
+        .getByRole("button", { name: "Undo" }),
+    ).toBeVisible();
+
+    // A different action runs. Offering the old Undo afterwards would
+    // restore tasks the user has since acted on.
+    //
+    // Set status is used deliberately: it does *not* clear the
+    // selection, so the result region stays mounted and the Undo has to
+    // be absent because it was superseded — not because its container
+    // vanished. An action that clears the selection would make this
+    // pass with the supersede logic deleted.
+    await page.locator("tbody input[type=checkbox]").first().check();
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "Done" }).click();
+
+    const bar = page.getByRole("region", { name: "Bulk actions" });
+    await expect(bar.getByRole("status")).toContainText("1 task updated");
+    await expect(bar).toBeVisible();
+    await expect(page.getByRole("button", { name: "Undo" })).toHaveCount(0);
   });
 });

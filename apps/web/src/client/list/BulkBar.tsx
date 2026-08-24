@@ -31,6 +31,7 @@ export function BulkBar({
   projects,
   busy,
   result,
+  resultAction,
   onClear,
   onSetField,
   onMove,
@@ -60,6 +61,13 @@ export function BulkBar({
   readonly result?:
     | { readonly message: string; readonly failures: readonly string[] }
     | undefined;
+  /**
+   * Rendered beside the result message. Archive passes an Undo here
+   * (BLK-10); the affordance belongs where the user is already reading
+   * the outcome, and it must appear whether or not the action cleared
+   * the selection.
+   */
+  readonly resultAction?: React.ReactNode;
   readonly onClear: () => void;
   /**
    * `null` clears the field. The bulk endpoint maps null to core's
@@ -166,22 +174,7 @@ export function BulkBar({
       </button>
 
       {result !== undefined && (
-        <span
-          role="status"
-          className={[
-            "text-[12px]",
-            result.failures.length > 0 ? "text-danger-fg" : "text-text-tertiary",
-          ].join(" ")}
-        >
-          {result.message}
-          {/* Each failure named individually, not summarised as a
-              count (BLK-38). */}
-          {result.failures.length > 0 && (
-            <span className="ml-1 text-text-tertiary">
-              ({result.failures.join("; ")})
-            </span>
-          )}
-        </span>
+        <BulkResult result={result} action={resultAction} />
       )}
 
       <button
@@ -193,6 +186,42 @@ export function BulkBar({
         Clear ×
       </button>
     </div>
+  );
+}
+
+/**
+ * The outcome of the last bulk action.
+ *
+ * Exported because it renders in two places: inside the bar while a
+ * selection is held, and standalone once an action has cleared it. The
+ * bar unmounts at zero selection, so an action that clears — archive,
+ * move — would otherwise destroy the message reporting what it did.
+ */
+export function BulkResult({
+  result,
+  action,
+}: {
+  readonly result: { readonly message: string; readonly failures: readonly string[] };
+  readonly action?: React.ReactNode;
+}) {
+  return (
+    <span
+      role="status"
+      className={[
+        "text-[12px]",
+        result.failures.length > 0 ? "text-danger-fg" : "text-text-tertiary",
+      ].join(" ")}
+    >
+      {result.message}
+      {/* Each failure named individually, not summarised as a
+          count (BLK-38). */}
+      {result.failures.length > 0 && (
+        <span className="ml-1 text-text-tertiary">
+          ({result.failures.join("; ")})
+        </span>
+      )}
+      {action}
+    </span>
   );
 }
 

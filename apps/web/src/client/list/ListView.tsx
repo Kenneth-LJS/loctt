@@ -19,7 +19,7 @@ import { useInfo } from "../api/hooks/useInfo.ts";
 import { buildQueryString, tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
-import { BulkBar } from "./BulkBar.tsx";
+import { BulkBar, BulkResult } from "./BulkBar.tsx";
 import {
   AssigneeCell,
   Dash,
@@ -135,23 +135,68 @@ export function ListView() {
     { message: string; failures: readonly string[] } | undefined
   >(undefined);
 
+  /**
+   * The tasks the last archive touched, so it can be undone (BLK-10).
+   *
+   * In memory only (V11): it dies on reload and on the next bulk
+   * action. Archive is reversible by other routes — "Show archived",
+   * then unarchive — so this is a convenience over the action just
+   * taken, not a recovery mechanism, and there is no expiry to
+   * configure.
+   */
+  const [undoableArchive, setUndoableArchive] = useState<readonly string[]>([]);
+
   const busy = bulkSet.isPending || bulkArchive.isPending || bulkDelete.isPending
     || bulkMove.isPending;
   const refs = [...selection.selected];
+
+  /**
+   * BLK-10: undo lives in the success message, where the user is
+   * already reading the outcome — not as a separate step they have to
+   * go and find. Rendered in whichever place that message appears, so
+   * it does not depend on whether the action cleared the selection.
+   */
+  const undoControl = undoableArchive.length > 0
+    ? (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            const refsToRestore = undoableArchive;
+            void runBulk(
+              () => bulkArchive.mutateAsync({ refs: refsToRestore, archive: false }),
+              "restored",
+              true,
+            );
+          }}
+          className="ml-2 rounded-md border border-border-subtle px-2 py-0.5 text-[12px] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
+        >
+          Undo
+        </button>
+      )
+    : undefined;
 
   const runBulk = async (
     run: () => Promise<import("@loctt/contracts").BulkResponse>,
     verb: string,
     clearSelection: boolean,
-  ): Promise<void> => {
+  ): Promise<readonly string[]> => {
     // Clear the previous outcome first: leaving "5 tasks updated" on
     // screen while the next action runs would misreport what just
     // happened.
     setBulkResult(undefined);
+    // A new action supersedes the previous undo: offering it after
+    // something else has run would restore tasks the user has since
+    // acted on.
+    setUndoableArchive([]);
     try {
       const result = await run();
       setBulkResult(describeBulkResult(result, verb));
       if (clearSelection) selection.clear();
+      // The ids that actually changed, not a yes/no. An Undo built from
+      // the refs *sent* would un-archive a task the batch failed on —
+      // one the user may have archived deliberately earlier.
+      return result.succeeded;
     } catch (err) {
       // The batch never ran (BLK-39): distinct from a partial failure,
       // and the selection survives so the user can retry it.
@@ -159,6 +204,7 @@ export function ListView() {
         message: `Nothing was ${verb} — the operation could not run.`,
         failures: [(err as Error).message],
       });
+      return [];
     }
   };
 
@@ -327,19 +373,8 @@ export function ListView() {
           the result was shown, taking the new keys BLK-9 requires be
           named. Archive had the same latent hole. */}
       {selection.count === 0 && bulkResult !== undefined && (
-        <div
-          role="status"
-          className={[
-            "border-t border-border-subtle px-4 py-2 text-[12px]",
-            bulkResult.failures.length > 0 ? "text-danger-fg" : "text-text-tertiary",
-          ].join(" ")}
-        >
-          {bulkResult.message}
-          {bulkResult.failures.length > 0 && (
-            <span className="ml-1 text-text-tertiary">
-              ({bulkResult.failures.join("; ")})
-            </span>
-          )}
+        <div className="border-t border-border-subtle px-4 py-2">
+          <BulkResult result={bulkResult} action={undoControl} />
         </div>
       )}
       <BulkBar
@@ -356,6 +391,7 @@ export function ListView() {
         projects={projects.data?.items}
         busy={busy}
         result={bulkResult}
+        resultAction={undoControl}
         onClear={selection.clear}
         onSetField={(field, value) => {
           void runBulk(
@@ -380,7 +416,7 @@ export function ListView() {
             () => bulkArchive.mutateAsync({ refs, archive: true }),
             "archived",
             true,
-          );
+          ).then(succeeded => { setUndoableArchive(succeeded); });
         }}
         onDeleteRequested={() => { setConfirmingDelete(true); }}
       />
@@ -433,14 +469,24 @@ function Cell({
       // middle-click / open-in-new-tab. The whole row is also clickable
       // (mouse convenience) via the <tr> onClick.
       return (
-        <Link
-          to="/tasks/$key"
-          params={{ key: task.key }}
-          onClick={e => e.stopPropagation()}
-          className="whitespace-nowrap font-mono text-text-tertiary no-underline hover:text-accent"
-        >
-          {task.key}
-        </Link>
+        <span className="flex items-center gap-1.5 whitespace-nowrap">
+          <Link
+            to="/tasks/$key"
+            params={{ key: task.key }}
+            onClick={e => e.stopPropagation()}
+            className="font-mono text-text-tertiary no-underline hover:text-accent"
+          >
+            {task.key}
+          </Link>
+          {/* BLK-10 asks for a badge, and the dimmed row it replaces was
+              a lone visual signal — unreadable to a screen reader and to
+              anyone the contrast drop does not reach. */}
+          {task.archived === true && (
+            <span className="rounded border border-border-subtle px-1 py-px text-[10px] font-medium uppercase tracking-wide text-text-tertiary">
+              Archived
+            </span>
+          )}
+        </span>
       );
     case "project":
       return <ProjectChip def={lookups.project(task.project)} raw={task.project} />;
