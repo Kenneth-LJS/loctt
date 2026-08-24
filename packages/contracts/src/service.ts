@@ -239,6 +239,23 @@ export interface BulkResponse {
   readonly bulk_op_id: string;
   readonly succeeded: readonly string[];
   readonly failed: readonly { readonly taskId: string; readonly error: string }[];
+  /**
+   * Key changes, on the routes that cause them. Move rekeys a task, and
+   * BLK-9 requires the result to *name the new keys* rather than state a
+   * count — a user who just moved four tasks cannot find them again from
+   * "4 tasks moved", because the keys they knew no longer exist.
+   *
+   * `old_key === new_key` marks a task already in the destination:
+   * BLK-26 makes that a no-op success rather than a rekey, so it must
+   * not consume a key number.
+   *
+   * Absent on routes that do not rekey.
+   */
+  readonly moved?: readonly {
+    readonly taskId: string;
+    readonly old_key: string;
+    readonly new_key: string;
+  }[];
 }
 
 /** One migration step in a plan or result. */

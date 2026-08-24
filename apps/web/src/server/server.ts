@@ -2562,12 +2562,20 @@ export function createWebApp(options: WebAppOptions) {
       const result = await bulkMoveTasksToProject({
         locttDir, taskRefs: r.refs, targetProjectId: projectId,
       });
-      // Move reports key changes per task; flatten to the shared shape
-      // so every bulk route answers identically.
+      // Move reports key changes per task. `succeeded` is flattened to
+      // the shared shape so every bulk route answers identically, but
+      // the keys are carried alongside rather than dropped: BLK-9 wants
+      // the result to name the new keys, and the old key is what the
+      // user still has in hand.
       json(res, {
         bulk_op_id: result.bulk_op_id,
         succeeded: result.succeeded.map(x => x.taskId),
         failed: result.failed,
+        moved: result.succeeded.map(x => ({
+          taskId: x.taskId,
+          old_key: x.oldKey,
+          new_key: x.newKey,
+        })),
       } satisfies BulkResponse);
     } catch (err) {
       error(res, (err as Error).message, 400, BULK_ABORTED);

@@ -12,6 +12,7 @@ import {
   describeBulkResult,
   useBulkArchive,
   useBulkDelete,
+  useBulkMove,
   useBulkSet,
 } from "../api/hooks/useBulk.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
@@ -128,12 +129,14 @@ export function ListView() {
   const bulkSet = useBulkSet();
   const bulkArchive = useBulkArchive();
   const bulkDelete = useBulkDelete();
+  const bulkMove = useBulkMove();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [bulkResult, setBulkResult] = useState<
     { message: string; failures: readonly string[] } | undefined
   >(undefined);
 
-  const busy = bulkSet.isPending || bulkArchive.isPending || bulkDelete.isPending;
+  const busy = bulkSet.isPending || bulkArchive.isPending || bulkDelete.isPending
+    || bulkMove.isPending;
   const refs = [...selection.selected];
 
   const runBulk = async (
@@ -319,6 +322,26 @@ export function ListView() {
           </tbody>
         </table>
       </div>
+      {/* The outcome outlives the bar. A move clears the selection
+          (BLK-18), which unmounts BulkBar — and with it the only place
+          the result was shown, taking the new keys BLK-9 requires be
+          named. Archive had the same latent hole. */}
+      {selection.count === 0 && bulkResult !== undefined && (
+        <div
+          role="status"
+          className={[
+            "border-t border-border-subtle px-4 py-2 text-[12px]",
+            bulkResult.failures.length > 0 ? "text-danger-fg" : "text-text-tertiary",
+          ].join(" ")}
+        >
+          {bulkResult.message}
+          {bulkResult.failures.length > 0 && (
+            <span className="ml-1 text-text-tertiary">
+              ({bulkResult.failures.join("; ")})
+            </span>
+          )}
+        </div>
+      )}
       <BulkBar
         count={selection.count}
         scopeLabel={
@@ -330,6 +353,7 @@ export function ListView() {
         users={users.data?.items}
         milestones={milestones.data?.items}
         sprints={sprints.data?.items}
+        projects={projects.data?.items}
         busy={busy}
         result={bulkResult}
         onClear={selection.clear}
@@ -338,6 +362,17 @@ export function ListView() {
             () => bulkSet.mutateAsync({ refs, field, value }),
             "updated",
             false,
+          );
+        }}
+        onMove={projectId => {
+          // Clears, like archive does. A move rekeys every task and can
+          // remove them from a project-scoped filter, so keeping the
+          // selection leaves the bar counting rows the user can no
+          // longer see — the exact state BLK-18 forbids.
+          void runBulk(
+            () => bulkMove.mutateAsync({ refs, project: projectId }),
+            "moved",
+            true,
           );
         }}
         onArchive={() => {

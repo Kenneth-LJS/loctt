@@ -91,8 +91,17 @@ export function describeBulkResult(
   const bad = result.failed.length;
   const noun = (n: number): string => (n === 1 ? "task" : "tasks");
 
+  // BLK-9: a move must name the new keys. "4 tasks moved" is unusable —
+  // the keys the user knew are gone, and nothing on screen says what
+  // replaced them. Tasks already in the destination keep their key
+  // (BLK-26) and are reported as unchanged rather than as a rekey.
+  const rekeyed = (result.moved ?? []).filter(m => m.old_key !== m.new_key);
+  const suffix = rekeyed.length > 0
+    ? `: ${rekeyed.map(m => `${m.old_key} → ${m.new_key}`).join(", ")}`
+    : "";
+
   if (bad === 0) {
-    return { message: `${String(ok)} ${noun(ok)} ${verb}`, failures: [] };
+    return { message: `${String(ok)} ${noun(ok)} ${verb}${suffix}`, failures: [] };
   }
   const failures = result.failed.map(f => `${f.taskId}: ${f.error}`);
   if (ok === 0) {
@@ -101,7 +110,7 @@ export function describeBulkResult(
     return { message: `No tasks ${verb}. ${String(bad)} failed.`, failures };
   }
   return {
-    message: `${String(ok)} ${noun(ok)} ${verb}, ${String(bad)} failed`,
+    message: `${String(ok)} ${noun(ok)} ${verb}${suffix}, ${String(bad)} failed`,
     failures,
   };
 }
