@@ -2228,6 +2228,48 @@ test.describe("ERR — the server dies mid-session", () => {
   });
 });
 
+test.describe("ERR — a filter applied against a dead server", () => {
+  // @verifies ERR-2
+  test("ERR-2: stale rows are never shown under a filter that never ran", async ({
+    page,
+    tracker,
+  }) => {
+    // Enough rows that the failure is visible as a count, matching the
+    // gate's reproduction (15 rows under a status filter).
+    await tracker.seed(
+      Array.from({ length: 15 }, (_unused, i) => ({
+        title: `Task ${String(i + 1)}`,
+        fields: { status: "in_progress" },
+      })),
+    );
+    // Land already filtered, so rows are loaded under one query before
+    // the next one fails. Starting unfiltered empties `items` and hides
+    // the defect.
+    await page.goto(`${tracker.baseURL}/list?status=in_progress`);
+    await expect(page.getByText("Showing 1–15 of 15")).toBeVisible();
+
+    // The server dies mid-session. No reload — a reload routes through
+    // the shell's boundary and is a fresh boot, which is what hid this.
+    await page.route(/\/api\/tasks(\?|$)/, route => route.abort("failed"));
+
+    // A second filter, so the query key changes while rows are held.
+    await page.getByRole("button", { name: "Filter Priority" }).click();
+    await page.getByRole("menuitemcheckbox", { name: /Critical/i }).click();
+
+    // The table must not keep showing rows that answer the previous
+    // question — with a chip claiming the new filter and a footer
+    // stating a count for a query that never ran.
+    // The table states the failure and drops the rows; the footer's
+    // count goes with them. Verified against the pre-fix predicate:
+    // what survives a failed *filter* is different from what survives a
+    // failed *Load more*, and `items.length === 0` could not tell them
+    // apart.
+    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Showing 1–15 of 15")).toHaveCount(0);
+    await expect(page.locator("tbody").getByText("Task 1", { exact: true })).toHaveCount(0);
+  });
+});
+
 test.describe("SHL — narrow viewports", () => {
   // @verifies SHL-1
   test("SHL-1: the sidebar collapses on a narrow viewport and returns when there is room", async ({
@@ -2252,9 +2294,21 @@ test.describe("SHL — narrow viewports", () => {
       .poll(() => aside.evaluate(el => el.getBoundingClientRect().width))
       .toBeLessThan(80);
 
+    // The table stays reachable. Clipping it made seven of ten columns
+    // unreachable by any input, which is worse than honest overflow.
+    const wrapper = page.locator("table").locator("xpath=ancestor::div[1]");
+    expect(await wrapper.evaluate(el => getComputedStyle(el).overflowX))
+      .toBe("auto");
+
+    // The toggle is disabled rather than silently inert: the click used
+    // to be stored and surface later at a wide width, which reads as
+    // the app changing state on its own.
+    await expect(page.getByRole("button", { name: /Toggle sidebar/i })).toBeDisabled();
+
     // And it comes back, because the stored preference was never
     // overwritten — a rotation must not silently discard a choice.
     await page.setViewportSize({ width: 1280, height: 800 });
     await expect(aside).toHaveAttribute("data-collapsed", "false");
+    await expect(page.getByRole("button", { name: /Toggle sidebar/i })).toBeEnabled();
   });
 });

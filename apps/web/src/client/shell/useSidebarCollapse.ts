@@ -46,6 +46,14 @@ function isNarrow(): boolean {
 export function useSidebarCollapse(): {
   collapsed: boolean;
   toggle: () => void;
+  /**
+   * False below the breakpoint, where the sidebar cannot expand. The
+   * toggle stays mounted so the layout does not shift, but a control
+   * that silently does nothing is worse than a disabled one — and the
+   * click was previously stored and surfaced later at a wide width,
+   * which reads as the app changing state on its own.
+   */
+  canToggle: boolean;
 } {
   const [stored, setCollapsed] = useState<boolean>(readStored);
   const [narrow, setNarrow] = useState<boolean>(isNarrow);
@@ -78,5 +86,5 @@ export function useSidebarCollapse(): {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggle]);
 
-  return { collapsed, toggle };
+  return { collapsed, toggle, canToggle: !narrow };
 }

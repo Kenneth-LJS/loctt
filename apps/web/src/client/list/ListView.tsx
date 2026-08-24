@@ -149,6 +149,26 @@ export function ListView() {
 
   const busy = bulkSet.isPending || bulkArchive.isPending || bulkDelete.isPending
     || bulkMove.isPending;
+  /**
+   * A failed fetch that is a failed *Load more* rather than a failed
+   * query.
+   *
+   * LST-49 requires the 50 rows already on screen to survive a failed
+   * Load more, with the pagination control reporting it. `items.length
+   * === 0` was standing in for that, and it is not the same predicate:
+   * a failed *filter change* also has rows on screen, and there they
+   * answer a question the user is no longer asking. The gate found the
+   * worst form of it — kill the server, apply a filter, and the table
+   * shows 15 stale rows under two chips claiming a filter that never
+   * ran, footer included: "Showing 1–15 of 15" when the true answer is
+   * 0. That fails ERR-1, ERR-2 and ERR-6.
+   *
+   * The distinction is which page failed. A Load more failure has
+   * successfully loaded pages behind it; a filter failure has none for
+   * *this* query.
+   */
+  const loadMoreFailed = tasks.isError && (tasks.data?.pages.length ?? 0) > 0;
+
   const refs = [...selection.selected];
 
   // The selection holds task ids; a failure has to name the key
@@ -273,7 +293,12 @@ export function ListView() {
         <FilterBar />
         <ExportMenu total={total} queryString={buildQueryString(params)} />
       </div>
-      <div className="overflow-hidden rounded-md border border-border-subtle bg-bg-surface">
+      {/* `overflow-x-auto`, not `hidden`: at a narrow viewport the
+          table is wider than its container, and clipping it made seven
+          of ten columns unreachable by any input — worse than the
+          honest overflow it replaced. `overflow-y-hidden` keeps the
+          rounded corners from being cut. */}
+      <div className="overflow-x-auto overflow-y-hidden rounded-md border border-border-subtle bg-bg-surface">
         <table aria-busy={tasks.isLoading} className="w-full border-separate border-spacing-0 text-[13px]">
           <thead>
             <tr>
@@ -326,7 +351,7 @@ export function ListView() {
           <tbody>
             {tasks.isLoading ? (
               <SkeletonRows columns={columns.length + 1} />
-            ) : tasks.isError && items.length === 0 ? (
+            ) : tasks.isError && !loadMoreFailed ? (
               // Without this branch a failed /api/tasks fell through to
               // the empty state below and rendered "No tasks match these
               // filters." A server that is down and a tracker that is

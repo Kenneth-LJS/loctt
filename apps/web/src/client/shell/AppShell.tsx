@@ -30,14 +30,14 @@ export function AppShell({
   readonly currentUser: UserProfile;
   readonly children?: ReactNode;
 }) {
-  const { collapsed, toggle } = useSidebarCollapse();
+  const { collapsed, toggle, canToggle } = useSidebarCollapse();
   const today = info.today;
 
   return (
     <div className="flex h-screen flex-col">
       <SchemaBanner status={info.schemaStatus} />
       <div className="grid min-h-0 flex-1 grid-cols-[auto_1fr] grid-rows-[48px_1fr]">
-        <Header currentUser={currentUser} onToggleSidebar={toggle} />
+        <Header currentUser={currentUser} onToggleSidebar={toggle} canToggleSidebar={canToggle} />
         <Sidebar
           collapsed={collapsed}
           info={info}
