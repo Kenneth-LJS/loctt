@@ -2157,3 +2157,45 @@ test.describe("BLK — corrupt and archived edges", () => {
     expect(await tracker.run(["show", String(seeded[0])])).toContain(String(seeded[0]));
   });
 });
+
+test.describe("LST — filtering by an entity", () => {
+  // @verifies LST-9
+  test("LST-9: filtering by assignee returns that user's tasks, not everyone's", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["user", "create", "Ann"]);
+    const seeded = await tracker.seed([{ title: "Hers" }, { title: "Not hers" }]);
+    await tracker.run(["set", String(seeded[0]), "assignee", "Ann"]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Filter through the real API, the way the filter bar does: the
+    // value is a ULID, and every ULID starts with a digit.
+    const assignee = await frontmatterValue(tracker.root, String(seeded[0]), "assignee");
+    const res = await page.request.get(
+      `${tracker.baseURL}/api/tasks?assignee=${assignee}`,
+    );
+    // Not a 400. The DSL builder passed bare identifiers through
+    // unquoted on the premise that "all ids are bare identifiers" —
+    // false for a ULID, so the tokenizer read `01` as a number and
+    // rejected every entity filter while the chip still claimed to be
+    // applied.
+    expect(res.status()).toBe(200);
+    const body = await res.json() as { items: { title: string }[]; total: number };
+    expect(body.total).toBe(1);
+    expect(body.items.map(t => t.title)).toEqual(["Hers"]);
+  });
+});
+
+/** One frontmatter value from the task holding `key`. */
+async function frontmatterValue(root: string, key: string, field: string): Promise<string> {
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  for (const id of await readdir(tasksDir)) {
+    const text = await readFile(path.join(tasksDir, id, "task.md"), "utf8");
+    if (!new RegExp(`^key: ${key}$`, "m").test(text)) continue;
+    return new RegExp(`^${field}: (.+)$`, "m").exec(text)?.[1]?.trim() ?? "";
+  }
+  return "";
+}

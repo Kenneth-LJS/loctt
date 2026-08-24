@@ -671,15 +671,24 @@ function assertPersisted<T>(entity: T | undefined, kind: string, key: string): T
 const VALID_REF_RE = /^[A-Za-z0-9_-]+$/;
 
 /**
- * Renders a filter value as a DSL atom. Bare identifiers
- * (`[A-Za-z0-9_.-]+`) — which all ids and workflow keys are — pass
- * through unquoted; anything else is double-quoted with `"`/`\`
- * escaped, so a value can never break out of its atom and inject query
- * structure. This is the single chokepoint that makes
+ * Renders a filter value as a DSL atom.
+ *
+ * Identifiers that **start with a letter or underscore** pass through
+ * unquoted; everything else is double-quoted with `"`/`\` escaped, so
+ * a value can never break out of its atom and inject query structure.
+ * This is the single chokepoint that makes
  * {@link buildStructuredQuery} injection-safe.
+ *
+ * The leading-character rule is load-bearing, and the previous
+ * `[A-Za-z0-9_.-]+` was not: **every ULID begins with a digit**, so the
+ * tokenizer read `01M0TC…` as the number `01` followed by a stray
+ * identifier and rejected the query. That broke every ULID-valued
+ * filter — project, assignee, reporter, milestone, sprint, labels —
+ * on every request, while the UI still displayed a chip claiming the
+ * filter was applied.
  */
 function dslAtom(value: string): string {
-  if (/^[A-Za-z0-9_.-]+$/.test(value)) return value;
+  if (/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(value)) return value;
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
