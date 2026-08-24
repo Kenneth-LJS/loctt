@@ -167,7 +167,28 @@ export function ListView() {
    * successfully loaded pages behind it; a filter failure has none for
    * *this* query.
    */
-  const loadMoreFailed = tasks.isError && (tasks.data?.pages.length ?? 0) > 0;
+  /**
+   * A failed *Load more*, as distinct from a failed query.
+   *
+   * LST-49 keeps the 50 already-loaded rows when a Load more fails.
+   * Two earlier predicates could not express that:
+   *
+   * - `items.length === 0` also matched a failed *filter*, where the
+   *   retained rows answer a question the user is no longer asking.
+   * - `pages.length > 0` is the same test rewritten — `items` is
+   *   derived from `pages`, and `keepPreviousData` keeps the previous
+   *   query's pages on a failed key change, so it was true always and
+   *   made the error branch unreachable.
+   *
+   * The question is whether the rows on screen belong to *this* query.
+   * `isPlaceholderData` answers exactly that: false means they were
+   * fetched for the current key, so a failure is a failed Load more on
+   * top of real data. True means they belong to the previous key, and
+   * showing them under the new filter is the lie ERR-2 forbids.
+   */
+  const loadMoreFailed = tasks.isError
+    && !tasks.isPlaceholderData
+    && items.length > 0;
 
   const refs = [...selection.selected];
 
