@@ -54,13 +54,72 @@ describe("validateRelationships", () => {
   });
 
   it("returns no errors for valid relationships", async () => {
+    // Both sides, as `linkTask` writes them. The fixture used to carry
+    // only the forward edge — a state the product never produces, and
+    // one P-12 now reports, so it was asserting that a one-sided edge
+    // is fine.
+    const t1 = makeTask("aaa", "T-1", [{ type: "parent", target: "bbb" }]);
+    const t2 = makeTask("bbb", "T-2", [{ type: "child", target: "aaa" }]);
+    await writeTask(locttDir, "aaa", t1);
+    await writeTask(locttDir, "bbb", t2);
+
+    const errors = await validateRelationships(locttDir, config);
+    expect(errors).toEqual([]);
+  });
+
+  it("reports a relationship whose inverse is missing on the target (P-12)", async () => {
+    // A hand-edit or a `git pull` can leave one side behind. The edge
+    // is then invisible from the target: the task that blocks something
+    // shows it, the task being blocked does not, so nobody working on
+    // it can see why it is stuck.
     const t1 = makeTask("aaa", "T-1", [{ type: "parent", target: "bbb" }]);
     const t2 = makeTask("bbb", "T-2");
     await writeTask(locttDir, "aaa", t1);
     await writeTask(locttDir, "bbb", t2);
 
     const errors = await validateRelationships(locttDir, config);
-    expect(errors).toEqual([]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.taskId).toBe("aaa");
+    expect(errors[0]?.message).toMatch(/no matching "child"/);
+  });
+
+  it("accepts a symmetric relationship with the same type on both sides", async () => {
+    // `relates_to` is its own inverse, so requiring a *different* type
+    // back would make every symmetric link report as broken.
+    const t1 = makeTask("aaa", "T-1", [{ type: "relates_to", target: "bbb" }]);
+    const t2 = makeTask("bbb", "T-2", [{ type: "relates_to", target: "aaa" }]);
+    await writeTask(locttDir, "aaa", t1);
+    await writeTask(locttDir, "bbb", t2);
+
+    expect(await validateRelationships(locttDir, config)).toEqual([]);
+  });
+
+  it("checks symmetric relationships rather than skipping them", async () => {
+    // The paired test above passes whether symmetric links are checked
+    // correctly or skipped entirely — "no error" is true either way. It
+    // takes a *one-sided* symmetric link to tell those apart, and
+    // skipping is a real temptation: `relates_to` is its own inverse,
+    // so the naive guard is `inverse === type -> continue`.
+    const t1 = makeTask("aaa", "T-1", [{ type: "relates_to", target: "bbb" }]);
+    const t2 = makeTask("bbb", "T-2");
+    await writeTask(locttDir, "aaa", t1);
+    await writeTask(locttDir, "bbb", t2);
+
+    const errors = await validateRelationships(locttDir, config);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toMatch(/no matching "relates_to"/);
+  });
+
+  it("does not report a missing inverse when the target does not exist", async () => {
+    // The dangling-target error already says what is wrong; adding a
+    // second finding about the inverse would be noise about a task that
+    // is not there.
+    const t1 = makeTask("aaa", "T-1", [{ type: "parent", target: "ghost" }]);
+    await writeTask(locttDir, "aaa", t1);
+
+    const errors = await validateRelationships(locttDir, config);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toMatch(/does not exist/);
   });
 
   it("reports unknown relationship type", async () => {

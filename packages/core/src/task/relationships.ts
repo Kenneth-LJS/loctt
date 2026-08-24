@@ -43,7 +43,7 @@ export interface UnlinkTaskOptions {
  * Searches both `key` and `inverse` columns so callers can pass either side.
  * Returns undefined if the workflow config is missing or the type isn't found.
  */
-function findInverseType(workflowConfig: WorkflowConfig | undefined, type: string): string | undefined {
+export function findInverseType(workflowConfig: WorkflowConfig | undefined, type: string): string | undefined {
   if (!workflowConfig) return undefined;
   for (const rel of workflowConfig.relationships) {
     const inv = effectiveInverseKey(rel);
