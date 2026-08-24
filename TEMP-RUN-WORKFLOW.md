@@ -238,6 +238,8 @@ not adjudicate.
 | Situation | Action |
 |---|---|
 | Gate finds a defect | Fix, re-run the failing tests plus the ones around what changed, re-gate |
+| **A fix fails twice** | Stop fixing. The model of the failure is wrong, not the fix. Capture the actual state at the failure and build a reproduction that runs in seconds before attempting a third time |
+| **A gate reproduces what a spec cannot** | That is an environment difference. Diff the environments before writing another spec — the gate's browser and the test harness disagree about something, and that something is usually the bug |
 | A defect sits in a ticket already marked ✅ | Fix it anyway. A ✅ that predates its cases records "the bullets were built", not "the cases pass" |
 | The gate finds behaviour **no case covers** | Record it as a proposed case; do **not** build it. Deciding what it should do is writing spec, which is the one thing an agent may not do |
 | A case's premise is stale | Test the correct behaviour, note it |
