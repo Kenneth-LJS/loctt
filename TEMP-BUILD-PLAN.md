@@ -129,7 +129,34 @@ Written after every subsection commit, per
 |---|---|---|---|---|
 | M1.4 | 1 · entity pickers | `2ca36cb` | BLK-7, BLK-8 | Coverage 111 → 113. Six mutations; two of my tests were vacuous and a fresh review agent found two more. |
 | M1.4 | 2 · move to project | `e541456` | BLK-9, BLK-26, BLK-31 | Coverage 113 → 116. Found a live API defect and introduced one regression; review caught eight things. |
+| M1.4 | 4 · concurrency + scale | `c4812bb` | BLK-22, 23, 24, 34, 41, 42 | Three live defects: ULID in a failure message, raw proper-lockfile error, unbounded hung request. Review found six more. |
 | M1.4 | 3 · archive undo | `6b16801` | BLK-10 | The ticket's premise was wrong — archive never had a typed confirm. Undo + archived badge built instead. Fixed an intermittent I introduced in subsection 2. |
+
+**Carried forward from subsection 4:**
+
+- **`AbortSignal.timeout` keeps running after a caller aborts.** So
+  checking `deadline.aborted` in a catch block classifies a routine
+  unmount as a timeout. Use an `AbortController` cleared on the
+  caller's abort, and reproduce the *ordering* in the test — the bug
+  only appears when the deadline elapses between the rejection and the
+  handler.
+- **`ELOCKED` was unmapped**, so every surface printed
+  proper-lockfile's internals. Anything a dependency throws reaches
+  the user verbatim unless core translates it.
+- **A bulk `catch` that flattens to 400** blames the user for a schema
+  mismatch or an unreadable file (ERR-31). Map the code, not the
+  route.
+- **Seeding 5,000 tasks via the CLI takes 20 minutes** at ~250ms per
+  `create`. `tracker.seedBulk` writes the files directly — but it does
+  **not** advance the key counter, so a `create` after it collides.
+  Read/scale specs only.
+- **A mutation that gets optimised away is not a mutation** either. A
+  reviewer's busy-wait was dead-code-eliminated by esbuild, the bundle
+  came out byte-identical, and the "survives" result was false. Add a
+  sink the compiler cannot remove.
+- **A doc comment is a claim.** Two here were false — `seedBulk`'s
+  counter promise and a CSV row count that said it parsed and did not.
+  Both would have misled the next reader.
 
 **Carried forward from subsection 3:**
 
