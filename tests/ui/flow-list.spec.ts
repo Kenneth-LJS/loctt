@@ -1387,6 +1387,31 @@ test.describe("BLK — archive undo", () => {
   });
 
   // @verifies BLK-10
+  test("BLK-10: Undo is reachable without scrolling on a full page", async ({
+    page,
+    tracker,
+  }) => {
+    // Enough rows that the result bar would otherwise render below the
+    // fold — it sits after the table, and BLK-10's Undo is the *only*
+    // safety net, since archive deliberately has no confirmation.
+    await tracker.seedBulk(60);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText(/Showing 1–\d+ of 60/)).toBeVisible();
+    await page.locator("tbody input[type=checkbox]").first().check();
+    await page.getByRole("button", { name: "Archive", exact: true }).click();
+
+    const undo = page.getByRole("button", { name: "Undo" });
+    await expect(undo).toBeVisible();
+    // In the viewport without scrolling: an undo the user has to go
+    // looking for is not an undo.
+    const box = await undo.boundingBox();
+    const height = page.viewportSize()?.height ?? 0;
+    expect(box).not.toBeNull();
+    expect(box?.y ?? Infinity).toBeLessThan(height);
+    await expect(undo).toBeInViewport();
+  });
+
+  // @verifies BLK-10
   test("BLK-10: the archived tasks are visible under Show archived", async ({
     page,
     tracker,
@@ -2364,5 +2389,45 @@ test.describe("ERR — the browser reports offline", () => {
     await expect(page.getByText(/No tasks match these filters/i)).toHaveCount(0);
 
     await context.setOffline(false);
+  });
+});
+
+test.describe("LST — sort validation and the detail stub", () => {
+  // @verifies LST-11
+  test("LST-11: an unknown sort field is refused rather than silently ignored", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }, { title: "Two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // An unknown field reads as `undefined` on every task, so the
+    // comparator returns 0 throughout and the list comes back in its
+    // original order — while the header still shows the sort applied.
+    const res = await page.request.get(`${tracker.baseURL}/api/tasks?sort=titel`);
+    expect(res.status()).toBe(400);
+    expect(await res.text()).toContain("titel");
+
+    // A real field still sorts, and so does a custom one.
+    expect((await page.request.get(`${tracker.baseURL}/api/tasks?sort=title`)).status())
+      .toBe(200);
+    expect((await page.request.get(`${tracker.baseURL}/api/tasks?sort=fields.impact`)).status())
+      .toBe(200);
+  });
+
+  // @verifies TSK-1
+  test("TSK-1: the task-detail stub names the task, not the route pattern", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([{ title: "One" }]);
+    await page.goto(`${tracker.baseURL}/tasks/${String(seeded[0])}`);
+
+    // The route *pattern* was rendered as the page's name, so clicking
+    // a task landed on "/tasks/$key" — which reads as a templating bug
+    // rather than an unbuilt view.
+    await expect(page.getByText(String(seeded[0]))).toBeVisible();
+    await expect(page.getByText("$key")).toHaveCount(0);
   });
 });

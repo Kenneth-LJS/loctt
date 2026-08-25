@@ -490,8 +490,23 @@ export function ListView() {
           the result was shown, taking the new keys BLK-9 requires be
           named. Archive had the same latent hole. */}
       {selection.count === 0 && bulkResult !== undefined && (
-        <div className="border-t border-border-subtle px-4 py-2">
+        // Sticky, like the bar it replaces. It renders after the table,
+        // so on a full page it sat ~770px below the fold — and BLK-10's
+        // Undo is the *only* safety net for archive, which deliberately
+        // has no confirmation dialog. An undo the user has to scroll to
+        // find is not an undo.
+        <div
+          className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border-subtle bg-bg-surface px-4 py-2 shadow-[0_-1px_3px_rgba(0,0,0,0.06)]"
+        >
           <BulkResult result={bulkResult} action={undoControl} />
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => { setBulkResult(undefined); }}
+            className="ml-auto rounded-md border border-border-subtle px-2 py-0.5 text-[12px] font-medium text-text-secondary hover:bg-bg-muted"
+          >
+            ✕
+          </button>
         </div>
       )}
       <BulkBar

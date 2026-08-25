@@ -39,6 +39,7 @@ import {
   PostCommentRequestSchema,
   projectTaskFrontmatter,
   PutWorkflowRequestSchema,
+  TaskFrontmatterSchema,
 } from "@loctt/contracts";
 import {
   appendTaskBody,
@@ -426,6 +427,24 @@ const NO_USERS_ENVELOPE = {
  * core returns in the 200 body as a `succeeded`/`failed` split. Reaching
  * `error()` at all means zero of the batch was applied.
  */
+/**
+ * Whether `field` names something a task can be sorted by.
+ *
+ * Derived from the frontmatter schema rather than a hand-kept list, so
+ * a new field is sortable the moment it exists — the alternative rots
+ * silently, and rejecting a *valid* field is worse than the bug this
+ * check fixes. Custom fields arrive as `fields.<key>` and are accepted
+ * on shape: their vocabulary lives in workflow.yaml, and a task that
+ * does not carry one sorts as absent, which is correct.
+ */
+function isSortableField(field: string): boolean {
+  if (field.startsWith("fields.")) return field.length > "fields.".length;
+  return Object.prototype.hasOwnProperty.call(
+    TaskFrontmatterSchema.shape,
+    field,
+  );
+}
+
 const BULK_ABORTED = {
   code: "validation_failed",
   data_state: "not_saved",
@@ -2241,6 +2260,19 @@ export function createWebApp(options: WebAppOptions) {
       error(res, "Sort direction must be ascending or descending.", 400, {
         code: "validation_failed",
         field: "dir",
+        recovery: { kind: "reload" },
+      });
+      return;
+    }
+    // `sort` gets the same treatment as `dir` next door. An unknown
+    // field reads as `undefined` on every task, so the comparator
+    // returns 0 throughout and the list comes back in its original
+    // order — while the column header still shows the sort as applied.
+    // A typo silently reorders nothing and says nothing.
+    if (sortField !== undefined && !isSortableField(sortField)) {
+      error(res, `There is no field called "${sortField}" to sort by.`, 400, {
+        code: "validation_failed",
+        field: "sort",
         recovery: { kind: "reload" },
       });
       return;

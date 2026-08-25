@@ -68,10 +68,23 @@ export function exportTasksToJSON(
 /**
  * Escapes a single CSV field per RFC 4180: doubled quotes, wrapped in
  * quotes if the value contains a quote/comma/newline.
+ *
+ * Also neutralises spreadsheet formula injection. Excel, Numbers and
+ * LibreOffice treat a cell beginning `=`, `+`, `-` or `@` as a formula
+ * and evaluate it on open — so a task titled `=cmd|'/c calc'!A1`
+ * executes on the machine of whoever opens the export. RFC 4180
+ * quoting does not help: the quotes are stripped before the cell is
+ * parsed.
+ *
+ * A leading apostrophe is the standard neutraliser — spreadsheets read
+ * it as "this is text", show the value unchanged, and never evaluate
+ * it. Tab and carriage return are included because they are stripped
+ * before the formula check, so `\t=cmd` would otherwise slip through.
  */
 function csvEscape(s: string): string {
-  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
+  const value = /^[\t\r ]*[=+\-@]/.test(s) ? `'${s}` : s;
+  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
 }
 
 function csvCell(value: unknown): string {

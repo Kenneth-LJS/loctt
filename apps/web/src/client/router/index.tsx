@@ -50,16 +50,25 @@ const timelineRoute = createRoute({
   component: () => <Stub name="/timeline" />,
 });
 
+// The route *pattern* was being shown as the stub's name, so clicking a
+// task landed on a page reading "/tasks/$key" — which looks like a
+// templating bug rather than an unbuilt view. Interpolate the param.
 const taskDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tasks/$key",
-  component: () => <Stub name="/tasks/$key" />,
+  component: function TaskDetailStub() {
+    const { key } = taskDetailRoute.useParams();
+    return <Stub name={`/tasks/${key}`} />;
+  },
 });
 
 const sprintDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sprints/$key",
-  component: () => <Stub name="/sprints/$key" />,
+  component: function SprintDetailStub() {
+    const { key } = sprintDetailRoute.useParams();
+    return <Stub name={`/sprints/${key}`} />;
+  },
 });
 
 const settingsRoute = createRoute({
