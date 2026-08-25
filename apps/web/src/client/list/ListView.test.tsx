@@ -208,8 +208,15 @@ describe("ListView", () => {
     const cells = within(row);
     // Unknown status key renders the raw key, not a blank.
     expect(cells.getByText("ghost_status")).toBeTruthy();
-    // Deleted user renders a truncated id rather than crashing.
-    expect(cells.getByText(/u_delete/)).toBeTruthy();
+    // A user the tracker no longer knows is *named* as unresolved.
+    //
+    // This previously asserted a truncated id, which is what the cell
+    // rendered — eight characters of a ULID in UI content, which P-4
+    // forbids and which told the reader nothing. Per CLAUDE.md, a fix
+    // that requires editing a green test means that test was asserting
+    // the bug (LST-25).
+    expect(cells.getByText("unknown user")).toBeTruthy();
+    expect(row.textContent).not.toContain("u_delete");
   });
 
   it("renders the empty state when no tasks match", async () => {

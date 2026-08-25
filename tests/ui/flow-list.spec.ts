@@ -934,7 +934,11 @@ test.describe("BLK — entity pickers", () => {
     await page.route(/\/api\/users(\?|$)/, async route => {
       const res = await route.fetch();
       const body = await res.json() as { items: { name: string }[] };
-      expect(body.items.map(u => u.name)).not.toContain("Gone");
+      // The list *does* request archived users now, so a task assigned
+      // to one still shows their name (LST-25). That makes the picker's
+      // own filter the only thing keeping an archived user out of the
+      // options — which is exactly what the assertion below tests, and
+      // why this route handler no longer needs to inject anything.
       await route.fulfill({
         response: res,
         json: {
@@ -2588,5 +2592,94 @@ test.describe("LST — rows that could break the layout (M1.2)", () => {
       return w ? w.scrollWidth - w.clientWidth : 0;
     });
     expect(overflow).toBeLessThan(50);
+  });
+});
+
+test.describe("LST — references that outlive their config (M1.2)", () => {
+  // @verifies LST-25
+  test("LST-25: an archived assignee still shows their name, marked archived", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["user", "create", "Ann"]);
+    await tracker.seed([{ title: "Hers" }]);
+    await tracker.run(["set", "T-1", "assignee", "Ann"]);
+    await tracker.run(["user", "archive", "Ann"]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    const row = page.locator("tbody tr").first();
+    // Attribution on old work does not break when someone leaves, and
+    // the name is never replaced by a raw ULID.
+    await expect(row).toContainText("Ann");
+    await expect(row).toContainText("(archived)");
+    await expect(row).not.toContainText(/[0-9A-Z]{20}/);
+  });
+
+  // @verifies LST-26
+  test("LST-26: a task with no project is listed, with the cell marked unknown", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Orphan" }, { title: "Normal" }]);
+    // Remove the project the way a bad merge would.
+    const tasksDir = path.join(tracker.root, ".loctt", "tasks");
+    for (const id of await readdir(tasksDir)) {
+      const file = path.join(tasksDir, id, "task.md");
+      const text = await readFile(file, "utf8");
+      if (!text.includes("title: Orphan")) continue;
+      await writeFile(file, text.replace(/^project: .+$/m, "project: 01MISSING0000000000000000"), "utf8");
+    }
+
+    await page.goto(`${tracker.baseURL}/list`);
+    // Listed, not excluded — one config gap does not remove tasks.
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    const row = page.locator("tbody tr").filter({ hasText: "Orphan" });
+    await expect(row).toContainText("unknown");
+    // And never the raw id.
+    await expect(row).not.toContainText("01MISSING");
+  });
+});
+
+test.describe("LST — a deleted status (M1.2)", () => {
+  // @verifies LST-24
+  test("LST-24: rows survive, the filter drops the option, but a URL still matches", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Stranded", fields: { status: "in_progress" } },
+      { title: "Fine" },
+    ]);
+    // Remove the status from the config while tasks still store it.
+    const cfg = path.join(tracker.root, ".loctt", "config", "workflow.yaml");
+    const before = await readFile(cfg, "utf8");
+    await writeFile(
+      cfg,
+      before.replace(/^ {2}- key: in_progress\n(?: {4}.+\n)+/m, ""),
+      "utf8",
+    );
+
+    await page.goto(`${tracker.baseURL}/list`);
+    // The rows stay: one config gap does not remove tasks from the list.
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    const row = page.locator("tbody tr").filter({ hasText: "Stranded" });
+    await expect(row).toContainText("in_progress");
+    // Marked unrecognised rather than rendered as an ordinary value.
+    await expect(row.getByTitle(/not defined in workflow\.yaml/)).toBeVisible();
+
+    // The dropdown does not offer it as a new filter choice...
+    await page.getByRole("button", { name: "Filter Status" }).click();
+    await expect(
+      page.getByRole("menuitemcheckbox", { name: /In progress|in_progress/ }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    // ...but a URL still carrying it matches, rather than erroring.
+    await page.goto(`${tracker.baseURL}/list?status=in_progress`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.locator("tbody tr")).toContainText("Stranded");
   });
 });

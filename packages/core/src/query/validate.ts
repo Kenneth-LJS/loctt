@@ -130,6 +130,22 @@ export interface ValidateQueryOptions {
    * a caller without config loaded still catches typo'd field names.
    */
   readonly workflow?: WorkflowConfig;
+  /**
+   * Enum values some task actually stores, even though the config no
+   * longer declares them.
+   *
+   * A status deleted from `workflow.yaml` while tasks still reference
+   * it made those tasks **unfindable**: the query that would locate
+   * them was rejected as a typo. LST-24 requires the opposite — the
+   * dropdown stops offering the value, but a URL still carrying it
+   * keeps matching. Without this, the one query that could find the
+   * affected rows is the one the validator refuses.
+   *
+   * Typos are still caught: a value neither declared nor stored has no
+   * business in a query, and that is the case the check was written
+   * for.
+   */
+  readonly inUse?: ReadonlySet<string>;
 }
 
 /**
@@ -340,7 +356,7 @@ function validateEnumValue(
     // booleans in this position are a different kind of mistake and
     // the evaluator's comparison already handles them as non-matches.
     if (v.type !== "string") continue;
-    if (!known.includes(v.value)) {
+    if (!known.includes(v.value) && opts.inUse?.has(v.value) !== true) {
       throw new QueryValidationError(
         `unknown ${node.field} value "${v.value}"`,
         pos,
