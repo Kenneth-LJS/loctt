@@ -33,7 +33,7 @@ import {
 import { resolveColumns } from "./columns.ts";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog.tsx";
 import { ExportMenu } from "./ExportMenu.tsx";
-import { FilterBar } from "./FilterBar.tsx";
+import { clearedSearch, FilterBar } from "./FilterBar.tsx";
 import { isOverdue, relativeTime, shortDate } from "./format.ts";
 import { buildLookups } from "./lookups.ts";
 import { Pagination } from "./Pagination.tsx";
@@ -230,6 +230,17 @@ export function ListView() {
    */
   const lastQueryError = useRef<unknown>(null);
   if (tasks.isError && !loadMoreFailed) lastQueryError.current = tasks.error;
+
+  /**
+   * Whether any filter is narrowing the list.
+   *
+   * Distinguishes LST-8's "your filter matched nothing" from the
+   * fresh-tracker state in flow-onboarding.md — which invites the user
+   * to create a first task, not to clear filters they never set.
+   */
+  const hasFilters = Object.entries(search).some(
+    ([k, v]) => v !== undefined && k !== "sort" && k !== "dir" && k !== "page",
+  );
 
   const refs = [...selection.selected];
 
@@ -440,7 +451,24 @@ export function ListView() {
             ) : items.length === 0 ? (
               <tr>
                 <td colSpan={columns.length + 1} className="px-3 py-8 text-center text-text-tertiary">
+                  {/* LST-8: the message names the situation *and*
+                      offers the way out, from where the user is
+                      looking. The chip row's "Clear all" is above the
+                      table; on a long page it is not where the eye is
+                      when the rows fail to appear. */}
                   No tasks match these filters.
+                  {hasFilters && (
+                    <>
+                      {" "}
+                      <button
+                        type="button"
+                        onClick={() => void navigate({ search: clearedSearch })}
+                        className="underline underline-offset-2 hover:text-text-primary"
+                      >
+                        Clear filters
+                      </button>
+                    </>
+                  )}
                 </td>
               </tr>
             ) : (
@@ -627,7 +655,18 @@ function Cell({
     case "project":
       return <ProjectChip def={lookups.project(task.project)} raw={task.project} />;
     case "title":
-      return <span className="font-medium text-text-primary">{task.title}</span>;
+      // LST-20: an unbroken 400-char title had nothing to stop it, so
+      // it widened the column and scrolled the whole table sideways.
+      // Truncation is visual only — `title` puts the full string on
+      // hover and the stored value is untouched.
+      return (
+        <span
+          title={task.title}
+          className="block max-w-[42ch] truncate font-medium text-text-primary"
+        >
+          {task.title}
+        </span>
+      );
     case "status":
       return <StatusBadge def={lookups.status(task.status)} raw={task.status} />;
     case "priority":

@@ -2431,3 +2431,162 @@ test.describe("LST — sort validation and the detail stub", () => {
     await expect(page.getByText("$key")).toHaveCount(0);
   });
 });
+
+test.describe("LST — table behaviour (M1.2)", () => {
+  // @verifies LST-8
+  test("LST-8: a filter matching nothing offers a way out, and is not the empty-tracker state", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One", fields: { status: "in_progress" } }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    await page.getByRole("button", { name: "Filter Status" }).click();
+    await page.getByRole("menuitemcheckbox", { name: "Done" }).click();
+
+    const body = page.locator("tbody");
+    await expect(body).toContainText("No tasks match these filters");
+    // Distinct from the fresh-tracker state, which invites creating a
+    // first task rather than clearing filters the user never set.
+    await expect(body).not.toContainText(/create your first|get started/i);
+    // The chips stay, so the user can see *why* nothing matched.
+    await expect(page.getByText(/Status:/)).toBeVisible();
+
+    // And the action works without a reload.
+    await body.getByRole("button", { name: "Clear filters" }).click();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.getByText(/Status:/)).toHaveCount(0);
+  });
+
+  // @verifies LST-5
+  test("LST-5: a row opens its task, and Back restores the filtered view", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([
+      { title: "Wanted", fields: { status: "in_progress" } },
+      { title: "Other" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list?status=in_progress`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    await page.locator("tbody tr").first().getByText("Wanted").click();
+    // The user-facing key, never the ULID (P-4).
+    await expect(page).toHaveURL(new RegExp(`/tasks/${String(seeded[0])}$`));
+
+    await page.goBack();
+    // Back restores the filter, not a reset default list.
+    await expect(page).toHaveURL(/status=in_progress/);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+  });
+
+  // @verifies LST-7
+  test("LST-7: a slow first load shows a skeleton, never the empty state", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+
+    let release: (() => void) | undefined;
+    const held = new Promise<void>(r => { release = r; });
+    await page.route(/\/api\/tasks(\?|$)/, async route => {
+      await held;
+      await route.continue();
+    });
+
+    await page.goto(`${tracker.baseURL}/list`);
+
+    // A skeleton with the right column count, not a blank pane. And
+    // never "No tasks match these filters" — a slow request must not
+    // momentarily claim the tracker is empty.
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    await expect(page.getByText(/No tasks match these filters/i)).toHaveCount(0);
+
+    release?.();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+  });
+
+  // @verifies LST-4
+  test("LST-4: priorities without a value sort stably, not arbitrarily", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Alpha", fields: { priority: "low" } },
+      { title: "Bravo", fields: { priority: "high" } },
+      { title: "Charlie", fields: { priority: "medium" } },
+    ]);
+
+    const order = async (): Promise<string[]> => {
+      await page.goto(`${tracker.baseURL}/list?sort=priority&dir=asc`);
+      await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+      return page.locator("tbody tr").allInnerTexts();
+    };
+
+    // Two successive loads of the same URL produce the identical
+    // sequence — a missing `value` treated as 0 for every row leaves
+    // the order to chance.
+    const first = await order();
+    const second = await order();
+    expect(second).toEqual(first);
+  });
+});
+
+test.describe("LST — rows that could break the layout (M1.2)", () => {
+  // @verifies LST-19
+  test("LST-19: 25 labels clamp to the row height and state the overflow", async ({
+    page,
+    tracker,
+  }) => {
+    const flags: string[] = [];
+    for (let i = 0; i < 25; i += 1) {
+      const name = `label-${String(i)}`;
+      await tracker.run(["label", "create", name]);
+      flags.push("--label", name);
+    }
+    // Labels attach at create time via repeated --label; `set` takes an
+    // array, not a comma string.
+    await tracker.run(["create", "Loaded", ...flags]);
+    await tracker.run(["create", "Normal"]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    const loaded = page.locator("tbody tr").filter({ hasText: "Loaded" });
+    const normal = page.locator("tbody tr").filter({ hasText: "Normal" });
+
+    // The overflow is stated, not silently dropped.
+    await expect(loaded.getByText(/^\+\d+$/)).toBeVisible();
+
+    // And the row stays a row: 25 pills wrapping freely turned this
+    // into a block tall enough to push later columns out of view.
+    const loadedBox = await loaded.boundingBox();
+    const normalBox = await normal.boundingBox();
+    expect(loadedBox?.height ?? 0).toBeLessThan((normalBox?.height ?? 0) * 2);
+  });
+
+  // @verifies LST-20
+  test("LST-20: a 400-character title truncates without scrolling the table", async ({
+    page,
+    tracker,
+  }) => {
+    const long = "x".repeat(400);
+    await tracker.seed([{ title: long }, { title: "Short" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // The stored value is unmodified — truncation is visual only, and
+    // the full string is on hover.
+    // Newest-first, so the long title is the *second* row.
+    await expect(page.locator(`[title="${long}"]`)).toBeVisible();
+
+    // The table does not scroll sideways because of one title.
+    const table = page.locator("table");
+    const overflow = await table.evaluate(el => {
+      const w = el.closest("div");
+      return w ? w.scrollWidth - w.clientWidth : 0;
+    });
+    expect(overflow).toBeLessThan(50);
+  });
+});
