@@ -64,16 +64,42 @@ export function PriorityCell({ def, raw }: { def: PriorityDef | undefined; raw: 
   // dot class so the common critical/high/medium/low keys still tint.
   const dotStyle = def?.color ? { background: def.color } : undefined;
   const dotClass = def?.color ? "" : PRIORITY_DOT_CLASS[raw] ?? "bg-text-tertiary";
+  // LST-27: a priority the workflow no longer declares is flagged, not
+  // rendered as an ordinary value. Same treatment as an unknown status
+  // (BLK-29) — a config change that orphaned rows is invisible
+  // otherwise.
+  if (!def) return <UnknownValue raw={raw} />;
   return (
     <span className="inline-flex items-center gap-1.5 text-[13px] text-text-secondary">
       <span className={["h-2 w-2 rounded-full", dotClass].join(" ")} style={dotStyle} />
-      {def?.label ?? raw}
+      {def.label}
+    </span>
+  );
+}
+
+/**
+ * An enum value stored on a task that the workflow no longer declares.
+ *
+ * The raw key is kept — it is the only handle the user has on what the
+ * task actually stores — but marked so it is distinguishable from a
+ * legitimate value, and with a glyph rather than colour alone.
+ */
+function UnknownValue({ raw }: { raw: string }) {
+  return (
+    <span
+      title={`"${raw}" is not defined in workflow.yaml`}
+      className="inline-flex items-center gap-1 rounded-md border border-dashed border-danger-fg/50 px-1.5 py-0.5 text-[12px] font-medium text-danger-fg"
+    >
+      <span aria-hidden="true">⚠</span>
+      {raw}
+      <span className="sr-only"> (unrecognised)</span>
     </span>
   );
 }
 
 export function TypeBadge({ def, raw }: { def: TaskTypeDef | undefined; raw: string | undefined }) {
   if (raw === undefined) return <Dash />;
+  if (!def) return <UnknownValue raw={raw} />;
   return (
     <span
       className="inline-flex items-center rounded-md border border-border-default px-1.5 py-0.5 text-[12px] text-text-secondary"
