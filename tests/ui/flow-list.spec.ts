@@ -1597,10 +1597,20 @@ test.describe("BLK — scale", () => {
   }) => {
     await tracker.seedBulk(AT_SCALE);
     await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.locator("tbody tr").first()).toBeVisible();
 
     // Page size is 50; the filter behind it holds 5,000.
-    await expect(page.getByText(`Showing 1–50 of ${String(AT_SCALE)}`)).toBeVisible();
+    //
+    // This is the settle gate, not the measurement. `/api/tasks`
+    // re-reads all 5,000 task files per request (~1–3s on an idle
+    // machine, more with four sibling workers seeding and serving),
+    // and the default 5s expect budget left it no headroom — this
+    // gate was the one line that failed under `--workers` and passed
+    // alone. The case's subject is the *selection* staying responsive,
+    // and those assertions below keep their strict budgets, all
+    // started only after rows are on screen. (`tbody tr` is no gate
+    // at all: the loading skeleton renders eight <tr>s.)
+    await expect(page.getByText(`Showing 1–50 of ${String(AT_SCALE)}`))
+      .toBeVisible({ timeout: 20_000 });
 
     const selectAll = page.getByRole("checkbox", { name: "Select all on this page" });
     const started = Date.now();
@@ -1616,9 +1626,12 @@ test.describe("BLK — scale", () => {
     for (let loaded = 100; loaded <= 500; loaded += 50) {
       await selectAll.uncheck();
       await page.getByRole("button", { name: /Load more/i }).click();
+      // Same reasoning as the first gate: each Load more is another
+      // full-tracker scan on the server, and it is not the thing this
+      // case times. The `round` clock starts after it.
       await expect(
         page.getByText(`Showing 1–${String(loaded)} of ${String(AT_SCALE)}`),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 20_000 });
       const round = Date.now();
       await selectAll.check();
       await expect(

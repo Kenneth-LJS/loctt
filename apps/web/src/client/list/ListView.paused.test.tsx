@@ -144,6 +144,33 @@ describe("ListView while the tab is in the background", () => {
   }, 20_000);
 });
 
+describe("ListView while the recovery poll is running", () => {
+  // @verifies ERR-6
+  it("keeps the error panel mounted through the poll's in-flight window", async () => {
+    stubFetch(path => {
+      if (path.startsWith("/api/tasks")) return Promise.reject(new Error("connection refused"));
+      return ok({ items: [], total: 0, offset: 0, limit: 100 });
+    });
+
+    mount();
+    await screen.findByText(/Loading tasks/i, undefined, { timeout: 5_000 });
+
+    // Span one full poll cycle plus the attempt-and-retry window it
+    // opens (poll at 5s, retry ~1s later). The `fetch` action resets a
+    // data-less query to pending with `error: null`, so a panel keyed
+    // on `isError` alone unmounts for that window every cycle — which
+    // resets ErrorState's "Show details" toggle and pulls the controls
+    // out from under the pointer (ERR-6). The panel must never leave
+    // the DOM, so sample continuously rather than at the end.
+    const until = Date.now() + 7_500;
+    while (Date.now() < until) {
+      expect(screen.queryByText(/Loading tasks/i)).not.toBeNull();
+      expect(screen.queryByRole("alert")).not.toBeNull();
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }, 20_000);
+});
+
 describe("ListView while the browser reports offline", () => {
   // @verifies ERR-1
   it("states the failure rather than rendering the empty state", async () => {

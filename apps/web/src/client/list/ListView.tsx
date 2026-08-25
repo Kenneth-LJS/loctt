@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import {
@@ -186,6 +186,45 @@ export function ListView() {
    */
   const loadMoreFailed = tasks.isFetchNextPageError;
 
+  /**
+   * "The query failed and there is nothing trustworthy to show" — held
+   * *through* the ERR-2 recovery poll's in-flight window.
+   *
+   * The poll (`refetchInterval` in queryClient.ts) refetches an errored
+   * query every 5s. TanStack's `fetch` action resets a query that has
+   * no data to `{ status: "pending", error: null }` (query-core
+   * `fetchState()`), so `isError` goes false for the ~1–2s the attempt
+   * plus its one retry are in flight. Keyed on `isError` alone, the
+   * error panel unmounted every cycle — which also reset ErrorState's
+   * local "Show details" toggle, making the detail unreachable (ERR-6).
+   *
+   * Two observations bridge the window:
+   * - `errorUpdateCount > 0` while `isFetching`: the only way a fetch
+   *   is in flight on a query that has already errored and still has
+   *   no real data is the recovery poll (or a manual Retry — same
+   *   screen either way).
+   * - "no real data": `data` is undefined, or is `keepPreviousData`'s
+   *   placeholder from another query key. The placeholder case is the
+   *   ERR-2 screen — a failed filter change re-showing the previous
+   *   filter's rows mid-poll is exactly what that case forbids.
+   *
+   * LST-49 needs no separate gate here: a failed Load more has real
+   * pages for *this* key, so `hasRealData` is true and the rows stay,
+   * with the pagination control reporting the failure.
+   */
+  const hasRealData = tasks.data !== undefined && !tasks.isPlaceholderData;
+  const queryFailed =
+    !hasRealData
+    && (tasks.isError || (tasks.isFetching && tasks.errorUpdateCount > 0));
+  /**
+   * The last query-level error, latched across the poll window —
+   * `tasks.error` is null while an attempt is in flight (see above),
+   * and swapping the panel's content mid-read is the same flicker one
+   * level down. Only read while `queryFailed` holds.
+   */
+  const lastQueryError = useRef<unknown>(null);
+  if (tasks.isError && !loadMoreFailed) lastQueryError.current = tasks.error;
+
   const refs = [...selection.selected];
 
   // The selection holds task ids; a failure has to name the key
@@ -366,29 +405,32 @@ export function ListView() {
             </tr>
           </thead>
           <tbody>
-            {tasks.isLoading ? (
-              <SkeletonRows columns={columns.length + 1} />
-            ) : tasks.isError && !loadMoreFailed ? (
+            {queryFailed ? (
               // Without this branch a failed /api/tasks fell through to
               // the empty state below and rendered "No tasks match these
               // filters." A server that is down and a tracker that is
               // empty must be visibly different screens — conflating
               // them reads as data loss (ERR-1).
               //
-              // Gated on having no rows: a *Load more* that fails also
-              // sets `isError`, and replacing the table there would
-              // discard the 50 rows already on screen. LST-49 requires
-              // those to survive, with the failure reported by the
-              // pagination control instead.
+              // First, ahead of the skeleton: the recovery poll flips
+              // the query back to pending every 5s, and `isLoading` is
+              // true for that window. Checked in the other order the
+              // panel unmounts each cycle — see `queryFailed` above.
+              //
+              // A failed *Load more* never lands here: it has real
+              // pages, so the rows stay and the pagination control
+              // reports the failure (LST-49).
               <tr>
                 <td colSpan={columns.length + 1} className="p-0">
                   <ErrorState
-                    error={tasks.error}
+                    error={lastQueryError.current}
                     context="Loading tasks"
                     onRetry={() => { void tasks.refetch(); }}
                   />
                 </td>
               </tr>
+            ) : tasks.isLoading ? (
+              <SkeletonRows columns={columns.length + 1} />
             ) : items.length === 0 ? (
               <tr>
                 <td colSpan={columns.length + 1} className="px-3 py-8 text-center text-text-tertiary">
@@ -503,7 +545,11 @@ export function ListView() {
           }}
         />
       )}
-      <Pagination
+      {/* Gated with the same predicate as the table: mid-poll the
+          placeholder briefly repopulates `pages`, and a footer reading
+          "Showing 1–14 of 14" under a filter that never ran is the
+          ERR-2 screen in miniature. */}
+      {queryFailed ? undefined : <Pagination
         loaded={items.length}
         total={total}
         hasMore={tasks.hasNextPage}
@@ -514,7 +560,7 @@ export function ListView() {
             : undefined
         }
         onLoadMore={() => void tasks.fetchNextPage()}
-      />
+      />}
     </div>
   );
 }
