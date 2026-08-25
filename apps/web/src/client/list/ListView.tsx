@@ -203,6 +203,12 @@ export function ListView() {
    *   is in flight on a query that has already errored and still has
    *   no real data is the recovery poll (or a manual Retry — same
    *   screen either way).
+   *
+   *   `errorUpdateCount` **never resets** — unlike `failureCount`, a
+   *   success does not clear it — so on its own it would put the panel
+   *   up for any slow fetch after the query had ever failed once. The
+   *   `!hasRealData` conjunct is what makes it safe: once real data
+   *   for this key has arrived, this branch cannot fire at all.
    * - "no real data": `data` is undefined, or is `keepPreviousData`'s
    *   placeholder from another query key. The placeholder case is the
    *   ERR-2 screen — a failed filter change re-showing the previous

@@ -79,7 +79,14 @@ export function createQueryClient(): QueryClient {
         // for a healthy query means a working tracker polls nothing,
         // and a broken one re-checks every few seconds until it heals.
         refetchInterval: query => (query.state.status === "error" ? 5_000 : false),
-        refetchIntervalInBackground: false,
+        // `true`, per the docs' own recommendation for a
+        // retry-until-it-recovers poll. With `false` the interval is
+        // gated on `focusManager.isFocused()`, so recovery would only
+        // run while the user is looking at the tab — and a user who
+        // switches away during an outage would come back to the same
+        // error screen. The poll only exists while a query is in error,
+        // so a healthy tracker still does nothing in the background.
+        refetchIntervalInBackground: true,
       },
       mutations: {
         // Same reasoning, and worse if it bites: a paused *write* never
