@@ -153,24 +153,33 @@ visual treatment is what a broken *task* row would want.
 
 ## Every list request re-reads every task file
 
-**Measured 2026-08-25 during the M1 gate, on an idle machine.**
+**Re-measured 2026-08-25 on a quiet machine. The first numbers recorded
+here were 3-6x too high — taken while the machine sat at load average
+688 — and the conclusion drawn from them was wrong.**
 
-`GET /api/tasks` takes **0.7–3s at 5,000 tasks**, and a page load costs
-~3.7s, because `loadAllTasks` (`packages/core/src/task/load-all.ts:59`)
-re-reads and re-parses the whole tracker on every call. There is no
-cache. `apps/web/src/server/server.ts` calls it from **five** handlers,
-so one page load can pay that cost several times over.
+`loadAllTasks` (`packages/core/src/task/load-all.ts:59`) re-reads and
+re-parses the whole tracker on every call, with no cache. Actual cost:
 
-Concurrency is bounded at 32 (`READ_CONCURRENCY`), which keeps the file
-descriptors sane but does nothing about the O(N) shape.
+| Tasks | `/api/tasks` | Full page load (9 endpoints) |
+|---|---|---|
+| 2,000 | ~200ms | ~342ms |
+| 5,000 | ~500ms | — |
 
-**Invisible at a few hundred tasks.** It first showed up as a UI spec
-that passed alone and failed under `--workers`: BLK-24's settle gate had
-the default 5s budget and no headroom. That gate now has 20s, and the
-case's actual measurements — selection responsiveness — keep their
-strict budgets, so the slowness is measured rather than hidden.
+**Not worth optimising at these sizes**, and the shape is better than
+it first looked: the four `loadAllTasks` call sites in
+`apps/web/src/server/server.ts` are four *different endpoints* — list,
+search, export, migrate-plan. A page load pays the scan **once**, not
+four times. A proposed per-request memo was dropped for exactly that
+reason: there is nothing within one request to memoise.
 
-**Not fixed here.** A cache keyed on directory mtime, or a persisted
-index, is a core data-path change with its own invalidation questions —
-the "escalate by rule" case, not something a UI ticket decides. Worth
-doing before anyone runs a tracker this size for real.
+**Still O(N), so worth knowing.** At tens of thousands of tasks this
+becomes the page-load cost. The fix then is an mtime-keyed cache or a
+persisted index, and both carry invalidation risk that is not worth
+taking for a 500ms scan — LocTT supports the CLI writing files behind
+the server's back, so any cache has to be right about that.
+
+**What this actually cost:** a UI spec that passed alone and failed
+under `--workers`. BLK-24's settle gate had the default 5s budget, and
+five concurrent Playwright workers pushed one 500ms scan past it. That
+gate now has 20s while every *measured* assertion keeps its strict
+budget, so the cost is measured rather than hidden.
