@@ -106,6 +106,15 @@ export function ListView() {
     [tasks.data],
   );
   const pages = tasks.data?.pages ?? [];
+  /**
+   * Task files that would not parse (ERR-9).
+   *
+   * Named with their path and the YAML error, because "2 of 3" is
+   * unreconcilable against a directory holding 3. Atomic writes rule
+   * out a torn write, so a hand-edit is the honest attribution
+   * (XS-51).
+   */
+  const unreadable = pages[pages.length - 1]?.unreadable ?? [];
   // Newest page's total. A filter change cannot be what makes these
   // differ — it builds a new query key, so the feed restarts with one
   // page — but a task created or deleted between page 1 and page 3
@@ -366,6 +375,21 @@ export function ListView() {
         <FilterBar />
         <ExportMenu total={total} queryString={buildQueryString(params)} />
       </div>
+      {unreadable.length > 0 && (
+        <div role="alert" className="mb-2 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[12px] text-danger-fg">
+          {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
+          {" "}could not be read, so {unreadable.length === 1 ? "it is" : "they are"}
+          {" "}missing from this list. A hand-edit is the usual cause — LocTT
+          {" "}writes atomically, so a half-written file is not.
+          <ul className="mt-1 space-y-0.5">
+            {unreadable.map(u => (
+              <li key={u.id} className="font-mono text-[11px]">
+                {u.path}: {u.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {/* `overflow-x-auto`, not `hidden`: at a narrow viewport the
           table is wider than its container, and clipping it made seven
           of ten columns unreachable by any input — worse than the

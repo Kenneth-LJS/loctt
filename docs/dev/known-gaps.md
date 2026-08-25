@@ -108,6 +108,21 @@ would always resolve it, but that contradicts GIT-C2's stated rule
 only arises from a hand-edited branch, which P-12 already classes as
 unsupported. Not worth a spec change on that evidence.
 
+## ~~One malformed `task.md` breaks the whole list~~ — FIXED 2026-08-25
+
+**Closed while verifying M1.2.** ERR-9 is the same defect as BLK-44 and
+is a blocker, so it came due with that ticket rather than waiting for a
+cleanup phase. `loadAllTasksDetailed` keeps the tasks that parse and
+returns the ones that do not; `loadAllTasks` keeps its `Task[]` shape
+for all 48 callers. `/api/tasks` reports the failures and the list
+names each path with its YAML error.
+
+BLK-44's own bullet about a broken-task indicator "see flow-list.md"
+still points at a case that was never written there — that half remains
+unaddressed, and BLK-44 stays untagged.
+
+The original entry follows, for the record.
+
 ## One malformed `task.md` breaks the whole list (BLK-44 deferred)
 
 **Found 2026-08-25 while building M1.4 subsection 5. Verified against

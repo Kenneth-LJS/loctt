@@ -104,6 +104,7 @@ import {
   listComments,
   listTasks,
   loadAllTasks,
+  loadAllTasksDetailed,
   loadAllUsers,
   loadArchivedGuardConfigs,
   loadCalendarConfig,
@@ -2228,7 +2229,11 @@ export function createWebApp(options: WebAppOptions) {
   const handleListTasks: RouteHandler = async ({ res, url, locttDir }) => {
     const page = parsePagination(url, res);
     if (!page) return;
-    const tasks = await loadAllTasks(locttDir);
+    // Detailed, so a task file that will not parse can be *named*
+    // rather than silently dropped (ERR-9). The other rows load either
+    // way; what the plain call cannot do is tell the user which file
+    // to go and fix.
+    const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
     const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
 
     const view = url.searchParams.get("view") ?? undefined;
@@ -2321,7 +2326,13 @@ export function createWebApp(options: WebAppOptions) {
       throw err;
     }
     const frontmatters = result.map(t => projectTaskFrontmatter(t.frontmatter));
-    json(res, paginated(frontmatters, page.offset, page.limit));
+    json(res, {
+      ...paginated(frontmatters, page.offset, page.limit),
+      // ERR-9: the count above is honest about what loaded; this says
+      // what did not, by path and with the parse error, so the user can
+      // reconcile the list against what is on disk.
+      ...(unreadable.length > 0 ? { unreadable } : {}),
+    });
   };
 
   /**
