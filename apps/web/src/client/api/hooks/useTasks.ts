@@ -9,6 +9,20 @@ interface TasksPage {
   readonly total: number;
   readonly offset: number;
   readonly limit: number;
+  /**
+   * Task files that exist and could not be parsed (ERR-9).
+   *
+   * The rows that *did* load are in `items` — one corrupt neighbour no
+   * longer takes down the read. These are reported so the surface can
+   * name the file and the YAML error, rather than dropping the task
+   * silently and leaving the count unexplainable against what is on
+   * disk.
+   */
+  readonly unreadable?: readonly {
+    readonly id: string;
+    readonly path: string;
+    readonly reason: string;
+  }[];
 }
 
 /** Default page size for the list view (matches the mockup's "of N"). */

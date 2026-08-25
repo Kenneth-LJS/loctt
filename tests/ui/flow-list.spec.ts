@@ -2774,3 +2774,38 @@ test.describe("LST — drift, unknown keys, and staleness (M1.2)", () => {
     await expect(page.locator("tbody")).not.toContainText("Doomed");
   });
 });
+
+test.describe("ERR — one corrupt task file (M1.2)", () => {
+  // @verifies ERR-9
+  test("ERR-9: the other rows load, and the bad file is named with its parse error", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "One" }, { title: "Two" }, { title: "Three" },
+    ]);
+    // Corrupt one task's frontmatter the way a bad merge would.
+    const tasksDir = path.join(tracker.root, ".loctt", "tasks");
+    const ids = await readdir(tasksDir);
+    const victim = String(ids[0]);
+    await writeFile(
+      path.join(tasksDir, victim, "task.md"),
+      "---\nid: [not\n  valid: yaml\n---\nbody\n",
+      "utf8",
+    );
+
+    await page.goto(`${tracker.baseURL}/list`);
+
+    // The view loads and the other tasks render — one unreadable
+    // neighbour used to take down every read through loadAllTasks.
+    await expect(page.getByText(/Showing 1–2 of 2/)).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("tbody tr")).toHaveCount(2);
+
+    // And the bad file is named, with the path and the YAML error, so
+    // the user can reconcile 2 rows against 3 directories.
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText(victim);
+    await expect(alert).toContainText("task.md");
+    await expect(alert).toContainText(/hand-edit/i);
+  });
+});
