@@ -133,3 +133,36 @@ describe("CSV escaping (RFC 4180)", () => {
     expect(cell).not.toContain("a,b,c");
   });
 });
+
+describe("CSV formula injection", () => {
+  // @verifies BLK-14
+  it("neutralises a leading =, +, - or @ so a spreadsheet does not evaluate it", () => {
+    for (const lead of ["=", "+", "-", "@"]) {
+      const csv = exportTasksToCSV([task({ title: `${lead}cmd|'/c calc'!A1` })]);
+      const cell = csv.split("\n")[1] ?? "";
+      // Excel, Numbers and LibreOffice evaluate a cell beginning with
+      // any of these on open, so a task title becomes code on the
+      // machine of whoever opens the export. RFC 4180 quoting does not
+      // help — the quotes are stripped before the cell is parsed.
+      expect(cell).toContain(`'${lead}cmd`);
+      expect(cell).not.toMatch(new RegExp(`(^|,)"?\\${lead}cmd`));
+    }
+  });
+
+  // @verifies BLK-14
+  it("does not neutralise a value that only contains those characters", () => {
+    const csv = exportTasksToCSV([task({ title: "a-b+c" })]);
+    // Only a *leading* one is a formula. Quoting mid-string values
+    // would corrupt ordinary titles.
+    expect(csv).toContain("a-b+c");
+    expect(csv).not.toContain("'a-b+c");
+  });
+
+  // @verifies BLK-14
+  it("sees through leading whitespace", () => {
+    const csv = exportTasksToCSV([task({ title: "\t=cmd" })]);
+    // Spreadsheets strip leading whitespace before the formula check,
+    // so a tab would otherwise smuggle one through.
+    expect(csv).toContain("'\t=cmd");
+  });
+});
