@@ -43,6 +43,15 @@ function stubFetch(handler: (path: string) => Response | Promise<Response>) {
   });
 }
 
+/** Puts the document in the state a background tab is in. */
+function hideDocument(): void {
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => "hidden",
+  });
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
 function ok(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -76,7 +85,63 @@ function mount(search = "") {
 afterEach(() => {
   cleanup();
   onlineManager.setOnline(true);
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => "visible",
+  });
+  document.dispatchEvent(new Event("visibilitychange"));
   vi.restoreAllMocks();
+});
+
+describe("ListView while the tab is in the background", () => {
+  // @verifies ERR-1
+  it("states the failure rather than pausing forever in a hidden tab", async () => {
+    stubFetch(path => {
+      if (path.startsWith("/api/tasks")) return Promise.reject(new Error("connection refused"));
+      return ok({ items: [], total: 0, offset: 0, limit: 100 });
+    });
+    // A real background tab, not `setFocused(false)`. The manager
+    // derives focus from `document.visibilityState` through a listener,
+    // and the app replaces that listener — so driving the manager
+    // directly would test the override rather than the thing the
+    // override exists to survive.
+    //
+    // The retryer has *two* conjuncts. `networkMode: "always"` clears
+    // the online one; this is the other. Gate round 4 measured
+    // `navigator.onLine === true` while a query sat paused, which is
+    // how the first fix looked complete and was not.
+    hideDocument();
+
+    mount();
+
+    await screen.findByText(/Loading tasks/i, undefined, { timeout: 5_000 });
+    expect(screen.queryByText(/No tasks match these filters/i)).toBeNull();
+  });
+
+  // @verifies ERR-2
+  it("recovers in a hidden tab once the server returns", async () => {
+    let down = true;
+    stubFetch(path => {
+      if (path.startsWith("/api/tasks")) {
+        if (down) return Promise.reject(new Error("connection refused"));
+        return ok({
+          items: [{
+            id: "t1", key: "WEB-1", title: "Back again",
+            created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+          }],
+          total: 1, offset: 0, limit: 50,
+        });
+      }
+      return ok({ items: [], total: 0, offset: 0, limit: 100 });
+    });
+    hideDocument();
+
+    mount();
+    await screen.findByText(/Loading tasks/i, undefined, { timeout: 5_000 });
+
+    down = false;
+    await screen.findByText("Back again", undefined, { timeout: 15_000 });
+  }, 20_000);
 });
 
 describe("ListView while the browser reports offline", () => {

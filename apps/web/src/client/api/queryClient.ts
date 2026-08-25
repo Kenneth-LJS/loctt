@@ -1,4 +1,4 @@
-import { QueryClient } from "@tanstack/react-query";
+import { focusManager, QueryClient } from "@tanstack/react-query";
 
 /**
  * Shared TanStack Query client. Defaults are conservative — most
@@ -15,6 +15,33 @@ import { QueryClient } from "@tanstack/react-query";
  *   `npm run dev` reloads but doesn't mask real failures.
  * - networkMode "always" — see below. Load-bearing, not a tweak.
  */
+/**
+ * Stops TanStack pausing work while the tab is in the background.
+ *
+ * `networkMode: "always"` only clears one of the retryer's two
+ * conjuncts. The other is `focusManager.isFocused()`, which is just
+ * `document.visibilityState !== "hidden"` — so a failed request in a
+ * background tab pauses **indefinitely**: `status` stays "pending", the
+ * error is never recorded, `isError` is false forever, and every error
+ * branch keyed on it is unreachable. Switching tabs is not an exotic
+ * state; it is what a user does constantly.
+ *
+ * Replacing the event listener rather than calling `setFocused(true)`
+ * once: the default listener re-derives focus from every
+ * `visibilitychange`, so a single call is undone the first time the
+ * user switches tabs. This subscribes to nothing and reports focused
+ * forever.
+ *
+ * Safe here because the app already runs with
+ * `refetchOnWindowFocus: false` — nothing in LocTT wants focus-driven
+ * refetching, so the manager's only remaining effect was to stall
+ * retries.
+ */
+focusManager.setEventListener(setFocused => {
+  setFocused(true);
+  return () => { /* nothing subscribed, nothing to tear down */ };
+});
+
 export function createQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {
