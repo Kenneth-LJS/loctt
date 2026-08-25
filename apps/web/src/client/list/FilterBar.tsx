@@ -83,16 +83,7 @@ export function FilterBar() {
 
   const activeChips = buildChips(search, options, customFields);
 
-  const clearAll = (): void => {
-    void navigate({
-      search: prev => {
-        const next: Record<string, unknown> = { ...prev };
-        for (const k of [...FACET_KEYS, "q", "page"]) next[k] = undefined;
-        for (const k of Object.keys(next)) if (k.startsWith("field.")) next[k] = undefined;
-        return next as typeof prev;
-      },
-    });
-  };
+  const clearAll = (): void => { void navigate({ search: clearedSearch }); };
 
   const hasActive = activeChips.length > 0;
 
@@ -187,6 +178,21 @@ export function FilterBar() {
       {saveOpen ? <SaveViewDialog search={search} onClose={() => setSaveOpen(false)} /> : null}
     </div>
   );
+}
+
+/**
+ * Drops every filter from the URL search, leaving sort and columns.
+ *
+ * Exported because LST-8 puts a "Clear filters" action in the *empty
+ * state* as well as the chip row: a filter that matches nothing has to
+ * offer a way out from where the user is looking. Two copies of this
+ * would drift the moment a facet is added.
+ */
+export function clearedSearch<T extends Record<string, unknown>>(prev: T): T {
+  const next: Record<string, unknown> = { ...prev };
+  for (const k of [...FACET_KEYS, "q", "page"]) next[k] = undefined;
+  for (const k of Object.keys(next)) if (k.startsWith("field.")) next[k] = undefined;
+  return next as T;
 }
 
 const FACET_KEYS: readonly FacetKey[] = [

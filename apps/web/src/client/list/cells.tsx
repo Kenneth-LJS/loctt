@@ -114,11 +114,23 @@ export function AssigneeCell({ user, raw }: { user: UserProfile | undefined; raw
   );
 }
 
+/**
+ * How many label pills a row shows before collapsing the rest.
+ *
+ * LST-19: 25 labels wrapped freely and turned one row into a block
+ * tall enough to push every later column out of view. The overflow is
+ * *stated* rather than silently dropped, so the user can tell labels
+ * are hidden.
+ */
+const MAX_LABEL_PILLS = 3;
+
 export function LabelsCell({ labels }: { labels: readonly (LabelDef | { id: string })[] }) {
   if (labels.length === 0) return <Dash />;
+  const shown = labels.slice(0, MAX_LABEL_PILLS);
+  const hidden = labels.length - shown.length;
   return (
-    <span className="flex flex-wrap gap-1">
-      {labels.map(l => {
+    <span className="flex items-center gap-1 whitespace-nowrap">
+      {shown.map(l => {
         const named = "name" in l ? l : undefined;
         const color = named?.color;
         return (
@@ -131,10 +143,21 @@ export function LabelsCell({ labels }: { labels: readonly (LabelDef | { id: stri
                 : { background: "var(--bg-muted)", color: "var(--text-secondary)" }
             }
           >
-            {named?.name ?? l.id.slice(0, 6)}
+            {/* A label the config no longer defines is named as
+                unresolved rather than shown as six characters of its
+                ULID, which P-4 keeps out of UI content entirely. */}
+            {named?.name ?? "unknown label"}
           </span>
         );
       })}
+      {hidden > 0 && (
+        <span
+          title={labels.map(l => ("name" in l ? l.name : "unknown label")).join(", ")}
+          className="inline-flex items-center rounded bg-bg-muted px-1.5 py-0.5 text-[11px] text-text-secondary"
+        >
+          +{hidden}
+        </span>
+      )}
     </span>
   );
 }
