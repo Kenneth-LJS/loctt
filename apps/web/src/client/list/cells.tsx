@@ -87,8 +87,19 @@ export function TypeBadge({ def, raw }: { def: TaskTypeDef | undefined; raw: str
 export function ProjectChip({ def, raw }: { def: ProjectDef | undefined; raw: string | undefined }) {
   if (raw === undefined) return <Dash />;
   return (
-    <span className="inline-flex items-center rounded bg-bg-muted px-1.5 py-0.5 text-[11px] font-medium text-text-secondary" title={def?.name}>
-      {def ? def.prefix.replace(/-$/, "") : raw}
+    <span
+      className={[
+        "inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium",
+        def
+          ? "bg-bg-muted text-text-secondary"
+          : "border border-dashed border-danger-fg/50 text-danger-fg",
+      ].join(" ")}
+      title={def?.name ?? `No project matches ${raw}`}
+    >
+      {/* A project the config no longer defines is marked as drift, not
+          printed as its raw id — P-4 keeps ULIDs out of UI content, and
+          the raw value read as a legitimate prefix. */}
+      {def ? def.prefix.replace(/-$/, "") : "unknown"}
     </span>
   );
 }
@@ -96,9 +107,16 @@ export function ProjectChip({ def, raw }: { def: ProjectDef | undefined; raw: st
 export function AssigneeCell({ user, raw }: { user: UserProfile | undefined; raw: string | undefined }) {
   if (raw === undefined) return <Dash />;
   if (!user) {
-    // Assigned to a now-deleted user: show the raw id truncated rather
-    // than a blank, so the row isn't silently mis-readable.
-    return <span className="text-[12px] text-text-tertiary">{raw.slice(0, 8)}…</span>;
+    // Assigned to someone the tracker no longer knows. Named as
+    // unresolved rather than shown as eight characters of a ULID, which
+    // P-4 keeps out of UI content and which told the reader nothing
+    // anyway. An *archived* user is not this case — those resolve, with
+    // their name (LST-25).
+    return (
+      <span title={`No user matches ${raw}`} className="text-[12px] italic text-text-tertiary">
+        unknown user
+      </span>
+    );
   }
   const firstName = user.name.split(/\s+/)[0] ?? user.name;
   return (

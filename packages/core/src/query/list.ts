@@ -191,6 +191,25 @@ export function listTasks(opts: ListTasksOptions): Task[] {
  * Returns the filtered + sorted task list before any limit/offset is
  * applied. Shared by `listTasks` and `listTasksPaginated`.
  */
+/**
+ * Every enum value the given tasks actually store.
+ *
+ * Feeds the validator's `inUse` set: a status or type deleted from the
+ * config while tasks still reference it must stay queryable, or the
+ * affected rows become unreachable (LST-24). Cheap — one pass over
+ * tasks already in memory.
+ */
+function storedEnumValues(tasks: readonly Task[]): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const t of tasks) {
+    const fm = t.frontmatter;
+    if (fm.status !== undefined) out.add(fm.status);
+    if (fm.priority !== undefined) out.add(fm.priority);
+    if (fm.task_type !== undefined) out.add(fm.task_type);
+  }
+  return out;
+}
+
 function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
   const { tasks, options, queriesConfig, workflowConfig, ctx = {} } = opts;
   let queryStr: string | undefined = options.query;
@@ -237,7 +256,9 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
     try {
       validateQuery(
         parseQuery(tokenize(queryStr)),
-        workflowConfig ? { workflow: workflowConfig } : {},
+        workflowConfig
+          ? { workflow: workflowConfig, inUse: storedEnumValues(opts.tasks) }
+          : {},
       );
     } catch (err) {
       if (!(err instanceof QueryValidationError)) throw err;

@@ -88,7 +88,15 @@ export function useSprints() {
 export function useUsers() {
   return useQuery({
     queryKey: ["users"],
-    queryFn: ({ signal }) => apiClient.get<UsersPage>("/api/users", { signal }),
+    // Archived users included: a task assigned to someone who has since
+    // been archived must still show their *name* (LST-25). Without them
+    // the lookup misses and the cell falls back to a raw id, which is
+    // both unreadable and a P-4 violation. Pickers filter archived out
+    // themselves — offering one as a *new* choice is the thing archiving
+    // prevents, and that is a different question from resolving an
+    // existing reference.
+    queryFn: ({ signal }) =>
+      apiClient.get<UsersPage>("/api/users?include_archived=true", { signal }),
   });
 }
 
