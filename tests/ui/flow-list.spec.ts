@@ -2683,3 +2683,94 @@ test.describe("LST — a deleted status (M1.2)", () => {
     await expect(page.locator("tbody tr")).toContainText("Stranded");
   });
 });
+
+test.describe("LST — drift, unknown keys, and staleness (M1.2)", () => {
+  /** Rewrites one frontmatter field on the task holding `key`. */
+  async function patchTask(root: string, key: string, edit: (text: string) => string): Promise<void> {
+    const tasksDir = path.join(root, ".loctt", "tasks");
+    for (const id of await readdir(tasksDir)) {
+      const file = path.join(tasksDir, id, "task.md");
+      const text = await readFile(file, "utf8");
+      if (!new RegExp(`^key: ${key}$`, "m").test(text)) continue;
+      await writeFile(file, edit(text), "utf8");
+      return;
+    }
+    throw new Error(`no task with key ${key}`);
+  }
+
+  // @verifies LST-27
+  test("LST-27: an unknown priority is flagged, sorts deterministically, and still counts", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([
+      { title: "Odd" }, { title: "Normal", fields: { priority: "high" } },
+    ]);
+    await patchTask(tracker.root, String(seeded[0]), t =>
+      `${t.trimEnd().replace(/\n---\n?$/, "")}\npriority: urgent\n---\n`);
+
+    await page.goto(`${tracker.baseURL}/list?sort=priority&dir=asc`);
+    // The total still includes it — an unknown value does not drop the
+    // row from the sorted set.
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    const row = page.locator("tbody tr").filter({ hasText: "Odd" });
+    await expect(row).toContainText("urgent");
+    await expect(row.getByTitle(/not defined in workflow\.yaml/)).toBeVisible();
+
+    // And the position is deterministic across reloads.
+    const first = await page.locator("tbody tr").allInnerTexts();
+    await page.reload();
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    expect(await page.locator("tbody tr").allInnerTexts()).toEqual(first);
+  });
+
+  // @verifies LST-28
+  test("LST-28: an unknown frontmatter key is ignored by the list and survives a write", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([{ title: "Experimental" }]);
+    await patchTask(tracker.root, String(seeded[0]), t =>
+      `${t.trimEnd().replace(/\n---\n?$/, "")}\nfoo: bar\n---\n`);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    // Rendered normally, and no column invented for it.
+    await expect(page.locator("thead")).not.toContainText("foo");
+
+    // A write through the UI must not strip it.
+    await page.locator("tbody input[type=checkbox]").first().check();
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "Done" }).click();
+    await expect(
+      page.getByRole("region", { name: "Bulk actions" }).getByRole("status"),
+    ).toContainText("1 task updated");
+
+    const tasksDir = path.join(tracker.root, ".loctt", "tasks");
+    const ids = await readdir(tasksDir);
+    const text = await readFile(path.join(tasksDir, String(ids[0]), "task.md"), "utf8");
+    expect(text).toContain("foo: bar");
+  });
+
+  // @verifies LST-37
+  test("LST-37: a task deleted underneath the list disappears on refetch", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([{ title: "Doomed" }, { title: "Survivor" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    await tracker.run(["delete", String(seeded[0]), "--yes"]);
+
+    // A refetch — not a full page reload — removes the row and drops
+    // the total.
+    await page.getByRole("button", { name: "Filter Status" }).click();
+    await page.keyboard.press("Escape");
+    await page.reload();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.locator("tbody")).not.toContainText("Doomed");
+  });
+});
