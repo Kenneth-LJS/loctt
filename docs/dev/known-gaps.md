@@ -150,3 +150,27 @@ never written. Both need settling together.
 **Related and already fixed:** BLK-29's drift indicator (a *status* the
 workflow no longer defines) shipped in the same subsection. The same
 visual treatment is what a broken *task* row would want.
+
+## Every list request re-reads every task file
+
+**Measured 2026-08-25 during the M1 gate, on an idle machine.**
+
+`GET /api/tasks` takes **0.7–3s at 5,000 tasks**, and a page load costs
+~3.7s, because `loadAllTasks` (`packages/core/src/task/load-all.ts:59`)
+re-reads and re-parses the whole tracker on every call. There is no
+cache. `apps/web/src/server/server.ts` calls it from **five** handlers,
+so one page load can pay that cost several times over.
+
+Concurrency is bounded at 32 (`READ_CONCURRENCY`), which keeps the file
+descriptors sane but does nothing about the O(N) shape.
+
+**Invisible at a few hundred tasks.** It first showed up as a UI spec
+that passed alone and failed under `--workers`: BLK-24's settle gate had
+the default 5s budget and no headroom. That gate now has 20s, and the
+case's actual measurements — selection responsiveness — keep their
+strict budgets, so the slowness is measured rather than hidden.
+
+**Not fixed here.** A cache keyed on directory mtime, or a persisted
+index, is a core data-path change with its own invalidation questions —
+the "escalate by rule" case, not something a UI ticket decides. Worth
+doing before anyone runs a tracker this size for real.
