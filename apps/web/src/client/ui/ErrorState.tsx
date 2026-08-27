@@ -76,7 +76,15 @@ export function ErrorState({ error, onRetry, context }: Props) {
   const recovery = envelope?.recovery
     // No envelope means we never reached the server, and retrying is
     // exactly the right action once it is back up.
-    ?? (isUnreachable(error) ? ({ kind: "retry" } as const) : undefined);
+    ?? (isUnreachable(error) ? ({ kind: "retry" } as const) : undefined)
+    // An envelope carrying no recovery still leaves the user with a
+    // dead end. A read is safe to repeat — nothing was written — so
+    // offering Retry is honest even when the server did not say so.
+    // ERR-15 wants recovery as a *control*, and a 500 with no button
+    // is the failure ONB-33 names. Writes are not covered by this:
+    // they pass an explicit recovery, and re-sending one that may have
+    // landed is how one archive becomes two.
+    ?? (onRetry !== undefined ? ({ kind: "retry" } as const) : undefined);
 
   return (
     <div role="alert" className="mx-auto max-w-lg px-4 py-10 text-center">

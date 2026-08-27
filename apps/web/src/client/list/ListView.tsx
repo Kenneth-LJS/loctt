@@ -475,15 +475,18 @@ export function ListView() {
             ) : items.length === 0 ? (
               <tr>
                 <td colSpan={columns.length + 1} className="px-3 py-8 text-center text-text-tertiary">
-                  {/* LST-8: the message names the situation *and*
-                      offers the way out, from where the user is
-                      looking. The chip row's "Clear all" is above the
-                      table; on a long page it is not where the eye is
-                      when the rows fail to appear. */}
-                  No tasks match these filters.
-                  {hasFilters && (
+                  {/* Two different empty states, deliberately.
+                      ONB-8: a tracker with no tasks is not a filter
+                      that matched nothing, and telling a new user to
+                      "clear filters" they never set is nonsense.
+                      LST-8: when a filter *is* active the message names
+                      that and offers the way out from where the eye
+                      is — the chip row's "Clear all" is above the
+                      table, which on a long page is not where the user
+                      is looking when the rows fail to appear. */}
+                  {hasFilters ? (
                     <>
-                      {" "}
+                      No tasks match these filters.{" "}
                       <button
                         type="button"
                         onClick={() => void navigate({ search: clearedSearch })}
@@ -491,6 +494,10 @@ export function ListView() {
                       >
                         Clear filters
                       </button>
+                    </>
+                  ) : (
+                    <>
+                      No tasks yet. Create one to get started.
                     </>
                   )}
                 </td>
@@ -715,7 +722,7 @@ function Cell({
             isOverdue(task.due_date, today) ? "font-medium text-danger-fg" : "text-text-secondary",
           ].join(" ")}
         >
-          {shortDate(task.due_date)}
+          {shortDate(task.due_date, today)}
         </span>
       );
     case "updated_at":

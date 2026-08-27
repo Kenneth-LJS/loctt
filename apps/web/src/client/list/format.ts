@@ -5,10 +5,22 @@
  */
 
 /** "Jan 15" style short date from a YYYY-MM-DD or ISO string. */
-export function shortDate(value: string): string {
+export function shortDate(value: string, today?: string): string {
   const d = new Date(value.length === 10 ? `${value}T00:00:00Z` : value);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  // The year is dropped only for the current one. "Dec 31" for a date
+  // in 2099 is not a real date (LST-22) — it reads as this year, which
+  // is the opposite of what the value says. Comparing against the
+  // workspace's date rather than the browser's keeps the boundary
+  // where the rest of the app puts it.
+  const thisYear = (today ?? new Date().toISOString()).slice(0, 4);
+  const sameYear = d.toISOString().slice(0, 4) === thisYear;
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+    timeZone: "UTC",
+  });
 }
 
 /** True when a due date (YYYY-MM-DD) is strictly before `today`. */

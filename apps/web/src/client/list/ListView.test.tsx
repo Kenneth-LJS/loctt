@@ -230,13 +230,19 @@ describe("ListView", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
     const rootRoute = createRootRoute();
     const listRoute = createRoute({ getParentRoute: () => rootRoute, path: "/list", validateSearch: listSearchSchema, component: ListView });
-    const router = createRouter({ routeTree: rootRoute.addChildren([listRoute]), history: createMemoryHistory({ initialEntries: ["/list"] }) });
+    const router = createRouter({ routeTree: rootRoute.addChildren([listRoute]), history: createMemoryHistory({ initialEntries: ["/list?status=done"] }) });
     render(
       <QueryClientProvider client={qc}>
         <RouterProvider router={router as never} />
       </QueryClientProvider>,
     );
-    expect(await screen.findByText("No tasks match these filters.")).toBeTruthy();
+    // Mounted *with* a filter. This previously loaded a bare `/list`
+    // and asserted the filtered-empty copy, which was the wrong screen
+    // for an unfiltered empty tracker — ONB-8 wants "No tasks yet" and
+    // no suggestion to clear filters the user never set. Per CLAUDE.md
+    // a fix that requires editing a green test means that test was
+    // asserting the bug.
+    expect(await screen.findByText(/No tasks match these filters/)).toBeTruthy();
   });
 });
 

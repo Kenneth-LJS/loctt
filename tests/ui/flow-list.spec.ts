@@ -2809,3 +2809,151 @@ test.describe("ERR — one corrupt task file (M1.2)", () => {
     await expect(alert).toContainText(/hand-edit/i);
   });
 });
+
+test.describe("LST — extreme values and locale (M1.2)", () => {
+  // @verifies LST-22
+  test("LST-22: far-out dates render as real dates and sort correctly", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([
+      { title: "Ancient", fields: { due_date: "1970-01-01" } },
+      { title: "Distant", fields: { due_date: "2099-12-31" } },
+      { title: "Undated" },
+    ]);
+    void seeded;
+
+    await page.goto(`${tracker.baseURL}/list?sort=due_date&dir=asc`);
+    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+
+    // Real dates, not "Invalid Date", not epoch 0, and not a bare
+    // "Jan 1" that reads as this year.
+    const ancient = page.locator("tbody tr").filter({ hasText: "Ancient" });
+    const distant = page.locator("tbody tr").filter({ hasText: "Distant" });
+    await expect(ancient).toContainText("1970");
+    await expect(distant).toContainText("2099");
+    await expect(page.locator("tbody")).not.toContainText("Invalid Date");
+
+    // 1970 sorts before 2099; neither is treated as "no date".
+    const titles = await page.locator("tbody tr").allInnerTexts();
+    const iAncient = titles.findIndex(t => t.includes("Ancient"));
+    const iDistant = titles.findIndex(t => t.includes("Distant"));
+    expect(iAncient).toBeLessThan(iDistant);
+  });
+
+  // @verifies LST-21
+  test("LST-21: CJK, RTL and emoji titles render and sort deterministically", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "日本語のタスク" },
+      { title: "مهمة عربية" },
+      { title: "family 👨‍👩‍👧‍👦 task" },
+    ]);
+
+    const order = async (): Promise<string[]> => {
+      await page.goto(`${tracker.baseURL}/list?sort=title&dir=asc`);
+      await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+      return page.locator("tbody tr").allInnerTexts();
+    };
+
+    const first = await order();
+    // All three render, and the ZWJ sequence is not split mid-grapheme
+    // into a lone surrogate or an orphaned modifier.
+    expect(first.join(" ")).toContain("日本語のタスク");
+    expect(first.join(" ")).toContain("مهمة عربية");
+    expect(first.join(" ")).toContain("👨‍👩‍👧‍👦");
+
+    // Deterministic across reloads.
+    expect(await order()).toEqual(first);
+  });
+
+  // @verifies LST-39
+  test("LST-39: a task created in the CLI appears and obeys the active sort", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Bravo" }, { title: "Delta" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list?sort=title&dir=asc`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    await tracker.run(["create", "Alpha"]);
+    await page.reload();
+
+    // Present, counted, and inserted at the sorted position — not
+    // appended to the bottom regardless of sort.
+    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+    const titles = await page.locator("tbody tr").allInnerTexts();
+    expect(titles.findIndex(t => t.includes("Alpha")))
+      .toBeLessThan(titles.findIndex(t => t.includes("Bravo")));
+  });
+});
+
+test.describe("ONB — empty and loading states (M1.2)", () => {
+  // @verifies ONB-8
+  test("ONB-8: an empty tracker is not the same screen as a filter that matched nothing", async ({
+    page,
+    tracker,
+  }) => {
+    await page.goto(`${tracker.baseURL}/list`);
+
+    const body = page.locator("tbody");
+    // Names the state and offers the next action. Telling a new user
+    // to clear filters they never set is nonsense.
+    await expect(body).toContainText(/No tasks yet/i);
+    await expect(body).not.toContainText(/Clear filters/i);
+    await expect(body).not.toContainText(/match these filters/i);
+    // No filter chips are active.
+    await expect(page.getByRole("button", { name: "Clear all" })).toHaveCount(0);
+  });
+
+  // @verifies ONB-33
+  test("ONB-33: a 500 on first load is an error in the table, never 'No tasks yet'", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.route(/\/api\/tasks(\?|$)/, route =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "io_failed", message: "disk is full" }),
+      }));
+
+    await page.goto(`${tracker.baseURL}/list`);
+
+    // A load failure must never read as data loss.
+    await expect(page.getByText(/No tasks yet/i)).toHaveCount(0);
+    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
+      .toBeVisible();
+    // The shell stays usable so the user can go elsewhere.
+    await expect(page.getByRole("link", { name: "List" })).toBeVisible();
+  });
+
+  // @verifies ONB-26
+  test("ONB-26: reloading a warm tracker goes skeleton to rows, never through empty", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }, { title: "Two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Watch every frame of the reload: copy implying the user's tasks
+    // are gone must never appear, even for one frame.
+    let sawEmpty = false;
+    const poll = setInterval(() => {
+      void page.locator("tbody").innerText()
+        .then(t => { if (/No tasks yet|match these filters/i.test(t)) sawEmpty = true; })
+        .catch(() => undefined);
+    }, 20);
+    await page.reload();
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    clearInterval(poll);
+    expect(sawEmpty).toBe(false);
+  });
+});
