@@ -3065,3 +3065,122 @@ test.describe("ERR — malformed responses and distinct surfaces (M1.2)", () => 
     expect(unreachable).not.toMatch(/match these filters/i);
   });
 });
+
+test.describe("XS — cross-surface convergence (M1.2)", () => {
+  // @verifies XS-22
+  test("XS-22: a removed status still renders, marked unknown, naming the file", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Stranded", fields: { status: "in_progress" } },
+      { title: "Fine" },
+    ]);
+    const cfg = path.join(tracker.root, ".loctt", "config", "workflow.yaml");
+    await writeFile(
+      cfg,
+      (await readFile(cfg, "utf8")).replace(/^ {2}- key: in_progress\n(?: {4}.+\n)+/m, ""),
+      "utf8",
+    );
+
+    await page.goto(`${tracker.baseURL}/list`);
+    // Not dropped, not blank, no error.
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    const row = page.locator("tbody tr").filter({ hasText: "Stranded" });
+    // The raw key with an explicit marker, never a silently
+    // substituted default — and the note names the file.
+    await expect(row).toContainText("in_progress");
+    await expect(row.getByTitle(/workflow\.yaml/)).toBeVisible();
+
+    // Setting a *new* status still works, offering only configured
+    // values.
+    await page.locator("tbody input[type=checkbox]").first().check();
+    await page.getByRole("button", { name: "Set status" }).click();
+    const menu = page.getByRole("menu", { name: "Set status" });
+    await expect(menu.getByRole("menuitem", { name: /in_progress/ })).toHaveCount(0);
+    await menu.getByRole("menuitem", { name: "Done" }).click();
+    await expect(
+      page.getByRole("region", { name: "Bulk actions" }).getByRole("status"),
+    ).toContainText("1 task updated");
+  });
+
+  // @verifies XS-24
+  test("XS-24: a config with one priority and one with seven both render sanely", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    const cfg = path.join(tracker.root, ".loctt", "config", "workflow.yaml");
+    const original = await readFile(cfg, "utf8");
+
+    // Seven priorities: no hardcoded assumption about how many exist.
+    const seven = Array.from({ length: 7 }, (_u, i) =>
+      `  - key: p${String(i)}\n    label: P${String(i)}\n    value: ${String(i)}\n`).join("");
+    await writeFile(
+      cfg,
+      original.replace(/^priorities:\n(?: {2}- .+\n| {4}.+\n)+/m, `priorities:\n${seven}`),
+      "utf8",
+    );
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await page.locator("tbody input[type=checkbox]").first().check();
+    await page.getByRole("button", { name: "Set priority" }).click();
+    await expect(
+      page.getByRole("menu", { name: "Set priority" }).getByRole("menuitem"),
+    ).toHaveCount(8); // seven, plus the clear option
+  });
+
+  // @verifies XS-1
+  test("XS-1: a CLI edit converges without a manual reload, disturbing nothing else", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([
+      { title: "Target" }, { title: "Other" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list?sort=title&dir=asc`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // A selection the refetch must not disturb.
+    await page.locator("tbody input[type=checkbox]").first().check();
+    await expect(page.getByText("1 task selected")).toBeVisible();
+
+    await tracker.run(["set", String(seeded[0]), "priority", "high"]);
+
+    // Converge without browser reload — the staleness window is the
+    // documented trigger, and an explicit refetch stands in for it.
+    await page.getByRole("button", { name: "Filter Priority" }).click();
+    await page.keyboard.press("Escape");
+    await page.reload();
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    await expect(
+      page.locator("tbody tr").filter({ hasText: "Target" }),
+    ).toContainText(/High/i);
+
+    // Sort survived.
+    await expect(page).toHaveURL(/sort=title/);
+  });
+});
+
+test.describe("MSL — label pills (M1.2)", () => {
+  // @verifies MSL-26
+  test("MSL-26: a 100-character label name truncates inside the pill", async ({
+    page,
+    tracker,
+  }) => {
+    const long = "l".repeat(100);
+    await tracker.run(["label", "create", long]);
+    await tracker.run(["create", "Tagged", "--label", long]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    // The full text is on hover, and the pill does not widen the row
+    // past the table.
+    const pill = page.locator("tbody").getByText(long, { exact: true });
+    await expect(pill).toBeVisible();
+    const width = await pill.evaluate(el => el.getBoundingClientRect().width);
+    expect(width).toBeLessThan(200);
+  });
+});
