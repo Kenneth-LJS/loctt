@@ -94,6 +94,20 @@ interface RequestOptions {
   readonly timeoutMs?: number;
 }
 
+/**
+ * A 200 whose JSON body is truncated or malformed.
+ *
+ * Distinct from a network failure: the server answered, and answered
+ * with something that is not what it claimed in `content-type`.
+ */
+class UnparseableBodyError extends Error {
+  constructor(cause: unknown) {
+    super("the response from the LocTT server could not be read");
+    this.name = "UnparseableBodyError";
+    this.cause = cause;
+  }
+}
+
 async function parseBody(res: Response): Promise<unknown> {
   // 204 No Content has no body — fetch will return an empty string,
   // not valid JSON, so short-circuit.
@@ -102,7 +116,17 @@ async function parseBody(res: Response): Promise<unknown> {
   if (ct.includes("application/json")) {
     try {
       return (await res.json()) as unknown;
-    } catch {
+    } catch (err) {
+      // A body that will not parse is a *failure*, not an absent
+      // value. Returning undefined here made a truncated 200 render as
+      // an empty list — a read that silently produced "no tasks" from
+      // a broken response, which ERR-19 forbids and which ERR-39 calls
+      // the bare-catch failure by name.
+      //
+      // On an error response the body is only ever detail, so a
+      // failure to parse it must not replace the status the caller
+      // already has.
+      if (res.ok) throw new UnparseableBodyError(err);
       return undefined;
     }
   }

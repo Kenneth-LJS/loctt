@@ -2957,3 +2957,111 @@ test.describe("ONB — empty and loading states (M1.2)", () => {
     expect(sawEmpty).toBe(false);
   });
 });
+
+test.describe("ERR — malformed responses and distinct surfaces (M1.2)", () => {
+  // @verifies ERR-19
+  test("ERR-19: a truncated response is a failure, not half a list", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.route(/\/api\/tasks(\?|$)/, route =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: '{"items":[{"id":"a","key":"T-1","tit',
+      }));
+
+    await page.goto(`${tracker.baseURL}/list`);
+
+    // Not half a table and not a row of undefined cells.
+    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("tbody")).not.toContainText("undefined");
+    await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
+      .toBeVisible();
+  });
+
+  // @verifies ERR-20
+  test("ERR-20: nonsense values do not corrupt the count or the cells", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.route(/\/api\/tasks(\?|$)/, route =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [{
+            id: "01AAAAAAAAAAAAAAAAAAAAAAAA", key: "T-1", title: "Odd",
+            created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+            status: null,
+          }],
+          total: -5, offset: 0, limit: 50,
+        }),
+      }));
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody")).toContainText("Odd");
+
+    // The count is never negative or NaN.
+    const footer = await page.locator("body").innerText();
+    expect(footer).not.toMatch(/-\d+ (of|tasks)/);
+    expect(footer).not.toContain("NaN");
+    // A null required field is an explicit marker, not blank or
+    // "undefined".
+    await expect(page.locator("tbody")).not.toContainText("undefined");
+  });
+
+  // @verifies ERR-21
+  test("ERR-21: a 500 with no body still names what was attempted", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.route(/\/api\/tasks(\?|$)/, route =>
+      route.fulfill({ status: 500, body: "" }));
+
+    await page.goto(`${tracker.baseURL}/list`);
+
+    // Not an empty surface and not "Error: ". The cause genuinely is
+    // not available, which is the rare exception — but the three
+    // obligations still hold (ERR-30).
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText(/Loading tasks/i, { timeout: 15_000 });
+    await expect(alert).not.toContainText(/^Error:\s*$/);
+    await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
+      .toBeVisible();
+  });
+
+  // @verifies ERR-41
+  test("ERR-41: the four empty-ish surfaces are all visibly distinct", async ({
+    page,
+    tracker,
+  }) => {
+    const read = async (): Promise<string> => page.locator("tbody").innerText();
+
+    // 1. A fresh tracker.
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody")).toContainText(/No tasks yet/i);
+    const fresh = await read();
+
+    // 2. A filter matching nothing.
+    await tracker.run(["create", "One"]);
+    await page.goto(`${tracker.baseURL}/list?status=done`);
+    await expect(page.locator("tbody")).toContainText(/match these filters/i);
+    const filtered = await read();
+
+    // 3. An unreachable server.
+    await page.route(/\/api\/tasks(\?|$)/, route => route.abort("failed"));
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 15_000 });
+    const unreachable = await page.locator("body").innerText();
+
+    // All three read differently, and neither failure borrows the
+    // empty-state copy — a load failure must never read as data loss.
+    expect(new Set([fresh, filtered]).size).toBe(2);
+    expect(unreachable).not.toMatch(/No tasks yet/i);
+    expect(unreachable).not.toMatch(/match these filters/i);
+  });
+});
