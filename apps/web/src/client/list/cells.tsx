@@ -176,11 +176,18 @@ export function LabelsCell({ labels }: { labels: readonly (LabelDef | { id: stri
     <span className="flex items-center gap-1 whitespace-nowrap">
       {shown.map(l => {
         const named = "name" in l ? l : undefined;
-        const color = named?.color;
+        // Only a real hex reaches CSS. `${color}22` on "notahex" is not
+        // a colour, so the pill rendered unstyled — MSL-22 requires a
+        // defined neutral fallback instead, and the schema rejects
+        // non-hex, so anything else here is config drift.
+        const color = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(named?.color ?? "")
+          ? named?.color
+          : undefined;
         return (
           <span
             key={l.id}
-            className="inline-flex items-center rounded px-1.5 py-0.5 text-[11px]"
+            title={named?.name}
+            className="inline-flex items-center rounded border border-border-subtle px-1.5 py-0.5 text-[11px]"
             style={
               color
                 ? { background: `${color}22`, color }
@@ -189,8 +196,12 @@ export function LabelsCell({ labels }: { labels: readonly (LabelDef | { id: stri
           >
             {/* A label the config no longer defines is named as
                 unresolved rather than shown as six characters of its
-                ULID, which P-4 keeps out of UI content entirely. */}
-            {named?.name ?? "unknown label"}
+                ULID, which P-4 keeps out of UI content entirely.
+                MSL-26: a 100-character name truncates within the pill,
+                with the full text on hover. */}
+            <span className="max-w-[14ch] truncate">
+              {named?.name ?? "unknown label"}
+            </span>
           </span>
         );
       })}
