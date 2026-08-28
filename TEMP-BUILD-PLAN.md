@@ -61,7 +61,7 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 | 2 · Measure | ✅ | Measured (CLI 17/49, MCP 26/75) and the blocker it raised is **cleared**: both reference docs corrected to the shipped API, every example executed. See *Blocker 2, resolved*. |
 | 3 · Surface gaps | ✅ | **68 of 68 closed**: blockers 23/23, major 29/29, minor 16/16. Surface coverage 46 → 111. See *Phase 3 log*. |
 | 4 · Structural audit | ✅ | **Groups A–F closed, the six swallowed-error findings with them, and the nine recorded decisions implemented** (2026-08-17). The two items previously listed here as open are now closed too: the MCP comment tools' bare catches (`a0677b4`) and `HistoryEntry`'s missing schema (`4fb7e4b`). Group G moves to Phase 6, itemised at 55 rather than the "~79" carried before. |
-| 5 · UI build | 🔵 | M1.1–M1.3 ✅ (but see the caveat on those ticks), M1.4 🔵. **M1.4 is the next ticket** — its 29 open major/minor BLK cases, then the 🚦 M1 gate. See *M1.4's remaining work*. |
+| 5 · UI build | 🔵 | M1.1 69/71, M1.2 59/60, M1.3 45/45, M1.4 51/62. **M1.4's remaining cases are next**, then the 🚦 M1 gate. |
 | 6 · Cleanup | ⬜ | Group G's 55 items and the flakiness diagnosis. Deferred deliberately — see *The open items*. |
 
 ### ✅ Blocker — RESOLVED 2026-08-16: two views need tickets, not a scope cut
@@ -133,6 +133,7 @@ Written after every subsection commit, per
 | 🚦 M1 | gate round 3 | `ecd2f8b` | — | **FAIL.** One blocker, mine, from round 2's fix. My predicate made the error branch unreachable. |
 | M1.2 | verification | ten batches | 59/60 | Fifteen real defects in code marked ✅. MSL-22 unblocked by Ken; XS-56 accepted as-is; PRU-3 moved to M4.1. |
 | M1.3 | verification | six batches | **45/45** | LST-16 (custom-field filters did nothing), LST-29 (I had built a 400 where the case wants a fallback), MSL-6 (label pills were not clickable), MSL-19 (40 labels, no typeahead). |
+| M1.1 | verification | eight batches, `f081792`..`f694265` | **69/71** | Nineteen live defects. The schema banner was unreachable in every state it describes; a crashed migration reported as healthy; blocked localStorage blanked the app before first paint; there was no error boundary anywhere, and when added at the root it took the shell with it; nothing restored scroll; the theme flashed on every reload. Three of my own mechanisms survived their mutation tests and were deleted. |
 | 🚦 M1 | gate round 2 | `12d93c8` | — | Confirmed 3 of 4 round-1 fixes. Found the stale-filter guard, plus two bugs in my own responsive change. Still **FAIL** pending round 3. |
 | 🚦 M1 | gate round 1 | `6a8cb49`, `a395023` | — | **FAIL.** 4 blockers: every entity filter 400'd, moved keys did not resolve, no responsive handling, one non-reproducing. |
 | M1.4 | 5 · remaining BLK cases | `9cae899` | BLK-6, 17, 19-21, 25, 27-29, 36, 40, 43, 46-48 | **M1.4 complete.** Four live defects incl. BLK-40, red since it was written. UI suite 65/65 for the first time. |
@@ -147,10 +148,14 @@ Working through them case by case, per Ken's instruction to verify all
 
 | Ticket | Was | Now |
 |---|---|---|
-| M1.1 | 1/71 | 1/71 — **next** |
+| M1.1 | 1/71 | **69/71** |
 | M1.2 | 12/61 | 59/60 |
 | M1.3 | 3/45 | **45/45** |
-| M1.4 | 51/62 | 51/62 |
+| M1.4 | 51/62 | 51/62 — **next** |
+
+M1.1's two remaining cases are both parked with reasons, not skipped:
+**SHL-33** (both obvious tests for it are vacuous — see known-gaps)
+and **SHL-44** (needs the real `/tasks/$key`, which is M2.1's).
 
 Roughly half of each batch turns out already correct and needing only
 a test; the other half is a live defect. **Six tests have been found
