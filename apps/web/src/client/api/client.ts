@@ -223,16 +223,29 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
       // data is in, and what to do — so the envelope carries
       // `data_state: "unknown"` and a reload, not a retry. Retrying a
       // write that may have landed is how one archive becomes two.
+      // A read and a write time out differently. Nothing was at stake
+      // in an unanswered GET — the data either arrived or it did not,
+      // and repeating it is safe, so it gets a retry (LST-52). A write
+      // may have landed, which is the one case where the honest answer
+      // is "unknown" and the action is a reload: re-sending is how one
+      // archive becomes two (BLK-41).
+      const isRead = method === "GET";
       throw new ApiError(`${endpoint} did not respond`, {
         status: 0,
         body: undefined,
         endpoint,
-        envelope: {
-          code: "unknown",
-          message: "the server did not respond, so LocTT cannot tell whether this was saved",
-          data_state: "unknown",
-          recovery: { kind: "reload" },
-        },
+        envelope: isRead
+          ? {
+              code: "unknown",
+              message: "the server did not respond",
+              recovery: { kind: "retry" },
+            }
+          : {
+              code: "unknown",
+              message: "the server did not respond, so LocTT cannot tell whether this was saved",
+              data_state: "unknown",
+              recovery: { kind: "reload" },
+            },
       });
     }
     throw err;

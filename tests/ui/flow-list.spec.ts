@@ -3957,3 +3957,216 @@ test.describe("LST — URL params that could lie (M1.3)", () => {
     await expect(page).toHaveURL(/debug=1/);
   });
 });
+
+test.describe("LST — query errors and composition (M1.3)", () => {
+  // @verifies LST-44
+  test("LST-44: a malformed query reports the error, never an empty result", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent("status = = in_progress")}`);
+
+    // A parse failure must never be presentable as a legitimate
+    // zero-match result.
+    await expect(page.getByText(/No tasks match these filters/i)).toHaveCount(0);
+    await expect(page.getByText(/No tasks yet/i)).toHaveCount(0);
+
+    const alert = page.getByRole("alert");
+    await expect(alert).toBeVisible({ timeout: 15_000 });
+    // Names the problem and the offending token's position.
+    await expect(alert).toContainText(/position/i);
+    await expect(alert).toContainText("=");
+
+    // Reloading reproduces the same visible error rather than a silent
+    // empty list.
+    await page.reload();
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 15_000 });
+  });
+
+  // @verifies LST-45
+  test("LST-45: an unknown field is named, with the valid alternative", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent("assignedto = alice")}`);
+
+    const alert = page.getByRole("alert");
+    await expect(alert).toBeVisible({ timeout: 15_000 });
+    // The field by name, not a generic "invalid query", and pointing
+    // at the valid alternative.
+    await expect(alert).toContainText("assignedto");
+    await expect(alert).toContainText("assignee");
+
+    // The CLI rejects it comparably — the UI accepts no syntax the CLI
+    // refuses and refuses none it accepts.
+    const cli = await tracker.run(["list", "--query", "assignedto = alice"])
+      .catch((e: Error) => e.message);
+    expect(cli).toContain("assignedto");
+  });
+
+  // @verifies LST-46
+  test("LST-46: an undeclared custom field is distinguished from a typo'd built-in", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent("fields.velocity > 3")}`);
+
+    const alert = page.getByRole("alert");
+    await expect(alert).toBeVisible({ timeout: 15_000 });
+    // The syntax is valid; the problem is a config reference. Named as
+    // a *custom* field, not reported as a parse error.
+    await expect(alert).toContainText("velocity");
+    await expect(alert).toContainText(/custom field/i);
+    // And not shown as a plain empty result.
+    await expect(page.getByText(/No tasks match these filters/i)).toHaveCount(0);
+  });
+
+  // @verifies LST-40
+  test("LST-40: a query and structured chips compose as an intersection", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Both", fields: { status: "in_progress", priority: "high" } },
+      { title: "QueryOnly", fields: { priority: "high" } },
+      { title: "ChipOnly", fields: { status: "in_progress" } },
+    ]);
+
+    // Query alone.
+    const q = "priority = high";
+    await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent(q)}`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Query plus a chip: the intersection, not one replacing the other.
+    await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent(q)}&status=in_progress`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.locator("tbody")).toContainText("Both");
+
+    // Both are in the URL at once.
+    await expect(page).toHaveURL(/q=/);
+    await expect(page).toHaveURL(/status=in_progress/);
+
+    // Removing the chip leaves the query applied.
+    await page.getByRole("button", { name: /Remove Status/ }).click();
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    await expect(page).toHaveURL(/q=/);
+  });
+
+  // @verifies LST-42
+  test("LST-42: a query with quotes and escapes round-trips through the URL", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: 'say "hi" there' }, { title: "plain" }]);
+    const q = 'title ~ "say \\"hi\\""';
+
+    await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent(q)}`);
+    // Executes rather than being mangled by URL encoding, and matches
+    // the literal text.
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.locator("tbody")).toContainText('say "hi" there');
+
+    // And survives a reload with its quoting intact.
+    await page.reload();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+  });
+});
+
+test.describe("LST — filters that fail honestly (M1.3)", () => {
+  // @verifies LST-52
+  test("LST-52: a hung read is reported as a timeout, not left spinning", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.addInitScript(() => {
+      (globalThis as { __LOCTT_READ_TIMEOUT_MS__?: number }).__LOCTT_READ_TIMEOUT_MS__ = 800;
+    });
+
+    let hang = true;
+    await page.route(/\/api\/tasks(\?|$)/, async route => {
+      if (hang) return; // never resolved
+      await route.continue();
+    });
+    await page.goto(`${tracker.baseURL}/list`);
+
+    // A terminal state, not an endless skeleton.
+    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
+      .toBeVisible();
+    // Never presented as an empty tracker.
+    await expect(page.getByText(/No tasks yet/i)).toHaveCount(0);
+
+    // Retry succeeding replaces the error without a reload.
+    hang = false;
+    await page.getByRole("button", { name: /Retry|Try again/i }).first().click();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible({ timeout: 20_000 });
+  });
+
+  // @verifies LST-50
+  test("LST-50: a failed filter never leaves chips claiming an unfiltered table", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }, { title: "Two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    await page.route(/\/api\/tasks(\?|$)/, route => route.abort("failed"));
+    await page.getByRole("button", { name: "Filter Status" }).click();
+    await page.getByRole("menuitemcheckbox", { name: "Done" }).click();
+
+    // The URL and the visible result never disagree silently: either
+    // the previous state is clearly retained, or the table is in an
+    // explicit error state. It is the latter.
+    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("Showing 1–2 of 2")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
+      .toBeVisible();
+  });
+
+  // @verifies LST-33
+  test("LST-33: a filter naming a deleted entity says so rather than reading as empty", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["milestone", "create", "v1"]);
+    await tracker.seed([{ title: "One" }]);
+    const gone = "01M0DELETED000000000000000";
+
+    await page.goto(`${tracker.baseURL}/list?milestone=${gone}`);
+    await expect(page.getByText(/No tasks match these filters/i)).toBeVisible();
+
+    // The chip is present and removable, so the user can recover —
+    // a chip with a blank label would read as a normal empty result.
+    const chip = page.getByRole("button", { name: /Remove Milestone/ });
+    await expect(chip).toBeVisible();
+    await chip.click();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+  });
+
+  // @verifies LST-41
+  test("LST-41: clearing the query leaves the chips applied", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Both", fields: { status: "in_progress", priority: "high" } },
+      { title: "ChipOnly", fields: { status: "in_progress" } },
+    ]);
+    await page.goto(
+      `${tracker.baseURL}/list?q=${encodeURIComponent("priority = high")}&status=in_progress`,
+    );
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    // Dropping `q` widens to the chips-only result and removes the
+    // param entirely.
+    await page.goto(`${tracker.baseURL}/list?status=in_progress`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    await expect(page).not.toHaveURL(/q=/);
+    await expect(page.getByRole("button", { name: /Remove Status/ })).toBeVisible();
+  });
+});

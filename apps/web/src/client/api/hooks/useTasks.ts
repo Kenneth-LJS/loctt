@@ -29,6 +29,22 @@ interface TasksPage {
 export const DEFAULT_LIST_LIMIT = 50;
 
 /**
+ * How long a list read may hang before the UI stops waiting.
+ *
+ * LST-52: the skeleton must not spin indefinitely with no terminal
+ * state. Nothing is at stake in an unanswered read, so unlike a write
+ * this reports a plain failure with a retry rather than an unknown
+ * data state — the tasks either arrived or they did not.
+ *
+ * Overridable from the page so a spec can exercise the deadline
+ * without waiting the full interval; Playwright's clock control does
+ * not reach the abort timer.
+ */
+const READ_TIMEOUT_MS = Number(
+  (globalThis as { __LOCTT_READ_TIMEOUT_MS__?: unknown }).__LOCTT_READ_TIMEOUT_MS__ ?? 20_000,
+);
+
+/**
  * The subset of list URL state that changes the `/api/tasks` request.
  * Filters (project/status/…) land in M1.3; M1.2 wires query, sort,
  * and pagination. Keeping this explicit means the query key only
@@ -144,7 +160,7 @@ export function useTasks(params: TasksQueryParams) {
   return useQuery({
     queryKey: ["tasks", params],
     queryFn: ({ signal }) =>
-      apiClient.get<TasksPage>(`/api/tasks?${buildQueryString(params)}`, { signal }),
+      apiClient.get<TasksPage>(`/api/tasks?${buildQueryString(params)}`, { signal, timeoutMs: READ_TIMEOUT_MS }),
     placeholderData: keepPreviousData,
   });
 }
@@ -180,7 +196,7 @@ export function useTasksFeed(params: TasksQueryParams) {
     queryFn: ({ pageParam, signal }) =>
       apiClient.get<TasksPage>(
         `/api/tasks?${buildQueryString({ ...feedParams, limit, offset: pageParam })}`,
-        { signal },
+        { signal, timeoutMs: READ_TIMEOUT_MS },
       ),
     getNextPageParam: (last: TasksPage) => {
       const loaded = last.offset + last.items.length;
