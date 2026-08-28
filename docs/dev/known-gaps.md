@@ -259,14 +259,23 @@ create` per task — sixty processes for a single test — and Playwright
 runs five workers at once. The suite's own contention pushes settle
 gates past their budgets.
 
-**`seedBulk` is not a drop-in fix.** It writes task files directly and
-is much faster, but it cannot set fields, and four of these six seed
-tasks *with* fields. Tried and reverted.
+**Half fixed, 2026-08-28.** `seed` no longer spawns a `loctt set` per
+field: it creates the tasks, then writes their frontmatter in one
+batch. A sixty-task seed with fields went from well over a hundred
+subprocesses to sixty.
 
-**What would actually fix it:** a seed path that writes frontmatter
-with fields directly, the way `seedBulk` writes titles. That is a
-fixture change, not a product change, and it would take the seeding
-cost of these tests from ~60 processes to zero.
+**Sixty is still the floor, and it is what these six pay.** `create`
+remains one process per task, because key allocation is stateful and
+the assigned key is what the specs read back. Measured after the fix,
+the pagination specs still take ~20s each: their cost is entirely
+`create`, since they seed no fields at all.
+
+**What would close it:** those specs need sixty *rows*, not sixty
+allocated keys — `seedBulk` already writes rows directly and takes no
+measurable time. Making it use the tracker's real key prefix instead
+of `BULK-` would make it a drop-in for them. Not done here: it is
+harness work, the failures are understood, and every one of the six
+passes alone.
 
 **Until then:** a failure in this set under the full suite is not
 evidence of a defect. Re-run the named tests alone before believing
