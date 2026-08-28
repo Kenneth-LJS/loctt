@@ -89,6 +89,36 @@ export function Sidebar({
 
 /* ---------- shared item primitives ---------- */
 
+
+/**
+ * Whether this query's last settled answer was a failure.
+ *
+ * **Not `isError`.** `fetchState` resets a data-less query to
+ * `status: "pending", error: null` on every fetch, so `isError` is
+ * false for the whole duration of a retry — and a group keyed on it
+ * falls through to its empty state while the request is in flight.
+ *
+ * The M1 round-6 gate measured the result: pressing "Try now" with the
+ * server down showed "No projects yet / No labels yet / No milestones
+ * yet" for about a second, in all five groups at once. A user with a
+ * populated tracker was told it was empty.
+ *
+ * `errorUpdatedAt` and `dataUpdatedAt` survive the reset, so they can
+ * answer what the query has *ever* done rather than what it is doing
+ * this instant. This is the fifth bug traced to that one trap; see
+ * known-gaps.md.
+ */
+function hasFailed(q: {
+  isError: boolean;
+  errorUpdatedAt: number;
+  dataUpdatedAt: number;
+}): boolean {
+  if (q.isError) return true;
+  // Errored at some point and never since answered: still failed, even
+  // while a retry has it reading as "pending".
+  return q.errorUpdatedAt > 0 && q.errorUpdatedAt >= q.dataUpdatedAt;
+}
+
 function GroupLabel({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
   if (collapsed) return null;
   return (
@@ -315,7 +345,7 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
     select: s => (s.location.search as { project?: string[] }).project ?? [],
   });
   const items = (projects.data?.items ?? []).filter(p => p.archived !== true);
-  const failed = projects.isError;
+  const failed = hasFailed(projects);
   // SHL-5: mark where a new task would land for *this* user, falling
   // back to the workspace default on a server that predates the field.
   // `??` would be wrong here: an explicit `null` means the chain
@@ -390,7 +420,7 @@ function SavedFiltersGroup({
   const ctx = { currentUserId, today, priorities };
   const counts = useBuiltinCounts(BUILTIN_FILTERS, ctx);
   const userViews = views.data?.queries ?? [];
-  const failed = views.isError;
+  const failed = hasFailed(views);
   // SHL-32: a pin that vanished from `queries.yaml` is explained
   // rather than silently dropped. Only once the list has actually
   // loaded — a failed or in-flight read is not a deletion.
@@ -513,7 +543,7 @@ function SavedFiltersGroup({
 function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
   const milestones = useMilestones();
   const items = (milestones.data?.items ?? []).filter(m => m.archived !== true);
-  const failed = milestones.isError;
+  const failed = hasFailed(milestones);
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Milestones</GroupLabel>
@@ -547,7 +577,7 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
   const items = (sprints.data?.items ?? []).filter(
     s => s.archived !== true && s.state !== "completed",
   );
-  const failed = sprints.isError;
+  const failed = hasFailed(sprints);
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Sprints</GroupLabel>
@@ -583,7 +613,7 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
 function LabelsGroup({ collapsed }: { collapsed: boolean }) {
   const labels = useLabels();
   const items = (labels.data?.items ?? []).filter(l => l.archived !== true);
-  const failed = labels.isError;
+  const failed = hasFailed(labels);
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Labels</GroupLabel>
@@ -614,7 +644,7 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
 function RecentsGroup({ collapsed }: { collapsed: boolean }) {
   const recents = useRecents();
   const items = recents.data?.items ?? [];
-  const failed = recents.isError;
+  const failed = hasFailed(recents);
   if (collapsed) return null;
   return (
     <div className="flex flex-col gap-0.5">
