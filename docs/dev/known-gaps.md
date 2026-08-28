@@ -560,3 +560,33 @@ the cache — so they test the one state a real outage never reaches.
 Revert `errorUpdatedAt === 0` back to `status !== "error"`, and
 restore the `continue` after `lastSuccess`. If it still passes, it is
 measuring a fresh query, not this case.
+
+## A gate agent can stash the main tree out from under you
+
+**Established 2026-08-29, after nearly losing an hour of test repairs.**
+
+The round-7 gate agent runs in the **main working tree** (unlike the
+sweep agents, which get their own worktrees). It needs a clean tree to
+run the suites, so it ran `git stash` — silently taking the
+coordinator's uncommitted work with it.
+
+The symptom is confusing rather than obvious: edits vanish, but
+`git status` reports clean and the reflog shows no checkout, because a
+stash is neither. The work is in `git stash list`, on your branch, at
+your commit — but nothing points you there.
+
+It looked, briefly, as though tests had been passing against code that
+no longer existed. They had not; the runs happened before the stash.
+That is a worse failure than losing the work, because it would have
+been reported as a verified result.
+
+Two rules:
+
+- **Commit before dispatching an agent that runs in the main tree.**
+  Uncommitted work is not safe there.
+- **If edits disappear, check `git stash list` before re-doing them.**
+  It is the first place to look, not the last.
+
+Better still, give a gate agent its own worktree — but note the base
+commit is wrong by default (see the worktree entry above), so it must
+be told which commit to use.
