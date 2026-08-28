@@ -354,6 +354,28 @@ function buildPriorityMap(
 }
 
 function getTaskFieldValue(task: Task, field: string): unknown {
+  // `fields.effort` is one dotted key, not a key called
+  // "fields.effort". Both lookups below miss it: the frontmatter has
+  // `fields` (an object), and `fields` has `effort`.
+  //
+  // So sorting by a custom field was a **silent no-op** — accepted by
+  // `isSortableTaskField`, kept in the URL, shown with a sort
+  // indicator, and returning identical order for `asc` and `desc`.
+  // Measured on three tasks: the same sequence both ways.
+  //
+  // That is the state LST-29's bullets 2 and 3 forbid — a column
+  // shown as sorting when it is not, persisting as though applied —
+  // reached by a path LST-29 does not cover, because the key is
+  // *known* rather than unknown. The predicate and the resolver
+  // disagreed, and the predicate is the one the URL is validated
+  // against.
+  if (field.startsWith("fields.")) {
+    const key = field.slice("fields.".length);
+    return task.frontmatter.fields
+        && Object.prototype.hasOwnProperty.call(task.frontmatter.fields, key)
+      ? task.frontmatter.fields[key]
+      : undefined;
+  }
   if (Object.prototype.hasOwnProperty.call(task.frontmatter, field)) {
     return readField(task.frontmatter, field);
   }
