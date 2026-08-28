@@ -258,7 +258,16 @@ function SavedFiltersGroup({
         // "Mentions me") render as inert text, not a link.
         if (search === null) {
           return (
-            <div key={f.id} aria-disabled className="opacity-50">
+            // SHL-8: says why it is inert and when it arrives, rather
+            // than being silently dead. `aria-disabled` carries the
+            // state to assistive tech, so the dimming is not the only
+            // signal (A11Y-31).
+            <div
+              key={f.id}
+              aria-disabled="true"
+              title={`${f.label} — available once comments land (M2)`}
+              className="opacity-50"
+            >
               <ItemShell collapsed={collapsed} title={f.label}>
                 <span className="w-4 shrink-0 text-center">{f.icon}</span>
                 {!collapsed ? <span className="truncate">{f.label}</span> : null}

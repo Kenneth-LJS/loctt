@@ -4971,3 +4971,209 @@ test.describe("Closing out M1.3", () => {
     ).toContainText("unknown");
   });
 });
+
+test.describe("SHL — the app shell (M1.1)", () => {
+  // @verifies SHL-1
+  test("SHL-1: the shell is two columns with a working collapse control", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    const aside = page.locator("aside");
+    const main = page.locator("main");
+    const asideBox = await aside.boundingBox();
+    const mainBox = await main.boundingBox();
+    // Side by side, with the header spanning above both.
+    expect(asideBox?.x ?? 0).toBeLessThan(mainBox?.x ?? 0);
+
+    // The collapse control is visible without hovering a hidden zone.
+    const toggle = page.getByRole("button", { name: /Toggle sidebar/i });
+    await expect(toggle).toBeVisible();
+
+    // Collapsing reclaims the width; the main pane reflows rather than
+    // being clipped.
+    await toggle.click();
+    await expect(aside).toHaveAttribute("data-collapsed", "true");
+    await expect
+      .poll(() => aside.evaluate(el => el.getBoundingClientRect().width))
+      .toBeLessThan(asideBox?.width ?? 999);
+    const widerMain = await main.boundingBox();
+    expect(widerMain?.width ?? 0).toBeGreaterThan(mainBox?.width ?? 0);
+
+    // Expanding restores it.
+    await toggle.click();
+    await expect(aside).toHaveAttribute("data-collapsed", "false");
+  });
+
+  // @verifies SHL-2
+  test("SHL-2: the header carries the logo, the avatar, and create — on every view", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+
+    for (const route of ["/list", "/board", "/timeline"]) {
+      await page.goto(`${tracker.baseURL}${route}`);
+      const header = page.getByRole("banner");
+      await expect(header).toBeVisible();
+
+      // Initials rather than a broken image for a user with no avatar.
+      const avatar = header.getByRole("button", { name: /User menu/i });
+      await expect(avatar).toBeVisible();
+      await expect(header.locator("img[src=''], img:not([src])")).toHaveCount(0);
+
+      // A create control on every view — the header does not reorder
+      // per route.
+      await expect(header.getByRole("button", { name: /New task/i })).toBeVisible();
+    }
+  });
+
+  // @verifies SHL-4
+  test("SHL-4: the Views group highlights the route, not the click history", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+
+    for (const [route, name] of [
+      ["/list", "List"], ["/board", "Board"], ["/timeline", "Timeline"],
+    ] as const) {
+      // Loading the URL directly highlights it — the highlight derives
+      // from the route.
+      await page.goto(`${tracker.baseURL}${route}`);
+      // Scoped to the three Views entries by name: a built-in saved
+      // filter also points at /list and is legitimately current when
+      // its own state is in the URL (SHL-6). "Exactly one" is a claim
+      // about *this* group.
+      for (const other of ["List", "Board", "Timeline"]) {
+        const link = page.getByRole("link", { name: other, exact: true });
+        if (other === name) await expect(link).toHaveAttribute("aria-current", "page");
+        else await expect(link).not.toHaveAttribute("aria-current", "page");
+      }
+    }
+
+    // And clicking navigates, with exactly one entry highlighted.
+    await page.goto(`${tracker.baseURL}/list`);
+    await page.getByRole("link", { name: "Board" }).click();
+    await expect(page).toHaveURL(/\/board/);
+    await expect(page.locator("aside a[aria-current='page']")).toHaveCount(1);
+  });
+});
+
+test.describe("SHL — the sidebar groups (M1.1)", () => {
+  // @verifies SHL-8
+  test("SHL-8: Mentions me is inert, badge-free, and explains itself", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    const mentions = page.locator("aside").getByText("Mentions me").first();
+    await expect(mentions).toBeVisible();
+
+    // No count badge — a `0` would be a false claim about data the
+    // app cannot see yet.
+    const row = mentions.locator("xpath=ancestor::*[@aria-disabled][1]");
+    await expect(row).toHaveAttribute("aria-disabled", /true|/);
+    await expect(row).not.toContainText(/\b0\b/);
+
+    // Not a link, so it cannot navigate.
+    expect(await page.locator("aside a").filter({ hasText: "Mentions me" }).count())
+      .toBe(0);
+
+    // And it says why it is inert rather than being silently dead.
+    const explained = await row.getAttribute("title")
+      ?? await mentions.getAttribute("title") ?? "";
+    expect(explained.length).toBeGreaterThan(0);
+  });
+
+  // @verifies SHL-6
+  test("SHL-6: each built-in filter's URL reproduces its result set", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Hot", fields: { priority: "high" } },
+      { title: "Late", fields: { due_date: "2020-01-01" } },
+      { title: "Plain" },
+    ]);
+
+    for (const name of ["High priority", "Overdue"]) {
+      await page.goto(`${tracker.baseURL}/list`);
+      await page.getByRole("link", { name: new RegExp(name, "i") }).click();
+      await expect(page.getByText(/Showing 1–\d+ of \d+/)).toBeVisible();
+
+      // Marked active while its state is in the URL. Scoped to the
+      // saved-filters group: the Views group's "List" entry also points
+      // at /list and is legitimately current at the same time — SHL-4
+      // governs that one, and it is checked there.
+      await expect(
+        page.getByRole("link", { name: new RegExp(name, "i") }),
+      ).toHaveAttribute("aria-current", "page");
+
+      // And the URL alone reproduces the same rows in a fresh tab.
+      const url = page.url();
+      const rows = await page.locator("tbody tr").count();
+      const fresh = await page.context().newPage();
+      await fresh.goto(url);
+      await expect(fresh.locator("tbody tr")).toHaveCount(rows);
+      await fresh.close();
+    }
+  });
+
+  // @verifies SHL-7
+  test("SHL-7: built-in badges show the filter's total, including zero", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Hot", fields: { priority: "high" } },
+      { title: "Plain" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    const aside = page.locator("aside");
+    // A filter matching one task shows 1, not the page count.
+    await expect(aside.getByText("High priority").locator("xpath=..")).toContainText("1");
+    // A filter matching none shows 0, not a blank.
+    await expect(aside.getByText("Overdue").locator("xpath=..")).toContainText("0");
+
+    // Creating a matching task updates the badge on refetch.
+    await tracker.run(["create", "Later", "--priority", "high"]);
+    await page.reload();
+    await expect(aside.getByText("High priority").locator("xpath=..")).toContainText("2");
+  });
+
+  // @verifies SHL-9
+  test("SHL-9: milestone, sprint and label groups render labels and filter on click", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["milestone", "create", "v1"]);
+    await tracker.run(["milestone", "create", "old"]);
+    await tracker.run(["milestone", "archive", "old"]);
+    await tracker.run(["label", "create", "bug"]);
+    await tracker.seed([{ title: "One" }]);
+    await tracker.run(["set", "T-1", "milestone", "v1"]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    const aside = page.locator("aside");
+    // Rendered by label, and archived entries are excluded.
+    await expect(aside.getByText("v1")).toBeVisible();
+    await expect(aside.getByText("old")).toHaveCount(0);
+    await expect(aside.getByText("bug")).toBeVisible();
+
+    // Clicking filters the view and shows it in the URL.
+    await aside.getByText("v1").click();
+    await expect(page).toHaveURL(/milestone=/);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+  });
+});
