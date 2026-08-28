@@ -245,9 +245,11 @@ enough.
 
 **XS-56 stays untagged.**
 
-## The UI suite competes with itself under `--workers`
+## The UI suite used to compete with itself under `--workers` (fixed)
 
-**Measured 2026-08-25. Not a product defect — a harness one.**
+**Measured 2026-08-25, fixed 2026-08-28. Never a product defect — a
+harness one.** Kept because the diagnosis is worth having if it
+recurs, and because two run logs misread it as a defect first.
 
 Six tests fail as a group under the full suite and all six pass alone,
 at load average 21:
@@ -259,25 +261,34 @@ create` per task — sixty processes for a single test — and Playwright
 runs five workers at once. The suite's own contention pushes settle
 gates past their budgets.
 
-**Half fixed, 2026-08-28.** `seed` no longer spawns a `loctt set` per
-field: it creates the tasks, then writes their frontmatter in one
-batch. A sixty-task seed with fields went from well over a hundred
-subprocesses to sixty.
+**Fixed 2026-08-28.** `seed` no longer spawns a `loctt set` per field:
+it creates the tasks, then writes their frontmatter in one batch. A
+sixty-task seed with fields went from well over a hundred subprocesses
+to sixty.
 
-**Sixty is still the floor, and it is what these six pay.** `create`
-remains one process per task, because key allocation is stateful and
-the assigned key is what the specs read back. Measured after the fix,
-the pagination specs still take ~20s each: their cost is entirely
-`create`, since they seed no fields at all.
+That was enough. The full suite went **20 failures → 0**, and the run
+from 4.3 minutes to 2.6 — all six of the named specs among the
+passes, at load average 128, which is six times the load this entry
+was first measured at.
 
-**What would close it:** those specs need sixty *rows*, not sixty
-allocated keys — `seedBulk` already writes rows directly and takes no
-measurable time. Making it use the tracker's real key prefix instead
-of `BULK-` would make it a drop-in for them. Not done here: it is
-harness work, the failures are understood, and every one of the six
-passes alone.
+**Why removing only the `set` calls fixed specs that seed no fields:**
+the contention is suite-wide, not per-spec. Five workers run at once,
+so the field-heavy specs' hundred-odd extra processes were starving
+the pagination specs running beside them. Cutting the former gave the
+latter their budget back.
 
-**Until then:** a failure in this set under the full suite is not
+**`create` is still one process per task**, because key allocation is
+stateful and the assigned key is what the specs read back. If this
+regresses under heavier load, the next step is `seedBulk`: it writes
+rows directly and takes no measurable time, and the pagination specs
+need sixty *rows* rather than sixty allocated keys. Making it use the
+tracker's real key prefix instead of `BULK-` would make it a drop-in.
+
+**The diagnosis in this entry was right and the fix was cheaper than
+it predicted** — worth remembering before assuming a flaky suite needs
+a fixture rewrite.
+
+**Still true in general:** a failure in this set is not by itself
 evidence of a defect. Re-run the named tests alone before believing
 it — the run log has been wrong about this twice.
 
