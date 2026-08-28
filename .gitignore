@@ -9,3 +9,6 @@ playwright-report/
 
 # Machine-specific Claude config (if created)
 .claude/agent-env.md
+
+# Playwright MCP scratch output (console logs, snapshots)
+.playwright-mcp/
