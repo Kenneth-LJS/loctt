@@ -3621,3 +3621,143 @@ test.describe("XS/ONB — staleness and the skeleton (M1.2)", () => {
     expect(overflow).toBeLessThanOrEqual(1);
   });
 });
+
+test.describe("The last of M1.2", () => {
+  // @verifies LST-23
+  test("LST-23: dates and relative times use the workspace timezone, not the browser's", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Dated", fields: { due_date: "2026-05-01" } }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    // A due date is a *date*, not an instant: it reads as May 1
+    // whatever the browser's zone. Pinned in UTC, so a browser east or
+    // west of the workspace cannot shift it a day.
+    const row = page.locator("tbody tr").first();
+    await expect(row).toContainText("May 1");
+
+    // And a relative timestamp is elapsed duration, which no timezone
+    // can move — a task just created reads as recent, never as
+    // tomorrow.
+    await expect(row).toContainText(/just now|\dm ago/);
+  });
+
+  // @verifies ERR-5
+  test("ERR-5: a request that never returns is bounded and says so", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }, { title: "Two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Shorten the client deadline; the production value is 30s.
+    await page.addInitScript(() => {
+      (globalThis as { __LOCTT_BULK_TIMEOUT_MS__?: number }).__LOCTT_BULK_TIMEOUT_MS__ = 500;
+    });
+    await page.reload();
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+
+    // The server accepts and never answers.
+    await page.route(/\/api\/tasks\/bulk\/archive/, () => { /* never resolved */ });
+    await page.getByRole("button", { name: "Archive", exact: true }).click();
+
+    // Bounded: the wait ends, and the message says what was attempted
+    // and what state the data is in.
+    const status = page.getByRole("status").filter({ hasText: /did not respond/i });
+    await expect(status).toBeVisible({ timeout: 20_000 });
+    await expect(status).toContainText(/2 tasks/);
+    await expect(status).toContainText(/Reload/i);
+  });
+
+  // @verifies ERR-17
+  test("ERR-17: ten failures coalesce into one dismissible surface", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed(
+      Array.from({ length: 10 }, (_u, i) => ({ title: `Task ${String(i + 1)}` })),
+    );
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–10 of 10")).toBeVisible();
+    await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+
+    await page.route(/\/api\/tasks\/bulk\/set/, route => route.abort("failed"));
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "Done" }).click();
+
+    // One surface, not ten. A bulk failure is reported as a single
+    // result naming the affected set, not a toast per task.
+    const bar = page.getByRole("region", { name: "Bulk actions" });
+    await expect(bar.getByRole("status")).toContainText(/could not|Nothing was/i, {
+      timeout: 20_000,
+    });
+    expect(await page.getByRole("status").count()).toBeLessThan(3);
+    // And the selection survives, so the user can retry it.
+    await expect(bar).toContainText("10 tasks selected");
+  });
+
+  // @verifies ERR-30
+  test("ERR-30: an unattributable failure still answers all three questions", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await page.locator("tbody input[type=checkbox]").first().check();
+
+    // An opaque fault: a 500 with a body the client cannot attribute.
+    await page.route(/\/api\/tasks\/bulk\/set/, route =>
+      route.fulfill({ status: 500, contentType: "text/plain", body: "???" }));
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "Done" }).click();
+
+    const status = page.getByRole("region", { name: "Bulk actions" }).getByRole("status");
+    await expect(status).toBeVisible({ timeout: 20_000 });
+    const copy = await status.innerText();
+
+    // What was attempted, and what state the data is in. "Something
+    // went wrong" with neither is a failing result for this case.
+    expect(copy).toMatch(/updated|update/i);
+    expect(copy).toMatch(/Nothing was|could not/i);
+    // And the selection survives as the way to retry.
+    await expect(
+      page.getByRole("region", { name: "Bulk actions" }),
+    ).toContainText("1 task selected");
+  });
+
+  // @verifies XS-40
+  test("XS-40: a task deleted out-of-band stops resolving and leaves the list", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([{ title: "Doomed" }, { title: "Survivor" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    // Warm the key index so the lookup has something cached to drop.
+    await tracker.run(["show", String(seeded[0])]);
+
+    // Remove the directory the way a `git pull` of a deletion would.
+    const tasksDir = path.join(tracker.root, ".loctt", "tasks");
+    for (const id of await readdir(tasksDir)) {
+      const text = await readFile(path.join(tasksDir, id, "task.md"), "utf8");
+      if (!text.includes("title: Doomed")) continue;
+      await rm(path.join(tasksDir, id), { recursive: true });
+    }
+
+    // The indexed entry drops on ENOENT and the lookup falls through —
+    // no manual rebuild.
+    const err = await tracker.run(["show", String(seeded[0])]).catch((e: Error) => e.message);
+    expect(err).toContain(String(seeded[0]));
+
+    await page.reload();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.locator("tbody")).not.toContainText("Doomed");
+  });
+});
