@@ -101,6 +101,10 @@ describe("ServerUnreachableBanner", () => {
     render(<ServerUnreachableBanner />, { wrapper: Wrapper });
     expect(await screen.findByRole("alert")).toBeTruthy();
 
+    // The timestamps have millisecond resolution and a tie resolves in
+    // favour of the failure, so the success has to land in a later
+    // millisecond for this to be the ordering the case describes.
+    await new Promise(r => setTimeout(r, 5));
     await seed(qc, "b", "success");
     await waitFor(() => {
       expect(screen.queryByRole("alert")).toBeNull();
@@ -119,6 +123,7 @@ describe("ServerUnreachableBanner", () => {
     render(<ServerUnreachableBanner />, { wrapper: Wrapper });
     expect(screen.queryByRole("alert")).toBeNull();
 
+    await new Promise(r => setTimeout(r, 5));
     await seed(qc, "b", new TypeError("Failed to fetch"));
     await waitFor(() => {
       expect(screen.queryByRole("alert")).not.toBeNull();

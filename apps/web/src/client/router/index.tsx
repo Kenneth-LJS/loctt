@@ -22,10 +22,17 @@ const rootRoute = createRootRoute({
   // used to sit here read "Route stub: 404", which names neither the
   // problem nor the path and offers no way out.
   notFoundComponent: NotFound,
-  // ERR-34: a route-level throw replaces the main pane only. Without
-  // this TanStack's default takes the whole tree, which is the white
-  // page that case is written against.
-  errorComponent: RouteError,
+  // Deliberately no `errorComponent` here.
+  //
+  // The root route's component *is* the shell, so an error component
+  // on it replaces the shell — header and sidebar included. That is
+  // the white page SHL-42 and ERR-34 both rule out, and it is what
+  // this did until the browser spec caught it: the boundary rendered
+  // the right words with nothing around them.
+  //
+  // The boundary belongs on the child routes, which render inside the
+  // root's outlet, so a throw takes the main pane and leaves the
+  // chrome.
 });
 
 /**
@@ -41,6 +48,9 @@ function RouteError({ error, reset }: { error: Error; reset: () => void }) {
       error={error}
       componentStack={null}
       writeInFlight={false}
+      // Not on `/list` itself: offering to navigate to the page the
+      // user is already on is not a way out (SHL-42).
+      offerListLink={pathname !== "/list"}
       onRetry={reset}
     />
   );
@@ -67,6 +77,7 @@ const indexRoute = createRoute({
 
 const listRoute = createRoute({
   getParentRoute: () => rootRoute,
+  errorComponent: RouteError,
   path: "/list",
   validateSearch: listSearchSchema,
   component: ListView,
@@ -74,12 +85,14 @@ const listRoute = createRoute({
 
 const boardRoute = createRoute({
   getParentRoute: () => rootRoute,
+  errorComponent: RouteError,
   path: "/board",
   component: () => <Stub name="/board" />,
 });
 
 const timelineRoute = createRoute({
   getParentRoute: () => rootRoute,
+  errorComponent: RouteError,
   path: "/timeline",
   component: () => <Stub name="/timeline" />,
 });
@@ -89,6 +102,7 @@ const timelineRoute = createRoute({
 // templating bug rather than an unbuilt view. Interpolate the param.
 const taskDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
+  errorComponent: RouteError,
   path: "/tasks/$key",
   component: function TaskDetailStub() {
     const { key } = taskDetailRoute.useParams();
@@ -98,6 +112,7 @@ const taskDetailRoute = createRoute({
 
 const sprintDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
+  errorComponent: RouteError,
   path: "/sprints/$key",
   component: function SprintDetailStub() {
     const { key } = sprintDetailRoute.useParams();
@@ -107,12 +122,14 @@ const sprintDetailRoute = createRoute({
 
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
+  errorComponent: RouteError,
   path: "/settings/$section",
   component: () => <Stub name="/settings/$section" />,
 });
 
 const initRoute = createRoute({
   getParentRoute: () => rootRoute,
+  errorComponent: RouteError,
   path: "/init",
   component: () => <Stub name="/init" />,
 });

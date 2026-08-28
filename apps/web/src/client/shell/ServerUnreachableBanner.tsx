@@ -56,7 +56,12 @@ export function ServerUnreachableBanner() {
         if (err instanceof ApiError && err.envelope !== undefined) continue;
         lastFailure = Math.max(lastFailure, q.state.errorUpdatedAt);
       }
-      setUnreachable(lastFailure > 0 && lastFailure > lastSuccess);
+      // `>=` rather than `>`: the timestamps have millisecond
+      // resolution, so a failure and a success in the same tick are
+      // indistinguishable by time. When they tie, the failure wins —
+      // saying "not responding" for a moment while the server is fine
+      // is a smaller error than staying silent while it is not.
+      setUnreachable(lastFailure > 0 && lastFailure >= lastSuccess);
     };
     recompute();
     return cache.subscribe(recompute);

@@ -302,3 +302,30 @@ real bootstrap with two different workflow configs and diffs the
 sidebar's DOM. It needs the config to arrive by the app's own path,
 not a stubbed hook — which is why this is a gap and not a five-minute
 fix.
+
+## `git/status-drift.test.ts` times out under heavy machine load
+
+**Measured 2026-08-28, at load average 118.**
+
+`returns to zero local drift after publishing` exceeded even the
+20s budget `packages/core/vitest.config.ts` already sets for the
+subprocess-heavy specs — it took 24s. It publishes to a real git
+worktree, so it is several `git` subprocesses deep, and a loaded
+machine starves each of them.
+
+**It is not a defect and it is not new.** It passes in isolation and
+it passes under load with more headroom.
+
+**Two things cost a round of investigation, both worth knowing:**
+
+- **The failure is reported against the wrong workspace.**
+  `npm run test` runs workspaces in sequence and prints
+  `npm error workspace @loctt/web` at the end whichever one failed.
+  The web suite was green (51 files, 463 tests) throughout. Grep the
+  full output for `FAIL` rather than trusting the trailing npm error.
+
+- **`npx vitest run packages/core/...` from the repo root uses the
+  *root* config**, whose timeout is vitest's 5s default — not the
+  workspace's 20s. Four tests "fail" that way that are fine under
+  `npm run test`. Run core's specs from `packages/core`, or expect
+  to misread the result.
