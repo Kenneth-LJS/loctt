@@ -11,7 +11,7 @@
  * on disk, so the files have to be real.
  */
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -114,6 +114,54 @@ async function killAndWait(child: KillableProcess): Promise<void> {
   }
 }
 
+
+/**
+ * Writes field values directly into task frontmatter.
+ *
+ * Reads every task file once, matches each by its `key`, and rewrites
+ * only the files that need changing. Insertion is line-based rather
+ * than through a YAML round-trip so a file's existing formatting,
+ * key order and body survive untouched — the specs assert against
+ * what the app renders from these files, and a reformat would be a
+ * change they cannot see but might depend on.
+ */
+async function applyFields(
+  root: string,
+  updates: readonly { key: string; fields: Readonly<Record<string, string>> }[],
+): Promise<void> {
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  const ids = await readdir(tasksDir);
+  const byKey = new Map(updates.map(u => [u.key, u.fields]));
+
+  await Promise.all(
+    ids.map(async id => {
+      const file = path.join(tasksDir, id, "task.md");
+      let text: string;
+      try {
+        text = await readFile(file, "utf8");
+      } catch {
+        return; // not a task directory
+      }
+      const key = /^key:\s*(\S+)\s*$/m.exec(text)?.[1];
+      if (key === undefined) return;
+      const fields = byKey.get(key);
+      if (fields === undefined) return;
+
+      let next = text;
+      for (const [field, value] of Object.entries(fields)) {
+        const existing = new RegExp(`^${field}:.*$`, "m");
+        next = existing.test(next)
+          ? next.replace(existing, `${field}: ${value}`)
+          // No `---` of its own: insert after the opening fence, which
+          // is the first line, so the closing one is never mistaken
+          // for it.
+          : next.replace(/^---\n/, `---\n${field}: ${value}\n`);
+      }
+      if (next !== text) await writeFile(file, next, "utf8");
+    }),
+  );
+}
+
 export const test = base.extend<{ tracker: TrackerFixture }>({
   tracker: async ({}, use) => {
     const root = await mkdtemp(path.join(workspaceRoot, "loctt-ui-"));
@@ -134,8 +182,25 @@ export const test = base.extend<{ tracker: TrackerFixture }>({
 
     await run(["init"]);
 
+    /**
+     * Creates tasks, then applies their fields in one batch.
+     *
+     * Fields used to go through `loctt set`, one process per field, so
+     * a sixty-task seed spawned well over a hundred subprocesses and
+     * took ~20 seconds. Under five Playwright workers that is the
+     * suite competing with itself, and it made six specs fail as a
+     * group while every one of them passed alone — recorded in
+     * known-gaps.md as the harness defect it was.
+     *
+     * `create` still runs per task, because key allocation is stateful
+     * and the assigned key is what the spec needs back. The fields are
+     * written straight into the frontmatter afterwards: they are plain
+     * scalars, and `set`'s validation is not what these specs are
+     * testing. A spec that *does* care about `set` calls `run` itself.
+     */
     const seed = async (tasks: readonly SeedTask[]): Promise<string[]> => {
       const keys: string[] = [];
+      const pending: { key: string; fields: Readonly<Record<string, string>> }[] = [];
       for (const task of tasks) {
         const out = await run(["create", task.title]);
         // `create` prints the assigned key; capture it rather than assuming
@@ -144,11 +209,13 @@ export const test = base.extend<{ tracker: TrackerFixture }>({
         if (key === undefined) {
           throw new Error(`could not parse a task key from: ${out}`);
         }
-        for (const [field, value] of Object.entries(task.fields ?? {})) {
-          await run(["set", key, field, value]);
+        const fields = task.fields;
+        if (fields !== undefined && Object.keys(fields).length > 0) {
+          pending.push({ key, fields });
         }
         keys.push(key);
       }
+      if (pending.length > 0) await applyFields(root, pending);
       return keys;
     };
 
