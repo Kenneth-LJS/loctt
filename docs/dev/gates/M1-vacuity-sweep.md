@@ -21,11 +21,12 @@ misdiagnoses in this repo.
 | XS | 20/20 | 1 | 1 |
 | MSL/VUE/ONB/TSK | 24/24 | 5 | — |
 | SHL | 25/25 | 2 | 1 |
+| LST | 24/49 | 8 | 1 |
 | BLK | — | — | — |
-| LST | — | — | — |
 | ERR | — | — | — |
 
-**9 vacuous of 69 checked so far.**
+**17 vacuous of 93 checked so far.** LST is a partial sweep — 25 of
+its 49 were not mutated and carry no verdict either way.
 
 ---
 
@@ -308,3 +309,98 @@ mutation and a survived mutation both look like a green test. The
 agent also caught itself checking a stale bundle path on its first
 SHL-26 attempt, and re-verified against the minified bundle
 thereafter — which is what grounds the SHL-26 and SHL-6 findings.
+
+---
+
+## LST — 24 of 49 checked, 8 vacuous
+
+The group is **49, not 53**: LST-9 and LST-13 have two tests each, and
+LST-3, 18, 38 and 43 have no test in the file at all.
+
+This sweep is **partial and says so**. 25 tests were not mutated and
+carry no verdict — including several that stayed green under mutations
+aimed at other cases, which the agent correctly refused to count as
+evidence of health.
+
+### LST-47 — VACUOUS
+
+Unreachable API. Its only positive assertion is that "Loading tasks"
+is visible — that is the `context` prop, and it renders regardless.
+
+**Mutation:** the unreachable headline gutted to "Something went
+wrong." **and** the Retry button deleted entirely. Still green.
+
+The case's "name the reason" and "retry re-issues the request"
+bullets are both unasserted. P-4 requires the reason; this test would
+not notice its removal.
+
+### LST-52 — VACUOUS
+
+Asserts a Retry button via `.first()`, which matches the **Sidebar's**
+Retry, not the table's. Delete the table's retry control and the test
+still finds a button, clicks it, and the resulting refetch revalidates
+the table.
+
+It measures the sidebar.
+
+### LST-4, LST-21, LST-27 — VACUOUS (sort bullet)
+
+**Mutation:** the comparator zeroed (`0 * compareTasks(...)`),
+disabling all sorting. All three survived.
+
+Each tests "sorting is deterministic" as "two loads agree" — and
+insertion order is perfectly deterministic. Determinism is not
+sortedness.
+
+### LST-15 — VACUOUS
+
+The `searchable: false` bullet asserts only HTTP 200; the response
+body is never inspected. Making every custom field searchable left it
+green. Its `has_link` two-argument bullet is not exercised at all.
+
+### LST-33 — VACUOUS, **and the shipped code fails the case**
+
+**Mutation:** deleted-entity chips made to render a blank label —
+verbatim the defect the case exists to catch. Still green.
+
+More importantly: production has no "no longer exists" affordance
+either. `labelOf` in `FilterBar.tsx:280` falls back to `?? value`, so
+a deleted milestone renders as a **raw ULID**. LST-33 requires the
+chip to indicate the entity is gone, *distinguishably from a valid
+milestone with no tasks*.
+
+**This is a live defect, not only a dead test.** Filed as such.
+
+### LST-1 — VACUOUS (replace-vs-push bullet)
+
+**Mutation:** the redirect changed from replace to a history push. The
+assertion `not.toHaveURL(/…\/list/)` after Back is satisfied by
+landing on `/` — which **is** the bounce the case forbids.
+
+### LST-22 — weak but healthy
+
+Goes red on an inverted sort, green on a disabled one: its ordering
+assertion coincides with seed order. Classified healthy, but it reads
+stronger than it is.
+
+### Healthy (18)
+
+LST-6, 8, 10, 16, 19, 20, 23, 24, 25, 26, 30, 31, 34, 39, 45, 46, 49,
+50.
+
+### A correction the agent made against itself
+
+Its first LST-16 mutation hit `buildDsl.ts`, which is not the live
+path — that green was **off-target, not survived**. Re-mutating the
+real path (`useTasks.ts`) turned it red. LST-16 is healthy.
+
+Same distinction as SHL-30/42: an inert mutation and a survived
+mutation are indistinguishable from the test result alone. Every
+sweep that has run has hit this at least once.
+
+### Not checked (25)
+
+Listed in `sweep-LST.md`. Next by suspicion: **LST-42** (its reload
+assertion checks row count, never that the search box shows the
+original quoted text — the case's explicit bullet), then LST-7 and
+LST-44.
