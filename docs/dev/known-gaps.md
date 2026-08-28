@@ -278,11 +278,26 @@ the pagination specs running beside them. Cutting the former gave the
 latter their budget back.
 
 **`create` is still one process per task**, because key allocation is
-stateful and the assigned key is what the specs read back. If this
-regresses under heavier load, the next step is `seedBulk`: it writes
-rows directly and takes no measurable time, and the pagination specs
-need sixty *rows* rather than sixty allocated keys. Making it use the
-tracker's real key prefix instead of `BULK-` would make it a drop-in.
+stateful and the assigned key is what the specs read back.
+
+**The M1 gate (F9) reported this as still failing, and it is not** —
+but the gate was not wrong to see failures. Every run of this suite
+that showed them, including two of mine, had a `npm run build` racing
+it: the fixture serves `apps/cli/dist`, so rebuilding mid-run swaps
+the binary underneath the workers. A clean run on 2026-08-28 at load
+average 86 was **194/194**.
+
+That is the more useful finding, and it generalises: *never run a
+build while the UI suite is running.* A failure under those
+conditions says nothing about the code, and it has now been misread
+three times — twice by me, once by the gate.
+
+`seedBulk` was made a genuine drop-in anyway (2026-08-28): it takes
+the tracker's own key prefix and advances `state.yaml`'s counter, so
+a later `create` no longer collides. It is not yet used by the
+pagination specs, which assert `Task N` titles it does not write —
+converting them needs a title pattern on `seedBulk` and eight call
+sites changed, which is more than the measured problem justifies.
 
 **The diagnosis in this entry was right and the fix was cheaper than
 it predicted** — worth remembering before assuming a flaky suite needs
