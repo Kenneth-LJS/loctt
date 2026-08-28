@@ -475,3 +475,94 @@ guard, and should not be counted as coverage.
 
 ERR-1 (dead server), ERR-2, ERR-5, ERR-10, and the four bulk tests
 ERR-17/30/39/40 all went red appropriately.
+
+---
+
+# What makes a test vacuous — the four shapes found
+
+Five groups swept, 23 vacuous of 109. They are not 23 independent
+mistakes; they are four recurring shapes. **Check new tests against
+these before writing them.**
+
+## 1. Something other than the app does the work
+
+The test observes a real effect produced by something that is not the
+behaviour under test.
+
+- **ERR-2** — the server was restored while retry backoff was still
+  sleeping. The pending retries woke and succeeded. Recovery was real;
+  the recovery *mechanism* was untested.
+- **XS-1** — calls `page.reload()`. A page load refetches from the
+  server whatever the client cache says, so `staleTime`,
+  `refetchOnWindowFocus` and `refetchInterval` can all be deleted
+  unnoticed.
+- **SHL-26** — asserts `scrollTop < 100` on a pane whose
+  `scrollHeight == clientHeight`. There is no scrollable range, so the
+  assertion holds however the app behaves.
+- **LST-52** — asserts a Retry button with `.first()`, which matches
+  the **sidebar's**. It measures the sidebar.
+
+**Test:** if I delete the mechanism this case names, does anything
+else in the environment produce the same observation?
+
+## 2. The label is asserted, not the effect
+
+Assertions on URL text, chip counts, `Showing 1–N of M`, or the
+presence of a control — the UI's *description* of what it is doing
+rather than what it did. "Filter displayed" and "filter applied"
+become indistinguishable, and applying is the half that breaks.
+
+- **MSL-30, VUE-15, SHL-6** — URL and counts, never the rows.
+- **LST-4/21/27** — test "sorting is deterministic" as "two loads
+  agree". Insertion order is perfectly deterministic. Determinism is
+  not sortedness.
+
+**Test:** does this assertion distinguish the feature working from the
+feature being a no-op?
+
+## 3. Absence assertions weaken as the app says less
+
+`not.toContainText`, `not.toBe`, "does not look like an empty state" —
+all get *easier to pass* the less the surface renders. A cluster of
+them is green in the limit where the app says nothing at all.
+
+- **ERR-19/21/41/42** — blanking the error headline is caught by one
+  of sixteen ERR tests. ERR-42's only positive check,
+  `toMatch(/tasks/i)`, is satisfied by the context label alone.
+- **MSL-22** — `bg !== "rgba(0,0,0,0)"` cannot fail: the pill has no
+  background class, so a dropped invalid colour inherits an opaque
+  background.
+
+**Test:** pair every absence with a positive assertion about what
+*should* be there.
+
+## 4. Seeding that cannot discriminate
+
+Every seeded row satisfies the filter, so filtered and unfiltered
+results are identical.
+
+- **MSL-7** — both seeded tasks carry the label being filtered on.
+- **VUE-13** — regexes the whole `queries.yaml` for strings that
+  already exist in the shipped defaults.
+
+**Test:** does the fixture contain at least one row the behaviour must
+exclude?
+
+---
+
+# The method's own failure mode
+
+**An inert mutation and a survived mutation are indistinguishable from
+the test result alone.** Every sweep hit this at least once:
+
+- LST-16's first mutation hit `buildDsl.ts`, not the live path
+- SHL-26's first attempt was absent from the bundle — a stale asset
+  path was being read
+- SHL-30 and SHL-42 each needed a second mutation before going red
+
+So a green result must be checked twice: **did the build succeed, and
+did the change reach the running code?** A mutation that does not
+compile is not a mutation, and one on a dead path is not either.
+
+The agents that caught these caught them by probing the mutated
+binary rather than trusting the edit. That step is not optional.
