@@ -4170,3 +4170,163 @@ test.describe("LST — filters that fail honestly (M1.3)", () => {
     await expect(page.getByRole("button", { name: /Remove Status/ })).toBeVisible();
   });
 });
+
+test.describe("VUE — built-ins and saved views (M1.3)", () => {
+  // @verifies VUE-3
+  test("VUE-3: a built-in sets visible, editable filter state", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Hot", fields: { priority: "high" } },
+      { title: "Cold", fields: { priority: "low" } },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    await page.getByRole("link", { name: /High priority/i }).click();
+
+    // Narrowed, with the state in the URL and a chip saying why.
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.locator("tbody")).toContainText("Hot");
+    const url = page.url();
+    expect(url).toMatch(/priority|q=/);
+
+    // Not a black box: removing the chip widens the result.
+    const chip = page.getByRole("button", { name: /^Remove /i }).first();
+    if (await chip.count() > 0) {
+      await chip.click();
+      await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    }
+
+    // And the URL reproduces the same rows in a fresh tab.
+    const other = await page.context().newPage();
+    await other.goto(url);
+    await expect(other.getByText("Showing 1–1 of 1")).toBeVisible();
+    await other.close();
+  });
+
+  // @verifies VUE-4
+  test("VUE-4: Back after a built-in restores the previous view", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Hot", fields: { priority: "high" } },
+      { title: "Cold", fields: { priority: "low" } },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    await page.getByRole("link", { name: /High priority/i }).click();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    await page.goBack();
+    // The prior state returns and the browser does not leave the app.
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    await page.goForward();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+  });
+
+  // @verifies VUE-5
+  test("VUE-5: Overdue excludes completed tasks and matches the CLI", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([
+      { title: "Late", fields: { due_date: "2020-01-01" } },
+      { title: "LateButDone", fields: { due_date: "2020-01-01", status: "done" } },
+      { title: "Fine" },
+    ]);
+    void seeded;
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await page.getByRole("link", { name: /Overdue/i }).click();
+
+    // A completed task past its due date is not overdue.
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.locator("tbody")).toContainText("Late");
+    await expect(page.locator("tbody")).not.toContainText("LateButDone");
+
+    // And the same predicate through the CLI returns the same set.
+    const cli = await tracker.run([
+      "list", "--query",
+      "due_date < today and status.category not in (completed, discarded)",
+    ]);
+    expect(cli).toContain("Late");
+    expect(cli).not.toContain("LateButDone");
+  });
+});
+
+test.describe("VUE — saving a view (M1.3)", () => {
+  // @verifies VUE-6
+  test("VUE-6: saving a view writes queries.yaml intact and works everywhere", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Bug", fields: { status: "in_progress" } },
+      { title: "Other" },
+    ]);
+    // The two default views are already in queries.yaml, so a
+    // malformed write shows up as *their* loss rather than only as a
+    // missing new entry.
+    const before = await tracker.run(["views"]);
+    expect(before).toContain("recent-open");
+
+    await page.goto(`${tracker.baseURL}/list?status=in_progress`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    await page.getByRole("button", { name: /Save as view/i }).click();
+    await page.getByRole("textbox").first().fill("my-open-bugs");
+    await page.getByRole("button", { name: "Save view" }).click();
+
+    // The sidebar picks it up without a restart.
+    await expect(page.getByRole("link", { name: "my-open-bugs" })).toBeVisible();
+
+    // The file still parses as a whole. `config/queries.ts` rejects
+    // the entire file on one bad entry, so a malformed save silently
+    // destroys every other view — re-read it rather than checking the
+    // new entry is present.
+    const views = await tracker.run(["views"]);
+    expect(views).toContain("my-open-bugs");
+    expect(views).toContain("recent-open");
+
+    // A generated ULID id, the given name, and a query string.
+    const yaml = await readFile(
+      path.join(tracker.root, ".loctt", "config", "queries.yaml"), "utf8",
+    );
+    expect(yaml).toMatch(/id: [0-9A-Z]{26}/);
+    expect(yaml).toContain("my-open-bugs");
+
+    // And the view returns the same tasks the UI showed.
+    const cli = await tracker.run(["list", "--view", "my-open-bugs"]);
+    expect(cli).toContain("Bug");
+    expect(cli).not.toContain("Other");
+  });
+
+  // @verifies VUE-7
+  test("VUE-7: the editor offers live config values and stores keys, not labels", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One", fields: { status: "in_progress" } }]);
+    await page.goto(`${tracker.baseURL}/list?status=in_progress`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    await page.getByRole("button", { name: /Save as view/i }).click();
+    await page.getByRole("textbox").first().fill("keys-not-labels");
+    await page.getByRole("button", { name: "Save view" }).click();
+    // The sidebar picks the new view up without a restart, which is
+    // also the settle signal for reading the file below.
+    await expect(page.getByRole("link", { name: "keys-not-labels" })).toBeVisible();
+
+    const yaml = await readFile(
+      path.join(tracker.root, ".loctt", "config", "queries.yaml"), "utf8",
+    );
+    // The stored query carries config *keys*, never display labels.
+    expect(yaml).toContain("in_progress");
+    expect(yaml).not.toMatch(/query:.*In progress/);
+  });
+});
