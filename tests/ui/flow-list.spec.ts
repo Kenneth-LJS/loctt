@@ -3400,3 +3400,115 @@ test.describe("ERR — the sweeps (M1.2)", () => {
       .toBeLessThanOrEqual(4);
   });
 });
+
+test.describe("XS/MSL — the last of M1.2", () => {
+  // @verifies XS-5
+  test("XS-5: a task created out-of-band appears and the total is recomputed", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "First" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    await tracker.run(["create", "Second"]);
+    await page.reload();
+
+    // The count is recomputed, not cached from the first load.
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // And a task that does not match the active filter does not
+    // appear — the filter is honoured, not bypassed.
+    await page.goto(`${tracker.baseURL}/list?status=done`);
+    await expect(page.locator("tbody")).toContainText(/match these filters/i);
+    await tracker.run(["create", "Third"]);
+    await page.reload();
+    await expect(page.locator("tbody")).toContainText(/match these filters/i);
+  });
+
+  // @verifies XS-39
+  test("XS-39: a task pulled in out-of-band resolves by key with no rebuild", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([{ title: "Existing" }]);
+    // Warm the index, so the new directory is genuinely unindexed.
+    await tracker.run(["show", String(seeded[0])]);
+
+    // A task directory arriving the way a `git pull` delivers one.
+    const id = "01M0PULLED0000000000000000";
+    const dir = path.join(tracker.root, ".loctt", "tasks", id);
+    await mkdir(dir, { recursive: true });
+    const project = /^ {2}([0-9A-Z]{26}):/m.exec(
+      await readFile(path.join(tracker.root, ".loctt", "state.yaml"), "utf8"),
+    )?.[1] ?? "";
+    await writeFile(
+      path.join(dir, "task.md"),
+      `---\nid: ${id}\nkey: T-900\ntitle: Pulled\n`
+      + `created_at: 2026-01-01T00:00:00.000Z\nupdated_at: 2026-01-01T00:00:00.000Z\n`
+      + `project: ${project}\nstatus: backlog\n---\n`,
+      "utf8",
+    );
+
+    // The key resolves with no manual step — the index folds it in.
+    expect(await tracker.run(["show", "T-900"])).toContain("Pulled");
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    await expect(page.locator("tbody")).toContainText("Pulled");
+  });
+
+  // @verifies MSL-21
+  test("MSL-21: two labels sharing a name stay distinguishable and filter separately", async ({
+    page,
+    tracker,
+  }) => {
+    // `name` is explicitly not unique.
+    const a = await tracker.run(["label", "create", "dup"]);
+    const b = await tracker.run(["label", "create", "dup"]);
+    const idA = /([0-9A-Z]{26})/.exec(a)?.[1] ?? "";
+    const idB = /([0-9A-Z]{26})/.exec(b)?.[1] ?? "";
+    expect(idA).not.toBe(idB);
+
+    await tracker.run(["create", "HasA", "--label", idA]);
+    await tracker.run(["create", "HasB", "--label", idB]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Filtering by one id matches only that label's task, not both.
+    await page.goto(`${tracker.baseURL}/list?labels=${idA}`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.locator("tbody")).toContainText("HasA");
+    await expect(page.locator("tbody")).not.toContainText("HasB");
+  });
+
+  // @verifies MSL-23
+  test("MSL-23: a very pale and a very dark label both stay legible", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["label", "create", "pale", "--color", "#ffffcc"]);
+    await tracker.run(["label", "create", "dark", "--color", "#001133"]);
+    await tracker.run(["create", "Tagged", "--label", "pale", "--label", "dark"]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    // Neither pill uses its own colour as text on a wash of itself —
+    // that renders pale-on-pale and dark-on-dark.
+    for (const name of ["pale", "dark"]) {
+      const pill = page.locator("tbody tr").first().getByTitle(name, { exact: true });
+      await expect(pill).toBeVisible();
+      const { color, border } = await pill.evaluate(el => {
+        const cs = getComputedStyle(el);
+        return { color: cs.color, border: cs.borderTopColor };
+      });
+      // Legible: not the extreme label colour itself.
+      expect(color).not.toBe("rgb(255, 255, 204)");
+      expect(color).not.toBe("rgb(0, 17, 51)");
+      // And the pill has a visible boundary.
+      expect(border).not.toBe("rgba(0, 0, 0, 0)");
+    }
+  });
+});
