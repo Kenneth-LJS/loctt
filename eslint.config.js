@@ -10,6 +10,10 @@ export default tseslint.config(
       "eslint.config.js",
       "**/tsup.config.ts",
       "temp-ui-mockups/",
+      // Agent worktrees are full copies of the repo. Six of them made
+      // `npm run lint` OOM the V8 heap, and the crash dump grepped
+      // clean — so a broken lint reported as a passing one.
+      ".claude/worktrees/",
     ],
   },
   ...tseslint.configs.recommendedTypeChecked,

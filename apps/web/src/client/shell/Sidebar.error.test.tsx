@@ -242,13 +242,13 @@ describe("a sidebar group that has not been answered yet", () => {
   it("still says so once the server answers with nothing", async () => {
     // The other half, and the one the fix must not break: a settled
     // empty answer is a real empty state and must still render.
-    await renderSidebarOk();
+    renderSidebarOk();
     expect(await screen.findByText("No projects yet")).toBeTruthy();
   });
 });
 
 /** Renders the sidebar with every endpoint answering empty. */
-async function renderSidebarOk(): Promise<void> {
+function renderSidebarOk(): void {
   stubFetch();
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const rootRoute = createRootRoute();
