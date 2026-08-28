@@ -244,3 +244,30 @@ what is wanted; worth amending the case if the error-state reading is
 enough.
 
 **XS-56 stays untagged.**
+
+## The UI suite competes with itself under `--workers`
+
+**Measured 2026-08-25. Not a product defect — a harness one.**
+
+Six tests fail as a group under the full suite and all six pass alone,
+at load average 21:
+
+    LST-13 (x2), LST-17, LST-35, LST-49, BLK-24
+
+They are the seeding-heavy ones. `tracker.seed()` spawns one `loctt
+create` per task — sixty processes for a single test — and Playwright
+runs five workers at once. The suite's own contention pushes settle
+gates past their budgets.
+
+**`seedBulk` is not a drop-in fix.** It writes task files directly and
+is much faster, but it cannot set fields, and four of these six seed
+tasks *with* fields. Tried and reverted.
+
+**What would actually fix it:** a seed path that writes frontmatter
+with fields directly, the way `seedBulk` writes titles. That is a
+fixture change, not a product change, and it would take the seeding
+cost of these tests from ~60 processes to zero.
+
+**Until then:** a failure in this set under the full suite is not
+evidence of a defect. Re-run the named tests alone before believing
+it — the run log has been wrong about this twice.

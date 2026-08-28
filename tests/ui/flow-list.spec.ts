@@ -2397,23 +2397,49 @@ test.describe("ERR — the browser reports offline", () => {
 });
 
 test.describe("LST — sort validation and the detail stub", () => {
-  // @verifies LST-11
-  test("LST-11: an unknown sort field is refused rather than silently ignored", async ({
+  // @verifies LST-29
+  test("LST-29: an unknown sort key falls back visibly rather than erroring", async ({
     page,
     tracker,
   }) => {
     await tracker.seed([{ title: "One" }, { title: "Two" }]);
-    await page.goto(`${tracker.baseURL}/list`);
+
+    // A pasted URL with a typo is a bad sort, not a bad request.
+    await page.goto(`${tracker.baseURL}/list?sort=nonexistent_field&dir=asc`);
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
 
-    // An unknown field reads as `undefined` on every task, so the
-    // comparator returns 0 throughout and the list comes back in its
-    // original order — while the header still shows the sort applied.
-    const res = await page.request.get(`${tracker.baseURL}/api/tasks?sort=titel`);
-    expect(res.status()).toBe(400);
-    expect(await res.text()).toContain("titel");
+    // No sort indicator on a column that is not actually sorting —
+    // that would misreport the order. The arrows on the headers are
+    // the affordance, not the state; the *active* one is what must not
+    // appear.
+    expect(await page.locator("thead th[aria-sort]").count()).toBe(0);
 
-    // A real field still sorts, and so does a custom one.
+    // And the assertion above means something: a *valid* sort does
+    // mark its column, so "no marked column" is a real observation
+    // rather than an attribute that is never set.
+    await page.goto(`${tracker.baseURL}/list?sort=title&dir=asc`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    expect(await page.locator("thead th[aria-sort]").count()).toBe(1);
+
+    // The unrecognised key produces the default order rather than an
+    // error or an empty table.
+    //
+    // This does not distinguish "dropped at the boundary" from "passed
+    // through and sorted nothing" — both yield insertion order, so no
+    // black-box assertion can tell them apart. What it does pin is the
+    // case's own bullets: the list renders, and no column claims to be
+    // sorting. The boundary check exists so the key never reaches the
+    // comparator at all, which is a correctness margin rather than an
+    // observable difference.
+    const bad = await (await page.request.get(
+      `${tracker.baseURL}/api/tasks?sort=nonexistent_field&dir=asc`,
+    )).json() as { items: { key: string }[] };
+    const none = await (await page.request.get(
+      `${tracker.baseURL}/api/tasks`,
+    )).json() as { items: { key: string }[] };
+    expect(bad.items.map(t => t.key)).toEqual(none.items.map(t => t.key));
+
+    // A real field still sorts, and a custom one is accepted.
     expect((await page.request.get(`${tracker.baseURL}/api/tasks?sort=title`)).status())
       .toBe(200);
     expect((await page.request.get(`${tracker.baseURL}/api/tasks?sort=fields.impact`)).status())
@@ -3886,5 +3912,48 @@ test.describe("LST — the filter bar (M1.3)", () => {
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
     await expect(page.locator("tbody")).toContainText("Platform");
     await expect(page.locator("tbody")).not.toContainText("Other");
+  });
+});
+
+test.describe("LST — URL params that could lie (M1.3)", () => {
+  // @verifies LST-31
+  test("LST-31: archived=false and archived=0 do not enable the toggle", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([{ title: "Live" }, { title: "Gone" }]);
+    await tracker.run(["archive", String(seeded[1])]);
+
+    for (const falsey of ["false", "0"]) {
+      await page.goto(`${tracker.baseURL}/list?archived=${falsey}`);
+      // A coerced-boolean parse turning "false" into true is exactly
+      // what this case exists to catch.
+      await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+      await expect(page.locator("tbody")).not.toContainText("Gone");
+      // The toggle's visual state agrees with the result set.
+      await expect(page.getByRole("checkbox", { name: "Show archived" }))
+        .not.toBeChecked();
+    }
+  });
+
+  // @verifies LST-32
+  test("LST-32: an unknown search param survives a filter change", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Done one", fields: { status: "done" } },
+      { title: "Other" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list?status=done&debug=1`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    // The known filter applies normally...
+    await expect(page.locator("tbody")).toContainText("Done one");
+
+    // ...and the unknown key is not dropped on the next navigation.
+    await page.getByRole("button", { name: "Filter Priority" }).click();
+    await page.getByRole("menuitemcheckbox").first().click();
+    await expect(page).toHaveURL(/debug=1/);
   });
 });
