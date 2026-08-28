@@ -70,6 +70,17 @@ export function tasksParamsFromSearch(search: Partial<ListSearch>): TasksQueryPa
     const v = search[key];
     if (Array.isArray(v) && v.length > 0) filters[key] = v;
   }
+  // Custom-field filters (`field.team=platform`). These are not in
+  // FILTER_KEYS because the set is per-workspace, so they have to be
+  // carried by shape rather than by name — and dropping them is
+  // exactly the failure LST-16 was written against: the chip and the
+  // URL param both appeared while the result set never narrowed.
+  for (const [key, v] of Object.entries(search)) {
+    if (!key.startsWith("field.")) continue;
+    if (Array.isArray(v) && v.length > 0) filters[key] = v as readonly string[];
+    else if (typeof v === "string" && v !== "") filters[key] = [v];
+  }
+
   return {
     ...filters,
     ...(search.q !== undefined ? { query: search.q } : {}),
@@ -108,6 +119,16 @@ export function buildQueryString(params: TasksQueryParams & { offset?: number })
   // effective query (`type` maps to task_type server-side).
   for (const key of FILTER_KEYS) {
     const v = params[key];
+    if (Array.isArray(v) && v.length > 0) sp.set(key, v.join(","));
+  }
+  // Custom fields, by shape rather than by name — the set is
+  // per-workspace, so a fixed key list cannot carry them. Both halves
+  // of the round trip need this: the parser above and the serializer
+  // here. Missing it in *either* leaves the chip and the URL param
+  // showing while the result set never narrows (LST-16), which is the
+  // failure that case was rewritten to catch.
+  for (const [key, v] of Object.entries(params)) {
+    if (!key.startsWith("field.")) continue;
     if (Array.isArray(v) && v.length > 0) sp.set(key, v.join(","));
   }
   return sp.toString();

@@ -3761,3 +3761,130 @@ test.describe("The last of M1.2", () => {
     await expect(page.locator("tbody")).not.toContainText("Doomed");
   });
 });
+
+test.describe("LST — the filter bar (M1.3)", () => {
+  // @verifies LST-10
+  test("LST-10: chips show labels, remove one facet each, and leave no empty params", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "One", fields: { status: "in_progress", priority: "high" } },
+      { title: "Two" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list?status=in_progress&priority=high`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    // Human labels, never the raw key. The facet name and the value
+    // are separate spans, so match on the remove button's own label.
+    const chip = (facet: string, value: string) =>
+      page.getByRole("button", { name: `Remove ${facet} ${value}` });
+    await expect(chip("Status", "In progress")).toBeVisible();
+    await expect(chip("Priority", "High")).toBeVisible();
+    await expect(page.locator("body")).not.toContainText("in_progress");
+
+    // Removing one chip leaves the other intact.
+    await chip("Status", "In progress").click();
+    await expect(page).toHaveURL(/priority=high/);
+    await expect(page).not.toHaveURL(/status=/);
+
+    // And removing the last leaves no empty param behind.
+    await chip("Priority", "High").click();
+    await expect(page).not.toHaveURL(/priority=/);
+    await expect(page).not.toHaveURL(/[?&]\w+=(&|$)/);
+  });
+
+  // @verifies LST-12
+  test("LST-12: Show archived toggles the param on and off, and marks the rows", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([{ title: "Live" }, { title: "Gone" }]);
+    await tracker.run(["archive", String(seeded[1])]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page).not.toHaveURL(/archived/);
+
+    await page.getByRole("checkbox", { name: "Show archived" }).check();
+    await expect(page).toHaveURL(/archived=true/);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    // Marked, so an archived row is distinguishable from a live one.
+    await expect(
+      page.locator("tbody tr").filter({ hasText: "Gone" }),
+    ).toContainText("Archived");
+
+    // Off removes the param rather than writing archived=false.
+    await page.getByRole("checkbox", { name: "Show archived" }).uncheck();
+    await expect(page).not.toHaveURL(/archived/);
+  });
+
+  // @verifies LST-14
+  test("LST-14: a DSL query runs the same language as the CLI and round-trips", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Match", fields: { status: "in_progress", priority: "high" } },
+      { title: "Miss", fields: { status: "in_progress" } },
+    ]);
+    const q = "status = in_progress and priority = high";
+
+    await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent(q)}`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.locator("tbody")).toContainText("Match");
+
+    // The same query through the CLI returns the same set.
+    const cli = await tracker.run(["list", "--query", q]);
+    expect(cli).toContain("Match");
+    expect(cli).not.toContain("Miss");
+
+    // Reload re-runs it and the URL carries it verbatim, so the view
+    // is bookmarkable and shareable.
+    await page.reload();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`q=${encodeURIComponent(q).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+
+    // Every operator the CLI accepts is accepted here — no UI-only
+    // dialect, and nothing the CLI takes is rejected.
+    for (const expr of [
+      "status in (in_progress, backlog)",
+      "status not in (done)",
+      "title ~ Match",
+      "not (priority = high)",
+    ]) {
+      const res = await page.request.get(
+        `${tracker.baseURL}/api/tasks?q=${encodeURIComponent(expr)}`,
+      );
+      expect(res.status(), expr).toBe(200);
+    }
+  });
+
+  // @verifies LST-16
+  test("LST-16: a custom-field filter actually narrows the result set", async ({
+    page,
+    tracker,
+  }) => {
+    const cfg = path.join(tracker.root, ".loctt", "config", "workflow.yaml");
+    await writeFile(
+      cfg,
+      (await readFile(cfg, "utf8")).replace(
+        "custom_fields: []",
+        "custom_fields:\n  - key: team\n    label: Team\n    type: string\n"
+        + "    multi: false\n    searchable: false",
+      ),
+      "utf8",
+    );
+    const seeded = await tracker.seed([{ title: "Platform" }, { title: "Other" }]);
+    await tracker.run(["set", String(seeded[0]), "team", "platform"]);
+
+    await page.goto(`${tracker.baseURL}/list?field.team=platform`);
+
+    // Not merely that the param and the chip appear: the rows narrow.
+    // `tasksParamsFromSearch` stripped every `field.*` key, so this
+    // case passed while the filter did nothing.
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.locator("tbody")).toContainText("Platform");
+    await expect(page.locator("tbody")).not.toContainText("Other");
+  });
+});
