@@ -139,6 +139,32 @@ reproduce in isolation.
 **A summary line is not a verdict.** `Tests 1443 passed` has appeared
 above a `FAIL`. Grep for `FAIL`; zero is the only clean result.
 
+### The gate runs alone, in its own tree
+
+**Added after round 7 was abandoned mid-run.** The gate agent shared
+the main working tree with the session that was fixing things. Three
+commits landed underneath it, two of them rewriting the very tests it
+was auditing — so its suite results described a tree that no longer
+existed. It stopped rather than report them, which was right.
+
+It had also run `git stash` to get a clean tree for the suites, and
+that swallowed 45 lines of the coordinator's uncommitted work. The
+symptom is silent: `git status` reads clean, the reflog shows no
+checkout, because a stash is neither.
+
+Two rules, and the first is not optional:
+
+1. **Give the gate its own worktree, at a pinned SHA.** Tell it the
+   commit explicitly and have it verify with `git log --oneline -1`
+   before starting — worktrees are created from an old base by
+   default (see `known-gaps.md`). Pre-build it, because the agent may
+   not have permission to.
+2. **Commit everything before dispatching it**, whichever tree it
+   runs in. Uncommitted work near a gate agent is not safe.
+
+A gate verdict on a moving tree is worth nothing, and this branch has
+already lost rounds to that class of confusion.
+
 ### Half 2 — agentic
 
 A fresh agent drives a real browser against a real seeded tracker. It
