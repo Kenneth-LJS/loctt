@@ -59,3 +59,19 @@ Two rules learned from this repo's own history:
 
 `retries: 0` is set on purpose. A spec that needs a retry is flaky, and a
 flaky gate teaches an agent to re-run instead of fix.
+
+## Rebuilding before a spec run
+
+`npm run test:ui` builds everything first. Running Playwright directly
+does not, and **which build you need depends on what you changed**:
+
+| Changed | Rebuild with | Why |
+|---|---|---|
+| `apps/web/src/client/**` | `npm run build -w @loctt/web` | The SPA is served from `apps/web/dist/client` |
+| `apps/web/src/server/**` | `npm run build` (root) | The fixture runs `loctt ui` from `apps/cli/dist/index.js`, which **bundles** the server via tsup — `tsc --build` alone does not update it |
+| `packages/core/**` | `npm run build` (root) | Same bundle |
+
+Getting this wrong is quiet rather than loud: the spec runs against
+the previous build and passes. It cost a round of "why does this
+mutation survive" on 2026-08-28, and it means a mutation test that
+does not rebuild proves nothing.

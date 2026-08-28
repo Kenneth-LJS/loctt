@@ -2802,7 +2802,12 @@ test.describe("LST — drift, unknown keys, and staleness (M1.2)", () => {
 });
 
 test.describe("ERR — one corrupt task file (M1.2)", () => {
-  // @verifies ERR-9
+  // @verifies ERR-9, LST-48
+  //
+  // LST-48 is the same scenario stated from the list's side: every
+  // other task lists, the failure is surfaced with the offending
+  // file's path, and the footer total is honest about what it
+  // counted — 2 of 2, against three directories on disk.
   test("ERR-9: the other rows load, and the bad file is named with its parse error", async ({
     page,
     tracker,
