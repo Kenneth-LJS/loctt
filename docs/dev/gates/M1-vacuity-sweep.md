@@ -20,12 +20,12 @@ misdiagnoses in this repo.
 |---|---|---|---|
 | XS | 20/20 | 1 | 1 |
 | MSL/VUE/ONB/TSK | 24/24 | 5 | — |
+| SHL | 25/25 | 2 | 1 |
 | BLK | — | — | — |
 | LST | — | — | — |
-| SHL | — | — | — |
 | ERR | — | — | — |
 
-**6 vacuous of 44 checked so far.**
+**9 vacuous of 69 checked so far.**
 
 ---
 
@@ -223,3 +223,88 @@ Two failure shapes have now been seen repeatedly:
 A third, narrower: **seeding that cannot discriminate** (MSL-7) —
 where every seeded row satisfies the filter, so filtered and
 unfiltered results are identical.
+
+---
+
+## SHL — 25 of 25 checked, 3 vacuous (one partial)
+
+### SHL-26 — VACUOUS
+
+"A fresh navigation starts at the top."
+`tests/ui/flow-app-shell.spec.ts:193`
+
+**Mutation:** `useMainScrollRestoration.ts:62` forced to
+`el.scrollTop = 800` on **every** navigation, re-applied across 1.5s —
+the exact opposite of the case. Still passed.
+
+**Why.** A probe found the `/board` pane has
+`scrollHeight: 672, clientHeight: 672` — **zero scrollable range**. So
+`scrollTop` is pinned at 0 whatever the app does, and
+`toBeLessThan(100)` cannot fail.
+
+This is the ERR-2 archetype exactly: the assertion is satisfied by an
+environmental accident rather than by the code.
+
+### SHL-6 — VACUOUS
+
+"Each built-in filter's URL reproduces its result set."
+`tests/ui/flow-list.spec.ts:5123`
+
+**Mutation:** the filter's URL contribution stripped at
+`Sidebar.tsx:438`. Still passed. A probe under the mutation printed
+`url=/list rows=3 aria-current=page` — the filter entirely inert, all
+three rows showing, and all three assertions holding.
+
+Each assertion is toothless on its own terms:
+
+- `Showing 1–\d+ of \d+` matches any count
+- `aria-current` comes from TanStack matching the **path** `/list`, so
+  it ignores search params — which is where the filter lives
+- the fresh-tab check compares the broken page's row count against a
+  tab broken identically. **Self-consistency that holds precisely
+  when both sides are wrong.**
+
+### SHL-8 — PARTIALLY VACUOUS
+
+`tests/ui/flow-list.spec.ts:5109`:
+
+```ts
+await expect(row).toHaveAttribute("aria-disabled", /true|/);
+```
+
+The regex has an **empty alternative**. `/true|/` matches any string
+at all — `"false"`, `"banana"`, anything. Verified directly.
+
+The test survives only on its separate `title` assertion, so the
+A11Y-31 claim it advertises asserts nothing.
+
+**Swept the suite for the same shape** (`/x|/` in an attribute or text
+matcher): this is the only occurrence.
+
+### Healthy (22)
+
+SHL-1 (×2), 2, 4, 5, 7, 9, 11, 15, 16 (×2), 24, 25, 27, 28, 29 (×2),
+30, 31, 41, 42, 43.
+
+The group flagged as highest-risk — the shell's degraded states — is
+**genuinely solid**. SHL-41 and SHL-11 both went red against the real
+ERR-1 conflation (making an unreachable server render "No tracker here
+yet"), and SHL-43 caught the same conflation one layer down. SHL-29
+went red when the theme script was made non-blocking, so it tests
+first paint rather than eventual state.
+
+### Two mutations that were inert, not survived
+
+SHL-30 and SHL-42 each needed a second mutation before going red, and
+the agent verified *why* rather than scoring the first attempt as a
+pass:
+
+- SHL-30 needed the 404 to auto-redirect, not merely lose its pathname
+- SHL-42's root `errorComponent` never fired until the child `/list`
+  boundary that caught the throw first was also removed
+
+**This distinction is the sweep's main methodological risk.** An inert
+mutation and a survived mutation both look like a green test. The
+agent also caught itself checking a stale bundle path on its first
+SHL-26 attempt, and re-verified against the minified bundle
+thereafter — which is what grounds the SHL-26 and SHL-6 findings.
