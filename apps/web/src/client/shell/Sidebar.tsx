@@ -332,6 +332,32 @@ function GroupError({
  * and pushes everything below it down. Saying "no labels yet" costs one
  * line and answers both.
  */
+/**
+ * Whether the server has ever answered this query.
+ *
+ * The companion to `hasFailed`, and the same idea: ask what the query
+ * has *ever* done, never what it is doing right now.
+ *
+ * A group whose empty state is gated only on `items.length === 0`
+ * claims "No projects yet" from its very first render — before
+ * anything has been asked, let alone answered. Measured: ~24ms on a
+ * healthy cold load, and **a full second** (1089–2098ms) on a cold
+ * load against a dead server, sitting under the unreachable banner
+ * while it says the tracker is empty.
+ *
+ * `hasFailed` cannot cover that window, and honestly so: nothing has
+ * failed yet. Nothing has *settled* yet. That is a third state, and
+ * P6 says empty, loading, partial and broken are four designed states
+ * rather than one — so "we have not asked" must not render as "there
+ * is nothing".
+ *
+ * `dataUpdatedAt` survives `fetchState`'s reset, exactly as
+ * `errorUpdatedAt` does.
+ */
+function hasAnswered(q: { dataUpdatedAt: number }): boolean {
+  return q.dataUpdatedAt > 0;
+}
+
 function GroupEmpty({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
   if (collapsed) return null;
   return (
@@ -364,7 +390,7 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
       {failed && (
         <GroupError collapsed={collapsed} error={projects.error} onRetry={() => { void projects.refetch(); }} />
       )}
-      {!failed && items.length === 0 ? (
+      {!failed && hasAnswered(projects) && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>No projects yet</GroupEmpty>
       ) : null}
       {items.map(p => {
@@ -550,7 +576,7 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
       {failed && (
         <GroupError collapsed={collapsed} error={milestones.error} onRetry={() => { void milestones.refetch(); }} />
       )}
-      {!failed && items.length === 0 ? (
+      {!failed && hasAnswered(milestones) && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>No milestones yet</GroupEmpty>
       ) : null}
       {items.map(m => (
@@ -584,7 +610,7 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
       {failed && (
         <GroupError collapsed={collapsed} error={sprints.error} onRetry={() => { void sprints.refetch(); }} />
       )}
-      {!failed && items.length === 0 ? (
+      {!failed && hasAnswered(sprints) && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>No active sprints</GroupEmpty>
       ) : null}
       {items.map(s => (
@@ -620,7 +646,7 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
       {failed && (
         <GroupError collapsed={collapsed} error={labels.error} onRetry={() => { void labels.refetch(); }} />
       )}
-      {!failed && items.length === 0 ? (
+      {!failed && hasAnswered(labels) && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>No labels yet</GroupEmpty>
       ) : null}
       {items.map(l => (
@@ -655,7 +681,7 @@ function RecentsGroup({ collapsed }: { collapsed: boolean }) {
       {/* `!failed` matters: on a failed fetch `items` is empty too, and
           rendering the empty copy beside the alert makes two
           contradictory claims about the same data (ERR-1, ONB-34). */}
-      {!failed && items.length === 0 ? (
+      {!failed && hasAnswered(recents) && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>
           No recent tasks — this fills in as you open them
         </GroupEmpty>
