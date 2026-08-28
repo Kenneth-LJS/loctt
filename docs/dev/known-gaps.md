@@ -422,3 +422,41 @@ footer came to report "0 tasks" during an outage.
 If a fifth bug appears in this file, check it against this list
 before diagnosing it fresh. Three of the four were diagnosed as
 unrelated at first.
+
+## A recovery test passes on retry backoff, not on recovery
+
+**Established 2026-08-29, by tracing every `/api/` fetch to its
+dispatching frame.**
+
+The ERR-2 spec kills the server, waits for the unreachable banner,
+brings the server back, and asserts the banner clears unattended.
+It passed with the recovery poll disabled entirely — which made the
+poll look irrelevant and produced a written claim, in two files,
+that "some render- or route-driven refetch gets there first". That
+claim was false.
+
+What actually happened: when the server returns while retry backoff
+is still sleeping, the pending retries wake and succeed. The stack
+under those fetches is the retryer's own
+`sleep(delay).then(() => run())`, not a timer and not an observer.
+Thirteen requests fire inside 790ms and none of them are evidence of
+a recovery path — they are one already-in-flight attempt per query,
+finally getting an answer.
+
+**The fix is a quiesce.** Wait past the backoff before flipping the
+server back on. With eight seconds of quiet first:
+
+- poll disabled → banner still up at 20s (**fails**)
+- poll restored → clears in ~2.7s, and the first request after the
+  flip is dispatched from query-core's `#updateRefetchInterval`
+  timer
+
+So the poll *is* the mechanism, and everything else that fires in
+that moment is downstream of it: once the poll heals `["info"]`,
+`AppBootstrap`'s gate reopens and the components inside it mount,
+each dispatching its own `onSubscribe` fetch.
+
+The general rule, for any test that restores a broken dependency:
+**an outage has a tail.** If the restore lands inside that tail, the
+test measures the tail. Quiesce first, or the assertion is about
+Playwright's timing rather than the app's behaviour.

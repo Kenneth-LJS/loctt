@@ -23,13 +23,16 @@ import { ApiError } from "../api/client.ts";
  * a second of the server returning, with no reload and no click
  * (ERR-2's last bullet).
  *
- * The M1 gate (F2) claimed the errored-query poll never runs and that
- * this comment's premise was therefore false. The poll does run — six
- * `/api/info` requests in a clean 20-second window — but it is *not*
- * what recovers this: with every poll disabled, thirteen requests
- * still fire within 790ms of the server returning. Some render- or
- * route-driven refetch gets there first. The behaviour is right; the
- * mechanism is not the one this comment used to name.
+ * The M1 gate (F2) claimed the errored-query poll never runs. It does,
+ * and it is what recovers this: traced through query-core to the
+ * `#updateRefetchInterval` timer, one frame under the `fetch` that
+ * heals `["info"]`. Disable that poll and the banner is still up
+ * twenty seconds after the server returns.
+ *
+ * The recovery is *only* the poll. Everything else that fires in the
+ * same moment — the sidebar counts, the list — is downstream: those
+ * are `onSubscribe` fetches from components that mount once
+ * `AppBootstrap`'s gate reopens on the healed `["info"]`.
  */
 export function ServerUnreachableBanner() {
   const queryClient = useQueryClient();

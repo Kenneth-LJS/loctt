@@ -1028,26 +1028,29 @@ test.describe("ERR — recovery when the server comes back", () => {
    *
    * The M1 gate's F2 claimed an errored query never runs its 5-second
    * recovery poll, so recovery waits on the 60-second staleness
-   * interval. **The user-visible claim does not reproduce**: the app
-   * recovers unattended in under a second.
+   * interval. **It does not reproduce.** The poll runs, and the poll
+   * is what recovers the app — traced to query-core's
+   * `#updateRefetchInterval` timer, one frame under the `fetch` that
+   * heals `["info"]`. The gate's mechanism claim was wrong for the
+   * same reason: `onQueryUpdate()` calls `#updateTimers()`, so the
+   * transition into `error` re-arms the interval rather than
+   * cancelling it.
    *
-   * Two separate measurements, both against the built app:
+   * **The quiesce below is the whole test.** Without it this passes
+   * with the poll disabled entirely, and an earlier version shipped
+   * exactly that way. When the server returns while retry backoff is
+   * still sleeping, those pending retries wake and succeed — traced
+   * to the retryer's own `sleep(delay).then(run)`, not to any
+   * recovery policy. Thirteen requests inside 790ms, none of them
+   * evidence of anything. Waiting past the backoff is what makes the
+   * next request attributable to recovery.
    *
-   * - The poll *does* run. Six `/api/info` requests in a clean
-   *   20-second window; a 60s-only interval would give zero. The
-   *   gate's mechanism claim was also wrong — `onQueryUpdate()` calls
-   *   `#updateTimers()`, so the error transition re-arms the interval.
-   * - But the poll is **not** what this test measures. With the error
-   *   poll at 120s, the staleness interval at 120s and
-   *   `refetchOnWindowFocus` off, thirteen requests still fire within
-   *   790ms of the server returning and the banner still clears. Some
-   *   render- or route-driven refetch gets there first.
+   * Mutation-checked both ways, against the built app:
    *
-   * So this asserts exactly ERR-2's own words — "the UI recovers on
-   * its own when the server comes back" — and deliberately does not
-   * assert *which* mechanism does it. An earlier version implied the
-   * poll; it passed with every poll disabled, which is worse than not
-   * testing it.
+   * - poll disabled, quiesce 8s → **fails** (banner still up at 20s)
+   * - poll disabled, no quiesce → passes, on backoff alone
+   * - poll restored, quiesce 8s → passes, 6 requests, first one
+   *   dispatched from the interval timer
    *
    * Pinned because a refutation nobody can re-run is just an
    * assertion, and this one contradicts a gate report.
@@ -1074,13 +1077,20 @@ test.describe("ERR — recovery when the server comes back", () => {
     const banner = page.locator("[data-server-unreachable]");
     await expect(banner).toBeVisible({ timeout: 15_000 });
 
+    // Let every retry finish sleeping. Retries use a capped
+    // exponential backoff and there is one attempt per query, so this
+    // is far longer than needed — the cost is eight seconds, and what
+    // it buys is that the next request cannot be a retry that was
+    // already in flight when the server returned.
+    await page.waitForTimeout(8_000);
+
     // The server comes back. Nothing is clicked, nothing is reloaded,
-    // and no queued request is released — the app has to ask again on
-    // its own.
+    // no queued request is released, and nothing is still retrying —
+    // the app has to ask again entirely on its own.
     down = false;
 
-    // Well inside the 60s staleness interval. If the error poll were
-    // dead, as the gate's F2 claimed, this would time out.
+    // Twenty seconds is four poll intervals and well inside the 60s
+    // staleness window, so only the recovery poll can close this.
     await expect(banner).toBeHidden({ timeout: 20_000 });
     await expect(page.locator("tbody tr")).toHaveCount(2);
   });
