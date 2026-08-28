@@ -3229,3 +3229,174 @@ test.describe("MSL — label pills (M1.2)", () => {
     expect(width).toBeLessThan(200);
   });
 });
+
+test.describe("LST — columns, staleness, unreachable (M1.2)", () => {
+  // @verifies LST-6
+  test("LST-6: per-user list_columns decide which columns render, and in what order", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    // A subset, in a non-default order.
+    const users = path.join(tracker.root, ".loctt", "users");
+    const id = String((await readdir(users))[0]);
+    await writeFile(
+      path.join(users, id, "settings.yaml"),
+      "list_columns:\n  - title\n  - key\n",
+      "utf8",
+    );
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    const headers = (await page.locator("thead th").allInnerTexts())
+      .map(h => h.replace(/[▾▴\s]/g, ""));
+    // Only the listed columns, in the listed order. The first cell is
+    // the select-all checkbox.
+    expect(headers.filter(Boolean)).toEqual(["Title", "Key"]);
+  });
+
+  // @verifies LST-36
+  test("LST-36: a stale row never pushes its old value back to disk", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([{ title: "Target" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    // The CLI changes a field the open list has not seen.
+    await tracker.run(["set", String(seeded[0]), "priority", "high"]);
+
+    // Acting on the stale row must not carry the old priority along.
+    let sentFields: string[] = [];
+    await page.route(/\/api\/tasks\/bulk\/set/, async route => {
+      const body = route.request().postDataJSON() as {
+        changes: { field: string }[];
+      };
+      sentFields = body.changes.map(c => c.field);
+      await route.continue();
+    });
+    await page.locator("tbody input[type=checkbox]").first().check();
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "Done" }).click();
+    await expect(
+      page.getByRole("region", { name: "Bulk actions" }).getByRole("status"),
+    ).toContainText("1 task updated");
+
+    // Only the field the user changed goes on the wire — a
+    // read-modify-write of the whole row would have reverted priority.
+    expect(sentFields).toEqual(["status"]);
+    expect(await tracker.run(["show", String(seeded[0])])).toContain("high");
+  });
+
+  // @verifies LST-47
+  test("LST-47: an unreachable API is reported distinctly from an empty tracker", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.route(/\/api\/tasks(\?|$)/, route => route.abort("connectionrefused"));
+    await page.goto(`${tracker.baseURL}/list`);
+
+    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 15_000 });
+    // Never the empty-tracker copy — a load failure must not read as
+    // data loss.
+    await expect(page.getByText(/No tasks yet/i)).toHaveCount(0);
+    await expect(page.getByText(/match these filters/i)).toHaveCount(0);
+  });
+});
+
+test.describe("ERR — the sweeps (M1.2)", () => {
+  // @verifies ERR-39
+  test("ERR-39: every failed write and read produces a visible surface", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }, { title: "Two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Every write path on this view, with the server failing.
+    await page.route(/\/api\/tasks\/bulk\//, route => route.abort("failed"));
+    await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+
+    const status = () => page.getByRole("region", { name: "Bulk actions" }).getByRole("status");
+
+    // 1. Set a field.
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "Done" }).click();
+    await expect(status()).toContainText(/could not|Nothing was/i, { timeout: 20_000 });
+
+    // 2. Archive.
+    await page.getByRole("button", { name: "Archive", exact: true }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: /could not|Nothing was/i }).first(),
+    ).toBeVisible({ timeout: 20_000 });
+
+    // 3. Move.
+    await tracker.run(["project", "create", "Ops", "--prefix", "OPS"]);
+    await page.reload();
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+    await page.getByRole("button", { name: "Move to project" }).click();
+    await page.getByRole("menu", { name: "Move to project" })
+      .getByRole("menuitem", { name: "Ops" }).click();
+    await expect(status()).toContainText(/could not|Nothing was/i, { timeout: 20_000 });
+  });
+
+  // @verifies ERR-40
+  test("ERR-40: no success is claimed for a rejected write, and disk agrees", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([{ title: "One" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    await page.route(/\/api\/tasks\/bulk\/set/, route => route.abort("failed"));
+    await page.locator("tbody input[type=checkbox]").first().check();
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "Done" }).click();
+
+    const status = page.getByRole("region", { name: "Bulk actions" }).getByRole("status");
+    await expect(status).toContainText(/could not|Nothing was/i, { timeout: 20_000 });
+    // No success claim of any kind.
+    await expect(status).not.toContainText(/1 task updated/);
+
+    // And what the UI implied matches disk: no optimistic state
+    // survived the failure.
+    const shown = await tracker.run(["show", String(seeded[0])]);
+    expect(shown.toLowerCase()).not.toContain("done");
+  });
+
+  // @verifies ERR-42
+  test("ERR-42: error copy names things the user recognises, not internals", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.route(/\/api\/tasks(\?|$)/, route => route.abort("failed"));
+    await page.goto(`${tracker.baseURL}/list`);
+
+    const alert = page.getByRole("alert");
+    await expect(alert).toBeVisible({ timeout: 20_000 });
+    const copy = await alert.innerText();
+
+    // None of the vocabulary the user has never seen.
+    for (const jargon of [
+      "mutation", "query key", "hydration", "route handler", "serializer",
+      "ZodError", "ENOENT", "EACCES",
+    ]) {
+      expect(copy.toLowerCase()).not.toContain(jargon.toLowerCase());
+    }
+    // And it says what was being done, in a sentence or two before any
+    // expandable detail.
+    expect(copy).toMatch(/tasks/i);
+    expect(copy.split(/[.!?]/).filter(s => s.trim().length > 0).length)
+      .toBeLessThanOrEqual(4);
+  });
+});
