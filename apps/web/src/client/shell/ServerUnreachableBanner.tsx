@@ -71,7 +71,18 @@ export function ServerUnreachableBanner() {
 
   return (
     <div
-      role="alert"
+      // `status`, not `alert`. SHL-41 asks for "a persistent, visible
+      // state (banner or blocking overlay)" and never for an alert
+      // role — and `alert` is wrong for it twice over: this is
+      // standing context rather than an interruption, and it fires
+      // alongside whatever the failing view is already saying, so a
+      // screen reader user would get two simultaneous assertive
+      // announcements for one event.
+      //
+      // It also made every spec that kills the server ambiguous:
+      // `getByRole("alert")` resolved to this banner *and* the view's
+      // own error state, which broke twenty of them at once.
+      role="status"
       data-server-unreachable="true"
       className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-danger-fg/20 bg-danger-bg px-4 py-2 text-[13px] text-danger-fg"
     >
