@@ -54,13 +54,36 @@ export function ServerUnreachableBanner() {
       let lastFailure = 0;
       let lastSuccess = 0;
       for (const q of queries) {
+        // A query that has been answered is evidence the server was
+        // alive *at that moment* — recorded, then compared by time
+        // below. It is emphatically not a reason to stop looking at
+        // this query's later failures.
+        //
+        // It used to `continue` here, and that is the whole of the M1
+        // round-6 F1 blocker: with the page open every query has
+        // succeeded, so every query was skipped, so no failure could
+        // ever be counted. Kill the server with the app open and
+        // nothing said so — 50 stale rows under an authoritative
+        // "Showing 1–50 of 63". Seven UI specs missed it because all
+        // of them `page.reload()` first, and a reload throws away the
+        // cache that creates the condition.
         if (q.state.dataUpdatedAt > 0) {
-          // This query has been answered at some point, so the server
-          // exists as far as it is concerned.
           lastSuccess = Math.max(lastSuccess, q.state.dataUpdatedAt);
-          continue;
         }
-        if (q.state.status !== "error") continue;
+
+        // **Never ask what the status is right now.** `fetchState`
+        // resets a data-less query to `status: "pending", error: null`
+        // on every fetch, so a query that is failing and retrying
+        // reads as "pending" for the whole attempt — measured here as
+        // `status: "pending", fetchStatus: "fetching",
+        // errorUpdatedAt > 0` while the server was definitively dead.
+        //
+        // A `status !== "error"` guard therefore drops exactly the
+        // failures this banner exists to notice. `errorUpdatedAt`
+        // survives the reset; it is the honest question, and it is the
+        // same fix `AppBootstrap` carries for the same reason. This is
+        // the fifth bug traced to that one trap — see known-gaps.md.
+        if (q.state.errorUpdatedAt === 0) continue;
         const err = q.state.error;
         // An envelope means the server answered — a server error, not
         // an absent server, and it belongs to the view that asked.

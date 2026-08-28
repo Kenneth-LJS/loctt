@@ -522,3 +522,41 @@ production behind a test that could not see it.
 Fix is in `buildChips`: when a value does not resolve to an option,
 mark the chip as dangling and render it as such, rather than falling
 through to the raw value.
+
+## SHL-41's "no reload" case has no UI test, and three attempts failed
+
+**Established 2026-08-29 while fixing the M1 round-6 F1 blocker.**
+
+The blocker: with the page open and the server killed, the banner
+never appeared — the state every real outage produces, because with
+the app loaded every query already has data. Fixed in
+`ServerUnreachableBanner.tsx`, and **proved by the unit test**
+"speaks when an answered query then fails", which goes red when either
+half of the fix is reverted.
+
+What does *not* exist is a Playwright test for it. Three attempts, all
+vacuous, all confirmed vacuous by mutation rather than assumed:
+
+1. **Sidebar link click.** Navigates to `?project=…` — a *new* query
+   key with no cached data. Such a query reaches `status: "error"`
+   normally, so the broken code caught it too. Passed with both halves
+   of the fix reverted.
+2. **Column-header sort click.** Fires no request at all; the banner
+   never appeared, with or without the fix.
+3. **Synthetic `visibilitychange`.** Does not trigger a refetch under
+   Playwright — the banner never appeared even *with* the fix, so it
+   would have been a false failure rather than a false pass.
+
+The difficulty is specific: the test must make the app re-issue a
+query that **already holds data**, without reloading (which clears the
+cache and destroys the condition) and without navigating (which
+creates a fresh key). Nothing tried does that reliably.
+
+This is why the original blocker survived seven outage specs. All
+seven use `page.route()` plus `page.reload()`, and the reload empties
+the cache — so they test the one state a real outage never reaches.
+
+**If you write this test:** mutate it both ways before believing it.
+Revert `errorUpdatedAt === 0` back to `status !== "error"`, and
+restore the `continue` after `lastSuccess`. If it still passes, it is
+measuring a fresh query, not this case.
