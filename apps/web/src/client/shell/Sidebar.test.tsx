@@ -8,7 +8,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Sidebar } from "./Sidebar.tsx";
@@ -60,6 +60,17 @@ let SLOW_COUNTS = false;
 /** Fails the count queries, for the unavailable-badge case. */
 let FAILED_COUNTS = false;
 
+/** Overrides the workspace label, per-test (ONB-23, SHL-19). */
+let CWD = "~/PDev/loctt";
+
+/** Makes /api/views fail, per-test (SHL-32). */
+let FAIL_VIEWS = false;
+
+/** Saved views returned by /api/views, per-test (SHL-32). */
+let VIEWS: { id: string; name: string; query: string }[] = [
+  { id: "v_mine", name: "My open bugs", query: "x" },
+];
+
 const INFO: TrackerInfoResponse = {
   exists: true,
   taskCount: 7,
@@ -69,6 +80,11 @@ const INFO: TrackerInfoResponse = {
   cwd: "~/PDev/loctt",
   today: "2026-08-14",
 };
+
+/** `INFO` with the per-test workspace label applied. */
+function info(): TrackerInfoResponse {
+  return { ...INFO, cwd: CWD };
+}
 
 /** Routes a request path to a canned JSON body for the stubbed fetch. */
 function routeFetch(path: string): unknown {
@@ -83,7 +99,7 @@ function routeFetch(path: string): unknown {
     };
   }
   if (path.startsWith("/api/views")) {
-    return { queries: [{ id: "v_mine", name: "My open bugs", query: "x" }] };
+    return { queries: VIEWS };
   }
   if (path.startsWith("/api/milestones")) {
     if (EMPTY_CONFIG) return { items: [], total: 0, offset: 0, limit: 100 };
@@ -138,6 +154,9 @@ function stubFetch() {
     // resolving — but the abort signal must still be honoured, or the
     // client's deadline has nothing to act on and the test would be
     // measuring the mock rather than the code.
+    if (FAIL_VIEWS && raw.includes("/api/views")) {
+      return Promise.reject(new TypeError("Failed to fetch"));
+    }
     if (SLOW_COUNTS && raw.includes("limit=0")) {
       return new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener(
@@ -179,7 +198,7 @@ async function renderSidebarAt(pathname: string, search: Record<string, unknown>
     path: "/list",
     validateSearch: (s: Record<string, unknown>) => s,
     component: () => (
-      <Sidebar collapsed={false} info={INFO} currentUserId="u_ken" today="2026-06-08" />
+      <Sidebar collapsed={false} info={info()} currentUserId="u_ken" today="2026-06-08" />
     ),
   });
   const router = createRouter({
@@ -211,6 +230,10 @@ afterEach(() => {
   EFFECTIVE_DEFAULT = undefined;
   PRIORITIES = undefined;
   WORKFLOW_STATUSES = [];
+  CWD = "~/PDev/loctt";
+  VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+  FAIL_VIEWS = false;
+  window.localStorage.clear();
   TASK_TOTAL = 3;
   EMPTY_CONFIG = false;
   SLOW_COUNTS = false;
@@ -656,4 +679,140 @@ describe("Sidebar count badges that never arrive", () => {
     expect(link.getAttribute("href")).toContain("/list");
   });
 
+});
+
+/**
+ * @verifies ONB-23
+ *
+ * The server abbreviates to the last two segments, but two long
+ * directory names still produce a long label — which is the state
+ * this case describes. The footer has to absorb it without widening
+ * the column or pushing Settings out.
+ */
+describe("Sidebar footer with a very long workspace label", () => {
+  it("truncates in place and keeps Settings reachable", async () => {
+    // ~200 characters, of the shape `displayPath` actually emits.
+    CWD = `~/${"deeply-nested-project-directory".repeat(3)}/${"another-long-segment-name".repeat(3)}`;
+    expect(CWD.length).toBeGreaterThan(150);
+
+    await renderSidebarAt("/list");
+
+    const label = await screen.findByText(CWD);
+    // Truncated by CSS rather than wrapped: one line, ellipsis.
+    expect(label.className).toContain("truncate");
+    // The full label is available on hover.
+    expect(label.getAttribute("title")).toBe(CWD);
+
+    // Settings is beside it, not pushed out of the footer.
+    const settings = screen.getByText("Settings").closest("a") as HTMLAnchorElement;
+    expect(settings.getAttribute("href")).toContain("/settings/");
+    // And it is outside the scrolling region, so it cannot scroll away.
+    const scroller = document.querySelector('[data-sidebar-scroll="true"]');
+    expect(scroller?.contains(settings)).toBe(false);
+  });
+});
+
+/**
+ * @verifies SHL-32
+ *
+ * "Delete a pinned saved view from the config while the UI is open,
+ * then refresh." `/api/views` simply omits it, so the only way to
+ * notice is to remember what was there — and the memory has to
+ * survive the refresh, which is the action that reveals the problem.
+ */
+describe("Sidebar with a saved view deleted from queries.yaml", () => {
+  it("explains the removal inline, naming the view, without an alert", async () => {
+    // First load: the view exists and is remembered.
+    VIEWS = [
+      { id: "v_mine", name: "My open bugs", query: "x" },
+      { id: "v_gone", name: "Release blockers", query: "y" },
+    ];
+    await renderSidebarAt("/list");
+    expect(await screen.findByText("Release blockers")).toBeTruthy();
+    cleanup();
+
+    // The user edits queries.yaml and refreshes.
+    VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+    await renderSidebarAt("/list");
+
+    const notice = await screen.findByText(/Release blockers.*was removed/);
+    expect(notice.textContent).toContain("queries.yaml");
+    // An explanation, not an error: no toast, no alert role.
+    expect(screen.queryByRole("alert")).toBeNull();
+    // The rest of the group renders normally.
+    expect(screen.getByText("My open bugs")).toBeTruthy();
+    expect(await screen.findByRole("link", { name: /Overdue/ })).toBeTruthy();
+    // And the stale entry is not a broken link.
+    expect(screen.queryByRole("link", { name: /Release blockers/ })).toBeNull();
+  });
+
+  it("stays dismissed once dismissed", async () => {
+    VIEWS = [
+      { id: "v_mine", name: "My open bugs", query: "x" },
+      { id: "v_gone", name: "Release blockers", query: "y" },
+    ];
+    await renderSidebarAt("/list");
+    await screen.findByText("Release blockers");
+    cleanup();
+
+    VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+    await renderSidebarAt("/list");
+    const dismiss = await screen.findByLabelText(/Dismiss: Release blockers/);
+    fireEvent.click(dismiss);
+    expect(screen.queryByText(/Release blockers.*was removed/)).toBeNull();
+    cleanup();
+
+    // And it does not come back on the next load — dismissing removes
+    // the pin, so there is nothing left to explain.
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    expect(screen.queryByText(/Release blockers.*was removed/)).toBeNull();
+  });
+
+  it("keeps explaining across a second refresh, until dismissed", async () => {
+    VIEWS = [
+      { id: "v_mine", name: "My open bugs", query: "x" },
+      { id: "v_gone", name: "Release blockers", query: "y" },
+    ];
+    await renderSidebarAt("/list");
+    await screen.findByText("Release blockers");
+    cleanup();
+
+    VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+    await renderSidebarAt("/list");
+    expect(await screen.findByText(/Release blockers.*was removed/)).toBeTruthy();
+    cleanup();
+
+    // A second refresh without dismissing. The explanation has to
+    // survive: a user who reloads twice before reading it would
+    // otherwise never learn what happened, which is the drift P7
+    // forbids.
+    await renderSidebarAt("/list");
+    expect(await screen.findByText(/Release blockers.*was removed/)).toBeTruthy();
+  });
+
+  it("says nothing on a first-ever load, when nothing is remembered", async () => {
+    VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    expect(screen.queryByText(/was removed/)).toBeNull();
+  });
+
+  it("says nothing when the views request failed", async () => {
+    // A failed read is not a deletion. Reporting every remembered pin
+    // as removed because a request errored would be the same ERR-1
+    // conflation one layer up.
+    VIEWS = [
+      { id: "v_mine", name: "My open bugs", query: "x" },
+      { id: "v_gone", name: "Release blockers", query: "y" },
+    ];
+    await renderSidebarAt("/list");
+    await screen.findByText("Release blockers");
+    cleanup();
+
+    FAIL_VIEWS = true;
+    await renderSidebarAt("/list");
+    await screen.findByText("Saved filters");
+    expect(screen.queryByText(/was removed/)).toBeNull();
+  });
 });
