@@ -1,5 +1,7 @@
 import { focusManager, QueryClient } from "@tanstack/react-query";
 
+import { ApiError } from "./client.ts";
+
 /**
  * The longest a displayed value may be wrong, in milliseconds.
  *
@@ -20,8 +22,8 @@ export const STALENESS_WINDOW_MS = 60_000;
  *   list of projects / users / labels.
  * - refetchOnWindowFocus true — see STALENESS below.
  * - refetchInterval 60s — likewise.
- * - retry: 1 — one quick retry hides transient network blips during
- *   `npm run dev` reloads but doesn't mask real failures.
+ * - retry — one quick retry for failures a retry could fix; never
+ *   for a 4xx, which is the server's considered answer.
  * - networkMode "always" — see below. Load-bearing, not a tweak.
  *
  * ## STALENESS (XS-2)
@@ -100,7 +102,22 @@ export function createQueryClient(): QueryClient {
         // overnight shows current data on the frame the user returns
         // to it, before they can act on a stale value (XS-2).
         refetchOnWindowFocus: true,
-        retry: 1,
+        // One quick retry hides a transient blip — but only for
+        // failures a retry could plausibly fix. A 4xx is the server's
+        // considered answer: it will say the same thing next time.
+        //
+        // This is not only waste. The M1 gate found a schema-mismatched
+        // tracker (every route 409s, permanently) hung on a spinner
+        // forever, because the retries kept the query re-entering
+        // `fetching` and `isLoading` is `isPending && isFetching`.
+        // Retrying a permanent answer manufactured a perpetual
+        // in-flight state out of a settled one.
+        retry: (failureCount, error) => {
+          if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+            return false;
+          }
+          return failureCount < 1;
+        },
         // The server is on loopback, so `navigator.onLine` says nothing
         // about whether it is reachable.
         //
@@ -130,14 +147,29 @@ export function createQueryClient(): QueryClient {
         // Only while the query is in an error state: returning false
         // for a healthy query means a working tracker polls nothing,
         // and a broken one re-checks every few seconds until it heals.
-        refetchInterval: query =>
-          query.state.status === "error"
+        refetchInterval: query => {
+          // A 4xx will say the same thing next time, so polling it is
+          // not recovery — it is a hot loop. Measured against a
+          // schema-mismatched tracker (every route 409s): the query
+          // never settled, sitting at `pending`/`fetching` with
+          // `isInvalidated` permanently true and `errorUpdateCount`
+          // past 1,800, while `AppBootstrap` re-rendered 126 times a
+          // second showing only a spinner. That is the M1 gate's F3.
+          //
+          // Recovery polling exists for a server that might come
+          // back. A server that answered is already back.
+          const err: unknown = query.state.error;
+          if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
+            return false;
+          }
+          return query.state.status === "error"
             // Errored: poll fast, because this is the recovery path.
             ? 5_000
             // Healthy: the bounded staleness window XS-2 requires. A
             // `false` here makes the maximum time a value can be wrong
             // the lifetime of the tab.
-            : STALENESS_WINDOW_MS,
+            : STALENESS_WINDOW_MS;
+        },
         // `true`, per the docs' own recommendation for a
         // retry-until-it-recovers poll. With `false` the interval is
         // gated on `focusManager.isFocused()`, so recovery would only
