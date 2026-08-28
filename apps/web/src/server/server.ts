@@ -2259,7 +2259,7 @@ export function createWebApp(options: WebAppOptions) {
     // ascending and rejects anything else so a bad URL doesn't silently
     // sort the wrong way. When `sort` is absent we pass nothing and let
     // the view's own sort (or core's default) stand.
-    const sortField = url.searchParams.get("sort") ?? undefined;
+    const rawSort = url.searchParams.get("sort") ?? undefined;
     const dirParam = url.searchParams.get("dir");
     if (dirParam !== null && dirParam !== "asc" && dirParam !== "desc") {
       error(res, "Sort direction must be ascending or descending.", 400, {
@@ -2269,19 +2269,15 @@ export function createWebApp(options: WebAppOptions) {
       });
       return;
     }
-    // `sort` gets the same treatment as `dir` next door. An unknown
-    // field reads as `undefined` on every task, so the comparator
-    // returns 0 throughout and the list comes back in its original
-    // order — while the column header still shows the sort as applied.
-    // A typo silently reorders nothing and says nothing.
-    if (sortField !== undefined && !isSortableField(sortField)) {
-      error(res, `There is no field called "${sortField}" to sort by.`, 400, {
-        code: "validation_failed",
-        field: "sort",
-        recovery: { kind: "reload" },
-      });
-      return;
-    }
+    // An unknown sort field falls back to the default rather than
+    // erroring (LST-29): the list must still render, and a pasted URL
+    // with a typo is a bad sort, not a bad request. Dropping it here
+    // also stops it reaching the comparator, where it read as
+    // `undefined` on every task — the list came back in its original
+    // order while the header still showed the sort as applied.
+    const sortField = rawSort !== undefined && isSortableField(rawSort)
+      ? rawSort
+      : undefined;
     const direction: "asc" | "desc" = dirParam ?? "asc";
     const sort = sortField !== undefined
       ? [{ field: sortField, direction }]
