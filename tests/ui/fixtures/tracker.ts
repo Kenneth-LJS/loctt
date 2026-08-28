@@ -251,17 +251,26 @@ export const test = base.extend<{ tracker: TrackerFixture }>({
         const rawPrefix = /^\s{4}prefix:\s*(\S+)\s*$/m.exec(stateText)?.[1];
         const keyPrefix = prefix ?? rawPrefix?.replace(/^["']|["']$/g, "") ?? "BULK-";
         const sep = keyPrefix.endsWith("-") ? "" : "-";
+        // Start where the tracker's counter is, not at 1. Numbering
+        // from 1 unconditionally meant `seed` then `seedBulk` wrote
+        // duplicate keys onto disk — the counter advance below
+        // protects later `create`s but cannot protect the rows this
+        // call is writing.
+        const first = Number(/^\s{4}next_number:\s*(\d+)\s*$/m.exec(stateText)?.[1] ?? "1");
         const stamp = "2026-01-01T00:00:00.000Z";
         await Promise.all(
           Array.from({ length: count }, async (_unused, i) => {
             // Monotonic, unique, and 26 chars — enough to satisfy the
             // readers without pulling ulid() into the fixture.
-            const id = `01M${String(i).padStart(23, "0")}`;
+            const n = first + i;
+            // Unique across calls as well as within one: two
+            // `seedBulk`s on the same tracker must not collide either.
+            const id = `01M${String(n).padStart(23, "0")}`;
             const dir = path.join(root, ".loctt", "tasks", id);
             await mkdir(dir, { recursive: true });
             await writeFile(
               path.join(dir, "task.md"),
-              `---\nid: ${id}\nkey: ${keyPrefix}${sep}${String(i + 1)}\n`
+              `---\nid: ${id}\nkey: ${keyPrefix}${sep}${String(n)}\n`
               + `title: Bulk task ${String(i + 1)}\ncreated_at: ${stamp}\n`
               + `updated_at: ${stamp}\nproject: ${projectId}\nstatus: backlog\n---\n`,
               "utf8",
@@ -279,7 +288,7 @@ export const test = base.extend<{ tracker: TrackerFixture }>({
           stateText.replace(
             /^(\s{4}next_number:\s*)(\d+)\s*$/m,
             (_m, head: string, current: string) =>
-              `${head}${String(Math.max(Number(current), count + 1))}`,
+              `${head}${String(Math.max(Number(current), first + count))}`,
           ),
           "utf8",
         );

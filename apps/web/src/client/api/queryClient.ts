@@ -3,6 +3,35 @@ import { focusManager, QueryClient } from "@tanstack/react-query";
 import { ApiError } from "./client.ts";
 
 /**
+ * Whether asking again could plausibly give a different answer.
+ *
+ * The distinction is the server's *code*, not its status class. A
+ * first cut tested `status >= 400 && status < 500` and got two things
+ * wrong: `conflict` is a 409 that BLK-42 says to wait out ("retrying
+ * after the lock clears succeeds"), and 408/429 are retryable by
+ * definition. Meanwhile a `config_invalid` will say the same thing
+ * every time until the user edits the file.
+ *
+ * Unknown codes and envelope-less failures count as retryable: a
+ * failure we cannot classify is one we have no grounds to give up on,
+ * and an unreachable server has no envelope at all.
+ */
+function isSettledAnswer(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  const code = error.envelope?.code;
+  if (code === undefined) return false;
+  // The server considered the request and refused it. Asking again
+  // changes nothing until something on disk changes.
+  return (
+    code === "validation_failed"
+    || code === "not_found"
+    || code === "config_invalid"
+    || code === "schema_mismatch"
+    || code === "archived_reference"
+  );
+}
+
+/**
  * The longest a displayed value may be wrong, in milliseconds.
  *
  * Exported so the surface can *state* the number rather than describe
@@ -113,9 +142,7 @@ export function createQueryClient(): QueryClient {
         // Retrying a permanent answer manufactured a perpetual
         // in-flight state out of a settled one.
         retry: (failureCount, error) => {
-          if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
-            return false;
-          }
+          if (isSettledAnswer(error)) return false;
           return failureCount < 1;
         },
         // A settled error is an answer, and mounting a component is not
@@ -183,20 +210,17 @@ export function createQueryClient(): QueryClient {
         // for a healthy query means a working tracker polls nothing,
         // and a broken one re-checks every few seconds until it heals.
         refetchInterval: query => {
-          // A 4xx will say the same thing next time, so polling it is
-          // not recovery — it is waste. Recovery polling exists for a
-          // server that might come back; a server that answered 409 is
-          // already back.
+          // A settled answer will say the same thing next time, so
+          // polling it is not recovery — it is waste. Recovery polling
+          // exists for a server that might come back, or a lock that
+          // might clear.
           //
           // This is *not* what caused the M1 gate's F3 hang — that was
           // the mount-refetch loop `retryOnMount` above describes, and
           // this returning `false` did not stop it. Kept on its own
           // merits: without it, a permanently-4xx route is re-asked
           // every 5 seconds forever.
-          const err: unknown = query.state.error;
-          if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
-            return false;
-          }
+          if (isSettledAnswer(query.state.error)) return false;
           return query.state.status === "error"
             // Errored: poll fast, because this is the recovery path.
             ? 5_000

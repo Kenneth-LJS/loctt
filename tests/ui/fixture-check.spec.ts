@@ -27,3 +27,21 @@ test("seedBulk uses the tracker's prefix and leaves create working", async ({ tr
   expect(new Set(keys).size).toBe(keys.length);
   expect(keys.length).toBe(6);
 });
+
+test("seedBulk does not collide with tasks that already exist", async ({ tracker }) => {
+  // The trap the first version fell into: numbering from 1 regardless
+  // of what is already on disk, so these two calls wrote the same keys
+  // twice and the second set was unreachable.
+  await tracker.seed([{ title: "created first" }]);
+  await tracker.seedBulk(3);
+
+  const listed = await tracker.run(["list"]);
+  const keys = [...listed.matchAll(/^(T-\d+)\s/gm)].map(m => m[1]);
+  expect(keys.length).toBe(4);
+  expect(new Set(keys).size, `duplicate keys: ${keys.join(", ")}`).toBe(4);
+
+  // And `create` still gets a fresh one after both.
+  const created = await tracker.run(["create", "created last"]);
+  const key = /\b(T-\d+)\b/.exec(created)?.[1];
+  expect(keys).not.toContain(key);
+});
