@@ -61,7 +61,7 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 | 2 · Measure | ✅ | Measured (CLI 17/49, MCP 26/75) and the blocker it raised is **cleared**: both reference docs corrected to the shipped API, every example executed. See *Blocker 2, resolved*. |
 | 3 · Surface gaps | ✅ | **68 of 68 closed**: blockers 23/23, major 29/29, minor 16/16. Surface coverage 46 → 111. See *Phase 3 log*. |
 | 4 · Structural audit | ✅ | **Groups A–F closed, the six swallowed-error findings with them, and the nine recorded decisions implemented** (2026-08-17). The two items previously listed here as open are now closed too: the MCP comment tools' bare catches (`a0677b4`) and `HistoryEntry`'s missing schema (`4fb7e4b`). Group G moves to Phase 6, itemised at 55 rather than the "~79" carried before. |
-| 5 · UI build | 🔵 | M1 verified and round-5 gate findings all closed. **A re-gate is next** — it needs an agent that wrote none of the fixes. |
+| 5 · UI build | 🔵 | **M1 passed its gate at round 8** (0 blockers, 0 majors, 2 minors, both fixed). M2.1 is next. |
 | 6 · Cleanup | ⬜ | Group G's 55 items and the flakiness diagnosis. Deferred deliberately — see *The open items*. |
 
 ### ✅ Blocker — RESOLVED 2026-08-16: two views need tickets, not a scope cut
@@ -129,6 +129,8 @@ Written after every subsection commit, per
 |---|---|---|---|---|
 | M1.4 | 1 · entity pickers | `2ca36cb` | BLK-7, BLK-8 | Coverage 111 → 113. Six mutations; two of my tests were vacuous and a fresh review agent found two more. |
 | M1.4 | 2 · move to project | `e541456` | BLK-9, BLK-26, BLK-31 | Coverage 113 → 116. Found a live API defect and introduced one regression; review caught eight things. |
+| 🚦 M1 | **gate round 8 — PASS** | `f8624aa`, `0cfb6ab` | — | **M1 is through the gate.** Eight rounds; zero blockers, zero majors, two minors, both fixed. The gate earned the verdict: it **mutated** both round-6 fixes rather than reading the diff, killed a real `loctt ui` with the page open (the procedure seven specs miss), and independently re-measured the claim decision A1 rests on. It upheld all three agent decisions. **F1**: sorting by `fields.*` was a silent no-op — accepted, kept in the URL, shown as applied, identical order both directions. My round-5 predicate said `fields.*` was sortable; the resolver could not read it. **F2**: `project create --name X` created a project called `--name`, and the same hole was in all five entity commands. |
+| 🚦 M1 | round 7 abandoned + repairs | `2b86fd6`..`3b0e33b` | LST-4, LST-21, ERR-19, ERR-21, ERR-41, ERR-42 | **No verdict, correctly.** I kept committing into the tree the gate was auditing, so its results described a tree that no longer existed; it also stashed my uncommitted work, which is silent because `git status` reads clean and a stash is not a checkout. One mistake, two agents in one tree — the rule is now in `TEMP-RUN-WORKFLOW.md` § "The gate runs alone". Its one real finding was a `require-await` error my F2 fix introduced, **and the reason I missed it is worse**: `npm run lint` was crashing with a V8 OOM while `grep -c error` on the crash dump printed 0, so I reported "lint clean" three times from a command that never completed. The OOM was mine too — six sweep worktrees, 1.9GB, eslint walking all of them. Six vacuous tests repaired meanwhile: the error headline now has 5 of 16 tests watching it rather than 1. |
 | 🚦 M1 | vacuity sweep + round 6 | `20cdf85`..`9a21b22` | SHL-41 | **The sweep found 27 vacuous tests of 186** — six agents, one per case-prefix, each mutating every test in its group. Four recurring shapes, written up in `gates/M1-vacuity-sweep.md`. **BLK is the only group with none (0 of 56)** — the M1.4 tests, the only ones built under the disciplined loop. Round 6 returned **FAIL**: F1 (blocker) is the banner never firing when the server dies with the page open, which seven outage specs missed because every one of them reloads and a reload empties the cache the bug lives in. F2's fix is in but **unproven** — handed to Fable. F3 declined as decision A1; the gate's supporting measurement did not reproduce. |
 | 🚦 M1 | Fable review fixes | `8ba3aec`..`c351586` | ERR-2, BLK-42 | Reviewed the round-5 fixes adversarially and found **three defects the gate had passed**, two of them regressions from my own fixes: the sort predicate dropped sorts the server honours, `AppBootstrap` still dismantled itself on retry, and a broken config lost its parse position in the CLI. Also caught that I had claimed nine findings closed when F2 was never touched, and that a 409 lock conflict was being treated as permanent when BLK-42 says it clears. **The common cause is recorded in known-gaps.md**: `fetchState` un-says a settled error on every refetch, which is the trap behind four separate `AppBootstrap` bugs. |
 | 🚦 M1 | round 5 fixes | `8ebcf15`..`ad14b26` | SHL-43, LST-29 | Six findings fixed, one declined, two did not reproduce — **not nine closed, as this row first claimed**. **Two blockers, both mine**: a failed `/api/info` destroyed the app (F1), and fixing that created a mount/unmount loop that hung the schema banner (F3). |
@@ -157,6 +159,50 @@ Working through them case by case, per Ken's instruction to verify all
 | M1.2 | 12/61 | 59/60 |
 | M1.3 | 3/45 | **45/45** |
 | M1.4 | 51/62 | **62/62** |
+
+## 🚦 M1 is through the gate
+
+**Round 8: PASS.** Zero blockers, zero majors, two minors — both
+fixed, both mutation-proved.
+
+It took eight rounds. Rounds 1, 3 and 5 each failed on defects
+introduced by the previous round's fixes; round 7 produced no verdict
+at all because I kept committing into the tree it was auditing.
+
+What made round 8 different was not the code being better — it was the
+gate refusing to take anything on trust. It mutated both round-6 fixes
+rather than reading the diff. It killed a real `loctt ui` with the page
+open, which is the procedure seven specs quietly skip by reloading
+first. It re-measured the claim decision A1 rests on rather than
+accepting the entry. And it ran in its own worktree at a pinned SHA, so
+nothing moved underneath it.
+
+**All three agent-made decisions (A1, A2, A3) were upheld.**
+
+The two findings, both now fixed:
+
+- **F1** · sorting by `fields.*` was a silent no-op. Accepted, kept in
+  the URL, shown with a sort indicator, identical order for `asc` and
+  `desc`. My round-5 predicate said `fields.*` was sortable and the
+  resolver could not read it — the two disagreed, and the URL was
+  validated against the one that was wrong.
+- **F2** · `project create --name X` created a project literally called
+  `--name`. `rejectUnknownFlags` could not catch it, because `--name`
+  is a real flag of `project rename`. The same hole was in all five
+  entity commands.
+
+### What the milestone cost, and what it bought
+
+M1's four tickets were marked ✅ **before any ticket declared its
+cases**. Verifying them found ~41 live defects. The vacuity sweep then
+found **27 of 186 tests asserting nothing** — including one blocker
+case failing in production behind a test that could not see it.
+
+The one group with zero vacuous tests was BLK: M1.4, the only ticket
+built under the disciplined loop rather than marked done in advance.
+That is the clearest evidence in this run for what the loop is worth.
+
+---
 
 **All four M1 tickets are verified.** Gate round 6 returned **FAIL**
 with 1 blocker, 1 major and 3 minors. **All five are now
