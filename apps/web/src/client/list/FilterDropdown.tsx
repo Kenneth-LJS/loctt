@@ -28,11 +28,21 @@ export function FilterDropdown({
   options,
   selected,
   onChange,
+  unavailable = false,
 }: {
   readonly label: string;
   readonly options: readonly FilterOption[];
   readonly selected: readonly string[];
   readonly onChange: (next: string[]) => void;
+  /**
+   * The options could not be loaded, as opposed to there being none.
+   *
+   * The M1 gate found (F4) that a `labels.yaml` broken by hand left
+   * this reading "No options" — presenting a broken config as an empty
+   * one, which is the same conflation ERR-1 forbids of the list. An
+   * absence and a failure must not look alike here either.
+   */
+  readonly unavailable?: boolean;
 }) {
   const selectedSet = new Set(selected);
   const count = selected.length;
@@ -94,7 +104,11 @@ export function FilterDropdown({
         )}
         <div className="max-h-[320px] min-w-[200px] overflow-y-auto">
           {shown.length === 0 ? (
-            <div className="px-3 py-2 text-[12px] italic text-text-tertiary">No options</div>
+            <div className="px-3 py-2 text-[12px] italic text-text-tertiary">
+              {unavailable
+                ? `${label} options could not be loaded — see the sidebar for why.`
+                : "No options"}
+            </div>
           ) : (
             shown.map(opt => {
               const isSelected = selectedSet.has(opt.value);

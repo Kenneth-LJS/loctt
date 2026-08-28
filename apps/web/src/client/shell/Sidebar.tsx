@@ -1,7 +1,8 @@
 import type { TrackerInfoResponse } from "@loctt/contracts";
 import { Link, useRouterState } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
+import { ApiError } from "../api/client.ts";
 import {
   useLabels,
   useMilestones,
@@ -213,13 +214,39 @@ function ViewSwitcher({ collapsed }: { collapsed: boolean }) {
  * state and a Retry button per group would bury the navigation this
  * component exists to provide. Retry is offered on the marker itself,
  * which is the control ERR-15 asks for.
+ *
+ * Compact is not the same as uninformative. The M1 gate found (F4) that
+ * a `labels.yaml` the user had broken by hand reported only "Could not
+ * load. Retry" — the filename never appeared anywhere in the UI, though
+ * the server had already sent it along with the YAML parse position.
+ * SHL-43 requires the specific file named, the parse location when the
+ * server provides one, and a next action.
+ *
+ * So the *cause* is named inline when the server told us one, and the
+ * technical detail sits behind a disclosure — the same shape
+ * `ErrorState` uses for ERR-6, at sidebar scale.
  */
-function GroupError({ collapsed, onRetry }: { collapsed: boolean; onRetry: () => void }) {
+function GroupError({
+  collapsed,
+  error,
+  onRetry,
+}: {
+  collapsed: boolean;
+  error: unknown;
+  onRetry: () => void;
+}) {
+  const [showDetail, setShowDetail] = useState(false);
+  const envelope = error instanceof ApiError ? error.envelope : undefined;
+  // A config that will not parse is the user's own edit, and the one
+  // failure here they can actually fix. Anything else stays terse.
+  const isConfig = envelope?.code === "config_invalid";
+  const headline = isConfig ? envelope?.message : undefined;
+
   if (collapsed) {
     return (
       <div
         role="alert"
-        title="Could not load — click to retry"
+        title={headline ?? "Could not load — click to retry"}
         onClick={onRetry}
         className="mx-auto my-1 cursor-pointer text-[11px] text-danger-fg"
       >
@@ -229,7 +256,7 @@ function GroupError({ collapsed, onRetry }: { collapsed: boolean; onRetry: () =>
   }
   return (
     <div role="alert" className="px-2 py-1 text-[12px] text-text-tertiary">
-      Could not load.{" "}
+      {headline ?? "Could not load."}{" "}
       <button
         type="button"
         onClick={onRetry}
@@ -237,6 +264,31 @@ function GroupError({ collapsed, onRetry }: { collapsed: boolean; onRetry: () =>
       >
         Retry
       </button>
+      {isConfig ? (
+        <>
+          {" · "}
+          <span className="text-text-tertiary">
+            or run <code className="font-mono">loctt doctor</code>
+          </span>
+        </>
+      ) : null}
+      {envelope?.detail !== undefined && (
+        <>
+          {" "}
+          <button
+            type="button"
+            onClick={() => { setShowDetail(v => !v); }}
+            className="underline hover:text-text-primary"
+          >
+            {showDetail ? "Hide details" : "Show details"}
+          </button>
+          {showDetail && (
+            <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-[11px] text-text-tertiary">
+              {envelope.detail}
+            </pre>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -280,7 +332,7 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Projects</GroupLabel>
       {failed && (
-        <GroupError collapsed={collapsed} onRetry={() => { void projects.refetch(); }} />
+        <GroupError collapsed={collapsed} error={projects.error} onRetry={() => { void projects.refetch(); }} />
       )}
       {!failed && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>No projects yet</GroupEmpty>
@@ -350,7 +402,7 @@ function SavedFiltersGroup({
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Saved filters</GroupLabel>
       {failed && (
-        <GroupError collapsed={collapsed} onRetry={() => { void views.refetch(); }} />
+        <GroupError collapsed={collapsed} error={views.error} onRetry={() => { void views.refetch(); }} />
       )}
 
       {BUILTIN_FILTERS.map(f => {
@@ -466,7 +518,7 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Milestones</GroupLabel>
       {failed && (
-        <GroupError collapsed={collapsed} onRetry={() => { void milestones.refetch(); }} />
+        <GroupError collapsed={collapsed} error={milestones.error} onRetry={() => { void milestones.refetch(); }} />
       )}
       {!failed && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>No milestones yet</GroupEmpty>
@@ -500,7 +552,7 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Sprints</GroupLabel>
       {failed && (
-        <GroupError collapsed={collapsed} onRetry={() => { void sprints.refetch(); }} />
+        <GroupError collapsed={collapsed} error={sprints.error} onRetry={() => { void sprints.refetch(); }} />
       )}
       {!failed && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>No active sprints</GroupEmpty>
@@ -536,7 +588,7 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Labels</GroupLabel>
       {failed && (
-        <GroupError collapsed={collapsed} onRetry={() => { void labels.refetch(); }} />
+        <GroupError collapsed={collapsed} error={labels.error} onRetry={() => { void labels.refetch(); }} />
       )}
       {!failed && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>No labels yet</GroupEmpty>
@@ -568,7 +620,7 @@ function RecentsGroup({ collapsed }: { collapsed: boolean }) {
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Recently viewed</GroupLabel>
       {failed && (
-        <GroupError collapsed={collapsed} onRetry={() => { void recents.refetch(); }} />
+        <GroupError collapsed={collapsed} error={recents.error} onRetry={() => { void recents.refetch(); }} />
       )}
       {/* `!failed` matters: on a failed fetch `items` is empty too, and
           rendering the empty copy beside the alert makes two
