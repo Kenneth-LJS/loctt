@@ -43,6 +43,9 @@ const USERS = {
 
 const switchCalls: string[] = [];
 
+/** Renders the header in its unknown-identity state (SHL-40). */
+let UNKNOWN = false;
+
 function stubFetch() {
   vi.spyOn(globalThis, "fetch").mockImplementation(
     (input: RequestInfo | URL, init?: RequestInit) => {
@@ -90,7 +93,10 @@ async function renderHeader() {
   const listRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/list",
-    component: () => <Header currentUser={KEN} onToggleSidebar={() => undefined} />,
+    component: () =>
+      UNKNOWN
+        ? <Header currentUser={null} identityUnknown onToggleSidebar={() => undefined} />
+        : <Header currentUser={KEN} onToggleSidebar={() => undefined} />,
   });
   const settingsRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -106,7 +112,7 @@ async function renderHeader() {
       <RouterProvider router={router as never} />
     </QueryClientProvider>,
   );
-  await screen.findByLabelText("User menu");
+  await screen.findByLabelText(/^User menu/);
   return router;
 }
 
@@ -123,6 +129,7 @@ async function click(el: HTMLElement): Promise<void> {
 beforeEach(() => {
   window.localStorage.clear();
   switchCalls.length = 0;
+  UNKNOWN = false;
   installMatchMedia(false);
 });
 
@@ -217,5 +224,43 @@ describe("Header theme control", () => {
     await click(within(theme).getByRole("button", { name: "System" }));
     expect(window.localStorage.getItem("tt-theme")).toBe("system");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
+  });
+});
+
+/**
+ * @verifies SHL-40
+ *
+ * A failed current-user read used to blank the entire app. Not knowing
+ * *who* you are does not stop you reading tasks or reaching Settings —
+ * which is where the user list is fixed — so a full-page error both
+ * overstated the failure and removed the route to its own fix.
+ */
+describe("Header with an unknown identity (SHL-40)", () => {
+  it("marks the avatar explicitly rather than showing a blank or a guessed name", async () => {
+    UNKNOWN = true;
+    await renderHeader();
+
+    const trigger = screen.getByLabelText("User menu — signed-in user unknown");
+    // Not blank, and not initials derived from nothing.
+    expect(trigger.textContent).toBe("?");
+    expect(trigger.getAttribute("title")).toMatch(/could not be determined/i);
+    // No fabricated identity anywhere in the chrome.
+    expect(screen.queryByText("Ken Loh")).toBeNull();
+  });
+
+  it("still opens the menu, explains the block, and keeps Settings reachable", async () => {
+    UNKNOWN = true;
+    await renderHeader();
+
+    await click(screen.getByLabelText("User menu — signed-in user unknown"));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/signed-in user unknown/i);
+    // The consequence is named, not left for the user to discover on
+    // the next write.
+    expect(alert.textContent).toMatch(/blocked/i);
+
+    const settings = screen.getByText("Settings").closest("a") as HTMLAnchorElement;
+    expect(settings.getAttribute("href")).toContain("/settings/");
   });
 });

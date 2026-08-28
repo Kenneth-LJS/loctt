@@ -18,12 +18,26 @@ import { Menu, MenuItem } from "../ui/Menu.tsx";
  * the chrome matches the mockup; their behaviour arrives with the
  * tickets that own them.
  */
+/**
+ * Why an attributed write is refused while the identity is unknown.
+ *
+ * SHL-40 requires the block to name its reason rather than fail
+ * silently or, worse, write under a guessed identity.
+ */
+export const UNKNOWN_IDENTITY_REASON =
+  "The current user could not be determined, so changes that record who made "
+  + "them are blocked. Settings is still reachable.";
+
 export function Header({
   currentUser,
+  identityUnknown = false,
   onToggleSidebar,
   canToggleSidebar = true,
 }: {
-  readonly currentUser: UserProfile;
+  /** Null when the current-user read failed (SHL-40). */
+  readonly currentUser: UserProfile | null;
+  /** True when the identity is unknown because the read failed. */
+  readonly identityUnknown?: boolean;
   readonly onToggleSidebar: () => void;
   /**
    * False below the sidebar's breakpoint, where it cannot expand.
@@ -76,7 +90,7 @@ export function Header({
         New task
       </button>
 
-      <UserMenu currentUser={currentUser} />
+      <UserMenu currentUser={currentUser} identityUnknown={identityUnknown} />
     </header>
   );
 }
@@ -122,11 +136,17 @@ function ThemeToggle() {
   );
 }
 
-function UserMenu({ currentUser }: { readonly currentUser: UserProfile }) {
+function UserMenu({
+  currentUser,
+  identityUnknown,
+}: {
+  readonly currentUser: UserProfile | null;
+  readonly identityUnknown: boolean;
+}) {
   const users = useUsers();
   const switchUser = useSwitchUser();
   const others = (users.data?.items ?? []).filter(
-    u => u.id !== currentUser.id && u.archived !== true,
+    u => u.id !== currentUser?.id && u.archived !== true,
   );
 
   return (
@@ -137,39 +157,57 @@ function UserMenu({ currentUser }: { readonly currentUser: UserProfile }) {
         <button
           type="button"
           onClick={toggle}
-          aria-label="User menu"
+          aria-label={identityUnknown ? "User menu — signed-in user unknown" : "User menu"}
+          title={identityUnknown ? UNKNOWN_IDENTITY_REASON : undefined}
           className={[
             "grid h-[22px] w-[22px] place-items-center rounded-full text-[11px] font-semibold",
-            avatarPalette(currentUser.id),
+            // An explicit unknown mark, not a blank circle and not a
+            // palette slot borrowed from an id we do not have.
+            identityUnknown
+              ? "border border-dashed border-danger-fg/60 text-danger-fg"
+              : avatarPalette(currentUser?.id ?? ""),
           ].join(" ")}
           {...aria}
         >
-          {initials(currentUser.name)}
+          {identityUnknown ? "?" : initials(currentUser?.name ?? "")}
         </button>
       )}
     >
       {({ close }) => (
         <div className="min-w-[240px]">
-          <div className="flex items-center gap-2.5 border-b border-border-subtle px-3 py-2.5">
-            <span
-              className={[
-                "grid h-[22px] w-[22px] place-items-center rounded-full text-[11px] font-semibold",
-                avatarPalette(currentUser.id),
-              ].join(" ")}
+          {identityUnknown || !currentUser ? (
+            // SHL-40: name the failure and its consequence. A blank
+            // header would leave the user to discover the blocked
+            // write later, with no explanation attached to it.
+            <div
+              role="alert"
+              className="border-b border-border-subtle px-3 py-2.5 text-[12px] text-text-secondary"
             >
-              {initials(currentUser.name)}
-            </span>
-            <div className="min-w-0">
-              <div className="truncate text-[13px] font-medium text-text-primary">
-                {currentUser.name}
-              </div>
-              {currentUser.email ? (
-                <div className="truncate text-[11px] text-text-tertiary">
-                  {currentUser.email}
-                </div>
-              ) : null}
+              <div className="font-medium text-danger-fg">Signed-in user unknown</div>
+              <div className="mt-0.5">{UNKNOWN_IDENTITY_REASON}</div>
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center gap-2.5 border-b border-border-subtle px-3 py-2.5">
+              <span
+                className={[
+                  "grid h-[22px] w-[22px] place-items-center rounded-full text-[11px] font-semibold",
+                  avatarPalette(currentUser.id),
+                ].join(" ")}
+              >
+                {initials(currentUser.name)}
+              </span>
+              <div className="min-w-0">
+                <div className="truncate text-[13px] font-medium text-text-primary">
+                  {currentUser.name}
+                </div>
+                {currentUser.email ? (
+                  <div className="truncate text-[11px] text-text-tertiary">
+                    {currentUser.email}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          )}
 
           {others.length > 0 ? (
             <div className="py-1">

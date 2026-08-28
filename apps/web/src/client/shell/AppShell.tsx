@@ -24,10 +24,18 @@ import { useSidebarCollapse } from "./useSidebarCollapse.ts";
 export function AppShell({
   info,
   currentUser,
+  identityUnknown = false,
   children,
 }: {
   readonly info: TrackerInfoResponse;
-  readonly currentUser: UserProfile;
+  /**
+   * Null when the current-user read failed. Carried as null rather
+   * than a stand-in profile so nothing downstream can render a name or
+   * an id that implies a real identity (SHL-40).
+   */
+  readonly currentUser: UserProfile | null;
+  /** True when the identity is unknown because the read failed. */
+  readonly identityUnknown?: boolean;
   readonly children?: ReactNode;
 }) {
   const { collapsed, toggle, canToggle } = useSidebarCollapse();
@@ -37,11 +45,16 @@ export function AppShell({
     <div className="flex h-screen flex-col">
       <SchemaBanner status={info.schemaStatus} />
       <div className="grid min-h-0 flex-1 grid-cols-[auto_1fr] grid-rows-[48px_1fr]">
-        <Header currentUser={currentUser} onToggleSidebar={toggle} canToggleSidebar={canToggle} />
+        <Header
+          currentUser={currentUser}
+          identityUnknown={identityUnknown}
+          onToggleSidebar={toggle}
+          canToggleSidebar={canToggle}
+        />
         <Sidebar
           collapsed={collapsed}
           info={info}
-          currentUserId={currentUser.id}
+          currentUserId={currentUser?.id ?? null}
           today={today}
         />
         <main className="row-start-2 overflow-auto bg-bg-canvas">

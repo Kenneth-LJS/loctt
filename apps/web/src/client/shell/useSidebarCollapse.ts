@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { readLocal, writeLocal } from "./storage.ts";
+
 /**
  * Collapsed/expanded state for the app sidebar, persisted to
  * localStorage under `tt-sidebar-collapsed` ("1" / "0") to match the
@@ -28,8 +30,9 @@ const NARROW_PX = 900;
 const STORAGE_KEY = "tt-sidebar-collapsed";
 
 function readStored(): boolean {
-  if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(STORAGE_KEY) === "1";
+  // Any value that is not exactly "1" — corrupt, absent, or an
+  // unreadable store — means expanded (SHL-17, SHL-18).
+  return readLocal(STORAGE_KEY) === "1";
 }
 
 function isEditableTarget(el: EventTarget | null): boolean {
@@ -62,9 +65,7 @@ export function useSidebarCollapse(): {
   const toggle = useCallback(() => {
     setCollapsed(prev => {
       const next = !prev;
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
-      }
+      writeLocal(STORAGE_KEY, next ? "1" : "0");
       return next;
     });
   }, []);

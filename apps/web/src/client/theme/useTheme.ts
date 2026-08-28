@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { readLocal, writeLocal } from "../shell/storage.ts";
+
 /**
  * Theme preference. `system` follows OS prefers-color-scheme; `light`
  * and `dark` are explicit overrides.
@@ -10,8 +12,9 @@ const STORAGE_KEY = "tt-theme";
 const DARK_CLASS = "dark";
 
 function readStored(): ThemePreference {
-  if (typeof window === "undefined") return "system";
-  const v = window.localStorage.getItem(STORAGE_KEY);
+  // Anything outside the three known values — corrupt, absent, or an
+  // unreadable store — falls back to system (SHL-17, SHL-18).
+  const v = readLocal(STORAGE_KEY);
   return v === "light" || v === "dark" || v === "system" ? v : "system";
 }
 
@@ -70,9 +73,7 @@ export function useTheme(): {
   }, [preference]);
 
   const setPreference = useCallback((next: ThemePreference) => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(STORAGE_KEY, next);
-    }
+    writeLocal(STORAGE_KEY, next);
     setPreferenceState(next);
   }, []);
 

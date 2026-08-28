@@ -5,7 +5,9 @@ import {
   redirect,
 } from "@tanstack/react-router";
 
+import { RegionErrorFallback } from "../error/RegionErrorBoundary.tsx";
 import { ListView } from "../list/ListView.tsx";
+import { NotFound } from "../routes/NotFound.tsx";
 import { Stub } from "../routes/Stub.tsx";
 import { AppBootstrap } from "../shell/AppBootstrap.tsx";
 import { listSearchSchema } from "./listSearch.ts";
@@ -16,8 +18,40 @@ import { listSearchSchema } from "./listSearch.ts";
 // (list/board/…) render inside the main pane.
 const rootRoute = createRootRoute({
   component: AppBootstrap,
-  notFoundComponent: () => <Stub name="404" />,
+  // SHL-16/SHL-30: a designed 404 *inside* the shell. The stub that
+  // used to sit here read "Route stub: 404", which names neither the
+  // problem nor the path and offers no way out.
+  notFoundComponent: NotFound,
+  // ERR-34: a route-level throw replaces the main pane only. Without
+  // this TanStack's default takes the whole tree, which is the white
+  // page that case is written against.
+  errorComponent: RouteError,
 });
+
+/**
+ * The main pane's boundary. Named per-route so the message says "the
+ * task list" rather than a component name (ERR-36).
+ */
+function RouteError({ error, reset }: { error: Error; reset: () => void }) {
+  const pathname = typeof window === "undefined" ? "" : window.location.pathname;
+  const region = ROUTE_REGIONS[pathname] ?? "this page";
+  return (
+    <RegionErrorFallback
+      region={region}
+      error={error}
+      componentStack={null}
+      writeInFlight={false}
+      onRetry={reset}
+    />
+  );
+}
+
+/** User-facing names for the routes, for the boundary's headline. */
+const ROUTE_REGIONS: Record<string, string> = {
+  "/list": "the task list",
+  "/board": "the board",
+  "/timeline": "the timeline",
+};
 
 // `/` redirects to `/list`. TanStack Router uses `throw redirect(...)`
 // to short-circuit the loader chain — the thrown value is a
