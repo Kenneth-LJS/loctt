@@ -201,3 +201,46 @@ What is genuinely open, and is Ken's rather than mine:
 
 `LARGE_DELETE_THRESHOLD` and `deleteConfirmWord()` in
 `DeleteConfirmDialog.tsx` are the two places any of this changes.
+
+---
+
+## Proposed: whether CSV export should resolve ULIDs to names
+
+**Raised by the M1 gate 2026-08-28 as F7 (minor). Not built — this
+needs a decision, not a patch.**
+
+`project`, `assignee`, `reporter`, `milestone` and `sprint` export as
+raw ULIDs (`01M13T6YWDXHB52P65P2BNAV8D`), so someone opening the CSV
+in Excel gets opaque ids in every reference column.
+
+**Why it was not simply fixed:**
+
+- **No case requires it.** BLK-33 through BLK-37 cover escaping,
+  scale, empty results, custom fields and URL reproducibility. None
+  says anything about how a reference column is rendered.
+- **P-4 does not obviously reach it.** It governs "UI **content** —
+  labels, pickers, prose, error messages". A CSV is a data file, and
+  the invariant already carves out URLs on the grounds that an
+  addressing mechanism is not something LocTT displays.
+- **It is core's export, not the web app's.** `DEFAULT_EXPORT_COLUMNS`
+  is shared with `loctt export`, where the current columns are the
+  documented contract. Changing it for a UI complaint changes CLI
+  output too.
+
+**The real tension:** an id round-trips and a name does not. Names are
+neither unique nor immutable, so a CSV of names cannot be re-imported
+or joined reliably — which is what a data export is *for*. But a CSV
+nobody can read defeats the point just as thoroughly.
+
+**Options, none chosen:**
+
+1. Leave it. The export is a data interchange format; ids are correct.
+2. Add resolved-name columns alongside (`project`, `project_name`).
+   Round-trips *and* readable, at the cost of width.
+3. Resolve in place, and accept the export is for reading, not
+   re-importing.
+4. Make it a UI-side choice — an "export for reading" toggle in the
+   export menu.
+
+Option 2 is the only one that does not lose something, but it is also
+the only one that changes the column count, which BLK-36 pins.
