@@ -5,6 +5,7 @@ import { LabelsConfigSchema } from "@loctt/contracts";
 import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
+import { LocttError } from "../errors.js";
 import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
@@ -12,9 +13,17 @@ import { readFileState, UnreadableFileError } from "../utils/read-state.js";
 import { safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
-export class LabelsConfigError extends Error {
+export class LabelsConfigError extends LocttError {
   constructor(message: string) {
-    super(message);
+    // `config_invalid`, not the `unknown` an un-attributed Error
+    // falls back to. The message already names the file, the field
+    // path and what was expected (ERR-10); what was missing was a
+    // code, so every surface reported a schema problem as an
+    // unexplained server failure. V1: core states its own cause.
+    super("config_invalid", message, {
+      dataState: "not_saved",
+      recovery: { kind: "command" },
+    });
     this.name = "LabelsConfigError";
   }
 }
@@ -69,7 +78,7 @@ export function parseLabelsConfig(yamlContent: string): LabelsConfig {
     parsed = LabelsConfigSchema.parse(dropInvalidColors(raw));
   } catch (err) {
     if (err instanceof z.ZodError) {
-      throw new LabelsConfigError(formatZodIssues("labels config", err));
+      throw new LabelsConfigError(`labels.yaml is not valid: ${formatZodIssues("labels config", err)}`);
     }
     throw err;
   }

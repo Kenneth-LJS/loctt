@@ -5,6 +5,7 @@ import { ProjectsConfigSchema } from "@loctt/contracts";
 import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
+import { LocttError } from "../errors.js";
 import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
@@ -12,9 +13,17 @@ import { readFileState, UnreadableFileError } from "../utils/read-state.js";
 import { safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
-export class ProjectsConfigError extends Error {
+export class ProjectsConfigError extends LocttError {
   constructor(message: string) {
-    super(message);
+    // `config_invalid`, not the `unknown` an un-attributed Error
+    // falls back to. The message already names the file, the field
+    // path and what was expected (ERR-10); what was missing was a
+    // code, so every surface reported a schema problem as an
+    // unexplained server failure. V1: core states its own cause.
+    super("config_invalid", message, {
+      dataState: "not_saved",
+      recovery: { kind: "command" },
+    });
     this.name = "ProjectsConfigError";
   }
 }
@@ -36,7 +45,7 @@ export function parseProjectsConfig(yamlContent: string): ProjectsConfig {
     return ProjectsConfigSchema.parse(raw);
   } catch (err) {
     if (err instanceof z.ZodError) {
-      throw new ProjectsConfigError(formatZodIssues("projects config", err));
+      throw new ProjectsConfigError(`projects.yaml is not valid: ${formatZodIssues("projects config", err)}`);
     }
     throw err;
   }

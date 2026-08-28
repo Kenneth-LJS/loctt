@@ -3,6 +3,7 @@ import type { ListViewConfig } from "@loctt/contracts";
 import { ListViewConfigSchema } from "@loctt/contracts";
 import { z } from "zod";
 
+import { LocttError } from "../errors.js";
 import { getListViewConfigPath } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
@@ -14,9 +15,17 @@ import { formatZodIssues } from "./zod-error.js";
  * and hand-editable, so a parse failure should give the user a clear
  * line/path to fix rather than a stack trace.
  */
-export class ListViewConfigError extends Error {
+export class ListViewConfigError extends LocttError {
   constructor(message: string) {
-    super(message);
+    // `config_invalid`, not the `unknown` an un-attributed Error
+    // falls back to. The message already names the file, the field
+    // path and what was expected (ERR-10); what was missing was a
+    // code, so every surface reported a schema problem as an
+    // unexplained server failure. V1: core states its own cause.
+    super("config_invalid", message, {
+      dataState: "not_saved",
+      recovery: { kind: "command" },
+    });
     this.name = "ListViewConfigError";
   }
 }
@@ -31,7 +40,7 @@ export function parseListViewConfig(yamlContent: string): ListViewConfig {
     return ListViewConfigSchema.parse(raw);
   } catch (err) {
     if (err instanceof z.ZodError) {
-      throw new ListViewConfigError(formatZodIssues("list-view config", err));
+      throw new ListViewConfigError(`list-view.yaml is not valid: ${formatZodIssues("list-view config", err)}`);
     }
     throw err;
   }
