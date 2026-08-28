@@ -111,6 +111,44 @@ export function stripCwdArg(args: string[]): string[] {
  * Opt-in per command rather than global — some commands take
  * pass-through arguments that must not be validated here.
  */
+/**
+ * Reads a positional argument, refusing anything that looks like a flag.
+ *
+ * `const name = args[2]` takes whatever sits in that slot. So
+ * `loctt project create --name "Second" --prefix SEC` created a
+ * project **literally named `--name`** and discarded "Second" —
+ * silently, exit 0, listed as `--name` forever after.
+ *
+ * `rejectUnknownFlags` cannot catch it: `--name` is a legitimate flag
+ * of `project rename`, so it is in the accepted list and passes the
+ * guard on its way to being eaten as a positional.
+ *
+ * The same `args[2]` appears in create for projects, labels, sprints,
+ * milestones and users. A user who guesses `--name` — a reasonable
+ * guess, since rename takes it — gets a wrongly named entity on every
+ * one of them.
+ *
+ * A name that genuinely begins with `--` is passed after a bare `--`:
+ * `loctt label create -- --weird`. That is why this reads *past* the
+ * separator rather than stopping at it — an earlier cut returned
+ * `undefined` for `--`, so the documented escape hatch produced a
+ * usage error instead of the name.
+ */
+export function positional(args: string[], index: number, usage: string): string | undefined {
+  const value = args[index];
+  if (value === undefined) return undefined;
+  // Everything after `--` is literal, flags included.
+  if (value === "--") return args[index + 1];
+  if (value.startsWith("--")) {
+    throw new UsageError(
+      `expected a name here, got the flag ${value}. `
+      + `If the name really begins with "--", pass it after a bare "--".`,
+      usage,
+    );
+  }
+  return value;
+}
+
 export function rejectUnknownFlags(args: string[], allowed: readonly string[]): void {
   const known = new Set(allowed.map(f => f.replace(/^--?/, "")));
   known.add("cwd");
