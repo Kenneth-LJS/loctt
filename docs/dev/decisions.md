@@ -660,3 +660,55 @@ otherwise. This is what makes the entry actionable rather than
 archival.
 ```
 
+
+### A1 · An unknown `sort` field stays a 200, not a 400
+
+**Ticket:** 🚦 M1 gate round 6 · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** The gate's F3 (minor) reports an API inconsistency:
+`?dir=sideways` returns 400 "Sort direction must be ascending or
+descending", while `?sort=nonexistent_field` returns 200. A direct API
+consumer gets a signal for a bad `dir`, `status` or `limit`, and
+silence for a bad `sort`.
+
+The gate also claimed the bogus sort produced "different ordering".
+**That does not reproduce.** Measured against three seeded tasks:
+default order and `?sort=nonexistent_field` both return
+`['Mango', 'Alpha', 'Zebra']` — identical. The fallback works.
+
+**What had to be decided.** Should the API reject an unknown `sort`
+field with a 400, for consistency with its other parameters?
+
+**Options considered.**
+
+1. **400 on an unknown sort.** Consistent with `dir`, `status` and
+   `limit`. Costs: LST-29 (major, P2 P6) says a pasted
+   `/list?sort=nonexistent_field` must render "with the default sort
+   rather than an empty table **or an error page**". A 400 would have
+   to be swallowed by the client to avoid violating that — so the
+   consistency is bought by adding a special case, not removing one.
+2. **Leave it.** The 200-with-fallback is what LST-29 asks for and
+   what the code comment already cites. Costs: the API asymmetry the
+   gate names is real and stays.
+3. **Warn without failing** — 200 plus a header or envelope field
+   naming the dropped parameter. Costs: no case describes this, and it
+   is a new API surface.
+
+**Decided.** Option 2 — leave it.
+
+**Why.** No case requires the API to reject an unknown sort, and
+LST-29 explicitly requires the UI not to error on one. Choosing
+option 1 or 3 would be **authoring a requirement**, which is stop
+condition 2 in `TEMP-RUN-WORKFLOW.md`. The gate identified a genuine
+asymmetry but did not identify a case it violates, and its supporting
+measurement ("different ordering") is wrong.
+
+Recorded rather than stopping the run because it is contained: it
+changes nothing, nothing builds on it, and reversing it is a small
+server-side edit.
+
+**To revert.** `apps/web/src/server/server.ts:2306` — the
+`isSortableTaskField(rawSort)` ternary. To adopt option 1, reject
+instead of falling back, and give `ListView` a client-side guard so
+LST-29 still renders. To adopt option 3, add the warning to the
+response envelope. Either way LST-29's spec test must stay green.
