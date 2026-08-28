@@ -712,3 +712,109 @@ server-side edit.
 instead of falling back, and give `ListView` a client-side guard so
 LST-29 still renders. To adopt option 3, add the warning to the
 response envelope. Either way LST-29's spec test must stay green.
+
+### A2 · One failed request is enough to say the server is not responding
+
+**Ticket:** 🚦 M1 gate round 6 (F1) · **Date:** 2026-08-29 · **Commit:** `20cdf85`
+
+**The situation.** The gate raised this as **PC-18**: no case says how
+much evidence "the server is not responding" requires, and the two
+defensible readings differ on the most common outage.
+
+SHL-41 says "**the next failed request** produces a persistent,
+visible state" — one request. The implementation demanded a query that
+had **never** succeeded, and the guard's own comment argued for that
+stricter reading: one aborted page-2 request is "a failed request, not
+a stopped process", and telling a user to restart a healthy terminal
+is worse than saying nothing.
+
+Fixing F1 forced the question, because the two readings are not
+distinguishable in the cache. A dead server and a failed "Load more"
+both leave a query with data plus a later error, and both retry, so
+neither `errorUpdatedAt` nor `fetchFailureCount` separates them.
+
+**What had to be decided.** Does the banner require a query that has
+never been answered, or does any failure more recent than the last
+success count?
+
+**Options considered.**
+
+1. **Never-answered only** (the old behaviour). No false alarm from a
+   single failed request. Costs: **the banner cannot fire at all in a
+   real outage**, because with the page open every query has been
+   answered. That is F1 — measured as fifty stale rows under an
+   authoritative "Showing 1–50 of 63", with nothing on screen saying
+   the server was gone.
+2. **Most recent evidence wins** — any failure later than the last
+   success. Costs: a failed "Load more" raises the banner for as long
+   as it stands. LST-49's own error still appears beside the control,
+   so the user is over-informed rather than misinformed.
+3. **A threshold** — N failures, or a time window. Costs: no case
+   names a number, so picking one is authoring a requirement.
+
+**Decided.** Option 2.
+
+**Why.** SHL-41's text says "the next failed request", and it is a
+**blocker**; LST-49 is a major, asks for an error near the control,
+and never asks the banner to stay silent. Option 1 makes a blocker
+case unimplementable. Option 3 would author a requirement.
+
+The costs are asymmetric: option 2's failure mode is a banner that is
+briefly too loud about a real failed request, and option 1's is a dead
+server that says nothing at all.
+
+**Recorded rather than stopping the run** because SHL-41's own words
+settle it — this is reading the spec, not extending it. But it is the
+answer to a question the gate says the spec does not ask, so it is
+here to be overruled.
+
+**To revert.** `apps/web/src/client/shell/ServerUnreachableBanner.tsx`
+— the loop in `recompute`. Option 1 is restoring the `continue` after
+`lastSuccess`. Note that doing so re-opens F1, so it needs a different
+answer to "how does the banner ever fire mid-session". The unit test
+"speaks when an answered query then fails" pins the current choice and
+would need to invert.
+
+### A3 · A transient wrong claim during a retry counts as making it
+
+**Ticket:** 🚦 M1 gate round 6 (F2) · **Date:** 2026-08-29 · **Commit:** `9a21b22`, `bb6b9fc`
+
+**The situation.** The gate raised this as **PC-19**: no case
+constrains what may be shown *during* a retry. Every surface derived
+from live query status flickers through a data-less `pending` on every
+refetch — `fetchState` resets it — and no case says whether a claim
+that is wrong for one second counts as being made.
+
+This is the general form of four `AppBootstrap` bugs, F2's sidebar
+flash, and F1.
+
+**What had to be decided.** Is a wrong claim shown for ~1s during a
+retry a defect, or acceptable transient state?
+
+**Options considered.**
+
+1. **It counts.** Every surface must ask what a query has *ever* done
+   (`errorUpdatedAt`, `dataUpdatedAt`) rather than what it is doing
+   now. Costs: more state to track at every site; five call sites in
+   `Sidebar.tsx` alone.
+2. **It does not count** below some duration. Costs: no case names a
+   threshold, and the measured windows are not short — 1089–2098ms for
+   the sidebar's cold-outage claim. A second of being told your
+   tracker is empty is not a flicker.
+3. **Case by case.** Costs: this is what produced four separate
+   `AppBootstrap` bugs diagnosed as unrelated.
+
+**Decided.** Option 1.
+
+**Why.** P6 says empty, loading, partial and broken are **four
+designed states**, and a surface that renders "empty" while it means
+"still asking" has collapsed two of them — the duration does not
+change which state it is claiming. ERR-1 says a failure and an absence
+must not look alike, with no exemption for brief ones.
+
+The measured windows also defeat option 2 on its own terms.
+
+**To revert.** The `hasFailed` and `hasAnswered` helpers in
+`apps/web/src/client/shell/Sidebar.tsx`, and `stillWaiting` in
+`AppBootstrap.tsx`. Both are small and local; the tests pinning them
+are named in their commits.
