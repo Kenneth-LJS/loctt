@@ -3437,6 +3437,17 @@ export function createWebApp(options: WebAppOptions) {
       // .loctt/, a full disk. ERR-31 forbids reporting a knowable cause
       // as unknown, and ERR-11/ERR-12 want these named: only the user
       // can fix a permission or free up space.
+      // Core attributed it, so use its attribution rather than
+      // flattening to `unknown`. A schema problem in workflow.yaml
+      // already names the file, the field path and what was expected
+      // (ERR-10); reporting it as an unexplained server failure threw
+      // all of that away at the last step. V1: core states its own
+      // cause and the surface renders it.
+      if (err instanceof LocttError) {
+        const env = err.toEnvelope();
+        error(res, env.message, statusForCode(err.code), env);
+        return;
+      }
       if (err instanceof FsAccessError) {
         error(res, err.message, 500, {
           code: "io_failed",

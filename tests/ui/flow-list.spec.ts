@@ -3512,3 +3512,63 @@ test.describe("XS/MSL — the last of M1.2", () => {
     }
   });
 });
+
+test.describe("ERR/LST — a broken config file (M1.2)", () => {
+  /** Removes `category` from the first status, breaking the schema. */
+  async function breakWorkflow(root: string): Promise<void> {
+    const cfg = path.join(root, ".loctt", "config", "workflow.yaml");
+    const text = await readFile(cfg, "utf8");
+    await writeFile(
+      cfg,
+      text.replace(/( {2}- key: \w+\n {4}label: .+\n) {4}category: .+\n/, "$1"),
+      "utf8",
+    );
+  }
+
+  // @verifies ERR-10
+  test("ERR-10: a schema failure names the file, the field, and what was expected", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await breakWorkflow(tracker.root);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    const alert = page.getByRole("alert");
+    await expect(alert).toBeVisible({ timeout: 20_000 });
+    const copy = await alert.innerText();
+
+    // The file, by name.
+    expect(copy).toContain("workflow.yaml");
+    // The failing field, with enough path to find it.
+    expect(copy).toMatch(/statuses\[\d+\]\.category/);
+    // What was expected — Zod knows this and the UI must not discard
+    // it. "workflow.yaml is invalid" alone fails this case.
+    expect(copy).toMatch(/pending|active|completed|discarded/);
+    // Not a stack trace, and no raw Zod vocabulary in the headline.
+    expect(copy).not.toContain("ZodError");
+    expect(copy).not.toContain("at Object.");
+  });
+
+  // @verifies LST-51
+  test("LST-51: a broken workflow is explained rather than crashed on", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await breakWorkflow(tracker.root);
+
+    await page.goto(`${tracker.baseURL}/list`);
+
+    // Explained, not a blank page and not a stack trace.
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("alert")).toContainText("workflow.yaml");
+    // The shell still works, so the user can go and fix it.
+    await expect(page.getByRole("link", { name: "List" })).toBeVisible();
+    // And the CLI says the same thing, so the fix is discoverable.
+    // `list` exits non-zero here and the fixture throws with stderr
+    // attached, which is where the message lives.
+    const cli = await tracker.run(["list"]).catch((e: Error) => e.message);
+    expect(cli).toContain("workflow.yaml");
+  });
+});

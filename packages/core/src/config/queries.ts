@@ -30,7 +30,7 @@ export function parseQueriesConfig(yamlContent: string): QueriesConfig {
     parsed = RawQueriesConfigSchema.parse(raw);
   } catch (err) {
     if (err instanceof z.ZodError) {
-      throw new QueriesConfigError(formatZodIssues("queries config", err));
+      throw new QueriesConfigError(`queries.yaml is not valid: ${formatZodIssues("queries config", err)}`);
     }
     throw err;
   }
