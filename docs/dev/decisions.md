@@ -604,3 +604,59 @@ losing it costs one click.
 **Consequence.** M3.5 needs no server work of any kind. The earlier
 claim in `TEMP-BUILD-PLAN.md` that M3.5 and M4.9 "carry server work"
 is wrong on both counts — see the note there.
+
+---
+
+## 8. Agent-made decisions (Phase 5 run) — REVIEWABLE, REVERTIBLE
+
+**Every entry here was decided by an agent, not by Ken.** They are
+recorded so they can be reviewed in a batch and reverted individually.
+Nothing in this section carries the authority of sections 1–7.
+
+An agent records here when a flow doc was silent or ambiguous and it
+had to pick a reading in order to keep building. It records here
+**instead of stopping** — the run does not block on these.
+
+An agent does NOT record here, and stops instead, when the call:
+
+1. **changes scope** — adds or removes a view, route, or feature
+2. **invents a requirement** — no case covers it and the agent would
+   be authoring one
+3. **violates a P-principle** (`ui-test-cases/README.md` P1–P10) or
+   contradicts a decision in sections 1–7
+4. **is load-bearing** — later work will build directly on top of it,
+   so being wrong means rework rather than a tweak
+
+Rule 4 is the judgment call, and it is the one that matters. A
+contained decision — one behaviour, one place, cheap to reverse — is
+made and recorded. A decision that becomes a foundation is Ken's, and
+the run stops for it.
+
+### The format
+
+Each entry MUST carry all six fields. A verdict without its context
+cannot be reverted from, which defeats the purpose of recording it.
+
+```
+### A<n> · <one-line title>
+
+**Ticket:** M2.1 · **Date:** YYYY-MM-DD · **Commit:** <sha>
+
+**The situation.** What was being built, and what the code or the
+docs actually did. Include the case ID and quote the case text if it
+is the ambiguous thing.
+
+**What had to be decided.** Stated as a question.
+
+**Options considered.** At least two, each with what it costs.
+
+**Decided.** Which one, in one sentence.
+
+**Why.** The reasoning — including any principle or existing decision
+it leans on.
+
+**To revert.** The files and symbols that change if Ken decides
+otherwise. This is what makes the entry actionable rather than
+archival.
+```
+

@@ -1,9 +1,10 @@
 # The Phase 5 run workflow
 
 How the UI build runs unsupervised: who does what, what splits into
-what, and the two things that stop the run.
+what, and the four things that stop the run.
 
-Decided with Ken 2026-08-24. This governs the *run*.
+Decided with Ken 2026-08-24; the autonomy rules revised with him
+2026-08-29 after M1. This governs the *run*.
 [`TEMP-BUILD-PLAN.md`](TEMP-BUILD-PLAN.md) governs the phases;
 [`build-loop.md`](docs/dev/build-loop.md) governs one ticket.
 
@@ -215,23 +216,103 @@ Per milestone. The named list is the floor, not the ceiling.
 
 ## What stops the run
 
+**Revised 2026-08-29 with Ken, after M1.** M1's failure mode was not
+the run going wrong — it was the run stopping constantly for calls
+that were the agent's to make. "Should I fix the blockers?" is not a
+question. The rules below exist to make that concrete.
+
 **Default: fix it.** If something is broken and the fix is known, make
 it — then re-run the failing tests *and* the tests around whatever the
 fix touched, to confirm the fix landed and nothing regressed. That
 second half is not optional: a fix verified only by the test that
 failed is a fix that has not been checked for blast radius.
 
-Only two things stop the run.
+### The four stop conditions
 
-**1. A design decision that is genuinely Ken's.** Not "which of two
-equivalent shapes" — that is mine. Genuinely his means: it changes what
-the product does, it is not derivable from the cases, and guessing wrong
-means rework rather than a tweak. V11 and V12 were these.
+Only these. Everything else continues.
 
-**2. A contradiction between two cases.** The docs are the
-specification. An agent that may rewrite the spec to match its code has
-no specification. State the two case IDs and what is contradictory; do
-not adjudicate.
+**1. It changes scope.** A case needs a view, route, or feature no
+ticket plans. The sprints overview and the Milestones view were these:
+28 cases specifying screens the ticket list never had.
+
+**2. It invents a requirement.** No case covers the behaviour, and
+building it means authoring the spec. BLK-30's confirmation threshold
+was this — "proportionate" with no number, and the number I picked was
+mine, not the case's. An agent that may write the spec has no spec.
+
+**3. It violates a principle or a recorded decision.** The ten
+principles in [`ui-test-cases/README.md`](docs/dev/ui-test-cases/README.md)
+(P1–P10) are the "is this in line with the rest of the app" test, and
+they are already tagged per case. `decisions.md` sections 1–7 are the
+other half. A decision needing a principle that does not yet exist
+**is** an escalation.
+
+**4. It is load-bearing.** Later work will build directly on top of
+it, so being wrong means rework rather than a tweak.
+
+Condition 4 is the judgment call and the one that matters. There is no
+count. An earlier draft capped recorded decisions at three per ticket;
+Ken replaced that with this, because the number was never the risk —
+**stacking** was. Three contained decisions are fine. One foundational
+one is not.
+
+### What "load-bearing" means, concretely
+
+Ask: **if this is wrong, what gets thrown away?**
+
+| Answer | Do |
+|---|---|
+| This one behaviour, in one place | Decide. Record. Continue. |
+| Every screen that follows this pattern | Stop. |
+| A data shape, URL scheme, or storage format others will read | Stop. |
+| A test's expectations, and nothing else | Decide. Record. Continue. |
+| Whether a later ticket's cases even make sense | Stop. |
+
+When genuinely unsure, decide — and say so in the record's **Why**.
+An entry that admits it was a close call is more useful on review than
+a confident one that was wrong.
+
+### Recording a decision
+
+Every decision made under this rule goes in
+[`decisions.md`](docs/dev/decisions.md) § 8, in the six-field format
+that section specifies: situation, what had to be decided, options,
+decided, why, **and how to revert**.
+
+That last field is not bookkeeping. The whole arrangement — agent
+decides, Ken reviews later — only works if reverting is cheap when he
+disagrees. An entry without a revert path has taken a decision away
+from him rather than deferring it.
+
+**A contradiction between two cases is still a stop.** The docs are
+the specification; an agent that may rewrite the spec to match its
+code has no specification. State the two case IDs and what is
+contradictory; do not adjudicate.
+
+### When a gate will not pass
+
+Rounds 1, 3 and 5 of M1's gate each failed on defects introduced by
+the *previous* round's fixes. So the escalation is by round, not by
+finding:
+
+| Round | Who |
+|---|---|
+| 1–2 | Orchestrator dispatches fixes normally |
+| **3+** | **A Fable agent investigates** — not to fix, but to find what the rounds are missing. It recommends; a cheaper agent implements. |
+| Fable also stuck | Ken |
+
+This is not a guess. A Fable agent found the paused query three
+rounds of Opus had misdiagnosed as a predicate; another found
+`fetchState` un-saying a settled error, the single trap behind four
+`AppBootstrap` bugs diagnosed as unrelated. The pattern is
+**investigate with Fable, implement with Opus**.
+
+**A claim about mechanism needs a measurement, not an argument.** This
+repo has produced several confident, wrong mechanism claims — in gate
+reports and in my own commits. If you assert *why* something happens,
+show the trace, the request log, or the experiment. Three agents
+reasoning from the same priors will agree with each other and still be
+wrong.
 
 **Everything else continues:**
 
