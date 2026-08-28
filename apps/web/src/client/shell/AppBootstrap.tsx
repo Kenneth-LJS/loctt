@@ -26,20 +26,19 @@ export function AppBootstrap() {
   const currentUser = useCurrentUser();
 
   // Every hook stays above every branch, per the rules of hooks — and
-  // every value that becomes `AppShell`'s `info` is memoised.
+  // every value that becomes `AppShell`'s `info` is memoised, so the
+  // shell's subtree is not re-mounted by a fresh object each render.
   //
-  // Identity matters here more than it looks. `info` flows into
-  // `Sidebar` and on into the built-in count query keys, so a fresh
-  // object per render re-mounts that subtree, which re-issues
-  // `/api/info`, which fails, which re-renders. Measured against a
-  // schema-mismatched tracker: **2,968 requests in 46 seconds**. Each
-  // attempt was cancelled by the next before it could settle, so
-  // `fetchFailureCount` stayed 0 and the query sat at
-  // `pending`/`fetching` indefinitely — which is why the spinner never
-  // cleared and the banner was unreachable.
-  //
-  // That, not the retry policy, is what the M1 gate's F3 actually was.
-  // Both were fixed; only this one stops the hang.
+  // Worth stating plainly, because this file spent four attempts being
+  // blamed for it: memoising these did **not** fix the M1 gate's F3
+  // hang, and the hang was never about identity here. This component
+  // gates the shell on `["info"]`, and `ListView` — which renders
+  // inside that shell — reads `["info"]` too. A second observer
+  // mounting on an errored, data-less query refetches it by default,
+  // which resets its status to "pending" and closes the gate again.
+  // The cure is `retryOnMount: false` in `queryClient.ts`, where that
+  // cycle is written out in full. These `useMemo`s are kept because
+  // stable props are right anyway, not because they stop a loop.
   const schemaMismatch = useMemo(
     () => schemaStatusFromError(info.error),
     [info.error],

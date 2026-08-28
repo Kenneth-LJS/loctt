@@ -2260,13 +2260,35 @@ test.describe("ERR — the server dies mid-session", () => {
 
     // A server that is down and a tracker that is empty must be
     // visibly different screens — conflating them reads as data loss.
-    // The shell's boundary catches this before the list renders at all,
-    // which is why the assertion is on the failure being *stated*
-    // rather than on the list's own ErrorState.
     await expect(page.getByText(/No tasks match these filters/i)).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: /went wrong/i }))
-      .toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(/Failed to fetch/i)).toBeVisible();
+
+    // This spec asserted a "Something went wrong" heading until
+    // 2026-08-28 — `FatalError`'s copy, from a full-page error that
+    // replaced the shell. The M1 gate ruled that a blocker (F1): it
+    // contradicted SHL-41 and ERR-1 both, since a page with no shell
+    // has no banner and no retry button either. The test was green
+    // and encoding the wrong behaviour.
+    //
+    // ERR-1's own bullets are what is asserted now.
+
+    // "The message says the LocTT server is not responding and that it
+    // may have been stopped in the terminal where `loctt ui` was run."
+    const banner = page.locator("[data-server-unreachable]");
+    await expect(banner).toBeVisible({ timeout: 15_000 });
+    await expect(banner).toContainText(/not responding/i);
+    await expect(banner).toContainText(/loctt ui/);
+
+    // "It does not blame the user's network — there is no network
+    // involved in a localhost app."
+    await expect(banner).not.toContainText(/network|offline|connection/i);
+
+    // "A retry control is present and is a button the user can press,
+    // not a sentence telling them to refresh."
+    await expect(banner.getByRole("button")).toBeVisible();
+
+    // And the shell survives, so the user can still navigate — the
+    // whole point of the gate's F1.
+    await expect(page.getByLabel("Toggle sidebar")).toBeVisible();
   });
 });
 
