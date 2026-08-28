@@ -2323,7 +2323,7 @@ test.describe("ERR — a filter applied against a dead server", () => {
     // The table must not keep rows fetched for the previous filter,
     // under chips claiming the new one, with a footer asserting a count
     // for a query that never ran.
-    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText("Showing 1–14 of 14")).toHaveCount(0);
     await expect(page.locator("tbody").getByText("Task 1", { exact: true }))
       .toHaveCount(0);
@@ -2980,7 +2980,7 @@ test.describe("ONB — empty and loading states (M1.2)", () => {
 
     // A load failure must never read as data loss.
     await expect(page.getByText(/No tasks yet/i)).toHaveCount(0);
-    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
       .toBeVisible();
     // The shell stays usable so the user can go elsewhere.
@@ -3028,7 +3028,7 @@ test.describe("ERR — malformed responses and distinct surfaces (M1.2)", () => 
     await page.goto(`${tracker.baseURL}/list`);
 
     // Not half a table and not a row of undefined cells.
-    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 15_000 });
     await expect(page.locator("tbody")).not.toContainText("undefined");
     await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
       .toBeVisible();
@@ -3081,7 +3081,17 @@ test.describe("ERR — malformed responses and distinct surfaces (M1.2)", () => 
     // not available, which is the rare exception — but the three
     // obligations still hold (ERR-30).
     const alert = page.getByRole("alert");
-    await expect(alert).toContainText(/Loading tasks/i, { timeout: 15_000 });
+    await expect(alert).toBeVisible({ timeout: 15_000 });
+    // ERR-30's first obligation: what was attempted. Past tense —
+    // the panel used to be headed "Loading tasks", which read as a
+    // progress claim inside a role="alert" (gate round 6, F5).
+    await expect(alert).toContainText(/Could not load tasks/i);
+    // **The reason**, which is ERR-30's whole point and which this
+    // test did not check. The M1 vacuity sweep found that blanking
+    // the headline was caught by exactly one of sixteen ERR tests:
+    // every assertion here was satisfied by the context label alone,
+    // so it got *easier* to pass the less the app said.
+    await expect(alert).toContainText(/\S{12,}/);
     await expect(alert).not.toContainText(/^Error:\s*$/);
     await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
       .toBeVisible();
@@ -3108,7 +3118,7 @@ test.describe("ERR — malformed responses and distinct surfaces (M1.2)", () => 
     // 3. An unreachable server.
     await page.route(/\/api\/tasks(\?|$)/, route => route.abort("failed"));
     await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 15_000 });
     const unreachable = await page.locator("body").innerText();
 
     // All three read differently, and neither failure borrows the
@@ -3353,7 +3363,7 @@ test.describe("LST — columns, staleness, unreachable (M1.2)", () => {
     await page.route(/\/api\/tasks(\?|$)/, route => route.abort("connectionrefused"));
     await page.goto(`${tracker.baseURL}/list`);
 
-    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 15_000 });
     // Never the empty-tracker copy — a load failure must not read as
     // data loss.
     await expect(page.getByText(/No tasks yet/i)).toHaveCount(0);
@@ -4121,7 +4131,7 @@ test.describe("LST — filters that fail honestly (M1.3)", () => {
     await page.goto(`${tracker.baseURL}/list`);
 
     // A terminal state, not an endless skeleton.
-    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
       .toBeVisible();
     // Never presented as an empty tracker.
@@ -4149,7 +4159,7 @@ test.describe("LST — filters that fail honestly (M1.3)", () => {
     // The URL and the visible result never disagree silently: either
     // the previous state is clearly retained, or the table is in an
     // explicit error state. It is the latter.
-    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText("Showing 1–2 of 2")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
       .toBeVisible();
