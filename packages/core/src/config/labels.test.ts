@@ -48,14 +48,24 @@ describe("parseLabelsConfig", () => {
     expect(() => parseLabelsConfig(yaml)).toThrow(LabelsConfigError);
   });
 
-  it("rejects a malformed hex color", () => {
+  // @verifies MSL-22
+  it("keeps a label whose hex color is malformed, dropping only the color", () => {
     const yaml = `labels:
   - id: 01HX0000000000000000000001
     name: Bug
     color: "not-a-color"
 `;
-    expect(() => parseLabelsConfig(yaml)).toThrow(LabelsConfigError);
-    expect(() => parseLabelsConfig(yaml)).toThrow(/hex color/);
+    // This previously threw, which took the *whole file* down: one bad
+    // cosmetic field made every label in it unresolvable, so every task
+    // rendered "unknown label" (MSL-22). V9's refuse-rather-than-build
+    // reasoning is about a definition that cannot render — a bad colour
+    // does not stop a label having an id and a name.
+    //
+    // Per CLAUDE.md, a fix that requires editing a green test means
+    // that test was asserting the bug.
+    const cfg = parseLabelsConfig(yaml);
+    expect(cfg.labels[0]?.name).toBe("Bug");
+    expect(cfg.labels[0]?.color).toBeUndefined();
   });
 
   it("accepts a 3-digit hex color", () => {
@@ -67,13 +77,17 @@ describe("parseLabelsConfig", () => {
     expect(cfg.labels[0]?.color).toBe("#f00");
   });
 
-  it("rejects an 8-digit hex color (no alpha support)", () => {
+  // @verifies MSL-22
+  it("drops an 8-digit hex color rather than rejecting the file (no alpha support)", () => {
     const yaml = `labels:
   - id: 01HX0000000000000000000001
     name: Bug
     color: "#1e6fcb80"
 `;
-    expect(() => parseLabelsConfig(yaml)).toThrow(/hex color/);
+    // Alpha is still unsupported; what changed is the consequence.
+    const cfg = parseLabelsConfig(yaml);
+    expect(cfg.labels[0]?.name).toBe("Bug");
+    expect(cfg.labels[0]?.color).toBeUndefined();
   });
 
   it("rejects an archived field of the wrong type", () => {

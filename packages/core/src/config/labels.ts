@@ -26,11 +26,47 @@ export function getLabelsConfigPath(locttDir: string): string {
 }
 
 /** Parses raw YAML content into a LabelsConfig. */
+/**
+ * Drops a `color` that is not a hex value, keeping the label.
+ *
+ * MSL-22: an invalid colour must not produce an unstyled pill or a
+ * render error — the label renders with the neutral default and the
+ * bad value is surfaced as a fixable config problem.
+ *
+ * This is narrower than it looks against V9 ("config is not a log;
+ * refuse rather than build on a definition you could not read"). V9's
+ * reasoning is about a definition that **cannot render**: a status
+ * with no key breaks every task pointing at it. A bad colour does not
+ * break the definition — the label still has an id and a name, which
+ * is everything a reference needs. So the *field* is dropped, not the
+ * entry and not the file.
+ *
+ * Every write path validates through `HexColor`, so this state is
+ * reachable only by hand-editing `labels.yaml`. Refusing to render
+ * would punish every other label in the file for one typo in one
+ * cosmetic field.
+ */
+function dropInvalidColors(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null) return raw;
+  const labels = (raw as { labels?: unknown }).labels;
+  if (!Array.isArray(labels)) return raw;
+  const cleaned: unknown[] = (labels as unknown[]).map((l): unknown => {
+    if (typeof l !== "object" || l === null) return l;
+    const entry = l as Record<string, unknown>;
+    const color = entry["color"];
+    if (typeof color !== "string") return l;
+    if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(color)) return l;
+    const { color: _dropped, ...rest } = entry;
+    return rest;
+  });
+  return { ...raw, labels: cleaned };
+}
+
 export function parseLabelsConfig(yamlContent: string): LabelsConfig {
   const raw: unknown = safeParseYaml(yamlContent, "labels.yaml");
   let parsed: LabelsConfig;
   try {
-    parsed = LabelsConfigSchema.parse(raw);
+    parsed = LabelsConfigSchema.parse(dropInvalidColors(raw));
   } catch (err) {
     if (err instanceof z.ZodError) {
       throw new LabelsConfigError(formatZodIssues("labels config", err));

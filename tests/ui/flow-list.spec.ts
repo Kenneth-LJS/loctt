@@ -3164,6 +3164,51 @@ test.describe("XS — cross-surface convergence (M1.2)", () => {
 });
 
 test.describe("MSL — label pills (M1.2)", () => {
+  // @verifies MSL-22
+  test("MSL-22: an invalid colour keeps the label, styled, and is reported as fixable", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["label", "create", "good"]);
+    await tracker.run(["label", "create", "bad"]);
+    await tracker.run(["create", "Tagged", "--label", "good", "--label", "bad"]);
+
+    // Only a hand-edit can produce this: every write path validates
+    // through HexColor, and the settings UI is M4.3.
+    const cfg = path.join(tracker.root, ".loctt", "config", "labels.yaml");
+    await writeFile(
+      cfg,
+      (await readFile(cfg, "utf8")).replace(/(name: bad)/, "$1\n    color: notahex"),
+      "utf8",
+    );
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    // Both labels render. One bad cosmetic field used to 500 the whole
+    // endpoint, so *every* label on every row read "unknown label" —
+    // including the ones that were fine.
+    const row = page.locator("tbody tr").first();
+    await expect(row).toContainText("good");
+    await expect(row).toContainText("bad");
+    await expect(row).not.toContainText("unknown label");
+
+    // Neither pill is unstyled: `notahex22` is not a colour, so the
+    // invalid value must not reach CSS at all.
+    for (const name of ["good", "bad"]) {
+      const pill = row.getByTitle(name, { exact: true });
+      await expect(pill).toBeVisible();
+      const bg = await pill.evaluate(el => getComputedStyle(el).backgroundColor);
+      expect(bg).not.toBe("rgba(0, 0, 0, 0)");
+    }
+
+    // And the bad value is surfaced as a fixable config problem,
+    // naming the label and the value.
+    const doctor = await tracker.run(["doctor"]);
+    expect(doctor).toContain("bad");
+    expect(doctor).toContain("notahex");
+  });
+
   // @verifies MSL-26
   test("MSL-26: a 100-character label name truncates inside the pill", async ({
     page,
