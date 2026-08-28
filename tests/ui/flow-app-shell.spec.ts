@@ -1021,3 +1021,67 @@ test.describe("SHL — the shell under a failing recovery attempt", () => {
     await expect(footer).toContainText(/2 tasks|unavailable/);
   });
 });
+
+test.describe("ERR — recovery when the server comes back", () => {
+  /**
+   * @verifies ERR-2
+   *
+   * The M1 gate's F2 claimed an errored query never runs its 5-second
+   * recovery poll, so recovery waits on the 60-second staleness
+   * interval. **The user-visible claim does not reproduce**: the app
+   * recovers unattended in under a second.
+   *
+   * Two separate measurements, both against the built app:
+   *
+   * - The poll *does* run. Six `/api/info` requests in a clean
+   *   20-second window; a 60s-only interval would give zero. The
+   *   gate's mechanism claim was also wrong — `onQueryUpdate()` calls
+   *   `#updateTimers()`, so the error transition re-arms the interval.
+   * - But the poll is **not** what this test measures. With the error
+   *   poll at 120s, the staleness interval at 120s and
+   *   `refetchOnWindowFocus` off, thirteen requests still fire within
+   *   790ms of the server returning and the banner still clears. Some
+   *   render- or route-driven refetch gets there first.
+   *
+   * So this asserts exactly ERR-2's own words — "the UI recovers on
+   * its own when the server comes back" — and deliberately does not
+   * assert *which* mechanism does it. An earlier version implied the
+   * poll; it passed with every poll disabled, which is worse than not
+   * testing it.
+   *
+   * Pinned because a refutation nobody can re-run is just an
+   * assertion, and this one contradicts a gate report.
+   */
+  test("ERR-2: the UI recovers on its own, without a reload or a click", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha task" }, { title: "Beta task" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody tr")).toHaveCount(2);
+
+    // The server "goes away" behind a flag the handler reads on every
+    // request. `page.unroute` is deliberately not used: it releases
+    // requests that were already queued, so the page recovers from
+    // that release rather than from any poll — a first cut of this
+    // test passed with *every* recovery path disabled.
+    let down = true;
+    await page.route(/\/api\//, route => {
+      if (down) void route.abort("connectionrefused");
+      else void route.continue();
+    });
+    await page.reload();
+    const banner = page.locator("[data-server-unreachable]");
+    await expect(banner).toBeVisible({ timeout: 15_000 });
+
+    // The server comes back. Nothing is clicked, nothing is reloaded,
+    // and no queued request is released — the app has to ask again on
+    // its own.
+    down = false;
+
+    // Well inside the 60s staleness interval. If the error poll were
+    // dead, as the gate's F2 claimed, this would time out.
+    await expect(banner).toBeHidden({ timeout: 20_000 });
+    await expect(page.locator("tbody tr")).toHaveCount(2);
+  });
+});
