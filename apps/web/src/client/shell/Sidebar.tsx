@@ -186,7 +186,18 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
   });
   const items = (projects.data?.items ?? []).filter(p => p.archived !== true);
   const failed = projects.isError;
-  const defaultProjectId = projects.data?.default ?? null;
+  // SHL-5: mark where a new task would land for *this* user, falling
+  // back to the workspace default on a server that predates the field.
+  // `??` would be wrong here: an explicit `null` means the chain
+  // resolved to nothing (several projects, no default anywhere), which
+  // is an answer. Only an *absent* field — an older server — falls back
+  // to the workspace default.
+  const defaultProjectId =
+    projects.data === undefined
+      ? null
+      : "effective_default" in projects.data
+        ? (projects.data.effective_default ?? null)
+        : (projects.data.default ?? null);
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Projects</GroupLabel>

@@ -14,6 +14,14 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
+/**
+ * @verifies SHL-12
+ *
+ * A fresh `renderHook` is the reload: the hook re-reads localStorage on
+ * mount with no in-memory state carried over. Route changes do not
+ * remount it — it lives above the router in AppShell — so persistence
+ * across a reload is the stronger of the two claims the case makes.
+ */
 describe("useSidebarCollapse", () => {
   it("defaults to expanded when nothing is stored", () => {
     const { result } = renderHook(() => useSidebarCollapse());

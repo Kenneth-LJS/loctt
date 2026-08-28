@@ -81,38 +81,43 @@ export function Header({
   );
 }
 
+/**
+ * Three-way theme control: Light, Dark, System.
+ *
+ * SHL-14 requires System to be reachable, and the pressed state to
+ * reflect the *preference* rather than what it resolved to. Keying
+ * `aria-pressed` on `resolved` (as this did) makes System indis-
+ * tinguishable from an explicit Light on a light OS, so a user who
+ * chose "follow the OS" is told they chose Light — and has no control
+ * to get back.
+ */
 function ThemeToggle() {
-  const { resolved, setPreference } = useTheme();
+  const { preference, setPreference } = useTheme();
+  const options = [
+    { value: "light", label: "Light", glyph: "\u2600" },
+    { value: "dark", label: "Dark", glyph: "\u263e" },
+    { value: "system", label: "System", glyph: "\u25d1" },
+  ] as const;
   return (
     <div className="inline-flex h-8 items-center rounded-md bg-bg-muted p-0.5" aria-label="Theme">
-      <button
-        type="button"
-        aria-pressed={resolved === "light"}
-        title="Light"
-        onClick={() => setPreference("light")}
-        className={[
-          "h-7 rounded-[4px] px-2.5 text-[13px]",
-          resolved === "light"
-            ? "bg-bg-surface text-text-primary shadow-raised"
-            : "text-text-secondary",
-        ].join(" ")}
-      >
-        ☀
-      </button>
-      <button
-        type="button"
-        aria-pressed={resolved === "dark"}
-        title="Dark"
-        onClick={() => setPreference("dark")}
-        className={[
-          "h-7 rounded-[4px] px-2.5 text-[13px]",
-          resolved === "dark"
-            ? "bg-bg-surface text-text-primary shadow-raised"
-            : "text-text-secondary",
-        ].join(" ")}
-      >
-        ☾
-      </button>
+      {options.map(o => (
+        <button
+          key={o.value}
+          type="button"
+          aria-pressed={preference === o.value}
+          title={o.label}
+          aria-label={o.label}
+          onClick={() => setPreference(o.value)}
+          className={[
+            "h-7 rounded-[4px] px-2.5 text-[13px]",
+            preference === o.value
+              ? "bg-bg-surface text-text-primary shadow-raised"
+              : "text-text-secondary",
+          ].join(" ")}
+        >
+          {o.glyph}
+        </button>
+      ))}
     </div>
   );
 }
