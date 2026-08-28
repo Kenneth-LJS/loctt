@@ -4462,3 +4462,79 @@ test.describe("XS — UI/CLI parity (M1.3)", () => {
     }
   });
 });
+
+test.describe("MSL — clicking label pills (M1.3)", () => {
+  // @verifies MSL-6
+  test("MSL-6: clicking a label filters the list and the CLI agrees", async ({
+    page,
+    tracker,
+  }) => {
+    const a = await tracker.run(["label", "create", "bug"]);
+    const idA = /([0-9A-Z]{26})/.exec(a)?.[1] ?? "";
+    await tracker.run(["create", "Buggy", "--label", "bug"]);
+    await tracker.run(["create", "Clean"]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Clicking the pill filters rather than opening the task (LST-5).
+    await page.locator("tbody").getByTitle("bug", { exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`labels=${idA}`));
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.locator("tbody")).toContainText("Buggy");
+
+    // A removable chip says why the rows matched.
+    const chip = page.getByRole("button", { name: /Remove Label/i });
+    await expect(chip).toBeVisible();
+
+    // Back removes it and restores the prior result set.
+    await page.goBack();
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // And the equivalent CLI query returns the same tasks, by key —
+    // not merely that it parses.
+    // Quoted: a ULID starts with a digit, so the tokenizer reads a
+    // bare one as a number followed by a stray identifier. The UI's
+    // own query builder quotes for the same reason.
+    const cli = await tracker.run(["list", "--query", `labels in ("${idA}")`]);
+    expect(cli).toContain("Buggy");
+    expect(cli).not.toContain("Clean");
+  });
+
+  // @verifies MSL-7
+  test("MSL-7: a second label adds to the filter rather than replacing it", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["label", "create", "bug"]);
+    await tracker.run(["label", "create", "ui"]);
+    await tracker.run(["create", "Both", "--label", "bug", "--label", "ui"]);
+    await tracker.run(["create", "OnlyBug", "--label", "bug"]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    await page.locator("tbody").getByTitle("bug", { exact: true }).first().click();
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    await page.locator("tbody").getByTitle("ui", { exact: true }).first().click();
+
+    // Added, not replaced: both labels are in the URL and both appear
+    // as their own removable chip.
+    await expect(page).toHaveURL(/labels=[^&]*,/);
+    expect(await page.getByRole("button", { name: /Remove Label/i }).count()).toBe(2);
+
+    // The combining semantics are OR, matching every other facet —
+    // `labels in (a, b)`. The case allows either rule as long as it is
+    // visible, and two chips reading "Label: bug" and "Label: ui" over
+    // a set containing both tasks is that.
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    await expect(page.locator("tbody")).toContainText("Both");
+    await expect(page.locator("tbody")).toContainText("OnlyBug");
+
+    // Removing one leaves the other applied.
+    await page.getByRole("button", { name: /Remove Label/i }).first().click();
+    expect(await page.getByRole("button", { name: /Remove Label/i }).count()).toBe(1);
+    await expect(page).toHaveURL(/labels=/);
+  });
+});
