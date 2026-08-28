@@ -21,12 +21,12 @@ misdiagnoses in this repo.
 | XS | 20/20 | 1 | 1 |
 | MSL/VUE/ONB/TSK | 24/24 | 5 | — |
 | SHL | 25/25 | 2 | 1 |
-| LST | 24/49 | 8 | 1 |
+| LST | 45/49 | 12 | 1 |
 | ERR | 16/16 | 6 | 2 |
-| BLK | — | — | — |
+| BLK | 56/56 | **0** | — |
 
-**23 vacuous of 109 checked so far.** LST is a partial sweep — 25 of
-its 49 were not mutated and carry no verdict either way.
+**Complete: 27 vacuous of 186 checked.** LST's remaining 4 (LST-3, 18,
+38, 43) have **no test at all** — a coverage gap, not a verdict.
 
 ---
 
@@ -398,12 +398,44 @@ Same distinction as SHL-30/42: an inert mutation and a survived
 mutation are indistinguishable from the test result alone. Every
 sweep that has run has hit this at least once.
 
-### Not checked (25)
+### Second pass — 21 more checked, 4 more vacuous
 
-Listed in `sweep-LST.md`. Next by suspicion: **LST-42** (its reload
-assertion checks row count, never that the search box shows the
-original quoted text — the case's explicit bullet), then LST-7 and
-LST-44.
+- **LST-7** — the skeleton replaced with a bare `Loading…` row, which
+  is verbatim the "bare centered spinner over empty chrome" the case
+  rules out. Green. Its only positive assertion is `tbody tr`
+  first-visible, which any row satisfies.
+- **LST-29** — the effect that strips an unrecognised sort key from
+  the URL disabled. Green. The agent distrusted this green and wrote a
+  throwaway probe: unmutated, `?sort=nonexistent_field` corrects to
+  bare `/list`; mutated, it persists. The case's third bullet — "does
+  **not** silently persist as though it were applied" — is unasserted
+  because the test never reads the URL.
+- **LST-37 and LST-39** — both refetch triggers disabled
+  (`refetchOnWindowFocus`, healthy `refetchInterval`), confirmed in the
+  bundle. Both stayed green, because each calls `page.reload()`.
+  LST-37's case says the row must go "after refetch — **not only after
+  a full page reload**", which is exactly what the test cannot
+  distinguish.
+
+### LST-42 — a product gap, not a test defect
+
+Healthy on execution (stripping backslashes from `q` turned it red).
+But its bullet "after reload the search box shows the original text"
+is **untestable as built: there is no search-box UI.** `q` is only
+ever read from the URL; nothing in `apps/web/src/client` binds an
+input to it.
+
+### Coverage gap: LST-3, 18, 38, 43 have no test
+
+**LST-3 is the one that matters.** It is a blocker, and its central
+bullet is:
+
+> the request carried the sort — asserting only the rendered order
+> lets a client-side sort of the current page pass
+
+That is precisely the hole the comparator mutation exposed in LST-4,
+LST-21 and LST-27. **The case that would have caught those three was
+never written.**
 
 ---
 
@@ -566,3 +598,51 @@ compile is not a mutation, and one on a dead path is not either.
 
 The agents that caught these caught them by probing the mutated
 binary rather than trusting the edit. That step is not optional.
+
+---
+
+## BLK — 56 of 56 checked, **zero vacuous**
+
+The count is 56, not 57: one tag (`// @verifies BLK-38, BLK-39`)
+covers two cases.
+
+Every BLK test went red under a mutation targeting the exact behaviour
+its case requires. 37 mutations applied, 35 valid. Control run both
+ways — all 56 green before mutating, all 56 green again after
+restoring, `git diff` empty — so every red came from the mutation in
+front of it.
+
+**This is the M1.4 group: the only tickets built under the disciplined
+loop rather than marked ✅ beforehand.** It is also the only group with
+no vacuous tests. That is the clearest evidence the sweep produced
+about what the build loop is worth.
+
+Several of these tests defend against this exact failure mode *and say
+so in comments*, and every such distinction held under mutation:
+
+- **BLK-10** picks "Set status" for its supersede test *because* it
+  does not clear the selection — so Undo must vanish by supersede
+  rather than by unmount
+- **BLK-9** asserts `"OLD → NEW"` as one string, because two
+  `toContainText` calls would pass with the arrow reversed
+- **BLK-7/8** force an archived entity into the payload, because
+  asserting against the live response would pass whether or not the
+  client filters
+
+### Two invalid mutations, caught rather than scored
+
+Both first produced a false "survived":
+
+- **BLK-43** — `setFailure` removed from the `catch` block, but the
+  test drives an HTTP 500, handled by an earlier `if (!res.ok)` branch
+  with its own `setFailure`. Redone: red.
+- **BLK-46** — the `if (def.archived)` throw in `move.ts` disabled,
+  test still green. The agent probed the live page rather than
+  recording it vacuous, and found the refusal actually originates at
+  `packages/core/src/projects/manage.ts:114`. Mutating *that*: red.
+
+The BLK-46 probe surfaced something worth knowing: `menuitem "Ops"`
+has count 0 at click time, because `active()` in `BulkBar.tsx` filters
+the archived project out of the picker. The test is healthy and does
+reach the server guard, but by a more indirect route than its name
+suggests — a landmine if it is ever edited.
