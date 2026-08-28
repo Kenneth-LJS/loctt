@@ -251,6 +251,24 @@ export function ListView() {
     ([k, v]) => v !== undefined && k !== "sort" && k !== "dir" && k !== "page",
   );
 
+  /**
+   * Adds a label to the filter (MSL-6, MSL-7).
+   *
+   * Additive: clicking a second label narrows further rather than
+   * replacing the first, and each arrives as its own removable chip so
+   * the user can see why rows matched.
+   */
+  const onFilterLabel = (id: string): void => {
+    void navigate({
+      search: prev => {
+        const current = Array.isArray(prev.labels) ? prev.labels : [];
+        return current.includes(id)
+          ? prev
+          : { ...prev, labels: [...current, id], page: undefined };
+      },
+    });
+  };
+
   const refs = [...selection.selected];
 
   // The selection holds task ids; a failure has to name the key
@@ -543,7 +561,7 @@ export function ListView() {
                   </td>
                   {columns.map(col => (
                     <td key={col.id} className="align-middle">
-                      <Cell colId={col.id} task={task} lookups={lookups} now={now} today={today} />
+                      <Cell colId={col.id} task={task} lookups={lookups} now={now} today={today} onFilterLabel={onFilterLabel} />
                     </td>
                   ))}
                 </tr>
@@ -659,10 +677,13 @@ function Cell({
   lookups,
   now,
   today,
+  onFilterLabel,
 }: {
   colId: string;
   task: import("@loctt/contracts").TaskFrontmatterPublic;
   lookups: ReturnType<typeof buildLookups>;
+  /** Clicking a label pill filters to it (MSL-6). */
+  onFilterLabel: (id: string) => void;
   now: number;
   today: string;
 }) {
@@ -718,6 +739,7 @@ function Cell({
       return (
         <LabelsCell
           labels={(task.labels ?? []).map(id => lookups.label(id) ?? { id })}
+          onFilter={onFilterLabel}
         />
       );
     case "due_date":

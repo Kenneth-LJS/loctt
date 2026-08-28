@@ -193,7 +193,19 @@ function readableOn(hex: string): string {
  */
 const MAX_LABEL_PILLS = 3;
 
-export function LabelsCell({ labels }: { labels: readonly (LabelDef | { id: string })[] }) {
+export function LabelsCell({
+  labels,
+  onFilter,
+}: {
+  readonly labels: readonly (LabelDef | { id: string })[];
+  /**
+   * Clicking a pill filters the list to that label (MSL-6).
+   *
+   * Optional so the cell stays usable where a filter makes no sense —
+   * the pill falls back to plain text rather than a dead button.
+   */
+  readonly onFilter?: ((id: string) => void) | undefined;
+}) {
   if (labels.length === 0) return <Dash />;
   const shown = labels.slice(0, MAX_LABEL_PILLS);
   const hidden = labels.length - shown.length;
@@ -208,9 +220,22 @@ export function LabelsCell({ labels }: { labels: readonly (LabelDef | { id: stri
         const color = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(named?.color ?? "")
           ? named?.color
           : undefined;
+        const Pill = onFilter ? "button" : "span";
         return (
-          <span
+          <Pill
             key={l.id}
+            {...(onFilter
+              ? {
+                  type: "button" as const,
+                  // The row itself navigates to the task, so a pill
+                  // click has to stop there — LST-5 is explicit that
+                  // clicking a label filters rather than opening.
+                  onClick: (e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    onFilter(l.id);
+                  },
+                }
+              : {})}
             title={named?.name}
             className="inline-flex items-center rounded border border-border-subtle px-1.5 py-0.5 text-[11px]"
             style={
@@ -236,7 +261,7 @@ export function LabelsCell({ labels }: { labels: readonly (LabelDef | { id: stri
             <span className="max-w-[14ch] truncate">
               {named?.name ?? "unknown label"}
             </span>
-          </span>
+          </Pill>
         );
       })}
       {hidden > 0 && (
