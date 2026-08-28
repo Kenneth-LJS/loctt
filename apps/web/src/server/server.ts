@@ -2430,7 +2430,13 @@ export function createWebApp(options: WebAppOptions) {
     const columnsParam = url.searchParams.get("columns");
     const columns = columnsParam ? columnsParam.split(",").map(c => c.trim()).filter(Boolean) : undefined;
 
-    const tasks = await loadAllTasks(locttDir);
+    // Detailed, so a task that will not parse can be *named* rather
+    // than silently dropped. BLK-44: "what must not happen is a
+    // truncated file that silently omits the bad row with no
+    // mention." The export used the plain call, so a corrupt task
+    // vanished from the CSV and nothing anywhere said so — a
+    // spreadsheet short by one row that reconciles against nothing.
+    const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
     const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
     const baseQuery = url.searchParams.get("query") ?? undefined;
     const view = url.searchParams.get("view") ?? undefined;
@@ -2460,11 +2466,29 @@ export function createWebApp(options: WebAppOptions) {
       ...(columns ? { columns } : {}),
       ...(includeBody ? { includeBody: true } : {}),
     };
+    // The body is a file, so it cannot carry an error envelope. The
+    // skipped ids ride on a header instead: the download still
+    // succeeds — which is the branch BLK-44 prefers — and the client
+    // reports what is missing from it.
+    // Paths rather than ids: a path is what the user acts on, and it
+    // is what ERR-9's banner already shows for the same files. A bare
+    // ULID would also put an internal identifier in front of the user
+    // for no gain (P-4) — the id is only a handle here because the
+    // file will not parse well enough to have a key.
+    //
+    // Header-safe: a header value cannot hold a newline, and these are
+    // filesystem paths under the tracker, so they are joined with a
+    // separator that cannot appear in one.
+    const skipped = unreadable.length > 0
+      ? { "X-Loctt-Unreadable": unreadable.map(u => u.path).join("|") }
+      : {};
+
     if (format === "json") {
       const body = exportTasksToJSON(filtered, opts);
       res.writeHead(200, {
         "Content-Type": "application/json",
         "Content-Disposition": 'attachment; filename="loctt-tasks.json"',
+        ...skipped,
       });
       res.end(body);
     } else {
@@ -2472,6 +2496,7 @@ export function createWebApp(options: WebAppOptions) {
       res.writeHead(200, {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": 'attachment; filename="loctt-tasks.csv"',
+        ...skipped,
       });
       res.end(body);
     }

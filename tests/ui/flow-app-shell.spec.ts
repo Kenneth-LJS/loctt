@@ -8,6 +8,9 @@
  * returns to where the user left it.
  */
 
+import { readdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+
 import { expect, test } from "./fixtures/tracker.ts";
 
 test.describe("SHL — routing and history", () => {
@@ -635,5 +638,48 @@ test.describe("XS — the UI and the CLI mean the same things", () => {
     const listed = await tracker.run(["list"]);
     const cliRows = listed.split("\n").filter(l => /^T-\d+\s/.test(l)).length;
     expect(cliRows).toBe(6);
+  });
+});
+
+test.describe("BLK — export with an unreadable task", () => {
+  // @verifies BLK-44
+  test("BLK-44: the export succeeds and names what it could not read", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Readable one" },
+      { title: "Readable two" },
+      { title: "Will be corrupted" },
+    ]);
+
+    const tasksDir = path.join(tracker.root, ".loctt", "tasks");
+    const ids = await readdir(tasksDir);
+    const victim = String(ids[ids.length - 1]);
+    await writeFile(
+      path.join(tasksDir, victim, "task.md"),
+      "---\nid: [not\n  valid: yaml\n---\nbody\n",
+      "utf8",
+    );
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Readable one")).toBeVisible();
+
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: /Export/ }).click();
+    await page.getByRole("menuitem", { name: /CSV/ }).click();
+
+    // The file arrives — BLK-44's preferred branch is that the export
+    // succeeds rather than failing outright.
+    const file = await download;
+    expect(file.suggestedFilename()).toContain(".csv");
+
+    // And the surface says what is missing from it. A truncated file
+    // with no mention is the one outcome the case rules out.
+    const notice = page.locator("[data-export-skipped]");
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText("1 task could not be read");
+    await expect(notice).toContainText("task.md");
+    await expect(notice).toContainText(victim);
   });
 });

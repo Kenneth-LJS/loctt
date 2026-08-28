@@ -42,6 +42,18 @@ export function ExportMenu({
   );
 
   /**
+   * Task ids the server could not read, so they are missing from the
+   * file it just handed over.
+   *
+   * BLK-44: the export may succeed and name what it skipped, or fail
+   * and name the offending path — but "a truncated file that silently
+   * omits the bad row with no mention" is the one outcome ruled out.
+   * The body is a file and cannot carry an envelope, so the ids ride
+   * on a header.
+   */
+  const [skipped, setSkipped] = useState<readonly string[]>([]);
+
+  /**
    * Runs the export as a fetch and hands the result to the browser.
    *
    * A plain `<a download>` cannot report failure: a 500 produces no
@@ -53,6 +65,7 @@ export function ExportMenu({
   const run = async (format: "csv" | "json"): Promise<void> => {
     setOpen(false);
     setFailure(undefined);
+    setSkipped([]);
     setPending(true);
     try {
       const res = await fetch(href(format));
@@ -64,6 +77,10 @@ export function ExportMenu({
           reason: body?.message ?? `the server returned ${String(res.status)}`,
         });
         return;
+      }
+      const unreadable = res.headers.get("X-Loctt-Unreadable");
+      if (unreadable !== null && unreadable !== "") {
+        setSkipped(unreadable.split("|").filter(Boolean));
       }
       const url = URL.createObjectURL(await res.blob());
       const a = document.createElement("a");
@@ -162,6 +179,19 @@ export function ExportMenu({
           >
             Retry
           </button>
+        </span>
+      )}
+
+      {skipped.length > 0 && (
+        // The file downloaded; this says what is not in it. A status
+        // rather than an alert: the export worked, and the tasks that
+        // could not be read are a fact about the tracker rather than a
+        // failure of this action (BLK-44).
+        <span role="status" data-export-skipped="true" className="ml-2 text-[12px] text-warn-fg">
+          {skipped.length} task{skipped.length === 1 ? "" : "s"} could not be read and
+          {" "}{skipped.length === 1 ? "is" : "are"} missing from the file:
+          {" "}<span className="font-mono">{skipped.join(", ")}</span>.
+          {" "}Run <code className="font-mono">loctt doctor</code> to see why.
         </span>
       )}
     </div>
