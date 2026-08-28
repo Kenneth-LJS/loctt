@@ -1172,9 +1172,24 @@ export function createWebApp(options: WebAppOptions) {
       // take down the projects list, which is where the user would go
       // to understand the problem.
     }
+    // SHL-5 marks the *active* project, which is where a new task
+    // actually lands — and that is the per-user default when one is
+    // set, not the workspace default. Reporting only `cfg.default`
+    // stars a project the user's own writes would not go to. Carried
+    // as a separate field so `default` keeps meaning "the workspace
+    // default" for the settings panel that edits it.
+    let effectiveDefault: string | null = cfg.default ?? null;
+    try {
+      effectiveDefault = await resolveProjectIdForUser(locttDir);
+    } catch {
+      // Ambiguous (several projects, no default anywhere) or empty.
+      // Neither is an error for a *list* — the group renders with no
+      // project starred, which is honest about there being no answer.
+    }
     json(res, {
       ...paginated(cfg.projects, page.offset, page.limit),
       default: cfg.default ?? null,
+      effective_default: effectiveDefault,
       ...(pendingPrefixRename !== undefined
         ? { pending_prefix_rename: pendingPrefixRename }
         : {}),

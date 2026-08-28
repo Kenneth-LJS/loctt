@@ -38,6 +38,15 @@ interface Page<T> {
 interface ProjectsPage extends Page<ProjectDef> {
   /** Workspace default project id, or null when none is set. */
   readonly default: string | null;
+  /**
+   * The project a new task would actually land in for the current
+   * user: per-user default > workspace default > sole project.
+   *
+   * Distinct from `default` on purpose. The settings panel edits the
+   * workspace value; the sidebar marks the active one (SHL-5), and a
+   * user with their own default set has those disagree.
+   */
+  readonly effective_default?: string | null;
 }
 
 interface UsersPage extends Page<UserProfile> {

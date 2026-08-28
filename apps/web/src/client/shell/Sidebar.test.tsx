@@ -22,6 +22,15 @@ import { Sidebar } from "./Sidebar.tsx";
  * full app boot.
  */
 
+/** Recents payload, per-test. */
+let RECENTS: { key: string; title: string }[] = [];
+
+/**
+ * `effective_default` from `/api/projects`, per-test. `undefined` omits
+ * the field entirely, standing in for a server that predates it.
+ */
+let EFFECTIVE_DEFAULT: string | null | undefined;
+
 const INFO: TrackerInfoResponse = {
   exists: true,
   taskCount: 7,
@@ -44,6 +53,7 @@ function routeFetch(path: string): unknown {
       offset: 0,
       limit: 100,
       default: "p_web",
+      ...(EFFECTIVE_DEFAULT === undefined ? {} : { effective_default: EFFECTIVE_DEFAULT }),
     };
   }
   if (path.startsWith("/api/views")) {
@@ -67,7 +77,7 @@ function routeFetch(path: string): unknown {
     return { items: [{ id: "l_fe", name: "frontend", color: "#1e6fcb" }], total: 1, offset: 0, limit: 100 };
   }
   if (path.startsWith("/api/recents")) {
-    return { items: [], total: 0, offset: 0, limit: 100 };
+    return { items: RECENTS, total: RECENTS.length, offset: 0, limit: 100 };
   }
   if (path.startsWith("/api/tasks")) {
     return { total: 3 }; // built-in count badges
@@ -133,6 +143,8 @@ async function renderSidebarAt(pathname: string, search: Record<string, unknown>
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  RECENTS = [];
+  EFFECTIVE_DEFAULT = undefined;
 });
 
 describe("Sidebar", () => {
@@ -201,5 +213,91 @@ describe("Sidebar", () => {
     expect(api.closest("a")?.querySelector("[data-active]")).not.toBeNull();
     const web = screen.getByText("Web");
     expect(web.closest("a")?.querySelector("[data-active]")).toBeNull();
+  });
+});
+
+/**
+ * @verifies SHL-5
+ *
+ * The star marks where a new task actually lands. `/api/projects`
+ * reported only the *workspace* default, so a user with their own
+ * `default_project` set was shown a star on a project their own writes
+ * would not go to — the one thing the mark is for.
+ */
+describe("Sidebar default project (SHL-5)", () => {
+  it("stars the per-user effective default over the workspace default", async () => {
+    EFFECTIVE_DEFAULT = "p_api";
+    await renderSidebarAt("/list");
+
+    const api = (await screen.findByText("API")).closest("a") as HTMLElement;
+    const web = (screen.getByText("Web")).closest("a") as HTMLElement;
+    expect(within(api).getByTitle("Default project")).toBeTruthy();
+    expect(within(web).queryByTitle("Default project")).toBeNull();
+  });
+
+  it("falls back to the workspace default when the server sends no effective default", async () => {
+    EFFECTIVE_DEFAULT = undefined;
+    await renderSidebarAt("/list");
+
+    const web = (await screen.findByText("Web")).closest("a") as HTMLElement;
+    const api = (screen.getByText("API")).closest("a") as HTMLElement;
+    expect(within(web).getByTitle("Default project")).toBeTruthy();
+    expect(within(api).queryByTitle("Default project")).toBeNull();
+  });
+
+  it("stars nothing when neither default resolves", async () => {
+    EFFECTIVE_DEFAULT = null;
+    await renderSidebarAt("/list");
+
+    await screen.findByText("Web");
+    expect(screen.queryByTitle("Default project")).toBeNull();
+  });
+});
+
+/**
+ * @verifies SHL-10
+ *
+ * Recents render key + title and link to the task route. The server
+ * drops ids that no longer resolve, so anything reaching the client is
+ * a live task — the client's job is to render it as a working link
+ * rather than to re-filter.
+ */
+describe("Sidebar recents (SHL-10)", () => {
+  it("renders key and title, most-recent-first, linking to the task route", async () => {
+    RECENTS = [
+      { key: "WEB-9", title: "Newest thing" },
+      { key: "API-2", title: "Older thing" },
+    ];
+    await renderSidebarAt("/list");
+
+    const newest = await screen.findByText("Newest thing");
+    const link = newest.closest("a") as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toContain("/tasks/WEB-9");
+    expect(within(link).getByText("WEB-9")).toBeTruthy();
+
+    // Server order is preserved — the sidebar must not re-sort.
+    const titles = screen
+      .getAllByText(/thing$/)
+      .map(el => el.textContent);
+    expect(titles).toEqual(["Newest thing", "Older thing"]);
+
+    // With entries present the empty affordance is gone.
+    expect(screen.queryByText("No recent tasks")).toBeNull();
+  });
+});
+
+/**
+ * @verifies SHL-11
+ *
+ * The footer names the workspace so two `loctt ui` windows are
+ * distinguishable, and pins a Settings link beside it.
+ */
+describe("Sidebar footer (SHL-11)", () => {
+  it("shows the workspace label and a Settings link", async () => {
+    await renderSidebarAt("/list");
+
+    expect(await screen.findByText("~/PDev/loctt")).toBeTruthy();
+    const settings = screen.getByText("Settings").closest("a") as HTMLAnchorElement;
+    expect(settings.getAttribute("href")).toContain("/settings/");
   });
 });
