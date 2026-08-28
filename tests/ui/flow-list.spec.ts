@@ -4538,3 +4538,229 @@ test.describe("MSL — clicking label pills (M1.3)", () => {
     await expect(page).toHaveURL(/labels=/);
   });
 });
+
+test.describe("XS — config drift while the UI is open (M1.3)", () => {
+  // @verifies XS-21
+  test("XS-21: a status added to workflow.yaml appears without a restart", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    const cfg = path.join(tracker.root, ".loctt", "config", "workflow.yaml");
+    await writeFile(
+      cfg,
+      (await readFile(cfg, "utf8")).replace(
+        /^statuses:\n/m,
+        "statuses:\n  - key: triage\n    label: Triage\n    category: pending\n",
+      ),
+      "utf8",
+    );
+
+    // Re-read, not cached at boot: no `loctt ui` restart involved.
+    await page.reload();
+    await page.getByRole("button", { name: "Filter Status" }).click();
+    await expect(page.getByRole("menuitemcheckbox", { name: "Triage" })).toBeVisible();
+  });
+
+  // @verifies XS-30
+  test("XS-30: removing a label leaves its tasks visible and the total unchanged", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["label", "create", "doomed"]);
+    await tracker.run(["create", "Tagged", "--label", "doomed"]);
+    await tracker.run(["create", "Plain"]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Remove the label from config while tasks still reference it.
+    const cfg = path.join(tracker.root, ".loctt", "config", "labels.yaml");
+    await writeFile(cfg, "labels: []\n", "utf8");
+    await page.reload();
+
+    // Same total before and after — the referencing task is not
+    // orphaned out of the view.
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    // And the pill degrades visibly rather than going blank.
+    await expect(
+      page.locator("tbody tr").filter({ hasText: "Tagged" }),
+    ).toContainText("unknown label");
+  });
+
+  // @verifies XS-59
+  test("XS-59: a misspelled field fails at the token, not by returning zero rows", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent("stats = done")}`);
+
+    const alert = page.getByRole("alert");
+    await expect(alert).toBeVisible({ timeout: 15_000 });
+    // Names the bad token and says the field is unknown.
+    await expect(alert).toContainText("stats");
+    await expect(alert).toContainText(/unknown field/i);
+    // Never a plain empty result.
+    await expect(page.getByText(/No tasks match these filters/i)).toHaveCount(0);
+  });
+
+  // @verifies XS-23
+  test("XS-23: tasks with an unknown status stay in the total and the selection", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Orphan", fields: { status: "in_progress" } },
+      { title: "Fine" },
+    ]);
+    const cfg = path.join(tracker.root, ".loctt", "config", "workflow.yaml");
+    await writeFile(
+      cfg,
+      (await readFile(cfg, "utf8")).replace(/^ {2}- key: in_progress\n(?: {4}.+\n)+/m, ""),
+      "utf8",
+    );
+
+    await page.goto(`${tracker.baseURL}/list`);
+    // The unfiltered total includes the task with the unknown status —
+    // it is not dropped into an invisible bucket.
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // And selecting all matches the visible row count: no ghost rows.
+    await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+    await expect(page.getByText("2 tasks selected")).toBeVisible();
+    expect(await page.locator("tbody tr").count()).toBe(2);
+  });
+});
+
+test.describe("The last of M1.3", () => {
+  // @verifies LST-11
+  test("LST-11: Back and Forward replay filter history step by step", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Alpha", fields: { status: "in_progress" } },
+      { title: "Beta" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Apply a filter, then a sort.
+    await page.getByRole("button", { name: "Filter Status" }).click();
+    await page.getByRole("menuitemcheckbox", { name: "In progress" }).click();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    // Close the dropdown first: it stays open over the column headers,
+    // so the sort click lands on the overlay rather than the header.
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: /Title/i }).first().click();
+    await expect(page).toHaveURL(/sort=title/);
+
+    // Back peels the sort, then the filter — and never leaves the app
+    // while filter history remains.
+    await page.goBack();
+    await expect(page).not.toHaveURL(/sort=title/);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    await page.goBack();
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    await expect(page).not.toHaveURL(/status=/);
+
+    // Forward re-applies them in order.
+    await page.goForward();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await page.goForward();
+    await expect(page).toHaveURL(/sort=title/);
+
+    // And each state matches what its URL renders on a cold load.
+    const url = page.url();
+    const fresh = await page.context().newPage();
+    await fresh.goto(url);
+    await expect(fresh.getByText("Showing 1–1 of 1")).toBeVisible();
+    await fresh.close();
+  });
+
+  // @verifies XS-60
+  test("XS-60: a query naming a removed status is not silently empty", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Stranded", fields: { status: "in_progress" } }]);
+    const cfg = path.join(tracker.root, ".loctt", "config", "workflow.yaml");
+    await writeFile(
+      cfg,
+      (await readFile(cfg, "utf8")).replace(/^ {2}- key: in_progress\n(?: {4}.+\n)+/m, ""),
+      "utf8",
+    );
+
+    const q = "status = in_progress";
+    await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent(q)}`);
+
+    // Tasks still carry the removed key, so the query matches them —
+    // never a bare "no tasks" implying the tracker is empty.
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.locator("tbody")).toContainText("Stranded");
+
+    // The CLI behaves the same; a discrepancy here is a P10 failure.
+    const cli = await tracker.run(["list", "--query", q]);
+    expect(cli).toContain("Stranded");
+  });
+
+  // @verifies XS-17
+  test("XS-17: a view saved in the UI is on disk and usable from the CLI", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Wanted", fields: { status: "in_progress" } },
+      { title: "Other" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list?status=in_progress`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    await page.getByRole("button", { name: /Save as view/i }).click();
+    await page.getByRole("textbox").first().fill("from-ui");
+    await page.getByRole("button", { name: "Save view" }).click();
+    await expect(page.getByRole("link", { name: "from-ui" })).toBeVisible();
+
+    // On disk, not in browser storage — so it survives a restart and
+    // is visible to every surface.
+    const yaml = await readFile(
+      path.join(tracker.root, ".loctt", "config", "queries.yaml"), "utf8",
+    );
+    expect(yaml).toContain("from-ui");
+
+    // `loctt views` lists it, and the view returns the same tasks the
+    // UI was showing when it was saved.
+    expect(await tracker.run(["views"])).toContain("from-ui");
+    const cli = await tracker.run(["list", "--view", "from-ui"]);
+    expect(cli).toContain("Wanted");
+    expect(cli).not.toContain("Other");
+  });
+
+  // @verifies MSL-30
+  test("MSL-30: clicking a label while another filter is active preserves both", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["label", "create", "bug"]);
+    await tracker.run(["create", "Both", "--label", "bug"]);
+    await tracker.run(["set", "T-1", "status", "in_progress"]);
+    await tracker.run(["create", "OnlyLabel", "--label", "bug"]);
+
+    await page.goto(`${tracker.baseURL}/list?status=in_progress`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    await page.locator("tbody").getByTitle("bug", { exact: true }).first().click();
+
+    // Both filters survive: the label is added, the status is not
+    // dropped.
+    await expect(page).toHaveURL(/status=in_progress/);
+    await expect(page).toHaveURL(/labels=/);
+    await expect(page.getByRole("button", { name: /Remove Status/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Remove Label/i })).toBeVisible();
+  });
+});
