@@ -4330,3 +4330,135 @@ test.describe("VUE — saving a view (M1.3)", () => {
     expect(yaml).not.toMatch(/query:.*In progress/);
   });
 });
+
+test.describe("XS — UI/CLI parity (M1.3)", () => {
+  // @verifies XS-16
+  test("XS-16: every documented construct parses in the UI and returns the CLI's set", async ({
+    page,
+    tracker,
+  }) => {
+    const seeded = await tracker.seed([
+      { title: "Alpha", fields: { status: "in_progress", priority: "high" } },
+      { title: "Beta", fields: { status: "done", priority: "low" } },
+      { title: "Gamma", fields: { due_date: "2020-01-01" } },
+    ]);
+    await tracker.run(["link", String(seeded[0]), "blocks", String(seeded[1])]);
+    await page.goto(`${tracker.baseURL}/list`);
+
+    const constructs = [
+      "status = in_progress",
+      "status != done",
+      "priority in (high, low)",
+      "priority not in (high)",
+      "title ~ Alpha",
+      "status = in_progress and priority = high",
+      "status = done or priority = high",
+      "not (status = done)",
+      "(status = in_progress)",
+      "due_date < today",
+      "due_date >= 2020-01-01",
+      "archived = false",
+      `parent = ${String(seeded[0])}`,
+      'has_link("blocks")',
+      "link_count(blocks) > 0",
+      'text ~ "Alpha"',
+    ];
+
+    for (const q of constructs) {
+      // The UI parses it...
+      const res = await page.request.get(
+        `${tracker.baseURL}/api/tasks?query=${encodeURIComponent(q)}`,
+      );
+      expect(res.status(), `UI rejected: ${q}`).toBe(200);
+      const uiKeys = ((await res.json()) as { items: { key: string }[] })
+        .items.map(t => t.key).sort();
+
+      // ...and returns the same set the CLI does. A construct that
+      // parses on one surface and not the other, or that quietly
+      // returns zero rows where the other returns some, is the failure
+      // this case exists to catch.
+      const cli = await tracker.run(["list", "--query", q]);
+      const cliKeys = [...cli.matchAll(/\b([A-Z][A-Z0-9]*-\d+)\b/g)]
+        .map(m => m[1] as string).sort();
+      expect(uiKeys, `mismatch for: ${q}`).toEqual(cliKeys);
+    }
+  });
+
+  // @verifies XS-15
+  test("XS-15: a query typed in the UI is accepted verbatim by the CLI", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Match", fields: { status: "in_progress", priority: "high" } },
+      { title: "Miss" },
+    ]);
+    const q = "status = in_progress and priority = high";
+
+    await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent(q)}`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    // The string as typed is what the URL carries, so copy-paste
+    // between the address bar and a terminal is lossless — no UI-only
+    // prefix and no implicit `archived != true` wrapper.
+    expect(decodeURIComponent(new URL(page.url()).searchParams.get("q") ?? "")).toBe(q);
+
+    const cli = await tracker.run(["list", "--query", q]);
+    expect(cli).toContain("Match");
+    expect(cli).not.toContain("Miss");
+  });
+
+  // @verifies XS-18
+  test("XS-18: a view added to queries.yaml by hand appears in the sidebar", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Backlogged" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    const cfg = path.join(tracker.root, ".loctt", "config", "queries.yaml");
+    await writeFile(
+      cfg,
+      `${await readFile(cfg, "utf8")}  - id: 01M0HANDWRITTEN00000000000\n`
+      + `    name: hand-written\n    query: status = backlog\n`,
+      "utf8",
+    );
+
+    await page.reload();
+    // Rendered as authored — the UI does not rewrite or normalise it.
+    const link = page.getByRole("link", { name: "hand-written" });
+    await expect(link).toBeVisible();
+
+    // And clicking it applies exactly the authored query.
+    await link.click();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.locator("tbody")).toContainText("Backlogged");
+  });
+
+  // @verifies XS-20
+  test("XS-20: filter options come from workflow.yaml, not invented buckets", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    const wf = await (await page.request.get(`${tracker.baseURL}/api/workflow`)).json() as {
+      statuses: { key: string; label: string }[];
+    };
+
+    await page.getByRole("button", { name: "Filter Status" }).click();
+    const offered = await page.getByRole("menuitemcheckbox").allInnerTexts();
+
+    // Every option is a configured status, by its configured label.
+    expect(offered.sort()).toEqual(wf.statuses.map(s => s.label).sort());
+    // And no hardcoded vocabulary for a tracker that does not define it.
+    for (const invented of ["To Do", "In Review"]) {
+      if (!wf.statuses.some(s => s.label === invented)) {
+        expect(offered).not.toContain(invented);
+      }
+    }
+  });
+});
