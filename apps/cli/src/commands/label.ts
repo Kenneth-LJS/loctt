@@ -9,7 +9,7 @@ import {
   unarchiveLabel,
 } from "@loctt/core";
 
-import { getArg, hasFlag, rejectUnknownFlags } from "../runtime/args.js";
+import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
 
@@ -51,7 +51,10 @@ export async function run(args: string[], root: string): Promise<void> {
     }
     case "create": {
       await runCommand(async () => {
-        const name = args[2];
+        // A flag here is a mistyped name, not a name. See
+        // `positional`: `--name "X"` used to create an entity
+        // literally called `--name`, silently, exit 0.
+        const name = positional(args, 2, "loctt label create <name> [--color <hex>]");
         if (!name) {
           throw new UsageError(
             "missing name",

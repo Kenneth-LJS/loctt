@@ -12,7 +12,7 @@ import {
 } from "@loctt/core";
 
 import { formatNumber, pad } from "../format/value.js";
-import { getArg, hasFlag, rejectUnknownFlags } from "../runtime/args.js";
+import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
 
@@ -53,7 +53,10 @@ export async function run(args: string[], root: string): Promise<void> {
     }
     case "create": {
       await runCommand(async () => {
-        const name = args[2];
+        // A flag here is a mistyped name, not a name. See
+        // `positional`: `--name "X"` used to create an entity
+        // literally called `--name`, silently, exit 0.
+        const name = positional(args, 2, "loctt sprint create <name> --start <YYYY-MM-DD> --end <YYYY-MM-DD> [--state <active|completed|future>] [--goal <g>]");
         const start = getArg(args, "--start");
         const end = getArg(args, "--end");
         const state = getArg(args, "--state") ?? "future";
