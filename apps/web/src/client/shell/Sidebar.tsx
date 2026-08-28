@@ -655,9 +655,24 @@ function Footer({ collapsed, info }: { collapsed: boolean; info: TrackerInfoResp
       {!collapsed ? (
         <div className="px-2.5 text-[11px] text-text-tertiary">
           <div className="truncate font-mono" title={info.cwd}>{info.cwd}</div>
+          {/* The count is omitted rather than shown as zero when the
+              tracker could not be read. `TrackerInfoResponse.taskCount`
+              is a number, so the placeholder the shell falls back to
+              during an outage has to say *something* — and "0 tasks"
+              in front of a user with two is a claim about their data,
+              not a missing value. ERR-1's rule, at footer scale: a
+              server that is down and a tracker that is empty must not
+              look alike.
+              `cwd === ""` is that placeholder's signature. */}
           <div className="mt-0.5">
-            {info.taskCount} task{info.taskCount === 1 ? "" : "s"}
-            {info.nextKey ? ` · next ${info.nextKey}` : ""}
+            {info.cwd === "" ? (
+              <span className="italic">task count unavailable</span>
+            ) : (
+              <>
+                {info.taskCount} task{info.taskCount === 1 ? "" : "s"}
+                {info.nextKey ? ` · next ${info.nextKey}` : ""}
+              </>
+            )}
           </div>
         </div>
       ) : null}

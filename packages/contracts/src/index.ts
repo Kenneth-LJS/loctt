@@ -132,6 +132,7 @@ export type {
   TaskRelationship,
 } from "./task.js";
 export {
+  isSortableTaskField,
   projectTaskFrontmatter,
   TaskFrontmatterPublicSchema,
   TaskFrontmatterSchema,

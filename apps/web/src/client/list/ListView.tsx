@@ -1,3 +1,4 @@
+import { isSortableTaskField } from "@loctt/contracts";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -30,7 +31,7 @@ import {
   StatusBadge,
   TypeBadge,
 } from "./cells.tsx";
-import { isSortableColumn, resolveColumns } from "./columns.ts";
+import { resolveColumns } from "./columns.ts";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog.tsx";
 import { ExportMenu } from "./ExportMenu.tsx";
 import { clearedSearch, FilterBar } from "./FilterBar.tsx";
@@ -84,17 +85,24 @@ export function ListView() {
   const sortField = search.sort;
   const sortDir = search.dir ?? "asc";
 
-  // LST-29: a sort key the list cannot honour is dropped from the URL
+  // LST-29: a sort key the *server* cannot honour is dropped from the
+  // URL
   // rather than left sitting there as though it applied. The rows
   // already come back in the default order — the server drops it too —
   // so leaving it in the address bar makes a copied URL claim a sort
   // that was never in effect (M1 gate, F6).
   //
+  // `isSortableTaskField` is the *server's* predicate, shared through
+  // contracts. A first cut used the client's own nine-column list and
+  // stripped sorts the server honours — `created_at`, `reporter`,
+  // `fields.<key>` — so a saved URL silently lost its ordering. Two
+  // copies of this rule drifted the moment they existed.
+  //
   // `replace`, not push: this is a correction to a URL the user pasted,
   // not a navigation they made, and Back should return to wherever they
   // came from rather than to the broken URL.
   useEffect(() => {
-    if (sortField === undefined || isSortableColumn(sortField)) return;
+    if (sortField === undefined || isSortableTaskField(sortField)) return;
     void navigate({
       search: prev => ({ ...prev, sort: undefined, dir: undefined }),
       replace: true,
