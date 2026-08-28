@@ -3063,8 +3063,20 @@ test.describe("ERR — malformed responses and distinct surfaces (M1.2)", () => 
     await page.goto(`${tracker.baseURL}/list`);
 
     // Not half a table and not a row of undefined cells.
-    await expect(page.getByRole("alert")).toBeVisible({ timeout: 15_000 });
+    const alert = page.getByRole("alert");
+    await expect(alert).toBeVisible({ timeout: 15_000 });
     await expect(page.locator("tbody")).not.toContainText("undefined");
+
+    // **Bullet 2: the message says the response could not be read.**
+    // This test asserted only that the alert exists — and the M1
+    // vacuity sweep confirmed it survives the headline being blanked
+    // entirely, which is the half of the case that carries the
+    // information. An alert that says nothing satisfies "treated it
+    // as an error" and fails the user.
+    const headline = alert.locator("p").nth(1);
+    await expect(headline).toContainText(/\S/);
+    await expect(alert).toContainText(/could not|couldn't|unable|not be read|unreadable/i);
+
     await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
       .toBeVisible();
   });
@@ -3161,6 +3173,20 @@ test.describe("ERR — malformed responses and distinct surfaces (M1.2)", () => 
     expect(new Set([fresh, filtered]).size).toBe(2);
     expect(unreachable).not.toMatch(/No tasks yet/i);
     expect(unreachable).not.toMatch(/match these filters/i);
+
+    // **Bullet 1: distinct *copy*, not merely distinct from the
+    // empties.** The M1 vacuity sweep found this half dead — the
+    // three assertions above are all absences, and an absence is
+    // satisfied by an error surface that says nothing at all, which
+    // is exactly what blanking the headline produces. The
+    // non-conflation claim survived a real mutation; this one did not
+    // exist.
+    const errorHeadline = page.getByRole("alert").locator("p").nth(1);
+    await expect(errorHeadline).toContainText(/\S/);
+    // And its copy is its own, not either empty state's.
+    const errorCopy = await errorHeadline.innerText();
+    expect(fresh).not.toContain(errorCopy);
+    expect(filtered).not.toContain(errorCopy);
   });
 });
 
@@ -3491,9 +3517,24 @@ test.describe("ERR — the sweeps (M1.2)", () => {
     ]) {
       expect(copy.toLowerCase()).not.toContain(jargon.toLowerCase());
     }
-    // And it says what was being done, in a sentence or two before any
-    // expandable detail.
-    expect(copy).toMatch(/tasks/i);
+    // **Bullet 1, which this test did not check.** Every assertion
+    // above is an absence, and an absence gets *easier* to pass the
+    // less the app says — the M1 vacuity sweep measured this cluster
+    // as green in the limit where the error surface renders nothing,
+    // and found that blanking the headline was caught by exactly one
+    // of sixteen ERR tests. This one's only positive check was
+    // `toMatch(/tasks/i)`, which the context label satisfies on its
+    // own, so it was strictly easier to pass the quieter the app got.
+    //
+    // The headline is the sentence the case is about, so assert it
+    // rather than the container that also holds the context label.
+    const headline = alert.locator("p").nth(1);
+    await expect(headline).toContainText(/\S/);
+    // Something the user recognises — the server they started, in the
+    // terminal they started it in.
+    await expect(headline).toContainText(/server|loctt/i);
+
+    // And it fits in one or two sentences before any expandable detail.
     expect(copy.split(/[.!?]/).filter(s => s.trim().length > 0).length)
       .toBeLessThanOrEqual(4);
   });
