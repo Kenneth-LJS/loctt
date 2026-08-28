@@ -146,7 +146,7 @@ Cases: SHL-1, SHL-2, SHL-3, SHL-4, SHL-5, SHL-6, SHL-7, SHL-8, SHL-9, SHL-10, SH
 > results, so the mark is now ✅.
 
 ### M1.2 · List view — table + columns ✅
-Cases: LST-1, LST-2, LST-3, LST-4, LST-5, LST-6, LST-7, LST-8, LST-19, LST-20, LST-21, LST-22, LST-23, LST-24, LST-25, LST-26, LST-27, LST-28, LST-36, LST-37, LST-39, LST-47, LST-51, ONB-8, ONB-12, ONB-26, ONB-24, ONB-33, ERR-1, ERR-2, ERR-5, ERR-6, ERR-9, ERR-10, ERR-14, ERR-15, ERR-16, ERR-17, ERR-18, ERR-19, ERR-20, ERR-21, ERR-22, ERR-30, ERR-31, ERR-39, ERR-40, ERR-41, ERR-42, XS-1, XS-5, XS-22, XS-24, XS-39, XS-40, XS-56, MSL-21, MSL-22, MSL-23, MSL-26, PRU-3
+Cases: LST-1, LST-2, LST-3, LST-4, LST-5, LST-6, LST-7, LST-8, LST-19, LST-20, LST-21, LST-22, LST-23, LST-24, LST-25, LST-26, LST-27, LST-28, LST-36, LST-37, LST-39, LST-47, LST-51, ONB-8, ONB-12, ONB-26, ONB-24, ONB-33, ERR-1, ERR-2, ERR-5, ERR-6, ERR-9, ERR-10, ERR-14, ERR-15, ERR-16, ERR-17, ERR-18, ERR-19, ERR-20, ERR-21, ERR-22, ERR-30, ERR-31, ERR-39, ERR-40, ERR-41, ERR-42, XS-1, XS-5, XS-22, XS-24, XS-39, XS-40, XS-56, MSL-21, MSL-22, MSL-23, MSL-26
 - Route `/list` (and `/` redirects)
 - Table: key, project, title, status, priority, type, assignee,
   labels, due, updated
@@ -501,7 +501,12 @@ Goal: settings panels work end-to-end, the init wizard handles
 first-run, and the v1 polish (keyboard, errors, a11y) is done.
 
 ### M4.1 · Settings shell + Projects + Users (with profile pics, CW-20) ⬜
-Cases: SET-32, SET-42, PRU-5, PRU-6, PRU-7, PRU-8, PRU-9, PRU-10, PRU-11, PRU-12, PRU-13, PRU-15, PRU-16, PRU-17, PRU-18, PRU-19, PRU-20, PRU-21, PRU-22, PRU-23, PRU-24, PRU-25, PRU-26, PRU-27, PRU-28, PRU-29, PRU-30, PRU-31, PRU-32, PRU-33, PRU-34, PRU-35, PRU-36, PRU-37, PRU-38, PRU-39, PRU-40, PRU-41, PRU-42, PRU-43, PRU-44, PRU-45, PRU-46, XS-55, XS-63
+> **PRU-3 moved here from M1.2** (Ken, 2026-08-25). It needs an "All
+> projects" mode and a project switcher, and no ticket built either —
+> the same shape as the SPR/MSL gap, found while verifying M1.2. It
+> sits with the rest of the project work rather than needing a ticket
+> of its own.
+Cases: SET-32, SET-42, PRU-3, PRU-5, PRU-6, PRU-7, PRU-8, PRU-9, PRU-10, PRU-11, PRU-12, PRU-13, PRU-15, PRU-16, PRU-17, PRU-18, PRU-19, PRU-20, PRU-21, PRU-22, PRU-23, PRU-24, PRU-25, PRU-26, PRU-27, PRU-28, PRU-29, PRU-30, PRU-31, PRU-32, PRU-33, PRU-34, PRU-35, PRU-36, PRU-37, PRU-38, PRU-39, PRU-40, PRU-41, PRU-42, PRU-43, PRU-44, PRU-45, PRU-46, XS-55, XS-63
 - Route `/settings/$section`; nav grouped (Workspace/Workflow/Data/
   Tracker/Personal)
 - Projects panel: CRUD with reference-count badge (CW-8), delete with
