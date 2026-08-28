@@ -19,11 +19,13 @@ misdiagnoses in this repo.
 | Group | Checked | Vacuous | Weak |
 |---|---|---|---|
 | XS | 20/20 | 1 | 1 |
+| MSL/VUE/ONB/TSK | 24/24 | 5 | — |
 | BLK | — | — | — |
 | LST | — | — | — |
 | SHL | — | — | — |
 | ERR | — | — | — |
-| MSL/VUE/ONB/TSK | — | — | — |
+
+**6 vacuous of 44 checked so far.**
 
 ---
 
@@ -113,3 +115,111 @@ that depends on them.
 This is the same shape as the ERR-2 defect that prompted the sweep:
 in both, the test observed something real happening for a reason that
 had nothing to do with the behaviour under test.
+
+---
+
+## MSL / VUE / ONB / TSK — 24 of 24 checked, 5 vacuous
+
+Every mutation compiled (`✓ built` confirmed before each run), and
+every vacuous verdict was re-confirmed green on unmutated source, so
+it is genuinely vacuous rather than broken. Several mutations were
+cross-checked against a neighbouring test that *did* go red, proving
+the mutation reached the binary.
+
+### VUE-13 — VACUOUS
+
+"A saved view's sort persists as field + direction and applies."
+
+**Mutation:** `SaveViewDialog.tsx:26`, `search.sort !== undefined` →
+`false`, so the view is saved with **no sort at all**. Still passed.
+
+The two assertions regex the *whole* `queries.yaml` for
+`/field: priority/` and `/direction: desc/` — and both strings already
+exist in the shipped default views (`defaults.ts:116-126`). They match
+the defaults, never the view just saved. The CLI ordering check also
+passes, because with no stored sort the fallback order happens to put
+High before Low.
+
+**Fix:** parse the YAML and assert on the `by-priority` entry's own
+`sort` array. Seed the CLI check so the fallback order *differs* from
+the requested one, so it can tell "the view's sort applied" from "the
+default order agreed".
+
+### VUE-15 — VACUOUS
+
+**Mutation:** `builtinFilters.ts:153`, the High-priority built-in
+drops its `priority in (...)` clause — it navigates but never narrows.
+Still passed. (VUE-3 and VUE-4 went red on this same mutation.)
+
+The test captures a row count and asserts a cold load yields the *same
+count*. It never asserts which rows, never that the count changed,
+never that the filter applied. "The built-in did nothing" and "the
+built-in worked" are indistinguishable to it.
+
+### MSL-7 — VACUOUS
+
+**Mutation:** `useTasks.ts:88`, `"labels"` removed from `FILTER_KEYS`,
+dropping the label filter from the request while the URL param and
+chips stay intact. Still passed. (MSL-6 and MSL-21 went red.)
+
+Both seeded tasks carry the `bug` label, so the filtered and
+unfiltered sets are **identical**. Every other assertion is about the
+URL string and the chip count, not the rows.
+
+This is precisely the failure the code's own comment at
+`useTasks.ts:98-102` warns about for custom fields.
+
+**Fix:** seed a third task carrying neither label.
+
+### MSL-22 — VACUOUS (styling half only)
+
+**Mutation:** `cells.tsx:220`, hex validation removed so `notahex`
+reaches CSS. Still passed.
+
+The check is `expect(bg).not.toBe("rgba(0, 0, 0, 0)")`, but the pill
+has no background class — so when the CSS parser drops the invalid
+inline value, the pill inherits the table's opaque background and can
+never be transparent. The assertion cannot fail for the reason the
+case cares about, which is its own stated requirement that an invalid
+value must not reach CSS at all.
+
+Its other assertions are real; only the styling half is dead.
+
+### MSL-30 — VACUOUS
+
+Checks URL text and chip count, never rows. Survived **two**
+independent mutations: labels dropped from `FILTER_KEYS`, and chips
+filtered to resolvable values only.
+
+### ONB — entirely sound
+
+Flagged in the brief as prime vacuity candidates; all six are genuine.
+They distinguish P6's four designed states, and ONB-26's 20ms polling
+loop catches a real single-frame empty flash rather than producing an
+ERR-2-style false pass.
+
+### Healthy (19)
+
+MSL-6/19/21/23/26, VUE-3/4/5/6/7/14, ONB-8/12/24/25/26/33, TSK-1.
+
+---
+
+## The second pattern: asserting the label, not the effect
+
+Four of these five assert on **URL strings, chip counts, or file-wide
+regexes** rather than on the row set or the specific entry. That makes
+"the filter is displayed" and "the filter is applied"
+indistinguishable — and the filter is the part that can break.
+
+Two failure shapes have now been seen repeatedly:
+
+1. **The reload does the work** (XS-1, ERR-2) — a page load or an
+   in-flight retry produces the observed recovery, so the mechanism
+   under test can be deleted unnoticed.
+2. **The label is asserted, not the effect** (MSL-7, MSL-30, VUE-15) —
+   the UI's description of what it is doing is checked instead of what
+   it did.
+
+A third, narrower: **seeding that cannot discriminate** (MSL-7) —
+where every seeded row satisfies the filter, so filtered and
+unfiltered results are identical.
