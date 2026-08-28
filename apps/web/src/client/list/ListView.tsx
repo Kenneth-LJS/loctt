@@ -37,6 +37,7 @@ import { clearedSearch, FilterBar } from "./FilterBar.tsx";
 import { isOverdue, relativeTime, shortDate } from "./format.ts";
 import { buildLookups } from "./lookups.ts";
 import { Pagination } from "./Pagination.tsx";
+import { RefreshButton } from "./RefreshButton.tsx";
 import { useSelection } from "./useSelection.ts";
 
 /**
@@ -115,6 +116,10 @@ export function ListView() {
    * (XS-51).
    */
   const unreadable = pages[pages.length - 1]?.unreadable ?? [];
+  // XS-28: the URL named a saved view that is no longer in
+  // `queries.yaml`. The server fell back to the unfiltered list; this
+  // is what makes that visible rather than a silent widening.
+  const missingView = pages[pages.length - 1]?.missing_view;
   // Newest page's total. A filter change cannot be what makes these
   // differ — it builds a new query key, so the feed restarts with one
   // page — but a task created or deleted between page 1 and page 3
@@ -391,8 +396,29 @@ export function ListView() {
     <div className="flex flex-col gap-4 p-6">
       <div className="flex items-center justify-between gap-3">
         <FilterBar />
+        <RefreshButton
+          busy={tasks.isFetching}
+          onRefresh={() => { void tasks.refetch(); }}
+        />
         <ExportMenu total={total} queryString={buildQueryString(params)} />
       </div>
+      {missingView !== undefined && (
+        <div
+          role="status"
+          className="rounded-md border border-warn-fg/30 bg-warn-bg px-4 py-2 text-[12px] text-warn-fg"
+        >
+          The saved view <code className="font-mono">{missingView}</code> no longer
+          exists, so this is showing every task instead. It was probably deleted
+          from <code className="font-mono">.loctt/config/queries.yaml</code>.{" "}
+          <button
+            type="button"
+            onClick={() => { void navigate({ search: prev => ({ ...prev, view: undefined }) }); }}
+            className="underline hover:text-text-primary"
+          >
+            Drop it from the URL
+          </button>
+        </div>
+      )}
       {unreadable.length > 0 && (
         <div role="alert" className="mb-2 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[12px] text-danger-fg">
           {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}

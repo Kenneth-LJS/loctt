@@ -1,7 +1,7 @@
 import { parseQuery, tokenize } from "@loctt/core";
 import { describe, expect, it } from "vitest";
 
-import { addDays, BUILTIN_FILTERS } from "./builtinFilters.ts";
+import { addDays, BUILTIN_FILTERS, highPriorityKeys } from "./builtinFilters.ts";
 
 function byId(id: string) {
   const f = BUILTIN_FILTERS.find(b => b.id === id);
@@ -25,8 +25,16 @@ describe("addDays", () => {
   });
 });
 
+/** The default LocTT priority scale, highest first. */
+const PRIORITIES = [
+  { key: "critical", label: "Critical", value: 4 },
+  { key: "high", label: "High", value: 3 },
+  { key: "medium", label: "Medium", value: 2 },
+  { key: "low", label: "Low", value: 1 },
+];
+
 describe("built-in filter resolution", () => {
-  const ctx = { currentUserId: "u_ken", today: "2026-06-08" };
+  const ctx = { currentUserId: "u_ken", today: "2026-06-08", priorities: PRIORITIES };
 
   it("'Assigned to me' embeds the current user id and excludes closed tasks", () => {
     const search = byId("assigned-to-me").resolve(ctx);
@@ -35,7 +43,9 @@ describe("built-in filter resolution", () => {
   });
 
   it("'Assigned to me' is unresolvable without a current user", () => {
-    expect(byId("assigned-to-me").resolve({ currentUserId: null, today: ctx.today })).toBeNull();
+    expect(
+      byId("assigned-to-me").resolve({ currentUserId: null, today: ctx.today }),
+    ).toBeNull();
   });
 
   it("'Due this week' spans today..today+7d", () => {
@@ -48,8 +58,54 @@ describe("built-in filter resolution", () => {
     expect(byId("overdue").resolve(ctx)?.q).toContain("due_date < 2026-06-08");
   });
 
-  it("'High priority' matches high or critical", () => {
-    expect(byId("high-priority").resolve(ctx)?.q).toContain("priority in (high, critical)");
+  /**
+   * @verifies VUE-24
+   *
+   * This test previously asserted the literal `priority in (high,
+   * critical)` — it was encoding the bug. On a tracker with no `high`
+   * key that query matches nothing, so the built-in sat at a permanent
+   * zero: a filter that looks live and is structurally dead. The keys
+   * come from the workspace now, so the assertion has to as well.
+   */
+  it("'High priority' resolves against the workspace's own priorities", () => {
+    // The default scale ranks critical and high at the top.
+    expect(byId("high-priority").resolve(ctx)?.q).toContain(
+      "priority in (critical, high)",
+    );
+
+    // A workspace using different vocabulary entirely.
+    const custom = byId("high-priority").resolve({
+      ...ctx,
+      priorities: [
+        { key: "p0", label: "Drop everything", value: 3 },
+        { key: "p1", label: "Soon", value: 2 },
+        { key: "p2", label: "Whenever", value: 1 },
+      ],
+    });
+    expect(custom?.q).toContain("priority in (p0, p1)");
+    // And emphatically not the hardcoded pair.
+    expect(custom?.q).not.toContain("high");
+    expect(custom?.q).not.toContain("critical");
+  });
+
+  /**
+   * @verifies VUE-24
+   *
+   * "…or the built-in is hidden when it cannot be expressed — it never
+   * shows a permanently-zero badge caused by a key that does not
+   * exist."
+   */
+  it("'High priority' is inert when the scale cannot express a high one", () => {
+    expect(byId("high-priority").resolve({ ...ctx, priorities: [] })).toBeNull();
+    expect(
+      byId("high-priority").resolve({
+        ...ctx,
+        priorities: [{ key: "normal", label: "Normal" }],
+      }),
+    ).toBeNull();
+    // Still loading is not the same as unexpressible, but it must not
+    // resolve to a wrong query either.
+    expect(byId("high-priority").resolve({ ...ctx, priorities: undefined })).toBeNull();
   });
 
   it("'Mentions me' is deferred (never resolves) until comments land", () => {
@@ -74,5 +130,48 @@ describe("built-in filter resolution", () => {
       if (q === undefined) continue;
       expect(() => parseQuery(tokenize(q)), `built-in "${id}": ${q}`).not.toThrow();
     }
+  });
+});
+
+/**
+ * @verifies VUE-24
+ *
+ * The ranking rule on its own, away from the DSL string.
+ */
+describe("highPriorityKeys", () => {
+  it("ranks by `value` when every priority declares one", () => {
+    // Deliberately out of config order: `value` must win.
+    expect(
+      highPriorityKeys([
+        { key: "low", label: "Low", value: 1 },
+        { key: "critical", label: "Critical", value: 4 },
+        { key: "medium", label: "Medium", value: 2 },
+        { key: "high", label: "High", value: 3 },
+      ]),
+    ).toEqual(["critical", "high"]);
+  });
+
+  it("falls back to config order when any priority omits `value`", () => {
+    expect(
+      highPriorityKeys([
+        { key: "urgent", label: "Urgent" },
+        { key: "normal", label: "Normal" },
+        { key: "later", label: "Later" },
+      ]),
+    ).toEqual(["urgent", "normal"]);
+  });
+
+  it("takes only the top one on a two-value scale", () => {
+    expect(
+      highPriorityKeys([
+        { key: "hot", label: "Hot", value: 2 },
+        { key: "cold", label: "Cold", value: 1 },
+      ]),
+    ).toEqual(["hot"]);
+  });
+
+  it("gives up on a scale that cannot express a high priority", () => {
+    expect(highPriorityKeys([])).toEqual([]);
+    expect(highPriorityKeys([{ key: "only", label: "Only" }])).toEqual([]);
   });
 });

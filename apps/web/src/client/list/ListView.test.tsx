@@ -7,7 +7,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { listSearchSchema } from "../router/listSearch.ts";
@@ -43,8 +43,13 @@ const TASKS = {
   limit: 50,
 };
 
+/** Set to make /api/tasks report a dropped saved view (XS-28). */
+let MISSING_VIEW: string | undefined;
+
 function routeFetch(path: string): unknown {
-  if (path.startsWith("/api/tasks")) return TASKS;
+  if (path.startsWith("/api/tasks")) {
+    return MISSING_VIEW === undefined ? TASKS : { ...TASKS, missing_view: MISSING_VIEW };
+  }
   if (path.startsWith("/api/projects")) {
     return { items: [{ id: "p_web", name: "Web", prefix: "WEB-" }], total: 1, offset: 0, limit: 100, default: "p_web" };
   }
@@ -108,6 +113,7 @@ async function mountList(initialSearch = "") {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  MISSING_VIEW = undefined;
 });
 
 describe("ListView", () => {
@@ -393,5 +399,113 @@ describe("ListView pagination", () => {
     mountPaged({ total: 128 }, "?limit=99999");
     expect(await screen.findByText("Showing 1–128 of 128")).toBeTruthy();
     expect(screen.getAllByRole("row").length - 1).toBe(128);
+  });
+});
+
+/**
+ * @verifies XS-3
+ *
+ * The tracker has three writers — this UI, the CLI, and the MCP
+ * server — so "I just changed that in the terminal" is the ordinary
+ * case. Automatic refresh bounds how stale a value can get; this is
+ * the control for when the user already knows.
+ */
+describe("ListView manual refresh", () => {
+  it("offers a top-level refresh that refetches and reports itself busy", async () => {
+    await mountList();
+
+    const before = vi.mocked(globalThis.fetch).mock.calls.filter(c =>
+      typeof c[0] === "string" && c[0].includes("/api/tasks"),
+    ).length;
+    expect(before).toBeGreaterThan(0);
+
+    // Reachable directly, not behind a menu.
+    const refresh = screen.getByRole("button", { name: "Refresh" });
+    expect(refresh.getAttribute("title")).toMatch(/refresh/i);
+
+    await act(async () => {
+      fireEvent.click(refresh);
+      await Promise.resolve();
+    });
+
+    // It never silently no-ops: a request actually goes out.
+    await waitFor(() => {
+      const after = vi.mocked(globalThis.fetch).mock.calls.filter(c =>
+        typeof c[0] === "string" && c[0].includes("/api/tasks"),
+      ).length;
+      expect(after).toBeGreaterThan(before);
+    });
+
+    // And it settles rather than staying busy forever.
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Refresh" }).getAttribute("aria-busy"),
+      ).toBe("false");
+    });
+  });
+
+  /**
+   * @verifies XS-3
+   *
+   * The staleness window is *stated*, not described as "eventually" —
+   * XS-2's requirement, surfaced where a user would look for it.
+   */
+  it("states the automatic refresh window on the control", async () => {
+    await mountList();
+    const title = screen.getByRole("button", { name: "Refresh" }).getAttribute("title") ?? "";
+    expect(title).toMatch(/\d+ seconds/);
+    expect(title).toMatch(/return to the tab/i);
+  });
+});
+
+/**
+ * @verifies XS-28
+ *
+ * A view deleted from `queries.yaml` under a live tab. The rows still
+ * render — the case forbids an error page and forbids an empty table
+ * implying zero tasks — but the widening is *stated*, because a silent
+ * fallback is indistinguishable from an ordinary unfiltered list.
+ *
+ * SHL-32 is deliberately NOT claimed here. It asks for the *sidebar*
+ * to explain a pin that vanished, dismissibly — and the sidebar reads
+ * `/api/views`, which simply omits a deleted view. Nothing tells the
+ * client the entry was ever there. Detecting it needs a record of
+ * which views the sidebar has shown, which is behaviour no case
+ * specifies; that belongs to whoever owns the pinning feature, not to
+ * this fix. The active-view half of SHL-32 is what lands here.
+ */
+describe("ListView with a deleted saved view", () => {
+  it("renders the rows and explains that the view is gone", async () => {
+    MISSING_VIEW = "v_gone";
+    await mountList("?view=v_gone");
+
+    // Not an error page, and not an empty table.
+    expect(screen.getByText("First task")).toBeTruthy();
+
+    const notice = screen.getByRole("status");
+    expect(notice.textContent).toContain("v_gone");
+    expect(notice.textContent).toMatch(/no longer exists/i);
+    expect(notice.textContent).toContain("queries.yaml");
+    // It is an explanation, not an error — P7's distinction.
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("offers to drop the stale view from the URL", async () => {
+    MISSING_VIEW = "v_gone";
+    const router = await mountList("?view=v_gone");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Drop it from the URL/ }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(router.state.location.search).not.toHaveProperty("view");
+    });
+  });
+
+  it("says nothing when the view still exists", async () => {
+    await mountList("?view=v_live");
+    expect(screen.queryByRole("status")).toBeNull();
   });
 });

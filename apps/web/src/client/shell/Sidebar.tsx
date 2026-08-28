@@ -11,6 +11,7 @@ import {
   useViews,
 } from "../api/hooks/sidebarData.ts";
 import { useBuiltinCounts } from "../api/hooks/useBuiltinCounts.ts";
+import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { RegionErrorBoundary } from "../error/RegionErrorBoundary.tsx";
 import { BUILTIN_FILTERS } from "../sidebar/builtinFilters.ts";
 
@@ -128,11 +129,39 @@ function ItemShell({
   );
 }
 
-function Badge({ value }: { value: number | undefined }) {
-  if (value === undefined) return null;
+/**
+ * A built-in's count badge.
+ *
+ * The slot is reserved before the number arrives (ONB-14, SHL-23):
+ * rendering nothing while a count is in flight and then inserting a
+ * pill shifts every row below it, so a click aimed mid-load lands on
+ * the wrong item. `min-w` holds the width of a three-digit count,
+ * which covers the overwhelming majority; a wider number grows the
+ * pill rather than being clipped.
+ *
+ * `pending` and "no badge at all" are different: "Mentions me" has no
+ * count to wait for (VUE-2) and gets no slot, while a slow query
+ * (SHL-23) shows a pending affordance in a slot that is already the
+ * right size.
+ */
+function Badge({
+  value,
+  pending = false,
+  unavailable = false,
+}: {
+  value: number | undefined;
+  pending?: boolean;
+  unavailable?: boolean;
+}) {
+  if (value === undefined && !pending && !unavailable) return null;
   return (
-    <span className="ml-auto rounded-full bg-bg-muted px-1.5 text-[11px] tabular-nums text-text-tertiary">
-      {value}
+    <span
+      data-pending={pending ? "true" : undefined}
+      data-unavailable={unavailable ? "true" : undefined}
+      title={unavailable ? "Count unavailable" : undefined}
+      className="ml-auto min-w-[1.75rem] rounded-full bg-bg-muted px-1.5 text-center text-[11px] tabular-nums text-text-tertiary"
+    >
+      {value !== undefined ? value : unavailable ? "—" : "\u00b7\u00b7\u00b7"}
     </span>
   );
 }
@@ -211,6 +240,22 @@ function GroupError({ collapsed, onRetry }: { collapsed: boolean; onRetry: () =>
   );
 }
 
+/**
+ * A group with nothing in it.
+ *
+ * ONB-9 and SHL-9 both forbid the group simply vanishing: on an empty
+ * tracker a missing Labels group is indistinguishable from a build
+ * where labels do not exist, and once entries arrive the group appears
+ * and pushes everything below it down. Saying "no labels yet" costs one
+ * line and answers both.
+ */
+function GroupEmpty({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
+  if (collapsed) return null;
+  return (
+    <div className="px-2.5 py-1 text-[12px] italic text-text-tertiary">{children}</div>
+  );
+}
+
 function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
   const projects = useProjects();
   const activeProjects = useRouterState({
@@ -236,6 +281,9 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
       {failed && (
         <GroupError collapsed={collapsed} onRetry={() => { void projects.refetch(); }} />
       )}
+      {!failed && items.length === 0 ? (
+        <GroupEmpty collapsed={collapsed}>No projects yet</GroupEmpty>
+      ) : null}
       {items.map(p => {
         const active = activeProjects.includes(p.id);
         return (
@@ -284,7 +332,10 @@ function SavedFiltersGroup({
   today: string;
 }) {
   const views = useViews();
-  const counts = useBuiltinCounts(BUILTIN_FILTERS, { currentUserId, today });
+  const workflow = useWorkflow();
+  const priorities = workflow.data?.priorities;
+  const ctx = { currentUserId, today, priorities };
+  const counts = useBuiltinCounts(BUILTIN_FILTERS, ctx);
   const userViews = views.data?.queries ?? [];
   const failed = views.isError;
 
@@ -296,8 +347,10 @@ function SavedFiltersGroup({
       )}
 
       {BUILTIN_FILTERS.map(f => {
-        const search = f.resolve({ currentUserId, today });
+        const search = f.resolve(ctx);
         const count = counts[f.id]?.count;
+        const countPending = counts[f.id]?.isLoading === true;
+        const countUnavailable = counts[f.id]?.unavailable === true;
         // Non-resolvable built-ins (no current user, or deferred
         // "Mentions me") render as inert text, not a link.
         if (search === null) {
@@ -309,7 +362,7 @@ function SavedFiltersGroup({
             <div
               key={f.id}
               aria-disabled="true"
-              title={`${f.label} — available once comments land (M2)`}
+              title={inertReason(f.id, f.label)}
               className="opacity-50"
             >
               <ItemShell collapsed={collapsed} title={f.label}>
@@ -332,7 +385,11 @@ function SavedFiltersGroup({
               {!collapsed ? (
                 <>
                   <span className="truncate">{f.label}</span>
-                  <Badge value={count} />
+                  <Badge
+                    value={count}
+                    pending={countPending}
+                    unavailable={countUnavailable}
+                  />
                 </>
               ) : null}
             </ItemShell>
@@ -374,15 +431,15 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
   const milestones = useMilestones();
   const items = (milestones.data?.items ?? []).filter(m => m.archived !== true);
   const failed = milestones.isError;
-  // A failed fetch must not make the group vanish — that is the
-  // same conflation as rendering it empty (ERR-1).
-  if (items.length === 0 && !failed) return null;
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Milestones</GroupLabel>
       {failed && (
         <GroupError collapsed={collapsed} onRetry={() => { void milestones.refetch(); }} />
       )}
+      {!failed && items.length === 0 ? (
+        <GroupEmpty collapsed={collapsed}>No milestones yet</GroupEmpty>
+      ) : null}
       {items.map(m => (
         <Link
           key={m.id}
@@ -408,15 +465,15 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
     s => s.archived !== true && s.state !== "completed",
   );
   const failed = sprints.isError;
-  // A failed fetch must not make the group vanish — that is the
-  // same conflation as rendering it empty (ERR-1).
-  if (items.length === 0 && !failed) return null;
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Sprints</GroupLabel>
       {failed && (
         <GroupError collapsed={collapsed} onRetry={() => { void sprints.refetch(); }} />
       )}
+      {!failed && items.length === 0 ? (
+        <GroupEmpty collapsed={collapsed}>No active sprints</GroupEmpty>
+      ) : null}
       {items.map(s => (
         <Link
           key={s.id}
@@ -444,15 +501,15 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
   const labels = useLabels();
   const items = (labels.data?.items ?? []).filter(l => l.archived !== true);
   const failed = labels.isError;
-  // A failed fetch must not make the group vanish — that is the
-  // same conflation as rendering it empty (ERR-1).
-  if (items.length === 0 && !failed) return null;
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Labels</GroupLabel>
       {failed && (
         <GroupError collapsed={collapsed} onRetry={() => { void labels.refetch(); }} />
       )}
+      {!failed && items.length === 0 ? (
+        <GroupEmpty collapsed={collapsed}>No labels yet</GroupEmpty>
+      ) : null}
       {items.map(l => (
         <Link
           key={l.id}
@@ -482,8 +539,13 @@ function RecentsGroup({ collapsed }: { collapsed: boolean }) {
       {failed && (
         <GroupError collapsed={collapsed} onRetry={() => { void recents.refetch(); }} />
       )}
-      {items.length === 0 ? (
-        <div className="px-2.5 py-1 text-[12px] italic text-text-tertiary">No recent tasks</div>
+      {/* `!failed` matters: on a failed fetch `items` is empty too, and
+          rendering the empty copy beside the alert makes two
+          contradictory claims about the same data (ERR-1, ONB-34). */}
+      {!failed && items.length === 0 ? (
+        <GroupEmpty collapsed={collapsed}>
+          No recent tasks — this fills in as you open them
+        </GroupEmpty>
       ) : (
         items.map(t => (
           <Link
@@ -524,6 +586,23 @@ function Footer({ collapsed, info }: { collapsed: boolean; info: TrackerInfoResp
       </Link>
     </div>
   );
+}
+
+/**
+ * Why a built-in is inert.
+ *
+ * SHL-8 requires the row to say why it cannot be used and when it
+ * arrives. One message for every null resolution was wrong once
+ * VUE-24 gave a *second* reason to be inert: a workspace whose
+ * priority scale cannot express "high" is not waiting for comments,
+ * and telling it so is a false promise.
+ */
+function inertReason(id: string, label: string): string {
+  if (id === "mentions-me") return `${label} — available once comments land (M2)`;
+  if (id === "high-priority") {
+    return `${label} — this workspace's priorities don't distinguish a high one`;
+  }
+  return `${label} — not available yet`;
 }
 
 /**
