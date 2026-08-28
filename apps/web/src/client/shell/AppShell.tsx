@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { Header } from "./Header.tsx";
 import { SchemaBanner } from "./SchemaBanner.tsx";
+import { ServerUnreachableBanner } from "./ServerUnreachableBanner.tsx";
 import { Sidebar } from "./Sidebar.tsx";
 import { useSidebarCollapse } from "./useSidebarCollapse.ts";
 
@@ -43,6 +44,10 @@ export function AppShell({
 
   return (
     <div className="flex h-screen flex-col">
+      {/* SHL-41: an unreachable server is app-level, not per-view. A
+          user watching a cached board while the server dies sees
+          nothing from a view-scoped error. */}
+      <ServerUnreachableBanner />
       <SchemaBanner status={info.schemaStatus} />
       <div className="grid min-h-0 flex-1 grid-cols-[auto_1fr] grid-rows-[48px_1fr]">
         <Header

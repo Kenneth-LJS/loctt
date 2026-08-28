@@ -30,6 +30,17 @@ function describeSchema(status: TrackerInfo["schemaStatus"]): string {
         + ` — update LocTT`;
     case "missing":
       return `not recorded — this tracker predates schema versioning`;
+    case "interrupted": {
+      // The backup path is the recovery, so it leads. Everything else
+      // here is context for it.
+      const versions = status.from !== undefined && status.to !== undefined
+        ? ` (v${String(status.from)} → v${String(status.to)})`
+        : "";
+      const backup = status.backup !== undefined
+        ? ` Restore from ${status.backup}, remove ${status.sentinel_path}, then re-run.`
+        : ` The sentinel at ${status.sentinel_path} names the backup to restore from.`;
+      return `a migration${versions} was interrupted and did not finish.${backup}`;
+    }
     case "unknown":
       return `unreadable: ${status.message}`;
   }

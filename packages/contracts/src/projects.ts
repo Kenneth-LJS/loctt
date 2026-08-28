@@ -32,7 +32,15 @@ export type ProjectDef = z.infer<typeof ProjectDefSchema>;
  * rejected at parse time so the file always reflects a coherent state.
  */
 export const ProjectsConfigSchema = z.object({
-  projects: z.array(ProjectDefSchema).min(1, "at least one project is required"),
+  // XS-62 wants the constraint *and* the fix. A tracker with no
+  // project cannot allocate a key, so this is not a preference — and
+  // the user editing `projects.yaml` by hand is exactly who needs to
+  // be told what to add rather than only what is wrong.
+  projects: z.array(ProjectDefSchema).min(
+    1,
+    "at least one project is required — add one to projects.yaml, "
+    + "or run 'loctt project create'",
+  ),
   default: z.string().optional(),
 }).strict().superRefine((cfg, ctx) => {
   const ids = new Set(cfg.projects.map(p => p.id));

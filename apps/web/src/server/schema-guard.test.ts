@@ -57,6 +57,7 @@ interface Envelope {
   message: string;
   detail?: string;
   recovery?: { kind: string; command?: string };
+  schema_status?: { kind: string; on_disk?: number; current?: number; message?: string };
 }
 
 describe("web schema guard", () => {
@@ -133,5 +134,165 @@ describe("web schema guard", () => {
     // for some unrelated reason.
     const res = await fetch(`${base}/api/info`);
     expect(res.status).toBe(200);
+  });
+});
+
+/**
+ * The four schema states, told apart while the guard is refusing.
+ *
+ * The guard blocks `/api/info` along with everything else, so the
+ * surface cannot read the status from the payload it just blocked.
+ * Each state has a *different* remedy — P4 admits no generic "schema
+ * problem" — so the refusal itself has to say which one this is.
+ */
+describe("the guard names which schema state it refused for", () => {
+  /**
+   * @verifies XS-33
+   *
+   * `missing` and `unknown` are distinct kinds: an absent version file
+   * is not an unreadable one, and they have different remedies.
+   */
+  it("reports `missing` for an absent .schema-version", async () => {
+    const { root, base } = await harness();
+    await rm(join(root, ".loctt/.schema-version"), { force: true });
+
+    const body = await (await fetch(`${base}/api/info`)).json() as Envelope;
+    expect(body.schema_status?.kind).toBe("missing");
+    // Nothing is known, so no numbers may be claimed.
+    expect(body.schema_status?.on_disk).toBeUndefined();
+  });
+
+  /**
+   * @verifies XS-34
+   */
+  it("reports `future` with both versions for a too-new tracker", async () => {
+    const { root, base } = await harness();
+    await writeFile(join(root, ".loctt/.schema-version"), "99\n", "utf8");
+
+    const body = await (await fetch(`${base}/api/info`)).json() as Envelope;
+    expect(body.schema_status?.kind).toBe("future");
+    expect(body.schema_status?.on_disk).toBe(99);
+    expect(typeof body.schema_status?.current).toBe("number");
+    expect(body.schema_status?.current).toBeLessThan(99);
+    // Migration cannot help, so no command is offered.
+    expect(body.recovery?.kind).toBe("none");
+  });
+
+  /**
+   * @verifies XS-35
+   *
+   * The `outdated` state cannot be reached on this build.
+   * `CURRENT_SCHEMA_VERSION` is 1 and `readSchemaVersion` rejects
+   * anything below 1, so there is no value a tracker can hold that
+   * reads as behind. XS-35's *copy* is covered where the banner is
+   * tested; what this pins is that the gap is arithmetic and will
+   * close on its own at version 2 — not a missing branch someone
+   * should go and write.
+   *
+   * If this test starts failing, `CURRENT_SCHEMA_VERSION` has moved
+   * and the real scenario is now reachable: replace this with a
+   * fixture that writes `CURRENT_SCHEMA_VERSION - 1`.
+   */
+  it("cannot yet produce an outdated tracker, because version 1 is the floor", async () => {
+    const { computeSchemaStatus, CURRENT_SCHEMA_VERSION } = await import("@loctt/core");
+    expect(CURRENT_SCHEMA_VERSION).toBe(1);
+
+    const { root } = await harness();
+    const status = await computeSchemaStatus(join(root, ".loctt"));
+    expect(status.kind).toBe("current");
+
+    // The one value below current is not a legal version, so it reads
+    // as unreadable rather than as behind.
+    await writeFile(join(root, ".loctt/.schema-version"), "0\n", "utf8");
+    expect((await computeSchemaStatus(join(root, ".loctt"))).kind).toBe("unknown");
+  });
+
+  /**
+   * @verifies XS-33
+   *
+   * An unreadable version is `unknown`, not `missing` — the distinction
+   * XS-33 draws by name.
+   */
+  it("reports `unknown` for an unparseable .schema-version", async () => {
+    const { root, base } = await harness();
+    await writeFile(join(root, ".loctt/.schema-version"), "abc\n", "utf8");
+
+    const body = await (await fetch(`${base}/api/info`)).json() as Envelope;
+    expect(body.schema_status?.kind).toBe("unknown");
+    expect(body.schema_status?.kind).not.toBe("missing");
+  });
+});
+
+/**
+ * @verifies XS-37
+ *
+ * The crashed-migration sentinel. `requireSupportedSchema` already
+ * refused to boot against one — what was missing was the *state
+ * reaching the surface*: `computeSchemaStatus` checked only the
+ * recorded version, so a half-migrated tracker whose version stamp
+ * happened to look current reported as healthy, and the UI showed the
+ * ordinary banner (or nothing) for the one condition where no in-app
+ * action is safe.
+ */
+describe("an interrupted migration", () => {
+  it("is reported as its own kind, carrying the sentinel's recovery details", async () => {
+    const { root, base } = await harness();
+    const sentinel = join(root, ".loctt/.schema-migration-in-progress");
+    const backup = join(root, ".loctt.backup-v1-20260828-abc123");
+    await writeFile(sentinel, `from: 1\nto: 2\nbackup: ${backup}\n`, "utf8");
+
+    const res = await fetch(`${base}/api/info`);
+    expect(res.status).toBe(409);
+    const body = await res.json() as Envelope;
+    expect(body.schema_status?.kind).toBe("interrupted");
+
+    const status = body.schema_status as unknown as {
+      from?: number; to?: number; backup?: string; sentinel_path?: string;
+    };
+    expect(status.from).toBe(1);
+    expect(status.to).toBe(2);
+    expect(status.backup).toBe(backup);
+    expect(status.sentinel_path).toBe(sentinel);
+
+    // No one-click fix: re-running over a half-migrated tracker
+    // compounds the damage.
+    expect(body.recovery?.kind).toBe("none");
+    expect(body.recovery?.command).toBeUndefined();
+  });
+
+  it("outranks a recorded version that looks perfectly current", async () => {
+    const { computeSchemaStatus } = await import("@loctt/core");
+    const { root } = await harness();
+    const locttDir = join(root, ".loctt");
+
+    // The crash can land between the last step's version stamp and the
+    // sentinel's removal, so this tracker is half-migrated *and* reads
+    // as current. Checking the version first reports it healthy.
+    expect((await computeSchemaStatus(locttDir)).kind).toBe("current");
+
+    await writeFile(
+      join(locttDir, ".schema-migration-in-progress"),
+      "from: 1\nto: 2\nbackup: /tmp/x\n",
+      "utf8",
+    );
+    expect((await computeSchemaStatus(locttDir)).kind).toBe("interrupted");
+  });
+
+  it("still reports interrupted when the sentinel is unreadable", async () => {
+    const { computeSchemaStatus } = await import("@loctt/core");
+    const { root } = await harness();
+    const locttDir = join(root, ".loctt");
+
+    // The file's *presence* is the fact that matters. Losing its
+    // contents means showing less, not reporting the tracker healthy.
+    await writeFile(join(locttDir, ".schema-migration-in-progress"), "garbage\n", "utf8");
+
+    const status = await computeSchemaStatus(locttDir);
+    expect(status.kind).toBe("interrupted");
+    if (status.kind === "interrupted") {
+      expect(status.from).toBeUndefined();
+      expect(status.backup).toBeUndefined();
+      expect(status.sentinel_path.length).toBeGreaterThan(0);
+    }
   });
 });

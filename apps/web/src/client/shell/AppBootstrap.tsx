@@ -1,8 +1,11 @@
+import type { SchemaStatusResponse, TrackerInfoResponse } from "@loctt/contracts";
 import { Outlet } from "@tanstack/react-router";
 
+import { ApiError } from "../api/client.ts";
 import { useCurrentUser } from "../api/hooks/useCurrentUser.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
 import { AppShell } from "./AppShell.tsx";
+import { InterruptedMigration } from "./InterruptedMigration.tsx";
 
 /**
  * Gates the whole app on the two reads every screen needs: tracker
@@ -23,6 +26,42 @@ export function AppBootstrap() {
 
   if (info.isLoading || currentUser.isLoading) {
     return <CenteredMessage>Loading…</CenteredMessage>;
+  }
+
+  // A schema mismatch is not a fatal error — it is the state the
+  // banner exists for. Every `/api/` route 409s while it stands,
+  // `/api/info` included, so this used to render a full-page error and
+  // the banner was unreachable in exactly the situation it describes.
+  //
+  // SHL-13, XS-34 and XS-35 all require the shell and navigation to
+  // stay up with the banner visible: the user can move around and read
+  // the explanation, they just cannot see or change tasks.
+  const schemaMismatch = schemaStatusFromError(info.error);
+
+  // XS-37: a crashed migration is not a banner state. It gets its own
+  // blocking screen, because the tracker may be half-rewritten and
+  // there is nothing safe to browse or click.
+  if (schemaMismatch?.kind === "interrupted") {
+    return (
+      <InterruptedMigration
+        from={schemaMismatch.from}
+        to={schemaMismatch.to}
+        backup={schemaMismatch.backup}
+        sentinelPath={schemaMismatch.sentinel_path}
+      />
+    );
+  }
+
+  if (schemaMismatch !== null) {
+    return (
+      <AppShell
+        info={PLACEHOLDER_INFO(schemaMismatch)}
+        currentUser={null}
+        identityUnknown
+      >
+        <Outlet />
+      </AppShell>
+    );
   }
 
   if (info.isError) {
@@ -77,6 +116,45 @@ export function AppBootstrap() {
       <Outlet />
     </AppShell>
   );
+}
+
+
+/**
+ * Reads a schema mismatch out of a failed `/api/info`.
+ *
+ * The guard's 409 carries the tracker's schema status directly, so the
+ * kind is read rather than inferred. An earlier cut recovered it by
+ * matching the error's prose, which makes a copy edit a behaviour
+ * change and quietly collapses the four states P4 requires be kept
+ * apart.
+ */
+function schemaStatusFromError(err: unknown): SchemaStatusResponse | null {
+  if (!(err instanceof ApiError)) return null;
+  if (err.envelope?.code !== "schema_mismatch") return null;
+  // A guard that refused without saying which state it is in leaves
+  // the surface genuinely unable to say — which is `unknown`, and the
+  // one kind whose copy admits that (SHL-38).
+  return err.envelope.schema_status ?? { kind: "unknown", message: err.message };
+}
+
+/**
+ * Enough `TrackerInfoResponse` for the shell to render while the real
+ * one is unavailable.
+ *
+ * Deliberately not invented data: the counts are zero and the labels
+ * empty, because nothing is known. What matters is that the schema
+ * status is real, since that is the whole reason this shell renders.
+ */
+function PLACEHOLDER_INFO(schemaStatus: SchemaStatusResponse): TrackerInfoResponse {
+  return {
+    exists: true,
+    taskCount: 0,
+    keyPrefix: null,
+    nextKey: null,
+    schemaStatus,
+    cwd: "",
+    today: new Date().toISOString().slice(0, 10),
+  };
 }
 
 function CenteredMessage({ children }: { children: React.ReactNode }) {

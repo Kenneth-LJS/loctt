@@ -67,8 +67,19 @@ interface ZodLikeIssue {
  * Translates the most common zod issue codes into stable
  * human-readable messages. Uncovered codes fall back to the
  * issue's default message.
+ *
+ * A message the *schema author* supplied always wins. The point of
+ * this function is insulating the surface from zod's own wording
+ * changing under it — not from ours. Overriding an author's message
+ * silently replaced domain constraints with generic ones: XS-62
+ * requires `projects.yaml` to state "at least one project is
+ * required", which the schema says in exactly those words, and this
+ * was rewriting it to "projects must contain at least one item".
  */
 function stableMessage(issue: z.ZodIssue): string {
+  const custom = customMessage(issue);
+  if (custom !== undefined) return custom;
+
   // Zod v4's discriminated union uses different field names per
   // code (origin vs type, values vs options); read everything
   // generically so the test surface stays stable.
@@ -191,4 +202,64 @@ export function formatIfZodError(err: unknown, prefix: string): string | null {
   const issues = (err as { issues?: unknown }).issues;
   if (!Array.isArray(issues)) return null;
   return formatZodIssues(prefix, err as z.ZodError);
+}
+
+/**
+ * The message an author attached to a schema rule, or undefined when
+ * the issue carries only zod's default.
+ *
+ * Zod does not flag which of the two an issue holds, so this compares
+ * against what zod would have produced for the same issue with no
+ * custom message. Anything different was written by us.
+ */
+function customMessage(issue: z.ZodIssue): string | undefined {
+  const isDefault = defaultMessagesFor(issue).some(d =>
+    typeof d === "string" ? d === issue.message : d.test(issue.message),
+  );
+  return isDefault ? undefined : issue.message;
+}
+
+/** Escapes a string for literal use inside a RegExp. */
+function escapeRe(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The default messages zod emits for an issue, for the codes this
+ * module rewrites.
+ *
+ * Listed rather than derived because zod builds them from an internal
+ * locale table that is not exported. Getting an entry wrong is safe in
+ * one direction only: a missed default leaks zod's wording through as
+ * if it were ours, which is a cosmetic regression rather than a lost
+ * constraint. Missing a *custom* message is the failure that matters,
+ * and that cannot happen — an unlisted default simply passes through.
+ */
+function defaultMessagesFor(issue: z.ZodIssue): readonly (string | RegExp)[] {
+  const i = issue as unknown as ZodLikeIssue;
+  switch (i.code) {
+    case "invalid_type":
+      // `received` is absent from the issue object even when the
+      // message names it, so this matches the message's shape rather
+      // than rebuilding it from fields that are not there.
+      return [
+        new RegExp(`^Invalid input: expected ${escapeRe(String(i.expected))}(, received .+)?$`),
+      ];
+    case "too_small":
+      return [
+        `Too small: expected ${String(i.origin ?? i.type)} to have >=${String(i.minimum)} characters`,
+        `Too small: expected ${String(i.origin ?? i.type)} to have >=${String(i.minimum)} items`,
+        `Too small: expected ${String(i.origin ?? i.type)} to be >=${String(i.minimum)}`,
+      ];
+    case "too_big":
+      return [
+        `Too big: expected ${String(i.origin ?? i.type)} to have <=${String(i.maximum)} characters`,
+        `Too big: expected ${String(i.origin ?? i.type)} to have <=${String(i.maximum)} items`,
+        `Too big: expected ${String(i.origin ?? i.type)} to be <=${String(i.maximum)}`,
+      ];
+    default:
+      // Codes this module does not rewrite fall through to the issue's
+      // own message anyway, so the distinction does not arise.
+      return [issue.message];
+  }
 }
