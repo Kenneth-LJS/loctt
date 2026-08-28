@@ -131,11 +131,41 @@ Written after every subsection commit, per
 | M1.4 | 2 · move to project | `e541456` | BLK-9, BLK-26, BLK-31 | Coverage 113 → 116. Found a live API defect and introduced one regression; review caught eight things. |
 | 🚦 M1 | root cause | `72b1a5d` | ERR-1, ERR-2 | A **fable agent** found what three rounds missed: a paused query, not a predicate. See below. |
 | 🚦 M1 | gate round 3 | `ecd2f8b` | — | **FAIL.** One blocker, mine, from round 2's fix. My predicate made the error branch unreachable. |
+| M1.2 | verification | ten batches | 59/60 | Fifteen real defects in code marked ✅. MSL-22 unblocked by Ken; XS-56 accepted as-is; PRU-3 moved to M4.1. |
+| M1.3 | verification | six batches | **45/45** | LST-16 (custom-field filters did nothing), LST-29 (I had built a 400 where the case wants a fallback), MSL-6 (label pills were not clickable), MSL-19 (40 labels, no typeahead). |
 | 🚦 M1 | gate round 2 | `12d93c8` | — | Confirmed 3 of 4 round-1 fixes. Found the stale-filter guard, plus two bugs in my own responsive change. Still **FAIL** pending round 3. |
 | 🚦 M1 | gate round 1 | `6a8cb49`, `a395023` | — | **FAIL.** 4 blockers: every entity filter 400'd, moved keys did not resolve, no responsive handling, one non-reproducing. |
 | M1.4 | 5 · remaining BLK cases | `9cae899` | BLK-6, 17, 19-21, 25, 27-29, 36, 40, 43, 46-48 | **M1.4 complete.** Four live defects incl. BLK-40, red since it was written. UI suite 65/65 for the first time. |
 | M1.4 | 4 · concurrency + scale | `c4812bb` | BLK-22, 23, 24, 34, 41, 42 | Three live defects: ULID in a failure message, raw proper-lockfile error, unbounded hung request. Review found six more. |
 | M1.4 | 3 · archive undo | `6b16801` | BLK-10 | The ticket's premise was wrong — archive never had a typed confirm. Undo + archived badge built instead. Fixed an intermittent I introduced in subsection 2. |
+
+**Verifying the ✅ tickets — where the run is now**
+
+M1.1-M1.3 were marked done before any ticket declared its cases.
+Working through them case by case, per Ken's instruction to verify all
+110.
+
+| Ticket | Was | Now |
+|---|---|---|
+| M1.1 | 1/71 | 1/71 — **next** |
+| M1.2 | 12/61 | 59/60 |
+| M1.3 | 3/45 | **45/45** |
+| M1.4 | 51/62 | 51/62 |
+
+Roughly half of each batch turns out already correct and needing only
+a test; the other half is a live defect. **Six tests have been found
+asserting the bug** and rewritten, each noted in its commit.
+
+Cases parked, with reasons, in `known-gaps.md`:
+
+- **XS-56** — rows cannot be marked stale because the data layer drops
+  them on error. Ken accepted the error state instead.
+- **PRU-3** — needs an "All projects" mode no ticket built; moved to
+  M4.1.
+- **BLK-44** — the blocker half is fixed; its remaining bullet points
+  at a `flow-list.md` case that was never written.
+- **LST-14** — the `q` param is covered; the header search box is a
+  deliberate stub, and M1.3's ticket never claimed one.
 
 **The M1 gate loop, and why it did not converge**
 
