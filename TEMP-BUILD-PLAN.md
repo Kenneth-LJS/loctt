@@ -159,11 +159,34 @@ Working through them case by case, per Ken's instruction to verify all
 | M1.4 | 51/62 | **62/62** |
 
 **All four M1 tickets are verified.** Gate round 6 returned **FAIL**
-with 1 blocker, 1 major and 3 minors. The blocker (F1) is fixed and
-proved by mutation; F2's fix is in but unproven and with a Fable
-agent; F3 is declined as decision A1; F4 is F7, still Ken's; F5 is
-copy. **Round 7 is next, and it needs an agent that wrote none of
-this.**
+with 1 blocker, 1 major and 3 minors. **All five are now
+dispositioned:**
+
+| | Finding | Disposition |
+|---|---|---|
+| F1 | blocker · banner never fires mid-session | **Fixed** (`20cdf85`), proved by mutation |
+| F2 | major · sidebar claims empty during a retry | **Fixed** (`9a21b22`, `bb6b9fc`) — and Fable found a worse defect underneath it |
+| F3 | minor · API 200s an unknown `sort` | **Declined**, decision A1. LST-29 requires the fallback; the gate's supporting measurement did not reproduce |
+| F4 | minor · CSV writes raw ULIDs | **Ken's**, unchanged. Four options in `PROPOSED-UI-CASES.md` |
+| F5 | minor · error panel headed "Loading tasks" | **Fixed** (`1e5aa39`) |
+
+Three decisions were recorded rather than escalated: **A1** (the sort
+fallback stays a 200), **A2** (one failed request is enough to raise
+the banner — SHL-41's own words, and the stricter reading made that
+blocker unimplementable), **A3** (a wrong claim during a retry counts
+as making it). A2 and A3 answer the gate's own PC-18 and PC-19, which
+it raised as behaviour no case covers.
+
+**Round 7 is next, and it needs an agent that wrote none of this.**
+
+The F2 investigation is worth carrying forward. Three of my fixes
+failed to establish the mechanism, which fired the "a fix that fails
+twice" rule for the first time under the new workflow. A Fable agent
+separated the phases and found my fix was correct but my diagnosis
+wrong — and that a *worse* defect sat underneath: every sidebar group
+claimed "No projects yet" from its first paint, for **1089–2098ms** on
+a cold load against a dead server, directly under the banner saying
+the server was down.
 
 A vacuity sweep ran alongside it: **27 of 186 M1 tests assert
 nothing**, found by mutating every test in six parallel groups. See
