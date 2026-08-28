@@ -534,7 +534,17 @@ export function ListView() {
                 <td colSpan={columns.length + 1} className="p-0">
                   <ErrorState
                     error={lastQueryError.current}
-                    context="Loading tasks"
+                    // Past tense. ERR-30 wants "what was attempted",
+                    // and "Loading tasks" satisfies that — but it is
+                    // the first line of a failure notice, so it read
+                    // as a progress claim, and a screen reader
+                    // announced "Loading tasks" at the moment loading
+                    // had permanently stopped. Graded minor by the M1
+                    // round-6 gate (F5) because no case is
+                    // contradicted; the past tense answers ERR-30
+                    // identically without describing the present
+                    // wrongly.
+                    context="Could not load tasks"
                     onRetry={() => { void tasks.refetch(); }}
                   />
                 </td>
