@@ -199,3 +199,33 @@ five concurrent Playwright workers pushed one 500ms scan past it. That
 gate now has 20s while every *measured* assertion keeps its strict
 budget, so the cost is measured rather than hidden.
 
+
+## XS-56: rows do not survive an unreachable server, so they cannot be marked stale
+
+**Found 2026-08-25 verifying M1.2. Not fixed — the case's second bullet
+is unreachable in the current data layer.**
+
+XS-56 wants both halves at once:
+
+- the already-rendered rows are **not wiped** to an empty state, and
+- they are **visibly marked** as possibly out of date.
+
+The first half is satisfied in effect: the table shows the error state
+with a Retry, never the empty-tracker copy, so nothing reads as data
+loss. The second is not, and cannot be as written — TanStack drops the
+data when a query settles into an error, so by the time the UI knows
+the tracker is unreachable there are no rows left to mark.
+
+I built the banner and then removed it: `items.length > 0 &&
+tasks.isError` is never true, so it was an unreachable branch and its
+test passed with the error state deleted entirely. Shipping either
+would have been worse than the gap.
+
+**What it would take.** Keeping the last successful page beside the
+query state and rendering *that* when the live query fails — a
+deliberate stale-data cache with its own invalidation rules, not a
+predicate change. Worth doing if the case's marked-stale reading is
+what is wanted; worth amending the case if the error-state reading is
+enough.
+
+**XS-56 stays untagged.**
