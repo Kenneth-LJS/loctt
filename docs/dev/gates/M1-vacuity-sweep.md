@@ -22,10 +22,10 @@ misdiagnoses in this repo.
 | MSL/VUE/ONB/TSK | 24/24 | 5 | — |
 | SHL | 25/25 | 2 | 1 |
 | LST | 24/49 | 8 | 1 |
+| ERR | 16/16 | 6 | 2 |
 | BLK | — | — | — |
-| ERR | — | — | — |
 
-**17 vacuous of 93 checked so far.** LST is a partial sweep — 25 of
+**23 vacuous of 109 checked so far.** LST is a partial sweep — 25 of
 its 49 were not mutated and carry no verdict either way.
 
 ---
@@ -404,3 +404,74 @@ Listed in `sweep-LST.md`. Next by suspicion: **LST-42** (its reload
 assertion checks row count, never that the search box shows the
 original quoted text — the case's explicit bullet), then LST-7 and
 LST-44.
+
+---
+
+## ERR — 16 of 16 checked, 6 vacuous
+
+### The headline finding
+
+**Blanking the error headline is caught by exactly one of sixteen
+error tests.**
+
+`ErrorState.tsx:94` renders `headline(error)` — the single sentence
+saying what went wrong. Blank it, and only ERR-10 notices. Four tests
+assert the `context` label ("Loading tasks") plus a Retry button, and
+never the reason.
+
+P-4 requires an error to name *the thing, the reason, and the next
+action*. Across this group's read-failure surfaces, **the reason is
+unverified**.
+
+### The shared root cause
+
+Five of the six vacuous tests assert on the alert **container** and
+assert **absences**.
+
+The container is `role="alert"` at `ErrorState.tsx:90`, and the
+`context` label lives *inside* it (line 92), above the headline. So
+`toMatch(/tasks/i)` against the alert is satisfied by "Loading tasks"
+alone — the context prop, which renders whatever the error is.
+
+And any "container does not contain X" assertion **gets weaker as the
+app says less**. The whole cluster is green in the limit where the
+error surface is empty.
+
+ERR-42 is the sharpest: its only positive check is `toMatch(/tasks/i)`,
+so it is *strictly easier to pass the less the app says*.
+
+This is one structural flaw, not six bugs.
+
+### Vacuous (6)
+
+| Case | Mutation that survived |
+|---|---|
+| ERR-19, ERR-21, ERR-41, ERR-42 | headline blanked (`ErrorState.tsx:94`) |
+| ERR-20 | `Dash` renders blank (`cells.tsx:280`) — the case requires an explicit unknown marker; the test only forbids the string "undefined" |
+| ERR-9 | parse error dropped (`ListView.tsx:456`) — the test's own name claims "named with its parse error", and that claim is false under the mutation |
+
+### ERR-2's fix holds
+
+With the recovery poll disabled, **ERR-2 was the only one of sixteen
+to fail** — confirming `cc45c2f`'s quiesce genuinely pins the
+mechanism rather than passing on backoff.
+
+### Two qualifications the agent raised
+
+**ERR-41 is half-healthy.** A different mutation — making the error
+surface render literal empty-state copy — *did* turn it red, so its
+non-conflation claim (ERR-1's requirement that a failure and an
+absence not look alike) is real. Only its "distinct copy" claim is
+vacuous. Recorded as vacuous because the case demands both, but it
+should be repaired rather than rewritten.
+
+**ERR-1's offline variant is healthy only by its own admission.** Its
+comment states it does not pin the fix — it passes with
+`networkMode: "online"` too, and names `ListView.paused.test.tsx` as
+the real guard. It is a browser-realism exercise, not a regression
+guard, and should not be counted as coverage.
+
+### Healthy (10)
+
+ERR-1 (dead server), ERR-2, ERR-5, ERR-10, and the four bulk tests
+ERR-17/30/39/40 all went red appropriately.
