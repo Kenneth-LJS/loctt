@@ -24,6 +24,7 @@
  *     the user to resolve, not a reason to refuse their publish.
  */
 
+import { getLabelsConfigPath } from "../config/labels.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
 import {
   getCommentsFilePath,
@@ -36,7 +37,7 @@ import { isMalformedComment, listCommentEntries } from "../task/comments.js";
 import { isMalformedHistoryEntry, readHistoryRows } from "../task/history.js";
 import { listTaskIds } from "../task/list-ids.js";
 import { validateRelationships } from "../task/traversal.js";
-import { isMissingFile, UnreadableFileError } from "../utils/read-state.js";
+import { isMissingFile, readFileState, UnreadableFileError } from "../utils/read-state.js";
 
 export type IntegritySeverity = "unreadable" | "malformed" | "inconsistent";
 
@@ -159,7 +160,54 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
     }
   }
 
+  // Config values LocTT kept but could not use. A label's colour is
+  // cosmetic: `parseLabelsConfig` drops a non-hex value rather than
+  // refusing the file, because the label still has an id and a name
+  // and every task pointing at it must keep rendering (MSL-22). That
+  // makes the bad value invisible unless something reports it — which
+  // is this, and why the case asks for it to be "surfaced as a fixable
+  // config problem naming the label and the bad value".
+  try {
+    const raw = await readFileState(getLabelsConfigPath(locttDir));
+    if (raw.state === "loaded") {
+      for (const { name, color } of invalidLabelColors(raw.content)) {
+        findings.push({
+          severity: "inconsistent",
+          path: getLabelsConfigPath(locttDir),
+          message:
+            `label "${name}" has colour "${color}", which is not a hex value `
+            + `(e.g. #1e6fcb or #f00). The label still renders, with the `
+            + `default colour; fix the value to restore its own.`,
+        });
+      }
+    }
+  } catch {
+    // An unreadable labels.yaml is already the loader's business and
+    // is reported wherever that surfaces. Nothing to add here.
+  }
+
   return findings;
+}
+
+/**
+ * Label colours the schema would reject, read from the raw YAML.
+ *
+ * Read raw rather than through `loadLabelsConfig`, which drops these
+ * on the way past — by the time a parsed config exists, the bad value
+ * is gone and there is nothing left to report.
+ */
+function invalidLabelColors(yamlContent: string): { name: string; color: string }[] {
+  const out: { name: string; color: string }[] = [];
+  let name = "";
+  for (const line of yamlContent.split("\n")) {
+    const n = /^\s*(?:- )?name:\s*(.+?)\s*$/.exec(line);
+    if (n?.[1] !== undefined) { name = n[1]; continue; }
+    const c = /^\s*color:\s*"?([^"\s]+)"?\s*$/.exec(line);
+    if (c?.[1] === undefined) continue;
+    if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(c[1])) continue;
+    out.push({ name, color: c[1] });
+  }
+  return out;
 }
 
 function messageOf(err: unknown): string {
