@@ -1022,6 +1022,58 @@ test.describe("SHL — the shell under a failing recovery attempt", () => {
   });
 });
 
+test.describe("SHL — the sidebar during a cold outage", () => {
+  /**
+   * @verifies SHL-39
+   *
+   * A cold load against a dead server used to spend a full second
+   * telling the user their tracker was empty — "No projects yet",
+   * "No labels yet", "No milestones yet" — while the unreachable
+   * banner sat above saying the server was down. Two contradictory
+   * claims on one screen, and the wrong one was about their data.
+   *
+   * Measured before the fix, phases kept apart: the empty text is on
+   * screen from **1089ms to 2098ms**. The query has not failed yet
+   * (the retry policy's one retry is still to come) so no
+   * error-keyed guard can catch it — it has not *settled* at all.
+   *
+   * A ~1s window is wide enough for a 40ms poll to catch reliably,
+   * which is why this is a real UI test where SHL-41's could not be
+   * (see known-gaps.md).
+   */
+  test("SHL-39: a sidebar with no answer yet does not claim the tracker is empty", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha task" }]);
+    await page.route(/\/api\//, route => { void route.abort("connectionrefused"); });
+
+    // Poll from the first paint. The window is between navigation and
+    // the query settling, so it has to be watched, not sampled once.
+    let sawEmptyClaim = "";
+    const poll = setInterval(() => {
+      void page.locator("body").innerText().then(text => {
+        const hit = /No projects yet|No labels yet|No milestones yet|No active sprints/
+          .exec(text);
+        if (hit !== null && sawEmptyClaim === "") sawEmptyClaim = hit[0];
+      }).catch(() => undefined);
+    }, 40);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("[data-server-unreachable]")).toBeVisible({
+      timeout: 20_000,
+    });
+    // Past the retry, so the whole never-settled window has elapsed.
+    await page.waitForTimeout(3_000);
+    clearInterval(poll);
+
+    expect(
+      sawEmptyClaim,
+      `the sidebar claimed "${sawEmptyClaim}" while the server was unreachable`,
+    ).toBe("");
+  });
+});
+
 test.describe("ERR — recovery when the server comes back", () => {
   /**
    * @verifies ERR-2
