@@ -378,3 +378,47 @@ git specs are.
 Not investigated further because it did not reproduce. Recorded so
 the next agent does not spend a round on it: re-run before believing
 a single failure here, and check `uptime` first.
+
+## `fetchState` un-says a settled error — the trap behind four bugs
+
+**Established 2026-08-29, by a Fable review plus direct measurement.**
+
+`query-core`'s reducer, `query.js`:
+
+```js
+function fetchState(data, options) {
+  return {
+    fetchFailureCount: 0, fetchFailureReason: null,
+    fetchStatus: ...,
+    ...data === void 0 && { error: null, status: "pending" }
+  };
+}
+```
+
+**Any** fetch on a query that has never held data resets it to
+`pending` with `error: null`. Not just a mount fetch — the interval
+tick, a focus refetch, and a manual `refetchQueries()` all do it.
+
+Four separate bugs in `AppBootstrap` came from reading live query
+status and acting on that reset:
+
+1. A full-page fatal error on any `/api/info` failure (gate F1).
+2. A mount/unmount loop at ~70Hz that hung the schema banner behind a
+   permanent spinner (gate F3) — caused by fixing 1.
+3. Pressing "Try now" on the unreachable banner destroying the shell
+   holding the banner.
+4. "No tracker here yet" shown to a user whose tracker was fine,
+   because `info.data` is undefined mid-attempt.
+
+**The rule that avoids all four:** ask whether a query has *ever*
+settled (`errorUpdatedAt > 0 || dataUpdatedAt > 0`), never what its
+status is right now. Those two fields survive the reset; `status`,
+`error`, `data` and `fetchFailureCount` do not.
+
+**And keep the last known value.** `info.data` empties during any
+attempt, so anything derived from it flickers — which is how the
+footer came to report "0 tasks" during an outage.
+
+If a fifth bug appears in this file, check it against this list
+before diagnosing it fresh. Three of the four were diagnosed as
+unrelated at first.
