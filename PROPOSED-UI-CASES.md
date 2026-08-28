@@ -172,3 +172,32 @@ bug. The pattern to watch for: a case that checks the UI *emitted*
 something, without checking the far end *accepted* it. This is the same
 failure mode as the three test suites that encode bugs as expectations
 that the 2026-08-14/15 sessions found.
+
+---
+
+## Proposed: the threshold in BLK-30's "proportionate" confirmation
+
+**Raised 2026-08-28 while covering BLK-30. Nothing here is decided.**
+
+BLK-30 requires that "the confirmation string required is
+proportionate — deleting 1,280 tasks must not require the same
+keystroke as deleting 2", but names no boundary. The implementation
+had to pick one, so it picked: **above 10 tasks, the user types the
+count instead of the word `DELETE`.**
+
+The reasoning: a fixed word is muscle memory by the third use, and ten
+is roughly where a selection stops being something you can see and
+verify at a glance. Typing the number cannot be done without reading
+it.
+
+What is genuinely open, and is Ken's rather than mine:
+
+- **The number.** 10 is a guess. 25 and 50 are equally defensible.
+- **The escalation shape.** Two tiers, or three? Something harder
+  again above, say, 500?
+- **Whether the count is the right string.** "1280" is short. Some
+  apps ask for the project name instead, which is longer and less
+  guessable but also less obviously tied to the thing being deleted.
+
+`LARGE_DELETE_THRESHOLD` and `deleteConfirmWord()` in
+`DeleteConfirmDialog.tsx` are the two places any of this changes.
