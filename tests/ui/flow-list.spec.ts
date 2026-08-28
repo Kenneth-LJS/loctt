@@ -3572,3 +3572,52 @@ test.describe("ERR/LST — a broken config file (M1.2)", () => {
     expect(cli).toContain("workflow.yaml");
   });
 });
+
+test.describe("XS/ONB — staleness and the skeleton (M1.2)", () => {
+  // @verifies ONB-12
+  test("ONB-12: the skeleton is page-shaped, so the pane does not jump when data lands", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seedBulk(60);
+
+    let release: (() => void) | undefined;
+    const held = new Promise<void>(r => { release = r; });
+    await page.route(/\/api\/tasks(\?|$)/, async route => {
+      await held;
+      await route.continue();
+    });
+    await page.goto(`${tracker.baseURL}/list`);
+
+    // A skeleton with the table's own column structure, not a spinner
+    // and not a blank pane.
+    const skeletonRows = page.locator("tbody tr[aria-hidden]");
+    await expect(skeletonRows.first()).toBeVisible();
+    const skeletonCount = await skeletonRows.count();
+    const headerCells = await page.locator("thead th").count();
+    expect(await skeletonRows.first().locator("td").count()).toBe(headerCells);
+
+    // Plausible for a page of results: eight rows under a fifty-row
+    // page made the pane visibly grow when data landed.
+    expect(skeletonCount).toBeGreaterThanOrEqual(20);
+
+    release?.();
+    await expect(page.getByText(/Showing 1–\d+ of 60/)).toBeVisible();
+  });
+
+  // @verifies ONB-24
+  test("ONB-24: the empty state survives a narrow window without a horizontal scrollbar", async ({
+    page,
+    tracker,
+  }) => {
+    void tracker;
+    await page.setViewportSize({ width: 768, height: 800 });
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody")).toContainText(/No tasks yet/i);
+
+    // The page body does not scroll sideways.
+    const overflow = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+  });
+});

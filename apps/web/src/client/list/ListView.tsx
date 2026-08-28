@@ -17,7 +17,7 @@ import {
   useBulkSet,
 } from "../api/hooks/useBulk.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
-import { buildQueryString, tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
+import { buildQueryString, DEFAULT_LIST_LIMIT, tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { BulkBar, BulkResult } from "./BulkBar.tsx";
@@ -471,7 +471,15 @@ export function ListView() {
                 </td>
               </tr>
             ) : tasks.isLoading ? (
-              <SkeletonRows columns={columns.length + 1} />
+              // As many rows as a page will hold (ONB-12): eight
+              // skeletons under a fifty-row page made the pane jump
+              // when data landed, which is the growth the case rules
+              // out. Capped so a huge page size does not paint
+              // hundreds of placeholder rows.
+              <SkeletonRows
+                columns={columns.length + 1}
+                rows={Math.min(params.limit ?? DEFAULT_LIST_LIMIT, 25)}
+              />
             ) : items.length === 0 ? (
               <tr>
                 <td colSpan={columns.length + 1} className="px-3 py-8 text-center text-text-tertiary">
@@ -736,10 +744,10 @@ function Cell({
   }
 }
 
-function SkeletonRows({ columns }: { columns: number }) {
+function SkeletonRows({ columns, rows }: { columns: number; rows: number }) {
   return (
     <>
-      {Array.from({ length: 8 }).map((_, r) => (
+      {Array.from({ length: rows }).map((_, r) => (
         <tr key={r} aria-hidden className="[&>td]:border-b [&>td]:border-border-subtle [&>td]:px-3 [&>td]:py-2.5">
           {Array.from({ length: columns }).map((__, c) => (
             <td key={c}>
