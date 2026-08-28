@@ -61,7 +61,7 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 | 2 · Measure | ✅ | Measured (CLI 17/49, MCP 26/75) and the blocker it raised is **cleared**: both reference docs corrected to the shipped API, every example executed. See *Blocker 2, resolved*. |
 | 3 · Surface gaps | ✅ | **68 of 68 closed**: blockers 23/23, major 29/29, minor 16/16. Surface coverage 46 → 111. See *Phase 3 log*. |
 | 4 · Structural audit | ✅ | **Groups A–F closed, the six swallowed-error findings with them, and the nine recorded decisions implemented** (2026-08-17). The two items previously listed here as open are now closed too: the MCP comment tools' bare catches (`a0677b4`) and `HistoryEntry`'s missing schema (`4fb7e4b`). Group G moves to Phase 6, itemised at 55 rather than the "~79" carried before. |
-| 5 · UI build | 🔵 | M1 verified: M1.1 69/71, M1.2 59/60, M1.3 45/45, M1.4 62/62. **The 🚦 M1 gate is next.** |
+| 5 · UI build | 🔵 | M1 verified and round-5 gate findings all closed. **A re-gate is next** — it needs an agent that wrote none of the fixes. |
 | 6 · Cleanup | ⬜ | Group G's 55 items and the flakiness diagnosis. Deferred deliberately — see *The open items*. |
 
 ### ✅ Blocker — RESOLVED 2026-08-16: two views need tickets, not a scope cut
@@ -129,6 +129,8 @@ Written after every subsection commit, per
 |---|---|---|---|---|
 | M1.4 | 1 · entity pickers | `2ca36cb` | BLK-7, BLK-8 | Coverage 111 → 113. Six mutations; two of my tests were vacuous and a fresh review agent found two more. |
 | M1.4 | 2 · move to project | `e541456` | BLK-9, BLK-26, BLK-31 | Coverage 113 → 116. Found a live API defect and introduced one regression; review caught eight things. |
+| 🚦 M1 | round 5 fixes | `8ebcf15`..`ad14b26` | SHL-43, LST-29 | Nine findings closed. **Two blockers, both mine**: a failed `/api/info` destroyed the app (F1), and fixing that created a mount/unmount loop that hung the schema banner (F3). F7 declined — no case requires it, recorded as a decision. F8 and F9 did not reproduce. |
+| 🚦 M1 | gate round 5 | `bf90537` (branch `gate/m1-round5`) | — | **FAIL.** 2 blockers, 2 majors, 5 minors. Suites all green except the UI one, which the gate read as self-contention — it was a concurrent rebuild. |
 | 🚦 M1 | root cause | `72b1a5d` | ERR-1, ERR-2 | A **fable agent** found what three rounds missed: a paused query, not a predicate. See below. |
 | 🚦 M1 | gate round 3 | `ecd2f8b` | — | **FAIL.** One blocker, mine, from round 2's fix. My predicate made the error branch unreachable. |
 | M1.2 | verification | ten batches | 59/60 | Fifteen real defects in code marked ✅. MSL-22 unblocked by Ken; XS-56 accepted as-is; PRU-3 moved to M4.1. |
@@ -154,7 +156,24 @@ Working through them case by case, per Ken's instruction to verify all
 | M1.3 | 3/45 | **45/45** |
 | M1.4 | 51/62 | **62/62** |
 
-**All four M1 tickets are verified. The 🚦 M1 gate is next.**
+**All four M1 tickets are verified.** Gate round 5 returned FAIL with
+nine findings; all nine are now closed (`8ebcf15`..`ad14b26`) and the
+tree is green on every suite. **A re-gate is next.**
+
+Three things from round 5 worth carrying forward:
+
+- **Two blockers were mine, and the second was caused by the first.**
+  F1's fix — render the shell rather than a fatal page — put a second
+  `useInfo()` consumer behind a gate keyed on that query, which is
+  F3's loop. The gate reported them separately; they were one
+  structural problem.
+- **F9 was a measurement error, three times over.** Every "failing"
+  UI run had a `npm run build` racing it. A clean run is 194/194.
+  `tests/ui/README.md` now states the rule.
+- **F7 was declined, not deferred.** Resolving ULIDs in CSV exports
+  is a decision about what an export is *for*; it is in
+  `PROPOSED-UI-CASES.md` with four options and no recommendation
+  dressed up as a finding.
 
 M1.1's two remaining cases are both parked with reasons, not skipped:
 **SHL-33** (both obvious tests for it are vacuous — see known-gaps)
