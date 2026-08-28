@@ -14,6 +14,7 @@ import { useBuiltinCounts } from "../api/hooks/useBuiltinCounts.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { RegionErrorBoundary } from "../error/RegionErrorBoundary.tsx";
 import { BUILTIN_FILTERS } from "../sidebar/builtinFilters.ts";
+import { useVanishedViews } from "./useVanishedViews.ts";
 
 /**
  * The app's left sidebar. Renders, top to bottom: the view switcher
@@ -338,6 +339,12 @@ function SavedFiltersGroup({
   const counts = useBuiltinCounts(BUILTIN_FILTERS, ctx);
   const userViews = views.data?.queries ?? [];
   const failed = views.isError;
+  // SHL-32: a pin that vanished from `queries.yaml` is explained
+  // rather than silently dropped. Only once the list has actually
+  // loaded — a failed or in-flight read is not a deletion.
+  const { vanished, dismiss } = useVanishedViews(
+    views.isSuccess ? views.data.queries : undefined,
+  );
 
   return (
     <div className="flex flex-col gap-0.5">
@@ -410,6 +417,30 @@ function SavedFiltersGroup({
             {!collapsed ? <span className="truncate">{v.name}</span> : null}
           </ItemShell>
         </Link>
+      ))}
+
+      {!collapsed && vanished.map(v => (
+        // Not `role="alert"`: this is an explanation, not an error
+        // (SHL-32's last bullet), and a config the user edited
+        // themselves must not fire a toast.
+        <div
+          key={v.id}
+          role="status"
+          data-vanished-view={v.id}
+          className="flex items-start gap-1 px-2.5 py-1 text-[12px] text-text-tertiary"
+        >
+          <span className="flex-1">
+            &ldquo;{v.name}&rdquo; was removed from queries.yaml.
+          </span>
+          <button
+            type="button"
+            aria-label={`Dismiss: ${v.name} was removed`}
+            onClick={() => { dismiss(v.id); }}
+            className="shrink-0 hover:text-text-primary"
+          >
+            ✕
+          </button>
+        </div>
       ))}
 
       {!collapsed ? (

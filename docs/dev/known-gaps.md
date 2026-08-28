@@ -329,3 +329,17 @@ it passes under load with more headroom.
   workspace's 20s. Four tests "fail" that way that are fine under
   `npm run test`. Run core's specs from `packages/core`, or expect
   to misread the result.
+
+## `apps/web`'s pagination spec is load-sensitive too
+
+**Observed 2026-08-28 at load average 128.**
+
+`/api/tasks pagination total exceeds the core listTasks default cap
+of 30` failed once inside the full web suite and passed both alone
+and on the immediate re-run of the same suite (471/471). It seeds 30+
+tasks through the CLI, so it is subprocess-bound in the same way the
+git specs are.
+
+Not investigated further because it did not reproduce. Recorded so
+the next agent does not spend a round on it: re-run before believing
+a single failure here, and check `uptime` first.

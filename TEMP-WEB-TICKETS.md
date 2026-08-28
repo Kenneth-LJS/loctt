@@ -235,6 +235,12 @@ Goal: clicking a task opens the full detail view. You can edit every
 field inline, write the description body, post comments, see history.
 
 ### M2.1 · Task detail — read shell ⬜
+> **Also closes SHL-44** (M1.1's, blocked here). A deep link to a key
+> that was never allocated must 404 *in the main pane*, naming the key
+> and distinguishing "no such key" from "not loaded". M1.1 cannot do
+> that: `/tasks/$key` is a stub with no fetch, so nothing discovers
+> that the key is missing. The state arrives with the real route.
+
 Cases: TSK-1, TSK-2, TSK-3, TSK-19, TSK-20, TSK-21, TSK-22, TSK-23, TSK-24, TSK-43, TSK-44, TSK-45, TSK-50, TSK-51, TSK-52, TSK-53, TSK-54, XS-51, XS-58, ERR-8, ERR-7
 - Route `/tasks/$key` (real component, replacing the stub)
 - Breadcrumb (All tasks › Project) + title + chips (key, archived

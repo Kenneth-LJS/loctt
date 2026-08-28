@@ -170,11 +170,16 @@ describe("AppBootstrap against a refused schema", () => {
 });
 
 /**
- * @verifies XS-37
+ * @verifies XS-37, SHL-37
  *
  * A crashed migration is the one schema state where the app must not
  * stay browsable — the tracker may be half-rewritten, so there is
  * nothing safe to show and nothing safe to click.
+ *
+ * SHL-37 is the same condition stated from the shell's side: "a
+ * distinct screen from SHL-34/35/36, not a variant of the banner",
+ * reporting the sentinel's `from`, `to` and backup path, with no
+ * one-click fix. The assertions below cover both readings.
  */
 describe("AppBootstrap with an interrupted migration", () => {
   const SENTINEL = "/tmp/tracker/.loctt/.schema-migration-in-progress";
