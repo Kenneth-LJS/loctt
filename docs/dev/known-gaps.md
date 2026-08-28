@@ -460,3 +460,30 @@ The general rule, for any test that restores a broken dependency:
 **an outage has a tail.** If the restore lands inside that tail, the
 test measures the tail. Quiesce first, or the assertion is about
 Playwright's timing rather than the app's behaviour.
+
+## Agent worktrees are created from an old base, not from HEAD
+
+**Established 2026-08-29, across six sweep agents.**
+
+Every agent spawned with `isolation: "worktree"` landed on `58848c5`
+— a commit predating the entire Phase 5 UI build. `tests/ui/`,
+`apps/web/src/client/shell/` and `docs/dev/ui-test-cases/` do not
+exist there, so a worktree agent asked to work on any of them finds
+nothing and, if it is not careful, reports the absence as a finding.
+
+All six were affected. It is a property of how the worktree is
+created, not a race or a one-off.
+
+Two consequences:
+
+- **Tell a worktree agent which commit it should be on**, and have it
+  verify with `git log --oneline -1` before it starts. Four of the six
+  found and fixed this themselves; that they did is luck, not design.
+- **Do not read a correct commit as evidence your setup worked.** The
+  coordinator checked the worktrees, saw the right SHA, and concluded
+  its pre-build step had landed. The reflogs show the agents had
+  already reset themselves minutes earlier. The check confirmed the
+  state, not the cause.
+
+Worktrees also start without `node_modules` or `tests/workspace/`, and
+both are needed before any UI test can run.
