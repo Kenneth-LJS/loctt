@@ -200,10 +200,25 @@ gate now has 20s while every *measured* assertion keeps its strict
 budget, so the cost is measured rather than hidden.
 
 
-## XS-56: rows do not survive an unreachable server, so they cannot be marked stale
+## XS-56: the error state stands in for marked-stale rows
 
-**Found 2026-08-25 verifying M1.2. Not fixed — the case's second bullet
-is unreachable in the current data layer.**
+**Decided by Ken 2026-08-25: the error state is accepted.** The case
+asks for the rows to be kept and marked; the app replaces them with an
+explicit failure surface instead, and that is enough.
+
+The reasoning, for whoever reads the case next: the error state is
+honest — it names the failure and offers a retry, and nothing reads as
+data loss. Rows that look real but are not invite acting on them, and a
+bulk write against stale rows is a worse failure than a table that says
+plainly it cannot reach the tracker. The case also predates the choice
+of data layer, and TanStack's own answer to this is "do not show
+errored data".
+
+**The case is not edited** — flow docs are the specification and an
+agent does not rewrite them. This note is the decision; amending
+XS-56's second bullet is a docs change for whoever owns that file.
+
+**Original finding, for the record.**
 
 XS-56 wants both halves at once:
 
