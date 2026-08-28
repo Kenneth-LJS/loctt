@@ -271,3 +271,34 @@ cost of these tests from ~60 processes to zero.
 **Until then:** a failure in this set under the full suite is not
 evidence of a defect. Re-run the named tests alone before believing
 it — the run log has been wrong about this twice.
+
+## SHL-33 is untagged, and the two obvious tests for it are vacuous
+
+**Measured 2026-08-28.**
+
+SHL-33 says a workflow with ten statuses "does not distort the shell —
+no group grows unbounded; Views group entries are unchanged". The
+claim is that the sidebar and header *do not react* to the status
+count, which is a negative, and both attempts to test it failed for
+the same underlying reason.
+
+**As a Playwright spec** it failed three times on fixture problems:
+replacing `statuses:` in `workflow.yaml` leaves the seeded task with a
+status nothing recognises, and adding to the list needs the default
+flag preserved and the right list indentation. Each round tested
+whether the config had loaded, not whether the shell reacted.
+
+**As a component test** it passed with a group that grows with the
+status count deliberately inserted — the mutation survived, so the
+test asserted nothing. Removed rather than left green.
+
+**Why it is genuinely awkward:** proving "X does not affect Y" needs a
+mutation that makes X affect Y, and the mutation has to reach the
+component through the same data path the real code uses. Getting that
+wrong yields a passing test either way, which is worse than no test.
+
+**What would work:** a spec that renders the shell twice through the
+real bootstrap with two different workflow configs and diffs the
+sidebar's DOM. It needs the config to arrive by the app's own path,
+not a stubbed hook — which is why this is a gap and not a five-minute
+fix.
