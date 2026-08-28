@@ -487,3 +487,38 @@ Two consequences:
 
 Worktrees also start without `node_modules` or `tests/workspace/`, and
 both are needed before any UI test can run.
+
+## LST-33: a deleted entity's filter chip shows a raw ULID
+
+**Found 2026-08-29 by the vacuity sweep — a live defect, not a
+test defect, though the test that should have caught it is vacuous
+too.**
+
+LST-33 requires that a filter referencing a since-deleted entity is
+*honest about it*:
+
+> the chip indicates the referenced milestone no longer exists, rather
+> than rendering a chip with a blank label that reads as a normal empty
+> result … This is distinguishable from a valid milestone that simply
+> has no tasks.
+
+`buildChips` in `apps/web/src/client/list/FilterBar.tsx:280`:
+
+```ts
+const labelOf = (opts: readonly FilterOption[], value: string): string =>
+  opts.find(o => o.value === value)?.label ?? value;
+```
+
+The `?? value` fallback renders the raw ULID. So a deleted milestone
+produces a chip reading `01M13T6YWDXHB52P65P2BNAV8D` — not blank, but
+not honest either, and not distinguishable from a valid entity in any
+way a user could act on.
+
+The sweep found this while establishing that LST-33's *test* is
+vacuous: making chips render a blank label — verbatim the defect the
+case names — left the test green. So the case has been failing in
+production behind a test that could not see it.
+
+Fix is in `buildChips`: when a value does not resolve to an option,
+mark the chip as dangling and render it as such, rather than falling
+through to the raw value.
