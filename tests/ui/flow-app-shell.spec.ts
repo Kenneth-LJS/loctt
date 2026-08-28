@@ -793,3 +793,93 @@ test.describe("SHL — narrow viewports", () => {
     await expect(page.getByLabel("Search tasks")).toBeVisible();
   });
 });
+
+test.describe("SHL — parameterised route stubs", () => {
+  /**
+   * @verifies SHL-16
+   *
+   * The M1 gate reported (F8) `/tasks/T1` rendering the literal
+   * `Route stub: /tasks/$key`. It does not reproduce — the route
+   * interpolates, and the gate measured a build that predated the fix.
+   *
+   * Pinned anyway. Printing a raw route pattern reads as a templating
+   * bug rather than an unbuilt view, and the stub is going to sit here
+   * until M2.1 replaces it.
+   */
+  test("a parameterised stub names the key, not the route pattern", async ({
+    page,
+    tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Alpha task" }]);
+
+    await page.goto(`${tracker.baseURL}/tasks/${String(key)}`);
+    const main = page.locator("main");
+    await expect(main).toContainText(String(key));
+    await expect(main).not.toContainText("$key");
+
+    // The shell is up, so the stub is a page rather than a dead end.
+    await expect(page.getByLabel("Toggle sidebar")).toBeVisible();
+
+    // Same for the other parameterised route.
+    await page.goto(`${tracker.baseURL}/sprints/S-1`);
+    await expect(page.locator("main")).not.toContainText("$key");
+  });
+});
+
+test.describe("LST — an unrecognised sort key", () => {
+  /**
+   * @verifies LST-29
+   *
+   * The M1 gate raised F6 asking for a 400 here, which contradicts
+   * this case: LST-29 requires the list to render "rather than an
+   * empty table or an error page". The first two bullets already
+   * passed. The third did not — `sort=nonexistent_field` stayed in
+   * the address bar as though it had applied, so copying that URL
+   * propagated a sort that was never in effect.
+   */
+  test("LST-29: an unknown sort key is dropped from the URL, not obeyed", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha task" }, { title: "Beta task" }]);
+
+    await page.goto(`${tracker.baseURL}/list?sort=nonexistent_field&dir=asc`);
+
+    // "The list renders with the default sort rather than an empty
+    // table or an error page."
+    await expect(page.locator("tbody tr")).toHaveCount(2);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+
+    // "It does not silently persist as though it were applied."
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("sort"), { timeout: 5_000 })
+      .toBeNull();
+    expect(new URL(page.url()).searchParams.get("dir")).toBeNull();
+
+    // "No sort indicator is shown on a column that isn't actually
+    // sorting, which would misreport the order."
+    const claimed = await page.evaluate(() =>
+      [...document.querySelectorAll("th")]
+        .map(h => h.getAttribute("aria-sort"))
+        .filter(v => v !== null && v !== "none"),
+    );
+    expect(claimed).toEqual([]);
+  });
+
+  test("LST-29: a sort key the list can honour is left alone", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha task" }, { title: "Beta task" }]);
+
+    await page.goto(`${tracker.baseURL}/list?sort=title&dir=desc`);
+    await expect(page.locator("tbody tr")).toHaveCount(2);
+
+    // Guards the fix from overreaching: dropping *every* sort would
+    // pass the test above and break sorting entirely.
+    await page.waitForTimeout(1_000);
+    const url = new URL(page.url());
+    expect(url.searchParams.get("sort")).toBe("title");
+    expect(url.searchParams.get("dir")).toBe("desc");
+  });
+});

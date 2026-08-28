@@ -30,7 +30,7 @@ import {
   StatusBadge,
   TypeBadge,
 } from "./cells.tsx";
-import { resolveColumns } from "./columns.ts";
+import { isSortableColumn, resolveColumns } from "./columns.ts";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog.tsx";
 import { ExportMenu } from "./ExportMenu.tsx";
 import { clearedSearch, FilterBar } from "./FilterBar.tsx";
@@ -83,6 +83,23 @@ export function ListView() {
 
   const sortField = search.sort;
   const sortDir = search.dir ?? "asc";
+
+  // LST-29: a sort key the list cannot honour is dropped from the URL
+  // rather than left sitting there as though it applied. The rows
+  // already come back in the default order — the server drops it too —
+  // so leaving it in the address bar makes a copied URL claim a sort
+  // that was never in effect (M1 gate, F6).
+  //
+  // `replace`, not push: this is a correction to a URL the user pasted,
+  // not a navigation they made, and Back should return to wherever they
+  // came from rather than to the broken URL.
+  useEffect(() => {
+    if (sortField === undefined || isSortableColumn(sortField)) return;
+    void navigate({
+      search: prev => ({ ...prev, sort: undefined, dir: undefined }),
+      replace: true,
+    });
+  }, [sortField, navigate]);
 
   const onSort = (colId: string): void => {
     // Same column → toggle direction; new column → ascending.
