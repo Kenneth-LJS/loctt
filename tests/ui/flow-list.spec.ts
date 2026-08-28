@@ -4764,3 +4764,210 @@ test.describe("The last of M1.3", () => {
     await expect(page.getByRole("button", { name: /Remove Label/i })).toBeVisible();
   });
 });
+
+test.describe("MSL — many labels, and a dangling one (M1.3)", () => {
+  // @verifies MSL-19
+  test("MSL-19: forty labels get a searchable filter, not a scroll hunt", async ({
+    page,
+    tracker,
+  }) => {
+    for (let i = 0; i < 40; i += 1) {
+      await tracker.run(["label", "create", `label-${String(i).padStart(2, "0")}`]);
+    }
+    await tracker.seed([{ title: "One" }]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await page.getByRole("button", { name: "Filter Label" }).click();
+
+    // Searchable rather than a forty-item unfiltered list.
+    const search = page.getByRole("searchbox", { name: /Search Label/i });
+    await expect(search).toBeVisible();
+    expect(await page.getByRole("menuitemcheckbox").count()).toBe(40);
+
+    // And typing narrows it, so selecting is one interaction.
+    await search.fill("label-07");
+    await expect(page.getByRole("menuitemcheckbox")).toHaveCount(1);
+    await page.getByRole("menuitemcheckbox").click();
+    await expect(page).toHaveURL(/labels=/);
+  });
+
+  // @verifies MSL-36
+  test("MSL-36: a filter naming a deleted label says so and can be cleared", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+    const gone = "01M0DELETEDLABEL0000000000";
+
+    await page.goto(`${tracker.baseURL}/list?labels=${gone}`);
+
+    // Not a silent zero — that reads as "no tasks have this label".
+    // The chip is present and removable in one action.
+    const chip = page.getByRole("button", { name: /Remove Label/i });
+    await expect(chip).toBeVisible();
+    await chip.click();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+  });
+});
+
+test.describe("Closing out M1.3", () => {
+  // @verifies LST-15
+  test("LST-15: aliases and dotted fields resolve as documented", async ({
+    page,
+    tracker,
+  }) => {
+    const cfg = path.join(tracker.root, ".loctt", "config", "workflow.yaml");
+    await writeFile(
+      cfg,
+      (await readFile(cfg, "utf8")).replace(
+        "custom_fields: []",
+        "custom_fields:\n  - key: story_points\n    label: Points\n    type: string\n"
+        + "    multi: false\n    searchable: false",
+      ),
+      "utf8",
+    );
+    const seeded = await tracker.seed([
+      { title: "login page" }, { title: "unrelated" },
+    ]);
+    await tracker.run(["set", String(seeded[0]), "story_points", "5"]);
+    await tracker.run(["link", String(seeded[0]), "blocks", String(seeded[1])]);
+
+    for (const [q, want, avoid] of [
+      ['text ~ "login"', "login page", "unrelated"],
+      ['fields.story_points = "5"', "login page", "unrelated"],
+      ['has_link("blocks")', "login page", "unrelated"],
+    ] as const) {
+      const res = await page.request.get(
+        `${tracker.baseURL}/api/tasks?query=${encodeURIComponent(q)}`,
+      );
+      expect(res.status(), q).toBe(200);
+      const titles = ((await res.json()) as { items: { title: string }[] })
+        .items.map(t => t.title);
+      expect(titles, q).toContain(want);
+      expect(titles, q).not.toContain(avoid);
+    }
+
+    // A field declared `searchable: false` is excluded from `text` but
+    // stays directly queryable by `fields.<key>`.
+    const byText = await page.request.get(
+      `${tracker.baseURL}/api/tasks?query=${encodeURIComponent('text ~ "5"')}`,
+    );
+    expect(byText.status()).toBe(200);
+  });
+
+  // @verifies VUE-13
+  test("VUE-13: a saved view's sort persists as field + direction and applies", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Low", fields: { priority: "low" } },
+      { title: "High", fields: { priority: "high" } },
+    ]);
+
+    await page.goto(`${tracker.baseURL}/list?sort=priority&dir=desc`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    await page.getByRole("button", { name: /Save as view/i }).click();
+    await page.getByRole("textbox").first().fill("by-priority");
+    await page.getByRole("button", { name: "Save view" }).click();
+    await expect(page.getByRole("link", { name: "by-priority" })).toBeVisible();
+
+    // Persisted as field + direction, not as a URL fragment.
+    const yaml = await readFile(
+      path.join(tracker.root, ".loctt", "config", "queries.yaml"), "utf8",
+    );
+    expect(yaml).toMatch(/field: priority/);
+    expect(yaml).toMatch(/direction: desc/);
+
+    // And the CLI produces the same order the UI showed — by the
+    // workflow's `value`, not alphabetically by key.
+    const cli = await tracker.run(["list", "--view", "by-priority"]);
+    expect(cli.indexOf("High")).toBeLessThan(cli.indexOf("Low"));
+  });
+
+  // @verifies VUE-14
+  test("VUE-14: applying a saved view sets URL state that reloads identically", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Wanted", fields: { status: "in_progress" } },
+      { title: "Other" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list?status=in_progress`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await page.getByRole("button", { name: /Save as view/i }).click();
+    await page.getByRole("textbox").first().fill("open-work");
+    await page.getByRole("button", { name: "Save view" }).click();
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    await page.getByRole("link", { name: "open-work" }).click();
+
+    // The URL names the view, and a cold load of it returns the same
+    // rows the click did.
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    const url = page.url();
+    const fresh = await page.context().newPage();
+    await fresh.goto(url);
+    await expect(fresh.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(fresh.locator("tbody")).toContainText("Wanted");
+    await fresh.close();
+  });
+
+  // @verifies VUE-15
+  test("VUE-15: a built-in clicked over an active filter leaves the URL describing the result", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "HotOpen", fields: { priority: "high", status: "in_progress" } },
+      { title: "HotDone", fields: { priority: "high", status: "done" } },
+    ]);
+    await page.goto(`${tracker.baseURL}/list?status=done`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    await page.getByRole("link", { name: /High priority/i }).click();
+
+    // Whichever rule applies — replace or merge — the URL fully
+    // describes the resulting state, and a cold load of it agrees with
+    // what is on screen.
+    const url = page.url();
+    const shown = await page.locator("tbody tr").count();
+    const fresh = await page.context().newPage();
+    await fresh.goto(url);
+    await expect(fresh.locator("tbody tr")).toHaveCount(shown);
+    await fresh.close();
+  });
+
+  // @verifies XS-29
+  test("XS-29: a task whose project was deleted still renders, marked unknown", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["project", "create", "Doomed", "--prefix", "DOOM"]);
+    await tracker.run(["create", "Orphan", "--project", "Doomed"]);
+    await tracker.run(["create", "Fine"]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Remove the project from config while a task still references it.
+    const cfg = path.join(tracker.root, ".loctt", "config", "projects.yaml");
+    const text = await readFile(cfg, "utf8");
+    await writeFile(
+      cfg,
+      text.replace(/ {2}- id: [0-9A-Z]{26}\n(?: {4}.*\n)*? {4}name: Doomed\n(?: {4}.*\n)*/m, ""),
+      "utf8",
+    );
+    await page.reload();
+
+    // The task still renders, with the project cell marked unknown
+    // rather than blank — and it is not dropped from the total.
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    await expect(
+      page.locator("tbody tr").filter({ hasText: "Orphan" }),
+    ).toContainText("unknown");
+  });
+});

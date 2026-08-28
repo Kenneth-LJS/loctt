@@ -1,4 +1,14 @@
+import { useState } from "react";
+
 import { Menu } from "../ui/Menu.tsx";
+
+/**
+ * Option count at which the dropdown grows a search box.
+ *
+ * MSL-19 names forty labels as the case; twelve is where scanning
+ * starts to cost more than typing.
+ */
+const TYPEAHEAD_THRESHOLD = 12;
 
 /** One selectable option in a filter dropdown. */
 export interface FilterOption {
@@ -26,6 +36,18 @@ export function FilterDropdown({
 }) {
   const selectedSet = new Set(selected);
   const count = selected.length;
+  /**
+   * Typeahead, once the list is long enough to need it (MSL-19).
+   *
+   * Forty labels in an unfiltered dropdown is a scroll hunt. Below the
+   * threshold the box is noise — the whole list already fits — so it
+   * appears only where it earns its place.
+   */
+  const [filter, setFilter] = useState("");
+  const searchable = options.length >= TYPEAHEAD_THRESHOLD;
+  const shown = searchable && filter.trim() !== ""
+    ? options.filter(o => o.label.toLowerCase().includes(filter.trim().toLowerCase()))
+    : options;
 
   const toggle = (value: string): void => {
     const next = new Set(selectedSet);
@@ -57,11 +79,24 @@ export function FilterDropdown({
       )}
     >
       {() => (
+        <>
+        {searchable && (
+          <div className="border-b border-border-subtle p-1.5">
+            <input
+              type="search"
+              aria-label={`Search ${label}`}
+              placeholder={`Search ${label.toLowerCase()}…`}
+              value={filter}
+              onChange={e => { setFilter(e.target.value); }}
+              className="h-7 w-full rounded border border-border-subtle bg-bg-canvas px-2 text-[12px] text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none"
+            />
+          </div>
+        )}
         <div className="max-h-[320px] min-w-[200px] overflow-y-auto">
-          {options.length === 0 ? (
+          {shown.length === 0 ? (
             <div className="px-3 py-2 text-[12px] italic text-text-tertiary">No options</div>
           ) : (
-            options.map(opt => {
+            shown.map(opt => {
               const isSelected = selectedSet.has(opt.value);
               return (
                 <button
@@ -81,6 +116,7 @@ export function FilterDropdown({
             })
           )}
         </div>
+        </>
       )}
     </Menu>
   );
