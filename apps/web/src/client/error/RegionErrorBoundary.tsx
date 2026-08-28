@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 /**
@@ -21,6 +22,16 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 interface Props {
   /** User-facing name of what broke: "the task list", not "ListView". */
   readonly region: string;
+  /**
+   * Offer a link back to the list alongside reload (SHL-42).
+   *
+   * Set by the route-level boundary, where the whole main pane is
+   * gone and the user needs somewhere to go. Off by default: a
+   * sidebar group that failed has not taken the page away, and a
+   * boundary around the list itself must not offer to navigate to
+   * the list.
+   */
+  readonly offerListLink?: boolean;
   /**
    * True when a write may have been in flight. ERR-35 forbids claiming
    * the last action landed; with this set the copy says so explicitly
@@ -71,6 +82,7 @@ export class RegionErrorBoundary extends Component<Props, State> {
         error={error}
         componentStack={this.state.componentStack}
         writeInFlight={this.props.writeInFlight === true}
+        offerListLink={this.props.offerListLink === true}
         onRetry={this.retry}
       />
     );
@@ -82,12 +94,14 @@ export function RegionErrorFallback({
   error,
   componentStack,
   writeInFlight,
+  offerListLink = false,
   onRetry,
 }: {
   readonly region: string;
   readonly error: Error;
   readonly componentStack: string | null;
   readonly writeInFlight: boolean;
+  readonly offerListLink?: boolean;
   readonly onRetry: () => void;
 }) {
   const details = [
@@ -107,7 +121,8 @@ export function RegionErrorFallback({
           Something went wrong displaying {region}
         </h2>
         <p className="mb-2 text-[13px] text-text-secondary">
-          This is a display problem, not a data problem. Your tasks are files in{" "}
+          Something in the app failed to draw — a bug on our side, not a
+          problem with your data. Your tasks are files in{" "}
           <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">.loctt/</code>{" "}
           and a rendering fault cannot change them.
         </p>
@@ -132,6 +147,17 @@ export function RegionErrorFallback({
           >
             Reload
           </button>
+          {offerListLink ? (
+            // SHL-42: reload alone leaves a user whose route is broken
+            // reloading the same broken route. A way *out* is the other
+            // half of the recovery.
+            <Link
+              to="/list"
+              className="flex h-8 items-center rounded-md border border-border-default bg-bg-surface px-3 text-[13px] text-text-secondary no-underline hover:bg-bg-muted"
+            >
+              Back to the task list
+            </Link>
+          ) : null}
         </div>
         <details className="text-[12px] text-text-tertiary">
           <summary className="cursor-pointer select-none">Show details</summary>

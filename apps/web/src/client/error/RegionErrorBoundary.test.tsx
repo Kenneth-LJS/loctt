@@ -1,4 +1,12 @@
 // @vitest-environment jsdom
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -66,7 +74,11 @@ describe("RegionErrorBoundary", () => {
       </RegionErrorBoundary>,
     );
     const text = screen.getByRole("alert").textContent ?? "";
-    expect(text).toMatch(/display problem, not a data problem/i);
+    // "Something in the app failed to display — a display fault, not a
+    // data fault." SHL-42 wants the same thing said as "a bug rather
+    // than a data problem", so the copy says both halves.
+    expect(text).toMatch(/failed to draw/i);
+    expect(text).toMatch(/not a problem with your data/i);
     expect(text).toContain(".loctt/");
     // Nothing was in flight, so no claim either way is made about one.
     expect(text).not.toMatch(/being saved/i);
@@ -177,5 +189,66 @@ describe("RegionErrorBoundary", () => {
     const logged = vi.mocked(console.error).mock.calls.flat().map(String).join(" ");
     expect(logged).toContain("render error in the task list");
     expect(logged).toContain("kaboom in the row");
+  });
+});
+
+/**
+ * @verifies SHL-42
+ *
+ * The route-level boundary owes more than the region ones: the whole
+ * main pane is gone, so "reload" alone leaves the user reloading the
+ * same broken route. A way *out* is the other half.
+ */
+describe("RegionErrorBoundary at route level", () => {
+  function mountWithRouter(offerListLink: boolean) {
+    const rootRoute = createRootRoute({ component: () => <Outlet /> });
+    const boomRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/board",
+      component: () => (
+        <RegionErrorBoundary region="the board" offerListLink={offerListLink}>
+          <Boom explode />
+        </RegionErrorBoundary>
+      ),
+    });
+    const listRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/list",
+      component: () => <div>the list</div>,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([boomRoute, listRoute]),
+      history: createMemoryHistory({ initialEntries: ["/board"] }),
+    });
+    render(<RouterProvider router={router as never} />);
+    return router;
+  }
+
+  it("offers a way back to the list alongside reload", async () => {
+    mountWithRouter(true);
+
+    const alert = await screen.findByRole("alert");
+    // Says what was being displayed, in user terms.
+    expect(alert.querySelector("h2")?.textContent).toContain("the board");
+    // A bug on our side, not a data problem.
+    expect(alert.textContent).toMatch(/bug on our side/i);
+    expect(alert.textContent).toMatch(/not a problem with your data/i);
+    // No raw stack as the primary message — it is behind the
+    // disclosure, which is closed.
+    expect(alert.querySelector("details")?.hasAttribute("open")).toBe(false);
+
+    expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
+    const back = screen.getByRole("link", { name: /Back to the task list/ });
+    expect(back.getAttribute("href")).toContain("/list");
+  });
+
+  it("does not offer to navigate to the page the user is already on", async () => {
+    mountWithRouter(false);
+
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("link", { name: /Back to the task list/ })).toBeNull();
+    // Reload and the narrow retry are still there.
+    expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Try the board again/ })).toBeTruthy();
   });
 });

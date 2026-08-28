@@ -370,3 +370,50 @@ test.describe("SHL — scale and isolation", () => {
   });
 });
 
+test.describe("SHL — render failures", () => {
+  // @verifies SHL-42
+  test("SHL-42: a render throw replaces the main pane, not the app", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha task" }]);
+
+    // A response that parses but whose rows are the wrong shape: the
+    // client's error handling never fires (this is a 200 with valid
+    // JSON), so the failure happens during render — which is what
+    // this case is about, and what a 500 cannot reproduce.
+    await page.route(/\/api\/tasks\?/, route =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ items: [null], total: 1, offset: 0, limit: 50 }),
+      }));
+
+    await page.goto(`${tracker.baseURL}/list`);
+
+    const alert = page.getByRole("alert");
+    await expect(alert).toBeVisible();
+    // Says what was being displayed, in user terms rather than a
+    // component name.
+    await expect(alert).toContainText("the task list");
+    await expect(alert).not.toContainText("ListView");
+    // A bug on our side, not a data problem — and the tasks on disk
+    // are explicitly said to be unaffected.
+    await expect(alert).toContainText(/bug on our side/i);
+    await expect(alert).toContainText(".loctt/");
+
+    // The header and sidebar survive, so the user can navigate away.
+    await expect(page.getByLabel("Toggle sidebar")).toBeVisible();
+    await expect(
+      page.locator("aside").getByRole("link", { name: "Board", exact: true }),
+    ).toBeVisible();
+
+    // No raw stack as the primary message: the detail is behind a
+    // closed disclosure.
+    await expect(page.locator("details")).not.toHaveAttribute("open", "");
+
+    // And navigating away actually works — the boundary is not a trap.
+    await page.locator("aside").getByRole("link", { name: "Board", exact: true }).click();
+    await expect(page).toHaveURL(/\/board$/);
+  });
+});
