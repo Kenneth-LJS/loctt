@@ -19,9 +19,17 @@ import { ApiError } from "../api/client.ts";
  * "terminal was closed" case; a 500 with an envelope is the server
  * answering, and is not this.
  *
- * Recovery is automatic. The query defaults poll an errored query, so
- * when the server returns a query succeeds and this clears itself
- * without a manual reload — the case's last bullet.
+ * Recovery is automatic and measured: the banner clears itself within
+ * a second of the server returning, with no reload and no click
+ * (ERR-2's last bullet).
+ *
+ * The M1 gate (F2) claimed the errored-query poll never runs and that
+ * this comment's premise was therefore false. The poll does run — six
+ * `/api/info` requests in a clean 20-second window — but it is *not*
+ * what recovers this: with every poll disabled, thirteen requests
+ * still fire within 790ms of the server returning. Some render- or
+ * route-driven refetch gets there first. The behaviour is right; the
+ * mechanism is not the one this comment used to name.
  */
 export function ServerUnreachableBanner() {
   const queryClient = useQueryClient();

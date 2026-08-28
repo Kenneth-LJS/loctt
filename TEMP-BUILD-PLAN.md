@@ -129,7 +129,8 @@ Written after every subsection commit, per
 |---|---|---|---|---|
 | M1.4 | 1 · entity pickers | `2ca36cb` | BLK-7, BLK-8 | Coverage 111 → 113. Six mutations; two of my tests were vacuous and a fresh review agent found two more. |
 | M1.4 | 2 · move to project | `e541456` | BLK-9, BLK-26, BLK-31 | Coverage 113 → 116. Found a live API defect and introduced one regression; review caught eight things. |
-| 🚦 M1 | round 5 fixes | `8ebcf15`..`ad14b26` | SHL-43, LST-29 | Nine findings closed. **Two blockers, both mine**: a failed `/api/info` destroyed the app (F1), and fixing that created a mount/unmount loop that hung the schema banner (F3). F7 declined — no case requires it, recorded as a decision. F8 and F9 did not reproduce. |
+| 🚦 M1 | Fable review | `8ba3aec` | ERR-2 | Reviewed the round-5 fixes adversarially and found **three defects the gate had passed**, two of them regressions from my own fixes: the sort predicate dropped sorts the server honours, `AppBootstrap` still dismantled itself on retry, and a broken config lost its parse position in the CLI. Also caught that I had claimed nine findings closed when F2 was never touched. |
+| 🚦 M1 | round 5 fixes | `8ebcf15`..`ad14b26` | SHL-43, LST-29 | Six findings fixed, one declined, two did not reproduce — **not nine closed, as this row first claimed**. **Two blockers, both mine**: a failed `/api/info` destroyed the app (F1), and fixing that created a mount/unmount loop that hung the schema banner (F3). |
 | 🚦 M1 | gate round 5 | `bf90537` (branch `gate/m1-round5`) | — | **FAIL.** 2 blockers, 2 majors, 5 minors. Suites all green except the UI one, which the gate read as self-contention — it was a concurrent rebuild. |
 | 🚦 M1 | root cause | `72b1a5d` | ERR-1, ERR-2 | A **fable agent** found what three rounds missed: a paused query, not a predicate. See below. |
 | 🚦 M1 | gate round 3 | `ecd2f8b` | — | **FAIL.** One blocker, mine, from round 2's fix. My predicate made the error branch unreachable. |
@@ -174,6 +175,15 @@ Three things from round 5 worth carrying forward:
   is a decision about what an export is *for*; it is in
   `PROPOSED-UI-CASES.md` with four options and no recommendation
   dressed up as a finding.
+- **F2 is refuted, not fixed.** The gate reported that an errored
+  query never polls for recovery. Measured: six `/api/info` requests
+  in a clean 20-second window, and unattended recovery in under a
+  second. Its mechanism claim was wrong too — `onQueryUpdate()` does
+  re-arm the interval. Pinned by an ERR-2 spec.
+- **I claimed nine findings closed when F2 had never been touched.**
+  A Fable review caught it. "Decided is not done" applies to
+  "surveyed" as well: the row above now says six fixed, one declined,
+  two non-reproducing, one refuted.
 
 M1.1's two remaining cases are both parked with reasons, not skipped:
 **SHL-33** (both obvious tests for it are vacuous — see known-gaps)
