@@ -12,3 +12,6 @@ playwright-report/
 
 # Playwright MCP scratch output (console logs, snapshots)
 .playwright-mcp/
+
+# Agent worktrees (transient, created by the Agent tool)
+.claude/worktrees/
