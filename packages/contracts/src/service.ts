@@ -168,6 +168,24 @@ export type SchemaStatusResponse =
   | { readonly kind: "outdated"; readonly on_disk: number; readonly current: number }
   | { readonly kind: "future"; readonly on_disk: number; readonly current: number }
   | { readonly kind: "missing" }
+  /**
+   * A `.schema-migration-in-progress` sentinel is present: a previous
+   * migration crashed part-way and the tracker may be half-rewritten.
+   *
+   * A distinct kind rather than a flavour of `unknown`, because
+   * XS-37 requires a distinct *screen*: this is the one schema state
+   * where no in-app action is safe, and where the user needs the
+   * recorded backup path to recover at all. The three fields are the
+   * sentinel's own contents; any may be absent if the sentinel is
+   * unreadable, which is itself worth showing rather than hiding.
+   */
+  | {
+      readonly kind: "interrupted";
+      readonly from?: number;
+      readonly to?: number;
+      readonly backup?: string;
+      readonly sentinel_path: string;
+    }
   | { readonly kind: "unknown"; readonly message: string };
 
 /** Tracker info response for API. */
@@ -394,6 +412,17 @@ export interface ErrorResponse {
   readonly failures?: readonly ErrorItemFailure[];
   /** Technical detail for a "Show details" affordance — never the headline. */
   readonly detail?: string;
+  /**
+   * Present on a `schema_mismatch`: which of the four schema states
+   * the tracker is in.
+   *
+   * The boot guard refuses `/api/info` along with everything else, so
+   * the surface cannot read the status from the payload it just
+   * blocked — and each state has a different remedy, which P4 forbids
+   * collapsing into one generic message. Carried here so the client
+   * branches on a kind rather than on the message text.
+   */
+  readonly schema_status?: SchemaStatusResponse;
 }
 
 /**

@@ -120,3 +120,62 @@ describe("formatZodIssues", () => {
     });
   });
 });
+
+/**
+ * @verifies XS-62
+ *
+ * A message the schema author wrote must survive. This module exists
+ * to insulate the surface from zod's wording changing under it — not
+ * from ours — and overriding an author's message silently replaced
+ * domain constraints with generic ones. `projects.yaml` says "at
+ * least one project is required"; this was rewriting it to "projects
+ * must contain at least one item", which states neither the domain
+ * rule nor its fix.
+ */
+describe("author-supplied messages", () => {
+  it("keeps a custom message on an array minimum", () => {
+    const schema = z.object({
+      projects: z.array(z.string()).min(1, "at least one project is required"),
+    });
+    const result = schema.safeParse({ projects: [] });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    const text = formatZodIssues("projects.yaml", result.error);
+    expect(text).toContain("at least one project is required");
+    expect(text).not.toContain("must contain at least one item");
+  });
+
+  it("keeps a custom message on a string minimum", () => {
+    const schema = z.object({ name: z.string().min(1, "every project needs a name") });
+    const result = schema.safeParse({ name: "" });
+    if (result.success) throw new Error("expected a failure");
+
+    const text = formatZodIssues("projects.yaml", result.error);
+    expect(text).toContain("every project needs a name");
+    expect(text).not.toContain("non-empty string");
+  });
+
+  it("still normalises zod's own default wording", () => {
+    // The whole point of the module: with no author message, the
+    // stable phrasing is used rather than zod's, which changes
+    // between versions.
+    const schema = z.object({ enabled: z.boolean() });
+    const result = schema.safeParse({ enabled: "yes" });
+    if (result.success) throw new Error("expected a failure");
+
+    const text = formatZodIssues("workflow.yaml", result.error);
+    expect(text).toContain("must be a boolean, got: string");
+    expect(text).not.toContain("Invalid input:");
+  });
+
+  it("still normalises a default array minimum", () => {
+    const schema = z.object({ items: z.array(z.string()).min(1) });
+    const result = schema.safeParse({ items: [] });
+    if (result.success) throw new Error("expected a failure");
+
+    const text = formatZodIssues("workflow.yaml", result.error);
+    expect(text).toContain("must contain at least one item");
+    expect(text).not.toContain("Too small:");
+  });
+});

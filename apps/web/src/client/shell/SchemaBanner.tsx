@@ -99,6 +99,14 @@ function describe(status: SchemaStatusResponse): {
           + "reinitialize — a directory holding tasks is a damaged tracker, not "
           + "an empty one, and reinitializing would risk the data.",
       };
+    case "interrupted":
+      // XS-37 requires a *distinct screen*, not a banner variant: a
+      // half-migrated tracker has nothing safe to browse behind a
+      // banner. `AppBootstrap` intercepts this kind and renders
+      // `InterruptedMigration` instead, so reaching here means that
+      // routing has been lost — which is worth failing loudly for
+      // rather than degrading into the very banner the case forbids.
+      throw new Error("describe() called for the interrupted kind: use InterruptedMigration");
     case "current":
       // Unreachable: the caller returns null for `current` before
       // calling describe(). Kept in the switch for exhaustiveness.

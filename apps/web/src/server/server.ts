@@ -62,6 +62,7 @@ import {
   bulkSetFields,
   BurndownError,
   completeInterruptedPrefixRename,
+  computeSchemaStatus,
   ConfigRouterError,
   countTasksByReferences,
   createLabel,
@@ -330,6 +331,7 @@ function error(
     ...(extra.recovery !== undefined ? { recovery: extra.recovery } : {}),
     ...(extra.failures !== undefined ? { failures: extra.failures } : {}),
     ...(extra.detail !== undefined ? { detail: extra.detail } : {}),
+    ...(extra.schema_status !== undefined ? { schema_status: extra.schema_status } : {}),
   };
   json(res, envelope, status);
 }
@@ -3362,8 +3364,17 @@ export function createWebApp(options: WebAppOptions) {
               : err instanceof SchemaUnmigratableError
                 ? { kind: "none" as const }
                 : { kind: "command" as const, command: "loctt migrate" };
+            // The kind, not just the message. The guard refuses
+            // `/api/info` too, so the surface cannot learn it from the
+            // payload it just blocked — and without it the client was
+            // left recovering the kind by matching the message text,
+            // which turns a copy edit into a behaviour change.
+            // SHL-13/34-36/38 and XS-33/34/35 all need the four kinds
+            // told apart while the guard is refusing.
+            const schemaStatus = await computeSchemaStatus(locttDir);
             error(res, err.message, 409, {
               code: "schema_mismatch",
+              schema_status: schemaStatus,
               ...(isWrite ? { data_state: "not_saved" as const } : {}),
               recovery,
               ...(err instanceof SchemaUnmigratableError ? { detail: err.remedy } : {}),
