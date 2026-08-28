@@ -56,25 +56,38 @@ function describe(status: SchemaStatusResponse): {
       return {
         tone: "warn",
         title: "Schema out of date.",
+        // SHL-36: naming the backup is what makes the command runnable.
+        // "Writes are blocked until you run this" without it asks the
+        // user to take an irreversible-looking step on trust.
         detail:
           `The data directory is at schema v${status.on_disk}, but this build expects ` +
-          `v${status.current}. Run \`loctt migrate\` to update it. Writes are blocked ` +
-          "until then.",
+          `v${status.current}. Run \`loctt migrate\` to update it — it takes a backup ` +
+          "before changing anything. Writes are blocked until then.",
       };
     case "future":
       return {
         tone: "danger",
         title: "Schema too new.",
+        // SHL-35 forbids offering `loctt migrate` here: migration
+        // cannot move a schema backwards, so the suggestion would only
+        // invite a destructive attempt.
         detail:
           `The data directory is at schema v${status.on_disk}, ahead of this build ` +
-          `(v${status.current}). Update LocTT to continue — a newer schema can't be ` +
-          "downgraded.",
+          `(v${status.current}). Update LocTT to continue (\`npm install -g ` +
+          "@loctt/cli@latest\`) — a newer schema can't be downgraded.",
       };
     case "unknown":
       return {
         tone: "danger",
         title: "Schema version unreadable.",
-        detail: status.message,
+        // SHL-38: P4's rare exception still owes attempt, data state
+        // and next action. The server's message alone is the attempt's
+        // result and nothing else — it left the user unable to tell
+        // whether anything had been touched.
+        detail:
+          `Reading the tracker's schema version did not produce a result that could ` +
+          `be interpreted: ${status.message} Your data is untouched — nothing has ` +
+          "been changed. Inspect `.loctt/.schema-version`, or run `loctt doctor`.",
       };
     case "missing":
       return {

@@ -11,6 +11,7 @@ import {
   useViews,
 } from "../api/hooks/sidebarData.ts";
 import { useBuiltinCounts } from "../api/hooks/useBuiltinCounts.ts";
+import { RegionErrorBoundary } from "../error/RegionErrorBoundary.tsx";
 import { BUILTIN_FILTERS } from "../sidebar/builtinFilters.ts";
 
 /**
@@ -39,19 +40,45 @@ export function Sidebar({
   return (
     <aside
       className={[
-        "row-start-2 flex flex-col gap-4 overflow-y-auto border-r border-border-subtle bg-bg-surface py-3",
+        "row-start-2 flex min-h-0 flex-col border-r border-border-subtle bg-bg-surface py-3",
         "transition-[width] duration-150 ease-out",
         collapsed ? "w-14 px-2" : "w-60 px-2",
       ].join(" ")}
       data-collapsed={collapsed}
     >
-      <ViewSwitcher collapsed={collapsed} />
-      <ProjectsGroup collapsed={collapsed} />
-      <SavedFiltersGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />
-      <MilestonesGroup collapsed={collapsed} />
-      <SprintsGroup collapsed={collapsed} />
-      <LabelsGroup collapsed={collapsed} />
-      <RecentsGroup collapsed={collapsed} />
+      {/* The groups scroll; the footer does not.
+          SHL-11 requires the workspace label and Settings to stay
+          pinned "and not scroll away with the groups", and SHL-20/21
+          put enough entries above them (20 recents, 30 projects, 40
+          labels) to make that the normal case rather than the extreme
+          one. Scrolling the whole column satisfies "reachable" and
+          fails "pinned". */}
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto" data-sidebar-scroll="true">
+        {/* ERR-34: a render throw in one group must not white-page the
+            app. Each group is its own boundary, so the rest of the
+            sidebar, the header and the main pane keep working. */}
+        <RegionErrorBoundary region="the view switcher">
+          <ViewSwitcher collapsed={collapsed} />
+        </RegionErrorBoundary>
+        <RegionErrorBoundary region="the projects list">
+          <ProjectsGroup collapsed={collapsed} />
+        </RegionErrorBoundary>
+        <RegionErrorBoundary region="the saved filters">
+          <SavedFiltersGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />
+        </RegionErrorBoundary>
+        <RegionErrorBoundary region="the milestones list">
+          <MilestonesGroup collapsed={collapsed} />
+        </RegionErrorBoundary>
+        <RegionErrorBoundary region="the sprints list">
+          <SprintsGroup collapsed={collapsed} />
+        </RegionErrorBoundary>
+        <RegionErrorBoundary region="the labels list">
+          <LabelsGroup collapsed={collapsed} />
+        </RegionErrorBoundary>
+        <RegionErrorBoundary region="recently viewed">
+          <RecentsGroup collapsed={collapsed} />
+        </RegionErrorBoundary>
+      </div>
       <Footer collapsed={collapsed} info={info} />
     </aside>
   );
@@ -82,7 +109,12 @@ function ItemShell({
   return (
     <span
       data-active={active ? "true" : undefined}
-      title={collapsed ? title : undefined}
+      // The tooltip lives on the enclosing <a> so keyboard focus
+      // surfaces it too (SHL-19, SHL-22); repeating it here would nest
+      // two tooltips on the same target. Kept for the non-link rows —
+      // the deferred "Mentions me" and the collapsed icons — which have
+      // no anchor of their own.
+      title={title}
       className={[
         "flex h-8 items-center rounded-md text-[13px] font-medium",
         collapsed ? "w-10 justify-center px-0" : "gap-2.5 px-2.5",
@@ -127,7 +159,7 @@ function ViewSwitcher({ collapsed }: { collapsed: boolean }) {
   return (
     <div className="flex flex-col gap-0.5">
       {VIEWS.map(v => (
-        <Link key={v.to} to={v.to} className="no-underline">
+        <Link key={v.to} to={v.to} title={v.label} className="no-underline">
           <ItemShell active={pathname === v.to} collapsed={collapsed} title={v.label}>
             <span className="shrink-0">{v.icon}</span>
             {!collapsed ? <span>{v.label}</span> : null}
@@ -219,6 +251,7 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
                 ? clearFilters(prev)
                 : { ...clearFilters(prev), project: [p.id] }
             }
+            title={p.name}
             className="no-underline"
           >
             <ItemShell active={active} collapsed={collapsed} title={p.name}>
@@ -291,6 +324,7 @@ function SavedFiltersGroup({
             key={f.id}
             to="/list"
             search={prev => ({ ...clearFilters(prev), ...search })}
+            title={f.label}
             className="no-underline"
           >
             <ItemShell collapsed={collapsed} title={f.label}>
@@ -311,6 +345,7 @@ function SavedFiltersGroup({
           key={v.id}
           to="/list"
           search={prev => ({ ...prev, view: v.id })}
+          title={v.name}
           className="no-underline"
         >
           <ItemShell collapsed={collapsed} title={v.name}>
@@ -353,6 +388,7 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
           key={m.id}
           to="/list"
           search={prev => ({ ...prev, milestone: [m.id] })}
+          title={m.name}
           className="no-underline"
         >
           <ItemShell collapsed={collapsed} title={m.name}>
@@ -386,6 +422,7 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
           key={s.id}
           to="/list"
           search={prev => ({ ...prev, sprint: [s.id] })}
+          title={`${s.name} (${s.state})`}
           className="no-underline"
         >
           <ItemShell collapsed={collapsed} title={`${s.name} (${s.state})`}>
@@ -421,6 +458,7 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
           key={l.id}
           to="/list"
           search={prev => ({ ...prev, labels: [l.id] })}
+          title={l.name}
           className="no-underline"
         >
           <ItemShell collapsed={collapsed} title={l.name}>
@@ -452,6 +490,7 @@ function RecentsGroup({ collapsed }: { collapsed: boolean }) {
             key={t.key}
             to="/tasks/$key"
             params={{ key: t.key }}
+            title={t.title}
             className="no-underline"
           >
             <ItemShell collapsed={collapsed} title={t.title}>
@@ -467,7 +506,7 @@ function RecentsGroup({ collapsed }: { collapsed: boolean }) {
 
 function Footer({ collapsed, info }: { collapsed: boolean; info: TrackerInfoResponse }) {
   return (
-    <div className="mt-auto flex flex-col gap-1 border-t border-border-subtle pt-2">
+    <div className="flex shrink-0 flex-col gap-1 border-t border-border-subtle pt-2">
       {!collapsed ? (
         <div className="px-2.5 text-[11px] text-text-tertiary">
           <div className="truncate font-mono" title={info.cwd}>{info.cwd}</div>
@@ -477,7 +516,7 @@ function Footer({ collapsed, info }: { collapsed: boolean; info: TrackerInfoResp
           </div>
         </div>
       ) : null}
-      <Link to="/settings/$section" params={{ section: "general" }} className="no-underline">
+      <Link to="/settings/$section" params={{ section: "general" }} title="Settings" className="no-underline">
         <ItemShell collapsed={collapsed} title="Settings">
           <SettingsIcon />
           {!collapsed ? <span>Settings</span> : null}

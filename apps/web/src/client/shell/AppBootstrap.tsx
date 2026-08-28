@@ -34,19 +34,27 @@ export function AppBootstrap() {
     );
   }
 
+  const trackerInfo = info.data;
+  const user = currentUser.data;
+
   // currentUser maps "no users yet" to data === null (not an error);
-  // any *error* here is a real failure worth surfacing.
-  if (currentUser.isError) {
+  // any *error* here is a real failure — but not a fatal one.
+  //
+  // SHL-40: this used to blank the app. Not knowing *who* you are does
+  // not stop you reading tasks or reaching Settings, which is where the
+  // user list is fixed; it stops attributed writes, and those are
+  // blocked individually with the reason named. A full-page error here
+  // both overstated the failure and removed the route to its own fix.
+  const identityUnknown = currentUser.isError;
+
+  if (trackerInfo?.exists === true && identityUnknown) {
     return (
-      <FatalError
-        message={currentUser.error?.message ?? "Failed to load the current user."}
-        onRetry={() => void currentUser.refetch()}
-      />
+      <AppShell info={trackerInfo} currentUser={null} identityUnknown>
+        <Outlet />
+      </AppShell>
     );
   }
 
-  const trackerInfo = info.data;
-  const user = currentUser.data;
   if (!trackerInfo || !trackerInfo.exists || !user) {
     return (
       <CenteredMessage>

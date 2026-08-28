@@ -80,6 +80,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/**
+ * @verifies SHL-39
+ *
+ * "No labels" and "couldn't load labels" are different claims. Every
+ * group used `data?.items ?? []`, so a failed fetch rendered as an
+ * empty group — and for the three groups that hide when empty, as no
+ * group at all.
+ */
 describe("a sidebar group whose data fails to load", () => {
   it("says so rather than rendering an empty group", async () => {
     await renderSidebar("/api/projects");

@@ -25,6 +25,17 @@ import { Sidebar } from "./Sidebar.tsx";
 /** Recents payload, per-test. */
 let RECENTS: { key: string; title: string }[] = [];
 
+/** Extra labels, per-test — used for the scale and truncation cases. */
+let LABELS: { id: string; name: string; color?: string }[] = [
+  { id: "l_fe", name: "frontend", color: "#1e6fcb" },
+];
+
+/** Extra projects, per-test. */
+let PROJECTS: { id: string; name: string; prefix: string }[] = [
+  { id: "p_web", name: "Web", prefix: "WEB-" },
+  { id: "p_api", name: "API", prefix: "API-" },
+];
+
 /**
  * `effective_default` from `/api/projects`, per-test. `undefined` omits
  * the field entirely, standing in for a server that predates it.
@@ -45,11 +56,8 @@ const INFO: TrackerInfoResponse = {
 function routeFetch(path: string): unknown {
   if (path.startsWith("/api/projects")) {
     return {
-      items: [
-        { id: "p_web", name: "Web", prefix: "WEB-" },
-        { id: "p_api", name: "API", prefix: "API-" },
-      ],
-      total: 2,
+      items: PROJECTS,
+      total: PROJECTS.length,
       offset: 0,
       limit: 100,
       default: "p_web",
@@ -74,7 +82,7 @@ function routeFetch(path: string): unknown {
     };
   }
   if (path.startsWith("/api/labels")) {
-    return { items: [{ id: "l_fe", name: "frontend", color: "#1e6fcb" }], total: 1, offset: 0, limit: 100 };
+    return { items: LABELS, total: LABELS.length, offset: 0, limit: 100 };
   }
   if (path.startsWith("/api/recents")) {
     return { items: RECENTS, total: RECENTS.length, offset: 0, limit: 100 };
@@ -145,6 +153,11 @@ afterEach(() => {
   vi.restoreAllMocks();
   RECENTS = [];
   EFFECTIVE_DEFAULT = undefined;
+  LABELS = [{ id: "l_fe", name: "frontend", color: "#1e6fcb" }];
+  PROJECTS = [
+    { id: "p_web", name: "Web", prefix: "WEB-" },
+    { id: "p_api", name: "API", prefix: "API-" },
+  ];
 });
 
 describe("Sidebar", () => {
@@ -299,5 +312,100 @@ describe("Sidebar footer (SHL-11)", () => {
     expect(await screen.findByText("~/PDev/loctt")).toBeTruthy();
     const settings = screen.getByText("Settings").closest("a") as HTMLAnchorElement;
     expect(settings.getAttribute("href")).toContain("/settings/");
+  });
+});
+
+/**
+ * Truncation and scale. All three cases share one requirement the
+ * sidebar failed: the full text has to be available on hover *and* on
+ * keyboard focus, and truncation only happens in the expanded state —
+ * which is exactly where the tooltip was omitted.
+ */
+describe("Sidebar truncation and scale", () => {
+  const LONG = "s".repeat(120);
+
+  /**
+   * @verifies SHL-22
+   *
+   * A 120-character label must truncate rather than widen the column,
+   * keep its colour swatch, and expose the full name on the element
+   * that takes focus — the anchor, not the inner span.
+   */
+  it("truncates a very long label while keeping its swatch and full name", async () => {
+    LABELS = [{ id: "l_long", name: LONG, color: "#1e6fcb" }];
+    await renderSidebarAt("/list");
+
+    const text = await screen.findByText(LONG);
+    expect(text.className).toContain("truncate");
+
+    // The focusable element carries the full name.
+    const link = text.closest("a") as HTMLAnchorElement;
+    expect(link.getAttribute("title")).toBe(LONG);
+
+    // Truncation eats the text, not the metadata: the swatch survives.
+    const swatch = link.querySelector('span[style*="background"]');
+    expect(swatch).not.toBeNull();
+  });
+
+  /**
+   * @verifies SHL-19
+   *
+   * The workspace label truncates in place and keeps the Settings link
+   * visible beside it.
+   */
+  it("truncates a long workspace path without displacing Settings", async () => {
+    await renderSidebarAt("/list");
+
+    const cwd = await screen.findByText("~/PDev/loctt");
+    expect(cwd.className).toContain("truncate");
+    expect(cwd.getAttribute("title")).toBe("~/PDev/loctt");
+    expect(screen.getByText("Settings").closest("a")).not.toBeNull();
+  });
+
+  /**
+   * @verifies SHL-11, SHL-20, SHL-21
+   *
+   * With twenty recents and forty labels above it, the footer must stay
+   * put. The groups scroll inside their own box; the footer is that
+   * box's sibling, so it cannot scroll away with them.
+   */
+  it("keeps the footer out of the scrolling region at scale", async () => {
+    RECENTS = Array.from({ length: 20 }, (_, i) => ({
+      key: `WEB-${i + 1}`,
+      title: `Recent task ${i + 1}`,
+    }));
+    LABELS = Array.from({ length: 40 }, (_, i) => ({
+      id: `l_${i}`,
+      name: `label-${i}`,
+      color: "#1e6fcb",
+    }));
+    await renderSidebarAt("/list");
+
+    await screen.findByText("Recent task 20");
+    const scroller = document.querySelector('[data-sidebar-scroll="true"]');
+    expect(scroller).not.toBeNull();
+
+    // Everything that grows is inside the scroller...
+    expect(scroller?.contains(screen.getByText("label-39"))).toBe(true);
+    expect(scroller?.contains(screen.getByText("Recent task 20"))).toBe(true);
+    // ...and the footer is not.
+    const footer = screen.getByText("~/PDev/loctt");
+    expect(scroller?.contains(footer)).toBe(false);
+    expect(scroller?.contains(screen.getByText("Settings"))).toBe(false);
+  });
+
+  /**
+   * @verifies SHL-20
+   *
+   * Long recent titles truncate to one line rather than wrapping and
+   * shoving the group down.
+   */
+  it("truncates long recent titles to a single line", async () => {
+    RECENTS = [{ key: "WEB-1", title: LONG }];
+    await renderSidebarAt("/list");
+
+    const title = await screen.findByText(LONG);
+    expect(title.className).toContain("truncate");
+    expect((title.closest("a") as HTMLAnchorElement).getAttribute("title")).toBe(LONG);
   });
 });
