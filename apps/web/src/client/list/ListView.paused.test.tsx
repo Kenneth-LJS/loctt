@@ -93,6 +93,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/**
+ * These tests locate the error panel by `role="alert"`, not by its
+ * copy.
+ *
+ * They used to match `/Loading tasks/i`, which broke the moment that
+ * string changed — twice, and for a reason unrelated to anything they
+ * assert. None of them is about the wording; each is about whether the
+ * panel is mounted at all. The role is what they actually mean, and it
+ * is what `ErrorState` guarantees.
+ */
 describe("ListView while the tab is in the background", () => {
   // @verifies ERR-1
   it("states the failure rather than pausing forever in a hidden tab", async () => {
@@ -114,7 +124,7 @@ describe("ListView while the tab is in the background", () => {
 
     mount();
 
-    await screen.findByText(/Loading tasks/i, undefined, { timeout: 5_000 });
+    await screen.findByRole("alert", undefined, { timeout: 5_000 });
     expect(screen.queryByText(/No tasks match these filters/i)).toBeNull();
   });
 
@@ -137,7 +147,7 @@ describe("ListView while the tab is in the background", () => {
     hideDocument();
 
     mount();
-    await screen.findByText(/Loading tasks/i, undefined, { timeout: 5_000 });
+    await screen.findByRole("alert", undefined, { timeout: 5_000 });
 
     down = false;
     await screen.findByText("Back again", undefined, { timeout: 15_000 });
@@ -153,7 +163,7 @@ describe("ListView while the recovery poll is running", () => {
     });
 
     mount();
-    await screen.findByText(/Loading tasks/i, undefined, { timeout: 5_000 });
+    await screen.findByRole("alert", undefined, { timeout: 5_000 });
 
     // Span one full poll cycle plus the attempt-and-retry window it
     // opens (poll at 5s, retry ~1s later). The `fetch` action resets a
@@ -164,7 +174,6 @@ describe("ListView while the recovery poll is running", () => {
     // the DOM, so sample continuously rather than at the end.
     const until = Date.now() + 7_500;
     while (Date.now() < until) {
-      expect(screen.queryByText(/Loading tasks/i)).not.toBeNull();
       expect(screen.queryByRole("alert")).not.toBeNull();
       await new Promise(r => setTimeout(r, 100));
     }
@@ -187,7 +196,7 @@ describe("ListView while the browser reports offline", () => {
 
     // ERR-1: a server that is down and a tracker that is empty must be
     // visibly different screens. Conflating them reads as data loss.
-    await screen.findByText(/Loading tasks/i, undefined, { timeout: 5_000 });
+    await screen.findByRole("alert", undefined, { timeout: 5_000 });
     expect(screen.queryByText(/No tasks match these filters/i)).toBeNull();
   });
 
@@ -244,13 +253,13 @@ describe("ListView while the browser reports offline", () => {
     });
 
     mount();
-    await screen.findByText(/Loading tasks/i, undefined, { timeout: 5_000 });
+    await screen.findByRole("alert", undefined, { timeout: 5_000 });
 
     // The server comes back. No reload, no click — the user does not
     // have to dismiss the error to see live data, and the poll only
     // runs while the query is in an error state.
     down = false;
     await screen.findByText("Back again", undefined, { timeout: 15_000 });
-    expect(screen.queryByText(/Loading tasks/i)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   }, 20_000);
 });
