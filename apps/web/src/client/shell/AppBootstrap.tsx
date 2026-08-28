@@ -1,5 +1,6 @@
 import type { SchemaStatusResponse, TrackerInfoResponse } from "@loctt/contracts";
 import { Outlet } from "@tanstack/react-router";
+import { useMemo } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { useCurrentUser } from "../api/hooks/useCurrentUser.ts";
@@ -24,7 +25,49 @@ export function AppBootstrap() {
   const info = useInfo();
   const currentUser = useCurrentUser();
 
-  if (info.isLoading || currentUser.isLoading) {
+  // Every hook stays above every branch, per the rules of hooks — and
+  // every value that becomes `AppShell`'s `info` is memoised.
+  //
+  // Identity matters here more than it looks. `info` flows into
+  // `Sidebar` and on into the built-in count query keys, so a fresh
+  // object per render re-mounts that subtree, which re-issues
+  // `/api/info`, which fails, which re-renders. Measured against a
+  // schema-mismatched tracker: **2,968 requests in 46 seconds**. Each
+  // attempt was cancelled by the next before it could settle, so
+  // `fetchFailureCount` stayed 0 and the query sat at
+  // `pending`/`fetching` indefinitely — which is why the spinner never
+  // cleared and the banner was unreachable.
+  //
+  // That, not the retry policy, is what the M1 gate's F3 actually was.
+  // Both were fixed; only this one stops the hang.
+  const schemaMismatch = useMemo(
+    () => schemaStatusFromError(info.error),
+    [info.error],
+  );
+  const placeholderInfo = useMemo(
+    () => (schemaMismatch === null ? null : PLACEHOLDER_INFO(schemaMismatch)),
+    [schemaMismatch],
+  );
+  const unknownInfo = useMemo(() => UNKNOWN_INFO(), []);
+
+  // `isLoading` is `isPending && isFetching`, which is true again on
+  // every refetch of a query that has never succeeded. A boot read
+  // that keeps failing therefore oscillates back into "loading"
+  // forever — the M1 gate measured this as a spinner still spinning
+  // at 142 seconds against a schema-mismatched tracker, with the
+  // banner it was meant to show unreachable behind it.
+  //
+  // What the spinner is actually for is the *first* attempt, before
+  // anything is known. Once a read has failed, the answer is known:
+  // it failed. `isPending && !isError` says that and does not
+  // un-say it on the next tick.
+  const stillWaiting = (q: { isPending: boolean; isError: boolean }): boolean =>
+    q.isPending && !q.isError;
+
+  // `||`, unchanged: either read still genuinely pending means the
+  // shell has nothing to render from. Only the *definition* of
+  // "still pending" changed.
+  if (stillWaiting(info) || stillWaiting(currentUser)) {
     return <CenteredMessage>Loading…</CenteredMessage>;
   }
 
@@ -36,8 +79,6 @@ export function AppBootstrap() {
   // SHL-13, XS-34 and XS-35 all require the shell and navigation to
   // stay up with the banner visible: the user can move around and read
   // the explanation, they just cannot see or change tasks.
-  const schemaMismatch = schemaStatusFromError(info.error);
-
   // XS-37: a crashed migration is not a banner state. It gets its own
   // blocking screen, because the tracker may be half-rewritten and
   // there is nothing safe to browse or click.
@@ -52,24 +93,15 @@ export function AppBootstrap() {
     );
   }
 
-  if (schemaMismatch !== null) {
+  if (schemaMismatch !== null && placeholderInfo !== null) {
     return (
       <AppShell
-        info={PLACEHOLDER_INFO(schemaMismatch)}
+        info={placeholderInfo}
         currentUser={null}
         identityUnknown
       >
         <Outlet />
       </AppShell>
-    );
-  }
-
-  if (info.isError) {
-    return (
-      <FatalError
-        message={info.error?.message ?? "Failed to load tracker info."}
-        onRetry={() => void info.refetch()}
-      />
     );
   }
 
@@ -86,9 +118,42 @@ export function AppBootstrap() {
   // both overstated the failure and removed the route to its own fix.
   const identityUnknown = currentUser.isError;
 
+  // **The rule, stated once.** A boot read that fails degrades
+  // *inside* the shell — it never replaces it.
+  //
+  // This file has been fixed three times for the same mistake, in
+  // three different branches, because each decided independently
+  // whether its failure was fatal and the fatal answer was the
+  // default. SHL-40 fixed the current-user branch; the schema branch
+  // was fixed separately; and the M1 gate then found that a plain
+  // failed `/api/info` still destroyed the entire app — shell,
+  // sidebar and nav gone, with no `[role=alert]` anywhere — reached
+  // by nothing more exotic than killing the server and clicking a nav
+  // link (SHL-41, ERR-1).
+  //
+  // So the fatal branch is gone rather than patched. What is left:
+  // if the tracker exists, render the shell.
+  // `ServerUnreachableBanner` inside it states an unreachable server,
+  // each view states its own failure, and neither can be reached from
+  // a page that replaced them both.
   if (trackerInfo?.exists === true && identityUnknown) {
     return (
       <AppShell info={trackerInfo} currentUser={null} identityUnknown>
+        <Outlet />
+      </AppShell>
+    );
+  }
+
+  // Info failed. The one thing that costs is `info.data`, so the
+  // shell renders from a placeholder that reports nothing it does not
+  // know — rather than from a page that reports nothing at all.
+  if (info.isError) {
+    return (
+      <AppShell
+        info={trackerInfo ?? unknownInfo}
+        currentUser={user ?? null}
+        identityUnknown={user === null || user === undefined}
+      >
         <Outlet />
       </AppShell>
     );
@@ -138,6 +203,27 @@ function schemaStatusFromError(err: unknown): SchemaStatusResponse | null {
 }
 
 /**
+ * `TrackerInfoResponse` for a tracker we could not read.
+ *
+ * Everything is zero or empty because nothing is known — the footer
+ * shows no count rather than a wrong one. `schemaStatus` claims
+ * `current` because a schema we could not read is not a schema
+ * *mismatch*, and saying otherwise would raise the wrong banner;
+ * `ServerUnreachableBanner` is what speaks in this state.
+ */
+function UNKNOWN_INFO(): TrackerInfoResponse {
+  return {
+    exists: true,
+    taskCount: 0,
+    keyPrefix: null,
+    nextKey: null,
+    schemaStatus: { kind: "current", version: 0 },
+    cwd: "",
+    today: new Date().toISOString().slice(0, 10),
+  };
+}
+
+/**
  * Enough `TrackerInfoResponse` for the shell to render while the real
  * one is unavailable.
  *
@@ -162,23 +248,5 @@ function CenteredMessage({ children }: { children: React.ReactNode }) {
     <div className="grid h-screen place-items-center bg-bg-canvas text-[13px] text-text-secondary">
       {children}
     </div>
-  );
-}
-
-function FatalError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <CenteredMessage>
-      <div className="max-w-md text-center">
-        <h1 className="mb-2 text-lg font-semibold text-danger-fg">Something went wrong</h1>
-        <p className="mb-4 text-[13px] text-text-secondary">{message}</p>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-contrast hover:bg-accent-hover"
-        >
-          Retry
-        </button>
-      </div>
-    </CenteredMessage>
   );
 }
