@@ -34,12 +34,14 @@ const INFO: TrackerInfoResponse = {
 
 const OK = { items: [], total: 0, offset: 0, limit: 100 };
 
-/** Fails exactly one endpoint; everything else resolves empty. */
-function stubFetch(failing: string) {
+/** Fails the named endpoints; everything else resolves empty. */
+function stubFetch(...failing: string[]) {
   vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const path = url.replace(/^https?:\/\/[^/]+/, "");
-    if (path.startsWith(failing)) return Promise.reject(new TypeError("Failed to fetch"));
+    if (failing.some(f => path.startsWith(f))) {
+      return Promise.reject(new TypeError("Failed to fetch"));
+    }
     if (path.startsWith("/api/views")) {
       return Promise.resolve(new Response(JSON.stringify({ queries: [] }), {
         status: 200, headers: { "Content-Type": "application/json" },
@@ -51,8 +53,8 @@ function stubFetch(failing: string) {
   });
 }
 
-async function renderSidebar(failing: string, collapsed = false) {
-  stubFetch(failing);
+async function renderSidebar(failing: string | string[], collapsed = false) {
+  stubFetch(...(Array.isArray(failing) ? failing : [failing]));
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const rootRoute = createRootRoute();
   const listRoute = createRoute({
@@ -124,5 +126,55 @@ describe("a sidebar group whose data fails to load", () => {
     // renders nothing.
     expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(screen.getByText("Projects")).toBeTruthy();
+  });
+});
+
+/**
+ * @verifies ONB-34, ERR-28
+ *
+ * Recents is the case where the two claims are easiest to confuse: a
+ * fresh tracker legitimately has none, so "you haven't viewed
+ * anything" and "we couldn't check" both look like an empty group
+ * unless one of them says otherwise.
+ */
+describe("Recently viewed failing on its own", () => {
+  it("shows a scoped failure distinguishable from its empty state", async () => {
+    await renderSidebar("/api/recents");
+
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toMatch(/could not load/i);
+    // Not the empty copy — that would be a claim about the data.
+    expect(screen.queryByText(/No recent tasks/)).toBeNull();
+    // Retry for that group alone.
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    // Everything else is untouched, including groups that are simply
+    // empty and say so.
+    expect(screen.getByText(/No labels yet/)).toBeTruthy();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+});
+
+/**
+ * @verifies ERR-29
+ *
+ * Two unrelated failures at once stay two failures: attributable to
+ * their own regions, neither overwriting the other.
+ */
+describe("two unrelated sidebar failures at once", () => {
+  it("surfaces both, each in its own group", async () => {
+    await renderSidebar(["/api/labels", "/api/recents"]);
+
+    const alerts = await screen.findAllByRole("alert");
+    expect(alerts).toHaveLength(2);
+
+    // Each sits inside the group it belongs to, rather than being
+    // merged into one ambiguous banner.
+    const labels = screen.getByText("Labels").parentElement as HTMLElement;
+    const recents = screen.getByText("Recently viewed").parentElement as HTMLElement;
+    expect(labels.querySelector('[role="alert"]')).not.toBeNull();
+    expect(recents.querySelector('[role="alert"]')).not.toBeNull();
+
+    // A group that is merely empty is not swept into the failure.
+    expect(screen.getByText(/No milestones yet/)).toBeTruthy();
   });
 });

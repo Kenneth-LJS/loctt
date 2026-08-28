@@ -21,16 +21,44 @@ interface TasksPage {
  * badge. The query key embeds the resolved `q` so a user switch (which
  * changes "Assigned to me") refetches automatically.
  *
- * Returns a map keyed by built-in id → `{ count, isLoading }`.
+ * Returns a map keyed by built-in id → `{ count, isLoading,
+ * unavailable }`.
  */
 export interface BuiltinCount {
   readonly count: number | undefined;
   readonly isLoading: boolean;
+  /**
+   * The count could not be obtained: the request failed, or it ran
+   * past `COUNT_TIMEOUT_MS` without answering.
+   *
+   * SHL-23 forbids a badge spinning forever — a pending affordance
+   * that never resolves is indistinguishable from a hang, and the
+   * user has no way to tell the count is simply not coming.
+   */
+  readonly unavailable: boolean;
 }
+
+/**
+ * How long a count may take before the badge gives up on it.
+ *
+ * Deliberately generous: the count is decoration, and a slow tracker
+ * answering at eight seconds should still get its number. Overridable
+ * from the page so a spec can exercise the deadline without waiting.
+ */
+export const COUNT_TIMEOUT_MS = Number(
+  (globalThis as { __LOCTT_COUNT_TIMEOUT_MS__?: unknown }).__LOCTT_COUNT_TIMEOUT_MS__ ?? 15_000,
+);
 
 export function useBuiltinCounts(
   builtins: readonly BuiltinFilter[],
   ctx: BuiltinContext,
+  /**
+   * Overrides the deadline. A parameter rather than only the global,
+   * because the global is read at module-evaluation time and a test
+   * importing this module cannot set it early enough — which made the
+   * deadline, the part SHL-23 actually turns on, untestable.
+   */
+  timeoutMs: number = COUNT_TIMEOUT_MS,
 ): Record<string, BuiltinCount> {
   const resolved = builtins.map(b => ({ id: b.id, search: b.resolve(ctx) }));
 
@@ -42,7 +70,7 @@ export function useBuiltinCounts(
         queryFn: ({ signal }: { signal: AbortSignal }) =>
           apiClient.get<TasksPage>(
             `/api/tasks?limit=0&query=${encodeURIComponent(q ?? "")}`,
-            { signal },
+            { signal, timeoutMs },
           ),
         // Skip the fetch for built-ins with no resolvable query.
         enabled: q !== undefined,
@@ -55,11 +83,14 @@ export function useBuiltinCounts(
     const r = results[i];
     // Only surface a count once the query has actually succeeded —
     // otherwise a failed or in-flight count (e.g. mid user-switch
-    // refetch) would render a stale number with no signal. An errored
-    // or pending count simply shows no badge.
+    // refetch) would render a stale number with no signal.
+    const enabled = search?.q !== undefined;
     out[id] = {
-      count: search?.q !== undefined && r?.isSuccess ? r.data?.total : undefined,
-      isLoading: r?.isLoading ?? false,
+      count: enabled && r?.isSuccess === true ? r.data?.total : undefined,
+      isLoading: enabled && r?.isLoading === true,
+      // A failed count — including one the deadline aborted — is
+      // reported as unavailable rather than left pending (SHL-23).
+      unavailable: enabled && r?.isError === true,
     };
   });
   return out;

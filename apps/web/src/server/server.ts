@@ -2251,7 +2251,25 @@ export function createWebApp(options: WebAppOptions) {
     const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
     const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
 
-    const view = url.searchParams.get("view") ?? undefined;
+    const requestedView = url.searchParams.get("view") ?? undefined;
+    // XS-28 / SHL-32: a view deleted from `queries.yaml` while a tab
+    // holds its URL must not error the list. The case is explicit —
+    // "the list falls back to a defined default view and says so — it
+    // does not render an error page or an empty table implying zero
+    // tasks". Resolving it in core throws `ViewError`, which the
+    // catch below turns into a 400 and the surface into an error
+    // page, so the drop has to happen before core sees it.
+    //
+    // A missing `queries.yaml` is not a missing view: with no config
+    // at all there is nothing to check against, so the ref is passed
+    // through and core decides.
+    const viewMissing =
+      requestedView !== undefined
+      && queriesConfig !== undefined
+      && !queriesConfig.queries.some(
+        q => q.id === requestedView || q.name === requestedView,
+      );
+    const view = viewMissing ? undefined : requestedView;
     const includeArchived = url.searchParams.get("archived") === "true";
     // Fold the free-text `query` and the structured filter params
     // (project/status/priority/type/assignee/…, plus custom
@@ -2343,6 +2361,11 @@ export function createWebApp(options: WebAppOptions) {
       // what did not, by path and with the parse error, so the user can
       // reconcile the list against what is on disk.
       ...(unreadable.length > 0 ? { unreadable } : {}),
+      // XS-28: the fallback is reported rather than performed
+      // silently. Without this the list looks like an ordinary
+      // unfiltered result, and the user has no way to learn that the
+      // view they asked for is gone.
+      ...(viewMissing ? { missing_view: requestedView } : {}),
     });
   };
 

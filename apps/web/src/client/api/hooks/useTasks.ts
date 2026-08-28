@@ -23,6 +23,15 @@ interface TasksPage {
     readonly path: string;
     readonly reason: string;
   }[];
+  /**
+   * The saved view the URL asked for, which no longer exists in
+   * `queries.yaml` (XS-28).
+   *
+   * The server falls back to the unfiltered list rather than erroring,
+   * and names what it dropped so the surface can say so. Silence here
+   * is indistinguishable from an ordinary unfiltered result.
+   */
+  readonly missing_view?: string;
 }
 
 /** Default page size for the list view (matches the mockup's "of N"). */

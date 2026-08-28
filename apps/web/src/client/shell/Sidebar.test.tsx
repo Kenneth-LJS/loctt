@@ -8,8 +8,8 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Sidebar } from "./Sidebar.tsx";
 
@@ -42,6 +42,21 @@ let PROJECTS: { id: string; name: string; prefix: string }[] = [
  */
 let EFFECTIVE_DEFAULT: string | null | undefined;
 
+/** Overrides the workflow config's priorities, per-test (VUE-24). */
+let PRIORITIES: { key: string; label: string; value?: number }[] | undefined;
+
+/** `total` returned by the stubbed /api/tasks — the count badges. */
+let TASK_TOTAL = 3;
+
+/** Empties milestones and sprints too, for the empty-tracker case. */
+let EMPTY_CONFIG = false;
+
+/** Leaves the count queries unresolved, for the pending-badge case. */
+let SLOW_COUNTS = false;
+
+/** Fails the count queries, for the unavailable-badge case. */
+let FAILED_COUNTS = false;
+
 const INFO: TrackerInfoResponse = {
   exists: true,
   taskCount: 7,
@@ -68,9 +83,11 @@ function routeFetch(path: string): unknown {
     return { queries: [{ id: "v_mine", name: "My open bugs", query: "x" }] };
   }
   if (path.startsWith("/api/milestones")) {
+    if (EMPTY_CONFIG) return { items: [], total: 0, offset: 0, limit: 100 };
     return { items: [{ id: "m_v1", name: "v1.0" }], total: 1, offset: 0, limit: 100 };
   }
   if (path.startsWith("/api/sprints")) {
+    if (EMPTY_CONFIG) return { items: [], total: 0, offset: 0, limit: 100 };
     return {
       items: [
         { id: "sp_12", name: "Sprint 12", start_date: "2026-06-01", end_date: "2026-06-14", state: "active" },
@@ -87,14 +104,49 @@ function routeFetch(path: string): unknown {
   if (path.startsWith("/api/recents")) {
     return { items: RECENTS, total: RECENTS.length, offset: 0, limit: 100 };
   }
+  if (path.startsWith("/api/workflow")) {
+    if (PRIORITIES !== undefined) {
+      return { statuses: [], priorities: PRIORITIES, task_types: [] };
+    }
+    // "High priority" resolves against these (VUE-24), so a fixture
+    // without them renders that built-in inert.
+    return {
+      statuses: [],
+      priorities: [
+        { key: "critical", label: "Critical", value: 4 },
+        { key: "high", label: "High", value: 3 },
+        { key: "medium", label: "Medium", value: 2 },
+        { key: "low", label: "Low", value: 1 },
+      ],
+      task_types: [],
+    };
+  }
   if (path.startsWith("/api/tasks")) {
-    return { total: 3 }; // built-in count badges
+    return { total: TASK_TOTAL }; // built-in count badges
   }
   return {};
 }
 
 function stubFetch() {
-  vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL) => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    (input: RequestInfo | URL, init?: RequestInit) => {
+    const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    // The count requests ask for limit=0. A hang is reproduced by never
+    // resolving — but the abort signal must still be honoured, or the
+    // client's deadline has nothing to act on and the test would be
+    // measuring the mock rather than the code.
+    if (SLOW_COUNTS && raw.includes("limit=0")) {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener(
+          "abort",
+          () => { reject(new DOMException("Aborted", "AbortError")); },
+          { once: true },
+        );
+      });
+    }
+    if (FAILED_COUNTS && raw.includes("limit=0")) {
+      return Promise.reject(new TypeError("Failed to fetch"));
+    }
     const url =
       typeof input === "string"
         ? input
@@ -108,7 +160,8 @@ function stubFetch() {
         headers: { "Content-Type": "application/json" },
       }),
     );
-  });
+  },
+  );
 }
 
 async function renderSidebarAt(pathname: string, search: Record<string, unknown> = {}) {
@@ -153,6 +206,11 @@ afterEach(() => {
   vi.restoreAllMocks();
   RECENTS = [];
   EFFECTIVE_DEFAULT = undefined;
+  PRIORITIES = undefined;
+  TASK_TOTAL = 3;
+  EMPTY_CONFIG = false;
+  SLOW_COUNTS = false;
+  FAILED_COUNTS = false;
   LABELS = [{ id: "l_fe", name: "frontend", color: "#1e6fcb" }];
   PROJECTS = [
     { id: "p_web", name: "Web", prefix: "WEB-" },
@@ -184,9 +242,17 @@ describe("Sidebar", () => {
     expect(screen.queryByText("Sprint 11")).toBeNull();
   });
 
-  it("renders the empty-state note for recents", async () => {
+  /**
+   * @verifies ONB-10
+   *
+   * The copy has to say the group *fills in*, so the emptiness reads
+   * as expected rather than broken. "No recent tasks" alone left a
+   * fresh tracker looking like a failed fetch.
+   */
+  it("renders the empty-state note for recents and says it fills in", async () => {
     await renderSidebarAt("/list");
-    expect(await screen.findByText("No recent tasks")).toBeTruthy();
+    const empty = await screen.findByText(/No recent tasks/);
+    expect(empty.textContent).toMatch(/as you open them/i);
   });
 
   it("renders all six built-in filters including deferred 'Mentions me'", async () => {
@@ -202,8 +268,13 @@ describe("Sidebar", () => {
   it("shows live count badges on resolvable built-ins but not on 'Mentions me'", async () => {
     await renderSidebarAt("/list");
     // Stubbed /api/tasks returns total: 3 for every count query.
-    const highPriority = (await screen.findByText("High priority")).closest("a");
-    expect(within(highPriority as HTMLElement).getByText("3")).toBeTruthy();
+    //
+    // The row starts inert — "High priority" resolves against the
+    // workflow config (VUE-24), which arrives a tick later — so wait
+    // for the link rather than for the text, which is present in both
+    // states.
+    const highPriority = await screen.findByRole("link", { name: /High priority/ });
+    expect(within(highPriority).getByText("3")).toBeTruthy();
     // "Mentions me" is deferred: inert text, no link, no badge.
     const mentions = await screen.findByText("Mentions me");
     expect(mentions.closest("a")).toBeNull();
@@ -408,4 +479,177 @@ describe("Sidebar truncation and scale", () => {
     expect(title.className).toContain("truncate");
     expect((title.closest("a") as HTMLAnchorElement).getAttribute("title")).toBe(LONG);
   });
+});
+
+/**
+ * The built-in saved filters, as the sidebar renders them.
+ */
+describe("Sidebar built-in filters", () => {
+  /**
+   * @verifies VUE-1
+   *
+   * Five of the six carry a badge; the badge is the filter's own total
+   * from `/api/tasks`, and a zero renders as `0` rather than
+   * disappearing — a missing badge and a zero badge are different
+   * claims about the data.
+   */
+  it("badges the five live built-ins, including a genuine zero", async () => {
+    TASK_TOTAL = 0;
+    await renderSidebarAt("/list");
+
+    for (const label of [
+      "Assigned to me", "Reported by me", "Due this week", "Overdue", "High priority",
+    ]) {
+      const link = await screen.findByRole("link", { name: new RegExp(label) });
+      expect(within(link).getByText("0")).toBeTruthy();
+    }
+  });
+
+  /**
+   * @verifies VUE-2
+   *
+   * No badge at all on "Mentions me" — not a `0`, which would be a
+   * claim about data nobody has counted.
+   */
+  it("gives 'Mentions me' no badge and no link", async () => {
+    await renderSidebarAt("/list");
+
+    const mentions = await screen.findByText("Mentions me");
+    expect(mentions.closest("a")).toBeNull();
+    const row = mentions.closest("[aria-disabled]") as HTMLElement;
+    expect(row).not.toBeNull();
+    expect(row.textContent).not.toMatch(/\d/);
+    expect(row.getAttribute("title")).toMatch(/comments/i);
+  });
+
+  /**
+   * @verifies VUE-16
+   *
+   * The badge is the true total, not the page size — the count request
+   * asks for `limit=0` precisely so the server counts without shipping
+   * rows.
+   */
+  it("shows the true total rather than a page size", async () => {
+    TASK_TOTAL = 1280;
+    await renderSidebarAt("/list");
+
+    const link = await screen.findByRole("link", { name: /Assigned to me/ });
+    expect(within(link).getByText("1280")).toBeTruthy();
+  });
+
+  /**
+   * @verifies VUE-24
+   *
+   * A workspace whose priority scale cannot express "high" gets an
+   * inert row that says so — not a link with a badge frozen at zero,
+   * and not the "comments land" message, which would be a false
+   * promise about a different feature.
+   */
+  it("makes 'High priority' inert, and honest, on a scale that cannot express it", async () => {
+    PRIORITIES = [{ key: "normal", label: "Normal" }];
+    await renderSidebarAt("/list");
+
+    const hp = await screen.findByText("High priority");
+    expect(hp.closest("a")).toBeNull();
+    const row = hp.closest("[aria-disabled]") as HTMLElement;
+    expect(row).not.toBeNull();
+    expect(row.getAttribute("title")).toMatch(/priorities don.t distinguish/i);
+    expect(row.getAttribute("title")).not.toMatch(/comments/i);
+  });
+});
+
+/**
+ * An empty tracker. ONB-9's rule is that "this tracker has nothing in
+ * it" must not be mistakable for "this feature is missing" — and three
+ * groups used to vanish outright when their config was empty, which is
+ * exactly that mistake.
+ */
+describe("Sidebar on an empty tracker", () => {
+  beforeEach(() => {
+    PROJECTS = [];
+    LABELS = [];
+    EMPTY_CONFIG = true;
+  });
+
+  /**
+   * @verifies ONB-9, SHL-9
+   */
+  it("renders every group with an explicit empty affordance", async () => {
+    await renderSidebarAt("/list");
+
+    for (const group of ["Projects", "Milestones", "Sprints", "Labels", "Recently viewed"]) {
+      expect(await screen.findByText(group)).toBeTruthy();
+    }
+    expect(await screen.findByText(/No projects yet/)).toBeTruthy();
+    expect(await screen.findByText(/No milestones yet/)).toBeTruthy();
+    expect(await screen.findByText(/No active sprints/)).toBeTruthy();
+    expect(await screen.findByText(/No labels yet/)).toBeTruthy();
+    expect(await screen.findByText(/No recent tasks/)).toBeTruthy();
+  });
+
+  /**
+   * @verifies ONB-9
+   *
+   * A real zero, not a blank and not an omitted badge.
+   */
+  it("badges the live built-ins with a real zero", async () => {
+    TASK_TOTAL = 0;
+    await renderSidebarAt("/list");
+
+    const link = await screen.findByRole("link", { name: /Overdue/ });
+    expect(within(link).getByText("0")).toBeTruthy();
+  });
+});
+
+/**
+ * @verifies ONB-13, ONB-14, SHL-23
+ *
+ * The badge slot is reserved before its number arrives. Rendering
+ * nothing and then inserting a pill shifts every row below it, so a
+ * click aimed mid-load lands on the wrong item — which is what ONB-14
+ * is written against. The filter itself stays clickable throughout:
+ * the count is decoration, not a gate.
+ */
+describe("Sidebar count badges while pending", () => {
+  it("reserves the badge slot and keeps the filter clickable while counting", async () => {
+    SLOW_COUNTS = true;
+    await renderSidebarAt("/list");
+
+    // The link exists and is navigable before any count resolves.
+    const link = await screen.findByRole("link", { name: /Overdue/ });
+    expect(link.getAttribute("href")).toContain("/list");
+
+    const badge = link.querySelector("[data-pending]");
+    expect(badge).not.toBeNull();
+    // The slot has width before the number lands.
+    expect(badge?.className).toMatch(/min-w-/);
+  });
+});
+
+/**
+ * @verifies SHL-23
+ *
+ * "If the count query never resolves, the badge eventually shows an
+ * unavailable affordance rather than spinning forever." The deadline
+ * lives in the request; what this checks is that the resulting failure
+ * reaches the badge as *unavailable* rather than as a permanent
+ * pending state, which reads to the user as a hang.
+ */
+describe("Sidebar count badges that never arrive", () => {
+  it("marks the badge unavailable rather than leaving it pending", async () => {
+    FAILED_COUNTS = true;
+    await renderSidebarAt("/list");
+
+    const link = await screen.findByRole("link", { name: /Overdue/ });
+    const badge = await waitFor(() => {
+      const el = link.querySelector("[data-unavailable]");
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    expect(badge.getAttribute("data-pending")).toBeNull();
+    expect(badge.getAttribute("title")).toMatch(/unavailable/i);
+    // The filter is still usable — the count is decoration, not a gate.
+    expect(link.getAttribute("href")).toContain("/list");
+  });
+
 });

@@ -1,3 +1,5 @@
+import type { PriorityDef } from "@loctt/contracts";
+
 import type { ListSearch } from "../router/listSearch.ts";
 
 /**
@@ -48,6 +50,38 @@ export interface BuiltinContext {
   readonly currentUserId: string | null;
   /** Today's date as YYYY-MM-DD (caller-supplied for testability). */
   readonly today: string;
+  /**
+   * The workspace's priorities, in config order.
+   *
+   * "High priority" cannot be a fixed key list: VUE-24 covers a
+   * tracker with no `high` key at all, where `priority in (high,
+   * critical)` matched nothing and the badge sat permanently at zero —
+   * a filter that looks live and is structurally dead. Undefined while
+   * the workflow config is still loading, which resolves the built-in
+   * to null rather than to a wrong query.
+   */
+  readonly priorities?: readonly PriorityDef[] | undefined;
+}
+
+/**
+ * The priorities "High priority" should match, given a workspace's own
+ * set.
+ *
+ * Rank by `value` when the config supplies it — that is what the field
+ * is for — and fall back to config order, which every LocTT config
+ * lists highest-first. Either way the top two are taken, or the single
+ * top one when the workspace defines fewer than three: on a two-value
+ * scale "high priority" meaning "all but the lowest" is still a
+ * distinction, but on a one-value scale it is not a filter at all.
+ */
+export function highPriorityKeys(
+  priorities: readonly PriorityDef[],
+): readonly string[] {
+  if (priorities.length < 2) return [];
+  const ranked = priorities.every(p => typeof p.value === "number")
+    ? [...priorities].sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
+    : priorities;
+  return ranked.slice(0, priorities.length >= 3 ? 2 : 1).map(p => p.key);
 }
 
 /** `status.category not in (completed, discarded)` — i.e. still open. */
@@ -108,8 +142,15 @@ export const BUILTIN_FILTERS: readonly BuiltinFilter[] = [
     id: "high-priority",
     label: "High priority",
     icon: "▲", // ▲
-    resolve: () => ({
-      q: `priority in (high, critical) and ${NOT_CLOSED}`,
-    }),
+    // Resolved against the workspace's own priorities (VUE-24). A
+    // workspace whose scale cannot express "high" — one priority, or
+    // none — resolves to null, so the row renders inert rather than
+    // showing a badge stuck at zero.
+    resolve: ({ priorities }) => {
+      if (priorities === undefined) return null;
+      const keys = highPriorityKeys(priorities);
+      if (keys.length === 0) return null;
+      return { q: `priority in (${keys.join(", ")}) and ${NOT_CLOSED}` };
+    },
   },
 ];
