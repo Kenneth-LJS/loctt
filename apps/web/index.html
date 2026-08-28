@@ -4,6 +4,33 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LocTT</title>
+    <!--
+      SHL-29: the theme has to be on the element before the first
+      paint. `applyInitialTheme()` in main.tsx runs before React
+      mounts, but a module script is deferred — the browser has
+      already painted a light page by then, so a dark-mode user saw a
+      white flash on every hard reload. This is the one thing that has
+      to be inline and blocking.
+
+      It reads the same key and accepts the same three values as
+      `useTheme`; anything else, including an unreadable store,
+      resolves through the OS preference exactly as that hook does.
+    -->
+    <script>
+      (function () {
+        try {
+          var pref = null;
+          try { pref = localStorage.getItem("tt-theme"); } catch (e) { /* blocked */ }
+          if (pref !== "light" && pref !== "dark") pref = "system";
+          var dark = pref === "dark"
+            || (pref === "system"
+                && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) document.documentElement.classList.add("dark");
+        } catch (e) {
+          /* Never let the theme be the thing that breaks the page. */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

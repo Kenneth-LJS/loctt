@@ -201,6 +201,14 @@ export const router = createRouter({
   defaultPreload: "intent",
   stringifySearch,
   parseSearch,
+  /**
+   * Scroll restoration is *not* the router's here — see
+   * `useMainScrollRestoration`. The option resolves the saved element
+   * by selector at restore time, and the main pane's rows mount after
+   * the route change, so the element it finds has no height yet and
+   * the assignment is discarded. Enabling it as well would install a
+   * second mechanism that silently loses to the first.
+   */
 });
 
 // Augment the router-wide type so `useNavigate`, `<Link>`, etc. infer

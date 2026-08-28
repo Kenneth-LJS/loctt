@@ -6,6 +6,7 @@ import { Header } from "./Header.tsx";
 import { SchemaBanner } from "./SchemaBanner.tsx";
 import { ServerUnreachableBanner } from "./ServerUnreachableBanner.tsx";
 import { Sidebar } from "./Sidebar.tsx";
+import { useMainScrollRestoration } from "./useMainScrollRestoration.ts";
 import { useSidebarCollapse } from "./useSidebarCollapse.ts";
 
 /**
@@ -40,6 +41,7 @@ export function AppShell({
   readonly children?: ReactNode;
 }) {
   const { collapsed, toggle, canToggle } = useSidebarCollapse();
+  const mainRef = useMainScrollRestoration();
   const today = info.today;
 
   return (
@@ -62,7 +64,14 @@ export function AppShell({
           currentUserId={currentUser?.id ?? null}
           today={today}
         />
-        <main className="row-start-2 overflow-auto bg-bg-canvas">
+        {/* The scrolling element is this pane, not the window — the
+            shell is a fixed grid. The router restores the offset of
+            elements carrying this attribute (SHL-25, SHL-26). */}
+        <main
+          ref={mainRef}
+          data-scroll-restoration-id="main"
+          className="row-start-2 overflow-auto bg-bg-canvas"
+        >
           {children ?? <Outlet />}
         </main>
       </div>

@@ -45,6 +45,9 @@ let EFFECTIVE_DEFAULT: string | null | undefined;
 /** Overrides the workflow config's priorities, per-test (VUE-24). */
 let PRIORITIES: { key: string; label: string; value?: number }[] | undefined;
 
+/** Overrides the workflow config's statuses, per-test (SHL-33). */
+let WORKFLOW_STATUSES: { key: string; label: string; category: string }[] = [];
+
 /** `total` returned by the stubbed /api/tasks — the count badges. */
 let TASK_TOTAL = 3;
 
@@ -106,12 +109,12 @@ function routeFetch(path: string): unknown {
   }
   if (path.startsWith("/api/workflow")) {
     if (PRIORITIES !== undefined) {
-      return { statuses: [], priorities: PRIORITIES, task_types: [] };
+      return { statuses: WORKFLOW_STATUSES, priorities: PRIORITIES, task_types: [] };
     }
     // "High priority" resolves against these (VUE-24), so a fixture
     // without them renders that built-in inert.
     return {
-      statuses: [],
+      statuses: WORKFLOW_STATUSES,
       priorities: [
         { key: "critical", label: "Critical", value: 4 },
         { key: "high", label: "High", value: 3 },
@@ -207,6 +210,7 @@ afterEach(() => {
   RECENTS = [];
   EFFECTIVE_DEFAULT = undefined;
   PRIORITIES = undefined;
+  WORKFLOW_STATUSES = [];
   TASK_TOTAL = 3;
   EMPTY_CONFIG = false;
   SLOW_COUNTS = false;

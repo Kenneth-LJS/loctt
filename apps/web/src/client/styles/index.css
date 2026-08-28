@@ -104,3 +104,26 @@
     text-decoration: underline;
   }
 }
+
+/**
+ * Reduced motion (SHL-28).
+ *
+ * A global rule rather than per-component `motion-reduce:` variants:
+ * the case's requirement is that *nothing* animates, and one component
+ * added later without the variant is a silent regression. States still
+ * change — this removes the animation, not the transition.
+ *
+ * `0.01ms` rather than `0`: a zero-duration transition never fires
+ * `transitionend`, and anything waiting on that event would hang. This
+ * is the value the WCAG technique recommends for the same reason.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
