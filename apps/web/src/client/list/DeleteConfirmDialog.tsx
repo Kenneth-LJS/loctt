@@ -11,6 +11,33 @@ import { useEffect, useRef, useState } from "react";
  */
 export const DELETE_CONFIRM_WORD = "DELETE";
 
+/**
+ * Above this many tasks, the confirmation asks for the count instead
+ * of the word.
+ *
+ * BLK-30: "the confirmation string required is proportionate —
+ * deleting 1,280 tasks must not require the same keystroke as
+ * deleting 2." A fixed word is muscle memory by the third use, and
+ * muscle memory is exactly what should not carry a user through
+ * deleting a thousand tasks. Typing the number cannot be done without
+ * reading it.
+ *
+ * Ten is chosen as the point where a selection stops being something
+ * the user can see and verify at a glance. No case names a threshold;
+ * this is recorded as a proposed case rather than treated as settled.
+ */
+export const LARGE_DELETE_THRESHOLD = 10;
+
+/**
+ * What the user must type to confirm deleting `count` tasks.
+ *
+ * Exported so the surface and its spec agree by construction rather
+ * than by two copies of the same rule.
+ */
+export function deleteConfirmWord(count: number): string {
+  return count > LARGE_DELETE_THRESHOLD ? String(count) : DELETE_CONFIRM_WORD;
+}
+
 export function DeleteConfirmDialog({
   count,
   onCancel,
@@ -38,7 +65,8 @@ export function DeleteConfirmDialog({
     return () => { document.removeEventListener("keydown", onKey); };
   }, [onCancel]);
 
-  const matches = typed === DELETE_CONFIRM_WORD;
+  const required = deleteConfirmWord(count);
+  const matches = typed === required;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -63,13 +91,18 @@ export function DeleteConfirmDialog({
         </p>
 
         <label className="mt-4 block text-[12px] font-medium text-text-secondary">
-          Type <code className="font-mono text-text-primary">{DELETE_CONFIRM_WORD}</code> to confirm
+          Type <code className="font-mono text-text-primary">{required}</code> to confirm
+          {required !== DELETE_CONFIRM_WORD ? (
+            <span className="ml-1 font-normal text-text-tertiary">
+              — the count, because this is a large batch
+            </span>
+          ) : null}
           <input
             ref={inputRef}
             type="text"
             value={typed}
             onChange={e => setTyped(e.target.value)}
-            aria-label={`Type ${DELETE_CONFIRM_WORD} to confirm`}
+            aria-label={`Type ${required} to confirm`}
             className="mt-1 w-full rounded-md border border-border-subtle bg-bg-canvas px-2.5 py-1.5 font-mono text-[13px] text-text-primary"
           />
         </label>

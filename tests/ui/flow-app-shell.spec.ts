@@ -508,3 +508,132 @@ test.describe("LST — list state and scale", () => {
       .not.toBe(firstBefore);
   });
 });
+
+test.describe("XS — the UI and the CLI mean the same things", () => {
+  // @verifies XS-19
+  test("XS-19: archive and delete mean the same thing in the UI as in the CLI", async ({
+    page,
+    tracker,
+  }) => {
+    const [keepKey, dropKey] = await tracker.seed([
+      { title: "To be archived" },
+      { title: "To be deleted" },
+    ]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("To be archived")).toBeVisible();
+
+    // Archive from the UI.
+    await page
+      .getByRole("row", { name: /To be archived/ })
+      .getByRole("checkbox")
+      .click();
+    await page.getByRole("button", { name: "Archive" }).click();
+    await expect(page.getByText("To be archived")).toBeHidden();
+
+    // The CLI agrees: the task still exists, flagged rather than gone.
+    const shown = await tracker.run(["show", String(keepKey)]);
+    expect(shown).toContain("To be archived");
+    // And `unarchive` reverses it — the same verb pair, not a UI-only
+    // notion of "hidden".
+    await tracker.run(["unarchive", String(keepKey)]);
+    const after = await tracker.run(["show", String(keepKey)]);
+    expect(after).toContain("To be archived");
+
+    // Delete from the UI. Below the large-batch threshold, so the
+    // habitual word applies.
+    await page.reload();
+    await expect(page.getByText("To be deleted")).toBeVisible();
+    await page
+      .getByRole("row", { name: /To be deleted/ })
+      .getByRole("checkbox")
+      .click();
+    await page.getByRole("button", { name: "Delete" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Type DELETE to confirm").fill("DELETE");
+    await dialog.getByRole("button", { name: /Delete 1 task/ }).click();
+    await expect(page.getByText("To be deleted")).toBeHidden();
+
+    // The CLI agrees again: permanently gone, not flagged.
+    await expect
+      .poll(async () => {
+        try {
+          await tracker.run(["show", String(dropKey)]);
+          return "found";
+        } catch {
+          return "gone";
+        }
+      })
+      .toBe("gone");
+
+    // And the UI offers no third verb — no soft delete, no hard flag.
+    await page.reload();
+    await expect(page.getByText("To be archived")).toBeVisible();
+    await page
+      .getByRole("row", { name: /To be archived/ })
+      .getByRole("checkbox")
+      .click();
+    const bar = page.getByRole("region", { name: "Bulk actions" });
+    await expect(bar).not.toContainText(/soft/i);
+    await expect(bar).not.toContainText(/permanent/i);
+    await expect(bar).not.toContainText(/--hard/);
+  });
+
+  // @verifies XS-19
+  test("XS-19: a task archived from the CLI shows as archived in the UI", async ({
+    page,
+    tracker,
+  }) => {
+    const [key] = await tracker.seed([
+      { title: "Archived elsewhere" },
+      { title: "Still open" },
+    ]);
+    await tracker.run(["archive", String(key)]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+
+    // Hidden from the default view, exactly as in the CLI.
+    await expect(page.getByText("Still open")).toBeVisible();
+    await expect(page.getByText("Archived elsewhere")).toBeHidden();
+
+    // And visible, badged, once archived rows are asked for.
+    await page.getByLabel("Show archived").check();
+    await expect(page.getByText("Archived elsewhere")).toBeVisible();
+    await expect(
+      page.getByRole("row", { name: /Archived elsewhere/ }),
+    ).toContainText(/archived/i);
+  });
+
+  // @verifies XS-6
+  test("XS-6: a CLI bulk archive under a loaded list is reflected in full", async ({
+    page,
+    tracker,
+  }) => {
+    test.slow();
+    const keys = await tracker.seed(
+      Array.from({ length: 12 }, (_, i) => ({ title: `Task ${i + 1}` })),
+    );
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–12 of 12")).toBeVisible();
+
+    // Archive half of them from the CLI, under the loaded list.
+    for (const key of keys.slice(0, 6)) {
+      await tracker.run(["archive", String(key)]);
+    }
+
+    // The refetch reflects *all six*, not a subset — a page-1 refresh
+    // stitched onto a stale page 2 is the failure this case names.
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await expect(page.getByText("Showing 1–6 of 6")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("tbody tr")).toHaveCount(6);
+
+    // And the count agrees with what the CLI reports for the same
+    // scope, which is the case's own cross-check. A bare `loctt list`
+    // excludes archived tasks by default — the same default the UI
+    // applies, which is XS-19's point restated.
+    const listed = await tracker.run(["list"]);
+    const cliRows = listed.split("\n").filter(l => /^T-\d+\s/.test(l)).length;
+    expect(cliRows).toBe(6);
+  });
+});

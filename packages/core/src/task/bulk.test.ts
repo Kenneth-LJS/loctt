@@ -39,6 +39,18 @@ async function seed(title: string): Promise<string> {
 }
 
 describe("bulkSetFields", () => {
+  /**
+   * @verifies BLK-32
+   *
+   * "The status change entry carries the shared `bulk_op_id`" — which
+   * is what makes the activity feed able to collapse the five entries
+   * as one bulk row rather than five ordinary edits.
+   *
+   * The case's *other* bullet, that the feed actually collapses it,
+   * belongs to the activity feed itself and lands with M2.3. Without
+   * the id stamped here that work would have nothing to group on, so
+   * this half is the precondition rather than a partial pass.
+   */
   it("applies the same change to every task and stamps a shared bulk_op_id", async () => {
     const a = await seed("A");
     const b = await seed("B");
