@@ -70,6 +70,18 @@ export function FilterBar() {
 
   const customFields = workflow.data?.custom_fields ?? [];
 
+  // Which facets have no options because their source failed, rather
+  // than because there are none (F4). Keyed the same way the dropdowns
+  // are, so a new facet cannot silently miss out.
+  const failedFacets = new Set<FacetKey>([
+    ...(projects.isError ? (["project"] as const) : []),
+    ...(users.isError ? (["assignee"] as const) : []),
+    ...(labels.isError ? (["labels"] as const) : []),
+    ...(milestones.isError ? (["milestone"] as const) : []),
+    ...(sprints.isError ? (["sprint"] as const) : []),
+    ...(workflow.isError ? (["status", "priority", "type"] as const) : []),
+  ]);
+
   const setFilter = (key: string, next: string[]): void => {
     void navigate({
       search: prev => ({ ...prev, [key]: next.length > 0 ? next : undefined, page: undefined }),
@@ -95,6 +107,7 @@ export function FilterBar() {
             key={key}
             label={FACET_LABELS[key]}
             options={options[key]}
+            unavailable={failedFacets.has(key)}
             selected={facetOf(key)}
             onChange={next => setFilter(key, next)}
           />

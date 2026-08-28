@@ -17,8 +17,26 @@ describe("safeParseYaml", () => {
   it("wraps a parse failure as YamlSyntaxError tagged with the file label", () => {
     // Unterminated flow mapping is reliably a parse error.
     expect(() => safeParseYaml("{ a: 1, b: 2", "labels.yaml")).toThrow(YamlSyntaxError);
+    // The file leads the headline: it is the one thing the user needs
+    // in order to fix it, and SHL-43 asks for it by name.
     expect(() => safeParseYaml("{ a: 1, b: 2", "labels.yaml")).toThrow(/labels\.yaml/);
-    expect(() => safeParseYaml("{ a: 1, b: 2", "labels.yaml")).toThrow(/malformed YAML/);
+
+    // The parser's own wording stays available, but in `detail` rather
+    // than the headline. This assertion used to be on `message`, which
+    // is where "malformed YAML" lived before 2026-08-28 — the M1 gate
+    // (F4) found that shape reaching the surface as a 500 with
+    // `code: "unknown"`, so the class became a `LocttError` and the
+    // machinery moved behind a disclosure (ERR-16).
+    const err = (() => {
+      try { safeParseYaml("{ a: 1, b: 2", "labels.yaml"); return null; }
+      catch (e) { return e as YamlSyntaxError; }
+    })();
+    expect(err).toBeInstanceOf(YamlSyntaxError);
+    expect(err?.code).toBe("config_invalid");
+    expect(err?.detail).toMatch(/malformed YAML/);
+    expect(err?.detail).toMatch(/labels\.yaml/);
+    // And the headline stays free of it.
+    expect(err?.message).not.toMatch(/malformed YAML/);
   });
 
   it("preserves the underlying parser message in the wrapped error", () => {
@@ -27,10 +45,11 @@ describe("safeParseYaml", () => {
       throw new Error("expected throw");
     } catch (err) {
       expect(err).toBeInstanceOf(YamlSyntaxError);
-      // The wrapped message should contain SOME hint from the
-      // yaml library (line/column or a description), not just the
-      // generic label.
-      expect((err as Error).message.length).toBeGreaterThan("queries.yaml: malformed YAML: ".length);
+      // The detail should contain SOME hint from the yaml library
+      // (line/column or a description), not just the generic label —
+      // losing it would make the disclosure pointless.
+      const detail = (err as YamlSyntaxError).detail ?? "";
+      expect(detail.length).toBeGreaterThan("queries.yaml: malformed YAML: ".length);
     }
   });
 });

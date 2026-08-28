@@ -683,3 +683,113 @@ test.describe("BLK — export with an unreadable task", () => {
     await expect(notice).toContainText(victim);
   });
 });
+
+test.describe("SHL — a config file broken by hand", () => {
+  // @verifies SHL-43
+  test("SHL-43: a malformed config names the file and does not read as empty", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Still listed" }]);
+    await writeFile(
+      path.join(tracker.root, ".loctt", "config", "labels.yaml"),
+      "labels:\n  - name: [unclosed\n",
+      "utf8",
+    );
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Still listed")).toBeVisible();
+
+    // "The error names the specific file … and includes the parse
+    // error's location if the server provides one."
+    const alert = page.locator("aside [role=alert]");
+    await expect(alert).toBeVisible();
+    await expect(alert).toContainText("labels.yaml");
+    await expect(alert).toContainText(/could not be parsed/i);
+
+    // "Offers the next action (fix the YAML, or run `loctt doctor`)."
+    await expect(alert).toContainText("loctt doctor");
+
+    // The parse position is available, but not in the headline — it is
+    // machinery, and ERR-16 keeps machinery out of the first sentence.
+    await alert.getByRole("button", { name: /Show details/ }).click();
+    await expect(alert).toContainText(/line \d+/);
+
+    // The M1 gate's F4 third strand: the filter presented a broken
+    // config as an empty one, which is ERR-1's conflation one layer
+    // down. An absence and a failure must not look alike.
+    await page.getByRole("button", { name: "Label", exact: false }).first().click();
+    const menu = page.getByRole("menu");
+    await expect(menu).toContainText(/could not be loaded/i);
+    await expect(menu).not.toContainText("No options");
+
+    // "Features not dependent on that file continue working."
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+  });
+});
+
+test.describe("SHL — narrow viewports", () => {
+  /**
+   * @verifies SHL-5, XS-19
+   *
+   * Not a case's own scenario — the M1 gate raised it as F5, and its
+   * PC-13 records that no case pins a sub-900px layout. What *is*
+   * pinned is that the table scrolls in its own container rather than
+   * panning the page (LST-19's neighbours assert the same shape), and
+   * a header that overflows breaks that for the whole app: at 375px
+   * its contents ran to x=561, so the theme toggle and avatar were
+   * unreachable without scrolling the app sideways.
+   */
+  test("the page does not pan sideways at 375px, and every header control is reachable", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha task" }]);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Alpha task")).toBeVisible();
+
+    // The page itself must not scroll horizontally.
+    const doc = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(
+      doc.scrollWidth,
+      `page scrollWidth ${String(doc.scrollWidth)} exceeds ${String(doc.clientWidth)}`,
+    ).toBeLessThanOrEqual(doc.clientWidth);
+
+    // Every header control is inside the viewport, not merely present
+    // in the DOM — the failure mode was reachable-only-by-panning.
+    for (const label of ["Theme", "New task", "User menu", "Toggle sidebar"]) {
+      const box = await page.getByLabel(label).first().boundingBox();
+      expect(box, `${label} has no box`).not.toBeNull();
+      expect(
+        Math.round(box?.x ?? 0) + Math.round(box?.width ?? 0),
+        `${label} extends past the viewport`,
+      ).toBeLessThanOrEqual(doc.clientWidth);
+    }
+
+    // The table still scrolls within its own container: the fix is a
+    // header that fits, not a table that was clipped.
+    const table = page.locator("table").first();
+    const tb = await table.evaluate(el => {
+      const c = el.parentElement;
+      return c === null ? null : { client: c.clientWidth, scroll: c.scrollWidth };
+    });
+    expect(tb?.scroll ?? 0).toBeGreaterThan(tb?.client ?? 0);
+  });
+
+  test("the full header returns at desktop width", async ({ page, tracker }) => {
+    await tracker.seed([{ title: "Alpha task" }]);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Alpha task")).toBeVisible();
+
+    // What narrow drops, wide keeps — the labels are hidden by a
+    // breakpoint, not deleted.
+    await expect(page.getByText("TaskTracker")).toBeVisible();
+    await expect(page.getByLabel("New task")).toContainText("New task");
+    await expect(page.getByLabel("Search tasks")).toBeVisible();
+  });
+});

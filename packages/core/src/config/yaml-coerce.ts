@@ -1,5 +1,7 @@
 import { parse as parseYaml } from "yaml";
 
+import { LocttError } from "../errors.js";
+
 /**
  * Thrown by config-loaders when the underlying YAML text fails to
  * parse (unterminated string, malformed flow, tab indentation,
@@ -10,10 +12,25 @@ import { parse as parseYaml } from "yaml";
  * Includes the wrapped library error's message so the line/column
  * hint from the `yaml` package isn't lost.
  */
-export class YamlSyntaxError extends Error {
+export class YamlSyntaxError extends LocttError {
   constructor(label: string, cause: unknown) {
     const inner = cause instanceof Error ? cause.message : String(cause);
-    super(`${label}: malformed YAML: ${inner}`);
+    // `config_invalid`, not a bare Error. A config file the user broke
+    // by hand is not a server fault, and the M1 gate found (F4) that
+    // being a plain Error made it one: the web server's top-level catch
+    // mapped it to a 500 with `code: "unknown"` and the headline "The
+    // server failed while handling GET /api/labels", burying the
+    // filename and parse position in `detail` where the sidebar never
+    // looked. SHL-43 wants the file named.
+    //
+    // The message leads with the file for the same reason every other
+    // config loader's does: it is the one thing the user needs to know
+    // to fix it, and the parse position is meaningless without it.
+    super("config_invalid", `${label} could not be parsed.`, {
+      detail: `${label}: malformed YAML: ${inner}`,
+      recovery: { kind: "none" },
+      cause,
+    });
     this.name = "YamlSyntaxError";
   }
 }
