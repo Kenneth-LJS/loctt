@@ -118,6 +118,41 @@ export function createQueryClient(): QueryClient {
           }
           return failureCount < 1;
         },
+        // A settled error is an answer, and mounting a component is not
+        // a reason to un-answer it.
+        //
+        // This is the whole of the M1 gate's F3 hang, and it is
+        // structural rather than a policy tweak. `AppBootstrap` gates
+        // the shell on `["info"]`; the shell contains `ListView`, which
+        // calls `useInfo()` too. So the gate depends on a query that
+        // opening the gate mutates:
+        //
+        //   1. `["info"]` 409s          → status "error"
+        //   2. `AppBootstrap` sees the error, renders `AppShell`
+        //   3. `ListView` mounts a *second* observer on `["info"]`
+        //   4. `shouldLoadOnMount` is true — no data, and by default a
+        //      new observer retries an errored query — so query-core
+        //      dispatches `fetch`, whose reducer resets `status` to
+        //      "pending" and `fetchFailureCount` to 0
+        //   5. the gate closes again, `AppShell` unmounts, goto 1
+        //
+        // Measured on a schema-mismatched tracker: ~70 cycles a second,
+        // `errorUpdateCount` past 4,900 while `fetchFailureCount` stayed
+        // 0 (reset every cycle by that `fetch`) and `status` never left
+        // "pending". The shell mounted and unmounted so fast it never
+        // reached a commit, so the schema banner it exists to show was
+        // unreachable — the page read "Loading…" forever.
+        //
+        // `retryOnMount` has exactly one use site in query-core, and it
+        // only suppresses the mount fetch for a query that is *already*
+        // in `error` with no data. A successful or pending query is
+        // unaffected, so this costs nothing on the healthy path.
+        //
+        // Nor does it strand a recoverable failure: recovery here is the
+        // `refetchInterval` poll below, not a remount, so a transient
+        // error still re-attempts within 5 seconds whether or not
+        // anything mounted.
+        retryOnMount: false,
         // The server is on loopback, so `navigator.onLine` says nothing
         // about whether it is reachable.
         //
@@ -149,15 +184,15 @@ export function createQueryClient(): QueryClient {
         // and a broken one re-checks every few seconds until it heals.
         refetchInterval: query => {
           // A 4xx will say the same thing next time, so polling it is
-          // not recovery — it is a hot loop. Measured against a
-          // schema-mismatched tracker (every route 409s): the query
-          // never settled, sitting at `pending`/`fetching` with
-          // `isInvalidated` permanently true and `errorUpdateCount`
-          // past 1,800, while `AppBootstrap` re-rendered 126 times a
-          // second showing only a spinner. That is the M1 gate's F3.
+          // not recovery — it is waste. Recovery polling exists for a
+          // server that might come back; a server that answered 409 is
+          // already back.
           //
-          // Recovery polling exists for a server that might come
-          // back. A server that answered is already back.
+          // This is *not* what caused the M1 gate's F3 hang — that was
+          // the mount-refetch loop `retryOnMount` above describes, and
+          // this returning `false` did not stop it. Kept on its own
+          // merits: without it, a permanently-4xx route is re-asked
+          // every 5 seconds forever.
           const err: unknown = query.state.error;
           if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
             return false;
