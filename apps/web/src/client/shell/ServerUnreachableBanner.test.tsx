@@ -58,7 +58,7 @@ describe("ServerUnreachableBanner", () => {
 
     render(<ServerUnreachableBanner />, { wrapper: Wrapper });
 
-    const banner = await screen.findByRole("alert");
+    const banner = await screen.findByRole("status");
     expect(banner.textContent).toMatch(/not responding/i);
     // "the terminal running `loctt ui` may have stopped; restart it"
     expect(banner.textContent).toMatch(/loctt ui/);
@@ -85,7 +85,7 @@ describe("ServerUnreachableBanner", () => {
     );
 
     render(<ServerUnreachableBanner />, { wrapper: Wrapper });
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   /**
@@ -99,7 +99,7 @@ describe("ServerUnreachableBanner", () => {
     await seed(qc, "a", new TypeError("Failed to fetch"));
 
     render(<ServerUnreachableBanner />, { wrapper: Wrapper });
-    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(await screen.findByRole("status")).toBeTruthy();
 
     // The timestamps have millisecond resolution and a tie resolves in
     // favour of the failure, so the success has to land in a later
@@ -107,7 +107,7 @@ describe("ServerUnreachableBanner", () => {
     await new Promise(r => setTimeout(r, 5));
     await seed(qc, "b", "success");
     await waitFor(() => {
-      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.queryByRole("status")).toBeNull();
     });
   });
 
@@ -121,12 +121,12 @@ describe("ServerUnreachableBanner", () => {
     const { qc, Wrapper } = harness();
     await seed(qc, "a", "success");
     render(<ServerUnreachableBanner />, { wrapper: Wrapper });
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
 
     await new Promise(r => setTimeout(r, 5));
     await seed(qc, "b", new TypeError("Failed to fetch"));
     await waitFor(() => {
-      expect(screen.queryByRole("alert")).not.toBeNull();
+      expect(screen.queryByRole("status")).not.toBeNull();
     });
   });
 
@@ -151,7 +151,7 @@ describe("ServerUnreachableBanner", () => {
     });
 
     render(<ServerUnreachableBanner />, { wrapper: Wrapper });
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("offers an immediate retry rather than only waiting for the poll", async () => {
