@@ -129,6 +129,7 @@ Written after every subsection commit, per
 |---|---|---|---|---|
 | M1.4 | 1 · entity pickers | `2ca36cb` | BLK-7, BLK-8 | Coverage 111 → 113. Six mutations; two of my tests were vacuous and a fresh review agent found two more. |
 | M1.4 | 2 · move to project | `e541456` | BLK-9, BLK-26, BLK-31 | Coverage 113 → 116. Found a live API defect and introduced one regression; review caught eight things. |
+| 🚦 M1 | vacuity sweep + round 6 | `20cdf85`..`9a21b22` | SHL-41 | **The sweep found 27 vacuous tests of 186** — six agents, one per case-prefix, each mutating every test in its group. Four recurring shapes, written up in `gates/M1-vacuity-sweep.md`. **BLK is the only group with none (0 of 56)** — the M1.4 tests, the only ones built under the disciplined loop. Round 6 returned **FAIL**: F1 (blocker) is the banner never firing when the server dies with the page open, which seven outage specs missed because every one of them reloads and a reload empties the cache the bug lives in. F2's fix is in but **unproven** — handed to Fable. F3 declined as decision A1; the gate's supporting measurement did not reproduce. |
 | 🚦 M1 | Fable review fixes | `8ba3aec`..`c351586` | ERR-2, BLK-42 | Reviewed the round-5 fixes adversarially and found **three defects the gate had passed**, two of them regressions from my own fixes: the sort predicate dropped sorts the server honours, `AppBootstrap` still dismantled itself on retry, and a broken config lost its parse position in the CLI. Also caught that I had claimed nine findings closed when F2 was never touched, and that a 409 lock conflict was being treated as permanent when BLK-42 says it clears. **The common cause is recorded in known-gaps.md**: `fetchState` un-says a settled error on every refetch, which is the trap behind four separate `AppBootstrap` bugs. |
 | 🚦 M1 | round 5 fixes | `8ebcf15`..`ad14b26` | SHL-43, LST-29 | Six findings fixed, one declined, two did not reproduce — **not nine closed, as this row first claimed**. **Two blockers, both mine**: a failed `/api/info` destroyed the app (F1), and fixing that created a mount/unmount loop that hung the schema banner (F3). |
 | 🚦 M1 | gate round 5 | `bf90537` (branch `gate/m1-round5`) | — | **FAIL.** 2 blockers, 2 majors, 5 minors. Suites all green except the UI one, which the gate read as self-contention — it was a concurrent rebuild. |
@@ -157,9 +158,18 @@ Working through them case by case, per Ken's instruction to verify all
 | M1.3 | 3/45 | **45/45** |
 | M1.4 | 51/62 | **62/62** |
 
-**All four M1 tickets are verified.** Gate round 5 returned FAIL with
-nine findings; all nine are now closed (`8ebcf15`..`ad14b26`) and the
-tree is green on every suite. **A re-gate is next.**
+**All four M1 tickets are verified.** Gate round 6 returned **FAIL**
+with 1 blocker, 1 major and 3 minors. The blocker (F1) is fixed and
+proved by mutation; F2's fix is in but unproven and with a Fable
+agent; F3 is declined as decision A1; F4 is F7, still Ken's; F5 is
+copy. **Round 7 is next, and it needs an agent that wrote none of
+this.**
+
+A vacuity sweep ran alongside it: **27 of 186 M1 tests assert
+nothing**, found by mutating every test in six parallel groups. See
+`docs/dev/gates/M1-vacuity-sweep.md` for the four recurring shapes.
+The one group with zero vacuous tests is BLK — M1.4, the only part
+built under the disciplined loop rather than marked ✅ in advance.
 
 Three things from round 5 worth carrying forward:
 
