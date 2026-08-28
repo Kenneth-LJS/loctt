@@ -2560,28 +2560,51 @@ test.describe("LST — table behaviour (M1.2)", () => {
   });
 
   // @verifies LST-4
-  test("LST-4: priorities without a value sort stably, not arbitrarily", async ({
+  test("LST-4: priorities without a value sort alphabetically by key", async ({
     page,
     tracker,
   }) => {
+    // **The case's premise, which this test used to skip.** LST-4 is
+    // about priorities "declared without `value`" — and the default
+    // workflow gives all four a value, so seeding against defaults
+    // exercises the ordinary numeric path and never the fallback.
+    const wf = path.join(tracker.root, ".loctt", "config", "workflow.yaml");
+    await writeFile(
+      wf,
+      (await readFile(wf, "utf8")).replace(/^\s*value:\s*\d+\s*$/gm, ""),
+      "utf8",
+    );
+
+    // Seeded in an order that is neither alphabetical nor reverse, so
+    // "sorted" cannot coincide with "as inserted".
     await tracker.seed([
-      { title: "Alpha", fields: { priority: "low" } },
-      { title: "Bravo", fields: { priority: "high" } },
-      { title: "Charlie", fields: { priority: "medium" } },
+      { title: "Seeded first", fields: { priority: "medium" } },
+      { title: "Seeded second", fields: { priority: "critical" } },
+      { title: "Seeded third", fields: { priority: "low" } },
+      { title: "Seeded fourth", fields: { priority: "high" } },
     ]);
 
     const order = async (): Promise<string[]> => {
       await page.goto(`${tracker.baseURL}/list?sort=priority&dir=asc`);
-      await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+      await expect(page.getByText("Showing 1–4 of 4")).toBeVisible();
       return page.locator("tbody tr").allInnerTexts();
     };
 
-    // Two successive loads of the same URL produce the identical
-    // sequence — a missing `value` treated as 0 for every row leaves
-    // the order to chance.
     const first = await order();
-    const second = await order();
-    expect(second).toEqual(first);
+
+    // **Bullet 1: alphabetical by key.** The M1 vacuity sweep found
+    // this test survived a *zeroed comparator* — because it only
+    // asserted that two loads agree, and insertion order is perfectly
+    // deterministic. Determinism is not sortedness, and the case asks
+    // for both.
+    const rank = first.map(row => {
+      const m = /critical|high|low|medium/i.exec(row);
+      return m === null ? "" : m[0].toLowerCase();
+    });
+    expect(rank).toEqual(["critical", "high", "low", "medium"]);
+
+    // Bullet 3: and it is stable across reloads.
+    expect(await order()).toEqual(first);
   });
 });
 
@@ -2917,6 +2940,18 @@ test.describe("LST — extreme values and locale (M1.2)", () => {
     expect(first.join(" ")).toContain("日本語のタスク");
     expect(first.join(" ")).toContain("مهمة عربية");
     expect(first.join(" ")).toContain("👨‍👩‍👧‍👦");
+
+    // Sorted, not merely repeatable. The M1 vacuity sweep zeroed the
+    // comparator and this test stayed green, because insertion order
+    // is perfectly deterministic and "identical across reloads" is
+    // all it asked. The case's own bullet is about *sorting* being
+    // deterministic, so the order has to be checked against what the
+    // sort claims — here, `localeCompare`, which is what the server
+    // uses for string fields.
+    const titles = first.map(row => row.split("\n").find(
+      cell => /[^\s\u2013\u2014A-Z0-9-]/.test(cell),
+    ) ?? row);
+    expect(titles).toEqual([...titles].sort((a, b) => a.localeCompare(b)));
 
     // Deterministic across reloads.
     expect(await order()).toEqual(first);
