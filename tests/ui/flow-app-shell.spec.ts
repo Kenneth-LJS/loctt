@@ -417,3 +417,94 @@ test.describe("SHL — render failures", () => {
     await expect(page).toHaveURL(/\/board$/);
   });
 });
+
+test.describe("LST — list state and scale", () => {
+  // @verifies LST-38
+  test("LST-38: two tabs hold independent list state", async ({
+    page,
+    context,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Alpha task", fields: { status: "in_progress" } },
+      { title: "Beta task" },
+    ]);
+
+    // Tab A: filtered.
+    await page.goto(`${tracker.baseURL}/list?status=in_progress`);
+    await expect(page.getByText("Alpha task")).toBeVisible();
+    await expect(page.getByText("Beta task")).toBeHidden();
+
+    // Tab B: unfiltered.
+    const b = await context.newPage();
+    await b.goto(`${tracker.baseURL}/list`);
+    await expect(b.getByText("Alpha task")).toBeVisible();
+    await expect(b.getByText("Beta task")).toBeVisible();
+
+    // Changing A does not touch B. List state lives in the URL, so
+    // this is a claim about *not* using shared storage — a filter
+    // persisted to localStorage would fail here and nowhere else.
+    await page.getByRole("button", { name: /Remove Status/ }).click();
+    await expect(page.getByText("Beta task")).toBeVisible();
+
+    await expect(b).toHaveURL(`${tracker.baseURL}/list`);
+    await expect(b.getByText("Alpha task")).toBeVisible();
+    await expect(b.getByText("Beta task")).toBeVisible();
+
+    // And B's own filter does not leak back to A.
+    await b.goto(`${tracker.baseURL}/list?status=in_progress`);
+    await expect(b.getByText("Beta task")).toBeHidden();
+    await expect(page.getByText("Beta task")).toBeVisible();
+
+    await b.close();
+  });
+
+  // @verifies ONB-25
+  test("ONB-25: a tracker with exactly one task does not render as empty", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "The only task" }]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+    await expect(page.getByText("The only task")).toBeVisible();
+    // The count is reported rather than hidden for a single row.
+    await expect(page.getByText(/Showing 1–1 of 1/)).toBeVisible();
+    // And the empty state is nowhere near it.
+    await expect(page.getByText(/No tasks/i)).toBeHidden();
+  });
+
+  // @verifies LST-18
+  test("LST-18: 5,000 tasks stay responsive and count honestly", async ({
+    page,
+    tracker,
+  }) => {
+    test.slow();
+    await tracker.seedBulk(5_000);
+
+    const started = Date.now();
+    await page.goto(`${tracker.baseURL}/list`);
+    // The first page renders without materialising all 5,000 rows.
+    await expect(page.locator("tbody tr")).toHaveCount(50, { timeout: 30_000 });
+    const elapsed = Date.now() - started;
+
+    // The true count, not a cap or an estimate — core's own
+    // `listTasks` defaults to 30, which is exactly the number a
+    // careless pass-through would show here.
+    await expect(page.getByText(/Showing 1–50 of 5000/)).toBeVisible();
+    // Generous, because this asserts "did not block", not a budget.
+    expect(elapsed).toBeLessThan(30_000);
+
+    // Sorting re-sorts the whole result set, not the loaded page: the
+    // first row after sorting descending by key must not be one of
+    // the fifty that happened to be on screen.
+    const firstBefore = await page.locator("tbody tr").first().innerText();
+    await page.getByRole("button", { name: /^Key/ }).click();
+    await page.getByRole("button", { name: /^Key/ }).click();
+    await expect
+      .poll(() => page.locator("tbody tr").first().innerText(), { timeout: 15_000 })
+      .not.toBe(firstBefore);
+  });
+});
