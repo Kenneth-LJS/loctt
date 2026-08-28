@@ -882,4 +882,142 @@ test.describe("LST — an unrecognised sort key", () => {
     expect(url.searchParams.get("sort")).toBe("title");
     expect(url.searchParams.get("dir")).toBe("desc");
   });
+
+  /**
+   * @verifies LST-29
+   *
+   * The regression this test exists for: the first cut of the fix used
+   * the *client's* nine visible columns as the authority, so every
+   * sort the server honours but the table does not show — `created_at`,
+   * `reporter`, `start_date`, and any custom `fields.<key>` — was
+   * stripped from the URL and its ordering silently lost. Testing only
+   * `title` (as the spec above does) leaves that green.
+   *
+   * The predicate is now the server's own, shared through contracts.
+   */
+  for (const field of ["created_at", "reporter", "start_date"]) {
+    test(`LST-29: ?sort=${field} is honoured by the server and kept in the URL`, async ({
+      page,
+      tracker,
+    }) => {
+      await tracker.seed([{ title: "Alpha task" }, { title: "Beta task" }]);
+
+      // Bracket the claim: the server really does sort by this field,
+      // so keeping it in the URL is honest rather than merely lenient.
+      const res = await page.request.get(
+        `${tracker.baseURL}/api/tasks?sort=${field}&dir=desc`,
+      );
+      expect(res.status(), `${field} should be a sortable field`).toBe(200);
+
+      await page.goto(`${tracker.baseURL}/list?sort=${field}&dir=desc`);
+      await expect(page.locator("tbody tr")).toHaveCount(2);
+
+      await page.waitForTimeout(1_000);
+      const kept = new URL(page.url());
+      expect(kept.searchParams.get("sort")).toBe(field);
+      expect(kept.searchParams.get("dir")).toBe("desc");
+    });
+  }
+});
+
+test.describe("SHL — the shell under a failing recovery attempt", () => {
+  /**
+   * @verifies SHL-41, ERR-1
+   *
+   * The fourth bug in `AppBootstrap`, and the one a Fable review
+   * caught after the gate had passed everything else: query-core's
+   * `fetchState` resets a data-less query to `status: "pending",
+   * error: null` on **every** fetch. So each recovery attempt against
+   * a still-dead server walks `["info"]` back through "pending", and
+   * any branch reading live status acted on it.
+   *
+   * Measured before the fix: pressing "Try now" on the unreachable
+   * banner destroyed the shell holding the banner, and a later cut
+   * replaced it with "No tracker here yet" — telling a user with a
+   * perfectly good tracker that they had none.
+   *
+   * SHL-41 wants the failure state *persistent*. A state that
+   * dismantles itself every time the user asks it to retry is not.
+   */
+  test("retrying while the server is still down does not dismantle the shell", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha task" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Alpha task")).toBeVisible();
+
+    // The server goes away and stays away.
+    await page.route(/\/api\//, route => { void route.abort("connectionrefused"); });
+    await page.reload();
+
+    const banner = page.locator("[data-server-unreachable]");
+    await expect(banner).toBeVisible({ timeout: 15_000 });
+
+    // The user does the one thing the banner invites.
+    await banner.getByRole("button").click();
+
+    // Sample hard across the whole failed attempt: a flash is still a
+    // failure, and a single post-hoc assertion would miss it.
+    let sawSpinner = false;
+    let lostShell = false;
+    let sawNoTracker = false;
+    for (let i = 0; i < 40; i += 1) {
+      const state = await page.evaluate(() => ({
+        shell: document.querySelector('[aria-label="Toggle sidebar"]') !== null,
+        text: document.body.innerText.trim(),
+      }));
+      if (state.text.startsWith("Loading")) sawSpinner = true;
+      if (!state.shell) lostShell = true;
+      if (/No tracker here/.test(state.text)) sawNoTracker = true;
+      await page.waitForTimeout(60);
+    }
+
+    expect(sawSpinner, "the spinner reappeared during a retry").toBe(false);
+    expect(lostShell, "the shell unmounted during a retry").toBe(false);
+    expect(
+      sawNoTracker,
+      "the app claimed there was no tracker while one was on disk",
+    ).toBe(false);
+
+    // And the banner is still there afterwards, still offering retry.
+    await expect(banner).toBeVisible();
+  });
+
+  /**
+   * @verifies SHL-11, ERR-1
+   *
+   * The other half of the same fix. During an outage `info.data` is
+   * undefined, so a shell rendered from the placeholder reports
+   * `taskCount: 0` — and the footer told a user with two tasks that
+   * they had none. "A server that is down and a tracker that is empty
+   * must be visibly different screens" (ERR-1) applies to the footer
+   * as much as to the table.
+   *
+   * The last *known* info is used instead, so the footer keeps saying
+   * what was last true rather than inventing a zero.
+   */
+  test("the footer does not report zero tasks during an outage", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha task" }, { title: "Beta task" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Alpha task")).toBeVisible();
+
+    const footer = page.locator("aside");
+    await expect(footer).toContainText(/2 tasks/);
+
+    await page.route(/\/api\//, route => { void route.abort("connectionrefused"); });
+    await page.reload();
+    await expect(page.locator("[data-server-unreachable]")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // Not "0 tasks" — that is a claim about their data, and it is
+    // false. Either the last known count or an explicit "unavailable";
+    // never a fabricated zero.
+    await expect(footer).not.toContainText(/\b0 tasks\b/);
+    await expect(footer).toContainText(/2 tasks|unavailable/);
+  });
 });

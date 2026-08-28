@@ -26,6 +26,7 @@ import {
   BurndownError,
   FsAccessError,
   LabelError,
+  LocttError,
   MilestoneError,
   ProjectError,
   ReorderError,
@@ -86,6 +87,7 @@ export const KNOWN_DOMAIN_ERRORS: ReadonlyArray<new (...args: never[]) => Error>
   // it is a domain error (exit 1), not an unexpected crash.
   FsAccessError,
   LabelError,
+  LocttError,
   MilestoneError,
   ProjectError,
   ReorderError,
@@ -125,6 +127,20 @@ export async function runCommand(fn: () => Promise<void>): Promise<void> {
       for (const Klass of KNOWN_DOMAIN_ERRORS) {
         if (err instanceof Klass) {
           console.error(`Error: ${err.message}`);
+          // `detail` is where the machinery lives — a YAML parse
+          // position, a Zod path. The web UI puts it behind a "Show
+          // details" disclosure (ERR-16); the terminal has no such
+          // affordance, so it prints, indented.
+          //
+          // Without this a `LocttError` carrying its whole diagnosis
+          // in `detail` reduces to one flat sentence: a broken
+          // `labels.yaml` printed "labels.yaml could not be parsed."
+          // and nothing else, with the line and column the parser
+          // gave us thrown away.
+          const detail = err instanceof LocttError ? err.detail : undefined;
+          if (detail !== undefined && detail !== err.message) {
+            for (const line of detail.split("\n")) console.error(`  ${line}`);
+          }
           process.exitCode = EXIT.RUNTIME;
           return;
         }

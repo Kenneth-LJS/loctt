@@ -53,19 +53,3 @@ export function resolveColumns(settings: UserSettings | undefined): readonly Col
   return ALL_COLUMNS;
 }
 
-/**
- * Whether `field` is something the list can actually sort by.
- *
- * LST-29's third bullet: an unrecognised sort key "does not silently
- * persist as though it were applied". The server already drops it —
- * the rows come back in the default order — but the URL kept saying
- * `sort=nonexistent_field`, so copying that URL propagated a sort
- * that was never in effect. The M1 gate raised this as F6.
- *
- * The column table is the right authority: a header is sortable iff
- * the server can sort by that field, which is what `sortable`
- * records.
- */
-export function isSortableColumn(field: string): boolean {
-  return ALL_COLUMNS.some(c => c.id === field && c.sortable);
-}

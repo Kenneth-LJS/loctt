@@ -1,6 +1,6 @@
 import type { SchemaStatusResponse, TrackerInfoResponse } from "@loctt/contracts";
 import { Outlet } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { useCurrentUser } from "../api/hooks/useCurrentUser.ts";
@@ -48,6 +48,10 @@ export function AppBootstrap() {
     [schemaMismatch],
   );
   const unknownInfo = useMemo(() => UNKNOWN_INFO(), []);
+  // The last `info` actually read. `info.data` is undefined during any
+  // attempt on a data-less query, so branching on it makes the answer
+  // flicker; this does not.
+  const everKnownInfo = useRef<TrackerInfoResponse | undefined>(undefined);
 
   // `isLoading` is `isPending && isFetching`, which is true again on
   // every refetch of a query that has never succeeded. A boot read
@@ -60,8 +64,21 @@ export function AppBootstrap() {
   // anything is known. Once a read has failed, the answer is known:
   // it failed. `isPending && !isError` says that and does not
   // un-say it on the next tick.
-  const stillWaiting = (q: { isPending: boolean; isError: boolean }): boolean =>
-    q.isPending && !q.isError;
+  // Neither `isLoading` nor `isPending` can express this. query-core's
+  // `fetchState` resets a data-less query to `status: "pending",
+  // error: null` on **every** fetch, not just a mount fetch — so each
+  // recovery attempt against a still-dead server walks the query back
+  // through "pending", and a gate reading live status collapses the
+  // shell for the duration of the attempt.
+  //
+  // Measured: pressing "Try now" on the unreachable banner destroyed
+  // the shell holding the banner.
+  //
+  // `errorUpdatedAt` / `dataUpdatedAt` survive that reset. They record
+  // whether this query has *ever* settled, which is the question the
+  // spinner is actually asking.
+  const stillWaiting = (q: { errorUpdatedAt: number; dataUpdatedAt: number }): boolean =>
+    q.errorUpdatedAt === 0 && q.dataUpdatedAt === 0;
 
   // `||`, unchanged: either read still genuinely pending means the
   // shell has nothing to render from. Only the *definition* of
@@ -104,81 +121,74 @@ export function AppBootstrap() {
     );
   }
 
-  const trackerInfo = info.data;
-  const user = currentUser.data;
-
-  // currentUser maps "no users yet" to data === null (not an error);
-  // any *error* here is a real failure — but not a fatal one.
+  // **One decision, made once.**
   //
-  // SHL-40: this used to blank the app. Not knowing *who* you are does
-  // not stop you reading tasks or reaching Settings, which is where the
-  // user list is fixed; it stops attributed writes, and those are
-  // blocked individually with the reason named. A full-page error here
-  // both overstated the failure and removed the route to its own fix.
-  const identityUnknown = currentUser.isError;
-
-  // **The rule, stated once.** A boot read that fails degrades
-  // *inside* the shell — it never replaces it.
+  // This file was fixed four times for four flavours of the same
+  // mistake, because each branch decided independently what a failure
+  // meant, and they disagreed. The fourth: pressing "Try now" on the
+  // unreachable banner told a user with a perfectly good tracker that
+  // they had none — `info.data` is undefined during any attempt on a
+  // data-less query, and a branch reading it took that for absence.
   //
-  // This file has been fixed three times for the same mistake, in
-  // three different branches, because each decided independently
-  // whether its failure was fatal and the fatal answer was the
-  // default. SHL-40 fixed the current-user branch; the schema branch
-  // was fixed separately; and the M1 gate then found that a plain
-  // failed `/api/info` still destroyed the entire app — shell,
-  // sidebar and nav gone, with no `[role=alert]` anywhere — reached
-  // by nothing more exotic than killing the server and clicking a nav
-  // link (SHL-41, ERR-1).
+  // The rule underneath all four: **a boot read that fails degrades
+  // inside the shell — it never replaces it.** The only state that may
+  // replace the shell is the one where there is no shell to draw: a
+  // directory with no tracker in it. (A crashed migration is handled
+  // above, for the same reason — nothing there is safe to browse.)
   //
-  // So the fatal branch is gone rather than patched. What is left:
-  // if the tracker exists, render the shell.
-  // `ServerUnreachableBanner` inside it states an unreachable server,
-  // each view states its own failure, and neither can be reached from
-  // a page that replaced them both.
-  if (trackerInfo?.exists === true && identityUnknown) {
-    return (
-      <AppShell info={trackerInfo} currentUser={null} identityUnknown>
-        <Outlet />
-      </AppShell>
-    );
-  }
+  // `everKnownInfo` is what makes this hold under a refetch: the last
+  // value we actually read, rather than the one currently in flight.
+  if (info.data !== undefined) everKnownInfo.current = info.data;
+  const known = info.data ?? everKnownInfo.current;
 
-  // Info failed. The one thing that costs is `info.data`, so the
-  // shell renders from a placeholder that reports nothing it does not
-  // know — rather than from a page that reports nothing at all.
-  if (info.isError) {
-    return (
-      <AppShell
-        info={trackerInfo ?? unknownInfo}
-        currentUser={user ?? null}
-        identityUnknown={user === null || user === undefined}
-      >
-        <Outlet />
-      </AppShell>
-    );
-  }
+  // "No tracker here" is a claim about the directory, and may only be
+  // made when the server told us so. A read that failed is the shell's
+  // job to explain — saying this instead tells a user their data is
+  // gone when it is on disk a metre away.
+  // The *only* condition that earns this screen: the server answered,
+  // and said there is nothing here.
+  //
+  // A second guard for "no data and no error" was tried and removed —
+  // that is precisely the state a refetch passes through, so it put
+  // "No tracker here yet" in front of a user whose tracker was fine.
+  // If we have never read anything and nothing errored, we are still
+  // waiting, and the gate above owns that.
+  if (known !== undefined && !known.exists) return <NoTrackerHere />;
 
-  if (!trackerInfo || !trackerInfo.exists || !user) {
-    return (
-      <CenteredMessage>
-        <div className="max-w-md text-center">
-          <h1 className="mb-2 text-lg font-semibold text-text-primary">
-            No tracker here yet
-          </h1>
-          <p className="text-[13px] text-text-secondary">
-            Run <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">loctt init</code> in
-            this directory to create one. The in-app setup wizard arrives in a later
-            release.
-          </p>
-        </div>
-      </CenteredMessage>
-    );
-  }
-
+  // Everything else renders the shell. Only the props differ.
+  const user = currentUser.data ?? null;
   return (
-    <AppShell info={trackerInfo} currentUser={user}>
+    <AppShell
+      info={known ?? unknownInfo}
+      currentUser={user}
+      identityUnknown={user === null}
+    >
       <Outlet />
     </AppShell>
+  );
+}
+
+/**
+ * There is no tracker in this directory.
+ *
+ * Deliberately separate from every failure state. "We could not read
+ * it" and "it is not there" are different claims, and conflating them
+ * is how a transient failure came to announce data loss.
+ */
+function NoTrackerHere() {
+  return (
+    <CenteredMessage>
+      <div className="max-w-md text-center">
+        <h1 className="mb-2 text-lg font-semibold text-text-primary">
+          No tracker here yet
+        </h1>
+        <p className="text-[13px] text-text-secondary">
+          Run <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">loctt init</code> in
+          this directory to create one. The in-app setup wizard arrives in a later
+          release.
+        </p>
+      </div>
+    </CenteredMessage>
   );
 }
 
