@@ -278,6 +278,40 @@ Cases: TSK-15, TSK-16, TSK-17, TSK-18, TSK-27, TSK-35, TSK-38, TSK-48, ERR-12, E
   raw markdown
 - Auto-save on 1.5s idle + on blur; coalesced `body_edited` history
   (CW-16)
+- **Optimistic concurrency, and it ships WITH the editor** — Ken's
+  ruling K2, `decisions.md` § 9. This is scope this ticket did not
+  previously carry.
+
+  `markdown-extensions.md` mandated explicit-Save and TSK-15 mandates
+  1.5s autosave; the contradiction was settled in favour of autosave,
+  **conditional on the precondition landing at the same time.** There
+  is no concurrency control anywhere today — no `If-Match`, no `412`,
+  no version on any write path, verified by grep — and LocTT has three
+  writers against one `.loctt/`. Autosave without a precondition
+  silently overwrites a concurrent CLI or MCP edit every 1.5 idle
+  seconds, unattended, which is exactly what **P1** forbids: "never
+  silently overwrite a change it didn't make".
+
+  Explicit-Save made the window small and the user present. Autosave
+  makes it continuous and the user absent, so the guard is not
+  optional here.
+
+  Owed:
+  - the editor sends the `updated_at` it loaded (`If-Match` or an
+    equivalent body field — the shape is a **core contract** decision,
+    since MCP and CLI writes want the same guard)
+  - the server refuses a stale write with **412**, not a silent
+    overwrite and not a generic 500
+  - the UI reports it as "this task changed underneath you", with the
+    user's text preserved — a lost draft is a worse outcome than the
+    conflict
+  - **CLI and MCP get the same guard**, per the layer rule: a
+    precondition only the web app honours protects nothing, because
+    the other two writers are the ones it is protecting against
+
+  Note `PROPOSED-UI-CASES.md` attributes this gap to "B5". That is the
+  wrong ID — B5 is the lossy-content guardrail. The concurrency gap has
+  no B-number.
 - Toolbar: bold, italic, code, code-block, link, list, heading,
   blockquote
 - @mention autocomplete (users)
@@ -517,6 +551,35 @@ Cases: SET-32, SET-42, PRU-3, PRU-5, PRU-6, PRU-7, PRU-8, PRU-9, PRU-10, PRU-11,
   Tracker/Personal)
 - Projects panel: CRUD with reference-count badge (CW-8), delete with
   remap
+- **A `slug` field on projects, and URLs carry it** — Ken's ruling K3,
+  `decisions.md` § 9. Scope this ticket did not previously carry, and
+  it is a **core schema change**, so under the layer rule it owes CLI
+  and MCP too.
+
+  `flow-projects-users.md` assumes `?project=web`. `ProjectDefSchema`
+  is `.strict()` with `{id, name, prefix, archived?}` — no slug — and
+  `state.keys` is indexed by ULID, so today the URL carries the ULID.
+
+  **This is a readability fix, not a broken case.** PRU-2's
+  `?project=web` is illustrative ("e.g."), and everything it *requires*
+  — the URL round-trip, back/forward, and that the **server** filtered
+  rather than the client narrowing — is satisfied by ULIDs. M1.1
+  passed its gate on that reading and does not reopen.
+
+  Owed:
+  - `slug` on `ProjectDefSchema`, generated from the name on create
+  - **uniqueness**, enforced where the project is written, not in the UI
+  - **a rename policy**, which is the real design question: does the
+    slug follow the name (breaking every saved URL and bookmark) or
+    stay fixed (and drift from a project renamed "Web" → "Website")?
+    Neither is obviously right and no case settles it. **Decide at
+    step 1 and record it**; if the answer looks load-bearing for saved
+    views or shared links, it stops the run.
+  - resolution accepting **both** slug and ULID, so existing URLs keep
+    working — an unresolvable slug must say so rather than silently
+    showing all projects (P4, ERR-1)
+  - CLI and MCP accept the slug wherever they accept a project today
+  - migration for existing trackers, which have no slug on disk
 - Users panel: CRUD; archive blocked on active user; switch/edit/
   delete; **avatar upload with frontend image compression (CW-20)** —
   resize/recompress to JPG/WebP in browser before POST (max 256×256
@@ -738,6 +801,57 @@ Cases: MSL-1, MSL-2, MSL-3, MSL-4, MSL-15, MSL-16, MSL-17, MSL-18, MSL-24, MSL-2
   render
 - Row count on the drill-in equals the readout's `total` for a milestone
   that has discarded tasks — the case where the two diverge today
+
+---
+
+### M5.1 · Structured export — the actual backup ⬜
+> **New ticket, 2026-08-29.** Ken's ruling K4, `decisions.md` § 9.
+> Deliberately **after M4**, and deliberately its own ticket: no case
+> describes it, so folding it into an existing one would put behaviour
+> in front of a gate that no case covers.
+
+Cases: none yet — **these must be written before this is built**, and
+they are Ken's to approve, not an agent's to author.
+
+**Why it exists.** Asked what the CSV export is *for*, Ken answered "a
+backup or archive". Measurement contradicted that: the CSV writes **18
+columns against 27 frontmatter fields**, and the omissions are the
+substance —
+
+| Missing | Consequence for a restore |
+|---|---|
+| `body` | every task's markdown content is gone |
+| `relationships` | a pile of disconnected tasks |
+| `fields` | all custom field values |
+| `key_history` | old keys stop resolving |
+| `archived` / `archived_at` | archived tasks and their state |
+| `rank` / `board_rank` | manual ordering |
+| comments | stored separately, never exported |
+
+So CSV stays a **report for a human in a spreadsheet** (K4, and the
+reason F7 became a plain bug), and the backup is a separate format.
+
+- **JSONL**, one task per line: streamable, appendable, diffable, and
+  it loads without parsing the whole file — Ken's call.
+- **Split above a size threshold.** The threshold is a number no case
+  names, so it is decided at step 1 and **recorded with a revert
+  path**, the same way BLK-30's was.
+- Lossless against `task.md` **plus** what lives outside frontmatter:
+  body, comments, history. If something is deliberately excluded, the
+  ticket says which and why — silence is not a decision.
+- **Core, so CLI and MCP both get it**, per the layer rule. A backup
+  only the web app can take is not a backup.
+- **Tests**: a round-trip — export a seeded tracker, restore into an
+  empty one, and diff. Anything a CSV would have dropped must survive.
+  That is the assertion the whole ticket is for, and a test that only
+  checks the file parses would be exactly the vacuity the M1 sweep
+  found 27 of.
+
+**One thing worth stating plainly**, because it bounds the urgency:
+`.loctt/` is *already* a complete, restorable, git-friendly backup.
+Copying that directory loses nothing. This ticket buys a single
+portable file and a defined restore path — convenience, not data
+safety.
 
 ---
 
