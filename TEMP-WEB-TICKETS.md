@@ -298,6 +298,17 @@ Cases: TSK-4, TSK-5, TSK-6, TSK-7, TSK-8, TSK-9, TSK-10, TSK-11, TSK-12, TSK-13,
 
 ### M2.3 · Task detail — body editor (TipTap + CodeMirror) ⬜
 Cases: TSK-15, TSK-16, TSK-17, TSK-18, TSK-27, TSK-35, TSK-38, TSK-48, ERR-12, ERR-27, XS-11, XS-12, XS-13, XS-14, XS-65, TSK-40, TSK-25
+- **Probed 2026-08-29: `apps/web/src/client/editor/` already exists —
+  484 lines, tested, with no consumer.** `MarkdownEditor.tsx` is the
+  CodeMirror 6 raw surface, complete and solving the hard part (the
+  EditorView lives outside React's render cycle, so a re-render never
+  costs the user their selection or undo history). `extensions.ts` is
+  the TipTap node/mark schema for LocTT's own markdown extensions —
+  which is TSK-17's round-trip requirement pre-solved, since TipTap
+  silently drops nodes it does not recognise.
+
+  So this ticket does not build two editors. It owes the TipTap
+  *surface*, the mode toggle, autosave, and two wire-ups.
 - TipTap rich editor (default mode), mode toggle to CodeMirror 6
   raw markdown
 - Auto-save on 1.5s idle + on blur; coalesced `body_edited` history
