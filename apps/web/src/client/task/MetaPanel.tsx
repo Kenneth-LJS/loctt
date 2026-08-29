@@ -1,95 +1,497 @@
-import type { TaskFrontmatterPublic } from "@loctt/contracts";
+import type {
+  CalendarConfig,
+  CustomFieldDef,
+  LabelDef,
+  MilestoneDef,
+  SprintDef,
+  TaskFrontmatterPublic,
+  UserProfile,
+  WorkflowConfig,
+} from "@loctt/contracts";
 
 import { shortDate } from "../list/format.ts";
 import type { ListLookups } from "../list/lookups.ts";
+import { customFieldRows } from "./editors/CustomFields.tsx";
+import { DateField } from "./editors/DateField.tsx";
+import { LabelsField } from "./editors/LabelsField.tsx";
+import type { PickerOption } from "./editors/OptionPicker.tsx";
+import { OptionPicker } from "./editors/OptionPicker.tsx";
+import { TextField } from "./editors/TextField.tsx";
 
 /**
- * The detail page's right-hand meta panel — **read-only in M2.1**.
- * The inline editors land in M2.2; this ticket owes the column and
- * what it displays.
+ * The detail page's right-hand meta panel — **editable from M2.2a**.
  *
- * Every stored value here is a key or a ULID on disk. None of them is
- * shown raw: statuses, priorities and types resolve through the
- * workflow's labels, project and assignee through their own configs.
- * P-4 keeps ULIDs out of UI content, and a raw workflow key
- * (`in_progress`) is not what the user configured as the label.
+ * Every row writes through one verb: `POST /api/tasks/:ref/set`, one
+ * field per request (`useSetField`). There is no PATCH or PUT on
+ * `/api/tasks/:ref`.
  *
- * A reference that no longer resolves is named as unresolved rather
- * than printed as its id — the same rule the list cells follow, for
- * the same reason: an eight-character fragment of a ULID tells the
- * reader nothing and looks like a legitimate value.
+ * ## P3 governs every control here
+ *
+ * No status, priority, type, enum value, milestone or sprint is
+ * hardcoded anywhere in this file or the editors beneath it. Each list
+ * is `workflow.yaml` (or the relevant config) in its configured order,
+ * rendered by `label` and stored by `key`. A tracker with seven
+ * statuses gets seven; a tracker whose statuses are in Welsh gets
+ * Welsh. The one place a colour appears it is the colour the user
+ * configured, never a map from a key this app decided to know about.
+ *
+ * ## What is deliberately *not* editable
+ *
+ *  - **Completed date** (TSK-5). Core lists it in `AUTO_MANAGED_FIELDS`
+ *    and refuses a direct write; it is stamped when the status moves
+ *    into a `completed`-category status and cleared on the way out.
+ *    Rendering an edit affordance would offer the user a control whose
+ *    every use the server rejects.
+ *  - **Key and key history** (XS-42). `key` is in core's
+ *    `USER_IMMUTABLE_FIELDS`, so the API rejects it; there is no
+ *    control for either, and the footer renders key history as prose.
+ *  - **Project.** Moving a task between projects rekeys it, which is
+ *    the Move dialog's job (M2.1) rather than a dropdown's — and
+ *    `project` is immutable to `setField` for that reason.
+ *  - **Created / updated.** Stamped by the tracker.
  */
 export function MetaPanel({
   frontmatter: fm,
   lookups,
+  workflow,
+  users,
+  labels,
+  milestones,
+  sprints,
+  calendar,
+  onSet,
+  onUnset,
+  onCreateLabel,
+  labelError,
+  onDismissLabelError,
+  fieldError,
 }: {
   readonly frontmatter: TaskFrontmatterPublic;
   readonly lookups: ListLookups;
+  readonly workflow: WorkflowConfig | undefined;
+  readonly users: readonly UserProfile[];
+  readonly labels: readonly LabelDef[];
+  readonly milestones: readonly MilestoneDef[];
+  readonly sprints: readonly SprintDef[];
+  readonly calendar: CalendarConfig | undefined;
+  readonly onSet: (field: string, value: unknown) => void;
+  readonly onUnset: (field: string) => void;
+  readonly onCreateLabel: (name: string) => Promise<string | undefined>;
+  readonly labelError?: string | undefined;
+  readonly onDismissLabelError?: (() => void) | undefined;
+  /**
+   * A server rejection, keyed by the field it belongs to.
+   *
+   * ERR-14 / P4: it renders under *that* control, not as a toast. The
+   * server's envelope carries `field` for exactly this — the panel
+   * does not have to parse a message to find out where it goes.
+   */
+  readonly fieldError?: { readonly field: string; readonly message: string } | undefined;
 }) {
   const today = new Date().toISOString().slice(0, 10);
-  const status = lookups.status(fm.status);
-  const priority = lookups.priority(fm.priority);
-  const taskType = lookups.taskType(fm.task_type);
   const project = lookups.project(fm.project);
-  const assignee = lookups.user(fm.assignee);
-  const reporter = lookups.user(fm.reporter);
+
+  const statusOptions = (workflow?.statuses ?? []).map(s => ({
+    key: s.key,
+    label: s.label,
+    ...(s.color !== undefined ? { color: s.color } : {}),
+  }));
+  const priorityOptions = (workflow?.priorities ?? []).map(p => ({
+    key: p.key,
+    label: p.label,
+    ...(p.color !== undefined ? { color: p.color } : {}),
+  }));
+  const typeOptions = (workflow?.task_types ?? []).map(t => ({
+    key: t.key,
+    label: t.label,
+    ...(t.color !== undefined ? { color: t.color } : {}),
+  }));
+
+  // TSK-12's fourth bullet: fields scoped to a task type appear only
+  // for that type, and changing the type updates the set without a
+  // reload — which it does for free, because the visible set is
+  // derived from `fm.task_type` on every render and the optimistic
+  // type change updates that immediately.
+  const customDefs = scopedCustomFields(workflow?.custom_fields ?? [], fm.task_type);
+
+  const estimate = estimateControl(workflow, fm.estimate, onSet, onUnset);
+
+  /** The rejection belonging to `field`, or undefined. */
+  const errorFor = (field: string): string | undefined =>
+    fieldError?.field === field ? fieldError.message : undefined;
 
   return (
     <aside
       aria-label="Task details"
       data-testid="meta-panel"
+      // No `overflow-y-auto`: without a max-height it would do
+      // nothing. TSK-26's "the panel remains scrollable" is satisfied
+      // by the detail page's own scroll container, which is what
+      // carries a 25-label panel past the fold.
       className="min-w-0 self-start rounded-lg border border-border-subtle bg-bg-surface p-4"
     >
       <dl className="space-y-3">
-      <Row label="Status" value={resolved(fm.status, status?.label)} />
-      <Row label="Type" value={resolved(fm.task_type, taskType?.label)} />
-      <Row label="Priority" value={resolved(fm.priority, priority?.label)} />
-      <Row label="Project" value={resolved(fm.project, project?.name)} />
-      <Row label="Assignee" value={resolved(fm.assignee, assignee?.name)} />
-      <Row label="Reporter" value={resolved(fm.reporter, reporter?.name)} />
-      <Row
-        label="Labels"
-        value={
-          fm.labels === undefined || fm.labels.length === 0
-            ? undefined
-            : fm.labels.map(id => lookups.label(id)?.name ?? "unresolved").join(", ")
-        }
-      />
-      <Row label="Start" value={fm.start_date === undefined ? undefined : shortDate(fm.start_date, today)} />
-      <Row label="Due" value={fm.due_date === undefined ? undefined : shortDate(fm.due_date, today)} />
-      <Row label="Estimate" value={fm.estimate} />
-      <Row label="Created" value={shortDate(fm.created_at, today)} />
-      <Row label="Updated" value={shortDate(fm.updated_at, today)} />
+        <Row label="Status" error={errorFor("status")}>
+          <OptionPicker
+            label="Status"
+            value={fm.status}
+            options={statusOptions}
+            onSelect={v => { onSet("status", v); }}
+          />
+        </Row>
+
+        <Row label="Type" error={errorFor("task_type")}>
+          <OptionPicker
+            label="Type"
+            value={fm.task_type}
+            options={typeOptions}
+            onSelect={v => { onSet("task_type", v); }}
+            onClear={() => { onUnset("task_type"); }}
+          />
+        </Row>
+
+        <Row label="Priority" error={errorFor("priority")}>
+          <OptionPicker
+            label="Priority"
+            value={fm.priority}
+            options={priorityOptions}
+            onSelect={v => { onSet("priority", v); }}
+            onClear={() => { onUnset("priority"); }}
+          />
+        </Row>
+
+        {/* Read-only: a project change rekeys, so it is the Move
+            dialog's job and `setField` refuses the field outright. */}
+        <Row label="Project">
+          <span className="text-[13px] text-text-primary">
+            {fm.project === undefined
+              ? <span className="text-text-tertiary">—</span>
+              : project?.name ?? "unresolved — not in the current config"}
+          </span>
+        </Row>
+
+        <Row label="Assignee" error={errorFor("assignee")}>
+          <OptionPicker
+            label="Assignee"
+            value={fm.assignee}
+            options={userOptions(users, fm.assignee)}
+            onSelect={v => { onSet("assignee", v); }}
+            onClear={() => { onUnset("assignee"); }}
+            disabledReason="Archived users cannot be assigned new work."
+          />
+        </Row>
+
+        <Row label="Reporter" error={errorFor("reporter")}>
+          <OptionPicker
+            label="Reporter"
+            value={fm.reporter}
+            options={userOptions(users, fm.reporter)}
+            onSelect={v => { onSet("reporter", v); }}
+            onClear={() => { onUnset("reporter"); }}
+            disabledReason="Archived users cannot be set as reporter."
+          />
+        </Row>
+
+        <Row label="Labels" error={errorFor("labels")}>
+          <LabelsField
+            attached={fm.labels ?? []}
+            all={labels}
+            onChange={ids => {
+              // TSK-42 again: the last label removed clears the field
+              // rather than storing `[]`.
+              if (ids.length === 0) onUnset("labels");
+              else onSet("labels", ids);
+            }}
+            onCreate={onCreateLabel}
+            createError={labelError}
+            onDismissCreateError={onDismissLabelError}
+          />
+        </Row>
+
+        <Row label="Milestone" error={errorFor("milestone")}>
+          <OptionPicker
+            label="Milestone"
+            value={fm.milestone}
+            options={namedOptions(milestones, fm.milestone)}
+            onSelect={v => { onSet("milestone", v); }}
+            onClear={() => { onUnset("milestone"); }}
+            disabledReason="Archived milestones cannot be newly assigned."
+          />
+        </Row>
+
+        <Row label="Sprint" error={errorFor("sprint")}>
+          <OptionPicker
+            label="Sprint"
+            value={fm.sprint}
+            options={namedOptions(sprints, fm.sprint)}
+            onSelect={v => { onSet("sprint", v); }}
+            onClear={() => { onUnset("sprint"); }}
+            disabledReason="Archived sprints cannot be newly assigned."
+          />
+        </Row>
+
+        <Row label="Start" error={errorFor("start_date")}>
+          <DateField
+            label="Start"
+            value={fm.start_date}
+            calendar={calendar}
+            onCommit={v => { onSet("start_date", v); }}
+            onClear={() => { onUnset("start_date"); }}
+            {...datesInverted(fm.start_date, fm.due_date)
+              ? { problem: "The start date is after the due date." }
+              : {}}
+          />
+        </Row>
+
+        <Row label="Due" error={errorFor("due_date")}>
+          <DateField
+            label="Due"
+            value={fm.due_date}
+            calendar={calendar}
+            onCommit={v => { onSet("due_date", v); }}
+            onClear={() => { onUnset("due_date"); }}
+            {...datesInverted(fm.start_date, fm.due_date)
+              ? { problem: "The due date is before the start date." }
+              : {}}
+          />
+        </Row>
+
+        {/* Absent entirely when estimation is disabled — TSK-9's third
+            bullet says absent, not "shown empty". */}
+        {estimate !== null && (
+          <Row label="Estimate" error={errorFor("estimate")}>{estimate}</Row>
+        )}
+
+        {/* TSK-5: present only when set, and never with an edit
+            affordance. Its own row rather than a disabled control,
+            because a disabled control still says "this is editable,
+            just not now", which is not what auto-managed means. */}
+        {fm.completed_date !== undefined && (
+          <Row label="Completed">
+            <span
+              data-testid="meta-completed-date"
+              className="text-[13px] text-text-primary"
+            >
+              {shortDate(fm.completed_date, today)}
+              <span className="ml-1 text-[11px] text-text-tertiary">
+                (set by the status)
+              </span>
+            </span>
+          </Row>
+        )}
+
+        {customFieldRows({
+          defs: customDefs,
+          values: fm.fields ?? {},
+          onSet,
+          onUnset,
+        }).map(row => (
+          <Row key={row.key} label={row.label} error={errorFor(row.key)}>
+            {row.node}
+          </Row>
+        ))}
       </dl>
+
+      <Footer frontmatter={fm} today={today} />
     </aside>
   );
 }
 
 /**
- * A stored value's display form.
+ * Created / updated / previous keys (TSK-14, XS-46).
  *
- * Three distinct states, kept apart: unset (nothing on disk), resolved
- * (a label from config), and set-but-unresolvable (config no longer
- * defines it — drift, which the user has to be told about rather than
- * shown as a raw id).
+ * Relative times with the absolute timestamp on `title`, so the
+ * precise instant is recoverable without spending a row on it.
+ *
+ * The previous-keys row renders **only when `key_history` is
+ * non-empty**. Both cases spell that out — no empty "Previous keys:"
+ * label with nothing after it — and it is the kind of thing a
+ * conditional on the *array* rather than on its length gets wrong,
+ * since `[]` is truthy.
  */
-function resolved(raw: string | undefined, label: string | undefined): string | undefined {
-  if (raw === undefined) return undefined;
-  return label ?? "unresolved — not in the current config";
+function Footer({
+  frontmatter: fm,
+  today,
+}: {
+  readonly frontmatter: TaskFrontmatterPublic;
+  readonly today: string;
+}) {
+  const history = fm.key_history ?? [];
+  return (
+    <div className="mt-4 space-y-1 border-t border-border-subtle pt-3 text-[11px] text-text-tertiary">
+      <p data-testid="meta-created">
+        Created <time title={fm.created_at}>{shortDate(fm.created_at, today)}</time>
+      </p>
+      <p data-testid="meta-updated">
+        Updated <time title={fm.updated_at}>{shortDate(fm.updated_at, today)}</time>
+      </p>
+      {history.length > 0 && (
+        <p data-testid="meta-key-history">
+          {/* Named as previous so they are not mistaken for the live
+              key, and phrased so a user whose bookmark changed can see
+              why (XS-46's second bullet). */}
+          Previously {history.map(k => <code key={k} className="font-mono">{k}</code>)
+            .reduce<React.ReactNode[]>((acc, node, i) => i === 0 ? [node] : [...acc, ", ", node], [])}
+          {" — now "}
+          <code className="font-mono">{fm.key}</code>. Old links still resolve.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The estimate control for the configured estimation mode (TSK-9).
+ *
+ * `null` means the row does not exist — estimation absent or disabled.
+ * Distinct from a rendered-but-empty control, which the case forbids.
+ */
+function estimateControl(
+  workflow: WorkflowConfig | undefined,
+  value: string | undefined,
+  onSet: (field: string, value: unknown) => void,
+  onUnset: (field: string) => void,
+): React.ReactNode | null {
+  const est = workflow?.estimation;
+  if (est === undefined || !est.enabled) return null;
+
+  if (est.unit === "custom_enum") {
+    // Constrained to `preset_values` — a free-text box here would let
+    // a value outside the scale reach the file, which is the whole
+    // point of declaring a scale.
+    const options: PickerOption[] = (est.preset_values ?? []).map(v => ({
+      key: String(v),
+      label: String(v),
+    }));
+    return (
+      <OptionPicker
+        label="Estimate"
+        value={value}
+        options={options}
+        onSelect={v => { onSet("estimate", v); }}
+        onClear={() => { onUnset("estimate"); }}
+      />
+    );
+  }
+
+  // Numeric modes. `unit_label` is required for `custom_numeric` and
+  // absent for the built-in units, whose own names read correctly as
+  // the suffix ("5 points").
+  const suffix = est.unit_label ?? est.unit;
+  return (
+    <TextField
+      label="Estimate"
+      value={value}
+      numeric
+      suffix={suffix}
+      onCommit={v => { onSet("estimate", Number(v)); }}
+      onClear={() => { onUnset("estimate"); }}
+    />
+  );
+}
+
+/**
+ * Custom fields visible for a task of this type.
+ *
+ * **`CustomFieldDef` carries no type scope today.** TSK-12's fourth
+ * bullet describes fields "scoped to a task type", and the schema
+ * (`packages/contracts/src/workflow.ts`) has `key`, `label`, `type`,
+ * `multi`, `searchable` and `values` — no `task_types`. So every
+ * declared field applies to every task, and this function is the seam
+ * where scoping would land rather than a scoping implementation.
+ *
+ * Adding the field to the contract is a schema change with CLI, MCP
+ * and settings-UI consequences, which is outside this ticket. The
+ * bullet is reported unmet rather than faked.
+ */
+function scopedCustomFields(
+  defs: readonly CustomFieldDef[],
+  _taskType: string | undefined,
+): readonly CustomFieldDef[] {
+  return defs;
+}
+
+/**
+ * User picker options (TSK-7).
+ *
+ * Archived users are **present and disabled**, not filtered out: a
+ * task already assigned to one must keep displaying that name with the
+ * marker, and an option list that omitted them would render the
+ * current value as unrecognized. The `current` argument is not used to
+ * decide inclusion for that reason — everyone is included; archiving
+ * only decides selectability.
+ *
+ * Display names are not unique, so a name shared by two profiles gets
+ * a truncated id beside each. Only where it collides: a hint on every
+ * row would be noise, and the ULID fragment is meaningless except as a
+ * tiebreak.
+ */
+function userOptions(
+  users: readonly UserProfile[],
+  _current: string | undefined,
+): readonly PickerOption[] {
+  const nameCounts = new Map<string, number>();
+  for (const u of users) {
+    nameCounts.set(u.name, (nameCounts.get(u.name) ?? 0) + 1);
+  }
+  return users.map(u => ({
+    key: u.id,
+    label: u.name,
+    ...(u.archived === true ? { disabled: true, suffix: "(archived)" } : {}),
+    ...((nameCounts.get(u.name) ?? 0) > 1 ? { hint: u.id.slice(-6) } : {}),
+  }));
+}
+
+/** Milestone / sprint options — same archived rule as users. */
+function namedOptions(
+  entries: readonly { id: string; name: string; archived?: boolean | undefined }[],
+  _current: string | undefined,
+): readonly PickerOption[] {
+  return entries.map(e => ({
+    key: e.id,
+    label: e.name,
+    ...(e.archived === true ? { disabled: true, suffix: "(archived)" } : {}),
+  }));
+}
+
+/**
+ * Whether start is after due (TSK-8's fourth bullet).
+ *
+ * Both are `YYYY-MM-DD`, so a lexical compare is chronological — and
+ * unlike a `Date` round-trip it cannot move a date across a timezone
+ * boundary on the way to the comparison.
+ */
+function datesInverted(start: string | undefined, due: string | undefined): boolean {
+  if (start === undefined || due === undefined) return false;
+  return start.slice(0, 10) > due.slice(0, 10);
 }
 
 function Row({
   label,
-  value,
+  children,
+  error,
 }: {
   readonly label: string;
-  readonly value: string | undefined;
+  readonly children: React.ReactNode;
+  readonly error?: string | undefined;
 }) {
   return (
     <div className="grid grid-cols-[80px_minmax(0,1fr)] gap-2 text-[13px]">
-      <dt className="text-text-tertiary">{label}</dt>
+      <dt className="pt-0.5 text-text-tertiary">{label}</dt>
       <dd className="min-w-0 break-words text-text-primary">
-        {value ?? <span className="text-text-tertiary">—</span>}
+        {children}
+        {error !== undefined && (
+          // At the field, not in a toast (P4). The message is the
+          // server's own — it names the field, the reason, and the
+          // valid options, which is more than this panel knows.
+          <p
+            role="alert"
+            data-testid="meta-field-error"
+            className="mt-0.5 text-[11px] text-danger-fg"
+          >
+            {error}
+          </p>
+        )}
       </dd>
     </div>
   );

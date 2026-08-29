@@ -2,7 +2,16 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
-import { useLabels, useProjects, useUsers } from "../api/hooks/sidebarData.ts";
+import {
+  useLabels,
+  useMilestones,
+  useProjects,
+  useSprints,
+  useUsers,
+} from "../api/hooks/sidebarData.ts";
+import { useCalendar } from "../api/hooks/useCalendar.ts";
+import { useCreateLabel } from "../api/hooks/useCreateLabel.ts";
+import { useSetField } from "../api/hooks/useSetField.ts";
 import { useTask } from "../api/hooks/useTask.ts";
 import {
   useArchiveTask,
@@ -48,6 +57,9 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
   const projects = useProjects();
   const users = useUsers();
   const labels = useLabels();
+  const milestones = useMilestones();
+  const sprints = useSprints();
+  const calendar = useCalendar();
   const workflow = useWorkflow();
 
   const [confirming, setConfirming] = useState<"delete" | "move" | null>(null);
@@ -60,6 +72,19 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
    * retry that works).
    */
   const [writeError, setWriteError] = useState<string | null>(null);
+
+  /**
+   * A field write that the server rejected, held per field so it
+   * renders *at the control that failed* rather than as a detached
+   * toast (P4, TSK-49). The envelope carries `field`; when core did
+   * not name one, the server fills it in from the request, so this is
+   * always keyed by something.
+   */
+  const [fieldError, setFieldError] = useState<{ field: string; message: string } | null>(null);
+  const [labelError, setLabelError] = useState<string | null>(null);
+
+  const setField = useSetField(taskRef);
+  const createLabel = useCreateLabel();
 
   const archive = useArchiveTask(taskRef);
   const del = useDeleteTask(taskRef);
@@ -129,6 +154,53 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
       setWriteError(
         "The browser would not give LocTT access to the clipboard.",
       );
+    }
+  };
+
+  /**
+   * One field, one request. XS-54 rests on this: two tabs editing
+   * different fields both land, because neither sends a field it did
+   * not change.
+   */
+  const onSet = (field: string, value: unknown): void => {
+    setFieldError(null);
+    setField.mutate({ field, value }, {
+      onError: (err: Error) => {
+        setFieldError({
+          field: (err instanceof ApiError ? err.envelope?.field : undefined) ?? field,
+          message: err.message,
+        });
+      },
+    });
+  };
+
+  const onUnset = (field: string): void => {
+    setFieldError(null);
+    setField.mutate({ field }, {
+      onError: (err: Error) => {
+        setFieldError({
+          field: (err instanceof ApiError ? err.envelope?.field : undefined) ?? field,
+          message: err.message,
+        });
+      },
+    });
+  };
+
+  /**
+   * Creates the label, then hands its id back so the caller can
+   * attach it. Resolving `undefined` on failure is what keeps the
+   * pill from being drawn for a label that does not exist (TSK-55).
+   */
+  const onCreateLabel = async (name: string): Promise<string | undefined> => {
+    setLabelError(null);
+    try {
+      const created = await createLabel.mutateAsync({ name });
+      return created.id;
+    } catch (err) {
+      setLabelError(
+        `The label “${name}” was not created: ${(err as Error).message}`,
+      );
+      return undefined;
     }
   };
 
@@ -378,7 +450,22 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
             </Section>
           </div>
 
-          <MetaPanel frontmatter={fm} lookups={lookups} />
+          <MetaPanel
+            frontmatter={fm}
+            lookups={lookups}
+            workflow={workflow.data}
+            users={users.data?.items ?? []}
+            labels={labels.data?.items ?? []}
+            milestones={milestones.data?.items ?? []}
+            sprints={sprints.data?.items ?? []}
+            calendar={calendar.data}
+            onSet={onSet}
+            onUnset={onUnset}
+            onCreateLabel={onCreateLabel}
+            {...(labelError !== null ? { labelError } : {})}
+            onDismissLabelError={() => { setLabelError(null); }}
+            {...(fieldError !== null ? { fieldError } : {})}
+          />
         </div>
       </div>
 

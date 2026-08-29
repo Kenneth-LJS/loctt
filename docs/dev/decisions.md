@@ -1146,3 +1146,50 @@ hook rather than leaking to the dialog.
 
 **To revert.** `useMoveTask` in
 `apps/web/src/client/api/hooks/useTaskMutations.ts`.
+
+### A10 · TSK-8's non-working days are marked on the chosen date, not shaded in a grid
+
+**Ticket:** M2.2a · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** TSK-8's first bullet: "Each opens a date input;
+non-working days per `calendar.yaml` are visually marked." A browser's
+native `<input type="date">` popup is not styleable — no page CSS
+reaches inside it — so shading weekends and holidays *within the
+picker* requires replacing the native control with a hand-built month
+grid.
+
+**What had to be decided.** Does "visually marked" require shading
+every non-working day inside an open picker, or is marking the
+selected date enough?
+
+**Options considered.**
+
+- *Hand-built month grid.* Literal reading of the bullet. Costs the
+  native control's keyboard support, locale-correct parsing, and its
+  year range — TSK-28 needs 1970 and 2099 both accepted without
+  clamping, which a hand-rolled grid has to reimplement and can get
+  wrong. A large new surface with its own defects, for shading two
+  columns.
+- *Native input, marker beside it.* The panel states whether the
+  chosen date is a non-working day and why ("Saturday is not a working
+  day", "New Year's Day — not a working day"). Costs the at-a-glance
+  scan of a month; a user picking a Saturday learns so after picking
+  rather than before.
+
+**Decided.** Native input with a marker on the chosen date.
+
+**Why.** It answers the question the shading exists to answer at the
+moment it matters, and it covers **holidays** — which weekend shading
+alone would miss, since a holiday looks like any other weekday in a
+grid. P8 ("frequent paths are fast and keyboard-reachable") argues
+against replacing a control that is already both. The literal reading
+is not abandoned so much as deferred: if Ken wants the grid, this is
+where it goes.
+
+**To revert.** `apps/web/src/client/task/editors/DateField.tsx` —
+replace the `<input type="date">` and `DateNotes` with a month grid;
+`nonWorkingNote()` already computes the per-date answer the grid would
+need, so it is reusable as the cell predicate. The test that pins the
+current behaviour is `TSK-8/TSK-28` in
+`tests/ui/flow-task-meta.spec.ts`, which asserts
+`meta-nonworking-due`.

@@ -280,6 +280,42 @@ fix touched, to confirm the fix landed and nothing regressed. That
 second half is not optional: a fix verified only by the test that
 failed is a fix that has not been checked for blast radius.
 
+### A test written around a defect becomes assertable when the defect is fixed
+
+**Established 2026-08-29, three times in one session.**
+
+An agent that meets a live defect mid-ticket often does the honest
+thing: it asserts the *reachable* half of the case and says in a
+comment why the real bullet cannot be tested yet. That is right — far
+better than a vacuous test or a silently narrowed case.
+
+But it leaves a trap. When the defect is fixed, **that test now
+asserts the wrong thing**, and it fails — which reads exactly like the
+fix broke something.
+
+The instances:
+
+- **XS-26** asserted that an unrelated save *fails* with an error
+  naming the orphaned field, because core rejected every write to such
+  a task. Its comment said the real bullet — "saving an unrelated
+  field does not strip it" — could not be asserted. Once `46507e8`
+  fixed that, the test failed on the assertion it had been forced to
+  invert.
+- **TSK-54 / XS-51** were reported as "not covered"; the review
+  corrected that to **contradicted**, which is what produced the
+  lookup fix.
+- **The `ServerUnreachableBanner` unit test** required silence for a
+  state that is exactly what a dead server produces.
+
+**So when a core fix lands, re-run the tickets that worked around
+it — and read any failure as a possible inversion before treating it
+as a regression.** The tell is a comment in the test saying what it
+could not assert.
+
+Fixing one is not a rewrite: the case text already says what it should
+assert. Delete the workaround, assert the bullet, and mutate the fix
+to prove the test can still fail.
+
 ### The stop gate
 
 **Added 2026-08-29 on Ken's instruction**, after the run kept stopping
@@ -419,6 +455,19 @@ Worked example, measured rather than assumed:
 
 That turns "25 cases need a decision" into **three**.
 
+**A worked instance, 2026-08-29.** TSK-12's fourth bullet — "fields
+scoped to a task type appear only for tasks of that type" — needs a
+scope field on `CustomFieldDef`. The schema is `.strict()` with
+`key`, `label`, `type`, `multi`, `searchable`, `values` and nothing
+else, so there is no task-type scope anywhere to render from.
+
+The build agent **stopped rather than inventing one**, built the
+bullet's other half (the visible set updates without a reload), and
+marked the seam in `MetaPanel.tsx` as `scopedCustomFields()`. That is
+condition 2 working as intended: a feature existing nowhere is scope,
+and adding a field to a shared contract is Ken's call, not an
+agent's.
+
 #### M2.1 · bullets deferred to a later ticket in the same flow
 
 Recorded rather than narrowed. Each is a bullet of a case whose other
@@ -444,6 +493,33 @@ M2 ticket builds. None is a missing API.
   built against. Duplicate (CW-3) is not implemented: no case in the
   brief covers it, and building it from the ticket's one-word bullet
   would be authoring the requirement.
+
+#### M2.2a · bullets that need something that does not exist
+
+Recorded rather than narrowed, per Ken's standing rule.
+
+- **TSK-12, bullet 4** — *"Fields scoped to a task type appear only
+  for tasks of that type, and changing the type updates the visible
+  field set without a reload."* **`CustomFieldDef` has no task-type
+  scope.** Its schema
+  (`packages/contracts/src/workflow.ts`, `CustomFieldDefSchema`) is
+  `key`, `label`, `type`, `multi`, `searchable`, `values` — nothing
+  names a task type, so every declared field applies to every task and
+  there is no scoping to render. This is a **feature that exists
+  nowhere**: adding it is a contract change with CLI, MCP and
+  settings-UI consequences, which is condition 1. The seam is marked
+  in the code (`scopedCustomFields()` in `MetaPanel.tsx`) so the
+  eventual change lands in one place. The bullet's other half — that
+  the visible set updates without a reload — is already satisfied,
+  since the set is derived from `fm.task_type` on every render.
+- **TSK-30 / TSK-31 / XS-26, the "unrelated edit" half** — blocked by
+  a **core defect**, not a missing feature: `setField` validates the
+  whole task, so a stale custom-field value makes every subsequent
+  write to that task fail from every surface. Reproduced on the CLI.
+  Recorded in `known-gaps.md` ("A stale custom-field value blocks
+  every subsequent write to that task") with where the fix belongs.
+  The UI half of each case — rendering the stale value flagged rather
+  than blank — is built and tested.
 
 ### Which layer — and core is not done until all three have it
 
