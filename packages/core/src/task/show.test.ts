@@ -304,4 +304,71 @@ describe("task show model", () => {
     expect(model.relationships[0]?.missing).toBe(false);
     expect(model.relationships[0]?.resolvedKey).toBe("T-2");
   });
+
+  /**
+   * @verifies REL-49
+   *
+   * **The gate's F5, and the test whose absence caused it.**
+   *
+   * REL-49 was marked covered by two tags asserting only that
+   * `discoverAttachments` *throws* on an unreadable directory.
+   * Nothing asserted that a **caller survives** it — so when the
+   * throw was introduced (correctly, replacing a silent `[]`),
+   * `buildShowModel`'s `Promise.all` let it reject the whole model
+   * and the entire task read began failing on all three surfaces.
+   * The UI suite was 332/332 green while the app violated the case.
+   *
+   * "The section degrades" is the assertion. "The reader throws" is
+   * not, and was never enough.
+   */
+  it("degrades only the attachments section when the directory is unreadable", async () => {
+    const task: Task = {
+      frontmatter: {
+        id: "abc123", key: "T-1", title: "Survivor",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+      },
+      body: "still here",
+    };
+    await writeTask(locttDir, "abc123", task);
+    const dir = getAttachmentsDir(locttDir, "abc123");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "present.txt"), "x", "utf-8");
+    await chmod(dir, 0o000);
+
+    try {
+      const model = await buildShowModel(locttDir, task);
+      // The task itself survives — the point of the case.
+      expect(model.task.body).toBe("still here");
+      expect(model.relationships).toEqual([]);
+      // The section says why, rather than claiming emptiness.
+      expect(model.attachments).toEqual([]);
+      expect(model.attachmentsError).toMatch(/EACCES|permission/i);
+    } finally {
+      await chmod(dir, 0o755);
+    }
+  });
+
+  /**
+   * @verifies REL-49
+   *
+   * The paired positive: a readable directory carries no error, so
+   * the guard above cannot pass by reporting a failure every time.
+   */
+  it("carries no attachmentsError when the directory reads fine", async () => {
+    const task: Task = {
+      frontmatter: {
+        id: "abc123", key: "T-1", title: "Fine",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+      },
+      body: "",
+    };
+    await writeTask(locttDir, "abc123", task);
+    const dir = getAttachmentsDir(locttDir, "abc123");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "ok.txt"), "x", "utf-8");
+
+    const model = await buildShowModel(locttDir, task);
+    expect(model.attachmentsError).toBeUndefined();
+    expect(model.attachments.map(a => a.name)).toEqual(["ok.txt"]);
+  });
 });

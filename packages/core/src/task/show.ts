@@ -49,6 +49,17 @@ export interface TaskShowModel {
   readonly task: Task;
   readonly attachments: readonly AttachmentInfo[];
   readonly relationships: readonly ResolvedRelationship[];
+  /**
+   * Why the attachments list is empty, when it is empty *because the
+   * directory could not be read* rather than because there is nothing
+   * in it.
+   *
+   * REL-49 wants an unreadable `attachments/` to degrade **that
+   * section** and leave the rest of the task rendering. Absent on the
+   * overwhelmingly common paths — no attachments, or attachments that
+   * read fine — so a caller that ignores it behaves exactly as before.
+   */
+  readonly attachmentsError?: string;
 }
 
 /**
@@ -167,9 +178,32 @@ export async function buildShowModel(
   locttDir: string,
   task: Task,
 ): Promise<TaskShowModel> {
-  const [attachments, relationships] = await Promise.all([
-    discoverAttachments(locttDir, task.frontmatter.id),
-    resolveRelationships(locttDir, task),
-  ]);
-  return { task, attachments, relationships };
+  // **Not `Promise.all` over both.** It was, and that made an
+  // attachments failure reject the whole model — so once
+  // `discoverAttachments` correctly stopped swallowing an unreadable
+  // directory, the *entire* task read began failing on all three
+  // surfaces: task, relationships, comments and meta panel, gone
+  // together. Measured: `loctt show T-1` printed nothing but the
+  // EACCES.
+  //
+  // That is REL-49 inverted twice over — the first fix removed a
+  // silent lie and put a total failure in its place, when the case
+  // asks for the section to degrade and everything else to stand.
+  // Found by the M2 gate at round 2 (F5).
+  //
+  // Relationships still reject: a task whose *own* links cannot be
+  // resolved has no honest page to show, and `resolveRelationships`
+  // already tolerates the per-edge failures that are survivable.
+  const relationships = await resolveRelationships(locttDir, task);
+  try {
+    const attachments = await discoverAttachments(locttDir, task.frontmatter.id);
+    return { task, attachments, relationships };
+  } catch (err) {
+    return {
+      task,
+      attachments: [],
+      relationships,
+      attachmentsError: (err as Error).message,
+    };
+  }
 }
