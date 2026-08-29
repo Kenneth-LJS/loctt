@@ -124,6 +124,25 @@ export interface TaskResponse {
    */
   readonly frontmatter: TaskFrontmatterPublic;
   readonly body: string;
+  /**
+   * Opaque token identifying the body state this response was read
+   * from (K2). A body write may carry it back as `expectedToken`; the
+   * write is then refused with 409 if the task changed in between,
+   * rather than silently overwriting a concurrent CLI or MCP edit.
+   *
+   * Derived server-side by core's `bodyToken` from `updated_at` plus a
+   * body digest, so *any* write to the task invalidates it — the
+   * conservative direction. A token surviving an unrelated frontmatter
+   * change could let a body write through that was composed against
+   * different metadata.
+   *
+   * Autosave is what makes this load-bearing rather than
+   * nice-to-have: an explicit Save fires when the user is present and
+   * looking, but a 1.5s idle autosave in a background tab would
+   * re-post a stale buffer over a CLI edit made minutes ago, unattended
+   * — exactly what P1 forbids.
+   */
+  readonly bodyToken: string;
   readonly attachments: readonly AttachmentResponse[];
   /**
    * Constructs in the body that the WYSIWYG editor cannot represent

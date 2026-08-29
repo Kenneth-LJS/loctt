@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
@@ -19,6 +20,7 @@ import {
   useMoveTask,
 } from "../api/hooks/useTaskMutations.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
+import { BodyEditor } from "../editor/BodyEditor.tsx";
 import { buildLookups } from "../list/lookups.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
@@ -54,6 +56,7 @@ import { TaskNotFound } from "./TaskNotFound.tsx";
  */
 export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
   const task = useTask(taskRef);
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
 
   const projects = useProjects();
@@ -447,20 +450,35 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
         <div className="grid grid-cols-1 gap-6 px-6 py-5 lg:grid-cols-[minmax(0,1fr)_280px]">
           <div className="min-w-0 space-y-6">
             <Section title="Description">
-              {task.data.body.trim() === "" ? (
-                <p className="text-[13px] text-text-tertiary">
-                  No description.
-                </p>
-              ) : (
-                // Read-only this ticket: the body editor is M2.3. A
-                // pre keeps the markdown legible without pretending to
-                // be a renderer that does not exist yet, and
-                // `whitespace-pre-wrap` + `break-words` keep a long
-                // unbroken line inside the column (TSK-24).
-                <pre className="whitespace-pre-wrap break-words font-sans text-[13px] leading-relaxed text-text-primary">
-                  {task.data.body}
-                </pre>
-              )}
+              {/* M2.3. Keyed by the task so navigating A → B builds a
+                  fresh editor rather than re-seeding one that still
+                  holds A's buffer — TSK-40's "task B's editor shows
+                  task B's body, never A's buffered content". A prop
+                  change alone would not be enough: the buffer and the
+                  autosave timers live in refs, which survive a
+                  re-render by design. */}
+              <BodyEditor
+                key={task.data.frontmatter.id}
+                taskRef={taskRef}
+                body={task.data.body}
+                bodyToken={task.data.bodyToken}
+                lossyConstructs={task.data.lossyConstructs}
+                /* A body write bumps `updated_at`, so the *list* rows
+                   and the meta panel's timestamp are both stale after
+                   one. Invalidating here is also what keeps the
+                   editor's own token fresh: without it the next read
+                   is up to 60s away (the shared poll), and until then
+                   the editor holds a token the file has moved past. */
+                onSaved={() => {
+                  void queryClient.invalidateQueries({ queryKey: ["task", taskRef] });
+                  void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+                  void queryClient.invalidateQueries({ queryKey: ["tasks-feed"] });
+                }}
+                mentionCandidates={(users.data?.items ?? []).map(u => ({
+                  id: u.id,
+                  name: u.name ?? u.id,
+                }))}
+              />
             </Section>
 
             {/* Placeholders, deliberately. The panels themselves are
