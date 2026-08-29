@@ -841,3 +841,44 @@ So an orphaned value no longer freezes the task, the user's data is
 left alone, and writing *to* the undeclared field is still an error —
 which it should be, since config no longer knows what it means.
 
+
+## `bulk_op_id` is reported in the response but never written to history
+
+**Found 2026-08-29 probing M2.4, before building it.**
+
+A bulk write answers `{bulk_op_id, succeeded, failed}` and the id is
+real in that response. It is **not** recorded on the entries the write
+creates:
+
+```
+POST /api/tasks/bulk/set {"refs":["T-1","T-2"],
+                          "changes":[{"field":"status",...}]}
+→ 200, bulk_op_id present
+
+.loctt/tasks/<id>/_history.yaml:
+  kind: field_change
+  field: status
+  before: backlog
+  after: in_progress          ← no bulk_op_id
+```
+
+Everything else is in place, which is what makes this a gap rather
+than a feature:
+
+- `HistoryEntry.bulk_op_id` is in the contract
+  (`packages/contracts/src/history.ts:53`)
+- core's coalescing already special-cases it — *"bulk-op entries never
+  coalesce — each stays its own row"* (`task/history.ts:339`)
+- `move.ts` **does** stamp it (`:110`, `:118`)
+
+So one bulk operation records the id and the others do not.
+`handleBulkSet` never passes one down.
+
+**This blocks CW-11**, which M2.4 owes: "consecutive `bulk_op_id`
+entries collapse to one expandable row". There is nothing to group on,
+so a bulk edit of forty tasks renders forty separate rows in each
+task's feed — the noise the case exists to prevent.
+
+Not fixed here because it is core plus web, and M2.4 has not started.
+Sized as small: the id already flows to the response, so it is
+threading it into the history write alongside what `move.ts` does.
