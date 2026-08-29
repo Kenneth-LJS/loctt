@@ -370,6 +370,28 @@ Cases: TSK-15, TSK-16, TSK-17, TSK-18, TSK-27, TSK-35, TSK-38, TSK-48, ERR-12, E
   mode toggle preserves content; mention picker filters by query
 
 ### M2.4 · Task detail — comments + activity ⬜
+> **Split into two subsections at step 1** (2026-08-29). 39 cases, 18
+> of them blockers — the same size as M2.2, and the seam is two
+> independent surfaces rather than an arbitrary cut:
+>
+> - **M2.4a · comments** (CMT-1..12) — list, composer, edit/delete,
+>   @mention autocomplete and chips.
+> - **M2.4b · activity** (CMT-13..38, XS-53) — history rendering,
+>   bulk collapse, pagination, and the degradation cases.
+>
+> **Probed before building.** The comments route already degrades
+> correctly: a corrupt `_comments.yaml` gives 400 naming the full path
+> and the parse problem, with the task and activity unaffected — three
+> of CMT-36's four bullets satisfied server-side. **CMT-37 does not**:
+> a corrupt `_history.yaml` returns a generic 500 `"unknown"`, failing
+> its "names the file" bullet. Same shape as the TSK-54 defect, and
+> the fix pattern is one endpoint away in the same file.
+>
+> **Mentions are stored as raw text and that is correct** — do not
+> "fix" it. CMT-10 requires mentions to survive a rename, which only
+> works if they resolve at render time; CMT-8 requires an unresolvable
+> mention to stay plain text and still post, which it does (measured:
+> `@NoSuchUser` posts 201).
 Cases: CMT-1, CMT-2, CMT-3, CMT-4, CMT-5, CMT-6, CMT-7, CMT-8, CMT-9, CMT-10, CMT-11, CMT-12, CMT-13, CMT-14, CMT-15, CMT-16, CMT-17, CMT-18, CMT-19, CMT-20, CMT-21, CMT-22, CMT-23, CMT-24, CMT-25, CMT-26, CMT-27, CMT-28, CMT-29, CMT-30, CMT-31, CMT-32, CMT-33, CMT-34, CMT-35, CMT-36, CMT-37, CMT-38, XS-53
 - Comments section per CW-14: list (oldest-first), composer (TipTap),
   edit/delete on own comments, @mention autocomplete, mentions as
