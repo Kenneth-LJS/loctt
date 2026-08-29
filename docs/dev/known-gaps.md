@@ -842,7 +842,7 @@ left alone, and writing *to* the undeclared field is still an error —
 which it should be, since config no longer knows what it means.
 
 
-## `bulk_op_id` is reported in the response but never written to history
+## ~~`bulk_op_id` is reported in the response but never written to history~~ — **WRONG, retracted 2026-08-29**
 
 **Found 2026-08-29 probing M2.4, before building it.**
 
@@ -879,6 +879,43 @@ entries collapse to one expandable row". There is nothing to group on,
 so a bulk edit of forty tasks renders forty separate rows in each
 task's feed — the noise the case exists to prevent.
 
-Not fixed here because it is core plus web, and M2.4 has not started.
-Sized as small: the id already flows to the response, so it is
-threading it into the history write alongside what `move.ts` does.
+## The retraction
+
+**All of the above is wrong.** `bulk_op_id` is written, and it always
+was. Re-measured:
+
+```
+POST /api/tasks/bulk/set {"refs":["T-1","T-2"],
+                          "changes":[{"field":"status",...}]}
+
+.loctt/tasks/<id>/_history.yaml:
+  kind: field_change
+  field: status
+  before: backlog
+  after: in_progress
+  bulk_op_id: 01M1637HMD7Y3Q5QPZ9M86FN1Y   ← present
+```
+
+The chain is complete and was all along: `bulk.ts:72` mints the id,
+`:114` passes it to `setFieldsLocked`, and `update.ts:838` stamps it
+onto every entry. The API exposes it as a **top-level** field on the
+activity entry.
+
+**Two mistakes produced the false finding, and both are worth naming:**
+
+1. **I inspected the result of a request that failed.** The first
+   probe sent `{field, value}` when `bulk/set` takes
+   `changes: [{field, value}]`. It returned 400. I then read
+   `_history.yaml`, saw no bulk entry — because no bulk write had
+   happened — and concluded the id was never written.
+2. **I looked in the wrong place.** The second probe printed
+   `meta keys: []` and I read that as absence. `bulk_op_id` is a
+   top-level field on the entry, not inside `meta`.
+
+So **CW-11 is not blocked**, and M2.4 can build the collapse against
+data that is already there.
+
+The general lesson is the one this repo keeps relearning in new
+disguises: *check the write succeeded before drawing conclusions from
+what it left behind.* A 400 followed by an empty read looks exactly
+like a feature that does not exist.
