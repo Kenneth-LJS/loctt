@@ -590,3 +590,44 @@ Two rules:
 Better still, give a gate agent its own worktree — but note the base
 commit is wrong by default (see the worktree entry above), so it must
 be told which commit to use.
+
+## An unreadable `task.md` reports as "task not found" — in every surface
+
+**Found 2026-08-29 by the M2.1 review, then measured wider.**
+
+Corrupt a task's frontmatter (an unclosed quote is enough) and ask for
+that task by key. Two different wrong answers, depending on whether
+the key was in the index when it was built:
+
+| Path | Answer |
+|---|---|
+| key **is** indexed → `readTask` throws the parse error | **500** `{"code":"unknown","message":"The server failed while handling GET /api/tasks/T-1"}`, parse detail buried in `detail` |
+| key **not** indexed (the file was already bad) | **404** `"task not found: \"T-1\""` |
+
+Both from `lookupByKey`, `packages/core/src/task/lookup.ts:120`.
+
+**The 404 is the worse one: it says the task does not exist while the
+file is on disk.** That is ERR-1's exact prohibition — a failure and an
+absence must not look alike — and the same shape as the M1 gate's F1
+blocker.
+
+**This is core, not web.** Measured against the same corrupt tracker:
+
+```
+$ loctt show T-1
+Error: task not found: "T-1"
+```
+
+So the CLI says it too, and MCP shares the same lookup. Under
+`TEMP-RUN-WORKFLOW.md` § "Which layer", the fix owes all three
+surfaces.
+
+**The capability already exists one route away.** `GET /api/tasks`
+returns `unreadable[{id, path, reason}]` for the identical file, with
+the full path and the line and column of the parse error. The list
+route degrades correctly; the detail path does not.
+
+Fails **TSK-54** and **XS-51**, which require the surface to say the
+file could not be parsed, name the path under `.loctt/tasks/<id>/`,
+and give the line or field. Recorded as *failing*, not uncovered — a
+"not covered" note would hand the next ticket a false baseline.
