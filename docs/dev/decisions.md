@@ -956,3 +956,68 @@ be paternalism. Nothing is owed unless a cap is later wanted.
 exported so the surface and its tests agree by construction — change
 it in one place and the tests follow. A third tier would change
 `deleteConfirmWord`'s return, not its call sites.
+
+### A4 · An unresolvable ref alongside an unreadable file is reported as undetermined, not as either answer
+
+**Ticket:** core lookup / TSK-54 · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** Fixing TSK-54 — an unparseable `task.md` reported as
+`task not found: "T-1"` — turned up a third case the case text does not
+cover. A key lives *inside* its own `task.md`. When that file will not
+parse, `readKeyHeader` cannot harvest the key, so the key never enters
+the index and the lookup misses. But a lookup for a key that simply
+does not exist misses in exactly the same way, through the same code
+path. Once some file in the tracker is unreadable, `lookupByKey` cannot
+tell the two apart.
+
+TSK-54 covers "the task the user asked for is corrupt". ERR-1 covers
+"a failure and an absence must not look alike". Neither says what to do
+when LocTT cannot establish which of the two it is looking at.
+
+**What had to be decided.** When a key does not resolve and some task
+file could not be read, does LocTT report it as not-found, as
+unreadable, or as neither?
+
+**Options considered.**
+
+1. **Report `task not found`.** Simple, and correct whenever the
+   corrupt file is an unrelated neighbour. Costs: it reproduces the
+   original bug exactly in the case that matters most — the user asks
+   for T-1, T-1's own file is the corrupt one, and LocTT tells them the
+   task does not exist. That is the ERR-1 violation being fixed.
+2. **Report the ref as unreadable, naming the corrupt files.** Never
+   claims a task is gone. Costs: it asserts something false in the
+   common case. Asking for a key that does not exist while one
+   unrelated file happens to be corrupt would answer "T-99 could not be
+   read", blaming a file with nothing to do with T-99 — the same
+   conflation pointed the other way, and measured during this work as a
+   regression I introduced before catching it.
+3. **Report that the outcome is undetermined**, naming every unreadable
+   candidate and the repair. Costs: a third message shape to render,
+   and a longer sentence than either alternative.
+
+**Decided.** Option 3. `UnreadableTaskError` carries an `indeterminate`
+flag; the message says no task matched the ref, that LocTT could not
+read every task file, that it therefore cannot confirm the task does
+not exist, and which files to repair.
+
+**Why.** P-4's stated exception is exactly this shape: an undetermined
+cause is permitted *only* when the cause genuinely cannot be
+determined, and must still name what was attempted and what to do next.
+Here it genuinely cannot — the key that would settle it is the
+unreadable bytes. Options 1 and 2 both resolve the ambiguity by
+guessing, and each is wrong in the case the other handles. This is also
+why the negative-lookup cache is not written on this path: caching an
+answer derived from a file the user is about to repair would pin it for
+the rest of the process.
+
+**To revert.** `UnreadableTaskError.indeterminate` and
+`UnreadableTaskError.indeterminateRef` in
+`packages/core/src/task/lookup.ts`, plus the `fold.unreadable.length > 0`
+branch at the end of `lookupByKey`. Reverting to option 1 means deleting
+that branch (the `TaskNotFoundError` below it already handles it);
+reverting to option 2 means dropping the `indeterminate` flag and
+calling the plain constructor. Tests:
+`packages/core/src/task/lookup-unreadable.test.ts` — "does not report a
+corrupt task as absent when the key never reached the index" and "does
+not claim a missing key was found when an unrelated file is corrupt".

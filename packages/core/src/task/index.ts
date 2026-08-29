@@ -73,7 +73,7 @@ export {
 export { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./lifecycle.js";
 export { listTaskIds } from "./list-ids.js";
 export { loadAllTasks, loadAllTasksDetailed, type UnreadableTask } from "./load-all.js";
-export { lookupById, lookupByKey, lookupTask, TaskNotFoundError } from "./lookup.js";
+export { lookupById, lookupByKey, lookupTask, TaskNotFoundError, UnreadableTaskError } from "./lookup.js";
 export { clearLookupCaches } from "./lookup-cache.js";
 export { mimeForFilename } from "./mime.js";
 export type {

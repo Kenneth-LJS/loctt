@@ -87,9 +87,29 @@ function coerceFrontmatter(raw: unknown): unknown {
   return out;
 }
 
-/** Parses raw YAML frontmatter into a TaskFrontmatter. */
+/**
+ * Parses raw YAML frontmatter into a TaskFrontmatter.
+ *
+ * Both failure modes leave as `TaskParseError`: a schema violation
+ * (a Zod issue) and a YAML *syntax* error such as an unclosed quote.
+ * The second used to escape as the `yaml` package's own
+ * `YAMLParseError`, and callers that wanted to distinguish "the file
+ * will not parse" from "the file is not there" had no type to test —
+ * `YAMLParseError` even carries a `code` (`MISSING_CHAR`), so an
+ * errno-shaped check reads it as a filesystem error. Wrapping it here
+ * gives `lookupByKey` one class to branch on (TSK-54).
+ *
+ * The message is passed through verbatim: it already names the line
+ * and column, which is precisely the detail P-4 wants and what makes
+ * the surface message actionable.
+ */
 export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
-  const raw = coerceFrontmatter(parseYaml(rawYaml));
+  let raw: unknown;
+  try {
+    raw = coerceFrontmatter(parseYaml(rawYaml));
+  } catch (err) {
+    throw new TaskParseError(err instanceof Error ? err.message : String(err));
+  }
   try {
     return TaskFrontmatterSchema.parse(raw);
   } catch (err) {
