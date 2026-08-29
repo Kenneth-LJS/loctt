@@ -7,6 +7,8 @@ import { HistoryEntrySchema } from "@loctt/contracts";
 import * as lockfile from "proper-lockfile";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
+import { LocttError } from "../errors.js";
+
 import { getHistoryFilePath } from "../paths/index.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
 
@@ -72,11 +74,25 @@ export interface ReadHistoryPage {
  * and repaired, and a message that only says "invalid history" leaves
  * the user hunting for which task it belongs to.
  */
-export class HistoryParseError extends Error {
-  constructor(readonly filePath: string) {
-    super(
-      `${filePath} is not a list of history entries. `
-      + `It has not been modified — open it and repair or remove it.`,
+export class HistoryParseError extends LocttError {
+  constructor(readonly filePath: string, reason?: string) {
+    // `io_failed`, matching what `UnreadableTaskError` uses for the
+    // same situation: a file that is on disk and will not parse. It
+    // was a bare `Error`, so the web layer's dispatcher had no branch
+    // for it and it surfaced as a generic 500 `code: "unknown"` —
+    // failing CMT-37's requirement that the feed name the file.
+    //
+    // `recovery: none` because retrying unparseable bytes cannot
+    // succeed (ERR-15); no `dataState` because this is a read.
+    super("io_failed",
+      reason === undefined
+        ? `${filePath} is not a list of history entries. `
+          + `It has not been modified — open it and repair or remove it.`
+        // The parse position is the actionable half. Without it the
+        // user is told a file is broken and left to find where.
+        : `${filePath} could not be parsed as YAML, so LocTT will not `
+          + `modify it: ${reason}`,
+      { recovery: { kind: "none" } },
     );
     this.name = "HistoryParseError";
   }
@@ -150,7 +166,18 @@ export async function readHistoryRows(
   const file = await readFileState(filePath);
   if (file.state === "unreadable") throw new UnreadableFileError(file);
   if (file.state === "absent") return [];
-  const parsed: unknown = parseYaml(file.content);
+  // `parseYaml` throws a raw YAMLParseError on malformed input, and
+  // nothing caught it — so a hand-broken `_history.yaml` reached the
+  // web layer's generic handler as a 500 `code: "unknown"`, which
+  // fails CMT-37's first bullet ("the feed shows an error naming the
+  // file"). The comments reader one module away already does this
+  // correctly; this is the same treatment.
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(file.content);
+  } catch (err) {
+    throw new HistoryParseError(filePath, (err as Error).message);
+  }
   if (!Array.isArray(parsed)) throw new HistoryParseError(filePath);
   return (parsed as unknown[]).map((entry, index) =>
     isHistoryEntry(entry) ? entry : { malformed: true as const, index, raw: entry },
@@ -183,7 +210,17 @@ export async function readHistory(
     if (options === undefined) return [];
     return { entries: [], total: 0 };
   }
-  const parsed: unknown = parseYaml(file.content);
+  // Same guard as `readHistoryRows` above, and it has to be repeated
+  // because this reader parses independently rather than delegating.
+  // Fixing only the other one left this path — the one the web
+  // activity route actually calls — still throwing a raw
+  // YAMLParseError into the generic 500 handler.
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(file.content);
+  } catch (err) {
+    throw new HistoryParseError(filePath, (err as Error).message);
+  }
   // Coercing a non-array to [] made a corrupt file read as an empty
   // one, and the next append then overwrote it with a single fresh
   // entry — the original content gone, with nothing said (CMT-C7).
