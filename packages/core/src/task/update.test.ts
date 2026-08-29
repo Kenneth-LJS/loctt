@@ -7,7 +7,7 @@ import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
 import { readHistory } from "./history.js";
 import { readTask,writeTask } from "./io.js";
-import { setField, setFields, TaskUpdateError,unsetField } from "./update.js";
+import { attributableErrors,setField, setFields, TaskUpdateError,unsetField } from "./update.js";
 
 describe("setField / unsetField", () => {
   let locttDir: string;
@@ -329,6 +329,296 @@ describe("setField / unsetField", () => {
         owner_team: "platform",
         impact: "high",
       });
+    });
+  });
+
+  /**
+   * TSK-29, last bullet. Whole-frontmatter validation on write meant a
+   * value that was legal when written became a hard error the moment
+   * `workflow.yaml` changed under it — freezing every *other* field on
+   * the task. Measured on core at `fd8e881`:
+   *
+   *     loctt set T-1 priority high
+   *     -> Error: invalid value: status: unknown status "in_progress";
+   *               valid: backlog, done, wont_do
+   *
+   * The line these draw is between the value being *written* (validate
+   * strictly, unchanged) and values already on disk that the write does
+   * not touch (preserve; P1 leaves the file the user's until they act,
+   * P7 wants drift surfaced rather than turned into a wall).
+   */
+  describe("orphaned enum values (TSK-29)", () => {
+    // `in_progress` is deliberately absent: the seeded task references
+    // it, so it stands for a status deleted from workflow.yaml.
+    const driftedConfig = {
+      key: { prefix: "T-" },
+      statuses: [
+        { key: "backlog", label: "Backlog", category: "pending" as const },
+        { key: "done", label: "Done", category: "completed" as const },
+      ],
+      priorities: [
+        { key: "high", label: "High", value: 2 },
+        { key: "low", label: "Low", value: 1 },
+      ],
+      task_types: [{ key: "bug", label: "Bug" }],
+      relationships: [],
+      custom_fields: [{
+        key: "sprint_field",
+        label: "Sprint",
+        type: "string" as const,
+        multi: false,
+        searchable: false,
+      }],
+    };
+
+    /** Seeded with a status that `driftedConfig` no longer declares. */
+    async function seedOrphaned(): Promise<void> {
+      await writeTask(locttDir, "abc", {
+        ...seed,
+        frontmatter: { ...seed.frontmatter, status: "in_progress" },
+      });
+    }
+
+    it("lets an unrelated field be written while status is orphaned", async () => {
+      await seedOrphaned();
+      const updated = await setField({
+        locttDir, taskId: "abc", field: "priority", value: "high",
+        workflowConfig: driftedConfig,
+      });
+      expect(updated.frontmatter.priority).toBe("high");
+    });
+
+    it("does not rewrite the orphaned status as a side effect", async () => {
+      await seedOrphaned();
+      await setField({
+        locttDir, taskId: "abc", field: "priority", value: "high",
+        workflowConfig: driftedConfig,
+      });
+      // Straight off disk: P1 says the file is the truth, and the
+      // unknown value stays until the user acts on it.
+      const loaded = await readTask(locttDir, "abc");
+      expect(loaded.frontmatter.status).toBe("in_progress");
+    });
+
+    it("still refuses an invalid new value for the field being written", async () => {
+      await seedOrphaned();
+      await expect(
+        setField({
+          locttDir, taskId: "abc", field: "priority", value: "bogus",
+          workflowConfig: driftedConfig,
+        }),
+      ).rejects.toThrow(/unknown priority "bogus"/);
+    });
+
+    it("still refuses an invalid new status even though status is already orphaned", async () => {
+      // The dangerous direction: the orphan and the bad write are the
+      // same field, so a filter keyed on field name alone would let
+      // `nonsense` through. It is a *different* error than the
+      // pre-existing one, so it is still this write's fault.
+      await seedOrphaned();
+      await expect(
+        setField({
+          locttDir, taskId: "abc", field: "status", value: "nonsense",
+          workflowConfig: driftedConfig,
+        }),
+      ).rejects.toThrow(/unknown status "nonsense"/);
+    });
+
+    it("lets the user repair the orphaned status by choosing a valid one", async () => {
+      await seedOrphaned();
+      const updated = await setField({
+        locttDir, taskId: "abc", field: "status", value: "done",
+        workflowConfig: driftedConfig,
+      });
+      expect(updated.frontmatter.status).toBe("done");
+    });
+
+    it("names the offending field on the error, not the field being written", async () => {
+      // The second defect: the envelope carried `field: "priority"` —
+      // what the user had just edited — while the message was about
+      // status, so a UI keying off it highlighted the wrong input.
+      await seedOrphaned();
+      const err = await setField({
+        locttDir, taskId: "abc", field: "priority", value: "bogus",
+        workflowConfig: driftedConfig,
+      }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(TaskUpdateError);
+      expect((err as TaskUpdateError).field).toBe("priority");
+    });
+
+    it("attributes a bad custom-field value to that custom field", async () => {
+      await seedOrphaned();
+      const err = await setField({
+        locttDir, taskId: "abc", field: "sprint_field", value: 42,
+        workflowConfig: driftedConfig,
+      }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(TaskUpdateError);
+      // `fields.sprint_field`, as the validator reports it — the UI
+      // needs the path it can key a row off, not the bare name.
+      expect((err as TaskUpdateError).field).toBe("fields.sprint_field");
+    });
+
+    it("lets a custom field be repaired while it is itself orphaned", async () => {
+      // `errorOwner` must strip the `fields.` prefix: the validator
+      // says `fields.sprint_field`, the write says `sprint_field`. If
+      // they do not meet, the field cannot be repaired — the same
+      // freeze as TSK-29, one level down.
+      await writeTask(locttDir, "abc", {
+        ...seed,
+        frontmatter: {
+          ...seed.frontmatter,
+          status: "backlog",
+          // A number where the config now declares `string`.
+          fields: { sprint_field: 42 },
+        },
+      });
+      const updated = await setField({
+        locttDir, taskId: "abc", field: "sprint_field", value: "sprint_2",
+        workflowConfig: driftedConfig,
+      });
+      expect(updated.frontmatter.fields?.["sprint_field"]).toBe("sprint_2");
+    });
+
+    it("refuses a still-invalid write to an already-invalid custom field", () => {
+      // The case only correct `fields.` handling can catch. The error
+      // is byte-identical before and after, so condition 2 drops it;
+      // it is caught solely because `errorOwner("fields.sprint_field")`
+      // is `sprint_field`, which the write touched. Without the prefix
+      // strip the owner reads `fields`, misses `touched`, and a value
+      // the config rejects is written to disk.
+      const base = {
+        id: "abc", key: "T-1", title: "t",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+        status: "backlog",
+      };
+      const errors = attributableErrors(
+        { ...base, fields: { sprint_field: 1 } },
+        { ...base, fields: { sprint_field: 2 } },
+        new Set(["sprint_field"]),
+        driftedConfig,
+        undefined,
+      );
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.field).toBe("fields.sprint_field");
+    });
+
+    it("lets an unrelated batch through while status is orphaned", async () => {
+      await seedOrphaned();
+      const updated = await setFields({
+        locttDir, taskId: "abc",
+        changes: [
+          { field: "priority", value: "low" },
+          { field: "task_type", value: "bug" },
+        ],
+        workflowConfig: driftedConfig,
+      });
+      expect(updated.frontmatter.priority).toBe("low");
+      expect(updated.frontmatter.task_type).toBe("bug");
+      expect(updated.frontmatter.status).toBe("in_progress");
+    });
+
+    it("refuses the whole batch when one value in it is invalid", async () => {
+      await seedOrphaned();
+      await expect(
+        setFields({
+          locttDir, taskId: "abc",
+          changes: [
+            { field: "priority", value: "low" },
+            { field: "task_type", value: "nope" },
+          ],
+          workflowConfig: driftedConfig,
+        }),
+      ).rejects.toThrow(/unknown task_type "nope"/);
+      // Nothing landed: the refusal is before the write.
+      const loaded = await readTask(locttDir, "abc");
+      expect(loaded.frontmatter.priority).toBeUndefined();
+    });
+
+    it("refuses a setField that leaves the written field invalid the same way", async () => {
+      // Single-field analogue of the batch case below. `sprint_field`
+      // goes number -> number under a `string` declaration, so the
+      // error is byte-identical and condition 2 drops it; the refusal
+      // rests entirely on `setField` naming the field it writes.
+      await writeTask(locttDir, "abc", {
+        ...seed,
+        frontmatter: {
+          ...seed.frontmatter, status: "backlog", fields: { sprint_field: 1 },
+        },
+      });
+      await expect(
+        setField({
+          locttDir, taskId: "abc", field: "sprint_field", value: 2,
+          workflowConfig: driftedConfig,
+        }),
+      ).rejects.toThrow(/expected string, got number/);
+      const loaded = await readTask(locttDir, "abc");
+      expect(loaded.frontmatter.fields?.["sprint_field"]).toBe(1);
+    });
+
+    it("refuses a batch that leaves a touched field invalid the same way", async () => {
+      // The batch analogue of the custom-field case: `sprint_field`
+      // goes from one wrong-typed number to another, so the error text
+      // is unchanged and condition 2 drops it. It is refused only
+      // because the batch's `touched` set names the fields it writes —
+      // if that set were empty, this bad value would reach disk.
+      await writeTask(locttDir, "abc", {
+        ...seed,
+        frontmatter: {
+          ...seed.frontmatter, status: "backlog", fields: { sprint_field: 1 },
+        },
+      });
+      await expect(
+        setFields({
+          locttDir, taskId: "abc",
+          changes: [{ field: "sprint_field", value: 2 }],
+          workflowConfig: driftedConfig,
+        }),
+      ).rejects.toThrow(/expected string, got number/);
+      const loaded = await readTask(locttDir, "abc");
+      expect(loaded.frontmatter.fields?.["sprint_field"]).toBe(1);
+    });
+
+    /**
+     * The safety property the write paths cannot stage.
+     *
+     * `attributableErrors` drops an error only when it is on an
+     * untouched field AND was already failing identically. No current
+     * write can invalidate a field it does not name — the only
+     * side-effect field, `completed_date`, is not validated — so this
+     * calls the function directly rather than pretending a route to it
+     * exists. Without the "already failing" half, a *newly* invalid
+     * untouched field would be silently written to disk.
+     */
+    it("reports a newly-invalid untouched field rather than dropping it", () => {
+      const base = {
+        id: "abc", key: "T-1", title: "t",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      };
+      // `before` is clean; `after` has an invalid status nobody touched.
+      const errors = attributableErrors(
+        { ...base, status: "backlog" },
+        { ...base, status: "in_progress" },
+        new Set(["priority"]),
+        driftedConfig,
+        undefined,
+      );
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.field).toBe("status");
+    });
+
+    it("drops an untouched field that was already failing identically", () => {
+      const base = {
+        id: "abc", key: "T-1", title: "t",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+        status: "in_progress",
+      };
+      const errors = attributableErrors(
+        base, base, new Set(["priority"]), driftedConfig, undefined,
+      );
+      expect(errors).toEqual([]);
     });
   });
 });

@@ -509,6 +509,22 @@ and does **not** abort the rest; the command exits non-zero when any
 task failed, so a script cannot mistake a partial success for a
 complete one. Batches are capped at 500 tasks.
 
+**Only the value you are writing is validated.** If a task already
+holds a value that `workflow.yaml` no longer declares — a status you
+deleted from config, say — that does not block edits to its other
+fields, and the unrecognised value is left on disk exactly as it is
+until you change it yourself:
+
+```
+loctt set T-12 priority high   # succeeds even if T-12's status
+                               # is no longer in workflow.yaml
+loctt set T-12 status doing    # this is how you repair it
+```
+
+The value you write is still checked as strictly as ever, so
+`loctt set T-12 status nonsense` is refused. Run `loctt doctor` to list
+every task holding a value config no longer declares.
+
 ### `loctt comment` / `loctt comments`
 
 Add and read task comments.
