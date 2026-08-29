@@ -6,6 +6,7 @@ import { loadCalendarConfig } from "../config/calendar.js";
 import { loadLabelsConfig } from "../config/labels.js";
 import { loadMilestonesConfig } from "../config/milestones.js";
 import { loadSprintsConfig } from "../config/sprints.js";
+import type { ValidationError } from "../config/validation.js";
 import { validateTaskAgainstWorkflow } from "../config/validation.js";
 import type { LocttErrorOptions } from "../errors.js";
 import { LocttError } from "../errors.js";
@@ -180,6 +181,115 @@ export async function todayDateString(locttDir: string): Promise<string> {
   }
 }
 
+/**
+ * Maps a {@link ValidationError}'s `field` back to the top-level name a
+ * write addresses it by.
+ *
+ * `validateTaskAgainstWorkflow` reports positions, not just names:
+ * `labels[0]`, `relationships[0].type`, `fields.team`, `fields.team[1]`.
+ * A write, by contrast, names `labels`, `relationships` or `team`. This
+ * collapses the former onto the latter so the two can be compared.
+ *
+ * `fields.X` collapses to `X` because that is how the setters address a
+ * custom field — `loctt set T-1 team platform`, not `fields.team`.
+ */
+function errorOwner(errorField: string): string {
+  if (errorField.startsWith("fields.")) {
+    // `fields.team[1]` -> `team`
+    return errorField.slice("fields.".length).replace(/\[\d+\].*$/, "");
+  }
+  // `relationships[0].type` -> `relationships`; `labels[0]` -> `labels`
+  return errorField.replace(/[[.].*$/, "");
+}
+
+/**
+ * Validates the post-write frontmatter, but reports only the failures
+ * this write is answerable for.
+ *
+ * The defect (TSK-29, last bullet): validation ran over the *whole*
+ * record on every write, so one enum value orphaned by a `workflow.yaml`
+ * edit froze every other field on the task. Measured against core at
+ * `fd8e881`:
+ *
+ *     loctt set T-1 status in_progress   # ok
+ *     # delete `in_progress` from workflow.yaml
+ *     loctt set T-1 priority high
+ *     -> Error: invalid value: status: unknown status "in_progress";
+ *               valid: backlog, done, wont_do
+ *
+ * P7 wants that drift surfaced, not turned into a wall; P1 wants the
+ * file left as the user's until they act. So an error is dropped only
+ * when BOTH hold:
+ *
+ *  1. it belongs to a field this write did not touch, and
+ *  2. it was already failing, identically, before the write.
+ *
+ * **Condition 1 is what keeps an invalid *new* value refused today.**
+ * Every field a write can change is named in `touched` — the setters
+ * address frontmatter by exactly the names the validator reports, once
+ * `errorOwner` has collapsed the indexed forms — so a bad value written
+ * directly is always attributed to this write. `loctt set T-1 status
+ * nonsense` fails exactly as it did before, and so does a bad value in
+ * a field that was *already* orphaned, because the message differs.
+ *
+ * **Condition 2 is a backstop, and is deliberately unreachable now.**
+ * It would catch a write that invalidated a field it does not name —
+ * a side effect. The only side-effect field today is `completed_date`,
+ * which `validateTaskAgainstWorkflow` does not check, so no current
+ * path reaches it. Verified by mutation: deleting condition 2 leaves
+ * the whole suite green, while deleting condition 1 does not. It is
+ * kept because the cost is one extra in-memory validate and the
+ * failure it guards against — a new invalid value reaching disk — is
+ * the expensive direction to get wrong. Its unit test calls this
+ * function directly, since no write path can stage the case.
+ *
+ * Comparing on `field` *and* `message`, not `field` alone, matters: an
+ * untouched field whose error text changed is a different failure, and
+ * a different failure is a new one.
+ */
+export function attributableErrors(
+  before: TaskFrontmatter,
+  after: TaskFrontmatter,
+  touched: ReadonlySet<string>,
+  workflowConfig: WorkflowConfig,
+  aux: ArchivedGuardConfigs | undefined,
+): readonly ValidationError[] {
+  const errors = validateTaskAgainstWorkflow(after, workflowConfig, aux);
+  if (errors.length === 0) return errors;
+
+  const preexisting = new Set(
+    validateTaskAgainstWorkflow(before, workflowConfig, aux)
+      .map(e => `${e.field} ${e.message}`),
+  );
+
+  return errors.filter(e =>
+    touched.has(errorOwner(e.field))
+    || !preexisting.has(`${e.field} ${e.message}`),
+  );
+}
+
+/**
+ * Builds the refusal for a set of validation errors, naming the field
+ * that is actually at fault.
+ *
+ * The second half of the TSK-29 defect: the envelope carried
+ * `"field": "priority"` — the field the user had just edited — while
+ * the message was about `status`, so a UI keying off `envelope.field`
+ * highlighted the wrong input. The web fills `field` in from the
+ * request only when core names none (`handleSetField` in
+ * `apps/web/src/server/server.ts`), so core naming it is what corrects
+ * the highlight.
+ *
+ * With more than one error no single field is *the* one at fault, so
+ * `field` is left unset and each surface falls back to its own context.
+ */
+function invalidValueError(errors: readonly ValidationError[]): TaskUpdateError {
+  const message =
+    `invalid value: ${errors.map(e => `${e.field}: ${e.message}`).join("; ")}`;
+  const only = errors.length === 1 ? errors[0] : undefined;
+  return new TaskUpdateError(message, only ? { field: only.field } : {});
+}
+
 /** Options bag for setField. */
 export interface SetFieldOptions {
   readonly locttDir: string;
@@ -350,12 +460,18 @@ async function setFieldLocked(opts: SetFieldOptions): Promise<Task> {
       // `doctor` passed `aux`, so a task could be written pointing at
       // an entity that was never created, and the user learned about it
       // from a diagnostic rather than from the write that caused it.
-    const errors = validateTaskAgainstWorkflow(updated, workflowConfig, archivedGuard);
-    if (errors.length > 0) {
-      throw new TaskUpdateError(
-        `invalid value: ${errors.map(e => `${e.field}: ${e.message}`).join("; ")}`,
-      );
-    }
+    // Only what this write is answerable for: a value already on disk
+    // and untouched here stays the user's to repair (TSK-29, P1, P7).
+    // The written field is always in `touched`, so an invalid new value
+    // is refused exactly as before.
+    const errors = attributableErrors(
+      task.frontmatter,
+      updated,
+      new Set([field]),
+      workflowConfig,
+      archivedGuard,
+    );
+    if (errors.length > 0) throw invalidValueError(errors);
   }
 
   if (archivedGuard) {
@@ -693,12 +809,18 @@ export async function setFieldsLocked(
       // `doctor` passed `aux`, so a task could be written pointing at
       // an entity that was never created, and the user learned about it
       // from a diagnostic rather than from the write that caused it.
-    const errors = validateTaskAgainstWorkflow(updated, workflowConfig, archivedGuard);
-    if (errors.length > 0) {
-      throw new TaskUpdateError(
-        `invalid value: ${errors.map(e => `${e.field}: ${e.message}`).join("; ")}`,
-      );
-    }
+    // Same rule as `setField`, over every field this call names: an
+    // orphaned value the batch does not touch does not block the batch
+    // (TSK-29), while every value the batch *does* write is validated
+    // as strictly as before.
+    const errors = attributableErrors(
+      task.frontmatter,
+      updated,
+      new Set(changes.map(c => c.field)),
+      workflowConfig,
+      archivedGuard,
+    );
+    if (errors.length > 0) throw invalidValueError(errors);
   }
   if (archivedGuard) {
     assertNotArchivedReferences(updated, task.frontmatter, archivedGuard);
