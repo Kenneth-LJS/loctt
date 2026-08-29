@@ -280,6 +280,35 @@ fix touched, to confirm the fix landed and nothing regressed. That
 second half is not optional: a fix verified only by the test that
 failed is a fix that has not been checked for blast radius.
 
+### The stop gate
+
+**Added 2026-08-29 on Ken's instruction**, after the run kept stopping
+mid-ticket to report progress rather than to ask anything.
+
+`.claude/hooks/stop-gate.sh` runs when a turn ends. It does not
+re-derive the conditions below — it asks one question: **was a reason
+declared?**
+
+    echo "<reason>" > .claude/STOPPING
+
+The file is consumed on read, so a reason authorises exactly one stop
+and cannot be left behind to cover the next.
+
+Two things pass without a declaration, and one of them is conditional:
+
+- **Waiting on work that is advancing.** A running suite or agent is a
+  legitimate reason to stop, because the model cannot do that work for
+  it — but only while it is *moving*. The gate fingerprints the suite
+  logs and process count each turn; if nothing has changed since the
+  last turn, that is a **hang, not a wait**, and it says so. Ken's
+  point: "the agent might be stuck too."
+- **Nothing else.** Reporting a finished step, summarising, or handing
+  back a status is stopping out of nowhere.
+
+The gate cannot tell whether stopping is *right* — only whether it was
+*declared*. That is the whole design. Deciding is the model's job;
+this makes the decision explicit instead of implicit.
+
 ### The four stop conditions
 
 Only these. Everything else continues.
