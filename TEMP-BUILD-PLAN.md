@@ -61,7 +61,7 @@ Legend: ⬜ not started · 🔵 in progress · ✅ done · ⛔ halted
 | 2 · Measure | ✅ | Measured (CLI 17/49, MCP 26/75) and the blocker it raised is **cleared**: both reference docs corrected to the shipped API, every example executed. See *Blocker 2, resolved*. |
 | 3 · Surface gaps | ✅ | **68 of 68 closed**: blockers 23/23, major 29/29, minor 16/16. Surface coverage 46 → 111. See *Phase 3 log*. |
 | 4 · Structural audit | ✅ | **Groups A–F closed, the six swallowed-error findings with them, and the nine recorded decisions implemented** (2026-08-17). The two items previously listed here as open are now closed too: the MCP comment tools' bare catches (`a0677b4`) and `HistoryEntry`'s missing schema (`4fb7e4b`). Group G moves to Phase 6, itemised at 55 rather than the "~79" carried before. |
-| 5 · UI build | 🔵 | **M1 passed its gate at round 8** (0 blockers, 0 majors, 2 minors, both fixed). M2.1 is next. |
+| 5 · UI build | 🔵 | **M1 through its gate** (round 8: 0 blockers, 0 majors). **M2.1 and M2.2a committed**; M2.2b building. Coverage **353/937**, UI suite 243. Four core defects surfaced by probing before building — an unreadable `task.md` reporting as "task not found", an orphaned enum freezing every write to a task, plus `bodyToken` and `unarchiveView` built in core with no callers. |
 | 6 · Cleanup | ⬜ | Group G's 55 items and the flakiness diagnosis. Deferred deliberately — see *The open items*. |
 
 ### ✅ Blocker — RESOLVED 2026-08-16: two views need tickets, not a scope cut
