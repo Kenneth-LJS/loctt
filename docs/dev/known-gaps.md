@@ -725,3 +725,45 @@ untestable from the browser. The re-ordering half of the same test
 build that appended rather than moved-to-front would fail. This is
 stated in a comment in the test itself so a reader does not take the
 count assertions for more than they are.
+
+## An orphaned enum value freezes every other field on the task
+
+**Found 2026-08-29 probing M2.2b, before building it.**
+
+Set a task's `status` to `in_progress`, then delete `in_progress` from
+`workflow.yaml`. The task still loads — the server preserves the
+stored value, which is what P1 requires. But **every subsequent write
+to that task is refused**, including to unrelated fields:
+
+```
+POST /api/tasks/T-1/set  {"field":"priority","value":"high"}
+→ 400 validation_failed
+  "invalid value: status: unknown status \"in_progress\";
+   valid: backlog, done, wont_do"
+```
+
+`loctt set T-1 priority high` fails identically, so this is **core**,
+and MCP inherits it. Under `TEMP-RUN-WORKFLOW.md` § "Which layer" the
+fix owes all three surfaces.
+
+**It contradicts TSK-29's final bullet** (blocker, P7 P3): "Editing an
+unrelated field (e.g. priority) does not clobber the unknown status as
+a side effect." It cannot clobber it — nothing can be written at all,
+so the task is frozen until the status is repaired by hand.
+
+The mechanism is whole-frontmatter validation on write: setting one
+field re-validates every field, and a value that was legal when it was
+written is now illegal. A stored value config no longer recognises is
+a **display** problem (TSK-29's first three bullets are all about
+rendering it as unknown); it is not a reason to refuse unrelated
+writes.
+
+**A second defect in the same response:** the envelope carries
+`"field": "priority"` while the message is about **status**. A UI
+highlighting `envelope.field` marks the field the user just edited
+rather than the one that is wrong — and it makes this look like a bug
+in the priority picker.
+
+Worth noting what still works, so a fix does not overreach: `GET`
+returns the orphaned value unchanged, and the CLI shows it. Only the
+write path is broken.
