@@ -15,6 +15,17 @@ import { linkTask, MAX_CYCLE_CHECK_VISITS, RelationshipError } from "./relations
 
 /**
  * @verifies REL-C3
+ * @verifies REL-23
+ *
+ * REL-23 is the same guard stated from the UI side — "the add is
+ * refused with a message saying the graph is too large to verify
+ * safely ... it does not silently add the link, and it does not claim
+ * a cycle exists when it hasn't proven one." All three of its bullets
+ * are the three tests below, and the web route surfaces core's message
+ * verbatim (`RelationshipError` is a `LocttError`, so the envelope
+ * carries this sentence). Tagged here rather than transcribed into a
+ * Playwright spec because the fixture is a 1000-node chain: through
+ * the browser it would be minutes of setup for the same assertions.
  *
  * A `parent` chain past the walk cap must refuse the link rather than
  * assume the graph is acyclic — "too big to verify" and "verified fine"

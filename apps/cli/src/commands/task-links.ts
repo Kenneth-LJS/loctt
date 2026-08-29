@@ -1,4 +1,4 @@
-import { linkTask, loadOptionalConfigs, lookupTask, resolveLocttDir, unlinkTask } from "@loctt/core";
+import { linkTask, loadOptionalConfigs, lookupTask, resolveLocttDir, TaskNotFoundError, unlinkTask } from "@loctt/core";
 
 import { rejectUnknownFlags } from "../runtime/args.js";
 import { UsageError } from "../runtime/errors.js";
@@ -57,13 +57,39 @@ export async function unlink(args: string[], root: string): Promise<void> {
   const { workflowConfig } = await loadOptionalConfigs(locttDir);
   assertWorkflowRelationshipKey(workflowConfig, relType);
   const task = await lookupTask(locttDir, ref);
-  const targetTask = await lookupTask(locttDir, target);
+  // A dangling edge is exactly what unlink is for, so resolving the
+  // target must not be a precondition. `lookupTask` threw here, which
+  // meant the one operation that cleans up after a deletion was the
+  // one a deletion made impossible — REL-24 requires the broken row to
+  // be removable. The web route already tolerates this; the CLI did
+  // not, and a core fix that only one surface can reach is not a fix.
+  //
+  // Falls back to the ref as given, which is the stored id on a
+  // dangling edge. A ref that is neither a live task nor an id on this
+  // task's edges still fails, from core, with "relationship ... does
+  // not exist on task ...".
+  let targetId = target;
+  try {
+    targetId = (await lookupTask(locttDir, target)).frontmatter.id;
+  } catch (err) {
+    if (!(err instanceof TaskNotFoundError)) throw err;
+  }
   await unlinkTask({
     locttDir,
     taskId: task.frontmatter.id,
     type: relType,
-    target: targetTask.frontmatter.id,
+    target: targetId,
     ...(workflowConfig !== undefined ? { workflowConfig } : {}),
   });
-  console.log(`Unlinked ${task.frontmatter.key} --${relType}--> ${targetTask.frontmatter.key}`);
+  // The target's key, when it still has one. A dangling edge has no
+  // task to read a key from, so the id it stored is the honest thing
+  // to echo — inventing a key for a task that no longer exists would
+  // be worse than showing the id the user is removing.
+  let targetLabel = targetId;
+  try {
+    targetLabel = (await lookupTask(locttDir, targetId)).frontmatter.key;
+  } catch (err) {
+    if (!(err instanceof TaskNotFoundError)) throw err;
+  }
+  console.log(`Unlinked ${task.frontmatter.key} --${relType}--> ${targetLabel}`);
 }

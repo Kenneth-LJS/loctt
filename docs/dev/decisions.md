@@ -1628,3 +1628,157 @@ mistake the first result for a hole.
 **To revert.** Add a `.sort((a, b) => b.timestamp.localeCompare(a.timestamp))`
 over `entries` in `groupActivity` (`apps/web/src/client/activity/group.ts`).
 Nothing else depends on the absence.
+
+### A? · A relationship whose target no longer exists can be unlinked
+
+**Ticket:** M2.5a · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** REL-24 (blocker) requires a dangling edge — one
+whose target ULID has no task directory — to render as a broken row
+that "offers 'Remove this link' so the user can clean it up".
+
+**It could not be cleaned up from anywhere.** Measured against a live
+tracker before any change: `POST /api/tasks/T-1/unlink` with the
+deleted target answered **404** ("task not found"), and
+`loctt unlink T-1 blocks <deleted-id>` exited **1** with the same
+message. The web route resolved the target with `lookupTask` before
+calling core, and core's `unlinkTask` then read the target's file
+unguarded for the inverse edge — a raw `ENOENT`, which surfaced as a
+500 with the file path in `detail`.
+
+So the one operation whose entire purpose is cleaning up after a
+deleted task was the one operation a deleted task made impossible.
+
+**What had to be decided.** Whether to fix it here, and how far.
+
+**Options considered.**
+
+1. **Leave it, drop REL-24's third bullet.** Costs: a blocker case
+   fails on a bullet it states outright, and the user has no route to
+   remove the row except editing YAML by hand — which is the thing the
+   UI exists to avoid.
+2. **Fix it in the web route only**, catching the lookup failure and
+   passing the raw ref through. Costs: the CLI and MCP keep the defect,
+   so `loctt unlink` still cannot clean up what the UI can. That is
+   drift with a good address, which `TEMP-RUN-WORKFLOW.md` § "Which
+   layer" rules out.
+3. **Fix it in core, and stop the route resolving the target first.**
+   Costs: it changes shared behaviour, so every surface's `unlink`
+   becomes more tolerant than it was.
+
+**Decided.** Option 3.
+
+**Why.** The tolerance is narrow and provably correct rather than
+merely convenient: there is no inverse edge to remove on a task that
+does not exist, so skipping the inverse side is the right answer, not
+a shortcut. The refusal path is untouched — `unlinkTask` still throws
+when *neither* side holds the edge, which is what REL-44's "already
+gone" message renders — so "any unlink now succeeds" is not what this
+does, and a test pins that (`still refuses when the target is missing
+AND the edge does not exist`).
+
+Only two error shapes are swallowed, and only these two: core's
+`TaskNotFoundError` and the platform's `ENOENT`. An `EACCES` or a
+corrupt target file still propagates, because reporting an unreadable
+task as a deleted one would be a different and worse lie.
+
+**Recorded rather than stopping the run** because it repairs a defect
+the case names rather than adding a requirement, and because it is
+contained: one guarded read in core, one guarded lookup in the route.
+
+**To revert.** `packages/core/src/task/relationships.ts` — drop the
+`try`/`catch` around the inverse `readTask` in `unlinkTask` and the
+`isMissingTask` helper; `apps/web/src/server/server.ts` — restore
+`handleUnlink`'s unguarded `lookupTask(locttDir, request.target)`.
+REL-24's removal half and REL-44 go red with it, and the two core
+tests named above fail.
+
+### A? · The relationships panel renders no optimistic rows
+
+**Ticket:** M2.5a · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** P1 permits optimistic rendering with two
+conditions, and the meta panel (`useSetField`) takes that permission:
+a status change paints before the server answers. The relationships
+panel does not.
+
+**What had to be decided.** Whether link/unlink render optimistically.
+
+**Options considered.**
+
+1. **Optimistic, visually distinct while pending**, as P1 allows and
+   as the board's drag does. Costs: REL-42 is the case where the
+   forward write lands and the inverse does not, and its second bullet
+   forbids "an optimistic UI showing a link that only half exists".
+   Satisfying it would mean the optimistic row had to know *which
+   half* failed — which the response shape does not say — or be rolled
+   back on a failure that partially succeeded, which would then show
+   less than is on disk.
+2. **No optimistic rows; every write invalidates and the panel
+   re-renders from the refetched file.** Costs: one local round-trip
+   of latency per link, and the row does not appear under the
+   pointer the instant it is clicked.
+
+**Decided.** Option 2.
+
+**Why.** A link is two file writes with five server-side guards
+(self-link, cycle, archived target, duplicate, unknown type), and
+every one of them can refuse *after* the click. A field edit is one
+write with a value the client already knows. The two are not the same
+bet, and P1's permission is a permission rather than an obligation.
+
+The reorder keeps a visual exception, and only a visual one: the row
+follows the pointer during a drag, because that is what dragging is —
+but the committed order comes from the refetch, which is what REL-46's
+"the UI never leaves a position on screen that isn't on disk" asks
+for.
+
+**Recorded rather than stopping the run** because it is contained to
+this panel and reversible per mutation.
+
+**To revert.** Add `onMutate`/`onError` optimistic bookkeeping to the
+hooks in `apps/web/src/client/api/hooks/useRelationships.ts`, mirroring
+`useSetField`. REL-42's row-count assertion is what goes red.
+
+### A? · The link picker's target search falls back to a direct lookup for retired keys
+
+**Ticket:** M2.5a · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** REL-8's third bullet: "Typing a former key from a
+task's `key_history` resolves to the task it now belongs to."
+
+`GET /api/search` runs core's `text ~`, whose searchable fields are
+`["title", "key", "id"]` (`query/evaluator.ts`) — **`key_history` is
+not among them**, so a retired key finds nothing there.
+`GET /api/tasks/:ref` *does* resolve retired keys, via the key index.
+
+**What had to be decided.** Where the retired-key resolution happens.
+
+**Options considered.**
+
+1. **Add `key_history` to core's `text` alias.** One request, and the
+   behaviour would be consistent everywhere. Costs: `text` is the
+   shared query language, so this changes what
+   `loctt list "text ~ WEB-3"` matches on every surface and what every
+   saved view using `text` returns. That is a P10 decision about the
+   query language, which this ticket has no mandate to make.
+2. **A second request from the picker**, to `GET /api/tasks/:ref`,
+   merged in when the search missed it. Costs: two requests per
+   keystroke that looks like a key, and the fallback is confined to
+   this picker rather than being available to the CLI.
+
+**Decided.** Option 2.
+
+**Why.** Option 1 is the larger change wearing the smaller change's
+clothes: it alters a language three surfaces share, in order to fix
+one picker. The second request is cheap against a local server, is
+already deduplicated against the search's own hits so a live key never
+yields two rows, and can be replaced by option 1 later without the
+picker noticing.
+
+**Recorded rather than stopping the run** because it adds no
+requirement and changes nothing outside the picker.
+
+**To revert.** Delete `lookupExact` and its merge block in
+`apps/web/src/client/api/hooks/useTaskSearch.ts`. REL-8's third
+bullet becomes unmet.
