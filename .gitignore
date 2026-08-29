@@ -16,3 +16,4 @@ playwright-report/
 # Agent worktrees (transient, created by the Agent tool)
 .claude/worktrees/
 .claude/gate-*/
+.claude/build-*/
