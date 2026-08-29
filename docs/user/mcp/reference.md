@@ -94,6 +94,19 @@ Get a task by key or ID, optionally including the markdown body.
 
 Returns JSON: all frontmatter fields, plus `relationships` (each as `{type, target, title?, status?, missing?}` — `target` is rendered as a user-facing key like `T-2` when resolvable, and `title`/`status` carry the target's live values so you need not call `get_task` per edge; deleted targets carry `missing: true`, retain the raw ID, and omit `title`/`status`), `attachments` (each as `{name, size, mime?}` — `mime` is derived from the filename extension and is omitted when the extension is unknown; consumers should treat its absence as `application/octet-stream`), and `body` when requested. The `relationships` key is omitted when empty.
 
+**When the task's file cannot be parsed**, `get_task` returns a tool
+error naming the file and the YAML line — not "task not found". The
+distinction matters when relaying to a user: a task whose `task.md` is
+corrupt has not been deleted, and the remedy is to open the named file
+and fix the YAML. Do not report it as missing, and do not attempt a
+write to the task until it parses.
+
+A `ref` that genuinely does not exist still returns `task not found`.
+If some task file could not be read *and* the ref matched nothing, the
+error says LocTT cannot confirm whether the task exists — the ref it
+would have matched lives inside the file that would not parse. Relay
+the named path and ask for it to be repaired.
+
 ### `list_tasks`
 
 List tasks with optional query, view, and limit.

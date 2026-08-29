@@ -460,6 +460,28 @@ loctt show <task>
 
 Example: `loctt show T-1`
 
+**If the task's file cannot be parsed**, `show` says so and names the
+file and the YAML line, rather than reporting the task as missing:
+
+```
+$ loctt show T-1
+Error: T-1 could not be read because
+/path/to/.loctt/tasks/01J.../task.md could not be parsed. The file
+appears to have been edited by hand or by another tool — LocTT writes
+task.md atomically, so this is not a half-written file. Missing
+closing "quote at line 7, column 17
+```
+
+A key that genuinely does not exist still reports `task not found`.
+The two are deliberately different: a task whose file is corrupt has
+not been lost, and the fix is to open the named file and repair the
+YAML.
+
+If some task file cannot be read *and* the key you asked for did not
+match anything, LocTT says it cannot confirm whether the task exists —
+the key it would have matched lives inside the file it could not
+parse. Repair the named file and run the command again.
+
 ### `loctt set`
 
 Set a field on one task, or on several at once. Works for both built-in

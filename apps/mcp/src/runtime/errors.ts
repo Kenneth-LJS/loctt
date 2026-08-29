@@ -28,6 +28,7 @@ import {
   TaskLifecycleError,
   TaskNotFoundError,
   TaskUpdateError,
+  UnreadableTaskError,
   UserError,
 } from "@loctt/core";
 
@@ -73,5 +74,11 @@ export function isKnownDomainError(err: unknown): err is Error {
     || err instanceof UserError
     || err instanceof SchemaVersionError
     || err instanceof SchemaTooNewError
+    // A corrupt task.md is the user's file, and the message names the
+    // path and the parse line. That is actionable by the agent (tell
+    // the user which file to fix), so it is a domain error — not a
+    // server fault to rethrow, which would have shown the agent an
+    // opaque stack instead of the one sentence that helps (TSK-54).
+    || err instanceof UnreadableTaskError
   );
 }
