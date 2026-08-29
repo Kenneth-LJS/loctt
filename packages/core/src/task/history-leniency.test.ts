@@ -9,8 +9,8 @@ import { mergeHistory } from "../git/merge.js";
 import { UnreadableFileError } from "../utils/read-state.js";
 import {
   appendHistory,
-  isMalformedHistoryEntry,
   HistoryParseError,
+  isMalformedHistoryEntry,
   readHistory,
   readHistoryRows,
 } from "./history.js";

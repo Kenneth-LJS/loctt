@@ -468,6 +468,38 @@ condition 2 working as intended: a feature existing nowhere is scope,
 and adding a field to a shared contract is Ken's call, not an
 agent's.
 
+#### M2.4b · CMT-18 is a whole surface nothing has built
+
+**CMT-18** — *"Comments and Activity are separate, addressable
+sections"* — asks for three things: both reachable without a full page
+load, **whichever is a tab records itself in the URL** so a link opens
+on the activity tab, and switching between them does not refetch the
+whole task.
+
+The first and third hold today and are not what is missing: both
+sections are on one task page, rendered from queries that are already
+loaded, and neither refetches `["task", ref]` when the other is
+touched.
+
+The second needs a **tab shell that does not exist**. `TaskDetail`
+stacks Description, Related, Attachments, Activity and Comments as
+plain `<Section>` headings down one column; there is no tab component
+anywhere in `apps/web/src/client`, and `/tasks/$key` declares no search
+schema, so there is nothing for a tab to write itself into.
+
+**M2.4b did not build one, deliberately.** Deciding that the task page
+becomes tabbed is a change to the shape of a page four tickets have
+already built into (M2.1's shell, M2.3's body editor, M2.4a's
+comments, and M2.5's relationships and attachments still to come), and
+it would move sections those tickets placed. That is the page's
+layout, not this ticket's rendering — and the case is written
+conditionally ("**whichever** is a tab"), which reads as permitting the
+stacked layout while requiring addressability *if* tabs are chosen.
+
+Not narrowed, not claimed. It wants a decision on whether the task
+detail page is tabbed at all, which belongs with whoever owns the page
+rather than with the activity feed.
+
 #### M2.1 · bullets deferred to a later ticket in the same flow
 
 Recorded rather than narrowed. Each is a bullet of a case whose other
