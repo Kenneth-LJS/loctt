@@ -352,9 +352,44 @@ Worked example, measured rather than assumed:
 
 That turns "25 cases need a decision" into **three**.
 
-**Say which layer before proposing the fix.** Milestone progress in
-the web app alone means CLI, MCP and UI each compute it and drift.
-When three surfaces need the same answer, it belongs in core.
+### Which layer — and core is not done until all three have it
+
+**Ken's rule, 2026-08-29.** Decide the layer *before* proposing the
+fix, and then honour what that choice costs:
+
+> If it goes in core, it ships to **CLI and MCP too**, not just the
+> web app.
+
+Otherwise core grows a capability one surface uses, which is exactly
+the drift that putting it in core was meant to prevent. Measured on
+this repo: `unarchiveView` is exported from core and called by
+**nothing** — not CLI, not MCP, not web. A core function with no
+consumers is not shared logic; it is dead code with a good address.
+
+The test for core: **would two surfaces have to answer the same
+question?** If yes it belongs in core, and all three get it. If only
+the web app could ever ask, it belongs in `apps/web`.
+
+A ticket that adds a core capability owes three things, and is not
+complete with one:
+
+| | Owes |
+|---|---|
+| `packages/core` | the logic, and its tests |
+| `apps/cli` | a command or flag, and the reference doc updated |
+| `apps/mcp` | a tool, and the reference doc updated |
+
+If a surface genuinely should *not* expose it, say so in the ticket
+and why. Silence is not a decision.
+
+**Check before claiming something does not exist.** The audit said
+milestone progress "does not exist anywhere in `packages` or `apps`",
+and that was repeated twice before anyone looked. It exists:
+`computeProgress` at `packages/core/src/task/progress.ts:45`, with
+`loctt milestone list --progress` in the CLI and a milestone tool in
+MCP. The only gap was the web view, which is M4 work. A "build from
+scratch" estimate was nearly given for something already built on two
+surfaces.
 
 ### When a gate will not pass
 

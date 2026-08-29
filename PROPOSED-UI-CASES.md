@@ -14,6 +14,12 @@ Three kinds of item:
 3. **Proposed new cases** — gaps with suggested IDs, appended to each
    file's existing numbering. No renumbering anywhere.
 
+**Five items here are now DECIDED** — see `docs/dev/decisions.md` § 9
+(Ken's rulings, 2026-08-29): the SET-3/SET-6 contradiction, the
+body-save question, project URL slugs, BLK-30's threshold, and the CSV
+export. Their sections below are marked and kept for the reasoning,
+not because they are still open.
+
 Each item states the finding behind it inline. (The audit document these
 were extracted from was deleted once its blockers were fixed; see
 `git log` for `FEATURE-AUDIT.md` if the original wording is needed.)
@@ -22,7 +28,7 @@ were extracted from was deleted once its blockers were fixed; see
 
 ## 1. Contradictions to resolve
 
-### SET-3 vs SET-6 — `flow-settings.md`
+### ✅ DECIDED (K1) · SET-3 vs SET-6 — `flow-settings.md`
 
 SET-3 asserts workflow panels are read-only: *"No status is presented as
 editable — no inline text inputs, no delete buttons."* SET-6 asserts
@@ -34,26 +40,31 @@ reading, and `workflow-write.ts` (822 lines, full per-collection remap)
 was clearly built for it. Recommendation: **drop SET-3**, keep the
 editable reading.
 
-### Body save: `markdown-extensions.md` vs TSK-15 — `flow-tasks.md`
+### ✅ DECIDED (K2) · Body save: `markdown-extensions.md` vs TSK-15
 
 `markdown-extensions.md:110-120` mandates explicit-Save and no autosave.
 TSK-15 mandates 1.5s idle autosave. The 15-minute `body_edited`
 coalescing window in core only makes sense under the autosave reading —
 under explicit-Save it silently merges two deliberate saves.
 
-Recommendation: **pick autosave**, and correct `markdown-extensions.md`.
-Note this interacts with B5 (no concurrency control): autosave without a
-precondition header makes lost updates more likely, not less.
+**Ken's ruling: autosave**, and correct `markdown-extensions.md` — **and
+the precondition ships with the body editor**, not as a follow-up. There
+is no concurrency control anywhere today (no `If-Match`, no `412`, no
+version on any write path), so autosave without one silently overwrites
+a concurrent CLI or MCP edit every 1.5 idle seconds. See K2.
 
-### `?project=web` URLs — `flow-projects-users.md` PRU-2 / PRU-6
+(The "B5" attribution above is **wrong** — B5 is the lossy-content
+guardrail. The concurrency gap has no B-number.)
+
+### ✅ DECIDED (K3) · `?project=web` URLs — PRU-2 / PRU-6
 
 The flow doc assumes project slugs in URLs. `ProjectDefSchema` is
 `.strict()` with `{id, name, prefix, archived?}` — there is **no** `key`
 or slug field, and `state.keys` is indexed by ULID.
 
-Either URLs carry ULIDs (`?project=01KZYW…`, which is ugly but honest and
-matches P2), or a slug field is reintroduced to the schema. This is a
-product decision that blocks writing the case correctly.
+**Ken's ruling: reintroduce the slug field.** URLs carry the slug, not
+the ULID. This is a core schema change and needs slug generation,
+uniqueness, and a rename policy — M-ticket work, not settled here.
 
 ---
 
@@ -72,7 +83,7 @@ product decision that blocks writing the case correctly.
 | **LST-44, LST-45** | `flow-list.md` | Structured query-parse errors — a DSL error propagates to the generic 500 (B16), discarding position and suggestions that `validate.ts` deliberately carries. |
 | **REL-40** | `flow-relationships.md` | The 20-file drop is unimplemented at the API layer: `multipart.ts:69` drains all parts after the first. |
 | **SPR-26** | `flow-sprints.md` | Unreachable from the UI: `handleUpdateSprint` has no `archived` field and there is no archive/unarchive route (B17). |
-| **MSL-1, MSL-2, and 8 others** | `flow-milestones-labels.md` | Milestone progress does not exist anywhere in `packages` or `apps` (B20). |
+| **MSL-1, MSL-2, and 8 others** | `flow-milestones-labels.md` | ~~Milestone progress does not exist anywhere in `packages` or `apps` (B20).~~ **This is wrong, verified 2026-08-29.** `computeProgress` is at `packages/core/src/task/progress.ts:45`, the CLI has `milestone list --progress`, and MCP has a milestone tool. The gap is the **web view only**, which is M4 work. Whether MSL-1's per-milestone rollup needs more than the generic function provides is a separate, smaller question. |
 | **VUE-31…34** | `flow-saved-views.md` | Three blockers depend on a DSL validation endpoint. `validateQuery` is exported from core with no caller and no route. |
 | **VUE-1, VUE-16** | `flow-saved-views.md` | Count-only query mode for sidebar badges does not exist. |
 | **PRU-33** | `flow-projects-users.md` | Specifies a refusal that the code contradicts — the "cannot delete the only project" guard never fires over HTTP, because DELETE never passes `hard:true` (B17). |
@@ -175,7 +186,7 @@ that the 2026-08-14/15 sessions found.
 
 ---
 
-## Proposed: the threshold in BLK-30's "proportionate" confirmation
+## ⏳ STILL OPEN · the threshold in BLK-30's "proportionate" confirmation
 
 **Raised 2026-08-28 while covering BLK-30. Nothing here is decided.**
 
@@ -204,10 +215,24 @@ What is genuinely open, and is Ken's rather than mine:
 
 ---
 
-## Proposed: whether CSV export should resolve ULIDs to names
+## ✅ DECIDED (K4) · whether CSV export should resolve ULIDs to names
 
-**Raised by the M1 gate 2026-08-28 as F7 (minor). Not built — this
-needs a decision, not a patch.**
+**DECIDED 2026-08-29 — see `decisions.md` § 9 K4. The four options
+below are closed.**
+
+**The ruling:** the CSV is a **report for a human in a spreadsheet**, so
+reference columns resolve to **names**; `id` stays (nothing scripted
+against the export breaks, and BLK-36's column count is unchanged); a
+size-split **JSONL** export is the backup, on its own ticket after M4.
+
+**Two things measured after these options were written, both of which
+change them.** First, **there is no CSV import anywhere in the
+codebase** — so "an id round-trips and a name does not" defends a
+round-trip that does not exist. Second, the CSV **cannot** be a backup:
+18 columns against 27 frontmatter fields, missing the body, every
+relationship, custom fields, `key_history`, archived state and ranks.
+
+The original framing follows.
 
 `project`, `assignee`, `reporter`, `milestone` and `sprint` export as
 raw ULIDs (`01M13T6YWDXHB52P65P2BNAV8D`), so someone opening the CSV
