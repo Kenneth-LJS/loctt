@@ -919,3 +919,52 @@ The general lesson is the one this repo keeps relearning in new
 disguises: *check the write succeeded before drawing conclusions from
 what it left behind.* A 400 followed by an empty read looks exactly
 like a feature that does not exist.
+
+## The body precondition is web-only; CLI and MCP still last-write-wins
+
+**Found:** M2.3, 2026-08-29. **Not a defect introduced by M2.3 — a gap
+M2.3 half-closed and cannot close alone.**
+
+K2 (`decisions.md` § 9) requires that a body write carry the version it
+was composed against, so a concurrent edit is refused rather than
+silently overwritten. Core has had the whole mechanism since before
+M2.3 — `bodyToken()`, `BodyWriteOptions.expectedToken`,
+`StaleBodyWriteError` — with **no caller anywhere**.
+
+M2.3 wired it into the web app only:
+
+| Surface | State |
+|---|---|
+| `GET /api/tasks/:ref` | returns `bodyToken` |
+| `POST /api/tasks/:ref/body` | accepts `expectedToken`, maps `StaleBodyWriteError` → **409** with both versions in the envelope |
+| web client | sends it, shows a conflict surface, keeps the user's text |
+| **`apps/cli`** | **`task-crud.ts:603` calls `writeTaskBody` with no options — unconditional** |
+| **`apps/mcp`** | **`tools/task-body.ts:36` likewise** |
+
+**Why this is the layer question and not just a TODO.** K2's own
+reasoning is that "a precondition only the web app honours protects
+nothing, because the other two writers are what it protects against."
+That is *half* right and the distinction matters:
+
+- **The web app is now protected** against CLI and MCP writes. Its
+  token is invalidated by *any* write to the task, whoever made it, so
+  a CLI edit under a live editor is caught. The UI specs in
+  `tests/ui/flow-task-body.spec.ts` (XS-11, XS-12, XS-14) drive the
+  real CLI and prove this.
+- **CLI and MCP are not protected** against each other or against the
+  web app. Two agents both running `loctt body --set` still race, and
+  the second silently wins.
+
+So the autosave-shaped hole K2 was most worried about is closed. What
+remains is the symmetric guarantee, and it needs a decision M2.3 did
+not have the standing to make: **what would a CLI or MCP caller pass?**
+An interactive `loctt body --set` has no prior read to derive a token
+from, so the guard would need either a new `--if-unchanged` flag, or a
+read-then-write inside the command, or an MCP tool that returns a token
+from `get_task` and requires it on write. Each changes a documented
+surface contract.
+
+**To close:** decide the CLI/MCP shape, then pass `expectedToken`
+through `writeTaskBody` at `apps/cli/src/commands/task-crud.ts:603`
+and `apps/mcp/src/tools/task-body.ts:36`, and document it in both
+reference docs.

@@ -52,6 +52,7 @@ import {
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,
+  bodyToken,
   buildListContext,
   buildMentionResolver,
   buildShowModel,
@@ -160,6 +161,7 @@ import {
   setProjectPrefix,
   SprintError,
   sprintProgress,
+  StaleBodyWriteError,
   switchCurrentUser,
   sync,
   TaskNotFoundError,
@@ -2002,14 +2004,82 @@ export function createWebApp(options: WebAppOptions) {
     const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
     const task = await lookupTask(locttDir, ref);
-    const r = await parseJsonBody<{ body: string }>(req, res);
+    const r = await parseJsonBody<{ body: string; expectedToken?: unknown }>(req, res);
     if (typeof r.body !== "string") {
       error(res, "The description could not be read.", 400, { ...REJECTED_WRITE, field: "body" });
       return;
     }
-    await writeTaskBody(locttDir, task.frontmatter.id, r.body);
-    json(res, { ok: true });
+    // K2. Optional on the wire, so the CLI's own `body --set` and every
+    // existing caller keep last-write-wins; a client that opts in gets
+    // the precondition. `undefined` is passed straight through to core,
+    // whose `BodyWriteOptions` already means "no precondition".
+    if (r.expectedToken !== undefined && typeof r.expectedToken !== "string") {
+      error(res, "The version token could not be read.", 400, {
+        ...REJECTED_WRITE_NO_RETRY,
+        field: "expectedToken",
+      });
+      return;
+    }
+    try {
+      await writeTaskBody(locttDir, task.frontmatter.id, r.body, {
+        ...(typeof r.expectedToken === "string" ? { expectedToken: r.expectedToken } : {}),
+      });
+    } catch (err) {
+      if (err instanceof StaleBodyWriteError) {
+        /**
+         * 409, not 412. Both are defensible reads of the spec, but the
+         * envelope's `code` is what the UI branches on and `conflict`
+         * already exists for exactly this shape (the git merge path
+         * uses it). A 412 would need a new code for no behavioural
+         * gain, and `conflict` is what `errorMessage()` already
+         * routes.
+         *
+         * The current on-disk body rides along in `detail`. XS-12
+         * requires the conflict surface to show *both* versions in
+         * full, and a client that had to issue a second GET to fetch
+         * "theirs" could race a third writer between the refusal and
+         * that read — showing the user a version that is already gone.
+         * Reading it here, after core has refused, means the two sides
+         * shown are the two sides that actually collided.
+         *
+         * `data_state: "not_saved"` matters more than usual here:
+         * core's own message says the text was NOT saved, and a client
+         * that mistook this for a success would let the user close the
+         * tab believing their draft landed.
+         */
+        const current = await readTaskBodyForConflict(locttDir, task.frontmatter.id);
+        error(res, err.message, 409, {
+          code: "conflict",
+          data_state: "not_saved",
+          // Retrying the identical request reproduces the refusal
+          // exactly — the user has to choose a side (ERR-15).
+          recovery: { kind: "none" },
+          field: "body",
+          detail: JSON.stringify({ theirs: current.body, bodyToken: current.token }),
+        });
+        return;
+      }
+      throw err;
+    }
+    json(res, { ok: true, bodyToken: await bodyToken(locttDir, task.frontmatter.id) });
   };
+
+  /**
+   * The body and token now on disk, for the conflict envelope above.
+   *
+   * Read through `buildShowModel`'s underlying loader rather than
+   * re-parsing here, so "theirs" is the same string the client would
+   * have got from a `GET /api/tasks/:ref` — a conflict surface that
+   * showed a differently-parsed version of the file would be lying
+   * about what the user is choosing between.
+   */
+  async function readTaskBodyForConflict(
+    dir: string,
+    taskId: string,
+  ): Promise<{ body: string; token: string }> {
+    const fresh = await lookupById(dir, taskId);
+    return { body: fresh.body, token: await bodyToken(dir, taskId) };
+  }
 
   const handleAppendBody: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = requireValidRef(captures, res, 0, req);
@@ -2583,6 +2653,10 @@ export function createWebApp(options: WebAppOptions) {
     const response: TaskResponse = {
       frontmatter: projectTaskFrontmatter(model.task.frontmatter),
       body: model.task.body,
+      // K2. Computed from the file rather than from `model`, so it
+      // describes the bytes on disk at the moment of this read — the
+      // same thing core will recompute when the write arrives.
+      bodyToken: await bodyToken(locttDir, task.frontmatter.id),
       attachments: model.attachments.map(a => ({
         name: a.name,
         size: a.size,

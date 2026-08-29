@@ -1356,3 +1356,98 @@ swap `relativeTime(fm.updated_at, now)` back to
 `shortDate(fm.updated_at, today)`. XS-4's third bullet goes unmet and
 the relative-form assertion in `tests/ui/flow-task-failure.spec.ts`
 goes red.
+
+### A14 · The rich↔raw toggle does not serialize; markdown is the buffer
+
+**Ticket:** M2.3 · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** TSK-17's third bullet (blocker, P10): "Round-tripping
+rich → raw → rich without edits leaves the stored body **byte-identical**
+— the toggle must not silently reformat or reorder markdown", and its
+fourth: "the editor does not normalize the user's markdown against their
+will."
+
+**No markdown→AST→markdown pipeline can satisfy that**, and the reason is
+structural rather than a matter of choosing a better library. Markdown is
+many-to-one: `*em*` and `_em_` are one node, so are `# H` and its setext
+form, `-`/`*`/`+` bullets, `1.`/`1)` ordinals, backtick and tilde fences,
+and any number of blank lines. A serializer must pick one spelling per
+node, so every body written in the other spelling is rewritten the first
+time the user *glances* at the rich tab. There is also no serializer in
+the tree to reach for — no `prosemirror-markdown`, no `tiptap-markdown`,
+and TipTap 3 has no markdown I/O of its own.
+
+**What had to be decided.** How the toggle preserves bytes.
+
+**Options considered.**
+
+1. **Add a serializer dependency and round-trip through it.** Costs:
+   fails the case's own third and fourth bullets by construction, and
+   fails them *invisibly* — a round-trip test written from
+   already-canonical markdown passes against it while every user body in
+   a different spelling is silently rewritten.
+2. **Markdown text is the buffer; the rich view is a projection.**
+   `RichBuffer` holds the loaded bytes and returns them unchanged until
+   the visual editor reports a real document change (`transaction
+   .docChanged`, not a selection move). Toggling therefore performs no
+   operation at all — byte-identical is the *absence* of a step rather
+   than something achieved. Costs: once the user does edit in rich mode,
+   the whole body is serialized to this module's spellings, not just the
+   paragraph they touched.
+
+**Decided.** Option 2.
+
+**Why.** The cost of option 2 is unavoidable for any WYSIWYG surface over
+markdown — the ProseMirror document has no memory of which bytes produced
+which node — while the cost of option 1 is avoidable and is what the case
+forbids. What option 2 buys is that *looking* is free, which is the common
+case and the one the user cannot anticipate or opt out of. The residual
+cost is real and is stated in `markdown.ts`'s header rather than claimed
+away.
+
+**To revert.** Delete the `dirty` check in `RichBuffer.text`
+(`apps/web/src/client/editor/markdown.ts`) so it always returns
+`toMarkdown(fromMarkdown(...))`. Eleven assertions in
+`markdown.test.ts` go red, and TSK-17's blocker bullets go unmet.
+
+### A15 · The idle editor does not poll for a fresher body token
+
+**Ticket:** M2.3 · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** XS-14's third bullet: an editor whose body changed
+underneath it "either adopts the CLI's empty body or raises the conflict
+surface; it does not silently restore the old text."
+
+The editor holds the `bodyToken` from its last read. A body write
+invalidates it and the response carries a fresh one, so an *active*
+editing session stays current. But when the CLI writes and the user is
+merely idle, nothing refetches until the shared 60s poll — so the user's
+next keystroke is refused and they meet a conflict dialog they did
+nothing to cause.
+
+**What had to be decided.** Adopt the change, or let it conflict.
+
+**Options considered.**
+
+1. **Adopt: refetch on a short interval while the editor is clean.**
+   Costs: a second polling loop for one component; and adoption while the
+   user is mid-thought silently changes text under their cursor, which is
+   the failure P1 exists to prevent, just in the other direction.
+2. **Conflict: let the stale token refuse the next write.** The user is
+   shown both versions and chooses. Costs: a conflict dialog for a user
+   who was not competing with anyone, on their first keystroke after an
+   unrelated CLI edit.
+
+**Decided.** Option 2.
+
+**Why.** XS-14 names both as acceptable, and option 2 is the branch that
+cannot lose text: the refusal happens *before* the write, both versions
+are shown, and the user picks. Option 1's failure mode is silent, which
+is the one thing P1 rules out. Closing the window properly needs a read
+on the write path, which is XS-13's residual-race question and larger
+than this ticket.
+
+**To revert.** Add a `refetchInterval` to `useTask` gated on the body
+editor being clean. The XS-14 UI spec's second half — which asserts the
+conflict surface appears — would need rewriting to assert adoption
+instead.
