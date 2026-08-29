@@ -315,6 +315,47 @@ the specification; an agent that may rewrite the spec to match its
 code has no specification. State the two case IDs and what is
 contradictory; do not adjudicate.
 
+### Cases that cannot be satisfied yet
+
+**Ken's standing rule, 2026-08-29.** An audit found ~25 existing cases
+that fail as written — not because the case is wrong, but because the
+API it assumes does not exist. The rule is that a case is never
+quietly narrowed to fit the code.
+
+**Never reword a case to match what is buildable.** That is an agent
+editing the specification, and the whole arrangement rests on it not
+doing that. If a case cannot be satisfied, the case is right and
+something is missing.
+
+Sort by what is actually missing, because the three differ by an order
+of magnitude:
+
+| Kind | Do |
+|---|---|
+| **Core has it; nothing wired it** | Build it. A case failing because two halves were never connected is not scope growth. |
+| **Cross-cutting** — one fix unblocks a whole flow doc | Its own ticket, **early**, because everything downstream inherits it. |
+| **A genuine feature** — it exists nowhere | **Stop.** This is scope (condition 1). |
+
+Worked example, measured rather than assumed:
+
+- **Wire-ups (7):** SPR-26 (core has `archived` and the CLI has
+  `sprint archive`; only the route is missing), VUE-38
+  (`unarchiveView` exists with no caller), PRU-33 (the web DELETE
+  never passes `hard:true`), SET-43, LST-13 (the honest `total` is
+  already returned, never rendered), REL-40, VUE-1/16.
+- **Cross-cutting (1):** the error envelope. ERR-30, the whole of
+  `flow-error-handling.md`, and LST-44/45 are one root cause — a DSL
+  parse error losing its position hurts CLI and MCP identically.
+- **Features (3):** milestone progress (exists nowhere), a
+  query-validation endpoint (`validateQuery` is built and unwired, but
+  its response shape is a core contract), avatar removal.
+
+That turns "25 cases need a decision" into **three**.
+
+**Say which layer before proposing the fix.** Milestone progress in
+the web app alone means CLI, MCP and UI each compute it and drift.
+When three surfaces need the same answer, it belongs in core.
+
 ### When a gate will not pass
 
 Rounds 1, 3 and 5 of M1's gate each failed on defects introduced by
