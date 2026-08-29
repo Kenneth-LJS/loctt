@@ -1867,3 +1867,51 @@ server code and no documented contract. Also recorded in
 `AttachmentsPanel.tsx` with a single multi-file request, and give
 `parseMultipartFile` a multi-part mode. REL-40's per-row assertions
 are what would need rewriting.
+
+### K7 · TSK-20 gets its own ticket before M3
+
+**Raised by the M2 gate at round 2 (F6) · Date: 2026-08-30**
+
+**The situation.** TSK-20 (Duplicate) is a **blocker**, declared in
+M2.1's `Cases:` line, and there is no Duplicate anywhere in the web
+client — no route, no control. M2.1's run-log row lists what it closed
+and omits it.
+
+Core already has `duplicateTask`, and both the CLI and MCP call it.
+Only the web layer does not.
+
+It survived the whole of M2 because **`cases:coverage` cannot tell an
+untagged case from an unbuilt one** — it reported TSK-20 alongside
+genuine tagging gaps, which reads as bookkeeping. Round 2's gate found
+it by reading the panel and probing the app.
+
+**What had to be decided.** Build it retroactively into M2.1, give it
+its own ticket, defer it to a named milestone, or drop it from M2's
+declared cases?
+
+**Options considered.**
+
+1. **Its own ticket, before M3.** Core is ready and the CLI shows the
+   shape, so it is a route, a menu item and the navigation path — a
+   short subsection rather than a full ticket. M2's gate stays honest
+   because the blocker closes before the milestone is signed off.
+   Costs: one build cycle before M3 starts.
+2. **Fold into M2.1 and re-gate.** Same code; the difference is
+   whether the run log shows M2.1 eventually delivering what it
+   declared. Costs: rewrites a shipped ticket's history.
+3. **Defer to a named milestone.** Fastest to M3. Costs: a gate
+   passing with a declared blocker open makes the verdict mean
+   "passed except what we agreed to ignore" — which is precisely the
+   ✅-before-cases failure M1 spent eight rounds undoing.
+4. **Drop it from M2's cases.** Only right if Duplicate is genuinely
+   unwanted in the web UI, and it would resurface at the next audit
+   unless the flow doc changed too.
+
+**Decided.** Option 1 — **its own ticket, M2.6, before M3.**
+
+**Why.** Ken's call. It keeps the gate's verdict meaning what it says:
+a milestone does not pass with a declared blocker unbuilt.
+
+**To revert.** Delete the M2.6 ticket from `TEMP-WEB-TICKETS.md` and
+choose one of options 2–4. Nothing is built on this decision beyond
+the ticket's own existence.

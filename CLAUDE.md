@@ -32,7 +32,7 @@ deleted when the build lands:
   subsections, which agents are fresh, the section gate, and the four
   things that stop the run. Read second.
   It governs `build-loop.md`, which governs one ticket.
-- `TEMP-WEB-TICKETS.md` — the 24 build tickets and the cases each owes
+- `TEMP-WEB-TICKETS.md` — the 25 build tickets and the cases each owes
 - `PROPOSED-UI-CASES.md` — flow-doc contradictions awaiting a decision
   from Ken; nothing here has been applied
 
