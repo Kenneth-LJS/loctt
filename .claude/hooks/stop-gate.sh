@@ -20,7 +20,26 @@ if [ -f "$DECL" ]; then
   exit 0
 fi
 
-# 2. Work in flight — but only if it is ADVANCING.
+# 2. A build agent is working in its own worktree.
+#
+# The model cannot do that agent's work for it, and an agent spends
+# most of its time thinking rather than running a suite — so the
+# process check below sees nothing and would call a healthy build a
+# hang. The worktree is the signal: it exists only while an agent
+# holds it, and the main session removes it once the work is merged.
+#
+# Deliberately not fingerprinted for progress. A stalled agent is
+# caught by its own task notification, not here, and a gate that
+# guessed at agent liveness would fire on every long build.
+# Each pattern tested separately with a compgen guard: a single `ls`
+# over both globs fails outright when either has no match, so a live
+# build worktree went undetected whenever no gate worktree existed.
+if compgen -G ".claude/build-*" >/dev/null 2>&1 \
+   || compgen -G ".claude/gate-*" >/dev/null 2>&1; then
+  exit 0
+fi
+
+# 3. Work in flight — but only if it is ADVANCING.
 #
 # "A suite is running" is not enough: a hung suite would excuse
 # stopping forever, which is the failure this gate exists to prevent
