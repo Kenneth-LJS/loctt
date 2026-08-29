@@ -327,6 +327,17 @@ a confident one that was wrong.
 
 ### Recording a decision
 
+**Numbers collide when agents work in parallel.** Two agents in
+separate worktrees both wrote a "decision A4" on 2026-08-29, neither
+able to see the other. Merging produced two entries with the same ID
+and six stale cross-references.
+
+So: an agent proposes its entry under a **placeholder** (`A?`) and
+states what it decided; **the main session assigns the number** when
+the work lands, because only it can see every branch. Renumbering
+after the fact means chasing every `Decision A5` in a comment.
+
+
 Every decision made under this rule goes in
 [`decisions.md`](docs/dev/decisions.md) § 8, in the six-field format
 that section specifies: situation, what had to be decided, options,
@@ -378,6 +389,32 @@ Worked example, measured rather than assumed:
   its response shape is a core contract), avatar removal.
 
 That turns "25 cases need a decision" into **three**.
+
+#### M2.1 · bullets deferred to a later ticket in the same flow
+
+Recorded rather than narrowed. Each is a bullet of a case whose other
+bullets M2.1 does satisfy; the missing half needs a surface a later
+M2 ticket builds. None is a missing API.
+
+- **XS-58, bullet 2** — *"Any pending unsaved body text is preserved
+  somewhere the user can copy it out before navigating away."* M2.1's
+  body is read-only; there is no editor and therefore no unsaved
+  text to preserve. **Owed by M2.3** (body editor), which introduces
+  the state this bullet protects.
+- **TSK-54 and XS-51** — a corrupt `task.md` reported with its path
+  and an actionable parse error. `TaskDetail` routes a non-404 error
+  to `ErrorState`, which renders the server's envelope including
+  `detail` and any `recovery`, so the *client* half is in place. What
+  is unverified is what `GET /api/tasks/:ref` actually puts in that
+  envelope for an unparseable file — whether it names the path under
+  `.loctt/tasks/<id>/` and which field failed. That is a server
+  question and a server test; M2.1 neither measured nor changed it,
+  so it is not claimed.
+- **TSK-19's Duplicate, and TSK-43/TSK-20/TSK-21** — listed on the
+  M2.1 ticket but absent from the 18-case brief this ticket was
+  built against. Duplicate (CW-3) is not implemented: no case in the
+  brief covers it, and building it from the ticket's one-word bullet
+  would be authoring the requirement.
 
 ### Which layer — and core is not done until all three have it
 

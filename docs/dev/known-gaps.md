@@ -631,3 +631,97 @@ Fails **TSK-54** and **XS-51**, which require the surface to say the
 file could not be parsed, name the path under `.loctt/tasks/<id>/`,
 and give the line or field. Recorded as *failing*, not uncovered — a
 "not covered" note would hand the next ticket a false baseline.
+
+## ~~A8's two guards in `useTask` exist but are unasserted~~ — CLOSED 2026-08-29
+
+**Established 2026-08-29**, fixing the M2.1 review's MAJOR 3.
+
+`useTask` (`apps/web/src/client/api/hooks/useTask.ts`) invalidates
+`["recents"]` when a task fetch lands, so the sidebar's Recently
+viewed group gains the task without a reload (TSK-3). Decision A8
+argues for two properties of that effect:
+
+```ts
+useEffect(() => {
+  if (!isSuccess) return;                       // (1) success path only
+  void qc.invalidateQueries({ queryKey: ["recents"] });
+}, [isSuccess, dataUpdatedAt, qc]);             // (2) once per fetch
+```
+
+The effect's **existence** is covered — delete it and TSK-3 and XS-58
+both go red. Neither guard is.
+
+**Measured, not assumed.** A probe counting `/api/recents` requests
+over a 404 deep link and over a normal open, with a settle window:
+
+| Build | 404 path | success path |
+|---|---|---|
+| both guards present | 1 | 2 |
+| `isSuccess` removed | 1 | 2 |
+| dependency array removed | 1 | 2 |
+| both removed | 2 | 2 |
+
+Each figure stable across repeated runs.
+
+So neither guard has an observable network signature on its own.
+React Query will not refetch a query that is fresh and already
+observed, however many times it is invalidated, which makes "once per
+fetch" and "on every render" network-identical. The single moved
+number — 2 on the 404 path — appears only when **both** guards are
+removed together, so it cannot attribute a failure to either one, and
+a test keyed on it would go green again the moment one guard was
+restored.
+
+**A test was written for guard (1) and then deleted.** It asserted
+`recentsRequests === 1` on a 404 and passed with the guard removed —
+the first reading of 2 had come from the combined mutation, not from
+the guard alone. It is recorded here rather than left in the suite
+because a green that implies a guard it cannot see is the exact
+failure mode the M1 vacuity sweep exists to catch.
+
+**Closed by taking that advice.** The assertion has to observe the
+invalidation itself, not its network consequence — the request count
+is the wrong instrument. `apps/web/src/client/api/hooks/useTask.test.tsx`
+renders the hook with a `QueryClient` whose `invalidateQueries` is
+spied, and counts the calls keyed on `["recents"]` directly.
+
+Mutated **separately**, which is what the Playwright attempt could not
+do:
+
+| Mutation | Result |
+|---|---|
+| `isSuccess` guard removed | 3 of 3 fail |
+| dependency array removed | exactly the re-render test fails |
+
+So each guard now has a test that fails when *it alone* is broken —
+the distinction the network layer could not make, because React Query
+will not refetch a fresh observed query however often it is
+invalidated.
+
+The absence assertion ("does not invalidate on a 404") is paired with
+a positive one ("invalidates once on success") on purpose: an absence
+alone is satisfied by a hook that never invalidates at all, which is
+vacuity shape 3 from the M1 sweep.
+
+**The lesson worth keeping:** the deleted Playwright test was not
+badly written, it was written at the wrong layer. A number that moves
+only under a *double* mutation proves nothing about either half —
+and that is what made it look like a signal.
+
+## TSK-3's "once per mount" bullet is unfalsifiable at the UI layer
+
+**Established 2026-08-29** (M2.1 review, MINOR 5).
+
+`pushRecent` (`packages/core/src/users/recents.ts:63`) filters the
+list by id and then unshifts, so a duplicate push is idempotent by
+construction: pushing the same id twice yields one row, not two.
+`toHaveCount(1)` in TSK-3 therefore holds even against a client that
+pushes on every render — the defect the bullet is about cannot produce
+a visible second row.
+
+Not a defect and not a bad test: a bullet the data structure makes
+untestable from the browser. The re-ordering half of the same test
+*is* real — it reads index order out of the rendered list, which a
+build that appended rather than moved-to-front would fail. This is
+stated in a comment in the test itself so a reader does not take the
+count assertions for more than they are.

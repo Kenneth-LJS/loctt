@@ -10,6 +10,7 @@ import { ListView } from "../list/ListView.tsx";
 import { NotFound } from "../routes/NotFound.tsx";
 import { Stub } from "../routes/Stub.tsx";
 import { AppBootstrap } from "../shell/AppBootstrap.tsx";
+import { TaskDetail } from "../task/TaskDetail.tsx";
 import { listSearchSchema } from "./listSearch.ts";
 
 // The root renders the app shell (header + sidebar + chrome) via
@@ -97,16 +98,26 @@ const timelineRoute = createRoute({
   component: () => <Stub name="/timeline" />,
 });
 
-// The route *pattern* was being shown as the stub's name, so clicking a
-// task landed on a page reading "/tasks/$key" — which looks like a
-// templating bug rather than an unbuilt view. Interpolate the param.
+// M2.1: the real read shell. The `$key` param is a *ref* — a current
+// key, a retired key, or a ULID — because the server resolves all
+// three and TSK-2 needs the retired one to keep working.
+//
+// `errorComponent` stays, but a 404 must never reach it: the boundary
+// replaces the main pane with a crash surface, and ERR-8 requires a
+// designed not-found state that a user can tell apart from a crash.
+// `TaskDetail` therefore renders its own not-found on a resolved 404
+// rather than throwing.
 const taskDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   errorComponent: RouteError,
   path: "/tasks/$key",
-  component: function TaskDetailStub() {
+  component: function TaskDetailRoute() {
     const { key } = taskDetailRoute.useParams();
-    return <Stub name={`/tasks/${key}`} />;
+    // Keyed on the ref so navigating between tasks remounts rather
+    // than reusing the previous task's component state — a stale
+    // "Copied" toast or a half-open dialog carrying over to a
+    // different task is state the URL does not describe.
+    return <TaskDetail key={key} taskRef={key} />;
   },
 });
 
