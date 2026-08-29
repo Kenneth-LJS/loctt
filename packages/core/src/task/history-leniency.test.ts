@@ -10,6 +10,7 @@ import { UnreadableFileError } from "../utils/read-state.js";
 import {
   appendHistory,
   isMalformedHistoryEntry,
+  HistoryParseError,
   readHistory,
   readHistoryRows,
 } from "./history.js";
@@ -219,5 +220,70 @@ describe("mergeHistory keeps entries it cannot key (V2)", () => {
     // Appended, not sorted in: there is no key to sort it by, and
     // inventing a position claims when it happened.
     expect(merged[2]).toBe(orphan);
+  });
+});
+
+describe("a history file that will not parse as YAML", () => {
+  /**
+   * @verifies CMT-37
+   *
+   * Both readers call `parseYaml` directly, and neither caught it —
+   * so a hand-broken `_history.yaml` threw a raw `YAMLParseError`
+   * straight through to the web layer's generic handler, which
+   * rendered it as a 500 `code: "unknown"`:
+   *
+   *     {"code":"unknown",
+   *      "message":"The server failed while handling GET …/activity."}
+   *
+   * CMT-37's first bullet is "the feed shows an error naming the
+   * file". A message about the *server* failing names nothing the
+   * user can act on, and reads as a crash rather than a file they
+   * hand-edited.
+   *
+   * `HistoryParseError` already existed for the not-a-list case and
+   * was simply unreachable on this path. It now carries the parse
+   * position too, because "this file is broken" without a line number
+   * leaves the user to find it.
+   *
+   * Both readers are tested: fixing only `readHistoryRows` left
+   * `readHistory` — the one the activity route actually calls — still
+   * throwing raw.
+   */
+  it("names the file and the parse position, from both readers", async () => {
+    await writeFile(historyPath(), "- kind: \"created\n  timestamp: x\n", "utf-8");
+
+    for (const read of [
+      () => readHistory(dir, TASK_ID),
+      () => readHistoryRows(dir, TASK_ID),
+    ]) {
+      // Not a bare Error: the web dispatcher branches on LocttError,
+      // and a plain throw is what produced the generic 500.
+      const err = await read().catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(HistoryParseError);
+      const message = (err as Error).message;
+      // The file, so the user knows what to open...
+      expect(message).toContain("_history.yaml");
+      // ...and where in it, which is the actionable half.
+      expect(message).toMatch(/line \d+/);
+      // And it says the file was left alone — a reader that had
+      // "repaired" it by returning [] is the CMT-C7 data loss above.
+      expect(message).toMatch(/will not modify/i);
+    }
+  });
+
+  /**
+   * @verifies CMT-37
+   *
+   * The guard must not swallow a *well-formed* file. Paired with the
+   * test above deliberately: an assertion that a read throws is
+   * satisfied by a reader that throws on everything.
+   */
+  it("still reads a valid file", async () => {
+    await writeFile(
+      historyPath(),
+      stringifyYaml([{ timestamp: "2026-01-01T00:00:00.000Z", kind: "created" }]),
+      "utf-8",
+    );
+    expect(await readHistory(dir, TASK_ID)).toHaveLength(1);
   });
 });
