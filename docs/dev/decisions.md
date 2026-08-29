@@ -818,3 +818,103 @@ The measured windows also defeat option 2 on its own terms.
 `apps/web/src/client/shell/Sidebar.tsx`, and `stillWaiting` in
 `AppBootstrap.tsx`. Both are small and local; the tests pinning them
 are named in their commits.
+
+---
+
+## 9. Ken's rulings, 2026-08-29
+
+**These are Ken's, not an agent's.** Unlike § 8, they carry the
+authority of sections 1–7 and are not revertible on an agent's
+judgment. Recorded here because several were open in
+`PROPOSED-UI-CASES.md` and were blocking M2.
+
+### K1 · SET-3 is dropped; workflow panels are editable
+
+SET-3 asserted workflow panels are read-only ("no inline text inputs,
+no delete buttons"). SET-6, SET-17 and SET-19 assert drag-reorder and
+in-panel deletion with remap. Both cannot hold.
+
+**Ruling: drop SET-3, keep the editable reading.** `PUT /api/workflow`
+supports it and `workflow-write.ts` (822 lines, full per-collection
+remap) was built for it.
+
+### K2 · Body save is autosave, and the precondition ships with it
+
+`markdown-extensions.md` mandates explicit-Save; TSK-15 mandates 1.5s
+idle autosave.
+
+**Ruling: autosave**, and `markdown-extensions.md` is corrected.
+
+**And the precondition is built with the body editor, not after it.**
+The objection put to Ken: there is no concurrency control anywhere —
+no `If-Match`, no `412`, no version on any write path, verified by
+grep. Autosave without one silently overwrites a concurrent CLI or MCP
+edit every 1.5 idle seconds, unattended, which is exactly what P1
+forbids ("never silently overwrite a change it didn't make"). Ken
+ruled the precondition ships with the editor rather than as a
+follow-up.
+
+So M2's body-editor ticket owes: the editor sends the `updated_at` it
+loaded, the server refuses a stale write with 412, and the UI reports
+that the task changed underneath the user.
+
+Note: `PROPOSED-UI-CASES.md` attributes this gap to "B5". **That is
+the wrong ID** — B5 is the lossy-content guardrail. The concurrency
+gap has no B-number.
+
+### K3 · Project URLs carry a slug
+
+`flow-projects-users.md` PRU-2/PRU-6 assume `?project=web`.
+`ProjectDefSchema` is `.strict()` with `{id, name, prefix, archived?}`
+— no slug — and `state.keys` is indexed by ULID.
+
+**Ruling: reintroduce a slug field to the schema.** URLs carry the
+slug, not the ULID.
+
+This is a core change (the schema is shared), and it needs: slug
+generation on create, uniqueness, and a decision on what happens when
+a project is renamed. Those are M-ticket work, not settled here.
+
+### K4 · The CSV export is a report; JSONL is the backup
+
+**Asked as a product question**: what is the export *for*? Ken's
+answer was "a backup or archive" — which the measurement then
+contradicted.
+
+**The CSV cannot be a backup.** 18 columns against 27 frontmatter
+fields, and the omissions are the substance: the **body** (the whole
+markdown content), **relationships** (every link between tasks),
+custom `fields`, `key_history`, `archived`/`archived_at`, and
+`rank`/`board_rank`. Comments are stored separately and not exported
+at all. A restore from it would be a pile of disconnected, bodyless
+tasks.
+
+**Rulings:**
+
+1. **CSV is a report for a human in a spreadsheet.** So it shows what
+   a human recognises: `project`, `assignee`, `reporter`, `milestone`
+   and `sprint` resolve to **names**. This closes the M1 gate's F7 as
+   a plain bug rather than a decision.
+2. **`id` stays.** One opaque column a reader can ignore, and nothing
+   scripted against the current export breaks. BLK-36's pinned column
+   count is unchanged — the smallest correct change. `key` remains the
+   stable identifier, and it survives project moves via `key_history`.
+3. **A structured export (JSON/YAML, JSONL, size-split) is the
+   backup**, and it is **its own ticket after M4**. Not folded into an
+   existing one, because no case describes it and the gate would
+   rightly flag behaviour no case covers.
+
+**Superseded reasoning, recorded so it is not re-derived.** The
+earlier argument for keeping raw ULIDs was that "an id round-trips and
+a name does not". **There is no CSV import anywhere in the codebase** —
+nothing parses CSV back in — so that defended a round-trip that does
+not exist. The four options in `PROPOSED-UI-CASES.md` are closed by
+this entry.
+
+### K5 · Robustness is a standing rule, not a one-off
+
+Ken, on the ~25 cases that fail as written: *"make sure this stays
+robust (this is a general rule, should this go into our workflow)"*.
+
+Written into `TEMP-RUN-WORKFLOW.md` § "Cases that cannot be satisfied
+yet".
