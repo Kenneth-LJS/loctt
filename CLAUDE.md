@@ -36,6 +36,32 @@ deleted when the build lands:
 - `PROPOSED-UI-CASES.md` — flow-doc contradictions awaiting a decision
   from Ken; nothing here has been applied
 
+**Keeping these current is part of the work, not paperwork.** A
+decision that lives only in a session's context is lost at the next
+compaction, and the agent after that will re-derive it differently.
+Before starting a ticket, read `decisions.md` (§ 8 agent-made, § 9
+Ken's) and `known-gaps.md`; while working, write back:
+
+| When | Where |
+|---|---|
+| A call the docs did not settle | `decisions.md` § 8, six fields incl. **To revert** |
+| Ken ruled on something | `decisions.md` § 9 — his, not revertible by an agent |
+| A defect found but not fixed | `known-gaps.md`, with how to reproduce |
+| A case that cannot be satisfied yet | `TEMP-RUN-WORKFLOW.md` § Cases that cannot be satisfied yet |
+| Any core change | the CLI **and** MCP reference docs — see below |
+| A subsection commit | `TEMP-BUILD-PLAN.md`'s Status table |
+
+**A capability in core is not done until CLI and MCP have it.** Core
+exists so two surfaces answer the same question the same way; adding
+to it for one surface is drift with a good address. `unarchiveView` is
+exported from core and called by nothing at all. See
+`TEMP-RUN-WORKFLOW.md` § "Which layer".
+
+**Check before claiming something does not exist.** An audit claimed
+milestone progress "does not exist anywhere"; it is
+`computeProgress` in core, with a CLI flag and an MCP tool. That was
+repeated twice before anyone looked.
+
 **The run does not stop for things the agent can decide.** It stops
 only when a call changes scope, invents a requirement, violates a
 P-principle or a recorded decision, or is load-bearing — see
