@@ -139,4 +139,44 @@ describe("unlink leaves identical state on CLI and MCP", () => {
       expect(after).not.toContain("blocks");
     });
   });
+
+  /**
+   * @verifies REL-24
+   *
+   * **A retired key cannot be resolved once its task is deleted**, and
+   * the message must say so rather than deny the edge exists.
+   *
+   * The key index is rebuilt from live task files, so a deleted task's
+   * `key` and `key_history` are gone with it. Core then reported
+   * "relationship blocks -> T-2 does not exist on task <id>", which is
+   * false — the edge exists under the id the file stores. Found by the
+   * M2 gate (F7).
+   */
+  it("explains an unresolvable target instead of denying the edge", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await seed(root);
+      await runCli(["delete", "T-2", "--yes"], { cwd: root });
+
+      const res = await runCli(["unlink", "T-1", "blocks", "T-2"], { cwd: root });
+      expect(res.exitCode).not.toBe(0);
+
+      // Not "does not exist" — that was the lie.
+      expect(res.stderr).not.toMatch(/does not exist on task/);
+      expect(res.stderr).toMatch(/could not be resolved/);
+
+      // And it hands over the id that works, rather than leaving the
+      // user to find it. Asserted by USING it, not by matching a
+      // shape: a message naming a wrong id would pass a regex.
+      const suggested = /\b(01[A-Z0-9]{24})\b/.exec(res.stderr)?.[1];
+      expect(suggested, res.stderr).toBeDefined();
+      const second = await runCli(
+        ["unlink", "T-1", "blocks", String(suggested)],
+        { cwd: root },
+      );
+      expect(second.exitCode, second.stderr).toBe(0);
+
+      // The far end: the edge is gone from the file.
+      expect(await snapshot(root)).not.toContain("blocks");
+    });
+  });
 });
