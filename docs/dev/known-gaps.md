@@ -843,6 +843,20 @@ Two rules:
   a deleted `build-m21` worktree was still running and still holding a
   port — `git worktree remove` does not stop what the agent started.
 
+  **This recurs, and it is the coordinator's own probes that leak.**
+  Measured 2026-08-30: three `loctt ui` servers had been running for
+  3, 4 and 7.5 hours, all from `curl` probes whose `pkill` was written
+  into a *later* command that never ran, or ran from a shell whose
+  `cd` had reset. Load was 43 with one Playwright suite in flight; it
+  fell to 31 the moment they were killed, and a run that normally
+  takes 14 minutes was at 37.
+
+  So: `pkill -f "port <n>"` belongs in the **same** command that
+  started the server, not the next one. And when a UI suite looks
+  slow, count the servers before blaming the suite —
+  `pgrep -f "loctt.*ui --port" | wc -l` should be 1 during a
+  `--workers=1` run.
+
 ### The same defect for custom fields — found independently
 
 The M2.2a build agent hit this from the other side, and its
@@ -1068,6 +1082,30 @@ rather than on the diff.
 `uptime` before believing a UI failure, and re-run the named specs in
 isolation before concluding anything. A green isolated run plus a
 green full re-run is the standard of proof; one red full run is not.
+
+### The ambient load has a name
+
+**Measured 2026-08-30**, after four runs on one commit each failed a
+*different* pair (SHL-9; then none; then SHL-28 + XS-6):
+
+```
+92.7%  TrendMicroSecurity.app/…/iCoreService
+58.1%  Google Chrome
+```
+
+**A real-time antivirus is scanning every file the fixtures create** —
+and the UI fixture creates a whole `.loctt/` tracker per spec, with a
+`loctt ui` server per spec on top. That is the flake, and it is not
+something this repo can fix.
+
+Two consequences worth knowing:
+
+- **A different failing pair each run is the signature.** A real break
+  is the same test every time. If the set moves, check `ps aux | sort
+  -k3 -rn | head` before anything else.
+- **Leaked `loctt ui` servers make it much worse** and *are* ours —
+  see above. Three had been running 3–7 hours; killing them dropped
+  load from 43 to 31 immediately.
 
 ## `multipart.ts`'s basename guard is inert; core's is the only one
 

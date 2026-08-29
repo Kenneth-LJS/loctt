@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -182,5 +182,126 @@ describe("task show model", () => {
       target: "vanished-id",
       missing: true,
     });
+  });
+
+  /**
+   * @verifies REL-49
+   *
+   * **"There is no attachments directory" and "I could not read it"
+   * are different answers.** A bare `catch { return [] }` made them
+   * the same, so an unreadable directory rendered as
+   * "No attachments on this task yet" over a directory holding a
+   * file — ERR-1's prohibition, and REL-49's first bullet inverted.
+   *
+   * Found by the M2 gate and confirmed on the CLI: `loctt show`
+   * dropped the section silently too, so the fix is core rather than
+   * the web client.
+   */
+  it("reports an unreadable attachments directory rather than an empty one", async () => {
+    const dir = getAttachmentsDir(locttDir, "abc123");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "present.txt"), "x", "utf-8");
+
+    // Sanity: readable, so the failure below cannot be "there was
+    // never a file". Paired deliberately.
+    expect((await discoverAttachments(locttDir, "abc123")).map(a => a.name))
+      .toEqual(["present.txt"]);
+
+    await chmod(dir, 0o000);
+    try {
+      await expect(discoverAttachments(locttDir, "abc123")).rejects.toThrow(/EACCES|permission/i);
+    } finally {
+      await chmod(dir, 0o755);
+    }
+  });
+
+  /**
+   * @verifies REL-49
+   *
+   * The guard the fix must not lose: a task with no attachments has
+   * no directory at all, which is the common path and is *not* a
+   * failure. Without this, "throw on everything" would satisfy the
+   * test above.
+   */
+  it("still returns [] when the directory does not exist", async () => {
+    expect(await discoverAttachments(locttDir, "no-such-task")).toEqual([]);
+  });
+
+
+  /**
+   * @verifies REL-25
+   *
+   * **A corrupt task must not take its neighbours down with it.**
+   *
+   * Relationship resolution tolerated `TaskNotFoundError` and rethrew
+   * everything else, so one unparseable `task.md` made *every* task
+   * linking to it answer 500 — naming the corrupt task's ULID, which
+   * the user can neither read nor act on, about a task they did not
+   * ask for. Found by the M2 gate (F3).
+   *
+   * From this task's point of view, "the target is gone" and "the
+   * target will not parse" are the same broken edge. The corrupt
+   * task's own page still reports the parse error with its path and
+   * position — that is where the user can act on it.
+   */
+  it("marks a link to an unparseable task as missing rather than failing the page", async () => {
+    const base: Task = {
+      frontmatter: {
+        id: "abc123", key: "T-1", title: "Source",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+      },
+      body: "",
+    };
+    const source: Task = {
+      frontmatter: {
+        ...base.frontmatter,
+        relationships: [{ type: "blocks", target: "broken-id" }],
+      },
+      body: "",
+    };
+    await writeTask(locttDir, "abc123", source);
+
+    // A target on disk whose frontmatter will not parse.
+    await mkdir(getTaskDir(locttDir, "broken-id"), { recursive: true });
+    await writeFile(
+      join(getTaskDir(locttDir, "broken-id"), "task.md"),
+      '---\nid: broken-id\nkey: T-9\nstatus: "backlog\n---\n',
+      "utf-8",
+    );
+
+    const model = await buildShowModel(locttDir, source);
+    expect(model.relationships).toHaveLength(1);
+    expect(model.relationships[0]?.missing).toBe(true);
+  });
+
+  /**
+   * @verifies REL-25
+   *
+   * The guard the fix must not lose: a healthy target still resolves.
+   * Without this, marking every edge missing would satisfy the test
+   * above.
+   */
+  it("still resolves a healthy link target", async () => {
+    const target: Task = {
+      frontmatter: {
+        id: "live-id", key: "T-2", title: "Live",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+      },
+      body: "",
+    };
+    const source: Task = {
+      frontmatter: {
+        id: "abc123", key: "T-1", title: "Source",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+        relationships: [{ type: "blocks", target: "live-id" }],
+      },
+      body: "",
+    };
+    await writeTask(locttDir, "abc123", source);
+    await writeTask(locttDir, "live-id", target);
+
+    const model = await buildShowModel(locttDir, source);
+    expect(model.relationships[0]?.missing).toBe(false);
+    expect(model.relationships[0]?.resolvedKey).toBe("T-2");
   });
 });

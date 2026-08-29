@@ -402,4 +402,35 @@ describe("key rename (CMT-29)", () => {
     expect(d.change?.before.text).toBe("T-12");
     expect(d.change?.after.text).toBe("M-4");
   });
+
+  /**
+   * @verifies CMT-26
+   *
+   * **The CLI writes history by name, not by id.** Measured on a real
+   * tracker: `loctt set T-1 milestone v1` stores
+   * `milestone: 01M17…` in the frontmatter and `after: v1` in
+   * `_history.yaml`.
+   *
+   * Matching on `id` alone therefore missed every CLI-written entry
+   * and marked a **live** milestone "(no longer defined)" — CMT-26's
+   * second bullet inverted, since the marker exists to flag a value
+   * config no longer knows. The M2 gate found it by putting two rows
+   * for the same milestone on one screen, one id-shaped and one
+   * name-shaped, rendering differently.
+   */
+  it("resolves a milestone written by name, not only by id", () => {
+    // The id form still resolves — asserted alongside so this cannot
+    // pass by making everything resolve to something.
+    expect(renderValue(ctx, "field_change", "milestone", "01MST000000000000000000M1").text)
+      .toBe("Launch");
+    expect(renderValue(ctx, "field_change", "milestone", "Launch").text)
+      .toBe("Launch");
+    expect(renderValue(ctx, "field_change", "milestone", "Launch").drifted)
+      .toBe(false);
+
+    // And the paired negative: a name config genuinely does not know
+    // is still marked. Without this, "resolve everything" would pass.
+    expect(renderValue(ctx, "field_change", "milestone", "Nonexistent").drifted)
+      .toBe(true);
+  });
 });

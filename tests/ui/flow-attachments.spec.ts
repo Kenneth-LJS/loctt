@@ -21,7 +21,7 @@
  * because "untouched" is not the same as "still present".
  */
 
-import { mkdtemp, readdir, readFile, truncate, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, truncate, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -596,6 +596,14 @@ test("REL-40: twenty files report per-file outcome, and a failure in the middle 
  * C. Removal — not a numbered case, but the panel's other write
  * ------------------------------------------------------------------ */
 
+// @verifies REL-19
+//
+// Covers REL-19's second and third bullets: removal deletes the file
+// and writes an `attachment_removed` history entry, and the tile goes
+// without a reload. Its first bullet — the control appearing on hover
+// AND on keyboard focus — is not asserted here; the control is always
+// in the DOM, so a hover assertion would pass without proving the
+// focus half. Left unclaimed rather than half-claimed.
 test("removing an attachment deletes the file and records it, leaving its neighbours alone", async ({ page, tracker }) => {
   const [t1] = await tracker.seed([{ title: "Remove one" }]);
   await openTask(page, tracker, t1 ?? "");
@@ -612,4 +620,101 @@ test("removing an attachment deletes the file and records it, leaving its neighb
   expect(await stored(tracker.root, t1 ?? "")).toEqual(["keep.txt"]);
   expect((await storedBytes(tracker.root, t1 ?? "", "keep.txt")).toString()).toBe("KEEP");
   expect(await historyKinds(tracker.root, t1 ?? "")).toContain("attachment_removed");
+});
+
+// @verifies REL-20
+test("REL-20: a download serves the original bytes, as an attachment, with nosniff", async ({
+  page,
+  tracker,
+}) => {
+  const [t1] = await tracker.seed([{ title: "Download me" }]);
+  await openTask(page, tracker, t1 ?? "");
+
+  // An `.svg` deliberately: it is the shape that makes this a security
+  // case rather than a convenience one. Served inline with a sniffable
+  // type, an uploaded SVG executes script in the app's own origin.
+  await drop(page, [await file("payload.svg", "<svg xmlns='http://www.w3.org/2000/svg'></svg>")]);
+  await settled(page);
+
+  const res = await page.request.get(
+    `${tracker.baseURL}/api/tasks/${t1 ?? ""}/attachments/payload.svg`,
+  );
+  expect(res.status()).toBe(200);
+
+  // The bytes are the ones uploaded — asserted first, so the header
+  // checks below cannot pass over an empty or wrong response.
+  expect(await res.text()).toContain("<svg");
+
+  // Downloads rather than renders. Both halves matter: a disposition
+  // without nosniff still lets a browser sniff its way to text/html.
+  expect(res.headers()["content-disposition"]).toContain("attachment");
+  expect(res.headers()["x-content-type-options"]).toBe("nosniff");
+});
+
+// @verifies REL-48
+test("REL-48: a delete the server refuses keeps the tile and names the reason", async ({
+  page,
+  tracker,
+}) => {
+  const [t1] = await tracker.seed([{ title: "Refused delete" }]);
+  await openTask(page, tracker, t1 ?? "");
+  await drop(page, [await file("locked.txt", "LOCKED")]);
+  await settled(page);
+  expect(await stored(tracker.root, t1 ?? "")).toEqual(["locked.txt"]);
+
+  // The server refuses. Intercepted rather than chmod'd: the point is
+  // what the panel does with a refusal, and a real permission error
+  // would make this test about the filesystem instead.
+  await page.route(/\/attachments\//, route =>
+    route.request().method() === "DELETE"
+      ? route.fulfill({
+          status: 403,
+          contentType: "application/json",
+          body: JSON.stringify({
+            code: "io_failed",
+            message: "locked.txt could not be removed: permission denied",
+          }),
+        })
+      : route.continue());
+
+  await tile(page, "locked.txt").getByTestId("attachment-remove").click();
+
+  // The tile stays — bullet 1. Asserted with a real wait rather than
+  // an immediate check, so a tile that vanishes and returns would
+  // still fail.
+  await expect(page.getByTestId("attachment-remove-error")).toContainText(/locked\.txt/);
+  await expect(page.getByTestId("attachment-remove-error")).toContainText(/permission denied/i);
+  await expect(tile(page, "locked.txt")).toHaveCount(1);
+
+  // And the far end: the file is still on disk. A panel that removed
+  // the tile optimistically and showed an error would pass the
+  // message assertions and fail this one.
+  expect(await stored(tracker.root, t1 ?? "")).toEqual(["locked.txt"]);
+});
+
+// @verifies REL-50
+test("REL-50: downloading a since-deleted attachment names the file rather than serving nothing", async ({
+  page,
+  tracker,
+}) => {
+  const [t1] = await tracker.seed([{ title: "Vanished file" }]);
+  await openTask(page, tracker, t1 ?? "");
+  await drop(page, [await file("gone.txt", "GONE")]);
+  await settled(page);
+
+  // Removed underneath the open page — the case's own setup. The tile
+  // is still rendered from the list the page already has.
+  const dir = path.join(await taskDir(tracker.root, t1 ?? ""), "attachments");
+  await unlink(path.join(dir, "gone.txt"));
+
+  const res = await page.request.get(
+    `${tracker.baseURL}/api/tasks/${t1 ?? ""}/attachments/gone.txt`,
+  );
+
+  // Not a zero-byte 200: the browser must not silently "download"
+  // nothing, which is bullet 2 and the only part a user would notice
+  // as data loss.
+  expect(res.status()).not.toBe(200);
+  const body = await res.text();
+  expect(body).toContain("gone.txt");
 });
