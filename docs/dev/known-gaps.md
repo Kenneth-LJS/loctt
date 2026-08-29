@@ -1068,3 +1068,51 @@ rather than on the diff.
 `uptime` before believing a UI failure, and re-run the named specs in
 isolation before concluding anything. A green isolated run plus a
 green full re-run is the standard of proof; one red full run is not.
+
+## `multipart.ts`'s basename guard is inert; core's is the only one
+
+**Found 2026-08-29 while mutation-testing M2.5b's REL-36.**
+
+`apps/web/src/server/multipart.ts` takes `basename(filename)` of the
+declared multipart filename, with a comment calling it a defence
+against injected directory components. **It defends nothing on its
+own.** Neutralising it — leaving the declared name intact — left
+REL-36 green: an upload named `../../etc/passwd` still landed as
+`passwd` inside the task's own `attachments/`.
+
+The reason is that `attachFile` in `packages/core/src/task/attachments.ts`
+derives the destination name from `basename(absSource)` itself, and
+`absSource` is the temp path the route wrote to. Neutralising *that*
+one turns REL-36 red immediately, with nothing written at all.
+
+So the traversal guard is core's, and it is doing its job. The web
+layer's copy is redundant — which is fine as defence in depth, but the
+comment overstates it, and anyone reading `multipart.ts` alone would
+conclude the route is the thing keeping uploads inside the directory.
+
+**Not a defect and not fixed:** removing the redundant call would make
+`multipart.ts` depend on core's guarantee across a package boundary
+for a security property, which is worse than a redundant line. The
+gap is the comment, not the code.
+
+## An attachment name that differs only by case aliases on macOS
+
+**Found 2026-08-29 while mutation-testing M2.5b's removal path.**
+
+`DELETE /api/tasks/:ref/attachments/DROP.TXT` deletes `drop.txt` on a
+default macOS volume, because APFS is case-insensitive. `unlink`
+resolves the alias and core's `detachFile` reports success, writing an
+`attachment_removed` history entry naming `DROP.TXT` — a name that was
+never on disk.
+
+The same upload path can therefore also overwrite `readme.md` with a
+file named `README.md` **without** triggering the collision check:
+`stat(dest)` for `README.md` finds `readme.md`, so it does throw
+`AttachmentExistsError` on macOS — but on a case-sensitive Linux
+volume the two are distinct files and both are kept. The behaviour
+differs by filesystem, which is the actual problem.
+
+**Not in scope for M2.5b** (no REL case covers case-folding), and not
+fixed: the honest fix is core normalising or refusing names that
+collide case-insensitively with an existing attachment, which changes
+what the CLI and MCP accept too.
