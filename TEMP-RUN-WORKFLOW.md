@@ -192,6 +192,17 @@ Two rules, and the first is not optional:
 A gate verdict on a moving tree is worth nothing, and this branch has
 already lost rounds to that class of confusion.
 
+**Copy the report out before removing the worktree.** The gate writes
+`docs/dev/gates/<milestone>-round<n>.md` into *its* tree, and
+`git worktree remove --force` takes it with everything else. M2's
+round-1 report was lost that way and had to be reconstructed from the
+agent's returned summary — which is thinner than the original, and had
+to be labelled a reconstruction because a gate report is evidence.
+
+    cp .claude/gate-m2/docs/dev/gates/M2-round1.md docs/dev/gates/
+
+before the `worktree remove`, not after.
+
 ### Half 2 — agentic
 
 A fresh agent drives a real browser against a real seeded tracker. It
