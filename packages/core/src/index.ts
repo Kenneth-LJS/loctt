@@ -327,7 +327,7 @@ export {
   DEFAULT_MAX_ATTACHMENT_BYTES,
   detachFile,
 } from "./task/index.js";
-export { appendHistory, readHistory } from "./task/index.js";
+export { appendHistory, isMalformedHistoryEntry, readHistory, readHistoryRows, validHistory } from "./task/index.js";
 export { assembleTaskFile, parseFrontmatter, serializeFrontmatter, splitTaskFile, TaskParseError } from "./task/index.js";
 export { appendTaskBody, readTask, readTaskBody, writeTask, writeTaskBody } from "./task/index.js";
 export { listTaskIds, loadAllTasks, loadAllTasksDetailed, lookupById, lookupByKey, lookupTask, TaskNotFoundError, type UnreadableTask, UnreadableTaskError } from "./task/index.js";

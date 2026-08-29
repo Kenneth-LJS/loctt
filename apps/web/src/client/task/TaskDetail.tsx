@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
+import { ActivityPanel } from "../activity/ActivityPanel.tsx";
 import { ApiError } from "../api/client.ts";
 import {
   useLabels,
@@ -505,9 +506,22 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
             </Section>
 
             <Section title="Activity">
-              <p className="text-[13px] text-text-tertiary">
-                The activity feed arrives with the activity panel.
-              </p>
+              {/* M2.4b. Keyed by the task for the same reason the
+                  other two panels are: the expanded/collapsed state of
+                  a bulk row and the loaded page count are component
+                  state, and carrying A's loaded pages onto B would
+                  show B a feed it never fetched. */}
+              <ActivityPanel
+                key={task.data.frontmatter.id}
+                taskRef={taskRef}
+                workflow={workflow.data}
+                users={users.data?.items ?? []}
+                labels={labels.data?.items ?? []}
+                milestones={milestones.data?.items ?? []}
+                sprints={sprints.data?.items ?? []}
+                projects={projects.data?.items ?? []}
+                calendar={calendar.data}
+              />
             </Section>
 
             <Section title="Comments">

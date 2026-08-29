@@ -101,6 +101,7 @@ import {
   getTrackerInfo,
   GitConflictError,
   initLoctt,
+  isMalformedHistoryEntry,
   LabelError,
   linkTask,
   listComments,
@@ -136,7 +137,7 @@ import {
   pushRecent,
   QueryValidationError,
   readBurndownSeries,
-  readHistory,
+  readHistoryRows,
   readPrefixRenameState,
   readRecents,
   recoverInterruptedPrefixRename,
@@ -176,6 +177,7 @@ import {
   unsetField,
   updateUser,
   UserError,
+  validHistory,
   ViewError,
   withStateLock,
   writeTaskBody,
@@ -2687,17 +2689,30 @@ export function createWebApp(options: WebAppOptions) {
     const ref = requireValidRef(captures, res);
     if (ref === null) return;
     const task = await lookupTask(locttDir, ref);
-    const entries = await readHistory(locttDir, task.frontmatter.id);
+    /**
+     * Rows, not entries. `readHistory` returns only the readable ones
+     * and says nothing about what it dropped — so a file with one
+     * hand-broken entry read back as a complete, shorter history, and
+     * CMT-37's second bullet ("the feed says the list is incomplete
+     * rather than presenting a partial log as complete") had no data
+     * to stand on. `unreadable` is that datum, and it is a count
+     * rather than the raw rows: the feed needs to say *that* the log
+     * is incomplete, and shipping malformed YAML into the client
+     * would invite rendering it.
+     */
+    const rows = await readHistoryRows(locttDir, task.frontmatter.id);
+    const unreadable = rows.filter(r => isMalformedHistoryEntry(r)).length;
+    const entries = validHistory(rows);
 
-    // Copy before reversing — if `readHistory` ever caches the
-    // returned array (or another caller observes the same reference),
-    // an in-place reverse would corrupt their view.
+    // Copy before reversing — if `validHistory` ever returns a cached
+    // array (or another caller observes the same reference), an
+    // in-place reverse would corrupt their view.
     const reversed = [...entries].reverse();
 
     const page = parsePagination(url, res);
     if (page === null) return;
     const sliced = reversed.slice(page.offset, page.offset + page.limit);
-    json(res, { entries: sliced, total: reversed.length });
+    json(res, { entries: sliced, total: reversed.length, unreadable });
   };
 
   /**

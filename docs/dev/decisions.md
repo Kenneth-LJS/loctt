@@ -1506,3 +1506,125 @@ Nothing else builds on it.
 `initialMode="raw"` prop on the edit `CommentComposer`. Removing it
 restores option 1 and CMT-3's spec assertion on
 `comment-edit-composer-mode-raw` inverts with it.
+
+### A? · The activity response reports how many history rows it could not read
+
+**Ticket:** M2.4b · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** CMT-37's second bullet has two clauses: "if some
+entries parsed, **they render** and **the feed says the list is
+incomplete** rather than presenting a partial log as complete." The
+M2.4b probe verified the first — a malformed row is dropped and the
+other 21 of 22 still render at HTTP 200 — and recorded the bullet as
+already satisfied.
+
+It is not. `readHistory` returns `validHistory(rows)`, which drops
+what it cannot interpret and says nothing about it, and the route
+computed `total` from that same filtered list. So a file with one
+hand-broken entry read back as a **complete, shorter history**: the
+response carried `total: 21` for a file holding 22 rows, and no client
+could tell that from a file that genuinely held 21. The second clause
+is unsatisfiable client-side, because the datum does not exist.
+
+**What had to be decided.** Whether M2.4b — whose brief is "rendering,
+not data" — changes the activity response.
+
+**Options considered.**
+
+1. **Leave it.** The bullet stays unmet and goes into
+   `known-gaps.md`. Costs: a blocker case ships knowingly incomplete,
+   and the failure mode is the silent one — a reader is shown a
+   truncated audit log with nothing saying so. History is M2's only
+   merge-recovery evidence, so "the log looks complete but isn't" is
+   the worst shape this can take.
+2. **Compare `total` against the raw row count in the client.** Costs:
+   the client has neither number. It sees only what the server chose
+   to send.
+3. **Have the route read rows rather than entries, and report the
+   count it dropped.** Costs: it is a server change inside a
+   rendering ticket, and it adds a field to a response shape.
+
+**Decided.** Option 3.
+
+**Why.** The bullet cannot be satisfied any other way, and the change
+is four lines in the handler plus three re-exports from core —
+`readHistoryRows`, `validHistory` and `isMalformedHistoryEntry` all
+already existed in `packages/core/src/task/index.ts` and were simply
+not surfaced at the package root. Nothing about how history is read,
+written or merged changed; the route now asks the reader a question it
+could already answer.
+
+The field is a **count**, not the rows. The feed's job is to say
+*that* the log is incomplete and how much of it is missing; shipping
+malformed YAML to the client would invite rendering it, and P-11 keeps
+those rows in the file precisely so nobody has to interpret them.
+
+`unreadable` is optional on the client type and tested as `> 0`, so a
+response without it reads as "nothing was dropped" rather than as a
+false alarm.
+
+**To revert.** In `handleTaskActivity` (`apps/web/src/server/server.ts`)
+restore `const entries = await readHistory(locttDir, task.frontmatter.id)`
+and drop `unreadable` from the `json(...)` call; drop the three
+re-exports from `packages/core/src/index.ts`; delete `unreadable` from
+`ActivityPage` and the `IncompleteNotice` from `ActivityPanel.tsx`.
+The UI spec "CMT-37: a partially readable history renders what parsed
+and says it is incomplete" then fails, which is the point.
+
+### A? · The activity feed never sorts; it renders the server's order
+
+**Ticket:** M2.4b · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** CMT-30 asks that entries sharing a timestamp "render
+in a deterministic order and do not reshuffle between renders or across
+'Load more'". `_history.yaml` is append order, `/api/tasks/:ref/activity`
+returns it reversed, and the timestamps are stamped per entry — so a
+bulk operation writes several entries on the same millisecond.
+
+**What had to be decided.** Whether the client sorts the entries it
+renders.
+
+**Options considered.**
+
+1. **Sort by `timestamp` descending in the client.** Costs: a sort is
+   applied to page 1, then to page 1+2, then to page 1+2+3 — a
+   *different input each time*. `Array.sort` is stable, so this is
+   harmless as long as the comparator is a pure timestamp compare; but
+   the invariant it rests on is "the input was already sorted", which
+   makes the sort a no-op that looks like a guarantee. Anything later
+   added to the comparator — a tiebreak, a secondary key — silently
+   becomes a reshuffle across a page boundary.
+2. **Render the server's order, and never compare timestamps.** Costs:
+   the feed inherits whatever order the file has, including after a
+   git merge, where `mergeHistory` concatenates two timelines and the
+   result is not globally chronological.
+
+**Decided.** Option 2.
+
+**Why.** Option 1's correctness is conditional on something the client
+cannot check, and the condition is invisible in the code. Option 2's
+correctness is structural: with no comparator there is nothing to be
+unstable. It is also what core already decided for the same reason —
+`readHistory`'s ascending path is documented as "left as the stored
+order ... re-sorting it would reorder the one thing a reader can
+currently rely on for ties".
+
+Option 2's cost is real but small, and it lands on the *day grouping*
+rather than on the entries: a merged file can revisit a day it already
+left. That is handled by keying day sections in a `Map` rather than
+closing a section when the day changes, so a recurring day joins its
+existing heading — which CMT-17's last bullet requires anyway, for
+pagination.
+
+**Honest limit, measured.** Inserting a *stable descending* sort leaves
+every ordering test green. That is correct rather than vacuous: the
+input is already descending and `Array.sort` is stable, so such a sort
+genuinely changes nothing. What the tests do catch is a comparator
+whose tiebreak is not the input order — adding `|| Math.random() - 0.5`
+turns both the unit test and the UI spec red on every run. This is
+recorded in `group.test.ts`'s header so the next reader does not
+mistake the first result for a hole.
+
+**To revert.** Add a `.sort((a, b) => b.timestamp.localeCompare(a.timestamp))`
+over `entries` in `groupActivity` (`apps/web/src/client/activity/group.ts`).
+Nothing else depends on the absence.

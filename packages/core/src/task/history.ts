@@ -8,7 +8,6 @@ import * as lockfile from "proper-lockfile";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { LocttError } from "../errors.js";
-
 import { getHistoryFilePath } from "../paths/index.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
 

@@ -969,6 +969,34 @@ through `writeTaskBody` at `apps/cli/src/commands/task-crud.ts:603`
 and `apps/mcp/src/tools/task-body.ts:36`, and document it in both
 reference docs.
 
+## A UI spec asserting a timezone must pin the browser's
+
+**Found 2026-08-29 while mutation-testing M2.4b's CMT-31.**
+
+Playwright's config here sets no `timezoneId`, so every spec inherits
+**the host machine's zone**. The developer machine is `Asia/Singapore`
+(UTC+8) and `loctt init` writes that same zone into `calendar.yaml`, so
+by default the browser and the workspace agree — and a spec asserting
+that the app follows the *workspace* zone cannot tell that from an app
+that follows the *browser*.
+
+Measured: CMT-31's first draft used a workspace on `Pacific/Kiritimati`
+(UTC+14) and two instants 14 hours apart. Replacing the workspace
+timezone with `Intl.DateTimeFormat().resolvedOptions().timeZone` — the
+whole mechanism deleted — **left the spec green**, because on a UTC+8
+host those instants fall on the same two calendar days either way.
+
+The fix is per-spec, not global: `flow-activity.spec.ts` wraps CMT-31
+in its own `test.describe` with
+`test.use({ timezoneId: "America/Los_Angeles" })`, 21 hours from the
+workspace zone, so every fixture instant lands on a different day in
+each. The mutation now turns it red.
+
+**The general rule:** a spec whose subject is "which clock does the app
+read" must fix *both* clocks. Leaving one to the host makes the test's
+verdict a property of whoever ran it. Anything asserting relative
+dates, "Today"/"Yesterday", or day boundaries is in scope.
+
 ## The UI suite flakes under ambient load, with a different set each time
 
 **Measured 2026-08-29 during M2.4a, at load average 24–29.**
