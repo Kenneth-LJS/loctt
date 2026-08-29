@@ -178,3 +178,95 @@ describe("two unrelated sidebar failures at once", () => {
     expect(screen.getByText(/No milestones yet/)).toBeTruthy();
   });
 });
+
+/**
+ * @verifies SHL-39
+ *
+ * **"We have not asked yet" is not "there is nothing".**
+ *
+ * Every group's empty state was gated only on `items.length === 0`,
+ * so it rendered from the very first paint — before a request had
+ * been answered, or in the outage case, before one had even failed.
+ *
+ * Measured on the built app by a Fable agent, with the phases kept
+ * apart: "No projects yet" is on screen 188–212ms into every healthy
+ * cold load, and **1089–2098ms** into a cold load against a dead
+ * server — a full second of a populated tracker being described as
+ * empty, sitting underneath the unreachable banner saying the server
+ * is down.
+ *
+ * `hasFailed` cannot close that window and should not try: nothing has
+ * failed. Nothing has settled at all. P6 asks for four designed
+ * states, and this is the one that was missing — so a group with no
+ * answer yet renders its label and nothing else.
+ *
+ * A never-resolving fetch is the honest fixture: it holds the query in
+ * exactly that state for the length of the test.
+ */
+describe("a sidebar group that has not been answered yet", () => {
+  it("says nothing rather than claiming the tracker is empty", async () => {
+    // Never settles: not an error, not an answer. The window every
+    // cold load passes through.
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      () => new Promise<Response>(() => { /* never */ }),
+    );
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const rootRoute = createRootRoute();
+    const listRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/list",
+      validateSearch: (search: Record<string, unknown>) => search,
+      component: () => (
+        <Sidebar collapsed={false} info={INFO} currentUserId="u_ken" today="2026-06-08" />
+      ),
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([listRoute]),
+      history: createMemoryHistory({ initialEntries: ["/list"] }),
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+
+    // The group labels are there — the sidebar renders — but none of
+    // them makes a claim about what the tracker contains.
+    await screen.findByText("Projects");
+    expect(screen.queryByText("No projects yet")).toBeNull();
+    expect(screen.queryByText("No milestones yet")).toBeNull();
+    expect(screen.queryByText("No active sprints")).toBeNull();
+    expect(screen.queryByText("No labels yet")).toBeNull();
+  });
+
+  it("still says so once the server answers with nothing", async () => {
+    // The other half, and the one the fix must not break: a settled
+    // empty answer is a real empty state and must still render.
+    renderSidebarOk();
+    expect(await screen.findByText("No projects yet")).toBeTruthy();
+  });
+});
+
+/** Renders the sidebar with every endpoint answering empty. */
+function renderSidebarOk(): void {
+  stubFetch();
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const rootRoute = createRootRoute();
+  const listRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/list",
+    validateSearch: (search: Record<string, unknown>) => search,
+    component: () => (
+      <Sidebar collapsed={false} info={INFO} currentUserId="u_ken" today="2026-06-08" />
+    ),
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([listRoute]),
+    history: createMemoryHistory({ initialEntries: ["/list"] }),
+  });
+  render(
+    <QueryClientProvider client={qc}>
+      <RouterProvider router={router as never} />
+    </QueryClientProvider>,
+  );
+}

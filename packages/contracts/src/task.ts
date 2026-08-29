@@ -178,3 +178,25 @@ export function projectTaskFrontmatter(fm: TaskFrontmatter): TaskFrontmatterPubl
   }
   return TaskFrontmatterPublicSchema.parse(out);
 }
+
+/**
+ * Whether the list can sort by `field`.
+ *
+ * Shared by the server (which builds the comparator) and the client
+ * (which decides whether a `?sort=` in the URL was honoured). Two
+ * copies of this drifted once already: the client kept a hand-written
+ * list of its nine visible columns, so a URL sorting by `created_at`,
+ * `reporter` or a custom `fields.*` key — all of which the server
+ * honours — was silently stripped from the address bar and the
+ * ordering lost.
+ *
+ * The schema is the authority precisely because it cannot rot: a
+ * field added to `TaskFrontmatterSchema` becomes sortable on both
+ * sides at once.
+ */
+export function isSortableTaskField(field: string): boolean {
+  // Custom fields are per-workspace, so they are carried by shape
+  // rather than by name.
+  if (field.startsWith("fields.")) return field.length > "fields.".length;
+  return Object.prototype.hasOwnProperty.call(TaskFrontmatterSchema.shape, field);
+}

@@ -19,9 +19,20 @@ import { ApiError } from "../api/client.ts";
  * "terminal was closed" case; a 500 with an envelope is the server
  * answering, and is not this.
  *
- * Recovery is automatic. The query defaults poll an errored query, so
- * when the server returns a query succeeds and this clears itself
- * without a manual reload — the case's last bullet.
+ * Recovery is automatic and measured: the banner clears itself within
+ * a second of the server returning, with no reload and no click
+ * (ERR-2's last bullet).
+ *
+ * The M1 gate (F2) claimed the errored-query poll never runs. It does,
+ * and it is what recovers this: traced through query-core to the
+ * `#updateRefetchInterval` timer, one frame under the `fetch` that
+ * heals `["info"]`. Disable that poll and the banner is still up
+ * twenty seconds after the server returns.
+ *
+ * The recovery is *only* the poll. Everything else that fires in the
+ * same moment — the sidebar counts, the list — is downstream: those
+ * are `onSubscribe` fetches from components that mount once
+ * `AppBootstrap`'s gate reopens on the healed `["info"]`.
  */
 export function ServerUnreachableBanner() {
   const queryClient = useQueryClient();
@@ -43,13 +54,36 @@ export function ServerUnreachableBanner() {
       let lastFailure = 0;
       let lastSuccess = 0;
       for (const q of queries) {
+        // A query that has been answered is evidence the server was
+        // alive *at that moment* — recorded, then compared by time
+        // below. It is emphatically not a reason to stop looking at
+        // this query's later failures.
+        //
+        // It used to `continue` here, and that is the whole of the M1
+        // round-6 F1 blocker: with the page open every query has
+        // succeeded, so every query was skipped, so no failure could
+        // ever be counted. Kill the server with the app open and
+        // nothing said so — 50 stale rows under an authoritative
+        // "Showing 1–50 of 63". Seven UI specs missed it because all
+        // of them `page.reload()` first, and a reload throws away the
+        // cache that creates the condition.
         if (q.state.dataUpdatedAt > 0) {
-          // This query has been answered at some point, so the server
-          // exists as far as it is concerned.
           lastSuccess = Math.max(lastSuccess, q.state.dataUpdatedAt);
-          continue;
         }
-        if (q.state.status !== "error") continue;
+
+        // **Never ask what the status is right now.** `fetchState`
+        // resets a data-less query to `status: "pending", error: null`
+        // on every fetch, so a query that is failing and retrying
+        // reads as "pending" for the whole attempt — measured here as
+        // `status: "pending", fetchStatus: "fetching",
+        // errorUpdatedAt > 0` while the server was definitively dead.
+        //
+        // A `status !== "error"` guard therefore drops exactly the
+        // failures this banner exists to notice. `errorUpdatedAt`
+        // survives the reset; it is the honest question, and it is the
+        // same fix `AppBootstrap` carries for the same reason. This is
+        // the fifth bug traced to that one trap — see known-gaps.md.
+        if (q.state.errorUpdatedAt === 0) continue;
         const err = q.state.error;
         // An envelope means the server answered — a server error, not
         // an absent server, and it belongs to the view that asked.

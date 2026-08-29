@@ -2260,13 +2260,35 @@ test.describe("ERR — the server dies mid-session", () => {
 
     // A server that is down and a tracker that is empty must be
     // visibly different screens — conflating them reads as data loss.
-    // The shell's boundary catches this before the list renders at all,
-    // which is why the assertion is on the failure being *stated*
-    // rather than on the list's own ErrorState.
     await expect(page.getByText(/No tasks match these filters/i)).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: /went wrong/i }))
-      .toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(/Failed to fetch/i)).toBeVisible();
+
+    // This spec asserted a "Something went wrong" heading until
+    // 2026-08-28 — `FatalError`'s copy, from a full-page error that
+    // replaced the shell. The M1 gate ruled that a blocker (F1): it
+    // contradicted SHL-41 and ERR-1 both, since a page with no shell
+    // has no banner and no retry button either. The test was green
+    // and encoding the wrong behaviour.
+    //
+    // ERR-1's own bullets are what is asserted now.
+
+    // "The message says the LocTT server is not responding and that it
+    // may have been stopped in the terminal where `loctt ui` was run."
+    const banner = page.locator("[data-server-unreachable]");
+    await expect(banner).toBeVisible({ timeout: 15_000 });
+    await expect(banner).toContainText(/not responding/i);
+    await expect(banner).toContainText(/loctt ui/);
+
+    // "It does not blame the user's network — there is no network
+    // involved in a localhost app."
+    await expect(banner).not.toContainText(/network|offline|connection/i);
+
+    // "A retry control is present and is a button the user can press,
+    // not a sentence telling them to refresh."
+    await expect(banner.getByRole("button")).toBeVisible();
+
+    // And the shell survives, so the user can still navigate — the
+    // whole point of the gate's F1.
+    await expect(page.getByLabel("Toggle sidebar")).toBeVisible();
   });
 });
 
@@ -2301,7 +2323,7 @@ test.describe("ERR — a filter applied against a dead server", () => {
     // The table must not keep rows fetched for the previous filter,
     // under chips claiming the new one, with a footer asserting a count
     // for a query that never ran.
-    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText("Showing 1–14 of 14")).toHaveCount(0);
     await expect(page.locator("tbody").getByText("Task 1", { exact: true }))
       .toHaveCount(0);
@@ -2538,28 +2560,51 @@ test.describe("LST — table behaviour (M1.2)", () => {
   });
 
   // @verifies LST-4
-  test("LST-4: priorities without a value sort stably, not arbitrarily", async ({
+  test("LST-4: priorities without a value sort alphabetically by key", async ({
     page,
     tracker,
   }) => {
+    // **The case's premise, which this test used to skip.** LST-4 is
+    // about priorities "declared without `value`" — and the default
+    // workflow gives all four a value, so seeding against defaults
+    // exercises the ordinary numeric path and never the fallback.
+    const wf = path.join(tracker.root, ".loctt", "config", "workflow.yaml");
+    await writeFile(
+      wf,
+      (await readFile(wf, "utf8")).replace(/^\s*value:\s*\d+\s*$/gm, ""),
+      "utf8",
+    );
+
+    // Seeded in an order that is neither alphabetical nor reverse, so
+    // "sorted" cannot coincide with "as inserted".
     await tracker.seed([
-      { title: "Alpha", fields: { priority: "low" } },
-      { title: "Bravo", fields: { priority: "high" } },
-      { title: "Charlie", fields: { priority: "medium" } },
+      { title: "Seeded first", fields: { priority: "medium" } },
+      { title: "Seeded second", fields: { priority: "critical" } },
+      { title: "Seeded third", fields: { priority: "low" } },
+      { title: "Seeded fourth", fields: { priority: "high" } },
     ]);
 
     const order = async (): Promise<string[]> => {
       await page.goto(`${tracker.baseURL}/list?sort=priority&dir=asc`);
-      await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
+      await expect(page.getByText("Showing 1–4 of 4")).toBeVisible();
       return page.locator("tbody tr").allInnerTexts();
     };
 
-    // Two successive loads of the same URL produce the identical
-    // sequence — a missing `value` treated as 0 for every row leaves
-    // the order to chance.
     const first = await order();
-    const second = await order();
-    expect(second).toEqual(first);
+
+    // **Bullet 1: alphabetical by key.** The M1 vacuity sweep found
+    // this test survived a *zeroed comparator* — because it only
+    // asserted that two loads agree, and insertion order is perfectly
+    // deterministic. Determinism is not sortedness, and the case asks
+    // for both.
+    const rank = first.map(row => {
+      const m = /critical|high|low|medium/i.exec(row);
+      return m === null ? "" : m[0].toLowerCase();
+    });
+    expect(rank).toEqual(["critical", "high", "low", "medium"]);
+
+    // Bullet 3: and it is stable across reloads.
+    expect(await order()).toEqual(first);
   });
 });
 
@@ -2896,6 +2941,18 @@ test.describe("LST — extreme values and locale (M1.2)", () => {
     expect(first.join(" ")).toContain("مهمة عربية");
     expect(first.join(" ")).toContain("👨‍👩‍👧‍👦");
 
+    // Sorted, not merely repeatable. The M1 vacuity sweep zeroed the
+    // comparator and this test stayed green, because insertion order
+    // is perfectly deterministic and "identical across reloads" is
+    // all it asked. The case's own bullet is about *sorting* being
+    // deterministic, so the order has to be checked against what the
+    // sort claims — here, `localeCompare`, which is what the server
+    // uses for string fields.
+    const titles = first.map(row => row.split("\n").find(
+      cell => /[^\s\u2013\u2014A-Z0-9-]/.test(cell),
+    ) ?? row);
+    expect(titles).toEqual([...titles].sort((a, b) => a.localeCompare(b)));
+
     // Deterministic across reloads.
     expect(await order()).toEqual(first);
   });
@@ -2958,7 +3015,7 @@ test.describe("ONB — empty and loading states (M1.2)", () => {
 
     // A load failure must never read as data loss.
     await expect(page.getByText(/No tasks yet/i)).toHaveCount(0);
-    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
       .toBeVisible();
     // The shell stays usable so the user can go elsewhere.
@@ -3006,8 +3063,20 @@ test.describe("ERR — malformed responses and distinct surfaces (M1.2)", () => 
     await page.goto(`${tracker.baseURL}/list`);
 
     // Not half a table and not a row of undefined cells.
-    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 15_000 });
+    const alert = page.getByRole("alert");
+    await expect(alert).toBeVisible({ timeout: 15_000 });
     await expect(page.locator("tbody")).not.toContainText("undefined");
+
+    // **Bullet 2: the message says the response could not be read.**
+    // This test asserted only that the alert exists — and the M1
+    // vacuity sweep confirmed it survives the headline being blanked
+    // entirely, which is the half of the case that carries the
+    // information. An alert that says nothing satisfies "treated it
+    // as an error" and fails the user.
+    const headline = alert.locator("p").nth(1);
+    await expect(headline).toContainText(/\S/);
+    await expect(alert).toContainText(/could not|couldn't|unable|not be read|unreadable/i);
+
     await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
       .toBeVisible();
   });
@@ -3059,7 +3128,17 @@ test.describe("ERR — malformed responses and distinct surfaces (M1.2)", () => 
     // not available, which is the rare exception — but the three
     // obligations still hold (ERR-30).
     const alert = page.getByRole("alert");
-    await expect(alert).toContainText(/Loading tasks/i, { timeout: 15_000 });
+    await expect(alert).toBeVisible({ timeout: 15_000 });
+    // ERR-30's first obligation: what was attempted. Past tense —
+    // the panel used to be headed "Loading tasks", which read as a
+    // progress claim inside a role="alert" (gate round 6, F5).
+    await expect(alert).toContainText(/Could not load tasks/i);
+    // **The reason**, which is ERR-30's whole point and which this
+    // test did not check. The M1 vacuity sweep found that blanking
+    // the headline was caught by exactly one of sixteen ERR tests:
+    // every assertion here was satisfied by the context label alone,
+    // so it got *easier* to pass the less the app said.
+    await expect(alert).toContainText(/\S{12,}/);
     await expect(alert).not.toContainText(/^Error:\s*$/);
     await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
       .toBeVisible();
@@ -3086,7 +3165,7 @@ test.describe("ERR — malformed responses and distinct surfaces (M1.2)", () => 
     // 3. An unreachable server.
     await page.route(/\/api\/tasks(\?|$)/, route => route.abort("failed"));
     await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 15_000 });
     const unreachable = await page.locator("body").innerText();
 
     // All three read differently, and neither failure borrows the
@@ -3094,6 +3173,20 @@ test.describe("ERR — malformed responses and distinct surfaces (M1.2)", () => 
     expect(new Set([fresh, filtered]).size).toBe(2);
     expect(unreachable).not.toMatch(/No tasks yet/i);
     expect(unreachable).not.toMatch(/match these filters/i);
+
+    // **Bullet 1: distinct *copy*, not merely distinct from the
+    // empties.** The M1 vacuity sweep found this half dead — the
+    // three assertions above are all absences, and an absence is
+    // satisfied by an error surface that says nothing at all, which
+    // is exactly what blanking the headline produces. The
+    // non-conflation claim survived a real mutation; this one did not
+    // exist.
+    const errorHeadline = page.getByRole("alert").locator("p").nth(1);
+    await expect(errorHeadline).toContainText(/\S/);
+    // And its copy is its own, not either empty state's.
+    const errorCopy = await errorHeadline.innerText();
+    expect(fresh).not.toContain(errorCopy);
+    expect(filtered).not.toContain(errorCopy);
   });
 });
 
@@ -3331,7 +3424,7 @@ test.describe("LST — columns, staleness, unreachable (M1.2)", () => {
     await page.route(/\/api\/tasks(\?|$)/, route => route.abort("connectionrefused"));
     await page.goto(`${tracker.baseURL}/list`);
 
-    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 15_000 });
     // Never the empty-tracker copy — a load failure must not read as
     // data loss.
     await expect(page.getByText(/No tasks yet/i)).toHaveCount(0);
@@ -3424,9 +3517,24 @@ test.describe("ERR — the sweeps (M1.2)", () => {
     ]) {
       expect(copy.toLowerCase()).not.toContain(jargon.toLowerCase());
     }
-    // And it says what was being done, in a sentence or two before any
-    // expandable detail.
-    expect(copy).toMatch(/tasks/i);
+    // **Bullet 1, which this test did not check.** Every assertion
+    // above is an absence, and an absence gets *easier* to pass the
+    // less the app says — the M1 vacuity sweep measured this cluster
+    // as green in the limit where the error surface renders nothing,
+    // and found that blanking the headline was caught by exactly one
+    // of sixteen ERR tests. This one's only positive check was
+    // `toMatch(/tasks/i)`, which the context label satisfies on its
+    // own, so it was strictly easier to pass the quieter the app got.
+    //
+    // The headline is the sentence the case is about, so assert it
+    // rather than the container that also holds the context label.
+    const headline = alert.locator("p").nth(1);
+    await expect(headline).toContainText(/\S/);
+    // Something the user recognises — the server they started, in the
+    // terminal they started it in.
+    await expect(headline).toContainText(/server|loctt/i);
+
+    // And it fits in one or two sentences before any expandable detail.
     expect(copy.split(/[.!?]/).filter(s => s.trim().length > 0).length)
       .toBeLessThanOrEqual(4);
   });
@@ -4099,7 +4207,7 @@ test.describe("LST — filters that fail honestly (M1.3)", () => {
     await page.goto(`${tracker.baseURL}/list`);
 
     // A terminal state, not an endless skeleton.
-    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
       .toBeVisible();
     // Never presented as an empty tracker.
@@ -4127,7 +4235,7 @@ test.describe("LST — filters that fail honestly (M1.3)", () => {
     // The URL and the visible result never disagree silently: either
     // the previous state is clearly retained, or the table is in an
     // explicit error state. It is the latter.
-    await expect(page.getByText(/Loading tasks/i)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText("Showing 1–2 of 2")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
       .toBeVisible();

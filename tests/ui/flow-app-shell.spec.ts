@@ -683,3 +683,467 @@ test.describe("BLK — export with an unreadable task", () => {
     await expect(notice).toContainText(victim);
   });
 });
+
+test.describe("SHL — a config file broken by hand", () => {
+  // @verifies SHL-43
+  test("SHL-43: a malformed config names the file and does not read as empty", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Still listed" }]);
+    await writeFile(
+      path.join(tracker.root, ".loctt", "config", "labels.yaml"),
+      "labels:\n  - name: [unclosed\n",
+      "utf8",
+    );
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Still listed")).toBeVisible();
+
+    // "The error names the specific file … and includes the parse
+    // error's location if the server provides one."
+    const alert = page.locator("aside [role=alert]");
+    await expect(alert).toBeVisible();
+    await expect(alert).toContainText("labels.yaml");
+    await expect(alert).toContainText(/could not be parsed/i);
+
+    // "Offers the next action (fix the YAML, or run `loctt doctor`)."
+    await expect(alert).toContainText("loctt doctor");
+
+    // The parse position is available, but not in the headline — it is
+    // machinery, and ERR-16 keeps machinery out of the first sentence.
+    await alert.getByRole("button", { name: /Show details/ }).click();
+    await expect(alert).toContainText(/line \d+/);
+
+    // The M1 gate's F4 third strand: the filter presented a broken
+    // config as an empty one, which is ERR-1's conflation one layer
+    // down. An absence and a failure must not look alike.
+    await page.getByRole("button", { name: "Label", exact: false }).first().click();
+    const menu = page.getByRole("menu");
+    await expect(menu).toContainText(/could not be loaded/i);
+    await expect(menu).not.toContainText("No options");
+
+    // "Features not dependent on that file continue working."
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+  });
+});
+
+test.describe("SHL — narrow viewports", () => {
+  /**
+   * @verifies SHL-5, XS-19
+   *
+   * Not a case's own scenario — the M1 gate raised it as F5, and its
+   * PC-13 records that no case pins a sub-900px layout. What *is*
+   * pinned is that the table scrolls in its own container rather than
+   * panning the page (LST-19's neighbours assert the same shape), and
+   * a header that overflows breaks that for the whole app: at 375px
+   * its contents ran to x=561, so the theme toggle and avatar were
+   * unreachable without scrolling the app sideways.
+   */
+  test("the page does not pan sideways at 375px, and every header control is reachable", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha task" }]);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Alpha task")).toBeVisible();
+
+    // The page itself must not scroll horizontally.
+    const doc = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(
+      doc.scrollWidth,
+      `page scrollWidth ${String(doc.scrollWidth)} exceeds ${String(doc.clientWidth)}`,
+    ).toBeLessThanOrEqual(doc.clientWidth);
+
+    // Every header control is inside the viewport, not merely present
+    // in the DOM — the failure mode was reachable-only-by-panning.
+    for (const label of ["Theme", "New task", "User menu", "Toggle sidebar"]) {
+      const box = await page.getByLabel(label).first().boundingBox();
+      expect(box, `${label} has no box`).not.toBeNull();
+      expect(
+        Math.round(box?.x ?? 0) + Math.round(box?.width ?? 0),
+        `${label} extends past the viewport`,
+      ).toBeLessThanOrEqual(doc.clientWidth);
+    }
+
+    // The table still scrolls within its own container: the fix is a
+    // header that fits, not a table that was clipped.
+    const table = page.locator("table").first();
+    const tb = await table.evaluate(el => {
+      const c = el.parentElement;
+      return c === null ? null : { client: c.clientWidth, scroll: c.scrollWidth };
+    });
+    expect(tb?.scroll ?? 0).toBeGreaterThan(tb?.client ?? 0);
+  });
+
+  test("the full header returns at desktop width", async ({ page, tracker }) => {
+    await tracker.seed([{ title: "Alpha task" }]);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Alpha task")).toBeVisible();
+
+    // What narrow drops, wide keeps — the labels are hidden by a
+    // breakpoint, not deleted.
+    await expect(page.getByText("TaskTracker")).toBeVisible();
+    await expect(page.getByLabel("New task")).toContainText("New task");
+    await expect(page.getByLabel("Search tasks")).toBeVisible();
+  });
+});
+
+test.describe("SHL — parameterised route stubs", () => {
+  /**
+   * @verifies SHL-16
+   *
+   * The M1 gate reported (F8) `/tasks/T1` rendering the literal
+   * `Route stub: /tasks/$key`. It does not reproduce — the route
+   * interpolates, and the gate measured a build that predated the fix.
+   *
+   * Pinned anyway. Printing a raw route pattern reads as a templating
+   * bug rather than an unbuilt view, and the stub is going to sit here
+   * until M2.1 replaces it.
+   */
+  test("a parameterised stub names the key, not the route pattern", async ({
+    page,
+    tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Alpha task" }]);
+
+    await page.goto(`${tracker.baseURL}/tasks/${String(key)}`);
+    const main = page.locator("main");
+    await expect(main).toContainText(String(key));
+    await expect(main).not.toContainText("$key");
+
+    // The shell is up, so the stub is a page rather than a dead end.
+    await expect(page.getByLabel("Toggle sidebar")).toBeVisible();
+
+    // Same for the other parameterised route.
+    await page.goto(`${tracker.baseURL}/sprints/S-1`);
+    await expect(page.locator("main")).not.toContainText("$key");
+  });
+});
+
+test.describe("LST — an unrecognised sort key", () => {
+  /**
+   * @verifies LST-29
+   *
+   * The M1 gate raised F6 asking for a 400 here, which contradicts
+   * this case: LST-29 requires the list to render "rather than an
+   * empty table or an error page". The first two bullets already
+   * passed. The third did not — `sort=nonexistent_field` stayed in
+   * the address bar as though it had applied, so copying that URL
+   * propagated a sort that was never in effect.
+   */
+  test("LST-29: an unknown sort key is dropped from the URL, not obeyed", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha task" }, { title: "Beta task" }]);
+
+    await page.goto(`${tracker.baseURL}/list?sort=nonexistent_field&dir=asc`);
+
+    // "The list renders with the default sort rather than an empty
+    // table or an error page."
+    await expect(page.locator("tbody tr")).toHaveCount(2);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+
+    // "It does not silently persist as though it were applied."
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("sort"), { timeout: 5_000 })
+      .toBeNull();
+    expect(new URL(page.url()).searchParams.get("dir")).toBeNull();
+
+    // "No sort indicator is shown on a column that isn't actually
+    // sorting, which would misreport the order."
+    const claimed = await page.evaluate(() =>
+      [...document.querySelectorAll("th")]
+        .map(h => h.getAttribute("aria-sort"))
+        .filter(v => v !== null && v !== "none"),
+    );
+    expect(claimed).toEqual([]);
+  });
+
+  test("LST-29: a sort key the list can honour is left alone", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha task" }, { title: "Beta task" }]);
+
+    await page.goto(`${tracker.baseURL}/list?sort=title&dir=desc`);
+    await expect(page.locator("tbody tr")).toHaveCount(2);
+
+    // Guards the fix from overreaching: dropping *every* sort would
+    // pass the test above and break sorting entirely.
+    await page.waitForTimeout(1_000);
+    const url = new URL(page.url());
+    expect(url.searchParams.get("sort")).toBe("title");
+    expect(url.searchParams.get("dir")).toBe("desc");
+  });
+
+  /**
+   * @verifies LST-29
+   *
+   * The regression this test exists for: the first cut of the fix used
+   * the *client's* nine visible columns as the authority, so every
+   * sort the server honours but the table does not show — `created_at`,
+   * `reporter`, `start_date`, and any custom `fields.<key>` — was
+   * stripped from the URL and its ordering silently lost. Testing only
+   * `title` (as the spec above does) leaves that green.
+   *
+   * The predicate is now the server's own, shared through contracts.
+   */
+  for (const field of ["created_at", "reporter", "start_date"]) {
+    test(`LST-29: ?sort=${field} is honoured by the server and kept in the URL`, async ({
+      page,
+      tracker,
+    }) => {
+      await tracker.seed([{ title: "Alpha task" }, { title: "Beta task" }]);
+
+      // Bracket the claim: the server really does sort by this field,
+      // so keeping it in the URL is honest rather than merely lenient.
+      const res = await page.request.get(
+        `${tracker.baseURL}/api/tasks?sort=${field}&dir=desc`,
+      );
+      expect(res.status(), `${field} should be a sortable field`).toBe(200);
+
+      await page.goto(`${tracker.baseURL}/list?sort=${field}&dir=desc`);
+      await expect(page.locator("tbody tr")).toHaveCount(2);
+
+      await page.waitForTimeout(1_000);
+      const kept = new URL(page.url());
+      expect(kept.searchParams.get("sort")).toBe(field);
+      expect(kept.searchParams.get("dir")).toBe("desc");
+    });
+  }
+});
+
+test.describe("SHL — the shell under a failing recovery attempt", () => {
+  /**
+   * @verifies SHL-41, ERR-1
+   *
+   * The fourth bug in `AppBootstrap`, and the one a Fable review
+   * caught after the gate had passed everything else: query-core's
+   * `fetchState` resets a data-less query to `status: "pending",
+   * error: null` on **every** fetch. So each recovery attempt against
+   * a still-dead server walks `["info"]` back through "pending", and
+   * any branch reading live status acted on it.
+   *
+   * Measured before the fix: pressing "Try now" on the unreachable
+   * banner destroyed the shell holding the banner, and a later cut
+   * replaced it with "No tracker here yet" — telling a user with a
+   * perfectly good tracker that they had none.
+   *
+   * SHL-41 wants the failure state *persistent*. A state that
+   * dismantles itself every time the user asks it to retry is not.
+   */
+  test("retrying while the server is still down does not dismantle the shell", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha task" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Alpha task")).toBeVisible();
+
+    // The server goes away and stays away.
+    await page.route(/\/api\//, route => { void route.abort("connectionrefused"); });
+    await page.reload();
+
+    const banner = page.locator("[data-server-unreachable]");
+    await expect(banner).toBeVisible({ timeout: 15_000 });
+
+    // The user does the one thing the banner invites.
+    await banner.getByRole("button").click();
+
+    // Sample hard across the whole failed attempt: a flash is still a
+    // failure, and a single post-hoc assertion would miss it.
+    let sawSpinner = false;
+    let lostShell = false;
+    let sawNoTracker = false;
+    for (let i = 0; i < 40; i += 1) {
+      const state = await page.evaluate(() => ({
+        shell: document.querySelector('[aria-label="Toggle sidebar"]') !== null,
+        text: document.body.innerText.trim(),
+      }));
+      if (state.text.startsWith("Loading")) sawSpinner = true;
+      if (!state.shell) lostShell = true;
+      if (/No tracker here/.test(state.text)) sawNoTracker = true;
+      await page.waitForTimeout(60);
+    }
+
+    expect(sawSpinner, "the spinner reappeared during a retry").toBe(false);
+    expect(lostShell, "the shell unmounted during a retry").toBe(false);
+    expect(
+      sawNoTracker,
+      "the app claimed there was no tracker while one was on disk",
+    ).toBe(false);
+
+    // And the banner is still there afterwards, still offering retry.
+    await expect(banner).toBeVisible();
+  });
+
+  /**
+   * @verifies SHL-11, ERR-1
+   *
+   * The other half of the same fix. During an outage `info.data` is
+   * undefined, so a shell rendered from the placeholder reports
+   * `taskCount: 0` — and the footer told a user with two tasks that
+   * they had none. "A server that is down and a tracker that is empty
+   * must be visibly different screens" (ERR-1) applies to the footer
+   * as much as to the table.
+   *
+   * The last *known* info is used instead, so the footer keeps saying
+   * what was last true rather than inventing a zero.
+   */
+  test("the footer does not report zero tasks during an outage", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha task" }, { title: "Beta task" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Alpha task")).toBeVisible();
+
+    const footer = page.locator("aside");
+    await expect(footer).toContainText(/2 tasks/);
+
+    await page.route(/\/api\//, route => { void route.abort("connectionrefused"); });
+    await page.reload();
+    await expect(page.locator("[data-server-unreachable]")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // Not "0 tasks" — that is a claim about their data, and it is
+    // false. Either the last known count or an explicit "unavailable";
+    // never a fabricated zero.
+    await expect(footer).not.toContainText(/\b0 tasks\b/);
+    await expect(footer).toContainText(/2 tasks|unavailable/);
+  });
+});
+
+test.describe("SHL — the sidebar during a cold outage", () => {
+  /**
+   * @verifies SHL-39
+   *
+   * A cold load against a dead server used to spend a full second
+   * telling the user their tracker was empty — "No projects yet",
+   * "No labels yet", "No milestones yet" — while the unreachable
+   * banner sat above saying the server was down. Two contradictory
+   * claims on one screen, and the wrong one was about their data.
+   *
+   * Measured before the fix, phases kept apart: the empty text is on
+   * screen from **1089ms to 2098ms**. The query has not failed yet
+   * (the retry policy's one retry is still to come) so no
+   * error-keyed guard can catch it — it has not *settled* at all.
+   *
+   * A ~1s window is wide enough for a 40ms poll to catch reliably,
+   * which is why this is a real UI test where SHL-41's could not be
+   * (see known-gaps.md).
+   */
+  test("SHL-39: a sidebar with no answer yet does not claim the tracker is empty", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha task" }]);
+    await page.route(/\/api\//, route => { void route.abort("connectionrefused"); });
+
+    // Poll from the first paint. The window is between navigation and
+    // the query settling, so it has to be watched, not sampled once.
+    let sawEmptyClaim = "";
+    const poll = setInterval(() => {
+      void page.locator("body").innerText().then(text => {
+        const hit = /No projects yet|No labels yet|No milestones yet|No active sprints/
+          .exec(text);
+        if (hit !== null && sawEmptyClaim === "") sawEmptyClaim = hit[0];
+      }).catch(() => undefined);
+    }, 40);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("[data-server-unreachable]")).toBeVisible({
+      timeout: 20_000,
+    });
+    // Past the retry, so the whole never-settled window has elapsed.
+    await page.waitForTimeout(3_000);
+    clearInterval(poll);
+
+    expect(
+      sawEmptyClaim,
+      `the sidebar claimed "${sawEmptyClaim}" while the server was unreachable`,
+    ).toBe("");
+  });
+});
+
+test.describe("ERR — recovery when the server comes back", () => {
+  /**
+   * @verifies ERR-2
+   *
+   * The M1 gate's F2 claimed an errored query never runs its 5-second
+   * recovery poll, so recovery waits on the 60-second staleness
+   * interval. **It does not reproduce.** The poll runs, and the poll
+   * is what recovers the app — traced to query-core's
+   * `#updateRefetchInterval` timer, one frame under the `fetch` that
+   * heals `["info"]`. The gate's mechanism claim was wrong for the
+   * same reason: `onQueryUpdate()` calls `#updateTimers()`, so the
+   * transition into `error` re-arms the interval rather than
+   * cancelling it.
+   *
+   * **The quiesce below is the whole test.** Without it this passes
+   * with the poll disabled entirely, and an earlier version shipped
+   * exactly that way. When the server returns while retry backoff is
+   * still sleeping, those pending retries wake and succeed — traced
+   * to the retryer's own `sleep(delay).then(run)`, not to any
+   * recovery policy. Thirteen requests inside 790ms, none of them
+   * evidence of anything. Waiting past the backoff is what makes the
+   * next request attributable to recovery.
+   *
+   * Mutation-checked both ways, against the built app:
+   *
+   * - poll disabled, quiesce 8s → **fails** (banner still up at 20s)
+   * - poll disabled, no quiesce → passes, on backoff alone
+   * - poll restored, quiesce 8s → passes, 6 requests, first one
+   *   dispatched from the interval timer
+   *
+   * Pinned because a refutation nobody can re-run is just an
+   * assertion, and this one contradicts a gate report.
+   */
+  test("ERR-2: the UI recovers on its own, without a reload or a click", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha task" }, { title: "Beta task" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.locator("tbody tr")).toHaveCount(2);
+
+    // The server "goes away" behind a flag the handler reads on every
+    // request. `page.unroute` is deliberately not used: it releases
+    // requests that were already queued, so the page recovers from
+    // that release rather than from any poll — a first cut of this
+    // test passed with *every* recovery path disabled.
+    let down = true;
+    await page.route(/\/api\//, route => {
+      if (down) void route.abort("connectionrefused");
+      else void route.continue();
+    });
+    await page.reload();
+    const banner = page.locator("[data-server-unreachable]");
+    await expect(banner).toBeVisible({ timeout: 15_000 });
+
+    // Let every retry finish sleeping. Retries use a capped
+    // exponential backoff and there is one attempt per query, so this
+    // is far longer than needed — the cost is eight seconds, and what
+    // it buys is that the next request cannot be a retry that was
+    // already in flight when the server returned.
+    await page.waitForTimeout(8_000);
+
+    // The server comes back. Nothing is clicked, nothing is reloaded,
+    // no queued request is released, and nothing is still retrying —
+    // the app has to ask again entirely on its own.
+    down = false;
+
+    // Twenty seconds is four poll intervals and well inside the 60s
+    // staleness window, so only the recovery poll can close this.
+    await expect(banner).toBeHidden({ timeout: 20_000 });
+    await expect(page.locator("tbody tr")).toHaveCount(2);
+  });
+});

@@ -604,3 +604,355 @@ losing it costs one click.
 **Consequence.** M3.5 needs no server work of any kind. The earlier
 claim in `TEMP-BUILD-PLAN.md` that M3.5 and M4.9 "carry server work"
 is wrong on both counts — see the note there.
+
+---
+
+## 8. Agent-made decisions (Phase 5 run) — REVIEWABLE, REVERTIBLE
+
+**Every entry here was decided by an agent, not by Ken.** They are
+recorded so they can be reviewed in a batch and reverted individually.
+Nothing in this section carries the authority of sections 1–7.
+
+An agent records here when a flow doc was silent or ambiguous and it
+had to pick a reading in order to keep building. It records here
+**instead of stopping** — the run does not block on these.
+
+An agent does NOT record here, and stops instead, when the call:
+
+1. **changes scope** — adds or removes a view, route, or feature
+2. **invents a requirement** — no case covers it and the agent would
+   be authoring one
+3. **violates a P-principle** (`ui-test-cases/README.md` P1–P10) or
+   contradicts a decision in sections 1–7
+4. **is load-bearing** — later work will build directly on top of it,
+   so being wrong means rework rather than a tweak
+
+Rule 4 is the judgment call, and it is the one that matters. A
+contained decision — one behaviour, one place, cheap to reverse — is
+made and recorded. A decision that becomes a foundation is Ken's, and
+the run stops for it.
+
+### The format
+
+Each entry MUST carry all six fields. A verdict without its context
+cannot be reverted from, which defeats the purpose of recording it.
+
+```
+### A<n> · <one-line title>
+
+**Ticket:** M2.1 · **Date:** YYYY-MM-DD · **Commit:** <sha>
+
+**The situation.** What was being built, and what the code or the
+docs actually did. Include the case ID and quote the case text if it
+is the ambiguous thing.
+
+**What had to be decided.** Stated as a question.
+
+**Options considered.** At least two, each with what it costs.
+
+**Decided.** Which one, in one sentence.
+
+**Why.** The reasoning — including any principle or existing decision
+it leans on.
+
+**To revert.** The files and symbols that change if Ken decides
+otherwise. This is what makes the entry actionable rather than
+archival.
+```
+
+
+### A1 · An unknown `sort` field stays a 200, not a 400
+
+**Ticket:** 🚦 M1 gate round 6 · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** The gate's F3 (minor) reports an API inconsistency:
+`?dir=sideways` returns 400 "Sort direction must be ascending or
+descending", while `?sort=nonexistent_field` returns 200. A direct API
+consumer gets a signal for a bad `dir`, `status` or `limit`, and
+silence for a bad `sort`.
+
+The gate also claimed the bogus sort produced "different ordering".
+**That does not reproduce.** Measured against three seeded tasks:
+default order and `?sort=nonexistent_field` both return
+`['Mango', 'Alpha', 'Zebra']` — identical. The fallback works.
+
+**What had to be decided.** Should the API reject an unknown `sort`
+field with a 400, for consistency with its other parameters?
+
+**Options considered.**
+
+1. **400 on an unknown sort.** Consistent with `dir`, `status` and
+   `limit`. Costs: LST-29 (major, P2 P6) says a pasted
+   `/list?sort=nonexistent_field` must render "with the default sort
+   rather than an empty table **or an error page**". A 400 would have
+   to be swallowed by the client to avoid violating that — so the
+   consistency is bought by adding a special case, not removing one.
+2. **Leave it.** The 200-with-fallback is what LST-29 asks for and
+   what the code comment already cites. Costs: the API asymmetry the
+   gate names is real and stays.
+3. **Warn without failing** — 200 plus a header or envelope field
+   naming the dropped parameter. Costs: no case describes this, and it
+   is a new API surface.
+
+**Decided.** Option 2 — leave it.
+
+**Why.** No case requires the API to reject an unknown sort, and
+LST-29 explicitly requires the UI not to error on one. Choosing
+option 1 or 3 would be **authoring a requirement**, which is stop
+condition 2 in `TEMP-RUN-WORKFLOW.md`. The gate identified a genuine
+asymmetry but did not identify a case it violates, and its supporting
+measurement ("different ordering") is wrong.
+
+Recorded rather than stopping the run because it is contained: it
+changes nothing, nothing builds on it, and reversing it is a small
+server-side edit.
+
+**To revert.** `apps/web/src/server/server.ts:2306` — the
+`isSortableTaskField(rawSort)` ternary. To adopt option 1, reject
+instead of falling back, and give `ListView` a client-side guard so
+LST-29 still renders. To adopt option 3, add the warning to the
+response envelope. Either way LST-29's spec test must stay green.
+
+### A2 · One failed request is enough to say the server is not responding
+
+**Ticket:** 🚦 M1 gate round 6 (F1) · **Date:** 2026-08-29 · **Commit:** `20cdf85`
+
+**The situation.** The gate raised this as **PC-18**: no case says how
+much evidence "the server is not responding" requires, and the two
+defensible readings differ on the most common outage.
+
+SHL-41 says "**the next failed request** produces a persistent,
+visible state" — one request. The implementation demanded a query that
+had **never** succeeded, and the guard's own comment argued for that
+stricter reading: one aborted page-2 request is "a failed request, not
+a stopped process", and telling a user to restart a healthy terminal
+is worse than saying nothing.
+
+Fixing F1 forced the question, because the two readings are not
+distinguishable in the cache. A dead server and a failed "Load more"
+both leave a query with data plus a later error, and both retry, so
+neither `errorUpdatedAt` nor `fetchFailureCount` separates them.
+
+**What had to be decided.** Does the banner require a query that has
+never been answered, or does any failure more recent than the last
+success count?
+
+**Options considered.**
+
+1. **Never-answered only** (the old behaviour). No false alarm from a
+   single failed request. Costs: **the banner cannot fire at all in a
+   real outage**, because with the page open every query has been
+   answered. That is F1 — measured as fifty stale rows under an
+   authoritative "Showing 1–50 of 63", with nothing on screen saying
+   the server was gone.
+2. **Most recent evidence wins** — any failure later than the last
+   success. Costs: a failed "Load more" raises the banner for as long
+   as it stands. LST-49's own error still appears beside the control,
+   so the user is over-informed rather than misinformed.
+3. **A threshold** — N failures, or a time window. Costs: no case
+   names a number, so picking one is authoring a requirement.
+
+**Decided.** Option 2.
+
+**Why.** SHL-41's text says "the next failed request", and it is a
+**blocker**; LST-49 is a major, asks for an error near the control,
+and never asks the banner to stay silent. Option 1 makes a blocker
+case unimplementable. Option 3 would author a requirement.
+
+The costs are asymmetric: option 2's failure mode is a banner that is
+briefly too loud about a real failed request, and option 1's is a dead
+server that says nothing at all.
+
+**Recorded rather than stopping the run** because SHL-41's own words
+settle it — this is reading the spec, not extending it. But it is the
+answer to a question the gate says the spec does not ask, so it is
+here to be overruled.
+
+**To revert.** `apps/web/src/client/shell/ServerUnreachableBanner.tsx`
+— the loop in `recompute`. Option 1 is restoring the `continue` after
+`lastSuccess`. Note that doing so re-opens F1, so it needs a different
+answer to "how does the banner ever fire mid-session". The unit test
+"speaks when an answered query then fails" pins the current choice and
+would need to invert.
+
+### A3 · A transient wrong claim during a retry counts as making it
+
+**Ticket:** 🚦 M1 gate round 6 (F2) · **Date:** 2026-08-29 · **Commit:** `9a21b22`, `bb6b9fc`
+
+**The situation.** The gate raised this as **PC-19**: no case
+constrains what may be shown *during* a retry. Every surface derived
+from live query status flickers through a data-less `pending` on every
+refetch — `fetchState` resets it — and no case says whether a claim
+that is wrong for one second counts as being made.
+
+This is the general form of four `AppBootstrap` bugs, F2's sidebar
+flash, and F1.
+
+**What had to be decided.** Is a wrong claim shown for ~1s during a
+retry a defect, or acceptable transient state?
+
+**Options considered.**
+
+1. **It counts.** Every surface must ask what a query has *ever* done
+   (`errorUpdatedAt`, `dataUpdatedAt`) rather than what it is doing
+   now. Costs: more state to track at every site; five call sites in
+   `Sidebar.tsx` alone.
+2. **It does not count** below some duration. Costs: no case names a
+   threshold, and the measured windows are not short — 1089–2098ms for
+   the sidebar's cold-outage claim. A second of being told your
+   tracker is empty is not a flicker.
+3. **Case by case.** Costs: this is what produced four separate
+   `AppBootstrap` bugs diagnosed as unrelated.
+
+**Decided.** Option 1.
+
+**Why.** P6 says empty, loading, partial and broken are **four
+designed states**, and a surface that renders "empty" while it means
+"still asking" has collapsed two of them — the duration does not
+change which state it is claiming. ERR-1 says a failure and an absence
+must not look alike, with no exemption for brief ones.
+
+The measured windows also defeat option 2 on its own terms.
+
+**To revert.** The `hasFailed` and `hasAnswered` helpers in
+`apps/web/src/client/shell/Sidebar.tsx`, and `stillWaiting` in
+`AppBootstrap.tsx`. Both are small and local; the tests pinning them
+are named in their commits.
+
+---
+
+## 9. Ken's rulings, 2026-08-29
+
+**These are Ken's, not an agent's.** Unlike § 8, they carry the
+authority of sections 1–7 and are not revertible on an agent's
+judgment. Recorded here because several were open in
+`PROPOSED-UI-CASES.md` and were blocking M2.
+
+### K1 · SET-3 is dropped; workflow panels are editable
+
+SET-3 asserted workflow panels are read-only ("no inline text inputs,
+no delete buttons"). SET-6, SET-17 and SET-19 assert drag-reorder and
+in-panel deletion with remap. Both cannot hold.
+
+**Ruling: drop SET-3, keep the editable reading.** `PUT /api/workflow`
+supports it and `workflow-write.ts` (822 lines, full per-collection
+remap) was built for it.
+
+### K2 · Body save is autosave, and the precondition ships with it
+
+`markdown-extensions.md` mandates explicit-Save; TSK-15 mandates 1.5s
+idle autosave.
+
+**Ruling: autosave**, and `markdown-extensions.md` is corrected.
+
+**And the precondition is built with the body editor, not after it.**
+The objection put to Ken: there is no concurrency control anywhere —
+no `If-Match`, no `412`, no version on any write path, verified by
+grep. Autosave without one silently overwrites a concurrent CLI or MCP
+edit every 1.5 idle seconds, unattended, which is exactly what P1
+forbids ("never silently overwrite a change it didn't make"). Ken
+ruled the precondition ships with the editor rather than as a
+follow-up.
+
+So M2's body-editor ticket owes: the editor sends the `updated_at` it
+loaded, the server refuses a stale write with 412, and the UI reports
+that the task changed underneath the user.
+
+Note: `PROPOSED-UI-CASES.md` attributes this gap to "B5". **That is
+the wrong ID** — B5 is the lossy-content guardrail. The concurrency
+gap has no B-number.
+
+### K3 · Project URLs carry a slug
+
+`flow-projects-users.md` PRU-2/PRU-6 assume `?project=web`.
+`ProjectDefSchema` is `.strict()` with `{id, name, prefix, archived?}`
+— no slug — and `state.keys` is indexed by ULID.
+
+**Ruling: reintroduce a slug field to the schema.** URLs carry the
+slug, not the ULID.
+
+This is a core change (the schema is shared), and it needs: slug
+generation on create, uniqueness, and a decision on what happens when
+a project is renamed. Those are M-ticket work, not settled here.
+
+### K4 · The CSV export is a report; JSONL is the backup
+
+**Asked as a product question**: what is the export *for*? Ken's
+answer was "a backup or archive" — which the measurement then
+contradicted.
+
+**The CSV cannot be a backup.** 18 columns against 27 frontmatter
+fields, and the omissions are the substance: the **body** (the whole
+markdown content), **relationships** (every link between tasks),
+custom `fields`, `key_history`, `archived`/`archived_at`, and
+`rank`/`board_rank`. Comments are stored separately and not exported
+at all. A restore from it would be a pile of disconnected, bodyless
+tasks.
+
+**Rulings:**
+
+1. **CSV is a report for a human in a spreadsheet.** So it shows what
+   a human recognises: `project`, `assignee`, `reporter`, `milestone`
+   and `sprint` resolve to **names**. This closes the M1 gate's F7 as
+   a plain bug rather than a decision.
+2. **`id` stays.** One opaque column a reader can ignore, and nothing
+   scripted against the current export breaks. BLK-36's pinned column
+   count is unchanged — the smallest correct change. `key` remains the
+   stable identifier, and it survives project moves via `key_history`.
+3. **A structured export (JSON/YAML, JSONL, size-split) is the
+   backup**, and it is **its own ticket after M4**. Not folded into an
+   existing one, because no case describes it and the gate would
+   rightly flag behaviour no case covers.
+
+**Superseded reasoning, recorded so it is not re-derived.** The
+earlier argument for keeping raw ULIDs was that "an id round-trips and
+a name does not". **There is no CSV import anywhere in the codebase** —
+nothing parses CSV back in — so that defended a round-trip that does
+not exist. The four options in `PROPOSED-UI-CASES.md` are closed by
+this entry.
+
+### K5 · Robustness is a standing rule, not a one-off
+
+Ken, on the ~25 cases that fail as written: *"make sure this stays
+robust (this is a general rule, should this go into our workflow)"*.
+
+Written into `TEMP-RUN-WORKFLOW.md` § "Cases that cannot be satisfied
+yet".
+
+### K6 · BLK-30's threshold is 10, two tiers, not configurable
+
+BLK-30 (major, P5 P9) requires the delete confirmation to be
+*"proportionate — deleting 1,280 tasks must not require the same
+keystroke as deleting 2"*. It names no threshold. An agent picked
+10, which was **authoring a requirement** and is why it went to Ken.
+
+**Ruling: keep two tiers at 10.** At or below 10, type `DELETE`;
+above 10, type the count.
+
+**Why the count rather than a longer word.** A fixed string is muscle
+memory by the third use, and muscle memory is what must not carry
+someone through deleting a thousand tasks. Typing `1280` cannot be
+done without reading the number that matters.
+
+**Not configurable.** Ken raised it as an option ("we can also make
+this configurable somewhere if we're worried") and the objection was
+put before he settled: a config key lets a user set the threshold to
+10,000 and never meet the harder confirmation, which turns P5's
+guarantee into an opt-out. It also costs a `workflow.yaml` field, its
+validation, its migration and a settings panel — for a number nobody
+has complained about. The escape hatch is cheaper without it: the
+constant is exported and the tests import it, so changing it is one
+edit. Configurable later is easy; unconfigurable again after shipping
+is not.
+
+**Bullet 3 stays unimplemented, deliberately.** It permits the app to
+*refuse* beyond a size ("**if** the app refuses"), and it does not
+refuse. A local file-backed tracker has no server to protect and no
+other users to affect; declining to delete the user's own files would
+be paternalism. Nothing is owed unless a cap is later wanted.
+
+**To revert.** `LARGE_DELETE_THRESHOLD` and `deleteConfirmWord()` in
+`apps/web/src/client/list/DeleteConfirmDialog.tsx`. The constant is
+exported so the surface and its tests agree by construction — change
+it in one place and the tests follow. A third tier would change
+`deleteConfirmWord`'s return, not its call sites.

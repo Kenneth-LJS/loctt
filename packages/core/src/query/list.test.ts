@@ -145,6 +145,62 @@ describe("listTasks", () => {
     ]);
   });
 
+  it("sorts by a custom field addressed as fields.<key>", () => {
+    // **This was a silent no-op.** `getTaskFieldValue` looked for the
+    // literal key "fields.points" in two places, and both missed: the
+    // frontmatter has `fields` (an object), and `fields` has `points`.
+    // So every task resolved to undefined, the comparator called them
+    // all equal, and the stable sort returned scan order.
+    //
+    // Silent is the operative word. `isSortableTaskField` accepts
+    // `fields.*` by shape, so the URL validated, the key persisted,
+    // and a sort indicator appeared on the column — the state LST-29's
+    // bullets 2 and 3 forbid, reached by a path LST-29 does not cover
+    // because the key is *known* rather than unknown. The predicate
+    // and the resolver disagreed.
+    //
+    // Measured over HTTP on three tasks before the fix: `asc` and
+    // `desc` both returned ['Zeta', 'Alpha', 'Mid'] — identical,
+    // which is the tell. Sorted output that ignores `direction` is not
+    // sorted at all.
+    const withFields: Task[] = [
+      makeTask("C-1", { fields: { points: 9 } }),
+      makeTask("C-2", { fields: { points: 1 } }),
+      makeTask("C-3", { fields: { points: 5 } }),
+    ];
+
+    const asc = listTasks({
+      tasks: withFields,
+      options: { sort: [{ field: "fields.points", direction: "asc" }] },
+    });
+    expect(asc.map(t => t.frontmatter.key)).toEqual(["C-2", "C-3", "C-1"]);
+
+    // Seeded in neither order, so "sorted" cannot coincide with "as
+    // given" — and asserting both directions is what catches a
+    // resolver that returns undefined for everything, since that
+    // leaves input order intact whichever way you ask.
+    const desc = listTasks({
+      tasks: withFields,
+      options: { sort: [{ field: "fields.points", direction: "desc" }] },
+    });
+    expect(desc.map(t => t.frontmatter.key)).toEqual(["C-1", "C-3", "C-2"]);
+  });
+
+  it("treats a missing custom field as absent, not as a prototype hit", () => {
+    // The dotted-key branch must not reintroduce the prototype hazard
+    // the tests around it exist for: `fields.toString` resolves on
+    // every object.
+    const withFields: Task[] = [
+      makeTask("P-1", { fields: { points: 3 } }),
+      makeTask("P-2", { fields: {} }),
+    ];
+    const result = listTasks({
+      tasks: withFields,
+      options: { sort: [{ field: "fields.toString", direction: "asc" }] },
+    });
+    expect(result.map(t => t.frontmatter.key)).toEqual(["P-1", "P-2"]);
+  });
+
   it("sorts on a prototype key against tasks that carry a fields object", () => {
     // The test above never reached the hazard it describes: none of the
     // shared fixtures has a `fields` object, so the custom-field lookup

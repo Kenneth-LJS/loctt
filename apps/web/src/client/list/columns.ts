@@ -52,3 +52,4 @@ export function resolveColumns(settings: UserSettings | undefined): readonly Col
   }
   return ALL_COLUMNS;
 }
+

@@ -278,11 +278,26 @@ the pagination specs running beside them. Cutting the former gave the
 latter their budget back.
 
 **`create` is still one process per task**, because key allocation is
-stateful and the assigned key is what the specs read back. If this
-regresses under heavier load, the next step is `seedBulk`: it writes
-rows directly and takes no measurable time, and the pagination specs
-need sixty *rows* rather than sixty allocated keys. Making it use the
-tracker's real key prefix instead of `BULK-` would make it a drop-in.
+stateful and the assigned key is what the specs read back.
+
+**The M1 gate (F9) reported this as still failing, and it is not** —
+but the gate was not wrong to see failures. Every run of this suite
+that showed them, including two of mine, had a `npm run build` racing
+it: the fixture serves `apps/cli/dist`, so rebuilding mid-run swaps
+the binary underneath the workers. A clean run on 2026-08-28 at load
+average 86 was **194/194**.
+
+That is the more useful finding, and it generalises: *never run a
+build while the UI suite is running.* A failure under those
+conditions says nothing about the code, and it has now been misread
+three times — twice by me, once by the gate.
+
+`seedBulk` was made a genuine drop-in anyway (2026-08-28): it takes
+the tracker's own key prefix and advances `state.yaml`'s counter, so
+a later `create` no longer collides. It is not yet used by the
+pagination specs, which assert `Task N` titles it does not write —
+converting them needs a title pattern on `seedBulk` and eight call
+sites changed, which is more than the measured problem justifies.
 
 **The diagnosis in this entry was right and the fix was cheaper than
 it predicted** — worth remembering before assuming a flaky suite needs
@@ -363,3 +378,215 @@ git specs are.
 Not investigated further because it did not reproduce. Recorded so
 the next agent does not spend a round on it: re-run before believing
 a single failure here, and check `uptime` first.
+
+## `fetchState` un-says a settled error — the trap behind four bugs
+
+**Established 2026-08-29, by a Fable review plus direct measurement.**
+
+`query-core`'s reducer, `query.js`:
+
+```js
+function fetchState(data, options) {
+  return {
+    fetchFailureCount: 0, fetchFailureReason: null,
+    fetchStatus: ...,
+    ...data === void 0 && { error: null, status: "pending" }
+  };
+}
+```
+
+**Any** fetch on a query that has never held data resets it to
+`pending` with `error: null`. Not just a mount fetch — the interval
+tick, a focus refetch, and a manual `refetchQueries()` all do it.
+
+Four separate bugs in `AppBootstrap` came from reading live query
+status and acting on that reset:
+
+1. A full-page fatal error on any `/api/info` failure (gate F1).
+2. A mount/unmount loop at ~70Hz that hung the schema banner behind a
+   permanent spinner (gate F3) — caused by fixing 1.
+3. Pressing "Try now" on the unreachable banner destroying the shell
+   holding the banner.
+4. "No tracker here yet" shown to a user whose tracker was fine,
+   because `info.data` is undefined mid-attempt.
+
+**The rule that avoids all four:** ask whether a query has *ever*
+settled (`errorUpdatedAt > 0 || dataUpdatedAt > 0`), never what its
+status is right now. Those two fields survive the reset; `status`,
+`error`, `data` and `fetchFailureCount` do not.
+
+**And keep the last known value.** `info.data` empties during any
+attempt, so anything derived from it flickers — which is how the
+footer came to report "0 tasks" during an outage.
+
+If a fifth bug appears in this file, check it against this list
+before diagnosing it fresh. Three of the four were diagnosed as
+unrelated at first.
+
+## A recovery test passes on retry backoff, not on recovery
+
+**Established 2026-08-29, by tracing every `/api/` fetch to its
+dispatching frame.**
+
+The ERR-2 spec kills the server, waits for the unreachable banner,
+brings the server back, and asserts the banner clears unattended.
+It passed with the recovery poll disabled entirely — which made the
+poll look irrelevant and produced a written claim, in two files,
+that "some render- or route-driven refetch gets there first". That
+claim was false.
+
+What actually happened: when the server returns while retry backoff
+is still sleeping, the pending retries wake and succeed. The stack
+under those fetches is the retryer's own
+`sleep(delay).then(() => run())`, not a timer and not an observer.
+Thirteen requests fire inside 790ms and none of them are evidence of
+a recovery path — they are one already-in-flight attempt per query,
+finally getting an answer.
+
+**The fix is a quiesce.** Wait past the backoff before flipping the
+server back on. With eight seconds of quiet first:
+
+- poll disabled → banner still up at 20s (**fails**)
+- poll restored → clears in ~2.7s, and the first request after the
+  flip is dispatched from query-core's `#updateRefetchInterval`
+  timer
+
+So the poll *is* the mechanism, and everything else that fires in
+that moment is downstream of it: once the poll heals `["info"]`,
+`AppBootstrap`'s gate reopens and the components inside it mount,
+each dispatching its own `onSubscribe` fetch.
+
+The general rule, for any test that restores a broken dependency:
+**an outage has a tail.** If the restore lands inside that tail, the
+test measures the tail. Quiesce first, or the assertion is about
+Playwright's timing rather than the app's behaviour.
+
+## Agent worktrees are created from an old base, not from HEAD
+
+**Established 2026-08-29, across six sweep agents.**
+
+Every agent spawned with `isolation: "worktree"` landed on `58848c5`
+— a commit predating the entire Phase 5 UI build. `tests/ui/`,
+`apps/web/src/client/shell/` and `docs/dev/ui-test-cases/` do not
+exist there, so a worktree agent asked to work on any of them finds
+nothing and, if it is not careful, reports the absence as a finding.
+
+All six were affected. It is a property of how the worktree is
+created, not a race or a one-off.
+
+Two consequences:
+
+- **Tell a worktree agent which commit it should be on**, and have it
+  verify with `git log --oneline -1` before it starts. Four of the six
+  found and fixed this themselves; that they did is luck, not design.
+- **Do not read a correct commit as evidence your setup worked.** The
+  coordinator checked the worktrees, saw the right SHA, and concluded
+  its pre-build step had landed. The reflogs show the agents had
+  already reset themselves minutes earlier. The check confirmed the
+  state, not the cause.
+
+Worktrees also start without `node_modules` or `tests/workspace/`, and
+both are needed before any UI test can run.
+
+## LST-33: a deleted entity's filter chip shows a raw ULID
+
+**Found 2026-08-29 by the vacuity sweep — a live defect, not a
+test defect, though the test that should have caught it is vacuous
+too.**
+
+LST-33 requires that a filter referencing a since-deleted entity is
+*honest about it*:
+
+> the chip indicates the referenced milestone no longer exists, rather
+> than rendering a chip with a blank label that reads as a normal empty
+> result … This is distinguishable from a valid milestone that simply
+> has no tasks.
+
+`buildChips` in `apps/web/src/client/list/FilterBar.tsx:280`:
+
+```ts
+const labelOf = (opts: readonly FilterOption[], value: string): string =>
+  opts.find(o => o.value === value)?.label ?? value;
+```
+
+The `?? value` fallback renders the raw ULID. So a deleted milestone
+produces a chip reading `01M13T6YWDXHB52P65P2BNAV8D` — not blank, but
+not honest either, and not distinguishable from a valid entity in any
+way a user could act on.
+
+The sweep found this while establishing that LST-33's *test* is
+vacuous: making chips render a blank label — verbatim the defect the
+case names — left the test green. So the case has been failing in
+production behind a test that could not see it.
+
+Fix is in `buildChips`: when a value does not resolve to an option,
+mark the chip as dangling and render it as such, rather than falling
+through to the raw value.
+
+## SHL-41's "no reload" case has no UI test, and three attempts failed
+
+**Established 2026-08-29 while fixing the M1 round-6 F1 blocker.**
+
+The blocker: with the page open and the server killed, the banner
+never appeared — the state every real outage produces, because with
+the app loaded every query already has data. Fixed in
+`ServerUnreachableBanner.tsx`, and **proved by the unit test**
+"speaks when an answered query then fails", which goes red when either
+half of the fix is reverted.
+
+What does *not* exist is a Playwright test for it. Three attempts, all
+vacuous, all confirmed vacuous by mutation rather than assumed:
+
+1. **Sidebar link click.** Navigates to `?project=…` — a *new* query
+   key with no cached data. Such a query reaches `status: "error"`
+   normally, so the broken code caught it too. Passed with both halves
+   of the fix reverted.
+2. **Column-header sort click.** Fires no request at all; the banner
+   never appeared, with or without the fix.
+3. **Synthetic `visibilitychange`.** Does not trigger a refetch under
+   Playwright — the banner never appeared even *with* the fix, so it
+   would have been a false failure rather than a false pass.
+
+The difficulty is specific: the test must make the app re-issue a
+query that **already holds data**, without reloading (which clears the
+cache and destroys the condition) and without navigating (which
+creates a fresh key). Nothing tried does that reliably.
+
+This is why the original blocker survived seven outage specs. All
+seven use `page.route()` plus `page.reload()`, and the reload empties
+the cache — so they test the one state a real outage never reaches.
+
+**If you write this test:** mutate it both ways before believing it.
+Revert `errorUpdatedAt === 0` back to `status !== "error"`, and
+restore the `continue` after `lastSuccess`. If it still passes, it is
+measuring a fresh query, not this case.
+
+## A gate agent can stash the main tree out from under you
+
+**Established 2026-08-29, after nearly losing an hour of test repairs.**
+
+The round-7 gate agent runs in the **main working tree** (unlike the
+sweep agents, which get their own worktrees). It needs a clean tree to
+run the suites, so it ran `git stash` — silently taking the
+coordinator's uncommitted work with it.
+
+The symptom is confusing rather than obvious: edits vanish, but
+`git status` reports clean and the reflog shows no checkout, because a
+stash is neither. The work is in `git stash list`, on your branch, at
+your commit — but nothing points you there.
+
+It looked, briefly, as though tests had been passing against code that
+no longer existed. They had not; the runs happened before the stash.
+That is a worse failure than losing the work, because it would have
+been reported as a verified result.
+
+Two rules:
+
+- **Commit before dispatching an agent that runs in the main tree.**
+  Uncommitted work is not safe there.
+- **If edits disappear, check `git stash list` before re-doing them.**
+  It is the first place to look, not the last.
+
+Better still, give a gate agent its own worktree — but note the base
+commit is wrong by default (see the worktree entry above), so it must
+be told which commit to use.
