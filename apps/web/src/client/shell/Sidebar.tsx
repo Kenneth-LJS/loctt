@@ -1,7 +1,8 @@
 import type { TrackerInfoResponse } from "@loctt/contracts";
 import { Link, useRouterState } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
+import { ApiError } from "../api/client.ts";
 import {
   useLabels,
   useMilestones,
@@ -87,6 +88,36 @@ export function Sidebar({
 }
 
 /* ---------- shared item primitives ---------- */
+
+
+/**
+ * Whether this query's last settled answer was a failure.
+ *
+ * **Not `isError`.** `fetchState` resets a data-less query to
+ * `status: "pending", error: null` on every fetch, so `isError` is
+ * false for the whole duration of a retry — and a group keyed on it
+ * falls through to its empty state while the request is in flight.
+ *
+ * The M1 round-6 gate measured the result: pressing "Try now" with the
+ * server down showed "No projects yet / No labels yet / No milestones
+ * yet" for about a second, in all five groups at once. A user with a
+ * populated tracker was told it was empty.
+ *
+ * `errorUpdatedAt` and `dataUpdatedAt` survive the reset, so they can
+ * answer what the query has *ever* done rather than what it is doing
+ * this instant. This is the fifth bug traced to that one trap; see
+ * known-gaps.md.
+ */
+function hasFailed(q: {
+  isError: boolean;
+  errorUpdatedAt: number;
+  dataUpdatedAt: number;
+}): boolean {
+  if (q.isError) return true;
+  // Errored at some point and never since answered: still failed, even
+  // while a retry has it reading as "pending".
+  return q.errorUpdatedAt > 0 && q.errorUpdatedAt >= q.dataUpdatedAt;
+}
 
 function GroupLabel({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
   if (collapsed) return null;
@@ -213,13 +244,39 @@ function ViewSwitcher({ collapsed }: { collapsed: boolean }) {
  * state and a Retry button per group would bury the navigation this
  * component exists to provide. Retry is offered on the marker itself,
  * which is the control ERR-15 asks for.
+ *
+ * Compact is not the same as uninformative. The M1 gate found (F4) that
+ * a `labels.yaml` the user had broken by hand reported only "Could not
+ * load. Retry" — the filename never appeared anywhere in the UI, though
+ * the server had already sent it along with the YAML parse position.
+ * SHL-43 requires the specific file named, the parse location when the
+ * server provides one, and a next action.
+ *
+ * So the *cause* is named inline when the server told us one, and the
+ * technical detail sits behind a disclosure — the same shape
+ * `ErrorState` uses for ERR-6, at sidebar scale.
  */
-function GroupError({ collapsed, onRetry }: { collapsed: boolean; onRetry: () => void }) {
+function GroupError({
+  collapsed,
+  error,
+  onRetry,
+}: {
+  collapsed: boolean;
+  error: unknown;
+  onRetry: () => void;
+}) {
+  const [showDetail, setShowDetail] = useState(false);
+  const envelope = error instanceof ApiError ? error.envelope : undefined;
+  // A config that will not parse is the user's own edit, and the one
+  // failure here they can actually fix. Anything else stays terse.
+  const isConfig = envelope?.code === "config_invalid";
+  const headline = isConfig ? envelope?.message : undefined;
+
   if (collapsed) {
     return (
       <div
         role="alert"
-        title="Could not load — click to retry"
+        title={headline ?? "Could not load — click to retry"}
         onClick={onRetry}
         className="mx-auto my-1 cursor-pointer text-[11px] text-danger-fg"
       >
@@ -229,7 +286,7 @@ function GroupError({ collapsed, onRetry }: { collapsed: boolean; onRetry: () =>
   }
   return (
     <div role="alert" className="px-2 py-1 text-[12px] text-text-tertiary">
-      Could not load.{" "}
+      {headline ?? "Could not load."}{" "}
       <button
         type="button"
         onClick={onRetry}
@@ -237,6 +294,31 @@ function GroupError({ collapsed, onRetry }: { collapsed: boolean; onRetry: () =>
       >
         Retry
       </button>
+      {isConfig ? (
+        <>
+          {" · "}
+          <span className="text-text-tertiary">
+            or run <code className="font-mono">loctt doctor</code>
+          </span>
+        </>
+      ) : null}
+      {envelope?.detail !== undefined && (
+        <>
+          {" "}
+          <button
+            type="button"
+            onClick={() => { setShowDetail(v => !v); }}
+            className="underline hover:text-text-primary"
+          >
+            {showDetail ? "Hide details" : "Show details"}
+          </button>
+          {showDetail && (
+            <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-[11px] text-text-tertiary">
+              {envelope.detail}
+            </pre>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -250,6 +332,32 @@ function GroupError({ collapsed, onRetry }: { collapsed: boolean; onRetry: () =>
  * and pushes everything below it down. Saying "no labels yet" costs one
  * line and answers both.
  */
+/**
+ * Whether the server has ever answered this query.
+ *
+ * The companion to `hasFailed`, and the same idea: ask what the query
+ * has *ever* done, never what it is doing right now.
+ *
+ * A group whose empty state is gated only on `items.length === 0`
+ * claims "No projects yet" from its very first render — before
+ * anything has been asked, let alone answered. Measured: ~24ms on a
+ * healthy cold load, and **a full second** (1089–2098ms) on a cold
+ * load against a dead server, sitting under the unreachable banner
+ * while it says the tracker is empty.
+ *
+ * `hasFailed` cannot cover that window, and honestly so: nothing has
+ * failed yet. Nothing has *settled* yet. That is a third state, and
+ * P6 says empty, loading, partial and broken are four designed states
+ * rather than one — so "we have not asked" must not render as "there
+ * is nothing".
+ *
+ * `dataUpdatedAt` survives `fetchState`'s reset, exactly as
+ * `errorUpdatedAt` does.
+ */
+function hasAnswered(q: { dataUpdatedAt: number }): boolean {
+  return q.dataUpdatedAt > 0;
+}
+
 function GroupEmpty({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
   if (collapsed) return null;
   return (
@@ -263,7 +371,7 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
     select: s => (s.location.search as { project?: string[] }).project ?? [],
   });
   const items = (projects.data?.items ?? []).filter(p => p.archived !== true);
-  const failed = projects.isError;
+  const failed = hasFailed(projects);
   // SHL-5: mark where a new task would land for *this* user, falling
   // back to the workspace default on a server that predates the field.
   // `??` would be wrong here: an explicit `null` means the chain
@@ -280,9 +388,9 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Projects</GroupLabel>
       {failed && (
-        <GroupError collapsed={collapsed} onRetry={() => { void projects.refetch(); }} />
+        <GroupError collapsed={collapsed} error={projects.error} onRetry={() => { void projects.refetch(); }} />
       )}
-      {!failed && items.length === 0 ? (
+      {!failed && hasAnswered(projects) && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>No projects yet</GroupEmpty>
       ) : null}
       {items.map(p => {
@@ -338,7 +446,7 @@ function SavedFiltersGroup({
   const ctx = { currentUserId, today, priorities };
   const counts = useBuiltinCounts(BUILTIN_FILTERS, ctx);
   const userViews = views.data?.queries ?? [];
-  const failed = views.isError;
+  const failed = hasFailed(views);
   // SHL-32: a pin that vanished from `queries.yaml` is explained
   // rather than silently dropped. Only once the list has actually
   // loaded — a failed or in-flight read is not a deletion.
@@ -350,7 +458,7 @@ function SavedFiltersGroup({
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Saved filters</GroupLabel>
       {failed && (
-        <GroupError collapsed={collapsed} onRetry={() => { void views.refetch(); }} />
+        <GroupError collapsed={collapsed} error={views.error} onRetry={() => { void views.refetch(); }} />
       )}
 
       {BUILTIN_FILTERS.map(f => {
@@ -461,14 +569,14 @@ function SavedFiltersGroup({
 function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
   const milestones = useMilestones();
   const items = (milestones.data?.items ?? []).filter(m => m.archived !== true);
-  const failed = milestones.isError;
+  const failed = hasFailed(milestones);
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Milestones</GroupLabel>
       {failed && (
-        <GroupError collapsed={collapsed} onRetry={() => { void milestones.refetch(); }} />
+        <GroupError collapsed={collapsed} error={milestones.error} onRetry={() => { void milestones.refetch(); }} />
       )}
-      {!failed && items.length === 0 ? (
+      {!failed && hasAnswered(milestones) && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>No milestones yet</GroupEmpty>
       ) : null}
       {items.map(m => (
@@ -495,14 +603,14 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
   const items = (sprints.data?.items ?? []).filter(
     s => s.archived !== true && s.state !== "completed",
   );
-  const failed = sprints.isError;
+  const failed = hasFailed(sprints);
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Sprints</GroupLabel>
       {failed && (
-        <GroupError collapsed={collapsed} onRetry={() => { void sprints.refetch(); }} />
+        <GroupError collapsed={collapsed} error={sprints.error} onRetry={() => { void sprints.refetch(); }} />
       )}
-      {!failed && items.length === 0 ? (
+      {!failed && hasAnswered(sprints) && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>No active sprints</GroupEmpty>
       ) : null}
       {items.map(s => (
@@ -531,14 +639,14 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
 function LabelsGroup({ collapsed }: { collapsed: boolean }) {
   const labels = useLabels();
   const items = (labels.data?.items ?? []).filter(l => l.archived !== true);
-  const failed = labels.isError;
+  const failed = hasFailed(labels);
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Labels</GroupLabel>
       {failed && (
-        <GroupError collapsed={collapsed} onRetry={() => { void labels.refetch(); }} />
+        <GroupError collapsed={collapsed} error={labels.error} onRetry={() => { void labels.refetch(); }} />
       )}
-      {!failed && items.length === 0 ? (
+      {!failed && hasAnswered(labels) && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>No labels yet</GroupEmpty>
       ) : null}
       {items.map(l => (
@@ -562,18 +670,18 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
 function RecentsGroup({ collapsed }: { collapsed: boolean }) {
   const recents = useRecents();
   const items = recents.data?.items ?? [];
-  const failed = recents.isError;
+  const failed = hasFailed(recents);
   if (collapsed) return null;
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Recently viewed</GroupLabel>
       {failed && (
-        <GroupError collapsed={collapsed} onRetry={() => { void recents.refetch(); }} />
+        <GroupError collapsed={collapsed} error={recents.error} onRetry={() => { void recents.refetch(); }} />
       )}
       {/* `!failed` matters: on a failed fetch `items` is empty too, and
           rendering the empty copy beside the alert makes two
           contradictory claims about the same data (ERR-1, ONB-34). */}
-      {!failed && items.length === 0 ? (
+      {!failed && hasAnswered(recents) && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>
           No recent tasks — this fills in as you open them
         </GroupEmpty>
@@ -603,9 +711,24 @@ function Footer({ collapsed, info }: { collapsed: boolean; info: TrackerInfoResp
       {!collapsed ? (
         <div className="px-2.5 text-[11px] text-text-tertiary">
           <div className="truncate font-mono" title={info.cwd}>{info.cwd}</div>
+          {/* The count is omitted rather than shown as zero when the
+              tracker could not be read. `TrackerInfoResponse.taskCount`
+              is a number, so the placeholder the shell falls back to
+              during an outage has to say *something* — and "0 tasks"
+              in front of a user with two is a claim about their data,
+              not a missing value. ERR-1's rule, at footer scale: a
+              server that is down and a tracker that is empty must not
+              look alike.
+              `cwd === ""` is that placeholder's signature. */}
           <div className="mt-0.5">
-            {info.taskCount} task{info.taskCount === 1 ? "" : "s"}
-            {info.nextKey ? ` · next ${info.nextKey}` : ""}
+            {info.cwd === "" ? (
+              <span className="italic">task count unavailable</span>
+            ) : (
+              <>
+                {info.taskCount} task{info.taskCount === 1 ? "" : "s"}
+                {info.nextKey ? ` · next ${info.nextKey}` : ""}
+              </>
+            )}
           </div>
         </div>
       ) : null}

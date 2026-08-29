@@ -35,11 +35,11 @@ import {
   EditCommentRequestSchema,
   EditViewRequestSchema,
   InitRequestSchema,
+  isSortableTaskField,
   ListViewConfigSchema,
   PostCommentRequestSchema,
   projectTaskFrontmatter,
   PutWorkflowRequestSchema,
-  TaskFrontmatterSchema,
 } from "@loctt/contracts";
 import {
   appendTaskBody,
@@ -440,13 +440,6 @@ const NO_USERS_ENVELOPE = {
  * on shape: their vocabulary lives in workflow.yaml, and a task that
  * does not carry one sorts as absent, which is correct.
  */
-function isSortableField(field: string): boolean {
-  if (field.startsWith("fields.")) return field.length > "fields.".length;
-  return Object.prototype.hasOwnProperty.call(
-    TaskFrontmatterSchema.shape,
-    field,
-  );
-}
 
 const BULK_ABORTED = {
   code: "validation_failed",
@@ -2310,7 +2303,7 @@ export function createWebApp(options: WebAppOptions) {
     // also stops it reaching the comparator, where it read as
     // `undefined` on every task — the list came back in its original
     // order while the header still showed the sort as applied.
-    const sortField = rawSort !== undefined && isSortableField(rawSort)
+    const sortField = rawSort !== undefined && isSortableTaskField(rawSort)
       ? rawSort
       : undefined;
     const direction: "asc" | "desc" = dirParam ?? "asc";

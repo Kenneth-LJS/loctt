@@ -41,13 +41,20 @@ export interface TrackerFixture {
   /**
    * Writes `count` minimal tasks straight to disk, bypassing the CLI.
    *
-   * `seed` spawns one `loctt create` per task at ~250ms each, so the
-   * scale cases (BLK-24, BLK-34) would take twenty minutes. These files
-   * are the same shape `create` writes.
+   * `seed` spawns one `loctt create` per task at ~250ms each, so a
+   * sixty-task spec pays fifteen seconds of subprocess time before it
+   * asserts anything — and with five Playwright workers that is the
+   * suite starving itself. These files are the same shape `create`
+   * writes.
    *
-   * **It does not advance `state.yaml`'s key counter**, so a `create`
-   * after `seedBulk` will collide. Use it for read/scale specs only —
-   * anything that writes should use `seed`.
+   * Keys use the tracker's own prefix by default, so this is a
+   * drop-in for `seed` wherever a spec needs rows rather than
+   * allocated keys. `state.yaml`'s counter **is** advanced, so a
+   * later `create` does not collide — the caveat that used to make
+   * this unsafe for anything but read-only specs.
+   *
+   * What it still cannot do is set fields, and it returns no keys.
+   * A spec that needs either wants `seed`.
    */
   seedBulk(count: number, prefix?: string): Promise<void>;
 }
@@ -229,27 +236,61 @@ export const test = base.extend<{ tracker: TrackerFixture }>({
 
     try {
       await waitForReady(baseURL, 15_000);
-      const seedBulk = async (count: number, prefix = "BULK"): Promise<void> => {
-        const projectId = /^\s{2}([0-9A-Z]{26}):/m.exec(
-          await readFile(path.join(root, ".loctt", "state.yaml"), "utf8"),
-        )?.[1];
+      const seedBulk = async (count: number, prefix?: string): Promise<void> => {
+        const statePath = path.join(root, ".loctt", "state.yaml");
+        const stateText = await readFile(statePath, "utf8");
+        const projectId = /^\s{2}([0-9A-Z]{26}):/m.exec(stateText)?.[1];
         if (projectId === undefined) throw new Error("no project in state.yaml");
+        // The tracker's own prefix unless the caller insists, so these
+        // rows are indistinguishable from `seed`'s to a spec that only
+        // reads them.
+        // `state.yaml` quotes the prefix (`prefix: "T-"`), so strip
+        // them — a literal `"T-"-1` key parses as YAML but matches
+        // nothing the reader looks for, and the tasks silently vanish
+        // from every list.
+        const rawPrefix = /^\s{4}prefix:\s*(\S+)\s*$/m.exec(stateText)?.[1];
+        const keyPrefix = prefix ?? rawPrefix?.replace(/^["']|["']$/g, "") ?? "BULK-";
+        const sep = keyPrefix.endsWith("-") ? "" : "-";
+        // Start where the tracker's counter is, not at 1. Numbering
+        // from 1 unconditionally meant `seed` then `seedBulk` wrote
+        // duplicate keys onto disk — the counter advance below
+        // protects later `create`s but cannot protect the rows this
+        // call is writing.
+        const first = Number(/^\s{4}next_number:\s*(\d+)\s*$/m.exec(stateText)?.[1] ?? "1");
         const stamp = "2026-01-01T00:00:00.000Z";
         await Promise.all(
           Array.from({ length: count }, async (_unused, i) => {
             // Monotonic, unique, and 26 chars — enough to satisfy the
             // readers without pulling ulid() into the fixture.
-            const id = `01M${String(i).padStart(23, "0")}`;
+            const n = first + i;
+            // Unique across calls as well as within one: two
+            // `seedBulk`s on the same tracker must not collide either.
+            const id = `01M${String(n).padStart(23, "0")}`;
             const dir = path.join(root, ".loctt", "tasks", id);
             await mkdir(dir, { recursive: true });
             await writeFile(
               path.join(dir, "task.md"),
-              `---\nid: ${id}\nkey: ${prefix}-${String(i + 1)}\n`
+              `---\nid: ${id}\nkey: ${keyPrefix}${sep}${String(n)}\n`
               + `title: Bulk task ${String(i + 1)}\ncreated_at: ${stamp}\n`
               + `updated_at: ${stamp}\nproject: ${projectId}\nstatus: backlog\n---\n`,
               "utf8",
             );
           }),
+        );
+
+        // Advance the key counter past what we just wrote, so a later
+        // `create` allocates a fresh key rather than colliding with
+        // one of these. Without this, `seedBulk` was safe only for
+        // read-only specs — which is most of the reason it was not
+        // already used where it would help most.
+        await writeFile(
+          statePath,
+          stateText.replace(
+            /^(\s{4}next_number:\s*)(\d+)\s*$/m,
+            (_m, head: string, current: string) =>
+              `${head}${String(Math.max(Number(current), first + count))}`,
+          ),
+          "utf8",
         );
       };
 

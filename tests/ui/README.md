@@ -75,3 +75,18 @@ Getting this wrong is quiet rather than loud: the spec runs against
 the previous build and passes. It cost a round of "why does this
 mutation survive" on 2026-08-28, and it means a mutation test that
 does not rebuild proves nothing.
+
+## Never build while the suite is running
+
+The fixture spawns `loctt ui` from `apps/cli/dist`, so a `npm run
+build` during a run swaps the binary underneath the workers. The
+result is a scatter of timeouts that look exactly like flakiness and
+do not reproduce.
+
+This has been misdiagnosed three times: twice as "the suite competes
+with itself under `--workers`", once by the M1 gate as a harness
+defect. A clean run on 2026-08-28 at load average 86 was **194/194**.
+
+If you are iterating on a fix, build *then* run. If a suite run shows
+scattered timeouts, check whether anything rebuilt during it before
+believing them.

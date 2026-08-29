@@ -133,21 +133,67 @@ describe("ServerUnreachableBanner", () => {
   /**
    * @verifies SHL-41
    *
-   * A page-2 request failing inside a query whose page 1 arrived is a
-   * failed request, not a stopped process. Telling the user to go
-   * restart a terminal that is running fine is worse than saying
-   * nothing — and this is not hypothetical: the list's "Load more"
-   * failure path produces exactly this state.
+   * **This test asserted the bug.** It required silence for a query
+   * that has data *and* a more recent failure — and that state is
+   * exactly what a server dying with the page open produces, because
+   * with the app loaded every query has already been answered.
+   *
+   * The M1 round-6 gate found the consequence: stop `loctt ui` with
+   * the browser open and nothing says so — 50 stale rows under an
+   * authoritative "Showing 1–50 of 63". Measured directly, with no
+   * reload: the banner never appeared, at 12 seconds and again at 75.
+   *
+   * Its stated concern was real — a failed "Load more" is a failed
+   * request, not a stopped process. But the two are **not
+   * distinguishable in the cache**: both leave data plus a later
+   * error, and both retry, so neither `errorUpdatedAt` nor
+   * `fetchFailureCount` separates them.
+   *
+   * The cases settle it. SHL-41 (blocker) says "**the next failed
+   * request** produces a persistent, visible state" — a failed Load
+   * more is one. LST-49 (major) asks for an error near the control
+   * and never asks for the banner to stay silent; that was this
+   * test's invention. So the banner speaks, and LST-49's own error
+   * still appears beside the control.
    */
-  it("stays quiet when a query that has been answered loses a later request", () => {
+  it("speaks when an answered query then fails — a dead server looks like this", () => {
     const { qc, Wrapper } = harness();
-    // A query with data *and* an error: page 1 landed, page 2 did not.
+    // Data *and* a later error: the state a page-2 failure produces,
+    // and equally the state of every query once the server dies.
     qc.setQueryData(["feed"], { pages: [{ items: [] }] });
     const query = qc.getQueryCache().find({ queryKey: ["feed"] });
     query?.setState({
       status: "error",
       error: new TypeError("Failed to fetch"),
       errorUpdatedAt: Date.now() + 1_000,
+    });
+
+    render(<ServerUnreachableBanner />, { wrapper: Wrapper });
+    expect(screen.queryByRole("status")).not.toBeNull();
+  });
+
+  /**
+   * @verifies SHL-41
+   *
+   * The guard the fix must not lose: a failure that is *older* than
+   * the last success is stale evidence. The server answered after it,
+   * so it is running.
+   *
+   * Without this, the banner would latch on the first failure of the
+   * session and never clear — the timestamp comparison, not the
+   * status, is what makes recovery work.
+   */
+  it("stays quiet when the last thing that happened was a success", () => {
+    const { qc, Wrapper } = harness();
+    qc.setQueryData(["feed"], { pages: [{ items: [] }] });
+    const query = qc.getQueryCache().find({ queryKey: ["feed"] });
+    const now = Date.now();
+    query?.setState({
+      status: "error",
+      error: new TypeError("Failed to fetch"),
+      // The failure came first; the data landed after it.
+      errorUpdatedAt: now - 1_000,
+      dataUpdatedAt: now,
     });
 
     render(<ServerUnreachableBanner />, { wrapper: Wrapper });

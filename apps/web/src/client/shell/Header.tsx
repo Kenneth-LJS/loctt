@@ -48,7 +48,16 @@ export function Header({
   readonly canToggleSidebar?: boolean;
 }) {
   return (
-    <header className="col-span-2 flex h-12 items-center gap-3 border-b border-border-subtle bg-bg-surface px-4">
+    // Responsive because it has to be: at 375px this header's contents
+    // ran to x=561, so the *whole page* panned sideways and the theme
+    // toggle and avatar sat off-screen (M1 gate, F5). The table's own
+    // container was already correct — the header was the one thing on
+    // the page that could not fit.
+    //
+    // `min-w-0` lets the flex children shrink below their content
+    // width; the wordmark and the search stub (disabled until search
+    // lands) drop below `sm`; the controls the user needs stay.
+    <header className="col-span-2 flex h-12 min-w-0 items-center gap-2 border-b border-border-subtle bg-bg-surface px-3 sm:gap-3 sm:px-4">
       <button
         type="button"
         onClick={onToggleSidebar}
@@ -60,11 +69,14 @@ export function Header({
         <HamburgerIcon />
       </button>
 
-      <div className="flex items-center gap-2 pr-2 text-[14px] font-semibold text-text-primary">
+      <div className="flex shrink-0 items-center gap-2 pr-1 text-[14px] font-semibold text-text-primary sm:pr-2">
         <span className="grid h-[22px] w-[22px] place-items-center rounded-sm bg-accent text-[12px] font-bold text-accent-contrast">
           T
         </span>
-        <span>TaskTracker</span>
+        {/* The wordmark is the first thing to go: the logo already
+            identifies the app, and the controls to its right are the
+            ones the user needs to reach. */}
+        <span className="hidden sm:inline">TaskTracker</span>
       </div>
 
       <div className="flex-1" />
@@ -75,7 +87,7 @@ export function Header({
         aria-label="Search tasks"
         disabled
         title="Search arrives in a later milestone"
-        className="h-8 w-[280px] rounded-md border border-border-default bg-bg-surface px-3 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-2 focus:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
+        className="hidden h-8 w-full min-w-0 max-w-[280px] rounded-md border border-border-default bg-bg-surface px-3 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-2 focus:outline-accent disabled:cursor-not-allowed disabled:opacity-60 sm:block"
       />
 
       <ThemeToggle />
@@ -83,11 +95,14 @@ export function Header({
       <button
         type="button"
         disabled
+        aria-label="New task"
         title="Create task arrives in a later milestone"
-        className="flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-accent px-2.5 text-[13px] font-medium text-accent-contrast hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 sm:px-3"
       >
         <PlusIcon />
-        New task
+        {/* The icon carries the meaning at narrow widths; the button
+            keeps its accessible name via aria-label either way. */}
+        <span className="hidden sm:inline">New task</span>
       </button>
 
       <UserMenu currentUser={currentUser} identityUnknown={identityUnknown} />
@@ -113,7 +128,7 @@ function ThemeToggle() {
     { value: "system", label: "System", glyph: "\u25d1" },
   ] as const;
   return (
-    <div className="inline-flex h-8 items-center rounded-md bg-bg-muted p-0.5" aria-label="Theme">
+    <div className="inline-flex h-8 shrink-0 items-center rounded-md bg-bg-muted p-0.5" aria-label="Theme">
       {options.map(o => (
         <button
           key={o.value}

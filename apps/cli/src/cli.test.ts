@@ -106,6 +106,36 @@ describe("CLI commands", () => {
     expect(process.exitCode).toBe(2);
   });
 
+  it("refuses a flag where a name belongs, rather than naming a project --name", async () => {
+    process.argv = ["node", "loctt", "init"];
+    await main();
+    process.exitCode = undefined;
+    const errSpy = vi.mocked(console.error);
+    errSpy.mockClear();
+
+    // `--name` is a real flag of `project rename`, so it is in the
+    // accepted list and sails past `rejectUnknownFlags` — then
+    // `args[2]` ate it as the positional. This created a project
+    // literally called `--name`, discarded "Second", and exited 0.
+    // Found by the M1 round-8 gate in passing.
+    process.argv = [
+      "node", "loctt", "project", "create", "--name", "Second", "--prefix", "SEC",
+    ];
+    await main();
+    expect(process.exitCode).toBe(2);
+    const errs = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(errs).toMatch(/got the flag --name/);
+    process.exitCode = undefined;
+
+    // And the escape hatch the message promises actually works — an
+    // earlier cut returned undefined for `--`, so the documented way
+    // to name something `--weird` produced a usage error.
+    errSpy.mockClear();
+    process.argv = ["node", "loctt", "label", "create", "--", "--weird"];
+    await main();
+    expect(process.exitCode).toBeUndefined();
+  });
+
   it("supports --flag=value form (project create)", async () => {
     process.argv = ["node", "loctt", "init"];
     await main();
