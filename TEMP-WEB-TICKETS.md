@@ -402,6 +402,38 @@ Cases: CMT-1, CMT-2, CMT-3, CMT-4, CMT-5, CMT-6, CMT-7, CMT-8, CMT-9, CMT-10, CM
 - **Tests**: comments routes; mention extraction round-trip; activity
   collapse + load-more
 
+### M2.6 · Task detail — Duplicate ⬜
+> **Added 2026-08-30 by Ken's ruling K7**, after the M2 gate found
+> TSK-20 declared as an M2.1 blocker and never built. Its own ticket
+> rather than a retroactive M2.1 fix, so the M2 gate's verdict keeps
+> meaning what it says — a milestone does not pass with a declared
+> blocker open.
+
+Cases: TSK-20
+
+**Core is ready.** `duplicateTask` is exported and both the CLI
+(`apps/cli/src/commands/task-crud.ts`) and MCP already call it — the
+web layer is the only surface that does not. Read the CLI's call for
+the shape: it takes `sourceRef`, `state`, `archivedGuard` and an
+`overrides` object, inside `withStateLock`.
+
+- `POST /api/tasks/:ref/duplicate` — a wrapper, following
+  `handleArchive`'s pattern
+- A "Duplicate" item in the task detail's More menu
+- **Navigate to the new task** on success — TSK-20's third bullet, and
+  the reason this is not a one-line route
+
+TSK-20's four bullets, each of which the test must reach:
+- a newly allocated key from the project's counter, never reused
+- title, body and metadata copied; `created_at`/`updated_at` fresh;
+  `key_history` **empty** on the copy
+- the app navigates, and the header key differs from the original
+- **the original is unmodified** — verify by returning to it, off disk
+
+**The trap.** A test asserting "a new task appeared" passes whether or
+not the copy is correct, and whether or not the original survived.
+Assert the far end: read both files.
+
 ### M2.5 · Task detail — relationships + attachments ⬜
 Cases: REL-1, REL-2, REL-3, REL-4, REL-5, REL-6, REL-7, REL-8, REL-9, REL-10, REL-11, REL-12, REL-13, REL-14, REL-15, REL-16, REL-17, REL-18, REL-19, REL-20, REL-21, REL-22, REL-23, REL-24, REL-25, REL-26, REL-27, REL-28, REL-29, REL-30, REL-31, REL-32, REL-33, REL-34, REL-35, REL-36, REL-37, REL-38, REL-39, REL-40, REL-41, REL-42, REL-43, REL-44, REL-45, REL-46, REL-47, REL-48, REL-49, REL-50, XS-25
 - Relationships panel: grouped by type (symmetric folds forward +
