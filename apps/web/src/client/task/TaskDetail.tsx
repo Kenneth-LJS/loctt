@@ -15,6 +15,7 @@ import { useCalendar } from "../api/hooks/useCalendar.ts";
 import { useCreateLabel } from "../api/hooks/useCreateLabel.ts";
 import { useSetField } from "../api/hooks/useSetField.ts";
 import { useTask } from "../api/hooks/useTask.ts";
+import { useTaskGraph } from "../api/hooks/useTaskGraph.ts";
 import {
   useArchiveTask,
   useDeleteTask,
@@ -24,6 +25,7 @@ import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { CommentsPanel } from "../comments/CommentsPanel.tsx";
 import { BodyEditor } from "../editor/BodyEditor.tsx";
 import { buildLookups } from "../list/lookups.ts";
+import { RelationshipsPanel } from "../relationships/RelationshipsPanel.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 import { DeleteTaskDialog } from "./DeleteTaskDialog.tsx";
@@ -68,6 +70,10 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
   const sprints = useSprints();
   const calendar = useCalendar();
   const workflow = useWorkflow();
+  // The whole graph, for the relationships panel's tree render. Called
+  // unconditionally with the other queries: hooks cannot sit below the
+  // pending / error returns.
+  const taskGraph = useTaskGraph();
 
   const [confirming, setConfirming] = useState<"delete" | "move" | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -483,20 +489,30 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
               />
             </Section>
 
-            {/* Placeholders, deliberately. The panels themselves are
-                M2.4 (relationships), M2.5 (attachments) and M2.6
-                (activity/comments); this ticket owes the two-column
-                shell they land in, and an absent heading would make
-                the layout untestable until then. Each names what it
-                will hold rather than rendering an empty box. */}
             <Section title="Related">
-              <PanelStub
-                count={task.data.relationships.length}
-                noun="linked task"
-                pending="Relationships arrive with the relationships panel."
+              {/* M2.5a. Keyed by the task for the same reason the other
+                  panels are: the picker's typed query, the collapsed
+                  groups and the collapsed tree nodes are component
+                  state, and carrying A's collapsed set onto B is the
+                  leak REL-5's last clause forbids. */}
+              <RelationshipsPanel
+                key={task.data.frontmatter.id}
+                taskRef={taskRef}
+                taskId={fm.id}
+                taskKey={fm.key}
+                taskTitle={fm.title}
+                taskKeyHistory={fm.key_history ?? []}
+                relationships={task.data.relationships}
+                stored={fm.relationships}
+                workflow={workflow.data}
+                statusOf={lookups.status}
+                taskIndex={taskGraph}
               />
             </Section>
 
+            {/* A placeholder, deliberately: the attachments panel is
+                M2.5b. It names what it will hold and states the count
+                it already has, rather than rendering an empty box. */}
             <Section title="Attachments">
               <PanelStub
                 count={task.data.attachments.length}

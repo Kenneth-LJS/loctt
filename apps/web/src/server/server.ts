@@ -3093,8 +3093,34 @@ export function createWebApp(options: WebAppOptions) {
     // and MCP (REL-C1).
     const wfConfig = await loadWorkflowConfig(locttDir);
     const task = await lookupTask(locttDir, ref);
-    const target = await lookupTask(locttDir, request.target);
-    const updated = await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: request.type, target: target.frontmatter.id, workflowConfig: wfConfig });
+    /**
+     * REL-24. The target may be a task that no longer exists — that is
+     * precisely the dangling edge the user is trying to clean up, and
+     * resolving it first made the cleanup impossible: `lookupTask`
+     * threw, the route answered 404 naming the id that is supposed to
+     * be gone, and the row could not be removed from any surface.
+     *
+     * So a resolvable ref is still resolved to its id (a user may
+     * unlink by key), and an unresolvable one is passed through as
+     * written. Core tolerates it: `unlinkTask` reads the *source*
+     * task's file for the forward edge and only reads the target for
+     * the inverse, which it now skips when the target is gone.
+     *
+     * A ref that is neither a live task nor an id on this task's edges
+     * still fails, from core, with "relationship ... does not exist on
+     * task ..." — which is the honest message for it.
+     */
+    let targetId = request.target;
+    try {
+      targetId = (await lookupTask(locttDir, request.target)).frontmatter.id;
+    } catch (err) {
+      if (!(err instanceof TaskNotFoundError)) throw err;
+    }
+    // REL-44's "already gone" message needs no catch here: core throws
+    // `RelationshipError`, which is a `LocttError`, and the route
+    // wrapper turns those into a 400 carrying core's own sentence
+    // ("relationship blocks -> <id> does not exist on task <id>").
+    const updated = await unlinkTask({ locttDir, taskId: task.frontmatter.id, type: request.type, target: targetId, workflowConfig: wfConfig });
     json(res, projectTaskFrontmatter(updated.frontmatter));
   };
 

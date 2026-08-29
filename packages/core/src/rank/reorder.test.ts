@@ -11,7 +11,7 @@ import { createTask } from "../task/create.js";
 import { readHistory } from "../task/history.js";
 import { lookupByKey } from "../task/lookup.js";
 import { linkTask } from "../task/relationships.js";
-import { INITIAL } from "./lexorank.js";
+import { INITIAL, REBALANCE_LENGTH_THRESHOLD } from "./lexorank.js";
 import { reorderBoardRank, ReorderError,reorderRelationship } from "./reorder.js";
 
 let root: string;
@@ -117,6 +117,154 @@ describe("reorderRelationship", () => {
     const c2Id = (await lookupByKey(locttDir, c2)).frontmatter.id;
     const c3Id = (await lookupByKey(locttDir, c3)).frontmatter.id;
     expect(ordered.map(r => r.target)).toEqual([c1Id, c3Id, c2Id]);
+  });
+
+  /**
+   * REL-14 and REL-31, neither of which had a test anywhere:
+   * `reorder.test.ts` never mentioned rebalancing, and no UI spec can
+   * reach it — driving a rank past 24 characters needs ~24 successive
+   * inserts into one shrinking gap, which is minutes of subprocess
+   * time through the CLI and slower still through a browser.
+   *
+   * Both are exercised here instead, where the loop is a loop.
+   */
+  it("REL-14: dropping above the first and below the last renumbers nothing", async () => {
+    const [pKey, c1, c2, c3] = await makeTasks(4) as [string, string, string, string];
+    await linkChildren(pKey, [c1, c2, c3]);
+    for (const c of [c1, c2, c3]) {
+      await reorderRelationship({ locttDir, sourceRef: pKey, relationshipType: "parent", targetRef: c });
+    }
+    const idOf = async (k: string): Promise<string> =>
+      (await lookupByKey(locttDir, k)).frontmatter.id;
+    const ranks = async (): Promise<Map<string, string | undefined>> => {
+      const p = await lookupByKey(locttDir, pKey);
+      return new Map((p.frontmatter.relationships ?? []).map(r => [r.target, r.rank]));
+    };
+    const [id1, id2, id3] = [await idOf(c1), await idOf(c2), await idOf(c3)];
+    const before = await ranks();
+
+    // Above the current first: a rank below every existing one.
+    await reorderRelationship({
+      locttDir, sourceRef: pKey, relationshipType: "parent", targetRef: c3, before: c1,
+    });
+    const afterHead = await ranks();
+    const headRank = afterHead.get(id3) ?? "";
+    expect(headRank < (afterHead.get(id1) ?? "")).toBe(true);
+    expect(headRank < (afterHead.get(id2) ?? "")).toBe(true);
+    // Neither of the other rows was renumbered.
+    expect(afterHead.get(id1)).toBe(before.get(id1));
+    expect(afterHead.get(id2)).toBe(before.get(id2));
+
+    // Below the current last: a rank above every existing one.
+    await reorderRelationship({
+      locttDir, sourceRef: pKey, relationshipType: "parent", targetRef: c3, after: c2,
+    });
+    const afterTail = await ranks();
+    const tailRank = afterTail.get(id3) ?? "";
+    expect(tailRank > (afterTail.get(id1) ?? "")).toBe(true);
+    expect(tailRank > (afterTail.get(id2) ?? "")).toBe(true);
+    expect(afterTail.get(id1)).toBe(before.get(id1));
+    expect(afterTail.get(id2)).toBe(before.get(id2));
+  });
+
+  it("REL-31: driving a rank past the length threshold rebalances the window without reordering it", async () => {
+    const [pKey, c1, c2, x, y] = await makeTasks(5) as [string, string, string, string, string];
+    await linkChildren(pKey, [c1, c2, x, y]);
+    for (const c of [c1, c2, x, y]) {
+      await reorderRelationship({ locttDir, sourceRef: pKey, relationshipType: "parent", targetRef: c });
+    }
+    const idOf = async (k: string): Promise<string> =>
+      (await lookupByKey(locttDir, k)).frontmatter.id;
+    const ids = {
+      c1: await idOf(c1), c2: await idOf(c2), x: await idOf(x), y: await idOf(y),
+    };
+
+    const snapshot = async (): Promise<{ order: string[]; ranks: string[] }> => {
+      const p = await lookupByKey(locttDir, pKey);
+      const rels = (p.frontmatter.relationships ?? [])
+        .filter(r => r.type === "parent")
+        .sort((a, b) => (a.rank ?? "").localeCompare(b.rank ?? ""));
+      return { order: rels.map(r => r.target), ranks: rels.map(r => r.rank ?? "") };
+    };
+
+    /**
+     * **Two rows leapfrogging, not one row re-dropped.**
+     *
+     * REL-31 says "repeatedly drop the same row between the same two
+     * neighbours", and that phrasing does not reach the threshold:
+     * measured, the second identical drop is a no-op. Once the row sits
+     * just below its anchor, `computeNewRank` returns the rank it
+     * already holds, so the string never grows and the case's premise
+     * is never met. (Traced through the CLI: `u w v vi` on the first
+     * drop and `u w v vi` on the next eleven.)
+     *
+     * What does drive the growth — and is the same situation from the
+     * user's side, a group being reordered over and over in one region
+     * — is two rows each moving above the other. The gap to the fixed
+     * neighbour above halves every move, and the rank string gains a
+     * character roughly every fifth one.
+     */
+    let rebalanced = false;
+    let orderBefore: string[] = [];
+    let longestBefore = 0;
+    let mover = x;
+    let anchor = y;
+    for (let i = 0; i < 400 && !rebalanced; i += 1) {
+      const snap = await snapshot();
+      orderBefore = snap.order;
+      longestBefore = Math.max(...snap.ranks.map(r => r.length));
+      const result = await reorderRelationship({
+        locttDir, sourceRef: pKey, relationshipType: "parent",
+        targetRef: mover, after: anchor,
+      });
+      rebalanced = result.rebalanced;
+      if (rebalanced) {
+        /**
+         * The order the *move* asked for, which is what the rebalance
+         * must preserve.
+         *
+         * `orderBefore` is the order before this iteration, and this
+         * iteration both moved a row and rebalanced — so comparing
+         * against it would fail on the move rather than on the
+         * rebalance, which is the wrong claim. The intended order is
+         * `orderBefore` with the mover lifted out and reinserted
+         * immediately after the anchor.
+         */
+        const moverId = await idOf(mover);
+        const anchorId = await idOf(anchor);
+        const without = orderBefore.filter(id => id !== moverId);
+        const at = without.indexOf(anchorId);
+        orderBefore = [...without.slice(0, at + 1), moverId, ...without.slice(at + 1)];
+      }
+      [mover, anchor] = [anchor, mover];
+    }
+
+    // The loop must actually have reached a rebalance; without this
+    // every assertion below would hold vacuously on a run that never
+    // triggered one.
+    expect(rebalanced).toBe(true);
+    // And it got there by growing a rank up to the threshold, rather
+    // than by some other route. `longestBefore` is the longest rank on
+    // the iteration *before* the rebalancing one, so it sits at the
+    // threshold rather than past it — the move that crossed 24 is the
+    // move that rebalanced.
+    expect(longestBefore).toBe(REBALANCE_LENGTH_THRESHOLD);
+
+    const after = await snapshot();
+    // The visible order before and after the rebalance is identical —
+    // "a rebalance must never reshuffle the user's ordering".
+    expect(after.order).toEqual(orderBefore);
+    // All four rows are still there, in a stored order.
+    expect(new Set(after.order)).toEqual(new Set([ids.c1, ids.c2, ids.x, ids.y]));
+    // Rebalanced to evenly spaced *short* strings, across the whole
+    // affected window rather than only the dragged row.
+    expect(after.ranks).toHaveLength(4);
+    expect(after.ranks.every(r => r.length <= 2)).toBe(true);
+    // No rank ends in `0`.
+    expect(after.ranks.every(r => !r.endsWith("0"))).toBe(true);
+    // Strictly increasing, so the order is stored rather than merely
+    // displayed.
+    expect([...after.ranks].sort()).toEqual(after.ranks);
   });
 
   it("rejects passing both before and after", async () => {

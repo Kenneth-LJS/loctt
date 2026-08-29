@@ -382,6 +382,54 @@ describe("relationships", () => {
         .rejects.toThrow(RelationshipError);
     });
 
+    it("removes a dangling edge whose target no longer exists on disk", async () => {
+      /**
+       * REL-24. A task deleted out of band leaves every edge pointing
+       * at it dangling, and this call is the only way the surviving
+       * side gets cleaned up.
+       *
+       * It used not to work anywhere. `readTask` on the vanished target
+       * raised a raw ENOENT out of the inverse branch, so the forward
+       * edge could not be removed from any surface — the web API
+       * answered 500 with the ENOENT path in `detail`, and
+       * `loctt unlink` exited 1. Both measured before the fix.
+       */
+      await writeTask(locttDir, "a", {
+        ...seedA,
+        frontmatter: {
+          ...seedA.frontmatter,
+          relationships: [
+            { type: "blocks", target: "vanished" },
+            { type: "blocks", target: "b" },
+          ],
+        },
+      });
+      await writeTask(locttDir, "b", {
+        ...seedB,
+        frontmatter: { ...seedB.frontmatter, relationships: [{ type: "blocked_by", target: "a" }] },
+      });
+      // `vanished` was never written, so its directory does not exist.
+
+      const updated = await unlinkTask({
+        locttDir, taskId: "a", type: "blocks", target: "vanished", workflowConfig: workflow,
+      });
+
+      // The dangling edge is gone...
+      expect(updated.frontmatter.relationships?.map(r => r.target)).toEqual(["b"]);
+      // ...and the live sibling is untouched, so the removal was
+      // targeted rather than a wholesale rewrite.
+      const b = await readTask(locttDir, "b");
+      expect(b.frontmatter.relationships).toEqual([{ type: "blocked_by", target: "a" }]);
+    });
+
+    it("still refuses when the target is missing AND the edge does not exist", async () => {
+      // The tolerance above must not become "any unlink succeeds".
+      await seedAB();
+      await expect(unlinkTask({
+        locttDir, taskId: "a", type: "blocks", target: "vanished", workflowConfig: workflow,
+      })).rejects.toThrow(RelationshipError);
+    });
+
     it("works without a workflow config (forward-only)", async () => {
       await writeTask(locttDir, "a", {
         ...seedA,

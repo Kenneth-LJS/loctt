@@ -500,6 +500,41 @@ Not narrowed, not claimed. It wants a decision on whether the task
 detail page is tabbed at all, which belongs with whoever owns the page
 rather than with the activity feed.
 
+#### M2.5a · REL-33's refusal has no guard to refuse with
+
+**REL-33's second bullet** — *"A drag attempt against a stale page is
+refused with a message that the kind is no longer ranked"* — needs a
+check that does not exist at any layer.
+
+`reorderRelationship` (`packages/core/src/rank/reorder.ts`) never loads
+the workflow config and never reads `ranked`. Measured against a live
+server: switch `blocks` to `ranked: false` in `workflow.yaml`, then
+`POST /api/tasks/T-1/relationships/blocks/T-3/rerank {"before":"T-2"}`
+answers **200 `{"rank":"f","rebalanced":false}`** and writes the rank.
+
+**The other two bullets are built and tested.** The panel's drag
+handles come from `group.ranked`, which is read from the live config,
+so they disappear on the next refresh; and the existing `rank` values
+are untouched by the config change. Both are asserted in
+`tests/ui/flow-relationships.spec.ts`'s REL-33 spec, with the
+handles-present case asserted first so the absence is a change rather
+than a constant.
+
+**Not built, deliberately.** Adding the guard means `reorder.ts` starts
+loading and enforcing workflow config — a *new refusal* on a shared
+core path that the CLI's `loctt rerank` and any future MCP tool
+inherit. That is a behaviour change to a contract three surfaces use,
+raised by a case rather than by a defect, so it is condition 1 rather
+than something to decide mid-ticket.
+
+**Where it belongs:** `reorderRelationship` should take the
+`workflowConfig` its sibling `linkTask` already takes, and throw a
+`ReorderError` naming the kind when the definition is absent or
+`ranked` is not true. The web route already maps `ReorderError` to a
+400 with `field: "relationships"`, which the panel renders at the
+group — so only core and the route's `loadWorkflowConfig` call are
+missing.
+
 #### M2.1 · bullets deferred to a later ticket in the same flow
 
 Recorded rather than narrowed. Each is a bullet of a case whose other

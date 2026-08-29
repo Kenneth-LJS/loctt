@@ -29,6 +29,46 @@ with M2.3; ERR-11 lands in M4.
 Cases: ERR-11, ERR-12 in
 [`ui-test-cases/flow-error-handling.md`](ui-test-cases/flow-error-handling.md).
 
+### `loctt link` rejects the inverse side of a relationship; the web API accepts it
+
+**Measured 2026-08-29** while building M2.5a.
+
+```
+loctt link T-1 child T-4
+  → exit 2: unknown relationship 'child'.
+    Known: blocks, parent, clones, duplicates, causes, relates_to
+
+POST /api/tasks/T-1/link {"type":"child","target":"T-4"}
+  → 200
+```
+
+Core's `linkTask` builds its valid-type set from
+`relationshipTypeKeys`, which yields **both** sides of a directional
+definition — so core accepts `child`, and so does the web route, which
+passes the user's type straight through. The CLI narrows it somewhere
+before that, to `r.key` only.
+
+**The stored result is identical either way** (`A child B` is the same
+edge as `B parent A`), so this is a usability and P10 divergence rather
+than a data problem: the same statement is expressible on two surfaces
+and not on the third. The UI's link picker offers all eleven sides, so
+a user who learns the vocabulary there finds half of it rejected at the
+command line.
+
+**Where the fix belongs:** wherever `apps/cli` validates the
+relationship argument — it should use `relationshipTypeKeys` like core
+and the web route do, rather than a narrower set. Not fixed in M2.5a
+because it is a CLI change and the ticket is the web relationships
+panel.
+
+**Reproduce:** `loctt init && loctt create A && loctt create B &&
+loctt link T-1 child T-2`.
+
+**Worked around in the specs**, deliberately visibly:
+`tests/ui/flow-relationships.spec.ts`'s `seedLink` helper states the
+forward link from the other end when the CLI will not take the inverse
+side, and says why in its docstring.
+
 ## Tests
 
 ### The integration suite is flaky under parallel load

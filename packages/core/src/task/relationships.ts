@@ -177,6 +177,23 @@ async function findStructuralCycle(
   return null;
 }
 
+/**
+ * True for the two shapes "this task does not exist" takes.
+ *
+ * `lookupById` raises `TaskNotFoundError`; `readTask` opens the file
+ * directly and raises the platform's `ENOENT`. Callers that must
+ * tolerate a missing task have to accept both, and must accept
+ * *only* these — an `EACCES` or a parse failure is a different fact
+ * and swallowing it would report a readable task as a deleted one.
+ */
+function isMissingTask(err: unknown): boolean {
+  if (err instanceof TaskNotFoundError) return true;
+  return (
+    err instanceof Error
+    && (err as NodeJS.ErrnoException).code === "ENOENT"
+  );
+}
+
 function applyRelationships(
   frontmatter: TaskFrontmatter,
   relationships: TaskRelationship[],
@@ -383,9 +400,39 @@ export async function unlinkTask(opts: UnlinkTaskOptions): Promise<Task> {
     let inverseUpdatedRels: TaskRelationship[] | null = null;
 
     if (inverseType && !isSelfLink) {
-      inverseTask = await readTask(locttDir, target);
-      const inverseExisting = inverseTask.frontmatter.relationships ?? [];
-      inverseUpdatedRels = removeEdge(inverseExisting, inverseType, taskId);
+      /**
+       * A target that no longer exists is not a reason to refuse the
+       * unlink — it is the main reason to want one.
+       *
+       * When a task is deleted out of band, every edge pointing at it
+       * becomes dangling, and this call is how the surviving side gets
+       * cleaned up. Reading the target unguarded made that impossible,
+       * so the forward edge could not be removed from any surface.
+       * Measured before the fix: the web API answered 404 (its route
+       * resolved the target first) and `loctt unlink T-1 blocks
+       * <deleted-id>` exited 1 — both naming the target that is
+       * *supposed* to be gone.
+       *
+       * There is no inverse edge to remove on a task that does not
+       * exist, so skipping the inverse side is not merely tolerable
+       * here, it is correct: the forward removal below still runs, and
+       * `forwardUpdatedRels === null && inverseUpdatedRels === null`
+       * still catches the genuinely-absent case.
+       */
+      try {
+        inverseTask = await readTask(locttDir, target);
+        const inverseExisting = inverseTask.frontmatter.relationships ?? [];
+        inverseUpdatedRels = removeEdge(inverseExisting, inverseType, taskId);
+      } catch (err) {
+        // `readTask` reads the file directly, so a deleted task surfaces
+        // as a raw ENOENT rather than as `TaskNotFoundError` — measured;
+        // catching only the latter left this route answering 500 with
+        // the ENOENT path in `detail`. Both are matched, and nothing
+        // else is: a permission failure or a corrupt file must still
+        // propagate rather than be silently treated as "target gone".
+        if (!isMissingTask(err)) throw err;
+        inverseTask = undefined;
+      }
     }
 
     if (forwardUpdatedRels === null && inverseUpdatedRels === null) {
