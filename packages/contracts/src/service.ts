@@ -145,6 +145,17 @@ export interface TaskResponse {
   readonly bodyToken: string;
   readonly attachments: readonly AttachmentResponse[];
   /**
+   * Why `attachments` is empty, when it is empty *because the
+   * directory could not be read* rather than because there is nothing
+   * in it (REL-49).
+   *
+   * Absent on both common paths — no attachments, or attachments that
+   * read fine — so a client that ignores it behaves as before. A
+   * client that renders it can degrade the section while the rest of
+   * the task stands, which is what the case asks for.
+   */
+  readonly attachmentsError?: string;
+  /**
    * Constructs in the body that the WYSIWYG editor cannot represent
    * (B5). Empty when the body is safe to edit visually.
    *

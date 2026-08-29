@@ -351,7 +351,13 @@ export async function show(args: string[], root: string): Promise<void> {
       console.log(`  ${r.type} → ${display}${detail ? `  ${detail}` : ""}`);
     }
   }
-  if (model.attachments.length > 0) {
+  // REL-49: an unreadable `attachments/` degrades **this section** and
+  // nothing else. Silence here would say "no attachments" about a
+  // directory that may be full — the conflation the core fix removed,
+  // reintroduced one layer up.
+  if (model.attachmentsError !== undefined) {
+    console.log(`Attachments: could not be read — ${model.attachmentsError}`);
+  } else if (model.attachments.length > 0) {
     console.log(`Attachments:`);
     for (const a of model.attachments) {
       console.log(`  ${a.name} (${a.size} bytes)`);

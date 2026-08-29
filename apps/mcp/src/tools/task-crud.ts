@@ -88,6 +88,13 @@ export const TOOLS: readonly ToolDef[] = [
           size: a.size,
           ...(a.mime !== undefined ? { mime: a.mime } : {}),
         })),
+        // REL-49. An agent reading this tool must not be told "no
+        // attachments" about a directory that could not be read — it
+        // would act on the absence, which is the whole point of P-4
+        // and of ERR-1.
+        ...(model.attachmentsError !== undefined
+          ? { attachmentsError: model.attachmentsError }
+          : {}),
       };
       if (model.relationships.length === 0) {
         delete result["relationships"];

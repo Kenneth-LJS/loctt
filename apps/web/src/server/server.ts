@@ -2664,6 +2664,12 @@ export function createWebApp(options: WebAppOptions) {
         size: a.size,
         ...(a.mime !== undefined ? { mime: a.mime } : {}),
       })),
+      // REL-49: an unreadable directory degrades this section, not the
+      // task. Omitting it would let the client render "no attachments"
+      // over a directory that may be full.
+      ...(model.attachmentsError !== undefined
+        ? { attachmentsError: model.attachmentsError }
+        : {}),
       // Detected server-side so every client applies one rule rather
       // than each editor reimplementing it (B5).
       lossyConstructs: findLossyConstructs(model.task.body).map(c => ({
