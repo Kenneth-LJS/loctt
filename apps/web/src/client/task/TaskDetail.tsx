@@ -20,6 +20,7 @@ import {
   useMoveTask,
 } from "../api/hooks/useTaskMutations.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
+import { CommentsPanel } from "../comments/CommentsPanel.tsx";
 import { BodyEditor } from "../editor/BodyEditor.tsx";
 import { buildLookups } from "../list/lookups.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
@@ -510,9 +511,16 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
             </Section>
 
             <Section title="Comments">
-              <p className="text-[13px] text-text-tertiary">
-                Comments arrive with the comments panel.
-              </p>
+              {/* M2.4a. Keyed by the task for the same reason
+                  `BodyEditor` is: the composer's buffer and the
+                  in-progress edit live in refs, which survive a
+                  re-render, so navigating A → B without a remount
+                  would carry A's half-typed comment onto B. */}
+              <CommentsPanel
+                key={task.data.frontmatter.id}
+                taskRef={taskRef}
+                users={users.data?.items ?? []}
+              />
             </Section>
           </div>
 

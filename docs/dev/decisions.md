@@ -1451,3 +1451,58 @@ than this ticket.
 editor being clean. The XS-14 UI spec's second half — which asserts the
 conflict surface appears — would need rewriting to assert adoption
 instead.
+
+### A16 · An edit opens in Markdown source; the composer opens rich
+
+**Ticket:** M2.4a · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** CMT-3's second bullet: "The raw markdown is what's
+stored — reopening the comment for edit shows **the source the user
+typed, not the rendered HTML**." CMT-7 requires the `@mention` picker
+in the composer, and that picker is a ProseMirror affordance —
+`MentionMenu` reads the editor's selection and inserts a node. The
+plain CodeMirror surface has no picker.
+
+Built rich-first, both surfaces the same, the CMT-3 spec failed with
+the editor showing `bold and italic and code — see docs` where the
+case asks for `**bold**`. So the two bullets pull opposite ways on one
+surface.
+
+**What had to be decided.** Which surface does a comment edit open in?
+
+**Options considered.**
+
+1. **Rich for both.** The picker is available everywhere. Costs:
+   CMT-3's second bullet is simply unmet — the user reopening a
+   comment sees rendered output, which is what the case names as the
+   wrong thing. A blocker-adjacent major fails outright.
+2. **Raw for both.** CMT-3 satisfied everywhere. Costs: CMT-7's picker
+   disappears from the composer, which is a **blocker** case. Worse
+   trade than option 1.
+3. **Composer rich, edit raw, with the toggle `BodyEditor` already
+   ships on both.** Costs: the two surfaces open differently, which a
+   user could find surprising; and the picker is one click rather
+   than zero away during an edit.
+
+**Decided.** Option 3.
+
+**Why.** It is the only option that satisfies both cases, and the
+split follows what each case is *about*: CMT-7 is written about
+composing a new comment ("Type `@` in the composer"), CMT-3 about
+*reopening* an existing one. Writing is where a picker earns its
+place; revisiting is where seeing what you actually stored does.
+
+The mechanism is already built and already reviewed — `BodyEditor`'s
+Rich/Markdown toggle over one `RichBuffer` (A14). This reuses it
+rather than adding a surface, so neither mode is a dead end: flipping
+to Rich during an edit restores the picker, and `RichBuffer` means
+merely looking at the other tab does not reformat anything.
+
+**Recorded rather than stopping the run** because it is contained —
+one prop, one component, and reversing it is changing that prop back.
+Nothing else builds on it.
+
+**To revert.** `apps/web/src/client/comments/CommentItem.tsx` — the
+`initialMode="raw"` prop on the edit `CommentComposer`. Removing it
+restores option 1 and CMT-3's spec assertion on
+`comment-edit-composer-mode-raw` inverts with it.

@@ -521,6 +521,31 @@ Recorded rather than narrowed, per Ken's standing rule.
   The UI half of each case — rendering the stale value flagged rather
   than blank — is built and tested.
 
+#### M2.4a · one bullet that needs something that does not exist
+
+Recorded rather than narrowed, per Ken's standing rule.
+
+- **CMT-10, bullet 4** — *"The 'Mentions me' saved filter still
+  matches the comment for that user after the rename."* **There is no
+  way to query on mentions at all.** Measured: the query DSL has no
+  `mentions` field (nothing in `packages/core/src/query/` references
+  one), and there is no comment-scan endpoint on the web server. The
+  "Mentions me" built-in in `apps/web/src/client/sidebar/
+  builtinFilters.ts` already resolves to `null` for exactly this
+  reason, with a comment saying it "needs a comment-scan endpoint that
+  lands with the comments feature".
+
+  This is a **feature that exists nowhere**, which is condition 1:
+  matching tasks by who is mentioned in their comments means indexing
+  every `_comments.yaml` at query time, and that is a core capability
+  with CLI and MCP consequences, not a web-client detail.
+
+  **The bullet's other three are satisfied and tested** — the stored
+  `mentions` array is unchanged by a rename, the chip reads the current
+  name on the next render, and the stored body still holds the old
+  token. Those are the mechanism the fourth bullet would be built on,
+  so nothing here has to be undone when it lands.
+
 ### Which layer — and core is not done until all three have it
 
 **Ken's rule, 2026-08-29.** Decide the layer *before* proposing the
