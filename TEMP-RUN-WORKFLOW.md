@@ -46,17 +46,44 @@ the code, and the agent that gates wrote nothing at all.
 A review agent that also wrote the code is not a review. If context
 pressure ever makes that tempting, spawn a new one instead.
 
-### Why the main session builds rather than delegating
+### Building is delegated too
 
-A build agent that writes the requirement, the test and the
-implementation has no external check on any of the three — the failure
-this repo already produced fourteen times. The main session is not
-immune to that, but it carries the case docs, the invariants and the
-decision history, and it is the thing that gets reviewed by someone
-fresh at every subsection boundary.
+**Changed 2026-08-29 on Ken's instruction: "use agents to code to
+preserve context".**
 
-Delegation is used where it *adds* an independent view: review and
-gating. Not where it only adds a second unchecked author.
+The earlier rule had the main session build, reasoning that a build
+agent writing the requirement, the test *and* the implementation has
+no external check on any of the three. That reasoning was half wrong.
+The main session had no external check either — it was reviewed at
+each subsection boundary, and **that review is what supplies the
+check, whoever wrote the code.** The freshness rule is untouched: the
+reviewer did not write it, the gate wrote nothing.
+
+What delegation buys is context. M1 spent most of a session's window
+on probes, mutations and suite output, and a compaction mid-ticket
+loses exactly the details a build depends on.
+
+| Role | Who |
+|---|---|
+| Plan, probe, split | Main session — it holds the case docs and decisions |
+| Build a subsection | **Fresh agent**, one subsection, briefed with the case text |
+| Review | **Fresh agent**, wrote none of it |
+| Section gate | **Fresh agent**, own worktree, pinned SHA |
+
+**What the main session keeps.** Step 1 (read the cases, run the
+inverted coverage gate) and step 2 (probe the built binary) stay here,
+because they decide *what* is owed and a build agent that also decides
+that is grading itself. The main session also owns every stop
+condition: an agent that hits one reports it rather than deciding.
+
+**What a build agent is given.** The case text in full, the relevant
+probe findings, `invariants.md`, `decisions.md` — and **not** a
+suggested implementation. It writes tests tagged `// @verifies`, and
+each must be shown to fail.
+
+**Agents that write code get their own worktree** when they may run
+concurrently, for the reason round 7 established: two agents in one
+working tree cost a whole gate round.
 
 ---
 
