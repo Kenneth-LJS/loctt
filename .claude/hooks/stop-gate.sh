@@ -28,10 +28,20 @@ fi
 # turn's. If nothing moved, the wait is not productive and the model is
 # told to investigate rather than wait again.
 if pgrep -f "playwright test|vitest run|npm run test|npm run build" >/dev/null 2>&1; then
-  # Bytes written by the logs an agent's suite streams into, plus the
-  # count of running test processes. Any real progress moves this.
+  # **Accumulated CPU time of the running test processes.**
+  #
+  # Log bytes were the first instrument and they were wrong: a
+  # background run's output is buffered until it exits, so its log sits
+  # at 0 bytes for ten minutes while the suite works perfectly. The
+  # gate fired on a suite 49 seconds into a clean run.
+  #
+  # CPU time cannot be fooled that way. A process doing work
+  # accumulates it; a hung one does not. It is also indifferent to
+  # *where* the output goes, which is what the log-bytes version got
+  # wrong.
   now=$(
-    { stat -f%z /tmp/vui.log /tmp/rb.log 2>/dev/null;
+    { ps -o time= -p "$(pgrep -f 'playwright test|vitest run|npm run' \
+        2>/dev/null | tr '\n' ',' | sed 's/,$//')" 2>/dev/null;
       pgrep -f "playwright test|vitest run" 2>/dev/null | wc -l; } | tr -d ' \n'
   )
   prev=$(cat "$STAMP" 2>/dev/null)
