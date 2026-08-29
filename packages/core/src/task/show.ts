@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { Task } from "@loctt/contracts";
 
 import { getAttachmentsDir } from "../paths/index.js";
-import { lookupById, TaskNotFoundError } from "./lookup.js";
+import { lookupById, TaskNotFoundError, UnreadableTaskError } from "./lookup.js";
 import { mimeForFilename } from "./mime.js";
 
 /** Attachment metadata discovered from the task folder. */
@@ -66,8 +66,23 @@ export async function discoverAttachments(
   let entries;
   try {
     entries = await readdir(attachmentsDir);
-  } catch {
-    return [];
+  } catch (err) {
+    // **ENOENT only.** A bare `catch { return [] }` made "there is no
+    // attachments directory" and "I could not read it" the same
+    // answer, so a permissions failure rendered as
+    // "No attachments on this task yet" over a directory holding a
+    // file — ERR-1's prohibition, and REL-49's first bullet inverted.
+    //
+    // Found by the M2 gate and confirmed on the CLI: `loctt show`
+    // dropped the section silently too, so this is core, not the web
+    // client.
+    //
+    // A task with no attachments has no directory, which is the
+    // overwhelmingly common path and still returns []. Anything else
+    // — EACCES, EIO, ENOTDIR — is a real failure and now propagates
+    // to a caller that can name the directory and the reason.
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
   }
 
   const attachments: AttachmentInfo[] = [];
@@ -114,9 +129,28 @@ export async function resolveRelationships(
           missing: false,
         };
       } catch (err) {
-        // Only treat genuinely-missing tasks as "missing"; let real I/O
-        // errors (permission, disk) propagate so the caller sees them.
-        if (err instanceof TaskNotFoundError) {
+        // A target that is absent and a target that will not parse are
+        // both edges this task cannot follow — from *this* task's point
+        // of view they are the same broken link, and neither is a
+        // reason to fail the page the user actually asked for.
+        //
+        // Only `TaskNotFoundError` was tolerated, so one corrupt
+        // `task.md` made every task linking to it return a 500 naming
+        // the corrupt task's **ULID** — a page the user can neither
+        // read nor act on, about a task they did not ask for. Found by
+        // the M2 gate (F3), and it is the unfinished half of A19: the
+        // same tolerance was applied to `unlink` and not to the read.
+        //
+        // The corrupt task's *own* page still reports the parse error
+        // with its path and position — that is where the user can act,
+        // and `UnreadableTaskError` carries what they need. Swallowing
+        // it here loses nothing, because the row is already rendered as
+        // broken.
+        //
+        // A permission or disk failure still propagates: those are not
+        // "this edge is broken", they are "this tracker cannot be
+        // read", and hiding them would be the LST-33 mistake.
+        if (err instanceof TaskNotFoundError || err instanceof UnreadableTaskError) {
           return { type: r.type, target: r.target, missing: true };
         }
         throw err;

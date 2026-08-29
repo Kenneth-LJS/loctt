@@ -261,17 +261,36 @@ export function renderValue(
       const def = ctx.workflow?.task_types.find(t => t.key === key);
       return def === undefined ? drifted(key) : known(def.label);
     }
+    // **Matched by id OR name, deliberately.** The frontmatter stores
+    // a ULID, but history does not: `loctt set T-1 milestone v1`
+    // records `after: v1` — the name the user typed. Measured on a
+    // real tracker.
+    //
+    // Matching on `id` alone therefore failed every CLI-written entry
+    // and marked a **live** milestone "(no longer defined)", which is
+    // CMT-26's second bullet inverted: the marker exists to flag a
+    // value config no longer knows, and it was firing on values config
+    // knows perfectly well. Found by the M2 gate, which put two rows
+    // for the same milestone on one screen — one id-shaped, one
+    // name-shaped, rendering differently.
+    //
+    // Id first: it is the stored form and cannot collide. The name
+    // fallback can in principle match a renamed entity's old name, but
+    // that is the same entity by any reading the user has, and it
+    // beats declaring a live value dead.
     case "assignee":
     case "reporter": {
-      const u = ctx.users.find(x => x.id === key);
+      const u = ctx.users.find(x => x.id === key) ?? ctx.users.find(x => x.name === key);
       return u === undefined ? drifted(key) : known(u.name);
     }
     case "milestone": {
-      const m = ctx.milestones.find(x => x.id === key);
+      const m = ctx.milestones.find(x => x.id === key)
+        ?? ctx.milestones.find(x => x.name === key);
       return m === undefined ? drifted(key) : known(m.name);
     }
     case "sprint": {
-      const s = ctx.sprints.find(x => x.id === key);
+      const s = ctx.sprints.find(x => x.id === key)
+        ?? ctx.sprints.find(x => x.name === key);
       return s === undefined ? drifted(key) : known(s.name);
     }
     case "project": {
