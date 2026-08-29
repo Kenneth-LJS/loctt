@@ -58,7 +58,19 @@ async function bodyOnDisk(root: string, key: string): Promise<string> {
 
 /** Types into whichever surface is showing. */
 async function typeInBody(page: Page, text: string): Promise<void> {
-  const rich = page.getByTestId("rich-editor");
+  /**
+   * Scoped to `body-editor`.
+   *
+   * A bare `getByTestId("rich-editor")` was unambiguous while the body
+   * editor was the only rich surface on the task page. M2.4a's comment
+   * composer is a second one, so the bare locator now resolves to two
+   * elements and every click through it fails in strict mode.
+   *
+   * This is a locator that stopped being unique when the page grew —
+   * not a test that was asserting a bug. The behaviour these specs
+   * cover is unchanged, and each one still means the body editor.
+   */
+  const rich = page.getByTestId("body-editor").getByTestId("rich-editor");
   await rich.click();
   await page.keyboard.type(text);
 }
@@ -97,7 +109,7 @@ test.describe("TSK — the body editor", () => {
      * re-arms fires **once, at the end**, while a fixed interval fires
      * twice or more. That difference is the case's first bullet.
      */
-    await page.getByTestId("rich-editor").click();
+    await page.getByTestId("body-editor").getByTestId("rich-editor").click();
     for (const word of ["A ", "paragraph ", "typed ", "at ", "human ", "pace."]) {
       await page.keyboard.type(word);
       await page.waitForTimeout(600);
@@ -153,12 +165,12 @@ test.describe("TSK — the body editor", () => {
     await expect(page.getByTestId("body-editor")).toBeVisible();
 
     // Rich mode renders it as a heading and a bold run, not as source.
-    await expect(page.getByTestId("rich-editor").getByRole("heading")).toContainText("Heading");
-    await expect(page.getByTestId("rich-editor").locator("strong")).toContainText("bold");
+    await expect(page.getByTestId("body-editor").getByTestId("rich-editor").getByRole("heading")).toContainText("Heading");
+    await expect(page.getByTestId("body-editor").getByTestId("rich-editor").locator("strong")).toContainText("bold");
 
     // Toggle to raw: the markdown source for what was rendered.
     await page.getByTestId("mode-raw").click();
-    const raw = page.getByTestId("markdown-editor");
+    const raw = page.getByTestId("body-editor").getByTestId("markdown-editor");
     await expect(raw).toContainText("# Heading");
     await expect(raw).toContainText("**bold**");
 
@@ -168,7 +180,7 @@ test.describe("TSK — the body editor", () => {
     await page.keyboard.type("\n\n## Added in source");
     await page.getByTestId("mode-rich").click();
     await expect(
-      page.getByTestId("rich-editor").getByRole("heading", { name: "Added in source" }),
+      page.getByTestId("body-editor").getByTestId("rich-editor").getByRole("heading", { name: "Added in source" }),
     ).toBeVisible();
 
     await expect(indicator(page)).toHaveAttribute("data-state", "saved", { timeout: 6000 });
@@ -199,9 +211,9 @@ test.describe("TSK — the body editor", () => {
     // Toggle back and forth several times, touching nothing.
     for (let i = 0; i < 3; i++) {
       await page.getByTestId("mode-raw").click();
-      await expect(page.getByTestId("markdown-editor")).toBeVisible();
+      await expect(page.getByTestId("body-editor").getByTestId("markdown-editor")).toBeVisible();
       await page.getByTestId("mode-rich").click();
-      await expect(page.getByTestId("rich-editor")).toBeVisible();
+      await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).toBeVisible();
     }
 
     // Give any autosave that *would* have fired time to land. The
@@ -227,7 +239,7 @@ test.describe("TSK — the body editor", () => {
      * are what see it.
      */
     await page.getByTestId("mode-raw").click();
-    await page.getByTestId("markdown-editor").click();
+    await page.getByTestId("body-editor").getByTestId("markdown-editor").click();
     // `Meta+End` / `Control+End` is not reliably end-of-document in
     // CodeMirror here — measured landing mid-list, where the ordinal
     // then auto-continued to "2)". Clicking the last line and using
@@ -314,16 +326,16 @@ test.describe("TSK — the body editor", () => {
     // selection and the test would fail for a reason the case is not
     // about.
     await page.keyboard.press("Shift+Home");
-    await page.getByTestId("fmt-bold").click();
+    await page.getByTestId("body-editor").getByTestId("fmt-bold").click();
 
     // Active state while the caret sits inside the formatting.
-    await expect(page.getByTestId("fmt-bold")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("body-editor").getByTestId("fmt-bold")).toHaveAttribute("aria-pressed", "true");
 
     // Reflected in the raw markdown after toggling modes — the case's
     // own wording, and the only check that the mark actually became
     // markdown rather than a styled div.
     await page.getByTestId("mode-raw").click();
-    await expect(page.getByTestId("markdown-editor")).toContainText("**make me bold**");
+    await expect(page.getByTestId("body-editor").getByTestId("markdown-editor")).toContainText("**make me bold**");
 
     await expect(indicator(page)).toHaveAttribute("data-state", "saved", { timeout: 6000 });
     expect(await bodyOnDisk(tracker.root, key)).toContain("**make me bold**");
@@ -397,7 +409,7 @@ test.describe("TSK — the body editor", () => {
     await page.getByTestId("conflict-dismiss").click();
     await expect(dialog).not.toBeVisible();
     expect(await bodyOnDisk(tracker.root, key)).toBe("Completely different text\n");
-    await expect(page.getByTestId("rich-editor")).toContainText("My version of the text.");
+    await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).toContainText("My version of the text.");
     // The indicator still says the text is not saved, so nothing
     // suggests the dismissal banked it (XS-65).
     await expect(indicator(page)).toHaveAttribute("data-state", "failed");
@@ -505,7 +517,7 @@ test.describe("TSK — the body editor", () => {
     await expect(indicator(page)).toContainText("not been saved");
 
     // The typed content stays in the editor so it can be copied out.
-    await expect(page.getByTestId("rich-editor")).toContainText("Words the user must not lose.");
+    await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).toContainText("Words the user must not lose.");
     // And a retry control is offered, since freeing space and retrying
     // is the actual fix.
     await expect(page.getByTestId("save-retry")).toBeVisible();
@@ -526,7 +538,7 @@ test.describe("TSK — the body editor", () => {
     await tracker.run(["body", b, "--set", "Body of B.\n"]);
 
     await page.goto(`${tracker.baseURL}/tasks/${a}`);
-    await expect(page.getByTestId("rich-editor")).toContainText("Body of A.");
+    await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).toContainText("Body of A.");
     await typeInBody(page, " Edited in A.");
 
     /**
@@ -547,9 +559,9 @@ test.describe("TSK — the body editor", () => {
     await page.getByRole("row").filter({ hasText: "Task B" }).first().click();
     await expect(page.getByTestId("body-editor")).toBeVisible();
 
-    await expect(page.getByTestId("rich-editor")).toContainText("Body of B.");
-    await expect(page.getByTestId("rich-editor")).not.toContainText("Edited in A.");
-    await expect(page.getByTestId("rich-editor")).not.toContainText("Body of A.");
+    await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).toContainText("Body of B.");
+    await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).not.toContainText("Edited in A.");
+    await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).not.toContainText("Body of A.");
 
     // A's pending edit was flushed rather than silently discarded.
     await expect

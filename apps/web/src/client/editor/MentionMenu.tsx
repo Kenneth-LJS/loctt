@@ -19,6 +19,17 @@ import { useCallback, useEffect, useState } from "react";
 export interface MentionCandidate {
   readonly id: string;
   readonly name: string;
+  /**
+   * A secondary line that tells two same-named users apart — CMT-7's
+   * third bullet asks for "email, or truncated id". Names are not
+   * unique in LocTT (ULIDs disambiguate, per `UserProfileSchema`'s own
+   * note), so without this a picker showing two identical rows makes
+   * the choice a coin flip.
+   *
+   * Optional because the body editor's picker (M2.3) predates this and
+   * a candidate list built without it still works.
+   */
+  readonly hint?: string;
 }
 
 export interface MentionState {
@@ -45,6 +56,28 @@ export const TRIGGER_RE = /(?:^|[^\w@])@([\w-]*)$/;
 export function mentionQuery(textBeforeCaret: string): string | null {
   const m = TRIGGER_RE.exec(textBeforeCaret);
   return m ? (m[1] ?? "") : null;
+}
+
+/**
+ * True when the caret sits inside code — an inline code span (a `code`
+ * mark) or a fenced block (a `codeBlock` node).
+ *
+ * Exported for the same reason `mentionQuery` is: it is half of the
+ * trigger rule, and a test that can only reach it through a real
+ * ProseMirror view is a test nobody writes.
+ */
+export function inCodeContext(editor: Editor): boolean {
+  if (editor.isActive("code")) return true;
+  if (editor.isActive("codeBlock")) return true;
+  // `isActive("code")` reads the *stored* marks at an empty selection,
+  // which are cleared the moment the caret moves rather than types. So
+  // also ask what the character immediately before the caret carries:
+  // typing `@` at the end of an existing code span must not open the
+  // picker either.
+  const { from, empty } = editor.state.selection;
+  if (!empty || from === 0) return false;
+  const before = editor.state.doc.resolve(from).nodeBefore;
+  return before?.marks.some(m => m.type.name === "code") ?? false;
 }
 
 export function useMentionState(
@@ -80,6 +113,17 @@ export function useMentionState(
     const onUpdate = () => {
       const { from, empty } = editor.state.selection;
       if (!empty) { setQuery(null); return; }
+      // CMT-7's fourth bullet: no picker inside a code span or a
+      // fenced block. Asked of the *document*, not of the text — the
+      // caret's marks and its parent node are what ProseMirror
+      // actually knows, and a regex over the preceding 40 characters
+      // cannot see a fence that opened five lines up.
+      //
+      // This is the same rule core applies when reading (`codeSpans`
+      // in `comments.ts`): an `@user:` token inside code is
+      // documentation of the syntax, never a mention. A picker firing
+      // there would insert a token core will not read back.
+      if (inCodeContext(editor)) { setQuery(null); return; }
       const before = editor.state.doc.textBetween(Math.max(0, from - 40), from, "\n", "\n");
       setQuery(mentionQuery(before));
       setHighlighted(0);
@@ -140,7 +184,15 @@ export function MentionMenu({ state }: { readonly state: MentionState }): React.
               + (i === state.highlighted ? "bg-accent-muted" : "hover:bg-bg-muted")
             }
           >
-            {c.name}
+            <span className="block">{c.name}</span>
+            {c.hint !== undefined && (
+              <span
+                data-testid={`mention-hint-${c.id}`}
+                className="block font-mono text-[11px] text-text-tertiary"
+              >
+                {c.hint}
+              </span>
+            )}
           </button>
         </li>
       ))}

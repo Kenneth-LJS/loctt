@@ -968,3 +968,35 @@ surface contract.
 through `writeTaskBody` at `apps/cli/src/commands/task-crud.ts:603`
 and `apps/mcp/src/tools/task-body.ts:36`, and document it in both
 reference docs.
+
+## The UI suite flakes under ambient load, with a different set each time
+
+**Measured 2026-08-29 during M2.4a, at load average 24–29.**
+
+Three consecutive full-suite runs on the **same commit**, one worker:
+
+| run | result | failures |
+|---|---|---|
+| first | 267/276 | 9, all `flow-task-body` |
+| second | 271/276 | 5 — 4 `flow-task-body`, 1 `flow-list` (MSL-6) |
+| third | **276/276** | none |
+
+The first run's 9 were a *real* defect (a `getByTestId("rich-editor")`
+that stopped being unique once M2.4a put a second editor on the task
+page) and were fixed by scoping the locators. **The second run's 5
+were not.** Every one of them passed in isolation at that same commit,
+and the third full run — same commit, same code — was clean.
+
+This is the "different set each time" signature the parallel-agent
+entry above describes, reproduced here **without** a competing suite:
+the machine was carrying ~25 load from an editor and a dozen MCP
+servers, and the UI fixture spawns a `loctt ui` server per spec.
+
+MSL-6 is the useful tell. It touches nothing M2.4a changed, so a run
+where it fails alongside four body specs is reporting on the machine
+rather than on the diff.
+
+**Practical rule, unchanged but now evidenced at ordinary load:** check
+`uptime` before believing a UI failure, and re-run the named specs in
+isolation before concluding anything. A green isolated run plus a
+green full re-run is the standard of proof; one red full run is not.
