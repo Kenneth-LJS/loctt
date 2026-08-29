@@ -22,6 +22,7 @@ import {
   useMoveTask,
 } from "../api/hooks/useTaskMutations.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
+import { AttachmentsPanel } from "../attachments/AttachmentsPanel.tsx";
 import { CommentsPanel } from "../comments/CommentsPanel.tsx";
 import { BodyEditor } from "../editor/BodyEditor.tsx";
 import { buildLookups } from "../list/lookups.ts";
@@ -510,14 +511,15 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
               />
             </Section>
 
-            {/* A placeholder, deliberately: the attachments panel is
-                M2.5b. It names what it will hold and states the count
-                it already has, rather than rendering an empty box. */}
             <Section title="Attachments">
-              <PanelStub
-                count={task.data.attachments.length}
-                noun="attachment"
-                pending="Attachments arrive with the attachments panel."
+              {/* M2.5b. Keyed by the task for the same reason the other
+                  panels are: the upload queue is component state, and
+                  carrying A's queue onto B would show B outcomes for
+                  files that were never dropped on it. */}
+              <AttachmentsPanel
+                key={task.data.frontmatter.id}
+                taskRef={taskRef}
+                attachments={task.data.attachments}
               />
             </Section>
 
@@ -665,30 +667,6 @@ function Section({
       </h2>
       {children}
     </section>
-  );
-}
-
-/**
- * A panel whose data this ticket fetches but whose rendering belongs
- * to a later one. It states the count it *has* rather than rendering
- * nothing: "3 linked tasks" is true and useful now, and it means the
- * later panel replaces a number rather than filling a void.
- */
-function PanelStub({
-  count,
-  noun,
-  pending,
-}: {
-  readonly count: number;
-  readonly noun: string;
-  readonly pending: string;
-}) {
-  return (
-    <p className="text-[13px] text-text-tertiary">
-      {count === 0
-        ? `No ${noun}s.`
-        : `${String(count)} ${noun}${count === 1 ? "" : "s"}. ${pending}`}
-    </p>
   );
 }
 

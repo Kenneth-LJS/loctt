@@ -1507,7 +1507,7 @@ Nothing else builds on it.
 restores option 1 and CMT-3's spec assertion on
 `comment-edit-composer-mode-raw` inverts with it.
 
-### A? · The activity response reports how many history rows it could not read
+### A17 · The activity response reports how many history rows it could not read
 
 **Ticket:** M2.4b · **Date:** 2026-08-29 · **Commit:** (this one)
 
@@ -1571,7 +1571,7 @@ re-exports from `packages/core/src/index.ts`; delete `unreadable` from
 The UI spec "CMT-37: a partially readable history renders what parsed
 and says it is incomplete" then fails, which is the point.
 
-### A? · The activity feed never sorts; it renders the server's order
+### A18 · The activity feed never sorts; it renders the server's order
 
 **Ticket:** M2.4b · **Date:** 2026-08-29 · **Commit:** (this one)
 
@@ -1629,7 +1629,7 @@ mistake the first result for a hole.
 over `entries` in `groupActivity` (`apps/web/src/client/activity/group.ts`).
 Nothing else depends on the absence.
 
-### A? · A relationship whose target no longer exists can be unlinked
+### A19 · A relationship whose target no longer exists can be unlinked
 
 **Ticket:** M2.5a · **Date:** 2026-08-29 · **Commit:** (this one)
 
@@ -1693,7 +1693,7 @@ contained: one guarded read in core, one guarded lookup in the route.
 REL-24's removal half and REL-44 go red with it, and the two core
 tests named above fail.
 
-### A? · The relationships panel renders no optimistic rows
+### A20 · The relationships panel renders no optimistic rows
 
 **Ticket:** M2.5a · **Date:** 2026-08-29 · **Commit:** (this one)
 
@@ -1740,7 +1740,7 @@ this panel and reversible per mutation.
 hooks in `apps/web/src/client/api/hooks/useRelationships.ts`, mirroring
 `useSetField`. REL-42's row-count assertion is what goes red.
 
-### A? · The link picker's target search falls back to a direct lookup for retired keys
+### A21 · The link picker's target search falls back to a direct lookup for retired keys
 
 **Ticket:** M2.5a · **Date:** 2026-08-29 · **Commit:** (this one)
 
@@ -1782,3 +1782,88 @@ requirement and changes nothing outside the picker.
 **To revert.** Delete `lookupExact` and its merge block in
 `apps/web/src/client/api/hooks/useTaskSearch.ts`. REL-8's third
 bullet becomes unmet.
+
+### A22 · The attachment size cap is enforced on the client as well as the server
+
+**Ticket:** M2.5b · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** REL-35's second bullet wants the refusal to name
+the file, its size and the cap in the user's units — "video.mp4 is
+200 MB; the limit is 50 MB". The server's envelope says
+`upload exceeds maximum size of 52428800 bytes`, which names one of
+the three and in bytes.
+
+**What had to be decided.** Where that message is composed.
+
+**Options considered.**
+
+1. **Rewrite the server's message.** One place, and every surface
+   benefits. Costs: `multipart.ts` knows the declared filename but
+   composes its message from `maxBytes` alone, and the envelope is
+   read by the CLI and by anything else that POSTs — `52428800` is the
+   right register for a developer reading a response body. Formatting
+   bytes into "50 MB" for a machine-facing envelope is a worse
+   message, not a better one.
+2. **Refuse on the client, before the upload leaves.** The browser has
+   `File.name` and `File.size` before it sends anything, so all three
+   values are in hand. Costs: the cap is duplicated as a constant in
+   `useAttachments.ts` (`@loctt/core` is a Node package and cannot be
+   imported into the bundle for one integer), so it can drift from
+   `DEFAULT_MAX_ATTACHMENT_BYTES`.
+
+**Decided.** Option 2. The server check stays exactly as it is.
+
+**Why.** It also satisfies REL-35's *first* bullet more strongly than
+the server can: nothing is sent at all, so "the rejection happens at
+the size check, not after a long upload" is not a claim about
+streaming behaviour but about a request that never existed. The
+duplication fails safe in the only direction that matters — a drifted
+client constant rejects a file the server would have taken, which is
+visible, rather than accepting one it will not.
+
+**Recorded rather than stopping the run** because it adds no
+requirement and changes no server behaviour.
+
+**To revert.** Delete the `file.size > MAX_ATTACHMENT_BYTES` branch in
+`send` in `apps/web/src/client/attachments/AttachmentsPanel.tsx`.
+REL-35's message assertions go red, and the panel falls back to the
+server's byte-count envelope.
+
+### A23 · A twenty-file drop is twenty sequential requests, not a batch endpoint
+
+**Ticket:** M2.5b · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** REL-40 drops 20 files at once. An earlier audit
+recorded this as a server gap because `multipart.ts` takes one file
+per request.
+
+**What had to be decided.** Whether to add a batch upload endpoint.
+
+**Options considered.**
+
+1. **A batch endpoint.** One request for the drop. Costs: it would
+   have to invent a partial-failure response shape, and re-derive
+   per-file errors — the size cap, the basename sanitisation, the
+   collision 409 — that the single-file route already returns
+   correctly. It also changes a documented surface the CLI and MCP do
+   not share.
+2. **Twenty sequential POSTs from the client.** Costs: twenty
+   round-trips instead of one, and the panel owns the loop.
+
+**Decided.** Option 2. `multipart.ts` is unchanged.
+
+**Why.** Re-reading the case: it asks for *per-file outcome* — "each
+file gets its own tile or its own failure line", "one failure does not
+abort the remaining uploads" — and never for one request. Sequential
+POSTs give exactly that, and each one takes the tracker lock anyway,
+so concurrency would serialise regardless. The batch endpoint is the
+harder path wearing the simpler path's clothes.
+
+**Recorded rather than stopping the run** because it changes no
+server code and no documented contract. Also recorded in
+`PROPOSED-UI-CASES.md`.
+
+**To revert.** Replace the loop in `send` in
+`AttachmentsPanel.tsx` with a single multi-file request, and give
+`parseMultipartFile` a multi-part mode. REL-40's per-row assertions
+are what would need rewriting.

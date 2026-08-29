@@ -264,7 +264,48 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
   return body as T;
 }
 
+/**
+ * POSTs a `File` as `multipart/form-data`, sharing this module's error
+ * handling with every other call site.
+ *
+ * `apiRequest` cannot carry this: it JSON-stringifies `body` and sets
+ * `Content-Type: application/json`, and a multipart upload needs the
+ * browser to set the header itself so it can append the boundary. So
+ * the fetch is its own, and the response handling is the same three
+ * lines — parse, throw `ApiError` with the envelope, return.
+ *
+ * Deliberately no `timeoutMs`. A 50 MB upload over a slow disk can
+ * legitimately outlast any deadline short enough to be useful, and
+ * the write-timeout envelope ("LocTT cannot tell whether this was
+ * saved") would be wrong far more often than it was right.
+ */
+async function postFile<T>(
+  endpoint: string,
+  file: File,
+  fieldName = "file",
+): Promise<T> {
+  const form = new FormData();
+  form.append(fieldName, file, file.name);
+  const res = await fetch(endpoint, {
+    method: "POST",
+    // No Content-Type: the browser writes it, with the boundary.
+    headers: { [CLIENT_HEADER]: CLIENT_NAME, Accept: "application/json" },
+    body: form,
+  });
+  const body = await parseBody(res);
+  if (!res.ok) {
+    throw new ApiError(errorMessage(endpoint, res.status, body), {
+      status: res.status,
+      body,
+      endpoint,
+      envelope: asEnvelope(body),
+    });
+  }
+  return body as T;
+}
+
 export const apiClient = {
+  postFile,
   get: <T>(endpoint: string, options?: Omit<RequestOptions, "method" | "body">): Promise<T> =>
     apiRequest<T>(endpoint, { ...options, method: "GET" }),
   post: <T>(endpoint: string, body: unknown, options?: Omit<RequestOptions, "method" | "body">): Promise<T> =>
