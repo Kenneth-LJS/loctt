@@ -918,3 +918,41 @@ robust (this is a general rule, should this go into our workflow)"*.
 
 Written into `TEMP-RUN-WORKFLOW.md` § "Cases that cannot be satisfied
 yet".
+
+### K6 · BLK-30's threshold is 10, two tiers, not configurable
+
+BLK-30 (major, P5 P9) requires the delete confirmation to be
+*"proportionate — deleting 1,280 tasks must not require the same
+keystroke as deleting 2"*. It names no threshold. An agent picked
+10, which was **authoring a requirement** and is why it went to Ken.
+
+**Ruling: keep two tiers at 10.** At or below 10, type `DELETE`;
+above 10, type the count.
+
+**Why the count rather than a longer word.** A fixed string is muscle
+memory by the third use, and muscle memory is what must not carry
+someone through deleting a thousand tasks. Typing `1280` cannot be
+done without reading the number that matters.
+
+**Not configurable.** Ken raised it as an option ("we can also make
+this configurable somewhere if we're worried") and the objection was
+put before he settled: a config key lets a user set the threshold to
+10,000 and never meet the harder confirmation, which turns P5's
+guarantee into an opt-out. It also costs a `workflow.yaml` field, its
+validation, its migration and a settings panel — for a number nobody
+has complained about. The escape hatch is cheaper without it: the
+constant is exported and the tests import it, so changing it is one
+edit. Configurable later is easy; unconfigurable again after shipping
+is not.
+
+**Bullet 3 stays unimplemented, deliberately.** It permits the app to
+*refuse* beyond a size ("**if** the app refuses"), and it does not
+refuse. A local file-backed tracker has no server to protect and no
+other users to affect; declining to delete the user's own files would
+be paternalism. Nothing is owed unless a cap is later wanted.
+
+**To revert.** `LARGE_DELETE_THRESHOLD` and `deleteConfirmWord()` in
+`apps/web/src/client/list/DeleteConfirmDialog.tsx`. The constant is
+exported so the surface and its tests agree by construction — change
+it in one place and the tests follow. A third tier would change
+`deleteConfirmWord`'s return, not its call sites.
