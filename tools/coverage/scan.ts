@@ -27,7 +27,16 @@ import type { CaseIndex, TestCase } from "../case-index/parse.ts";
 const VERIFIES = /@verifies\s+([A-Z][A-Z0-9]*-C?\d+(?:\s*,\s*[A-Z][A-Z0-9]*-C?\d+)*)/g;
 
 const TEST_FILE = /\.(test|spec)\.tsx?$/;
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git", "workspace", "temp-ui-mockups"]);
+// `.claude` holds agent worktrees — full copies of the repo. Without
+// it the scanner walks every one and counts every tag twice: 451 tags
+// became 902 the moment a build agent's worktree existed. Coverage
+// itself survived (it is a set of IDs), but the tag count became
+// meaningless, and a worktree at a *different* commit would report
+// coverage the main tree does not have. Same shape as the six sweep
+// worktrees that made `npm run lint` exhaust the V8 heap.
+const SKIP_DIRS = new Set([
+  "node_modules", "dist", ".git", "workspace", "temp-ui-mockups", ".claude",
+]);
 
 export interface Tag {
   readonly caseId: string;
