@@ -9,7 +9,7 @@ import type {
   WorkflowConfig,
 } from "@loctt/contracts";
 
-import { shortDate } from "../list/format.ts";
+import { relativeTime, shortDate } from "../list/format.ts";
 import type { ListLookups } from "../list/lookups.ts";
 import { customFieldRows } from "./editors/CustomFields.tsx";
 import { DateField } from "./editors/DateField.tsx";
@@ -17,6 +17,8 @@ import { LabelsField } from "./editors/LabelsField.tsx";
 import type { PickerOption } from "./editors/OptionPicker.tsx";
 import { OptionPicker } from "./editors/OptionPicker.tsx";
 import { TextField } from "./editors/TextField.tsx";
+import type { FieldFailure } from "./fieldFailure.ts";
+import { FieldFailureNotice } from "./FieldFailureNotice.tsx";
 
 /**
  * The detail page's right-hand meta panel — **editable from M2.2a**.
@@ -65,6 +67,8 @@ export function MetaPanel({
   labelError,
   onDismissLabelError,
   fieldError,
+  onRetryField,
+  onDismissFieldError,
 }: {
   readonly frontmatter: TaskFrontmatterPublic;
   readonly lookups: ListLookups;
@@ -85,8 +89,18 @@ export function MetaPanel({
    * ERR-14 / P4: it renders under *that* control, not as a toast. The
    * server's envelope carries `field` for exactly this — the panel
    * does not have to parse a message to find out where it goes.
+   *
+   * M2.2b widened this from `{ field, message }` to the whole
+   * `FieldFailure`. A message is enough for a bad enum value and
+   * wrong for everything else: ERR-3 needs the data-state claim in
+   * words, ERR-4 needs "unknown" not to become "not saved", and
+   * XS-57 needs `not_found` to demote retry. None of those are
+   * recoverable from message text.
    */
-  readonly fieldError?: { readonly field: string; readonly message: string } | undefined;
+  readonly fieldError?: FieldFailure | undefined;
+  /** Re-sends the failed write. Absent when retrying cannot help. */
+  readonly onRetryField?: (() => void) | undefined;
+  readonly onDismissFieldError?: (() => void) | undefined;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const project = lookups.project(fm.project);
@@ -117,8 +131,26 @@ export function MetaPanel({
   const estimate = estimateControl(workflow, fm.estimate, onSet, onUnset);
 
   /** The rejection belonging to `field`, or undefined. */
-  const errorFor = (field: string): string | undefined =>
-    fieldError?.field === field ? fieldError.message : undefined;
+  const errorFor = (field: string): FieldFailure | undefined =>
+    fieldError?.field === field ? fieldError : undefined;
+
+  /**
+   * The props every row shares, spread at each call site.
+   *
+   * **Not a component defined here.** A `const Row = props => …` inside
+   * this function is a *new component type* on every render, so React
+   * unmounts and remounts the whole subtree rather than updating it —
+   * and an open `TextField` loses its draft the moment a background
+   * refetch repaints any other row. That is precisely the clobbering
+   * XS-4's second bullet forbids, arriving from the panel rather than
+   * from the editor. Written the obvious way first, and caught by
+   * XS-4's test.
+   */
+  const rowShared = {
+    taskKey: fm.key,
+    ...(onRetryField !== undefined ? { onRetry: onRetryField } : {}),
+    ...(onDismissFieldError !== undefined ? { onDismiss: onDismissFieldError } : {}),
+  } as const;
 
   return (
     <aside
@@ -131,7 +163,7 @@ export function MetaPanel({
       className="min-w-0 self-start rounded-lg border border-border-subtle bg-bg-surface p-4"
     >
       <dl className="space-y-3">
-        <Row label="Status" error={errorFor("status")}>
+        <Row {...rowShared} label="Status" error={errorFor("status")}>
           <OptionPicker
             label="Status"
             value={fm.status}
@@ -140,7 +172,7 @@ export function MetaPanel({
           />
         </Row>
 
-        <Row label="Type" error={errorFor("task_type")}>
+        <Row {...rowShared} label="Type" error={errorFor("task_type")}>
           <OptionPicker
             label="Type"
             value={fm.task_type}
@@ -150,7 +182,7 @@ export function MetaPanel({
           />
         </Row>
 
-        <Row label="Priority" error={errorFor("priority")}>
+        <Row {...rowShared} label="Priority" error={errorFor("priority")}>
           <OptionPicker
             label="Priority"
             value={fm.priority}
@@ -162,7 +194,7 @@ export function MetaPanel({
 
         {/* Read-only: a project change rekeys, so it is the Move
             dialog's job and `setField` refuses the field outright. */}
-        <Row label="Project">
+        <Row {...rowShared} label="Project">
           <span className="text-[13px] text-text-primary">
             {fm.project === undefined
               ? <span className="text-text-tertiary">—</span>
@@ -170,7 +202,7 @@ export function MetaPanel({
           </span>
         </Row>
 
-        <Row label="Assignee" error={errorFor("assignee")}>
+        <Row {...rowShared} label="Assignee" error={errorFor("assignee")}>
           <OptionPicker
             label="Assignee"
             value={fm.assignee}
@@ -181,7 +213,7 @@ export function MetaPanel({
           />
         </Row>
 
-        <Row label="Reporter" error={errorFor("reporter")}>
+        <Row {...rowShared} label="Reporter" error={errorFor("reporter")}>
           <OptionPicker
             label="Reporter"
             value={fm.reporter}
@@ -192,7 +224,7 @@ export function MetaPanel({
           />
         </Row>
 
-        <Row label="Labels" error={errorFor("labels")}>
+        <Row {...rowShared} label="Labels" error={errorFor("labels")}>
           <LabelsField
             attached={fm.labels ?? []}
             all={labels}
@@ -208,7 +240,7 @@ export function MetaPanel({
           />
         </Row>
 
-        <Row label="Milestone" error={errorFor("milestone")}>
+        <Row {...rowShared} label="Milestone" error={errorFor("milestone")}>
           <OptionPicker
             label="Milestone"
             value={fm.milestone}
@@ -219,7 +251,7 @@ export function MetaPanel({
           />
         </Row>
 
-        <Row label="Sprint" error={errorFor("sprint")}>
+        <Row {...rowShared} label="Sprint" error={errorFor("sprint")}>
           <OptionPicker
             label="Sprint"
             value={fm.sprint}
@@ -230,7 +262,7 @@ export function MetaPanel({
           />
         </Row>
 
-        <Row label="Start" error={errorFor("start_date")}>
+        <Row {...rowShared} label="Start" error={errorFor("start_date")}>
           <DateField
             label="Start"
             value={fm.start_date}
@@ -243,7 +275,7 @@ export function MetaPanel({
           />
         </Row>
 
-        <Row label="Due" error={errorFor("due_date")}>
+        <Row {...rowShared} label="Due" error={errorFor("due_date")}>
           <DateField
             label="Due"
             value={fm.due_date}
@@ -259,7 +291,7 @@ export function MetaPanel({
         {/* Absent entirely when estimation is disabled — TSK-9's third
             bullet says absent, not "shown empty". */}
         {estimate !== null && (
-          <Row label="Estimate" error={errorFor("estimate")}>{estimate}</Row>
+          <Row {...rowShared} label="Estimate" error={errorFor("estimate")}>{estimate}</Row>
         )}
 
         {/* TSK-5: present only when set, and never with an edit
@@ -267,7 +299,7 @@ export function MetaPanel({
             because a disabled control still says "this is editable,
             just not now", which is not what auto-managed means. */}
         {fm.completed_date !== undefined && (
-          <Row label="Completed">
+          <Row {...rowShared} label="Completed">
             <span
               data-testid="meta-completed-date"
               className="text-[13px] text-text-primary"
@@ -286,13 +318,13 @@ export function MetaPanel({
           onSet,
           onUnset,
         }).map(row => (
-          <Row key={row.key} label={row.label} error={errorFor(row.key)}>
+          <Row {...rowShared} key={row.key} label={row.label} error={errorFor(row.key)}>
             {row.node}
           </Row>
         ))}
       </dl>
 
-      <Footer frontmatter={fm} today={today} />
+      <Footer frontmatter={fm} />
     </aside>
   );
 }
@@ -311,19 +343,30 @@ export function MetaPanel({
  */
 function Footer({
   frontmatter: fm,
-  today,
 }: {
   readonly frontmatter: TaskFrontmatterPublic;
-  readonly today: string;
 }) {
   const history = fm.key_history ?? [];
+  // Read once per render rather than held in state: the panel
+  // re-renders whenever the task refetches, which is exactly when the
+  // stamp has moved. A ticking clock would be its own case.
+  const now = Date.now();
   return (
     <div className="mt-4 space-y-1 border-t border-border-subtle pt-3 text-[11px] text-text-tertiary">
       <p data-testid="meta-created">
-        Created <time title={fm.created_at}>{shortDate(fm.created_at, today)}</time>
+        Created <time title={fm.created_at}>{relativeTime(fm.created_at, now)}</time>
       </p>
+      {/* **Relative, not a short date.** This block's own comment has
+          said "relative times" since M2.1 while the code rendered
+          `shortDate` — day granularity, so a CLI write and the page
+          load beside it produce the identical string. XS-4's third
+          bullet requires the footer show "something changed *and
+          when*" after a `loctt set`, which a date that cannot move
+          within the day does not. `relativeTime` already existed for
+          the list's Updated column; the footer now uses it, and the
+          exact instant stays recoverable on `title` as before. */}
       <p data-testid="meta-updated">
-        Updated <time title={fm.updated_at}>{shortDate(fm.updated_at, today)}</time>
+        Updated <time title={fm.updated_at}>{relativeTime(fm.updated_at, now)}</time>
       </p>
       {history.length > 0 && (
         <p data-testid="meta-key-history">
@@ -470,10 +513,16 @@ function Row({
   label,
   children,
   error,
+  taskKey,
+  onRetry,
+  onDismiss,
 }: {
   readonly label: string;
   readonly children: React.ReactNode;
-  readonly error?: string | undefined;
+  readonly error?: FieldFailure | undefined;
+  readonly taskKey: string;
+  readonly onRetry?: (() => void) | undefined;
+  readonly onDismiss?: (() => void) | undefined;
 }) {
   return (
     <div className="grid grid-cols-[80px_minmax(0,1fr)] gap-2 text-[13px]">
@@ -481,16 +530,17 @@ function Row({
       <dd className="min-w-0 break-words text-text-primary">
         {children}
         {error !== undefined && (
-          // At the field, not in a toast (P4). The message is the
-          // server's own — it names the field, the reason, and the
-          // valid options, which is more than this panel knows.
-          <p
-            role="alert"
-            data-testid="meta-field-error"
-            className="mt-0.5 text-[11px] text-danger-fg"
-          >
-            {error}
-          </p>
+          // At the field, not in a toast (P4). The notice adds the two
+          // things the server's sentence cannot carry: what state the
+          // file is in, and which control is honest to offer.
+          <FieldFailureNotice
+            failure={error}
+            taskKey={taskKey}
+            {...(error.retry !== undefined && onRetry !== undefined
+              ? { onRetry }
+              : {})}
+            {...(onDismiss !== undefined ? { onDismiss } : {})}
+          />
         )}
       </dd>
     </div>

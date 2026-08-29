@@ -1193,3 +1193,166 @@ need, so it is reusable as the cell predicate. The test that pins the
 current behaviour is `TSK-8/TSK-28` in
 `tests/ui/flow-task-meta.spec.ts`, which asserts
 `meta-nonworking-due`.
+
+### A11 · Rejection messages are resolved to configured labels in the web client, not in core
+
+**Ticket:** M2.2b · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** ERR-43 (major, P4 P3) requires an error about a
+config value show "the configured **label** ("In Progress"), not the
+stored key (`in_progress`), wherever the label is available". Measured
+against a live server, core's messages carry raw identifiers on both
+paths:
+
+```
+status:   invalid value: status: unknown status "nonesuch";
+          valid: backlog, in_progress, done, wont_do
+assignee: cannot assign archived user "01M15ZCHKHK534CBPCQS5FQ30S"
+          to assignee; unarchive it first
+```
+
+The archived one is worse than a key — it is a ULID, which names
+nothing to a reader. TSK-46 (blocker, P4 P7) requires that same
+message "names the user".
+
+**What had to be decided.** Which layer turns a stored key or ULID
+into the name the user configured?
+
+**Options considered.**
+
+1. **Core resolves it.** Messages come out label-shaped for every
+   surface at once. Costs: core's validator holds *keys* by
+   construction — the set it compares against is
+   `config.statuses.map(s => s.key)` — so it would have to carry a
+   second, parallel label index through every error path. And the CLI
+   and MCP would inherit the change without a case asking for it:
+   MCP's consumer is an agent, for which the stored key is the more
+   useful string.
+2. **The web client resolves it.** The panel already holds
+   `workflow`, `users`, `labels`, `milestones` and `sprints` as live
+   queries — it renders every picker from them. Costs: the
+   translation is a string transform over a message, so it is
+   matching text rather than reading structure; and it is one
+   surface's fix, so a later CLI case wanting the same would repeat it.
+3. **The server envelope carries both**, e.g. a `label` beside
+   `field`. Costs: a contract change, and no case describes it.
+
+**Decided.** Option 2 — `apps/web/src/client/task/fieldFailure.ts`
+resolves quoted identifiers and core's `valid:` list against an index
+built from the panel's own queries.
+
+**Why.** The layer that has both halves is the client: core has the
+message and the keys, the client has the message *and the names*. It
+is deliberately conservative about the text-matching cost — only
+quoted tokens and the `valid:` suffix are rewritten, never bare words,
+so a message saying "the write was done" is left alone. A token with
+no entry in the index is left exactly as it stands, which is ERR-43's
+own stated exception; `markUnknownValues` then marks it as
+unrecognized so it is not read as a label.
+
+**To revert.** Delete `resolveLabels` / `markUnknownValues` /
+`buildLabelIndex` from
+`apps/web/src/client/task/fieldFailure.ts` and stop calling them in
+`toFieldFailure`; drop `labelIndex` from
+`apps/web/src/client/task/TaskDetail.tsx`. ERR-43 and TSK-46's second
+bullet go unmet, and their tests in
+`tests/ui/flow-task-failure.spec.ts` and
+`apps/web/src/client/task/fieldFailure.test.ts` go red.
+
+### A12 · A write that finds the task deleted keeps the detail page up rather than swapping to the not-found page
+
+**Ticket:** M2.2b · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** XS-57 (blocker, P1 P4): delete `T-12` from the CLI,
+then submit a field edit from the still-open detail page. The server
+half already worked — 404, `not_found`, `data_state: "not_saved"`,
+naming the key.
+
+The client did not. `useSetField`'s `onSettled` invalidates the task
+query; its refetch 404s; `TaskDetail` saw `task.isError` with
+`code === "not_found"` and returned `<TaskNotFound>`. Measured: the
+field notice never rendered at all — the page swapped before it could.
+
+`TaskNotFound` answers one of the case's four bullets (a route back)
+and none of the other three. It does not say the edit failed, does not
+say the task was deleted *while the page was open*, and cannot show
+the field snapping back because the field is gone with the page.
+
+**What had to be decided.** When a *write* discovers the task is gone,
+does the page become the generic not-found screen, or stay up with the
+failure reported at the control?
+
+**Options considered.**
+
+1. **Swap to `TaskNotFound`** (what it did). Costs: three of XS-57's
+   four bullets unmet, and the user is told the key resolves to
+   nothing rather than that their edit did not land.
+2. **Keep the detail page on its last-known data while a `not_found`
+   field failure stands.** Costs: the page is briefly showing a task
+   that no longer exists on disk — which XS-58 warns about for a
+   *cold* load ("not a page of stale fields with live-looking edit
+   controls").
+3. **Navigate to the list automatically.** Costs: a silent redirect
+   hides that the edit failed, which is the failure SHL-44 names in
+   the neighbouring case.
+
+**Decided.** Option 2, narrowly: the swap is suppressed **only** when
+`fieldError.code === "not_found"` and a previous success is still in
+cache.
+
+**Why.** XS-58's concern is a user arriving at a page for a task that
+is gone and believing it live. This is the opposite situation — the
+user was *just told* their write failed because the task is gone, at
+the control they used, with the route back offered in the same notice.
+A cold navigation to a key that never existed is untouched:
+`fieldError` is null there and the branch is not taken.
+
+**To revert.** In `apps/web/src/client/task/TaskDetail.tsx`, restore
+the unconditional `return <TaskNotFound taskKey={taskRef} />` in the
+`not_found` branch. XS-57's first three bullets go unmet and its test
+goes red.
+
+### A13 · The detail footer's timestamps are relative, not short dates
+
+**Ticket:** M2.2b · **Date:** 2026-08-29 · **Commit:** (this one)
+
+**The situation.** XS-4's third bullet (blocker, P1): "The detail
+footer's `updated_at` relative time reflects the CLI write, so the
+user can see something changed **and when**."
+
+The footer rendered `shortDate(fm.updated_at, today)` — "Aug 29". That
+is day-granularity, so a `loctt set` and the page load beside it
+produce the *identical string*: the user cannot see that anything
+changed, and the bullet is unsatisfiable for any same-day write.
+
+The block's own doc comment, written in M2.1, already said "Relative
+times with the absolute timestamp on `title`". The comment described
+relative; the code rendered absolute.
+
+**What had to be decided.** Is this a bug to fix or existing M2.1
+behaviour to leave alone?
+
+**Options considered.**
+
+1. **Leave it and report XS-4's third bullet unmet.** Costs: a
+   blocker bullet unmet for a one-line fix, and the doc comment stays
+   wrong.
+2. **Render `relativeTime`.** `relativeTime` already exists in
+   `apps/web/src/client/list/format.ts` and is what the list's own
+   Updated column uses, so this is reuse rather than new code. Costs:
+   it changes what an M2.1 ticket shipped, and the exact date is no
+   longer on screen — though it stays on `title`, as the comment
+   always said.
+
+**Decided.** Option 2.
+
+**Why.** The comment is the intent and the code was the deviation; the
+case names "relative time" explicitly; and the formatter was already
+in the codebase being used for the same field elsewhere. Judged a
+defect rather than a scope change on that basis.
+
+**To revert.** In `apps/web/src/client/task/MetaPanel.tsx`'s `Footer`,
+swap `relativeTime(fm.updated_at, now)` back to
+`shortDate(fm.updated_at, today)`. XS-4's third bullet goes unmet and
+the relative-form assertion in `tests/ui/flow-task-failure.spec.ts`
+goes red.

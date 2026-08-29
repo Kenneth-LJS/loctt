@@ -23,6 +23,8 @@ import { buildLookups } from "../list/lookups.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 import { DeleteTaskDialog } from "./DeleteTaskDialog.tsx";
+import type { FieldFailure } from "./fieldFailure.ts";
+import { buildLabelIndex, toFieldFailure } from "./fieldFailure.ts";
 import { MetaPanel } from "./MetaPanel.tsx";
 import { MoveTaskDialog } from "./MoveTaskDialog.tsx";
 import { TaskNotFound } from "./TaskNotFound.tsx";
@@ -80,7 +82,7 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
    * not name one, the server fills it in from the request, so this is
    * always keyed by something.
    */
-  const [fieldError, setFieldError] = useState<{ field: string; message: string } | null>(null);
+  const [fieldError, setFieldError] = useState<FieldFailure | null>(null);
   const [labelError, setLabelError] = useState<string | null>(null);
 
   const setField = useSetField(taskRef);
@@ -113,15 +115,37 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
 
   if (task.isError) {
     if (task.error instanceof ApiError && task.error.code === "not_found") {
-      return <TaskNotFound taskKey={taskRef} />;
+      /**
+       * XS-57. A *write* that discovered the task is gone invalidates
+       * this query, whose refetch then 404s — and swapping straight to
+       * `TaskNotFound` here threw away the only thing the case is
+       * about. The generic page says the key resolves to nothing,
+       * which is true and answers none of the four bullets: it does
+       * not say the edit failed, does not say the task was deleted
+       * while the page was open, and cannot show the field's value
+       * snapping back because the field is gone with it.
+       *
+       * So while a `not_found` field failure stands, the detail page
+       * stays up on its last-known data with the notice at the
+       * control. `task.data` survives the failed refetch — React Query
+       * keeps the previous success — and the notice carries the route
+       * back to the list, which is what `TaskNotFound` was providing.
+       *
+       * A cold navigation to a key that never existed is unaffected:
+       * `fieldError` is null there, and it takes the branch below.
+       */
+      if (!(fieldError?.code === "not_found" && task.data !== undefined)) {
+        return <TaskNotFound taskKey={taskRef} />;
+      }
+    } else {
+      return (
+        <ErrorState
+          error={task.error}
+          context={`Loading ${taskRef}`}
+          onRetry={() => { void task.refetch(); }}
+        />
+      );
     }
-    return (
-      <ErrorState
-        error={task.error}
-        context={`Loading ${taskRef}`}
-        onRetry={() => { void task.refetch(); }}
-      />
-    );
   }
 
   const fm = task.data.frontmatter;
@@ -162,28 +186,52 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
    * different fields both land, because neither sends a field it did
    * not change.
    */
-  const onSet = (field: string, value: unknown): void => {
+  /**
+   * The names the user configured, for the ids and keys a rejection
+   * quotes (ERR-43).
+   *
+   * Built from the queries the panel already renders from, so a
+   * message naming `01M15Z…` or `in_progress` comes back naming
+   * "Ada Byron" or "In progress" — the same words the picker beside
+   * it shows. The server cannot do this: core's messages are shared
+   * with the CLI and MCP and its validator holds keys by design.
+   */
+  const labelIndex = buildLabelIndex({
+    statuses: workflow.data?.statuses,
+    priorities: workflow.data?.priorities,
+    taskTypes: workflow.data?.task_types,
+    customFields: workflow.data?.custom_fields,
+    users: users.data?.items,
+    labels: labels.data?.items,
+    milestones: milestones.data?.items,
+    sprints: sprints.data?.items,
+    projects: projects.data?.items,
+  });
+
+  /**
+   * One field, one request. XS-54 and TSK-34 both rest on this: two
+   * writers editing different fields both land, because neither sends
+   * a field it did not change.
+   *
+   * `fm.key` rather than `taskRef` for the failure: a user who arrived
+   * through a retired key or a ULID must still be told about `T-12`
+   * (XS-57's first bullet, and P4 generally).
+   */
+  const writeField = (vars: { field: string; value?: unknown }): void => {
     setFieldError(null);
-    setField.mutate({ field, value }, {
+    setField.mutate(vars, {
       onError: (err: Error) => {
-        setFieldError({
-          field: (err instanceof ApiError ? err.envelope?.field : undefined) ?? field,
-          message: err.message,
-        });
+        setFieldError(toFieldFailure(err, vars, labelIndex, fm.key));
       },
     });
   };
 
+  const onSet = (field: string, value: unknown): void => {
+    writeField({ field, value });
+  };
+
   const onUnset = (field: string): void => {
-    setFieldError(null);
-    setField.mutate({ field }, {
-      onError: (err: Error) => {
-        setFieldError({
-          field: (err instanceof ApiError ? err.envelope?.field : undefined) ?? field,
-          message: err.message,
-        });
-      },
-    });
+    writeField({ field });
   };
 
   /**
@@ -465,6 +513,17 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
             {...(labelError !== null ? { labelError } : {})}
             onDismissLabelError={() => { setLabelError(null); }}
             {...(fieldError !== null ? { fieldError } : {})}
+            {...(fieldError?.retry !== undefined
+              ? {
+                  // Re-attempts *the same field-level write* — ERR-3's
+                  // fourth bullet is specific about that. Rebuilding
+                  // it from the current panel state would re-send
+                  // whatever the field holds now, which after the
+                  // rollback is the old value.
+                  onRetryField: retryWith(fieldError.retry, writeField),
+                }
+              : {})}
+            onDismissFieldError={() => { setFieldError(null); }}
           />
         </div>
       </div>
@@ -575,4 +634,21 @@ function PanelStub({
         : `${String(count)} ${noun}${count === 1 ? "" : "s"}. ${pending}`}
     </p>
   );
+}
+
+/**
+ * Binds a stored write's vars to a retry callback.
+ *
+ * A function rather than a spread at the call site so the narrowing
+ * survives: `FieldFailure.retry` is optional, and spreading it inside
+ * the JSX widens `field` back to `string | undefined` even under a
+ * guard on the same expression.
+ */
+function retryWith(
+  vars: { readonly field: string; readonly value?: unknown },
+  send: (v: { field: string; value?: unknown }) => void,
+): () => void {
+  return () => {
+    send("value" in vars ? { field: vars.field, value: vars.value } : { field: vars.field });
+  };
 }
