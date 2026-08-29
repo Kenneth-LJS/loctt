@@ -14,7 +14,7 @@ Three kinds of item:
 3. **Proposed new cases** — gaps with suggested IDs, appended to each
    file's existing numbering. No renumbering anywhere.
 
-**Five items here are now DECIDED** — see `docs/dev/decisions.md` § 9
+**Six items here are now DECIDED** — see `docs/dev/decisions.md` § 9
 (Ken's rulings, 2026-08-29): the SET-3/SET-6 contradiction, the
 body-save question, project URL slugs, BLK-30's threshold, and the CSV
 export. Their sections below are marked and kept for the reasoning,
@@ -186,9 +186,18 @@ that the 2026-08-14/15 sessions found.
 
 ---
 
-## ⏳ STILL OPEN · the threshold in BLK-30's "proportionate" confirmation
+## ✅ DECIDED (K6) · the threshold in BLK-30's "proportionate" confirmation
 
-**Raised 2026-08-28 while covering BLK-30. Nothing here is decided.**
+**DECIDED 2026-08-29 — see `decisions.md` § 9 K6.**
+
+**The ruling:** two tiers at 10, as built. Above ten, type the count.
+**Not configurable** — a config key would let the threshold be set to
+10,000, turning P5's guarantee into an opt-out; and the constant is
+exported, so moving it is one edit if ten proves wrong. Bullet 3's
+optional refusal stays unimplemented: a local tracker has no server to
+protect, and refusing to delete the user's own files is paternalism.
+
+The original framing follows.
 
 BLK-30 requires that "the confirmation string required is
 proportionate — deleting 1,280 tasks must not require the same
