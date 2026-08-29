@@ -69,10 +69,41 @@ export async function unlink(args: string[], root: string): Promise<void> {
   // task's edges still fails, from core, with "relationship ... does
   // not exist on task ...".
   let targetId = target;
+  let targetResolved = true;
   try {
     targetId = (await lookupTask(locttDir, target)).frontmatter.id;
   } catch (err) {
     if (!(err instanceof TaskNotFoundError)) throw err;
+    targetResolved = false;
+  }
+
+  // **A retired key cannot be resolved once its task is deleted.**
+  // The key index is rebuilt from live task files, so a deleted
+  // task's `key` and `key_history` are gone with it — there is
+  // nowhere left to learn that `T-2` meant this ULID.
+  //
+  // Core would then report "relationship blocks -> T-2 does not exist
+  // on task <id>", which is **false and misleading**: the edge does
+  // exist, under the id the file stores. Found by the M2 gate (F7).
+  //
+  // So when the ref did not resolve and does not itself look like a
+  // stored target on this task, say what actually happened and name
+  // the ids the user can use. `unlink` by ULID works, and the ids are
+  // right there in the task's own frontmatter.
+  if (!targetResolved) {
+    const edges = (task.frontmatter.relationships ?? [])
+      .filter(r => r.type === relType);
+    if (!edges.some(r => r.target === target)) {
+      throw new UsageError(
+        `"${target}" could not be resolved, and no ${relType} edge on `
+        + `${task.frontmatter.key} stores it. A deleted task's key cannot be `
+        + `looked up — unlink by the id the edge stores`
+        + (edges.length > 0
+          ? `: ${edges.map(r => r.target).join(", ")}`
+          : ` (this task has no ${relType} edges).`),
+        "loctt unlink <task> <relationship> <target-id>",
+      );
+    }
   }
   await unlinkTask({
     locttDir,

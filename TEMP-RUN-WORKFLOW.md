@@ -327,6 +327,43 @@ Fixing one is not a rewrite: the case text already says what it should
 assert. Delete the workaround, assert the bullet, and mutate the fix
 to prove the test can still fail.
 
+### TSK-20 (Duplicate) is declared, unbuilt, and not silently dropped
+
+**Raised by the M2 gate at round 2 (F6), 2026-08-30. Ken's call.**
+
+TSK-20 is a **blocker**, declared in M2.1's `Cases:` line, and there
+is no Duplicate anywhere in the web client — no route, no control.
+M2.1's run-log row lists what it closed and simply omits it.
+
+**Core already has `duplicateTask`**, and the CLI and MCP both call
+it. Only the web layer does not — the inverse of the usual gap here,
+where core has a capability nobody uses.
+
+Why this is a stop rather than a fix: the case has four bullets
+including *"the app navigates to the new task"*, so it is a route, a
+menu item, an optimistic-navigation path and its failure state — not
+a wrapper. That is a ticket's worth of work, arriving after the ticket
+that owed it has shipped.
+
+**Options, none taken:**
+
+1. Build it into M2.1 retroactively and re-gate M2.
+2. Give it its own ticket before M3, since core is ready and the CLI
+   shows the shape.
+3. Record it as deferred with a named milestone.
+
+What must not happen is the fourth option: leaving it declared,
+unbuilt, and unmentioned. It was in that state for the whole of M2,
+and only the gate's own probing found it — the coverage tool reported
+it as untagged, which reads as a tagging gap rather than a missing
+blocker.
+
+**The general lesson**, and it is why this is written here rather than
+in a ticket: *an untagged case and an unbuilt case look identical to
+`cases:coverage`*. The tool cannot tell them apart, so a gate that
+only reads its output will call a missing blocker a bookkeeping
+problem. Round 2 caught it by reading the panel and probing the app.
+
 ### The stop gate
 
 **Added 2026-08-29 on Ken's instruction**, after the run kept stopping
