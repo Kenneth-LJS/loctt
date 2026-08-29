@@ -55,6 +55,30 @@ import { apiClient } from "../client.ts";
  * optimistically and arrive on the refetch above.
  */
 
+/**
+ * How long one field write may hang before the UI stops claiming to
+ * know (ERR-4).
+ *
+ * Without a deadline a request that leaves and is never answered
+ * leaves the panel spinning forever — the user cannot act, and the one
+ * thing that would tell them (a reload) is the thing they are not
+ * being offered. `useBulk` already carries this for the bulk verbs;
+ * a single field write had none, so ERR-4's case was unreachable in
+ * the meta panel.
+ *
+ * Shorter than the bulk deadline on purpose: a bulk write may be
+ * grinding through 5,000 tasks, while one `setField` rewrites one
+ * file. Fifteen seconds is far past any honest local write.
+ *
+ * Overridable from the page so a spec can exercise the deadline
+ * without waiting it out. Playwright's clock control does not reach
+ * the platform timer this runs on.
+ */
+const SET_FIELD_TIMEOUT_MS = Number(
+  (globalThis as { __LOCTT_SET_FIELD_TIMEOUT_MS__?: unknown })
+    .__LOCTT_SET_FIELD_TIMEOUT_MS__ ?? 15_000,
+);
+
 /** One field write. `value: undefined` means unset, not "set to null". */
 export interface SetFieldVars {
   readonly field: string;
@@ -79,10 +103,12 @@ export function useSetField(ref: string) {
         ? apiClient.post<TaskFrontmatterPublic>(
             `/api/tasks/${encodeURIComponent(ref)}/unset`,
             { field: vars.field },
+            { timeoutMs: SET_FIELD_TIMEOUT_MS },
           )
         : apiClient.post<TaskFrontmatterPublic>(
             `/api/tasks/${encodeURIComponent(ref)}/set`,
             { field: vars.field, value: vars.value },
+            { timeoutMs: SET_FIELD_TIMEOUT_MS },
           ),
 
     onMutate: async vars => {
