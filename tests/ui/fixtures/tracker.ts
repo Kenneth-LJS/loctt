@@ -53,10 +53,15 @@ export interface TrackerFixture {
    * later `create` does not collide — the caveat that used to make
    * this unsafe for anything but read-only specs.
    *
+   * `title` names the rows. Several specs assert on a literal title
+   * (`"Task 1"`), which the default `Bulk task N` would break — so
+   * they could not use this and paid ~15s of subprocess time each
+   * instead. Passing `n => \`Task \${n}\`` makes it a drop-in.
+   *
    * What it still cannot do is set fields, and it returns no keys.
    * A spec that needs either wants `seed`.
    */
-  seedBulk(count: number, prefix?: string): Promise<void>;
+  seedBulk(count: number, prefix?: string, title?: (n: number) => string): Promise<void>;
 }
 
 /**
@@ -236,7 +241,11 @@ export const test = base.extend<{ tracker: TrackerFixture }>({
 
     try {
       await waitForReady(baseURL, 15_000);
-      const seedBulk = async (count: number, prefix?: string): Promise<void> => {
+      const seedBulk = async (
+        count: number,
+        prefix?: string,
+        title?: (n: number) => string,
+      ): Promise<void> => {
         const statePath = path.join(root, ".loctt", "state.yaml");
         const stateText = await readFile(statePath, "utf8");
         const projectId = /^\s{2}([0-9A-Z]{26}):/m.exec(stateText)?.[1];
@@ -271,7 +280,8 @@ export const test = base.extend<{ tracker: TrackerFixture }>({
             await writeFile(
               path.join(dir, "task.md"),
               `---\nid: ${id}\nkey: ${keyPrefix}${sep}${String(n)}\n`
-              + `title: Bulk task ${String(i + 1)}\ncreated_at: ${stamp}\n`
+              + `title: ${title?.(i + 1) ?? `Bulk task ${String(i + 1)}`}\n`
+              + `created_at: ${stamp}\n`
               + `updated_at: ${stamp}\nproject: ${projectId}\nstatus: backlog\n---\n`,
               "utf8",
             );

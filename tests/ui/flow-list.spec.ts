@@ -14,6 +14,15 @@ import { DEFAULT_EXPORT_COLUMNS } from "@loctt/core";
 
 import { expect, test } from "./fixtures/tracker.ts";
 
+// Sixty rows, written straight to disk. `seed` spawns one
+// `loctt create` per task at ~250ms, so these specs each paid ~15s
+// of subprocess time before asserting anything — 39% of this file's
+// total test time sat in twelve pagination and bulk specs doing it.
+// The rows are filler; nothing here asserts anything a real `create`
+// does that a written file does not.
+const sixty = (t: { seedBulk: (c: number, p?: string, f?: (n: number) => string) => Promise<void> }) =>
+  t.seedBulk(60, undefined, n => `Task ${String(n)}`);
+
 test.describe("LST — list view", () => {
   // @verifies LST-1
   test("LST-1: / redirects to /list and lands on a populated table", async ({ page, tracker }) => {
@@ -151,11 +160,10 @@ test.describe("LST — pagination", () => {
    * 60 tasks against a page size of 50: enough for exactly two pages,
    * so exhaustion is reachable without seeding 128 through the CLI.
    */
-  const SIXTY = Array.from({ length: 60 }, (_, i) => ({ title: `Task ${i + 1}` }));
 
   // @verifies LST-13
   test("LST-13: the count is honest and Load more appends in place", async ({ page, tracker }) => {
-    await tracker.seed(SIXTY);
+    await sixty(tracker);
     await page.goto(`${tracker.baseURL}/list`);
 
     // The total matches the filtered set, and only a page is rendered.
@@ -181,10 +189,10 @@ test.describe("LST — pagination", () => {
     page,
     tracker,
   }) => {
-    await tracker.seed([
-      ...SIXTY,
-      { title: "Critical one", fields: { priority: "critical" } },
-    ]);
+    // The 60 filler rows go straight to disk; only the one row that
+    // needs a field value pays for a `loctt create` subprocess.
+    await sixty(tracker);
+    await tracker.seed([{ title: "Critical one", fields: { priority: "critical" } }]);
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–50 of 61")).toBeVisible();
 
@@ -205,7 +213,7 @@ test.describe("LST — pagination", () => {
 
   // @verifies LST-17
   test("LST-17: a loaded second page is reproducible from the URL", async ({ page, tracker }) => {
-    await tracker.seed(SIXTY);
+    await sixty(tracker);
     await page.goto(`${tracker.baseURL}/list`);
     await page.getByRole("button", { name: "Load more" }).click();
     await expect(page.getByText("Showing 1–60 of 60")).toBeVisible();
@@ -228,7 +236,7 @@ test.describe("LST — pagination", () => {
     page,
     tracker,
   }) => {
-    await tracker.seed(SIXTY);
+    await sixty(tracker);
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–50 of 60")).toBeVisible();
 
@@ -256,10 +264,10 @@ test.describe("LST — pagination", () => {
     page,
     tracker,
   }) => {
-    await tracker.seed([
-      ...SIXTY,
-      { title: "Critical one", fields: { priority: "critical" } },
-    ]);
+    // The 60 filler rows go straight to disk; only the one row that
+    // needs a field value pays for a `loctt create` subprocess.
+    await sixty(tracker);
+    await tracker.seed([{ title: "Critical one", fields: { priority: "critical" } }]);
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–50 of 61")).toBeVisible();
 
@@ -288,7 +296,7 @@ test.describe("LST — pagination", () => {
 
   // @verifies LST-30
   test("LST-30: malformed pagination params are clamped, not obeyed", async ({ page, tracker }) => {
-    await tracker.seed(SIXTY);
+    await sixty(tracker);
 
     // Each of these threw in the route's validateSearch before the
     // schema was fixed, taking down /list rather than just pagination.
@@ -397,7 +405,7 @@ test.describe("BLK — selection", () => {
   // @verifies BLK-3
   test("BLK-3: select-all takes the visible page and says so", async ({ page, tracker }) => {
     // 60 tasks, page size 50: select-all must claim 50, never 60.
-    await tracker.seed(Array.from({ length: 60 }, (_, i) => ({ title: `Task ${i + 1}` })));
+    await sixty(tracker);
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–50 of 60")).toBeVisible();
 
@@ -422,7 +430,7 @@ test.describe("BLK — selection", () => {
 
   // @verifies BLK-4
   test("BLK-4: nothing claims a scope wider than the visible page", async ({ page, tracker }) => {
-    await tracker.seed(Array.from({ length: 60 }, (_, i) => ({ title: `Task ${i + 1}` })));
+    await sixty(tracker);
     await page.goto(`${tracker.baseURL}/list`);
     // Wait for the page to load before select-all: clicking the header
     // against an empty table selects nothing and the bar never appears.
@@ -467,7 +475,7 @@ test.describe("BLK — selection", () => {
     page,
     tracker,
   }) => {
-    await tracker.seed(Array.from({ length: 60 }, (_, i) => ({ title: `Task ${i + 1}` })));
+    await sixty(tracker);
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–50 of 60")).toBeVisible();
 
@@ -493,7 +501,7 @@ test.describe("BLK — selection", () => {
 
   // @verifies BLK-18
   test("BLK-18: loading another page keeps the selection", async ({ page, tracker }) => {
-    await tracker.seed(Array.from({ length: 60 }, (_, i) => ({ title: `Task ${i + 1}` })));
+    await sixty(tracker);
     await page.goto(`${tracker.baseURL}/list`);
 
     const rows = page.getByRole("row").filter({ hasNot: page.getByRole("columnheader") });
