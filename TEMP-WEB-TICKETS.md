@@ -320,10 +320,26 @@ Cases: TSK-15, TSK-16, TSK-17, TSK-18, TSK-27, TSK-35, TSK-38, TSK-48, ERR-12, E
   makes it continuous and the user absent, so the guard is not
   optional here.
 
+  **Probed 2026-08-29: core already has all of this, and nothing calls
+  it.** `packages/core/src/task/io.ts` exports `bodyToken()`,
+  `BodyWriteOptions.expectedToken`, and `StaleBodyWriteError` — with a
+  message that already states the text was *not* saved. Measured: a
+  write carrying a stale token is refused. `grep -rln bodyToken`
+  outside `dist/` finds the export barrel, its own module, and its own
+  test. **No caller.** Third orphaned core capability found that day,
+  after `unarchiveView` and `validateQuery`.
+
+  So this is a **wire-up across three surfaces**, not a build — which
+  makes it smaller than the entry below implies, and makes Ken's layer
+  rule the whole point of it.
+
+  (Note `expectedToken`, not `expectToken`. A probe using the wrong key
+  had the option silently ignored and the stale write accepted, which
+  reads exactly like the precondition not working.)
+
   Owed:
-  - the editor sends the `updated_at` it loaded (`If-Match` or an
-    equivalent body field — the shape is a **core contract** decision,
-    since MCP and CLI writes want the same guard)
+  - the editor sends the token it read (core's `bodyToken`, not a
+    hand-rolled `If-Match` — the shape is already decided)
   - the server refuses a stale write with **412**, not a silent
     overwrite and not a generic 500
   - the UI reports it as "this task changed underneath you", with the
