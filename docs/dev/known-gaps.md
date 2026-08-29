@@ -726,7 +726,7 @@ build that appended rather than moved-to-front would fail. This is
 stated in a comment in the test itself so a reader does not take the
 count assertions for more than they are.
 
-## An orphaned enum value freezes every other field on the task
+## ~~An orphaned enum value freezes every other field on the task~~ — FIXED `46507e8`
 
 **Found 2026-08-29 probing M2.2b, before building it.**
 
@@ -802,3 +802,42 @@ Two rules:
 - **Kill stray servers when a worktree is removed.** A `loctt ui` from
   a deleted `build-m21` worktree was still running and still holding a
   port — `git worktree remove` does not stop what the agent started.
+
+### The same defect for custom fields — found independently
+
+The M2.2a build agent hit this from the other side, and its
+reproduction is worth keeping because it is a *different* trigger:
+
+```
+loctt set T-1 status in_progress
+Error: invalid value: fields.component: unknown custom field
+       "component"; declared: (none)
+```
+
+and for a removed enum value on a custom field:
+
+```
+Error: invalid value: fields.team: invalid enum value "platform";
+       valid: frontend
+```
+
+So it was never only about statuses: **any** stored value the config
+no longer declares froze the whole task. Two agents found it
+independently within an hour, from opposite directions — one probing
+M2.2b's cases, one building M2.2a's pickers.
+
+The fix at `46507e8` is field-scoped rather than status-scoped, so it
+covers both. **Verified against the agent's own reproduction**, on the
+CLI:
+
+| | before | after |
+|---|---|---|
+| declare `component`, set it, then undeclare it | — | — |
+| `loctt set T-1 status in_progress` | refused | **succeeds** |
+| `fields.component: api` still on disk | — | **yes** |
+| `loctt set T-1 component newvalue` | refused | **still refused** |
+
+So an orphaned value no longer freezes the task, the user's data is
+left alone, and writing *to* the undeclared field is still an error —
+which it should be, since config no longer knows what it means.
+
