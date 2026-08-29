@@ -551,6 +551,33 @@ complete with one:
 If a surface genuinely should *not* expose it, say so in the ticket
 and why. Silence is not a decision.
 
+**Grep core before building anything.** Ten user-facing capabilities
+sit in `packages/core` with **zero callers on any surface** —
+`unarchiveView`, `archiveView`, `validateQuery`, `bodyToken`,
+`computeBurndown`, `computeWorkflowKeyUsage`, `extractMentions`,
+`removeRecent`, `findMigrationPath`, `backupLocttDir`. Measured
+2026-08-29.
+
+They are not dead code. Several are specified by cases a later ticket
+owes — `computeBurndown` by `flow-sprints.md`, `extractMentions` by
+the mention cases — so they were built *ahead* of their consumers and
+then forgotten.
+
+Four were found the hard way in one session, each moments before being
+rebuilt from scratch or reported as a missing feature:
+
+| | found while |
+|---|---|
+| `unarchiveView` | auditing the failing cases |
+| `validateQuery` | the same |
+| `bodyToken` | probing M2.3 — the ticket said *build the precondition*; core already had it, tested, with the right error message |
+| `bulk_op_id` in history | probing M2.4 — reported in the response, never written to disk |
+
+**So step 2 of the subsection loop is not optional, and it starts in
+core.** Before building a capability, grep `packages/core/src/index.ts`
+for it. The cost of not looking is building twice; the cost of looking
+is one grep.
+
 **Check before claiming something does not exist.** The audit said
 milestone progress "does not exist anywhere in `packages` or `apps`",
 and that was repeated twice before anyone looked. It exists:
