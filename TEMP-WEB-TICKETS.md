@@ -255,6 +255,30 @@ Cases: TSK-1, TSK-2, TSK-3, TSK-19, TSK-20, TSK-21, TSK-22, TSK-23, TSK-24, TSK-
   fires once per mount
 
 ### M2.2 · Task detail — meta panel edits ⬜
+> **Split into two subsections at step 1** (2026-08-29). 43 cases, 18
+> of them blockers, is more than one review diff can carry — and the
+> seam is real rather than arbitrary:
+>
+> - **M2.2a · the pickers** — one control per field type. P3
+>   throughout: render the `workflow.yaml` label, store the key.
+> - **M2.2b · failure and concurrency** — optimistic rollback,
+>   archived-reference rejection, a status deleted from config while a
+>   task references it, and the CLI writing underneath an open page
+>   (TSK-29/34/46/47, ERR-3/4/43, XS-4/7/8/57).
+>
+> **Probed before building** (`m22-probe.md`): `POST /api/tasks/:ref/set`
+> already answers 200, and an invalid enum already returns 400
+> `validation_failed` naming the field, the bad value **and the valid
+> options**, with `data_state: "not_saved"`. So P-4 and ERR-3/4 are
+> satisfied *server-side*; what M2.2b owes is the client rendering
+> that at the field which failed rather than as a toast.
+>
+> **XS-8 does not need K2's precondition**, though it reads as if it
+> might. Its own text: "This holds even though the UI's cached copy of
+> the task predated the CLI write — **because the request carried only
+> `priority`**." Field-level writes are the mechanism and the server
+> already does them. K2's `If-Match` work stays in M2.3, where the
+> whole body is replaced and a stale copy genuinely can clobber.
 Cases: TSK-4, TSK-5, TSK-6, TSK-7, TSK-8, TSK-9, TSK-10, TSK-11, TSK-12, TSK-13, TSK-14, TSK-26, TSK-28, TSK-29, TSK-30, TSK-31, TSK-32, TSK-33, TSK-34, TSK-36, TSK-37, TSK-39, TSK-41, TSK-42, TSK-46, TSK-47, TSK-49, TSK-55, TSK-56, ERR-43, XS-4, XS-7, XS-8, XS-10, XS-26, XS-27, XS-42, XS-46, XS-54, XS-57, ERR-3, ERR-4, VUE-30
 - All meta rows inline-editable via `setField` / `setFields`:
   - Status, Priority, Type (dropdowns)

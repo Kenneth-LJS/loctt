@@ -1021,3 +1021,128 @@ calling the plain constructor. Tests:
 `packages/core/src/task/lookup-unreadable.test.ts` — "does not report a
 corrupt task as absent when the key never reached the index" and "does
 not claim a missing key was found when an unrelated file is corrupt".
+
+### A7 · The task detail query always revalidates on mount
+
+**Ticket:** M2.1 · **Date:** 2026-08-29 · **Commit:** (uncommitted)
+
+**The situation.** `queryClient.ts` sets a shared `staleTime` of 30
+seconds for every query. The task detail page renders entirely from
+one `GET /api/tasks/:ref`. Measured on a real tracker at this commit:
+open `/tasks/T-1`, run `loctt delete T-1 --yes`, navigate away in-app
+and back to the task — **the full detail page rendered from cache**:
+title, breadcrumb, meta panel, and a live-looking More menu, for a
+task with no directory on disk.
+
+XS-58 (blocker, P1 P4) forbids exactly this: *"The detail page shows a
+not-found state naming `T-12`, not a page of stale fields with
+live-looking edit controls."* ERR-7 turns on the same read.
+
+**What had to be decided.** Should the task detail query opt out of
+the shared 30-second `staleTime`, or should XS-58 be satisfied some
+other way (a shorter global window, an invalidation on route change,
+or accepting the stale window)?
+
+**Options considered.**
+
+- **`refetchOnMount: "always"` on this one query.** Costs one request
+  per mount of a route the user navigated to deliberately, against a
+  local server reading one file. Contained to `useTask.ts`.
+- **Shorten the global `staleTime`.** Fixes this page and changes
+  every other query's behaviour with it, including the sidebar config
+  lists the window was chosen for. A wide blast radius for one page's
+  problem, and it would still leave a window in which the page lies.
+- **Invalidate `["task", …]` on every route change.** Same effect,
+  more machinery, and it puts the rule somewhere no one reading
+  `useTask.ts` would find it.
+- **Accept the stale window.** Rejected: it is not a stale *value*, it
+  is a whole page of controls for a file that does not exist.
+
+**Decided.** `useTask` sets `refetchOnMount: "always"`, opting this
+query alone out of the shared window.
+
+**Why.** P-1 — "the UI must never present a stale view as
+authoritative" — and the tracker has three concurrent writers, so a
+task vanishing underneath the UI is a normal way to use it rather than
+an exotic race. Mounting the detail route is the moment the user
+asserts they are looking at *this* task, which makes it the moment to
+check. The cost is one local file read.
+
+**To revert.** Delete `refetchOnMount: "always"` from
+`useTask()` in `apps/web/src/client/api/hooks/useTask.ts`; the query
+inherits the 30-second window again. `tests/ui/flow-tasks.spec.ts`'s
+XS-58/ERR-7 case goes red, which is the intended alarm.
+
+### A8 · Opening a task invalidates the recents query
+
+**Ticket:** M2.1 · **Date:** 2026-08-29 · **Commit:** (uncommitted)
+
+**The situation.** `pushRecent` fires server-side inside
+`handleGetTask` (`server.ts:2579`), so opening a task records it
+without the client doing anything. But `/api/recents` is a separate
+query under the same 30-second `staleTime`, so the sidebar kept
+rendering "No recent tasks — this fills in as you open them" after a
+task had been opened and the recents file had been written.
+
+TSK-3 (major, P1 P8) requires: *"The sidebar's Recently viewed group
+gains this task **without a page reload**."*
+
+**What had to be decided.** Where does the client learn that the read
+it just performed changed a different resource?
+
+**Options considered.**
+
+- **Invalidate `["recents"]` from `useTask` on a successful fetch.**
+  One extra request per task open. The knowledge lives next to the
+  fetch that causes the push, which is where a reader would look for
+  it.
+- **Have the detail component invalidate.** Same request count, but
+  puts a server-side side-effect's compensation in a view component,
+  where the next person to render `useTask` elsewhere will not repeat
+  it.
+- **Poll recents more often.** Costs a request on a timer forever to
+  fix a thing that happens on a known event.
+
+**Decided.** `useTask` invalidates `["recents"]` in an effect keyed on
+`dataUpdatedAt`, on success only.
+
+**Why.** The invalidation belongs to the call that caused the write.
+On success only, because a 404 pushes nothing and re-reading recents
+on every dead deep link is work for an answer that cannot have
+changed.
+
+**To revert.** Delete the `useEffect` in `useTask()`
+(`apps/web/src/client/api/hooks/useTask.ts`). TSK-3 goes red.
+
+### A9 · Single-task Move goes through the bulk endpoint
+
+**Ticket:** M2.1 · **Date:** 2026-08-29 · **Commit:** (uncommitted)
+
+**The situation.** The More menu owes "Move to project" (CW-13). The
+server exposes no single-task move route — `POST
+/api/tasks/bulk/move` is the only one, and it answers 200 with a
+`succeeded`/`failed` split rather than an error envelope.
+
+**What had to be decided.** Add a single-task move route to the
+server, or send a one-element batch to the existing bulk one?
+
+**Options considered.**
+
+- **One-element batch to `bulk/move`.** No server change. A failure
+  arrives as `failed[0].error` inside a 200, so the hook has to
+  inspect the body and reject, or every call site has to remember to.
+- **New `POST /api/tasks/:ref/move` route.** A cleaner client contract
+  and a real error envelope — but it is a new API surface, which is a
+  scope change no ticket plans, and it duplicates logic that already
+  works.
+
+**Decided.** `useMoveTask` sends a one-element batch to
+`/api/tasks/bulk/move` and throws on a non-empty `failed`, so callers
+see a normal rejected mutation.
+
+**Why.** Adding a route is scope the run stops for; reusing the
+endpoint is not. The 200-with-failures shape is contained inside one
+hook rather than leaking to the dialog.
+
+**To revert.** `useMoveTask` in
+`apps/web/src/client/api/hooks/useTaskMutations.ts`.
