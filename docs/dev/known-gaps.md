@@ -767,3 +767,38 @@ in the priority picker.
 Worth noting what still works, so a fix does not overreach: `GET`
 returns the orphaned value unchanged, and the CLI shows it. Only the
 write path is broken.
+
+## Parallel build agents make the integration suite fail at random
+
+**Established 2026-08-29, at load average 437.**
+
+Running the integration suite while a build agent runs the Playwright
+UI suite produces failures that are pure contention:
+
+| run | failures |
+|---|---|
+| first | 5, mostly git |
+| second, same commit | **26**, a different set |
+| the same tests in isolation, both commits | 5/5 pass |
+
+A *different* set each time is the tell. A real break is
+deterministic; this moves.
+
+The cause is arithmetic. Both suites spawn real subprocesses — the
+integration tests spawn the CLI binary and MCP over stdio, the UI
+fixture spawns a `loctt ui` server per spec. Two of those at once on
+one machine is not a test failure, it is oversubscription.
+
+**Do not diagnose an integration failure without checking `uptime`
+first.** This nearly cost a wrong revert: five git tests failed right
+after a core change to `update.ts`, which looked exactly like a
+regression. They passed in isolation at both the parent commit and the
+child — so the change was innocent and the machine was not.
+
+Two rules:
+
+- **One agent runs a suite at a time.** Worktree isolation prevents
+  agents corrupting each other's *files*; it does nothing about CPU.
+- **Kill stray servers when a worktree is removed.** A `loctt ui` from
+  a deleted `build-m21` worktree was still running and still holding a
+  port — `git worktree remove` does not stop what the agent started.
