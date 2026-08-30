@@ -302,6 +302,125 @@ test.describe("TSK — task detail read shell", () => {
     await fresh.close();
   });
 
+  // @verifies TSK-20
+  test("TSK-20: Duplicate creates a copy under a fresh key and navigates to it", async ({
+    page,
+    tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Duplicable task" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    // A body, so the copy has something to carry over that the
+    // frontmatter alone would not prove. Written through the CLI so
+    // the UI is not asserting against its own earlier write.
+    await tracker.run(["body", key, "--set", "Body that must survive the copy."]);
+
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByRole("heading", { name: "Duplicable task", level: 1 })).toBeVisible();
+    const sourceBefore = await frontmatterOf(tracker.root, key);
+
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Duplicate" }).click();
+
+    // Duplicating destroys nothing, so no typed confirmation stands
+    // between the click and the write (the Archive-not-Delete side of
+    // TSK-23's proportionality).
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // The app navigated: the header key chip now reads something
+    // other than the source's, and the URL followed it. Both, because
+    // a chip that changed while the address bar did not would leave a
+    // copy nobody can link to.
+    await expect(page.getByTestId("task-key-chip")).not.toHaveText(key);
+    const copyKey = await page.getByTestId("task-key-chip").innerText();
+    expect(copyKey).not.toBe(key);
+    expect(page.url()).toContain(`/tasks/${copyKey}`);
+
+    // The copy on disk carries the title and the body. Read off the
+    // file, not the page: a header rendered from a stale cache would
+    // satisfy a screen-only assertion.
+    const copyFile = await frontmatterOf(tracker.root, copyKey);
+    expect(copyFile).toMatch(/^title:\s*Duplicable task \(copy\)\s*$/m);
+    expect(copyFile).toContain("Body that must survive the copy.");
+    // `key_history` empty on the copy — paired with the positive
+    // assertion that it does carry the new key, so an unreadable or
+    // empty file cannot satisfy the absence alone.
+    expect(copyFile).not.toMatch(/^key_history:/m);
+    expect(copyFile).toMatch(new RegExp(`^key:\\s*${copyKey}\\s*$`, "m"));
+
+    // TSK-20's fourth bullet, both ways. Off disk: the source file is
+    // byte-identical to before the duplicate — nothing on screen
+    // signals this, so nothing else catches a route that touched it.
+    expect(await frontmatterOf(tracker.root, key)).toBe(sourceBefore);
+    // And by returning to it, which is what the case actually asks
+    // for: the original still resolves at its own key, under its own
+    // unsuffixed title.
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("task-key-chip")).toHaveText(key);
+    await expect(page.getByRole("heading", { name: "Duplicable task", level: 1 })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Duplicable task (copy)", level: 1 }),
+    ).toHaveCount(0);
+
+    // Both rows are in the list — the copy was created, and the
+    // original was not consumed making it. Two rows total, and the
+    // copy is exactly one of them: "Duplicable task" is a substring of
+    // "Duplicable task (copy)", so a bare count of the former would be
+    // satisfied by the copy alone.
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(listRow(page, "Duplicable task")).toHaveCount(2);
+    await expect(listRow(page, "Duplicable task (copy)")).toHaveCount(1);
+    await expect(listRow(page, key)).toHaveCount(1);
+    await expect(listRow(page, copyKey)).toHaveCount(1);
+  });
+
+  // @verifies TSK-20
+  test("TSK-20: a refused duplicate names the failure and does not navigate", async ({
+    page,
+    tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Uncopyable task" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+
+    await page.route(/\/api\/tasks\/[^/]+\/duplicate$/, route =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({
+          code: "internal_error",
+          message: "The copy could not be written.",
+          data_state: "not_saved",
+          recovery: { kind: "retry" },
+        }),
+      }));
+
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByRole("heading", { name: "Uncopyable task", level: 1 })).toBeVisible();
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Duplicate" }).click();
+
+    await expect(page.getByRole("alert")).toContainText(/could not be written/i);
+
+    // Still on the source. Navigating on a failed duplicate would put
+    // the user on a task that does not exist, or read as a success.
+    await expect(page.getByTestId("task-key-chip")).toHaveText(key);
+    expect(page.url()).toContain(`/tasks/${key}`);
+
+    // Nothing was created: the list has the one row it started with,
+    // and no `(copy)` row beside it.
+    await page.unroute(/\/api\/tasks\/[^/]+\/duplicate$/);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(listRow(page, "Uncopyable task")).toHaveCount(1);
+    await expect(listRow(page, "Uncopyable task (copy)")).toHaveCount(0);
+
+    // The menu item is still a live control, not a spent one — retry
+    // works once the write can land, which is what makes the offered
+    // Duplicate a real recovery (ERR-3).
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Duplicate" }).click();
+    await expect(page.getByTestId("task-key-chip")).not.toHaveText(key);
+  });
+
   // @verifies TSK-22
   test("TSK-22: delete requires typing the key and removes the task from disk", async ({
     page,

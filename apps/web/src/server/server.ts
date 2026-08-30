@@ -83,6 +83,7 @@ import {
   deleteView,
   detachFile,
   disableGit,
+  duplicateTask,
   editComment,
   editLabel,
   editMilestone,
@@ -822,6 +823,7 @@ const TASK_COMMENT_ID_RE = /^\/api\/tasks\/([^/]+)\/comments\/([^/]+)$/;
 const TASK_SET_RE = /^\/api\/tasks\/([^/]+)\/set$/;
 const TASK_UNSET_RE = /^\/api\/tasks\/([^/]+)\/unset$/;
 const TASK_ARCHIVE_RE = /^\/api\/tasks\/([^/]+)\/archive$/;
+const TASK_DUPLICATE_RE = /^\/api\/tasks\/([^/]+)\/duplicate$/;
 const TASK_UNARCHIVE_RE = /^\/api\/tasks\/([^/]+)\/unarchive$/;
 const TASK_LINK_RE = /^\/api\/tasks\/([^/]+)\/link$/;
 const TASK_UNLINK_RE = /^\/api\/tasks\/([^/]+)\/unlink$/;
@@ -3043,6 +3045,71 @@ export function createWebApp(options: WebAppOptions) {
     json(res, projectTaskFrontmatter(updated.frontmatter));
   };
 
+  /**
+   * `POST /api/tasks/:ref/duplicate` — TSK-20.
+   *
+   * A thin wrapper over core's `duplicateTask`, which is what the CLI
+   * and MCP already call. The copy's title, body and metadata come
+   * from core; `key`, `id`, `created_at`/`updated_at` are fresh and
+   * `key_history` is empty, all of which core guarantees and none of
+   * which this route re-implements.
+   *
+   * No `overrides` are passed, so the copy is titled `<title> (copy)`
+   * — core's default, and the same title `loctt duplicate` and the
+   * MCP `duplicate` tool produce (A24). The suffix is not added here.
+   *
+   * `withStateLock` is not optional: allocating the copy's key reads
+   * and writes `state.yaml`, so two concurrent duplicates without it
+   * would race for the same counter value and hand out one key twice.
+   * That is the one invariant this wrapper is responsible for.
+   *
+   * The full frontmatter is returned rather than just the key, because
+   * the client navigates to the copy and can prime its cache from the
+   * response instead of racing a refetch.
+   */
+  const handleDuplicate: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const ref = requireValidRef(captures, res, 0, req);
+    if (ref === null) return;
+    // Fails here with a 404 if the source does not exist, before any
+    // key is allocated — so a bad ref cannot burn a counter value.
+    await lookupTask(locttDir, ref);
+    const { workflowConfig } = await loadOptionalConfigs(locttDir);
+    const archivedGuard = await loadArchivedGuardConfigs(locttDir);
+    try {
+      const created = await withStateLock(locttDir, async () => {
+        const state = await loadState(locttDir);
+        const task = await duplicateTask({
+          locttDir,
+          state,
+          sourceRef: ref,
+          ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+          archivedGuard,
+        });
+        await saveState(locttDir, state);
+        return task;
+      });
+      json(res, projectTaskFrontmatter(created.frontmatter));
+    } catch (err) {
+      // A source whose assignee or milestone has since been archived
+      // cannot be copied forward wholesale. Same shape as create's
+      // (ERR-31): named cause, nothing written, no retry offered —
+      // repeating the request would be rejected identically.
+      if (err instanceof ArchivedReferenceError) {
+        error(res, err.message, 400, {
+          code: "archived_reference",
+          data_state: "not_saved",
+          recovery: { kind: "none" },
+        });
+        return;
+      }
+      if (err instanceof ZodError) {
+        error(res, zodIssueSummary(err), 400, { ...REJECTED_WRITE_NO_RETRY });
+        return;
+      }
+      throw err;
+    }
+  };
+
   const handleDeleteTask: RouteHandler = async ({ req, res, url, locttDir, captures }) => {
     const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
@@ -3424,6 +3491,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "POST", pattern: TASK_UNSET_RE, handler: handleUnsetField },
     { method: "POST", pattern: TASK_ARCHIVE_RE, handler: handleArchive },
     { method: "POST", pattern: TASK_UNARCHIVE_RE, handler: handleUnarchive },
+    { method: "POST", pattern: TASK_DUPLICATE_RE, handler: handleDuplicate },
     { method: "POST", pattern: TASK_LINK_RE, handler: handleLink },
     { method: "POST", pattern: TASK_UNLINK_RE, handler: handleUnlink },
     { method: "POST", pattern: TASK_ATTACHMENTS_RE, handler: handleAttachUpload },
