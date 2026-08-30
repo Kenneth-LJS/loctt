@@ -1,16 +1,17 @@
-import type { TaskFrontmatterPublic, TimelineGrouping, TimelineZoom } from "@loctt/contracts";
+import type { TimelineGrouping, TimelineZoom } from "@loctt/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { useMilestones, useSprints, useUsers, useViews } from "../api/hooks/sidebarData.ts";
 import { useCalendar } from "../api/hooks/useCalendar.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
+import { useTaskDates } from "../api/hooks/useTaskDates.ts";
 import { tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { ConfigErrorState } from "../board/ConfigErrorState.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
-import { dependencyEdges } from "./arrows.ts";
+import { dependencyGraph } from "./arrows.ts";
 import {
   computeRange,
   dateToX,
@@ -25,9 +26,12 @@ import {
   buildLayout,
   ROW_H,
 } from "./layout.ts";
-import { buildRows, totalRows } from "./rows.ts";
+import type { TimelineRow } from "./rows.ts";
+import { buildRows, dateProblemNote, totalRows } from "./rows.ts";
 import { dependencyRelationshipStatus, resolveArrows, resolveGrouping, resolveZoom } from "./settings.ts";
 import { TimelineChart } from "./TimelineChart.tsx";
+import type { BarDropRequest } from "./useBarDrag.ts";
+import { applyDelta, useBarDrag } from "./useBarDrag.ts";
 
 /**
  * The timeline / Gantt view (M3.3a — TML-1..17, rendering only).
@@ -131,10 +135,31 @@ export function TimelineView() {
   // notice is TML-34 (M3.3b), and `dependencyRelationshipStatus`
   // already returns the name for that.
   const depStatus = dependencyRelationshipStatus(workflow.data);
-  const edges = useMemo(
-    () => (arrowsOn && depStatus.kind === "ok" ? dependencyEdges(items, depStatus.key) : []),
-    [arrowsOn, depStatus.kind, depStatus.kind === "ok" ? depStatus.key : undefined, items],
+  const depKey = depStatus.kind === "ok" ? depStatus.key : undefined;
+
+  /**
+   * The tasks that actually have a bar — the only valid arrow
+   * endpoints (TML-31).
+   *
+   * Filtered-out tasks are absent from `items` already; this removes
+   * the ones that are *present* but undrawable: unscheduled rows, and
+   * rows carrying a date anomaly, which render a marker rather than a
+   * bar. Collapsed bands are handled inside `TimelineChart`, which
+   * owns the collapsed set.
+   */
+  const drawableIds = useMemo(
+    () => new Set(model.bands.flatMap(b => b.rows.filter(r => r.problem === undefined).map(r => r.task.id))),
+    [model],
   );
+
+  const graph = useMemo(
+    () =>
+      arrowsOn && depKey !== undefined
+        ? dependencyGraph(items, depKey, drawableIds)
+        : { edges: [], offscreenFrom: new Set<string>() },
+    [arrowsOn, depKey, items, drawableIds],
+  );
+  const edges = graph.edges;
 
   const setParam = useCallback(
     (patch: Record<string, unknown>): void => {
@@ -169,6 +194,156 @@ export function TimelineView() {
     centreToday();
   }, [zoom, range, items.length, centreToday]);
 
+  /**
+   * The drag layer (TML-9 through TML-12, TML-36 through TML-39).
+   *
+   * `datesById` is rebuilt whenever the feed changes, but the drag hook
+   * reads it only at *press* and snapshots the pair it found. That is
+   * TML-37: a poll landing mid-drag replaces this map, and the bar the
+   * user is holding keeps the geometry it was grabbed with, then writes
+   * "the dates the user saw at release".
+   */
+  const datesById = useMemo(() => {
+    const m = new Map<string, { start: string; due: string }>();
+    for (const t of items) {
+      if (typeof t.start_date === "string" && typeof t.due_date === "string") {
+        m.set(t.id, { start: t.start_date, due: t.due_date });
+      }
+    }
+    return m;
+  }, [items]);
+
+  const keyById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of items) m.set(t.id, t.key);
+    return m;
+  }, [items]);
+
+  const setDates = useTaskDates();
+
+  /**
+   * The failed drop the user is being told about, or null.
+   *
+   * Holds the attempted values as well as the task, because TML-42
+   * requires the message to show "the value that was attempted" and
+   * TML-43 requires it to say that *both* dates are unchanged. A toast
+   * carrying only "failed" satisfies neither.
+   */
+  const [dropError, setDropError] = useState<{
+    readonly key: string;
+    readonly edge: BarDropRequest["edge"];
+    readonly attempted: string;
+    readonly message: string;
+    readonly gone: boolean;
+  } | null>(null);
+  const lastDrop = useRef<BarDropRequest | null>(null);
+
+  const runDrop = useCallback(
+    (req: BarDropRequest): void => {
+      lastDrop.current = req;
+      setDropError(null);
+      setDates.mutate(
+        {
+          ref: req.key,
+          ...(req.start_date !== undefined ? { start_date: req.start_date } : {}),
+          ...(req.due_date !== undefined ? { due_date: req.due_date } : {}),
+        },
+        {
+          onError: (err: unknown) => {
+            const envelope = err instanceof ApiError ? err.envelope : undefined;
+            // TML-49: a task deleted from another surface fails
+            // *specifically* — the message says it no longer exists,
+            // rather than the generic "not saved". The 404 is the
+            // signal; `onSettled`'s refetch is what removes the row.
+            const gone = err instanceof ApiError && err.status === 404;
+            setDropError({
+              key: req.key,
+              edge: req.edge,
+              attempted:
+                req.start_date !== undefined && req.due_date !== undefined
+                  ? `${req.start_date} → ${req.due_date}`
+                  : (req.start_date ?? req.due_date ?? ""),
+              message:
+                gone
+                  ? "It no longer exists — it was deleted somewhere else."
+                  : envelope?.message
+                    ?? (err instanceof Error ? err.message : "The server could not be reached."),
+              gone,
+            });
+          },
+        },
+      );
+    },
+    [setDates],
+  );
+
+  const { drag, onBarPointerDown, consumeDragTail } = useBarDrag({
+    range,
+    zoom,
+    datesById,
+    keyById,
+    onDrop: runDrop,
+  });
+
+  /**
+   * The dates a bar renders at *right now*.
+   *
+   * Only the bar being dragged is overridden, and only while the
+   * pointer is down. Nothing is overridden after release: the write is
+   * either accepted, in which case the refetch supplies the new dates,
+   * or it failed, in which case the stored dates are the truth and the
+   * bar must show them (TML-42, TML-43, TML-44 — "never rendered as a
+   * settled new position while the server holds the old one").
+   */
+  const barDatesOverride = useCallback(
+    (taskId: string) =>
+      drag !== null && drag.taskId === taskId
+        ? { start: drag.start, due: drag.due }
+        : undefined,
+    [drag],
+  );
+
+  /**
+   * TML-40: a keyboard adjustment, routed through the very same
+   * `runDrop` a mouse release uses.
+   *
+   * Sharing the path is the point, not a convenience: the case asks for
+   * "the same single-write semantics as the mouse drags (TML-9 through
+   * TML-11)", and a second write path would be a second place for the
+   * payload shape to drift. `applyDelta` supplies the clamps too, so a
+   * held arrow key cannot walk a bar to a negative duration any more
+   * than a drag can.
+   */
+  const onBarKeyAdjust = useCallback(
+    (taskId: string, edge: "start" | "end" | "body", days: number): void => {
+      const dates = datesById.get(taskId);
+      const key = keyById.get(taskId);
+      if (dates === undefined || key === undefined) return;
+      const next = applyDelta(edge, dates.start, dates.due, days);
+      if (next.start === dates.start && next.due === dates.due) return;
+      runDrop({
+        taskId,
+        key,
+        edge,
+        originStart: dates.start,
+        originDue: dates.due,
+        ...(edge !== "end" ? { start_date: next.start } : {}),
+        ...(edge !== "start" ? { due_date: next.due } : {}),
+      });
+    },
+    [datesById, keyById, runDrop],
+  );
+
+  const openTask = useCallback(
+    (key: string): void => {
+      // TML-17: "a click that was actually the tail of a drag does not
+      // navigate."
+      if (consumeDragTail()) return;
+      void navigate({ to: "/tasks/$key", params: { key } });
+    },
+    [consumeDragTail, navigate],
+  );
+
   const configError = configInvalidOf(workflow.error) ?? configInvalidOf(tasks.error);
   if (configError !== null) {
     return (
@@ -182,7 +357,18 @@ export function TimelineView() {
     );
   }
 
-  const loading = tasks.isLoading || workflow.isLoading;
+  /**
+   * Whether the first page of data is still in flight.
+   *
+   * `isLoading` alone is not enough here and was measured rendering a
+   * full empty chart while the request was still held open:
+   * `useTasksFeed` sets `placeholderData: keepPreviousData`, which
+   * suppresses the loading flag. `isPending` is the state that
+   * survives that — no data has ever resolved for this query key —
+   * which is exactly TML-41's "the user does not briefly see a fully
+   * drawn empty timeline that then repopulates".
+   */
+  const loading = tasks.isPending || tasks.isLoading || workflow.isLoading;
   if (!loading && (tasks.isError || workflow.isError)) {
     return (
       <div className="p-4">
@@ -200,6 +386,22 @@ export function TimelineView() {
 
   const width = rangeWidth(range, zoom);
   const cells = headerCells(range, zoom, calendar.data);
+
+  /**
+   * TML-46: `calendar.yaml` did not load — `working_days: [9]` fails
+   * the schema and `/api/calendar` answers `config_invalid`.
+   *
+   * This is deliberately *not* the whole-view `ConfigErrorState` the
+   * workflow's own failure gets. The case is explicit that "the
+   * timeline still renders bars and dates" and that "shading is
+   * skipped rather than applied wrongly" — a blocking error state
+   * would fail its first bullet. `calendar.data` is undefined in this
+   * state, and `nonWorkingReason` already answers `undefined` for
+   * every day when it is, so the unshaded grid falls out; what was
+   * missing is saying so.
+   */
+  const calendarError = calendar.isError ? calendar.error : null;
+
   // Shading is per *day* column at every zoom, but at month zoom a
   // 4px band per weekend is visual noise on a chart nobody reads
   // day-by-day. TML-13's first bullet asks for day and week only.
@@ -209,6 +411,25 @@ export function TimelineView() {
       : eachDay(range)
           .map(d => ({ date: d, reason: nonWorkingReason(d, calendar.data) }))
           .filter((s): s is { date: string; reason: string } => s.reason !== undefined);
+
+  // TML-47: task files that exist and could not be parsed. The rows
+  // that *did* load are already in `items`; this is what makes the
+  // count honest about the ones that did not.
+  const unreadable = pages[pages.length - 1]?.unreadable ?? [];
+
+  /**
+   * TML-41: an explicit empty state, and a skeleton rather than a
+   * fully-drawn empty chart while loading.
+   *
+   * Three distinguishable states, because the case asks for three
+   * different messages: still loading, a filter that matched nothing,
+   * and a tracker whose tasks simply have no dates (which is *not*
+   * empty — the Unscheduled lane is populated and the chart area's
+   * emptiness needs explaining).
+   */
+  const noRows = !loading && totalRows(model) === 0;
+  const noBars = !loading && !noRows && layout.bands.length === 0;
+  const activeFilters = describeFilters(search);
 
   return (
     <div className="flex h-full flex-col gap-3 p-4" data-testid="timeline">
@@ -223,36 +444,221 @@ export function TimelineView() {
         onToday={() => { centreToday(); }}
       />
 
-      {loading && (
-        <div className="text-[12px] text-fg-muted" data-testid="timeline-loading">
-          Loading…
+      {/* TML-34: a `dependency_relationship` naming a key that
+          `relationships` does not define. Core no longer deletes the
+          dangling line (A31), so the typo survives to be reported —
+          and this is the report. "Not a silent no-op and not a crash":
+          no arrows are drawn, and the missing key is named. */}
+      {depStatus.kind === "missing" && (
+        <div
+          role="alert"
+          data-testid="timeline-dependency-config-error"
+          className="rounded-md border border-attention-fg/40 bg-attention-fg/5 px-3 py-2 text-[12px] text-fg-default"
+        >
+          <strong>workflow.yaml</strong>: <code>timeline.dependency_relationship</code>
+          {" "}names <code data-testid="timeline-dependency-missing-key">{depStatus.key}</code>,
+          {" "}which is not defined in <code>relationships</code>. No dependency
+          {" "}arrows can be drawn until that key is corrected.
         </div>
       )}
 
-      <TimelineChart
-        ref={scroller}
-        layout={layout}
-        model={model}
-        range={range}
-        zoom={zoom}
-        width={width}
-        cells={cells}
-        shaded={shaded}
-        today={today}
-        edges={arrowsOn ? edges : []}
-        onOpenTask={key => { void navigate({ to: "/tasks/$key", params: { key } }); }}
-      />
+      {/* TML-46. */}
+      {calendarError !== null && (
+        <div
+          role="alert"
+          data-testid="timeline-calendar-error"
+          className="rounded-md border border-attention-fg/40 bg-attention-fg/5 px-3 py-2 text-[12px] text-fg-default"
+        >
+          <strong>calendar.yaml</strong> could not be read, so weekend and holiday
+          {" "}shading is switched off and the today-marker is placed in{" "}
+          <strong>UTC</strong>. Fix the file to restore them.{" "}
+          <span data-testid="timeline-calendar-error-detail">
+            {calendarError instanceof ApiError
+              ? calendarError.envelope?.message ?? calendarError.message
+              : String(calendarError)}
+          </span>
+        </div>
+      )}
 
-      <UnscheduledLane
-        rows={model.unscheduled}
-        onOpenTask={key => { void navigate({ to: "/tasks/$key", params: { key } }); }}
-      />
+      {/* TML-42, TML-43, TML-44, TML-45, TML-49: a drop that did not
+          land. The bar is already back where it started — nothing
+          optimistic was written, and `useTaskDates` refetches on
+          settle — so this states what was attempted and offers the
+          retry. */}
+      {dropError !== null && (
+        <div
+          role="alert"
+          data-testid="timeline-drag-error"
+          className="flex items-center gap-3 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+        >
+          <span className="min-w-0 flex-1">
+            <strong>{dropError.key}</strong>{" "}
+            {dropError.edge === "body"
+              ? "was not moved — neither the start date nor the due date was changed."
+              : dropError.edge === "end"
+                ? "was not resized — the due date was not changed."
+                : "was not resized — the start date was not changed."}
+            {dropError.attempted !== "" && (
+              <>
+                {" "}Attempted:{" "}
+                <code data-testid="timeline-drag-error-attempted">{dropError.attempted}</code>.
+              </>
+            )}
+            {" "}{dropError.message}
+          </span>
+          {!dropError.gone && (
+            <button
+              type="button"
+              data-testid="timeline-drag-retry"
+              onClick={() => {
+                const req = lastDrop.current;
+                if (req !== null) runDrop(req);
+              }}
+              className="shrink-0 rounded border border-danger-fg/40 px-2 py-0.5 hover:bg-danger-fg/10"
+            >
+              Retry
+            </button>
+          )}
+          <button
+            type="button"
+            data-testid="timeline-drag-dismiss"
+            onClick={() => { setDropError(null); }}
+            className="shrink-0 rounded border border-danger-fg/40 px-2 py-0.5 hover:bg-danger-fg/10"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* TML-47: one corrupt task.md does not blank the timeline. */}
+      {unreadable.length > 0 && (
+        <div
+          role="alert"
+          data-testid="timeline-unreadable"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+        >
+          {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
+          {" "}could not be read, so {unreadable.length === 1 ? "it is" : "they are"}
+          {" "}missing from this timeline and from the counts below. Check the file.
+          <ul className="mt-1 space-y-0.5">
+            {unreadable.map(u => (
+              <li key={u.id} className="font-mono text-[11px]">
+                {u.path}: {u.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* TML-41: a skeleton grid, not a drawn-then-repopulated chart.
+          The chart is not rendered at all while loading, so the user
+          never sees a complete empty timeline that fills in. */}
+      {loading ? (
+        <div
+          className="min-h-0 flex-1 animate-pulse rounded-md border border-border-default bg-canvas-subtle"
+          data-testid="timeline-skeleton"
+          aria-busy="true"
+          aria-label="Loading the timeline"
+        />
+      ) : noRows ? (
+        <div
+          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 rounded-md border border-border-default text-[12px] text-fg-muted"
+          data-testid="timeline-empty"
+        >
+          <span>No tasks match this view.</span>
+          <span data-testid="timeline-empty-filters">
+            {activeFilters === null
+              ? "There are no tasks in this tracker yet."
+              : `Active filter: ${activeFilters}`}
+          </span>
+        </div>
+      ) : (
+        <>
+          {/* TML-41's third bullet: every task lacks dates, so the
+              chart area is genuinely empty and needs saying so —
+              the Unscheduled lane below is where the tasks are. */}
+          {noBars && (
+            <div
+              className="rounded-md border border-border-default px-3 py-2 text-[12px] text-fg-muted"
+              data-testid="timeline-no-dated-tasks"
+            >
+              None of these tasks has both a start date and a due date, so there is
+              nothing to chart. They are listed under Unscheduled below.
+            </div>
+          )}
+          <TimelineChart
+            ref={scroller}
+            layout={layout}
+            model={model}
+            range={range}
+            zoom={zoom}
+            width={width}
+            cells={cells}
+            shaded={shaded}
+            today={today}
+            edges={arrowsOn ? edges : []}
+            offscreenFrom={arrowsOn ? graph.offscreenFrom : undefined}
+            onOpenTask={openTask}
+            onBarPointerDown={onBarPointerDown}
+            onBarKeyAdjust={onBarKeyAdjust}
+            barDatesOverride={barDatesOverride}
+            dragging={drag !== null}
+            renderBarOverlay={() =>
+              drag === null ? null : (
+                /* TML-12's second bullet: "the tooltip/label shows the
+                   candidate date live during the drag so the user can
+                   aim" — at month zoom a day is 4px, and without this
+                   the user is guessing. The values shown are the exact
+                   ones the release will send, because both come from
+                   the same `applyDelta` result. */
+                <div
+                  data-testid="timeline-drag-label"
+                  data-start={drag.start}
+                  data-due={drag.due}
+                  className="pointer-events-none fixed z-50 rounded border border-border-default bg-canvas-default px-1.5 py-0.5 font-mono text-[11px] shadow"
+                  style={{ left: drag.x + 12, top: drag.y + 12 }}
+                >
+                  {drag.edge === "start"
+                    ? drag.start
+                    : drag.edge === "end"
+                      ? drag.due
+                      : `${drag.start} → ${drag.due}`}
+                </div>
+              )
+            }
+          />
+        </>
+      )}
+
+      <UnscheduledLane rows={model.unscheduled} onOpenTask={openTask} />
 
       <div className="text-[11px] text-fg-muted" data-testid="timeline-total">
         {totalRows(model)} {totalRows(model) === 1 ? "task" : "tasks"}
+        {unreadable.length > 0 && (
+          <span data-testid="timeline-total-unreadable">
+            {" "}({unreadable.length} unreadable, not counted)
+          </span>
+        )}
       </div>
     </div>
   );
+}
+
+/**
+ * The active filters, as a phrase the empty state can name (TML-41:
+ * "an explicit empty state **naming the active filter**").
+ *
+ * Reads the shared list vocabulary, so the phrase says the same thing
+ * the list's own empty state would about the same URL.
+ */
+function describeFilters(search: Record<string, unknown>): string | null {
+  const parts: string[] = [];
+  for (const key of ["q", "status", "assignee", "milestone", "sprint", "priority", "task_type", "label", "project"]) {
+    const v = search[key];
+    if (typeof v === "string" && v.length > 0) parts.push(`${key} = ${v}`);
+    else if (Array.isArray(v) && v.length > 0) parts.push(`${key} = ${v.join(", ")}`);
+  }
+  return parts.length === 0 ? null : parts.join("; ");
 }
 
 /** Zoom / grouping / arrows / today controls. */
@@ -338,7 +744,7 @@ function Toolbar(props: {
  * vertical space on the common path.
  */
 function UnscheduledLane(props: {
-  readonly rows: readonly { readonly task: TaskFrontmatterPublic }[];
+  readonly rows: readonly TimelineRow[];
   readonly onOpenTask: (key: string) => void;
 }) {
   if (props.rows.length === 0) return null;
@@ -365,6 +771,22 @@ function UnscheduledLane(props: {
             >
               <span className="font-mono text-fg-muted">{r.task.key}</span>
               <span className="truncate">{r.task.title}</span>
+              {/* TML-19 ("hovering explains the missing date"), TML-20
+                  and TML-48 ("the message names the task and the
+                  offending field value"). Rendered as text, not only as
+                  a `title`: a tooltip the user must discover is not the
+                  explicit treatment those cases ask for, and TML-48's
+                  verbatim value has to be readable without hovering.
+                  `dateProblemNote` formats from the raw strings, so no
+                  `Invalid Date` can reach here. */}
+              {r.problem !== undefined && (
+                <span
+                  data-testid={`timeline-unscheduled-reason-${r.task.key}`}
+                  className="ml-auto shrink-0 rounded border border-border-muted px-1 text-[11px] text-fg-muted"
+                >
+                  {dateProblemNote(r.problem)}
+                </span>
+              )}
             </button>
           </li>
         ))}

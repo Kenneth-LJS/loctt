@@ -52,20 +52,54 @@ export function dependencyEdges(
   tasks: readonly TaskFrontmatterPublic[],
   relationshipKey: string | undefined,
 ): readonly DependencyEdge[] {
-  if (relationshipKey === undefined) return [];
+  return dependencyGraph(tasks, relationshipKey).edges;
+}
+
+/**
+ * Edges to draw, **and** the tasks whose links point somewhere not
+ * drawable (M3.3b: TML-31).
+ *
+ * TML-31: "no arrow is drawn to nowhere ... the source bar carries an
+ * indicator that it has an off-screen dependency ... rather than the
+ * link simply vanishing." Dropping such an edge is right — an arrow to
+ * a row that is not on screen has nowhere to land — but dropping it
+ * *silently* is the failure the case names. So the drop is reported
+ * rather than merely performed, and the chart badges the source bar.
+ *
+ * "Not drawable" is deliberately broader than "not in the task feed":
+ * a target that is filtered out is absent from `tasks`, but a target
+ * that is unscheduled or inside a collapsed band **is** in `tasks` and
+ * still has no bar to point at. `drawableIds`, when given, is the set
+ * that actually has bars; without it every in-scope task counts as
+ * drawable, which is the M3.3a behaviour.
+ */
+export function dependencyGraph(
+  tasks: readonly TaskFrontmatterPublic[],
+  relationshipKey: string | undefined,
+  drawableIds?: ReadonlySet<string>,
+): { readonly edges: readonly DependencyEdge[]; readonly offscreenFrom: ReadonlySet<string> } {
+  if (relationshipKey === undefined) return { edges: [], offscreenFrom: new Set() };
   const inScope = new Set(tasks.map(t => t.id));
+  const drawable = drawableIds ?? inScope;
   const edges: DependencyEdge[] = [];
+  const offscreenFrom = new Set<string>();
   for (const task of tasks) {
     for (const rel of task.relationships ?? []) {
       if (rel.type !== relationshipKey) continue;
-      if (!inScope.has(rel.target)) continue;
       // A self-link would render as an arrow from a bar to itself:
-      // visually meaningless, and the path math degenerates.
+      // visually meaningless, and the path math degenerates. Not an
+      // off-screen dependency either — the target is right there.
       if (rel.target === task.id) continue;
+      if (!drawable.has(rel.target)) {
+        // Only badge a source that is itself drawn; a badge on a bar
+        // that does not exist has nowhere to appear.
+        if (drawable.has(task.id)) offscreenFrom.add(task.id);
+        continue;
+      }
       edges.push({ from: task.id, to: rel.target });
     }
   }
-  return edges;
+  return { edges, offscreenFrom };
 }
 
 /** Where an arrow attaches to a bar. */
