@@ -2294,3 +2294,72 @@ status reddens both BRD-13 tests; `insertionIndex` comparing top edges
 instead of midpoints reddens two; comparing only one neighbour in
 `isNoOpDrop` reddens "requires both neighbours to match" — that
 mutation initially **survived**, which is why that test exists.
+
+### K8 · A board column is a group of tickets, and reordering inside one works across statuses
+
+**Date:** 2026-08-30 · **Ken's ruling — an agent may not revert this.**
+
+**The situation.** `reorderBoardRank` sets `const column =
+moved.frontmatter.status` (`reorder.ts:212`) and drops every task whose
+status differs. The variable is named `column` and holds a *status*.
+When a column was one status those meant the same thing;
+`workflow.boards` made them different, and this line was never updated.
+
+So dragging a `blocked` card above an `in_progress` card in the same
+column is refused: core looks for the anchor among cards sharing the
+dragged card's status, does not find it, and declines. The optimistic
+UI has already moved the card, so **the user sees the card move and the
+write never lands** — the board silently discards the action.
+
+**Ken's model, stated in his own words:** "if each column = a status, i
+want people to be able to drag cards across columns to update their
+status. then i want to allow re-ordering within the column (even across
+status) ... its just a group of tickets, no?" And on being shown the
+mechanism: "that sounds like a bug we need to fix then."
+
+**Ruling: it is a bug and it gets fixed.** A column is a group of
+tickets. Reordering within a column ranks against every card in that
+column regardless of status.
+
+**How** (recommended, pending only if a better shape emerges in build):
+the caller passes the column's status set; core ranks within whatever
+set it is handed. `ReorderBoardRankOptions` gains an optional
+`columnStatuses?: readonly string[]`, defaulting to the moved task's own
+status — so the CLI and MCP, which have no board config, behave exactly
+as today and nothing existing breaks.
+
+Rejected: core loading `workflow.boards` itself (presentation config
+reaching into a shared write path — a CLI-only user's `board-rerank`
+would silently depend on a `boards:` block for a UI they never open).
+Rejected: dropping the status filter entirely — that is precisely the
+SPR-C2 bug, where a card could be handed a rank interpolated between
+two cards in a column the user is not even looking at.
+
+**Consequence.** SPR-C2's premise comment ("A board column is a status")
+is false and its two tests assert the narrow rule. Per CLAUDE.md, a fix
+that requires editing a green test means that test was asserting the
+bug — to be said plainly in the commit message. The SPR-C2 *defect*
+stays fixed: a column is still the boundary; only the definition of
+"column" changes.
+
+**Unblocks** BRD-12, currently `test.fixme` in `flow-board.spec.ts`.
+
+### K9 · A card's status is always visible in a multi-status column
+
+**Date:** 2026-08-30 · **Ken's ruling — an agent may not revert this.**
+
+**Ruling: "always show status in the card."** Where a board column
+collapses several statuses, the card's status is shown regardless of
+whether `card_layout` lists it. A column that mixes statuses is
+otherwise an undifferentiated pile, and reordering across statuses is
+guesswork without it.
+
+Scope: this overrides `card_layout` only for columns that actually
+collapse more than one status. A single-status column honours
+`card_layout` as configured, since the column header already states the
+status.
+
+**Note.** BRD-13 is unaffected and already built: a card dropped into a
+multi-status column adopts the column's **first** listed status,
+deterministically — the user controls the default by ordering the
+`statuses` array.
