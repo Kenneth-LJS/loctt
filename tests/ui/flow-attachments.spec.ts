@@ -21,7 +21,7 @@
  * because "untouched" is not the same as "still present".
  */
 
-import { mkdtemp, readdir, readFile, truncate, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, truncate, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -717,4 +717,42 @@ test("REL-50: downloading a since-deleted attachment names the file rather than 
   expect(res.status()).not.toBe(200);
   const body = await res.text();
   expect(body).toContain("gone.txt");
+});
+
+// @verifies REL-49
+test("REL-49: an unreadable attachments directory degrades only that section", async ({
+  page,
+  tracker,
+}) => {
+  const [key] = await tracker.seed([{ title: "Task with attachments" }]);
+  if (key === undefined) throw new Error("seed returned no key");
+  // A real attachment, so the directory is non-empty. The failure must
+  // come from the read, not from there being nothing to read: an empty
+  // directory and an unreadable one are exactly what this case is
+  // about telling apart.
+  await page.goto(`${tracker.baseURL}/tasks/${key}`);
+  await drop(page, [await file("drop.txt", "hello")]);
+  await expect.poll(() => stored(tracker.root, key)).toEqual(["drop.txt"]);
+
+  const dir = path.join(await taskDir(tracker.root, key), "attachments");
+  await chmod(dir, 0o000);
+  try {
+    // Reload so the page re-reads the now-unreadable directory.
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+
+    // The section names the failure. Asserting the error is present is
+    // not enough on its own — the bug this covers rendered the *empty*
+    // state, which is a specific false claim about the disk, so the
+    // absence of that exact string is the load-bearing half.
+    await expect(page.getByTestId("attachments-error")).toBeVisible();
+    await expect(page.getByTestId("attachments-empty")).toHaveCount(0);
+
+    // Degraded *only*: the rest of the task still renders. Without
+    // this the case is satisfied by a page that error-states wholesale.
+    await expect(page.getByRole("heading", { name: "Task with attachments", level: 1 }))
+      .toBeVisible();
+  } finally {
+    // Restore, or the fixture cleanup cannot remove the directory.
+    await chmod(dir, 0o755);
+  }
 });
