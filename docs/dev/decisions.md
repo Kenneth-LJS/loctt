@@ -2357,16 +2357,6 @@ column".
 column being reordered, which is what both `{kind: "end"}` and the
 rebalance need.
 
-Core cannot derive that set — the grouping lives in `workflow.boards`,
-which is presentation config. So the **caller passes the column's peer
-set (or the status set defining it)**, and core ranks within whatever it
-is handed. A caller with no board config (the CLI, MCP) passes the moved
-task's own status and behaves exactly as today.
-
-This is close to the parameter I first proposed, but for the right
-reason: not "widen the filter to match more cases", but "the column is
-the scope, and only the caller knows what a column is".
-
 **Ken: do it the clean way — no local duplicate.** "we havent published
 yet, nobody is using this model yet." So this is not a
 backwards-compatible parameter bolted onto a shipped API; it is a
@@ -2413,6 +2403,50 @@ symptom was a rank interpolated against cards *not adjacent on screen*,
 so the card did not land where the user dropped it. Ranking between the
 caller's two anchors fixes that directly, and more precisely than a
 status filter ever did. The filter was never what made it correct.
+
+**Amended after an independent (Fable) review, before any build.** The
+review is at `.claude/k8-model-review.md`. It confirmed the model — each
+column its own sequence, columns derived in core — and found three things
+wrong with the *mechanism* I specified. All three verified independently:
+
+1. **"Route both paths through `reorderBoardRank`" cannot be executed as
+   written.** That function throws when given `before` *and* `after`
+   (`reorder.ts:198-200`), but `handleBoardMove` deliberately passes both
+   — BRD-32 requires the two neighbours the user actually saw at release
+   — and interpolates between them as bounds (`server.ts:2377-2388`).
+   It also writes only `board_rank`, so routing a cross-column drop
+   through it would lose the atomic status+rank write BRD-41 and XS-9
+   mandate.
+
+   **The consolidation target is therefore a new core operation**, not
+   the existing one: a `boardMove` that takes an optional destination
+   status, accepts both anchors, validates them against the *destination*
+   column, and writes atomically through the `setFields` mechanism. A
+   mechanism change, not a model change — the duplication still goes.
+
+2. **Duplicate ranks become normal, and the write path crashes on them.**
+   Every column's first card gets `INITIAL = "u"` (`lexorank.ts:33`), so
+   under per-column sequences two columns' first cards share a rank.
+   `between("u","u")` throws a **plain `Error`** (`lexorank.ts:75-78`),
+   not a `ReorderError` — and the server's catch tests
+   `instanceof ReorderError` (`server.ts:2411`), so it escapes as a 500.
+   Rendering already tolerates duplicates (BRD-29's tiebreak chain); the
+   write path must too. **This would fire in ordinary use**, not at an
+   edge.
+
+3. **The SPR-C2 tests will probably stay green, which is a trap.** Their
+   fixture has no `boards` block, so the 1:1 fallback still refuses
+   cross-status anchors and the tests pass unchanged. The actual
+   behaviour change — cross-status anchors accepted *inside one
+   configured column* — has no core test today. One must be written and
+   **shown to fail** before the fix, or the change ships unverified.
+
+Also: a task with **no status** belongs to no column under
+`deriveColumns`, yet core's rebalance tests rank exactly such tasks. The
+build must define a pseudo-column for them or those tests break. And
+`columns.ts`'s header comment records an explicit rationale *against*
+living in core — it must be rewritten in the same commit, not left
+contradicting the code.
 
 **Unblocks** BRD-12, currently `test.fixme` in `flow-board.spec.ts`.
 
