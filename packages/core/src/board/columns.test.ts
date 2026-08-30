@@ -7,7 +7,7 @@ import {
   ORPHAN_COLUMN_ID,
   sortColumn,
   UNCOVERED_COLUMN_ID,
-} from "./columns.ts";
+} from "./columns.js";
 
 /**
  * Column derivation is the board's whole data model, so it is tested

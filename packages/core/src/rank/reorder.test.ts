@@ -319,12 +319,21 @@ describe("reorderBoardRank", () => {
   /**
    * @verifies SPR-C2
    *
-   * A board column is a status, and a rank only means anything within
-   * one. `peers` was built from every ranked task in the tracker with no
-   * status filter, so a `backlog` task could be handed a rank
-   * interpolated between two `in_progress` tasks — a position that means
-   * nothing in the column it actually renders in. The docstring claimed
-   * "within its column" in three places; the code never did it.
+   * A rank only means anything within one column. `peers` was built
+   * from every ranked task in the tracker with no filter at all, so a
+   * `backlog` task could be handed a rank interpolated between two
+   * `in_progress` tasks — a position that means nothing in the column
+   * it actually renders in. The docstring claimed "within its column"
+   * in three places; the code never did it.
+   *
+   * **The premise "a board column is a status" was false, and K8
+   * removed it.** These tests survive unchanged because their fixture
+   * has no `boards` block: under the 1:1 fallback `backlog` and
+   * `in_progress` genuinely *are* different columns, so the refusal is
+   * still correct here and this block still guards SPR-C2. What
+   * changed is only what "another column" means — see the
+   * `boards`-configured tests below, where two statuses share one
+   * column and an anchor across them is now accepted.
    */
   describe("column scoping", () => {
     /** Moves `key` into `status`, so the fixture has two real columns. */
@@ -411,6 +420,100 @@ describe("reorderBoardRank", () => {
       expect(entry?.field).toBe("board_rank");
       expect(entry?.after).toBe(moved.frontmatter.board_rank);
     });
+  });
+});
+
+/**
+ * @verifies BRD-12
+ *
+ * K8: a board column is a group of tickets, not a status. When
+ * `workflow.boards` collapses several statuses into one column, the
+ * cards in that column interleave freely and a reorder ranks against
+ * every card in the column regardless of status.
+ *
+ * Before K8, `reorderBoardRank` scoped `peers` and its anchor check by
+ * `moved.frontmatter.status`. Dragging a `blocked` card above an
+ * `in_progress` card in the same rendered column was refused with
+ * "Board rank is per-column — move the task to that status first",
+ * even though the two cards sat next to each other on screen. The
+ * optimistic UI had already moved the card, so the user saw the card
+ * move and the write never landed.
+ */
+describe("reorderBoardRank — a configured column collapses several statuses", () => {
+  /** Adds a `boards` block collapsing `in_progress` + `blocked`. */
+  async function configureBoard(): Promise<void> {
+    const { loadWorkflowConfig } = await import("../config/workflow.js");
+    const { saveWorkflowConfig } = await import("../config/workflow-write.js");
+    const wf = await loadWorkflowConfig(locttDir);
+    await saveWorkflowConfig(locttDir, {
+      ...wf,
+      statuses: [
+        ...wf.statuses,
+        { key: "blocked", label: "Blocked", category: "active" },
+      ],
+      boards: {
+        columns: [
+          { key: "todo", label: "To do", statuses: ["backlog"] },
+          { key: "in_flight", label: "In flight", statuses: ["in_progress", "blocked"] },
+          { key: "shipped", label: "Shipped", statuses: ["done", "wont_do"] },
+        ],
+      },
+    });
+  }
+
+  async function setStatus(key: string, status: string): Promise<void> {
+    const { setField } = await import("../task/update.js");
+    const task = await lookupByKey(locttDir, key);
+    await setField({ locttDir, taskId: task.frontmatter.id, field: "status", value: status });
+  }
+
+  it("ranks a blocked card against an in_progress anchor in the same column", async () => {
+    await configureBoard();
+    const [k1, k2] = await makeTasks(2) as [string, string];
+    await setStatus(k1, "blocked");
+    await setStatus(k2, "in_progress");
+    await reorderBoardRank({ locttDir, taskRef: k2 });
+
+    // The K8 behaviour: both cards render in the `In flight` column, so
+    // k2 is a legitimate anchor for k1 even though their statuses
+    // differ. This threw a ReorderError before K8.
+    await reorderBoardRank({ locttDir, taskRef: k1, after: k2 });
+
+    const t1 = await lookupByKey(locttDir, k1);
+    const t2 = await lookupByKey(locttDir, k2);
+    // BRD-12: only `board_rank` is written — the status stays `blocked`.
+    expect(t1.frontmatter.status).toBe("blocked");
+    expect(t1.frontmatter.board_rank).toBeDefined();
+    expect(t2.frontmatter.board_rank! < t1.frontmatter.board_rank!).toBe(true);
+  });
+
+  it("still refuses an anchor from a different column", async () => {
+    await configureBoard();
+    const [k1, k2] = await makeTasks(2) as [string, string];
+    await setStatus(k1, "blocked");
+    await setStatus(k2, "backlog");
+    await reorderBoardRank({ locttDir, taskRef: k2 });
+
+    const err = await reorderBoardRank({ locttDir, taskRef: k1, after: k2 })
+      .catch((e: unknown) => e) as Error;
+
+    expect(err).toBeInstanceOf(ReorderError);
+  });
+
+  it("puts a new card at the bottom of its column, not the tracker", async () => {
+    await configureBoard();
+    const [k1, k2] = await makeTasks(2) as [string, string];
+    // A ranked card in a *different* column must not push the new
+    // card's rank past it — each column is its own sequence, so the
+    // first card of an empty column lands on INITIAL.
+    await setStatus(k1, "backlog");
+    await setStatus(k2, "blocked");
+    await reorderBoardRank({ locttDir, taskRef: k1 });
+
+    await reorderBoardRank({ locttDir, taskRef: k2 });
+
+    const t2 = await lookupByKey(locttDir, k2);
+    expect(t2.frontmatter.board_rank).toBe(INITIAL);
   });
 });
 
@@ -603,5 +706,79 @@ describe("reorderBoardRank — rebalance", () => {
       (moved.frontmatter.board_rank as string)
         < (first.frontmatter.board_rank as string),
     ).toBe(true);
+  });
+});
+
+/**
+ * @verifies BRD-29, BRD-25
+ *
+ * K8 makes duplicate ranks a *normal* condition, not a hand-edit.
+ * Every column's first card gets `INITIAL` ("u"), so under per-column
+ * sequences two columns' first cards legitimately share a rank — and
+ * a config change that merges those columns puts both in one column.
+ *
+ * `between("u", "u")` throws a plain `Error`, not a `ReorderError`, so
+ * it escapes the server's `instanceof ReorderError` catch and becomes
+ * a 500. Rendering already tolerates duplicates (BRD-29's tiebreak
+ * chain ends at `id`); the write path must too.
+ */
+describe("reorderBoardRank — duplicate peer ranks", () => {
+  async function setStatus(key: string, status: string): Promise<void> {
+    const { setField } = await import("../task/update.js");
+    const task = await lookupByKey(locttDir, key);
+    await setField({ locttDir, taskId: task.frontmatter.id, field: "status", value: status });
+  }
+
+  /** Writes a raw `board_rank`, bypassing the auto-managed guard. */
+  async function forceRank(key: string, rank: string): Promise<void> {
+    const { writeTask } = await import("../task/io.js");
+    const task = await lookupByKey(locttDir, key);
+    await writeTask(locttDir, task.frontmatter.id, {
+      ...task,
+      frontmatter: { ...task.frontmatter, board_rank: rank },
+    });
+  }
+
+  it("does not throw when the anchor's rank is shared by another peer", async () => {
+    const [k1, k2, k3, k4] = await makeTasks(4) as [string, string, string, string];
+    for (const k of [k1, k2, k3, k4]) await setStatus(k, "backlog");
+    // THREE peers share the rank, deliberately. With only two, the
+    // moved card is excluded from `peers` and one duplicate remains,
+    // so `indexOf` still finds a distinct successor and the bug hides.
+    // Reproduced on the CLI: with the guard reverted this exact shape
+    // fails with `between: lower bound must be less than upper bound
+    // (u >= u)` — a plain Error, which the server's `instanceof
+    // ReorderError` catch misses, so it escapes as a 500.
+    await forceRank(k1, INITIAL);
+    await forceRank(k2, INITIAL);
+    await forceRank(k4, INITIAL);
+
+    // Dropping k3 after k1 must produce a real rank, not a 500.
+    const result = await reorderBoardRank({ locttDir, taskRef: k3, after: k1 });
+
+    expect(result.rank).toBeDefined();
+    const t3 = await lookupByKey(locttDir, k3);
+    expect(t3.frontmatter.board_rank).toBe(result.rank);
+    // It sits after the duplicated rank, not on top of it.
+    expect(result.rank > INITIAL).toBe(true);
+  });
+
+  it("does not throw when dropping before a duplicated anchor", async () => {
+    const [k1, k2, k3, k4] = await makeTasks(4) as [string, string, string, string];
+    for (const k of [k1, k2, k3, k4]) await setStatus(k, "backlog");
+    // Three cards sharing a rank. `indexOf` picks the first copy, so
+    // the *lower* neighbour of the anchor is itself a duplicate — the
+    // case the "before" branch's widening exists for. With only two
+    // duplicates the lower bound is MIN and the guard never bites.
+    await forceRank(k1, "m");
+    await forceRank(k2, INITIAL);
+    await forceRank(k3, INITIAL);
+    await forceRank(k4, INITIAL);
+
+    // Anchor on the *last* duplicate: its lower neighbour shares its
+    // rank, so an unwidened lower bound is `between("u", "u")`.
+    const result = await reorderBoardRank({ locttDir, taskRef: k1, before: k4 });
+
+    expect(result.rank < INITIAL).toBe(true);
   });
 });

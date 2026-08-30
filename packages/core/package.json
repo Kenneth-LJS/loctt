@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./board/columns.js": {
+      "types": "./dist/board/columns.d.ts",
+      "import": "./dist/board/columns.js"
     }
   },
   "scripts": {

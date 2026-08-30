@@ -1,10 +1,12 @@
 import type { Task, TaskRelationship } from "@loctt/contracts";
 
+import { loadWorkflowConfig } from "../config/workflow.js";
 import { withStateLock } from "../state/index.js";
 import { appendHistory } from "../task/history.js";
 import { writeTask } from "../task/io.js";
 import { loadAllTasks } from "../task/load-all.js";
 import { lookupTask } from "../task/lookup.js";
+import { columnStatusesFor, STATUSLESS_COLUMN } from "./column-scope.js";
 import {
   between,
   evenlySpacedRanks,
@@ -203,16 +205,31 @@ export async function reorderBoardRank(
     const moved = await lookupTask(opts.locttDir, opts.taskRef);
     const priorBoardRank = moved.frontmatter.board_rank;
     const allTasks = await loadAllTasks(opts.locttDir);
-    // A board column is a status, and a rank is only meaningful within
-    // one. Peers used to be *every* ranked task in the tracker, so a
-    // `todo` task could be handed a rank interpolated between two
-    // `doing` tasks — a position that means nothing in the column it
-    // actually renders in (SPR-C2). The docstring said "within its
-    // column" in three places; the code never did it.
-    const column = moved.frontmatter.status;
+    const workflow = await loadWorkflowConfig(opts.locttDir);
+    // K8: a board column is a *group of tickets*, not a status. Ranks
+    // are only ever compared within one column, and inside a column
+    // cards of different statuses interleave freely — the ordering
+    // knows nothing about status.
+    //
+    // This line used to read `const column = moved.frontmatter.status`.
+    // The variable was named `column` and held a status; when a column
+    // was one status those meant the same thing, and `workflow.boards`
+    // made them different. The result was that dragging a `blocked`
+    // card above an `in_progress` card in the same rendered column was
+    // refused, while the optimistic UI had already moved it — the user
+    // saw the card move and the write never landed (BRD-12).
+    //
+    // With no `boards` block `columnStatuses` is the single status, so
+    // behaviour is byte-for-byte what it was.
+    const columnStatuses = columnStatusesFor(workflow, allTasks, moved.frontmatter.status);
+    const inColumn = (status: string | undefined): boolean =>
+      status === undefined
+        ? columnStatuses === STATUSLESS_COLUMN
+        : columnStatuses !== STATUSLESS_COLUMN && columnStatuses.has(status);
+
     const peers = allTasks.flatMap(t => {
       if (t.frontmatter.id === moved.frontmatter.id) return [];
-      if (t.frontmatter.status !== column) return [];
+      if (!inColumn(t.frontmatter.status)) return [];
       const rank = t.frontmatter.board_rank;
       if (rank === undefined) return [];
       return [{ id: t.frontmatter.id, rank }];
@@ -223,16 +240,20 @@ export async function reorderBoardRank(
      *
      * Silently accepting it produced a rank derived from tasks the user
      * cannot see next to the one they moved — the drag looked like it
-     * worked and the card landed somewhere arbitrary.
+     * worked and the card landed somewhere arbitrary (SPR-C2). The
+     * check is by *column* rather than status under K8, so an anchor
+     * that shares the moved card's column is accepted whatever its
+     * status.
      */
     const anchorRank = async (ref: string, label: string): Promise<string | undefined> => {
       const t = await lookupTask(opts.locttDir, ref);
-      if (t.frontmatter.status !== column) {
+      if (!inColumn(t.frontmatter.status)) {
         throw new ReorderError(
           `cannot rank ${label} '${ref}': it is in status `
-          + `'${t.frontmatter.status ?? "(none)"}' but ${opts.taskRef} is in `
-          + `'${column ?? "(none)"}'. Board rank is per-column — move the task `
-          + `to that status first, or pick an anchor in its own column.`,
+          + `'${t.frontmatter.status ?? "(none)"}', a different board column from `
+          + `${opts.taskRef} in '${moved.frontmatter.status ?? "(none)"}'. Board rank `
+          + `is per-column — pick an anchor from the same column, or move the task `
+          + `to that column first.`,
         );
       }
       return t.frontmatter.board_rank;
@@ -362,12 +383,19 @@ function computeNewRank(opts: ComputeNewRankOptions): string {
       if (first === undefined) return INITIAL;
       return between(MIN, first);
     }
+    // `indexOf` finds the *first* copy, which is what "before" wants:
+    // the new rank goes below every card sharing the anchor's rank.
     const anchorIdx = ranked.indexOf(anchor);
     if (anchorIdx === -1) {
       // Anchor isn't in the peer list (e.g. anchor itself is the
       // moved item — impossible by callers, but guard anyway).
       return between(MIN, anchor);
     }
+    // No duplicate-widening is needed on this branch: `indexOf`
+    // returns the *first* copy of the anchor's rank, so the element
+    // below it is strictly smaller by construction. (The "after"
+    // branch does need it — `lastIndexOf` alone would leave the upper
+    // bound equal to the anchor when duplicates run to the end.)
     const lower = anchorIdx === 0 ? MIN : ranked[anchorIdx - 1] ?? MIN;
     return between(lower, anchor);
   }
@@ -378,11 +406,22 @@ function computeNewRank(opts: ComputeNewRankOptions): string {
     if (last === undefined) return INITIAL;
     return between(last, MAX);
   }
-  const anchorIdx = ranked.indexOf(anchor);
+  // `lastIndexOf` for "after": the new rank goes above every card
+  // sharing the anchor's rank, mirroring the "before" case.
+  const anchorIdx = ranked.lastIndexOf(anchor);
   if (anchorIdx === -1) {
     return between(anchor, MAX);
   }
-  const upper = anchorIdx === ranked.length - 1 ? MAX : ranked[anchorIdx + 1] ?? MAX;
+  // `lastIndexOf` is what makes the upper bound safe when ranks
+  // duplicate: it lands on the final copy, so `ranked[anchorIdx + 1]`
+  // is strictly greater than the anchor by construction and `between`
+  // cannot throw. Under K8 duplicates are a normal condition — every
+  // column's first card gets INITIAL, so a config change merging two
+  // columns puts two "u"s in one sequence — and the throw is a plain
+  // Error that escapes the server's `instanceof ReorderError` catch as
+  // a 500.
+  const upperIdx = anchorIdx + 1;
+  const upper = upperIdx >= ranked.length ? MAX : ranked[upperIdx] ?? MAX;
   return between(anchor, upper);
 }
 

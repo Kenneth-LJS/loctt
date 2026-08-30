@@ -46,7 +46,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "reorder_board",
-    description: "Reorder a task's position on the board (its `board_rank`). Pass exactly one of `before` or `after` to position the task relative to a sibling, or neither to move it to the end of its column. The board column is implicit — the task stays in its current status; this only changes its order within that column.",
+    description: "Reorder a task's position on the board (its `board_rank`). Pass exactly one of `before` or `after` to position the task relative to a sibling, or neither to move it to the end of its column. The board column is implicit — the task stays in its current status; this only changes its order within that column. A column is a group of tickets, not a status: where `workflow.yaml`'s `boards` block collapses several statuses into one column, `before`/`after` accept any task in that column whatever its status. Each column is its own sequence, so \"the end\" means the end of that column.",
     inputSchema: {
       ref: z.string().describe("Task key or ID"),
       before: z.string().optional().describe("Sibling task to position before"),

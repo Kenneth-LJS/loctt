@@ -1,3 +1,5 @@
+export type { BoardMoveOptions, BoardMoveResult } from "./board-move.js";
+export { boardMove } from "./board-move.js";
 export {
   between,
   compare,

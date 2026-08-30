@@ -718,6 +718,8 @@ Returns JSON `{ sprintKey, start, end, unit, unitLabel?, initialTotal, series, i
 
 Reorder a task's position on the board (its `board_rank`). The board column is implicit — the task stays in its current status; this only changes its order within that column. Pass exactly one of `before` or `after` to position relative to a sibling, or neither to move to the end. **`before` and `after` are mutually exclusive.**
 
+A column is a *group of tickets*, not a status. Where `workflow.yaml`'s `boards` block collapses several statuses into one column, ranks can cross statuses within that column: `before` / `after` accept any task in the same column whatever its status, and cards of different statuses interleave freely. With no `boards` block a column is one status. An anchor from a different column is refused. Each column is its own sequence, so "the end" means the end of that column, not of the tracker.
+
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `ref` | string | yes | Task key or ID being moved |

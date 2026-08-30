@@ -87,6 +87,15 @@ export const TaskFrontmatterSchema = z.object({
    * Lexorank string for manual drag-reorder within a board column.
    * Independent from relationship rank. Cards without `board_rank`
    * sort below ranked ones, fallback to created.
+   *
+   * "Within a board column" became true with K8. It was aspirational
+   * before: core scoped the rank per *status*, so on a board whose
+   * `boards` block collapsed several statuses into one column, the
+   * ordering the board drew was one the write path would not produce.
+   * Each column is now its own sequence, and ranks are only ever
+   * compared within one — which is why two columns' first cards
+   * legitimately share the value `"u"`, and why comparing ranks
+   * across columns means nothing.
    */
   board_rank: z.string().optional(),
   // .passthrough(): unknown frontmatter keys are preserved on

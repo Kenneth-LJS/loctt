@@ -1,7 +1,7 @@
 import type { UserSettings } from "@loctt/contracts";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_CARD_LAYOUT, resolveCardLayout } from "./cardLayout.ts";
+import { DEFAULT_CARD_LAYOUT, resolveCardLayout, resolveColumnCardLayout } from "./cardLayout.ts";
 import { HIDDEN_COLUMNS_KEY, hiddenColumnsOf, withHiddenColumns } from "./chipSettings.ts";
 
 describe("resolveCardLayout", () => {
@@ -98,5 +98,33 @@ describe("chip visibility settings", () => {
     expect(hiddenColumnsOf({ [HIDDEN_COLUMNS_KEY]: "done" } as unknown as UserSettings)).toEqual([]);
     expect(hiddenColumnsOf({ [HIDDEN_COLUMNS_KEY]: [1, "done"] } as unknown as UserSettings))
       .toEqual(["done"]);
+  });
+});
+
+/**
+ * @verifies K9
+ *
+ * A card's status is always visible in a multi-status column. Without
+ * it, a column collapsing `in_progress` and `blocked` is an
+ * undifferentiated pile, and K8's cross-status reordering is guesswork.
+ */
+describe("resolveColumnCardLayout — K9", () => {
+  it("shows status in a column that collapses several statuses", () => {
+    const layout = resolveColumnCardLayout(["key", "priority"], ["in_progress", "blocked"]);
+    expect(layout).toContain("status");
+    // It leads: the status is what the user is scanning for.
+    expect(layout[0]).toBe("status");
+  });
+
+  it("leaves a single-status column's layout alone", () => {
+    const layout = resolveColumnCardLayout(["key", "priority"], ["in_progress"]);
+    expect(layout).not.toContain("status");
+    expect(layout).toEqual(["key", "priority"]);
+  });
+
+  it("does not duplicate a status the layout already lists", () => {
+    const layout = resolveColumnCardLayout(["status", "key"], ["in_progress", "blocked"]);
+    expect(layout.filter(f => f === "status")).toHaveLength(1);
+    expect(layout).toEqual(["status", "key"]);
   });
 });

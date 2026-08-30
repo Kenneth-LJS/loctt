@@ -1681,17 +1681,13 @@ test.describe("BRD — board view", () => {
 
   // @verifies BRD-12
   //
-  // KNOWN FAILURE — see docs/dev/known-gaps.md, "BRD-12 cannot be
-  // satisfied". The payload half of the case holds (exactly one
-  // request, no `status` key, status stays `blocked`), but core's
-  // `reorderBoardRank` scopes board rank per *status* and refuses an
-  // anchor in a sibling status, so the rank never lands. Fixing that
-  // changes CLI and MCP behaviour and contradicts the recorded SPR-C2
-  // decision, so it is reported rather than decided here.
-  //
-  // `fixme` rather than `skip`: the test runs and is expected to fail,
-  // so it starts passing — loudly — the moment core is fixed.
-  test.fixme("BRD-12: reordering inside a multi-status column keeps the card's status", async ({
+  // Was `test.fixme` until K8. Core's `reorderBoardRank` scoped board
+  // rank per *status* and refused an anchor in a sibling status, so
+  // the rank never landed even though the payload half of the case
+  // held. K8 makes a column a group of tickets: the anchor check is by
+  // column, and cards of different statuses interleave freely inside
+  // one.
+  test("BRD-12: reordering inside a multi-status column keeps the card's status", async ({
     page,
     tracker,
   }) => {
