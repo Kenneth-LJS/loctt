@@ -2367,6 +2367,42 @@ This is close to the parameter I first proposed, but for the right
 reason: not "widen the filter to match more cases", but "the column is
 the scope, and only the caller knows what a column is".
 
+**Ken: do it the clean way — no local duplicate.** "we havent published
+yet, nobody is using this model yet." So this is not a
+backwards-compatible parameter bolted onto a shipped API; it is a
+correction to a model that no user depends on.
+
+**Two implementations of rank interpolation exist today, and one goes.**
+`handleBoardMove` (`server.ts:2307`) computes the rank *itself*, in the
+server, with its own comment explaining why: "`reorderBoardRank` derives
+a card's peers from the status the task *currently* has — correct for an
+intra-column reorder, wrong for this one." The M3.2 agent hit exactly the
+wall this ruling is about and routed around it rather than fixing core.
+
+That left the board with two paths — cross-column drops computing rank in
+the server, intra-column reorders calling core — and two implementations
+of "interpolate between two ranks" that will drift: one gets a rebalance
+or boundary fix the other does not. Ken's ruling is to consolidate: fix
+core, then **delete** the server's local computation and route both paths
+through `reorderBoardRank`. A net simplification, reachable only because
+core is being fixed rather than worked around a second time.
+
+**Where the column grouping comes from.** `deriveColumns`
+(`apps/web/src/client/board/columns.ts:70`) takes a `WorkflowConfig` and
+tasks and returns the columns. Measured: it imports **only types** from
+`@loctt/contracts` and touches no React, `window` or `document`. It is
+pure logic that happens to live in the client because that is where it
+was first needed — not a presentation concern.
+
+So it moves to core rather than becoming a parameter the caller must
+thread through. `reorderBoardRank` derives the moved task's column the
+same way the board renders it, and every surface — web, CLI, MCP — agrees
+on what a column is without any of them passing extra arguments. This
+also answers the objection recorded earlier against core reading
+`workflow.boards`: the concern was presentation config reaching a write
+path, but column grouping is not presentation, and a CLI user reordering
+a card *should* get the same column semantics the board shows.
+
 **Consequence.** SPR-C2's premise comment ("A board column is a status")
 is false and its two tests assert the narrow rule. Per CLAUDE.md, a fix
 that requires editing a green test means that test was asserting the
