@@ -161,6 +161,7 @@ import {
   setConfigValue,
   setDefaultProject,
   setField,
+  setFields,
   setProjectPrefix,
   SprintError,
   sprintProgress,
@@ -832,6 +833,7 @@ const TASK_ATTACHMENTS_RE = /^\/api\/tasks\/([^/]+)\/attachments$/;
 const TASK_ATTACHMENT_ITEM_RE = /^\/api\/tasks\/([^/]+)\/attachments\/([^/]+)$/;
 const TASK_BOARD_RERANK_RE = /^\/api\/tasks\/([^/]+)\/board-rerank$/;
 const TASK_BOARD_MOVE_RE = /^\/api\/tasks\/([^/]+)\/board-move$/;
+const TASK_SET_DATES_RE = /^\/api\/tasks\/([^/]+)\/set-dates$/;
 
 const TASK_RELATIONSHIP_RERANK_RE = /^\/api\/tasks\/([^/]+)\/relationships\/([^/]+)\/([^/]+)\/rerank$/;
 const TASK_BODY_RE = /^\/api\/tasks\/([^/]+)\/body$/;
@@ -2392,6 +2394,150 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
+
+  /**
+   * `POST /api/tasks/:ref/set-dates` — the timeline drag's write verb
+   * (TML-9, TML-10, TML-11).
+   *
+   * ## Why a route at all, when `/set` exists
+   *
+   * TML-11 is explicit: a body drag sends both dates "in a **single**
+   * atomic multi-field write, not two sequential calls". `/set` is
+   * singular by construction — one `field`, one `value`, one
+   * `setField` — so a body drag routed through it is two requests with
+   * a window between them. A crash in that window leaves a task whose
+   * `start_date` is after its `due_date`, which is precisely the
+   * anomaly TML-18 exists to render. TML-43 names the same failure
+   * from the other side: "a half-applied shift that silently changes
+   * the task's duration is the specific failure this case exists to
+   * catch".
+   *
+   * `setFields` (core) applies a change set under one state lock and
+   * appends one history batch, so both dates land or neither does.
+   * This is `handleBoardMove`'s reasoning applied to the other pair of
+   * fields that must move together.
+   *
+   * ## Why no `allowAutoManaged` grant
+   *
+   * `board_rank` needed one because it is in `AUTO_MANAGED_FIELDS`.
+   * `start_date` and `due_date` are `BUILTIN_OPTIONAL_FIELDS` — user
+   * fields the CLI's `loctt set` already writes — so the default
+   * refusal does not apply to them and no grant is passed. Checked
+   * rather than assumed: passing a grant we do not need would widen
+   * this route to fields it has no business writing.
+   *
+   * ## Why the route names its own fields
+   *
+   * The payload is `{ start_date?, due_date? }`, not a generic
+   * `changes[]`. A general multi-field write endpoint is a larger
+   * surface than any case asks for, and it would let a client send
+   * `status` and `title` through a path whose error envelopes are
+   * written about dates. Each of TML-9/10/11 is one of the three
+   * shapes this accepts: due only, start only, both.
+   *
+   * TML-9's first bullet ("`start_date` is **not included** in the
+   * payload") and TML-10's ("only `start_date` is written; `due_date`
+   * is untouched") are held by the omitted key never reaching the
+   * change set — an absent key is absent, not sent at its current
+   * value. Resending the unchanged date would clobber a concurrent
+   * CLI edit with a value the browser read minutes ago, the same
+   * hazard XS-9 names for `status` on a rerank.
+   */
+  const handleSetDates: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const ref = requireValidRef(captures, res, 0, req);
+    if (ref === null) return;
+    const request = await parseJsonBody<{
+      start_date?: unknown;
+      due_date?: unknown;
+    }>(req, res);
+
+    const changes: { field: string; value: unknown }[] = [];
+    for (const field of ["start_date", "due_date"] as const) {
+      if (!Object.hasOwn(request, field)) continue;
+      const value = request[field];
+      if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        error(
+          res,
+          `"${field}" must be a date in YYYY-MM-DD form.`,
+          400,
+          { ...REJECTED_WRITE, field },
+        );
+        return;
+      }
+      changes.push({ field, value });
+    }
+
+    if (changes.length === 0) {
+      error(res, "No dates were given to change.", 400, REJECTED_WRITE);
+      return;
+    }
+
+    // TML-45: "the write is rejected ... and the reason names the
+    // constraint: start cannot be after due", and "nothing is written
+    // to disk". Checked here, before `setFields`, so the rejection
+    // happens without a partial write — and against the *effective*
+    // pair, which for a single-edge drag means the stored value of the
+    // date this request does not carry. A left-edge drag past the due
+    // date sends only `start_date`, so comparing the two sent values
+    // would find nothing wrong and write the anomaly.
+    const current = await lookupTask(locttDir, ref);
+    const sent = new Map(changes.map(c => [c.field, c.value as string]));
+    const start = sent.get("start_date") ?? current.frontmatter.start_date;
+    const due = sent.get("due_date") ?? current.frontmatter.due_date;
+    if (
+      typeof start === "string" && typeof due === "string"
+      && start.slice(0, 10) > due.slice(0, 10)
+    ) {
+      error(
+        res,
+        `The start date (${start.slice(0, 10)}) cannot be after the due date `
+        + `(${due.slice(0, 10)}).`,
+        400,
+        {
+          ...REJECTED_WRITE,
+          field: sent.has("start_date") ? "start_date" : "due_date",
+        },
+      );
+      return;
+    }
+
+    try {
+      const wfConfig = await loadWorkflowConfig(locttDir);
+      const archivedGuard = await loadArchivedGuardConfigs(locttDir);
+      const updated = await setFields({
+        locttDir,
+        taskId: current.frontmatter.id,
+        changes,
+        workflowConfig: wfConfig,
+        archivedGuard,
+      });
+      json(res, projectTaskFrontmatter(updated.frontmatter));
+    } catch (err) {
+      // TML-43: the write failed, so *neither* date was written —
+      // `setFields` is atomic. The client reverts the bar to its
+      // original geometry on this and says both dates are unchanged.
+      if (err instanceof LocttError) {
+        const envelope = err.toEnvelope();
+        error(res, envelope.message, 400, {
+          ...envelope,
+          field: envelope.field ?? changes[0]?.field ?? "due_date",
+          recovery: envelope.recovery ?? { kind: "retry" },
+        });
+        return;
+      }
+      if (err instanceof ZodError) {
+        error(res, zodIssueSummary(err), 400, {
+          code: "validation_failed",
+          field: changes[0]?.field ?? "due_date",
+          data_state: "not_saved",
+          recovery: { kind: "retry" },
+        });
+        return;
+      }
+      throw err;
+    }
+  };
+
   const handleRelationshipRerank: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const sourceRef = captures[0] ?? "";
     const relationshipType = captures[1] ?? "";
@@ -3620,6 +3766,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "DELETE", pattern: TASK_REF_RE, handler: handleDeleteTask },
     { method: "POST", pattern: TASK_BOARD_RERANK_RE, handler: handleBoardRerank },
     { method: "POST", pattern: TASK_BOARD_MOVE_RE, handler: handleBoardMove },
+    { method: "POST", pattern: TASK_SET_DATES_RE, handler: handleSetDates },
     { method: "POST", pattern: TASK_RELATIONSHIP_RERANK_RE, handler: handleRelationshipRerank },
     { method: "POST", pattern: TASK_BODY_RE, handler: handleReplaceBody },
     { method: "POST", pattern: TASK_BODY_APPEND_RE, handler: handleAppendBody },

@@ -32,11 +32,104 @@ import { parseDay } from "./geometry.ts";
  * band is not a nicety; it is what makes the counts agree.
  */
 
+/**
+ * Why a task has no ordinary two-date bar (M3.3b).
+ *
+ * TML-18, TML-19, TML-20 and TML-48 are four shapes of the same
+ * question, and each forbids the same wrong answer: rendering the task
+ * as though its dates were fine. Classifying once, here, is what stops
+ * the chart, the lane and the notices from each deciding separately —
+ * a bar drawn from a reversed pair and a lane that also lists the task
+ * would be two components disagreeing about one row.
+ *
+ *  - `reversed`   — TML-18: `due_date` precedes `start_date`. Both
+ *                   dates are real; their *order* is the defect, so the
+ *                   values are carried through for the message.
+ *  - `invalid`    — TML-48: a date field that is not a date at all
+ *                   ("next tuesday"). The offending text is carried
+ *                   verbatim, because the case requires it shown that
+ *                   way and requires that no `Invalid Date` leak out.
+ *  - `open_start` — TML-19: a start with no due.
+ *  - `open_due`   — TML-20: a due with no start.
+ *  - `undated`    — TML-5: neither.
+ */
+export type DateProblem =
+  | { readonly kind: "reversed"; readonly start: string; readonly due: string }
+  | { readonly kind: "invalid"; readonly field: "start_date" | "due_date"; readonly value: string }
+  | { readonly kind: "open_start"; readonly start: string }
+  | { readonly kind: "open_due"; readonly due: string }
+  | { readonly kind: "undated" };
+
+/**
+ * The date problem a task has, or `undefined` when it has a normal
+ * two-date span.
+ *
+ * Order matters and is not arbitrary. `invalid` is checked before
+ * "missing", because a `start_date` of "next tuesday" is *present* and
+ * wrong — reporting it as merely absent (TML-19) would drop the
+ * verbatim value TML-48's third bullet requires the message to name.
+ * `reversed` is checked last, since it is the only one that needs both
+ * dates to have parsed.
+ */
+export function dateProblem(task: TaskFrontmatterPublic): DateProblem | undefined {
+  const rawStart = task.start_date;
+  const rawDue = task.due_date;
+  const start = parseDay(rawStart);
+  const due = parseDay(rawDue);
+
+  if (rawStart !== undefined && start === undefined) {
+    return { kind: "invalid", field: "start_date", value: String(rawStart) };
+  }
+  if (rawDue !== undefined && due === undefined) {
+    return { kind: "invalid", field: "due_date", value: String(rawDue) };
+  }
+  if (start === undefined && due === undefined) return { kind: "undated" };
+  if (due === undefined) return { kind: "open_start", start: rawStart as string };
+  if (start === undefined) return { kind: "open_due", due: rawDue as string };
+  if (due < start) {
+    return { kind: "reversed", start: rawStart as string, due: rawDue as string };
+  }
+  return undefined;
+}
+
+/**
+ * A human sentence for a date problem, for the row's marker tooltip
+ * and the Unscheduled lane's reason column.
+ *
+ * TML-18 names the wording it wants ("Due date is before start date").
+ * TML-48 requires the offending value verbatim and no `Invalid Date`
+ * anywhere — which is why this formats from the *raw* strings the
+ * classifier carried, never from a `Date` object.
+ */
+export function dateProblemNote(problem: DateProblem): string {
+  switch (problem.kind) {
+    case "reversed":
+      return `Due date is before start date (${problem.start} → ${problem.due})`;
+    case "invalid":
+      return `${problem.field} is not a date: "${problem.value}"`;
+    case "open_start":
+      return `No due date — starts ${problem.start}`;
+    case "open_due":
+      return `No start date — due ${problem.due}`;
+    case "undated":
+      return "No start or due date";
+  }
+}
+
 /** One task's row in the chart. */
 export interface TimelineRow {
   readonly task: TaskFrontmatterPublic;
   /** Both dates present and parseable — the only rows that get a bar. */
   readonly scheduled: boolean;
+  /**
+   * Why this row has no ordinary bar (M3.3b), or `undefined` when it
+   * is a normal two-date span.
+   *
+   * Carried on the row rather than recomputed by each consumer so the
+   * chart's flag, the lane's reason and the drag's refusal all describe
+   * the same task the same way.
+   */
+  readonly problem?: DateProblem | undefined;
 }
 
 /** A labelled band of rows. */
@@ -99,11 +192,28 @@ export function buildRows(
   const scheduled: TaskFrontmatterPublic[] = [];
   const unscheduled: TimelineRow[] = [];
   for (const t of tasks) {
-    if (isScheduled(t)) scheduled.push(t);
-    else unscheduled.push({ task: t, scheduled: false });
+    if (isScheduled(t)) {
+      scheduled.push(t);
+      continue;
+    }
+    // TML-5, TML-19, TML-20, TML-48: the lane carries the *reason*, not
+    // just the fact. "Hovering explains the missing date" (TML-19) and
+    // "the message names the task and the offending field value"
+    // (TML-48) both need it, and a lane row with no reason is the
+    // silent drop each of those cases forbids.
+    unscheduled.push({ task: t, scheduled: false, problem: dateProblem(t) });
   }
 
-  const rows = scheduled.map(task => ({ task, scheduled: true }));
+  const rows = scheduled.map(task => ({
+    task,
+    scheduled: true,
+    // TML-18: a reversed pair parses on both ends, so it reaches here
+    // as "scheduled". It keeps its row — the case requires the row to
+    // stay clickable through to detail and the rest of the timeline to
+    // render normally — and carries the problem so the chart draws an
+    // error marker instead of a bar.
+    problem: dateProblem(task),
+  }));
 
   if (grouping === "none") {
     return {

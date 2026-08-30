@@ -1231,3 +1231,79 @@ timeline should not own it), and have both format its result.
 this is a pure refactor whose regression surface is TSK-8/TSK-28 in
 `tests/ui/flow-task-meta.spec.ts` plus TML-13 in
 `tests/ui/flow-timeline.spec.ts`.
+
+## The timeline has no virtualization: TML-21, TML-26, TML-27, TML-30, TML-32 are unmet
+
+**Found:** M3.3b (2026-08-30). **Not fixed.**
+
+Five section-B cases ask the timeline to stay usable at scale, and each
+names a mechanism that does not exist:
+
+- **TML-21** — a 1970→2099 span at day zoom must not render ~47,000 day
+  columns at once: "the header and the grid virtualize". `headerCells`
+  builds one cell per day and `eachDay` materializes the whole range,
+  so both arrays are ~47,000 long. Measured: the view *does* load and
+  stay interactive within a couple of seconds, and the bar's width is
+  correct (>1,000,000px) rather than an overflow artefact — so the
+  case's first, third and fourth bullets hold. The second bullet, the
+  virtualization itself, does not. The passing test asserts only what
+  was measured.
+- **TML-26** — 3,000 dated tasks with vertical row virtualization.
+  `buildLayout` places every row and `TimelineChart` renders every one.
+- **TML-27** — 40 assignee bands with *sticky* band headers. The band
+  header is `absolute`, not `sticky`, so it scrolls away.
+- **TML-30** — 60 overlapping bars: each already gets its own row (that
+  part holds), but the vertical extent is not virtualized.
+- **TML-32** — 50 outgoing arrows with hover-highlighting of a source
+  bar's arrows. No hover-highlight behaviour exists.
+
+**Why it matters.** These are the cases that decide whether the
+timeline survives a real tracker rather than a seeded one. They were
+scoped to M3.3b but each needs a windowing layer (horizontal for the
+header/grid, vertical for rows) that is a build of its own, plus a
+sticky-header change and an arrow-hover interaction. Building any of
+them by halves would produce a virtualized view whose band counts,
+`centreById` map and arrow anchors disagree with what is rendered —
+the arrows are positioned from `layout.centreById` *before* paint
+precisely so they do not lag, and a windowed layout has to keep
+supplying centres for rows that are not mounted.
+
+**To reproduce:** seed 3,000 dated tasks and open `/timeline?zoom=month`;
+count the rendered `[data-testid^="timeline-bar-"]` nodes — it equals
+the task count, not the visible-window count. For TML-27, scroll inside
+a long band and watch the band header leave the viewport.
+
+**To fix:** a windowing layer over `eachDay`/`headerCells` (horizontal)
+and `buildLayout` (vertical) that keeps `centreById` answering for
+off-window rows, `position: sticky` on the band header, and an
+`onPointerEnter` on the bar that marks its edges for a highlight class.
+
+## `XS-12/TSK-35` (body-editor conflict) is timing-flaky under full-suite load
+
+**Found:** M3.3b (2026-08-30), while running the full UI suite. **Not
+fixed — and not caused by that ticket**, which touches no body-editor
+file (`git diff --name-only` lists none under `task-body`).
+
+`tests/ui/flow-task-body.spec.ts:385` — "a genuine conflict shows both
+versions and each choice does what it promised" — failed once in a
+438-test run and passed on every isolated run.
+
+**Measured, and the timing is the tell:** it took **8.1s** in the
+failing full-suite run, **3.1s** in an earlier full-suite run where it
+passed, and **3.3s** run alone. The test stages a real write conflict
+between a stale editor buffer and an out-of-band change, so it depends
+on two writes landing in a particular order; under a loaded machine
+the margin closes.
+
+**Why it matters.** It is a false red on a gate that is supposed to be
+trustworthy, and a suite with one known flake trains agents to explain
+failures away — which is how a real regression gets waved through.
+
+**To reproduce:** run the whole UI suite on a loaded machine
+(`npx playwright test --config tests/ui/playwright.config.ts
+--workers=1`) and watch that test's duration. It does not reproduce
+with `-g "XS-12/TSK-35"`.
+
+**To fix:** replace whatever fixed wait stages the conflict with a
+condition on the observable state — poll the file on disk, or wait for
+the conflict banner — rather than on elapsed time.

@@ -2669,6 +2669,148 @@ untouched, so the field never doubles.
 delete `resolveColumnCardLayout` and pass `layout` straight through in
 `BoardView.tsx`'s `Column`.
 
+### A39 · A dedicated `set-dates` route, not a general multi-field write endpoint
+
+**Ticket:** M3.3b · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** TML-11 requires a body drag to send both dates "in a
+**single** atomic multi-field write, not two sequential calls". The web
+server's task route was singular — `TASK_SET_RE` → `handleSetField` →
+core's `setField`, one field per request. No existing web route could
+satisfy the case. Core's `setFields` (plural, atomic) was already
+exported and already had callers (`task/update.ts`, `task/bulk.ts`,
+`rank/board-move.ts`); what was missing was a web caller.
+
+**What had to be decided.** The shape of the new route: a general
+`POST /api/tasks/:ref/set-fields` taking a `changes[]` array, or a
+narrow `set-dates` taking `{ start_date?, due_date? }`.
+
+**Options considered.**
+
+- *A general `changes[]` endpoint.* Costs: it is a much larger surface
+  than any case asks for, and it lets a client push `status`, `title`
+  or a custom field through a path whose error envelopes, validation
+  and recovery hints are written about dates. Every future field
+  becomes reachable through it by default rather than by decision.
+- *A narrow `set-dates` endpoint.* Costs: a third field that must move
+  atomically with the dates would need the route widened or a sibling
+  added.
+
+**Chosen:** the narrow `set-dates`, mirroring `board-move`'s precedent
+— that route is likewise named for the operation (`status` +
+`board_rank`) rather than being a generic writer.
+
+**Why.** Each of TML-9/10/11 is exactly one of the three shapes this
+accepts (due only, start only, both), so the route's surface is the
+case's surface. It also lets the start-after-due guard (TML-45) live in
+the handler against the *effective* pair — the stored value of whichever
+date the request does not carry — which a generic endpoint could not do
+without knowing dates were special anyway.
+
+No `allowAutoManaged` grant is passed, and that was checked rather than
+assumed: `board_rank` needed one because it is in `AUTO_MANAGED_FIELDS`,
+whereas `start_date` and `due_date` are `BUILTIN_OPTIONAL_FIELDS` — the
+same user fields `loctt set` writes — so the default refusal does not
+apply to them. Passing a grant that is not needed would widen the route
+to fields it has no business writing.
+
+**To revert.** Delete `TASK_SET_DATES_RE`, its route-table entry and
+`handleSetDates` from `apps/web/src/server/server.ts`, and delete
+`apps/web/src/client/api/hooks/useTaskDates.ts`. The drag layer would
+then need two sequential `/set` calls, which fails TML-11 and TML-43.
+
+### A40 · Edge-resize handles get a 6px minimum hit area, raised above the bar label
+
+**Ticket:** M3.3b · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** M3.3a left the two resize handles as 1px strips
+(`w-1`) with no explicit stacking. Measured with
+`document.elementFromPoint` at the bar's own right edge, the element
+returned was the **BUTTON**, not the handle — so an end-edge drag was
+dispatched as a *body* drag and the request carried `{start_date,
+due_date}` where TML-9 requires `{due_date}` alone. This was a real
+defect reachable by a user, not only by a test.
+
+**What had to be decided.** Whether to enforce a minimum hit area or to
+disable edge-resize at narrow scales. TML-36's first bullet explicitly
+offers both: "either the edge handles remain grabbable (a minimum hit
+area is enforced), or edge-resize is disabled at that scale with an
+explanation on hover."
+
+**Options considered.**
+
+- *Disable edge-resize below some bar width.* Costs: it removes a
+  capability at exactly the zoom where a user is most likely to be
+  adjusting a deadline, and it needs a hover explanation and a
+  threshold, both of which are new invented behaviour.
+- *Enforce a minimum hit area.* Costs: on a bar narrower than
+  `2 × EDGE_HIT_PX` the two handles overlap, and one of them wins.
+
+**Chosen:** a 6px minimum hit area (`EDGE_HIT_PX`), with `z-10` so the
+handle sits above the truncating title span, and `cursor-ew-resize`.
+The start handle wins on an overlapping narrow bar.
+
+**Why.** The alternative removes a capability; this one keeps it and
+costs only an ambiguity on bars a few pixels wide, where the start
+handle winning is a defined outcome rather than a coin-toss between
+"resize" and "move". Six pixels rather than one because a 1px strip is
+not a target a pointer can reliably find — which is what the measured
+`elementFromPoint` result showed.
+
+**To revert.** In `apps/web/src/client/timeline/TimelineChart.tsx`,
+restore the handles to `className="absolute inset-y-0 left-0 w-1"` /
+`right-0 w-1` and delete `EDGE_HIT_PX`. TML-9's payload assertion goes
+red immediately, which is the intended alarm.
+
+### A41 · TML-48's invalid date surfaces through the unreadable notice, not the Unscheduled lane
+
+**Ticket:** M3.3b · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** TML-48 hand-edits a task to `start_date: "next
+tuesday"` and requires it to appear "in Unscheduled (**or flagged in
+place**) with the invalid value shown verbatim", with no `Invalid Date`
+leaking anywhere and a message naming the task and the field.
+
+**Measured against the real server:** such a task fails the task schema
+on read, so `GET /api/tasks` returns it not in `items` but in
+`unreadable`, with `reason: "start_date must be YYYY-MM-DD or full
+ISO-8601 timestamp"`. The client is never handed a task carrying the
+bad value, so it *cannot* place one in the lane.
+
+**What had to be decided.** Whether to change the server so invalid
+dates pass through as ordinary tasks (making the lane branch
+reachable), or to treat the unreadable notice as the "flagged" branch
+the case permits.
+
+**Options considered.**
+
+- *Relax the task schema so a bad date parses through.* Costs: it
+  changes core read behaviour for every surface — CLI, MCP and web —
+  to satisfy one web case, and it weakens a validation that currently
+  catches corruption at the boundary. That is a scope change, not a
+  build decision.
+- *Treat the unreadable notice as the flag.* Costs: the verbatim value
+  reaches the user as part of the parse reason rather than as a
+  standalone field value.
+
+**Chosen:** the unreadable notice.
+
+**Why.** The case offers "or flagged in place" explicitly, and what it
+actually requires is met: the task is named, the offending field is
+named, the constraint is stated, and no `Invalid Date` appears. The
+client-side lane path still exists and is unit-tested
+(`dateProblem.test.ts`, kind `invalid`) — it is what renders this if
+the API ever starts passing such tasks through, so the behaviour is
+built, not merely deferred.
+
+**To revert.** If the task schema is later relaxed to admit unparseable
+dates, no client change is needed: `dateProblem` already classifies
+them as `{kind: "invalid", field, value}` and `UnscheduledLane` already
+renders the reason. Only the UI test's expectation would move from
+`timeline-unreadable` back to
+`timeline-unscheduled-reason-<key>`.
+
+
 ### K8 · A board column is a group of tickets, and reordering inside one works across statuses
 
 **Date:** 2026-08-30 · **Ken's ruling — an agent may not revert this.**

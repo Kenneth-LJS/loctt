@@ -516,6 +516,42 @@ condition 2 working as intended: a feature existing nowhere is scope,
 and adding a field to a shared contract is Ken's call, not an
 agent's.
 
+#### M3.3b · TML-26, 27, 30, 32 · the timeline has no virtualization
+
+**Not a ruling — a build of its own, and it is named here so the next
+agent does not re-derive it.** Four section-B cases each ask the
+timeline to stay usable at scale, and each names a mechanism that does
+not exist rather than a behaviour that is subtly wrong:
+
+- **TML-26** — 3,000 dated tasks: rows must virtualize vertically.
+  `buildLayout` places every row and `TimelineChart` renders every one.
+  Measured: the rendered bar count equals the task count.
+- **TML-27** — 40 assignee bands with **sticky** band headers. The
+  header is `absolute`, so it scrolls away inside a long band.
+- **TML-30** — 60 overlapping bars: each already gets its own row (that
+  half holds), but the vertical extent is not windowed.
+- **TML-32** — 50 outgoing arrows, with hovering the source bar
+  highlighting its arrows. No hover-highlight behaviour exists.
+
+**TML-21 is tagged and passing, but honestly partial**, and it belongs
+in the same paragraph: its responsiveness, its bar width (>1,000,000px
+rather than an overflow artefact) and its far-end date correctness are
+asserted and hold. Its *second* bullet — "roughly 47,000 day columns
+are not all rendered at once — the header and the grid virtualize" —
+is unmet for the same reason as the four above. The test asserts only
+what was measured.
+
+**Why it was not done inside M3.3b.** It is a windowing layer in two
+axes, and the arrows make it more than a `react-window` drop-in: they
+are positioned from `layout.centreById` *before* paint, precisely so
+they do not lag a frame behind the bars. A windowed layout has to keep
+answering `centreById` for rows that are not mounted, or the arrows
+anchor to nothing. Doing half of that would produce a view whose band
+counts and arrow anchors disagree with what is on screen — worse than
+the honest non-virtualized version.
+
+Logged in `known-gaps.md` with the reproduction and the fix sketched.
+
 #### M3.2 · BRD-12 · core and the board disagree on what a column is
 
 **Cross-cutting, and it needs a ruling — not a build-agent decision.**
