@@ -475,7 +475,7 @@ describe("saveWorkflowConfig — timeline defaults", () => {
     expect(reloaded.timeline?.dependency_relationship).toBe("blocks");
   });
 
-  it("preserves new timeline fields when dependency_relationship is auto-cleared", async () => {
+  it("preserves every timeline field when the referenced relationship is deleted", async () => {
     const wf = await loadWorkflowConfig(locttDir);
     const withDefaults: WorkflowConfig = {
       ...wf,
@@ -488,15 +488,17 @@ describe("saveWorkflowConfig — timeline defaults", () => {
     const { saveWorkflowConfig } = await import("./workflow-write.js");
     await saveWorkflowConfig(locttDir, withDefaults);
 
-    // Remove `blocks` from relationships; auto-clear should drop
-    // `dependency_relationship` but keep default_zoom + show_arrows.
+    // Remove `blocks` from relationships. The dangling reference is
+    // PRESERVED, not auto-cleared: TML-34 needs the missing key's name
+    // to still be on disk so the timeline can report it. This
+    // expectation was `toBeUndefined()` and was asserting the bug.
     const withoutBlocks: WorkflowConfig = {
       ...withDefaults,
       relationships: withDefaults.relationships.filter(r => r.key !== "blocks"),
     };
     await saveWorkflowConfig(locttDir, withoutBlocks);
     const final = await loadWorkflowConfig(locttDir);
-    expect(final.timeline?.dependency_relationship).toBeUndefined();
+    expect(final.timeline?.dependency_relationship).toBe("blocks");
     expect(final.timeline?.default_zoom).toBe("day");
     expect(final.timeline?.show_arrows).toBe(true);
   });
@@ -577,8 +579,8 @@ describe("saveWorkflowConfig — cross-field validation (B9)", () => {
   });
 });
 
-describe("saveWorkflowConfig auto-clear", () => {
-  it("drops timeline.dependency_relationship when the referenced key is gone", async () => {
+describe("saveWorkflowConfig — dangling timeline reference", () => {
+  it("preserves timeline.dependency_relationship when the referenced key is gone", async () => {
     const wf = await loadWorkflowConfig(locttDir);
     // First write a workflow that references `blocks` from timeline.
     const withTimeline: WorkflowConfig = {
@@ -590,17 +592,26 @@ describe("saveWorkflowConfig auto-clear", () => {
     const reloaded = await loadWorkflowConfig(locttDir);
     expect(reloaded.timeline?.dependency_relationship).toBe("blocks");
 
-    // Now save a workflow that removes `blocks`. The save should
-    // auto-clear the dangling timeline ref in the same write.
+    // Now save a workflow that removes `blocks`. The dangling ref
+    // SURVIVES the write: deleting the user's own line is the silent
+    // pruning P7 forbids, and TML-34 requires the missing key to be
+    // nameable in a notice. This assertion was `toBeUndefined()` and
+    // was asserting the bug.
     const withoutBlocks: WorkflowConfig = {
       ...withTimeline,
       relationships: withTimeline.relationships.filter(r => r.key !== "blocks"),
     };
     await saveWorkflowConfig(locttDir, withoutBlocks);
     const final = await loadWorkflowConfig(locttDir);
-    // Field should be absent — the timeline block has nothing else, so
-    // the writer drops the block entirely.
-    expect(final.timeline).toBeUndefined();
+    expect(final.timeline?.dependency_relationship).toBe("blocks");
+
+    // And it is on disk, not just in the parse result — the notice
+    // TML-34 asks for is only possible if the file still says so.
+    const onDisk = await readFile(
+      join(locttDir, "config", "workflow.yaml"),
+      "utf8",
+    );
+    expect(onDisk).toContain("dependency_relationship: blocks");
   });
 
   it("preserves timeline.dependency_relationship when the referenced key still exists", async () => {

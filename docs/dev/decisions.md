@@ -2295,6 +2295,194 @@ instead of midpoints reddens two; comparing only one neighbour in
 `isNoOpDrop` reddens "requires both neighbours to match" — that
 mutation initially **survived**, which is why that test exists.
 
+### A31 · A dangling `timeline.dependency_relationship` survives the write instead of being silently deleted
+
+**Ticket:** M3.3a · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** `autoClearTimelineDependency`
+(`packages/core/src/config/workflow-write.ts:152`) deleted
+`timeline.dependency_relationship` from the config on every write
+whose value was not a key in `relationships`. Its docstring called
+this deliberate: "a dangling timeline ref would just render zero
+arrows anyway, so we silently drop the field rather than failing the
+write or leaving a misleading config on disk."
+
+Measured before the change: with `dependency_relationship: blocks`
+set and `blocks` removed from `relationships`, `saveWorkflowConfig`
+wrote a `workflow.yaml` with the line **gone**, and
+`loadWorkflowConfig` returned `timeline: undefined`.
+
+TML-34's third bullet requires the opposite: "Setting
+`dependency_relationship` to a key that does not exist in
+`relationships` results in no arrows plus a visible configuration
+notice naming the missing key — **not a silent no-op** and not a
+crash."
+
+The two cannot both hold. A notice cannot name a key that the writer
+has erased from the file.
+
+**What had to be decided.** When a workflow write carries a
+`dependency_relationship` naming a relationship that does not exist,
+should the field be deleted, rejected, or preserved?
+
+**Options considered.**
+
+1. **Keep the auto-clear.** No code changes. Costs: TML-34's third
+   bullet is unsatisfiable — there is nothing left to name. Worse, a
+   user who typos `dpends_on` has the line removed from a file they
+   hand-authored, sees no arrows, and has no way to discover why: the
+   evidence of the mistake is destroyed by the tool. This is the
+   silent pruning P7's amendment closed the last carve-out for.
+2. **Reject the write.** `assertWorkflowConfigValid` throws on a
+   dangling ref. Costs: deleting a relationship would then fail the
+   *whole* workflow write — including remaps that are otherwise valid
+   — until the user separately fixes the timeline block. It turns a
+   cosmetic dangling reference into a hard blocker on an unrelated
+   edit, and TML-34 says "not a crash".
+3. **Preserve the value.** The write passes the field through
+   untouched; consumers resolve it against `relationships` and report
+   a miss. Costs: `workflow.yaml` can now hold a reference that does
+   not resolve, so every consumer must treat the field as
+   possibly-dangling rather than assuming validity. That obligation is
+   documented on both the schema and the writer.
+
+**Decided.** Option 3 — the field is preserved, and resolution moves
+to the consumer.
+
+**Why.** It is the only option that satisfies TML-34's third bullet,
+and the only one that keeps the user's own configuration intact. P7
+forbids silently dropping data the user can see; a line in a
+hand-edited YAML file is exactly that. Option 2 was rejected because
+the case explicitly rules out a crash and because it couples an
+unrelated edit to a cosmetic problem.
+
+The consumer-side half is `dependencyRelationshipStatus` in
+`apps/web/src/client/timeline/settings.ts`, which returns
+`{kind: "none" | "ok" | "missing", key}`. M3.3a draws no arrows in the
+`missing` case; **rendering the notice is M3.3b's TML-34** — this
+decision only makes the fact and the key's name reachable.
+
+**Two green tests were editing to make this pass, and both were
+asserting the bug** (CLAUDE.md: "if a fix requires editing a green
+test, that test was asserting the bug"):
+`packages/core/src/config/workflow-write.test.ts` — "drops
+timeline.dependency_relationship when the referenced key is gone"
+(asserted `final.timeline` was `undefined`) and "preserves new
+timeline fields when dependency_relationship is auto-cleared"
+(asserted the field was `undefined`). Both now assert the value
+survives, and the first also reads `workflow.yaml` off disk, because
+the notice is only possible if the *file* still says so.
+
+Verified sane on the other two surfaces with the dangling value on
+disk: `loctt doctor` reports `workflow.yaml: valid` and passes every
+check; `loctt create` / `list` / `link` behave normally (`link`
+rejects the removed relationship with "unknown relationship 'blocks'.
+Known: parent, clones, …" rather than crashing); the MCP
+`get_workflow_config` returns the config with the dangling string
+intact, and `tests/integration/mcp/config-parity.test.ts` passes.
+
+**To revert.** Restore `autoClearTimelineDependency` in
+`packages/core/src/config/workflow-write.ts` and re-add its call
+inside `assertWorkflowConfigValid` (it was the inner call of
+`renumberPriorities(autoClearTimelineDependency(config))`). Revert the
+docstrings on `saveWorkflowConfig` and on `TimelineConfigSchema` in
+`packages/contracts/src/workflow.ts`. Flip the two tests named above
+back to `toBeUndefined()` and drop the on-disk assertion. In the web
+client, `dependencyRelationshipStatus` collapses to `none` vs `ok`,
+and its "missing" test in
+`apps/web/src/client/timeline/settings.test.ts` goes with it — as does
+TML-34's third bullet.
+
+### A32 · The timeline's zoom, grouping and arrows live in the URL; collapsed bands do not
+
+**Ticket:** M3.3a · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** The timeline has four pieces of view state: zoom,
+grouping, the arrows toggle, and which bands are collapsed. The cases
+are explicit about the first three and silent about the fourth.
+
+TML-1: "The URL reflects the effective zoom so the view is shareable."
+TML-8: "Changing to `none` … updates the URL." TML-15: "The toggle
+state is reflected in the URL (or the saved view's
+`display.show_arrows`) so the state is shareable."
+
+TML-6, on collapse, says only: "Bands are collapsible and the
+collapsed state does not change the URL's task scope."
+
+**What had to be decided.** Does the collapsed state belong in the URL
+alongside the other three?
+
+**Options considered.**
+
+- *Collapse in the URL too.* Consistent with the other three, and a
+  shared link reproduces the exact screen. Costs: TML-6 requires that
+  collapsing not change "the URL's task scope", so a collapse param
+  would have to be provably scope-free — a guarantee maintained by
+  care rather than by construction. It also puts a transient
+  affordance into the shareable identity of a view, so every collapse
+  becomes a history entry that back/forward walks through.
+- *Collapse as local component state.* TML-6's guarantee holds
+  trivially — the URL cannot change task scope if it does not change
+  at all. Costs: a shared link does not reproduce which bands the
+  sender had collapsed.
+
+**Decided.** Collapse is local state in `TimelineChart`; zoom,
+grouping and arrows are URL search params in `timelineSearch.ts`.
+
+**Why.** The three the cases name as shareable are shareable; the one
+they do not name is the one whose only stated requirement is a
+negative ("does not change the URL's task scope"), which local state
+satisfies by construction. A collapsed band is a display affordance,
+not a description of what is being looked at.
+
+`timelineSearchSchema` *extends* `listSearchSchema` rather than
+redefining it, for the same reason the board shares it outright
+(BRD-1, BRD-14): a filter must mean the same thing in every view, and
+`/timeline?assignee=…` must select what `/list?assignee=…` selects.
+
+**To revert.** Add a `collapsed` CSV param to
+`apps/web/src/client/router/timelineSearch.ts`, lift the `collapsed`
+`useState` out of `TimelineChart.tsx` into `TimelineView.tsx`, and
+pass it down. The band-collapse assertions in TML-6 in
+`tests/ui/flow-timeline.spec.ts` — which currently assert
+`page.url()` is *unchanged* after a collapse — would need inverting.
+
+### A33 · Weekend and holiday shading is drawn at day and week zoom, not at month
+
+**Ticket:** M3.3a · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** TML-13's first bullet: "Saturday and Sunday columns
+are faintly shaded **at day and week zoom**." The case names two of the
+three zoom levels and says nothing about the third.
+
+At month zoom a day column is 4px wide, so a weekend is an 8px band
+repeating every 28px across the whole chart.
+
+**What had to be decided.** Should the shading also be drawn at month
+zoom, where the case does not ask for it?
+
+**Options considered.**
+
+- *Shade at all three zooms.* Uniform behaviour, one less branch.
+  Costs: a year-wide month view becomes a striped background of ~104
+  shaded bands, which is visual noise on a chart nobody reads
+  day-by-day, and it competes with the bars for contrast.
+- *Shade at day and week only.* Exactly what the bullet lists. Costs:
+  the shading "disappears" when zooming out, which a user could read
+  as a bug rather than a choice.
+
+**Decided.** Day and week only — the literal reading of the bullet.
+
+**Why.** The case enumerates the levels, and enumeration in these
+docs has been deliberate elsewhere (TML-3 enumerates the header
+labelling per level too). The decorative purpose stated in
+`calendar.ts` ("No business-day math — purely cosmetic") does not
+survive contact with 104 stripes.
+
+**To revert.** In `apps/web/src/client/timeline/TimelineView.tsx`,
+remove the `zoom === "month" ? [] :` guard on `shaded`. No geometry
+changes — `nonWorkingReason` already answers per-day at every zoom.
+
 ### K8 · A board column is a group of tickets, and reordering inside one works across statuses
 
 **Date:** 2026-08-30 · **Ken's ruling — an agent may not revert this.**

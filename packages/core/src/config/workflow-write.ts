@@ -72,11 +72,10 @@ export interface WorkflowRemap {
  * Atomically writes workflow.yaml. Round-trips through parse to
  * enforce all invariants before persisting.
  *
- * Auto-clears `timeline.dependency_relationship` when the referenced
- * relationship key is no longer present in `config.relationships` — a
- * dangling timeline ref would just render zero arrows anyway, so we
- * silently drop the field rather than failing the write or leaving a
- * misleading config on disk.
+ * `timeline.dependency_relationship` is written through as given,
+ * even when it names a relationship key that no longer exists. See
+ * the note above `SimpleCollection` for why the previous auto-clear
+ * was removed.
  */
 export async function saveWorkflowConfig(
   locttDir: string,
@@ -106,7 +105,7 @@ export async function saveWorkflowConfig(
  * journal, but "refused" should mean nothing happened.
  */
 export function assertWorkflowConfigValid(config: WorkflowConfig): WorkflowConfig {
-  const cleaned = renumberPriorities(autoClearTimelineDependency(config));
+  const cleaned = renumberPriorities(config);
   // Re-encode and re-parse so any caller-side issues surface as
   // validation errors rather than corrupting on-disk state.
   parseWorkflowConfig(serializeWorkflowConfigAsYaml(cleaned));
@@ -144,31 +143,28 @@ function renumberPriorities(config: WorkflowConfig): WorkflowConfig {
 }
 
 /**
- * Returns `config` with `timeline.dependency_relationship` cleared
- * (field omitted) when the referenced relationship key is not present
- * in `config.relationships`. Returns the input unchanged when the
- * reference is still valid or no timeline config exists.
+ * `timeline.dependency_relationship` is deliberately NOT validated
+ * against `relationships` here, and a dangling value is written back
+ * unchanged.
+ *
+ * This used to auto-clear: a value naming a relationship key that no
+ * longer existed was silently deleted from the user's own
+ * workflow.yaml on the next write. That is the worst of the three
+ * available behaviours — a user who typos `dpends_on` gets no arrows,
+ * no message, and the evidence of the mistake erased from the file
+ * they would look at to find it. P7 forbids exactly this kind of
+ * silent pruning.
+ *
+ * TML-34's third bullet is the requirement the old behaviour could not
+ * meet: a missing key must produce "no arrows plus a visible
+ * configuration notice naming the missing key — not a silent no-op and
+ * not a crash". Naming it requires the value to still be there, so the
+ * value survives and the timeline reports it.
+ *
+ * Consumers must therefore treat the field as a *reference that may
+ * dangle*: resolve it against `relationships` and render nothing (plus
+ * a notice) when it does not resolve, rather than assuming validity.
  */
-function autoClearTimelineDependency(config: WorkflowConfig): WorkflowConfig {
-  const dep = config.timeline?.dependency_relationship;
-  if (dep === undefined || dep === null) return config;
-  const relKeys = new Set(config.relationships.map(r => r.key));
-  if (relKeys.has(dep)) return config;
-  // Drop the field entirely. Preserve any other timeline keys for
-  // forward-compat; today there's only `dependency_relationship`, but
-  // we don't want a future field added here to be silently dropped by
-  // an old core version's auto-clear pass.
-  const { dependency_relationship: _drop, ...rest } = config.timeline ?? {};
-  void _drop;
-  const restEmpty = Object.keys(rest).length === 0;
-  // Rebuild without the now-empty timeline block, or with the
-  // surviving keys.
-  const { timeline: _t, ...withoutTimeline } = config;
-  void _t;
-  return restEmpty
-    ? (withoutTimeline as WorkflowConfig)
-    : ({ ...withoutTimeline, timeline: rest } as WorkflowConfig);
-}
 
 type SimpleCollection = "statuses" | "priorities" | "task_types";
 
