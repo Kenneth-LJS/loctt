@@ -555,6 +555,8 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
                 key={task.data.frontmatter.id}
                 taskRef={taskRef}
                 attachments={task.data.attachments}
+                attachmentsError={task.data.attachmentsError}
+                onRetry={() => { void task.refetch(); }}
               />
             </Section>
 

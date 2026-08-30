@@ -1972,3 +1972,48 @@ a milestone does not pass with a declared blocker unbuilt.
 **To revert.** Delete the M2.6 ticket from `TEMP-WEB-TICKETS.md` and
 choose one of options 2–4. Nothing is built on this decision beyond
 the ticket's own existence.
+
+### A25 · The attachments read failure renders in the panel, not the page
+
+**Ticket:** M2 gate round 3 · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** Round 2's F5 fix made `buildShowModel` return
+`attachmentsError` instead of rejecting, so one unreadable directory
+stopped taking down the whole task read. The CLI renders it
+(`task-crud.ts:358`), MCP renders it, and the web server serialises it
+(`server.ts:2672`) — but the web *client* read it nowhere. Measured: the
+Attachments section rendered "No attachments on this task yet." while
+the activity feed said a file had been attached. That is a false claim
+about the disk, not a missing feature.
+
+REL-49 looked covered — four `@verifies REL-49` tags — but all four are
+in core, and no UI test `chmod`s a directory.
+
+**What had to be decided.** Where the failure surfaces in the web UI.
+
+**Options considered.**
+
+1. **A page-level error state.** Consistent with how a task that cannot
+   be read at all is handled. Rejected: REL-49's second bullet requires
+   relationships, comments, activity and meta to still render, and F5
+   exists precisely so one unreadable directory does not take the page
+   down. A page-level state would undo it.
+2. **The panel renders the error in place of the empty state, with a
+   retry.** Chosen. Satisfies all three bullets: names the reason,
+   degrades only the section, offers a retry (`task.refetch()`).
+3. **Reuse the per-tile `removeError` channel.** Rejected: that is keyed
+   by attachment name, and here there are no tiles to key by.
+
+**Why.** The empty state and the error state are the two readings of an
+empty list, and the whole point of `attachmentsError` is telling them
+apart. The panel is where the distinction is visible.
+
+**To revert.** Drop the `attachmentsError`/`onRetry` props from
+`AttachmentsPanel` and the two lines passing them in `TaskDetail.tsx`.
+The server field can stay; CLI and MCP already use it.
+
+**Test.** `flow-attachments.spec.ts` "REL-49: an unreadable attachments
+directory degrades only that section" — `chmod 000` on a directory
+holding a real attachment. Shown to fail: dropping the
+`attachmentsError` prop at the call site turns it red on the
+empty-state assertion, which is the exact shape of the bug that shipped.

@@ -201,7 +201,20 @@ async function retypeEdit(page: Page, text: string): Promise<void> {
  * established the pattern.
  */
 async function refocus(page: Page): Promise<void> {
-  await page.waitForTimeout(31_000);
+  // Outlast the 30s `staleTime`: `refetchOnWindowFocus` only refetches
+  // data that has gone stale, so a shorter wait makes the focus
+  // transition a no-op and the test asserts against the pre-rename
+  // cache. 31s left a one-second margin, which a loaded machine loses —
+  // the observed CMT-10 flake. The extra second is cheap; the refetch
+  // below is what the assertion actually waits on.
+  await page.waitForTimeout(33_000);
+  // Wait for the refetch this focus transition triggers, rather than
+  // racing it. Armed before the event is dispatched, or the response
+  // can land before the wait begins.
+  const refetched = page.waitForResponse(
+    r => r.url().includes("/api/users") && r.status() === 200,
+    { timeout: 15_000 },
+  );
   await page.evaluate(() => {
     Object.defineProperty(document, "visibilityState", {
       value: "hidden", configurable: true,
@@ -214,6 +227,7 @@ async function refocus(page: Page): Promise<void> {
     });
     document.dispatchEvent(new Event("visibilitychange"));
   });
+  await refetched;
 }
 
 async function openTask(page: Page, tracker: TrackerFixture, key: string): Promise<void> {

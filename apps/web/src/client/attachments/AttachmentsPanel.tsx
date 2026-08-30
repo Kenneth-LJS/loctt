@@ -55,9 +55,22 @@ import { displayMime, familyForMime, glyphFor } from "./icon.ts";
 export function AttachmentsPanel({
   taskRef,
   attachments,
+  attachmentsError,
+  onRetry,
 }: {
   readonly taskRef: string;
   readonly attachments: readonly AttachmentResponse[];
+  /**
+   * Set when the attachments directory could not be read (REL-49).
+   * The list is empty in that case for the same reason it is empty
+   * when there are none — so without this the section renders "No
+   * attachments on this task yet.", which is a claim about the disk
+   * that nothing verified. `show.ts` degrades rather than throwing so
+   * the rest of the task still renders; the price is that the caller
+   * must tell the two apart.
+   */
+  readonly attachmentsError?: string | undefined;
+  readonly onRetry?: (() => void) | undefined;
 }): React.JSX.Element {
   const upload = useUploadAttachment(taskRef);
   const del = useDeleteAttachment(taskRef);
@@ -177,11 +190,27 @@ export function AttachmentsPanel({
             : "border-border-subtle")
         }
       >
-        {attachments.length === 0 && (
+        {attachmentsError !== undefined ? (
+          <div data-testid="attachments-error" className="mb-2 text-[13px]">
+            <p className="text-danger-fg">
+              Attachments could not be read — {attachmentsError}
+            </p>
+            {onRetry !== undefined && (
+              <button
+                type="button"
+                data-testid="attachments-retry"
+                onClick={onRetry}
+                className="mt-1 rounded border border-border-subtle px-1.5 py-0.5 text-[12px] text-text-secondary underline hover:bg-bg-muted"
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        ) : attachments.length === 0 ? (
           <p data-testid="attachments-empty" className="mb-2 text-[13px] text-text-secondary">
             No attachments on this task yet.
           </p>
-        )}
+        ) : null}
         <p className="text-[12px] text-text-tertiary">
           Drag files here, or{" "}
           <button
