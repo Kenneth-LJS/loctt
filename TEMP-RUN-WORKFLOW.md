@@ -516,6 +516,55 @@ condition 2 working as intended: a feature existing nowhere is scope,
 and adding a field to a shared contract is Ken's call, not an
 agent's.
 
+#### M3.1 · three cases are covered in part, by construction
+
+**BRD-45's 1:1 fallback cannot happen, and Ken ruled it stays that
+way.** The case's second bullet offers the user "remove the `boards`
+block to fall back to 1:1 columns" as a *fix*, which is built and
+true. But its own framing implies the board could fall back on its
+own. It cannot: `BoardsConfigSchema` rejects a duplicated status at
+parse time, so `loadWorkflowConfig` throws and **every** read fails —
+measured, `/api/workflow` and `/api/tasks` both return 400
+`config_invalid`. There is no parsed config to fall back *with*.
+
+Ken ruled (2026-08-29): validation stays strict, and the web renders
+the refusal as BRD-45's designed state rather than relaxing the schema
+to make a literal fallback reachable. `ConfigErrorState.tsx` names the
+file, the offending column index and the duplicated status key, and
+tells the user both fixes. The other bullets — an explicit
+configuration-error state, no white pane, no *silent* 1:1 fallback —
+all hold. Only "falls back to 1:1 columns" as a runtime behaviour
+does not, and it is unreachable by design.
+
+**BRD-21 is covered for the three bullets a static board owns.** The
+header count reading the true total, the column scrolling
+independently of its neighbours, and cards rendering far down the
+range are built and asserted (`flow-board.spec.ts` BRD-21). The
+remaining two bullets — dragging from a virtualized row, and
+auto-scroll at a column edge — are drag behaviour and belong to M3.2
+with the rest of BRD-9..13 / 25..38.
+
+Note that the count bullet was a **real defect found by building the
+test**: the board initially rendered a 900-task column under a header
+reading `200`, the page size, which is exactly what the bullet
+forbids. The board now exhausts the paged feed itself
+(`BoardView.tsx`).
+
+**MSL-20's `+N` reveal is not built, and needs a component that does
+not exist.** The case wants the overflow affordance to "reveal the
+remaining labels on click/hover" with "each remaining label
+individually clickable to filter". Today `LabelsCell` renders `+N` as
+a `<span>` carrying a `title` — a static tooltip, not a hover-card:
+the hidden labels are named in the tooltip text but none of them is
+clickable.
+
+The rest of MSL-20 holds and is asserted: pills overflow to `+N`
+rather than widening the card, the due date stays on screen, row
+height stays bounded, and each *rendered* pill filters on click. The
+reveal itself needs a new interactive popover component, shared with
+the list row (`LabelsCell` serves both surfaces), and no case in M3.1
+authorises building one. **Not built, deliberately** — condition 2.
+
 #### M2.4b · CMT-18 is a whole surface nothing has built
 
 **CMT-18** — *"Comments and Activity are separate, addressable
