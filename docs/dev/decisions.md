@@ -2321,26 +2321,49 @@ mechanism: "that sounds like a bug we need to fix then."
 tickets. Reordering within a column ranks against every card in that
 column regardless of status.
 
-**How** (recommended, pending only if a better shape emerges in build):
-the caller passes the column's status set; core ranks within whatever
-set it is handed. `ReorderBoardRankOptions` gains an optional
-`columnStatuses?: readonly string[]`, defaulting to the moved task's own
-status — so the CLI and MCP, which have no board config, behave exactly
-as today and nothing existing breaks.
+**How — Ken corrected my framing, and the correction is the point.**
+I twice proposed *widening* the status filter (pass a status set, or have
+core read `workflow.boards`). Ken: "it sounds like you're still trying to
+think in terms of 'oh the column stores it in order and i want to propose
+a ux that fits that ordering'. im telling you to think outside, that we
+may need to refactor: the multi-label column needs to allow tickets to be
+in any order, even interleaving different statuses."
 
-Rejected: core loading `workflow.boards` itself (presentation config
-reaching into a shared write path — a CLI-only user's `board-rerank`
-would silently depend on a `boards:` block for a UI they never open).
-Rejected: dropping the status filter entirely — that is precisely the
-SPR-C2 bug, where a card could be handed a rank interpolated between
-two cards in a column the user is not even looking at.
+He is right, and the storage already agrees with him. `board_rank` is a
+single optional string on the task (`contracts/src/task.ts:91`), scoped to
+nothing. Its own docstring says "Lexorank string for manual drag-reorder
+within a board column". **The ordering is global; a column is a filter
+over it, not a separate ordering.** Nothing in storage ever needed a
+status filter — only `reorder.ts` invented one.
+
+So the fix is a *deletion*, not a parameter:
+
+- Drop the `status !== column` filter at `reorder.ts:213-218` entirely.
+- `computeNewRank` already interpolates between `beforeRank` / `afterRank`
+  — the anchors the caller passes, which are the cards the user actually
+  dropped between. That is the honest source of adjacency, and the client
+  knows it exactly because it rendered them.
+- `peers` is then used only for `{kind: "end"}` and for rebalancing, where
+  a **global** peer set is the correct one: rebalancing re-spaces the whole
+  ordering.
+- No `columnStatuses` parameter, no board config in core, no new option.
+
+**Why the earlier proposal was wrong.** Filtering peers by status was a
+*proxy* for "cards adjacent on screen", which happened to hold when a
+column was a status. Passing a status set would have kept the proxy and
+merely made it configurable — still wrong, just wrong in a way that
+matched more cases.
 
 **Consequence.** SPR-C2's premise comment ("A board column is a status")
 is false and its two tests assert the narrow rule. Per CLAUDE.md, a fix
 that requires editing a green test means that test was asserting the
-bug — to be said plainly in the commit message. The SPR-C2 *defect*
-stays fixed: a column is still the boundary; only the definition of
-"column" changes.
+bug — to be said plainly in the commit message.
+
+**The SPR-C2 defect stays fixed, by a better mechanism.** Its real
+symptom was a rank interpolated against cards *not adjacent on screen*,
+so the card did not land where the user dropped it. Ranking between the
+caller's two anchors fixes that directly, and more precisely than a
+status filter ever did. The filter was never what made it correct.
 
 **Unblocks** BRD-12, currently `test.fixme` in `flow-board.spec.ts`.
 
