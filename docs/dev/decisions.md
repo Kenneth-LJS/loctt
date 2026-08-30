@@ -2321,38 +2321,51 @@ mechanism: "that sounds like a bug we need to fix then."
 tickets. Reordering within a column ranks against every card in that
 column regardless of status.
 
-**How — Ken corrected my framing, and the correction is the point.**
-I twice proposed *widening* the status filter (pass a status set, or have
-core read `workflow.boards`). Ken: "it sounds like you're still trying to
-think in terms of 'oh the column stores it in order and i want to propose
-a ux that fits that ordering'. im telling you to think outside, that we
-may need to refactor: the multi-label column needs to allow tickets to be
-in any order, even interleaving different statuses."
+**How — Ken corrected my framing twice, and both corrections matter.**
 
-He is right, and the storage already agrees with him. `board_rank` is a
-single optional string on the task (`contracts/src/task.ts:91`), scoped to
-nothing. Its own docstring says "Lexorank string for manual drag-reorder
-within a board column". **The ordering is global; a column is a filter
-over it, not a separate ordering.** Nothing in storage ever needed a
-status filter — only `reorder.ts` invented one.
+*First correction.* I proposed *widening* the status filter (pass a status
+set, or have core read `workflow.boards`). Ken: "im telling you to think
+outside, that we may need to refactor: the multi-label column needs to
+allow tickets to be in any order, even interleaving different statuses."
 
-So the fix is a *deletion*, not a parameter:
+*Second correction — I then overshot.* I concluded the ordering must be
+**global**, with a column as a filter over it. Ken: "uh, i was thinking a
+column is its own sequence. new tickets added just gets put at the bottom
+of the column. i dont think we need a global ordering."
 
-- Drop the `status !== column` filter at `reorder.ts:213-218` entirely.
-- `computeNewRank` already interpolates between `beforeRank` / `afterRank`
-  — the anchors the caller passes, which are the cards the user actually
-  dropped between. That is the honest source of adjacency, and the client
-  knows it exactly because it rendered them.
-- `peers` is then used only for `{kind: "end"}` and for rebalancing, where
-  a **global** peer set is the correct one: rebalancing re-spaces the whole
-  ordering.
-- No `columnStatuses` parameter, no board config in core, no new option.
+He is right, and a global ordering breaks the case he names.
+`computeNewRank`'s `{kind: "end"}` returns `between(last, MAX)` where
+`last` is the greatest rank **in the peer set**
+(`reorder.ts:352-355`). Under one global sequence, "the bottom of my
+column" and "the bottom of the tracker" collapse to the same position, so
+a new ticket lands after every task in every column. A per-column
+sequence is what actually gives "new tickets go to the bottom of their
+column".
 
-**Why the earlier proposal was wrong.** Filtering peers by status was a
-*proxy* for "cards adjacent on screen", which happened to hold when a
-column was a status. Passing a status set would have kept the proxy and
-merely made it configurable — still wrong, just wrong in a way that
-matched more cases.
+**The model: each column is its own sequence.**
+
+- A column has its own ordering; ranks are only ever compared within one.
+- Inside a column, cards of different statuses interleave freely — the
+  ordering knows nothing about status. That is the first correction.
+- "End of the column" means the end of *that column's* sequence, not of
+  everything. That is the second.
+
+**What this means for `reorder.ts`.** The status filter at
+`reorder.ts:213-218` is still wrong and still goes — it scopes by
+`status`, which is not the column. But it is replaced by a filter on
+**the column**, not deleted outright: `peers` must be the cards of the
+column being reordered, which is what both `{kind: "end"}` and the
+rebalance need.
+
+Core cannot derive that set — the grouping lives in `workflow.boards`,
+which is presentation config. So the **caller passes the column's peer
+set (or the status set defining it)**, and core ranks within whatever it
+is handed. A caller with no board config (the CLI, MCP) passes the moved
+task's own status and behaves exactly as today.
+
+This is close to the parameter I first proposed, but for the right
+reason: not "widen the filter to match more cases", but "the column is
+the scope, and only the caller knows what a column is".
 
 **Consequence.** SPR-C2's premise comment ("A board column is a status")
 is false and its two tests assert the narrow rule. Per CLAUDE.md, a fix
