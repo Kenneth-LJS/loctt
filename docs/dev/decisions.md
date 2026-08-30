@@ -2017,3 +2017,97 @@ directory degrades only that section" — `chmod 000` on a directory
 holding a real attachment. Shown to fail: dropping the
 `attachmentsError` prop at the call site turns it red on the
 empty-state assertion, which is the exact shape of the bug that shipped.
+
+### A26 · Board chip visibility is stored as the columns turned *off*
+
+**Ticket:** M3.1 · **Date:** 2026-08-30 · **Commit:** (uncommitted)
+
+**The situation.** BRD-3 and BRD-4 require the status chips bar to
+toggle a column's visibility and persist that per user in
+`users/<id>/settings.yaml`. BRD-4 adds that a user who has never
+toggled sees **all** columns. Neither case says what the stored shape
+is, and `UserSettings` has no key for it — the schema is
+`.passthrough()` and the server stores settings schema-lessly, so
+either shape is storable.
+
+**What had to be decided.** Should the setting record the columns the
+user has hidden, or the columns the user can see?
+
+**Options considered.**
+
+1. **Store the visible set.** Reads naturally ("these are your
+   columns"). Costs: a status added to `workflow.yaml` afterwards is
+   absent from every existing user's stored list, so it renders
+   **hidden** for everyone who has ever touched a chip — a new column
+   nobody can see and no message explains. That is the silent-omission
+   shape P7 rules out, and it contradicts BRD-4's "all columns visible
+   for a user who has never toggled" the moment a user toggles once.
+2. **Store the hidden set.** Chosen. A column not mentioned is
+   visible, so a newly configured column appears by default and the
+   never-toggled user's empty setting means "show everything" without
+   a special case. Costs: the stored value is a negation, which reads
+   less directly in the file.
+
+**Decided.** Option 2 — `board_hidden_columns` lists the columns
+turned off.
+
+**Why.** Option 1's failure is invisible and data-shaped: it makes a
+config change silently subtract from what the user sees, which is
+exactly what BRD-18 and BRD-24 exist to prevent elsewhere on this same
+view. Option 2's cost is only legibility of a file the user rarely
+opens.
+
+**To revert.** `apps/web/src/client/board/chipSettings.ts` —
+`HIDDEN_COLUMNS_KEY`, `hiddenColumnsOf`, `withHiddenColumns` — plus the
+`hidden`/`visible` derivation in `BoardView.tsx`. Any stored
+`board_hidden_columns` key becomes inert rather than harmful, since an
+unknown settings key is ignored.
+
+**Test.** `apps/web/src/client/board/cardLayout.test.ts` "reports
+nothing hidden for a user who has never toggled" and "round-trips
+hidden columns through the settings object"; `flow-board.spec.ts`
+BRD-4 reads `settings.yaml` off disk. Shown to fail: making
+`hiddenColumnsOf` always return `[]` reddens both unit tests, and
+neutering the `visible` filter reddens BRD-3 and BRD-4.
+
+### A27 · The board pages the task feed to 200 rather than the list's 50
+
+**Ticket:** M3.1 · **Date:** 2026-08-30 · **Commit:** (uncommitted)
+
+**The situation.** The board reuses `useTasksFeed`, whose default page
+size is `DEFAULT_LIST_LIMIT` (50) because the list view paginates
+visibly. A board does not: BRD-21 requires a column header to read the
+**true total** (`900`), "not a page size", and BRD-14 requires a WIP
+indicator's number to match the cards actually rendered. At 50 the
+first paint would show truncated columns and counts that disagree with
+the list view for the same filter — which BRD-24 explicitly forbids.
+
+**What had to be decided.** What page size should the board request?
+
+**Options considered.**
+
+1. **Keep 50.** No change. Costs: every column is truncated until the
+   feed exhausts itself, and the header count is briefly a lie. The
+   case names that exact failure.
+2. **Request everything in one call (no limit).** Costs: the server
+   clamps `limit` to 200 (`urlInt(1, 200)`), so this is not actually
+   available; asking for more silently yields 200 anyway.
+3. **200, the server's ceiling.** Chosen. One request per 200 tasks,
+   the fewest round trips the API allows, with the infinite feed
+   continuing underneath for larger trackers.
+
+**Decided.** Option 3 — `BOARD_PAGE_SIZE = 200`.
+
+**Why.** It is the largest page the server will honour, so it
+minimises the window in which a count is wrong without inventing a new
+endpoint or changing the server's clamp. Virtualization and the
+900-card scrolling behaviour BRD-21 also asks for are **not** built
+here — see the gap noted in the M3.1 report.
+
+**To revert.** `BOARD_PAGE_SIZE` in
+`apps/web/src/client/board/BoardView.tsx`; deleting the `limit`
+override returns the board to the list's 50.
+
+**Test.** Not directly asserted — BRD-21 (900 cards) is not in M3.1's
+owed set and no spec seeds past 200. The constant is exercised
+indirectly by every board spec.

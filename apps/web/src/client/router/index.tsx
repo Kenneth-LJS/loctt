@@ -5,6 +5,7 @@ import {
   redirect,
 } from "@tanstack/react-router";
 
+import { BoardView } from "../board/BoardView.tsx";
 import { RegionErrorFallback } from "../error/RegionErrorBoundary.tsx";
 import { ListView } from "../list/ListView.tsx";
 import { NotFound } from "../routes/NotFound.tsx";
@@ -84,11 +85,17 @@ const listRoute = createRoute({
   component: ListView,
 });
 
+// M3.1: the board reads the *same* search vocabulary as the list
+// (BRD-1, BRD-14), so a filter means the same thing in both views and
+// a `/board?assignee=…` URL reproduces the filtered board. Sharing the
+// schema is what makes that true by construction rather than by two
+// definitions agreeing for now.
 const boardRoute = createRoute({
   getParentRoute: () => rootRoute,
   errorComponent: RouteError,
   path: "/board",
-  component: () => <Stub name="/board" />,
+  validateSearch: listSearchSchema,
+  component: BoardView,
 });
 
 const timelineRoute = createRoute({
