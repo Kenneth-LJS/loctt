@@ -309,6 +309,80 @@ describe("setField / unsetField", () => {
       })).rejects.toThrow(TaskUpdateError);
     });
 
+    // @verifies BRD-9
+    // @verifies XS-9
+    //
+    // The board's cross-column drag writes `status` and `board_rank`
+    // in ONE change set, so a crash between them cannot leave a card
+    // in a column its status contradicts. `board_rank` is auto-managed
+    // and refused by default; the board-move path is granted it.
+    it("writes status and board_rank together when board_rank is granted", async () => {
+      await seedTask();
+      const updated = await setFields({
+        locttDir,
+        taskId: "abc",
+        changes: [
+          { field: "status", value: "in_progress" },
+          { field: "board_rank", value: "v" },
+        ],
+        allowAutoManaged: new Set(["board_rank"]),
+      });
+
+      expect(updated.frontmatter.status).toBe("in_progress");
+      // Top-level, not nested under `fields:` — a rank stored there is
+      // invisible to every reader and the card renders unranked.
+      expect(updated.frontmatter.board_rank).toBe("v");
+      expect(updated.frontmatter.fields).not.toHaveProperty("board_rank");
+
+      // Re-read from disk: the response is not the file.
+      const onDisk = await readTask(locttDir, "abc");
+      expect(onDisk.frontmatter.status).toBe("in_progress");
+      expect(onDisk.frontmatter.board_rank).toBe("v");
+
+      // One write, so both entries share the batch's timestamp, and
+      // the rank is recorded as a built-in field change rather than a
+      // `custom_field_change` naming a `fields:` key that never existed.
+      const history = await readHistory(locttDir, "abc");
+      const rank = history.find(e => e.field === "board_rank");
+      const status = history.find(e => e.field === "status");
+      expect(rank?.kind).toBe("field_change");
+      expect(rank?.after).toBe("v");
+      expect(status?.after).toBe("in_progress");
+      expect(rank?.timestamp).toBe(status?.timestamp);
+    });
+
+    // @verifies XS-9
+    //
+    // The grant is per-field and opt-in. Without this, widening it to
+    // "any auto-managed field" would let a caller stamp
+    // `completed_date` by hand, which the server computes from the
+    // workspace timezone.
+    it("still refuses an auto-managed field the caller was not granted", async () => {
+      await seedTask();
+      await expect(setFields({
+        locttDir,
+        taskId: "abc",
+        changes: [
+          { field: "status", value: "in_progress" },
+          { field: "completed_date", value: "2026-01-02" },
+        ],
+        allowAutoManaged: new Set(["board_rank"]),
+      })).rejects.toThrow(/auto-managed/);
+    });
+
+    // @verifies XS-9
+    //
+    // The default must not change: `loctt set <task> board_rank u` is
+    // still refused, which is why the field is auto-managed at all.
+    it("refuses board_rank when no grant is passed", async () => {
+      await seedTask();
+      await expect(setFields({
+        locttDir,
+        taskId: "abc",
+        changes: [{ field: "board_rank", value: "v" }],
+      })).rejects.toThrow(/auto-managed/);
+    });
+
     it("rejects empty changes", async () => {
       await seedTask();
       await expect(setFields({ locttDir, taskId: "abc", changes: [] }))

@@ -224,6 +224,8 @@ export type {
   ReorderResult,
 } from "./rank/index.js";
 export {
+  MAX as LEXORANK_MAX,
+  MIN as LEXORANK_MIN,
   between as lexorankBetween,
   compare as lexorankCompare,
   reorderBoardRank,

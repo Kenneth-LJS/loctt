@@ -726,6 +726,8 @@ Reorder a task's position on the board (its `board_rank`). The board column is i
 
 Returns the result of the reorder as JSON (`{ rank, rebalanced }`). Errors via `ReorderError`; passing both `before` and `after` errors with the same mutually-exclusive message as `reorder_relationship`.
 
+Reordering a task into the position it already occupies is a **no-op**: when the computed rank equals the current one, nothing is written — `board_rank` and `updated_at` are unchanged and no history entry is appended. The call still succeeds and returns the existing rank with `rebalanced: false`.
+
 ## Config and Git
 
 Config tools currently target machine-local keys (`git.*`).

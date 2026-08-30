@@ -22,7 +22,10 @@ import type { buildLookups } from "../list/lookups.ts";
  * argument covers the status, priority and type badges: a second
  * palette here would drift the first time either was edited.
  *
- * Not draggable. Drag-and-drop is M3.2; this renders and navigates.
+ * Draggable as of M3.2: the gesture is armed by `onPointerDown`
+ * (see `useBoardDrag`) and mirrored on the keyboard by `onMoveKey`.
+ * A press that never passes the threshold stays a click and opens the
+ * task (BRD-8, BRD-37).
  */
 export function BoardCard({
   task,
@@ -33,6 +36,9 @@ export function BoardCard({
   today,
   onOpen,
   onFilterLabel,
+  onPointerDown,
+  onMoveKey,
+  placeholder = false,
 }: {
   readonly task: TaskFrontmatterPublic;
   readonly layout: readonly CardLayoutField[];
@@ -48,6 +54,21 @@ export function BoardCard({
   readonly today: string;
   readonly onOpen: (key: string) => void;
   readonly onFilterLabel: (id: string) => void;
+  /**
+   * Arms a drag (M3.2). Absent on the floating preview, which must
+   * not itself be draggable.
+   */
+  readonly onPointerDown?: (e: React.PointerEvent) => void;
+  /**
+   * BRD-38: the keyboard equivalent of a drag. Ctrl/Cmd + arrow.
+   */
+  readonly onMoveKey?: (direction: "left" | "right" | "up" | "down") => void;
+  /**
+   * This card is the one being dragged (BRD-11). It keeps its box —
+   * so the column does not collapse and the drop geometry still
+   * matches the screen — but renders as an empty slot.
+   */
+  readonly placeholder?: boolean;
 }) {
   const milestoneName = milestones.find(m => m.id === task.milestone)?.name;
   const sprintName = sprints.find(s => s.id === task.sprint)?.name;
@@ -60,12 +81,37 @@ export function BoardCard({
       // button rather than a div so it is keyboard-reachable and shows
       // a focus ring without hand-rolling either (BRD-38 builds the
       // *move* gesture on top of this in M3.2; reachability is here).
-      className="rounded border border-border-subtle bg-bg-base focus-within:ring-2 focus-within:ring-accent-fg"
+      data-placeholder={placeholder ? "true" : undefined}
+      className={[
+        "rounded border focus-within:ring-2 focus-within:ring-accent-fg",
+        placeholder
+          ? "border-dashed border-border-subtle bg-bg-muted/40 opacity-40 [&_*]:invisible"
+          : "border-border-subtle bg-bg-base",
+      ].join(" ")}
+      onPointerDown={onPointerDown}
     >
       <button
         type="button"
         onClick={() => { onOpen(task.key); }}
-        className="block w-full cursor-pointer p-2 text-left"
+        // BRD-38: Ctrl/Cmd + arrow moves the card. Plain arrows are
+        // deliberately untouched so they still move focus and scroll
+        // the column; a bare arrow key stealing the card would make
+        // the board unnavigable by keyboard.
+        onKeyDown={e => {
+          if (onMoveKey === undefined) return;
+          if (!e.ctrlKey && !e.metaKey) return;
+          const dir =
+            e.key === "ArrowLeft" ? "left"
+            : e.key === "ArrowRight" ? "right"
+            : e.key === "ArrowUp" ? "up"
+            : e.key === "ArrowDown" ? "down"
+            : null;
+          if (dir === null) return;
+          e.preventDefault();
+          e.stopPropagation();
+          onMoveKey(dir);
+        }}
+        className="block w-full cursor-grab p-2 text-left active:cursor-grabbing"
       >
         {/* BRD-22: a 300-character title clamps to a fixed number of
             lines rather than growing the card to fill the column. */}

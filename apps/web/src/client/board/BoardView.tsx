@@ -1,9 +1,10 @@
 import type { CardLayoutField, TaskFrontmatterPublic } from "@loctt/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { useLabels, useMilestones, useProjects, useSprints, useUsers } from "../api/hooks/sidebarData.ts";
+import { useBoardMove } from "../api/hooks/useBoardMove.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
 import { tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
@@ -16,14 +17,20 @@ import { hiddenColumnsOf, withHiddenColumns } from "./chipSettings.ts";
 import type { BoardColumn } from "./columns.ts";
 import { bucketTasks, deriveColumns } from "./columns.ts";
 import { ConfigErrorState } from "./ConfigErrorState.tsx";
+import type { DropNeighbours } from "./dragModel.ts";
+import { neighboursAt, statusForColumn } from "./dragModel.ts";
+import type { DragState, DropRequest } from "./useBoardDrag.ts";
+import { useBoardDrag } from "./useBoardDrag.ts";
 
 /**
- * The board (M3.1) — a static, read-only board.
+ * The board (M3.1 static shape; M3.2 adds the drag layer).
  *
- * Drag-and-drop is M3.2 and deliberately absent: no card is draggable,
- * and nothing here writes `board_rank`. The column model, the chips
- * bar and the card renderer are built so that M3.2 adds a drag layer
- * rather than rewriting them.
+ * Cards are dragged between and within columns. The two writes are
+ * deliberately different shapes: crossing a column boundary sends
+ * `status` and `board_rank` in ONE request (BRD-9, XS-9), while a
+ * reorder inside a column sends `board_rank` alone, with `status`
+ * absent from the payload rather than resent at its current value.
+ * See `useBoardMove` for why the two-request version is a defect.
  *
  * The board reads the *same* URL search vocabulary as the list
  * (BRD-1, BRD-14), so a filter is expressed identically in both and a
@@ -107,10 +114,116 @@ export function BoardView() {
     [userSettings.data?.settings],
   );
 
+  // Computed before the drag hook because hooks cannot run behind an
+  // early return, and the drag needs to know which columns are
+  // actually rendered (BRD-36).
+  const visible = useMemo(
+    () => columns.filter(c => !hidden.includes(c.id)),
+    [columns, hidden],
+  );
+
   // BRD-48: the write can fail. The optimistic hide is rolled back by
   // the mutation, so the board and the file agree again — this is what
   // tells the user why the column came back.
   const [chipError, setChipError] = useState<unknown>(null);
+
+  // BRD-41/BRD-43/BRD-44: a failed drop must name the task, say the
+  // move was not saved, and offer a retry. `lastMove` keeps the
+  // arguments so the retry can re-issue exactly the same write rather
+  // than asking the user to drag again.
+  const [moveError, setMoveError] = useState<{ key: string; message: string } | null>(null);
+  const lastMove = useRef<DropRequest | null>(null);
+
+  const boardMove = useBoardMove();
+
+  const runMove = useCallback((req: DropRequest): void => {
+    lastMove.current = req;
+    setMoveError(null);
+    boardMove.mutate(
+      {
+        ref: req.key,
+        ...(req.status !== undefined ? { status: req.status } : {}),
+        ...(req.before !== undefined ? { before: req.before } : {}),
+        ...(req.after !== undefined ? { after: req.after } : {}),
+      },
+      {
+        onError: (err: unknown) => {
+          setMoveError({
+            key: req.key,
+            message:
+              err instanceof ApiError
+                ? err.envelope?.message ?? err.message
+                : "The server could not be reached.",
+          });
+        },
+      },
+    );
+  }, [boardMove]);
+
+  const { drag, onPointerDown } = useBoardDrag({
+    columns: visible,
+    buckets,
+    onDrop: runMove,
+  });
+
+  // BRD-38: the same move without a mouse.
+  //
+  // The documented sequence is Ctrl/Cmd + arrow on a focused card:
+  // Left/Right move it to the adjacent column, Up/Down move it within
+  // its own column. Plain arrows are left alone so they still scroll
+  // the column and move between focusable controls.
+  //
+  // This funnels into `runMove` — the same request a mouse drag makes,
+  // so the atomic single write of BRD-9 is not reimplemented for the
+  // keyboard and cannot drift from it.
+  const [announcement, setAnnouncement] = useState("");
+
+  const moveByKeyboard = useCallback(
+    (key: string, columnId: string, direction: "left" | "right" | "up" | "down"): void => {
+      const colIndex = visible.findIndex(c => c.id === columnId);
+      const column = visible[colIndex];
+      if (column === undefined) return;
+      const cards = buckets.get(columnId) ?? [];
+      const index = cards.findIndex(t => t.key === key);
+      if (index === -1) return;
+
+      if (direction === "left" || direction === "right") {
+        const targetColumn = visible[colIndex + (direction === "left" ? -1 : 1)];
+        if (targetColumn === undefined) return;
+        const status = statusForColumn(targetColumn);
+        if (status === undefined) return;
+        // Appended to the end of the destination column, which is the
+        // one position that needs no pointer to express.
+        const targetCards = buckets.get(targetColumn.id) ?? [];
+        const after = targetCards[targetCards.length - 1]?.key;
+        runMove({ key, status, ...(after !== undefined ? { after } : {}) });
+        setAnnouncement(
+          `${key} moved to ${targetColumn.label}, position ${targetCards.length + 1}.`,
+        );
+        return;
+      }
+
+      const targetIndex = index + (direction === "up" ? -1 : 1);
+      if (targetIndex < 0 || targetIndex >= cards.length) return;
+      const others = cards.filter(t => t.key !== key);
+      const { after, before } = neighboursAt(others, targetIndex);
+      runMove({
+        key,
+        ...(before !== undefined ? { before } : {}),
+        ...(after !== undefined ? { after } : {}),
+      });
+      setAnnouncement(
+        `${key} moved to position ${targetIndex + 1} in ${column.label}.`,
+      );
+    },
+    [visible, buckets, runMove],
+  );
+
+  // The dragged card's data, for the floating preview.
+  const draggedTask = useMemo(
+    () => (drag === null ? undefined : items.find(t => t.key === drag.key)),
+    [drag, items],
+  );
 
   const toggleColumn = (columnId: string): void => {
     const current = userSettings.data?.settings ?? {};
@@ -145,7 +258,6 @@ export function BoardView() {
     );
   }
 
-  const visible = columns.filter(c => !hidden.includes(c.id));
   const loading = tasks.isLoading || workflow.isLoading;
   const queryFailed = !loading && (tasks.isError || workflow.isError);
 
@@ -166,6 +278,44 @@ export function BoardView() {
 
   return (
     <div className="flex h-full flex-col gap-3 p-4" data-testid="board">
+      {/* BRD-41/BRD-43/BRD-44: a drop that did not land names the
+          task, says plainly that it was not saved, and offers a retry
+          that re-issues the same move. The card itself is already back
+          in its original column — the refetch in `useBoardMove`
+          settles the board to what the files say, so nothing optimistic
+          survives this (P1). */}
+      {moveError !== null && (
+        <div
+          role="alert"
+          data-testid="board-move-error"
+          className="flex items-center gap-3 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+        >
+          <span className="min-w-0 flex-1">
+            <strong>{moveError.key}</strong> was not moved — the change was not
+            saved. {moveError.message}
+          </span>
+          <button
+            type="button"
+            data-testid="board-move-retry"
+            onClick={() => {
+              const req = lastMove.current;
+              if (req !== null) runMove(req);
+            }}
+            className="shrink-0 rounded border border-danger-fg/40 px-2 py-0.5 hover:bg-danger-fg/10"
+          >
+            Retry
+          </button>
+          <button
+            type="button"
+            data-testid="board-move-reload"
+            onClick={() => { window.location.reload(); }}
+            className="shrink-0 rounded border border-danger-fg/40 px-2 py-0.5 hover:bg-danger-fg/10"
+          >
+            Reload
+          </button>
+        </div>
+      )}
+
       {chipError !== null && (
         <div
           role="alert"
@@ -259,6 +409,9 @@ export function BoardView() {
               onFilterLabel={id =>
                 void navigate({ search: prev => ({ ...prev, labels: [id] }) })
               }
+              drag={drag}
+              onCardPointerDown={onPointerDown}
+              onKeyboardMove={moveByKeyboard}
             />
           ))}
           {/* BRD-16: one column must not stretch into a full-width
@@ -267,6 +420,46 @@ export function BoardView() {
           <div className="min-w-0 flex-1" aria-hidden="true" />
         </div>
       </div>
+
+      {/* BRD-38: the keyboard move is announced to assistive tech,
+          naming the destination column and the position. A visual drag
+          shows its result; a keyboard move otherwise has nothing to
+          tell a screen-reader user it happened. */}
+      <div
+        aria-live="polite"
+        role="status"
+        data-testid="board-live-region"
+        className="sr-only"
+      >
+        {announcement}
+      </div>
+
+      {/* The card under the cursor. Rendered outside the columns and
+          pointer-transparent so `elementFromPoint` resolves the column
+          beneath it rather than the card itself (BRD-32: the card
+          stays under the cursor for the whole drag). */}
+      {drag !== null && draggedTask !== undefined && (
+        <div
+          data-testid="board-drag-preview"
+          className="pointer-events-none fixed z-50 rotate-2 opacity-90 shadow-lg"
+          style={{
+            left: drag.x - drag.offsetX,
+            top: drag.y - drag.offsetY,
+            width: drag.width,
+          }}
+        >
+          <BoardCard
+            task={draggedTask}
+            layout={cardLayout}
+            lookups={lookups}
+            milestones={milestones.data?.items ?? []}
+            sprints={sprints.data?.items ?? []}
+            today={today}
+            onOpen={() => undefined}
+            onFilterLabel={() => undefined}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -369,6 +562,9 @@ function Column({
   today,
   onOpen,
   onFilterLabel,
+  drag,
+  onCardPointerDown,
+  onKeyboardMove,
 }: {
   readonly column: BoardColumn;
   readonly tasks: readonly TaskFrontmatterPublic[];
@@ -380,18 +576,70 @@ function Column({
   readonly today: string;
   readonly onOpen: (key: string) => void;
   readonly onFilterLabel: (id: string) => void;
+  readonly drag: DragState | null;
+  readonly onCardPointerDown: (
+    e: React.PointerEvent,
+    key: string,
+    columnId: string,
+    originNeighbours: DropNeighbours,
+  ) => void;
+  readonly onKeyboardMove: (
+    key: string,
+    columnId: string,
+    direction: "left" | "right" | "up" | "down",
+  ) => void;
 }) {
   const over = column.wip !== undefined && tasks.length > column.wip;
   const atCap = column.wip !== undefined && tasks.length === column.wip;
 
+  const isDropTarget = drag !== null && drag.over?.columnId === column.id;
+  // BRD-11: the source position collapses while the card is held, so
+  // the board does not jump when the card is finally removed. The card
+  // is hidden in place rather than spliced out of the array, which is
+  // what keeps every other card's DOM node — and therefore its CSS
+  // transition — alive across the drag.
+  const draggingKey = drag?.key;
+  // The cards the drop indicator and the geometry both see. The
+  // dragged card is replaced by a placeholder of the same height
+  // rather than removed: BRD-11 asks for the source position to hold
+  // its space so the board does not jump, and the geometry needs it
+  // too — with the card spliced out, every card below shifts up, and
+  // the pointer held perfectly still then resolves to the slot BELOW
+  // where the drag started. Measured: a card dropped back on its own
+  // centre reported the end-of-column slot and issued a write BRD-31
+  // forbids.
+  // Every card stays rendered, the dragged one included. It is made
+  // invisible (not removed) so it still occupies its slot: removing it
+  // collapses the column, every card below shifts up, and a pointer
+  // held perfectly still then resolves to the slot BELOW where the
+  // drag began. Measured before this: a card dropped back on its own
+  // centre reported the end-of-column slot and issued the write
+  // BRD-31 forbids. Keeping the box also gives BRD-11 its
+  // "source position holds its space so the board doesn't jump".
+  const rest = tasks;
+  const dropIndex = isDropTarget ? drag.over?.index : undefined;
+
   return (
     <section
       data-testid={`board-column-${column.id}`}
+      // The drag resolves the column under the pointer from this
+      // attribute (`elementFromPoint` → `closest`), so it must stay on
+      // the element that covers the whole column, header included.
+      data-column-id={column.id}
       aria-label={column.label}
+      data-drop-active={isDropTarget ? "true" : undefined}
       // BRD-15/BRD-20: a fixed width keeps columns uniform whatever
       // the label length, and keeps twenty of them readable rather
       // than squashed. `shrink-0` is what makes the region scroll.
-      className="flex h-full w-[280px] shrink-0 flex-col rounded-md border border-border-subtle bg-bg-surface"
+      //
+      // BRD-11: the hovered column is visually distinguished from the
+      // others while a card is held over it.
+      className={[
+        "flex h-full w-[280px] shrink-0 flex-col rounded-md border bg-bg-surface transition-colors",
+        isDropTarget
+          ? "border-accent-fg ring-1 ring-accent-fg/40"
+          : "border-border-subtle",
+      ].join(" ")}
     >
       <header className="flex items-center justify-between gap-2 border-b border-border-subtle px-3 py-2">
         <div className="min-w-0">
@@ -464,22 +712,70 @@ function Column({
             No tasks in {column.label}
           </p>
         ) : (
-          tasks.map(task => (
-            <BoardCard
-              key={task.id}
-              task={task}
-              layout={layout}
-              lookups={lookups}
-              milestones={milestones}
-              sprints={sprints}
-              today={today}
-              onOpen={onOpen}
-              onFilterLabel={onFilterLabel}
-            />
-          ))
+          <>
+            {rest.map((task, i) => (
+              <Fragment key={task.id}>
+                {/* BRD-11: the gap opens at the insertion point. It is
+                    a real element with a height transition, so moving
+                    between positions animates rather than teleports. */}
+                <DropIndicator active={dropIndex === i} />
+                <BoardCard
+                  task={task}
+                  layout={layout}
+                  lookups={lookups}
+                  milestones={milestones}
+                  sprints={sprints}
+                  today={today}
+                  // BRD-11: the source position shows a placeholder
+                  // rather than vanishing, so the board does not jump
+                  // when the card is finally removed. The floating
+                  // preview is what the user drags.
+                  placeholder={task.key === draggingKey}
+                  onOpen={onOpen}
+                  onFilterLabel={onFilterLabel}
+                  onPointerDown={e => {
+                    // The neighbours this card currently sits between,
+                    // computed from the list with the card itself
+                    // removed — the same basis the drop uses, so the
+                    // two are comparable (BRD-31).
+                    onCardPointerDown(
+                      e,
+                      task.key,
+                      column.id,
+                      neighboursAt(rest.filter(t => t.key !== task.key), i),
+                    );
+                  }}
+                  onMoveKey={dir => { onKeyboardMove(task.key, column.id, dir); }}
+                />
+              </Fragment>
+            ))}
+            <DropIndicator active={dropIndex === rest.length} />
+          </>
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * The gap that opens where a dropped card would land (BRD-11).
+ *
+ * Always rendered, with height animated between 0 and its open size,
+ * so moving the pointer between two positions slides the gap instead
+ * of removing one element and inserting another — which is what
+ * "teleporting" looks like, and what the case rules out.
+ */
+function DropIndicator({ active }: { readonly active: boolean }) {
+  return (
+    <div
+      aria-hidden="true"
+      data-testid="board-drop-indicator"
+      data-active={active ? "true" : "false"}
+      className={[
+        "overflow-hidden rounded transition-all duration-150",
+        active ? "my-1 h-10 border-2 border-dashed border-accent-fg bg-accent-fg/10" : "h-0",
+      ].join(" ")}
+    />
   );
 }
 

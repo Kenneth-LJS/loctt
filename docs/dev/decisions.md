@@ -2111,3 +2111,186 @@ override returns the board to the list's 50.
 **Test.** Not directly asserted — BRD-21 (900 cards) is not in M3.1's
 owed set and no spec seeds past 200. The constant is exercised
 indirectly by every board spec.
+
+### A28 · `reorderBoardRank` writes nothing when the rank is unchanged
+
+**Ticket:** M3.2 · **Date:** 2026-08-30 · **Commit:** (uncommitted)
+
+**The situation.** BRD-31 requires that dropping a card into the exact
+position it already occupies be a no-op: "`board_rank` on disk is
+unchanged, and no history entry is written … `updated_at` is not
+bumped." `reorderBoardRank` had no same-position guard. Measured on
+the CLI before the fix:
+
+```
+board-rerank T1 --after T2  → rank u, history 2 entries
+board-rerank T1 --after T2  → rank u (UNCHANGED), history 3, updated_at ADVANCED
+```
+
+The field path already behaves correctly — `buildSetFieldHistory`
+returns no entries when `before === value`, and `set T1 priority high`
+twice leaves history untouched (measured, 4 entries both times). So
+this was an inconsistency *inside* core, not a design choice.
+
+**What had to be decided.** Whether to guard in core (shared by CLI,
+MCP and web) or only suppress the request in the web client.
+
+**Options considered.**
+
+1. **Client-side only.** The board would not send the request, and
+   BRD-31 would pass. Costs: `loctt board-rerank` and the MCP tool keep
+   writing a phantom history entry and bumping `updated_at`, so the
+   audit trail still claims moves that never happened — and the two
+   surfaces disagree about what the same operation does, which is the
+   drift CLAUDE.md names.
+2. **Guard in core.** Chosen. An early return when the computed rank
+   equals the prior one, before the write and before `appendHistory`.
+   Every surface inherits it. Costs: a caller that *wanted* an
+   idempotent touch to bump `updated_at` no longer gets one — no caller
+   does, and `updated_at` is documented as "stamped on every write",
+   not every call.
+
+**Decided.** Option 2 — the guard lives in `reorderBoardRank`.
+
+**Why.** The defect is in core's behaviour, not in the board's use of
+it; fixing it at the caller would leave the CLI and MCP wrong and make
+BRD-31 true only of the web. The client *also* declines to send the
+request (see A29), but that is about not making a pointless round trip,
+not about correctness of the write.
+
+**To revert.** `packages/core/src/rank/reorder.ts` — the
+`newRank === priorBoardRank` early return. Removing it restores the
+prior behaviour exactly.
+
+**Test.** `packages/core/src/rank/reorder.test.ts` — "writes nothing
+when the computed rank equals the current one" (asserts rank,
+`updated_at` and history length off disk) and "still writes when the
+drop actually changes position", which is what stops the guard being
+widened into "never write". Shown to fail: deleting the guard reddens
+the first test only (12 others stay green); typecheck exits 0 with the
+mutation in place.
+
+### A29 · A cross-column drop is one `setFields` write, reached by a new `board-move` route
+
+**Ticket:** M3.2 · **Date:** 2026-08-30 · **Commit:** (uncommitted)
+
+**The situation.** BRD-9, XS-9 and CW-5 all require a cross-column drag
+to write `status` and `board_rank` in **one** request — "two sequential
+single-field calls is a failure of this case". BRD-41 adds that a
+failed drop must leave *neither* field written. The web server had
+`POST /api/tasks/:ref/set` (one field per request) and
+`POST /api/tasks/:ref/board-rerank` (rank only, and it derives peers
+from the task's *current* status, so it cannot rank against the
+destination column's cards). `setFields` existed in core, exported,
+with no caller anywhere.
+
+**What had to be decided.** How the web reaches an atomic two-field
+write, given `board_rank` is in `AUTO_MANAGED_FIELDS` and `setFields`
+therefore refuses it.
+
+**Options considered.**
+
+1. **Two requests (set status, then rerank).** Costs: the exact shape
+   the cases forbid. A crash between them leaves a card in a column its
+   status contradicts, which is unrecoverable without a manual file fix.
+2. **Remove `board_rank` from `AUTO_MANAGED_FIELDS`.** One line, and
+   `setFields` would take it. Costs: `loctt set <task> board_rank u`
+   becomes legal on every surface, so a user can hand-write a rank that
+   collides with a peer's or sits outside the alphabet — the guard
+   exists precisely to keep rank computation in `reorderBoardRank`.
+3. **A per-call grant.** Chosen. `setFields` takes an optional
+   `allowAutoManaged` set, empty by default; the new
+   `POST /api/tasks/:ref/board-move` route passes `{"board_rank"}`. The
+   refusal stays the default on every existing path.
+
+**Decided.** Option 3 — `allowAutoManaged`, plus a `board-move` route
+calling `setFields`.
+
+**Why.** It gets the atomic write the cases require without widening
+what users can write. The grant is per-field and per-call, so
+`completed_date` — the other auto-managed field, computed from the
+workspace timezone — stays refused even on this path.
+
+Two supporting changes were needed and are part of this decision:
+`setFieldsLocked` now writes a granted auto-managed field at the **top
+level** of frontmatter (it would otherwise fall through to the
+custom-field branch and nest `board_rank` under `fields:`, where
+nothing reads it), and `buildSetFieldHistory` records it as a
+`field_change` rather than a `custom_field_change` naming a `fields:`
+key that does not exist.
+
+**To revert.** Delete `handleBoardMove`, `TASK_BOARD_MOVE_RE`,
+`BOARD_MOVE_GRANT` and the route-table entry in
+`apps/web/src/server/server.ts`; drop `allowAutoManaged` from
+`SetFieldsOptions` / `assertChangesWritable` / `setFields` and the
+`AUTO_MANAGED_FIELDS` branch in `setFieldsLocked` and
+`buildSetFieldHistory` in `packages/core/src/task/update.ts`; point
+`useBoardMove` at the old two-call shape. The CLI and MCP are
+untouched by this decision and need no revert.
+
+**Test.** `packages/core/src/task/update.test.ts` — "writes status and
+board_rank together when board_rank is granted" (asserts both fields
+off disk, that `board_rank` is *not* under `fields:`, and that both
+history entries share one timestamp), "still refuses an auto-managed
+field the caller was not granted", "refuses board_rank when no grant is
+passed". `tests/ui/flow-board.spec.ts` BRD-9 counts the POSTs (exactly
+one) and reads the resulting rank off disk, asserting it falls strictly
+between the two neighbours. Shown to fail: routing `board_rank` down
+the custom-field branch reddens the first test only; ignoring the grant
+reddens the other two. Both mutations typecheck.
+
+### A30 · The board's drag is built on pointer events, and a no-op drop is decided by neighbours
+
+**Ticket:** M3.2 · **Date:** 2026-08-30 · **Commit:** (uncommitted)
+
+**The situation.** `apps/web` has no drag-and-drop dependency. M3.2
+needs a drag threshold (BRD-37: a 2px move stays a click), `Esc` and
+external cancellation (BRD-36), and a drop computed against the
+neighbours the user saw at release rather than whatever a mid-drag
+refetch re-sorted (BRD-32).
+
+**What had to be decided.** Whether to add a drag library, use HTML5
+drag-and-drop, or hand-roll on pointer events; and how to decide that a
+drop is a no-op.
+
+**Options considered.**
+
+1. **Add `@dnd-kit` or similar.** Costs: a new runtime dependency this
+   ticket has no mandate to add, and its own cancellation semantics to
+   fight for BRD-36.
+2. **HTML5 drag-and-drop.** Costs: `dragstart` fires on the browser's
+   threshold, not ours, so BRD-37's 2px bullet is not expressible; it
+   also suppresses the click that BRD-8 needs.
+3. **Pointer events.** Chosen. ~230 lines in `useBoardDrag.ts`, with the
+   pure geometry in `dragModel.ts` so it is unit-testable without
+   synthesizing pointer events.
+
+**Decided.** Option 3.
+
+**Why.** Two of the owed cases are specifically about gesture
+thresholds and cancellation, which are exactly what a library
+abstracts away.
+
+The second half of this decision was forced by measurement. `isNoOpDrop`
+first compared the drop's index against the card's original index; the
+BRD-31 spec caught it. While a card is held it is lifted out of the
+flow, so the cards below shift up and a pointer held perfectly still
+resolves one slot *lower* than the drag began — measured: origin index
+1, resolved index 2, and a write BRD-31 forbids. Two changes fix it
+together: the dragged card keeps its box in the column (rendered as a
+dimmed placeholder, which BRD-11 wants anyway) so the geometry matches
+the screen, and `isNoOpDrop` compares the **pair of neighbours** rather
+than indices, since neighbours are stable under renumbering.
+
+**To revert.** Delete `apps/web/src/client/board/useBoardDrag.ts` and
+`dragModel.ts`, the `drag` / `onCardPointerDown` / `onKeyboardMove`
+props on `Column` and `BoardCard`, and `useBoardMove`. `BoardView`
+returns to rendering static cards.
+
+**Test.** `apps/web/src/client/board/dragModel.test.ts` (18 tests) for
+the geometry and the no-op rule; `tests/ui/flow-board.spec.ts` for the
+gestures end-to-end. Shown to fail: `statusForColumn` picking the last
+status reddens both BRD-13 tests; `insertionIndex` comparing top edges
+instead of midpoints reddens two; comparing only one neighbour in
+`isNoOpDrop` reddens "requires both neighbours to match" — that
+mutation initially **survived**, which is why that test exists.

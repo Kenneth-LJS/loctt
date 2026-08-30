@@ -104,6 +104,9 @@ import {
   initLoctt,
   isMalformedHistoryEntry,
   LabelError,
+  LEXORANK_MAX,
+  LEXORANK_MIN,
+  lexorankBetween,
   linkTask,
   listComments,
   listTasks,
@@ -160,6 +163,7 @@ import {
   setConfigValue,
   setDefaultProject,
   setField,
+  setFields,
   setProjectPrefix,
   SprintError,
   sprintProgress,
@@ -830,6 +834,16 @@ const TASK_UNLINK_RE = /^\/api\/tasks\/([^/]+)\/unlink$/;
 const TASK_ATTACHMENTS_RE = /^\/api\/tasks\/([^/]+)\/attachments$/;
 const TASK_ATTACHMENT_ITEM_RE = /^\/api\/tasks\/([^/]+)\/attachments\/([^/]+)$/;
 const TASK_BOARD_RERANK_RE = /^\/api\/tasks\/([^/]+)\/board-rerank$/;
+const TASK_BOARD_MOVE_RE = /^\/api\/tasks\/([^/]+)\/board-move$/;
+
+/**
+ * The one auto-managed field the board-move path may write directly.
+ *
+ * Scoped to a constant so the grant is greppable and cannot quietly
+ * widen: `completed_date`, the other auto-managed field, stays
+ * server-computed on every path including this one.
+ */
+const BOARD_MOVE_GRANT: ReadonlySet<string> = new Set(["board_rank"]);
 const TASK_RELATIONSHIP_RERANK_RE = /^\/api\/tasks\/([^/]+)\/relationships\/([^/]+)\/([^/]+)\/rerank$/;
 const TASK_BODY_RE = /^\/api\/tasks\/([^/]+)\/body$/;
 const TASK_BODY_APPEND_RE = /^\/api\/tasks\/([^/]+)\/body\/append$/;
@@ -2273,6 +2287,160 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
+  /**
+   * A board drag that crosses columns: `status` and `board_rank` in
+   * **one** write (BRD-9, XS-9, CW-5).
+   *
+   * ## Why this is not two calls
+   *
+   * The obvious implementation — `POST /set status` then
+   * `POST /board-rerank` — is two writes with a window between them. A
+   * crash, a 500, or a lost connection in that window leaves the card
+   * in a column its `status` contradicts: exactly the half-landed
+   * state BRD-41 says must never reach disk ("no partial write of one
+   * field without the other"). XS-9 rules it out in as many words.
+   *
+   * `setFields` (core) writes a change set under one state lock and
+   * appends one history batch, so both fields land or neither does. It
+   * was exported and had no caller; this is the caller.
+   *
+   * ## Why the rank is computed here rather than by `reorderBoardRank`
+   *
+   * `reorderBoardRank` derives a card's peers from the status the task
+   * *currently* has — correct for an intra-column reorder, wrong for
+   * this one. On a cross-column drop the destination neighbours are in
+   * the column the card is moving *to*, and that function would refuse
+   * them outright (its `anchorRank` throws when an anchor's status
+   * differs). So the neighbours arrive from the client as the two keys
+   * the user actually saw at release time (BRD-32), and the rank is
+   * interpolated between their stored ranks.
+   *
+   * The anchors are re-read from disk rather than trusted from the
+   * payload: BRD-44's neighbour may have been deleted since the drag
+   * began, and BRD-35's card may have moved.
+   */
+  const handleBoardMove: RouteHandler = async ({ req, res, locttDir, captures }) => {
+    const ref = requireValidRef(captures, res, 0, req);
+    if (ref === null) return;
+    const request = await parseJsonBody<{
+      status?: unknown;
+      before?: unknown;
+      after?: unknown;
+    }>(req, res);
+
+    if (typeof request.status !== "string" || request.status.length === 0) {
+      error(res, "No destination status was named for the move.", 400, REJECTED_WRITE);
+      return;
+    }
+    const status = request.status;
+
+    const wfConfig = await loadWorkflowConfig(locttDir);
+    // BRD-42: the column was rendered from config the page loaded
+    // *before* the status was deleted from `workflow.yaml`. The write
+    // must be refused naming the key, and the board told to reload —
+    // not written into a status the workflow no longer declares.
+    if (!wfConfig.statuses.some(s => s.key === status)) {
+      error(
+        res,
+        `The status "${status}" no longer exists in workflow.yaml. `
+        + `This board is showing stale configuration — reload to see the current columns.`,
+        400,
+        {
+          ...REJECTED_WRITE_NO_RETRY,
+          field: "status",
+          recovery: { kind: "reload" },
+        },
+      );
+      return;
+    }
+
+    try {
+      const task = await lookupTask(locttDir, ref);
+      const archivedGuard = await loadArchivedGuardConfigs(locttDir);
+
+      // Anchors are read fresh. A neighbour deleted mid-drag (BRD-44)
+      // surfaces here as a lookup failure naming the operation, rather
+      // than as a rank silently interpolated against a ghost.
+      const rankOfAnchor = async (anchorRef: unknown): Promise<string | undefined> => {
+        if (typeof anchorRef !== "string" || anchorRef.length === 0) return undefined;
+        try {
+          const anchor = await lookupTask(locttDir, anchorRef);
+          return anchor.frontmatter.board_rank;
+        } catch {
+          throw new ReorderError(
+            `Couldn't reorder ${ref}: the neighbouring task "${anchorRef}" no longer `
+            + `exists, so this board is out of date. Reload and try the move again.`,
+          );
+        }
+      };
+
+      const beforeRank = await rankOfAnchor(request.before);
+      const afterRank = await rankOfAnchor(request.after);
+
+      // `before` is the card the dropped card lands *above*, `after`
+      // the one it lands *below* — so the new rank sits between the
+      // lower bound (`after`) and the upper bound (`before`). Missing
+      // bounds fall back to the ends of the space, which is what makes
+      // a drop at the very top (BRD-25) or very bottom (BRD-26)
+      // produce a rank strictly inside `("0", "z")` rather than equal
+      // to either end.
+      const lower = afterRank ?? LEXORANK_MIN;
+      const upper = beforeRank ?? LEXORANK_MAX;
+      const board_rank = lexorankBetween(lower, upper);
+
+      const updated = await setFields({
+        locttDir,
+        taskId: task.frontmatter.id,
+        // Both fields, one change set, one write. Nothing else is
+        // included: XS-9 requires a concurrent CLI edit to `assignee`
+        // on this same card to survive the drag.
+        changes: [
+          { field: "status", value: status },
+          { field: "board_rank", value: board_rank },
+        ],
+        workflowConfig: wfConfig,
+        archivedGuard,
+        // `board_rank` is auto-managed, so `setFields` refuses it by
+        // default — that guard is what stops a user hand-writing a
+        // rank through `loctt set`. This path *is* the rank's owner,
+        // and it needs the write in the same change set as `status`.
+        allowAutoManaged: BOARD_MOVE_GRANT,
+      });
+      json(res, projectTaskFrontmatter(updated.frontmatter));
+    } catch (err) {
+      if (err instanceof ReorderError) {
+        error(res, err.message, 400, {
+          ...REJECTED_WRITE_NO_RETRY,
+          field: "board_rank",
+          recovery: { kind: "reload" },
+        });
+        return;
+      }
+      // BRD-41: the drop failed, so *neither* field was written —
+      // `setFields` is atomic. The client snaps the card back to its
+      // original column and position on this.
+      if (err instanceof LocttError) {
+        const envelope = err.toEnvelope();
+        error(res, envelope.message, 400, {
+          ...envelope,
+          field: envelope.field ?? "status",
+          recovery: envelope.recovery ?? { kind: "retry" },
+        });
+        return;
+      }
+      if (err instanceof ZodError) {
+        error(res, zodIssueSummary(err), 400, {
+          code: "validation_failed",
+          field: "status",
+          data_state: "not_saved",
+          recovery: { kind: "retry" },
+        });
+        return;
+      }
+      throw err;
+    }
+  };
+
   const handleRelationshipRerank: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const sourceRef = captures[0] ?? "";
     const relationshipType = captures[1] ?? "";
@@ -3500,6 +3668,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "GET", pattern: TASK_REF_RE, handler: handleGetTask },
     { method: "DELETE", pattern: TASK_REF_RE, handler: handleDeleteTask },
     { method: "POST", pattern: TASK_BOARD_RERANK_RE, handler: handleBoardRerank },
+    { method: "POST", pattern: TASK_BOARD_MOVE_RE, handler: handleBoardMove },
     { method: "POST", pattern: TASK_RELATIONSHIP_RERANK_RE, handler: handleRelationshipRerank },
     { method: "POST", pattern: TASK_BODY_RE, handler: handleReplaceBody },
     { method: "POST", pattern: TASK_BODY_APPEND_RE, handler: handleAppendBody },

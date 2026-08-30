@@ -516,6 +516,47 @@ condition 2 working as intended: a feature existing nowhere is scope,
 and adding a field to a shared contract is Ken's call, not an
 agent's.
 
+#### M3.2 · BRD-12 · core and the board disagree on what a column is
+
+**Cross-cutting, and it needs a ruling — not a build-agent decision.**
+
+BRD-12 requires reordering *inside* a column that collapses several
+statuses: a `blocked` card dragged above an `in_progress` card in the
+same `In flight` column writes **only** `board_rank`. The client half
+works and is asserted — exactly one request, no `status` key, the card
+stays `blocked` — but core refuses the write:
+
+```
+$ loctt board-rerank C2 --before C1
+Error: cannot rank before 'C1': it is in status 'in_progress' but C2 is
+in 'blocked'. Board rank is per-column — move the task to that status
+first, or pick an anchor in its own column.
+```
+
+`reorderBoardRank` derives peers from `moved.frontmatter.status` and
+its `anchorRank` throws on a cross-status anchor. That is deliberate —
+it is the SPR-C2 fix, with two tests in `rank/reorder.test.ts`
+asserting the refusal, on the reasoning that a rank interpolated
+between tasks the user cannot see next to the moved one is
+meaningless.
+
+But `workflow.boards.columns[].statuses` (BRD-2, BRD-12, BRD-13) makes
+a column a **set** of statuses, and the board sorts on that basis. So
+the board can *render* an order — `in_progress` and `blocked` cards
+interleaved by rank — that core will not let a user *produce*.
+
+**Why it was not decided here.** The fix is to scope rank to the
+configured board column rather than to one status. That changes what
+`loctt board-rerank` and the MCP `reorder_board` tool accept, requires
+rewriting the two SPR-C2 tests that assert the current refusal, and
+needs a ruling on what board rank means when there is no `boards`
+block and "column" and "status" genuinely coincide. Contradicting a
+recorded core decision is condition 3, so it is reported.
+
+The spec is `test.fixme`, not skipped: it runs, is expected to fail,
+and starts passing loudly the moment core is fixed. Detail in
+`docs/dev/known-gaps.md`.
+
 #### M3.1 · three cases are covered in part, by construction
 
 **BRD-45's 1:1 fallback cannot happen, and Ken ruled it stays that
