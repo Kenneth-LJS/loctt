@@ -675,6 +675,11 @@ loctt board-rerank <task> [--before <task> | --after <task>]
 
 Example: `loctt board-rerank T-9 --after T-7`
 
+Re-running the same reorder is a **no-op**: if the computed rank matches
+the task's current one, nothing is written — `board_rank` and
+`updated_at` are unchanged and no history entry is added. The command
+still succeeds and prints the rank.
+
 ## Lifecycle
 
 ### `loctt archive`

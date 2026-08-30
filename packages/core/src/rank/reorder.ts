@@ -257,6 +257,27 @@ export async function reorderBoardRank(
             : { kind: "end" },
     });
 
+    // A drop into the position the card already occupies changes
+    // nothing, so nothing is written (BRD-31).
+    //
+    // Without this, re-dropping a card between the same two neighbours
+    // rewrote `task.md` with an identical `board_rank`, advanced
+    // `updated_at`, and appended a `rank_changed` history entry whose
+    // `before` and `after` were the same string — an audit trail
+    // claiming a move that did not happen. Measured before this
+    // existed: `board-rerank T1 --after T2` twice left rank `u`
+    // unchanged but grew history from 2 entries to 3.
+    //
+    // The field path has always behaved this way — `buildSetFieldHistory`
+    // returns no entries when `before === value` — so this closes an
+    // inconsistency inside core rather than introducing a new rule.
+    // It is placed before the rebalance check deliberately: a rank that
+    // is unchanged is by definition not longer than it was, so it
+    // cannot be the thing that triggers a rebalance.
+    if (priorBoardRank !== undefined && newRank === priorBoardRank) {
+      return { rank: priorBoardRank, rebalanced: false };
+    }
+
     let rebalanced = false;
     let updates: { id: string; rank: string }[] = [
       { id: moved.frontmatter.id, rank: newRank },

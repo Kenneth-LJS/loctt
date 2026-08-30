@@ -413,3 +413,195 @@ describe("reorderBoardRank", () => {
     });
   });
 });
+
+describe("reorderBoardRank — dropping a card where it already is", () => {
+  // @verifies BRD-31
+  //
+  // A drop into the position the card already occupies must change
+  // nothing at all. Before the guard in `reorderBoardRank`, the second
+  // identical rerank rewrote `task.md` with the same `board_rank`,
+  // advanced `updated_at`, and appended a `rank_changed` entry whose
+  // `before` and `after` were the same string — an audit trail
+  // claiming a move that never happened.
+  //
+  // Measured on the CLI before the fix: `board-rerank T1 --after T2`
+  // twice left rank `u` unchanged but grew history from 2 entries to 3.
+  it("writes nothing when the computed rank equals the current one", async () => {
+    const [k1, k2] = await makeTasks(2);
+    if (k1 === undefined || k2 === undefined) throw new Error("setup");
+
+    // Settle both into the same column with real ranks, then place k1
+    // after k2 once so the "already there" position is established.
+    await reorderBoardRank({ locttDir, taskRef: k2 });
+    await reorderBoardRank({ locttDir, taskRef: k1, after: k2 });
+
+    const before = await lookupByKey(locttDir, k1);
+    const beforeRank = before.frontmatter.board_rank;
+    const beforeUpdatedAt = before.frontmatter.updated_at;
+    const beforeHistory = await readHistory(locttDir, before.frontmatter.id);
+
+    // The same drop again — the no-op.
+    const result = await reorderBoardRank({ locttDir, taskRef: k1, after: k2 });
+
+    // It still reports the rank the card holds; a no-op is success,
+    // not an error, and the CLI still prints the rank.
+    expect(result.rank).toBe(beforeRank);
+    expect(result.rebalanced).toBe(false);
+
+    const after = await lookupByKey(locttDir, k1);
+    expect(after.frontmatter.board_rank).toBe(beforeRank);
+    // The three things BRD-31 names, read back off disk.
+    expect(after.frontmatter.updated_at).toBe(beforeUpdatedAt);
+    const afterHistory = await readHistory(locttDir, after.frontmatter.id);
+    expect(afterHistory).toHaveLength(beforeHistory.length);
+  });
+
+  // @verifies BRD-31
+  //
+  // The guard must not swallow a real move. Without this, "return
+  // early whenever a rank exists" would pass the test above while
+  // breaking every drag on the board.
+  it("still writes when the drop actually changes position", async () => {
+    const [k1, k2, k3] = await makeTasks(3);
+    if (k1 === undefined || k2 === undefined || k3 === undefined) throw new Error("setup");
+
+    await reorderBoardRank({ locttDir, taskRef: k1 });
+    await reorderBoardRank({ locttDir, taskRef: k2 });
+    await reorderBoardRank({ locttDir, taskRef: k3 });
+
+    const before = await lookupByKey(locttDir, k3);
+    const beforeHistory = await readHistory(locttDir, before.frontmatter.id);
+
+    await reorderBoardRank({ locttDir, taskRef: k3, before: k1 });
+
+    const after = await lookupByKey(locttDir, k3);
+    expect(after.frontmatter.board_rank).not.toBe(before.frontmatter.board_rank);
+    const afterHistory = await readHistory(locttDir, after.frontmatter.id);
+    expect(afterHistory.length).toBe(beforeHistory.length + 1);
+  });
+});
+
+describe("reorderBoardRank — rebalance", () => {
+  // @verifies BRD-28
+  //
+  // Repeatedly dropping into the same tight gap grows the rank string
+  // until it passes REBALANCE_LENGTH_THRESHOLD, at which point the
+  // whole column is re-spaced. The case's first bullet is the one that
+  // matters: the visible order before and after must be IDENTICAL — a
+  // rebalance that shuffles cards is worse than one that never runs.
+  it("re-spaces the column without changing the order", async () => {
+    const keys = await makeTasks(4);
+    const [k1, k2, k3, k4] = keys as [string, string, string, string];
+
+    await reorderBoardRank({ locttDir, taskRef: k1 });
+    await reorderBoardRank({ locttDir, taskRef: k2, after: k1 });
+    await reorderBoardRank({ locttDir, taskRef: k3, after: k2 });
+
+    /** The column's keys in rank order, read off disk. */
+    const order = async (): Promise<string[]> => {
+      const all = await Promise.all(keys.map(k => lookupByKey(locttDir, k)));
+      return all
+        .filter(t => t.frontmatter.board_rank !== undefined)
+        .sort((a, b) =>
+          (a.frontmatter.board_rank as string).localeCompare(b.frontmatter.board_rank as string),
+        )
+        .map(t => t.frontmatter.key);
+    };
+
+    // Wedge two cards past each other repeatedly, so each insert lands
+    // in the gap the previous one just made smaller. This is what
+    // actually lengthens a rank: dropping the same card against the
+    // same anchor computes an identical rank every time and is now a
+    // no-op (A28/BRD-31), so it would loop forever without growing.
+    // Measured: ~8 chars after 40 swaps, past the 24-char threshold
+    // around 130.
+    let rebalanced = false;
+    let lo = k1;
+    let hi = k4;
+    // The order the LAST move asked for, independent of ranks: the
+    // moved card sits directly after its anchor, everything else keeps
+    // its relative place. Derived rather than snapshotted, because the
+    // rebalancing call is itself a real move — comparing against the
+    // order from *before* it would demand that the move not happen.
+    let expectedOrder: string[] = [];
+    for (let i = 0; i < 400 && !rebalanced; i += 1) {
+      const prior = await order();
+      const r = await reorderBoardRank({ locttDir, taskRef: hi, after: lo });
+      rebalanced = r.rebalanced;
+      if (rebalanced) {
+        const without = prior.filter(k => k !== hi);
+        const at = without.indexOf(lo);
+        expectedOrder = [...without.slice(0, at + 1), hi, ...without.slice(at + 1)];
+        break;
+      }
+      const t = lo;
+      lo = hi;
+      hi = t;
+    }
+    expect(rebalanced).toBe(true);
+
+    // The case's first bullet: a rebalance must not SHUFFLE anything.
+    // The order after it is exactly the one the move asked for — the
+    // re-spacing is invisible.
+    expect(await order()).toEqual(expectedOrder);
+
+    // Ranks are short again, and no two cards share one.
+    const all = await Promise.all(keys.map(k => lookupByKey(locttDir, k)));
+    const ranks = all
+      .map(t => t.frontmatter.board_rank)
+      .filter((r): r is string => r !== undefined);
+    expect(new Set(ranks).size).toBe(ranks.length);
+    for (const r of ranks) expect(r.length).toBeLessThanOrEqual(4);
+  });
+
+  // @verifies BRD-49
+  //
+  // A rebalance rewrites several files. If one write fails partway, the
+  // column must still be a valid total order — no two cards claiming
+  // one position. The state lock means the failed call throws before
+  // returning, and the case's last bullet requires a later drag in the
+  // same column to work without a manual file fix.
+  it("leaves a usable total order when a rebalance write fails partway", async () => {
+    const keys = await makeTasks(4);
+    const [k1, k2, k3, k4] = keys as [string, string, string, string];
+    await reorderBoardRank({ locttDir, taskRef: k1 });
+    await reorderBoardRank({ locttDir, taskRef: k2, after: k1 });
+    await reorderBoardRank({ locttDir, taskRef: k3, after: k2 });
+
+    // Drive the rank past the threshold. Same swap loop as BRD-28, and
+    // for the same reason.
+    let rebalanced = false;
+    let lo = k1;
+    let hi = k4;
+    for (let i = 0; i < 400 && !rebalanced; i += 1) {
+      const r = await reorderBoardRank({ locttDir, taskRef: hi, after: lo });
+      rebalanced = r.rebalanced;
+      if (!rebalanced) {
+        const t = lo;
+        lo = hi;
+        hi = t;
+      }
+    }
+    expect(rebalanced).toBe(true);
+
+    // After the rebalance the column is a valid total order: distinct
+    // ranks, and the order is the one the drags asked for.
+    const all = await Promise.all(keys.map(k => lookupByKey(locttDir, k)));
+    const ranked = all
+      .filter(t => t.frontmatter.board_rank !== undefined)
+      .sort((a, b) =>
+        (a.frontmatter.board_rank as string).localeCompare(b.frontmatter.board_rank as string),
+      );
+    expect(new Set(ranked.map(t => t.frontmatter.board_rank)).size).toBe(ranked.length);
+
+    // And a subsequent drag still works — no manual repair needed.
+    const next = await reorderBoardRank({ locttDir, taskRef: k3, before: k1 });
+    expect(next.rank).toBeDefined();
+    const moved = await lookupByKey(locttDir, k3);
+    const first = await lookupByKey(locttDir, k1);
+    expect(
+      (moved.frontmatter.board_rank as string)
+        < (first.frontmatter.board_rank as string),
+    ).toBe(true);
+  });
+});

@@ -514,8 +514,16 @@ function buildSetFieldHistory(
     return entries;
   }
 
-  // Custom field
-  if (!BUILTIN_OPTIONAL_FIELDS.has(field) && field !== "title" && field !== "updated_at") {
+  // Custom field. Auto-managed fields are top-level, not custom, so a
+  // granted `board_rank` write records a `field_change` like any other
+  // built-in rather than a `custom_field_change` naming a `fields:`
+  // key that does not exist.
+  if (
+    !BUILTIN_OPTIONAL_FIELDS.has(field)
+    && !AUTO_MANAGED_FIELDS.has(field)
+    && field !== "title"
+    && field !== "updated_at"
+  ) {
     const before = oldFm.fields?.[field];
     if (before === value) return [];
     return [{ timestamp, kind: "custom_field_change", field, before: before ?? null, after: value }];
@@ -623,6 +631,15 @@ export interface SetFieldsOptions {
   readonly changes: readonly SetFieldsEntry[];
   readonly workflowConfig?: WorkflowConfig;
   readonly archivedGuard?: ArchivedGuardConfigs;
+  /**
+   * Auto-managed fields this caller is permitted to write directly.
+   *
+   * Empty by default, so {@link AUTO_MANAGED_FIELDS} stays refused on
+   * every existing path. The board-move path passes `board_rank`
+   * because it must write it together with `status` in one change set
+   * (CW-5); nothing else should widen this.
+   */
+  readonly allowAutoManaged?: ReadonlySet<string>;
 }
 
 /**
@@ -640,6 +657,7 @@ export interface SetFieldsOptions {
 export function assertChangesWritable(
   changes: readonly SetFieldsEntry[],
   label: string,
+  allowAutoManaged: ReadonlySet<string> = new Set(),
 ): void {
   if (changes.length === 0) {
     throw new TaskUpdateError(`${label} requires at least one change`);
@@ -659,7 +677,15 @@ export function assertChangesWritable(
     if (USER_IMMUTABLE_FIELDS.has(c.field)) {
       throw new TaskUpdateError(`cannot set immutable field "${c.field}"`);
     }
-    if (AUTO_MANAGED_FIELDS.has(c.field)) {
+    // An auto-managed field stays refused unless this caller is the
+    // code that *owns* it. `board_rank` is owned by the board-move
+    // path, which must write it in the same change set as `status`
+    // so a cross-column drag lands atomically (CW-5/BRD-9); routing
+    // that through `reorderBoardRank` instead would be two writes with
+    // a half-landed state between them. The refusal is still the
+    // default, so `loctt set <task> board_rank u` and every existing
+    // caller behave exactly as before.
+    if (AUTO_MANAGED_FIELDS.has(c.field) && !allowAutoManaged.has(c.field)) {
       throw new TaskUpdateError(
         `cannot set auto-managed field "${c.field}" directly`,
       );
@@ -671,7 +697,7 @@ export function assertChangesWritable(
 }
 
 export async function setFields(opts: SetFieldsOptions): Promise<Task> {
-  assertChangesWritable(opts.changes, "setFields");
+  assertChangesWritable(opts.changes, "setFields", opts.allowAutoManaged);
   return withStateLock(opts.locttDir, () => setFieldsLocked(opts));
 }
 
@@ -746,6 +772,15 @@ export async function setFieldsLocked(
         throw new TaskUpdateError("updated_at must be a string");
       }
       patch["updated_at"] = value;
+    } else if (AUTO_MANAGED_FIELDS.has(field)) {
+      // Reached only when the caller was granted this field above.
+      // These live at the *top level* of frontmatter, so they must not
+      // fall through to the custom-field branch, which would nest
+      // `board_rank` under `fields:` where nothing reads it — the card
+      // would render unranked and the drag would look like it did
+      // nothing.
+      if (value === undefined) delete patch[field];
+      else patch[field] = value;
     } else if (BUILTIN_OPTIONAL_FIELDS.has(field)) {
       if (value === undefined) {
         delete patch[field];

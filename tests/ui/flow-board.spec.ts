@@ -3,9 +3,8 @@
  * from flow-onboarding.md and MSL-5 / MSL-20 from
  * flow-milestones-labels.md).
  *
- * M3.1 — the **static** board. Drag-and-drop is M3.2, so no case here
- * picks a card up; the ones that do (BRD-9..13, 25..32, 34..38, 41..44,
- * 49) are deliberately absent rather than half-asserted.
+ * M3.1 built the static board; M3.2 adds the drag layer, so the cases
+ * that pick a card up now live here too.
  *
  * One `test` per case, named by case ID, with a `@verifies` tag. The
  * prose is the specification: a spec asserting something the case does
@@ -70,6 +69,107 @@ async function readUserSettings(root: string): Promise<string> {
     }
   }
   return "";
+}
+
+
+/**
+ * Reads one task's `task.md` from disk by key.
+ *
+ * Every drag case asserts the *file*, not the screen. A board that
+ * moved a card optimistically and never landed the write looks
+ * identical to one that saved — which is exactly the failure BRD-43
+ * and P1 are about, so the screen cannot be the evidence.
+ */
+async function readTaskFile(root: string, key: string): Promise<string> {
+  const { readdir } = await import("node:fs/promises");
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  for (const id of await readdir(tasksDir)) {
+    try {
+      const text = await readFile(path.join(tasksDir, id, "task.md"), "utf8");
+      if (new RegExp(`^key: ${key}$`, "m").test(text)) return text;
+    } catch {
+      continue;
+    }
+  }
+  throw new Error(`no task.md for ${key}`);
+}
+
+/** One frontmatter scalar, or undefined when the key is absent. */
+function frontmatterValue(text: string, field: string): string | undefined {
+  return new RegExp(`^${field}: (.*)$`, "m").exec(text)?.[1]?.trim();
+}
+
+/** A task's `_history.yaml`, or "" when it has none. */
+async function readTaskHistory(root: string, key: string): Promise<string> {
+  const { readdir } = await import("node:fs/promises");
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  for (const id of await readdir(tasksDir)) {
+    const dir = path.join(tasksDir, id);
+    try {
+      const text = await readFile(path.join(dir, "task.md"), "utf8");
+      if (!new RegExp(`^key: ${key}$`, "m").test(text)) continue;
+      try {
+        return await readFile(path.join(dir, "_history.yaml"), "utf8");
+      } catch {
+        return "";
+      }
+    } catch {
+      continue;
+    }
+  }
+  return "";
+}
+
+/**
+ * Drags a card onto a target, in steps, with the pointer events the
+ * board actually listens for.
+ *
+ * `steps` matters: the drag only starts once the pointer passes
+ * `DRAG_THRESHOLD_PX`, and the drop indicator is computed on move — a
+ * single jump from source to target would arm the drag and release in
+ * the same frame, testing nothing about the gesture.
+ */
+async function dragCard(
+  page: import("@playwright/test").Page,
+  sourceKey: string,
+  target: { readonly x: number; readonly y: number },
+): Promise<void> {
+  const card = page.getByTestId(`board-card-${sourceKey}`);
+  const box = await card.boundingBox();
+  if (box === null) throw new Error(`no box for ${sourceKey}`);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  // Past the threshold first, so the drag is armed before we aim.
+  await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2 + 20, { steps: 4 });
+  await page.mouse.move(target.x, target.y, { steps: 12 });
+  await page.mouse.up();
+}
+
+/** The point at the vertical centre of a column's card area. */
+async function columnPoint(
+  page: import("@playwright/test").Page,
+  columnId: string,
+  position: "top" | "bottom" | "middle" = "middle",
+): Promise<{ x: number; y: number }> {
+  const col = page.getByTestId(`board-column-${columnId}`);
+  const box = await col.boundingBox();
+  if (box === null) throw new Error(`no box for column ${columnId}`);
+  const x = box.x + box.width / 2;
+  const y =
+    position === "top" ? box.y + 90
+    : position === "bottom" ? box.y + box.height - 30
+    : box.y + box.height / 2;
+  return { x, y };
+}
+
+/** The point just above a given card, i.e. the slot before it. */
+async function pointAboveCard(
+  page: import("@playwright/test").Page,
+  key: string,
+): Promise<{ x: number; y: number }> {
+  const box = await page.getByTestId(`board-card-${key}`).boundingBox();
+  if (box === null) throw new Error(`no box for ${key}`);
+  return { x: box.x + box.width / 2, y: box.y + 4 };
 }
 
 test.describe("BRD — board view", () => {
@@ -1121,5 +1221,984 @@ test.describe("BRD — board view", () => {
     await expect(firstPill).toBeVisible();
     await firstPill.click();
     await expect(page).toHaveURL(/labels=/);
+  });
+
+  // ===== M3.2 — drag and drop =====
+
+  // @verifies BRD-9
+  // @verifies XS-9
+  test("BRD-9: a cross-column drag writes status and board_rank in one call", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([
+      { title: "Mover" },
+      { title: "Upper", fields: { status: "in_progress" } },
+      { title: "Lower", fields: { status: "in_progress" } },
+    ]);
+    const [mover, upper, lower] = keys as [string, string, string];
+    // Give the destination pair real ranks so the drop lands between
+    // two known values rather than at an end.
+    await tracker.run(["board-rerank", upper]);
+    await tracker.run(["board-rerank", lower, "--after", upper]);
+
+    // XS-9: a concurrent edit on another field must survive the drag.
+    await tracker.run(["set", mover, "priority", "high"]);
+
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId(`board-card-${mover}`)).toBeVisible();
+
+    // Record every write the drop makes. Two requests here is the
+    // failure the case names, so the count is the assertion.
+    const writes: { url: string; body: unknown }[] = [];
+    page.on("request", req => {
+      if (req.method() !== "POST") return;
+      if (!/\/api\/tasks\//.test(req.url())) return;
+      writes.push({ url: req.url(), body: req.postDataJSON() as unknown });
+    });
+
+    // Drop between the two in_progress cards.
+    await dragCard(page, mover, await pointAboveCard(page, lower));
+
+    await expect(
+      page.getByTestId("board-column-in_progress").getByTestId(`board-card-${mover}`),
+    ).toBeVisible();
+
+    // Exactly one request, carrying BOTH fields.
+    expect(writes).toHaveLength(1);
+    const sent = writes[0]?.body as { status?: string; before?: string; after?: string };
+    // The config KEY, not the label.
+    expect(sent.status).toBe("in_progress");
+
+    // The far end: both fields on disk, and the rank strictly between
+    // the two neighbours it was dropped between.
+    await expect(async () => {
+      const text = await readTaskFile(tracker.root, mover);
+      expect(frontmatterValue(text, "status")).toBe("in_progress");
+      const rank = frontmatterValue(text, "board_rank");
+      expect(rank).toBeDefined();
+      const upperRank = frontmatterValue(await readTaskFile(tracker.root, upper), "board_rank");
+      const lowerRank = frontmatterValue(await readTaskFile(tracker.root, lower), "board_rank");
+      expect(upperRank).toBeDefined();
+      expect(lowerRank).toBeDefined();
+      expect(rank! > upperRank!).toBe(true);
+      expect(rank! < lowerRank!).toBe(true);
+      // XS-9: nothing else was written.
+      expect(frontmatterValue(text, "priority")).toBe("high");
+    }).toPass({ timeout: 5000 });
+
+    // The change is on the record.
+    const history = await readTaskHistory(tracker.root, mover);
+    expect(history).toContain("board_rank");
+    expect(history).toContain("in_progress");
+  });
+
+  // @verifies BRD-10
+  // @verifies XS-9
+  test("BRD-10: an intra-column drag writes board_rank only", async ({ page, tracker }) => {
+    const keys = await tracker.seed([
+      { title: "First" },
+      { title: "Second" },
+      { title: "Third" },
+    ]);
+    const [first, second, third] = keys as [string, string, string];
+    await tracker.run(["board-rerank", first]);
+    await tracker.run(["board-rerank", second, "--after", first]);
+    await tracker.run(["board-rerank", third, "--after", second]);
+
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId(`board-card-${third}`)).toBeVisible();
+
+    const writes: { url: string; body: Record<string, unknown> }[] = [];
+    page.on("request", req => {
+      if (req.method() !== "POST") return;
+      if (!/\/api\/tasks\//.test(req.url())) return;
+      writes.push({ url: req.url(), body: req.postDataJSON() as Record<string, unknown> });
+    });
+
+    // Bottom card to the top of its own column.
+    await dragCard(page, third, await pointAboveCard(page, first));
+
+    expect(writes).toHaveLength(1);
+    // `status` is ABSENT from the payload — not resent at its current
+    // value. That is the bullet, and the reason this hits the rerank
+    // endpoint rather than the move one.
+    expect(writes[0]?.body).not.toHaveProperty("status");
+    expect(writes[0]?.url).toContain("/board-rerank");
+
+    // Re-read from disk: rank changed, status untouched.
+    await expect(async () => {
+      const text = await readTaskFile(tracker.root, third);
+      const rank = frontmatterValue(text, "board_rank");
+      const firstRank = frontmatterValue(await readTaskFile(tracker.root, first), "board_rank");
+      expect(rank).toBeDefined();
+      expect(rank! < firstRank!).toBe(true);
+      expect(frontmatterValue(text, "status")).toBe("backlog");
+    }).toPass({ timeout: 5000 });
+  });
+
+  // @verifies BRD-31
+  test("BRD-31: dropping a card where it already is writes nothing", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([{ title: "One" }, { title: "Two" }, { title: "Three" }]);
+    const [one, two, three] = keys as [string, string, string];
+    await tracker.run(["board-rerank", one]);
+    await tracker.run(["board-rerank", two, "--after", one]);
+    await tracker.run(["board-rerank", three, "--after", two]);
+
+    const before = await readTaskFile(tracker.root, two);
+    const beforeRank = frontmatterValue(before, "board_rank");
+    const beforeUpdated = frontmatterValue(before, "updated_at");
+    const beforeHistory = await readTaskHistory(tracker.root, two);
+
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId(`board-card-${two}`)).toBeVisible();
+
+    const writes: string[] = [];
+    page.on("request", req => {
+      if (req.method() === "POST" && /\/api\/tasks\//.test(req.url())) writes.push(req.url());
+    });
+
+    // Pick the middle card up and put it back between the same two.
+    const box = await page.getByTestId(`board-card-${two}`).boundingBox();
+    if (box === null) throw new Error("no box");
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + 30, cy + 15, { steps: 6 });
+    await page.mouse.move(cx, cy, { steps: 6 });
+    await page.mouse.up();
+
+    // No request is issued.
+    await page.waitForTimeout(500);
+    expect(writes).toHaveLength(0);
+
+    // And nothing on disk moved: rank, updated_at, history all as they
+    // were. Asserting only that the card did not move would pass even
+    // if a history entry had been written.
+    const after = await readTaskFile(tracker.root, two);
+    expect(frontmatterValue(after, "board_rank")).toBe(beforeRank);
+    expect(frontmatterValue(after, "updated_at")).toBe(beforeUpdated);
+    expect(await readTaskHistory(tracker.root, two)).toBe(beforeHistory);
+  });
+
+  // @verifies BRD-11
+  test("BRD-11: drop targets are visible and a drop outside cancels", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Dragged" },
+      { title: "Other" },
+      { title: "Elsewhere", fields: { status: "in_progress" } },
+    ]);
+
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId("board-card-T-1")).toBeVisible();
+
+    const writes: string[] = [];
+    page.on("request", req => {
+      if (req.method() === "POST" && /\/api\/tasks\//.test(req.url())) writes.push(req.url());
+    });
+
+    const box = await page.getByTestId("board-card-T-1").boundingBox();
+    if (box === null) throw new Error("no box");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 5 });
+
+    // Hovering a column distinguishes it from the others.
+    const target = await columnPoint(page, "in_progress");
+    await page.mouse.move(target.x, target.y, { steps: 8 });
+    await expect(page.getByTestId("board-column-in_progress")).toHaveAttribute(
+      "data-drop-active",
+      "true",
+    );
+    // A gap opens at the insertion point.
+    await expect(
+      page.getByTestId("board-column-in_progress")
+        .getByTestId("board-drop-indicator")
+        .filter({ has: page.locator("[data-active='true']") })
+        .or(page.locator("[data-testid='board-drop-indicator'][data-active='true']"))
+        .first(),
+    ).toBeVisible();
+
+    // The card being dragged follows the cursor.
+    await expect(page.getByTestId("board-drag-preview")).toBeVisible();
+
+    // Released outside any column: cancelled, and no request.
+    await page.mouse.move(5, 5, { steps: 8 });
+    await expect(page.getByTestId("board-column-in_progress")).not.toHaveAttribute(
+      "data-drop-active",
+      "true",
+    );
+    await page.mouse.up();
+
+    await page.waitForTimeout(400);
+    expect(writes).toHaveLength(0);
+    await expect(page.getByTestId("board-column-backlog").getByTestId("board-card-T-1"))
+      .toBeVisible();
+  });
+
+  // @verifies BRD-37
+  test("BRD-37: a 2px press is a click, and Esc cancels a drag", async ({ page, tracker }) => {
+    await tracker.seed([{ title: "Clickable" }]);
+    await page.goto(`${tracker.baseURL}/board`);
+    const card = page.getByTestId("board-card-T-1");
+    await expect(card).toBeVisible();
+
+    const writes: string[] = [];
+    page.on("request", req => {
+      if (req.method() === "POST" && /\/api\/tasks\//.test(req.url())) writes.push(req.url());
+    });
+
+    // A press with a 2px wobble stays a click and navigates (BRD-8).
+    const box = await card.boundingBox();
+    if (box === null) throw new Error("no box");
+    await page.mouse.move(box.x + box.width / 2, box.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 2, box.y + 20, { steps: 2 });
+    await page.mouse.up();
+    await expect(page).toHaveURL(/\/tasks\/T-1/);
+    expect(writes).toHaveLength(0);
+
+    // Esc mid-drag returns the card and issues no request.
+    await page.goto(`${tracker.baseURL}/board`);
+    const again = page.getByTestId("board-card-T-1");
+    await expect(again).toBeVisible();
+    const box2 = await again.boundingBox();
+    if (box2 === null) throw new Error("no box");
+    await page.mouse.move(box2.x + box2.width / 2, box2.y + box2.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box2.x + box2.width / 2 + 40, box2.y + box2.height / 2 + 30, { steps: 6 });
+    await expect(page.getByTestId("board-drag-preview")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("board-drag-preview")).toHaveCount(0);
+    await page.mouse.up();
+
+    await page.waitForTimeout(400);
+    expect(writes).toHaveLength(0);
+    await expect(page.getByTestId("board-column-backlog").getByTestId("board-card-T-1"))
+      .toBeVisible();
+  });
+
+  // @verifies BRD-41
+  test("BRD-41: a failed cross-column drop snaps back and says why", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([{ title: "Mover" }]);
+    const [mover] = keys as [string];
+
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId(`board-card-${mover}`)).toBeVisible();
+
+    // The server returns 500 on the atomic write.
+    await page.route("**/board-move", route =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "The server failed to save the move." }),
+      }),
+    );
+
+    await dragCard(page, mover, await columnPoint(page, "in_progress"));
+
+    // Named, stated, and retryable.
+    const err = page.getByTestId("board-move-error");
+    await expect(err).toBeVisible();
+    await expect(err).toContainText(mover);
+    await expect(err).toContainText("not saved");
+    await expect(page.getByTestId("board-move-retry")).toBeVisible();
+
+    // The card is back in its original column, and disk shows the
+    // original values — no partial write of one field without the other.
+    await expect(
+      page.getByTestId("board-column-backlog").getByTestId(`board-card-${mover}`),
+    ).toBeVisible();
+    const text = await readTaskFile(tracker.root, mover);
+    expect(frontmatterValue(text, "status")).toBe("backlog");
+    expect(frontmatterValue(text, "board_rank")).toBeUndefined();
+  });
+
+  // @verifies BRD-42
+  test("BRD-42: a drop into a status deleted since page load is rejected legibly", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([{ title: "Mover" }]);
+    const [mover] = keys as [string];
+
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId("board-column-in_progress")).toBeVisible();
+
+    // Delete the status from workflow.yaml *after* the board rendered,
+    // so the column on screen is stale config.
+    await setStatuses(tracker.root, [
+      { key: "backlog", label: "Backlog", default: true },
+      { key: "done", label: "Done", category: "completed" },
+    ]);
+
+    await dragCard(page, mover, await columnPoint(page, "in_progress"));
+
+    // The message names the vanished key and says the board is stale.
+    const err = page.getByTestId("board-move-error");
+    await expect(err).toBeVisible();
+    await expect(err).toContainText("in_progress");
+    await expect(err).toContainText(/stale|reload/i);
+    // A reload action is offered.
+    await expect(page.getByTestId("board-move-reload")).toBeVisible();
+
+    // Nothing was written.
+    const text = await readTaskFile(tracker.root, mover);
+    expect(frontmatterValue(text, "status")).toBe("backlog");
+  });
+
+  // @verifies BRD-43
+  test("BRD-43: losing the connection mid-drop does not leave the card moved", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([{ title: "Mover" }]);
+    const [mover] = keys as [string];
+
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId(`board-card-${mover}`)).toBeVisible();
+
+    // The connection dies between mouse-up and the response.
+    await page.route("**/board-move", route => route.abort("connectionfailed"));
+
+    await dragCard(page, mover, await columnPoint(page, "in_progress"));
+
+    const err = page.getByTestId("board-move-error");
+    await expect(err).toBeVisible();
+    await expect(err).toContainText(mover);
+    await expect(err).toContainText("not saved");
+
+    // The card is not left rendered in the destination while the file
+    // says otherwise.
+    await expect(
+      page.getByTestId("board-column-backlog").getByTestId(`board-card-${mover}`),
+    ).toBeVisible();
+    const text = await readTaskFile(tracker.root, mover);
+    expect(frontmatterValue(text, "status")).toBe("backlog");
+
+    // A reload shows server truth — the optimistic position does not
+    // survive it.
+    await page.unroute("**/board-move");
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(
+      page.getByTestId("board-column-backlog").getByTestId(`board-card-${mover}`),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("board-column-in_progress").getByTestId(`board-card-${mover}`),
+    ).toHaveCount(0);
+  });
+
+  // @verifies BRD-44
+  test("BRD-44: a drop next to a deleted task fails with a specific message", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([
+      { title: "Mover" },
+      { title: "Neighbour", fields: { status: "in_progress" } },
+    ]);
+    const [mover, neighbour] = keys as [string, string];
+    await tracker.run(["board-rerank", neighbour]);
+
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId(`board-card-${neighbour}`)).toBeVisible();
+
+    // The neighbour is deleted out from under the open board.
+    await tracker.run(["delete", neighbour, "--yes"]);
+
+    await dragCard(page, mover, await pointAboveCard(page, neighbour));
+
+    // Named operation, stated reason.
+    const err = page.getByTestId("board-move-error");
+    await expect(err).toBeVisible();
+    await expect(err).toContainText(mover);
+
+    // The board refetches, so the deleted card disappears, and the
+    // dragged card ends in a real persisted position — never one that
+    // exists only in the browser.
+    await expect(page.getByTestId(`board-card-${neighbour}`)).toHaveCount(0);
+    const text = await readTaskFile(tracker.root, mover);
+    const status = frontmatterValue(text, "status");
+    expect(["backlog", "in_progress"]).toContain(status);
+  });
+
+  // @verifies BRD-38
+  test("BRD-38: a card can be moved between columns without a mouse", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([{ title: "Keyboard mover" }]);
+    const [mover] = keys as [string];
+
+    await page.goto(`${tracker.baseURL}/board`);
+    const card = page.getByTestId(`board-card-${mover}`);
+    await expect(card).toBeVisible();
+
+    const writes: { url: string; body: Record<string, unknown> }[] = [];
+    page.on("request", req => {
+      if (req.method() !== "POST") return;
+      if (!/\/api\/tasks\//.test(req.url())) return;
+      writes.push({ url: req.url(), body: req.postDataJSON() as Record<string, unknown> });
+    });
+
+    // Reachable by keyboard, with a visible focus ring.
+    const button = card.getByRole("button").first();
+    await button.focus();
+    await expect(button).toBeFocused();
+
+    // The documented sequence moves it to the next column.
+    await page.keyboard.press("Control+ArrowRight");
+
+    await expect(
+      page.getByTestId("board-column-in_progress").getByTestId(`board-card-${mover}`),
+    ).toBeVisible();
+
+    // The SAME single atomic write a mouse drag makes (BRD-9).
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.url).toContain("/board-move");
+    expect(writes[0]?.body["status"]).toBe("in_progress");
+
+    // Announced to assistive tech, naming column and position.
+    const live = page.getByTestId("board-live-region");
+    await expect(live).toContainText(mover);
+
+    // And it landed on disk.
+    await expect(async () => {
+      const text = await readTaskFile(tracker.root, mover);
+      expect(frontmatterValue(text, "status")).toBe("in_progress");
+    }).toPass({ timeout: 5000 });
+  });
+
+  // @verifies BRD-12
+  //
+  // KNOWN FAILURE — see docs/dev/known-gaps.md, "BRD-12 cannot be
+  // satisfied". The payload half of the case holds (exactly one
+  // request, no `status` key, status stays `blocked`), but core's
+  // `reorderBoardRank` scopes board rank per *status* and refuses an
+  // anchor in a sibling status, so the rank never lands. Fixing that
+  // changes CLI and MCP behaviour and contradicts the recorded SPR-C2
+  // decision, so it is reported rather than decided here.
+  //
+  // `fixme` rather than `skip`: the test runs and is expected to fail,
+  // so it starts passing — loudly — the moment core is fixed.
+  test.fixme("BRD-12: reordering inside a multi-status column keeps the card's status", async ({
+    page,
+    tracker,
+  }) => {
+    await setStatuses(tracker.root, [
+      { key: "backlog", label: "Backlog", default: true },
+      { key: "in_progress", label: "In progress" },
+      { key: "blocked", label: "Blocked" },
+    ]);
+    await setBoards(
+      tracker.root,
+      ["boards:", "  columns:", "    - key: flight", "      label: In flight",
+       "      statuses: [in_progress, blocked]"].join("\n"),
+    );
+
+    const keys = await tracker.seed([
+      { title: "Working", fields: { status: "in_progress" } },
+      { title: "Stuck", fields: { status: "blocked" } },
+    ]);
+    const [working, stuck] = keys as [string, string];
+    await tracker.run(["board-rerank", working]);
+
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId(`board-card-${stuck}`)).toBeVisible();
+
+    const writes: Record<string, unknown>[] = [];
+    page.on("request", req => {
+      if (req.method() !== "POST") return;
+      if (!/\/api\/tasks\//.test(req.url())) return;
+      writes.push(req.postDataJSON() as Record<string, unknown>);
+    });
+
+    // Drag the blocked card above the in_progress one, same column.
+    await dragCard(page, stuck, await pointAboveCard(page, working));
+
+    // Only board_rank is written; status is not in the payload.
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).not.toHaveProperty("status");
+
+    // The card's status stays `blocked` on disk.
+    await expect(async () => {
+      const text = await readTaskFile(tracker.root, stuck);
+      expect(frontmatterValue(text, "status")).toBe("blocked");
+      expect(frontmatterValue(text, "board_rank")).toBeDefined();
+    }).toPass({ timeout: 5000 });
+  });
+
+  // @verifies BRD-13
+  test("BRD-13: a card dropped into a multi-status column adopts its first status", async ({
+    page,
+    tracker,
+  }) => {
+    await setStatuses(tracker.root, [
+      { key: "backlog", label: "Backlog", default: true },
+      { key: "in_progress", label: "In progress" },
+      { key: "in_review", label: "In review" },
+      { key: "blocked", label: "Blocked" },
+    ]);
+    await setBoards(
+      tracker.root,
+      ["boards:", "  columns:", "    - key: todo", "      label: Backlog",
+       "      statuses: [backlog]",
+       "    - key: flight", "      label: In flight",
+       "      statuses: [in_progress, in_review, blocked]"].join("\n"),
+    );
+
+    const keys = await tracker.seed([{ title: "Mover" }]);
+    const [mover] = keys as [string];
+
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId(`board-card-${mover}`)).toBeVisible();
+
+    await dragCard(page, mover, await columnPoint(page, "flight"));
+
+    // The FIRST entry of the column's statuses array.
+    await expect(async () => {
+      const text = await readTaskFile(tracker.root, mover);
+      expect(frontmatterValue(text, "status")).toBe("in_progress");
+    }).toPass({ timeout: 5000 });
+  });
+
+  // @verifies BRD-13
+  test("BRD-13: reordering the statuses array changes what the drop writes", async ({
+    page,
+    tracker,
+  }) => {
+    await setStatuses(tracker.root, [
+      { key: "backlog", label: "Backlog", default: true },
+      { key: "in_progress", label: "In progress" },
+      { key: "in_review", label: "In review" },
+      { key: "blocked", label: "Blocked" },
+    ]);
+    // Same column, statuses reordered so `blocked` is first.
+    await setBoards(
+      tracker.root,
+      ["boards:", "  columns:", "    - key: todo", "      label: Backlog",
+       "      statuses: [backlog]",
+       "    - key: flight", "      label: In flight",
+       "      statuses: [blocked, in_progress, in_review]"].join("\n"),
+    );
+
+    const keys = await tracker.seed([{ title: "Mover" }]);
+    const [mover] = keys as [string];
+
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId(`board-card-${mover}`)).toBeVisible();
+
+    await dragCard(page, mover, await columnPoint(page, "flight"));
+
+    await expect(async () => {
+      const text = await readTaskFile(tracker.root, mover);
+      expect(frontmatterValue(text, "status")).toBe("blocked");
+    }).toPass({ timeout: 5000 });
+  });
+
+  // @verifies BRD-25
+  test("BRD-25: dropping at the top generates a rank below the first card", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([{ title: "First" }, { title: "Mover" }]);
+    const [first, mover] = keys as [string, string];
+    await tracker.run(["board-rerank", first]);
+    const firstRank = frontmatterValue(await readTaskFile(tracker.root, first), "board_rank");
+    expect(firstRank).toBe("u");
+
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId(`board-card-${mover}`)).toBeVisible();
+
+    await dragCard(page, mover, await pointAboveCard(page, first));
+
+    await expect(async () => {
+      const rank = frontmatterValue(await readTaskFile(tracker.root, mover), "board_rank");
+      expect(rank).toBeDefined();
+      // Strictly between MIN and the first card's rank.
+      expect(rank! < firstRank!).toBe(true);
+      expect(rank! > "0").toBe(true);
+      expect(rank).not.toBe("0");
+      expect(rank!.endsWith("0")).toBe(false);
+    }).toPass({ timeout: 5000 });
+
+    // Order survives a refetch from disk.
+    await page.reload();
+    const cards = page.getByTestId("board-column-backlog").locator("[data-task-key]");
+    await expect(cards.first()).toHaveAttribute("data-task-key", mover);
+  });
+
+  // @verifies BRD-26
+  test("BRD-26: dropping at the bottom generates a rank above the last card", async ({
+    page,
+    tracker,
+  }) => {
+    // The mover must start ABOVE the last card, or dropping it at the
+    // bottom is the position it already holds and the no-op guard
+    // (BRD-31) correctly refuses to write — which is what the first
+    // version of this fixture accidentally asserted.
+    const keys = await tracker.seed([{ title: "Mover" }, { title: "Last" }]);
+    const [mover, last] = keys as [string, string];
+    await tracker.run(["board-rerank", mover]);
+    await tracker.run(["board-rerank", last, "--after", mover]);
+    const lastRank = frontmatterValue(await readTaskFile(tracker.root, last), "board_rank");
+
+    await page.goto(`${tracker.baseURL}/board`);
+    const cards = page.getByTestId("board-column-backlog").locator("[data-task-key]");
+    await expect(cards.first()).toHaveAttribute("data-task-key", mover);
+
+    await dragCard(page, mover, await columnPoint(page, "backlog", "bottom"));
+
+    await expect(async () => {
+      const rank = frontmatterValue(await readTaskFile(tracker.root, mover), "board_rank");
+      expect(rank).toBeDefined();
+      expect(rank! > lastRank!).toBe(true);
+      // Strictly before MAX, never equal to it.
+      expect(rank! < "z").toBe(true);
+      expect(rank).not.toBe("z");
+    }).toPass({ timeout: 5000 });
+  });
+
+  // @verifies BRD-27
+  test("BRD-27: an unranked card sorts below ranked ones and can acquire a rank", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([
+      { title: "Ranked A" },
+      { title: "Ranked B" },
+      { title: "Unranked one" },
+      { title: "Unranked two" },
+    ]);
+    const [a, b, u1, u2] = keys as [string, string, string, string];
+    await tracker.run(["board-rerank", a]);
+    await tracker.run(["board-rerank", b, "--after", a]);
+
+    await page.goto(`${tracker.baseURL}/board`);
+    const cards = page.getByTestId("board-column-backlog").locator("[data-task-key]");
+    // Ranked first, then the unranked in creation order.
+    await expect(cards.nth(0)).toHaveAttribute("data-task-key", a);
+    await expect(cards.nth(1)).toHaveAttribute("data-task-key", b);
+    await expect(cards.nth(2)).toHaveAttribute("data-task-key", u1);
+    await expect(cards.nth(3)).toHaveAttribute("data-task-key", u2);
+
+    // Dragging one unranked card above a ranked one gives it a rank.
+    await dragCard(page, u1, await pointAboveCard(page, a));
+
+    await expect(async () => {
+      const rank = frontmatterValue(await readTaskFile(tracker.root, u1), "board_rank");
+      expect(rank).toBeDefined();
+    }).toPass({ timeout: 5000 });
+
+    // The other unranked card is NOT silently backfilled.
+    const other = await readTaskFile(tracker.root, u2);
+    expect(frontmatterValue(other, "board_rank")).toBeUndefined();
+
+    // It stays above after a reload.
+    await page.reload();
+    await expect(
+      page.getByTestId("board-column-backlog").locator("[data-task-key]").first(),
+    ).toHaveAttribute("data-task-key", u1);
+  });
+
+  // @verifies BRD-29
+  test("BRD-29: two cards sharing a rank order deterministically and separate on drag", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([{ title: "Twin one" }, { title: "Twin two" }]);
+    const [one, two] = keys as [string, string];
+    // Hand-edit both to the same rank.
+    const { readdir } = await import("node:fs/promises");
+    const tasksDir = path.join(tracker.root, ".loctt", "tasks");
+    for (const id of await readdir(tasksDir)) {
+      const file = path.join(tasksDir, id, "task.md");
+      let text: string;
+      try {
+        text = await readFile(file, "utf8");
+      } catch {
+        continue;
+      }
+      if (!/^key: (?:T-1|T-2)$/m.test(text)) continue;
+      await writeFile(file, text.replace(/^status:/m, "board_rank: u\nstatus:"), "utf8");
+    }
+
+    await page.goto(`${tracker.baseURL}/board`);
+    const cards = page.getByTestId("board-column-backlog").locator("[data-task-key]");
+    const firstOrder = await cards.first().getAttribute("data-task-key");
+
+    // Two reloads produce the same order — not a random swap.
+    await page.reload();
+    await expect(page.getByTestId("board-column-backlog").locator("[data-task-key]").first())
+      .toHaveAttribute("data-task-key", firstOrder!);
+
+    // Dragging one above the other produces distinct ranks.
+    const lower = firstOrder === one ? two : one;
+    const upper = firstOrder === one ? one : two;
+    await dragCard(page, lower, await pointAboveCard(page, upper));
+
+    await expect(async () => {
+      const r1 = frontmatterValue(await readTaskFile(tracker.root, one), "board_rank");
+      const r2 = frontmatterValue(await readTaskFile(tracker.root, two), "board_rank");
+      expect(r1).toBeDefined();
+      expect(r2).toBeDefined();
+      expect(r1).not.toBe(r2);
+    }).toPass({ timeout: 5000 });
+  });
+
+  // @verifies BRD-30
+  test("BRD-30: an invalid board_rank is tolerated and repaired by a drag", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([{ title: "Bad rank" }, { title: "Good" }]);
+    const [bad, good] = keys as [string, string];
+    await tracker.run(["board-rerank", good]);
+
+    const { readdir } = await import("node:fs/promises");
+    const tasksDir = path.join(tracker.root, ".loctt", "tasks");
+    for (const id of await readdir(tasksDir)) {
+      const file = path.join(tasksDir, id, "task.md");
+      let text: string;
+      try {
+        text = await readFile(file, "utf8");
+      } catch {
+        continue;
+      }
+      if (!new RegExp(`^key: ${bad}$`, "m").test(text)) continue;
+      await writeFile(file, text.replace(/^status:/m, 'board_rank: "ABC!"\nstatus:'), "utf8");
+      break;
+    }
+
+    await page.goto(`${tracker.baseURL}/board`);
+    // Still rendered — not dropped from the column, and no throw.
+    await expect(page.getByTestId(`board-card-${bad}`)).toBeVisible();
+
+    // Dragging it writes a valid rank, repairing it.
+    await dragCard(page, bad, await pointAboveCard(page, good));
+
+    await expect(async () => {
+      const rank = frontmatterValue(await readTaskFile(tracker.root, bad), "board_rank");
+      expect(rank).toBeDefined();
+      expect(rank).not.toContain("!");
+      expect(/^[0-9a-z]+$/.test(rank!)).toBe(true);
+    }).toPass({ timeout: 5000 });
+  });
+
+  // @verifies BRD-36
+  test("BRD-36: toggling a column off mid-drag cancels cleanly", async ({ page, tracker }) => {
+    await tracker.seed([{ title: "Dragged" }, { title: "Elsewhere", fields: { status: "in_progress" } }]);
+
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId("board-card-T-1")).toBeVisible();
+
+    const writes: string[] = [];
+    page.on("request", req => {
+      if (req.method() === "POST" && /\/api\/tasks\//.test(req.url())) writes.push(req.url());
+    });
+
+    // Start a drag and hold it over the in_progress column.
+    const box = await page.getByTestId("board-card-T-1").boundingBox();
+    if (box === null) throw new Error("no box");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 5 });
+    const target = await columnPoint(page, "in_progress");
+    await page.mouse.move(target.x, target.y, { steps: 8 });
+    await expect(page.getByTestId("board-drag-preview")).toBeVisible();
+
+    // Toggle that column off from the chips bar, via the keyboard.
+    const chip = page.getByTestId("board-chip-in_progress");
+    await chip.focus();
+    await page.keyboard.press("Enter");
+
+    // The drag is cancelled rather than dropping into a column that is
+    // no longer rendered.
+    await expect(page.getByTestId("board-drag-preview")).toHaveCount(0);
+    await page.mouse.up();
+
+    await page.waitForTimeout(400);
+    expect(writes.filter(u => /board-move|board-rerank/.test(u))).toHaveLength(0);
+    const text = await readTaskFile(tracker.root, "T-1");
+    expect(frontmatterValue(text, "status")).toBe("backlog");
+    expect(frontmatterValue(text, "board_rank")).toBeUndefined();
+  });
+
+  // @verifies BRD-32
+  test("BRD-32: a refetch landing mid-drag does not yank the card", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([
+      { title: "Dragged" },
+      { title: "Second" },
+      { title: "Third" },
+    ]);
+    const [one, two, three] = keys as [string, string, string];
+    await tracker.run(["board-rerank", one]);
+    await tracker.run(["board-rerank", two, "--after", one]);
+    await tracker.run(["board-rerank", three, "--after", two]);
+
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId(`board-card-${three}`)).toBeVisible();
+
+    const writes: Record<string, unknown>[] = [];
+    page.on("request", req => {
+      if (req.method() !== "POST") return;
+      if (!/\/api\/tasks\//.test(req.url())) return;
+      writes.push(req.postDataJSON() as Record<string, unknown>);
+    });
+
+    // Pick up the bottom card and hold it over the top slot.
+    const box = await page.getByTestId(`board-card-${three}`).boundingBox();
+    if (box === null) throw new Error("no box");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 5 });
+    const top = await pointAboveCard(page, one);
+    await page.mouse.move(top.x, top.y, { steps: 10 });
+    await expect(page.getByTestId("board-drag-preview")).toBeVisible();
+
+    // A write from another surface lands mid-drag, and the board's
+    // poll picks it up while the card is still held.
+    await tracker.run(["set", two, "priority", "high"]);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await page.waitForTimeout(600);
+
+    // The card is still under the cursor: the drag survived the
+    // refetch rather than being re-sorted out from under it.
+    await expect(page.getByTestId("board-drag-preview")).toBeVisible();
+
+    await page.mouse.up();
+
+    // The drop was computed against what was on screen at release:
+    // dropped above the first card, so it has no `after` anchor.
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).not.toHaveProperty("after");
+    expect(writes[0]?.["before"]).toBe(one);
+
+    // And the resulting order matches what the user saw.
+    await expect(async () => {
+      const rank = frontmatterValue(await readTaskFile(tracker.root, three), "board_rank");
+      const firstRank = frontmatterValue(await readTaskFile(tracker.root, one), "board_rank");
+      expect(rank! < firstRank!).toBe(true);
+    }).toPass({ timeout: 5000 });
+  });
+
+  // @verifies BRD-34
+  test("BRD-34: two tabs reordering one column converge on the files' order", async ({
+    page,
+    context,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([
+      { title: "Card one" },
+      { title: "Card two" },
+      { title: "Card three" },
+    ]);
+    const [one, two, three] = keys as [string, string, string];
+    await tracker.run(["board-rerank", one]);
+    await tracker.run(["board-rerank", two, "--after", one]);
+    await tracker.run(["board-rerank", three, "--after", two]);
+
+    // Tab A drags card one below card three.
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId(`board-card-${one}`)).toBeVisible();
+
+    // Tab B opens on the same (now about to be stale) order.
+    const pageB = await context.newPage();
+    await pageB.goto(`${tracker.baseURL}/board`);
+    await expect(pageB.getByTestId(`board-card-${two}`)).toBeVisible();
+
+    await dragCard(page, one, await columnPoint(page, "backlog", "bottom"));
+    await expect(async () => {
+      expect(frontmatterValue(await readTaskFile(tracker.root, one), "board_rank"))
+        .not.toBe("u");
+    }).toPass({ timeout: 5000 });
+
+    // Tab B, stale, drags card two to the top.
+    await dragCard(pageB, two, await pointAboveCard(pageB, three));
+
+    // Both writes succeeded — they touch different tasks, so neither
+    // clobbered the other.
+    const rankOf = async (k: string): Promise<string> => {
+      const v = frontmatterValue(await readTaskFile(tracker.root, k), "board_rank");
+      if (v === undefined) throw new Error(`no rank for ${k}`);
+      return v;
+    };
+
+    // The order the FILES say. Both writes landed, so all three cards
+    // carry a rank.
+    const ranks = await Promise.all(
+      [one, two, three].map(async k => [k, await rankOf(k)] as const),
+    );
+    const onDisk = [...ranks].sort((a, b) => a[1].localeCompare(b[1])).map(r => r[0]);
+
+    // Both tabs, after refetching, agree with the files and with each
+    // other — neither is left showing a position no rank justifies.
+    for (const p of [page, pageB]) {
+      await p.reload();
+      const cards = p.getByTestId("board-column-backlog").locator("[data-task-key]");
+      // Wait for the column to actually render before reading it, or
+      // the order is read off a half-painted board.
+      await expect(cards).toHaveCount(3);
+      await expect(cards.nth(0)).toHaveAttribute("data-task-key", onDisk[0]!);
+      await expect(cards.nth(1)).toHaveAttribute("data-task-key", onDisk[1]!);
+      await expect(cards.nth(2)).toHaveAttribute("data-task-key", onDisk[2]!);
+    }
+
+    await pageB.close();
+  });
+
+  // @verifies BRD-35
+  test("BRD-35: a card moved by another surface mid-drag resolves without inventing a state", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([
+      { title: "Contested" },
+      { title: "Anchor", fields: { status: "in_progress" } },
+    ]);
+    const [contested, anchor] = keys as [string, string];
+    await tracker.run(["board-rerank", anchor]);
+
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId(`board-card-${contested}`)).toBeVisible();
+
+    // Start dragging toward `in_progress`, and hold.
+    const box = await page.getByTestId(`board-card-${contested}`).boundingBox();
+    if (box === null) throw new Error("no box");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 5 });
+    const target = await columnPoint(page, "in_progress");
+    await page.mouse.move(target.x, target.y, { steps: 10 });
+
+    // The CLI moves that same task to a THIRD status while it is held.
+    await tracker.run(["set", contested, "status", "done"]);
+
+    // Release after the CLI write.
+    await page.mouse.up();
+    await page.waitForTimeout(800);
+
+    // Either the drop applied against the task as it now exists, or it
+    // was rejected — but the rendered column must match the stored
+    // status, with no card floating in a column its file contradicts.
+    const status = frontmatterValue(await readTaskFile(tracker.root, contested), "status");
+    expect(status).toBeDefined();
+    await page.reload();
+    await expect(
+      page.getByTestId(`board-column-${status}`).getByTestId(`board-card-${contested}`),
+    ).toBeVisible();
   });
 });
