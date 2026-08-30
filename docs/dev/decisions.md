@@ -2985,3 +2985,86 @@ status.
 multi-status column adopts the column's **first** listed status,
 deterministically — the user controls the default by ordering the
 `statuses` array.
+
+### K10 · The body-write precondition ships on every surface, not just the web
+
+**Date:** 2026-08-30 · **Ken's ruling — an agent may not revert this.**
+
+**The situation.** K2 ruled that the body-write precondition ships with
+the editor, on the stated grounds that autosave without one "silently
+overwrites a concurrent CLI or MCP edit every 1.5 idle seconds,
+unattended, which is exactly what P1 forbids". It was then built
+**web-only**: `bodyToken` / `expectedToken` appear in
+`apps/web/src/server/server.ts` and in neither `apps/cli/src` nor
+`apps/mcp/src` (grep with positive control). Core's own docstring says
+"Omit for last-write-wins, which is what every existing caller gets."
+
+So the guard protects the web editor from itself, while the two surfaces
+K2 named as *the threat* write unguarded. The M2 gate raised this as a
+blocker, correctly.
+
+**The usability case Ken ruled on.** The failure without it: a task is
+open in the web UI; the user edits the body in their terminal with
+`loctt body --set`; the browser autosaves 1.5s after the next keystroke
+and **silently destroys the terminal edit** — no warning, no conflict, no
+trace. That is the worst shape a data-loss bug can take: invisible,
+unattended, and it discards work the user did deliberately in favour of
+work they may have done by accident.
+
+**Ruling: (a) — CLI and MCP acquire a token on read and pass it on
+write.** Plus a `--force` escape hatch (MCP: `force: true`).
+
+Rejected: an opt-in `--if-unchanged` flag, because it leaves the unsafe
+behaviour as the default and only protects users already being careful.
+Rejected: warn-but-still-write, because the data is gone by the time the
+warning prints and scrollback is easy to miss.
+
+**The accepted cost, stated before the ruling.** `loctt body --set`
+starts refusing where it always succeeded — a real behaviour change to
+two published surfaces. A script looping `--set` over tasks an agent is
+also editing will begin failing. `--force` is the deliberate way
+through; it is not the default, so the safe path is what you get by
+not thinking about it.
+
+`--force` is not a new convention: it already means exactly this on
+`sprint` (`apps/cli/src/commands/sprint.ts:34`) and on attachments
+(`task-files.ts:20`), and MCP already takes `force: z.boolean()`.
+
+**Unblocks** the M2 section gate's second blocker.
+
+### K11 · `boardMove` gets CLI and MCP surfaces inside M3
+
+**Date:** 2026-08-30 · **Ken's ruling.**
+
+K8 added `boardMove` to core with only the web calling it — the
+`unarchiveView` pattern CLAUDE.md names, and the eighth built-but-uncalled
+capability found in this run.
+
+**Ruling: build the surfaces into M3's remaining work**, not as a
+follow-up after M4. M3 closes with no drift.
+
+A CLI user moving a card between columns today needs two separate
+writes, which is precisely the non-atomicity `boardMove` exists to fix —
+so the surfaces are a real capability, not bookkeeping.
+
+### K12 · MSL-20's `+N` reveal is built
+
+**Date:** 2026-08-30 · **Ken's ruling.**
+
+**Why two agents declined it, for the record:** not difficulty. MSL-20's
+second bullet wants the `+N` affordance to reveal the remaining labels
+"on click/hover and each remains individually clickable to filter".
+Today it is a `<span>` with a `title`. Closing that needs a **popover
+component that exists nowhere in the app** — focus management,
+click-outside dismissal, escape handling, viewport-edge positioning, a11y
+semantics — shared by the list row and the board card. Both agents
+correctly read that as inventing scope, one of the four conditions that
+stop the run, and both flagged rather than built.
+
+**Ruling: build it.** Ken asked for it explicitly.
+
+Scope note: MSL-20's other bullets already pass — pills wrap, trailing
+columns stay on screen, row height is bounded. The reveal is the single
+unmet bullet, and MSL-20 is `major`, not `blocker`. The component is
+shared surface: one hover-card used by both the list row and the board
+card, not two implementations.
