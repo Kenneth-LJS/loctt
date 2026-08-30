@@ -107,3 +107,28 @@ export function useMoveTask(ref: string) {
     onSuccess: () => { invalidate(ref); },
   });
 }
+
+/**
+ * Duplicates one task (TSK-20).
+ *
+ * `POST /api/tasks/:ref/duplicate` returns the *copy's* public
+ * frontmatter, so the caller gets the newly allocated key directly and
+ * does not have to guess it from the project's counter — which it
+ * could not do correctly anyway, since another writer may have taken
+ * the next value first.
+ *
+ * The source ref is invalidated as well as the feed. The copy is a
+ * different task and its own query key does not exist yet; what can go
+ * stale is the list, which now has one more row.
+ */
+export function useDuplicateTask(ref: string) {
+  const invalidate = useInvalidateTask();
+  return useMutation<TaskFrontmatterPublic, Error, void>({
+    mutationFn: () =>
+      apiClient.post<TaskFrontmatterPublic>(
+        `/api/tasks/${encodeURIComponent(ref)}/duplicate`,
+        {},
+      ),
+    onSuccess: () => { invalidate(ref); },
+  });
+}

@@ -1868,6 +1868,63 @@ server code and no documented contract. Also recorded in
 `parseMultipartFile` a multi-part mode. REL-40's per-row assertions
 are what would need rewriting.
 
+### A24 · The web's Duplicate keeps core's `(copy)` title suffix
+
+**Ticket:** M2.6 · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** TSK-20 says "title, body, and metadata are copied"
+and says nothing about a suffix. `loctt duplicate T-1` produces
+`Original (copy)`.
+
+The ticket brief and the M2.6 probe both attribute that suffix to the
+CLI's own `overrides`. **That is wrong, and it inverts the decision.**
+`duplicateTask` in `packages/core/src/task/duplicate.ts` reads
+`title: overrides.title ?? \`${fm.title} (copy)\``. The suffix is
+core's default; the CLI and the MCP `duplicate` tool both pass `title`
+only when the user supplied one, and otherwise inherit it. It is also
+documented in `duplicateTask`'s own contract comment.
+
+**What had to be decided.** Whether the web route passes an
+`overrides.title` to suppress the suffix and title the copy
+identically — what TSK-20 says literally — or passes no override and
+inherits core's.
+
+**Options considered.**
+
+1. **Pass `overrides: { title: fm.title }`.** The copy reads exactly
+   as the case's words do. Costs: the web would be the only one of
+   three surfaces actively overriding a documented core default, so
+   the same action would produce two different titles depending on
+   where it was invoked — the drift `CLAUDE.md` names as the reason
+   core exists. It also leaves two rows with byte-identical titles and
+   nothing but the key to tell them apart, which is worse in the list
+   than in the case text.
+2. **Pass no `overrides`.** The copy is `<title> (copy)`, matching CLI
+   and MCP. Costs: a suffix TSK-20 does not mention.
+
+**Decided.** Option 2. `handleDuplicate` passes no `overrides`.
+
+**Why.** TSK-20's bullet is about *what is carried over* — it lists
+title alongside body and metadata to say none of them is dropped, and
+contrasts them with `created_at`/`key_history`, which are not. Reading
+it as a prohibition on a suffix makes it also a prohibition core, the
+CLI and the MCP already violate, and would make the web the odd one
+out. Option 1 is the reading that requires the most new behaviour to
+satisfy the fewest words.
+
+**Recorded rather than stopping the run** because it changes no core
+code and no documented contract: it declines to add a web-only
+override. If the literal reading is preferred, the revert is one
+argument.
+
+**To revert.** Add `overrides: { title: <source title> }` to the
+`duplicateTask` call in `handleDuplicate` in
+`apps/web/src/server/server.ts`. Two assertions change: the
+`^title:\s*Duplicable task \(copy\)$` match in
+`apps/web/src/server/server.duplicate.test.ts` and the pair of
+`(copy)` row assertions in `tests/ui/flow-tasks.spec.ts`'s TSK-20
+specs. Nothing else reads the copy's title.
+
 ### K7 · TSK-20 gets its own ticket before M3
 
 **Raised by the M2 gate at round 2 (F6) · Date: 2026-08-30**

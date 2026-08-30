@@ -402,7 +402,7 @@ Cases: CMT-1, CMT-2, CMT-3, CMT-4, CMT-5, CMT-6, CMT-7, CMT-8, CMT-9, CMT-10, CM
 - **Tests**: comments routes; mention extraction round-trip; activity
   collapse + load-more
 
-### M2.6 · Task detail — Duplicate ⬜
+### M2.6 · Task detail — Duplicate ✅
 > **Added 2026-08-30 by Ken's ruling K7**, after the M2 gate found
 > TSK-20 declared as an M2.1 blocker and never built. Its own ticket
 > rather than a retroactive M2.1 fix, so the M2 gate's verdict keeps

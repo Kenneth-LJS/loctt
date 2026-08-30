@@ -19,6 +19,7 @@ import { useTaskGraph } from "../api/hooks/useTaskGraph.ts";
 import {
   useArchiveTask,
   useDeleteTask,
+  useDuplicateTask,
   useMoveTask,
 } from "../api/hooks/useTaskMutations.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
@@ -103,6 +104,7 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
   const archive = useArchiveTask(taskRef);
   const del = useDeleteTask(taskRef);
   const move = useMoveTask(taskRef);
+  const duplicate = useDuplicateTask(taskRef);
 
   // The confirmation toast is transient; a permanent "Copied" would
   // stop meaning anything after the first copy (TSK-19).
@@ -264,6 +266,31 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
     }
   };
 
+  /**
+   * TSK-20. The copy's key is allocated by the server, so the only
+   * honest source for where to navigate is the response — computing
+   * it client-side would be a guess about a counter another writer
+   * may have moved.
+   *
+   * No dialog: duplicating creates a new task and destroys nothing, so
+   * it takes the same friction as Archive rather than Delete's typed
+   * confirmation (TSK-23's proportionality).
+   *
+   * On failure the navigation does not happen. Staying put is the
+   * whole point — landing on a task that was never created, or worse
+   * back on the list as though something had been made, would read as
+   * a success.
+   */
+  const onDuplicate = (): void => {
+    setWriteError(null);
+    duplicate.mutate(undefined, {
+      onSuccess: created => {
+        void navigate({ to: "/tasks/$key", params: { key: created.key } });
+      },
+      onError: (err: Error) => { setWriteError(err.message); },
+    });
+  };
+
   const onArchiveToggle = (): void => {
     setWriteError(null);
     archive.mutate(
@@ -400,6 +427,14 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
                     }}
                   >
                     Copy link
+                  </MenuItem>
+                  <MenuItem
+                    onSelect={() => {
+                      onDuplicate();
+                      close();
+                    }}
+                  >
+                    Duplicate
                   </MenuItem>
                   <MenuItem
                     onSelect={() => {
