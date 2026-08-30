@@ -1,5 +1,13 @@
 // @loctt/core — shared LocTT logic
 
+export type { BoardColumn, ColumnKind, ColumnTask } from "./board/index.js";
+export {
+  bucketTasks,
+  deriveColumns,
+  ORPHAN_COLUMN_ID,
+  sortColumn,
+  UNCOVERED_COLUMN_ID,
+} from "./board/index.js";
 export type { OptionalConfigs } from "./config/index.js";
 export type { WorkflowRemap } from "./config/index.js";
 export type { ConfigKeyDef } from "./config/index.js";
@@ -218,11 +226,13 @@ export { QUERYABLE_FIELDS, QueryValidationError, validateQuery } from "./query/i
 export { ParseError,parseQuery } from "./query/index.js";
 export { evaluateQuery } from "./query/index.js";
 export { buildListContext, DEFAULT_LIST_LIMIT, listTasks, listTasksPaginated, resolveView } from "./query/index.js";
+export type { BoardMoveOptions, BoardMoveResult } from "./rank/index.js";
 export type {
   ReorderBoardRankOptions,
   ReorderRelationshipOptions,
   ReorderResult,
 } from "./rank/index.js";
+export { boardMove } from "./rank/index.js";
 export {
   MAX as LEXORANK_MAX,
   MIN as LEXORANK_MIN,

@@ -52,6 +52,7 @@ import {
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,
+  boardMove,
   bodyToken,
   buildListContext,
   buildMentionResolver,
@@ -104,9 +105,6 @@ import {
   initLoctt,
   isMalformedHistoryEntry,
   LabelError,
-  LEXORANK_MAX,
-  LEXORANK_MIN,
-  lexorankBetween,
   linkTask,
   listComments,
   listTasks,
@@ -163,7 +161,6 @@ import {
   setConfigValue,
   setDefaultProject,
   setField,
-  setFields,
   setProjectPrefix,
   SprintError,
   sprintProgress,
@@ -836,14 +833,6 @@ const TASK_ATTACHMENT_ITEM_RE = /^\/api\/tasks\/([^/]+)\/attachments\/([^/]+)$/;
 const TASK_BOARD_RERANK_RE = /^\/api\/tasks\/([^/]+)\/board-rerank$/;
 const TASK_BOARD_MOVE_RE = /^\/api\/tasks\/([^/]+)\/board-move$/;
 
-/**
- * The one auto-managed field the board-move path may write directly.
- *
- * Scoped to a constant so the grant is greppable and cannot quietly
- * widen: `completed_date`, the other auto-managed field, stays
- * server-computed on every path including this one.
- */
-const BOARD_MOVE_GRANT: ReadonlySet<string> = new Set(["board_rank"]);
 const TASK_RELATIONSHIP_RERANK_RE = /^\/api\/tasks\/([^/]+)\/relationships\/([^/]+)\/([^/]+)\/rerank$/;
 const TASK_BODY_RE = /^\/api\/tasks\/([^/]+)\/body$/;
 const TASK_BODY_APPEND_RE = /^\/api\/tasks\/([^/]+)\/body\/append$/;
@@ -2304,20 +2293,19 @@ export function createWebApp(options: WebAppOptions) {
    * appends one history batch, so both fields land or neither does. It
    * was exported and had no caller; this is the caller.
    *
-   * ## Why the rank is computed here rather than by `reorderBoardRank`
+   * ## Why a dedicated core op, not `reorderBoardRank`
    *
-   * `reorderBoardRank` derives a card's peers from the status the task
-   * *currently* has — correct for an intra-column reorder, wrong for
-   * this one. On a cross-column drop the destination neighbours are in
-   * the column the card is moving *to*, and that function would refuse
-   * them outright (its `anchorRank` throws when an anchor's status
-   * differs). So the neighbours arrive from the client as the two keys
-   * the user actually saw at release time (BRD-32), and the rank is
-   * interpolated between their stored ranks.
+   * `reorderBoardRank` throws when given `before` *and* `after`
+   * together, and this path passes both deliberately (BRD-32 wants the
+   * two neighbours the user actually saw at release). It also writes
+   * only `board_rank`, so routing through it would lose the atomic
+   * status+rank write. Core's `boardMove` is the consolidation target
+   * instead — and it brings the rebalance this path never had.
    *
-   * The anchors are re-read from disk rather than trusted from the
-   * payload: BRD-44's neighbour may have been deleted since the drag
-   * began, and BRD-35's card may have moved.
+   * The rank interpolation that used to live here is gone: one
+   * implementation of "interpolate between two ranks", in core, so a
+   * boundary fix or a rebalance cannot land on one path and not the
+   * other.
    */
   const handleBoardMove: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = requireValidRef(captures, res, 0, req);
@@ -2355,58 +2343,21 @@ export function createWebApp(options: WebAppOptions) {
     }
 
     try {
-      const task = await lookupTask(locttDir, ref);
       const archivedGuard = await loadArchivedGuardConfigs(locttDir);
-
-      // Anchors are read fresh. A neighbour deleted mid-drag (BRD-44)
-      // surfaces here as a lookup failure naming the operation, rather
-      // than as a rank silently interpolated against a ghost.
-      const rankOfAnchor = async (anchorRef: unknown): Promise<string | undefined> => {
-        if (typeof anchorRef !== "string" || anchorRef.length === 0) return undefined;
-        try {
-          const anchor = await lookupTask(locttDir, anchorRef);
-          return anchor.frontmatter.board_rank;
-        } catch {
-          throw new ReorderError(
-            `Couldn't reorder ${ref}: the neighbouring task "${anchorRef}" no longer `
-            + `exists, so this board is out of date. Reload and try the move again.`,
-          );
-        }
-      };
-
-      const beforeRank = await rankOfAnchor(request.before);
-      const afterRank = await rankOfAnchor(request.after);
-
-      // `before` is the card the dropped card lands *above*, `after`
-      // the one it lands *below* — so the new rank sits between the
-      // lower bound (`after`) and the upper bound (`before`). Missing
-      // bounds fall back to the ends of the space, which is what makes
-      // a drop at the very top (BRD-25) or very bottom (BRD-26)
-      // produce a rank strictly inside `("0", "z")` rather than equal
-      // to either end.
-      const lower = afterRank ?? LEXORANK_MIN;
-      const upper = beforeRank ?? LEXORANK_MAX;
-      const board_rank = lexorankBetween(lower, upper);
-
-      const updated = await setFields({
+      const result = await boardMove({
         locttDir,
-        taskId: task.frontmatter.id,
-        // Both fields, one change set, one write. Nothing else is
-        // included: XS-9 requires a concurrent CLI edit to `assignee`
-        // on this same card to survive the drag.
-        changes: [
-          { field: "status", value: status },
-          { field: "board_rank", value: board_rank },
-        ],
+        taskRef: ref,
+        status,
+        ...(typeof request.before === "string" && request.before.length > 0
+          ? { before: request.before }
+          : {}),
+        ...(typeof request.after === "string" && request.after.length > 0
+          ? { after: request.after }
+          : {}),
         workflowConfig: wfConfig,
         archivedGuard,
-        // `board_rank` is auto-managed, so `setFields` refuses it by
-        // default — that guard is what stops a user hand-writing a
-        // rank through `loctt set`. This path *is* the rank's owner,
-        // and it needs the write in the same change set as `status`.
-        allowAutoManaged: BOARD_MOVE_GRANT,
       });
-      json(res, projectTaskFrontmatter(updated.frontmatter));
+      json(res, projectTaskFrontmatter(result.task.frontmatter));
     } catch (err) {
       if (err instanceof ReorderError) {
         error(res, err.message, 400, {

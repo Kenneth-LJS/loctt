@@ -2483,6 +2483,192 @@ survive contact with 104 stripes.
 remove the `zoom === "month" ? [] :` guard on `shaded`. No geometry
 changes — `nonWorkingReason` already answers per-day at every zoom.
 
+### A34 · Tasks with no status form their own pseudo-column
+
+**Ticket:** K8 · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** K8 scopes `board_rank` by column, derived through
+`deriveColumns`. But `deriveColumns` gives a status-less task **no
+column**: `bucketTasks` drops it and the orphan bucket explicitly skips
+`status === undefined`, so the board never renders it. Core's own
+fixtures create exactly such tasks — `makeTasks` in `reorder.test.ts`
+makes tasks with no status at all, and the BRD-28/BRD-49 rebalance
+tests rank them.
+
+**What had to be decided.** What column a status-less task belongs to,
+given `deriveColumns` has no answer.
+
+**Options considered.**
+
+- *Treat them as one pseudo-column.* Status-less tasks are peers of
+  each other and of nothing else. Costs: a concept that exists in the
+  ranking layer and nowhere in the rendering layer.
+- *Put them in every column / rank them against all tasks.* Costs: a
+  status-less task's rank would be interpolated against cards it never
+  renders beside — the exact SPR-C2 defect, reintroduced.
+- *Refuse to rank them.* Costs: breaks the existing rebalance tests and
+  removes a capability the CLI has today.
+
+**Decided.** A pseudo-column: tasks sharing an absent status form their
+own sequence.
+
+**Why.** It preserves pre-K8 behaviour for these tasks *exactly* —
+before K8 the scope was `moved.frontmatter.status`, which for a
+status-less task was `undefined` and matched only other status-less
+tasks. So this is not a new rule, it is the old rule stated honestly
+now that "column" and "status" have come apart. Inventing an answer
+where `deriveColumns` has none was the alternative the review warned
+about.
+
+**To revert.** In `packages/core/src/rank/column-scope.ts`, delete the
+`STATUSLESS_COLUMN` symbol and have `columnStatusesFor` return an empty
+set for `status === undefined`. The BRD-28/BRD-49 rebalance tests in
+`reorder.test.ts` will fail, which is the signal that this decision was
+load-bearing.
+
+### A35 · A column-membership config change yields an arbitrary-but-stable interleave
+
+**Ticket:** K8 · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** `board_rank` is one string per task, scoped to
+nothing on disk; column membership is a function of config at read
+time. Editing `workflow.boards` to merge two columns brings two
+independently-dense sequences together, and they interleave by raw
+string comparison.
+
+**What had to be decided.** Whether to repair ranks when a config
+change alters column membership.
+
+**Options considered.**
+
+- *Renumber the merged column on config save.* Costs: a config edit
+  becomes a bulk write across every task in the affected columns,
+  bumping `updated_at` and writing history for cards nobody touched —
+  and it would have to run on every surface that can save workflow
+  config.
+- *Leave it; the interleave is arbitrary but stable.* Costs: after a
+  merge, the first render's order is not meaningful.
+
+**Decided.** Leave it. No repair pass.
+
+**Why.** `sortColumn` tiebreaks equal ranks by `created_at` then `id`,
+so the result is deterministic across reloads (BRD-29) — arbitrary is
+not the same as unstable. The first drag repairs positions locally, and
+no invariant breaks. Splitting a column is even cleaner: a subsequence
+of a total order is still a total order, so relative order of
+same-status cards is preserved exactly.
+
+**To revert.** Add a normalization pass to `saveWorkflowConfig` that
+re-spaces `board_rank` per column when `boards` changed. Note it would
+need the archived guard and a history policy for the tasks it rewrites.
+
+### A36 · `reorderBoardRank` now loads workflow config, so a malformed `boards` block fails the reorder
+
+**Ticket:** K8 · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** To scope by column, `reorderBoardRank` calls
+`loadWorkflowConfig`, which throws on an absent or invalid
+`workflow.yaml`. The `boards` cross-column duplicate-status check lives
+in the zod schema itself, so it runs on every parse. A CLI
+`board-rerank` in a tracker with a malformed `boards` block goes from
+"works, status-scoped" to "config error".
+
+**What had to be decided.** Whether to swallow the config error and
+fall back to status scoping.
+
+**Options considered.**
+
+- *Catch and fall back to 1:1 status columns.* The reorder keeps
+  working. Costs: it silently writes a rank under a column model that
+  is not the one the user configured — and the board, which does
+  surface the config error (BRD-45), and the CLI would then disagree
+  about what happened.
+- *Let it throw.* Costs: a previously-working command now fails on a
+  file the user may not realise is broken.
+
+**Decided.** Let it throw.
+
+**Why.** Consistent with BRD-45's spirit: a malformed `boards` block is
+surfaced, not worked around. Ranking against a column model the user
+did not configure is the drift K8 exists to remove. The error names the
+file and the offending keys, which is actionable.
+
+**To revert.** In `packages/core/src/rank/reorder.ts`, wrap the
+`loadWorkflowConfig` call in a try/catch returning `undefined`, and
+have `columnStatusesFor` fall back to `new Set([status])` when the
+workflow is absent.
+
+### A37 · The web client imports core's column module by subpath, not through the barrel
+
+**Ticket:** K8 · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** Moving `deriveColumns` into core and re-exporting it
+from `@loctt/core` broke the client bundle: `vite build` failed with
+`"resolve" is not exported by "__vite-browser-external"`. Core's barrel
+pulls in `paths/index.js`, which imports `node:path` — no browser
+build.
+
+**What had to be decided.** How the browser reaches a pure-logic module
+that lives inside a node-flavoured package.
+
+**Options considered.**
+
+- *Add a `node:path` browser shim / alias in vite config.* Costs:
+  pulls all of core into the client bundle to use one pure function,
+  and hides the next accidental node import behind a stub.
+- *Add a narrow subpath export for the one module.* Costs: a second
+  entry in `exports`, and the discipline that this module must stay
+  free of node imports.
+- *Keep a copy in the client.* Costs: the drift K8 exists to remove.
+
+**Decided.** A subpath export: `@loctt/core/board/columns.js`.
+
+**Why.** It is the narrowest thing that works and it fails loudly —
+if someone adds a node import to `board/columns.ts`, the client build
+breaks immediately rather than silently bundling a shim. The module is
+pure logic over types by construction, which is the premise K8's move
+rests on anyway.
+
+**To revert.** Remove the `./board/columns.js` entry from
+`packages/core/package.json`'s `exports` and point
+`apps/web/src/client/board/columns.ts` at `@loctt/core`. The client
+build will then fail until a `node:path` shim is configured in vite.
+
+### A38 · K9's status field is prepended to the card layout, per column
+
+**Ticket:** K9 · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** K9 requires a card's status to be visible in a
+multi-status column regardless of `card_layout`, while single-status
+columns honour `card_layout` as configured. K9 does not say *where* in
+the card the status goes.
+
+**What had to be decided.** Position of the forced status field, and
+the layer that applies the rule.
+
+**Options considered.**
+
+- *Append it after the configured fields.* Costs: it trails behind the
+  due date, which is the least scannable position for the one field
+  that disambiguates the pile.
+- *Prepend it.* Costs: it displaces the user's chosen first field in
+  those columns only.
+
+**Decided.** Prepend, resolved per column in
+`resolveColumnCardLayout`, applied inside the `Column` component.
+
+**Why.** The status is the disambiguator the user is scanning for in
+exactly the columns where the rule fires, so it leads. Resolving per
+column rather than per board is required, not stylistic: one board can
+hold both single- and multi-status columns, and K9 scopes the override
+to the latter only. A layout that already lists `status` is left
+untouched, so the field never doubles.
+
+**To revert.** In `apps/web/src/client/board/cardLayout.ts`, change
+`return ["status", ...layout]` to `return [...layout, "status"]`, or
+delete `resolveColumnCardLayout` and pass `layout` straight through in
+`BoardView.tsx`'s `Column`.
+
 ### K8 · A board column is a group of tickets, and reordering inside one works across statuses
 
 **Date:** 2026-08-30 · **Ken's ruling — an agent may not revert this.**

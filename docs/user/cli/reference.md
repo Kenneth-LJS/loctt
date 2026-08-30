@@ -669,6 +669,18 @@ in its current status; only its order within the column changes. Pass
 either `--before` or `--after` (mutually exclusive); without either, the
 task moves to the end of its column.
 
+**A column is a group of tickets, not a status.** When
+`workflow.yaml` has a `boards` block, a column may collapse several
+statuses, and cards of different statuses interleave freely inside it:
+`--before` / `--after` accept any task in the same *column*, whatever
+its status. With no `boards` block a column is one status, so the
+anchor must share the moved task's status. An anchor from a different
+column is refused, naming both.
+
+Each column is its own sequence: "the end of the column" means the end
+of that column's ordering, not of the tracker, so a task moved to the
+end lands below that column's cards only.
+
 ```
 loctt board-rerank <task> [--before <task> | --after <task>]
 ```

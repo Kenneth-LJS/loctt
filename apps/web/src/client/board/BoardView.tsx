@@ -12,7 +12,7 @@ import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { buildLookups } from "../list/lookups.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { BoardCard } from "./BoardCard.tsx";
-import { resolveCardLayout } from "./cardLayout.ts";
+import { resolveCardLayout, resolveColumnCardLayout } from "./cardLayout.ts";
 import { hiddenColumnsOf, withHiddenColumns } from "./chipSettings.ts";
 import type { BoardColumn } from "./columns.ts";
 import { bucketTasks, deriveColumns } from "./columns.ts";
@@ -589,6 +589,10 @@ function Column({
     direction: "left" | "right" | "up" | "down",
   ) => void;
 }) {
+  // K9: a card's status is always visible where the column collapses
+  // more than one, whatever `card_layout` says. Resolved per column
+  // rather than per board, because a board can hold both kinds.
+  const columnLayout = resolveColumnCardLayout(layout, column.statuses);
   const over = column.wip !== undefined && tasks.length > column.wip;
   const atCap = column.wip !== undefined && tasks.length === column.wip;
 
@@ -721,7 +725,7 @@ function Column({
                 <DropIndicator active={dropIndex === i} />
                 <BoardCard
                   task={task}
-                  layout={layout}
+                  layout={columnLayout}
                   lookups={lookups}
                   milestones={milestones}
                   sprints={sprints}

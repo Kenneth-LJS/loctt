@@ -1155,65 +1155,25 @@ fixed: the honest fix is core normalising or refusing names that
 collide case-insensitively with an existing attachment, which changes
 what the CLI and MCP accept too.
 
-## BRD-12 cannot be satisfied: core scopes `board_rank` per **status**, the board scopes it per **column**
+## ~~BRD-12 cannot be satisfied~~ — FIXED by K8 (2026-08-30)
 
-**Found 2026-08-30 building M3.2 (board drag-and-drop). Not fixed —
-the fix is load-bearing and changes CLI and MCP behaviour.**
+**Resolved.** Ken's K8 ruling made a board column a *group of tickets*
+rather than a status, and the fix landed with it.
 
-BRD-12 requires reordering *inside* a column that collapses several
-statuses: a `blocked` card dragged above an `in_progress` card in the
-same `In flight` column must write **only** `board_rank`, leaving the
-status `blocked`. `reorderBoardRank` refuses it.
+`deriveColumns` moved from `apps/web/src/client/board/columns.ts` into
+`packages/core/src/board/columns.ts`, and `reorderBoardRank` now scopes
+its peer set and its anchor check by **column** (via
+`rank/column-scope.ts`) instead of by `moved.frontmatter.status`. A
+`blocked` card can be dragged above an `in_progress` card in the same
+configured column; the rank lands and the status is untouched.
 
-Core treats a board column as exactly one status. `reorderBoardRank`
-derives its peer set from `moved.frontmatter.status` and its
-`anchorRank` helper throws when an anchor's status differs:
+The two SPR-C2 tests still pass — their fixture has no `boards` block,
+so the 1:1 fallback keeps `backlog` and `in_progress` in separate
+columns and the refusal is still correct there. Only the error
+*message* changed (it now names columns rather than prescribing "move
+the task to that status first").
 
-```
-$ loctt board-rerank C2 --before C1
-Error: cannot rank before 'C1': it is in status 'in_progress' but C2 is
-in 'blocked'. Board rank is per-column — move the task to that status
-first, or pick an anchor in its own column.
-```
-
-(Reproduce: create two tasks, set one `in_progress` and one `blocked`,
-`board-rerank` the first, then `board-rerank` the second `--before` it.)
-
-That refusal is deliberate — it is the SPR-C2 fix, with two tests in
-`packages/core/src/rank/reorder.test.ts` ("refuses an anchor in another
-column, naming both statuses", "does not derive a rank from another
-column's tasks") asserting it. Its rationale is that a rank
-interpolated between tasks the user cannot see next to the moved one is
-meaningless.
-
-But `workflow.boards.columns[].statuses` (BRD-2, BRD-12, BRD-13) makes
-a column a *set* of statuses, and the web's `columns.ts` buckets and
-sorts on that basis. So the two layers disagree about what "a column"
-is, and the board's own sort order — which interleaves `in_progress`
-and `blocked` cards by rank — is an order core will not let a user
-produce by dragging.
-
-**Why it was not fixed here.** The honest fix is to make core's rank
-scope match the configured board column: `reorderBoardRank` would take
-the destination column's status set (or read `workflow.boards`) instead
-of assuming one status. That changes what `loctt board-rerank` and the
-MCP rank tool accept, requires the two SPR-C2 tests above to be
-rewritten (they assert the current refusal), and needs a ruling on what
-board rank means for a tracker with **no** `boards` block, where
-"column" and "status" genuinely coincide. That is a scope change and a
-contradiction of a recorded core decision, so it is reported rather
-than decided.
-
-**State of the case.** `tests/ui/flow-board.spec.ts` has a BRD-12 test
-tagged `@verifies BRD-12`. It currently FAILS at its final assertion:
-the client sends exactly one request with no `status` key (the payload
-half of the case is correct and asserted), the server accepts it, and
-core refuses the rank, so `board_rank` is never written. The two
-bullets it does cover — "only `board_rank` is written" and the status
-staying `blocked` — hold; the write itself does not land.
-
-BRD-12's third bullet ("moving the same card *out* to another column
-does write the new column's status") is covered by BRD-13 and passes.
+`tests/ui/flow-board.spec.ts`'s BRD-12 test is no longer `test.fixme`.
 
 ## `workflow.boards` is undocumented in schema-reference.md
 

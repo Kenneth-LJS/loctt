@@ -57,3 +57,30 @@ export function resolveCardLayout(
   if (!parsed.success) return DEFAULT_CARD_LAYOUT;
   return parsed.data;
 }
+
+/**
+ * The layout for one column's cards, honouring K9.
+ *
+ * **A card's status is always visible in a multi-status column.**
+ * Where a column collapses several statuses, `status` is shown
+ * regardless of whether `card_layout` lists it: a column that mixes
+ * statuses is otherwise an undifferentiated pile, and reordering
+ * across statuses (K8) is guesswork without it.
+ *
+ * Scope is exactly the columns that *actually* collapse more than one
+ * status. A single-status column honours `card_layout` as configured,
+ * since its header already states the status — which is why
+ * `DEFAULT_CARD_LAYOUT` leaves `status` out in the first place.
+ *
+ * Prepended rather than appended: the status is the disambiguator the
+ * user is scanning for, so it leads the field list instead of trailing
+ * behind the due date.
+ */
+export function resolveColumnCardLayout(
+  layout: readonly CardLayoutField[],
+  columnStatuses: readonly string[],
+): readonly CardLayoutField[] {
+  if (columnStatuses.length <= 1) return layout;
+  if (layout.includes("status")) return layout;
+  return ["status", ...layout];
+}
