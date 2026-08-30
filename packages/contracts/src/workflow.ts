@@ -438,9 +438,13 @@ export type TimelineGrouping = z.infer<typeof TimelineGroupingSchema>;
  * when a user opens the Timeline view without a per-view override.
  *
  *  - `dependency_relationship`: relationship key whose links the
- *    timeline renders as dependency arrows (e.g. "blocks"). When the
- *    key is deleted from `relationships`, the workflow writer
- *    auto-clears this field in the same atomic write.
+ *    timeline renders as dependency arrows (e.g. "blocks"). This is a
+ *    reference that MAY DANGLE: deleting the key from `relationships`
+ *    leaves this field pointing at a key that no longer exists, and
+ *    the writer preserves it rather than silently deleting the user's
+ *    line (TML-34). Consumers resolve it against `relationships` and
+ *    draw no arrows — plus a notice naming the missing key — when it
+ *    does not resolve.
  *  - `default_zoom`: zoom level when first opening the view.
  *  - `show_arrows`: whether dependency arrows are drawn by default.
  *  - `default_grouping`: row grouping when first opening the view.

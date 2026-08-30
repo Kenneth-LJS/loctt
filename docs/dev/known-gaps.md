@@ -1214,3 +1214,60 @@ staying `blocked` — hold; the write itself does not land.
 
 BRD-12's third bullet ("moving the same card *out* to another column
 does write the new column's status") is covered by BRD-13 and passes.
+
+## `workflow.boards` is undocumented in schema-reference.md
+
+**Found:** M3.3a · **Not fixed:** out of the ticket's scope.
+
+`docs/dev/schema-reference.md`'s `workflow.yaml` "Top-level fields"
+table listed neither `boards` nor `timeline`, though both are in
+`WorkflowConfigSchema` and both are read by shipped code
+(`board/columns.ts` derives its columns from `workflow.boards.columns`;
+BRD-2, BRD-6, BRD-17 and BRD-24 all depend on the shape).
+
+M3.3a added the `timeline` row and a `### timeline` section, because
+that block is this ticket's subject. **`boards` is listed in the
+table but still has no section of its own** — its `columns[]` entries
+(`key`, `label`, `statuses[]`, `wip`) are documented nowhere.
+
+**To reproduce:** `grep -n '^### ' docs/dev/schema-reference.md` between
+the `workflow.yaml` and `queries.yaml` headings — there is no `boards`
+entry. Compare with `BoardsConfigSchema` in
+`packages/contracts/src/workflow.ts`.
+
+**To fix:** add a `### boards` section next to `### timeline`, taking
+the field list from `BoardsConfigSchema` and the semantics from the
+`board/columns.ts` docstring (which is accurate and thorough).
+
+## The non-working-day predicate exists twice
+
+**Found:** M3.3a · **Not fixed:** would require editing `DateField`,
+which M3.3a had no other reason to touch.
+
+`nonWorkingReason` in `apps/web/src/client/timeline/geometry.ts` and
+`nonWorkingNote` in `apps/web/src/client/task/editors/DateField.tsx`
+both decide whether a date is a non-working day, and both do it the
+same way: look for a holiday whose `date` matches, else parse the day
+as UTC and test `calendar.working_days.includes(weekday)`.
+
+They differ only in what they return — `nonWorkingNote` gives an
+English sentence for the task panel ("Saturday is not a working day"),
+`nonWorkingReason` gives the bare holiday label or `""` for a chart
+tooltip. The *decision* is duplicated; the formatting is not.
+
+**Why it matters.** TML-13 and TSK-8 must agree: a day shaded in the
+timeline should be marked in the date editor. Nothing enforces that
+today. A change to one — say, honouring a per-project calendar — would
+silently leave the other behind, and only the calendar tests on each
+side would notice.
+
+**To reproduce:** compare the bodies of the two functions; the holiday
+lookup and the `working_days` test are line-for-line equivalent.
+
+**To fix:** extract `isNonWorkingDay(date, calendar): { holiday?: string }
+| undefined` (in `geometry.ts`, or a shared `calendar.ts` if the
+timeline should not own it), and have both format its result.
+`DateField` is currently byte-for-byte unchanged from before M3.3a, so
+this is a pure refactor whose regression surface is TSK-8/TSK-28 in
+`tests/ui/flow-task-meta.spec.ts` plus TML-13 in
+`tests/ui/flow-timeline.spec.ts`.

@@ -12,7 +12,9 @@ import { NotFound } from "../routes/NotFound.tsx";
 import { Stub } from "../routes/Stub.tsx";
 import { AppBootstrap } from "../shell/AppBootstrap.tsx";
 import { TaskDetail } from "../task/TaskDetail.tsx";
+import { TimelineView } from "../timeline/TimelineView.tsx";
 import { listSearchSchema } from "./listSearch.ts";
+import { timelineSearchSchema } from "./timelineSearch.ts";
 
 // The root renders the app shell (header + sidebar + chrome) via
 // AppBootstrap, which gates on tracker info + current user and renders
@@ -98,11 +100,17 @@ const boardRoute = createRoute({
   component: BoardView,
 });
 
+// M3.3: the timeline extends the list's search vocabulary rather than
+// forking it, for the same reason the board shares it outright — a
+// filter must mean the same thing in every view. The three extra
+// params (zoom, grouping, arrows) are in the URL because TML-1, TML-3,
+// TML-8 and TML-15 each require that state to be shareable.
 const timelineRoute = createRoute({
   getParentRoute: () => rootRoute,
   errorComponent: RouteError,
   path: "/timeline",
-  component: () => <Stub name="/timeline" />,
+  validateSearch: timelineSearchSchema,
+  component: TimelineView,
 });
 
 // M2.1: the real read shell. The `$key` param is a *ref* — a current

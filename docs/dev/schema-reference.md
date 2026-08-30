@@ -278,6 +278,8 @@ estimation:
 | `relationships` | array | yes | Relationship-type definitions |
 | `custom_fields` | array | yes | Custom-field definitions |
 | `estimation` | object | no | Estimation configuration |
+| `boards` | object | no | Board column configuration |
+| `timeline` | object | no | Timeline (Gantt) view defaults |
 
 ### `key`
 
@@ -377,6 +379,26 @@ Two modes:
 | `unit_label` | string | conditional | Required when `unit` is `custom_numeric` or `custom_enum` |
 | `scale` | enum | no | One of `free`, `linear`, `fibonacci` |
 | `preset_values` | (number\|string)[] | conditional | Suggested values. Required and non-empty when `unit` is `custom_enum` |
+
+### `timeline`
+
+Workspace-level defaults for the timeline (Gantt) view. Every field is optional; a saved view's `display` overrides these, and the URL overrides both. UI consumers fall back to the built-ins in the last column.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `dependency_relationship` | string \| null | no | Relationship `key` whose links are drawn as dependency arrows (e.g. `blocks`). `null` means "no arrows", same as absent. **May dangle** — see below. Built-in: none |
+| `default_zoom` | enum | no | One of `day`, `week`, `month`. Built-in: `week` |
+| `show_arrows` | boolean | no | Whether arrows are drawn by default. Built-in: `true` |
+| `default_grouping` | enum | no | One of `none`, `milestone`, `assignee`, `status`, `sprint`. Built-in: `none` |
+
+**`dependency_relationship` is a reference that may dangle.** Deleting its
+target from `relationships` leaves this field pointing at a key that no
+longer exists. The writer **preserves** it rather than deleting the user's
+line: silently pruning it destroys the evidence of a typo, and a UI notice
+cannot name a key that has been erased. Consumers must resolve the value
+against `relationships` and, when it does not resolve, draw no arrows and
+report the missing key by name — never assume the value is valid. See
+decision A31.
 
 ---
 
