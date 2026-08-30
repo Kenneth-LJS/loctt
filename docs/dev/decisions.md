@@ -2986,49 +2986,65 @@ multi-status column adopts the column's **first** listed status,
 deterministically — the user controls the default by ordering the
 `statuses` array.
 
-### K10 · The body-write precondition ships on every surface, not just the web
+### K10 · The body-write precondition is available everywhere, opt-in on the CLI, token-passing on MCP
 
 **Date:** 2026-08-30 · **Ken's ruling — an agent may not revert this.**
+**Supersedes an earlier draft of K10 that made the guard safe-by-default.**
 
-**The situation.** K2 ruled that the body-write precondition ships with
-the editor, on the stated grounds that autosave without one "silently
-overwrites a concurrent CLI or MCP edit every 1.5 idle seconds,
-unattended, which is exactly what P1 forbids". It was then built
+**The situation.** K2 ruled the body-write precondition ships with the
+editor, because autosave without one "silently overwrites a concurrent
+CLI or MCP edit every 1.5 idle seconds, unattended". It was built
 **web-only**: `bodyToken` / `expectedToken` appear in
 `apps/web/src/server/server.ts` and in neither `apps/cli/src` nor
-`apps/mcp/src` (grep with positive control). Core's own docstring says
-"Omit for last-write-wins, which is what every existing caller gets."
+`apps/mcp/src` (grep, with positive control). Core's docstring: "Omit
+for last-write-wins, which is what every existing caller gets." The M2
+gate raised this as a blocker, correctly.
 
-So the guard protects the web editor from itself, while the two surfaces
-K2 named as *the threat* write unguarded. The M2 gate raised this as a
-blocker, correctly.
+**How the ruling was reached, including my error.** Ken first ruled
+safe-by-default with a `--force` escape hatch. He then proposed two
+modes with the unsafe one as the default. I put the reversal back to him
+rather than silently recording it, with my objection stated: the people
+who would think to pass a `--safe` flag are the ones already being
+careful, and the asymmetry favours the safe default (a wrong refusal
+costs seconds; a wrong overwrite costs body text, silently, often
+noticed much later).
 
-**The usability case Ken ruled on.** The failure without it: a task is
-open in the web UI; the user edits the body in their terminal with
-`loctt body --set`; the browser autosaves 1.5s after the next keystroke
-and **silently destroys the terminal edit** — no warning, no conflict, no
-trace. That is the worst shape a data-loss bug can take: invisible,
-unattended, and it discards work the user did deliberately in favour of
-work they may have done by accident.
+Ken's answer refined the design rather than simply picking (b):
+**"unsafe default, can configure, and agents via mcp and existing
+scripts should pass it if its provided in params."**
 
-**Ruling: (a) — CLI and MCP acquire a token on read and pass it on
-write.** Plus a `--force` escape hatch (MCP: `force: true`).
+That is not "MCP is unsafe too". It splits the two surfaces:
 
-Rejected: an opt-in `--if-unchanged` flag, because it leaves the unsafe
-behaviour as the default and only protects users already being careful.
-Rejected: warn-but-still-write, because the data is gone by the time the
-warning prints and scrollback is easy to miss.
+- **CLI: last-write-wins by default**, configurable. Existing scripts and
+  existing habits are unchanged; a user who wants the check turns it on.
+- **MCP: the write tools take the token as a parameter**, and an agent
+  that holds one passes it. An MCP agent typically reads a task before
+  writing it, so it has the token in hand and passing it costs nothing.
 
-**The accepted cost, stated before the ruling.** `loctt body --set`
-starts refusing where it always succeeded — a real behaviour change to
-two published surfaces. A script looping `--set` over tasks an agent is
-also editing will begin failing. `--force` is the deliberate way
-through; it is not the default, so the safe path is what you get by
-not thinking about it.
+This addresses my objection at its actual root. The failure I was
+worried about — an agent silently clobbering a human's edit — is handled
+by *the agent having the token*, not by a global default that punishes
+solo CLI use.
 
-`--force` is not a new convention: it already means exactly this on
-`sprint` (`apps/cli/src/commands/sprint.ts:34`) and on attachments
-(`task-files.ts:20`), and MCP already takes `force: z.boolean()`.
+**Implementation consequence, measured.** `bodyToken`
+(`packages/core/src/task/io.ts:161`) is `sha256(updated_at + "\0" + body)`
+truncated to 16 hex chars. **An agent cannot construct it from an ordinary
+read** — the MCP read path must return it explicitly, or the write tools
+must accept `updated_at` and derive it server-side. Whichever is chosen,
+the token has to become reachable through MCP; today it is not exported
+to any tool.
+
+**What is still true from the earlier draft.** `--force` is not a new
+convention (`sprint.ts:34`, `task-files.ts:20`, and MCP's
+`force: z.boolean()`), so whichever direction the flag runs, the
+vocabulary already exists.
+
+**The accepted cost, stated plainly.** With last-write-wins as the CLI
+default, a `loctt body --set` that races a browser autosave still
+destroys the browser's edit silently. Ken has this in front of him: the
+protection exists, and it is on for the surface most likely to race a
+human (MCP agents), off for the surface least likely to (a person at
+their own terminal).
 
 **Unblocks** the M2 section gate's second blocker.
 
