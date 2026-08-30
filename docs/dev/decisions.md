@@ -3084,3 +3084,49 @@ columns stay on screen, row height is bounded. The reveal is the single
 unmet bullet, and MSL-20 is `major`, not `blocker`. The component is
 shared surface: one hover-card used by both the list row and the board
 card, not two implementations.
+
+### K13 · Error-message vocabulary gets its own audit, across all functionality
+
+**Date:** 2026-08-31 · **Ken's ruling.**
+
+**How this came up.** M3.4 fixed an archived-reference error that named a
+ULID the user never chose:
+
+    cannot assign archived milestone "01M19KQKWHX80KPY0WQ4B2Z067" to milestone
+
+It became `"v1.0 launch (01M19KQK…)"` — name **and** id — recorded as
+A47, arguing the id keeps the message "actionable against the file,
+where identity is the ULID (P-2)". That broke TSK-46, whose test asserts
+`not.toContainText(userId)`.
+
+Three sources disagree:
+
+- **ERR-43**: the message shows "the configured **label** … not the
+  stored key".
+- **TSK-46's test**: `not.toContainText(userId)` — no id at all.
+- **A47**: name *and* id, so the user can find the thing on disk.
+
+**Ken's position:** "feels like error messages could be more helpful
+with keys rather than just labels" — a lean toward A47's reasoning, but
+**not a ruling on this site**. He asked instead for an audit, and then
+clarified: "by audit i mean, across all the functionality, not just this
+one."
+
+**Ruling: a dedicated audit ticket, project-wide, after M4.** Not folded
+into M3.4 — it spans CLI, MCP and web equally and is not a web-UI
+concern.
+
+**Scope, measured before writing this:**
+
+- **317** `throw new` sites in `packages/core/src` (excluding tests).
+- **35** of them interpolate a raw id into an error/message string.
+- **15** UI tests assert `not.toContainText(...)` on something
+  id-shaped; exactly **one** (TSK-46) pins a ULID specifically.
+
+The audit must decide one rule and apply it everywhere, rather than
+per-site: when does a message carry a label, an id, or both — and in
+what order. It should also reconcile ERR-43's wording with whatever is
+chosen, since the case as written forbids the key outright.
+
+**Interim state for M3.4** (revisit in the audit, not before): recorded
+separately below.
