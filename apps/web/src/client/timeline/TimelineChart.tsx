@@ -214,6 +214,12 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
             {/* TML-16: the today marker. */}
             <div
               data-testid="timeline-today-marker"
+              // TML-24 bullets 1-2: the marker's date is exposed so a
+              // test can prove it follows the *workspace* timezone.
+              // Sourcing `today` from `new Date()` instead of the
+              // server left all 52 timeline tests green, because the
+              // marker's position was only a pixel offset.
+              data-today={props.today}
               aria-hidden="true"
               className="absolute top-0 z-10 w-px bg-accent-fg/70"
               style={{ left: todayX, height: layout.height, pointerEvents: "none" }}

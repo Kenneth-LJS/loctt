@@ -1087,7 +1087,17 @@ test.describe("TML — timeline edge cases (section B)", () => {
   });
 
   // @verifies TML-24
-  test("TML-24: dates are never converted through a timezone", async ({ page, tracker }) => {
+  //
+  // Pinned, because the case's premise is a browser 16-17 hours from
+  // the workspace and nothing made that true: there was exactly one
+  // `timezoneId` in the whole test tree, in a different spec. On a
+  // UTC+8 host, Asia/Tokyo is one hour away, so the test could not
+  // tell a component reading calendar.yaml from one reading the
+  // browser. Measured: sourcing `today` from `new Date()` instead of
+  // the server left all 52 timeline tests green.
+  test.describe("TML-24 in a browser far from the workspace", () => {
+    test.use({ timezoneId: "America/Los_Angeles" });
+    test("TML-24: dates are never converted through a timezone", async ({ page, tracker }) => {
     // `start_date` / `due_date` are date strings. A browser 16 hours
     // from the workspace must render the same columns.
     const [k] = await tracker.seed([{ title: "TZ" }]);
@@ -1118,6 +1128,19 @@ test.describe("TML — timeline edge cases (section B)", () => {
     // viewer sits.
     expect(width).toBe(5 * 36);
     expect(Number.isFinite(left)).toBe(true);
+
+    // Bullets 1-2: the today-marker follows the WORKSPACE timezone.
+    // The browser is pinned to America/Los_Angeles and the workspace
+    // to Asia/Tokyo — 16-17 hours apart, so for much of the day they
+    // are on different dates. The marker must carry the workspace's,
+    // which is what the server computes and sends.
+    const marker = page.getByTestId("timeline-today-marker");
+    await expect(marker).toBeVisible();
+    const tokyoToday = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+    await expect(marker).toHaveAttribute("data-today", tokyoToday);
+    });
   });
 
   // @verifies TML-29

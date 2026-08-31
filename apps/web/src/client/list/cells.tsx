@@ -116,6 +116,11 @@ export function ProjectChip({ def, raw }: { def: ProjectDef | undefined; raw: st
   if (raw === undefined) return <Dash />;
   return (
     <span
+      // BRD-23's bullet 1 turns on this chip being *present* on every
+      // card of an all-projects board. It had no testid, so the case
+      // could only assert the key text — and deleting the chip
+      // entirely left BRD-23 green (the M3 gate measured it).
+      data-testid="project-chip"
       className={[
         "inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium",
         def

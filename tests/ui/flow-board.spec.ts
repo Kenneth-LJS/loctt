@@ -444,6 +444,26 @@ test.describe("BRD — board view", () => {
     // A column with no `wip` key shows a plain count and no `/ n`.
     await expect(page.getByTestId("board-count-todo")).toHaveText("1");
     await expect(page.getByTestId("board-count-shipped")).toHaveText("0");
+
+    // Bullet 2's over-cap half, and bullet 4's "never renders an
+    // over-cap state" for an uncapped column. Neither was asserted:
+    // the M3 gate forced `over` to false permanently and all 51 board
+    // tests stayed green, because the state lived only in a Tailwind
+    // class. It is now a data attribute so the distinction the case
+    // turns on can be read.
+    await expect(page.getByTestId("board-count-doing"))
+      .toHaveAttribute("data-wip-state", "at-cap");
+    await expect(page.getByTestId("board-count-todo"))
+      .toHaveAttribute("data-wip-state", "under");
+
+    // A fourth card in the capped column: the drop is allowed (wip is
+    // a passive indicator, bullet 3) and the state becomes over-cap.
+    const [extra] = await tracker.seed([{ title: "Fourth" }]);
+    await tracker.run(["set", extra ?? "", "status", "in_progress"]);
+    await page.reload();
+    await expect(page.getByTestId("board-count-doing")).toHaveText("4 / 3");
+    await expect(page.getByTestId("board-count-doing"))
+      .toHaveAttribute("data-wip-state", "over");
   });
 
   // @verifies BRD-7
@@ -894,14 +914,31 @@ test.describe("BRD — board view", () => {
   }) => {
     await tracker.run(["project", "create", "Backend", "--prefix", "BACKEND-"]);
     await tracker.seed([{ title: "Web one" }]);
+    // A task in the SECOND project. Without it the case's premise —
+    // two projects' cards on one board — never existed: the fixture
+    // created Backend and seeded nothing into it, and the assertion
+    // only read the key text, so deleting the project chip entirely
+    // left this test green (the M3 gate measured it; BRD-4 caught the
+    // deletion, this case did not).
+    await tracker.run(["create", "Backend one", "--project", "Backend"]);
 
     await page.goto(`${tracker.baseURL}/board`);
 
-    // The key field carries a project chip alongside the key, so two
-    // projects' keys are not confusable.
-    const keyField = page.getByTestId("board-card-T-1").getByTestId("board-card-field-key");
-    await expect(keyField).toBeVisible();
-    await expect(keyField).toContainText("T-1");
+    // Bullet 1: every card shows a project indicator, and the two
+    // projects are named distinctly rather than left to key prefixes.
+    const webChip = page.getByTestId("board-card-T-1")
+      .getByTestId("project-chip");
+    const backendChip = page.getByTestId("board-card-BACKEND-1")
+      .getByTestId("project-chip");
+    await expect(webChip).toBeVisible();
+    await expect(backendChip).toBeVisible();
+    await expect(webChip).not.toHaveText(await backendChip.innerText());
+
+    // The keys stay distinguishable too.
+    await expect(page.getByTestId("board-card-T-1")
+      .getByTestId("board-card-field-key")).toContainText("T-1");
+    await expect(page.getByTestId("board-card-BACKEND-1")
+      .getByTestId("board-card-field-key")).toContainText("BACKEND-1");
   });
 
   // @verifies BRD-24

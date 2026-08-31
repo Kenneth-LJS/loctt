@@ -2795,9 +2795,33 @@ the case permits.
 
 **Chosen:** the unreadable notice.
 
-**Why.** The case offers "or flagged in place" explicitly, and what it
-actually requires is met: the task is named, the offending field is
-named, the constraint is stated, and no `Invalid Date` appears. The
+**Why.** The case offers "or flagged in place" explicitly, so routing
+through the unreadable notice is a legitimate reading of bullet 1.
+
+**CORRECTION, 2026-09-01 (M3 gate round 1).** The sentence that stood
+here — "the task is named, the offending field is named" — was **false**,
+and it made a partial case read as met. Measured against a live server
+with a hand-edited `start_date: "next tuesday"`:
+
+    {"id": "01M1CJZ…", "path": "/…/tasks/01M1CJZ…/task.md",
+     "reason": "start_date must be YYYY-MM-DD or full ISO-8601 timestamp"}
+
+The payload carries a **ULID file path** and a generic schema
+constraint. It does not carry the task's title, its key, or the
+offending value. `TimelineView.tsx:546` renders exactly `{u.path}:
+{u.reason}`, so the screen shows both and neither.
+
+So **bullet 3 — "the message names the task and the offending field
+value" — is unmet**, on both halves. Bullet 2 holds (no `Invalid Date`
+leaks). Bullet 1 holds under the "flagged in place" reading.
+
+Naming the task requires the server to carry a display name for a file
+it could not parse — the title may itself be unreadable — and naming
+the value requires the ZodError's received input to survive into the
+envelope. Neither is hard, but both are server work on a payload the
+CLI and MCP share, and this was found during a gate rather than a
+build. Recorded here and in known-gaps as unmet rather than left
+overstated. The
 client-side lane path still exists and is unit-tested
 (`dateProblem.test.ts`, kind `invalid`) — it is what renders this if
 the API ever starts passing such tasks through, so the behaviour is

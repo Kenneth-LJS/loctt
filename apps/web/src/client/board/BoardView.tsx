@@ -680,6 +680,7 @@ function Column({
                 ? "bg-warning-fg/10 font-semibold text-warning-fg"
                 : "text-text-tertiary",
           ].join(" ")}
+          data-wip-state={over ? "over" : atCap ? "at-cap" : "under"}
         >
           {/* BRD-6: a capped column shows both numbers; an uncapped
               one shows a plain count and never an over-cap state. */}

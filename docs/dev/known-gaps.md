@@ -1650,3 +1650,33 @@ time.
 defects: the features may work. What is recorded is that nobody has
 checked, which is the honest state — and it is now written down rather
 than implied by a number.
+
+## TML-48's unreadable notice names neither the task nor the bad value
+
+**Measured 2026-09-01 during the M3 gate, against a live server.**
+
+TML-48's third bullet: "The message names the task and the offending
+field value." A hand-edited `start_date: "next tuesday"` produces:
+
+    {"id": "01M1CJZ…", "path": "/…/tasks/01M1CJZ…/task.md",
+     "reason": "start_date must be YYYY-MM-DD or full ISO-8601 timestamp"}
+
+`TimelineView.tsx:546` renders exactly `{u.path}: {u.reason}` — a ULID
+file path and a generic schema constraint. **No title, no key, and the
+offending value `"next tuesday"` appears nowhere.** So bullet 3 is unmet
+on both halves. Bullet 2 holds (no `Invalid Date` leaks) and bullet 1
+holds under the case's "or flagged in place" reading.
+
+**A41 asserted the opposite** — "the task is named, the offending field
+is named" — which made a partial case read as met. That sentence has
+been corrected in place rather than deleted, with this measurement.
+It is the same failure as REL-16's forward reference to a known-gaps
+entry that was never written: a claim in a document standing in for a
+check.
+
+**Why it is not fixed here.** Naming the task means the server must
+carry a display name for a file it could not parse — the title may
+itself be unreadable — and naming the value means the ZodError's
+received input has to survive into the envelope. Neither is hard, but
+both are server work on a payload the CLI and MCP share, found during a
+gate rather than a build.
