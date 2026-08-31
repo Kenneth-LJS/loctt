@@ -1555,3 +1555,29 @@ test now moves a *third* task and types a key never searched before.
 
 **Not fixed.** Lowering `staleTime` for this one query would trade a
 30s window for a request per keystroke; the case does not ask for it.
+
+## A resolved body conflict can re-open its own dialog
+
+**Measured 2026-09-01 while adding XS-11's bullet-3 assertion.
+Reproduces in roughly 1–2 of 10 runs.**
+
+Clicking a choice in the conflict dialog **blurs the editor**, and both
+editor modes flush on blur (`BodyEditor.tsx:158` and `:162`). That
+fires a second write carrying the *stale* token, which the server
+correctly refuses with a 409 — visible in every single run.
+
+If that 409's response lands **after** Apply, `write()`'s catch calls
+`setConflict(...)` and re-opens the dialog over a conflict the user has
+already resolved. The merge write itself still succeeds (200 observed
+in the same run), so **no data is lost** — but the user is left facing
+a stale conflict dialog that nothing will close.
+
+Measured in one failing run: 409 at `…308336`, resolve 200 at
+`…308358`, dialog still present.
+
+**Not fixed.** The fix is to suppress the blur-flush while a conflict
+dialog is open, or to ignore a 409 whose token predates the resolution
+— but that is a change to the autosave state machine on a path K2 and
+K10 both touch, and no case describes it. XS-11's test therefore does
+**not** assert the dialog closes; it asserts the merged text reaches
+disk, which is what the bullet actually requires.

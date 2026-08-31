@@ -371,6 +371,45 @@ test.describe("TSK — the body editor", () => {
 
     // Nothing was written: the CLI's text is still what is on disk.
     expect(await bodyOnDisk(tracker.root, key)).toContain("Note from CLI");
+
+    // Bullet 3, which had no assertion until now: when the two edits do
+    // not overlap, the result contains BOTH texts and the user is told a
+    // merge happened. Measured before this existed: replacing the merge
+    // with `conflict.mine` — so "Keep both" silently drops the CLI's
+    // paragraph, losing exactly what the option promises to keep — left
+    // this file 11/11 green.
+    //
+    // Asserted on disk rather than in the preview, because the preview
+    // showing both proves only that the dialog can render them.
+    await page.getByRole("radio", { name: "Keep both" }).click();
+    await page.getByTestId("conflict-apply").click();
+
+    /**
+     * The dialog unmounting is NOT the signal that the merge landed:
+     * `resolve` closes the dialog synchronously and only then chains
+     * the conditional write behind any in-flight flush, so reading the
+     * file the instant the dialog is gone races the write and loses
+     * ~2 runs in 10 (measured; the trace showed the 200 with the
+     * correct merged body arriving a few ms AFTER the read). Polling
+     * for "Note from CLI" is no signal either — the CLI put that on
+     * disk before the conflict even appeared, so it matches at t=0.
+     * The only text whose arrival proves the resolution wrote is the
+     * editor's own: poll for it, then hold the merge to bullet 3.
+     *
+     * Not asserted here: the dialog being gone after Apply. The radio
+     * click blurs the editor (BodyEditor flushes on blur), and that
+     * doomed stale-token flush's 409 can land after Apply and re-open
+     * the dialog over an already-resolved conflict — a real app-side
+     * race, tracked in known-gaps, but a different behaviour than the
+     * merge this case's bullet is about.
+     */
+    await expect.poll(
+      async () => await bodyOnDisk(tracker.root, key),
+      { timeout: 8000 },
+    ).toContain("My addition.");
+    const merged = await bodyOnDisk(tracker.root, key);
+    expect(merged).toContain("Note from CLI");
+    expect(merged).toContain("My addition.");
   });
 
   // @verifies XS-12
