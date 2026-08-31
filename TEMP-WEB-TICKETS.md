@@ -596,20 +596,29 @@ Cases: SPR-1, SPR-2, SPR-3, SPR-4, SPR-5, SPR-6, SPR-15, SPR-17, SPR-19, SPR-20,
   exists and asks for a refresh, and the stale column is gone on refresh
 
 **Server work (this ticket is NOT frontend-only)**
-- `handleListSprints` does not catch `SprintsConfigError`, so a
-  malformed `sprints.yaml` currently returns a generic 500 with
-  `code: io_failed` + retry — the exact shape SPR-32 reserves for a
-  *failed fetch*, making the two indistinguishable. Needs a caught,
-  named error carrying the file, the offending sprint, and the broken
-  rule (the text exists in the ZodError but never reaches the client)
+- ~~`handleListSprints` does not catch `SprintsConfigError`, so a
+  malformed `sprints.yaml` returns a generic 500 with `code: io_failed`
+  + retry~~ **FALSE — measured 2026-08-31, see A50.** The missing catch
+  is real; the consequence is not. Against the unmodified handler a
+  malformed `sprints.yaml` returns **HTTP 400** `config_invalid`, naming
+  the file, the offending sprint and the broken rule — SPR-31's three
+  requirements, already met. `SprintsConfigError` sets `config_invalid`
+  in its own constructor, and the dispatcher maps any uncaught
+  `LocttError` through `toEnvelope()` + `statusForCode()`. A per-route
+  catch would re-derive what core already states. **No server work
+  here.** Two regression tests now pin this.
 - `parseSprintsConfig` is all-or-nothing. SPR-31 asks for valid sprints
   to still render *if the loader can partially recover* — decide
   explicitly: either add a lenient parse, or state that it cannot
   recover and always show the whole-file error. Do not leave it implied
-- SPR-36 needs an existence check on the drop write. The archived-
-  reference guard covers archived entities, not deleted ones, so a
-  write naming a deleted sprint id likely succeeds silently today —
-  verify before building the client half
+- ~~SPR-36 needs an existence check on the drop write... a write naming
+  a deleted sprint id likely succeeds silently today~~ **FALSE —
+  measured 2026-08-31, see A49.** It already refuses: assigning a
+  deleted sprint id exits 1 with `unknown sprint: <id>` and writes no
+  `sprint` key (positive control: assigning a live sprint exits 0 and
+  `loctt show` reports it). The guard is `resolveSprintIdFromInput`
+  (`sprints/manage.ts:86-103`) via `setField`, throwing
+  `SprintError extends LocttError` → 400. **Client half only.**
 - `GET /api/sprints` counts are opt-in via `?counts=true` (progress is
   not needed here; that is M4.7's burndown)
 
