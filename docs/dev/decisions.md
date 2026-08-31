@@ -3434,3 +3434,45 @@ chosen, since the case as written forbids the key outright.
 
 **Interim state for M3.4** (revisit in the audit, not before): recorded
 separately below.
+
+### A48 · `sprints.yaml` parsing stays all-or-nothing, and the page says so
+
+**Ticket:** M3.5 · **Date:** 2026-08-31
+
+**The situation.** SPR-31's third bullet: "Other, valid sprints still
+render **if the loader can partially recover**; if it cannot, the page
+says the whole file failed to parse rather than showing an empty state
+that reads as 'no sprints'." `TEMP-WEB-TICKETS.md` line 605 requires this
+be decided explicitly: "either add a lenient parse, or state that it
+cannot recover and always show the whole-file error. **Do not leave it
+implied.**"
+
+**What had to be decided.** Whether `parseSprintsConfig` gains a lenient
+mode.
+
+**Options considered.**
+
+1. **Lenient parse — drop invalid entries, render the rest.** Rejected.
+   `SprintsConfigSchema` validates the file as a unit, with a
+   `superRefine` enforcing id uniqueness *across* entries
+   (`sprints.ts:48`), so "the valid ones" is not a well-defined subset —
+   uniqueness is a property of the whole. Worse, a silently dropped
+   sprint leaves every task whose `sprint` field names it dangling into
+   SPR-27's "unknown sprint" path, converting one legible file error into
+   N scattered ones. That trades a clear failure for a confusing one.
+2. **All-or-nothing, with an honest message.** Chosen. The parse keeps
+   throwing for the whole file; the view says the file failed to parse,
+   names the file, the offending sprint and the broken rule.
+
+**Why.** SPR-31's bullet is conditional, not a mandate — it permits
+all-or-nothing provided the page is honest about it. P7 forbids the
+silent pruning that option 1 requires.
+
+**To revert.** Add a lenient branch to `parseSprintsConfig` returning
+`{ sprints, errors }`, and have the sprints view render both. The case
+allows it; nothing else depends on the strictness.
+
+**Note.** This is only reachable once `handleListSprints` catches
+`SprintsConfigError` at all — today it calls `loadSprintsConfig` bare
+(`server.ts:1476`), so the ZodError's text never reaches the client and
+SPR-31 and SPR-32 receive byte-identical 500s.
