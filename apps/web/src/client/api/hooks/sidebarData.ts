@@ -55,7 +55,14 @@ interface Page<T> {
   readonly limit: number;
 }
 
-interface ProjectsPage extends Page<ProjectDef> {
+export interface PrefixRenameSentinel {
+  readonly project_id: string;
+  readonly from: string;
+  readonly to: string;
+  readonly started_at: string;
+}
+
+export interface ProjectsPage extends Page<ProjectDef> {
   /** Workspace default project id, or null when none is set. */
   readonly default: string | null;
   /**
@@ -67,6 +74,18 @@ interface ProjectsPage extends Page<ProjectDef> {
    * user with their own default set has those disagree.
    */
   readonly effective_default?: string | null;
+  /**
+   * Task count per project id (PRU-17's reference-count badge). Ships
+   * with the list so the badge is visible before the delete dialog is
+   * opened, and comes from the same source as the delete guard.
+   */
+  readonly task_counts?: Readonly<Record<string, number>>;
+  /**
+   * Present only when a prefix rename was interrupted server-side
+   * (PRU-46). The panel must report the tracker as mid-rename rather
+   * than healthy.
+   */
+  readonly pending_prefix_rename?: PrefixRenameSentinel;
 }
 
 interface UsersPage extends Page<UserProfile> {

@@ -12,6 +12,7 @@ import {
 } from "../task/frontmatter.js";
 import {
   assignProvisionalPrefixes,
+  assignProvisionalSlugs,
   deriveKeyState,
   type MergeableComment,
   mergeById,
@@ -245,12 +246,20 @@ export async function resolveConflicts(
           // prefixes here, before writing, rather than after: the file
           // cannot be loaded again once it is invalid.
           const projects = list as unknown as {
-            id: string; prefix: string; created_at?: string;
+            id: string; prefix: string; slug?: string; created_at?: string;
           }[];
           const assigned = assignProvisionalPrefixes(projects);
+          // Slugs collide for exactly the same reason and are rejected
+          // by the same schema, so they are de-duplicated in the same
+          // pass — otherwise the file is still unloadable after the
+          // prefix fix (K3, A60).
+          const assignedSlugs = assignProvisionalSlugs(projects);
           list = projects.map(p => ({
             ...p,
             prefix: assigned.get(p.id) ?? p.prefix,
+            ...(p.slug !== undefined
+              ? { slug: assignedSlugs.get(p.id) ?? p.slug }
+              : {}),
           })) as unknown as { id: string }[];
         }
 

@@ -388,15 +388,18 @@ No parameters. Returns JSON `{projects: [...], default: <id|null>}` from `projec
 
 Create a new project. Prefixes must be unique across the tracker, and a project's prefix is immutable after creation except via `set_project_prefix`.
 
-A project is `{id, name, prefix}`. There is no slug: `id` is a ULID minted at creation and `name` is mutable display text.
+A project is `{id, name, slug?, prefix}`. `id` is a ULID minted at creation and `name` is mutable display text. The **slug** is the stable, URL-safe handle (`web`, `web-app`): generated from the name unless given, unique across the tracker, and **fixed once created** — renaming a project does not change it, so links keep resolving (K3, decisions.md A60). Trackers created before slugs existed have none and are referenced by name or id.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `name` | string | yes | Human-readable display name |
 | `prefix` | string | yes | Task-key prefix, e.g. `BACKEND-` |
+| `slug` | string | no | URL-safe handle. Generated from the name when omitted. Lowercase letters, digits, hyphen, underscore; must start with a letter. Rejected if malformed or already taken |
 | `make_default` | boolean | no | If true, also set as workspace default |
 
-Returns JSON `{id, name, prefix}`.
+Returns JSON `{id, name, slug?, prefix}`.
+
+Every tool that takes a `project` parameter accepts a **slug**, an id, or a name — resolved in that order, so the unambiguous handle wins.
 
 Returns: `Created project <key>`. `ProjectError` on validation failures.
 

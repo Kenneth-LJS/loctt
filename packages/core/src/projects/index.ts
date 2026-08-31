@@ -20,3 +20,10 @@ export {
   recoverInterruptedPrefixRename,
   setProjectPrefix,
 } from "./prefix.js";
+export {
+  allocateSlug,
+  findProjectBySlug,
+  isValidSlug,
+  projectSlug,
+  slugifyName,
+} from "./slug.js";

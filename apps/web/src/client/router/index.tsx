@@ -10,6 +10,7 @@ import { RegionErrorFallback } from "../error/RegionErrorBoundary.tsx";
 import { ListView } from "../list/ListView.tsx";
 import { NotFound } from "../routes/NotFound.tsx";
 import { Stub } from "../routes/Stub.tsx";
+import { SettingsShell } from "../settings/SettingsShell.tsx";
 import { AppBootstrap } from "../shell/AppBootstrap.tsx";
 import { SprintsView } from "../sprints/SprintsView.tsx";
 import { TaskDetail } from "../task/TaskDetail.tsx";
@@ -162,7 +163,10 @@ const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   errorComponent: RouteError,
   path: "/settings/$section",
-  component: () => <Stub name="/settings/$section" />,
+  component: function SettingsSection() {
+    const { section } = settingsRoute.useParams();
+    return <SettingsShell section={section} />;
+  },
 });
 
 const initRoute = createRoute({

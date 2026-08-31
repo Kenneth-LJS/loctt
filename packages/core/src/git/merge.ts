@@ -443,6 +443,50 @@ export function assignProvisionalPrefixes(
 }
 
 /**
+ * The slug half of {@link assignProvisionalPrefixes} (K3, A60).
+ *
+ * Two clones that each ran `loctt init` mint the same slug — both
+ * projects are called "Tasks", so both derive `tasks` — with different
+ * ULIDs. The union of the two lists then holds one slug twice, which
+ * `ProjectsConfigSchema` rejects, and the merged file cannot be loaded
+ * at all. Same failure as the prefix collision above, same fix.
+ *
+ * The project with the smaller id keeps the slug; the others get
+ * `<slug>-2`, `<slug>-3`… A project with no slug (pre-K3) is left
+ * alone — it has nothing to collide with.
+ *
+ * Ordering by id is ordering by mint time, and it is what makes two
+ * clones merging the same set reach the same answer instead of
+ * diverging permanently.
+ */
+export function assignProvisionalSlugs(
+  projects: readonly { id: string; slug?: string }[],
+): Map<string, string> {
+  const out = new Map<string, string>();
+  const taken = new Set<string>();
+  const ordered = [...projects].sort((a, b) => a.id.localeCompare(b.id));
+
+  for (const p of ordered) {
+    if (p.slug === undefined) continue;
+    if (!taken.has(p.slug)) {
+      taken.add(p.slug);
+      out.set(p.id, p.slug);
+      continue;
+    }
+    let n = 2;
+    let candidate = `${p.slug}-${String(n)}`;
+    while (taken.has(candidate)) {
+      n += 1;
+      candidate = `${p.slug}-${String(n)}`;
+    }
+    taken.add(candidate);
+    out.set(p.id, candidate);
+  }
+
+  return out;
+}
+
+/**
  * Unions a config list keyed by entry id (projects, queries).
  *
  * Both sides may have added entries; neither addition should be lost.

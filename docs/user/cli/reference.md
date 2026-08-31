@@ -122,16 +122,32 @@ space — each project has its own prefix and counter.
 
 ```
 loctt project list [--all]
-loctt project create <name> --prefix <prefix> [--default]
-loctt project edit <name|id> --name <new-name>
-loctt project set-prefix <name|id> <new-prefix> [--yes]
-loctt project archive <name|id>
-loctt project unarchive <name|id>
-loctt project delete <name|id> [--remap-to <other>] [--yes]
-loctt project set-default <name|id|->
+loctt project create <name> --prefix <prefix> [--slug <slug>] [--default]
+loctt project edit <slug|name|id> --name <new-name>
+loctt project set-prefix <slug|name|id> <new-prefix> [--yes]
+loctt project archive <slug|name|id>
+loctt project unarchive <slug|name|id>
+loctt project delete <slug|name|id> [--remap-to <other>] [--yes]
+loctt project set-default <slug|name|id|->
 ```
 
-Projects are referenced by name (when unambiguous) or by their internal id.
+Projects are referenced by **slug**, by name (when unambiguous), or by
+their internal id. Anywhere a command takes a project — including
+`--project` on `create` and `list` — all three are accepted.
+
+A **slug** is the project's stable, URL-safe handle (`web`, `web-app`):
+lowercase letters, digits, hyphen and underscore, starting with a
+letter. It is generated from the name when the project is created, and
+`--slug` overrides that. Slugs are unique across the tracker.
+
+A slug is **fixed at creation and does not change when the project is
+renamed**, so links and bookmarks that carry it keep resolving. That
+means a project created as "Web" and later renamed "Website" keeps the
+slug `web`. Resolution prefers the slug over a name, so an unambiguous
+handle always wins.
+
+Trackers created before slugs existed have none; those projects are
+referenced by name or id exactly as before.
 
 `list` hides archived projects unless `--all` is passed. The workspace default
 project is marked with `*`.

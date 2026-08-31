@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { SlugKey } from "./brands.js";
+
 /**
  * A single project definition. A LocTT tracker can host multiple
  * projects, each with its own task-key prefix and counter. Tasks
@@ -10,6 +12,13 @@ import { z } from "zod";
  *    to users. Tasks reference projects by id.
  *  - `name` is the human display name. Editable. Not unique
  *    (disambiguated by id when ambiguous).
+ *  - `slug` is the stable user-facing handle that URLs carry
+ *    (`?project=web`) and that the CLI and MCP accept wherever they
+ *    accept a project. Unique across projects, generated from the
+ *    name at creation, and **immutable thereafter** — see K3 and
+ *    decisions.md A60. Optional because trackers created before the
+ *    slug existed have none on disk; `projectSlug()` derives a
+ *    display value for those, and resolution still accepts the ULID.
  *  - `prefix` is the task-key prefix (e.g. `BACKEND-`, `WEB-`).
  *    Unique across projects. Not editable through `editProject`,
  *    because changing it has to rename every task in the project —
@@ -20,6 +29,7 @@ import { z } from "zod";
 export const ProjectDefSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
+  slug: SlugKey.optional(),
   prefix: z.string().min(1),
   archived: z.boolean().optional(),
 }).strict();
@@ -45,20 +55,42 @@ export const ProjectsConfigSchema = z.object({
 }).strict().superRefine((cfg, ctx) => {
   const ids = new Set(cfg.projects.map(p => p.id));
   const seenIds = new Set<string>();
-  const seenPrefixes = new Set<string>();
+  // Name the *first* holder of a duplicated value, not just the second
+  // one: XS-63 wants both entries that carry it, so the user can tell
+  // which two lines of the file to reconcile.
+  const firstByPrefix = new Map<string, ProjectDef>();
+  const firstBySlug = new Map<string, ProjectDef>();
   for (const [i, p] of cfg.projects.entries()) {
     if (seenIds.has(p.id)) {
       ctx.addIssue({ code: "custom", message: `duplicate project id: ${p.id}`, path: ["projects", i, "id"] });
     }
     seenIds.add(p.id);
-    if (seenPrefixes.has(p.prefix)) {
+    const priorPrefix = firstByPrefix.get(p.prefix);
+    if (priorPrefix) {
       ctx.addIssue({
         code: "custom",
-        message: `duplicate project prefix: ${p.prefix} — prefixes must be unique so task keys are unambiguous`,
+        message:
+          `duplicate project prefix: ${p.prefix} — prefixes must be unique so task keys are unambiguous. `
+          + `Held by "${priorPrefix.name}" and "${p.name}"`,
         path: ["projects", i, "prefix"],
       });
+    } else {
+      firstByPrefix.set(p.prefix, p);
     }
-    seenPrefixes.add(p.prefix);
+    if (p.slug !== undefined) {
+      const priorSlug = firstBySlug.get(p.slug);
+      if (priorSlug) {
+        ctx.addIssue({
+          code: "custom",
+          message:
+            `duplicate project slug: ${p.slug} — slugs must be unique so a URL names one project. `
+            + `Held by "${priorSlug.name}" and "${p.name}"`,
+          path: ["projects", i, "slug"],
+        });
+      } else {
+        firstBySlug.set(p.slug, p);
+      }
+    }
   }
   if (cfg.default !== undefined && !ids.has(cfg.default)) {
     ctx.addIssue({

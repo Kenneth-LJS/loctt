@@ -550,12 +550,15 @@ Located at `.loctt/config/projects.yaml`. A LocTT tracker hosts one or more proj
 projects:
   - id: 01JBQZ4X8N0000000000000030
     name: Backend
+    slug: backend
     prefix: BACKEND-
   - id: 01JBQZ4X8N0000000000000031
     name: Web
+    slug: web
     prefix: WEB-
   - id: 01JBQZ4X8N0000000000000032
     name: Legacy
+    slug: legacy
     prefix: LEG-
     archived: true
 default: 01JBQZ4X8N0000000000000030
@@ -563,7 +566,7 @@ default: 01JBQZ4X8N0000000000000030
 
 The schema enforces:
 - At least one project entry.
-- `id` and `prefix` are unique across all projects.
+- `id`, `slug` and `prefix` are unique across all projects.
 - `default` (if set) must point at an existing project id.
 
 ### Top-level
@@ -579,6 +582,7 @@ The schema enforces:
 |---|---|---|---|
 | `id` | ULID | yes | Immutable internal identifier. Never shown to the user (invariant P-4) |
 | `name` | string | yes | Human display name (editable; renaming does not move any task) |
+| `slug` | string | no | Stable URL-safe handle (`web`, `web-app`) that URLs carry and the CLI/MCP accept. Generated from the name at creation; **fixed thereafter**, so a rename does not break existing links (K3, decisions.md A60). Absent on trackers created before slugs existed, which resolve by id (A61) |
 | `prefix` | string | yes | Task-key prefix (e.g. `BACKEND-`). Unique across projects. Changeable only via `loctt project set-prefix`, which renames every task in the project |
 | `archived` | boolean | no | When `true`, project is hidden but tasks remain accessible |
 
