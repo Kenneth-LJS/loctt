@@ -82,7 +82,21 @@ export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
   const { taskRef, loadedBody, loadedToken, onSaved } = opts;
 
   const [state, setState] = useState<SaveState>({ kind: "saved" });
-  const [conflict, setConflict] = useState<BodyConflict | null>(null);
+  const [conflict, setConflictState] = useState<BodyConflict | null>(null);
+
+  /**
+   * Mirror of `conflict` that `flush` can read synchronously (A59).
+   *
+   * The guard below has to see the dialog close the instant `resolve`
+   * closes it — `resolve` clears the conflict and then flushes in the
+   * same tick, and a state read through a callback closure would still
+   * say "open" and swallow the resolution write itself.
+   */
+  const conflictRef = useRef<BodyConflict | null>(null);
+  const setConflict = useCallback((c: BodyConflict | null) => {
+    conflictRef.current = c;
+    setConflictState(c);
+  }, []);
 
   /**
    * The text the user has typed. A ref, not state: the timer callback
@@ -208,6 +222,27 @@ export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
 
   const flush = useCallback(async (): Promise<void> => {
     clearTimer();
+    /**
+     * A59: while the conflict dialog is open, no write leaves.
+     *
+     * XS-12's first bullet — "The UI does not write. It presents a
+     * conflict resolution surface" — and it is not just principle.
+     * Clicking a choice radio blurs the editor, the blur-flush went
+     * out carrying the token the server had already refused, and its
+     * guaranteed 409 could land *after* Apply and re-open the dialog
+     * over a conflict the user had just resolved (the known-gaps
+     * race, measured at 4 in 10 runs once asserted directly). Worse,
+     * the refetch effect above adopts a fresh `loadedToken` even
+     * while dirty, so a mid-conflict refetch could let that blur
+     * write *succeed* — silently overwriting `theirs` while the
+     * dialog is still asking the user which side to keep (P1).
+     *
+     * The resolution write is not suppressed: `resolve` clears
+     * `conflictRef` synchronously before it flushes. Every other
+     * trigger — blur, Ctrl/Cmd+S, unmount — waits; the buffer keeps
+     * the text and `hasUnsavedWork` keeps the warnings armed.
+     */
+    if (conflictRef.current !== null) return;
     // Chain rather than run in parallel: two overlapping POSTs would
     // race on the server and the older one could land last.
     const prior = inFlightRef.current ?? Promise.resolve();

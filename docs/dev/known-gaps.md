@@ -1556,7 +1556,7 @@ test now moves a *third* task and types a key never searched before.
 **Not fixed.** Lowering `staleTime` for this one query would trade a
 30s window for a request per keystroke; the case does not ask for it.
 
-## A resolved body conflict can re-open its own dialog
+## ~~A resolved body conflict can re-open its own dialog~~ — CLOSED 2026-09-01
 
 **Measured 2026-09-01 while adding XS-11's bullet-3 assertion.
 Reproduces in roughly 1–2 of 10 runs.**
@@ -1575,12 +1575,15 @@ a stale conflict dialog that nothing will close.
 Measured in one failing run: 409 at `…308336`, resolve 200 at
 `…308358`, dialog still present.
 
-**Not fixed.** The fix is to suppress the blur-flush while a conflict
-dialog is open, or to ignore a 409 whose token predates the resolution
-— but that is a change to the autosave state machine on a path K2 and
-K10 both touch, and no case describes it. XS-11's test therefore does
-**not** assert the dialog closes; it asserts the merged text reaches
-disk, which is what the bullet actually requires.
+**CLOSED 2026-09-01 by A59** (`decisions.md` § 8): `flush()` now
+returns without writing while the conflict dialog is open — XS-12's
+"The UI does not write" bullet, enforced in the hook — so the doomed
+blur-flush never leaves and nothing can re-open a resolved dialog.
+`resolve()` clears the guard synchronously before its own write, which
+still carries the conflicting version's token. Covered by the "A59"
+describe block in `useBodyAutosave.test.ts` (deterministic, scripted
+response ordering) and XS-11's spec, which now asserts the dialog
+stays closed (pre-fix: 4 failures in 10 repeats; post-fix: 0).
 
 ## REL-16's PNG thumbnail is not built, and the reason was never written down
 

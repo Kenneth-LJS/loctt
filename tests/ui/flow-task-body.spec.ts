@@ -395,13 +395,6 @@ test.describe("TSK — the body editor", () => {
      * disk before the conflict even appeared, so it matches at t=0.
      * The only text whose arrival proves the resolution wrote is the
      * editor's own: poll for it, then hold the merge to bullet 3.
-     *
-     * Not asserted here: the dialog being gone after Apply. The radio
-     * click blurs the editor (BodyEditor flushes on blur), and that
-     * doomed stale-token flush's 409 can land after Apply and re-open
-     * the dialog over an already-resolved conflict — a real app-side
-     * race, tracked in known-gaps, but a different behaviour than the
-     * merge this case's bullet is about.
      */
     await expect.poll(
       async () => await bodyOnDisk(tracker.root, key),
@@ -410,6 +403,20 @@ test.describe("TSK — the body editor", () => {
     const merged = await bodyOnDisk(tracker.root, key);
     expect(merged).toContain("Note from CLI");
     expect(merged).toContain("My addition.");
+
+    /**
+     * The dialog stays closed after Apply. This was unassertable
+     * until A59: the radio click blurs the editor, the blur-flush
+     * went out with the stale token, and its 409 could land after
+     * Apply and re-open the dialog over an already-resolved conflict
+     * (4 in 10 runs once this assertion existed to catch it — the
+     * known-gaps entry, now CLOSED).
+     * A59 suppresses non-resolving writes while the dialog is open,
+     * so the doomed flush never leaves and nothing can re-open it.
+     * Asserted after the on-disk poll above, so the write chain has
+     * demonstrably drained before this claims quiescence.
+     */
+    await expect(page.getByTestId("body-conflict")).not.toBeVisible();
   });
 
   // @verifies XS-12
