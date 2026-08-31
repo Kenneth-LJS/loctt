@@ -264,7 +264,7 @@ export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
     if (conflict !== null) tokenRef.current = conflict.theirToken;
     setConflict(null);
     // Force the write even if `text` happens to equal the last save.
-    savedRef.current = " pending";
+    savedRef.current = "\0pending";
     await flushRef.current();
   }, [conflict]);
 
