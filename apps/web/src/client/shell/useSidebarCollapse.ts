@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { readLocal, writeLocal } from "./storage.ts";
+import { isTypingTarget } from "./typingTarget.ts";
 
 /**
  * Collapsed/expanded state for the app sidebar, persisted to
@@ -33,12 +34,6 @@ function readStored(): boolean {
   // Any value that is not exactly "1" — corrupt, absent, or an
   // unreadable store — means expanded (SHL-17, SHL-18).
   return readLocal(STORAGE_KEY) === "1";
-}
-
-function isEditableTarget(el: EventTarget | null): boolean {
-  if (!(el instanceof HTMLElement)) return false;
-  const tag = el.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
 }
 
 function isNarrow(): boolean {
@@ -79,7 +74,7 @@ export function useSidebarCollapse(): {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== "[" || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (isEditableTarget(e.target)) return;
+      if (isTypingTarget(e.target)) return;
       e.preventDefault();
       toggle();
     };

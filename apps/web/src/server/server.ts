@@ -2893,7 +2893,14 @@ export function createWebApp(options: WebAppOptions) {
         return;
       }
       if (err instanceof TaskUpdateError) {
-        error(res, err.message, 400, REJECTED_WRITE);
+        // Forward the offending field so the create form places the
+        // message *at the input* (ERR-14, NEW-40) rather than as a
+        // detached banner. Dropping it left the client with a correct
+        // message and nowhere to put it.
+        error(res, err.message, 400, {
+          ...REJECTED_WRITE,
+          ...(err.field !== undefined ? { field: err.field } : {}),
+        });
         return;
       }
       throw err;

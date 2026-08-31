@@ -9,7 +9,7 @@ import { allocateKey } from "../state/keys.js";
 import { appendHistory } from "./history.js";
 import { writeTask } from "./io.js";
 import { clearLookupCaches } from "./lookup-cache.js";
-import { resolveEntityRef } from "./update.js";
+import { invalidValueError, resolveEntityRef } from "./update.js";
 import { todayDateString } from "./update.js";
 
 /** Options for creating a new task. */
@@ -163,7 +163,28 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
       // from a diagnostic rather than from the write that caused it.
     const errors = validateTaskAgainstWorkflow(frontmatter, workflowConfig, archivedGuard);
     if (errors.length > 0) {
-      throw new Error(`invalid task: ${errors.map(e => `${e.field}: ${e.message}`).join("; ")}`);
+      // A *typed* rejection, carrying the offending field — the same
+      // shape `setField` has always thrown (`invalidValueError`), and
+      // for the same reason.
+      //
+      // This used to be a bare `Error`. It matched none of the web
+      // server's error branches, so an unconfigured status or a
+      // non-numeric `number` custom field escaped as a 500 with
+      // `code: "unknown"` and `data_state: "unknown"`, stranding the
+      // real reason in `detail`. Measured against this SHA: creating
+      // with `fields.points = "not-a-number"` returned
+      //   HTTP 500 {"code":"unknown","data_state":"unknown", ...}
+      // while the identical value through `setField` returned
+      //   HTTP 400 {"code":"validation_failed","field":"fields.points"}
+      // — two write paths giving two different answers about the same
+      // rejected value, and the create side violating P4 (a failure
+      // must name its cause) and ERR-18 (a write must state whether
+      // the data was saved).
+      //
+      // `invalidValueError` is shared rather than reimplemented so the
+      // message rule and the single-error `field` rule cannot drift
+      // between the two paths.
+      throw invalidValueError(errors, "invalid task");
     }
   }
 

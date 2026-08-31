@@ -77,11 +77,35 @@ If none of these resolve to a unique project, the call fails with a project-reso
 | `status` | string | no | Status key (must exist in workflow.yaml) |
 | `priority` | string | no | Priority key |
 | `task_type` | string | no | Task type key |
+| `assignee` | string | no | User id or name |
+| `reporter` | string | no | User id or name |
+| `start_date` | string | no | `YYYY-MM-DD` |
+| `due_date` | string | no | `YYYY-MM-DD` |
+| `estimate` | string | no | Estimate, in the workspace's configured unit |
+| `milestone` | string | no | Milestone id or name |
+| `sprint` | string | no | Sprint id or name |
+| `labels` | string[] | no | Label ids or names |
 | `body` | string | no | Initial markdown body |
+
+Every field `createTask` accepts is settable at creation, so a create
+need not be followed by `update_task` calls. `loctt create` takes the
+same set (as the equivalent flags), so a task created either way
+carries the same fields.
 
 Returns: `Created <KEY>: <title>`.
 
-Errors: project resolution failures (no project specified and no default; unknown project key); workflow validation failures from `createTask`.
+Errors: project resolution failures (no project specified and no
+default; unknown project key); archived-reference rejections; and
+workflow validation failures from `createTask` — an unconfigured
+status, a reference to something that does not exist, or a custom-field
+value of the wrong type. These come back as a normal tool error whose
+message names the offending field, e.g.
+
+    Error: invalid task: fields.points: expected finite number, got string
+
+rather than as a server fault. (Before 2026-08-30 `createTask` threw an
+untyped error, which `isKnownDomainError` did not recognise, so these
+surfaced as an MCP server fault instead of an actionable message.)
 
 ### `get_task`
 

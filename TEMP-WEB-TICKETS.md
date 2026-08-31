@@ -496,7 +496,7 @@ Cases: TML-1, TML-2, TML-3, TML-4, TML-5, TML-6, TML-7, TML-8, TML-9, TML-10, TM
 - **Tests**: bar geometry math; pixel-to-date snapping; arrows only
   drawn for the configured relationship
 
-### M3.4 · Create task modal ⬜
+### M3.4 · Create task modal ✅
 Cases: NEW-1, NEW-2, NEW-3, NEW-4, NEW-5, NEW-6, NEW-7, NEW-8, NEW-9, NEW-10, NEW-11, NEW-12, NEW-13, NEW-14, NEW-15, NEW-16, NEW-17, NEW-18, NEW-19, NEW-20, NEW-21, NEW-22, NEW-23, NEW-24, NEW-25, NEW-26, NEW-27, NEW-28, NEW-29, NEW-30, NEW-31, NEW-32, NEW-33, NEW-34, NEW-35, NEW-36, NEW-37, NEW-38, NEW-39, NEW-40, NEW-41
 - Launched from `+` in header, "+ Add task" on board columns, `n`
   shortcut

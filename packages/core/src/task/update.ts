@@ -283,9 +283,12 @@ export function attributableErrors(
  * With more than one error no single field is *the* one at fault, so
  * `field` is left unset and each surface falls back to its own context.
  */
-function invalidValueError(errors: readonly ValidationError[]): TaskUpdateError {
+export function invalidValueError(
+  errors: readonly ValidationError[],
+  prefix = "invalid value",
+): TaskUpdateError {
   const message =
-    `invalid value: ${errors.map(e => `${e.field}: ${e.message}`).join("; ")}`;
+    `${prefix}: ${errors.map(e => `${e.field}: ${e.message}`).join("; ")}`;
   const only = errors.length === 1 ? errors[0] : undefined;
   return new TaskUpdateError(message, only ? { field: only.field } : {});
 }

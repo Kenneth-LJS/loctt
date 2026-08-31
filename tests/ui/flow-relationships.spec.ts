@@ -920,7 +920,17 @@ test("REL-27: a one-sided legacy edge renders on the side that has it, and re-ad
 });
 
 // @verifies REL-28
+// Seeds 51 tasks and 50 links through the CLI, which costs ~29s of the
+// default 30s budget on a quiet machine — a margin ambient load erases,
+// and it has timed out in three full runs across unrelated commits
+// while passing alone and at file level. The fixture is not wasteful:
+// the case is *about* fifty relationships, so seeding fewer would stop
+// covering it. Given time instead.
 test("REL-28: fifty relationships across six kinds render with correct counts and stay collapsible", async ({ page, tracker }) => {
+  // Scoped to this test, not the file: at file scope `test.slow()`
+  // would triple the budget for all 30 tests here and stop a real
+  // hang in any of them from ever failing.
+  test.slow();
   // Six kinds, summing to fifty.
   const plan: readonly (readonly [string, number])[] = [
     ["blocks", 9], ["is_blocked_by", 8], ["parent", 8],

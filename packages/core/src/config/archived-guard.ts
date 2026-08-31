@@ -127,6 +127,28 @@ export async function loadArchivedGuardConfigs(
 }
 
 /** Returns the set of ids currently archived in the given config slice. */
+/**
+ * A display name for an id, falling back to the id itself.
+ *
+ * The rejection message used to interpolate the raw id:
+ *
+ *     cannot assign archived milestone
+ *     "01M19KQKWHX80KPY0WQ4B2Z067" to milestone; unarchive it first
+ *
+ * A ULID is not something the user chose, typed, or can recognise —
+ * they picked "v1.0 launch" from a picker. P4 asks the message to name
+ * the thing at fault in the user's own terms, and web case NEW-35
+ * requires it explicitly ("names the milestone **by its label**").
+ * Identity stays the id (P-2); only what is *shown* changes.
+ */
+function displayNameFor(
+  defs: ReadonlyArray<{ readonly id: string; readonly name?: string }> | undefined,
+  id: string,
+): string {
+  const found = defs?.find(d => d.id === id);
+  return found?.name !== undefined && found.name !== "" ? found.name : id;
+}
+
 function archivedIds(
   defs: ReadonlyArray<{ readonly id: string; readonly archived?: boolean | undefined }> | undefined,
 ): ReadonlySet<string> {
@@ -186,12 +208,39 @@ export function assertNotArchivedReferences(
     field: "project" | "milestone" | "sprint" | "assignee" | "reporter";
     archived: ReadonlySet<string>;
     kindLabel: string;
+    /** Definitions for this field's entity kind, to resolve id → name. */
+    defs?: ReadonlyArray<{ readonly id: string; readonly name?: string }> | undefined;
   }> = [
-    { field: "project", archived: archivedIds(aux.projects?.projects), kindLabel: "project" },
-    { field: "milestone", archived: archivedIds(aux.milestones?.milestones), kindLabel: "milestone" },
-    { field: "sprint", archived: archivedIds(aux.sprints?.sprints), kindLabel: "sprint" },
-    { field: "assignee", archived: archivedUserIds(aux.users), kindLabel: "user" },
-    { field: "reporter", archived: archivedUserIds(aux.users), kindLabel: "user" },
+    {
+      field: "project",
+      archived: archivedIds(aux.projects?.projects),
+      kindLabel: "project",
+      defs: aux.projects?.projects,
+    },
+    {
+      field: "milestone",
+      archived: archivedIds(aux.milestones?.milestones),
+      kindLabel: "milestone",
+      defs: aux.milestones?.milestones,
+    },
+    {
+      field: "sprint",
+      archived: archivedIds(aux.sprints?.sprints),
+      kindLabel: "sprint",
+      defs: aux.sprints?.sprints,
+    },
+    {
+      field: "assignee",
+      archived: archivedUserIds(aux.users),
+      kindLabel: "user",
+      defs: aux.users?.map(u => ({ id: u.id, name: u.name })),
+    },
+    {
+      field: "reporter",
+      archived: archivedUserIds(aux.users),
+      kindLabel: "user",
+      defs: aux.users?.map(u => ({ id: u.id, name: u.name })),
+    },
   ];
 
   /**
@@ -205,7 +254,7 @@ export function assertNotArchivedReferences(
   const unknownFor = (field: ArchivedGuardField): string | undefined =>
     aux.unreadable?.find(u => u.field === field)?.reason;
 
-  for (const { field, archived, kindLabel } of scalar) {
+  for (const { field, archived, kindLabel, defs } of scalar) {
     const next = fm[field];
     if (typeof next !== "string") continue;
     const prior = prev?.[field];
@@ -222,7 +271,8 @@ export function assertNotArchivedReferences(
     }
     if (archived.has(next)) {
       errors.push(
-        `cannot assign archived ${kindLabel} "${next}" to ${field}; unarchive it first`,
+        `cannot assign archived ${kindLabel} "${displayNameFor(defs, next)}" `
+        + `to ${field}; unarchive it first`,
       );
     }
   }

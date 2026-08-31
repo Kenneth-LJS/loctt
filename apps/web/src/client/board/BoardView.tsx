@@ -9,6 +9,7 @@ import { useInfo } from "../api/hooks/useInfo.ts";
 import { tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
+import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { buildLookups } from "../list/lookups.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { BoardCard } from "./BoardCard.tsx";
@@ -39,6 +40,7 @@ import { useBoardDrag } from "./useBoardDrag.ts";
 export function BoardView() {
   const search = useSearch({ from: "/board" });
   const navigate = useNavigate({ from: "/board" });
+  const createTask = useCreateTask();
 
   // The board shows a whole column, not a page of one. The list's
   // 50-row default would silently truncate every column and make the
@@ -373,15 +375,21 @@ export function BoardView() {
           className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[13px] text-text-tertiary"
         >
           No tasks yet.{" "}
-          {/* The create modal is `flow-task-create.md`'s ticket and is
-              not built (verified: no create component exists in
-              `client/`). BRD-40 requires the affordance to be here and
-              offered, so it is — pointed at the list, which is where a
-              task can be made today. Repoint it at the modal when that
-              ticket lands. */}
+          {/* BRD-40's affordance, now pointed at the create modal
+              (M3.4) rather than at `/list`.
+              
+              It is deliberately the *only* "+ Add task" on this view.
+              BRD-40 asks for "one board-level empty state ... [that]
+              offers '+ Add task'" and says nothing about per-column
+              controls; adding one per column would put a control on
+              every stale column too, and BRD-42 turns on a column that
+              is still rendered for a status `workflow.yaml` no longer
+              defines. A per-column control that resolves anything from
+              workflow config would throw or render nothing for exactly
+              that column — which is the one BRD-42 drags into. */}
           <button
             type="button"
-            onClick={() => void navigate({ to: "/list" })}
+            onClick={() => { createTask.open(); }}
             className="underline underline-offset-2 hover:text-text-primary"
           >
             + Add task

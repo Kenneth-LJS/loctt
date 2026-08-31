@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 
 import { useUsers } from "../api/hooks/sidebarData.ts";
 import { useSwitchUser } from "../api/hooks/useSwitchUser.ts";
+import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { useTheme } from "../theme/useTheme.ts";
 import { avatarPalette, initials } from "../ui/avatar.ts";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
@@ -47,6 +48,7 @@ export function Header({
    */
   readonly canToggleSidebar?: boolean;
 }) {
+  const createTask = useCreateTask();
   return (
     // Responsive because it has to be: at 375px this header's contents
     // ran to x=561, so the *whole page* panned sideways and the theme
@@ -92,11 +94,14 @@ export function Header({
 
       <ThemeToggle />
 
+      {/* NEW-1: one of the three entry points, and it goes through the
+          same provider as the board's "+ Add task" and the `n`
+          shortcut, so all three open the identical modal. */}
       <button
         type="button"
-        disabled
+        onClick={() => { createTask.open(); }}
         aria-label="New task"
-        title="Create task arrives in a later milestone"
+        data-testid="header-new-task"
         className="flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-accent px-2.5 text-[13px] font-medium text-accent-contrast hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 sm:px-3"
       >
         <PlusIcon />

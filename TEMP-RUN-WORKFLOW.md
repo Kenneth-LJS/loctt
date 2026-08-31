@@ -516,6 +516,39 @@ condition 2 working as intended: a feature existing nowhere is scope,
 and adding a field to a shared contract is Ken's call, not an
 agent's.
 
+#### M3.4 · NEW-20 and NEW-41 name states that cannot exist
+
+**Both are measured, not inferred, and neither case is wrong** — each
+describes a state the current schema makes unreachable. Recorded so the
+next agent does not re-derive them. Full reasoning in `decisions.md`
+A44 and A45.
+
+- **NEW-20** — "a workspace default naming a nonexistent project
+  degrades to the ask state". It cannot: `ProjectsConfigSchema`
+  rejects a `default` that is not in the projects list at **parse
+  time**, so `GET /api/projects` returns `400 config_invalid` and
+  there is no project list to degrade *with*. Measured against a real
+  tracker with `default: ghost`. The case's **third** bullet ("the
+  config drift is surfaced somewhere actionable") is satisfied, and
+  more loudly than the case expects. Its first two are unreachable.
+  `resolveProjectChoice` already handles the fall-through if the
+  schema is ever relaxed, and that path is unit-tested.
+
+- **NEW-41** — "a modal opened while the tracker's schema is
+  **outdated**". There is no outdated state: `CURRENT_SCHEMA_VERSION`
+  is 1, and `readSchemaVersion` rejects anything below 1 as malformed,
+  so `.schema-version = 0` reports `kind: "unknown"`, not `"outdated"`.
+  The `outdated` branch in `diagnostics/info.ts` is unreachable at this
+  version — core's own migrate test skips itself with "can't go below
+  1" for the same reason. Verified against `future` (`.schema-version
+  = 2`) instead, which goes through the identical server gate: every
+  route 409s, the shell never mounts, and the modal cannot open. That
+  is NEW-41's first branch, satisfied structurally.
+
+**Not deferred work.** Neither needs building. NEW-20 needs a schema
+decision that is Ken's, and NEW-41 becomes reachable on its own when
+`CURRENT_SCHEMA_VERSION` moves past 1.
+
 #### M3.3b · TML-26, 27, 30, 32 · the timeline has no virtualization
 
 **Not a ruling — a build of its own, and it is named here so the next
