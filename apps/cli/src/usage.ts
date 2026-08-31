@@ -62,7 +62,10 @@ Commands:
   archive <task>                   Soft-delete (reversible). Use 'delete' to permanently remove.
   unarchive <task>
   delete <task> [--yes]             Permanent removal; use 'archive' for the reversible alternative
-  body <task> [--set <text>] [--append <text>]
+  body <task> [--set <text>] [--append <text>] [--expect <token>] [--token]
+                                   --token prints the current body token; pass it back
+                                   as --expect to refuse a write that would overwrite a
+                                   concurrent edit (off by default)
   log <task> [--limit <n>] [--offset <n>]
   duplicate <task> [--title <t>] [--project <name|id>]
                                    Copy field values and body to a new key.

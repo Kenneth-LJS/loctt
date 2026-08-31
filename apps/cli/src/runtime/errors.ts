@@ -31,6 +31,7 @@ import {
   ProjectError,
   ReorderError,
   SprintError,
+  StaleBodyWriteError,
   TaskNotFoundError,
   UserError,
 } from "@loctt/core";
@@ -92,6 +93,11 @@ export const KNOWN_DOMAIN_ERRORS: ReadonlyArray<new (...args: never[]) => Error>
   ProjectError,
   ReorderError,
   SprintError,
+  // K10: a refused body write is a rejection the user can act on
+  // (re-read, reapply, retry), not a crash. Its message already says
+  // the text was NOT saved; without this it bubbles to main()'s
+  // catch and reads as an internal failure.
+  StaleBodyWriteError,
   TaskNotFoundError,
   UserError,
   // RelationshipError surfaces from link/unlink; not currently

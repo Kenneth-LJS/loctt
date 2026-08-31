@@ -8,7 +8,7 @@ import { initLoctt } from "../init/init.js";
 import { resolveLocttDir } from "../paths/index.js";
 import { loadState, saveState } from "../state/index.js";
 import { createTask } from "./create.js";
-import { bodyToken, readTask, writeTaskBody } from "./io.js";
+import { appendTaskBody, bodyToken, readTask, StaleBodyWriteError, writeTaskBody } from "./io.js";
 
 /**
  * @verifies CMT-C3
@@ -91,5 +91,58 @@ describe("body writes can be guarded by a concurrency token", () => {
     const before = await bodyToken(locttDir, taskId);
     await writeTaskBody(locttDir, taskId, "changed");
     expect(await bodyToken(locttDir, taskId)).not.toBe(before);
+  });
+});
+
+/**
+ * K10. `appendTaskBody` took no options at all until the CLI and MCP
+ * needed the guard — the token was enforced on replace and silently
+ * ignored on append, which is the more dangerous half: an append reads
+ * the existing text in order to add to it, so a concurrent edit is
+ * incorporated-then-overwritten rather than merely replaced.
+ */
+describe("appendTaskBody honours the precondition", () => {
+  let root: string;
+  let locttDir: string;
+  let taskId: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-append-token-"));
+    await initLoctt(root, { docs: false });
+    locttDir = resolveLocttDir(root);
+    const state = await loadState(locttDir);
+    const task = await createTask({
+      locttDir, state, options: { project: Object.keys(state.keys)[0] ?? "", title: "subject" },
+    });
+    await saveState(locttDir, state);
+    taskId = task.frontmatter.id;
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("refuses a stale append and leaves the body untouched", async () => {
+    await writeTaskBody(locttDir, taskId, "original");
+    const stale = await bodyToken(locttDir, taskId);
+    await writeTaskBody(locttDir, taskId, "theirs");
+
+    await expect(
+      appendTaskBody(locttDir, taskId, "mine", { expectedToken: stale }),
+    ).rejects.toThrow(StaleBodyWriteError);
+
+    const after = await readTask(locttDir, taskId);
+    expect(after.body).toContain("theirs");
+    expect(after.body).not.toContain("mine");
+  });
+
+  it("accepts an append carrying the current token", async () => {
+    await writeTaskBody(locttDir, taskId, "original");
+    await appendTaskBody(locttDir, taskId, "added", {
+      expectedToken: await bodyToken(locttDir, taskId),
+    });
+    const after = await readTask(locttDir, taskId);
+    expect(after.body).toContain("original");
+    expect(after.body).toContain("added");
   });
 });

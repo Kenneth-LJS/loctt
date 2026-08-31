@@ -321,6 +321,7 @@ export type {
   MoveTaskResult,
 } from "./task/index.js";
 export type { MilestoneProgressOptions, Progress } from "./task/index.js";
+export type { BodyWriteOptions } from "./task/index.js";
 export {
   buildMentionResolver,
   CommentError,

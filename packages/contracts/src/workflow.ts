@@ -460,9 +460,29 @@ export const TimelineConfigSchema = z.object({
 }).strict();
 export type TimelineConfig = z.infer<typeof TimelineConfigSchema>;
 
+/**
+ * CLI-only behaviour toggles (K10).
+ *
+ *  - `require_body_token`: when true, `loctt body --set/--append`
+ *    refuses to write without a matching `--expect <token>`. Default
+ *    false — Ken ruled last-write-wins is the CLI default so existing
+ *    scripts and habits are unchanged, with this as the opt-in for a
+ *    workspace that wants the check on for everyone.
+ *
+ * Scoped to the CLI on purpose. The web always sends a token, and MCP
+ * enforces one whenever an agent passes it, so neither surface reads
+ * this. Naming it `cli` keeps that honest instead of implying a
+ * workspace-wide policy it does not have.
+ */
+export const CliConfigSchema = z.object({
+  require_body_token: z.boolean().optional(),
+}).strict();
+export type CliConfig = z.infer<typeof CliConfigSchema>;
+
 /** The full workflow.yaml shape. */
 export const WorkflowConfigSchema = z.object({
   key: KeyConfigSchema,
+  cli: CliConfigSchema.optional(),
   statuses: z.array(StatusDefSchema),
   priorities: z.array(PriorityDefSchema),
   task_types: z.array(TaskTypeDefSchema),

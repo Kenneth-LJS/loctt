@@ -118,6 +118,8 @@ Get a task by key or ID, optionally including the markdown body.
 
 Returns JSON: all frontmatter fields, plus `relationships` (each as `{type, target, title?, status?, missing?}` — `target` is rendered as a user-facing key like `T-2` when resolvable, and `title`/`status` carry the target's live values so you need not call `get_task` per edge; deleted targets carry `missing: true`, retain the raw ID, and omit `title`/`status`), `attachments` (each as `{name, size, mime?}` — `mime` is derived from the filename extension and is omitted when the extension is unknown; consumers should treat its absence as `application/octet-stream`), and `body` when requested. The `relationships` key is omitted when empty.
 
+When the body is included the result also carries **`body_token`** — pass it as `expected_token` on `replace_task_body` / `append_task_body` so your write is refused rather than silently overwriting an edit made while you were composing. See [Not overwriting someone else's edit](#not-overwriting-someone-elses-edit).
+
 **When the task's file cannot be parsed**, `get_task` returns a tool
 error naming the file and the YAML line — not "task not found". The
 distinction matters when relaying to a user: a task whose `task.md` is
@@ -300,6 +302,7 @@ Replace a task's entire markdown body.
 |---|---|---|---|
 | `ref` | string | yes | Task key or ID |
 | `body` | string | yes | New body content |
+| `expected_token` | string | no | The `body_token` from your `get_task` read. See [Not overwriting someone else's edit](#not-overwriting-someone-elses-edit). |
 
 Returns: `Replaced <KEY> body.`.
 
@@ -311,8 +314,31 @@ Append text to a task's markdown body.
 |---|---|---|---|
 | `ref` | string | yes | Task key or ID |
 | `text` | string | yes | Text to append |
+| `expected_token` | string | no | The `body_token` from your `get_task` read. See [Not overwriting someone else's edit](#not-overwriting-someone-elses-edit). |
 
 Returns: `Appended to <KEY> body.`.
+
+### Not overwriting someone else's edit
+
+A body write with no `expected_token` is last-write-wins: if a person edited
+the task in the browser while you were composing, your text replaces theirs
+silently.
+
+**Pass the token whenever you have one.** You almost always do — you read the
+task before writing it, and `get_task` returns `body_token` alongside the
+body. Hand it straight back:
+
+```json
+{ "ref": "T-12", "body": "...", "expected_token": "<body_token from get_task>" }
+```
+
+If the task changed in between, the write is **refused and nothing is
+written**. You get an error saying so; the remedy is to `get_task` again,
+reapply your edit to the current text, and write again with the fresh token.
+
+You cannot compute the token yourself — it is derived from the task's
+`updated_at` and a digest of the body — so it must come from a `get_task`
+response.
 
 ### `get_task_history`
 

@@ -25,6 +25,7 @@ import {
   SchemaTooNewError,
   SchemaVersionError,
   SprintError,
+  StaleBodyWriteError,
   TaskLifecycleError,
   TaskNotFoundError,
   TaskUpdateError,
@@ -71,6 +72,11 @@ export function isKnownDomainError(err: unknown): err is Error {
     || err instanceof ProjectError
     || err instanceof ReorderError
     || err instanceof SprintError
+    // K10: a refused body write is the guard working. The agent's
+    // remedy is in the message — re-read, reapply, write again — so
+    // it must reach the agent as an error result, not be rethrown as
+    // a server fault it cannot act on.
+    || err instanceof StaleBodyWriteError
     || err instanceof UserError
     || err instanceof SchemaVersionError
     || err instanceof SchemaTooNewError

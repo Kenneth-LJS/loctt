@@ -280,6 +280,7 @@ estimation:
 | `estimation` | object | no | Estimation configuration |
 | `boards` | object | no | Board column configuration |
 | `timeline` | object | no | Timeline (Gantt) view defaults |
+| `cli` | object | no | CLI-only behaviour toggles |
 
 ### `key`
 
@@ -399,6 +400,21 @@ cannot name a key that has been erased. Consumers must resolve the value
 against `relationships` and, when it does not resolve, draw no arrows and
 report the missing key by name — never assume the value is valid. See
 decision A31.
+
+### `cli`
+
+CLI-only behaviour toggles. Every field is optional.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `require_body_token` | boolean | no | When `true`, `loctt body --set` / `--append` refuse to write unless `--expect <token>` is supplied. Built-in: `false` |
+
+**Why this is CLI-scoped rather than a workspace-wide policy.** Ken's ruling
+K10 makes the body-write precondition opt-in on the CLI (last-write-wins by
+default, so existing scripts are unchanged) while MCP enforces it whenever an
+agent passes `expected_token` and the web always sends one. Only the CLI has a
+default to configure, so naming the block `cli` keeps it honest instead of
+implying it governs the other two surfaces. See decision A56.
 
 ---
 

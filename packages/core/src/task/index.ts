@@ -63,6 +63,7 @@ export {
   readHistoryRows,
   validHistory,
 } from "./history.js";
+export type { BodyWriteOptions } from "./io.js";
 export {
   appendTaskBody,
   readTask,

@@ -12,6 +12,7 @@
  */
 
 import {
+  bodyToken,
   buildListContext,
   buildShowModel,
   bulkMoveTasksToProject,
@@ -62,7 +63,7 @@ function optionalString(
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "get_task",
-    description: "Get a task by key or ID, optionally including the markdown body. Relationship targets are returned as user-facing keys (e.g. T-2); deleted targets carry `missing: true` and retain the raw ID in `target`.",
+    description: "Get a task by key or ID, optionally including the markdown body. Relationship targets are returned as user-facing keys (e.g. T-2); deleted targets carry `missing: true` and retain the raw ID in `target`. When the body is included the result carries `body_token` — pass it as `expected_token` to `replace_task_body` / `append_task_body` so your write is refused rather than overwriting a concurrent edit.",
     inputSchema: {
       ref: z.string().describe("Task key (e.g. T-1) or ID"),
       include_body: z.boolean().optional().describe("Whether to include the markdown body (default true)"),
@@ -99,7 +100,15 @@ export const TOOLS: readonly ToolDef[] = [
       if (model.relationships.length === 0) {
         delete result["relationships"];
       }
-      if (includeBody) result["body"] = model.task.body;
+      if (includeBody) {
+        result["body"] = model.task.body;
+        // K10. The agent cannot derive this: it is
+        // sha256(updated_at + "\0" + body) truncated, so `updated_at`
+        // alone is not enough. Handing it out here is what makes
+        // "pass it if it's provided in params" possible on the write
+        // tools — an agent that read the task holds the token.
+        result["body_token"] = await bodyToken(locttDir, task.frontmatter.id);
+      }
       return text(JSON.stringify(result, null, 2));
     },
   },
