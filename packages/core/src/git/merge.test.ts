@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   assignProvisionalPrefixes,
+  assignProvisionalSlugs,
   deriveKeyState,
   laterWins,
   mergeById,
@@ -456,5 +457,45 @@ describe("assignProvisionalPrefixes", () => {
     ]);
     // `c` cannot take T2-, which `b` already holds.
     expect(out.get("c")).toBe("T3-");
+  });
+});
+
+describe("assignProvisionalSlugs", () => {
+  it("lets the smaller id keep the slug and suffixes the rest (K3, A60)", () => {
+    const out = assignProvisionalSlugs([
+      { id: "01B", slug: "tasks" },
+      { id: "01A", slug: "tasks" },
+    ]);
+    expect(out.get("01A")).toBe("tasks");
+    expect(out.get("01B")).toBe("tasks-2");
+  });
+
+  it("is order-independent, so two clones converge", () => {
+    const projects = [
+      { id: "01C", slug: "tasks" },
+      { id: "01A", slug: "tasks" },
+      { id: "01B", slug: "tasks" },
+    ];
+    const a = assignProvisionalSlugs(projects);
+    const b = assignProvisionalSlugs([...projects].reverse());
+    expect([...a.entries()].sort()).toEqual([...b.entries()].sort());
+  });
+
+  it("leaves a pre-K3 project without a slug alone", () => {
+    const out = assignProvisionalSlugs([
+      { id: "01A" },
+      { id: "01B", slug: "web" },
+    ]);
+    expect(out.has("01A")).toBe(false);
+    expect(out.get("01B")).toBe("web");
+  });
+
+  it("does not renumber slugs that do not collide", () => {
+    const out = assignProvisionalSlugs([
+      { id: "01A", slug: "web" },
+      { id: "01B", slug: "backend" },
+    ]);
+    expect(out.get("01A")).toBe("web");
+    expect(out.get("01B")).toBe("backend");
   });
 });

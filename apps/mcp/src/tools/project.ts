@@ -44,28 +44,36 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "create_project",
-    description: "Create a new project. Names are not unique — duplicates are disambiguated by the auto-generated id. Prefixes must be unique across the tracker. Setting `make_default: true` also sets the workspace default. Returns the generated id.",
+    description: "Create a new project. Names are not unique — duplicates are disambiguated by the auto-generated id. Prefixes must be unique across the tracker, as are slugs. A slug is the project's stable URL-safe handle; it is generated from the name unless given, and does not change when the project is renamed. Setting `make_default: true` also sets the workspace default. Returns the generated id and slug.",
     inputSchema: {
       name: z.string().describe("Human-readable display name"),
       prefix: z.string().describe("Task-key prefix, e.g. BACKEND-"),
+      slug: z.string().optional().describe("URL-safe handle, e.g. `web`. Generated from the name when omitted. Lowercase letters, digits, hyphen, underscore; must start with a letter."),
       make_default: z.boolean().optional().describe("If true, also set this project as the workspace default"),
     },
     handler: async ({ locttDir }, args) => {
+      const slug = args["slug"];
       const def = await createProject(locttDir, {
         name: args["name"] as string,
         prefix: args["prefix"] as string,
+        ...(typeof slug === "string" ? { slug } : {}),
       });
       if (args["make_default"] === true) {
         await setDefaultProject(locttDir, def.id);
       }
-      return text(JSON.stringify({ id: def.id, name: def.name, prefix: def.prefix }, null, 2));
+      return text(JSON.stringify({
+        id: def.id,
+        name: def.name,
+        ...(def.slug !== undefined ? { slug: def.slug } : {}),
+        prefix: def.prefix,
+      }, null, 2));
     },
   },
   {
     name: "edit_project",
-    description: "Edit an existing project's name. `id` is immutable. The prefix has its own tool (`set_project_prefix`) because changing it rewrites every task in the project. The `project` parameter accepts either an id or a name.",
+    description: "Edit an existing project's name. `id` is immutable. The prefix has its own tool (`set_project_prefix`) because changing it rewrites every task in the project. The `project` parameter accepts a slug, an id, or a name.",
     inputSchema: {
-      project: z.string().describe("Project id or name"),
+      project: z.string().describe("Project slug, id, or name"),
       name: z.string().describe("New name"),
     },
     handler: async ({ locttDir }, args) => {
@@ -85,7 +93,7 @@ export const TOOLS: readonly ToolDef[] = [
       "Setting a project's own current prefix is a no-op. Requires `confirm: true` " +
       "because it rewrites every task in the project.",
     inputSchema: {
-      project: z.string().describe("Project id or name"),
+      project: z.string().describe("Project slug, id, or name"),
       prefix: z.string().describe("New prefix, e.g. WEB-"),
       confirm: z.boolean().optional().describe("Required: must be true to proceed"),
     },
@@ -135,7 +143,7 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "archive_project",
     description: "Mark a project as archived. Archived projects are hidden from default lists and pickers. Reversible via `unarchive_project`. Accepts an id or a name.",
-    inputSchema: { project: z.string().describe("Project id or name") },
+    inputSchema: { project: z.string().describe("Project slug, id, or name") },
     handler: async ({ locttDir }, args) => {
       const cfg = await loadProjectsConfig(locttDir);
       const id = resolveProjectIdFromInput(cfg, args["project"] as string, { includeArchived: true });
@@ -146,7 +154,7 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "unarchive_project",
     description: "Clear the archived flag on a project.",
-    inputSchema: { project: z.string().describe("Project id or name") },
+    inputSchema: { project: z.string().describe("Project slug, id, or name") },
     handler: async ({ locttDir }, args) => {
       const cfg = await loadProjectsConfig(locttDir);
       const id = resolveProjectIdFromInput(cfg, args["project"] as string, { includeArchived: true });

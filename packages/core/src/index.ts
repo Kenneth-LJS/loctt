@@ -130,6 +130,7 @@ export {
 export { mergeKeyHistory,mergeRelationships, rekeyCollisions } from "./git/index.js";
 export {
   assignProvisionalPrefixes,
+  assignProvisionalSlugs,
   deriveKeyState,
   mergeById,
   mergeComments,
@@ -202,17 +203,22 @@ export {
   setProjectPrefix,
 } from "./projects/index.js";
 export {
+  allocateSlug,
   archiveProject,
   createProject,
   deleteProject,
   editProject,
   findProject,
+  findProjectBySlug,
+  isValidSlug,
   ProjectError,
+  projectSlug,
   resolveProjectByName,
   resolveProjectId,
   resolveProjectIdForUser,
   resolveProjectIdFromInput,
   setDefaultProject,
+  slugifyName,
   unarchiveProject,
 } from "./projects/index.js";
 export type { Token, TokenType } from "./query/index.js";

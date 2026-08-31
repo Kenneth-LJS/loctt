@@ -45,6 +45,7 @@ import {
   appendTaskBody,
   applyWorkflowEdit,
   ArchivedReferenceError,
+  archiveProject,
   archiveTask,
   archiveUser,
   assertSafeBasename,
@@ -96,6 +97,7 @@ import {
   exportTasksToJSON,
   filterForExport,
   findLossyConstructs,
+  findProjectBySlug,
   FsAccessError,
   getAttachmentPath,
   getCurrentUser,
@@ -173,6 +175,7 @@ import {
   TaskUpdateError,
   todayInZone,
   TokenizeError,
+  unarchiveProject,
   unarchiveTask,
   unarchiveUser,
   unlinkTask,
@@ -744,6 +747,32 @@ const STRUCTURED_FILTER_FIELDS: Readonly<Record<string, string>> = {
  * `fields.<key>`. All values flow through {@link dslAtom}, so
  * user-supplied ids/keys can't inject query structure.
  */
+/**
+ * Rewrites a `?project=` slug in place to the project's id.
+ *
+ * K3 rules that URLs carry a slug, not a ULID, and PRU-6's last bullet
+ * requires `?project=backend` to keep resolving after a rename. Core's
+ * `findProjectBySlug` existed and was called nowhere, so a slug
+ * silently produced an empty list: the task was there, a ULID filter
+ * found it, the slug found nothing — an empty result reads as "no
+ * matches", not as "this filter does not work".
+ *
+ * A value that is not a known slug is left untouched, so ids and names
+ * keep working exactly as before.
+ */
+async function resolveProjectSlugParam(url: URL, locttDir: string): Promise<void> {
+  const raw = url.searchParams.get("project");
+  if (raw === null || raw === "") return;
+  try {
+    const cfg = await loadProjectsConfig(locttDir);
+    const bySlug = findProjectBySlug(cfg, raw);
+    if (bySlug !== undefined) url.searchParams.set("project", bySlug.id);
+  } catch {
+    // An unreadable projects.yaml is reported by the routes that need
+    // it; a filter is not the place to fail the whole request.
+  }
+}
+
 function buildStructuredQuery(url: URL, baseQuery: string | undefined): string | undefined {
   const clauses: string[] = [];
   if (baseQuery !== undefined && baseQuery.trim().length > 0) {
@@ -1192,10 +1221,27 @@ export function createWebApp(options: WebAppOptions) {
       // Neither is an error for a *list* — the group renders with no
       // project starred, which is honest about there being no answer.
     }
+    // PRU-17: the panel shows a reference count *before* the delete
+    // dialog is opened, so it ships with the list rather than behind a
+    // second round-trip. Counted from the same source the delete
+    // guard uses, so the badge and the dialog cannot disagree.
+    const taskCounts: Record<string, number> = {};
+    try {
+      for (const task of await loadAllTasks(locttDir)) {
+        const proj = task.frontmatter.project;
+        if (typeof proj === "string" && proj.length > 0) {
+          taskCounts[proj] = (taskCounts[proj] ?? 0) + 1;
+        }
+      }
+    } catch {
+      // An unreadable task must not take down the projects panel; the
+      // badge is omitted rather than shown as a wrong number.
+    }
     json(res, {
       ...paginated(cfg.projects, page.offset, page.limit),
       default: cfg.default ?? null,
       effective_default: effectiveDefault,
+      task_counts: taskCounts,
       ...(pendingPrefixRename !== undefined
         ? { pending_prefix_rename: pendingPrefixRename }
         : {}),
@@ -1233,22 +1279,28 @@ export function createWebApp(options: WebAppOptions) {
     const request = await parseJsonBody<{
       name: string;
       prefix: string;
+      slug?: string;
       make_default?: boolean;
     }>(req, res);
     try {
       const created = await createProject(locttDir, {
         name: request.name,
         prefix: request.prefix,
+        ...(typeof request.slug === "string" && request.slug.length > 0
+          ? { slug: request.slug }
+          : {}),
       });
       if (request.make_default === true) {
         await setDefaultProject(locttDir, created.id);
       }
       json(res, created, 201);
     } catch (err) {
-      // A create rejection is almost always the prefix (taken, or badly
-      // shaped), which is the field the UI can mark (ERR-14).
+      // Blame the field that actually conflicts (PRU-35, PRU-36,
+      // ERR-14): a slug rejection marked as a prefix problem points the
+      // user at an input that is perfectly fine.
       if (err instanceof ProjectError) {
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: "prefix" });
+        const field = /slug/i.test(err.message) ? "slug" : "prefix";
+        error(res, err.message, 400, { ...REJECTED_WRITE, field });
         return;
       }
       throw err;
@@ -1257,10 +1309,22 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleUpdateProject: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const id = captures[0] ?? "";
-    const request = await parseJsonBody<{ name?: string; default?: boolean }>(req, res);
+    const request = await parseJsonBody<{
+      name?: string;
+      default?: boolean;
+      archived?: boolean;
+    }>(req, res);
     try {
       if (request.name !== undefined) {
         await editProject(locttDir, id, { name: request.name });
+      }
+      // PRU-7: archive/unarchive. Core has had `archiveProject` and
+      // `unarchiveProject` all along with no caller on any surface;
+      // without this the field was accepted and silently dropped.
+      if (request.archived === true) {
+        await archiveProject(locttDir, id);
+      } else if (request.archived === false) {
+        await unarchiveProject(locttDir, id);
       }
       if (request.default === true) {
         await setDefaultProject(locttDir, id);
@@ -1323,8 +1387,15 @@ export function createWebApp(options: WebAppOptions) {
   const handleDeleteProject: RouteHandler = async ({ res, url, locttDir, captures }) => {
     const id = captures[0] ?? "";
     const remapTo = url.searchParams.get("remap_to") ?? undefined;
+    // A DELETE that only archived was the whole endpoint until now:
+    // `hard` was never passed, so PRU-17's remap flow had no way to
+    // run and a "delete" silently left the project in projects.yaml.
+    // Archive keeps its own route (`PUT` with `archived: true`), so
+    // DELETE means delete unless explicitly asked to soft-delete.
+    const hard = url.searchParams.get("soft") !== "true";
     try {
       const result = await deleteProject(locttDir, id, {
+        ...(hard ? { hard: true } : {}),
         ...(remapTo !== undefined ? { remapTo } : {}),
       });
       json(res, { deleted: id, remappedTaskCount: result.remappedTaskCount });
@@ -2612,6 +2683,7 @@ export function createWebApp(options: WebAppOptions) {
     // are authored as-is) and apply `?project=` via core's dedicated
     // structured project option instead.
     const baseQuery = url.searchParams.get("query") ?? undefined;
+    await resolveProjectSlugParam(url, locttDir);
     const effectiveQuery = view !== undefined
       ? baseQuery
       : buildStructuredQuery(url, baseQuery);
@@ -2776,6 +2848,7 @@ export function createWebApp(options: WebAppOptions) {
     // Export mirrors the list view's filter resolution so a CSV/JSON
     // reflects exactly the rows the user is looking at. (archived is
     // applied below via filterForExport, so it's excluded here.)
+    await resolveProjectSlugParam(url, locttDir);
     const effectiveQuery = view !== undefined
       ? baseQuery
       : buildStructuredQuery(url, baseQuery);

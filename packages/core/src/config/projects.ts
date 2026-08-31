@@ -56,6 +56,7 @@ export function serializeProjectsConfig(config: ProjectsConfig): string {
     projects: config.projects.map(p => ({
       id: p.id,
       name: p.name,
+      ...(p.slug !== undefined ? { slug: p.slug } : {}),
       prefix: p.prefix,
       ...(p.archived === true ? { archived: true } : {}),
     })),
@@ -89,6 +90,7 @@ export async function saveProjectsConfig(
     projects: validated.projects.map(p => ({
       id: p.id,
       name: p.name,
+      ...(p.slug !== undefined ? { slug: p.slug } : {}),
       prefix: p.prefix,
       ...(p.archived === true ? { archived: true } : {}),
     })),

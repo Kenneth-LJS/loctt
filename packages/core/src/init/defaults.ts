@@ -1,5 +1,7 @@
 import { ulid } from "ulid";
 
+import { slugifyName } from "../projects/slug.js";
+
 /**
  * Default workflow.yaml content seeded on `loctt init`.
  *
@@ -151,10 +153,15 @@ export function defaultStateYaml(projectId: string, prefix: string): string {
 export function defaultProjectsYaml(projectId: string, name: string, prefix: string): string {
   // YAML scalar that may contain spaces — quote `name` to be safe.
   const escapedName = JSON.stringify(name);
+  // K3: a tracker is born with a slug so its URLs are readable from the
+  // first one. A name with no usable ASCII yields none, and resolution
+  // falls back to the ULID rather than inventing a handle.
+  const slug = slugifyName(name);
+  const slugLine = slug !== undefined ? `    slug: ${slug}\n` : "";
   return `projects:
   - id: ${projectId}
     name: ${escapedName}
-    prefix: "${prefix}"
+${slugLine}    prefix: "${prefix}"
 
 default: ${projectId}
 `;

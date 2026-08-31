@@ -819,6 +819,255 @@ The measured windows also defeat option 2 on its own terms.
 `AppBootstrap.tsx`. Both are small and local; the tests pinning them
 are named in their commits.
 
+### A60 · A project's slug is fixed at creation and does not follow a rename
+
+**Ticket:** M4.1 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** Ken's ruling K3 (§ 9) reintroduces a `slug` on
+`ProjectDefSchema` and puts it in URLs instead of the ULID. K3 names
+three things it does not settle and hands them to the M-ticket: slug
+generation, uniqueness, and — "the real design question" — **what
+happens to the slug when a project is renamed**. PRU-6 says renaming a
+project "changes only its label" and that "a URL containing
+`?project=backend` still resolves after the rename — the URL carries
+the key, not the label", but no case states whether the slug itself is
+rewritten.
+
+**What had to be decided.** When a project is renamed, does its slug
+follow the new name (staying readable, breaking every saved URL and
+bookmark) or stay as generated (surviving links, drifting from a
+project renamed "Web" → "Website")?
+
+**Options considered.**
+
+1. **Slug follows the name.** Always readable and never stale-looking.
+   Costs: every existing URL, bookmark, and shared link to that
+   project breaks silently — the old slug resolves to nothing, and
+   under K3's own requirement that must be an error, so the user is
+   shown a failure for a link that was valid a moment ago. A rename is
+   a cheap, frequent, reversible edit; making it a breaking change to
+   every address is disproportionate.
+2. **Slug fixed at creation.** Links survive every rename. Costs: a
+   project renamed "Web" → "Website" keeps `?project=web`, so the URL
+   and the display name can disagree.
+3. **Slug follows, with the old slug kept as an alias.** Best of both,
+   at the cost of an alias list on disk, a second uniqueness domain to
+   enforce, and a `key_history`-shaped feature that no case asks for —
+   inventing a requirement.
+
+**Decided.** Option 2: the slug is generated from the name at creation
+and is immutable thereafter. `editProject` does not touch it.
+
+**Why.** Measured, not inferred: **nothing on disk stores a slug except
+the project's own definition.** Tasks reference their project by ULID
+(invariant P-2); the query DSL's `project` field is read generically
+off frontmatter (`packages/core/src/query/evaluator.ts:142` via
+`readField`), so a saved view stores a ULID too. The slug therefore
+lives only in URLs and in CLI/MCP input. That is what makes this
+decision contained rather than load-bearing — K3 said the rename
+answer "stops the run" if it is load-bearing for saved views or shared
+links, and for saved views it measurably is not. Only shared links
+are affected, and option 2 is the one that preserves them.
+
+It also matches how the rest of the tracker already treats identity:
+a task key survives a project move via `key_history` (P-7), and a
+prefix change preserves old keys rather than invalidating them
+(`setProjectPrefix`). A stable address that drifts from a display name
+is the pattern this codebase already chose.
+
+Drift is recoverable and cheap: a user who wants the URL to match the
+new name deletes and re-creates, or we add an explicit "change slug"
+control later — an additive change this decision does not foreclose.
+
+**To revert.** Make `editProject` in
+`packages/core/src/projects/manage.ts` recompute the slug via
+`allocateSlug` when `name` changes, and decide there whether the old
+slug becomes an alias. `allocateSlug`/`slugifyName` in
+`packages/core/src/projects/slug.ts` are unchanged either way. The
+tests that pin the current behaviour are in
+`packages/core/src/projects/slug.test.ts` (the rename case) and
+`tests/integration/mcp/project-slug.test.ts`.
+
+### A61 · The slug is optional on disk, and a nameless-in-ASCII project has none
+
+**Ticket:** M4.1 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** K3 owes "migration for existing trackers, which
+have no slug on disk". `ProjectDefSchema` is `.strict()`, so a
+required `slug` would make every pre-K3 `projects.yaml` fail
+validation on load — the tracker would refuse to open rather than
+migrate. Separately, a project named "日本語" or "!!!" has no
+meaningful ASCII slug.
+
+**What had to be decided.** Is `slug` required (with a migration that
+rewrites every existing `projects.yaml`) or optional (with resolution
+falling back to the ULID)?
+
+**Options considered.**
+
+1. **Required, with an eager migration on load.** Uniform data. Costs:
+   a schema-version bump and a rewrite of a config file on read, which
+   is a write the user did not ask for; and it still has no answer for
+   a name that yields no slug.
+2. **Optional, with the ULID as the fallback handle.** No migration
+   step, no forced write, and pre-K3 trackers keep working untouched —
+   their URLs already carry ULIDs, which K3 requires to keep
+   resolving anyway. Costs: two shapes of project on disk, and
+   `projectSlug()` has to be used rather than reading `.slug` directly.
+
+**Decided.** Option 2. `slug` is `SlugKey.optional()`. New projects
+get one at `createProject` and at `initLoctt`; existing ones acquire
+none until re-created, and resolve by ULID as they always have.
+
+**Why.** K3 requires resolution to accept "**both** slug and ULID, so
+existing URLs keep working" — which means the ULID path must exist
+regardless. Given that, a forced migration buys uniformity and nothing
+functional, while costing a write to a file the user did not ask us to
+touch. P-11's spirit ("leniency means keeping") points the same way:
+read what is there, do not rewrite it to suit us.
+
+The nameless case follows from the same reasoning — `slugifyName`
+returns `undefined` rather than inventing `project-1`, because an
+invented handle is less honest than no handle, and the ULID still
+addresses the project.
+
+**To revert.** Make `slug` non-optional in
+`packages/contracts/src/projects.ts`, add a schema migration that
+backfills via `allocateSlug`, and drop the `?? p.id` fallback in
+`projectSlug()` (`packages/core/src/projects/slug.ts`). The tests
+pinning the optional shape are the "pre-K3 project" and "omits the
+slug" cases in `packages/core/src/projects/slug.test.ts`.
+
+### A62 · Slug collisions in a git merge are de-duplicated like prefix collisions
+
+**Ticket:** M4.1 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** Adding slug uniqueness to `ProjectsConfigSchema`
+broke `tests/integration/git/with-remote.test.ts` ("two clones that
+both create a task"): `git sync` began exiting 1. Two clones that each
+ran `loctt init` both mint a project named "Tasks", so both derive the
+slug `tasks` with different ULIDs; `mergeById` unions them and the
+merged `projects.yaml` then holds one slug twice, which the schema
+rejects — leaving a file that cannot be loaded at all. Confirmed by
+measurement: disabling only the slug branch of the `superRefine` made
+the test pass again.
+
+**What had to be decided.** How a merge should resolve two projects
+that legitimately claim the same slug.
+
+**Options considered.**
+
+1. **Drop slug uniqueness.** Restores the merge, but then a URL does
+   not name one project, which is the entire point of K3.
+2. **Fail the sync and make the user fix it.** Honest, but it strands
+   the user in a state where every command that loads
+   `projects.yaml` fails, including `doctor` — and the two clones did
+   nothing wrong.
+3. **De-duplicate deterministically during the merge**, exactly as
+   `assignProvisionalPrefixes` already does for the identical prefix
+   collision.
+
+**Decided.** Option 3: `assignProvisionalSlugs` in
+`packages/core/src/git/merge.ts`, applied in the same pass as the
+prefix assignment.
+
+**Why.** This is not a new problem; it is the existing one with a
+different field. `assignProvisionalPrefixes` was written for precisely
+"two independently-init'ed trackers both mint `T-`", and its rules —
+smaller ULID keeps the value, others get a suffix, ordering by id so
+two clones converge rather than diverge — transfer unchanged. Solving
+the same problem two different ways in one function would be the
+inconsistency worth avoiding. A project with no slug (pre-K3, A61) is
+skipped, having nothing to collide with.
+
+**To revert.** Delete `assignProvisionalSlugs` from
+`packages/core/src/git/merge.ts`, its export in
+`packages/core/src/index.ts`, and its use in
+`packages/core/src/git/resolve-conflicts.ts`. The tests pinning it are
+the `assignProvisionalSlugs` block in
+`packages/core/src/git/merge.test.ts`. Note that reverting this
+without also relaxing the schema re-breaks `git sync`.
+
+### A63 · Settings lists every section; unbuilt panels say so rather than 404
+
+**Ticket:** M4.1 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** M4.1 builds the settings shell and two panels
+(Projects, Users); the other nineteen sections land in M4.2–M4.4.
+SET-2's last bullet says "every panel reachable from the nav resolves
+— no nav item routes to a 404 or an unimplemented placeholder **at M4
+close**", and SET-32 forbids "a blank pane under a valid-looking URL".
+Between now and M4 close, those two pull in opposite directions.
+
+**What had to be decided.** Whether the nav lists sections whose
+panels do not exist yet.
+
+**Options considered.**
+
+1. **List only the two built sections.** Nothing unresolved, but the
+   nav then misrepresents the shape of settings, and each later ticket
+   has to edit the nav as well as add its panel.
+2. **List all sections; unbuilt ones render a stated "not built yet"
+   pane** naming the files and the CLI that do change those settings.
+
+**Decided.** Option 2, with a `built` flag on each entry in
+`apps/web/src/client/settings/sections.ts`.
+
+**Why.** SET-2's constraint is explicitly dated to *M4 close*, and at
+that point every flag flips to `built: true` and the case is
+satisfied. Until then the choice is between hiding sections that exist
+in the product and showing an honest interim state; SET-32's actual
+prohibition is a *blank* pane, not an explanatory one. Keeping the
+section list in one data module also means a later ticket adds a panel
+and flips one boolean, rather than editing nav markup — and it is what
+lets the nav, the route resolution, and the not-found state read from
+the same list, which is the drift SET-2's bullet is really about.
+
+**To revert.** Filter `SETTINGS_SECTIONS` to `built` entries in
+`SectionNav` and `UnknownSection`
+(`apps/web/src/client/settings/SettingsShell.tsx`); the `built` field
+can then be dropped. The SET-2 test in
+`tests/ui/flow-settings-projects-users.spec.ts` asserts the five group
+headings, not the unbuilt entries, so it survives either way.
+
+### A64 · The create form marks a duplicate project name without blocking it
+
+**Ticket:** M4.1 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** PRU-35 covers "creating a project with a key that
+already exists" and PRU-23 establishes that duplicate *display names*
+are legal and get disambiguated rather than refused. Core agrees:
+`createProject` enforces uniqueness on prefix and slug, never on name.
+No case says what the create form should do when the typed name
+matches an existing project.
+
+**What had to be decided.** Whether a duplicate name is an error, a
+warning, or silent.
+
+**Options considered.**
+
+1. **Silent.** Matches core exactly. But the user gets two
+   indistinguishable rows in every picker and finds out later.
+2. **Block it.** Contradicts PRU-23, which requires the app never to
+   imply names must be unique.
+3. **Show the problem text, leave submit enabled.**
+
+**Decided.** Option 3: the name field shows "Another project is
+already called X. Names do not have to be unique, but they will be
+hard to tell apart", and submit stays enabled.
+
+**Why.** PRU-23's "nothing in the UI implies names must be unique"
+rules out blocking, and P4's preference for telling the user what they
+are walking into rules out silence. Saying so without preventing it is
+the only reading that satisfies both.
+
+**To revert.** Delete the `problems.name` branch in
+`validateNewProject`
+(`apps/web/src/client/settings/projectForm.ts`) and the
+`project-create-name-problem` element in `ProjectsPanel.tsx`. Note
+that `blocked` already ignores `problems.name` for submit purposes,
+so no gating logic changes.
+
 ---
 
 ## 9. Ken's rulings, 2026-08-29

@@ -1711,3 +1711,73 @@ reached.
 **Not fixed.** Restoring per-column controls means re-opening BRD-42's
 regression, which needs the stale-column case handled first. That is a
 build decision, not a test repair, and it was found during a gate.
+
+## PRU-17's "clear the project field" option has no core support
+
+**Found building M4.1, 2026-09-01.**
+
+PRU-17 requires the delete-with-references dialog to offer **either** a
+remap target **or** an explicit "clear the project field on these
+tasks" choice, so that "there is no default that silently orphans the
+12 tasks".
+
+**Only remap exists.** `deleteProject` (`packages/core/src/projects/
+manage.ts`) takes `{hard?, remapTo?}` and nothing else; with tasks
+present and no `remapTo` it throws. Measured: `grep -rn
+"clear_project\|clearProject" packages/core/src apps/web/src/server`
+returns nothing, while the positive control `bulkMoveTasksToProject`
+is found in `packages/core/src/task/move.ts:173`.
+
+`TaskFrontmatterSchema.project` **is** `.optional()`
+(`packages/contracts/src/task.ts:53`), so a cleared project is
+representable on disk. The work is not the field, it is the
+transaction: the remap runs through a journal entry
+(`kind: "remap_project"`) with an idempotent replay handler, and a
+clear-instead-of-remap needs its own journal kind and recovery path or
+a crash mid-clear leaves tasks half-updated with no way to finish.
+
+**The dialog therefore offers remap only**, and the no-silent-orphan
+half of the case *is* satisfied — the server rejects the delete when
+tasks exist and no target is given, so confirming without a choice is
+impossible. What is missing is the second option, not the guard.
+
+**To reproduce:** Settings → Projects → delete a project holding
+tasks. The dialog offers a remap select and no "clear" alternative.
+
+## `DELETE /api/projects/:id` archived instead of deleting
+
+**Found and FIXED in M4.1, 2026-09-01** — recorded because it was
+silent, untested, and shipped.
+
+`handleDeleteProject` called `deleteProject(locttDir, id, {remapTo})`
+and **never passed `hard: true`**, so every DELETE took core's
+soft-delete branch and merely archived the project. `remap_to` was
+accepted and then ignored, because the archive branch rejects it.
+Measured before the fix: `grep -n "hard" apps/web/src/server/server.ts`
+returned nothing, against a positive control of two `deleteProject`
+hits.
+
+No test caught it: all 232 server tests passed both before and after
+the fix. PRU-17, PRU-18, PRU-33 and PRU-34 all depend on a real
+delete, and none of them had a working endpoint to build on.
+
+**Fixed** by passing `hard: true` unless `?soft=true` is given.
+Archive keeps its own route (`PUT` with `archived: true`), so DELETE
+now means delete.
+
+## `PUT /api/projects/:id` silently ignored `archived`
+
+**Found and FIXED in M4.1, 2026-09-01.**
+
+The handler parsed `{name?, default?}` only. A client sending
+`{archived: true}` got a 200 and an unchanged project — the field was
+dropped without comment, and there was no project archive/unarchive
+route anywhere (unlike users, which have both). Core's
+`archiveProject` / `unarchiveProject` were exported and called by
+**nothing on any surface** — two more of the built-but-uncalled
+capabilities this run keeps finding.
+
+Caught by the PRU-7 UI test, which archived a project and found the
+row still active.
+
+**Fixed** by handling `archived` in `handleUpdateProject`.

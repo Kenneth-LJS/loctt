@@ -24,6 +24,7 @@ import type { JournalEntry } from "../state/journal.js";
 import { loadAllTasks } from "../task/load-all.js";
 import { getCurrentUser } from "../users/manage.js";
 import { loadUserSettings } from "../users/settings.js";
+import { allocateSlug, isValidSlug } from "./slug.js";
 
 /**
  * Entity errors carry `validation_failed` and `not_saved`: every throw
@@ -90,6 +91,14 @@ export function resolveProjectIdFromInput(
     && (options.includeArchived === true || p.archived !== true));
   if (byId) return byId.id;
 
+  // Slug next, ahead of name: it is the handle URLs and the CLI carry,
+  // it is unique where names are not, and it is immutable where names
+  // are not (K3). A name that happens to equal another project's slug
+  // therefore loses — the unambiguous identifier wins.
+  const bySlug = config.projects.find(p => p.slug === input
+    && (options.includeArchived === true || p.archived !== true));
+  if (bySlug) return bySlug.id;
+
   const byName = resolveProjectByName(config, input, options);
   if (byName.kind === "match") return byName.project.id;
   if (byName.kind === "ambiguous") {
@@ -107,7 +116,7 @@ export function resolveProjectIdFromInput(
   // A looser comparison here would let an archived "Ops" claim an input
   // that an active "OPS" should have taken.
   const archived = config.projects.find(
-    p => p.id === input || p.name === input,
+    p => p.id === input || p.slug === input || p.name === input,
   );
   if (archived?.archived === true) {
     throw new ProjectError(
@@ -197,6 +206,11 @@ export interface CreateProjectInput {
   readonly name: string;
   readonly prefix: string;
   readonly archived?: boolean;
+  /**
+   * Explicit slug. Omitted, one is generated from the name. Rejected
+   * if malformed or already held by another project (K3).
+   */
+  readonly slug?: string;
 }
 
 /**
@@ -226,12 +240,34 @@ export async function createProject(
       );
     }
 
+    // An explicitly-requested slug is validated and must be free: only
+    // a *generated* one may be suffixed to dodge a collision, because
+    // silently handing back `web-2` to a caller that asked for `web`
+    // would put a different URL in their hands than the one they chose.
+    if (input.slug !== undefined) {
+      if (!isValidSlug(input.slug)) {
+        throw new ProjectError(
+          `invalid project slug '${input.slug}' — must start with a letter and `
+          + `contain only lowercase letters, digits, hyphen, or underscore`,
+        );
+      }
+      const clash = config.projects.find(p => p.slug === input.slug);
+      if (clash) {
+        throw new ProjectError(
+          `project slug '${input.slug}' is already used by project "${clash.name}" `
+          + `— slugs must be unique`,
+        );
+      }
+    }
+    const slug = allocateSlug(config.projects, input.name, input.slug);
+
     // Generate the id up front so we can use it as the state.keys key
     // before the projects.yaml write.
     const id = ulid();
     const def: ProjectDef = {
       id,
       name: input.name,
+      ...(slug !== undefined ? { slug } : {}),
       prefix: input.prefix,
       ...(input.archived === true ? { archived: true } : {}),
     };

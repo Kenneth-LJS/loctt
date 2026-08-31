@@ -38,7 +38,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--default", "--ids", "--name", "--prefix", "--remap-to", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--default", "--ids", "--name", "--prefix", "--remap-to", "--slug", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -67,19 +67,26 @@ export async function run(args: string[], root: string): Promise<void> {
         // A flag here is a mistyped name, not a name. See
         // `positional`: `--name "X"` used to create an entity
         // literally called `--name`, silently, exit 0.
-        const name = positional(args, 2, "loctt project create <name> --prefix <prefix> [--default]");
+        const usage = "loctt project create <name> --prefix <prefix> [--slug <slug>] [--default]";
+        const name = positional(args, 2, usage);
         const prefix = getArg(args, "--prefix");
         if (!name || !prefix) {
-          throw new UsageError(
-            "missing name or --prefix",
-            "loctt project create <name> --prefix <prefix> [--default]",
-          );
+          throw new UsageError("missing name or --prefix", usage);
         }
-        const def = await createProject(locttDir, { name, prefix });
+        const slug = getArg(args, "--slug");
+        const def = await createProject(locttDir, {
+          name,
+          prefix,
+          ...(slug !== undefined ? { slug } : {}),
+        });
         if (hasFlag(args, "--default")) {
           await setDefaultProject(locttDir, def.id);
         }
-        console.log(`Created project "${name}" (prefix ${prefix}, id ${def.id})`);
+        // Print the slug: it is the handle the user will type next, and
+        // when it was generated rather than given this is the only place
+        // they learn what it is.
+        const slugCol = def.slug !== undefined ? `slug ${def.slug}, ` : "";
+        console.log(`Created project "${name}" (${slugCol}prefix ${prefix}, id ${def.id})`);
       });
       break;
     }

@@ -101,4 +101,41 @@ describe("GET /api/tasks?project=", () => {
     expect(second.titles).toEqual(first.titles);
     expect(first.titles).toEqual(["in the second project"]);
   });
+
+  it("resolves a project SLUG, not only a ULID (K3, PRU-6)", async () => {
+    // K3 rules that URLs carry a slug rather than a ULID, and PRU-6's
+    // last bullet requires `?project=backend` to keep resolving after
+    // a rename. `findProjectBySlug` was in core and called nowhere
+    // from the server, so a slug returned an **empty list** — the task
+    // was there and a ULID filter found it, but the slug found
+    // nothing. An empty result reads as "no matches", not as "this
+    // filter is broken", which is how it survived.
+    const projects = await (await fetch(`${base}/api/projects`, { headers })).json() as {
+      items: { id: string; name: string; slug?: string }[];
+    };
+    const second = projects.items.find(p => p.name === "Second");
+    expect(second?.slug, "K3 requires a generated slug").toBeDefined();
+
+    const bySlug = await (await fetch(
+      `${base}/api/tasks?project=${second?.slug ?? ""}`,
+      { headers },
+    )).json() as { items: { title: string }[] };
+    expect(bySlug.items.map(t => t.title)).toEqual(["in the second project"]);
+
+    // The same filter by id, so a slug that silently fell back to
+    // "no filter" would not pass the assertion above by accident.
+    const byId = await (await fetch(
+      `${base}/api/tasks?project=${second?.id ?? ""}`,
+      { headers },
+    )).json() as { items: { title: string }[] };
+    expect(byId.items.map(t => t.title)).toEqual(bySlug.items.map(t => t.title));
+
+    // An unknown value must still filter to nothing rather than
+    // becoming a pass-through that returns everything.
+    const unknown = await (await fetch(
+      `${base}/api/tasks?project=no-such-slug`,
+      { headers },
+    )).json() as { items: unknown[] };
+    expect(unknown.items).toHaveLength(0);
+  });
 });
