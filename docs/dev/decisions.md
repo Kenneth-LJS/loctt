@@ -3922,6 +3922,64 @@ names the setting so it is findable.
 `docs/dev/schema-reference.md`, and the config paragraph in
 `docs/user/cli/reference.md`.
 
+### A59 · No write leaves while the body-conflict dialog is open
+
+**Ticket:** known-gaps, "A resolved body conflict can re-open its own
+dialog" · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** Clicking a choice radio in the conflict dialog blurs
+the editor, and both editor modes flush on blur. That flush carries the
+token the server has already refused, so it 409s in every run; when that
+409's response landed after Apply, `write()`'s catch re-opened the
+dialog over a conflict the user had just resolved. Measured at 4 in 10
+runs once XS-11's spec asserted dialog closure directly. No data was
+lost — the merge write succeeded — but the stale dialog nothing would
+close is a P4 violation in the one surface built to protect P1.
+
+**What had to be decided.** Which layer stops the stale 409 from
+re-opening a resolved conflict, on the state machine K2 and K10 govern.
+
+**Options considered.**
+
+(a) Suppress every non-resolving flush while a conflict is open, inside
+the hook. Costs: keystrokes typed just before the blur stay unflushed
+until the conflict is closed — but they were unflushable anyway (any
+flush would 409 against the same stale token), so nothing that was
+being saved stops being saved.
+
+(b) A generation counter: ignore a 409 whose request predates the last
+resolve. Costs: the doomed write still fires every run (guaranteed-409
+network noise), more state-machine surface, and it cannot fix the
+success-path hole below.
+
+(c) `resolve()` awaits in-flight writes before clearing the conflict.
+Costs: the dialog close lags the network, the doomed write still fires,
+and it reorders the race rather than removing it.
+
+**Decided.** (a) — `flush()` returns without writing while
+`conflictRef` (a synchronous mirror of the conflict state) is non-null;
+`resolve()` clears the mirror before it flushes, so the resolution
+write is the one write that passes.
+
+**Why.** XS-12's first bullet already states the invariant: while the
+conflict surface is up, "The UI does not write." The blur-flush was a
+case violation before it was a race trigger. And it was not always
+harmless noise: the refetch effect adopts a fresh `loadedToken` even
+while the buffer is dirty, so a same-task refetch during an open
+conflict could have let the blur-flush *succeed* — silently overwriting
+`theirs` while the dialog was still asking which side to keep, exactly
+what P1 forbids. (a) closes both with one guard and no new state
+machine; (b) and (c) each close only the measured race. K2/K10 are
+untouched: every write that does leave still carries its precondition.
+
+**To revert.** In `apps/web/src/client/editor/useBodyAutosave.ts`,
+remove the `if (conflictRef.current !== null) return;` guard in
+`flush()` and the `conflictRef`/`setConflict` wrapper above it (rename
+`setConflictState` back to `setConflict`). Delete the "A59" describe
+block in `useBodyAutosave.test.ts`, the closure assertion at the end of
+XS-11's test in `tests/ui/flow-task-body.spec.ts`, and re-open the
+known-gaps entry.
+
 ### K14 · Image attachments are validated and re-encoded on upload, with a cropper
 
 **Date:** 2026-09-01 · **Ken's ruling — an agent may not revert this.**

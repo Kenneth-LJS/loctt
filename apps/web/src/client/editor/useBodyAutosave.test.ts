@@ -372,3 +372,139 @@ describe("TSK-48 / ERR-27 — a failed save is loud and keeps the text", () => {
     expect(result.current.state.kind).toBe("failed");
   });
 });
+
+describe("A59 — no write leaves while the conflict dialog is open", () => {
+  /**
+   * The measured race (known-gaps, "A resolved body conflict can
+   * re-open its own dialog"): clicking a choice radio blurs the
+   * editor, the blur-flush fires with the stale token, and its 409
+   * lands after Apply — re-opening the dialog over a conflict the
+   * user already resolved.
+   *
+   * The e2e reproduction is a timing accident (~1–2 in 10 runs);
+   * here the response ordering is scripted, so the race is
+   * deterministic in both directions. The 409 envelope mirrors what
+   * the server actually sends (see server.ts's conflict response and
+   * the K2 tests above).
+   */
+
+  /** A fetch whose responses land only when the test releases them. */
+  function heldFetch() {
+    const writes: Recorded[] = [];
+    const held: Array<{ token: unknown; release: () => void }> = [];
+    vi.stubGlobal("fetch", vi.fn((_url: string | URL, init?: RequestInit) => {
+      const raw = typeof init?.body === "string" ? init.body : "{}";
+      const parsed = JSON.parse(raw) as Recorded;
+      writes.push(parsed);
+      return new Promise<Response>(res => {
+        held.push({
+          token: parsed.expectedToken,
+          release: () => {
+            // The real server's rule: a stale token is refused, the
+            // conflicting version's token is accepted.
+            if (parsed.expectedToken === "tok-cli") {
+              res(new Response(JSON.stringify({ ok: true, bodyToken: "tok-3" }), {
+                status: 200, headers: { "Content-Type": "application/json" },
+              }));
+              return;
+            }
+            res(new Response(JSON.stringify({
+              code: "conflict",
+              message: "changed",
+              data_state: "not_saved",
+              detail: JSON.stringify({ theirs: "the CLI's text", bodyToken: "tok-cli" }),
+            }), { status: 409, headers: { "Content-Type": "application/json" } }));
+          },
+        });
+      });
+    }));
+    return { writes, held };
+  }
+
+  /** Drives the hook into an open conflict via a refused idle flush. */
+  async function openConflict(
+    result: { current: ReturnType<typeof useBodyAutosave> },
+    held: ReturnType<typeof heldFetch>["held"],
+  ): Promise<void> {
+    act(() => { result.current.edit("mine"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
+    expect(held).toHaveLength(1);
+    held.shift()?.release();
+    await settle();
+    expect(result.current.conflict).not.toBeNull();
+  }
+
+  // @verifies XS-12 (bullet 1: "The UI does not write" while the
+  // conflict surface is up) — and closes the known-gaps race.
+  it("a stale 409 landing after Apply does not re-open the resolved dialog", async () => {
+    const { writes, held } = heldFetch();
+    const { result } = harness();
+    await openConflict(result, held);
+
+    // The user clicks a choice radio. That click blurs the editor,
+    // and BodyEditor flushes on blur — with the same stale token.
+    let blurFlush: Promise<void> = Promise.resolve();
+    act(() => { blurFlush = result.current.flush(); });
+    await settle();
+
+    // Apply. `resolve` closes the dialog synchronously and chains the
+    // merged write behind anything in flight.
+    let applied: Promise<void> = Promise.resolve();
+    act(() => { applied = result.current.resolve("the CLI's text\n\nmine"); });
+    expect(result.current.conflict).toBeNull();
+
+    // Only now do the held responses land — the doomed blur-flush's
+    // 409 (if it was sent at all) arrives AFTER Apply, which is the
+    // ordering that re-opened the dialog. Settle first each time:
+    // the resolution write's fetch is issued in a microtask, so a
+    // synchronous look at `held` would miss it and deadlock.
+    for (let i = 0; i < 5; i += 1) {
+      await settle();
+      if (held.length > 0) held.shift()?.release();
+    }
+    await act(async () => { await blurFlush; await applied; });
+    await settle();
+
+    // The user resolved this conflict. Nothing may re-open it.
+    expect(result.current.conflict).toBeNull();
+    expect(result.current.state.kind).toBe("saved");
+
+    // And the doomed write never left: the refused idle flush and the
+    // resolution write are the only two. A third write here is the
+    // blur-flush going out with a token already known to be stale —
+    // guaranteed 409, pure noise, and the trigger of the race.
+    expect(writes).toHaveLength(2);
+    expect(writes.at(-1)?.body).toBe("the CLI's text\n\nmine");
+    expect(writes.at(-1)?.expectedToken).toBe("tok-cli");
+  });
+
+  // The guard must suppress, not wedge: once the conflict is closed —
+  // by either path — the machine writes again. Without this, an
+  // overbroad guard (a conflict flag that never clears) would pass the
+  // test above by never writing anything again.
+  it("dismiss then retry still re-raises the conflict, and edits still save", async () => {
+    const { writes, held } = heldFetch();
+    const { result } = harness();
+    await openConflict(result, held);
+
+    // Blur while the dialog is open: nothing leaves.
+    let blurFlush: Promise<void> = Promise.resolve();
+    act(() => { blurFlush = result.current.flush(); });
+    await settle();
+    await act(async () => { await blurFlush; });
+    expect(writes).toHaveLength(1);
+    // And nothing was lost: the state still says so (XS-65).
+    expect(result.current.hasUnsavedWork).toBe(true);
+
+    // Dismiss without writing, then Retry — XS-65's re-entry path.
+    act(() => { result.current.dismissConflict(); });
+    let retried: Promise<void> = Promise.resolve();
+    act(() => { retried = result.current.retry(); });
+    await settle();
+    expect(writes).toHaveLength(2);
+    held.shift()?.release();
+    await settle();
+    await act(async () => { await retried; });
+    expect(result.current.conflict).not.toBeNull();
+  });
+});
