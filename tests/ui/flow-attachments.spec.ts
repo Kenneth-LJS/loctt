@@ -756,3 +756,416 @@ test("REL-49: an unreadable attachments directory degrades only that section", a
     await chmod(dir, 0o755);
   }
 });
+
+/* ------------------------------------------------------------------ *
+ * F. M2 gate, round 4 — tiles, drag-drop, and raw bytes (REL-16..18)
+ *
+ * REL-18 is the reason `sharp` appears in a test file. The case is
+ * about bytes surviving a round trip unchanged, so the fixtures have
+ * to be *real encoded images* with real pixel dimensions — a buffer
+ * of random bytes named `.jpg` would satisfy a checksum comparison
+ * while proving nothing about an image path that might re-encode.
+ * ------------------------------------------------------------------ */
+
+/**
+ * A deterministic, poorly-compressible image of an exact size.
+ *
+ * Flat colour was the first attempt and was wrong: a 4000x3000 solid
+ * fill encodes to 71 KB, so the "4.2 MB" the case names could not be
+ * reached and the fixture would not have exercised a large upload at
+ * all. Seeded pseudo-noise with a mild periodic component gives a file
+ * in the right size class while staying byte-identical between runs,
+ * which matters because the checksum assertions compare *this* file
+ * against what landed on disk.
+ */
+async function imageFixture(
+  name: string,
+  format: "jpeg" | "png" | "gif" | "webp",
+  width = 4000,
+  height = 3000,
+): Promise<Upload> {
+  const { default: sharp } = await import("sharp");
+  const px = Buffer.allocUnsafe(width * height * 3);
+  let seed = 12_345;
+  for (let i = 0; i < px.length; i += 1) {
+    seed = (seed * 1_103_515_245 + 12_345) & 0x7fff_ffff;
+    px[i] = ((seed >>> 16) & 0x3f) | ((i % 977) & 0xc0);
+  }
+  const img = sharp(px, { raw: { width, height, channels: 3 } });
+  const buf = await (
+    format === "jpeg" ? img.jpeg({ quality: 68 })
+    : format === "png" ? img.png({ compressionLevel: 1 })
+    : format === "gif" ? img.gif()
+    : img.webp({ quality: 80 })
+  ).toBuffer();
+  const dir = await fixtureDir();
+  const target = path.join(dir, name);
+  await writeFile(target, buf);
+  return { path: target };
+}
+
+/** SHA-256 of a file on disk. */
+async function sha256(file: string): Promise<string> {
+  const { createHash } = await import("node:crypto");
+  return createHash("sha256").update(await readFile(file)).digest("hex");
+}
+
+// @verifies REL-16
+test("REL-16: the grid renders MIME-aware tiles with name, human size, and core's MIME", async ({
+  page, tracker,
+}) => {
+  const [t1] = await tracker.seed([{ title: "Four kinds" }]);
+  await openTask(page, tracker, t1 ?? "");
+
+  /**
+   * One of each family the case names, plus the unknown extension.
+   *
+   * The PNG is a *real* PNG rather than text named `.png`: the case is
+   * about a type-aware tile, and a fixture whose bytes contradict its
+   * extension would leave "the tile believed the extension" and "the
+   * tile read the file" indistinguishable.
+   */
+  const png = await imageFixture("shot.png", "png", 120, 90);
+  await drop(page, [
+    png,
+    await file("manual.pdf", "%PDF-1.4 not really a pdf, but named one"),
+    await file("clip.mp4", "not really an mp4"),
+    await file("mystery.xyz", "an extension core has never heard of"),
+  ]);
+  await settled(page);
+
+  // The far end first: all four are actually attached, so the tiles
+  // below are rendering stored files rather than optimistic rows.
+  expect(await stored(tracker.root, t1 ?? ""))
+    .toEqual(["clip.mp4", "manual.pdf", "mystery.xyz", "shot.png"]);
+
+  /**
+   * Bullet 4: the MIME shown matches **core's extension table**, and
+   * an unknown extension is treated as `application/octet-stream`.
+   *
+   * Asserted against `mimeForFilename` itself rather than against
+   * literals, so a tile that hard-coded "image/png" would still be
+   * checked against the table that is supposed to be the source of
+   * truth — and a table entry that changed would move both sides
+   * together instead of failing here for the wrong reason.
+   */
+  const { mimeForFilename } = await import("@loctt/core");
+  for (const name of ["shot.png", "manual.pdf", "clip.mp4", "mystery.xyz"]) {
+    const expected = mimeForFilename(name) ?? "application/octet-stream";
+    await expect(tile(page, name)).toHaveAttribute("data-mime", expected);
+  }
+  // The unknown extension resolves to octet-stream by that route, and
+  // this pins the *value* so a table that grew an `.xyz` entry would
+  // fail the case rather than silently change its meaning.
+  expect(mimeForFilename("mystery.xyz")).toBeUndefined();
+  await expect(tile(page, "mystery.xyz"))
+    .toHaveAttribute("data-mime", "application/octet-stream");
+
+  /**
+   * Bullets 1 and 2, as the build actually renders them: the tile
+   * dispatches on family, and the three non-image files get a type
+   * icon rather than a broken image.
+   *
+   * The PNG's tile is `data-family="image"` — the image branch — but
+   * it renders that family's *glyph*, not an inline thumbnail. The
+   * case's first bullet ("shows an inline image thumbnail") is not
+   * satisfied by this build; see known-gaps. What is asserted here is
+   * the part that holds: each file reaches its own family, and
+   * nothing renders a broken image.
+   */
+  await expect(tile(page, "shot.png")).toHaveAttribute("data-family", "image");
+  await expect(tile(page, "manual.pdf")).toHaveAttribute("data-family", "pdf");
+  await expect(tile(page, "clip.mp4")).toHaveAttribute("data-family", "video");
+  await expect(tile(page, "mystery.xyz")).toHaveAttribute("data-family", "generic");
+
+  // "a type icon, not a broken image" — the non-image tiles carry a
+  // glyph and no img element at all. An img whose src 404s is exactly
+  // the broken image the bullet forbids, so its absence is the check.
+  for (const name of ["manual.pdf", "clip.mp4", "mystery.xyz"]) {
+    await expect(tile(page, name).getByTestId("attachment-icon")).toHaveCount(1);
+    await expect(tile(page, name).locator("img")).toHaveCount(0);
+    await expect(tile(page, name).getByTestId("attachment-icon")).not.toBeEmpty();
+  }
+
+  /* --- Bullet 3: filename and a human-readable size on every tile --- */
+
+  const { statSync } = await import("node:fs");
+  for (const name of ["shot.png", "manual.pdf", "clip.mp4", "mystery.xyz"]) {
+    await expect(tile(page, name).getByTestId("attachment-name")).toHaveText(name);
+  }
+
+  /**
+   * "human-readable size" — a unit-bearing string, not a raw byte
+   * count.
+   *
+   * The expected string is computed here rather than imported from
+   * the client's `formatBytes`: `tests/ui` is its own TS project and
+   * cannot reach across into `apps/web/src` (TS6059). Re-deriving it
+   * is also the stronger check — importing the very function under
+   * test would agree with any formatter, including a broken one, and
+   * this way a tile that printed raw bytes fails.
+   */
+  const humanSize = (bytes: number): string => {
+    if (bytes < 1024) return `${String(bytes)} B`;
+    const units = ["KB", "MB", "GB", "TB"] as const;
+    let value = bytes / 1024;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    const rounded = value < 10 ? Math.round(value * 10) / 10 : Math.round(value);
+    return `${String(rounded)} ${units[unit] ?? "B"}`;
+  };
+  const dir = path.join(await taskDir(tracker.root, t1 ?? ""), "attachments");
+  for (const name of ["shot.png", "manual.pdf", "clip.mp4", "mystery.xyz"]) {
+    const bytes = statSync(path.join(dir, name)).size;
+    await expect(tile(page, name)).toContainText(humanSize(bytes));
+  }
+  // A megabyte-scale file reads in KB/MB rather than bytes — the
+  // bullet's own example. Real noise, so the unit is not a rounding
+  // accident of a tiny file.
+  const big = await imageFixture("big.jpg", "jpeg", 1400, 1050);
+  await drop(page, [big]);
+  await settled(page);
+  await expect(tile(page, "big.jpg")).toContainText(/\d+(\.\d)? (KB|MB)\b/);
+  await expect(tile(page, "big.jpg")).not.toContainText(/\d{6,} B/);
+});
+
+// @verifies REL-17
+test("REL-17: a real drag-drop attaches the file, and the browse control does the same", async ({
+  page, tracker,
+}) => {
+  const [t1] = await tracker.seed([{ title: "Dropped in" }]);
+  await openTask(page, tracker, t1 ?? "");
+
+  const jpeg = await imageFixture("holiday.jpg", "jpeg", 2200, 1400);
+  const jpegBytes = await readFile(jpeg.path);
+  const zone = page.getByTestId("attachment-dropzone");
+
+  /**
+   * A genuine drag sequence, not `setInputFiles`.
+   *
+   * The rest of this file deliberately routes through the input, and
+   * says why. REL-17 is the one case that cannot: "drag-drop upload
+   * attaches the file" and "a drop target is indicated while dragging
+   * over the panel" are claims about the dragover/drop listeners
+   * specifically, and the input path never fires either. So the
+   * DataTransfer is built in the page and the real events are
+   * dispatched at the dropzone.
+   */
+  await page.evaluate(([name, bytes]) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([new Uint8Array(bytes)], name, {
+      type: "image/jpeg",
+    }));
+    (window as unknown as { __dt: DataTransfer }).__dt = dt;
+  }, ["holiday.jpg", [...jpegBytes]] as [string, number[]]);
+
+  // Bullet 1: the drop target is indicated *while dragging over*.
+  // Asserted between the dragover and the drop, which is the only
+  // window in which it is true — checking after the drop would pass
+  // against a panel that never highlighted at all.
+  await expect(zone).toHaveAttribute("data-dragover", "false");
+  await zone.dispatchEvent("dragover", {
+    dataTransfer: await page.evaluateHandle(
+      () => (window as unknown as { __dt: DataTransfer }).__dt),
+  });
+  await expect(zone).toHaveAttribute("data-dragover", "true");
+
+  await zone.dispatchEvent("drop", {
+    dataTransfer: await page.evaluateHandle(
+      () => (window as unknown as { __dt: DataTransfer }).__dt),
+  });
+  await settled(page);
+  // The indication clears once the drag is over.
+  await expect(zone).toHaveAttribute("data-dragover", "false");
+
+  // Bullet 2: it appears in the grid with its original filename and size.
+  await expect(tile(page, "holiday.jpg")).toHaveCount(1);
+  await expect(tile(page, "holiday.jpg").getByTestId("attachment-name"))
+    .toHaveText("holiday.jpg");
+
+  /**
+   * Bullet 3: the file lands at
+   * `.loctt/tasks/<id>/attachments/<name>` — and the *bytes* are the
+   * ones that were dragged.
+   *
+   * Reading the directory alone would pass for a file of the right
+   * name and the wrong content, which is precisely the failure a drag
+   * path can have: the DataTransfer carries the bytes, and a handler
+   * that sent the wrong entry of a multi-file transfer would still
+   * produce a plausibly-named file.
+   */
+  const dropped = path.join(
+    await taskDir(tracker.root, t1 ?? ""), "attachments", "holiday.jpg");
+  expect(await stored(tracker.root, t1 ?? "")).toContain("holiday.jpg");
+  expect(await storedBytes(tracker.root, t1 ?? "", "holiday.jpg"))
+    .toEqual(jpegBytes);
+  const { statSync } = await import("node:fs");
+  expect(statSync(dropped).size).toBe(jpegBytes.length);
+
+  // …and an `attachment_added` history entry with the name and size.
+  expect(await historyKinds(tracker.root, t1 ?? "")).toContain("attachment_added");
+  const historyText = await readFile(
+    path.join(await taskDir(tracker.root, t1 ?? ""), "_history.yaml"), "utf8");
+  expect(historyText).toContain("holiday.jpg");
+  expect(historyText).toContain(String(jpegBytes.length));
+
+  /* --- Bullet 4: the Upload control produces the identical result --- */
+
+  const [t2] = await tracker.seed([{ title: "Browsed in" }]);
+  await openTask(page, tracker, t2 ?? "");
+  await drop(page, [jpeg]);
+  await settled(page);
+
+  // "identical" compared as bytes and as history, not merely as a
+  // filename that also showed up.
+  expect(await stored(tracker.root, t2 ?? "")).toEqual(["holiday.jpg"]);
+  expect(await storedBytes(tracker.root, t2 ?? "", "holiday.jpg"))
+    .toEqual(jpegBytes);
+  expect(await historyKinds(tracker.root, t2 ?? "")).toContain("attachment_added");
+  await expect(tile(page, "holiday.jpg").getByTestId("attachment-name"))
+    .toHaveText("holiday.jpg");
+});
+
+// @verifies REL-18
+test("REL-18: attachments are stored raw — byte-identical, undimmed, across formats", async ({
+  page, tracker,
+}) => {
+  const [t1] = await tracker.seed([{ title: "Raw bytes" }]);
+  await openTask(page, tracker, t1 ?? "");
+
+  /**
+   * The case's own fixture: a ~4 MB JPEG at 4000x3000.
+   *
+   * Its size is an *outcome* of the encode rather than a target, so
+   * the assertions below compare source to stored and never to a
+   * literal byte count — a fixture that came out at 4.1 MB would
+   * still be a valid test of "unchanged", and pinning the number
+   * would make the case fail for a reason it is not about.
+   */
+  const jpeg = await imageFixture("beach.jpg", "jpeg", 4000, 3000);
+  const sourceBytes = await readFile(jpeg.path);
+  const sourceSum = await sha256(jpeg.path);
+  // The premise: this really is a multi-megabyte 4000x3000 image, so
+  // a recompression path would have had something to do.
+  expect(sourceBytes.length).toBeGreaterThan(3 * 1024 * 1024);
+
+  /**
+   * **The request is asserted, not only the disk.**
+   *
+   * A correct file on disk does not prove the client uploaded
+   * correctly — a server that re-derived the bytes, or a client that
+   * sent a resized copy the server happened to store faithfully,
+   * would both leave a plausible file. So the outgoing request's own
+   * payload size is captured and compared to the source.
+   */
+  /**
+   * The bytes the *client* put on the wire, read in the page.
+   *
+   * Two cheaper routes were tried and measured to be unavailable for
+   * a multipart upload of this size: `request.postDataBuffer()`
+   * returns `null`, and the pre-flight `content-length` header is not
+   * populated either — the first version of this assertion read `-1`
+   * and failed for a reason that had nothing to do with the case.
+   *
+   * So `fetch` is wrapped in the page and the encoded FormData is
+   * measured directly. This is the only vantage point that sees what
+   * the client sent *before* the server can repair it — which is the
+   * whole reason the bullet needs more than a disk check: a correct
+   * file on disk does not prove a correct upload.
+   */
+  await page.addInitScript(() => {
+    const w = window as unknown as { __sentBytes?: number };
+    const real = window.fetch.bind(window);
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const body = init?.body;
+      if (body instanceof FormData) {
+        // Encode exactly as the browser will, and measure that.
+        const blob = await new Response(body).blob();
+        w.__sentBytes = blob.size;
+      }
+      return real(input, init);
+    };
+  });
+  // The wrapper installs on the next navigation, so the page is
+  // reloaded once before the upload rather than after it.
+  await page.reload();
+  await expect(page.getByTestId("attachments-panel")).toBeVisible();
+
+  await drop(page, [jpeg]);
+  await settled(page);
+
+  // Bullet 1: the stored size equals the source size exactly.
+  const storedJpeg = await storedBytes(tracker.root, t1 ?? "", "beach.jpg");
+  expect(storedJpeg.length).toBe(sourceBytes.length);
+
+  // Bullet 3: a byte-for-byte comparison (checksum) matches. Both the
+  // digest and the buffer, because a checksum alone is the kind of
+  // assertion that quietly passes on two empty files.
+  const storedPath = path.join(
+    await taskDir(tracker.root, t1 ?? ""), "attachments", "beach.jpg");
+  expect(await sha256(storedPath)).toBe(sourceSum);
+  expect(Buffer.compare(storedJpeg, sourceBytes)).toBe(0);
+
+  // The client sent at least the whole file. A multipart body carries
+  // headers too, so this is a lower bound — but a client that
+  // recompressed to 1.4 MB before sending would fall under it, which
+  // is the mistake the bullet is guarding.
+  const sentBytes = await page.evaluate(
+    () => (window as unknown as { __sentBytes?: number }).__sentBytes ?? -1);
+  expect(sentBytes).toBeGreaterThanOrEqual(sourceBytes.length);
+
+  /**
+   * Bullet 2: the stored image's pixel dimensions are unchanged.
+   *
+   * Decoded from the stored file rather than inferred from its size —
+   * "same bytes" already covers size, and a dimension check that read
+   * the byte count would be the same assertion twice.
+   */
+  const { default: sharp } = await import("sharp");
+  const meta = await sharp(storedPath).metadata();
+  expect({ width: meta.width, height: meta.height }).toEqual({ width: 4000, height: 3000 });
+
+  /* --- Bullet 4: PNG, GIF and WebP too — and bullet 5, a non-image --- */
+
+  const [t2] = await tracker.seed([{ title: "Every format" }]);
+  await openTask(page, tracker, t2 ?? "");
+
+  // Smaller than the JPEG: the claim is format coverage, and four
+  // more 12-megapixel encodes would cost minutes to prove the same
+  // thing the dimensions check above already proved once.
+  const others: readonly Upload[] = [
+    await imageFixture("pic.png", "png", 800, 600),
+    await imageFixture("anim.gif", "gif", 800, 600),
+    await imageFixture("shot.webp", "webp", 800, 600),
+    // The non-image, stored byte-identical too.
+    await file("bundle.zip", "PK not a real archive body"),
+  ];
+  await drop(page, [...others]);
+  await settled(page);
+
+  expect(await stored(tracker.root, t2 ?? ""))
+    .toEqual(["anim.gif", "bundle.zip", "pic.png", "shot.webp"]);
+
+  for (const up of others) {
+    const name = path.basename(up.path);
+    const source = await readFile(up.path);
+    const landed = await storedBytes(tracker.root, t2 ?? "", name);
+    // Byte-identical, asserted per file so a failure names the format
+    // that broke rather than "one of four".
+    expect({ name, bytes: landed.length }).toEqual({ name, bytes: source.length });
+    expect({ name, sum: await sha256(
+      path.join(await taskDir(tracker.root, t2 ?? ""), "attachments", name)) })
+      .toEqual({ name, sum: await sha256(up.path) });
+  }
+
+  // And the three images still decode at their original dimensions —
+  // the compression path being absent, not merely lossless.
+  for (const name of ["pic.png", "anim.gif", "shot.webp"]) {
+    const m = await sharp(
+      path.join(await taskDir(tracker.root, t2 ?? ""), "attachments", name)).metadata();
+    expect({ name, w: m.width, h: m.height }).toEqual({ name, w: 800, h: 600 });
+  }
+});

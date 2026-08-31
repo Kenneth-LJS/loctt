@@ -167,6 +167,7 @@ describe("reorderRelationship", () => {
     expect(afterTail.get(id2)).toBe(before.get(id2));
   });
 
+  // @verifies REL-31
   it("REL-31: driving a rank past the length threshold rebalances the window without reordering it", async () => {
     const [pKey, c1, c2, x, y] = await makeTasks(5) as [string, string, string, string, string];
     await linkChildren(pKey, [c1, c2, x, y]);
