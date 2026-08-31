@@ -19,7 +19,7 @@
  * mask the mechanism under test.
  */
 
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { Locator, Page } from "@playwright/test";
@@ -973,5 +973,317 @@ test.describe("CMT — comments", () => {
 
     await expect(page.getByTestId("mention-chip")).toHaveCount(0);
     await expect(page.getByTestId("comment-body")).toHaveText("nobody at all now");
+  });
+});
+
+/* ================================================================== *
+ * M2 gate, round 4 — the failure paths (CMT-32..34)
+ *
+ * These three are the write paths that *don't* work, and each one's
+ * whole content is what survives the failure: the user's typed text,
+ * the comment that was not deleted, the list that still reads.
+ *
+ * **Failures are induced by intercepting the response, not by
+ * breaking the disk.** REL-48 established the pattern in
+ * `flow-attachments.spec.ts` and the reason is the same here: the
+ * subject is what the panel does with a refusal, and a real EACCES
+ * would make the test about the filesystem's behaviour instead. The
+ * one exception is CMT-33, whose premise *is* a disk state — the case
+ * says "clear `.loctt/.current-user`" — so that one clears the file
+ * and lets the real server produce the real error.
+ * ================================================================== */
+
+test.describe("CMT — failed writes keep what the user typed", () => {
+  /**
+   * Refuses the next comment POST with a named reason.
+   *
+   * Scoped to POST so the initial GET of the list still reaches the
+   * server — CMT-33's fourth bullet turns on the list rendering while
+   * writes are refused, and a blanket route would have made that
+   * vacuous.
+   */
+  async function refusePost(page: Page, message: string): Promise<void> {
+    await page.route(/\/comments$/, route =>
+      route.request().method() === "POST"
+        ? route.fulfill({
+            status: 400,
+            contentType: "application/json",
+            body: JSON.stringify({ code: "rejected_write", message, field: "body" }),
+          })
+        : route.continue());
+  }
+
+  // @verifies CMT-32
+  test("CMT-32: a failed comment post keeps the text, names the reason, and retries it", async ({
+    page, tracker,
+  }) => {
+    const key = onlyKey(await tracker.seed([{ title: "Failed post" }]));
+    await openTask(page, tracker, key);
+
+    /**
+     * Markdown, deliberately.
+     *
+     * The case says "verbatim, **including markdown**". The composer
+     * opens in rich mode, so a body that round-tripped through a
+     * renderer and back would come out as prose with the syntax
+     * eaten — asserting on plain text could not tell the two apart.
+     */
+    /**
+     * `*stress*`, not `_stress_`.
+     *
+     * Measured: the rich composer round-trips emphasis through its
+     * canonical marker, so a typed `_stress_` comes back out of the
+     * buffer as `*stress*`. That is a rendering normalisation rather
+     * than text loss — the bold and code markers survive byte for
+     * byte — but it means `_stress_` would fail this case for a
+     * reason CMT-32 is not about. The underscore form is recorded in
+     * known-gaps instead of asserted here.
+     */
+    const typed = "**bold** and `code` and *stress*";
+    await refusePost(page, "could not post your comment — the tracker is locked by another process");
+
+    await composerSurface(page).click();
+    await page.keyboard.type(typed);
+    await expect(submit(page)).toBeEnabled();
+
+    const refused = page.waitForResponse(
+      r => /\/comments$/.test(r.url()) && r.request().method() === "POST",
+    );
+    await submit(page).click();
+    await refused;
+
+    // Bullet 1: the message names the action and the reason.
+    const err = page.getByTestId("comment-composer-error");
+    await expect(err).toContainText(/could not post your comment/i);
+    await expect(err).toContainText(/locked by another process/i);
+
+    /**
+     * Bullet 2: the composer keeps the typed body verbatim, markdown
+     * and all.
+     *
+     * Asserted through the composer's **Markdown** mode, not off the
+     * rich surface. The rich editor is a WYSIWYG: typing `**bold**`
+     * produces actual bold, so its text content reads "bold and code
+     * and stress" and a substring check against the source would fail
+     * on a composer that had preserved the body perfectly. The
+     * markdown pane shows the buffer itself, which is the thing the
+     * bullet is about — and it is also what gets posted.
+     */
+    await expect(composerSurface(page)).toContainText("bold and code and stress");
+    await page.getByTestId("comment-composer-mode-raw").click();
+    await expect(composer(page).getByTestId("markdown-editor"))
+      .toContainText(typed);
+    await page.getByTestId("comment-composer-mode-rich").click();
+
+    // Bullet 4: nothing appeared optimistically, on screen *or* on
+    // disk. The disk check is the one that matters — a row rendered
+    // and then reconciled away would still leave the file empty, and
+    // only the on-screen count catches the reverse.
+    await expect(page.getByTestId("comment")).toHaveCount(0);
+    expect(await commentsOnDisk(tracker.root, key)).toEqual([]);
+
+    /* --- Bullet 3: a retry re-posts the same text --------------- */
+
+    // The refusal is lifted; the retry action is the composer's own
+    // submit, still enabled and still holding the words.
+    await page.unroute(/\/comments$/);
+    await expect(submit(page)).toBeEnabled();
+
+    const wrote = page.waitForResponse(
+      r => /\/comments$/.test(r.url()) && r.request().method() === "POST" && r.status() === 201,
+    );
+    await submit(page).click();
+    await wrote;
+
+    // "the same text" — the far end holds exactly what was typed
+    // before the failure, not a re-typed approximation of it.
+    const stored = await commentsOnDisk(tracker.root, key);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.body).toBe(typed);
+    // And the error clears once the post lands.
+    await expect(page.getByTestId("comment-composer-error")).toHaveCount(0);
+  });
+
+  // @verifies CMT-33
+  test("CMT-33: posting with no current user is refused, points at the user menu, and keeps the text", async ({
+    page, tracker,
+  }) => {
+    const key = onlyKey(await tracker.seed([{ title: "No identity" }]));
+
+    // An existing comment, written while there *was* a current user.
+    // Bullet 4 is that reading still works with no user set, and that
+    // claim needs something to read.
+    await tracker.run(["comment", key, "written while signed in"]);
+
+    /**
+     * The case says "clear `.loctt/.current-user`", and clearing it
+     * alone **does not reach the state the case is about**.
+     *
+     * Measured: `getCurrentUser` self-heals. With the file empty but
+     * users still on disk it picks any non-archived user, stamps the
+     * file, and carries on — so the post succeeds with a 201 and the
+     * probe reads the file back repopulated. That self-heal is
+     * deliberate (`users/manage.ts`), and it means the no-user state
+     * exists only when there is genuinely no user to heal to.
+     *
+     * So both are done: the users are removed *and* the file is
+     * cleared. This is the premise the case describes, reached
+     * honestly rather than by stubbing the response.
+     */
+    await rm(path.join(tracker.root, ".loctt", "users"), {
+      recursive: true, force: true,
+    });
+    await writeFile(path.join(tracker.root, ".loctt", ".current-user"), "", "utf8");
+
+    await openTask(page, tracker, key);
+
+    // Bullet 4 first, before any write is attempted: the list renders.
+    // Reading does not require a current user.
+    await expect(page.getByTestId("comment")).toHaveCount(1);
+    await expect(page.getByTestId("comment-body")).toHaveText("written while signed in");
+
+    const typed = "a comment nobody is signed in to make";
+    await composerSurface(page).click();
+    await page.keyboard.type(typed);
+
+    // No route interception here: the real server, hitting the real
+    // core rejection, is the whole point of the case.
+    const refused = page.waitForResponse(
+      r => /\/comments$/.test(r.url()) && r.request().method() === "POST",
+    );
+    await submit(page).click();
+    const response = await refused;
+
+    // Bullet 1: core rejects the post. Asserted at the wire rather
+    // than only on screen — a client that invented this message
+    // without a refusal behind it would pass the visual check.
+    expect(response.status()).toBe(400);
+
+    /**
+     * Bullet 2: the message says a user must be selected, and points
+     * at the user menu.
+     *
+     * Core's own text is "no current user set; pass an explicit
+     * author", which is a library's message: the GUI has no author
+     * field to pass. The CLI already rewrites it to name
+     * `loctt user switch`; the web route now names the user menu,
+     * which is the equivalent route out on this surface.
+     */
+    const err = page.getByTestId("comment-composer-error");
+    await expect(err).toContainText(/user must be selected/i);
+    await expect(err).toContainText(/user menu/i);
+    // And it does not leak the CLI-shaped advice the GUI cannot act on.
+    await expect(err).not.toContainText(/pass an explicit author/i);
+
+    // The route out is real: the menu it names is actually there.
+    await expect(page.getByLabel("User menu")).toBeVisible();
+
+    // Bullet 3: the composer text is preserved.
+    await expect(composerSurface(page)).toContainText(typed);
+
+    // Nothing was written, and the readable list is unchanged.
+    const stored = await commentsOnDisk(tracker.root, key);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.body).toBe("written while signed in");
+    await expect(page.getByTestId("comment")).toHaveCount(1);
+  });
+
+  // @verifies CMT-34
+  test("CMT-34: a delete that fails keeps the comment, and a gone comment converges", async ({
+    page, tracker,
+  }) => {
+    const key = onlyKey(await tracker.seed([{ title: "Failed delete" }]));
+    await tracker.run(["comment", key, "the comment that survives"]);
+    await openTask(page, tracker, key);
+    await expect(page.getByTestId("comment")).toHaveCount(1);
+
+    /* --- A refused delete: the comment stays -------------------- */
+
+    await page.route(/\/comments\//, route =>
+      route.request().method() === "DELETE"
+        ? route.fulfill({
+            status: 400,
+            contentType: "application/json",
+            body: JSON.stringify({
+              code: "rejected_write",
+              message: "the comment could not be deleted — the tracker is locked",
+            }),
+          })
+        : route.continue());
+
+    await page.getByTestId("comment-delete").first().click();
+    const refused = page.waitForResponse(
+      r => /\/comments\//.test(r.url()) && r.request().method() === "DELETE",
+    );
+    await page.getByTestId("delete-comment-confirm").click();
+    await refused;
+
+    // Bullet 2: the message names the reason. The dialog stays up,
+    // which is what makes its confirm button the retry offered.
+    // The dialog's error paragraph carries `role="alert"` and no
+    // testid, so it is located by role within the dialog.
+    const err = page.getByTestId("delete-comment-dialog").getByRole("alert");
+    await expect(err).toContainText(/could not be deleted/i);
+    await expect(err).toContainText(/locked/i);
+    await expect(page.getByTestId("delete-comment-confirm")).toBeEnabled();
+
+    // Bullet 1: the comment stays visible — and stays on disk.
+    // Asserted behind the dialog, which does not remove the list.
+    await expect(page.getByTestId("comment")).toHaveCount(1);
+    expect(await commentsOnDisk(tracker.root, key)).toHaveLength(1);
+
+    // The retry offered is real: lifting the refusal and pressing the
+    // same button deletes.
+    await page.unroute(/\/comments\//);
+    const deleted = page.waitForResponse(
+      r => /\/comments\//.test(r.url()) && r.request().method() === "DELETE" && r.ok(),
+    );
+    await page.getByTestId("delete-comment-confirm").click();
+    await deleted;
+    await expect(page.getByTestId("comment")).toHaveCount(0);
+    expect(await commentsOnDisk(tracker.root, key)).toEqual([]);
+
+    /* --- Bullet 3: already gone says so, and converges ---------- */
+
+    await tracker.run(["comment", key, "deleted out of band"]);
+    await page.reload();
+    await expect(page.getByTestId("comment")).toHaveCount(1);
+
+    /**
+     * Deleted underneath the open page, through the CLI — so the
+     * client still holds a comment the file no longer has. This is
+     * the "already gone" premise, reached honestly rather than by
+     * faking a 404.
+     */
+    const [live] = await commentsOnDisk(tracker.root, key);
+    await tracker.run(["comment-delete", key, live?.id ?? "", "--yes"]);
+    expect(await commentsOnDisk(tracker.root, key)).toEqual([]);
+
+    await page.getByTestId("comment-delete").first().click();
+    const gone = page.waitForResponse(
+      r => /\/comments\//.test(r.url()) && r.request().method() === "DELETE",
+    );
+    await page.getByTestId("delete-comment-confirm").click();
+    await gone;
+
+    // "the message says so" — the reason given is that it is already
+    // gone, not a generic failure.
+    await expect(page.getByTestId("delete-comment-dialog").getByRole("alert"))
+      .toContainText(/not found|no longer|already/i);
+
+    /**
+     * "and the list converges on refresh".
+     *
+     * A `page.reload()` is the *literal* instrument the bullet names,
+     * and unusually it is the honest one here: what converges is the
+     * client's stale cache against a file that changed out of band,
+     * and a refresh is precisely the user action being described.
+     * The mechanism under test is the server's answer, which a reload
+     * does not manufacture — the row is gone after it only because
+     * the file says so.
+     */
+    await page.reload();
+    await expect(page.getByTestId("comment")).toHaveCount(0);
+    expect(await commentsOnDisk(tracker.root, key)).toEqual([]);
   });
 });

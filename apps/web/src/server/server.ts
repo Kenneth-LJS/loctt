@@ -3152,7 +3152,17 @@ export function createWebApp(options: WebAppOptions) {
       // ERR-12/ERR-27: the comment box keeps the typed text on screen, so
       // the not-saved claim is what tells the user to retry rather than
       // retype. The body is the field the composer can mark (ERR-14).
-      error(res, (err as Error).message, 400, { ...REJECTED_WRITE, field: "body" });
+      //
+      // CMT-33: core's "no current user set; pass an explicit author" is
+      // a library's message — this surface has no author field to pass,
+      // so relaying it verbatim names a fix the user cannot perform.
+      // The CLI already rewrites it to name `loctt user switch`; the
+      // equivalent route out here is the header's user menu.
+      const message = /no current user/i.test((err as Error).message)
+        ? "A user must be selected before you can comment — pick one from "
+          + "the user menu, then post again."
+        : (err as Error).message;
+      error(res, message, 400, { ...REJECTED_WRITE, field: "body" });
     }
   };
 
@@ -3203,7 +3213,17 @@ export function createWebApp(options: WebAppOptions) {
     } catch (err) {
       // The comment is missing or the file could not be rewritten;
       // either way nothing was removed. Reload settles which it was.
-      error(res, (err as Error).message, 400, {
+      //
+      // CMT-34's third bullet: when the comment was *already gone*,
+      // the message has to say so. Core's "unknown comment id: <ulid>"
+      // is accurate but reads as a malformed-input error, and the id
+      // it names is one the user never typed and cannot act on.
+      const raw = (err as Error).message;
+      const message = /unknown comment id/i.test(raw)
+        ? "That comment is already gone — someone else deleted it. "
+          + "Refreshing will bring this list up to date."
+        : raw;
+      error(res, message, 400, {
         ...REJECTED_WRITE_NO_RETRY,
         recovery: { kind: "reload" },
       });
