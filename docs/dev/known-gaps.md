@@ -1680,3 +1680,34 @@ itself be unreadable — and naming the value means the ZodError's
 received input has to survive into the envelope. Neither is hard, but
 both are server work on a payload the CLI and MCP share, found during a
 gate rather than a build.
+
+## NEW-3's status pre-fill is unenactable, and `initialStatus` is dead plumbing
+
+**Found by the M3 gate round 2, 2026-09-01.**
+
+NEW-3's first bullet needs "+ Add task" **on a board column** to
+pre-select that column's status. Only a **board-level** button exists
+(BRD-40's, which is a different control on a different case).
+
+**M3.1 built per-column controls and removed them**, recorded in
+`TEMP-BUILD-PLAN.md`: a column still rendering for a status deleted
+from `workflow.yaml` since page load then carried a create control,
+and that is what broke BRD-42. The call is sound. **Its consequence
+for NEW-3 was never recorded**, and NEW-3 stayed counted among M3.4's
+satisfied cases.
+
+**`initialStatus` is plumbed and unreachable.** It threads through
+`CreateTaskProvider` and `CreateTaskModal`, and both call sites are
+`createTask.open()` with no argument (`Header.tsx:102`,
+`BoardView.tsx:392`). Measured: neutering the pre-fill
+(`&& false as boolean`) built clean and left **all 44** create tests
+green — the tenth built-but-uncalled capability found in this run.
+
+**What the test actually covers**, now that its title says so: bullets
+2 and 3 — the status is editable before submit, and the card lands in
+the column chosen. Bullet 1 is not covered because it cannot be
+reached.
+
+**Not fixed.** Restoring per-column controls means re-opening BRD-42's
+regression, which needs the stale-column case handled first. That is a
+build decision, not a test repair, and it was found during a gate.

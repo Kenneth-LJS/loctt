@@ -34,6 +34,7 @@ export function Header({
   identityUnknown = false,
   onToggleSidebar,
   canToggleSidebar = true,
+  createBlocked,
 }: {
   /** Null when the current-user read failed (SHL-40). */
   readonly currentUser: UserProfile | null;
@@ -47,6 +48,20 @@ export function Header({
    * state on its own.
    */
   readonly canToggleSidebar?: boolean;
+  /**
+   * NEW-41: a create started under a mismatched schema cannot land —
+   * every `/api/` route 409s. The shell deliberately stays up in that
+   * state (SHL-13, XS-34, XS-35), so the modal was reachable and its
+   * Create button enabled, and submitting produced no error and no
+   * POST: a working-looking button that silently did nothing.
+   *
+   * A45 recorded the opposite — "the shell never mounts and the modal
+   * cannot open" — and wrote no test on that basis. Measured against a
+   * live tracker at `.schema-version=9`: the button was visible and
+   * enabled, `n` opened the modal, and submit enabled once a title was
+   * typed.
+   */
+  readonly createBlocked?: string | undefined;
 }) {
   const createTask = useCreateTask();
   return (
@@ -99,6 +114,8 @@ export function Header({
           shortcut, so all three open the identical modal. */}
       <button
         type="button"
+        disabled={createBlocked !== undefined}
+        title={createBlocked}
         onClick={() => { createTask.open(); }}
         aria-label="New task"
         data-testid="header-new-task"
