@@ -100,7 +100,7 @@ interface RequestOptions {
  * Distinct from a network failure: the server answered, and answered
  * with something that is not what it claimed in `content-type`.
  */
-class UnparseableBodyError extends Error {
+export class UnparseableBodyError extends Error {
   constructor(cause: unknown) {
     super("the response from the LocTT server could not be read");
     this.name = "UnparseableBodyError";

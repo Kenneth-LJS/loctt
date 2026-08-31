@@ -28,6 +28,26 @@ import { apiClient } from "../client.ts";
  * keeps cross-view navigation from refetching the same lists.
  */
 
+/**
+ * Every picker's list is fetched at this size.
+ *
+ * `GET /api/*` paginates at `DEFAULT_PAGE_LIMIT = 100` when no `limit`
+ * is sent, and these hooks sent none. Measured against a tracker with
+ * 150 labels: `{ total: 150, items: 100 }` — the client was handed two
+ * thirds of the list and told the total, and nothing reconciled the
+ * two. The consequence is not a short list, it is a *wrong* one: the
+ * create modal's label field offers "Create «lbl-140»" for a label
+ * that already exists on disk but fell outside the first hundred, so
+ * searching for an existing label offers to duplicate it (NEW-7,
+ * NEW-25).
+ *
+ * 1000 is the server's `MAX_PAGE_LIMIT`; asking for more is a 400.
+ * These are config lists (labels, milestones, sprints, users,
+ * projects), not the task table — a workspace past a thousand of any
+ * of them needs a paged picker, which is a different ticket.
+ */
+const PICKER_PAGE_LIMIT = 1000;
+
 interface Page<T> {
   readonly items: readonly T[];
   readonly total: number;
@@ -62,7 +82,7 @@ interface ViewsConfig {
 export function useProjects() {
   return useQuery({
     queryKey: ["projects"],
-    queryFn: ({ signal }) => apiClient.get<ProjectsPage>("/api/projects", { signal }),
+    queryFn: ({ signal }) => apiClient.get<ProjectsPage>(`/api/projects?limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
   });
 }
 
@@ -76,21 +96,21 @@ export function useViews() {
 export function useLabels() {
   return useQuery({
     queryKey: ["labels"],
-    queryFn: ({ signal }) => apiClient.get<Page<LabelDef>>("/api/labels", { signal }),
+    queryFn: ({ signal }) => apiClient.get<Page<LabelDef>>(`/api/labels?limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
   });
 }
 
 export function useMilestones() {
   return useQuery({
     queryKey: ["milestones"],
-    queryFn: ({ signal }) => apiClient.get<Page<MilestoneDef>>("/api/milestones", { signal }),
+    queryFn: ({ signal }) => apiClient.get<Page<MilestoneDef>>(`/api/milestones?limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
   });
 }
 
 export function useSprints() {
   return useQuery({
     queryKey: ["sprints"],
-    queryFn: ({ signal }) => apiClient.get<Page<SprintDef>>("/api/sprints", { signal }),
+    queryFn: ({ signal }) => apiClient.get<Page<SprintDef>>(`/api/sprints?limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
   });
 }
 
@@ -105,7 +125,10 @@ export function useUsers() {
     // prevents, and that is a different question from resolving an
     // existing reference.
     queryFn: ({ signal }) =>
-      apiClient.get<UsersPage>("/api/users?include_archived=true", { signal }),
+      apiClient.get<UsersPage>(
+        `/api/users?include_archived=true&limit=${String(PICKER_PAGE_LIMIT)}`,
+        { signal },
+      ),
   });
 }
 

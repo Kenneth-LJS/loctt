@@ -11,6 +11,7 @@ import {
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CreateTaskProvider } from "../create/CreateTaskProvider.tsx";
 import { Header } from "./Header.tsx";
 
 /**
@@ -93,10 +94,17 @@ async function renderHeader() {
   const listRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/list",
-    component: () =>
-      UNKNOWN
-        ? <Header currentUser={null} identityUnknown onToggleSidebar={() => undefined} />
-        : <Header currentUser={KEN} onToggleSidebar={() => undefined} />,
+    // The provider is required because the header's "+ New task"
+    // button opens the shared create modal (M3.4, NEW-1) — one modal
+    // for all three entry points, so the button reaches it through
+    // context rather than owning its own copy.
+    component: () => (
+      <CreateTaskProvider>
+        {UNKNOWN
+          ? <Header currentUser={null} identityUnknown onToggleSidebar={() => undefined} />
+          : <Header currentUser={KEN} onToggleSidebar={() => undefined} />}
+      </CreateTaskProvider>
+    ),
   });
   const settingsRoute = createRoute({
     getParentRoute: () => rootRoute,

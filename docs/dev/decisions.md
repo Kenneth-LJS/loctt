@@ -2811,6 +2811,310 @@ renders the reason. Only the UI test's expectation would move from
 `timeline-unscheduled-reason-<key>`.
 
 
+### A42 · `createTask` throws a typed error, so a rejected value is a 400 and not a 500
+
+**Ticket:** M3.4 · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** `createTask` threw a bare `Error` for anything
+`validateTaskAgainstWorkflow` rejected. The web route's catch has
+branches for `ArchivedReferenceError`, `ZodError` and
+`TaskUpdateError`; a bare `Error` matched none and escaped through the
+generic handler.
+
+**Measured at SHA 610ae29**, against a real tracker with a `number`
+custom field `points`, value `"not-a-number"`:
+
+    POST /api/tasks   -> HTTP 500
+      {"code":"unknown","data_state":"unknown",
+       "detail":"invalid task: fields.points: expected finite number,
+                 got string"}
+
+    POST /api/tasks/T-1/set (same value, same validator message)
+                      -> HTTP 400
+      {"code":"validation_failed","field":"fields.points",
+       "data_state":"not_saved"}
+
+Two write paths giving two different answers about the same rejected
+value. The create side breaks P4 (the cause was in `detail`, which the
+client's envelope does not render), ERR-18 (`data_state: "unknown"` was
+false — nothing was written), and made NEW-40 unsatisfiable, since the
+form can only place a message at a field if `field` is in the envelope.
+
+**What had to be decided.** Whether to add a `catch`-all branch in the
+web server that reinterprets bare errors, or to fix the throw in core.
+
+**Options considered.**
+
+- *Pattern-match the message in `handleCreateTask`.* Costs: it puts a
+  string-matching rule in one surface for a defect in core, so the CLI
+  and MCP keep the untyped throw, and the next surface repeats the
+  work. It is also the kind of match that breaks silently when the
+  message is reworded.
+- *Throw a typed `TaskUpdateError` from `createTask`.* Costs: it
+  changes an error type every caller of core sees.
+
+**Decision.** The second. `invalidValueError` — the helper `setField`
+has always used — is now exported and called from `createTask` with an
+`"invalid task"` prefix, so both write paths share the message rule and
+the single-error `field` rule and cannot drift. The web route forwards
+`err.field` into the envelope.
+
+The CLI and MCP inherit the improvement: both surface `LocttError`'s
+fields, so a rejected create now reports `validation_failed` there too
+rather than an untyped crash.
+
+**To revert.** Restore the bare `throw new Error(...)` in
+`packages/core/src/task/create.ts` and drop the `field` spread in
+`handleCreateTask`. `apps/web/src/server/server.create-validation.test.ts`
+goes red immediately, which is the intended alarm.
+
+
+### A43 · Every picker fetches at `limit=1000`, not the server's default page
+
+**Ticket:** M3.4 · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** The sidebar hooks (`useProjects`, `useLabels`,
+`useMilestones`, `useSprints`, `useUsers`) sent no `limit`, and
+`GET /api/*` paginates at `DEFAULT_PAGE_LIMIT = 100` when none is
+given.
+
+**Measured** against a tracker seeded with 150 labels:
+
+    GET /api/labels            -> { total: 150, items: 100 }
+    GET /api/labels?limit=1000 -> { total: 150, items: 150 }
+
+The damage is not a short list, it is a wrong one. `LabelsField`
+decides whether to offer "Create «name»" by searching the list it was
+handed, so `lbl-140` — present on disk, outside the first hundred —
+was invisible and the form offered to create a duplicate of it. That
+defeats NEW-7's inline-create branch and NEW-25's searchable picker,
+and the same reasoning applies to the milestone, sprint, assignee and
+reporter pickers.
+
+**What had to be decided.** Whether to paginate the pickers properly
+or to raise the request size.
+
+**Options considered.**
+
+- *Build paging/incremental search into every picker.* Costs: five
+  components and a server-side search parameter, for a workspace size
+  no one has yet. It is the right answer eventually and the wrong one
+  to bundle into this ticket.
+- *Request `limit=1000` (the server's `MAX_PAGE_LIMIT`).* Costs: a
+  workspace with more than a thousand labels is still wrong, and
+  silently so.
+
+**Decision.** The second, as `PICKER_PAGE_LIMIT` in `sidebarData.ts`.
+These are config lists, not the task table. A workspace past a
+thousand of any of them needs a paged picker, which is its own ticket —
+noted in `known-gaps.md`.
+
+**To revert.** Drop the `?limit=` from the five query functions.
+`sidebarData.test.tsx` goes red on all five.
+
+
+### A44 · NEW-20's "ask" state is unreachable; a ghost default is a config error
+
+**Ticket:** M3.4 · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** NEW-20 sets `projects.yaml#default: ghost` naming no
+such project, and requires resolution to "fall through to the
+unique-single-project rung, and failing that, to the ask state of
+NEW-19".
+
+**Measured:** it cannot. `ProjectsConfigSchema.superRefine`
+(`packages/contracts/src/projects.ts`) rejects a `default` that is not
+in the projects list *at parse time*, so:
+
+    GET /api/projects -> HTTP 400
+      {"code":"config_invalid",
+       "message":"projects.yaml is not valid: default default project
+                  'ghost' is not in the projects list"}
+
+There is no project list for the modal to fall through *to*. The
+workspace is in a config-error state before resolution is reached.
+
+**What had to be decided.** Whether to relax the schema so a ghost
+default parses and resolution can degrade, or to treat the config error
+as the answer.
+
+**Options considered.**
+
+- *Relax `ProjectsConfigSchema` to warn rather than reject.* Costs: it
+  changes config validation for every surface — CLI, MCP and web — to
+  satisfy one web case, and it weakens a check that currently catches
+  the drift at the boundary, where it is cheapest to explain. That is a
+  scope change, not an implementation choice.
+- *Treat the 400 as NEW-20's "surfaced somewhere actionable".* Costs:
+  the case's first two bullets are not exercised, because the states
+  they describe do not exist.
+
+**Decision.** The second. NEW-20's third bullet — "the config drift is
+surfaced somewhere actionable" — is satisfied, and strictly better than
+the modal quietly degrading: the user is told the file is wrong and
+which key is at fault. The first two bullets are recorded as
+unsatisfiable in `TEMP-RUN-WORKFLOW.md` rather than faked with a test
+that asserts something else.
+
+**A real defect found while measuring this**, logged separately in
+`known-gaps.md`: the message reads "default default project 'ghost'",
+doubling the word.
+
+**To revert.** If the schema is later relaxed, `resolveProjectChoice`
+already returns `{kind: "ask"}` for an `effective_default` that names
+no live project — that path is built and unit-tested
+(`projectChoice.test.ts`, "falls through silently…"). Only a browser
+test for the ghost case would need adding.
+
+
+### A45 · NEW-41 is verified against `future`, because `outdated` cannot exist
+
+**Ticket:** M3.4 · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** NEW-41 requires the modal not to offer a broken
+create "with `.schema-version` behind `CURRENT_SCHEMA_VERSION`".
+
+**Measured:** there is no such state. `CURRENT_SCHEMA_VERSION` is 1,
+and `readSchemaVersion` rejects anything below 1 as malformed
+(`n < 1` throws `SchemaUnmigratableError`). So:
+
+    .schema-version = 0 -> schema_status.kind = "unknown"
+                           (".schema-version must be a positive
+                             integer, got: 0")
+    .schema-version = 2 -> schema_status.kind = "future"
+
+The `outdated` branch in `packages/core/src/diagnostics/info.ts:137` is
+unreachable at this schema version — the repo's own migrate test skips
+itself with "can't go below 1" for the same reason.
+
+**What had to be decided.** Whether to leave the case untested or to
+verify the reachable equivalent.
+
+**Options considered.**
+
+- *Mark it unsatisfiable and test nothing.* Costs: the behaviour the
+  case is really about — a mismatched schema must not offer a create
+  that would write under the wrong one — goes unverified, when a
+  reachable state exercising the identical guard exists.
+- *Verify against `future`.* Costs: the literal word "outdated" is not
+  what is tested, so a future schema v2 should revisit this.
+
+**Decision.** The second. Both states go through the same server gate:
+every route returns 409 `schema_mismatch`, so the shell never mounts
+and the modal cannot open — NEW-41's first branch ("either does not
+open"), satisfied structurally rather than by a disabled button. This
+is covered by the existing `flow-schema-mismatch.spec.ts`, which
+already asserts the app is gated; no create-specific test is added,
+because there is no create surface to test in that state.
+
+**To revert.** When `CURRENT_SCHEMA_VERSION` moves past 1, the
+`outdated` state becomes reachable and NEW-41 should be re-verified
+against it directly.
+
+
+### A46 · The double-submit guard is a ref, not state and not `disabled`
+
+**Ticket:** M3.4 · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** NEW-29 requires two rapid submits to create exactly
+one task. The obvious implementations both fail, and both fail
+*silently green*.
+
+**Measured**, all three variants, with two clicks dispatched in one
+tick from the first press:
+
+    disabled attribute only    -> 2 POSTs, 2 tasks on disk
+    `submitting` state check   -> 2 POSTs, 2 tasks on disk
+    `inFlight` ref             -> 1 POST,  1 task
+
+`disabled` only appears after React re-renders, which is after the
+second click. The state check is worse than it looks: every click
+handler closes over its render's value of `submitting`, so two clicks
+in the same tick both read `false` and both proceed.
+
+**What had to be decided.** Nothing about the fix once measured — a ref
+is the only variant that works. What had to be decided was **how the
+test drives it**, because the first version of the test passed with the
+guard deleted.
+
+**Options considered.**
+
+- *`click({force: true})` on the disabled button.* Asserts only that
+  the attribute is set; the browser swallows the click.
+- *Dispatch after a real Playwright click.* That click lets React
+  re-render, so later handlers already see `submitting === true` — the
+  test passed with the guard removed. Measured.
+- *Dispatch both clicks in one tick, from the first press.* Reproduces
+  the real race.
+
+**Decision.** The ref, plus the third test shape. The `disabled`
+attribute is kept as well — it is the visible pending state NEW-29's
+second bullet asks for — but it is not the guard.
+
+**To revert.** Delete `inFlight` and its two assignments in
+`CreateTaskModal.tsx`. NEW-29 goes red with "Expected length: 1,
+Received length: 2".
+
+
+### A47 · An archived-reference rejection names the entity, not its ULID
+
+**SUPERSEDED IN PART — see K13.** A47's core finding stands: the
+message named a ULID the user never chose, and resolving the name in
+core's guard (not the web client) was right, because the CLI and MCP
+print the same string. What did **not** stand was the `name (id)`
+format: it broke TSK-46, whose test asserts the ULID is absent. The
+shipped format is the **name alone**, which satisfies ERR-43 and TSK-46
+as written. Ken has ruled (K13) that label-vs-key is not settled
+per-site and gets a project-wide audit after M4, across all 35 core
+error sites that interpolate a raw id. This site is in that scope.
+
+**Ticket:** M3.4 · **Date:** 2026-08-30 · **Commit:** (this one)
+
+**The situation.** Found by writing NEW-35's test, which requires the
+message to name the milestone "by its label". Measured against a real
+tracker, archiving a milestone the modal had selected:
+
+    Couldn't create the task: cannot assign archived milestone
+    "01M19KQKWHX80KPY0WQ4B2Z067" to milestone; unarchive it first
+
+A ULID is not something the user chose, typed, or can recognise — they
+picked "v1.0 launch" from a picker. The message names the right thing
+in the wrong vocabulary, which is a P4 failure (a message must name its
+cause in terms the user can act on), and it made NEW-35's first bullet
+unsatisfiable on every surface at once: the same string is what the CLI
+and MCP print.
+
+**What had to be decided.** Whether to resolve the name in the web
+client (which has the milestone list already) or in core's guard.
+
+**Options considered.**
+
+- *Resolve it client-side, in the modal.* Costs: the CLI and MCP keep
+  printing the ULID, so the same rejection reads differently depending
+  on where you hit it — and the surface that has the *least* context
+  about the config would be the only one that explains itself. It also
+  means parsing an id back out of a message string, which breaks the
+  moment the wording changes.
+- *Resolve it in `assertNotArchivedReferences`.* Costs: it changes an
+  error string every surface and three existing tests depend on.
+
+**Decision.** The second. `displayNameFor` resolves id → `"name (id)"`
+from the config slices the guard already loads, so all three surfaces
+improve together. **The id is kept alongside the name**, deliberately:
+identity is the ULID (P-2), and a user grepping `task.md` or
+`milestones.yaml` needs the id the message is actually about. Two
+milestones may also share a name.
+
+**Three green tests were asserting the old message** — each pinned
+`archived <kind> "<bare id>"` — and were updated to require both halves.
+Flagged here per CLAUDE.md: they were encoding the defect, not
+protecting behaviour.
+
+**To revert.** Make `displayNameFor` return `id` unchanged. The three
+`archived-guard.test.ts` assertions go red immediately, which is the
+intended alarm.
+
+
 ### K8 · A board column is a group of tickets, and reordering inside one works across statuses
 
 **Date:** 2026-08-30 · **Ken's ruling — an agent may not revert this.**

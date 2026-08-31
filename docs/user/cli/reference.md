@@ -407,6 +407,23 @@ Every field `createTask` accepts is settable at creation:
 `create_task` takes the same set, so a task created either way carries
 the same fields without a follow-up `set`.
 
+A rejected value fails the create, names what was wrong, and writes
+nothing — no task directory, and no key consumed. Most rejections are
+caught before core is reached, with a message naming the valid options:
+
+```
+$ loctt create "Ship it" --status shipped
+Error: unknown status 'shipped'. Known: backlog, in_progress, done, wont_do
+
+$ loctt create "Ship it" --milestone no-such-milestone
+Error: unknown milestone: no-such-milestone
+```
+
+Anything that gets past those guards is rejected by core's own
+validator, which names the field (`invalid task: <field>: <reason>`).
+That is the same validator, the same message rule and the same field
+attribution `loctt set` uses, so both write paths answer identically.
+
 ### `loctt list`
 
 List tasks with optional filtering. Without `--query` or `--view`, lists the

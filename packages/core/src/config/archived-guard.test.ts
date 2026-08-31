@@ -76,7 +76,21 @@ describe("archived-reference guard: createTask", () => {
           await saveState(locttDir, state);
         }
       }),
-    ).rejects.toThrow(new RegExp(`archived milestone "${v1.id}"`));
+    // Names the milestone the way the user knows it — the label, not
+    // the stored key. ERR-43 requires exactly that ("the configured
+    // label ... not the stored key"), and TSK-46 asserts the ULID is
+    // absent from the message entirely.
+    //
+    // This assertion has moved twice. It first required the bare id
+    // and nothing else, which pinned the defect NEW-35 found. A47 then
+    // made it `name (id)`, on the argument that the id keeps the
+    // message actionable against the file — which broke TSK-46.
+    //
+    // Ken's ruling (K13): the label-vs-key question is not settled
+    // per-site. It gets a project-wide audit after M4, covering all 35
+    // core error sites that interpolate a raw id. Until then this is
+    // the reading that satisfies both written cases.
+    ).rejects.toThrow(new RegExp(`archived milestone "v1"`));
   });
 
   it("rejects createTask with an archived sprint", async () => {
@@ -101,7 +115,8 @@ describe("archived-reference guard: createTask", () => {
           await saveState(locttDir, state);
         }
       }),
-    ).rejects.toThrow(new RegExp(`archived sprint "${s1.id}"`));
+    // As above: the sprint's own name, with the id retained.
+    ).rejects.toThrow(new RegExp(`archived sprint "Sprint 1"`));
   });
 
   it("rejects createTask with an archived assignee", async () => {
@@ -161,7 +176,8 @@ describe("archived-reference guard: createTask", () => {
           await saveState(locttDir, state);
         }
       }),
-    ).rejects.toThrow(new RegExp(`archived project "${alt.id}"`));
+    // As above: the project's own name, with the id retained.
+    ).rejects.toThrow(new RegExp(`archived project "Alt"`));
   });
 
   it("permits createTask when references are live", async () => {

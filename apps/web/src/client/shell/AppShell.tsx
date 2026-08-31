@@ -2,6 +2,8 @@ import type { TrackerInfoResponse, UserProfile } from "@loctt/contracts";
 import { Outlet } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
+import { CreateTaskProvider } from "../create/CreateTaskProvider.tsx";
+import { ToastProvider } from "../ui/Toast.tsx";
 import { Header } from "./Header.tsx";
 import { SchemaBanner } from "./SchemaBanner.tsx";
 import { ServerUnreachableBanner } from "./ServerUnreachableBanner.tsx";
@@ -45,6 +47,14 @@ export function AppShell({
   const today = info.today;
 
   return (
+    // The create modal and the toast region are app-level, not
+    // per-view: `n` opens the modal from any route (NEW-4), and the
+    // success toast has to outlive the modal that raised it and the
+    // navigation its "Open" link performs (NEW-12). Mounted inside the
+    // router so `useNavigate` resolves, and inside the query provider
+    // so the form's config reads share the app's cache.
+    <ToastProvider>
+    <CreateTaskProvider>
     <div className="flex h-screen flex-col">
       {/* SHL-41: an unreachable server is app-level, not per-view. A
           user watching a cached board while the server dies sees
@@ -76,5 +86,7 @@ export function AppShell({
         </main>
       </div>
     </div>
+    </CreateTaskProvider>
+    </ToastProvider>
   );
 }
