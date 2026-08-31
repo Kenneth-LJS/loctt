@@ -945,7 +945,7 @@ test.describe("TSK — task detail read shell", () => {
     await expect(current).toHaveJSProperty("disabled", true);
   });
 
-  // @verifies TSK-21
+  // @verifies TSK-51
   //
   // The Move *failure* path. A9 records why this needs its own test:
   // there is no single-task move endpoint, so a move goes through
@@ -960,7 +960,7 @@ test.describe("TSK — task detail read shell", () => {
   // `{ bulk_op_id, succeeded, failed: [{ taskId, error }], moved }`.
   // Inventing a shape here would make the test pass against a client
   // reading a field the server never sends.
-  test("TSK-44: a move the server reports as failed keeps the dialog open and names it", async ({
+  test("TSK-51: a move the server reports as failed keeps the dialog open and names it", async ({
     page,
     tracker,
   }) => {
@@ -1024,7 +1024,7 @@ test.describe("TSK — task detail read shell", () => {
   // for exactly that, and without the navigate the address bar keeps
   // a stale key while the page re-resolves it by history — which
   // looks correct and is not.
-  test("TSK-44: a successful move rekeys the task and follows it to the new key", async ({
+  test("TSK-21: a successful move rekeys the task and follows it to the new key", async ({
     page,
     tracker,
   }) => {
