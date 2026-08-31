@@ -44,6 +44,8 @@ Commands:
   calendar show                   Print the calendar config (timezone, working days, holidays)
   rerank <source> <relationship> <target> [--before <task>] [--after <task>]
   board-rerank <task> [--before <task>] [--after <task>]
+  board-move <task> [--status <s>] [--before <task>] [--after <task>]
+                                   moves column and position in ONE write
   create <title> [--project <key>] [--status <s>] [--priority <p>] [--type <t>]
                                    [--assignee <u>] [--reporter <u>] [--due <d>]
                                    [--start <d>] [--estimate <e>] [--milestone <m>]

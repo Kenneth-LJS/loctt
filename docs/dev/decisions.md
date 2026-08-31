@@ -3585,3 +3585,199 @@ red and a per-route catch becomes the right fix at that point.
 **Supersedes.** A48's premise is unaffected (the all-or-nothing parse
 still stands), but its framing assumed a server fix would accompany
 it. It does not.
+
+---
+
+### A51 · `useBoardDrag` is generalized in place, not forked for `/sprints`
+
+**Ticket:** M3.5 · **Date:** 2026-08-31
+
+**The situation.** The ticket reported a previous agent's *impression*
+— explicitly flagged as untested — that the board's drag primitives
+were reusable for sprint columns, and asked that it be verified rather
+than assumed.
+
+**The measurement.** Read end to end. `useBoardDrag` is column-agnostic
+in everything that matters: the 5px threshold, the mid-drag snapshot
+(BRD-32), `elementFromPoint` → `[data-column-id]` resolution, the
+`Esc` cancel, the vanished-column cancel (BRD-36) and `isNoOpDrop` all
+work from a column `id` and the bucket map. Exactly **two** things were
+status-specific: the `columns: readonly BoardColumn[]` parameter type,
+and one call to `statusForColumn(targetColumn)` on a cross-column drop.
+
+**What had to be decided.** Fork the hook, or widen it.
+
+**Options considered.**
+
+1. **A second `useSprintDrag`.** Rejected. It would duplicate ~200
+   lines whose comments record two geometry bugs that were measured
+   and fixed once; the copy would not carry the fixes forward, and the
+   next change to either would drift.
+2. **Widen the hook.** Chosen. A `DraggableColumn` interface (`{ id }`)
+   as the generic bound, and a `fieldForColumn` callback for the one
+   status-specific line, defaulting to the board's existing rule so
+   `BoardView` is byte-for-byte unchanged in behaviour.
+
+**Why.** The guidance is against a *divergent* second implementation.
+One parameter is a smaller change than a fork, and `BoardColumn`
+structurally satisfies `DraggableColumn`, so the board needed no edit
+at all — its 30 existing tests pass untouched.
+
+**To revert.** Delete `fieldForColumn` and `DraggableColumn`, restore
+the `BoardColumn` parameter type and the direct `statusForColumn` call.
+`/sprints` would then need its own hook.
+
+---
+
+### A52 · The sprint drop writes through `useSetField`, not `boardMove`
+
+**Ticket:** M3.5 · **Date:** 2026-08-31
+
+**The situation.** The board's drop is one atomic `boardMove` writing
+`status` + `board_rank`. The obvious symmetry would route a sprint
+drop through the same op.
+
+**What had to be decided.** Which write verb a sprint reassignment uses.
+
+**Options considered.**
+
+1. **Extend `boardMove` to take a sprint.** Rejected. `board_rank` is
+   ranked *within a board column*, and a sprint column is not one — so
+   this would rewrite `board_rank` as a side effect of a sprint change,
+   silently reordering the board a user was not looking at. It would
+   also mean a second grant in `BOARD_MOVE_GRANT`.
+2. **`useSetField` with `field: "sprint"`.** Chosen. One field, the
+   same verb the meta panel uses, which brings the optimistic rollback
+   SPR-5 needs and routes through `setFields` — and therefore through
+   `resolveSprintIdFromInput`, which is the guard A49 measured as
+   already satisfying SPR-36's server half.
+
+**Why.** `/sprints` has no ordering of its own. SPR-4 asks for the
+`sprint` field to be written and says nothing about rank; writing one
+anyway is scope the case does not carry.
+
+**Consequence, recorded honestly.** An intra-column drop on `/sprints`
+issues no write and reorders nothing — there is no per-sprint sequence
+to reorder into. SPR-4's last bullet only requires that a drop back
+where it started writes nothing, which holds.
+
+**To revert.** Replace the `SprintWriter` component with a `boardMove`
+call carrying a sprint id, and add `sprint` to the auto-managed grant.
+
+---
+
+### A53 · SPR-17 is a bounded render window, not a measuring virtualizer
+
+**Ticket:** M3.5 · **Date:** 2026-08-31
+
+**The situation.** SPR-17 asks that a 400-task column "virtualize or
+paginate" while the header still reads the true total.
+
+**What had to be decided.** Which of the two the case allows.
+
+**Options considered.**
+
+1. **A measuring virtualizer** (absolute positioning off a scroll
+   offset). Rejected. The drag resolves its drop slot from
+   `elementFromPoint` and each card's real `getBoundingClientRect`, and
+   SPR-4's drop must land between the neighbours the user *saw*. Cards
+   lifted into a transformed container make that geometry disagree with
+   the screen — the exact bug class `BoardView`'s own comments record
+   being measured and fixed twice.
+2. **A bounded window with an explicit "show more".** Chosen. The
+   column renders 50 cards in ordinary flow and names how many are
+   hidden.
+
+**Why.** The case says "virtualizes **or** paginates" — this is the
+second, and it keeps the drag geometry honest. The header count comes
+from the bucket, not from what is rendered, so 400 reads 400.
+
+**Consequence, recorded honestly.** A card beyond the window is not a
+drop neighbour until revealed. It is not on screen, so this is the
+bargain any windowing makes.
+
+**To revert.** Replace `VirtualCards` with a virtualizer and re-verify
+every SPR-4 / SPR-24 drop case against it.
+
+---
+
+### A54 · The `+N` reveal is a portalled fixed-position popover
+
+**Ticket:** M3.5 (K12) · **Date:** 2026-08-31
+
+**The situation.** K12 authorises MSL-20's reveal. The app already has
+`Menu`, a popover with outside-click and Escape handling.
+
+**The measurement.** `Menu` positions its panel with CSS
+(`absolute`, anchored to the trigger's wrapper). Both of MSL-20's call
+sites clip: the list table is inside
+`overflow-x-auto overflow-y-hidden` (`ListView.tsx:467`) and a board
+column inside `overflow-y-auto`. An absolutely-positioned panel is cut
+off by whichever ancestor scrolls. No `createPortal` existed anywhere
+in the client (`grep createPortal apps/web/src/client` → 0 hits).
+
+**The decision.** `LabelOverflow` renders its panel through
+`createPortal` to `document.body` with `position: fixed`, placed from
+the trigger's measured rect in a `useLayoutEffect` so it can flip at
+the viewport edges. `Menu` is left alone.
+
+**Why not widen `Menu`.** It is used by the header menu and the filter
+and bulk dropdowns, none of which clip. Changing its positioning model
+would re-open three working surfaces to satisfy a fourth.
+
+**Consequence.** A fixed panel does not follow its trigger when an
+ancestor scrolls, so it closes on scroll and resize rather than
+drifting away from the pill it belongs to.
+
+**One component, both surfaces.** K12 requires it, and it was already
+true: `LabelsCell` is imported by both `ListView` and `BoardCard`. The
+pill was extracted to `LabelPill` so the revealed labels are the *same*
+control as the visible ones rather than a lookalike.
+
+**To revert.** Replace `LabelOverflow` with the previous
+`<span title={…}>+N</span>` and delete `LabelPill`, inlining it back.
+MSL-20's second bullet then fails again.
+
+---
+
+### A55 · The query language has no "field is unset" operator, so SPR-6 asserts the negation
+
+**Ticket:** M3.5 · **Date:** 2026-08-31
+
+**The situation.** SPR-6's third bullet: a task whose sprint was
+cleared "subsequently matches `sprint` being unset in the query
+language, consistently with what the CLI reports".
+
+**The measurement.** Against a scratch tracker with the CLI built from
+this worktree, one task assigned and one not:
+
+    sprint = null    → No tasks found.   (matches nothing, not an error)
+    sprint is null   → Error: expected operator but got "is"
+    sprint = empty   → No tasks found.
+    sprint is empty  → Error: expected operator but got "is"
+
+Positive control, same tracker, same session:
+
+    sprint = "<ULID>"  → T-1        (the assigned task)
+    sprint != "<ULID>" → T-2        (the unassigned one)
+
+`grep -n -i "null\|unset\|absent" docs/user/common/query-language.md`
+returns nothing relevant. The sprint filter also takes the **ULID**,
+quoted — a bare ULID is a parse error, and the sprint *name* matches
+nothing.
+
+**The decision.** SPR-6's spec asserts the negation
+(`sprint != "<id>"` matches the cleared task, `sprint = "<id>"` does
+not), which is what the CLI actually offers. No query-language change
+is made — adding an `is null` operator is a language change well
+outside a view ticket.
+
+**Why this still satisfies the bullet.** The bullet's substance is
+that the cleared task is *findable* and that the browser and the CLI
+agree. Both hold. What does not exist is a dedicated operator.
+
+**To revert.** If an `is null` / `is unset` operator is added to the
+query language, tighten the SPR-6 spec to use it directly.
+
+**Logged as a gap.** See `known-gaps.md` — the absence is a real
+usability hole beyond this ticket.

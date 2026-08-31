@@ -709,6 +709,41 @@ the task's current one, nothing is written — `board_rank` and
 `updated_at` are unchanged and no history entry is added. The command
 still succeeds and prints the rank.
 
+### `loctt board-move`
+
+Move a task to another board column **and** position it there, in a
+single write.
+
+`board-rerank` only reorders within the current column. Crossing a
+column boundary otherwise takes two commands — `loctt set <task>
+status <s>` then `loctt board-rerank <task>` — and a failure between
+them leaves the task in a column whose stored status contradicts it.
+This command writes `status` and `board_rank` as one change set, so
+both land or neither does.
+
+```
+loctt board-move <task> [--status <status>] [--before <task>] [--after <task>]
+```
+
+Omit `--status` to reposition within the task's current column; then
+`status` is not written at all, rather than resent at its current value.
+
+Unlike `board-rerank`, **`--before` and `--after` are not mutually
+exclusive here.** A drop lands *between* two neighbours, so passing
+both interpolates a rank between that pair. Passing neither appends the
+task to the end of the destination column.
+
+The anchors are validated against the *destination* column, not the
+task's current one — on a cross-column move the neighbours legitimately
+belong to the column being moved to. An anchor that no longer exists,
+or that has since left that column, is refused by name.
+
+Example: `loctt board-move T-9 --status in_progress --after T-7 --before T-4`
+
+A move that changes neither status nor rank is a **no-op**: nothing is
+written, `updated_at` is unchanged, and no history entry is added. The
+command still succeeds and prints the rank.
+
 ## Lifecycle
 
 ### `loctt archive`

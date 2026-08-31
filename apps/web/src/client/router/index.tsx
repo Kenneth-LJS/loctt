@@ -11,6 +11,7 @@ import { ListView } from "../list/ListView.tsx";
 import { NotFound } from "../routes/NotFound.tsx";
 import { Stub } from "../routes/Stub.tsx";
 import { AppBootstrap } from "../shell/AppBootstrap.tsx";
+import { SprintsView } from "../sprints/SprintsView.tsx";
 import { TaskDetail } from "../task/TaskDetail.tsx";
 import { TimelineView } from "../timeline/TimelineView.tsx";
 import { listSearchSchema } from "./listSearch.ts";
@@ -65,6 +66,7 @@ const ROUTE_REGIONS: Record<string, string> = {
   "/list": "the task list",
   "/board": "the board",
   "/timeline": "the timeline",
+  "/sprints": "the sprints view",
 };
 
 // `/` redirects to `/list`. TanStack Router uses `throw redirect(...)`
@@ -136,6 +138,16 @@ const taskDetailRoute = createRoute({
   },
 });
 
+// M3.5: the sprints overview. `/sprints/$key` below is M4.7's detail
+// and burndown, and is a separate route — a `$key` param cannot also
+// match the bare path.
+const sprintsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  errorComponent: RouteError,
+  path: "/sprints",
+  component: SprintsView,
+});
+
 const sprintDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   errorComponent: RouteError,
@@ -166,6 +178,7 @@ const routeTree = rootRoute.addChildren([
   boardRoute,
   timelineRoute,
   taskDetailRoute,
+  sprintsRoute,
   sprintDetailRoute,
   settingsRoute,
   initRoute,

@@ -257,6 +257,125 @@ describe("CLI commands", () => {
     }
   });
 
+  // @verifies K11
+  it("board-move --status writes status AND board_rank in one change set", async () => {
+    // K11: the CLI could not express a cross-column move at all. Two
+    // commands (`set status` then `board-rerank`) is the non-atomicity
+    // `boardMove` exists to fix, so the assertion is that BOTH fields
+    // landed from ONE invocation — not that the command printed.
+    await initLoctt(root);
+    for (const t of ["alpha", "bravo", "charlie"]) {
+      process.argv = ["node", "loctt", "create", t];
+      await main();
+    }
+    const locttDir = resolveLocttDir(root);
+    // An anchor already in the DESTINATION column. `boardMove`
+    // validates anchors against the column being moved *to* (BRD-35),
+    // so a backlog neighbour is correctly refused for an in_progress
+    // drop — measured.
+    process.argv = ["node", "loctt", "board-move", "T-1", "--status", "in_progress"];
+    await main();
+    process.exitCode = undefined;
+    consoleSpy.mockClear();
+
+    const beforeMove = await lookupByKey(locttDir, "T-3");
+    expect(beforeMove.frontmatter.status).not.toBe("in_progress");
+
+    process.argv = [
+      "node", "loctt", "board-move", "T-3",
+      "--status", "in_progress", "--before", "T-1",
+    ];
+    await main();
+    expect(process.exitCode).toBeUndefined();
+
+    const t1 = await lookupByKey(locttDir, "T-1");
+    const t3 = await lookupByKey(locttDir, "T-3");
+    // The status half.
+    expect(t3.frontmatter.status).toBe("in_progress");
+    // The rank half, from the same single write: --before places it
+    // ahead of T-1 in the destination column's sequence.
+    expect(t3.frontmatter.board_rank).toBeDefined();
+    expect(t1.frontmatter.board_rank).toBeDefined();
+    expect(t3.frontmatter.board_rank! < t1.frontmatter.board_rank!).toBe(true);
+  });
+
+  // @verifies K11
+  it("board-move without --status leaves status untouched", async () => {
+    // XS-9's rule, now reachable from the CLI: an intra-column
+    // reposition must not resend `status`. If `--status` defaulted to
+    // anything, or the command always wrote the field, this rewrites it.
+    await initLoctt(root);
+    for (const t of ["alpha", "bravo", "charlie"]) {
+      process.argv = ["node", "loctt", "create", t];
+      await main();
+    }
+    const locttDir = resolveLocttDir(root);
+    process.argv = ["node", "loctt", "set", "T-3", "status", "in_progress"];
+    await main();
+    process.exitCode = undefined;
+    consoleSpy.mockClear();
+
+    // Unanchored: appends to the end of T-3's own column. Anchors are
+    // beside the point here — the claim under test is about `status`.
+    process.argv = ["node", "loctt", "board-move", "T-3"];
+    await main();
+    expect(process.exitCode).toBeUndefined();
+
+    const t3 = await lookupByKey(locttDir, "T-3");
+    expect(t3.frontmatter.status).toBe("in_progress");
+    expect(t3.frontmatter.board_rank).toBeDefined();
+  });
+
+  // @verifies K11
+  it("board-move accepts --before and --after together", async () => {
+    // The one place this command deliberately differs from
+    // `board-rerank`, whose mutex exits 2 on the same pair. A drop
+    // lands BETWEEN two neighbours (BRD-32), so the pair is the
+    // position, and the rank must land strictly between theirs.
+    await initLoctt(root);
+    for (const t of ["alpha", "bravo", "charlie"]) {
+      process.argv = ["node", "loctt", "create", t];
+      await main();
+    }
+    const locttDir = resolveLocttDir(root);
+    // Give T-1 and T-2 real ranks in their shared column, ascending.
+    process.argv = ["node", "loctt", "board-rerank", "T-1"];
+    await main();
+    process.argv = ["node", "loctt", "board-rerank", "T-2"];
+    await main();
+    process.exitCode = undefined;
+
+    const t1before = await lookupByKey(locttDir, "T-1");
+    const t2before = await lookupByKey(locttDir, "T-2");
+    expect(t1before.frontmatter.board_rank! < t2before.frontmatter.board_rank!).toBe(true);
+
+    process.argv = [
+      "node", "loctt", "board-move", "T-3", "--after", "T-1", "--before", "T-2",
+    ];
+    await main();
+    // Not a usage error — `board-rerank` with the same flags exits 2.
+    expect(process.exitCode).toBeUndefined();
+
+    const t3 = await lookupByKey(locttDir, "T-3");
+    // Interpolated strictly between the pair, not appended past both.
+    expect(t3.frontmatter.board_rank! > t1before.frontmatter.board_rank!).toBe(true);
+    expect(t3.frontmatter.board_rank! < t2before.frontmatter.board_rank!).toBe(true);
+  });
+
+  // @verifies K11
+  it("board-move requires the task argument", async () => {
+    await initLoctt(root);
+    process.exitCode = undefined;
+    const errSpy = vi.mocked(console.error);
+    errSpy.mockClear();
+    process.argv = ["node", "loctt", "board-move"];
+    await main();
+    expect(process.exitCode).toBe(2);
+    const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(stderr).toMatch(/missing task/);
+    expect(stderr).toMatch(/loctt board-move/);
+  });
+
   it("board-rerank --after places the task behind the referenced sibling", async () => {
     await initLoctt(root);
     process.argv = ["node", "loctt", "create", "alpha"];

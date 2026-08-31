@@ -10,7 +10,7 @@
  * was redundant.
  */
 
-import { reorderBoardRank, reorderRelationship } from "@loctt/core";
+import { boardMove, reorderBoardRank, reorderRelationship } from "@loctt/core";
 import { z } from "zod";
 
 import { errorResult, text } from "../runtime/errors.js";
@@ -65,6 +65,36 @@ export const TOOLS: readonly ToolDef[] = [
         ...(after !== undefined ? { after } : {}),
       });
       return text(JSON.stringify(result, null, 2));
+    },
+  },
+  {
+    name: "move_board_card",
+    description: "Move a task to another board column AND position it there in a SINGLE write. Prefer this over calling `update_task` for `status` followed by `reorder_board`: those are two writes, and a failure between them leaves the task in a column its stored status contradicts. Pass `status` to cross a column boundary; omit it to reposition within the task's current column. `before` is the task the moved task lands ABOVE, `after` the one it lands BELOW; unlike `reorder_board` these are NOT mutually exclusive — passing both interpolates a rank between that pair. Passing neither appends to the end of the destination column. A column is a group of tickets, not a status: where `workflow.yaml`'s `boards` block collapses several statuses into one column, the anchors may carry any status in that column.",
+    inputSchema: {
+      ref: z.string().describe("Task key or ID being moved"),
+      status: z.string().optional().describe("Destination status. Omit for an intra-column reposition, which writes `board_rank` only and leaves `status` untouched."),
+      before: z.string().optional().describe("Task the moved task lands above"),
+      after: z.string().optional().describe("Task the moved task lands below"),
+    },
+    handler: async ({ locttDir }, args) => {
+      const status = args["status"] as string | undefined;
+      const before = args["before"] as string | undefined;
+      const after = args["after"] as string | undefined;
+      const result = await boardMove({
+        locttDir,
+        taskRef: args["ref"] as string,
+        ...(status !== undefined ? { status } : {}),
+        ...(before !== undefined ? { before } : {}),
+        ...(after !== undefined ? { after } : {}),
+      });
+      // The whole task would bury the two fields that changed in
+      // forty lines of frontmatter; the agent asked to move a card.
+      return text(JSON.stringify({
+        key: result.task.frontmatter.key,
+        status: result.task.frontmatter.status,
+        board_rank: result.rank,
+        rebalanced: result.rebalanced,
+      }, null, 2));
     },
   },
 ];

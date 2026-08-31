@@ -1,4 +1,4 @@
-import { reorderBoardRank, reorderRelationship, resolveLocttDir } from "@loctt/core";
+import { boardMove, reorderBoardRank, reorderRelationship, resolveLocttDir } from "@loctt/core";
 
 import { getArg, rejectUnknownFlags } from "../runtime/args.js";
 import { UsageError } from "../runtime/errors.js";
@@ -15,6 +15,7 @@ import { UsageError } from "../runtime/errors.js";
  */
 const RERANK_FLAGS: readonly string[] = ["--after", "--before"];
 const BOARD_RERANK_FLAGS: readonly string[] = ["--after", "--before"];
+const BOARD_MOVE_FLAGS: readonly string[] = ["--after", "--before", "--status"];
 
 export async function rerank(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, RERANK_FLAGS);
@@ -71,6 +72,53 @@ export async function boardRerank(args: string[], root: string): Promise<void> {
     ...(after !== undefined ? { after } : {}),
   });
   console.log(`Reranked ${task} on board (rank=${result.rank})`);
+  if (result.rebalanced) {
+    console.log(`(also rebalanced sibling ranks)`);
+  }
+}
+
+/**
+ * `loctt board-move <task> --status <status>` — move a card to
+ * another board column and position it there, in **one** write.
+ *
+ * K11: `boardMove` lived in core with only the web calling it. A CLI
+ * user crossing a column boundary had to run `loctt set <task> status`
+ * and then `loctt board-rerank <task>` — two writes, and a failure
+ * between them leaves the card in a column whose stored status
+ * contradicts it. That non-atomicity is the whole reason `boardMove`
+ * exists (BRD-41, XS-9), so the CLI could not express the operation
+ * the core op was built for.
+ *
+ * Unlike `board-rerank`, `--before` and `--after` are **not** mutually
+ * exclusive here: a drop lands between two neighbours, and BRD-32
+ * requires the rank to be interpolated against the pair the user saw.
+ * `board-rerank` keeps its mutex because `reorderBoardRank` refuses
+ * both; this command routes to `boardMove`, which takes them as
+ * bounds.
+ */
+export async function boardMoveCmd(args: string[], root: string): Promise<void> {
+  rejectUnknownFlags(args, BOARD_MOVE_FLAGS);
+  const task = args[1];
+  if (!task) {
+    throw new UsageError(
+      "missing task",
+      "loctt board-move <task> [--status <status>] [--before <task>] [--after <task>]",
+    );
+  }
+  const status = getArg(args, "--status");
+  const before = getArg(args, "--before");
+  const after = getArg(args, "--after");
+  const result = await boardMove({
+    locttDir: resolveLocttDir(root),
+    taskRef: task,
+    ...(status !== undefined ? { status } : {}),
+    ...(before !== undefined ? { before } : {}),
+    ...(after !== undefined ? { after } : {}),
+  });
+  const where = status === undefined
+    ? "within its column"
+    : `to ${result.task.frontmatter.status}`;
+  console.log(`Moved ${task} ${where} (rank=${result.rank})`);
   if (result.rebalanced) {
     console.log(`(also rebalanced sibling ranks)`);
   }

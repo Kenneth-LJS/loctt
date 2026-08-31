@@ -589,6 +589,91 @@ describe("MCP executeTool", () => {
     });
   });
 
+  describe("move_board_card", () => {
+    // @verifies K11
+    it("is registered with a `status` parameter", () => {
+      // The one thing that distinguishes it from `reorder_board`: the
+      // ability to cross a column boundary. Without `status` this tool
+      // is a duplicate of the one that already existed.
+      const tool = getTools().find(t => t.name === "move_board_card");
+      expect(tool).toBeDefined();
+      expect(tool?.inputSchema).toHaveProperty("ref");
+      expect(tool?.inputSchema).toHaveProperty("status");
+      expect(tool?.inputSchema).toHaveProperty("before");
+      expect(tool?.inputSchema).toHaveProperty("after");
+    });
+
+    // @verifies K11
+    it("writes status and board_rank from one call", async () => {
+      // K11: the two-write shape (`set_task_field` status, then
+      // `reorder_board`) can fail between the halves. Asserted on
+      // disk, both fields, from a single tool call.
+      await executeTool(root, "create_task", { title: "a" });
+      await executeTool(root, "create_task", { title: "b" });
+      const locttDir = resolveLocttDir(root);
+      const before = await lookupByKey(locttDir, "T-2");
+      expect(before.frontmatter.status).not.toBe("in_progress");
+
+      const result = await executeTool(root, "move_board_card", {
+        ref: "T-2",
+        status: "in_progress",
+      });
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text ?? "{}") as {
+        status: string;
+        board_rank: string;
+      };
+      expect(payload.status).toBe("in_progress");
+
+      const t2 = await lookupByKey(locttDir, "T-2");
+      expect(t2.frontmatter.status).toBe("in_progress");
+      expect(t2.frontmatter.board_rank).toBe(payload.board_rank);
+    });
+
+    // @verifies K11
+    it("omitting status leaves the task's status untouched", async () => {
+      // XS-9: an intra-column reposition must not resend `status`.
+      await executeTool(root, "create_task", { title: "a" });
+      await executeTool(root, "create_task", { title: "b" });
+      const set = await executeTool(root, "update_task", {
+        ref: "T-2",
+        field: "status",
+        value: "in_progress",
+      });
+      expect(set.isError).toBeUndefined();
+      const result = await executeTool(root, "move_board_card", { ref: "T-2" });
+      expect(result.isError).toBeUndefined();
+      const locttDir = resolveLocttDir(root);
+      const t2 = await lookupByKey(locttDir, "T-2");
+      expect(t2.frontmatter.status).toBe("in_progress");
+    });
+
+    // @verifies K11
+    it("accepts before and after together, unlike reorder_board", async () => {
+      // `reorder_board` refuses the pair; a drop lands BETWEEN two
+      // neighbours (BRD-32), so this tool must not inherit that mutex.
+      await executeTool(root, "create_task", { title: "a" });
+      await executeTool(root, "create_task", { title: "b" });
+      await executeTool(root, "create_task", { title: "c" });
+      await executeTool(root, "reorder_board", { ref: "T-1" });
+      await executeTool(root, "reorder_board", { ref: "T-2" });
+      const locttDir = resolveLocttDir(root);
+      const t1 = await lookupByKey(locttDir, "T-1");
+      const t2 = await lookupByKey(locttDir, "T-2");
+      expect(t1.frontmatter.board_rank! < t2.frontmatter.board_rank!).toBe(true);
+
+      const result = await executeTool(root, "move_board_card", {
+        ref: "T-3",
+        after: "T-1",
+        before: "T-2",
+      });
+      expect(result.isError).toBeUndefined();
+      const t3 = await lookupByKey(locttDir, "T-3");
+      expect(t3.frontmatter.board_rank! > t1.frontmatter.board_rank!).toBe(true);
+      expect(t3.frontmatter.board_rank! < t2.frontmatter.board_rank!).toBe(true);
+    });
+  });
+
   describe("get_task response shape", () => {
     // Regression: the attachments shape gained an optional `mime` field
     // (commit 4472ed3). These tests pin down the contract so future

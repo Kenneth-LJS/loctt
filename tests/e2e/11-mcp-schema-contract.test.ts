@@ -236,6 +236,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "move_board_card",
+            },
+            {
+              "hasDescription": true,
               "name": "move_task",
             },
             {
