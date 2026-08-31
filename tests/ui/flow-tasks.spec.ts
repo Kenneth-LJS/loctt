@@ -901,9 +901,53 @@ test.describe("TSK — task detail read shell", () => {
     await expect(listRow(page, "Still here")).toHaveCount(1);
     await expect(listRow(page, "Deleted underneath")).toHaveCount(0);
   });
-  // @verifies TSK-44
+  // @verifies TSK-21
   //
-  // The Move *failure* path. A6 records why this needs its own test:
+  // Bullet 1, which nothing asserted until now: "The picker lists
+  // non-archived projects, excluding the current one." Both halves were
+  // built and correct; the M2 gate proved they were unchecked by
+  // listing archived projects AND making the current one selectable,
+  // after which all 18 tests in this file still passed.
+  //
+  // The current-project half asserts the DOM property, not
+  // `toBeDisabled()`. Playwright retargets an element inside a <label>
+  // to that label's control unless it is itself a control-ish tag, and
+  // <option> is not on that list — so `toBeDisabled()` here evaluates
+  // the parent <select>, which is enabled, and reports "enabled" while
+  // its own call log shows it resolved to `<option disabled ...>`.
+  // Measured in isolation: the same markup without the <label> wrapper
+  // returns disabled=true.
+  test("TSK-21: the move picker omits archived projects and cannot re-pick the current one", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["project", "create", "Web App", "--prefix", "WEB"]);
+    await tracker.run(["project", "create", "Retired", "--prefix", "RET"]);
+    await tracker.run(["project", "archive", "Retired"]);
+    const [key] = await tracker.seed([{ title: "Movable task" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Move to project…" }).click();
+    const select = page.getByRole("dialog").getByLabel("Destination project");
+    await expect(select).toBeVisible();
+
+    // The archived project is not offered at all.
+    await expect(select.getByRole("option", { name: /Retired/ })).toHaveCount(0);
+    // A live one is — the positive control, so the assertion above
+    // cannot pass merely because the picker is empty or unrendered.
+    await expect(select.getByRole("option", { name: /Web App/ })).toHaveCount(1);
+
+    // The current project is present but not selectable, and says so.
+    const current = select.getByRole("option", { name: /current/ });
+    await expect(current).toHaveCount(1);
+    await expect(current).toHaveJSProperty("disabled", true);
+  });
+
+  // @verifies TSK-21
+  //
+  // The Move *failure* path. A9 records why this needs its own test:
   // there is no single-task move endpoint, so a move goes through
   // `POST /api/tasks/bulk/move`, which answers **200 with a `failed`
   // array** rather than a non-2xx. `useMoveTask` inspects `failed[0]`
@@ -969,7 +1013,7 @@ test.describe("TSK — task detail read shell", () => {
     expect(await frontmatterOf(tracker.root, key)).toBe(before);
   });
 
-  // @verifies TSK-44
+  // @verifies TSK-21
   //
   // The Move *success* path, against the real server — no
   // interception, so the rekey is the tracker's own.
