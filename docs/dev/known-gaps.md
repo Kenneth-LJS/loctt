@@ -1484,3 +1484,50 @@ set T-1 sprint S1`; then run the queries above.
 query parser, applied to every optional field rather than to `sprint`
 alone. SPR-6's spec asserts the negation in the meantime — see
 `decisions.md` A55.
+
+## `toBeDisabled()` silently checks the wrong element inside a `<label>`
+
+**Measured 2026-08-31, Playwright 1.62.1, isolated from this app.**
+
+Playwright's `elementState('disabled')` calls `retarget(node,
+'follow-label')` first. An element that does **not** match
+`a, input, textarea, button, select, [role=link|button|checkbox|radio]`
+and sits inside a `<label>` is retargeted to `enclosingLabel.control`.
+`<option>` is not on that list.
+
+So for markup like `MoveTaskDialog.tsx`'s —
+
+    <label>Destination project<select><option disabled>…</option></select></label>
+
+— `expect(option).toBeDisabled()` evaluates the parent **`<select>`**,
+which is enabled, and reports "enabled" while its own call log shows it
+resolved to `<option disabled value="…">`. Isolated repro: identical
+markup **without** the `<label>` wrapper returns `disabled=true`.
+
+**Use `toHaveJSProperty("disabled", true)`** (or `toHaveAttribute`) for a
+disabled `<option>`, or for any non-control element inside a label.
+Property and attribute assertions skip retargeting.
+
+**Why this is worth recording rather than just fixing:** the assertion
+does not error. It fails with a plausible message naming the right
+locator, so it reads as an application defect. It cost a Fable
+investigation to distinguish from one.
+
+## A stale `apps/web/dist` makes UI tests assert code that is not the source
+
+**Measured 2026-08-31 during TSK-21.**
+
+The Playwright fixture serves the built SPA from `apps/web/dist/client`.
+When that bundle predates the source, the browser renders old code while
+`git diff` shows the new. TSK-21's picker test failed against *correct*
+source: the browser received `{"name":"Retired","archived":true}` and
+rendered it anyway, because the bundle it was running had neither the
+filter nor the `disabled` attribute.
+
+This is the same shape as running a suite in the wrong worktree —
+verifying against something other than the code being read — and it
+produced a confident, wrong "shipping bug" report before it was caught.
+
+**Rebuild before trusting a UI failure that contradicts the source.**
+Never mid-suite: that empties `apps/cli/dist/` and fails unrelated specs
+with ENOENT.
