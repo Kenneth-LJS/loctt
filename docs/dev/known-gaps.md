@@ -1581,3 +1581,33 @@ dialog is open, or to ignore a 409 whose token predates the resolution
 K10 both touch, and no case describes it. XS-11's test therefore does
 **not** assert the dialog closes; it asserts the merged text reaches
 disk, which is what the bullet actually requires.
+
+## REL-16's PNG thumbnail is not built, and the reason was never written down
+
+**Found by the M2 gate's tag-to-case audit, 2026-09-01.**
+
+REL-16 (`flow-relationships.md:174`, an M2 **blocker**) bullet 1: "The
+PNG shows an inline image thumbnail." The build renders the image
+*family glyph* instead. Its test says so in a comment — "not satisfied
+by this build; see known-gaps" — and forwards to an entry that does not
+exist. Measured: `grep -ci thumbnail docs/dev/known-gaps.md` → 0, with
+43 `##` entries in the file as a positive control. So a blocker shipped
+knowingly unmet with its justification recorded nowhere, and the
+coverage tool scored the case green because the *other three* bullets
+are asserted.
+
+**It is not blocked by anything.** `TASK_ATTACHMENT_ITEM_RE`
+(`server.ts:833`) already serves individual attachment bytes, which is
+what an `<img src>` needs. This is unbuilt, not impossible.
+
+**Why it is not being built here:** the audit that found it was
+checking tag-to-case fidelity during M2's gate, and building an image
+thumbnail — with its own loading, error and oversized-file states — is
+a feature, not a test repair. It also raises questions no case answers:
+whether to render the full file inline (a 3 MB PNG per tile) or add a
+server-side resize, and what a corrupt image shows.
+
+**What the test asserts today is honest**: the family glyph, the
+filename, the human-readable size, and the MIME dispatch — bullets 2, 3
+and 4. Bullet 1 is the only gap, and it is now written down where the
+test's comment claimed it already was.
