@@ -685,10 +685,11 @@ Bulk edits *are* available — see `bulk_update_tasks`.
 
 ### Reordering
 
-`reorder_relationship` and `reorder_board` live under
-[Relationships and Ranks](#relationships-and-ranks) — they move a task
-within an ordering rather than changing its fields. Both take `before`
-**or** `after`, never both.
+`reorder_relationship`, `reorder_board` and `move_board_card` live
+under [Relationships and Ranks](#relationships-and-ranks) — they move a
+task within an ordering rather than changing its fields. The two
+`reorder_*` tools take `before` **or** `after`, never both;
+`move_board_card` takes both, because a drop lands between a pair.
 
 ## Calendar
 
@@ -753,6 +754,40 @@ A column is a *group of tickets*, not a status. Where `workflow.yaml`'s `boards`
 Returns the result of the reorder as JSON (`{ rank, rebalanced }`). Errors via `ReorderError`; passing both `before` and `after` errors with the same mutually-exclusive message as `reorder_relationship`.
 
 Reordering a task into the position it already occupies is a **no-op**: when the computed rank equals the current one, nothing is written — `board_rank` and `updated_at` are unchanged and no history entry is appended. The call still succeeds and returns the existing rank with `rebalanced: false`.
+
+### `move_board_card`
+
+Move a task to another board column **and** position it there in a
+single write.
+
+Prefer this over `update_task` for `status` followed by
+`reorder_board`. Those are two writes, and a failure between them
+leaves the task in a column whose stored status contradicts it; this
+tool writes `status` and `board_rank` as one change set, so both land
+or neither does.
+
+Omit `status` to reposition within the task's current column, in which
+case `status` is not written at all (not resent at its current value).
+
+Unlike `reorder_board`, **`before` and `after` are not mutually
+exclusive here.** A drop lands *between* two neighbours, so passing
+both interpolates a rank between that pair; passing neither appends to
+the end of the destination column. A column is a group of tickets, not
+a status, so the anchors may carry any status belonging to that column.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ref` | string | yes | Task key or ID being moved |
+| `status` | string | no | Destination status; omit for an intra-column reposition |
+| `before` | string | no | Task the moved task lands above |
+| `after` | string | no | Task the moved task lands below |
+
+Returns JSON `{ key, status, board_rank, rebalanced }`. Errors via
+`ReorderError` when an anchor no longer exists or has left the
+destination column, naming the anchor and telling you to reload.
+
+A move that changes neither status nor rank is a **no-op**: nothing is
+written, `updated_at` is unchanged, and no history entry is appended.
 
 ## Config and Git
 

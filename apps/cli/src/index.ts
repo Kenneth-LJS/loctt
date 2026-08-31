@@ -132,6 +132,7 @@ export async function main(): Promise<void> {
 
       case "rerank":       await runCommand(() => taskRankCmd.rerank(args, root));      break;
       case "board-rerank": await runCommand(() => taskRankCmd.boardRerank(args, root)); break;
+      case "board-move":   await runCommand(() => taskRankCmd.boardMoveCmd(args, root)); break;
 
       case "git":     await runCommand(() => gitCmd.run(args, root));     break;
       case "config":  await runCommand(() => configCmd.run(args, root));  break;

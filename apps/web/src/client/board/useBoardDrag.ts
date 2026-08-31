@@ -6,6 +6,22 @@ import type { DropNeighbours, DropSlot } from "./dragModel.ts";
 import { DRAG_THRESHOLD_PX, insertionIndex, isNoOpDrop, neighboursAt, statusForColumn } from "./dragModel.ts";
 
 /**
+ * The minimum a column must be for this hook to drag cards between
+ * them: an identity to match `data-column-id` against.
+ *
+ * Widened from `BoardColumn` under M3.5, having read the hook end to
+ * end to check the claim that it was reusable. It is: the threshold,
+ * the snapshot, the geometry, `Esc`, the vanished-column cancel and
+ * the no-op check are all decided from `id` and the bucket map alone.
+ * `statusForColumn` was the single status-specific line, and it is now
+ * the caller's (`fieldForColumn`) rather than a fork of the file.
+ * `BoardColumn` structurally satisfies this, so the board is unchanged.
+ */
+export interface DraggableColumn {
+  readonly id: string;
+}
+
+/**
  * The board's drag gesture (M3.2).
  *
  * Built on pointer events rather than HTML5 drag-and-drop or a
@@ -48,7 +64,14 @@ export interface DragState {
 
 export interface DropRequest {
   readonly key: string;
-  /** Absent for an intra-column reorder — see `useBoardMove`. */
+  /**
+   * The value the destination column writes, absent for a drop that
+   * stayed inside its own column — see `useBoardMove`.
+   *
+   * On the board this is a `status`. On `/sprints` it is a sprint
+   * `id`; the field it lands in is the caller's business, which is
+   * what keeps one drag gesture behind both views.
+   */
   readonly status?: string;
   readonly before?: string;
   readonly after?: string;
@@ -66,13 +89,30 @@ interface PendingPress {
   readonly pointerId: number;
 }
 
-export interface BoardDragOptions {
-  readonly columns: readonly BoardColumn[];
+export interface BoardDragOptions<C extends DraggableColumn = BoardColumn> {
+  readonly columns: readonly C[];
   readonly buckets: ReadonlyMap<string, readonly TaskFrontmatterPublic[]>;
   readonly onDrop: (req: DropRequest) => void;
+  /**
+   * What a *cross-column* drop writes, or `undefined` to make the drop
+   * rank-only.
+   *
+   * Defaults to the board's rule (BRD-13: the column's first status).
+   * `/sprints` passes the sprint's `id` instead — SPR-4 requires the
+   * `id`, never the `name`.
+   *
+   * Returning `undefined` cancels the write for that column, which is
+   * how the board declines a column with no status to give.
+   */
+  readonly fieldForColumn?: (column: C) => string | undefined;
 }
 
-export function useBoardDrag({ columns, buckets, onDrop }: BoardDragOptions) {
+export function useBoardDrag<C extends DraggableColumn = BoardColumn>({
+  columns,
+  buckets,
+  onDrop,
+  fieldForColumn,
+}: BoardDragOptions<C>) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const pending = useRef<PendingPress | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -259,8 +299,11 @@ export function useBoardDrag({ columns, buckets, onDrop }: BoardDragOptions) {
       // BRD-12: staying inside the column writes rank only, even when
       // that column collapses several statuses.
       const crossing = d.columnId !== target.columnId;
-      // BRD-13: a multi-status column's *first* status, deterministically.
-      const status = crossing ? statusForColumn(targetColumn) : undefined;
+      // BRD-13: a multi-status column's *first* status, deterministically —
+      // unless the caller names the value itself (SPR-4's sprint id).
+      const status = crossing
+        ? (fieldForColumn ?? defaultFieldForColumn)(targetColumn)
+        : undefined;
 
       cancel();
       onDrop({
@@ -279,7 +322,19 @@ export function useBoardDrag({ columns, buckets, onDrop }: BoardDragOptions) {
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", cancel);
     };
-  }, [buckets, columns, slotAt, cancel, onDrop]);
+  }, [buckets, columns, slotAt, cancel, onDrop, fieldForColumn]);
 
   return { drag, onPointerDown };
+}
+
+/**
+ * The board's rule, kept as the default so `useBoardDrag()` behaves
+ * exactly as it did before the hook was generalized.
+ *
+ * The cast is confined to this one line: the default is only ever
+ * correct for a `BoardColumn`, and a caller passing a column shape
+ * without `statuses` must supply its own `fieldForColumn`.
+ */
+function defaultFieldForColumn(column: DraggableColumn): string | undefined {
+  return statusForColumn(column as BoardColumn);
 }

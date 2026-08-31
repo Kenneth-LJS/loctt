@@ -1308,6 +1308,50 @@ with `-g "XS-12/TSK-35"`.
 condition on the observable state — poll the file on disk, or wait for
 the conflict banner — rather than on elapsed time.
 
+## The full UI suite's load-sensitivity is wider than `flow-relationships`
+
+**Measured 2026-08-31 during M3.5's verification, with the suite grown
+to 500 tests.** One full single-worker run produced **six** failures;
+every one of them passed at *file* level immediately afterwards, on the
+same build, with no code change in between:
+
+| failing test | file | file-level result |
+|---|---|---|
+| XS-18 | `flow-list.spec.ts` | 168/168 passed |
+| MSL-6 | `flow-list.spec.ts` | 168/168 passed |
+| REL-5 | `flow-relationships.spec.ts` | 30/30 passed |
+| REL-28 | `flow-relationships.spec.ts` | 30/30 passed |
+| REL-46 | `flow-relationships.spec.ts` | 30/30 passed |
+| schema-mismatch banner | `flow-schema-mismatch.spec.ts` | 1/1 passed |
+
+MSL-6 was additionally run 4× in its `-g "MSL-"` group (9/9 each time)
+because M3.5 refactored the component under it (`LabelsCell` →
+`LabelPill` + `LabelOverflow`); it did not fail once.
+
+**What this changes.** The existing entry above names REL-28, REL-30 and
+REL-32 as *the* load-sensitive tests. That list is too short: REL-5,
+REL-46, XS-18 and the schema-mismatch banner join it, so the pattern is
+not specific to `flow-relationships`. The suite now takes ~25 minutes at
+one worker, and tests near their budget fail somewhere in that window
+rather than in a fixed place.
+
+**Why it matters more than the individual flakes.** Six red tests in a
+gate run is indistinguishable, at a glance, from six regressions. The
+only thing separating them here was re-running each *file* — and an
+agent that trusts the full-suite result alone will either chase
+phantoms or, worse, learn to dismiss real failures as "probably the
+known flake".
+
+**To reproduce:** `npx playwright test --config
+tests/ui/playwright.config.ts --workers=1` on a machine also running
+other work, then re-run each failing file on its own.
+
+**To fix:** raise the per-test timeout for the seed-heavy tests (the
+budget is 30s globally, and several seed dozens of tasks through the
+CLI at ~250ms per spawn), or move fixture seeding off the CLI and onto
+`seedBulk`-style direct writes wherever the case is not about the CLI.
+Neither is M3.5's to do.
+
 ## `flow-relationships.spec.ts` has three load-sensitive tests
 
 **Measured 2026-08-31 during M3.4's verification.** Across four full UI
@@ -1402,3 +1446,54 @@ label in `labels.yaml`, not just a missing row.
 incremental picker that queries rather than filtering a
 fully-fetched array. NEW-25 already asks for "filters as you type and
 shows a bounded number of results", which is that design.
+
+
+## The query language cannot ask whether a field is unset
+
+**Found:** M3.5 (2026-08-31). **Not fixed** — adding an operator is a
+language change, well outside a view ticket.
+
+There is no way to write "tasks with no sprint" (or no milestone, no
+assignee, no due date). Measured against a scratch tracker built from
+this worktree, one task assigned to a sprint and one not:
+
+```
+sprint = null    → No tasks found.   (matches nothing; not an error)
+sprint is null   → Error: expected operator but got "is" at position 7
+sprint = empty   → No tasks found.
+sprint is empty  → Error: expected operator but got "is" at position 7
+```
+
+Positive control, same tracker, same session — the field and the
+filter both work, so this is a missing operator and not a broken
+filter:
+
+```
+sprint = "<ULID>"  → T-1   (the assigned task)
+sprint != "<ULID>" → T-2   (the unassigned one)
+```
+
+`grep -n -i "null\|unset\|absent\|empty" docs/user/common/query-language.md`
+finds nothing on the subject — it is undocumented because it does not
+exist, not because it was overlooked.
+
+**Why it matters.** "What is not yet scheduled?" is one of the more
+natural questions to ask a tracker, and the workaround only exists
+when there is something to negate against. With N sprints the user
+must write `sprint != "id1" and sprint != "id2" and …`, and with
+**zero** sprints defined there is no expression at all. `sprint = null`
+silently matching nothing is the worse half: it looks like an answer.
+
+**Related.** The sprint filter takes the **ULID**, and it must be
+quoted — a bare ULID is `Error: unexpected token`, and the sprint
+*name* matches nothing. Same shape as the known project-filter
+behaviour.
+
+**To reproduce:** `loctt init`; `loctt sprint create S1 --start
+2026-01-01 --end 2026-01-14 --state active`; create two tasks; `loctt
+set T-1 sprint S1`; then run the queries above.
+
+**To fix:** an `is null` / `is not null` (or `= none`) operator in the
+query parser, applied to every optional field rather than to `sprint`
+alone. SPR-6's spec asserts the negation in the meantime — see
+`decisions.md` A55.
