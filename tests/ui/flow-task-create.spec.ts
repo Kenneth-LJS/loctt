@@ -773,7 +773,22 @@ test.describe("NEW — create task modal", () => {
   });
 
   // @verifies NEW-3
-  test("NEW-3: a board column's Add task pre-fills that column's status", async ({
+  // NOTE: this test covers NEW-3's bullets 2 and 3 only — the pre-fill
+  // is editable, and the new card lands in the right column. Bullet 1,
+  // the pre-fill itself, is **unenactable**: it needs a per-column
+  // "+ Add task", and only the board-level one exists.
+  //
+  // M3.1 added per-column controls and removed them: a column still
+  // rendering for a status deleted from workflow.yaml since page load
+  // then carried a create control, which is what broke BRD-42. The
+  // call is sound and recorded — its consequence for NEW-3 was not.
+  //
+  // So `initialStatus` is plumbed through provider and modal and no
+  // caller supplies it: both call sites are `createTask.open()` with
+  // no argument. Measured — neutering the pre-fill left all 44 tests
+  // in this file green. Renamed so the title stops claiming a control
+  // the app does not have.
+  test("NEW-3: the create modal's status is editable and the card lands there", async ({
     page,
     tracker,
   }) => {

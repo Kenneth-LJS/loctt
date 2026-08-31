@@ -61,6 +61,7 @@ async function waitForSchemaGuard(baseURL: string, timeoutMs: number): Promise<v
   throw new Error(`schema guard never answered within ${String(timeoutMs)}ms: ${last}`);
 }
 
+// @verifies NEW-41
 test("a future-schema tracker shows the banner in the shell, without looping", async ({ page }) => {
   const root = await mkdtemp(path.join(workspaceRoot, "loctt-schema-"));
   const port = await freePort();
@@ -104,6 +105,22 @@ test("a future-schema tracker shows the banner in the shell, without looping", a
 
     // 3. The spinner is gone and stays gone.
     await expect(page.getByText("Loading…")).toHaveCount(0);
+
+    // 4. NEW-41: the create action does not offer a write that cannot
+    // land. Every `/api/` route 409s in this state, so an enabled
+    // button submits into nothing — measured before this assertion
+    // existed: the button was enabled, `n` opened the modal, submit
+    // enabled once a title was typed, and clicking it produced no
+    // error and no POST.
+    //
+    // A45 recorded that "the shell never mounts and the modal cannot
+    // open" and wrote no test on that basis. Assertion 2 above, in
+    // this same test, disproves the premise — and SHL-13, XS-34 and
+    // XS-35 all *require* the shell to stay up.
+    const create = page.getByLabel("New task");
+    await expect(create).toBeVisible();
+    await expect(create).toBeDisabled();
+    await expect(create).toHaveAttribute("title", /schema does not match/i);
 
     // 4. The page is *settled*. This is the assertion the bug fails:
     //    with the mount-refetch loop the shell never reaches a commit,

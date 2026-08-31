@@ -67,6 +67,13 @@ export function AppShell({
           identityUnknown={identityUnknown}
           onToggleSidebar={toggle}
           canToggleSidebar={canToggle}
+          {...(info.schemaStatus.kind !== "current"
+            ? {
+                createBlocked:
+                  "This tracker's schema does not match this LocTT — "
+                  + "creating a task would be refused. See the banner above.",
+              }
+            : {})}
         />
         <Sidebar
           collapsed={collapsed}
