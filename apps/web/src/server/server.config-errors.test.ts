@@ -193,3 +193,71 @@ describe("a config file that is not valid YAML", () => {
     expect(tasks.status).toBe(200);
   });
 });
+
+/**
+ * @verifies SPR-31
+ * @verifies SPR-32
+ *
+ * SPR-32's blocker is a *distinguishability* claim: "a tracker whose
+ * sprint fetch failed shows an error with a retry — never the same
+ * empty state", and SPR-31 wants the malformed file to name itself.
+ *
+ * Before M3.5, `handleListSprints` called `loadSprintsConfig` bare, so
+ * a malformed file fell through to the generic 500 with
+ * `code: io_failed` + `recovery: retry` — the exact envelope a genuine
+ * fetch failure produces. The two were byte-identical, and no
+ * client-side work can separate identical payloads. That is why this
+ * asserts the envelope, not merely that an error occurred: a test
+ * checking only `status >= 400` passed the whole time the bug existed.
+ */
+describe("a malformed sprints.yaml", () => {
+  it("is distinguishable from a failed fetch and names the broken rule", async () => {
+    const { root, base } = await harness();
+    // SPR-31's stated fixture: end_date precedes start_date.
+    await writeFile(
+      join(root, ".loctt/config/sprints.yaml"),
+      "sprints:\n"
+      + "  - id: 01ARZ3NDEKTSV4RRFFQ69G5FAV\n"
+      + "    name: Backwards\n"
+      + "    start_date: 2026-02-01\n"
+      + "    end_date: 2026-01-01\n"
+      + "    state: active\n",
+      "utf8",
+    );
+
+    const res = await fetch(`${base}/api/sprints`);
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    const body = await res.json() as Envelope & { recovery?: { kind?: string } };
+
+    // The file is named, so the user knows where to look (SPR-31).
+    const text = `${body.message ?? ""} ${body.detail ?? ""}`;
+    expect(text).toContain("sprints.yaml");
+
+    // The distinguishing bit (SPR-32). `io_failed` + retry is the
+    // failed-fetch envelope; a broken file must not wear it.
+    expect(body.code).toBe("config_invalid");
+    expect(body.code).not.toBe("io_failed");
+    expect(body.recovery?.kind).not.toBe("retry");
+
+    // One bad file does not blank unrelated views.
+    const tasks = await fetch(`${base}/api/tasks`);
+    expect(tasks.status).toBe(200);
+  });
+
+  /**
+   * The other half of SPR-32: zero sprints is a *state*, not a
+   * failure, and must stay a 200 so the client can show the
+   * "no sprints — see Settings → Sprints" empty state rather than an
+   * error. Pairs with the malformed case above; together they pin
+   * both sides of the distinction.
+   */
+  it("is not confused with a tracker that simply has no sprints", async () => {
+    const { root, base } = await harness();
+    await writeFile(join(root, ".loctt/config/sprints.yaml"), "sprints: []\n", "utf8");
+
+    const res = await fetch(`${base}/api/sprints`);
+    expect(res.status).toBe(200);
+    const body = await res.json() as { total: number };
+    expect(body.total).toBe(0);
+  });
+});
