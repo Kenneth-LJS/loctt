@@ -1614,3 +1614,39 @@ server-side resize, and what a corrupt image shows.
 filename, the human-readable size, and the MIME dispatch — bullets 2, 3
 and 4. Bullet 1 is the only gap, and it is now written down where the
 test's comment claimed it already was.
+
+## Fifteen M2 cases are uncovered, and were documented nowhere
+
+**Found by the M2 gate round 7, 2026-09-01. No blockers among them:
+11 majors, 5 minors** (severities read from the flow docs, not assumed).
+
+Uncovered and, until this entry, absent from known-gaps, `decisions.md`
+and `TEMP-RUN-WORKFLOW.md`'s "cannot be satisfied yet" section:
+
+CMT-18, CMT-20, CMT-23, CMT-24, CMT-25, ERR-23, REL-14, REL-47,
+TSK-27, TSK-39, TSK-43, TSK-55, TSK-56, XS-10, XS-65.
+
+**CMT-35 was on this list and is now closed** — a *tagging* gap, not a
+build gap. Its `editors` mechanism is fully built in core and was
+already covered by four tests there; dropping the appended editor from
+`recordEditor` reddens all four. Only the `@verifies` tag was missing,
+so the tool scored a case uncovered whose behaviour was verified.
+
+**TSK-39 is partial and must not be bare-tagged.** Its first bullet is
+exercised by the XS-58/ERR-7 test; its other two are not. Tagging it
+would overstate coverage — the same failure that hid TSK-51, in
+reverse.
+
+**Why this matters more than the count.** Round 6 reported "70/70
+blockers audited — every one", while its own skip list held five
+blockers (XS-4, XS-7, XS-8, XS-13, XS-57 — all verified `blocker`
+severity). Round 7 audited those five and they hold. So coverage
+**understates** verification where a mechanism is tested but untagged,
+and a gate report can **overstate** completeness where its summary and
+its skip list disagree. Both directions were live in M2 at the same
+time.
+
+**Not built here.** These are real gaps in test coverage, not known
+defects: the features may work. What is recorded is that nobody has
+checked, which is the honest state — and it is now written down rather
+than implied by a number.

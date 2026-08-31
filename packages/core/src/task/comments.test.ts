@@ -172,6 +172,15 @@ describe("comments lifecycle", () => {
 describe("comment attribution", () => {
   // Anyone may edit anyone's comment — that's intended. The point of
   // logging it is that an unexpected change stays traceable.
+  // @verifies CMT-35
+  //
+  // The mechanism CMT-35 names — "Ken is appended to the comment's
+  // `editors`", and a self-edit adding none — is built and tested
+  // here, and was tested here before this tag existed. The case read
+  // as uncovered only because nothing carried its ID: the coverage
+  // tool counts tags, not behaviour. Shown to fail: dropping the
+  // appended editor from `recordEditor` reddens four tests in this
+  // file.
   describe("editors list", () => {
     it("records a cross-user edit without blocking it", async () => {
       const posted = await postComment({ locttDir, taskId, body: "alice's comment" });
