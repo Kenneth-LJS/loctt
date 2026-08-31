@@ -764,7 +764,18 @@ test.describe("CMT — activity", () => {
    * measured, on a UTC+8 host.
    */
   test.describe("in a browser far from the workspace", () => {
-    // pin removed (simulating the vacuous original)
+    // Pinned 21 hours from the workspace's Asia/Singapore. Without
+    // this the browser inherits the host's zone, and on a UTC+8 host
+    // that IS the workspace zone — so the test cannot tell a component
+    // reading calendar.yaml from one reading the browser, and passes
+    // either way. known-gaps.md records this exact vacuity being found
+    // and fixed during M2.4b; the pin was then replaced by a comment
+    // saying it had been removed "simulating the vacuous original",
+    // and that comment shipped in 1ae1761. Re-measured 2026-08-31 on a
+    // UTC+8 host: deleting the whole mechanism left flow-activity
+    // 15/15 green.
+    test.use({ timezoneId: "America/Los_Angeles" });
+
 
     /**
      * CMT-31's second bullet, which cannot be reached without a

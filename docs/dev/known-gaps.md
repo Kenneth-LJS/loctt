@@ -1531,3 +1531,27 @@ produced a confident, wrong "shipping bug" report before it was caught.
 **Rebuild before trusting a UI failure that contradicts the source.**
 Never mid-suite: that empties `apps/cli/dist/` and fails unrelated specs
 with ENOENT.
+
+## A rekey elsewhere can show a stale key in the link picker for 30s
+
+**Measured 2026-09-01 while adding REL-8's bullet-3 assertion.**
+
+The link-target search is `useQuery({queryKey: ["task-search", trimmed,
+selfId]})` under the app-wide `staleTime: 30_000`
+(`apps/web/src/client/api/queryClient.ts:129`). Retyping a string
+searched seconds earlier is served from cache with **no request**.
+
+So a user who searches a key, sees the task, and then has it rekeyed
+from another surface can be offered the old key for up to 30 seconds.
+Not REL-8's bullet — a user typing a key retired *before* they opened
+the picker is typing that string into this query for the first time,
+which always fetches — but the same mechanism.
+
+This is the deliberate freshness policy, recorded here because it bit
+the test that was written to cover the bullet: the first draft retyped
+a string an earlier assertion had already searched, so react-query
+replayed the pre-move result and the new key could never appear. The
+test now moves a *third* task and types a key never searched before.
+
+**Not fixed.** Lowering `staleTime` for this one query would trade a
+30s window for a request per keystroke; the case does not ask for it.

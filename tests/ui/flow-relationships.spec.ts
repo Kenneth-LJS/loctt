@@ -481,8 +481,8 @@ test("REL-7: the kind picker offers every configured side, symmetric ones once, 
 
 // @verifies REL-8
 test("REL-8: the target search matches key, title and a retired key, and never the current task", async ({ page, tracker }) => {
-  const [root, other] = await tracker.seed([
-    { title: "Root task" }, { title: "Distinctive haystack" },
+  const [root, other, movable] = await tracker.seed([
+    { title: "Root task" }, { title: "Distinctive haystack" }, { title: "Movable" },
   ]);
   await openTask(page, tracker, root ?? "");
   await page.getByTestId("add-link").click();
@@ -490,6 +490,30 @@ test("REL-8: the target search matches key, title and a retired key, and never t
   // By exact key.
   await page.getByTestId("link-target").fill(other ?? "");
   await expect(page.locator(`[data-testid="link-result"][data-key="${other ?? ""}"]`)).toBeVisible();
+
+  // By a RETIRED key — bullet 3, which had no assertion at all until
+  // now. The test named it in its title and never created one, so
+  // disabling the whole exact/retired-key lookup left this file 30/30
+  // green (measured). Moving the task to another project rekeys it and
+  // pushes the old key onto `key_history`; typing that old key must
+  // still resolve to the task it now belongs to.
+  // A DIFFERENT task is moved than the one bullet 1 searched for: the
+  // search is a react-query cache keyed on the typed string with a 30s
+  // staleTime, so retyping a string searched seconds earlier replays
+  // the cached pre-move result and never issues a request. Typing a
+  // string for the first time — the only way a user can type a key
+  // that was retired before they opened the picker — always fetches.
+  await tracker.run(["project", "create", "Web App", "--prefix", "WEB"]);
+  const moved = await tracker.run(["move", movable ?? "", "Web App"]);
+  // Read the new key from the CLI rather than assuming its shape: the
+  // prefix is used verbatim, so "WEB" + 1 is `WEB1`, not `WEB-1`.
+  const movedKey = /→\s*(\S+)/.exec(moved)?.[1] ?? "";
+  expect(movedKey).not.toBe("");
+  expect(movedKey).not.toBe(movable);
+  await page.getByTestId("link-target").fill(movable ?? "");
+  await expect(
+    page.locator(`[data-testid="link-result"][data-key="${movedKey}"]`),
+  ).toBeVisible();
 
   // By a word from the title.
   await page.getByTestId("link-target").fill("haystack");
