@@ -3781,3 +3781,143 @@ query language, tighten the SPR-6 spec to use it directly.
 
 **Logged as a gap.** See `known-gaps.md` — the absence is a real
 usability hole beyond this ticket.
+
+### A56 · MCP gets the body token by having `get_task` return it, not by deriving it from `updated_at`
+
+**Ticket:** K10 · **Date:** 2026-08-31 · **Commit:** (uncommitted)
+
+**The situation.** K10 requires MCP's write tools to "take the token as
+a parameter", and states the implementation consequence measured: the
+token is `sha256(updated_at + "\0" + body)` truncated to 16 hex chars
+(`packages/core/src/task/io.ts:161-171`), so **an agent cannot construct
+it from an ordinary read**. K10 names two ways to make it reachable and
+leaves the choice open.
+
+**What had to be decided.** Does the token reach an MCP agent as an
+explicit field on the read path, or do the write tools accept
+`updated_at` and derive the token server-side?
+
+**Options considered.**
+
+(a) `get_task` returns `body_token` alongside the body; the write tools
+take `expected_token`. Costs: adds a field to a published read schema,
+and the agent must carry two values instead of reusing one it already
+has.
+
+(b) The write tools accept `updated_at`; the server re-reads the body
+and derives the token. Costs: couples the tool schema to a frontmatter
+field, **and — decisive — it is a weaker guard wearing the same name.**
+`updated_at` is only half the hash. Deriving server-side means hashing
+the caller's `updated_at` against *whatever body is on disk now*, so the
+check passes whenever `updated_at` matches regardless of what body the
+agent actually read. Core's docstring says the token deliberately covers
+both, because "a token that survived an unrelated frontmatter change
+could let a body write through that was composed against different
+metadata"; (b) inverts exactly that property.
+
+**Decided.** (a) — `get_task` returns `body_token` when the body is
+included; `replace_task_body` and `append_task_body` take an optional
+`expected_token`.
+
+**Why.** (b) does not implement the guard K2 and K10 asked for, it
+implements a laxer one that would report success in a case the real
+token refuses. Beyond that, (a) mirrors the web exactly — the web's task
+detail response already carries `bodyToken`
+(`apps/web/src/server/server.ts:2935`) and its body write already takes
+`expectedToken` — so all three surfaces now name the same concept the
+same way, which is the drift CLAUDE.md's "core is not done until CLI and
+MCP have it" rule exists to prevent. The added field is additive and
+sits behind `include_body`, so a caller that does not want it does not
+pay for it.
+
+**To revert.** Drop `result["body_token"]` and the `bodyToken` import
+from `apps/mcp/src/tools/task-crud.ts`, drop `expected_token` and
+`tokenOpts` from `apps/mcp/src/tools/task-body.ts`, and delete
+`tests/integration/mcp/body-token.test.ts`. The `get_task` and
+body-tool sections of `docs/user/mcp/reference.md` revert with them.
+
+### A57 · The CLI hands out a token via `loctt body --token`, not via `show`
+
+**Ticket:** K10 · **Date:** 2026-08-31 · **Commit:** (uncommitted)
+
+**The situation.** K10 makes the CLI's precondition opt-in. A user who
+opts in needs some way to obtain a token, and — as with MCP — cannot
+compute one. K10 leaves the mechanism open.
+
+**What had to be decided.** Where does a CLI user get a body token?
+
+**Options considered.**
+
+(a) `loctt body <task> --token` prints the token alone. Costs: one more
+flag on `body`, and a mutual exclusion to enforce against `--set` /
+`--append`.
+
+(b) `loctt show <task>` prints it as another field. Costs: taxes every
+reader of `show` — the most-used command — with a 16-hex string that
+almost none of them will ever use, to serve an opt-in feature.
+
+(c) A separate `loctt body-token <task>` command. Costs: a new top-level
+command for one line of output, in a CLI that already groups body
+operations under `body`.
+
+**Decided.** (a), printing the bare token with no label so
+`--expect "$(loctt body T-1 --token)"` substitutes directly.
+
+**Why.** `show` is a human-readable display and a token is machine
+input; putting one in the other makes the common path worse to serve the
+rare one. Keeping the read next to the write it feeds means the two
+cannot drift apart, matching the reason `appendTaskBody` is already
+described in core as a single source of truth for its own surface pair.
+The bare-token output is the load-bearing half — a label would break the
+substitution, and it is pinned by a test.
+
+**To revert.** Remove `--token` from `TASK_BODY_FLAGS` and the
+`wantToken` branch in `apps/cli/src/commands/task-crud.ts`, and drop the
+token helper in `tests/integration/cli/body-token.test.ts`.
+
+### A58 · The CLI's opt-in is a `cli:` block in `workflow.yaml`
+
+**Ticket:** K10 · **Date:** 2026-08-31 · **Commit:** (uncommitted)
+
+**The situation.** K10 says the CLI default is last-write-wins and Ken
+added "can configure", so the flag needs a workspace-level counterpart.
+There is no general workspace-settings store: `users/settings.ts` is
+per-user and gitignored, which is the wrong scope for a rule meant to
+apply to everyone in a tracker.
+
+**What had to be decided.** Where does `require_body_token` live, and
+what is it called?
+
+**Options considered.**
+
+(a) A new `cli:` block in `workflow.yaml`. Costs: extends a `.strict()`
+schema shared by all three surfaces for a setting only one of them
+reads.
+
+(b) A new top-level config file (e.g. `cli.yaml`). Costs: a whole file,
+loader, and error path for one boolean.
+
+(c) A per-user setting in `users/<id>/settings.yaml`. Costs: gitignored
+and per-checkout, so it cannot express "this tracker requires the
+check", which is the thing worth configuring.
+
+**Decided.** (a), named `cli` rather than something surface-neutral, with
+`require_body_token: boolean` as its only field.
+
+**Why.** `workflow.yaml` is already the workspace-level, checked-in,
+hand-editable config the CLI loads, so (a) adds a field where (b) adds a
+subsystem. Naming it `cli` is the honest name and not an accident: after
+K10 only the CLI *has* a default to configure — the web always sends a
+token and MCP enforces one whenever the agent supplies it — so a
+neutral name like `body_writes:` would imply a workspace-wide policy
+that does not exist. A refusal under this setting is a `UsageError`
+(exit 2), not a stale-token failure, because nothing was compared: the
+user simply did not supply what the tracker requires, and the message
+names the setting so it is findable.
+
+**To revert.** Remove `CliConfigSchema` and the `cli` field from
+`packages/contracts/src/workflow.ts`, its two export lines in
+`packages/contracts/src/index.ts`, the `require_body_token` branch in
+`apps/cli/src/commands/task-crud.ts`, the `cli` rows in
+`docs/dev/schema-reference.md`, and the config paragraph in
+`docs/user/cli/reference.md`.

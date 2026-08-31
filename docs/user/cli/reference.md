@@ -587,7 +587,7 @@ task failed.
 View or update a task's markdown body.
 
 ```
-loctt body <task> [--set <text>] [--append <text>]
+loctt body <task> [--set <text>] [--append <text>] [--expect <token>] [--token]
 ```
 
 Without flags, prints the current body (or `(empty body)`). `--set` replaces
@@ -601,6 +601,38 @@ loctt body T-12
 loctt body T-12 --set "Repro: open app, click logout, observe crash."
 loctt body T-12 --append $'\n## Update\nReproduced on staging.'
 ```
+
+#### Guarding against a concurrent edit
+
+By default a body write is **last-write-wins**: if someone edited the task in
+the browser between your read and your write, your text replaces theirs with
+no warning. This is the default so existing scripts behave as they always
+have.
+
+To opt in, read a token first and hand it back with the write. The write is
+refused — and nothing is written — if the task changed in between:
+
+```
+TOKEN=$(loctt body T-12 --token)
+loctt body T-12 --expect "$TOKEN" --set "my new text"
+```
+
+`--token` prints the token alone, so it substitutes directly. A refused write
+exits 1 and says the text was not saved; re-read, reapply your edit, retry.
+`--expect` works with `--append` as well as `--set`, and cannot be combined
+with `--token` (which reads rather than writes).
+
+To require this for everyone working in a tracker, set it in
+`.loctt/config/workflow.yaml`:
+
+```yaml
+cli:
+  require_body_token: true
+```
+
+A write with no `--expect` is then refused with a usage error instead of
+falling back to overwriting. The setting is CLI-only: the web always sends a
+token, and MCP enforces one whenever an agent supplies it.
 
 ### `loctt log`
 

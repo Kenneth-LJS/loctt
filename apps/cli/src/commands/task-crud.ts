@@ -1,6 +1,7 @@
 import type { WorkflowConfig } from "@loctt/contracts";
 import {
   appendTaskBody,
+  bodyToken,
   buildListContext,
   buildShowModel,
   bulkMoveTasksToProject,
@@ -71,7 +72,7 @@ const TASK_MOVE_FLAGS: readonly string[] = [];
 const TASK_SET_FLAGS: readonly string[] = [];
 const TASK_UNSET_FLAGS: readonly string[] = [];
 const TASK_DELETE_CMD_FLAGS: readonly string[] = ["--yes"];
-const TASK_BODY_FLAGS: readonly string[] = ["--set", "--append"];
+const TASK_BODY_FLAGS: readonly string[] = ["--set", "--append", "--token", "--expect"];
 const TASK_LOG_FLAGS: readonly string[] = ["--limit", "--offset"];
 
 export async function create(args: string[], root: string): Promise<void> {
@@ -589,13 +590,36 @@ export async function deleteCmd(args: string[], root: string): Promise<void> {
   console.log(`Deleted ${task.frontmatter.key}`);
 }
 
+/**
+ * Whether this tracker opts every `loctt body` write into the K10
+ * precondition (`cli.require_body_token` in workflow.yaml).
+ *
+ * **A config that cannot be read answers `false`, deliberately.** The
+ * setting's default is off, and `body --set` has never needed
+ * workflow.yaml at all — reading it here to decide an opt-in must not
+ * turn an unrelated broken config into a failed body write. Measured:
+ * without this, `loctt body T-1 --set x` against a tracker with
+ * malformed YAML exited 1 where it previously succeeded.
+ *
+ * The direction is the safe one: an unreadable config cannot silently
+ * *enable* a guard either, and every other command that needs
+ * workflow.yaml still reports the parse error itself.
+ */
+async function requiresBodyToken(locttDir: string): Promise<boolean> {
+  try {
+    return (await loadWorkflowConfig(locttDir)).cli?.require_body_token === true;
+  } catch {
+    return false;
+  }
+}
+
 export async function body(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, TASK_BODY_FLAGS);
   const ref = args[1];
   if (!ref) {
     throw new UsageError(
       "missing task ref",
-      "loctt body <task> [--set <text>] [--append <text>]",
+      "loctt body <task> [--set <text>] [--append <text>] [--expect <token>] [--token]",
     );
   }
   const newBody = getArg(args, "--set");
@@ -603,14 +627,40 @@ export async function body(args: string[], root: string): Promise<void> {
   if (newBody !== undefined && appendText !== undefined) {
     throw new UsageError("--set and --append are mutually exclusive");
   }
+  const wantToken = hasFlag(args, "--token");
+  const expected = getArg(args, "--expect");
+  if (wantToken && (newBody !== undefined || appendText !== undefined)) {
+    throw new UsageError("--token reads the current token; it cannot be combined with a write");
+  }
   const locttDir = resolveLocttDir(root);
   const task = await lookupTask(locttDir, ref);
-  if (newBody !== undefined) {
-    await writeTaskBody(locttDir, task.frontmatter.id, newBody + "\n");
-    console.log(`Updated body for ${task.frontmatter.key}`);
-  } else if (appendText !== undefined) {
-    await appendTaskBody(locttDir, task.frontmatter.id, appendText);
-    console.log(`Appended to body for ${task.frontmatter.key}`);
+  if (wantToken) {
+    // Bare token on stdout so `--expect "$(loctt body T-1 --token)"`
+    // works without the caller having to strip a label.
+    console.log(await bodyToken(locttDir, task.frontmatter.id));
+    return;
+  }
+  if (newBody !== undefined || appendText !== undefined) {
+    // K10: last-write-wins is the CLI default. `--expect` opts in per
+    // command; `cli.require_body_token` in workflow.yaml opts the whole
+    // workspace in, and then a write without `--expect` is refused
+    // rather than silently falling back to clobbering.
+    if (expected === undefined && await requiresBodyToken(locttDir)) {
+      throw new UsageError(
+        "this tracker requires a body-write token (cli.require_body_token in workflow.yaml)",
+        `loctt body ${ref} --expect "$(loctt body ${ref} --token)" --set <text>`,
+      );
+    }
+    const opts = expected === undefined ? {} : { expectedToken: expected };
+    if (newBody !== undefined) {
+      await writeTaskBody(locttDir, task.frontmatter.id, newBody + "\n", opts);
+      console.log(`Updated body for ${task.frontmatter.key}`);
+    } else {
+      await appendTaskBody(locttDir, task.frontmatter.id, appendText as string, opts);
+      console.log(`Appended to body for ${task.frontmatter.key}`);
+    }
+  } else if (expected !== undefined) {
+    throw new UsageError("--expect applies to a write; pass --set or --append");
   } else {
     const taskBody = await readTaskBody(locttDir, task.frontmatter.id);
     if (taskBody.trim()) {

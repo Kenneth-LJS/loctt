@@ -157,6 +157,7 @@ export {
 export type {
   BoardColumnDef,
   BoardsConfig,
+  CliConfig,
   CustomFieldDef,
   CustomFieldType,
   CustomFieldValueDef,
@@ -181,6 +182,7 @@ export type {
 export {
   BoardColumnDefSchema,
   BoardsConfigSchema,
+  CliConfigSchema,
   CustomFieldDefSchema,
   CustomFieldTypeSchema,
   CustomFieldValueDefSchema,

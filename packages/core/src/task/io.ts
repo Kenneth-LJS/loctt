@@ -177,8 +177,17 @@ function tokenFor(updatedAt: string | undefined, body: string): string {
  *
  * Single source of truth for append spacing — both CLI `body --append` and
  * MCP `append_task_body` go through this so their behavior can't drift.
+ *
+ * Takes the same {@link BodyWriteOptions} as {@link writeTaskBody}: an
+ * append is as capable of clobbering a concurrent edit as a replace,
+ * since the text it appends to is the text it just read.
  */
-export async function appendTaskBody(locttDir: string, taskId: string, text: string): Promise<void> {
+export async function appendTaskBody(
+  locttDir: string,
+  taskId: string,
+  text: string,
+  opts: BodyWriteOptions = {},
+): Promise<void> {
   await updateTaskBody(locttDir, taskId, (current) => {
     if (current.length === 0) {
       return text + "\n";
@@ -189,5 +198,5 @@ export async function appendTaskBody(locttDir: string, taskId: string, text: str
     } else {
       return current + "\n\n" + text + "\n";
     }
-  });
+  }, opts);
 }
