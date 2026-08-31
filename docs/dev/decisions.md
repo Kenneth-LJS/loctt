@@ -3921,3 +3921,53 @@ names the setting so it is findable.
 `apps/cli/src/commands/task-crud.ts`, the `cli` rows in
 `docs/dev/schema-reference.md`, and the config paragraph in
 `docs/user/cli/reference.md`.
+
+### K14 · Image attachments are validated and re-encoded on upload, with a cropper
+
+**Date:** 2026-09-01 · **Ken's ruling — an agent may not revert this.**
+
+**The situation.** REL-16 bullet 1 ("the PNG shows an inline image
+thumbnail") is unbuilt; the tile renders a family glyph. Its test says
+"see known-gaps" and forwarded to an entry that was never written. The
+open questions were: render a 3 MB PNG inline per tile or resize
+server-side, and what a corrupt image shows.
+
+**Ken's ruling, in his words:** "show proper error messages for corrupt
+images BEFORE it even gets saved. then if cannot load (e.g. the user
+corrupts the image by hand-writing files or replacing files in file
+system), then we show a fallback as if the image wasnt there. but if
+you use the normal upload flow, we should check for valid image files,
+crop and compress (we should also provide a cropper tool for users to
+crop images)."
+
+So, four parts:
+
+1. **Validate on upload, refuse before writing.** A corrupt or
+   non-image file claiming to be an image is rejected with a message,
+   and nothing is stored. Not stored-then-flagged.
+2. **Crop and compress on the way in.** The stored file is the
+   processed one, so a tile renders a small image rather than a 3 MB
+   original. This answers the resize question: server-side, at upload,
+   once — not per render.
+3. **A cropper tool** so the user chooses the crop rather than
+   accepting a centre-crop.
+4. **A fallback for a file corrupted after storage** — hand-edited or
+   replaced on disk. It renders "as if the image wasn't there", i.e.
+   the existing family glyph, not a broken-image icon.
+
+**Most of this exists already.** `copyAvatar`
+(`packages/core/src/users/avatar.ts:115`) validates, honours EXIF
+orientation, resizes to a longest-edge bound and re-encodes as JPEG via
+`sharp` — already a core dependency. The work is generalising that
+pipeline from avatars to image attachments, not building it.
+
+**Scope note.** Point 3 (a cropper) is a UI component no existing case
+describes, and points 1–2 change what `POST /api/tasks/:ref/attachments`
+stores — REL-18 currently asserts stored bytes are **byte-identical** to
+the source, which is true for non-images and must stay true for them.
+That tension needs settling when this is built: re-encoding an image
+attachment means REL-18's guarantee no longer holds for images.
+
+**Not built here.** Recorded during M2's gate; belongs in its own
+ticket, and REL-16's known-gaps entry now points at this decision
+instead of at nothing.
