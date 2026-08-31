@@ -1307,3 +1307,45 @@ with `-g "XS-12/TSK-35"`.
 **To fix:** replace whatever fixed wait stages the conflict with a
 condition on the observable state — poll the file on disk, or wait for
 the conflict banner — rather than on elapsed time.
+
+## `flow-relationships.spec.ts` has three load-sensitive tests
+
+**Measured 2026-08-31 during M3.4's verification.** Across four full UI
+runs on the same code, this one file produced a different single failure
+each time, while passing **30/30 at file level every time**:
+
+| run | failing test | failure mode | clean-run time |
+|---|---|---|---|
+| 1 | REL-28 | `locator.hover` timeout at 30s | 28.9s |
+| 2 | — | (clean) | — |
+| 3 | REL-30 | `loctt link T-1 blocks T-2 exited 1` | — |
+| 4 | REL-32 | convergence assertion, wrong rank order | 4.9s |
+
+**REL-28 is fixed** — it seeds 51 tasks and 50 links through the CLI,
+costing 28.9s against a 30s budget, i.e. a 1.1s margin on a *quiet*
+machine. `test.slow()` (scoped to the test, not the file) gives it 90s.
+Shrinking the fixture was rejected: the case is *about* fifty
+relationships.
+
+**REL-30 and REL-32 are NOT fixed, and `test.slow()` will not help
+REL-32.** It completes in 4.9s clean — three orders of magnitude inside
+its budget — so its full-suite failure is the two-tab race *resolving
+differently* under load, not a timeout. The assertion picks a winner
+between two concurrent writes; under contention the loser can win.
+
+`TEMP-BUILD-PLAN.md`'s M2.5a row already records that REL-32 was
+timing-fragile when written: "REL-32's first two mutations were
+rejected, not scored — both turned it red on a `waitForResponse`
+timeout rather than on the convergence assertion, which is a red for the
+wrong reason."
+
+**Why this is logged rather than fixed here:** a race test that asserts
+*which* writer wins is asserting something the system does not
+guarantee. The honest fix is to assert what the case actually requires —
+that the two tabs **converge** and that the loser **is told** — without
+pinning which order they converge on. That is a rewrite of the
+assertion, on a case (REL-32) owned by M2.5a, during M3.4's
+verification. Out of scope here; it needs its own look.
+
+**Do not read a green full run as evidence these are fixed.** One in
+four runs was clean with all three still fragile.
