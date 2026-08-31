@@ -3439,6 +3439,15 @@ separately below.
 
 **Ticket:** M3.5 · **Date:** 2026-08-31
 
+**Recorded twice, deduplicated.** I committed this ruling to `main`,
+then told the M3.5 agent to "read A48 before building" — but its
+worktree was pinned at an earlier SHA, so A48 genuinely was not in the
+tree it could see. It flagged that rather than pretending to read it,
+and wrote its own A48 from the reasoning in my message. Both versions
+reached the same conclusion by the same argument; the duplicate was
+removed and this one kept. Telling an agent to read a decision that is
+not in its tree is how invented content enters a record.
+
 **The situation.** SPR-31's third bullet: "Other, valid sprints still
 render **if the loader can partially recover**; if it cannot, the page
 says the whole file failed to parse rather than showing an empty state
@@ -3476,3 +3485,103 @@ allows it; nothing else depends on the strictness.
 `SprintsConfigError` at all — today it calls `loadSprintsConfig` bare
 (`server.ts:1476`), so the ZodError's text never reaches the client and
 SPR-31 and SPR-32 receive byte-identical 500s.
+
+---
+
+### A49 · SPR-36's drop guard already exists in core; the client half is all that is new
+
+**Ticket:** M3.5 · **Date:** 2026-08-31 · **Commit:** (this one)
+
+**The situation.** TEMP-WEB-TICKETS.md line ~609 states SPR-36 "needs
+an existence check on the drop write", reasoning that the archived-
+reference guard covers archived entities and not deleted ones, so a
+write naming a deleted sprint id "likely succeeds silently today". It
+asked that this be verified before building. It was a guess, flagged
+as one.
+
+**The measurement.** Against a real scratch tracker, CLI binary built
+from this worktree:
+- Positive control — assign an existing sprint: exit 0,
+  `Set sprint = 01M1AQ6K...`, and `loctt show T-1` reports `Sprint: S1`.
+- Delete the sprint (`sprints: []` in `sprints.yaml`), then assign that
+  now-dangling id to a *different* task: **exit 1**,
+  `Error: unknown sprint: 01M1AQ6K96WRM6WNESPCN4WQEP`, and no `sprint`
+  key on that task's `task.md`.
+
+**The finding.** The guess was wrong. The guard is not the archived-
+reference guard at all — it is `resolveSprintIdFromInput`
+(`packages/core/src/sprints/manage.ts:86-103`), reached from
+`setField`'s reference resolution (`task/update.ts:371-374`), which
+throws `SprintError("unknown sprint: …")` when the id matches neither
+an id nor a name. The web PATCH path routes through the same
+`setFields`, and `SprintError extends LocttError`, so it surfaces as a
+400 carrying the message.
+
+**The decision.** No core or server existence check is added for
+SPR-36. Only the client half is built: rejecting the drop, returning
+the card, and phrasing the error as "no longer exists — refresh".
+
+**To revert.** Nothing to revert in core. If a future change makes
+sprint resolution lenient, SPR-36 regresses silently — its spec test
+is the guard, and it asserts the rejection end-to-end rather than
+trusting this note.
+
+---
+
+### A50 · `handleListSprints` needs no catch: the dispatcher already attributes `SprintsConfigError`
+
+**Ticket:** M3.5 · **Date:** 2026-08-31 · **Commit:** (this one)
+
+**The situation.** TEMP-WEB-TICKETS.md (~line 598, "Server work — this
+ticket is NOT frontend-only") states that `handleListSprints` does not
+catch `SprintsConfigError`, so a malformed `sprints.yaml` "currently
+returns a generic 500 with `code: io_failed` + retry — the exact shape
+SPR-32 reserves for a *failed fetch*, making the two
+indistinguishable". The run coordinator independently confirmed the
+missing try/catch and directed that the caught, named response be
+built. It was built, and then measured.
+
+**The measurement.** The bare-handler claim is true; the *consequence*
+is not. Against the pristine handler at 688d5d7, with no fix applied,
+`GET /api/sprints` over a backwards-dated sprint returns:
+
+    status=400
+    {"code":"config_invalid",
+     "message":"sprints.yaml is not valid: sprints[0].end_date end_date
+                (2026-01-01) must not be before start_date (2026-02-01)",
+     "data_state":"not_saved","recovery":{"kind":"command"}}
+
+Not a 500, not `io_failed`, not `retry`. The file, the offending
+sprint (`sprints[0]`) and the broken rule are all present — SPR-31's
+three requirements, met by code that already shipped.
+
+**Why the guess was wrong.** The catch is real but redundant. The
+request dispatcher (`server.ts:4000`) already maps any uncaught
+`LocttError` through `err.toEnvelope()` + `statusForCode(err.code)`.
+`SprintsConfigError` sets `config_invalid` with
+`recovery: { kind: "command" }` in its own constructor
+(`config/sprints.ts:16-28`), and `statusForCode` sends
+`config_invalid` to the 400 default — never the 500 branch. A
+per-route catch re-derives what core already states, which is exactly
+the V1/V8 duplication the dispatcher comment warns against.
+
+**How it was caught.** The added test passed with the fix *disabled*
+(`if (false as boolean && ...)`, typecheck exit 0). Under the repo's
+rule that a test which stays green with its behaviour removed asserts
+nothing, that green was the signal — the behaviour was upstream, not
+absent. Had the mutation step been skipped, a redundant catch would
+have shipped as a fix for a bug that did not exist.
+
+**The decision.** No server change. `handleListSprints` stays as it is.
+The two SPR-31/SPR-32 tests are kept: they are now **regression
+guards** on the dispatcher's attribution, not on a new catch, and they
+pin the distinction SPR-32 needs.
+
+**To revert.** Nothing to revert. If a future change makes the
+dispatcher flatten `LocttError` to `unknown`/500, or drops
+`config_invalid` from `statusForCode`'s 400 default, these tests go
+red and a per-route catch becomes the right fix at that point.
+
+**Supersedes.** A48's premise is unaffected (the all-or-nothing parse
+still stands), but its framing assumed a server fix would accompany
+it. It does not.
