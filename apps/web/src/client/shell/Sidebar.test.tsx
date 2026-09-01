@@ -79,6 +79,7 @@ const INFO: TrackerInfoResponse = {
   schemaStatus: { kind: "current", version: 3 },
   cwd: "~/PDev/loctt",
   today: "2026-08-14",
+    timezone: "UTC",
 };
 
 /** `INFO` with the per-test workspace label applied. */

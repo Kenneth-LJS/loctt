@@ -4871,3 +4871,203 @@ would have to archive too, or MSL-12's fourth bullet breaks.
 
 **Supersedes** the unrecorded archive-by-default answer. A68 stands.
 
+
+### A73 · `POST /api/query/validate` is a new route, not a reuse of the list or save paths
+
+**Ticket:** M4.5 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** VUE-8 needs a parse-error marker that updates *while
+typing*, and VUE-31/32/33/34 need four distinguishable failures, each
+carrying the offending token's position. Two existing routes touch
+query validity, and neither can serve this: `GET /api/tasks` **runs**
+the query (wrong side effects, wrong cost per keystroke) and `POST
+/api/views` **writes** it. Both also flatten the error into a message
+string via `error(res, err.message, …)`, discarding the `position` and
+`suggestions` that `validate.ts` builds deliberately — which is
+exactly LST-44/LST-45 in `PROPOSED-UI-CASES.md`.
+
+**What had to be decided.** Where validation-without-execution lives.
+
+**Options considered.**
+
+1. **Parse in the client with core's `parseQuery`/`validateQuery`.**
+   Rejected: `validateQuery` needs the *workspace* `workflow.yaml` to
+   know the enum keys and custom fields, so the client would need the
+   whole config and would drift from what the server enforces on save.
+2. **Add `?dry_run=1` to `POST /api/views`.** Rejected: overloads a
+   write route with a read, and the CSRF/write semantics come along
+   with it.
+3. **A dedicated `POST /api/query/validate`.** Chosen.
+
+**Decided.** Option 3. It returns **200 with a body**, not a 4xx: an
+invalid *draft* is not a failed request, and the editor asks about
+every keystroke. The body carries `valid`, plus `kind`, `message`,
+`position` and `suggestions` when invalid. `kind` is derived from the
+error **class** (`TokenizeError`/`ParseError` → `syntax`;
+`QueryValidationError` → `unknown_field` or `unknown_value`), so
+rewording core's copy cannot change which UI state renders.
+
+**Side effect.** This closes LST-44/LST-45 for the editor's path:
+position and suggestions now reach a surface intact for the first
+time. The generic-500 behaviour on `GET /api/tasks` is unchanged and
+still open.
+
+**To revert.** Delete `handleValidateQuery`, its route entry, and
+`ValidateQueryRequestSchema`; the editor then loses live markers and
+VUE-8/31/32/33/34 regress. No stored data depends on it.
+
+### A74 · Advanced → Basic refuses conversion rather than approximating it
+
+**Ticket:** M4.5 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** VUE-11 requires the Basic toggle to be disabled,
+with a reason, when a query is not visually expressible — and is
+explicit that "the query is never rewritten or truncated to fit".
+`buildDsl.ts` already goes Basic → Advanced; nothing went back.
+
+**What had to be decided.** How much of the DSL the reverse direction
+should attempt.
+
+**Options considered.**
+
+1. **Best-effort conversion, dropping what does not fit.** Rejected —
+   it is the P10 failure the case exists to catch: the basic filter
+   would return different rows than the query the user wrote, silently.
+2. **Convert only the exact shape `buildDslFromSearch` emits, and
+   refuse everything else with a named reason.** Chosen.
+
+**Decided.** Option 2. `dslToSearch` accepts a flat `and` of
+`field = v` / `field in (a, b)` clauses over facet fields and
+`fields.*`, and returns `{ expressible: false, reason }` for anything
+else — a disjunction, a negation, any comparison operator, a
+relationship call, a repeated field, a `today` value, or a field with
+no basic control. The reason names the construct, which is what the
+disabled control displays.
+
+**Deliberate conservatism.** A query a human could see is expressible
+may still be refused (`status = a and status = b`). A false refusal
+costs the user a toggle; a false conversion costs them wrong rows with
+no signal. The asymmetry is the point.
+
+**One special case.** `archived != true` is the default scope
+`buildDslFromSearch` always appends, so it maps back to the *absence*
+of an `archived` filter rather than to a chip the user never set.
+
+**To revert.** Delete `dslToSearch.ts` and the toggle in
+`AdvancedQueryEditor`; VUE-10's return leg and VUE-11 regress.
+
+### A75 · The saved-view name-collision warning lives in the client
+
+**Ticket:** M4.5 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** VUE-20 requires that saving a second view named
+`overdue` **warns before writing**. Measured: `POST /api/views` twice
+with the same name returns 201 both times and `queries.yaml` ends up
+with two `overdue` entries. Ids stay distinct (the case's third
+bullet holds), but `resolveView` then throws `multiple views named
+'overdue'; refer by id instead` — a failure discovered later, from the
+CLI.
+
+**What had to be decided.** Whether core should refuse the duplicate.
+
+**Options considered.**
+
+1. **Make `createView` reject a duplicate name.** Rejected as
+   out-of-scope and load-bearing: it changes an existing core contract
+   that the CLI and MCP also use, and VUE-20's own wording ("the user
+   can rename or explicitly confirm") requires the duplicate to remain
+   *possible*.
+2. **Warn in the client, ahead of the request.** Chosen.
+
+**Decided.** Option 2. `checkViewNameCollision` compares
+case-insensitively after trimming — "Overdue " and "overdue" read as
+the same name — and returns a message stating how `loctt list --view
+<name>` will resolve the ambiguity. Built-in filter labels are checked
+too, per the case's fourth bullet.
+
+**Not done.** The warning is a pure function with unit tests; wiring
+it into a save dialog is not part of this ticket's surface, since
+M4.5's editor does not own the save flow. Recorded so the next
+saved-view ticket does not re-derive it.
+
+**To revert.** Delete `viewNameCollision.ts`; VUE-20 has no other
+implementation.
+
+### A76 · The web surfaces `onWarning` as a `warnings` array on the tasks response
+
+**Ticket:** M4.5 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** VUE-21 requires a saved view referencing a deleted
+custom field to degrade *visibly* — "it does not return zero rows
+presented as a legitimate empty result". `listTasks` has always
+reported this through `onWarning` rather than throwing, deliberately:
+a view that used to work must keep working, so it runs and returns
+what it matches.
+
+**Measured.** The CLI passes `onWarning` (`task-crud.ts:225`, to
+stderr) and MCP passes it (`task-crud.ts:163`, into a `warnings`
+array). The web passed nothing — `grep -n onWarning
+apps/web/src/server/server.ts` returned zero against three
+`listTasks(` call sites as a positive control. So core raised the
+warning and the web dropped it, returning 200 with an empty list.
+
+**What had to be decided.** How the web surfaces it, given the other
+two surfaces already had shapes.
+
+**Options considered.**
+
+1. **Promote it to an error.** Rejected: it would break views that
+   used to work, which is the regression core avoids by design.
+2. **A `warnings` array on the 200 response.** Chosen — it mirrors
+   MCP's shape and sits beside `unreadable` and `missing_view`, which
+   are the same idea (the rows are honest; this says what else the
+   user needs to know).
+
+**Decided.** Option 2. Entries carry `field`, `message`, `position`
+and `suggestions` — the same structured fields A73's validation route
+returns, so a client renders both the same way. Omitted entirely when
+there are no warnings, so its presence is meaningful.
+
+**Not a new capability.** This is web reaching parity with CLI and
+MCP, so the reference docs are unchanged: the behaviour they describe
+already existed on both surfaces they cover.
+
+**Still open.** VUE-21's sibling VUE-22 (a view that no longer
+*parses*) is not fixed — it needs `parseQueriesConfig` to tolerate a
+bad entry on load, which is a core contract change. See
+`TEMP-RUN-WORKFLOW.md` § Cases that cannot be satisfied yet.
+
+**To revert.** Drop the `onWarning` callback and the `warnings` spread
+in `handleListTasks`; VUE-21 regresses to a silent empty result.
+
+### A77 · `TrackerInfoResponse` carries the timezone `today` was resolved in
+
+**Ticket:** M4.5 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** VUE-19's remaining UI-side criterion is that the
+resolved date is discoverable — "the UI states the resolved date (and
+which timezone it used) rather than leaving an off-by-one-day result
+unexplained". Core already resolves `today` in the workspace zone on
+every surface, and `/api/info` already sent the date. It did not send
+the zone, so a user seeing a date one day off their wall clock could
+not tell a correctly-configured workspace from a bug.
+
+**What had to be decided.** Where the zone comes from, given the date
+was already being computed.
+
+**Decided.** `workspaceTodayWithZone()` returns both from **one**
+`loadCalendarConfig` read, and `/api/info` spreads the pair. Resolving
+the zone in a second read could straddle workspace midnight and report
+a date and a zone that never went together — a rare bug, but exactly
+the class VUE-19 is about.
+
+`timezone` is **required** on `TrackerInfoResponse`, not optional: an
+optional field would let a caller render the date with no zone, which
+is the state the case is trying to eliminate. The three existing
+placeholder fixtures (`AppBootstrap`'s two unknown-state objects and
+the sidebar tests) declare `"UTC"`, matching the server's own fallback
+rather than the viewer's browser zone.
+
+**To revert.** Drop `timezone` from the interface and the response,
+restore `workspaceToday`, and remove it from the three fixtures.
+VUE-19's first bullet then has no data behind it.

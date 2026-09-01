@@ -145,6 +145,12 @@ export function ListView() {
   // `queries.yaml`. The server fell back to the unfiltered list; this
   // is what makes that visible rather than a silent widening.
   const missingView = pages[pages.length - 1]?.missing_view;
+  // VUE-21: core raises a warning when a query names a field that no
+  // longer exists, and the CLI and MCP both print it. The web dropped
+  // it, so a saved view filtering on a deleted custom field answered
+  // 200 with zero rows — an empty result the user reads as "nothing
+  // matches" rather than "this view is broken".
+  const queryWarnings = pages[pages.length - 1]?.warnings ?? [];
   // Newest page's total. A filter change cannot be what makes these
   // differ — it builds a new query key, so the feed restarts with one
   // page — but a task created or deleted between page 1 and page 3
@@ -427,6 +433,17 @@ export function ListView() {
         />
         <ExportMenu total={total} queryString={buildQueryString(params)} />
       </div>
+      {queryWarnings.length > 0 && (
+        <div
+          role="status"
+          data-testid="query-warnings"
+          className="rounded-md border border-warn-fg/30 bg-warn-bg px-4 py-2 text-[12px] text-warn-fg"
+        >
+          {queryWarnings.map(w => (
+            <p key={`${w.field}:${w.message}`}>{w.message}</p>
+          ))}
+        </div>
+      )}
       {missingView !== undefined && (
         <div
           role="status"

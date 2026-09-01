@@ -41,6 +41,7 @@ import {
   PostCommentRequestSchema,
   projectTaskFrontmatter,
   PutWorkflowRequestSchema,
+  ValidateQueryRequestSchema,
 } from "@loctt/contracts";
 import {
   appendTaskBody,
@@ -137,6 +138,7 @@ import {
   MilestoneError,
   milestoneProgress,
   ParseError,
+  parseQuery,
   planMigration,
   postComment,
   type Progress,
@@ -179,6 +181,7 @@ import {
   type TaskReferenceKind,
   TaskUpdateError,
   todayInZone,
+  tokenize,
   TokenizeError,
   unarchiveLabel,
   unarchiveProject,
@@ -190,6 +193,7 @@ import {
   unsetField,
   updateUser,
   UserError,
+  validateQuery,
   validHistory,
   ViewError,
   withStateLock,
@@ -208,11 +212,23 @@ const DEFAULT_PORT = 4321;
  * calendar.yaml. Falls back to UTC when the config is missing or
  * unreadable, matching `loadCalendarConfig`'s own default.
  */
-async function workspaceToday(locttDir: string): Promise<string> {
+/**
+ * `today` together with the zone that produced it (VUE-19).
+ *
+ * Split out rather than resolving the zone a second time at the call
+ * site: reading `calendar.yaml` twice could straddle workspace
+ * midnight and report a date and a zone that never went together.
+ */
+async function workspaceTodayWithZone(
+  locttDir: string,
+): Promise<{ today: string; timezone: string }> {
   try {
-    return todayInZone((await loadCalendarConfig(locttDir)).timezone);
+    const { timezone } = await loadCalendarConfig(locttDir);
+    return { today: todayInZone(timezone), timezone };
   } catch {
-    return todayInZone();
+    // Matches `loadCalendarConfig`'s own default, and is what
+    // `todayInZone()` with no argument resolves in.
+    return { today: todayInZone(), timezone: "UTC" };
   }
 }
 
@@ -1090,7 +1106,10 @@ export function createWebApp(options: WebAppOptions) {
       // filters ("Overdue", "Due this week") agree with what the same
       // query returns through the CLI rather than following the
       // viewer's browser zone.
-      today: await workspaceToday(locttDir),
+      // VUE-19: the zone travels with the date, so the UI can state
+      // *why* today is what it is rather than leaving an off-by-one
+      // result unexplained.
+      ...(await workspaceTodayWithZone(locttDir)),
     };
     json(res, response);
   };
@@ -1125,6 +1144,72 @@ export function createWebApp(options: WebAppOptions) {
       }
       throw err;
     }
+  };
+
+  /**
+   * `POST /api/query/validate` — parse and validate a DSL string
+   * without running or saving it (VUE-8, VUE-31..34, A11Y-53).
+   *
+   * The advanced editor needs to mark errors *while the user types*,
+   * which neither `GET /api/tasks` nor `POST /api/views` can serve: one
+   * runs the query, the other writes it. Both also flatten the failure
+   * into a message string, discarding the `position` and `suggestions`
+   * that `validate.ts` deliberately carries (LST-44/LST-45). A marker
+   * cannot be placed from prose, so this route returns them as fields.
+   *
+   * `kind` is the discriminator the four error cases turn on, and it is
+   * derived from the error *class*, not from matching message text:
+   *
+   *  - `syntax`       — TokenizeError/ParseError (VUE-31, VUE-34)
+   *  - `unknown_field` — parses, names a field that does not exist (VUE-32)
+   *  - `unknown_value` — parses, names a value outside the config (VUE-33)
+   *
+   * The last two are both `QueryValidationError`, so they are split on
+   * whether the offending token is a known field — see `classify`.
+   * Reporting a valid query as 200 with `valid: true` rather than an
+   * empty error keeps VUE-28's legitimate-empty-result distinct from
+   * every failure: a query that matches nothing is still *valid*.
+   */
+  const handleValidateQuery: RouteHandler = async ({ req, res, locttDir }) => {
+    const r = await parseJsonBodyWithSchema(req, res, ValidateQueryRequestSchema);
+    const { workflowConfig } = await loadOptionalConfigs(locttDir);
+
+    try {
+      validateQuery(
+        parseQuery(tokenize(r.query)),
+        workflowConfig ? { workflow: workflowConfig } : {},
+      );
+    } catch (err) {
+      if (err instanceof TokenizeError || err instanceof ParseError) {
+        json(res, {
+          valid: false,
+          kind: "syntax",
+          message: err.message,
+          position: err.position,
+          suggestions: [],
+        });
+        return;
+      }
+      if (err instanceof QueryValidationError) {
+        json(res, {
+          valid: false,
+          // `unknown field "x"` is the only phrasing validate.ts uses
+          // for a field it does not recognise; everything else it
+          // raises is about a *value*. Matched on the structured
+          // message it builds itself, not on user text.
+          kind: err.message.startsWith("unknown field")
+            ? "unknown_field"
+            : "unknown_value",
+          message: err.message,
+          position: err.position,
+          suggestions: err.suggestions,
+        });
+        return;
+      }
+      throw err;
+    }
+
+    json(res, { valid: true });
   };
 
   const handleCreateView: RouteHandler = async ({ req, res, locttDir }) => {
@@ -2865,11 +2950,36 @@ export function createWebApp(options: WebAppOptions) {
       limit: Number.MAX_SAFE_INTEGER,
     };
 
+    /*
+      VUE-21. A saved view naming a since-deleted custom field is the
+      one case core deliberately *warns* about instead of throwing:
+      breaking a view that used to work would regress existing
+      trackers, so `listTasks` runs it and reports through
+      `onWarning`. Nothing was passing the callback, so the warning was
+      raised and dropped, and the request returned 200 with zero rows —
+      exactly the "zero rows presented as a legitimate empty result"
+      the case forbids.
+
+      Collected here and returned alongside the rows, the way
+      `unreadable` already reports per-file parse failures: the rows
+      that did match are still honest, and the reason the set may be
+      short is named rather than left for the user to infer.
+    */
+    const queryWarnings: { field: string; message: string; position: number; suggestions: string[] }[] = [];
+
     let result;
     try {
       result = listTasks({
         tasks,
         options: params,
+        onWarning: (err: QueryValidationError) => {
+          queryWarnings.push({
+            field: "query",
+            message: err.message,
+            position: err.position,
+            suggestions: [...err.suggestions],
+          });
+        },
         ...(queriesConfig !== undefined ? { queriesConfig } : {}),
         ...(workflowConfig !== undefined ? { workflowConfig } : {}),
         ctx: buildListContext(tasks),
@@ -2901,6 +3011,11 @@ export function createWebApp(options: WebAppOptions) {
       // unfiltered result, and the user has no way to learn that the
       // view they asked for is gone.
       ...(viewMissing ? { missing_view: requestedView } : {}),
+      // VUE-21: a saved view that ran but referenced something the
+      // workflow no longer defines. Non-fatal by design — the rows are
+      // real — but the user must be told, or a short result reads as a
+      // legitimate empty one.
+      ...(queryWarnings.length > 0 ? { warnings: queryWarnings } : {}),
     });
   };
 
@@ -3963,6 +4078,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "GET", pattern: "/api/workflow/usage", handler: handleWorkflowUsage },
     { method: "GET", pattern: "/api/workflow", handler: handleGetWorkflow },
     { method: "PUT", pattern: "/api/workflow", handler: handlePutWorkflow },
+    { method: "POST", pattern: "/api/query/validate", handler: handleValidateQuery },
     { method: "GET", pattern: "/api/views", handler: handleListViews },
     { method: "POST", pattern: "/api/views", handler: handleCreateView },
     { method: "PUT", pattern: VIEW_REF_RE, handler: handleUpdateView },

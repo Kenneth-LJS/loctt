@@ -25,6 +25,19 @@ import { QuerySortSchema } from "./query.js";
 import { WorkflowConfigSchema } from "./workflow.js";
 
 /**
+ * Body of `POST /api/query/validate`.
+ *
+ * Deliberately allows an *empty* string, unlike the view schemas: the
+ * advanced editor validates on every settle, and a box the user has
+ * just cleared must come back as an ordinary "invalid" marker rather
+ * than a shape rejection the editor has to special-case.
+ */
+export const ValidateQueryRequestSchema = z.object({
+  query: z.string(),
+}).strict();
+export type ValidateQueryRequest = z.infer<typeof ValidateQueryRequestSchema>;
+
+/**
  * Body of `POST /api/views`. Mirrors `core/views/manage.CreateViewInput`.
  */
 export const CreateViewRequestSchema = z.object({
