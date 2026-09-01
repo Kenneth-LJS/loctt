@@ -2157,3 +2157,87 @@ moving one argument.
 
 **Workaround used by the M4.7 UI specs.** They assign sprints by ULID,
 which is what the web client itself sends.
+
+## The header search box is disabled, so `/` has nothing to focus
+
+**Found:** M4.8 · 2026-09-01 · **Blocks:** A11Y-2
+
+`apps/web/src/client/shell/Header.tsx:102-107` renders the only global
+search box with `disabled` and `title="Search arrives in a later
+milestone"`. The `/` shortcut is built and registered
+(`shell/shortcuts.ts`), and the shell's handler focuses
+`input[type="search"]` — but a disabled input cannot take focus, so
+nothing happens.
+
+**To reproduce.** Load `/list`, press `/`, observe focus stays where it
+was. `document.activeElement` is unchanged.
+
+**Why it was not fixed here.** Implementing search is a feature no
+ticket in `TEMP-WEB-TICKETS.md` owns — grepping the file for "search"
+turns up nothing that builds it. Doing it inside the a11y polish
+ticket would be inventing scope.
+
+A11Y-2 is therefore left uncovered rather than tagged; see
+`decisions.md` § 8 A84. `tests/ui/flow-accessibility.spec.ts` carries a
+deliberately untagged test asserting the box is disabled, which fails
+the day search is built — the signal to restore the real assertions.
+
+## `PUT /api/user-settings` takes no state lock
+
+**Found:** M4.8 · 2026-09-01 · **Severity:** low
+
+`handlePutUserSettings` (`apps/web/src/server/server.ts:2567`) calls
+`saveUserSettings` directly, with no `withStateLock`. Every other
+mutating path takes the lock first.
+
+**To reproduce.** Hold the state lock from another process (core's
+`withStateLock`), then `PUT /api/user-settings`. It returns 200 and
+writes, where a task write in the same window correctly returns a
+`conflict` envelope.
+
+**Why it may not be a defect.** User settings are machine-local,
+per-checkout state — XS-52 explicitly calls them caches rather than
+tracker data, and says their absence must not surface an error. Two
+processes on the same checkout writing the same user's settings is a
+last-writer-wins situation with nothing to corrupt.
+
+**Why it is recorded anyway.** The asymmetry is undocumented, and the
+next person to add a settings field that *is* tracker-scoped will
+inherit an unlocked write path without noticing. If it is deliberate,
+it deserves a comment at the handler saying so.
+
+SET-39's spec was pointed at `PUT /api/workflow` (genuinely
+tracker-scoped and genuinely locked) rather than at this path.
+
+## The coverage gate reads case IDs out of prose, not only out of tags
+
+**Found:** M4.8 · 2026-09-01 · **Severity:** medium (it inflates the gate)
+
+`tools/coverage/main.ts` counts a case as covered when the token
+appears near `@verifies` anywhere in a scanned file — including inside
+a comment that is *explaining why the case is not covered*.
+
+**To reproduce.** Write, in a comment:
+
+    // Deliberately NOT tagged `@verifies A11Y-2`. …
+
+then run `npx tsx tools/coverage/main.ts --require A11Y-2`. It reports
+the case covered. Rewording the comment to avoid the literal token
+flips it back to uncovered — measured both ways during M4.8, a swing
+of one case.
+
+**Why it matters.** The failure direction is the bad one: prose that
+argues a case is *unmet* makes the gate believe it is met. Any comment
+quoting a tag — a TODO, a decision note, a review remark — silently
+inflates the count, and nothing in the output distinguishes a real tag
+from a mention.
+
+**Workaround used in M4.8.** Comments that discuss an untagged case
+refer to it as "that case" rather than repeating the ID next to the
+word `@verifies`. This is fragile: the next person to quote a tag in a
+comment will re-introduce it without knowing.
+
+**A fix would be** to require the tag to be the first non-space content
+of its comment line — `// @verifies X` — and ignore occurrences
+elsewhere. That is a change to the tooling, not to any ticket's cases,
+which is why it was recorded rather than done inside M4.8.

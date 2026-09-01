@@ -97,6 +97,41 @@ loctt ui
 
 This starts the server in the foreground and opens your browser to [http://localhost:4321](http://localhost:4321). You get board and list views for browsing, creating, and updating tasks — all backed by the same `.loctt/` data on disk. Press Ctrl-C to stop. Pass `--no-open` to skip the browser launch, or `--port <n>` to use a different port.
 
+### Keyboard shortcuts
+
+Press <kbd>?</kbd> anywhere in the app for the full reference. It is
+generated from the shortcut table the app dispatches from, so it cannot
+drift out of date.
+
+| Key | Action |
+|---|---|
+| <kbd>n</kbd> | Create a task |
+| <kbd>/</kbd> | Focus the search box |
+| <kbd>g</kbd> then <kbd>l</kbd> / <kbd>b</kbd> / <kbd>t</kbd> | Go to List / Board / Timeline |
+| <kbd>[</kbd> | Collapse or expand the sidebar |
+| <kbd>t</kbd> | Cycle the theme (light → dark → system) |
+| <kbd>?</kbd> | Show the shortcut reference |
+| <kbd>Esc</kbd> | Close the topmost dialog or menu |
+
+Single-key shortcuts are ignored while a text field, editor, or dialog
+has focus, so they never interfere with typing. Modifier combinations
+(<kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + a key) are left to the browser.
+
+Settings → Personal → Keyboard also lists the context-specific keys —
+moving a board card, reordering rows, saving the body editor.
+
+### Accessibility
+
+The UI is built for keyboard-only and screen-reader use: modals trap
+focus and return it to the control that opened them, icon-only buttons
+carry accessible names, the task table exposes real column and row
+header semantics, and asynchronous outcomes (saves, sort changes,
+filter result counts, route changes) are announced through a live
+region. A skip link is the first tab stop on every page.
+
+One known gap: the header search box is not yet implemented, so
+<kbd>/</kbd> currently has no field to focus. See `docs/dev/known-gaps.md`.
+
 ## MCP / AI Agent Integration
 
 LocTT ships an MCP server so AI coding agents (Claude Code, Cursor, etc.) can manage tasks on your behalf. The MCP layer exposes structured tools for creating, querying, updating, and linking tasks, managing users, projects, sprints, labels, milestones, attachments, and more — agents never touch raw files.

@@ -516,6 +516,63 @@ condition 2 working as intended: a feature existing nowhere is scope,
 and adding a field to a shared contract is Ken's call, not an
 agent's.
 
+#### M4.8 · A11Y-2 has no target, and 25 more cases need what this repo cannot measure
+
+**A11Y-2 — a genuine feature, so the run did not build it.** The case
+needs `/` to focus "the filter/search input". The binding is built and
+registered; the app's only global search box is `disabled` with
+`title="Search arrives in a later milestone"`
+(`shell/Header.tsx:102`). Grepping `TEMP-WEB-TICKETS.md` for "search"
+finds no ticket that builds one. Per the table above this is condition
+1 — a feature existing nowhere — so the case is **left uncovered and
+not reworded**, and no test carries its tag. `decisions.md` A84 and
+`known-gaps.md` record it.
+
+**Twenty-five a11y cases need instruments this repo does not have.**
+They fall into three kinds, and only the first is a scope question:
+
+- **Needs a dependency (7):** A11Y-16 (a visible focus indicator on
+  every stop, both themes), A11Y-30 (colour never the sole carrier),
+  A11Y-40 (contrast ratios), A11Y-37 (`prefers-reduced-motion`),
+  A11Y-38/39 (zoom to 200%, page and text-only), A11Y-19 (tab order
+  matching *visual* order). These are computed-style, contrast and
+  rendered-geometry questions. `@axe-core/playwright`, `axe-core` and
+  `jest-axe` are all absent — verified against `package.json`,
+  `apps/web/package.json` and `node_modules`, with `@playwright/test`
+  as the positive control. **Adding a test dependency is a call that
+  stops the run**, so none was added and none of these is tagged.
+  Playwright can assert roles, names, focus and `aria-*`; it cannot
+  audit contrast or run a ruleset.
+
+- **Needs a real screen reader (4):** A11Y-51 (a long partial-result
+  announcement "not truncated by a live region that cuts off long
+  text"), A11Y-52 (the unreachable state "remains discoverable
+  afterwards" to a user who was away), A11Y-49 (the crashed-migration
+  screen read heading-by-heading), A11Y-42's announcement half. The
+  flow doc says so itself in its preamble: verification "assumes a
+  real screen reader … not an automated audit tool". The DOM contract
+  under several of these *is* covered — `ui/Announcer.test.tsx`
+  asserts atomicity and the no-backlog rule — but the cases as written
+  are about what is spoken, and no test here can claim that.
+
+- **Needs surfaces later tickets own (16):** A11Y-9/10/11 (full
+  keyboard cycles through list → open → edit → save), A11Y-5, A11Y-12,
+  A11Y-17, A11Y-18, A11Y-23, A11Y-28/29 (keyboard alternatives to drag
+  on board and timeline — the *bindings* exist, `BoardCard.tsx:100`;
+  the announcement and disk-check bullets do not), A11Y-36, A11Y-41,
+  ERR-32 (an audit across every milestone's E2E suites, explicitly
+  "re-run at each milestone review gate" — a process, not a test),
+  ERR-44.
+
+ERR-24 started in this list and was moved out: its last bullet
+("nothing is left in `tasks/<id>/attachments/` — verify by listing the
+directory") is server-side and was covered in
+`server.attachments.test.ts`. The claim that it was unreachable did
+not survive being checked, which is why it is called out here.
+
+None of these was narrowed to fit. 38 of the ticket's 64 cases are
+covered; the other 26 are listed above with what each actually needs.
+
 #### M4.6 · ONB-18's two entry conditions are both unreachable from the wizard
 
 **Measured 2026-09-01.**

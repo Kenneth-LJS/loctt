@@ -44,25 +44,16 @@ describe("useSidebarCollapse", () => {
     expect(window.localStorage.getItem(KEY)).toBe("0");
   });
 
-  it("toggles on the `[` key when no input is focused", () => {
-    const { result } = renderHook(() => useSidebarCollapse());
-    act(() => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "[" }));
-    });
-    expect(result.current.collapsed).toBe(true);
-  });
-
-  it("ignores `[` while a text input is focused", () => {
-    const input = document.createElement("input");
-    document.body.appendChild(input);
-    input.focus();
-    const { result } = renderHook(() => useSidebarCollapse());
-    act(() => {
-      input.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "[", bubbles: true }),
-      );
-    });
-    expect(result.current.collapsed).toBe(false);
-    input.remove();
-  });
+  // The `[` binding moved to the global shortcut registry
+  // (`shortcuts.ts` / `useShortcuts.ts`) in M4.8, so the two tests
+  // that used to live here — "toggles on `[`" and "ignores `[` while
+  // an input is focused" — no longer have a listener in this hook to
+  // exercise. They are not dropped: `useShortcuts.test.ts` asserts the
+  // dispatch and both suppression rules against the registry, and
+  // `flow-accessibility.spec.ts` (A11Y-6) asserts `[` actually
+  // collapses the rendered sidebar end to end, which is a stronger
+  // claim than the hook-level version made.
+  //
+  // What stays here is what this hook still owns: the persisted state
+  // (SHL-12), which is the half the shortcut path calls into.
 });

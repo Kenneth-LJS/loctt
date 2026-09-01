@@ -1358,6 +1358,21 @@ export function createWebApp(options: WebAppOptions) {
       const result = await applyWorkflowEdit(locttDir, payload.workflow, remap);
       json(res, result);
     } catch (err) {
+      // Core attributed it — a held state lock, a schema mismatch, an
+      // unreadable file — so the envelope comes from the error rather
+      // than being re-derived (V1, V8).
+      //
+      // Without this branch every such failure was flattened to
+      // `config_invalid` with a 400. Measured: with another process
+      // holding the state lock, a settings write reported "the config
+      // is invalid" and blamed the user for a file that was perfectly
+      // fine (SET-39, ERR-31, and ERR-32's "no routine failure lands
+      // in the generic handler").
+      if (err instanceof LocttError) {
+        const env = err.toEnvelope();
+        error(res, env.message, statusForCode(err.code), env);
+        return;
+      }
       // applyWorkflowEdit validates the whole document and rewrites task
       // frontmatter; it either commits or rejects, so the write did not
       // land. `config_invalid` rather than a generic validation failure —

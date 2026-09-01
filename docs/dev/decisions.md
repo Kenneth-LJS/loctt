@@ -5321,3 +5321,283 @@ Recorded here rather than done.
 **To revert.** Delete the `UnitReason` type and the
 `burndown-enum-fallback` block; SPR-11's "states the fallback" bullet
 then has nothing satisfying it.
+
+### A84 · A11Y-2 is left uncovered: the `/` shortcut is built, its target is disabled
+
+**Ticket:** M4.8 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** A11Y-2 requires `/` to move focus to "the
+filter/search input" and to not insert the character. The `/` binding
+is built and registered in `shell/shortcuts.ts`, and the shell's
+handler focuses `input[type="search"]`.
+
+But the app's only global search box — the header's — is rendered
+`disabled`, with `title="Search arrives in a later milestone"`
+(`shell/Header.tsx:102-107`). A disabled input cannot receive focus, so
+the case's first bullet cannot be satisfied. Grepping
+`TEMP-WEB-TICKETS.md` for "search" finds no ticket in this run that
+builds it.
+
+**What had to be decided.** Whether to build a global search box so
+A11Y-2 could be claimed.
+
+**Decided.** No. Building full-text search is a feature no ticket owns
+and would be inventing scope. A11Y-2 is left **uncovered** and no test
+carries its `@verifies` tag.
+
+**Why not tag it anyway.** A test asserting the `/` handler runs would
+be vacuity shape (b) — the label asserted rather than the effect. The
+gate would read A11Y-2 as covered while a keyboard user still cannot
+reach a search box. The third bullet ("`/` inside a text field inserts
+a literal `/`") *is* covered, in
+`shell/useShortcuts.test.tsx`, but under A11Y-1's and A11Y-43's tags
+where it genuinely belongs rather than as a stand-in for the case.
+
+`tests/ui/flow-accessibility.spec.ts` carries a deliberately untagged
+test, "A11Y-2 (partial)", asserting the box is disabled. It fails the
+day search is built, which is the signal to restore the real
+assertions and the tag.
+
+**To revert.** Build the header search box, then replace that test
+with the two focus assertions and tag it `@verifies A11Y-2`.
+
+### A85 · The global shortcut table is one registry that both dispatches and documents
+
+**Ticket:** M4.8 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** A11Y-4's second bullet: "the list matches the
+shortcuts actually bound — a shortcut that exists but isn't listed, or
+listed but not bound, is a defect."
+
+Before this ticket the bindings were scattered — `[` in
+`useSidebarCollapse`, `n` in `CreateTaskProvider` — and the reference
+in `settings/KeyboardPanel.tsx` was a hand-maintained array with source
+line numbers in its comments. That makes the bullet unassertable by
+construction: the only way to check the list against the bindings is
+for a human to re-read both.
+
+**What had to be decided.** Whether to add the new keys as more ad-hoc
+listeners, or to centralise.
+
+**Decided.** One exported table, `GLOBAL_SHORTCUTS` in
+`apps/web/src/client/shell/shortcuts.ts`. `useShortcuts` dispatches
+from it; `ShortcutHelpDialog` renders from it. The `[` and `n`
+listeners were **removed** from their components and re-bound through
+the registry.
+
+This also fixed a real defect found on the way: `[` carried only the
+typing guard, not the dialog guard, so `[` collapsed the sidebar
+underneath an open create modal — an A11Y-8 violation. Centralising
+applies all three suppression rules (typing, dialog, modifier)
+uniformly.
+
+**What is deliberately not in it.** Context-scoped keys — `Ctrl+←` on a
+board card, `Esc` inside a modal, `↑`/`↓` on a reorder handle. Those
+are bound by the component that owns focus and only mean anything while
+it is focused. `Esc` in particular must stay per-layer: A11Y-5 and
+A11Y-34 require it to close *the topmost* layer, which only the layers
+know.
+
+**Consequence for existing tests.** Two tests in
+`useSidebarCollapse.test.tsx` asserted the `[` listener that no longer
+lives there. They were removed, not weakened — the behaviour is now
+covered more strongly by `useShortcuts.test.tsx` (dispatch plus both
+suppression rules) and end to end by A11Y-6 in
+`flow-accessibility.spec.ts`. `settings/KeyboardPanel.tsx` still holds
+its own hand-maintained table for the context-scoped keys, which the
+registry does not cover.
+
+**To revert.** Re-add the `keydown` effects to `useSidebarCollapse` and
+`CreateTaskProvider` and delete `shortcuts.ts` / `useShortcuts.ts`;
+A11Y-1..8 lose their coverage and the `?` dialog has no source.
+
+### A86 · Modals mark the shell chrome `inert`, and focus recovery is centralised there
+
+**Ticket:** M4.8 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** A11Y-14's third bullet requires content behind a
+modal to be "inert to assistive tech, not merely visually dimmed — a
+screen reader's virtual cursor cannot browse the list underneath". A
+focus trap does not deliver that, because a virtual cursor does not
+follow focus.
+
+**What had to be decided.** What to mark, and how to keep A11Y-15's
+focus-return working once it was marked.
+
+**Decided.** `useInertBackground` in `ui/Modal.tsx` sets `inert` on the
+element carrying `data-app-chrome` (the shell's chrome div), guarded by
+a depth counter so stacked layers (A11Y-34) unwind correctly.
+
+**Two wrong implementations, both measured, both worth recording
+because each looked right.**
+
+1. `aria-hidden` on `#root`. These modals are **not** portalled — they
+   render inside `#root` — so this hides the dialog along with the page
+   behind it. Worse than the defect it fixes, and invisible to a test
+   that only checks the attribute landed.
+
+2. Marking the chrome inert without touching focus. `focus()` on an
+   element inside an `inert` subtree is silently ignored, so the create
+   modal's own focus-restore ran while the chrome was still inert and
+   left `document.activeElement === body` — exactly A11Y-15's named
+   failure. Verified by isolation: with `useInertBackground()` commented
+   out of `CreateTaskModal`, A11Y-15 passed; with it in, it failed.
+
+So `useInertBackground`'s cleanup also restores focus, to the last
+element focused *within the chrome*. That element is tracked by a
+capturing `focusin` listener installed at **module load**, not from
+inside the effect — installing it in the effect means it starts
+existing only once a dialog is already opening, by which point the
+trigger's own `focusin` has been missed and there is nothing to restore
+to. That mistake cost three failed fixes before isolation found it.
+
+**A third wrong version, found by the full suite.** Marking the chrome
+inert unconditionally broke every dialog that renders *from inside*
+the chrome. `SaveViewDialog` mounts in `FilterBar` → `<main>` →
+chrome, so inerting the chrome disabled the dialog's own Save button:
+VUE-6, VUE-7 and XS-17 each hung 30s clicking a control that would
+never enable. The same `#root` mistake in a different hat, and this
+time invisible until a spec three files away timed out.
+
+`useInertBackground` now takes the dialog's panel ref and **refuses to
+inert a chrome that contains it**. Focus recovery is deliberately
+*not* skipped in that case — it is a separate concern, and A11Y-34's
+chain (⋯ menu → delete dialog) lives inside the chrome and depends on
+it. So a chrome-nested dialog keeps its focus trap and its focus
+return, and forgoes only the virtual-cursor isolation.
+
+**What that costs, stated plainly.** A11Y-14's third bullet is fully
+met only for dialogs mounted as siblings of the chrome — today the
+create modal and the `?` dialog. `SaveViewDialog`, `DeleteTaskDialog`
+and the settings dialogs get the trap but not the inert background.
+Moving them to a portal would fix it and is the right long-term shape;
+it is not an a11y-polish ticket's change to make across six
+components, so it is recorded here rather than done.
+
+**To revert.** Delete `useInertBackground` and its call sites in
+`ui/Modal.tsx`, `create/CreateTaskModal.tsx`,
+`task/DeleteTaskDialog.tsx` and `shell/ShortcutHelpDialog.tsx`.
+A11Y-14's inert bullet loses its coverage; A11Y-15 keeps working, since
+the modal's own restore is sufficient once nothing is inert.
+
+### A87 · `PUT /api/workflow` surfaces core's error envelope instead of flattening it to `config_invalid`
+
+**Ticket:** M4.8 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** Writing SET-39's spec — a tracker settings write
+under a held state lock — surfaced a real defect. `handlePutWorkflow`
+caught *everything* from `applyWorkflowEdit` and reported
+`config_invalid` with a 400.
+
+So a lock conflict, which is a transient condition nothing about the
+user's input caused, was reported as "the config is invalid". Measured:
+with another process holding the state lock, the envelope came back
+`{code: "config_invalid"}` and a 400.
+
+That is three violations at once — ERR-31 (the cause was knowable and
+was reported as something else), ERR-32 (a routine failure landing in a
+generic handler), and SET-39's own first bullet (the failure must name
+the lock).
+
+**What had to be decided.** Whether to fix the handler inside an a11y
+polish ticket.
+
+**Decided.** Fixed. The handler now re-raises core's envelope for any
+`LocttError` before falling back to `config_invalid`:
+
+```ts
+if (err instanceof LocttError) {
+  const env = err.toEnvelope();
+  error(res, env.message, statusForCode(err.code), env);
+  return;
+}
+```
+
+This is the pattern `bulkAborted` already uses a few hundred lines
+above (V1, V8: the envelope comes from the error rather than being
+re-derived), so it is applying an existing convention to a handler that
+had missed it, not introducing one.
+
+**Scope.** One handler, and only the branch that was mis-attributing.
+The `config_invalid` fallback is untouched and still catches a genuinely
+invalid document, which is what it was written for.
+
+**To revert.** Delete the `LocttError` branch in `handlePutWorkflow`;
+SET-39's test in `apps/web/src/server/server.errors.test.ts` goes red
+with `expected 'config_invalid' to be 'conflict'`, which is exactly how
+it was found.
+
+### A88 · Focus return walks back to the nearest *surviving* chrome focus, not the newest one
+
+**Ticket:** M4.8 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** A11Y-34 opens three layers — task detail → ⋯ menu →
+delete confirmation — and requires focus to "return correctly at each
+step". A11Y-15 says the same thing for one layer, and adds the escape
+clause that matters here: focus lands on the trigger "or its nearest
+surviving equivalent when the trigger is gone".
+
+Two problems showed up, both measured:
+
+1. `DeleteTaskDialog` focused its input on open and did **nothing** on
+   close. Dismissing it left `document.activeElement === body`, so the
+   next Tab restarted at the top of the page.
+2. Once that was fixed with `useFocusTrap`, focus still landed on
+   `body` — because the ⋯ menu *closes as its item is chosen*, and the
+   dialog mounts afterwards. At trap-mount time there was nothing
+   focused to remember, and the single-slot chrome-focus tracker held
+   the menu item, which was already detached.
+
+**What had to be decided.** What "the trigger" means when the thing
+that opened the dialog no longer exists.
+
+**Decided.** `ui/Modal.tsx` keeps a bounded history (4) of elements
+focused inside the app chrome, and the restore walks back to the most
+recent one still `isConnected`. For A11Y-34 that is the menu's own
+trigger — measured: focus lands on the "More" button.
+
+The history is re-resolved at cleanup rather than reused from open
+time, because the element recorded when the dialog opened can itself
+unmount while it is open (a row deleted underneath a confirmation is
+the ordinary case).
+
+**Why bounded.** An unbounded history retains detached DOM for the
+session. Four covers trigger → menu → item → dialog with room spare.
+
+**To revert.** Replace `lastSurvivingChromeFocus()` with a single
+`lastChromeFocus` slot and drop `useFocusTrap`/`useInertBackground`
+from `task/DeleteTaskDialog.tsx`. A11Y-34 then fails with focus on
+`BODY`, which is how it was found.
+
+### A89 · Settings → Keyboard derives its global rows from the registry
+
+**Ticket:** M4.8 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** `settings/KeyboardPanel.tsx` held a hand-maintained
+`SHORTCUTS` array with source line numbers in its comments. Its
+docblock said shortcuts "specified but not yet wired (A11Y-1's `n`,
+for one) are deliberately absent" — correct when written.
+
+M4.8 built `n`, `/`, the `g` chords, `t` and `?`. That left the panel
+listing exactly one global key (`[`) and silently omitting six that
+were bound — a reference that is wrong in the direction A11Y-4 names:
+bound but not listed.
+
+**What had to be decided.** Whether to add six rows by hand or derive
+them.
+
+**Decided.** The panel's "Global" group is `GLOBAL_SHORTCUTS.map(...)`
+— the same table `useShortcuts` dispatches from and `ShortcutHelpDialog`
+renders. Adding a global key now updates the dispatcher, the `?`
+dialog and this page together.
+
+**What stayed hand-maintained, and why.** The context-scoped groups —
+board cards, reorder handles, the body editor, dialogs. Those keys are
+bound by whichever component owns focus, there is no single table to
+derive them from, and hoisting them into one would mean the global
+dispatcher needs to know what is focused (see A85). They keep their
+source-line comments, and the docblock now says which half is derived
+and which is not.
+
+**To revert.** Replace the `Global` group with a literal array. The
+panel then re-acquires the drift A11Y-4 forbids, silently.

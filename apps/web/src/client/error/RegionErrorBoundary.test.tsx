@@ -193,6 +193,142 @@ describe("RegionErrorBoundary", () => {
 });
 
 /**
+ * The error surface's own robustness, and its keyboard operability.
+ *
+ * ERR-33 asks for proof the generic fallback is "reachable at all, and
+ * is tested" rather than dead code. ERR-38 asks that a throw *inside*
+ * the error surface not cascade. A11Y-54 asks that the fallback be
+ * keyboard-operable and that focus reach it.
+ */
+describe("the error surface itself", () => {
+  /**
+   * @verifies ERR-33
+   *
+   * The case's first bullet: "an intentionally unattributable fault
+   * produces the ERR-30 surface rather than an unhandled rejection, a
+   * blank region, or a console-only error."
+   *
+   * An error with no message and no name is as unattributable as it
+   * gets — nothing about it can be mapped to a specific cause, so it
+   * must land in the generic fallback. The assertion is that the
+   * region still *renders something legible*, which is what
+   * distinguishes this from the blank region the case forbids.
+   */
+  it("renders the generic fallback for a fault it cannot attribute", () => {
+    function Unattributable(): never {
+      // No message, no name, no code — nothing to key a specific
+      // message off.
+      throw new Error("");
+    }
+
+    render(
+      <RegionErrorBoundary region="the task list">
+        <Unattributable />
+      </RegionErrorBoundary>,
+    );
+
+    // Not blank, and not console-only: the region names itself in user
+    // terms and offers a way out, which is the ERR-30 surface.
+    expect(screen.getByRole("heading").textContent).toContain("the task list");
+    expect(screen.getByRole("button", { name: /try/i })).toBeTruthy();
+  });
+
+  /**
+   * @verifies ERR-38
+   *
+   * "Force a throw inside the toast provider or the error-boundary
+   * fallback itself."
+   *
+   * The fallback renders a `<pre>` built from the caught error. An
+   * error whose `stack` getter throws is the sharpest available probe:
+   * the boundary has already caught something, and now the act of
+   * *describing* it throws too.
+   *
+   * The bar the case sets is deliberately low — "at worst a plain
+   * static fallback" — but it is a real bar: an infinite
+   * render/throw loop or a blank page both fail it.
+   */
+  it("does not cascade when describing the error itself throws", () => {
+    const hostile = new Error("original cause");
+    Object.defineProperty(hostile, "stack", {
+      get() { throw new Error("secondary failure while reading stack"); },
+    });
+
+    function Hostile(): never { throw hostile; }
+
+    // The assertion is that this returns at all. A render/throw loop
+    // would blow the stack rather than fail an expectation, and a
+    // rethrow would propagate out of `render`.
+    expect(() => {
+      render(
+        <RegionErrorBoundary region="the task list">
+          <Hostile />
+        </RegionErrorBoundary>,
+      );
+    }).not.toThrow();
+
+    // Second bullet: "something legible still reaches the user".
+    expect(screen.getByRole("heading").textContent).toContain("the task list");
+
+    // Third bullet: "the console still receives the original error,
+    // not only the secondary one, so the root cause is not lost".
+    //
+    // Asserted against **the boundary's own log line**, not against
+    // the console as a whole. React logs caught render errors itself,
+    // so a whole-console assertion passes even with the boundary's
+    // logging deleted — measured: removing `error` from the boundary's
+    // `console.error` call left this test green. That is vacuity shape
+    // (a), something else doing the work.
+    //
+    // So the call is located by the boundary's own prefix, and the
+    // original error must be among *that* call's arguments.
+    const ownCall = vi
+      .mocked(console.error)
+      .mock.calls.find(args => String(args[0]).includes("[loctt] render error in"));
+    expect(ownCall, "the boundary did not log its own line").toBeDefined();
+    expect(String((ownCall ?? []).map(a => String(a)).join(" "))).toContain("original cause");
+  });
+
+  /**
+   * @verifies A11Y-54
+   *
+   * The fallback's recovery actions must be reachable and activatable
+   * by keyboard, and the stack must not be the first thing announced.
+   */
+  it("exposes a heading and keyboard-activatable recovery actions", () => {
+    render(
+      <RegionErrorBoundary region="the task list">
+        <Boom explode />
+      </RegionErrorBoundary>,
+    );
+
+    // First bullet: the heading is announced. A real heading element,
+    // not a styled div — `getByRole` resolves the browser's semantics,
+    // so this fails if the copy is rendered as a bare `<span>`.
+    const heading = screen.getByRole("heading");
+    expect(heading.textContent).toContain("the task list");
+
+    // First bullet, second half: the recovery actions are focusable
+    // and activatable. Buttons are keyboard-activatable by nature —
+    // the real risk is a `<div onClick>`, which `getByRole("button")`
+    // would not find.
+    const retry = screen.getByRole("button", { name: /try/i });
+    retry.focus();
+    expect(document.activeElement).toBe(retry);
+
+    // Third bullet: "a raw stack trace, if shown at all, is behind a
+    // collapsed disclosure that is not the first thing announced."
+    const details = document.querySelector("details");
+    expect(details?.hasAttribute("open")).toBe(false);
+    // And the disclosure comes *after* the heading in document order,
+    // so a screen reader reaches the explanation before the stack.
+    expect(
+      heading.compareDocumentPosition(details as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});
+
+/**
  * @verifies SHL-42
  *
  * The route-level boundary owes more than the region ones: the whole

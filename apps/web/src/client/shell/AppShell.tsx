@@ -5,12 +5,17 @@ import { type ReactNode, useEffect } from "react";
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
 import { CreateTaskProvider } from "../create/CreateTaskProvider.tsx";
 import { adoptStoredTheme } from "../theme/useTheme.ts";
+import { AnnouncerProvider } from "../ui/Announcer.tsx";
+import { CHROME_ATTR } from "../ui/Modal.tsx";
 import { ToastProvider } from "../ui/Toast.tsx";
 import { Header } from "./Header.tsx";
 import { SchemaBanner } from "./SchemaBanner.tsx";
 import { ServerUnreachableBanner } from "./ServerUnreachableBanner.tsx";
 import { Sidebar } from "./Sidebar.tsx";
+import { MAIN_CONTENT_ID,SkipLink } from "./SkipLink.tsx";
+import { useGlobalShortcuts } from "./useGlobalShortcuts.tsx";
 import { useMainScrollRestoration } from "./useMainScrollRestoration.ts";
+import { useRouteAnnouncement } from "./useRouteAnnouncement.ts";
 import { useSidebarCollapse } from "./useSidebarCollapse.ts";
 
 /**
@@ -59,19 +64,85 @@ export function AppShell({
   useEffect(() => {
     if (storedTheme !== undefined) adoptStoredTheme(storedTheme);
   }, [storedTheme]);
-  const mainRef = useMainScrollRestoration();
-  const today = info.today;
 
   return (
-    // The create modal and the toast region are app-level, not
-    // per-view: `n` opens the modal from any route (NEW-4), and the
-    // success toast has to outlive the modal that raised it and the
-    // navigation its "Open" link performs (NEW-12). Mounted inside the
-    // router so `useNavigate` resolves, and inside the query provider
-    // so the form's config reads share the app's cache.
+    // The create modal, the toast region and the announcer are
+    // app-level, not per-view: `n` opens the modal from any route
+    // (NEW-4), the success toast has to outlive the modal that raised
+    // it and the navigation its "Open" link performs (NEW-12), and the
+    // live regions must survive the route change they announce
+    // (A11Y-45). Mounted inside the router so `useNavigate` resolves,
+    // and inside the query provider so the form's config reads share
+    // the app's cache.
+    <AnnouncerProvider>
     <ToastProvider>
     <CreateTaskProvider>
-    <div className="flex h-screen flex-col">
+      <ShellChrome
+        info={info}
+        currentUser={currentUser}
+        identityUnknown={identityUnknown}
+        collapsed={collapsed}
+        toggle={toggle}
+        canToggle={canToggle}
+      >
+        {children}
+      </ShellChrome>
+    </CreateTaskProvider>
+    </ToastProvider>
+    </AnnouncerProvider>
+  );
+}
+
+/**
+ * The chrome itself, mounted inside the providers.
+ *
+ * Split out because the global shortcuts need `useCreateTask` (for
+ * `n`) and `useAnnouncer` (for `t`), and a hook cannot read a context
+ * its own component provides. The alternative — threading an imperative
+ * handle out of the providers — buys nothing and hides the dependency.
+ */
+function ShellChrome({
+  info,
+  currentUser,
+  identityUnknown,
+  collapsed,
+  toggle,
+  canToggle,
+  children,
+}: {
+  readonly info: TrackerInfoResponse;
+  readonly currentUser: UserProfile | null;
+  readonly identityUnknown: boolean;
+  readonly collapsed: boolean;
+  readonly toggle: () => void;
+  readonly canToggle: boolean;
+  readonly children?: ReactNode;
+}) {
+  const mainRef = useMainScrollRestoration();
+  const today = info.today;
+  useRouteAnnouncement();
+
+  const { helpDialog } = useGlobalShortcuts({
+    // A11Y-2: `/` focuses the search box and scrolls it into view. The
+    // box lives in the header, so the shell finds it by its accessible
+    // name rather than threading a ref through Header's props — the
+    // same name the case's screen-reader user would hear.
+    onFocusSearch: () => {
+      const box = document.querySelector<HTMLInputElement>('input[type="search"]');
+      if (box === null) return;
+      box.focus();
+      box.scrollIntoView({ block: "nearest" });
+    },
+    onToggleSidebar: toggle,
+  });
+
+  return (
+    <>
+    {/* First in the DOM so it is the first tab stop (A11Y-44). Outside
+        the chrome element so a modal marking the chrome inert does not
+        also swallow it. */}
+    <SkipLink />
+    <div className="flex h-screen flex-col" {...{ [CHROME_ATTR]: "" }}>
       {/* SHL-41: an unreachable server is app-level, not per-view. A
           user watching a cached board while the server dies sees
           nothing from a view-scoped error. */}
@@ -83,6 +154,7 @@ export function AppShell({
           identityUnknown={identityUnknown}
           onToggleSidebar={toggle}
           canToggleSidebar={canToggle}
+          sidebarCollapsed={collapsed}
           {...(info.schemaStatus.kind !== "current"
             ? {
                 createBlocked:
@@ -100,16 +172,23 @@ export function AppShell({
         {/* The scrolling element is this pane, not the window — the
             shell is a fixed grid. The router restores the offset of
             elements carrying this attribute (SHL-25, SHL-26). */}
+        {/* `tabIndex={-1}` makes the pane programmatically focusable
+            without adding a tab stop, which is what lets the skip link
+            (A11Y-44) and the route announcement (A11Y-45) land focus
+            here. `<main>` is also the landmark a screen reader jumps
+            to directly. */}
         <main
           ref={mainRef}
+          id={MAIN_CONTENT_ID}
+          tabIndex={-1}
           data-scroll-restoration-id="main"
-          className="row-start-2 overflow-auto bg-bg-canvas"
+          className="row-start-2 overflow-auto bg-bg-canvas outline-none"
         >
           {children ?? <Outlet />}
         </main>
       </div>
     </div>
-    </CreateTaskProvider>
-    </ToastProvider>
+    {helpDialog}
+    </>
   );
 }

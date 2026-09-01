@@ -1,6 +1,5 @@
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useMemo, useRef, useState } from "react";
 
-import { isTypingTarget } from "../shell/typingTarget.ts";
 import { CreateTaskModal } from "./CreateTaskModal.tsx";
 
 /**
@@ -53,26 +52,14 @@ export function CreateTaskProvider({ children }: { readonly children: ReactNode 
 
   const close = useCallback(() => { setState(null); }, []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== "n" || e.metaKey || e.ctrlKey || e.altKey) return;
-      // NEW-4's third bullet: inside a text input, `n` types the
-      // letter. The guard is a shared helper with its own unit test —
-      // see `typingTarget.ts` for why testing it through the modal
-      // proves nothing.
-      if (isTypingTarget(e.target)) return;
-      // NEW-31: while any dialog owns focus, `n` is ignored rather
-      // than stacking a second trap on top of the first.
-      if (document.querySelector('[role="dialog"], [role="alertdialog"]') !== null) return;
-      e.preventDefault();
-      const active = document.activeElement;
-      opener.current = active instanceof HTMLElement ? active : null;
-      setState({});
-    };
-    window.addEventListener("keydown", onKey);
-    return () => { window.removeEventListener("keydown", onKey); };
-  }, []);
-
+  // `n` is bound by the global shortcut registry
+  // (`shell/shortcuts.ts`), which calls `open()` above. It used to be
+  // a local listener here; moving it means the typing guard, the
+  // dialog guard (NEW-31) and the modifier guard are applied by the
+  // same code that applies them to every other global key, and the
+  // binding is the same table the `?` reference renders from
+  // (A11Y-4). `open` captures the opener itself, so focus still
+  // returns to the trigger (NEW-28).
   const api = useMemo(() => ({ open, isOpen: state !== null }), [open, state]);
 
   return (
