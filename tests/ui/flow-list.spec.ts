@@ -4394,6 +4394,51 @@ test.describe("VUE — built-ins and saved views (M1.3)", () => {
 
 test.describe("VUE — saving a view (M1.3)", () => {
   // @verifies VUE-6
+  // @verifies VUE-8
+  //
+  // The reachability half. Six M4.5 blockers — VUE-8, 10, 11, 31, 32,
+  // 33 — were tagged, green, and reported covered while
+  // `AdvancedQueryEditor` was imported by nothing but its own test and
+  // tree-shaken out of the bundle: `dsl-input` appeared **zero** times
+  // in the built assets. Every one of those cases was verified against
+  // the server API or the unmounted module, and neither layer can
+  // observe that no user can open the editor.
+  //
+  // The cause was structural, not an oversight. `dslToSearch.ts`
+  // imported `@loctt/core`'s barrel, which drags `node:path` and
+  // `sharp` into the browser bundle, so mounting the editor *broke the
+  // client build*. Narrow subpath imports fixed it (A37's pattern).
+  //
+  // This test asserts the one thing those six could not: that a user
+  // can reach it and that it runs a query.
+  test("VUE-8: the advanced editor is reachable from the list and runs a query", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Bug one", fields: { status: "in_progress" } },
+      { title: "Other" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+
+    // Reachable — the assertion whose absence let six blockers pass.
+    const toggle = page.getByTestId("advanced-query-toggle");
+    await expect(toggle).toBeVisible();
+    await toggle.click();
+    await expect(page.getByTestId("advanced-query-editor")).toBeVisible();
+
+    // And it runs: a valid query narrows the list to the matching row.
+    await page.getByTestId("dsl-input").fill("status = in_progress");
+    // Ctrl/Cmd-Enter runs; plain Enter inserts a newline, because the
+    // textbox is multi-line and a bare Enter mid-query would submit an
+    // incomplete one. Measured: my first draft pressed Enter and the
+    // query never ran — the editor was right and the test was wrong.
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect(page).toHaveURL(/[?&]q=/);
+    await expect(page.getByText("Bug one")).toBeVisible();
+    await expect(page.getByText("Other")).toHaveCount(0);
+  });
+
   // @verifies VUE-21
   //
   // The server half of this was built with a server test asserting the

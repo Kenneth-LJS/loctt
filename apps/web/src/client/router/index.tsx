@@ -11,6 +11,7 @@ import { ListView } from "../list/ListView.tsx";
 import { MilestoneDetail } from "../milestones/MilestoneDetail.tsx";
 import { MilestonesView } from "../milestones/MilestonesView.tsx";
 import { NotFound } from "../routes/NotFound.tsx";
+import { DEFAULT_SECTION } from "../settings/sections.ts";
 import { SettingsShell } from "../settings/SettingsShell.tsx";
 import { AppBootstrap } from "../shell/AppBootstrap.tsx";
 import { SprintDetail } from "../sprints/SprintDetail.tsx";
@@ -211,6 +212,25 @@ const milestoneDetailRoute = createRoute({
   },
 });
 
+// SET-1's first bullet: "Landing on `/settings` redirects to a concrete
+// section rather than rendering an empty pane." Without this route the
+// bare path fell through to the app-level 404 — so `/settings/typo`
+// rendered the settings shell with its nav intact while the canonical
+// `/settings` did not. The typo'd URL was handled better than the real
+// one, and SET-1's tagged test never requested the bare path.
+const settingsIndexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings",
+  beforeLoad: () => {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect({
+      to: "/settings/$section",
+      params: { section: DEFAULT_SECTION },
+      replace: true,
+    });
+  },
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   errorComponent: RouteError,
@@ -248,6 +268,7 @@ const routeTree = rootRoute.addChildren([
   sprintDetailRoute,
   milestonesRoute,
   milestoneDetailRoute,
+  settingsIndexRoute,
   settingsRoute,
   initRoute,
 ]);
