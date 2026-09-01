@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { readLocal, writeLocal } from "./storage.ts";
-import { isTypingTarget } from "./typingTarget.ts";
 
 /**
  * Collapsed/expanded state for the app sidebar, persisted to
@@ -71,16 +70,12 @@ export function useSidebarCollapse(): {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== "[" || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (isTypingTarget(e.target)) return;
-      e.preventDefault();
-      toggle();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [toggle]);
-
+  // `[` is bound by the global shortcut registry (`shortcuts.ts`),
+  // not here. It used to be a local listener with only the typing
+  // guard, which meant `[` collapsed the sidebar underneath an open
+  // create modal — A11Y-8 requires a modal to own the keyboard. The
+  // registry applies the typing guard, the dialog guard and the
+  // modifier guard uniformly, and is the same table the `?` reference
+  // renders from (A11Y-4).
   return { collapsed, toggle, canToggle: !narrow };
 }

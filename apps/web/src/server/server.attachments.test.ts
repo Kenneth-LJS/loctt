@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -243,5 +243,101 @@ describe("web server attachments", () => {
       "utf-8",
     );
     expect(onDisk).toBe("disk content");
+  });
+});
+
+/**
+ * A failed upload leaves nothing behind (ERR-24).
+ *
+ * The case's last bullet is the one that needs the filesystem:
+ * "nothing is left in `tasks/<id>/attachments/` — verify by listing
+ * the directory." A test that only asserted the error envelope would
+ * pass against a server that wrote a partial file and then reported
+ * failure, which is exactly the phantom attachment the case is named
+ * for.
+ *
+ * The client-side bullets (no entry in the grid, retry offered) belong
+ * with the attachments UI and are not claimed here.
+ */
+describe("a failed attachment upload leaves no phantom", () => {
+  let root: string;
+  let app: ReturnType<typeof createWebApp>;
+  let base: string;
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-web-attach-fail-"));
+    await initLoctt(root);
+    app = createWebApp({ root, port: 0 });
+    await app.start();
+    const addr = app.server.address();
+    const port = typeof addr === "object" && addr ? addr.port : app.port;
+    base = `http://127.0.0.1:${port}`;
+  });
+
+  afterAll(async () => {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  // @verifies ERR-24
+  it("writes nothing to the attachments directory when the upload is refused", async () => {
+    const key = await createTask(base, "phantom check");
+    const taskRes = await fetch(`${base}/api/tasks/${key}`);
+    const { frontmatter } = await taskRes.json() as { frontmatter: { id: string } };
+    const attachDir = join(root, ".loctt", "tasks", frontmatter.id, "attachments");
+
+    // A truncated multipart body: the headers promise a part the body
+    // never closes, so the parse fails partway through — the "fail an
+    // upload mid-transfer" the case describes, rather than a request
+    // rejected before any bytes were read.
+    const boundary = "----loctttruncated";
+    const truncated = [
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="file"; filename="ghost.txt"',
+      "Content-Type: text/plain",
+      "",
+      "partial content with no closing boundary",
+    ].join("\r\n");
+
+    const res = await fetch(`${base}/api/tasks/${key}/attachments`, {
+      method: "POST",
+      headers: {
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "X-Loctt-Client": "1",
+      },
+      body: truncated,
+    });
+
+    // Second bullet: it failed, and said so.
+    expect(res.ok).toBe(false);
+
+    // Last bullet: nothing was left behind. `readdir` on a directory
+    // that was never created throws ENOENT, which is also a pass — the
+    // requirement is that no attachment file exists, not that the
+    // directory does.
+    const entries = await readdir(attachDir).catch(() => [] as string[]);
+    expect(entries).not.toContain("ghost.txt");
+    expect(entries.filter(e => !e.startsWith("."))).toHaveLength(0);
+
+    // First bullet, server-side: the task's own attachment list does
+    // not report it either — the grid renders from this, so a phantom
+    // here is a phantom on screen.
+    const after = await fetch(`${base}/api/tasks/${key}`);
+    const body = await after.json() as { attachments: { name: string }[] };
+    expect(body.attachments.map(a => a.name)).not.toContain("ghost.txt");
+
+    // Third bullet: "retrying does not create a duplicate". The retry
+    // is a well-formed upload of the same name; it must land exactly
+    // once, which is the positive control proving the directory checks
+    // above are not passing because uploads never work here.
+    const { body: goodBody, contentType } = buildMultipart("file", "ghost.txt", "the real thing");
+    const retry = await fetch(`${base}/api/tasks/${key}/attachments`, {
+      method: "POST",
+      headers: { "Content-Type": contentType, "X-Loctt-Client": "1" },
+      body: goodBody,
+    });
+    expect(retry.status).toBe(201);
+    const finalEntries = await readdir(attachDir);
+    expect(finalEntries.filter(e => e === "ghost.txt")).toHaveLength(1);
   });
 });

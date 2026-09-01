@@ -34,6 +34,7 @@ export function Header({
   identityUnknown = false,
   onToggleSidebar,
   canToggleSidebar = true,
+  sidebarCollapsed = false,
   createBlocked,
 }: {
   /** Null when the current-user read failed (SHL-40). */
@@ -48,6 +49,15 @@ export function Header({
    * state on its own.
    */
   readonly canToggleSidebar?: boolean;
+  /**
+   * Whether the sidebar is currently collapsed.
+   *
+   * Needed only so the toggle can announce its state (A11Y-21): a
+   * button that says "Toggle sidebar" and nothing else leaves a
+   * screen-reader user unable to tell whether pressing it will open or
+   * close, and unable to tell what pressing it just did.
+   */
+  readonly sidebarCollapsed?: boolean;
   /**
    * NEW-41: a create started under a mismatched schema cannot land —
    * every `/api/` route 409s. The shell deliberately stays up in that
@@ -81,6 +91,13 @@ export function Header({
         disabled={!canToggleSidebar}
         title={canToggleSidebar ? undefined : "The sidebar stays collapsed at this width"}
         aria-label="Toggle sidebar"
+        // A11Y-21: the control exposes its *state*, not only its
+        // label. `aria-expanded` is the right property for a
+        // disclosure — the sidebar is shown or hidden, which is what
+        // expanded/collapsed means; `aria-pressed` would describe the
+        // button as a toggle that is "on", which reads backwards here
+        // (the button is not pressed, the sidebar is open).
+        aria-expanded={!sidebarCollapsed}
         className="grid h-8 w-8 place-items-center rounded-md text-text-secondary hover:bg-bg-muted hover:text-text-primary"
       >
         <HamburgerIcon />

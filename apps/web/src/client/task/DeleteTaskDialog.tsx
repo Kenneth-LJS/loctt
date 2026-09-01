@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
+import { useInertBackground } from "../ui/Modal.tsx";
+import { useFocusTrap } from "../ui/useFocusTrap.ts";
+
 /**
  * Typed confirmation for deleting one task (TSK-22).
  *
@@ -36,10 +39,22 @@ export function DeleteTaskDialog({
 }) {
   const [typed, setTyped] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+  // A11Y-14 / A11Y-15 / A11Y-34: Tab is confined to the dialog, and
+  // focus returns to whatever opened it when it closes.
+  //
+  // This dialog previously focused its input on open and did nothing
+  // on close, so dismissing it left focus on `document.body` — the
+  // next Tab restarted at the top of the page. Measured via A11Y-34,
+  // which opens this from the detail page's ⋯ menu and Tabs after
+  // closing.
+  //
+  // `initialFocus` is the typed-confirmation input, which A11Y-50
+  // permits explicitly as the safe landing spot for a destructive
+  // dialog — never the destructive button.
+  useFocusTrap(panelRef, { initialFocus: inputRef });
+  useInertBackground(panelRef);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -54,6 +69,7 @@ export function DeleteTaskDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="delete-task-title"

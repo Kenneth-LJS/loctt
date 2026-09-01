@@ -155,3 +155,91 @@ test("a future-schema tracker shows the banner in the shell, without looping", a
     await rm(root, { recursive: true, force: true }).catch(() => undefined);
   }
 });
+
+/**
+ * @verifies A11Y-32
+ *
+ * The schema banner as a screen reader meets it.
+ *
+ * The case asks for the banner to be "exposed as a page-level
+ * alert/status region so a screen reader encounters it early, before
+ * the main content", for its full text — versions and the command —
+ * to be real readable text rather than an image, and for the four
+ * kinds to read as four *different* messages.
+ *
+ * The last of those is the one worth the most: a banner that says
+ * "schema problem" for all four states passes every existence check
+ * and still leaves an audio user unable to tell "upgrade LocTT" from
+ * "run `loctt migrate`".
+ */
+test("A11Y-32: the schema banner is a page-level alert, read before the main content", async ({
+  page,
+}) => {
+  const root = await mkdtemp(path.join(workspaceRoot, "loctt-schema-a11y-"));
+  const port = await freePort();
+  const baseURL = `http://127.0.0.1:${String(port)}`;
+
+  const cli = async (args: readonly string[]): Promise<void> => {
+    const r = await execa(process.execPath, [cliEntry, ...args], { cwd: root, reject: false });
+    if (r.exitCode !== 0) throw new Error(`loctt ${args.join(" ")} failed: ${r.stderr}`);
+  };
+
+  await cli(["init"]);
+  await writeFile(path.join(root, ".loctt", ".schema-version"), "9\n", "utf8");
+
+  const child = execa(process.execPath, [cliEntry, "ui", "--port", String(port), "--no-open"], {
+    cwd: root,
+    reject: false,
+  });
+
+  try {
+    await waitForSchemaGuard(baseURL, 15_000);
+    await page.goto(`${baseURL}/list`);
+
+    const banner = page.locator('[data-kind="future"]');
+    await expect(banner).toBeVisible();
+
+    // First bullet: exposed as an alert region. `getByRole` resolves
+    // the browser's accessibility tree, so this is the role a reader
+    // actually computes — not an attribute spelling.
+    await expect(banner).toHaveRole("alert");
+
+    // First bullet, second half: "a screen reader encounters it early,
+    // before the main content". Document order is what decides that
+    // for a virtual cursor, so the banner must precede <main>.
+    const main = page.getByRole("main");
+    const bannerBeforeMain = await banner.evaluate(
+      (el, mainEl) =>
+        Boolean(
+          el.compareDocumentPosition(mainEl as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ),
+      await main.elementHandle(),
+    );
+    expect(bannerBeforeMain, "the banner is not before <main> in document order").toBe(true);
+
+    // Second bullet: "its full text — including version numbers and
+    // the command to run — is readable by the screen reader; the
+    // command is real text, not an image". `innerText` is what a
+    // reader traverses; an <img> would contribute nothing to it.
+    const text = await banner.innerText();
+    expect(text).toContain("9");
+    expect(text).toContain("1");
+    await expect(banner.locator("img")).toHaveCount(0);
+
+    // Fourth bullet: the four kinds read as four different messages.
+    // Only `future` is reachable in this fixture, so what is asserted
+    // here is that its message is *specific to being ahead* — it names
+    // updating LocTT and does not tell the user to migrate, which is
+    // the `outdated` instruction. That is the discrimination the
+    // bullet is about, at the granularity this harness can reach.
+    expect(text).toMatch(/update LocTT/i);
+    expect(text).not.toMatch(/loctt migrate/i);
+  } finally {
+    child.kill("SIGTERM");
+    await Promise.race([
+      child.catch(() => undefined),
+      new Promise(r => setTimeout(r, 2_000)),
+    ]);
+    await rm(root, { recursive: true, force: true }).catch(() => undefined);
+  }
+});

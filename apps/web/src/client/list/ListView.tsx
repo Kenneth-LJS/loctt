@@ -20,6 +20,7 @@ import {
 import { useInfo } from "../api/hooks/useInfo.ts";
 import { buildQueryString, DEFAULT_LIST_LIMIT, tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
+import { useAnnouncer } from "../ui/Announcer.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { BulkBar, BulkResult } from "./BulkBar.tsx";
 import {
@@ -65,6 +66,8 @@ export function ListView() {
   const workflow = useWorkflow();
   const info = useInfo();
   const userSettings = useUserSettings();
+
+  const { announce } = useAnnouncer();
 
   const columns = useMemo(
     () => resolveColumns(userSettings.data?.settings),
@@ -115,6 +118,12 @@ export function ListView() {
     void navigate({
       search: prev => ({ ...prev, sort: colId, dir: nextDir, page: undefined }),
     });
+    // A11Y-27's second bullet: activating a header announces the new
+    // sort. `aria-sort` alone does not — it is state a reader exposes
+    // when the user navigates *to* the header, not something spoken
+    // when the sort changes under a user who is elsewhere on the page.
+    const label = columns.find(c => c.id === colId)?.label ?? colId;
+    announce(`Sorted by ${label}, ${nextDir === "asc" ? "ascending" : "descending"}`);
   };
 
   const now = Date.now();
@@ -158,6 +167,35 @@ export function ListView() {
   // a spec: reproducing it needs a write landing between two paged
   // reads of the same feed, which the fixture cannot currently stage.
   const total = pages[pages.length - 1]?.total ?? 0;
+
+  /**
+   * Announce the result count when it settles (A11Y-25).
+   *
+   * The case is specific about *when*: "the announcement fires once
+   * for the settled result, not once per intermediate loading state".
+   * So this is gated on `!isFetching` — an in-flight query has a stale
+   * or placeholder total, and announcing it would read out the
+   * previous filter's count before the new one arrives.
+   *
+   * The ref makes it fire on *change*. Without it every re-render with
+   * the same total re-announces, which is A11Y-24's "not duplicated
+   * (once per event, not once per re-render)" — and a query key is not
+   * enough on its own, because React Query re-renders on window focus.
+   *
+   * The first settled render is skipped: arriving on the list is not a
+   * count *change*, and the reader is already announcing the page.
+   */
+  const announcedTotal = useRef<number | null>(null);
+  useEffect(() => {
+    if (tasks.isFetching || tasks.isError) return;
+    if (!tasks.isSuccess) return;
+    const previous = announcedTotal.current;
+    announcedTotal.current = total;
+    if (previous === null || previous === total) return;
+    // A11Y-25's third bullet: zero is announced explicitly, so it is
+    // distinguishable from an unresponsive UI.
+    announce(total === 0 ? "No tasks match these filters" : `${String(total)} tasks`);
+  }, [total, tasks.isFetching, tasks.isError, tasks.isSuccess, announce]);
 
   // The result-set identity, for BLK-18. Everything the server reads
   // except how far we have paged — loading page 2 must not clear a
@@ -482,10 +520,17 @@ export function ListView() {
           honest overflow it replaced. `overflow-y-hidden` keeps the
           rounded corners from being cut. */}
       <div className="overflow-x-auto overflow-y-hidden rounded-md border border-border-subtle bg-bg-surface">
-        <table aria-busy={tasks.isLoading} className="w-full border-separate border-spacing-0 text-[13px]">
+        {/* A11Y-26: the table has an accessible name describing what
+            it lists, so a screen reader's table navigation announces
+            what it entered rather than "table". */}
+        <table
+          aria-label="Tasks"
+          aria-busy={tasks.isLoading}
+          className="w-full border-separate border-spacing-0 text-[13px]"
+        >
           <thead>
             <tr>
-              <th className="sticky top-0 w-9 border-b border-border-subtle bg-bg-canvas px-3 py-2 dark:bg-bg-surface">
+              <th scope="col" className="sticky top-0 w-9 border-b border-border-subtle bg-bg-canvas px-3 py-2 dark:bg-bg-surface">
                 <input
                   type="checkbox"
                   aria-label="Select all on this page"
@@ -509,6 +554,13 @@ export function ListView() {
                 return (
                   <th
                     key={col.id}
+                    // A11Y-26: `scope` is what associates a header
+                    // with its column, so cell-to-cell navigation
+                    // announces the column name. A bare `<th>` in a
+                    // table with a row-header column is ambiguous —
+                    // the browser has to guess the axis, and readers
+                    // disagree about the guess.
+                    scope="col"
                     aria-sort={isSorted ? (sortDir === "asc" ? "ascending" : "descending") : undefined}
                     className="sticky top-0 whitespace-nowrap border-b border-border-subtle bg-bg-canvas px-3 py-2 text-left text-[12px] font-semibold text-text-secondary dark:bg-bg-surface"
                   >
@@ -637,11 +689,24 @@ export function ListView() {
                       className="cursor-pointer align-middle accent-accent"
                     />
                   </td>
-                  {columns.map(col => (
-                    <td key={col.id} className="align-middle">
+                  {columns.map(col => {
+                    const cell = (
                       <Cell colId={col.id} task={task} lookups={lookups} now={now} today={today} onFilterLabel={onFilterLabel} />
-                    </td>
-                  ))}
+                    );
+                    // A11Y-26's second bullet: the key column is the
+                    // row header, so navigating rows announces *which
+                    // task* the row is rather than reading a bare
+                    // cell value with no subject.
+                    return col.id === "key" ? (
+                      <th key={col.id} scope="row" className="text-left align-middle font-normal">
+                        {cell}
+                      </th>
+                    ) : (
+                      <td key={col.id} className="align-middle">
+                        {cell}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))
             )}

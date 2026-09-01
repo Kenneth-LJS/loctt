@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ErrorResponse } from "@loctt/contracts";
-import { initLoctt } from "@loctt/core";
+import { initLoctt, withStateLock } from "@loctt/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createWebApp } from "./server.js";
@@ -369,5 +369,197 @@ describe("actionable filesystem errors", () => {
     expect(envelope.detail).toContain("EACCES");
     // Bounded by proper-lockfile's backoff (10 retries, capped at 500ms)
     // before the failure surfaces.
+  }, 20_000);
+});
+
+/**
+ * Lock contention as the UI sees it (XS-47, XS-49, SET-39).
+ *
+ * These hold the real state lock from *this* process using core's own
+ * `withStateLock`, then drive the HTTP API from outside it. That is
+ * the closest available analogue of the case's "a wedged CLI command":
+ * the lock file on disk is the same one, taken by the same library
+ * with the same options, so the API path hits genuine `proper-lockfile`
+ * contention rather than a stubbed rejection.
+ *
+ * Asserting the *envelope* is the point. The UI branches on `code`,
+ * `data_state` and `recovery` to decide what to render and whether to
+ * offer a retry control, so those fields are the contract — not the
+ * prose, which the client is free to reword.
+ */
+describe("state-lock contention", () => {
+  let root: string;
+  let app: ReturnType<typeof createWebApp>;
+  let base: string;
+  let taskKey: string;
+  const csrf = { "Content-Type": "application/json", "X-Loctt-Client": "test" };
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-web-lock-"));
+    await initLoctt(root);
+    app = createWebApp({ root, port: 0 });
+    await app.start();
+    const addr = app.server.address();
+    const port = typeof addr === "object" && addr ? addr.port : app.port;
+    base = `http://127.0.0.1:${port}`;
+
+    const created = await fetch(`${base}/api/tasks`, {
+      method: "POST",
+      headers: csrf,
+      body: JSON.stringify({ title: "Lock subject" }),
+    });
+    taskKey = ((await created.json()) as { key: string }).key;
+  });
+
+  afterAll(async () => {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  // @verifies XS-47
+  it("reports a held state lock honestly rather than hanging or claiming success", async () => {
+    const locttDir = join(root, ".loctt");
+
+    // Hold the lock for longer than the API's bounded backoff (10
+    // retries capped at 500ms), so the request genuinely loses the
+    // race rather than winning it after a pause.
+    let res!: Response;
+    await withStateLock(locttDir, async () => {
+      res = await fetch(`${base}/api/tasks`, {
+        method: "POST",
+        headers: csrf,
+        body: JSON.stringify({ title: "Should not be created" }),
+      });
+    });
+
+    // First bullet: it resolves within a bounded time rather than
+    // hanging. Reaching this line at all is that assertion — the
+    // 20s test timeout is the ceiling.
+    expect(res.ok).toBe(false);
+
+    const envelope = (await res.json()) as ErrorResponse;
+    // Second bullet: the failure says another LocTT process holds the
+    // lock. `conflict`, not `unknown` — ERR-31's prohibition, and the
+    // code the client branches on to pick this message at all.
+    expect(envelope.code).toBe("conflict");
+    expect(envelope.message).toMatch(/another LocTT process/i);
+    // Third bullet: it states the change was **not** saved, and offers
+    // retry as a control. `retry` specifically: contention clears on
+    // its own, so unlike a git conflict this one is worth repeating.
+    expect(envelope.data_state).toBe("not_saved");
+    expect(envelope.recovery?.kind).toBe("retry");
+    // ERR-16: proper-lockfile's own `ELOCKED` wording is internals and
+    // belongs behind the details affordance, not in the headline.
+    expect(envelope.message).not.toContain("ELOCKED");
+
+    // Fourth bullet: "no optimistic row is left in the list implying
+    // the task was created". Asserted against the *server's own list*
+    // after the lock is released — the strongest available form of
+    // "it was not created", since P1 makes the files the truth.
+    const list = await fetch(`${base}/api/tasks?limit=100`);
+    const body = (await list.json()) as { items: { title: string }[] };
+    expect(body.items.map(t => t.title)).not.toContain("Should not be created");
+    // Positive control: the task that *was* created is present, so the
+    // assertion above is about the refused write and not about the
+    // list endpoint returning nothing.
+    expect(body.items.map(t => t.title)).toContain("Lock subject");
+  }, 20_000);
+
+  // @verifies XS-49
+  it("succeeds on retry once the lock is released, with no manual step", async () => {
+    const locttDir = join(root, ".loctt");
+
+    // Inside the window, the failure is transient-shaped: `retry` is
+    // the recovery, which is what lets the UI say "try again in a
+    // moment" rather than presenting a permanent condition.
+    let blocked!: Response;
+    await withStateLock(locttDir, async () => {
+      blocked = await fetch(`${base}/api/tasks/${taskKey}/set`, {
+        method: "POST",
+        headers: csrf,
+        body: JSON.stringify({ field: "priority", value: "high" }),
+      });
+    });
+    expect(blocked.ok).toBe(false);
+    const blockedBody = (await blocked.json()) as ErrorResponse;
+    expect(blockedBody.recovery?.kind).toBe("retry");
+    expect(blockedBody.data_state).toBe("not_saved");
+
+    // First bullet: the retry succeeds "without manual intervention"
+    // once the holder is gone. No unlock call, no sleep on the
+    // 10-second stale timeout — the lock was released normally, and
+    // the third bullet's point is that ordinary state operations are
+    // never made to wait the 5-minute *migration* timeout.
+    const retried = await fetch(`${base}/api/tasks/${taskKey}/set`, {
+      method: "POST",
+      headers: csrf,
+      body: JSON.stringify({ field: "priority", value: "high" }),
+    });
+    expect(retried.ok).toBe(true);
+
+    // And the retried write actually landed — asserting the 200 alone
+    // would pass against a server that accepted and dropped it.
+    const after = await fetch(`${base}/api/tasks/${taskKey}`);
+    const task = (await after.json()) as { frontmatter: { priority?: string } };
+    expect(task.frontmatter.priority).toBe("high");
+  }, 20_000);
+
+  // @verifies SET-39
+  it("refuses a tracker settings write under a held lock, naming it and not corrupting", async () => {
+    const locttDir = join(root, ".loctt");
+
+    // SET-39 is contention on a **tracker settings** write. The case
+    // frames it as a Dropbox-hosted tracker, where POSIX advisory
+    // locks are unsafe; the observable the UI must get right is the
+    // refused write and the untouched stored config.
+    //
+    // `/api/workflow` is the tracker-level settings write.
+    // `/api/user-settings` is deliberately *not* used: those are
+    // machine-local per-checkout state (XS-52 calls them caches, not
+    // tracker data) and that path takes no state lock — measured, and
+    // recorded in known-gaps.md rather than asserted here, because
+    // locking a per-checkout cache is not what SET-39 asks for.
+    const before = await fetch(`${base}/api/workflow`);
+    const originalWorkflow = await before.text();
+    // The PUT takes `{ workflow, remap }`. Sending the workflow back
+    // unchanged is a legitimate write: it passes validation, so the
+    // request reaches the lock rather than being rejected before it —
+    // which is what makes this test about contention and not about
+    // schema validation.
+    // GET returns the workflow document itself (no wrapper); PUT
+    // takes it under a `workflow` key. Measured, not assumed — the
+    // first attempt sent the GET body through unchanged and was
+    // rejected by validation before ever reaching the lock, which
+    // would have made this a test of the schema rather than of
+    // contention.
+    const workflow = JSON.parse(originalWorkflow) as unknown;
+
+    let res!: Response;
+    await withStateLock(locttDir, async () => {
+      res = await fetch(`${base}/api/workflow`, {
+        method: "PUT",
+        headers: csrf,
+        body: JSON.stringify({ workflow }),
+      });
+    });
+
+    expect(res.ok).toBe(false);
+
+    const envelope = (await res.json()) as ErrorResponse;
+    // First bullet: the failure names the lock and states that the
+    // write did not complete.
+    expect(envelope.code).toBe("conflict");
+    expect(envelope.message).toMatch(/another LocTT process/i);
+    // Second bullet: a warning rather than "the write being retried
+    // into possible corruption" — `not_saved` is the claim that
+    // nothing was half-written.
+    expect(envelope.data_state).toBe("not_saved");
+
+    // Third bullet: "the panel reverts to the last known-good values
+    // rather than displaying the unsaved edit as saved". The server
+    // half is that the stored config is byte-identical, so a refetch
+    // hands the panel the truth.
+    const after = await fetch(`${base}/api/workflow`);
+    expect(await after.text()).toBe(originalWorkflow);
   }, 20_000);
 });

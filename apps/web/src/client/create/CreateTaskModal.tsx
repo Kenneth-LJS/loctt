@@ -20,6 +20,7 @@ import { RichEditor } from "../editor/RichEditor.tsx";
 import { nonWorkingNote } from "../task/editors/DateField.tsx";
 import { LabelsField } from "../task/editors/LabelsField.tsx";
 import { OptionPicker } from "../task/editors/OptionPicker.tsx";
+import { useInertBackground } from "../ui/Modal.tsx";
 import { useToasts } from "../ui/Toast.tsx";
 import {
   afterCreateAnother,
@@ -164,6 +165,13 @@ export function CreateTaskModal({
     if (dirty) setConfirmDiscard(true);
     else onClose();
   };
+
+  // A11Y-14's third bullet: the page behind is marked `inert`, so a
+  // screen reader's virtual cursor cannot browse the list underneath.
+  // `aria-modal` alone is not enough — support for it is uneven, and
+  // the case asks for the content to be genuinely unreachable rather
+  // than merely flagged.
+  useInertBackground(panelRef);
 
   // NEW-28: focus is trapped. Tab cycles within the panel and never
   // reaches the page behind, which is inert (the backdrop covers it

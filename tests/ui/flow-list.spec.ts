@@ -86,12 +86,19 @@ test.describe("LST — list view", () => {
     await expect(row).not.toContainText("in_progress");
     await expect(row).toContainText("High");
 
-    // The key column (first cell) shows the user-facing key, not the ULID.
+    // The key column shows the user-facing key, not the ULID.
     // Asserted on the cell rather than the row: adjacent cell text
     // concatenates in the row's accessible text, which would let a
     // neighbouring column satisfy a row-level match.
-    // nth(1), not first(): cell 0 is the selection checkbox (BLK-1).
-    await expect(row.getByRole("cell").nth(1)).toHaveText(/^[A-Z][A-Z0-9]*-\d+$/);
+    //
+    // Addressed by **role**, not by index. The key cell is a
+    // `<th scope="row">` as of M4.8 — A11Y-26's second bullet requires
+    // a row header so screen-reader row navigation announces *which
+    // task* the row is. That takes it out of the `cell` role, so the
+    // old `nth(1)` silently moved on to the Project column and matched
+    // "T". Indexing into a table's cells is what made this test
+    // fragile; `rowheader` names the thing it means.
+    await expect(row.getByRole("rowheader")).toHaveText(/^[A-Z][A-Z0-9]*-\d+$/);
     // The ULID appears nowhere in the row.
     await expect(row).not.toContainText(/[0-9A-HJKMNP-TV-Z]{26}/);
 
@@ -99,8 +106,11 @@ test.describe("LST — list view", () => {
     // dash) — not "Invalid Date", and not today's date. Due is the 9th
     // of the ten columns.
     const undated = page.getByRole("row").filter({ hasText: "Undated task" });
-    // Due is the 9th data column, shifted one by the selection cell.
-    const dueCell = undated.getByRole("cell").nth(9);
+    // Due is the 9th data column. The offset is +1 for the selection
+    // cell and -1 for the key column, which is a `rowheader` rather
+    // than a `cell` since M4.8 (A11Y-26) — so the two cancel and Due
+    // sits at index 8 among the cells.
+    const dueCell = undated.getByRole("cell").nth(8);
     await expect(dueCell).toHaveText("—");
     await expect(undated).not.toContainText("Invalid Date");
   });
@@ -354,7 +364,9 @@ test.describe("BLK — selection", () => {
 
     // Clicking elsewhere in the row DOES navigate — the checkbox is the
     // only non-navigating hit area.
-    await alpha.getByRole("cell").nth(2).click();
+    // Any cell that is not the checkbox. Index 1 is Project now that
+    // the key column is a `rowheader` (A11Y-26) rather than a cell.
+    await alpha.getByRole("cell").nth(1).click();
     await expect(page).toHaveURL(/\/tasks\//);
   });
 
