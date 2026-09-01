@@ -601,3 +601,97 @@ test.describe("MSL — the milestones view", () => {
     await expect(page.getByTestId(`milestone-${alpha}-readout`)).toContainText("4 / 8");
   });
 });
+
+// @verifies MSL-10
+//
+// MSL-10's four bullets all concern *pickers*; its only two tags sat
+// on server tests asserting `labels.yaml` on disk, so the picker
+// behaviour was unguarded. Measured: forcing archived labels back into
+// the picker left 24 label and meta UI tests green.
+//
+// Both halves matter. Asserting the archived label is absent would
+// pass on an empty picker, so a live label is asserted present
+// alongside it.
+test("MSL-10: an archived label leaves the picker but stays on tasks that carry it", async ({
+  page,
+  tracker,
+}) => {
+  await tracker.run(["label", "create", "keepme"]);
+  await tracker.run(["label", "create", "retired"]);
+  // `set … labels` needs an array and the CLI has no `label add`;
+  // `create --label` is the gesture that attaches one. Measured: `set`
+  // gives "labels must be an array, got: string".
+  const out = await tracker.run(["create", "Labelled", "--label", "retired"]);
+  const key = /(\w+-\d+)/.exec(out)?.[1];
+  if (key === undefined) throw new Error(`no key in: ${out}`);
+
+  // Archive *after* attaching, so bullet 1 has something to preserve.
+  await tracker.run(["label", "archive", "retired"]);
+
+  // A second task that does NOT carry the label. The picker excludes
+  // already-attached labels via `!attachedSet.has(l.id)`, so opening it
+  // on the labelled task hides `retired` whether or not the archived
+  // filter works — my first draft did exactly that and passed with the
+  // filter disabled. Shape (d): seeding that cannot discriminate.
+  const other = await tracker.run(["create", "Unlabelled"]);
+  const otherKey = /(\w+-\d+)/.exec(other)?.[1];
+  if (otherKey === undefined) throw new Error(`no key in: ${other}`);
+
+  await page.goto(`${tracker.baseURL}/tasks/${key}`);
+  const meta = page.getByTestId("meta-labels");
+
+  // Bullet 1: the reference survives archiving.
+  await expect(meta.getByTestId("label-pill").filter({ hasText: "retired" }))
+    .toHaveCount(1);
+
+  // Bullet 2: the picker no longer offers it — with a positive control,
+  // without which an empty picker satisfies the assertion.
+  await page.goto(`${tracker.baseURL}/tasks/${otherKey}`);
+  await page.getByTestId("meta-add-label").click();
+  await expect(page.getByRole("option", { name: "keepme", exact: true }))
+    .toHaveCount(1);
+  await expect(page.getByRole("option", { name: "retired", exact: true }))
+    .toHaveCount(0);
+});
+
+// @verifies MSL-13
+//
+// MSL-13's three bullets are all about the *dialog's shape*; its only
+// tag sat on a server test asserting MSL-12's remap mechanic, so the
+// lighter-weight confirmation was unguarded. Measured: forcing the
+// remap picker onto every delete left 48 settings UI tests green.
+//
+// Both branches are asserted in one test, because "no picker" alone
+// passes on a dialog that never renders a picker at all.
+test("MSL-13: an unreferenced milestone confirms without a remap picker", async ({
+  page,
+  tracker,
+}) => {
+  await tracker.run(["milestone", "create", "Orphan"]);
+  await tracker.run(["milestone", "create", "Used"]);
+  await tracker.run(["create", "Has a milestone", "--milestone", "Used"]);
+
+  await page.goto(`${tracker.baseURL}/settings/milestones`);
+
+  // Zero references: a simple confirm, no remap choice.
+  // Scoped by the row's refcount attribute rather than by text: the
+  // rows carry ids in their testid, and `hasText` on a name is fragile
+  // when one name is a substring of another or the row shows extra
+  // copy. This asserts the fixture is what I think it is *before*
+  // asserting the dialog, so a fixture mistake fails here rather than
+  // masquerading as an app defect.
+  const orphanRow = page.locator('[data-testid^="milestone-row-"]')
+    .filter({ has: page.locator('[data-milestone-refcount="0"]') });
+  await expect(orphanRow).toHaveCount(1);
+  await orphanRow.getByTestId("milestone-delete").click();
+  await expect(page.getByTestId("remap-choice")).toHaveCount(0);
+  await page.getByRole("button", { name: /cancel/i }).click();
+
+  // Referenced: the remap choice IS demanded. The positive control —
+  // without it, a dialog that never renders a picker satisfies the
+  // assertion above.
+  const usedRow = page.locator('[data-testid^="milestone-row-"]')
+    .filter({ hasText: "Used" });
+  await usedRow.getByTestId("milestone-delete").click();
+  await expect(page.getByTestId("remap-choice")).toHaveCount(1);
+});

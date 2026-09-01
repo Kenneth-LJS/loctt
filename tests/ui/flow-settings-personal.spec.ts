@@ -10,7 +10,7 @@
  * server restart SET-11 asks about.
  */
 
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { expect, test } from "./fixtures/tracker.ts";
@@ -209,3 +209,54 @@ test.describe("SET — personal settings", () => {
       .not.toContain(viewId);
   });
 });
+
+// @verifies XS-41
+//
+// XS-41's third bullet — "The exact command is shown and copyable" —
+// had no UI test. Its only coverage was a component test with a
+// hand-written message, so it never saw what the server actually
+// sends. Measured on the shipped app: core's key-index warning read
+// "rerun with --rebuild-index to repair", with no `loctt ` prefix, so
+// the panel's CLI_COMMAND_RE never matched and **zero** copyable
+// commands rendered on genuine drift. Deleting the copyable rendering
+// outright left all 11 tests in that component file green.
+//
+// The fix is in core, because the message is what both surfaces show.
+test("XS-41: key-index drift shows the repair command, copyable", async ({ page, tracker }) => {
+  const [key] = await tracker.seed([{ title: "Drifty" }]);
+  if (key === undefined) throw new Error("seed returned no key");
+
+  // Build the index by looking the task up, then drift it by hand —
+  // without the lookup there is no index and a different branch fires.
+  await tracker.run(["show", key]);
+  const dir = await taskDirFor(tracker.root, key);
+  const file = path.join(dir, "task.md");
+  const before = await readFile(file, "utf8");
+  await writeFile(file, before.replace(/^key: .+$/m, "key: ZZ-404"), "utf8");
+
+  await page.goto(`${tracker.baseURL}/settings/diagnostics`);
+
+  const cmd = page.getByTestId("diagnostics-command");
+  await expect(cmd.first()).toBeVisible();
+  // The exact command, not merely *a* command — a panel rendering
+  // `loctt doctor` alone would satisfy a looser assertion while
+  // leaving the user without the flag that actually repairs it.
+  await expect(cmd.filter({ hasText: "loctt doctor --rebuild-index" })).toHaveCount(1);
+
+  // Bullet 4: still no rebuild button. Asserted alongside, because on
+  // its own it passes on a panel that renders nothing at all — which
+  // is exactly what shipped.
+  await expect(page.getByRole("button", { name: /rebuild/i })).toHaveCount(0);
+});
+
+/** The on-disk directory for a task key. */
+async function taskDirFor(root: string, key: string): Promise<string> {
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  const { readdir } = await import("node:fs/promises");
+  for (const id of await readdir(tasksDir)) {
+    const md = path.join(tasksDir, id, "task.md");
+    const text = await readFile(md, "utf8").catch(() => "");
+    if (new RegExp(`^key: ${key}$`, "m").test(text)) return path.join(tasksDir, id);
+  }
+  throw new Error(`no task dir for ${key}`);
+}

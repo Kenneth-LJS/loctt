@@ -8,7 +8,7 @@
  * so a client that posted the wrong value cannot pass.
  */
 
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { expect, test } from "./fixtures/tracker.ts";
@@ -472,4 +472,62 @@ test.describe("XS — cross-surface constraints", () => {
     // The UI does not pick a winner and carry on.
     await expect(page.getByTestId("settings-projects")).toHaveCount(0);
   });
+});
+
+// @verifies PRU-46
+//
+// PRU-46's three bullets are all about what the *panel shows*; its
+// only tag sat on a server test whose own docstring says "the panel
+// itself is not built (settings routes are still stubs), so these
+// cover the contract the panel will consume". That was true when
+// written — M4.1 built the panel and the tag never moved. Measured:
+// suppressing the banner entirely left 19 settings UI tests green.
+// KNOWN FAILURE — awaiting Ken's ruling, see known-gaps.md "PRU-46's
+// pending-rename banner is unreachable dead code".
+//
+// `test.fixme` rather than `skip`: it runs and is expected to fail, so
+// it starts passing loudly the moment the design changes. Measured:
+// `server.ts:4290` recovers an interrupted rename before ANY handler
+// runs, so a sentinel either heals or 500s and can never reach
+// `handleListProjects`. The banner and its completion endpoint are
+// unreachable dead code built for a boot-only-recovery design the
+// middleware forecloses.
+test.fixme("PRU-46: an interrupted prefix rename is surfaced in the panel", async ({
+  page,
+  tracker,
+}) => {
+  await tracker.run(["project", "create", "Web App", "--prefix", "WEB-"]);
+  const projects = await readFile(
+    path.join(tracker.root, ".loctt", "config", "projects.yaml"), "utf8",
+  );
+  // `id` precedes `name` in each entry, so a greedy `id: … name: Web
+  // App` match spans from the *first* project and captures the wrong
+  // id. Anchor on the entry itself. Measured: the naive form returned
+  // the default project's id and the banner never rendered.
+  const id = /- id: (\S+)\s+name: Web App\b/.exec(projects)?.[1];
+  if (id === undefined) throw new Error(`no id for Web App in:\n${projects}`);
+
+  // The journal core writes before rewriting keys, and leaves behind if
+  // the process dies mid-rewrite. Writing it directly is the only way
+  // to reach the state without killing a server mid-call.
+  await mkdir(path.join(tracker.root, ".loctt", "local"), { recursive: true });
+  await writeFile(
+    path.join(tracker.root, ".loctt", "local", "prefix-rename.yaml"),
+    // The on-disk shape is PrefixRenameStateSchema (contracts/state.ts):
+    // strict, snake_case, with a required started_at. `projectId` is the
+    // *return* shape of SetPrefixResult, not the sentinel — a camelCase
+    // key here fails the strict parse and the server silently omits
+    // `pending_prefix_rename`.
+    `project_id: ${id}\nfrom: WEB-\nto: SITE-\nstarted_at: "2026-09-01T00:00:00.000Z"\n`,
+    "utf8",
+  );
+
+  await page.goto(`${tracker.baseURL}/settings/projects`);
+
+  const banner = page.getByTestId("project-prefix-rename-pending");
+  await expect(banner).toBeVisible();
+  // Bullet 2: which prefix it was moving from and to. Asserting the
+  // banner alone would pass on one that named neither.
+  await expect(banner).toContainText("WEB-");
+  await expect(banner).toContainText("SITE-");
 });
