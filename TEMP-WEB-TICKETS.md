@@ -777,7 +777,7 @@ Cases: A11Y-1, A11Y-2, A11Y-3, A11Y-4, A11Y-5, A11Y-6, A11Y-7, A11Y-8, A11Y-9, A
   not scaffolding, and `tokens.css` is the upstream source of the app's
   design tokens. See `temp-ui-mockups/README.md`.
 
-### M4.9 · Milestones view + detail ⬜
+### M4.9 · Milestones view + detail ✅ (12 of 13; MSL-35 uncovered — see run workflow)
 Cases: MSL-1, MSL-2, MSL-3, MSL-4, MSL-15, MSL-16, MSL-17, MSL-18, MSL-24, MSL-25, MSL-29, MSL-35, MSL-38
 - Route `/milestones` (list) and the milestone detail route. Distinct
   from Settings → Milestones (M4.3), which is CRUD management, not a

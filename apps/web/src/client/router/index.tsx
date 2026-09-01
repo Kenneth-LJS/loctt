@@ -8,6 +8,8 @@ import {
 import { BoardView } from "../board/BoardView.tsx";
 import { RegionErrorFallback } from "../error/RegionErrorBoundary.tsx";
 import { ListView } from "../list/ListView.tsx";
+import { MilestoneDetail } from "../milestones/MilestoneDetail.tsx";
+import { MilestonesView } from "../milestones/MilestonesView.tsx";
 import { NotFound } from "../routes/NotFound.tsx";
 import { SettingsShell } from "../settings/SettingsShell.tsx";
 import { AppBootstrap } from "../shell/AppBootstrap.tsx";
@@ -68,6 +70,7 @@ const ROUTE_REGIONS: Record<string, string> = {
   "/board": "the board",
   "/timeline": "the timeline",
   "/sprints": "the sprints view",
+  "/milestones": "the milestones view",
 };
 
 // `/` redirects to `/list`. TanStack Router uses `throw redirect(...)`
@@ -174,6 +177,40 @@ const sprintDetailRoute = createRoute({
   },
 });
 
+// M4.9: the milestones progress view. Distinct from Settings →
+// Milestones (M4.3), which manages the entries; this reads them.
+const milestonesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  errorComponent: RouteError,
+  path: "/milestones",
+  component: MilestonesView,
+});
+
+// M4.9: the milestone detail. `$id` is the milestone's **ULID**
+// (decision V3). `MilestoneDef` has no `key` at all, so unlike a task
+// there is no user-facing identifier a route could carry instead — and
+// a `name` is neither unique nor immutable. MSL-1's "never the ULID"
+// governs the row's name, not the address bar (P-4 is scoped to UI
+// content).
+//
+// It shares `listSearchSchema` with `/list` for the same reason the
+// sprint detail does: the scoped task list must speak the list's
+// filter vocabulary rather than a milestone-only dialect. The
+// milestone scope is the route param, not a search param, so no filter
+// edit can drop it.
+const milestoneDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  errorComponent: RouteError,
+  path: "/milestones/$id",
+  validateSearch: listSearchSchema,
+  component: function MilestoneDetailRoute() {
+    const { id } = milestoneDetailRoute.useParams();
+    // Keyed on the id so navigating between milestones remounts
+    // rather than carrying the previous one's state into the next.
+    return <MilestoneDetail key={id} milestoneId={id} />;
+  },
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   errorComponent: RouteError,
@@ -209,6 +246,8 @@ const routeTree = rootRoute.addChildren([
   taskDetailRoute,
   sprintsRoute,
   sprintDetailRoute,
+  milestonesRoute,
+  milestoneDetailRoute,
   settingsRoute,
   initRoute,
 ]);

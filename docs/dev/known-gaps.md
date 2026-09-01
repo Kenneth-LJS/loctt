@@ -2258,6 +2258,10 @@ for `assignee`, `sprint` and `project`, all returning 3 of 3.
 **Positive control:** `?query=milestone = "<ulid>"` returns exactly 1,
 so the query path works; only the `!= null` comparison is wrong.
 
+The request answers **200 with an empty `warnings` array** — so nothing
+anywhere signals that the predicate did not apply. Independently found
+twice on the same day, by me and by the M4.9 build agent.
+
 **Why it matters beyond a wrong result.** It fails *silently and in the
 permissive direction*: a user filtering for "has a milestone" gets
 their whole task list back and nothing says the filter did not apply.
@@ -2274,3 +2278,84 @@ cleared), which is a semantics call, not a patch.
 *without*. A tracker where every task has the field, or none does,
 cannot discriminate — my own first probe had a single task and showed
 the correct-looking answer.
+
+## MSL-35 · Milestone progress cannot fail per row, so a per-row error is unrenderable
+
+**Found:** M4.9 · 2026-09-02 · **Status:** open, case left uncovered
+
+MSL-35 requires a failed progress computation to show an error
+affordance **in place of the numbers**, **naming the milestone**, with
+a retry, **while other milestones' rows continue to render their own
+progress**. The last bullet cannot be satisfied as the server stands.
+
+**Measured, not assumed:**
+
+- `withProgress` (`apps/web/src/server/server.ts`) calls
+  `milestoneProgress` **once for the whole list**, and
+  `referenceProgress` (`packages/core/src/task/progress.ts`) does a
+  single corpus scan by design. It succeeds for every milestone or
+  throws for all of them — there is no per-milestone failure.
+- `handleListMilestones` does not catch, so a throw becomes a
+  whole-response 500 (`server.ts` ~4408). Nothing partial reaches the
+  client.
+- `withProgress` fills any id missing from the map with
+  `{done:0,total:0,discarded:0,fraction:0}`, so a missing computation
+  is indistinguishable from a real zero — producing exactly the `0 / 0`
+  the case forbids. Verified against a live server: every item in a
+  `?progress=true` response carries a `progress` object; it is never
+  `undefined`.
+
+**To reproduce.** Seed a milestone, request
+`GET /api/milestones?progress=true`, and confirm every item has
+`progress`. Then corrupt a task file — the response still answers 200
+with full progress, because a malformed task is skipped rather than
+thrown on, so even that does not produce a per-row failure.
+
+**What M4.9 built anyway.** The client half exists and is unit-tested:
+`progressState(undefined)` returns `kind: "unavailable"`, and
+`ProgressReadout` renders a named, retryable error in place of the
+numbers rather than `0 / 0`. It is unreachable from the current server.
+The UI spec covers the whole-list failure (a named error state with a
+working retry, never `0 / 0`) under a test that deliberately carries no
+tag for that case.
+
+**A fix needs server work:** either a per-milestone progress endpoint,
+or a partial-success shape (`progress | {error}` per item) from
+`handleListMilestones`, plus removing the silent zero fallback in
+`withProgress` so a missing computation arrives as `undefined`.
+
+## MSL-29 · A hand-edited `workflow.yaml` is not seen until a page refresh
+
+**Found:** M4.9 · 2026-09-02 · **Status:** open, case covered for the
+behaviour it actually specifies
+
+MSL-29 says "**on refresh**, milestones containing tasks in that status
+show an increased numerator", and that is what M4.9 built and tests:
+recategorising `backlog` from `pending` to `completed` takes the
+worked example from `4 / 8` to `8 / 8` after a reload.
+
+The gap is the case's second bullet, "no cached progress figure
+survives the config change", read strictly. A hand-edit of
+`workflow.yaml` fires no mutation, so nothing invalidates the query,
+and the 30s stale window legitimately serves the old figure to a
+client-side navigation away and back.
+
+**To reproduce.** Open `/milestones`, hand-edit a status's `category`
+in `workflow.yaml`, then navigate to a milestone detail and back
+(without reloading) inside 30 seconds. The old numerator is still
+shown. Measured — a navigate-and-return version of the MSL-29 spec
+fails against correct code.
+
+**Note on what the query key does and does not buy.** The progress
+query key is `["workflow", "milestones-progress"]` (A92), so a workflow
+edit made *through the settings panel* drops the figure with no reload.
+That is a real invalidation path and worth having. It does not help a
+hand-edit, and it is not what the reload-based spec proves — a reload
+drops the whole cache, so removing `"workflow"` from the key survives
+that test. The spec says so in a comment rather than implying otherwise.
+
+**A fix would be** a config file-watcher pushing an invalidation, or
+polling `workflow.yaml`'s mtime. Both are app-wide mechanisms, not
+milestone-specific, which is why this was recorded rather than built
+inside M4.9.
+
