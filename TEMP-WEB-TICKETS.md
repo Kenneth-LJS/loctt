@@ -758,7 +758,7 @@ Cases: ONB-1, ONB-2, ONB-3, ONB-4, ONB-5, ONB-6, ONB-7, ONB-15, ONB-16, ONB-17, 
 - **Tests**: `/api/init` route; app routes to `/init` when
   uninitialized
 
-### M4.7 · Sprint detail ⬜
+### M4.7 · Sprint detail ✅
 Cases: SPR-7, SPR-8, SPR-9, SPR-10, SPR-11, SPR-12, SPR-13, SPR-14, SPR-16, SPR-18, SPR-21, SPR-22, SPR-23, SPR-25, SPR-26, SPR-28, SPR-29, SPR-30, SPR-33, SPR-34, SPR-35, SPR-37, SPR-38
 - Route `/sprints/$key`
 - Editable metadata header (name, dates, state, goal)

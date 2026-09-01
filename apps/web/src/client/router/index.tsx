@@ -9,9 +9,9 @@ import { BoardView } from "../board/BoardView.tsx";
 import { RegionErrorFallback } from "../error/RegionErrorBoundary.tsx";
 import { ListView } from "../list/ListView.tsx";
 import { NotFound } from "../routes/NotFound.tsx";
-import { Stub } from "../routes/Stub.tsx";
 import { SettingsShell } from "../settings/SettingsShell.tsx";
 import { AppBootstrap } from "../shell/AppBootstrap.tsx";
+import { SprintDetail } from "../sprints/SprintDetail.tsx";
 import { SprintsView } from "../sprints/SprintsView.tsx";
 import { TaskDetail } from "../task/TaskDetail.tsx";
 import { TimelineView } from "../timeline/TimelineView.tsx";
@@ -149,13 +149,28 @@ const sprintsRoute = createRoute({
   component: SprintsView,
 });
 
+// M4.7: the sprint detail. `$key` is the sprint's **ULID** (decision
+// V3) — names are neither unique nor immutable, so a name in the path
+// would break on rename and be ambiguous between two sprints sharing
+// one. SPR-1's "never the ULID" is about the column header, which
+// shows the name; it does not govern the address bar.
+//
+// It shares `listSearchSchema` with `/list` for the same reason the
+// board does: SPR-13 requires the filter bar's vocabulary and query
+// semantics to be the list's, with no sprint-only dialect. The sprint
+// scope itself is *not* a search param — it is the route param, so no
+// filter edit can drop it.
 const sprintDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   errorComponent: RouteError,
   path: "/sprints/$key",
-  component: function SprintDetailStub() {
+  validateSearch: listSearchSchema,
+  component: function SprintDetailRoute() {
     const { key } = sprintDetailRoute.useParams();
-    return <Stub name={`/sprints/${key}`} />;
+    // Keyed on the id so navigating between sprints remounts rather
+    // than carrying the previous sprint's draft edits into the next
+    // one's header.
+    return <SprintDetail key={key} sprintId={key} />;
   },
 });
 

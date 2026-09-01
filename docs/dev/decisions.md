@@ -5213,3 +5213,111 @@ trackers already on disk — Ken's call, not an agent's. Recorded in
 **To revert.** Delete `apps/web/src/client/init/prefix.ts` and its
 test, and let the field accept anything non-empty. ONB-19 then fails
 on its first, second and fourth bullets.
+
+### A81 · The burndown's "nothing to burn down" keys off the task list, not the series
+
+**Ticket:** M4.7 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** SPR-16 wants a sprint with zero tasks to state
+"nothing to burn down" rather than draw empty axes. The obvious test
+is the series itself: `initialTotal === 0` and every day's
+`incompleteTaskCount === 0`.
+
+Measured, that test is wrong. A sprint whose every task was
+*completed* produces exactly the same response — `initialTotal: 0`,
+`incompleteTaskCount: 0` on every day:
+
+    [('2026-08-30', 0, 0), ('2026-08-31', 0, 0), ('2026-09-01', 0, 0)]
+
+byte-identical to a sprint that never held anything. The first version
+of this component used that test and suppressed the chart for a
+finished sprint, which hid the burn-down-to-zero SPR-30 requires to be
+*visible*. The SPR-30 spec caught it.
+
+**What had to be decided.** What distinguishes "empty" from "finished"
+when the wire cannot.
+
+**Decided.** The sprint's **current task list** — which the detail page
+already loads for its table — is the discriminator. `nothingToBurn` is
+`tasks.length === 0 && every incompleteTaskCount === 0`. No tasks
+assigned means the empty state; any assigned task means a real sprint
+with a real (possibly flat-at-zero) line.
+
+**Why not the alternative.** Adding a `hadAnyTask` flag to the
+burndown response would put the answer on the wire, but it is a core
+contract change for a question the client can already answer from data
+it holds, and M4.7 owns no core change.
+
+**To revert.** In `apps/web/src/client/sprints/BurndownChart.tsx`,
+restore `nothingToBurn` to `series.initialTotal === 0 && …`. SPR-30's
+"completing then reopening" spec will fail, which is the signal that
+the fix mattered.
+
+### A82 · The shared `FilterBar` gains `from` / `hiddenFacets`, rather than the sprint page forking it
+
+**Ticket:** M4.7 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** SPR-13 requires the sprint detail's task list to use
+the **shared** filter bar — "the filters offered and the query
+semantics match flow-list.md — no sprint-only filter dialect".
+`FilterBar` was hardcoded to `useSearch({ from: "/list" })` /
+`useNavigate({ from: "/list" })`, so it could not mount on
+`/sprints/$key` at all.
+
+**What had to be decided.** Parameterize the shared component, or give
+the sprint page its own bar.
+
+**Decided.** Parameterize. `FilterBar` takes an optional `from`
+(defaulting to `/list`, so every existing call site is unchanged), a
+`hiddenFacets` list, and `showSaveView`. The sprint detail passes
+`from="/sprints/$key"` and `hiddenFacets={["sprint"]}`.
+
+Two facts made a fork the worse option: a second bar is exactly the
+"filter dialect" SPR-13 rules out, and the facet list, option
+building, chip row and clear-all would be duplicated — the drift this
+repo has been bitten by repeatedly. The route also shares
+`listSearchSchema`, so the URL vocabulary is literally the same
+schema, not a matching one.
+
+**Why `sprint` is hidden rather than shown-and-locked.** The route
+param *is* the scope. A visible sprint control could clear or change
+it, leaving the header naming one sprint while the list showed
+another. The scope is applied after the URL's filters
+(`{ ...tasksParamsFromSearch(search), sprint: [sprintId] }`), so even a
+hand-edited `?sprint=<other>` cannot retarget the page — there is a
+spec for exactly that.
+
+**To revert.** Drop the three props and restore the two `from: "/list"`
+literals; the sprint detail then needs its own bar, and SPR-13's
+"shared filter bar" bullet is no longer satisfied by construction.
+
+### A83 · The burndown's unit *reason* is derived client-side from `workflow.yaml`
+
+**Ticket:** M4.7 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** SPR-11 requires the page to state, near the chart,
+that a `custom_enum` estimation with no `weights` is being *counted as
+tasks* rather than summed, with a pointer to adding `weights`.
+
+Core's `determineUnit` collapses two different configurations onto
+`unit: "tasks"` — estimation switched off (SPR-10), and `custom_enum`
+without weights (SPR-11) — and the burndown response carries only the
+result. The wire genuinely cannot tell them apart.
+
+**What had to be decided.** Where the distinction comes from.
+
+**Decided.** `resolveAxis` in
+`apps/web/src/client/sprints/burndownModel.ts` re-derives it from the
+workflow config the client already loads: estimation enabled + unit
+`custom_enum` + no `weights` ⇒ `enum-without-weights`, otherwise
+`estimation-disabled`. The chart renders the explanatory note only for
+the first.
+
+**Why not add a `unitReason` to the response.** It is the better long-
+term shape and belongs in core with CLI and MCP surfacing it too —
+which is precisely why it is not being done inside M4.7's UI ticket.
+Recorded here rather than done.
+
+**To revert.** Delete the `UnitReason` type and the
+`burndown-enum-fallback` block; SPR-11's "states the fallback" bullet
+then has nothing satisfying it.

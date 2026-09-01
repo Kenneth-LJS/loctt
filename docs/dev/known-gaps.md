@@ -2085,3 +2085,75 @@ about migration, not just a regex.
 **To reproduce.** `mkdir /tmp/p && cd /tmp/p && loctt init --prefix
 "web/x" && loctt create hello` → `Created web/x1`. Positive control:
 the same commands with `--prefix "WEB-"` give `WEB-1`, which routes.
+
+## `setField` records the *unresolved* name in history, so the burndown ignores name-assigned tasks
+
+**Found during M4.7 (sprint detail / burndown).** Severity: the
+burndown silently under-reports. A sprint whose tasks were assigned by
+**name** (the normal CLI gesture) burns down from `initialTotal: 0`
+with a flat zero line, indistinguishable from an empty sprint.
+
+`setField` resolves a name to its id before writing frontmatter:
+
+    packages/core/src/task/update.ts:430
+    patch[field] = await resolveEntityRef(opts.locttDir, field, value, archivedGuard);
+
+but the history entry is built from the **raw, unresolved `value`**:
+
+    packages/core/src/task/update.ts:488
+    const historyEntries = buildSetFieldHistory(task.frontmatter, field, value, now);
+
+So `_history.yaml` ends up with `after: Now` (the sprint *name*) while
+`task.md` has `sprint: 01M1ECPPSN4MTMWB60CVP52HYV` (the *id*).
+
+`computeBurndown`'s replay compares history against the sprint id
+(`packages/core/src/sprints/burndown.ts`, `replayTaskState`:
+`inSprint = e.after === sprintId`). A name never equals a ULID, so
+every day of the replay reads the task as out-of-sprint and it
+contributes nothing.
+
+The irony is that the code comment immediately above the resolving
+line cites MSL-C1 — *"storing the name also made every consumer that
+counts by id (milestone progress, the sprint burndown) report zero"* —
+and fixes only the frontmatter write, leaving the history entry with
+exactly the defect it describes.
+
+**Scope.** Both `buildSetFieldHistory` call sites in `update.ts`
+(single-field at :488, multi-field at :873). It affects every
+name-resolvable field — `sprint`, `milestone`, `assignee`, `reporter`
+— not just sprints. `move.ts` is **not** affected: it builds its
+history from the already-resolved `targetProjectId`. The web UI's
+sprint drag sends a ULID, so the drag path happens to be safe; the
+CLI/name path is not.
+
+**To reproduce.**
+
+    mkdir /tmp/bd && cd /tmp/bd && loctt init
+    loctt sprint create Now --start 2026-08-30 --end 2026-09-03 --state active
+    loctt create "by name"  # T-1
+    loctt set T-1 estimate 5
+    loctt set T-1 sprint Now          # <- assigned by NAME
+    curl "$SERVER/api/sprints/$SPRINT_ID/burndown"
+    # initialTotal 0, every remaining 0 — T-1 invisible
+
+**Positive control** (same tracker, same sprint, assigned by id):
+
+    loctt create "by id"    # T-2
+    loctt set T-2 estimate 8
+    loctt set T-2 sprint 01M1ECPPSN4MTMWB60CVP52HYV   # <- by ULID
+    # series now: 2026-09-01 remaining 8, incompleteTaskCount 1
+
+T-2 (by id) burns down; T-1 (by name, estimate 5) never appears.
+Confirms the history value is the sole cause, not the replay or the
+window.
+
+**Why it was not fixed here.** M4.7 is the sprint detail UI; this is a
+core write-path defect touching four fields and every consumer that
+replays history. Fixing it also raises a migration question this
+ticket cannot settle — trackers already on disk hold name-valued
+history entries, so a corrected replay still mis-reads their past
+unless the reader also accepts a name. That needs a decision, not just
+moving one argument.
+
+**Workaround used by the M4.7 UI specs.** They assign sprints by ULID,
+which is what the web client itself sends.
