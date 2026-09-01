@@ -4478,3 +4478,49 @@ attachment means REL-18's guarantee no longer holds for images.
 **Not built here.** Recorded during M2's gate; belongs in its own
 ticket, and REL-16's known-gaps entry now points at this decision
 instead of at nothing.
+
+### K15 · PENDING — the label-delete contract conflicts with MSL-12
+
+**Raised 2026-09-01. Ken has ruled once; the ruling and the case
+disagree, so this needs a second word from him.**
+
+**What Ken ruled.** Asked about `CASE-AUDIT.md` § 1.4, he chose
+"**Archive by default, hard-delete with a flag**".
+
+**What was never done.** That answer was never written into
+`decisions.md`. Measured: `grep MSL-12|MSL-32 docs/dev/decisions.md`
+→ **0 hits**, against a positive control of 15 for `K10` in the same
+file. So the ruling existed only in conversation, and the M4.3 brief
+cited it as a recorded decision that an agent then could not find —
+correctly reporting my error rather than inventing a citation.
+
+**Why it is not simply applied.** MSL-12 is an **M4 blocker** and its
+third and fourth bullets say:
+
+> On confirm, all 12 tasks are updated on disk and **the entry is
+> removed from `labels.yaml`**. The same delete via CLI produces the
+> same end state — the UI invents no extra remap mode.
+
+"Removed from `labels.yaml`", matching the CLI, **is a hard delete**.
+Archive-by-default cannot satisfy that bullet: an archived label is
+still in the file.
+
+**What M4.3 built:** hard-by-default with `?soft=true` to archive
+(A68) — to the case, not to the ruling, because the agent could not
+find the ruling. It also found the same shape M4.1 had: three routes
+(`labels`, `milestones`, `views`) all archived while answering
+`200 {"deleted": id}`, so a user who deleted a label still had it.
+
+**The options, none of them free:**
+
+1. **Keep hard-by-default (as built).** MSL-12 holds; Ken's stated
+   preference is overridden.
+2. **Archive-by-default per the ruling.** MSL-12's third bullet fails
+   and the case needs rewording — and the CLI would then have to
+   archive too, or bullet four breaks.
+3. **Archive in the UI, hard in the CLI.** Bullet four breaks
+   explicitly: it forbids the UI inventing a different mode.
+
+**Recorded rather than decided, because it is Ken's product call and
+he has already stated a preference that the spec contradicts.**
+Nothing here reverses A68; it flags that A68 may need to.
