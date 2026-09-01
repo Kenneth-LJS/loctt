@@ -602,6 +602,17 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Milestones</GroupLabel>
+      {/* M4.9: the group's entries filter the list to one milestone;
+          this opens the milestones *progress* view, which is a
+          different surface and otherwise reachable only by URL. */}
+      {!collapsed && (
+        <Link to="/milestones" data-testid="sidebar-milestones-link" className="no-underline">
+          <ItemShell collapsed={collapsed} title="All milestones">
+            <span className="w-4 shrink-0 text-center text-text-tertiary">◈</span>
+            <span className="truncate">All milestones</span>
+          </ItemShell>
+        </Link>
+      )}
       {failed && (
         <GroupError collapsed={collapsed} error={milestones.error} onRetry={() => { void milestones.refetch(); }} />
       )}

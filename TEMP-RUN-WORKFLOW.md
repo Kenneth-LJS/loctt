@@ -516,6 +516,42 @@ condition 2 working as intended: a feature existing nowhere is scope,
 and adding a field to a shared contract is Ken's call, not an
 agent's.
 
+#### M4.9 · MSL-35 needs a progress shape the server cannot produce
+
+**A wire-up that is really a feature, so the case is left uncovered.**
+MSL-35 wants a *per-row* progress error: the failing milestone's row
+shows an error naming that milestone, with a retry, **while other
+milestones' rows continue to render their own progress**.
+
+Measured, not argued:
+
+- `withProgress` (`apps/web/src/server/server.ts`) calls
+  `milestoneProgress` **once for the whole list**, and core's
+  `referenceProgress` does a single corpus scan by design. It succeeds
+  for every milestone or throws for all of them.
+- `handleListMilestones` has no catch, so a throw is a whole-response
+  500.
+- `withProgress` fills any id missing from the map with a zeroed
+  entry, producing exactly the `0 / 0` the case forbids. Verified on a
+  live server: every item in a `?progress=true` response carries a
+  `progress` object; it is never `undefined`.
+
+So there is no per-row failure on the wire to render. Satisfying the
+case needs either a per-milestone progress endpoint or a
+`progress | {error}` partial-success shape, plus removing the silent
+zero fallback — a response-shape change to a route the CLI and MCP do
+not share, but a **feature that exists nowhere**, which the table
+above makes condition 1.
+
+**The case is left uncovered and not reworded.** No test carries its
+tag. M4.9 built and unit-tested the client half anyway
+(`progressState(undefined)` → `kind: "unavailable"`, rendered by
+`ProgressReadout` in place of the numbers rather than `0 / 0`); it is
+unreachable from the current server. The UI spec covers the
+whole-list failure — a named error state with a working retry, never
+`0 / 0` — under a test that deliberately carries no tag.
+`decisions.md` A90–A93 and `known-gaps.md` record it.
+
 #### M4.8 · A11Y-2 has no target, and 25 more cases need what this repo cannot measure
 
 **A11Y-2 — a genuine feature, so the run did not build it.** The case

@@ -5601,3 +5601,146 @@ and which is not.
 
 **To revert.** Replace the `Global` group with a literal array. The
 panel then re-acquires the drift A11Y-4 forbids, silently.
+
+### A90 · The milestone drill-in carries a DSL predicate excluding discarded tasks
+
+**Ticket:** M4.9 · **Date:** 2026-09-02 · **Commit:** (uncommitted)
+
+**The situation.** MSL-4 requires the drill-in row count to equal the
+milestone's `total` from the progress readout, under MSL-3's discarded
+rule. `/api/tasks?milestone=<id>` does not satisfy that: it returns
+discarded tasks, while `progress.total` excludes them. Measured on a
+live server against MSL-3's own worked example (10 tasks, 2 discarded):
+the milestones endpoint answers `{"done":4,"total":8,"discarded":2}`
+while `/api/tasks?milestone=<id>` answers `total: 10`. The case's `4 / 8`
+readout would sit above 10 rows.
+
+**What had to be decided.** `STRUCTURED_FILTER_FIELDS` has no category
+negation, so the exclusion could not ride as a structured filter. The
+ticket named two options: a DSL `query` on the drill-in, or renegotiating
+the equality with the case.
+
+**Decided.** The drill-in sends both — the `milestone` structured filter
+*and* a DSL `query` of `status.category != discarded`. Measured:
+`?milestone=<id>&query=status.category%20!%3D%20discarded` returns
+exactly 8, matching `total`. The predicate is `EXCLUDE_DISCARDED_QUERY`
+in `milestones/model.ts`, so the view and its spec build the same string
+rather than two that can drift.
+
+A user's own `?q=` from the URL is **and**-ed with it rather than
+replaced, so a filter typed on the detail page still applies and the
+count still matches.
+
+**Why not renegotiate the case.** The equality is the case's point: it
+is what catches a drill-in that quietly shows a different task set than
+the number above it. Dropping it would leave the two free to disagree.
+
+**To revert.** Remove the `query` composition in `MilestoneDetail`'s
+`params` memo and pass `{ ...base, milestone: [milestoneId] }`. The row
+count then reads 10 under a `4 / 8` heading — measured: doing exactly
+that reddens the MSL-4 and MSL-25 specs.
+
+### A91 · The milestone detail resolves from the list; no `GET /api/milestones/:id` is added
+
+**Ticket:** M4.9 · **Date:** 2026-09-02 · **Commit:** (uncommitted)
+
+**The situation.** No per-id milestone route exists. The detail needs
+the milestone's name, target date and progress.
+
+**What had to be decided.** Add the endpoint, or resolve client-side
+out of the list the view already fetches.
+
+**Decided.** Resolve from the list. Beyond avoiding server work the
+ticket does not own, it is what makes MSL-38 correct: a 404 from a
+detail endpoint arrives as a query *error*, so the not-found state
+would have to be told apart from a genuine load failure by inspecting
+an envelope. Resolving from the list makes "the fetch succeeded and no
+milestone has this id" a plain fact, and the load-failure branch stays
+separate with its own retry — which is exactly the distinction MSL-38
+asks for.
+
+**Cost.** The detail pays for the whole milestones list. These are
+config lists, fetched at the shared 1000-item picker limit and shared
+with the view via the query cache, so the detail usually reads a warm
+entry rather than issuing a request.
+
+**To revert.** Add `GET /api/milestones/:id` and a `useMilestone(id)`
+hook, and give the detail an explicit 404-vs-error discrimination on
+the envelope's `code`.
+
+### A92 · Progress rides a `["workflow", …]` query key, and the orphan count is computed client-side
+
+**Ticket:** M4.9 · **Date:** 2026-09-02 · **Commit:** (uncommitted)
+
+**The situation.** Two gaps, both in `withProgress`/`referenceProgress`.
+
+MSL-29: progress is computed from status **categories** in
+`workflow.yaml`, so a settings edit changes every number without
+touching a milestone or a task. `invalidateWorkflowConsumers`
+invalidates `workflow`, `workflow-usage`, `config`, `tasks` and `task`
+— not milestones.
+
+MSL-24: `referenceProgress` seeds its map with the requested ids only
+and silently drops tasks pointing at a deleted milestone. Measured —
+with one such task the milestones response is byte-identical to the
+response without it, so "that exclusion is visible somewhere" has
+nothing on the wire to render.
+
+**What had to be decided.** Whether to add milestones to
+`invalidateWorkflowConsumers` and an orphan counter to the response
+(both server/shared changes), or handle each on the client.
+
+**Decided.** Both on the client.
+
+The progress query key is `["workflow", "milestones-progress"]`, so the
+existing `["workflow"]`-prefix invalidation drops it as a matter of key
+structure rather than because someone remembered to add it to a list.
+
+Orphans are found by difference: read the tasks and keep those whose
+`milestone` names an id the fetched milestone list does not contain. It
+is a *diagnosis* and never feeds a count.
+
+**The narrowing is client-side, and that was measured rather than
+assumed.** A `milestone != null` DSL predicate was tried first to make
+the server do it. It does not filter: on a two-task tracker where only
+one task has a milestone, `GET /api/tasks?query=milestone != null`
+returns **both**, the unset one included as `milestone: null`. So no
+predicate is sent, and the `t.milestone !== undefined` guard in the
+hook is what excludes unassigned tasks — without it, every task with no
+milestone would be reported as an orphan.
+
+**To revert.** Rename the query key to `["milestones-progress"]` and add
+it explicitly to `invalidateWorkflowConsumers`; replace
+`useOrphanedMilestoneTasks` with an orphan counter in the milestones
+response.
+
+### A93 · A shared workspace-calendar date formatter, pinned to noon UTC
+
+**Ticket:** M4.9 · **Date:** 2026-09-02 · **Commit:** (uncommitted)
+
+**The situation.** MSL-1 wants `target_date` "formatted per the
+workspace locale/calendar". `GET /api/calendar` carries the workspace
+`timezone`, but no ticket built a formatter bound to it — M4.2 built
+the Calendar settings *panel*, not this. `list/format.ts`'s `shortDate`
+drops the year within the current year and ignores the calendar
+entirely.
+
+**What had to be decided.** A local helper in the milestones view, or a
+shared utility.
+
+**Decided.** A shared utility, `client/dates/workspaceDate.ts`. The
+timeline and the task detail need the same thing, and three private
+copies is how one date renders two ways on two surfaces.
+
+The date-only string is pinned to **noon** UTC, not midnight. Midnight
+UTC lands on the previous calendar day once shifted into any western
+zone, so a milestone due Jan 1 renders as Dec 31 — measured: switching
+to `T00:00:00Z` reddens the formatter spec.
+
+An unparseable value is returned verbatim rather than becoming "No
+target date": config drift must stay visible (P7), and swallowing it
+would hide a value that really is on disk.
+
+**To revert.** Inline `formatWorkspaceDate` into `MilestonesView` and
+delete `client/dates/`. The timeline and task detail then each need
+their own, which is the drift this avoids.
