@@ -73,6 +73,8 @@ let VIEWS: { id: string; name: string; query: string }[] = [
 
 const INFO: TrackerInfoResponse = {
   exists: true,
+  initState: "ready",
+  defaultUserName: "you",
   taskCount: 7,
   keyPrefix: "WEB-",
   nextKey: "WEB-8",

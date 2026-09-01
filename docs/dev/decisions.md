@@ -5071,3 +5071,145 @@ rather than the viewer's browser zone.
 **To revert.** Drop `timezone` from the interface and the response,
 restore `workspaceToday`, and remove it from the three fixtures.
 VUE-19's first bullet then has no data behind it.
+
+### A78 · `initState` splits an empty `.loctt/` from a damaged one, because `exists` cannot
+
+**Ticket:** M4.6 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** Two cases ask the same boolean for opposite
+answers. ONB-16 requires an **empty** `.loctt/` be treated as
+uninitialized, routed to the wizard, with copy acknowledging the
+folder already exists. SET-30 requires a `.loctt/` **holding tasks**
+but missing `.schema-version` be treated as damaged and never offered
+init — its own words: "a `.loctt/` holding tasks but no version file
+is damaged, not empty."
+
+Measured at `packages/core/src/diagnostics/info.ts`: `exists` was set
+purely from `access(locttDir)`, so both states were `exists: true`.
+Worse, measured over HTTP: both answered `409 schema_mismatch` on
+**every** route including `/api/info`, because `requireSupportedSchema`
+fails on a missing `.schema-version` and the guard's precondition was
+`trackerDirExists` — the directory being present. An empty `.loctt/`
+therefore got the schema banner, which ONB-16 explicitly forbids.
+
+**What had to be decided.** What signal separates them, given
+`taskCount`, `workflowConfig`, `queriesConfig` and `state` were
+already computed and none alone discriminates.
+
+**Decided.** A four-state `InitState` (`ready` / `absent` / `empty` /
+`damaged`) on `TrackerInfo`, mirrored in contracts the way
+`SchemaStatusResponse` mirrors `SchemaStatus`. `empty` requires *all*
+of: no core files, zero tasks, and no config or state that loaded —
+so a surviving `workflow.yaml` with no tasks is still `damaged`,
+because that is someone's configuration and initializing would discard
+it. The discriminator is the one SET-30 itself names, not an invented
+one.
+
+`missingCoreFiles` moved from `init.ts` into `init/core-files.ts` and
+is now shared with `info.ts`. One definition rather than two: a
+directory that init calls "empty" and the info read calls "damaged"
+leaves the user on a screen whose only button cannot work.
+
+The guard's precondition became "is there a tracker here worth
+enforcing a version on" rather than "does the directory exist", via
+`isEmptyTracker` — `access` calls only, short-circuiting on the first
+sign of content. **Not** `getTrackerInfo`: the first cut called it
+there and put a full task-directory scan plus three YAML parses in
+front of *every* API request. SPR-6 caught it, failing
+deterministically where it had passed; it passes again with the cheap
+check. The expensive `empty`-vs-`damaged` split is drawn once, in
+`/api/info`, where it is actually rendered.
+
+A `damaged` tracker stays guarded — its data is real and SET-30 requires
+it keep saying so, verified by a test that asserts the 409 *and* that
+`state.yaml` is byte-identical after a refused init.
+
+Reaches CLI and MCP for free: all three surfaces call `getTrackerInfo`.
+
+**To revert.** Drop `initState` from `TrackerInfo` and
+`TrackerInfoResponse`, restore `trackerDirExists` to the `fsStat`-only
+form, inline `missingCoreFiles` back into `init.ts`, delete
+`core-files.ts` (with `isEmptyTracker`) and `info.init-state.test.ts`. ONB-16 then fails as it did before: an
+empty `.loctt/` shows the schema banner.
+
+### A79 · An **empty** `.loctt/` is initialized via core's `repair` path
+
+**Ticket:** M4.6 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** With A78 routing an empty `.loctt/` to the wizard,
+the wizard's submit still failed: `initLoctt` refuses any existing
+`.loctt/` and throws `InitRepairNeededError` — measured as `Error:
+.loctt directory at … exists but is incomplete — missing:
+config/workflow.yaml, config/projects.yaml, state.yaml`. The screen
+ONB-16 requires was offering a button that could not work.
+
+**What had to be decided.** Whether to relax core's refusal, or have
+the web pass the `repair` flag core already has.
+
+**Decided.** `handleInit` reads `getTrackerInfo(root)` and passes
+`repair: true` **only** when `initState === "empty"`. Core is not
+relaxed: its refusal is right for every other state.
+
+Passing it only for `empty` is the entire safety argument. `repairLoctt`
+rebuilds `state.yaml` with `next_number: 1`, which on a tracker with
+surviving tasks reissues keys already in use — the CLI says so and
+points at `doctor --rebuild-index`. An empty directory has no keys to
+reissue and no `projects.yaml` to inherit a prefix from, so the user's
+typed prefix and project name are used verbatim. Asserted at the far
+end: the test reads `projects.yaml` and `state.yaml` off disk and
+checks both carry `WEB-` and `Website`, not a default a layer
+substituted.
+
+**To revert.** Drop the `initState === "empty"` spread in
+`handleInit`. Init into an empty `.loctt/` then 400s, and ONB-16's
+last bullet fails while its first two still pass — the wizard renders
+and the button does nothing.
+
+### A80 · The wizard's prefix rule rejects only what breaks a key, and ONB-19's two bullets conflict
+
+**Ticket:** M4.6 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** ONB-19 asks for two things that cannot both hold
+against the shipped CLI. It wants the wizard to reject "a space, a
+slash, or a lowercase/unicode character the CLI would reject", and it
+wants the rule to match the CLI exactly: "a value the CLI would take
+is not rejected here, and vice versa".
+
+Measured against the built CLI at this SHA — `loctt init --prefix`
+with `"a b"`, `"web/x"`, `"lowercase-"`, `"Ünicode-"`, `"NODASH"`:
+**all five exit 0 and initialize**. Core validates only non-emptiness
+(`init.ts:199`). `setProjectPrefix` likewise checks only emptiness and
+uniqueness. So there is no CLI rule to match; matching it exactly
+means rejecting nothing, and the first bullet fails.
+
+This is a real defect on the CLI side, not only a doc problem:
+`--prefix "web/x"` allocates keys like `web/x1`, and the web UI routes
+tasks at `/tasks/$key`, so those keys break their own task URLs.
+Verified: `loctt create` returns `Created web/x1`.
+
+**What had to be decided.** Which bullet to honour, given both cannot
+be.
+
+**Decided.** The **narrow** rule: reject only characters that
+demonstrably break something — whitespace, and the punctuation that
+cannot survive a URL path segment — and accept everything else,
+including lowercase, unicode, and a prefix with no trailing dash. The
+message states the allowed set and the trailing-`-` convention, so the
+"states the actual rule" bullet holds; the preview is withdrawn on a
+rejected prefix rather than promising a key that cannot be allocated.
+
+This keeps ONB-19's compatibility bullet true for every prefix the CLI
+takes *except* those containing the broken characters, and honours the
+spirit of the first bullet for the cases that matter. The wider
+reading (uppercase-only, trailing `-` required) would reject prefixes
+the CLI accepts today, failing the compatibility bullet outright.
+
+**Not decided here, and deliberately not done:** tightening core's own
+prefix validation so the CLI and UI agree by construction. That
+changes what an existing command accepts and could reject prefixes in
+trackers already on disk — Ken's call, not an agent's. Recorded in
+`known-gaps.md`.
+
+**To revert.** Delete `apps/web/src/client/init/prefix.ts` and its
+test, and let the field accept anything non-empty. ONB-19 then fails
+on its first, second and fourth bullets.

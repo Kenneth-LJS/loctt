@@ -82,6 +82,20 @@ export async function switchCurrentUser(
 }
 
 /**
+ * The display name `ensureDefaultUser` would give a user it creates:
+ * `$USER`, else `$USERNAME`, else `you`.
+ *
+ * Exported so a surface can *name* that identity before creating it —
+ * the init wizard says "You'll be set up as ken" (ONB-5). Reading the
+ * rule rather than restating it is what keeps the promise and the
+ * creation from drifting, and the `you` fallback is why the note can
+ * never render an empty name (ONB-21).
+ */
+export function defaultUserDisplayName(): string {
+  return process.env["USER"] || process.env["USERNAME"] || "you";
+}
+
+/**
  * Bootstraps a default user when none exist. Idempotent: if any
  * user exists, this is a no-op. The default user's name is
  * pulled from `$USER` (env), falling back to `you`.
@@ -98,6 +112,6 @@ export async function ensureDefaultUser(locttDir: string): Promise<UserProfile> 
       return first;
     }
   }
-  const name = process.env["USER"] || process.env["USERNAME"] || "you";
+  const name = defaultUserDisplayName();
   return createUser(locttDir, { name, switchToOnCreate: true });
 }

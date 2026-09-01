@@ -68,13 +68,26 @@ afterwards, which the repair output tells you.
 
 ### `loctt info`
 
-Display tracker status: directory path, task count, configured statuses, and
-per-project counters (next key for each project; the workspace default is
-marked with `*`). Works without a tracker — prints a hint to run `loctt init`.
+Display tracker status: directory path, task count, schema version, configured
+statuses, and per-project counters (next key for each project; the workspace
+default is marked with `*`). Works without a tracker — prints a hint to run
+`loctt init`.
 
 ```
 loctt info
 ```
+
+It distinguishes three not-a-tracker states, because the remedy differs:
+
+| State | What is printed |
+|---|---|
+| No `.loctt/` at all | `No .loctt directory found. Run 'loctt init' to get started.` |
+| `.loctt/` exists but is **empty** | `Found an empty .loctt directory … It is not a tracker yet. Run 'loctt init' to set one up in it.` |
+| `.loctt/` holds tasks but core files are missing | The schema line reports the problem; the remedy is `loctt init --repair` (see `loctt doctor`) |
+
+The middle case used to be reported as a schema problem ("this tracker predates
+schema versioning"), which pointed at `loctt migrate` — a command with nothing
+to migrate. An empty directory has no schema because it is not yet a tracker.
 
 ### `loctt doctor`
 

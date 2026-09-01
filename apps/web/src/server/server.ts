@@ -79,6 +79,7 @@ import {
   createTask,
   createUser,
   createView,
+  defaultUserDisplayName,
   deleteComment,
   deleteLabel,
   deleteMilestone,
@@ -110,6 +111,7 @@ import {
   getWorkflowConfigPath,
   GitConflictError,
   initLoctt,
+  isEmptyTracker,
   isMalformedHistoryEntry,
   LabelError,
   linkTask,
@@ -253,13 +255,43 @@ function displayPath(absPath: string): string {
   return segments.length > 2 ? `…${pathSep}${tail}` : tail;
 }
 
+/**
+ * Whether there is a tracker here worth enforcing a schema version on.
+ *
+ * Deliberately not "does the directory exist". An empty `.loctt/` —
+ * `mkdir .loctt`, an aborted clone, a checkout that dropped the
+ * contents — has no `.schema-version` and so failed the guard, which
+ * answered every route including `/api/info` with a 409 and put the
+ * schema banner in front of a user whose real problem was that they
+ * had no tracker yet (ONB-16). It has no schema because it has no
+ * tracker, and a version check over nothing protects nothing.
+ *
+ * A `.loctt/` that is missing core files but still holds tasks is a
+ * different thing entirely and stays guarded: that one is damaged,
+ * its data is real, and SET-30 requires it keep saying so.
+ */
 async function trackerDirExists(locttDir: string): Promise<boolean> {
   try {
     const s = await fsStat(locttDir);
-    return s.isDirectory();
+    if (!s.isDirectory()) return false;
   } catch {
     return false;
   }
+  // A handful of `access` calls, not `getTrackerInfo`.
+  //
+  // This runs on **every** API request, so the first cut — calling
+  // `getTrackerInfo` and testing `initState !== "empty"` — put a full
+  // task-directory scan and three YAML config parses in front of every
+  // read and every write. SPR-6 caught it: a drag-and-drop whose count
+  // assertion had comfortably passed began failing deterministically,
+  // and it passes again with this.
+  //
+  // `isEmptyTracker` answers the same question from `access` calls
+  // alone, short-circuiting on the first sign of content. The full
+  // `initState` — which separates `empty` from `damaged` — costs the
+  // scan, and is computed once in `/api/info` where the answer is
+  // actually rendered.
+  return !(await isEmptyTracker(locttDir));
 }
 
 /**
@@ -1095,6 +1127,12 @@ export function createWebApp(options: WebAppOptions) {
     }
     const response: TrackerInfoResponse = {
       exists: info.exists,
+      // The client decides whether to offer the init wizard from this,
+      // not from `exists` — an empty `.loctt/` is present but not a
+      // tracker (ONB-16), and a `.loctt/` holding tasks with no
+      // `.schema-version` is present and must never be offered init
+      // (SET-30).
+      initState: info.initState,
       taskCount: info.taskCount,
       keyPrefix: primaryEntry?.prefix ?? info.workflowConfig?.key.prefix ?? null,
       nextKey: primaryEntry
@@ -1102,6 +1140,11 @@ export function createWebApp(options: WebAppOptions) {
         : null,
       schemaStatus: info.schemaStatus,
       cwd: displayPath(root),
+      // Named here rather than in the client so the wizard's note and
+      // the user init actually creates cannot drift, and so an
+      // environment with neither variable still yields a real name
+      // rather than an empty one (ONB-21).
+      defaultUserName: defaultUserDisplayName(),
       // Workspace-timezone today, so the client's date-dependent
       // filters ("Overdue", "Due this week") agree with what the same
       // query returns through the CLI rather than following the
@@ -2391,10 +2434,25 @@ export function createWebApp(options: WebAppOptions) {
   const handleInit: RouteHandler = async ({ req, res }) => {
     const r = await parseJsonBodyWithSchema(req, res, InitRequestSchema);
     try {
+      // An **empty** `.loctt/` needs `repair`, not a plain init: core
+      // refuses an existing directory outright and only fills in
+      // missing files under that flag. Without this the wizard ONB-16
+      // requires offered a button that could not work — it rendered
+      // for the empty directory and then failed with "exists but is
+      // incomplete".
+      //
+      // Passing it only for `empty` is the whole safety argument. A
+      // `damaged` tracker — core files missing but tasks still on
+      // disk — must never reach this: repair rebuilds `state.yaml`
+      // with the key counter back at 1, which reissues keys that
+      // already exist. That tracker gets the schema banner and the
+      // CLI's `--repair`, which says so.
+      const info = await getTrackerInfo(root);
       const result = await initLoctt(root, {
         ...(r.prefix !== undefined ? { prefix: r.prefix } : {}),
         ...(r.projectLabel !== undefined ? { projectName: r.projectLabel } : {}),
         ...(r.docs !== undefined ? { docs: r.docs } : {}),
+        ...(info.initState === "empty" ? { repair: true } : {}),
       });
       json(res, { locttDir: result.locttDir, created: result.created.length }, 201);
     } catch (err) {

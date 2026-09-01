@@ -1,10 +1,11 @@
 import type { SchemaStatusResponse, TrackerInfoResponse } from "@loctt/contracts";
-import { Outlet } from "@tanstack/react-router";
-import { useMemo, useRef } from "react";
+import { Outlet, useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useRef } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { useCurrentUser } from "../api/hooks/useCurrentUser.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
+import { InitWizard } from "../init/InitWizard.tsx";
 import { AppShell } from "./AppShell.tsx";
 import { InterruptedMigration } from "./InterruptedMigration.tsx";
 
@@ -16,9 +17,10 @@ import { InterruptedMigration } from "./InterruptedMigration.tsx";
  *  - loading      → a centered spinner
  *  - fatal error  → a reload-able error page (info failed, or current
  *    user failed for a reason other than "no users yet")
- *  - uninitialized / no user → a placeholder pointing at the CLI. The
- *    in-app init wizard lands in M4; until then `loctt init` is the
- *    path, and this state is informational rather than a dead end.
+ *  - uninitialized → the init wizard, replacing the shell. It is
+ *    decided here rather than by the `/init` route because ONB-29
+ *    requires *every* path to route here rather than render its own
+ *    empty state.
  *  - ready        → the app shell with the routed page inside it
  */
 export function AppBootstrap() {
@@ -153,45 +155,90 @@ export function AppBootstrap() {
   // "No tracker here yet" in front of a user whose tracker was fine.
   // If we have never read anything and nothing errored, we are still
   // waiting, and the gate above owns that.
-  if (known !== undefined && !known.exists) return <NoTrackerHere />;
+  // ONB-1, ONB-15, ONB-29: an uninitialized directory lands on
+  // `/init`, *whatever path was requested* — `/`, `/list`, `/board`,
+  // `/tasks/T-1`, `/settings/general`. Deciding it here rather than
+  // per-route is what makes that true for every path at once; leaving
+  // each route to notice would have them rendering their own empty
+  // states, which is the "reads as data loss" blocker itself.
+  //
+  // A real redirect rather than rendering the wizard in place: ONB-1
+  // asks for the address bar to say `/init`, and ONB-27 asks what
+  // happens when `/init` is "re-entered by URL", which presumes it is
+  // somewhere the user can actually be.
+  //
+  // `initState`, not `exists`: an empty `.loctt/` is present on disk
+  // but is not a tracker, and ONB-16 requires it get this screen with
+  // copy that accounts for the folder already being there.
+  const uninitialized =
+    known !== undefined && (known.initState === "absent" || known.initState === "empty");
+  if (uninitialized) {
+    // The wizard replaces the shell: there is no sidebar to populate,
+    // and a sidebar with zero counts is exactly the reading ONB-1 and
+    // ONB-29 forbid.
+    return <InitRedirect info={known} />;
+  }
 
   // Everything else renders the shell. Only the props differ.
   const user = currentUser.data ?? null;
   return (
-    <AppShell
-      info={known ?? unknownInfo}
-      currentUser={user}
-      identityUnknown={user === null}
-    >
-      <Outlet />
-    </AppShell>
+    <>
+      {/*
+        ONB-27 / ONB-35: `/init` on a working tracker is not a place to
+        stay. Reaching it by Back or by typing the URL sends the user
+        to the list rather than offering to initialize a second tracker
+        over the first — and because this sits in the ready branch, no
+        code path can render the wizard here at all.
+      */}
+      <RedirectFromInit />
+      <AppShell
+        info={known ?? unknownInfo}
+        currentUser={user}
+        identityUnknown={user === null}
+      >
+        <Outlet />
+      </AppShell>
+    </>
   );
 }
 
 /**
- * There is no tracker in this directory.
+ * Sends `/init` to `/list` on a tracker that is already initialized.
  *
- * Deliberately separate from every failure state. "We could not read
- * it" and "it is not there" are different claims, and conflating them
- * is how a transient failure came to announce data loss.
+ * A component rather than a bare effect in the parent, so it can sit
+ * inside the ready branch's JSX without adding a hook that the
+ * earlier `return`s would skip — the rules of hooks are why every
+ * other conditional in this file is a branch on already-computed
+ * state.
  */
-function NoTrackerHere() {
-  return (
-    <CenteredMessage>
-      <div className="max-w-md text-center">
-        <h1 className="mb-2 text-lg font-semibold text-text-primary">
-          No tracker here yet
-        </h1>
-        <p className="text-[13px] text-text-secondary">
-          Run <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">loctt init</code> in
-          this directory to create one. The in-app setup wizard arrives in a later
-          release.
-        </p>
-      </div>
-    </CenteredMessage>
-  );
+function RedirectFromInit() {
+  const navigate = useNavigate();
+  const pathname = typeof window === "undefined" ? "" : window.location.pathname;
+  useEffect(() => {
+    if (pathname === "/init") void navigate({ to: "/list", replace: true });
+  }, [pathname, navigate]);
+  return null;
 }
 
+/**
+ * Puts the address bar on `/init` and renders the wizard there.
+ *
+ * The navigation is a side effect rather than a `throw redirect` in a
+ * route loader, because this decision is made above the router's
+ * outlet — the shell gate runs for every path, and the whole point is
+ * that no individual route has to know. Rendering the wizard while the
+ * navigation settles avoids a frame of blank page on the way.
+ */
+function InitRedirect({ info }: { info: TrackerInfoResponse }) {
+  const navigate = useNavigate();
+  const pathname = typeof window === "undefined" ? "/init" : window.location.pathname;
+  useEffect(() => {
+    // `replace`, so Back does not walk the user through every route
+    // they were bounced off.
+    if (pathname !== "/init") void navigate({ to: "/init", replace: true });
+  }, [pathname, navigate]);
+  return <InitWizard info={info} />;
+}
 
 /**
  * Reads a schema mismatch out of a failed `/api/info`.
@@ -223,6 +270,12 @@ function schemaStatusFromError(err: unknown): SchemaStatusResponse | null {
 function UNKNOWN_INFO(): TrackerInfoResponse {
   return {
     exists: true,
+    // "ready", for the same reason `schemaStatus` claims `current`: a
+    // tracker we could not read is not a tracker we know to be
+    // missing, and offering to initialize one that may well exist is
+    // the mistake ONB-32 rules out.
+    initState: "ready",
+    defaultUserName: "you",
     taskCount: 0,
     keyPrefix: null,
     nextKey: null,
@@ -246,6 +299,12 @@ function UNKNOWN_INFO(): TrackerInfoResponse {
 function PLACEHOLDER_INFO(schemaStatus: SchemaStatusResponse): TrackerInfoResponse {
   return {
     exists: true,
+    // "ready", for the same reason `schemaStatus` claims `current`: a
+    // tracker we could not read is not a tracker we know to be
+    // missing, and offering to initialize one that may well exist is
+    // the mistake ONB-32 rules out.
+    initState: "ready",
+    defaultUserName: "you",
     taskCount: 0,
     keyPrefix: null,
     nextKey: null,

@@ -243,8 +243,34 @@ export type SchemaStatusResponse =
   | { readonly kind: "unknown"; readonly message: string };
 
 /** Tracker info response for API. */
+/**
+ * Whether a `.loctt/` directory is usable, and if not, why.
+ *
+ *  - `ready`: core files all present; normal operation.
+ *  - `absent`: no `.loctt/` at all.
+ *  - `empty`: `.loctt/` exists but holds no core files and no tasks —
+ *    a leftover shell. Safe to initialize into.
+ *  - `damaged`: core files missing but tasks or config survive.
+ *    Initializing over this would destroy data.
+ *
+ * Mirrors core's `InitState`, the way `SchemaStatusResponse` mirrors
+ * `SchemaStatus`: contracts is the lower layer and cannot import core.
+ */
+export type InitState = "ready" | "absent" | "empty" | "damaged";
+
 export interface TrackerInfoResponse {
   readonly exists: boolean;
+  /**
+   * Whether the tracker is usable, and if not, why — `ready`,
+   * `absent`, `empty`, or `damaged`.
+   *
+   * `exists` is set from the `.loctt/` directory being *present*, so
+   * it cannot tell an empty shell from a tracker full of tasks whose
+   * `.schema-version` went missing. ONB-16 needs the first offered the
+   * init wizard; SET-30 needs the second never offered it. Any client
+   * decision about offering initialization reads this, not `exists`.
+   */
+  readonly initState: InitState;
   readonly taskCount: number;
   readonly keyPrefix: string | null;
   readonly nextKey: string | null;
@@ -258,6 +284,19 @@ export interface TrackerInfoResponse {
    * layout. Informational — never used to drive a filesystem operation.
    */
   readonly cwd: string;
+  /**
+   * Display name of the user init would create, derived server-side
+   * from `$USER` (falling back to `$USERNAME`, then `you`).
+   *
+   * Sent so the init wizard can *name* the identity it is about to
+   * create (ONB-5) rather than describing it in the abstract. The
+   * fallback is applied here rather than left to the client, because
+   * ONB-21 requires the note never render an empty name or
+   * `undefined` when the environment has neither variable — and a
+   * client-side fallback would be a second, drifting copy of the rule
+   * core already applies when it actually creates the user.
+   */
+  readonly defaultUserName: string;
   /**
    * Today's date (`YYYY-MM-DD`) in the **workspace** timezone from
    * calendar.yaml, resolved server-side.

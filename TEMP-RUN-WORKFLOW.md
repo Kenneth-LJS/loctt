@@ -516,6 +516,35 @@ condition 2 working as intended: a feature existing nowhere is scope,
 and adding a field to a shared contract is Ken's call, not an
 agent's.
 
+#### M4.6 · ONB-18's two entry conditions are both unreachable from the wizard
+
+**Measured 2026-09-01.**
+
+ONB-18 (prefix collides with an existing project prefix) names its own
+precondition: it is "only reachable when initializing into a directory
+that already has a tracker, or when the wizard is reused for adding a
+project". Neither state exists:
+
+- **Initializing into an existing tracker** is what ONB-35 forbids.
+  `AppBootstrap` renders the wizard only for `initState` `absent` or
+  `empty`, and `/init` on a `ready` tracker redirects to `/list`
+  (`RedirectFromInit`). A tracker with a project to collide with is
+  `ready` by definition, so the wizard is not on screen.
+- **The wizard reused for adding a project** did not happen. Adding a
+  project is `settings/ProjectsPanel.tsx`, built in M4.3 with its own
+  prefix field, its own `problems.prefix` validation and its own
+  `data-testid="project-create-prefix-problem"` alert — a separate
+  component, not this one.
+
+So the collision check has nowhere to fire *in the init wizard*. The
+case is not wrong and has not been reworded; it describes a wizard
+that also creates projects into an existing tracker, which is not the
+shape M4.6 was built to. If that reuse is ever built, ONB-18 attaches
+to it.
+
+**Not** recorded as a defect: `ProjectsPanel` already validates
+prefixes on the path where a collision is actually possible.
+
 #### M4.5 · VUE-22 needs `queries.yaml` to load per-entry, which is a core contract change
 
 **Measured 2026-09-01, with a positive control.**

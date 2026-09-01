@@ -169,11 +169,21 @@ const settingsRoute = createRoute({
   },
 });
 
+// `/init` is a real path so the address bar can say it (ONB-1) and so
+// a deep link to it resolves — but nothing renders *here*.
+//
+// Both of its states are owned by `AppBootstrap`, above the outlet:
+// when there is no tracker it renders the wizard, and when there is
+// one it renders the shell, whose `RedirectFromInit` sends `/init` on
+// to `/list` (ONB-27, ONB-35). Keeping the decision in one place is
+// what stops the two answers disagreeing — a route-level check would
+// need the same `initState` read and could reach a different verdict
+// while the query is in flight.
 const initRoute = createRoute({
   getParentRoute: () => rootRoute,
   errorComponent: RouteError,
   path: "/init",
-  component: () => <Stub name="/init" />,
+  component: () => null,
 });
 
 const routeTree = rootRoute.addChildren([

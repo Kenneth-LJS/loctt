@@ -1,9 +1,10 @@
 import { access, readFile } from "node:fs/promises";
 
-import type { LocttState,QueriesConfig, WorkflowConfig } from "@loctt/contracts";
+import type { InitState, LocttState,QueriesConfig, WorkflowConfig } from "@loctt/contracts";
 
 import { loadQueriesConfig } from "../config/queries.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
+import { isEmptyTracker, missingCoreFiles } from "../init/core-files.js";
 import { getSchemaMigrationInProgressPath, resolveLocttDir } from "../paths/index.js";
 import { CURRENT_SCHEMA_VERSION, readSchemaVersion } from "../schema/index.js";
 import { loadState } from "../state/state.js";
@@ -48,6 +49,11 @@ export type SchemaStatus =
 export interface TrackerInfo {
   readonly locttDir: string;
   readonly exists: boolean;
+  /**
+   * Whether the tracker is usable, and if not, why. Prefer this over
+   * `exists` for any decision about offering initialization.
+   */
+  readonly initState: InitState;
   readonly taskCount: number;
   readonly workflowConfig: WorkflowConfig | null;
   readonly queriesConfig: QueriesConfig | null;
@@ -70,6 +76,7 @@ export async function getTrackerInfo(root: string): Promise<TrackerInfo> {
     return {
       locttDir,
       exists: false,
+      initState: "absent",
       taskCount: 0,
       workflowConfig: null,
       queriesConfig: null,
@@ -96,9 +103,30 @@ export async function getTrackerInfo(root: string): Promise<TrackerInfo> {
   const taskIds = await listTaskIds(locttDir);
   const schemaStatus = await computeSchemaStatus(locttDir);
 
+  // A `.loctt/` missing any core file is not a working tracker. Which
+  // *kind* of not-working decides what the surface may offer, and the
+  // two are not interchangeable: initializing into an empty shell is
+  // safe, initializing over surviving tasks destroys them.
+  const missing = await missingCoreFiles(locttDir);
+  const initState: InitState =
+    missing.length === 0
+      ? "ready"
+      // `isEmptyTracker` is the shared definition of "nothing here",
+      // so the web server's per-request guard and this read cannot
+      // disagree about which directories are safe to initialize into.
+      // The extra `queriesConfig`/`state` test is this function's
+      // own: those loaded from files `isEmptyTracker` does not check,
+      // and a readable config is someone's configuration even with no
+      // tasks — so it is content, and this is `damaged`.
+      : (await isEmptyTracker(locttDir))
+          && workflowConfig === null && queriesConfig === null && state === null
+        ? "empty"
+        : "damaged";
+
   return {
     locttDir,
     exists: true,
+    initState,
     taskCount: taskIds.length,
     workflowConfig,
     queriesConfig,
