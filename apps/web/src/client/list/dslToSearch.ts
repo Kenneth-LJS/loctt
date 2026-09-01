@@ -1,4 +1,11 @@
-import { parseQuery, type QueryNode, type QueryValue, tokenize } from "@loctt/core";
+// Imported by subpath, not the barrel. `@loctt/core`'s index pulls
+// `node:path` and `sharp` into the browser bundle, which is why
+// mounting this editor's dependency chain failed the client build —
+// and why the editor sat unmounted and tree-shaken out while six
+// blocker cases stayed green against the server and the unmounted
+// module. Same constraint A37 recorded for `board/columns.js`.
+import { parseQuery, type QueryNode, type QueryValue } from "@loctt/core/query/parser.js";
+import { tokenize } from "@loctt/core/query/tokenizer.js";
 
 import type { ListSearch } from "../router/listSearch.ts";
 

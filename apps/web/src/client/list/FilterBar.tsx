@@ -11,6 +11,7 @@ import {
 } from "../api/hooks/sidebarData.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import type { ListSearch } from "../router/listSearch.ts";
+import { AdvancedQueryEditor } from "./AdvancedQueryEditor.tsx";
 import { FilterDropdown, type FilterOption } from "./FilterDropdown.tsx";
 import { SaveViewDialog } from "./SaveViewDialog.tsx";
 
@@ -75,6 +76,18 @@ export function FilterBar({
   const search = useSearch({ from });
   const navigate = useNavigate({ from });
 
+  // VUE-8/10/11/31/32/33: the advanced DSL editor. Without this mount
+  // the component was imported by nothing but its own test, so it was
+  // tree-shaken out of the bundle entirely — `dsl-input` appeared zero
+  // times in the built assets — while six blocker cases stayed green,
+  // because every one of them was verified against the server API or
+  // the unmounted module rather than the rendered page.
+  const [advanced, setAdvanced] = useState(false);
+  const query = typeof (search as { q?: unknown }).q === "string"
+    ? (search as { q: string }).q
+    : "";
+  const [draft, setDraft] = useState(query);
+
   const projects = useProjects();
   const users = useUsers();
   const labels = useLabels();
@@ -131,9 +144,40 @@ export function FilterBar({
 
   const hasActive = activeChips.length > 0;
 
+  if (advanced) {
+    return (
+      <AdvancedQueryEditor
+        value={draft}
+        onChange={setDraft}
+        onRun={() => {
+          void navigate({
+            search: (prev: Record<string, unknown>) => ({
+              ...prev,
+              q: draft.trim().length > 0 ? draft : undefined,
+            }),
+          });
+        }}
+        onSwitchToBasic={(next: Record<string, unknown>) => {
+          setAdvanced(false);
+          void navigate({ search: () => next });
+        }}
+        onClose={() => { setAdvanced(false); }}
+        dirty={draft !== query}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          data-testid="advanced-query-toggle"
+          onClick={() => { setDraft(query); setAdvanced(true); }}
+          className="rounded border border-border-subtle px-2 py-1 text-[12px] text-text-secondary hover:bg-bg-muted"
+        >
+          Advanced
+        </button>
         {FACET_KEYS.filter(key => !hiddenFacets.includes(key)).map(key => (
           <FilterDropdown
             key={key}

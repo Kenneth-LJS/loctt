@@ -1180,6 +1180,34 @@ test.describe("SET — the panels under stress and failure", () => {
   });
 
   // @verifies SET-1
+  // @verifies SET-1
+  //
+  // SET-1's *first* bullet, which nothing asserted: "Landing on
+  // `/settings` redirects to a concrete section rather than rendering
+  // an empty pane." The existing SET-1 test only ever visits
+  // `/settings/<section>`, so the bare path went unchecked — and it
+  // fell through to the app-level 404 while `/settings/typo` rendered
+  // the shell correctly. The typo'd URL was handled better than the
+  // canonical one.
+  test("SET-1: the bare /settings redirects to a concrete section", async ({
+    page,
+    tracker,
+  }) => {
+    await page.goto(`${tracker.baseURL}/settings`);
+
+    // Redirected to a real section, not left on a bare path.
+    await expect(page).toHaveURL(/\/settings\/[a-z-]+$/);
+    // And that section actually rendered — a redirect to an empty pane
+    // would satisfy the URL assertion alone.
+    await expect(page.getByTestId("settings-nav")).toBeVisible();
+
+    // `replace: true`, so back leaves settings rather than stepping
+    // onto the bare path and redirecting again — which would trap the
+    // user in a loop they cannot back out of.
+    await page.goBack();
+    await expect(page).not.toHaveURL(/\/settings/);
+  });
+
   test("SET-1: every workflow section is a real route reachable by URL and by back", async ({
     page,
     tracker,

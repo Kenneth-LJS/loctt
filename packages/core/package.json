@@ -17,6 +17,14 @@
     "./users/pins.js": {
       "types": "./dist/users/pins.d.ts",
       "import": "./dist/users/pins.js"
+    },
+    "./query/parser.js": {
+      "types": "./dist/query/parser.d.ts",
+      "import": "./dist/query/parser.js"
+    },
+    "./query/tokenizer.js": {
+      "types": "./dist/query/tokenizer.d.ts",
+      "import": "./dist/query/tokenizer.js"
     }
   },
   "scripts": {
