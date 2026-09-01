@@ -2241,3 +2241,36 @@ comment will re-introduce it without knowing.
 of its comment line — `// @verifies X` — and ignore occurrences
 elsewhere. That is a change to the tooling, not to any ticket's cases,
 which is why it was recorded rather than done inside M4.8.
+
+## `field != null` does not filter — it returns everything
+
+**Measured 2026-09-02 during M4.9, on a live server with a seeded
+tracker (1 task with a milestone, 2 without).**
+
+    ?query=milestone != null   → 3 tasks  (T-1 milestone=<id>,
+                                           T-2 milestone=None,
+                                           T-3 milestone=None)
+
+The predicate matches rows whose field is *absent*, which is the exact
+opposite of what it asks. Not milestone-specific — measured the same
+for `assignee`, `sprint` and `project`, all returning 3 of 3.
+
+**Positive control:** `?query=milestone = "<ulid>"` returns exactly 1,
+so the query path works; only the `!= null` comparison is wrong.
+
+**Why it matters beyond a wrong result.** It fails *silently and in the
+permissive direction*: a user filtering for "has a milestone" gets
+their whole task list back and nothing says the filter did not apply.
+A predicate that returns too much reads as "no matches were excluded"
+rather than as an error.
+
+**Not fixed here.** It is a core query-evaluator defect on a path the
+CLI, MCP and web all share, and no M4.9 case asks for it — M4.9's
+orphan hook filters client-side instead. Fixing it means deciding what
+`!= null` should mean for an optional field (never-set vs explicitly
+cleared), which is a semantics call, not a patch.
+
+**To reproduce:** seed at least one task *with* the field and one
+*without*. A tracker where every task has the field, or none does,
+cannot discriminate — my own first probe had a single task and showed
+the correct-looking answer.
