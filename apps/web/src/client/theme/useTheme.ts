@@ -42,6 +42,32 @@ function resolve(pref: ThemePreference): "light" | "dark" {
  * The hook also installs a `prefers-color-scheme` listener while the
  * preference is `system` so the page tracks OS dark-mode flips live.
  */
+/**
+ * Adopts a theme that came from somewhere other than this browser —
+ * the acting user's `settings.yaml` (SET-11).
+ *
+ * Called by the shell once the settings query answers. The stored
+ * value is per-*user*, so switching users must repaint to theirs even
+ * though this browser's localStorage still holds the previous user's
+ * choice; that is why this overwrites the cache rather than deferring
+ * to it. The cache's job is only to avoid a flash before the fetch
+ * lands.
+ */
+export function adoptStoredTheme(pref: unknown): void {
+  if (pref !== "light" && pref !== "dark" && pref !== "system") return;
+  writeLocal(STORAGE_KEY, pref);
+  applyResolvedTheme(resolve(pref));
+  for (const listener of listeners) listener(pref);
+}
+
+/**
+ * Subscribers to out-of-band theme changes. `useTheme` is used in more
+ * than one place (the picker, and the shell that seeds it), and a
+ * `useState` per call site would let the picker keep rendering the
+ * previous user's choice after a switch repainted the page.
+ */
+const listeners = new Set<(pref: ThemePreference) => void>();
+
 export function useTheme(): {
   preference: ThemePreference;
   resolved: "light" | "dark";
@@ -49,6 +75,14 @@ export function useTheme(): {
 } {
   const [preference, setPreferenceState] = useState<ThemePreference>(readStored);
   const [resolved, setResolved] = useState<"light" | "dark">(() => resolve(readStored()));
+
+  // Track adoptions from the user's settings file so every mounted
+  // picker agrees with what is painted.
+  useEffect(() => {
+    const listener = (next: ThemePreference): void => { setPreferenceState(next); };
+    listeners.add(listener);
+    return () => { listeners.delete(listener); };
+  }, []);
 
   // Apply on mount and whenever preference changes.
   useEffect(() => {

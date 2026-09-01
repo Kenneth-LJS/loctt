@@ -35,6 +35,45 @@ describe("UserSettings", () => {
     expect(parsed).toEqual(input);
   });
 
+  describe("theme and sidebar_pins (SET-11, SET-13)", () => {
+    // @verifies SET-11
+    it("accepts the three theme preferences and rejects anything else", () => {
+      for (const t of ["light", "dark", "system"]) {
+        expect(UserSettingsSchema.parse({ theme: t }).theme).toBe(t);
+      }
+      // A hand-edited settings.yaml naming a theme that does not exist
+      // is caught at load rather than repainting to nothing.
+      expect(() => UserSettingsSchema.parse({ theme: "solarized" })).toThrow();
+      expect(UserSettingsSchema.parse({}).theme).toBeUndefined();
+    });
+
+    // @verifies SET-13
+    it("accepts an ordered pin array and preserves its order", () => {
+      // Order is the sidebar order — this is why pins are an array and
+      // not a set.
+      const input = { sidebar_pins: ["v-c", "v-a", "v-b"] };
+      expect(UserSettingsSchema.parse(input).sidebar_pins)
+        .toEqual(["v-c", "v-a", "v-b"]);
+    });
+
+    // @verifies SET-13
+    it("rejects a repeated pin and an empty pin id", () => {
+      // A pin appearing twice has no meaningful sidebar position.
+      expect(() => UserSettingsSchema.parse({ sidebar_pins: ["a", "a"] }))
+        .toThrow();
+      expect(() => UserSettingsSchema.parse({ sidebar_pins: [""] })).toThrow();
+    });
+
+    // @verifies SET-27
+    it("accepts an empty pin list — every pin swept is representable", () => {
+      // SET-27 rewrites settings.yaml after deleting every pinned
+      // view. If `[]` were rejected the sweep could not persist its
+      // result and would re-run on every load.
+      expect(UserSettingsSchema.parse({ sidebar_pins: [] }).sidebar_pins)
+        .toEqual([]);
+    });
+  });
+
   describe("card_layout (CW-17)", () => {
     it("accepts an ordered array and preserves its order", () => {
       // Order is the point: it carries render order as well as

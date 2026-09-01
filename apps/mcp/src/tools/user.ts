@@ -14,7 +14,12 @@ import {
   deleteUser,
   getCurrentUser,
   loadAllUsers,
+  loadOptionalConfigs,
+  loadUserSettings,
+  readSidebarPins,
   resolveUserRef,
+  saveUserSettings,
+  sweepSidebarPins,
   switchCurrentUser,
   unarchiveUser,
   updateUser,
@@ -51,6 +56,45 @@ export const TOOLS: readonly ToolDef[] = [
       const current = await getCurrentUser(locttDir);
       if (!current) return errorResult("no users registered");
       return text(JSON.stringify(current, null, 2));
+    },
+  },
+  {
+    /**
+     * Ken's layer rule: core's pin sweep (`sweepSidebarPins`) ships to
+     * all three surfaces, not just the web UI that motivated it.
+     */
+    name: "get_user_settings",
+    description: "Returns the active user's personal settings (theme, card_layout, sidebar_pins, default_project). These are per-user render preferences stored in .loctt/users/<id>/settings.yaml.",
+    inputSchema: {},
+    handler: async ({ locttDir }) => {
+      const current = await getCurrentUser(locttDir);
+      if (!current) return errorResult("no users registered");
+      const settings = await loadUserSettings(locttDir, current.id);
+      return text(JSON.stringify({ user: current.id, settings }, null, 2));
+    },
+  },
+  {
+    name: "sweep_sidebar_pins",
+    description: "Removes pinned saved views whose views no longer exist in queries.yaml, and reports which were removed by id. Pins whose views merely match zero tasks are kept — this checks existence, not results.",
+    inputSchema: {},
+    handler: async ({ locttDir }) => {
+      const current = await getCurrentUser(locttDir);
+      if (!current) return errorResult("no users registered");
+      const settings = await loadUserSettings(locttDir, current.id);
+      const { queriesConfig } = await loadOptionalConfigs(locttDir);
+      const existing = (queriesConfig?.queries ?? []).map(q => q.id);
+      const sweep = sweepSidebarPins(readSidebarPins(settings), existing);
+      if (sweep.changed) {
+        await saveUserSettings(locttDir, current.id, {
+          ...settings,
+          sidebar_pins: sweep.kept,
+        });
+      }
+      return text(JSON.stringify(
+        { removed: sweep.removed, kept: sweep.kept, changed: sweep.changed },
+        null,
+        2,
+      ));
     },
   },
   {

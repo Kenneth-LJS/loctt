@@ -12,8 +12,9 @@ import {
   useViews,
 } from "../api/hooks/sidebarData.ts";
 import { useBuiltinCounts } from "../api/hooks/useBuiltinCounts.ts";
-import { useWorkflow } from "../api/hooks/useWorkflow.ts";
+import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { RegionErrorBoundary } from "../error/RegionErrorBoundary.tsx";
+import { readSidebarPins } from "../settings/sidebarPins.ts";
 import { BUILTIN_FILTERS } from "../sidebar/builtinFilters.ts";
 import { useVanishedViews } from "./useVanishedViews.ts";
 
@@ -445,7 +446,14 @@ function SavedFiltersGroup({
   const priorities = workflow.data?.priorities;
   const ctx = { currentUserId, today, priorities };
   const counts = useBuiltinCounts(BUILTIN_FILTERS, ctx);
-  const userViews = views.data?.queries ?? [];
+  // SET-13: pinned views lead the group, in the user's stored pin
+  // order; everything else follows in config order. A pin whose view
+  // is gone contributes nothing here — it has no row to render — and
+  // the pins panel is what tells the user it went.
+  const settings = useUserSettings();
+  const pins = readSidebarPins(settings.data?.settings);
+  const allViews = views.data?.queries ?? [];
+  const userViews = orderByPins(allViews, pins);
   const failed = hasFailed(views);
   // SHL-32: a pin that vanished from `queries.yaml` is explained
   // rather than silently dropped. Only once the list has actually
@@ -564,6 +572,27 @@ function SavedFiltersGroup({
       ) : null}
     </div>
   );
+}
+
+/**
+ * Pinned views first in pin order, then the rest in config order.
+ *
+ * Pins that name a missing view are skipped rather than rendered as
+ * broken entries — SET-13's third bullet and P7's "the sidebar
+ * crashing because a pinned view was removed" violation.
+ */
+function orderByPins<T extends { id: string }>(
+  views: readonly T[],
+  pins: readonly string[],
+): readonly T[] {
+  if (pins.length === 0) return views;
+  const byId = new Map(views.map(v => [v.id, v]));
+  const pinned = pins.flatMap(id => {
+    const v = byId.get(id);
+    return v === undefined ? [] : [v];
+  });
+  const pinnedIds = new Set(pinned.map(v => v.id));
+  return [...pinned, ...views.filter(v => !pinnedIds.has(v.id))];
 }
 
 function MilestonesGroup({ collapsed }: { collapsed: boolean }) {

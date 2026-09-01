@@ -62,10 +62,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "sync", label: "Sync", group: "Tracker", built: true },
   { id: "diagnostics", label: "Diagnostics", group: "Tracker", built: true },
 
-  { id: "preferences", label: "My preferences", group: "Personal", built: false },
-  { id: "card-layout", label: "Card layout", group: "Personal", built: false },
-  { id: "sidebar-pins", label: "Sidebar pins", group: "Personal", built: false },
-  { id: "keyboard", label: "Keyboard", group: "Personal", built: false },
+  { id: "preferences", label: "My preferences", group: "Personal", built: true },
+  { id: "card-layout", label: "Card layout", group: "Personal", built: true },
+  { id: "sidebar-pins", label: "Sidebar pins", group: "Personal", built: true },
+  { id: "keyboard", label: "Keyboard", group: "Personal", built: true },
 ];
 
 /** The section a bare `/settings` lands on (SET-1). */

@@ -382,6 +382,7 @@ export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationshi
 export { computeProgress, milestoneProgress, sprintProgress } from "./task/index.js";
 export { bodyToken, StaleBodyWriteError } from "./task/io.js";
 export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserSettings } from "./users/index.js";
+export type { PinSweep } from "./users/index.js";
 export type { RecentEntry } from "./users/index.js";
 export {
   archiveUser,
@@ -399,12 +400,14 @@ export {
   pushRecent,
   readCurrentUserId,
   readRecents,
+  readSidebarPins,
   RECENTS_CAP,
   removeRecent,
   resolveUserRef,
   saveUserProfile,
   saveUserSettings,
   serializeUserProfile,
+  sweepSidebarPins,
   switchCurrentUser,
   unarchiveUser,
   updateUser,

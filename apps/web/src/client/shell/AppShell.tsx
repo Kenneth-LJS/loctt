@@ -1,8 +1,10 @@
 import type { TrackerInfoResponse, UserProfile } from "@loctt/contracts";
 import { Outlet } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 
+import { useUserSettings } from "../api/hooks/useWorkflow.ts";
 import { CreateTaskProvider } from "../create/CreateTaskProvider.tsx";
+import { adoptStoredTheme } from "../theme/useTheme.ts";
 import { ToastProvider } from "../ui/Toast.tsx";
 import { Header } from "./Header.tsx";
 import { SchemaBanner } from "./SchemaBanner.tsx";
@@ -43,6 +45,20 @@ export function AppShell({
   readonly children?: ReactNode;
 }) {
   const { collapsed, toggle, canToggle } = useSidebarCollapse();
+  // SET-11: the theme is per *user*, so the acting user's stored
+  // choice wins over whatever this browser last cached. Seeded here
+  // rather than in the picker — the repaint must happen on every load
+  // and after a user switch, not only when settings is open.
+  const settingsQuery = useUserSettings();
+  // `?.` on `settings` too, not only on `data`. The response type says
+  // `settings` is always present, but a server that answered without
+  // it — or any stub that does — would throw *inside the shell's own
+  // render*, taking the whole app down over a theme preference. The
+  // shell must survive its own optional reads (SHL-13's family).
+  const storedTheme = settingsQuery.data?.settings?.theme;
+  useEffect(() => {
+    if (storedTheme !== undefined) adoptStoredTheme(storedTheme);
+  }, [storedTheme]);
   const mainRef = useMainScrollRestoration();
   const today = info.today;
 

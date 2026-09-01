@@ -726,7 +726,7 @@ Cases: SET-14, SET-15, SET-29, SET-30, SET-31, SET-37, SET-38, SET-40, MSL-8, MS
 - **Tests**: doctor route shape; auto-push/fetch toggles persist;
   migrate happy-path returns schema to `current` + banner clears
 
-### M4.4 · Settings — personal + keyboard ⬜
+### M4.4 · Settings — personal + keyboard ✅
 Cases: SET-11, SET-12, SET-13, SET-26, SET-27, PRU-14, SET-2, VUE-38
 - My preferences + Card layout + Sidebar pins + Keyboard reference
   (C.10.19–C.10.22); theme picker; card layout drag editor (CW-17);

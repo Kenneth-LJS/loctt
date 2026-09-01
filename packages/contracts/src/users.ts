@@ -95,9 +95,33 @@ export type CardLayout = z.infer<typeof CardLayoutSchema>;
 export const EditorModeSchema = z.enum(["wysiwyg", "source"]);
 export type EditorMode = z.infer<typeof EditorModeSchema>;
 
+/** Theme preference, persisted per user (SET-11). */
+export const ThemePreferenceSchema = z.enum(["light", "dark", "system"]);
+export type ThemePreference = z.infer<typeof ThemePreferenceSchema>;
+
+/**
+ * Sidebar pins (SET-13): the saved-view ids pinned to the sidebar's
+ * Saved filters group, in sidebar order.
+ *
+ * Ids, not names — a view renamed in `queries.yaml` keeps its pin.
+ * Absent means "pin nothing"; the sidebar still lists views, but the
+ * pinned subset is what this orders.
+ *
+ * Duplicates are rejected for the same reason `card_layout` rejects
+ * them: a pin appearing twice has no meaningful sidebar position.
+ */
+export const SidebarPinsSchema = z
+  .array(z.string().min(1))
+  .refine(ids => new Set(ids).size === ids.length, {
+    message: "sidebar_pins must not repeat a view",
+  });
+export type SidebarPins = z.infer<typeof SidebarPinsSchema>;
+
 export const UserSettingsSchema = z.object({
   default_project: z.string().min(1).optional(),
   card_layout: CardLayoutSchema.optional(),
   editor_mode: EditorModeSchema.optional(),
+  theme: ThemePreferenceSchema.optional(),
+  sidebar_pins: SidebarPinsSchema.optional(),
 }).passthrough();
 export type UserSettings = z.infer<typeof UserSettingsSchema>;

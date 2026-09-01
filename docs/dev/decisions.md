@@ -1414,6 +1414,166 @@ side is a boolean.
 boolean rendering with a computed count, which requires a new core
 function to produce it.
 
+### A68 · `theme` and `sidebar_pins` become typed fields on `UserSettingsSchema`
+
+**Ticket:** M4.4 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** `UserSettingsSchema` is `.passthrough()`, and both
+`theme` and `sidebar_pins` already round-tripped as unknown keys — the
+schema's own test names them as examples of UI-only keys. SET-11 and
+SET-13 make both load-bearing: the theme must survive a user switch,
+and the pins carry sidebar order.
+
+**What had to be decided.** Whether to keep them as passthrough keys or
+model them.
+
+**Options considered.**
+
+1. **Leave them untyped.** A hand-edited `theme: solarized` or a
+   repeated pin reaches the client and has to be defended against at
+   every read site. `card_layout` was modelled for exactly this reason.
+2. **Model them in contracts.** Chosen. `ThemePreferenceSchema` is the
+   three-value enum the UI already implements; `SidebarPinsSchema`
+   rejects repeats, mirroring `CardLayoutSchema`'s no-repeat refine.
+
+**Decided.** Option 2. Both are optional fields on
+`UserSettingsSchema`; `.passthrough()` is retained, so every *other*
+UI-only key still survives a round trip (P7).
+
+**Why.** Typing a key that two cases depend on moves the check to the
+one place both surfaces read through, rather than each consumer
+guessing. It does not narrow the passthrough policy for anything else.
+
+**To revert.** Delete `ThemePreferenceSchema` and `SidebarPinsSchema`
+from `packages/contracts/src/users.ts` and remove `theme` /
+`sidebar_pins` from `UserSettingsSchema`'s object shape. Both keys keep
+working as passthrough values.
+
+---
+
+### A69 · The pin sweep lives in core and ships to CLI and MCP
+
+**Ticket:** M4.4 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** SET-13 and SET-27 need "which of these pins point at
+views that no longer exist". Nothing in `packages/core` answered it —
+`grep`ed `packages/core/src/index.ts` first, per the run workflow.
+
+**What had to be decided.** Whether the sweep is web-only UI logic or a
+core capability, given the layer rule's cost: core means CLI and MCP
+get it too.
+
+**Options considered.**
+
+1. **Put it in `apps/web`.** Cheapest. But `loctt doctor` already
+   reports dangling references of other kinds, and a user who hand-edits
+   `queries.yaml` from a terminal has no way to repair their pins
+   without opening the web UI.
+2. **Put it in core, with all three surfaces.** Chosen.
+
+**Decided.** Option 2. `packages/core/src/users/pins.ts` exports
+`readSidebarPins` and `sweepSidebarPins`; the CLI gains
+`loctt user settings [--sweep-pins]` and MCP gains `get_user_settings`
+and `sweep_sidebar_pins`.
+
+**Why.** The layer test is "would two surfaces have to answer the same
+question?" — and three do. Building it in `apps/web` would have made it
+the eleventh core-adjacent capability reachable from exactly one place.
+`users/pins.js` is also added as a package subpath export so the client
+can import it without pulling `node:path` through core's barrel, which
+is the precedent `board/columns.js` already set.
+
+**Not satisfied by this.** The sweep is not wired into `loctt doctor`
+as a reported check; PRU-14's `doctor` bullet concerns
+`default_project`, not pins, and no case in M4.4 asks for a pins check
+there.
+
+**To revert.** Delete `packages/core/src/users/pins.ts` and its
+exports, the `settings` case in `apps/cli/src/commands/user.ts`, and
+the two MCP tools; inline the partition in `SidebarPinsPanel.tsx`.
+
+---
+
+### A70 · `DELETE /api/views/:ref` hard-deletes, matching the projects route
+
+**Ticket:** M4.4 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** `handleDeleteView` called `deleteView(locttDir, ref)`
+with no options. `deleteView`'s default is the **archive** branch, so a
+DELETE left the view in `queries.yaml` with `archived: true`. VUE-38's
+third bullet requires the opposite: "Deletion removes the entry from
+`queries.yaml`; `loctt list --view <name>` then reports an unknown
+view."
+
+**What had to be decided.** Whether this is a defect to fix or the
+intended contract to build around.
+
+**Options considered.**
+
+1. **Treat archive as intended and satisfy VUE-38 elsewhere.** There is
+   nowhere else — the case is about what DELETE does to the file.
+2. **Make DELETE hard-delete unless `?soft=true`.** Chosen. This is the
+   exact shape `handleDeleteProject` already uses, and its comment
+   records the identical defect being fixed under PRU-17.
+
+**Decided.** Option 2. `const hard = url.searchParams.get("soft") !== "true"`,
+passed through to `deleteView`. Archive keeps its own route (`PUT` with
+`archived: true`).
+
+**Why.** Two sibling routes disagreeing about what DELETE means is
+drift, and the projects route already settled which way. No existing
+test asserted the archive behaviour — verified by grep — so nothing was
+encoding it as intended.
+
+**To revert.** Restore `await deleteView(locttDir, ref);` in
+`apps/web/src/server/server.ts`. Note that VUE-38 then fails.
+
+---
+
+
+**CORRECTION, 2026-09-01 — the defect this records does not reproduce.**
+Measured against a real tracker on **both** binaries: baseline and
+fixed each return HTTP 200 and each leave `queries: []` — the view is
+genuinely removed either way. Core's archive branch is real
+(`views/manage.ts:166`, and `archiveView` sets `archived: true` while
+keeping the entry), so the reading of the code was right; the route's
+*observable* behaviour was already correct. Passing `hard` explicitly
+is kept because it matches the other three delete routes and removes
+the ambiguity, but **this was not a live bug** and must not be cited
+as one. The PRU-17/M4.1 project-delete defect and M4.3's label and
+milestone defects DID reproduce; this one did not.
+### A71 · SET-13's "dropped silently" is treated as superseded by SET-27
+
+**Ticket:** M4.4 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** SET-13's third bullet says a stale pin is "dropped
+**silently** from both the panel and the sidebar". SET-27's second
+bullet says the panel "**says** the pins were removed because their
+views no longer exist, rather than silently emptying". Same file, same
+P7 tag, opposite requirements, 115 lines apart.
+
+**What had to be decided.** Nothing, on inspection — but it was carried
+into the ticket as a possible stop-and-ask, so the resolution is
+recorded rather than left to be re-derived.
+
+**Decided.** SET-27 governs. `docs/dev/ui-test-cases/README.md:191-198`
+already settles it: "No carve-out for per-user preference drift ...
+This resolves the SHL-32 / SET-13 / SET-27 / XS-28 disagreement in
+favour of the explaining cases." SET-13's other three bullets — the
+drag list, the persisted order, and not sweeping views that merely
+match zero tasks — are implemented as written.
+
+**Why.** The amendment names SET-13 explicitly as one of the cases it
+corrects. Its bullet text was simply never updated to match.
+
+**Not satisfied by this.** The spec text still reads as a
+contradiction for the next agent. The flow docs are read-only, so
+SET-13 was not edited; the stale wording is reported instead.
+
+**To revert.** Nothing to revert in code without also reverting
+SET-27's coverage. If the amendment is ever withdrawn, delete the
+`pins-swept-notice` block in `SidebarPinsPanel.tsx`.
+
 ---
 
 ## 9. Ken's rulings, 2026-08-29

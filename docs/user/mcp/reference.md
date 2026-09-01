@@ -499,6 +499,21 @@ Returns JSON `{current: <id|null>, users: [...]}`.
 
 No parameters. Returns the active user's profile JSON, or errors with `no users registered`.
 
+### `get_user_settings`
+
+No parameters. Returns `{user: <id>, settings: {...}}` — the active
+user's personal preferences from `.loctt/users/<id>/settings.yaml`
+(`theme`, `default_project`, `card_layout`, `sidebar_pins`). These are
+per-user render preferences; unrecognised keys round-trip untouched.
+
+### `sweep_sidebar_pins`
+
+No parameters. Removes pinned saved views whose views no longer exist in
+`queries.yaml`, rewrites `settings.yaml`, and returns
+`{removed: [...], kept: [...], changed: <bool>}` — the removed ids are
+reported rather than dropped silently. Pins whose views merely match
+zero tasks are kept: this checks existence, not results.
+
 ### `switch_user`
 
 Switches the active user. Accepts a UUID or an exact name (when unambiguous).

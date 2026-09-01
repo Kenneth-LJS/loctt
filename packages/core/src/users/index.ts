@@ -20,6 +20,8 @@ export {
   resolveUserRef,
   switchCurrentUser,
 } from "./manage.js";
+export type { PinSweep } from "./pins.js";
+export { readSidebarPins, sweepSidebarPins } from "./pins.js";
 export type { AllUsers, UnreadableUser } from "./profile.js";
 export {
   loadAllUsers,

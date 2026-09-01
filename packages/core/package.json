@@ -13,6 +13,10 @@
     "./board/columns.js": {
       "types": "./dist/board/columns.d.ts",
       "import": "./dist/board/columns.js"
+    },
+    "./users/pins.js": {
+      "types": "./dist/users/pins.d.ts",
+      "import": "./dist/users/pins.js"
     }
   },
   "scripts": {
