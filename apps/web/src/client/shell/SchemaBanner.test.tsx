@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import type { SchemaStatusResponse } from "@loctt/contracts";
-import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render as rtlRender, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { SchemaBanner } from "./SchemaBanner.tsx";
@@ -8,6 +9,21 @@ import { SchemaBanner } from "./SchemaBanner.tsx";
 afterEach(() => {
   document.body.innerHTML = "";
 });
+
+/**
+ * The `outdated` banner now carries a "Migrate now" button, which uses
+ * a mutation — so the component needs query context where it
+ * previously needed none. Wrapping every render keeps the other kinds'
+ * assertions unchanged rather than splitting the file in two.
+ */
+function render(ui: React.ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return rtlRender(
+    <QueryClientProvider client={client}>{ui}</QueryClientProvider>,
+  );
+}
 
 describe("SchemaBanner", () => {
   it("renders nothing for the current schema", () => {
@@ -44,8 +60,10 @@ describe("SchemaBanner", () => {
     expect(alert.textContent).toContain("loctt migrate");
     expect(alert.textContent).toContain("v2");
     expect(alert.textContent).toContain("v3");
-    // No in-app migrate button in M1.1 — that lands in M4.
-    expect(screen.queryByRole("button")).toBeNull();
+    // Was `expect(screen.queryByRole("button")).toBeNull()` with the
+    // note "No in-app migrate button in M1.1 — that lands in M4."
+    // This is M4: the button landed (SET-15, XS-36).
+    expect(screen.getByTestId("schema-migrate-now")).not.toBeNull();
   });
 
   it("tells the user to upgrade for a future schema", () => {
@@ -131,8 +149,32 @@ describe("SchemaBanner distinguishes the four kinds", () => {
     expect(text).toMatch(/backup/i);
     // Distinct from `future`: the tracker is behind the app, not ahead.
     expect(text).not.toMatch(/ahead of this build/i);
-    // M1 has no in-app migrate control.
-    expect(screen.queryByRole("button")).toBeNull();
+    // M4.3 REVERSES this. The assertion here used to be
+    // `expect(screen.queryByRole("button")).toBeNull()` with the note
+    // "M1 has no in-app migrate control" — true when written, and the
+    // exact thing SET-15/XS-36 asked M4.3 to build. The banner now
+    // carries "Migrate now" for `outdated`, so the old expectation was
+    // encoding a deferral, not a requirement.
+    expect(screen.getByTestId("schema-migrate-now")).not.toBeNull();
+  });
+
+  /**
+   * @verifies SET-30
+   *
+   * "Offering Migrate on those kinds would risk a downgrade write; the
+   * button's absence is the assertion." `future` is a downgrade,
+   * `missing` and `unknown` are trackers whose layout is unconfirmed —
+   * none of them may get the button that `outdated` gets.
+   */
+  it.each([
+    ["future", { kind: "future", on_disk: 9, current: 3 }],
+    ["missing", { kind: "missing" }],
+    ["unknown", { kind: "unknown", message: "`.schema-version` contained `abc`." }],
+  ] as const)("%s: offers no Migrate now button", (_kind, status) => {
+    render(<SchemaBanner status={status as SchemaStatusResponse} />);
+    expect(screen.queryByTestId("schema-migrate-now")).toBeNull();
+    // And the confirm step is unreachable too, not merely unrendered.
+    expect(screen.queryByTestId("schema-migrate-confirm-button")).toBeNull();
   });
 
   /**

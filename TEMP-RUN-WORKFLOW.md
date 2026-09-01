@@ -516,6 +516,63 @@ condition 2 working as intended: a feature existing nowhere is scope,
 and adding a field to a shared contract is Ken's call, not an
 agent's.
 
+#### M4.3 · The git reconciliation cases have no model to render
+
+**Measured 2026-09-01, with a positive control. Full reasoning in
+`decisions.md` A69.**
+
+`local/reconcile.yaml` is a **crash sentinel, not a decision model**.
+`ReconcileStateSchema` (`packages/contracts/src/state.ts:43-49`) is
+`.strict()` with exactly four fields: `mode`, `base_commit`,
+`remote_commit`, `started_at`. No per-task rows, no per-field values,
+no chosen sides. `packages/core/src/state/reconcile.ts` exports only
+load / save / clear / parse / serialize — there is **no function that
+applies a reconciliation decision**. A grep for
+`applyReconcil|resolveReconcil|reconcileDecision|keepLocal|keepRemote|
+pickValue` across `packages/core/src`, `apps/cli/src`, `apps/web/src`
+returns 0 hits; the same technique returns real hits for
+`GitConflictError`, which is the positive control.
+
+`GitConflictError` carries a flat `readonly string[]` of file
+**paths**, not fields — and per `git-errors.test.ts:87-91`,
+`config/workflow.yaml` is essentially the only path that still raises
+it, since task frontmatter merges per field. The CLI has no reconcile
+command by explicit design (`apps/cli/src/commands/git.ts:14-21`).
+
+**26 cases cannot be satisfied**, and none of them is wrong — each
+describes a real product requirement whose engine does not exist:
+
+- **Conflict resolution UI (no data model):** GIT-5, GIT-6, GIT-7,
+  GIT-11, GIT-12, GIT-13, GIT-14, GIT-16, GIT-17, GIT-26, GIT-31,
+  GIT-32, GIT-37.
+- **Rekey summary + confirm (`rekeyCollisions` is a pure function
+  whose `RekeyOutcome` is flattened to `rekeyed: number` before it
+  leaves `sync`):** GIT-8, GIT-9, GIT-19, GIT-33.
+- **Publish/sync reporting at task-and-field granularity.**
+  `SyncOutcome` reports **file counts** (`copied`/`merged`/`deleted`)
+  and cannot distinguish created from updated — `plan.copies` is one
+  bucket, and the per-path detail is discarded at
+  `publish-sync.ts:1030`: GIT-15, GIT-21, GIT-23, GIT-34, GIT-35,
+  GIT-36.
+- **Filesystem-class detection for the advisory-lock warning.** It
+  exists **nowhere** — `grep -rniE "icloud|dropbox|onedrive|statfs|
+  nfs|smb|cifs|fstype"` over `packages` and `apps` returns 14 hits,
+  **zero of them code**: two docstring lines in `state/lock.ts`, one
+  architecture-doc line, and eight case specs. Positive control:
+  the same grep for `advisory|lockfile|\.lock` returns
+  `proper-lockfile` imports in `state/lock.ts`. Affects **GIT-22 and
+  XS-50**.
+- **Non-fast-forward vs auth distinction (GIT-29).** `gitErrorResponse`
+  maps exactly two shapes — conflict → 409, everything else → 500 —
+  and `PushResult.error` is an opaque string.
+
+**Also unsatisfiable, unrelated to git:** **SET-29** ("checks stream in
+individually"). `runDoctor` accumulates into a local array and returns
+once; there is no callback, generator or async iterator, and no SSE
+route anywhere in `apps/web/src`. Streaming needs work in three
+layers (core signature, route, client) and is a feature, not a
+wire-up.
+
 #### M3.4 · NEW-20 and NEW-41 name states that cannot exist
 
 **Both are measured, not inferred, and neither case is wrong** — each

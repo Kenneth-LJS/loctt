@@ -51,16 +51,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "custom-fields", label: "Custom fields", group: "Workflow", built: true },
   { id: "estimation", label: "Estimation", group: "Workflow", built: true },
 
-  { id: "labels", label: "Labels", group: "Data", built: false },
-  { id: "milestones", label: "Milestones", group: "Data", built: false },
-  { id: "sprints", label: "Sprints", group: "Data", built: false },
-  { id: "saved-views", label: "Saved views", group: "Data", built: false },
+  { id: "labels", label: "Labels", group: "Data", built: true },
+  { id: "milestones", label: "Milestones", group: "Data", built: true },
+  { id: "sprints", label: "Sprints", group: "Data", built: true },
+  { id: "saved-views", label: "Saved views", group: "Data", built: true },
 
   { id: "calendar", label: "Calendar", group: "Tracker", built: true },
   { id: "board-columns", label: "Board columns", group: "Tracker", built: false },
   { id: "timeline", label: "Timeline defaults", group: "Tracker", built: false },
-  { id: "sync", label: "Sync", group: "Tracker", built: false },
-  { id: "diagnostics", label: "Diagnostics", group: "Tracker", built: false },
+  { id: "sync", label: "Sync", group: "Tracker", built: true },
+  { id: "diagnostics", label: "Diagnostics", group: "Tracker", built: true },
 
   { id: "preferences", label: "My preferences", group: "Personal", built: false },
   { id: "card-layout", label: "Card layout", group: "Personal", built: false },
