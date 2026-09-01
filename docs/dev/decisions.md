@@ -4479,48 +4479,65 @@ attachment means REL-18's guarantee no longer holds for images.
 ticket, and REL-16's known-gaps entry now points at this decision
 instead of at nothing.
 
-### K15 · PENDING — the label-delete contract conflicts with MSL-12
+### K15 · Data deletes are hard by default; archive-by-default stays for projects and sprints
 
-**Raised 2026-09-01. Ken has ruled once; the ruling and the case
-disagree, so this needs a second word from him.**
+**Date:** 2026-09-01 · **Ken's ruling — an agent may not revert this.**
 
-**What Ken ruled.** Asked about `CASE-AUDIT.md` § 1.4, he chose
-"**Archive by default, hard-delete with a flag**".
+**The situation.** Ken first ruled "archive by default, hard-delete
+with a flag" for label deletion, answering `CASE-AUDIT.md` § 1.4. That
+answer was never written into `decisions.md` — measured: `grep
+MSL-12|MSL-32 docs/dev/decisions.md` returned **0**, against a positive
+control of 15 for `K10` in the same file. My M4.3 brief then cited it
+as a recorded decision, and the build agent correctly reported the
+citation as unfindable rather than inventing one or ignoring it.
 
-**What was never done.** That answer was never written into
-`decisions.md`. Measured: `grep MSL-12|MSL-32 docs/dev/decisions.md`
-→ **0 hits**, against a positive control of 15 for `K10` in the same
-file. So the ruling existed only in conversation, and the M4.3 brief
-cited it as a recorded decision that an agent then could not find —
-correctly reporting my error rather than inventing a citation.
-
-**Why it is not simply applied.** MSL-12 is an **M4 blocker** and its
-third and fourth bullets say:
+Meanwhile MSL-12 is an **M4 blocker** whose bullets read:
 
 > On confirm, all 12 tasks are updated on disk and **the entry is
 > removed from `labels.yaml`**. The same delete via CLI produces the
 > same end state — the UI invents no extra remap mode.
 
-"Removed from `labels.yaml`", matching the CLI, **is a hard delete**.
-Archive-by-default cannot satisfy that bullet: an archived label is
-still in the file.
+"Removed from `labels.yaml`", matching the CLI, is a hard delete. An
+archived label is still in the file, so archive-by-default cannot
+satisfy that bullet.
 
-**What M4.3 built:** hard-by-default with `?soft=true` to archive
-(A68) — to the case, not to the ruling, because the agent could not
-find the ruling. It also found the same shape M4.1 had: three routes
-(`labels`, `milestones`, `views`) all archived while answering
-`200 {"deleted": id}`, so a user who deleted a label still had it.
+**Ruling: hard by default**, as M4.3 built it (`?soft=true` archives).
 
-**The options, none of them free:**
+**The UX reasoning Ken ruled on.**
 
-1. **Keep hard-by-default (as built).** MSL-12 holds; Ken's stated
-   preference is overridden.
-2. **Archive-by-default per the ruling.** MSL-12's third bullet fails
-   and the case needs rewording — and the CLI would then have to
-   archive too, or bullet four breaks.
-3. **Archive in the UI, hard in the CLI.** Bullet four breaks
-   explicitly: it forbids the UI inventing a different mode.
+1. **Deletion already cannot happen by accident.** Every delete routes
+   through `RemapDeleteDialog`, and for a referenced item the confirm
+   button is `disabled` until the user explicitly chooses remap-to or
+   clear-the-reference. The protection archive-by-default would add is
+   already present, one step earlier and more visibly.
+2. **Archive-by-default preserves a lie.** Today's shipped behaviour
+   returns `{"deleted": id}` with HTTP 200 while the entry stays in
+   `labels.yaml` with `archived: true` — measured against a real
+   tracker. A destructive action that reports success and does not act
+   is worse than either honest option.
+3. **It would need a home that does not exist.** An archived label the
+   user cannot see or restore is a leak, not safety: it vanishes from
+   pickers while still holding its name, so a replacement collides
+   with something invisible. Making it real means an archived-labels
+   view, an unarchive control, and an answer to "why can't I reuse
+   this name?" — a ticket, not a flag.
+4. **A label is cheap to recreate.** Archive-over-delete is right for
+   things expensive to reconstruct; a label is a name and a colour,
+   and the tasks that referenced it were explicitly remapped or
+   cleared before anything was written.
 
-**Recorded rather than decided, because it is Ken's product call and
-he has already stated a preference that the spec contradicts.**
-Nothing here reverses A68; it flags that A68 may need to.
+**Scope, explicitly.** This governs labels, milestones and saved views
+— the three routes M4.3 fixed. **Archive-by-default stands for
+projects and sprints**, where it is already the behaviour and where
+the entity carries history that is expensive to reconstruct.
+
+**The accepted cost, stated before the ruling.** After the remap
+prompt, a mis-click is unrecoverable except from git. Ken accepted
+that with the alternative in front of him.
+
+**To revert.** Flip the default in the three `handleDelete*` routes
+and drop `?soft=true`; MSL-12 would then need rewording and the CLI
+would have to archive too, or MSL-12's fourth bullet breaks.
+
+**Supersedes** the unrecorded archive-by-default answer. A68 stands.
+
