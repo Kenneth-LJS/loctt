@@ -83,6 +83,35 @@ async function openModal(page: import("@playwright/test").Page): Promise<void> {
 
 test.describe("NEW — create task modal", () => {
   // @verifies NEW-1
+  // @verifies NEW-1
+  //
+  // The seeded case. NEW-1's other test navigates to `/board` without
+  // seeding, so the board is empty and BRD-40's empty-state "+ Add
+  // task" is present — the only one that existed. On any board with
+  // tasks there was no board entry point at all, and the test could
+  // not see it because it never created a task.
+  //
+  // The button is board-level, not per-column: M3.1 built per-column
+  // controls and removed them, because a column still rendered for a
+  // status `workflow.yaml` no longer declares would carry a create
+  // control, which is what broke BRD-42.
+  test("NEW-1: the board entry point exists once the board has tasks", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Existing one" }, { title: "Existing two" }]);
+    await page.goto(`${tracker.baseURL}/board`);
+
+    // The empty state is gone — the positive control, without which
+    // this test would pass on the very state it exists to rule out.
+    await expect(page.getByText("No tasks yet.")).toHaveCount(0);
+
+    const add = page.getByTestId("board-add-task");
+    await expect(add).toBeVisible();
+    await add.click();
+    await expect(page.getByTestId("create-task-modal")).toBeVisible();
+  });
+
   test("NEW-1: all three entry points open the same modal", async ({ page, tracker }) => {
     await page.goto(`${tracker.baseURL}/board`);
 

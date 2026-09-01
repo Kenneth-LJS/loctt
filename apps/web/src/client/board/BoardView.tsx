@@ -357,13 +357,32 @@ export function BoardView() {
           console warning the user never sees (P7). */}
       <ColumnDriftBanner columns={columns} />
 
-      <ChipsBar
-        columns={columns}
-        counts={buckets}
-        hidden={hidden}
-        onToggle={toggleColumn}
-        loading={loading}
-      />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <ChipsBar
+          columns={columns}
+          counts={buckets}
+          hidden={hidden}
+          onToggle={toggleColumn}
+          loading={loading}
+        />
+        {/* NEW-1's board entry point. BRD-40's "+ Add task" lives
+            inside the `total === 0` empty state, so on any board that
+            actually has tasks there was no way to open the modal from
+            here at all — NEW-1's test passed only because it never
+            seeded. This is board-level, not per-column, deliberately:
+            M3.1 built per-column controls and removed them because a
+            column still rendered for a status `workflow.yaml` no
+            longer declares would carry a create control, which is what
+            broke BRD-42. */}
+        <button
+          type="button"
+          data-testid="board-add-task"
+          onClick={() => { createTask.open(); }}
+          className="rounded border border-border-subtle px-2 py-1 text-[12px] text-text-secondary hover:bg-bg-muted"
+        >
+          + Add task
+        </button>
+      </div>
 
       {/* BRD-40: a tracker with zero tasks gets ONE board-level empty
           state, not six per-column placeholders reading as six

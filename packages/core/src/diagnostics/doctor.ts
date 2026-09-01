@@ -525,7 +525,7 @@ export async function runDoctor(
           checks.push({
             name: "key index",
             status: "warn",
-            message: `${parts.join("; ")} — rerun with --rebuild-index to repair`,
+            message: `${parts.join("; ")} — run \`loctt doctor --rebuild-index\` to repair`,
           });
         } else {
           checks.push({
