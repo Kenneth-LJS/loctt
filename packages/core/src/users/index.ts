@@ -15,6 +15,7 @@ export {
   updateUser,
 } from "./lifecycle.js";
 export {
+  defaultUserDisplayName,
   ensureDefaultUser,
   getCurrentUser,
   resolveUserRef,

@@ -24,6 +24,8 @@ import { Sidebar } from "./Sidebar.tsx";
 
 const INFO: TrackerInfoResponse = {
   exists: true,
+  initState: "ready",
+  defaultUserName: "you",
   taskCount: 7,
   keyPrefix: "WEB-",
   nextKey: "WEB-8",

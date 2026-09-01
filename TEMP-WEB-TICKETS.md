@@ -749,7 +749,7 @@ Cases: VUE-8, VUE-9, VUE-10, VUE-11, VUE-12, VUE-17, VUE-18, VUE-19, VUE-20, VUE
 - Editing a built-in opens with the built-in's DSL pre-populated
 - **Tests**: round-trip parse; toggle disabled correctly
 
-### M4.6 · Init wizard ⬜
+### M4.6 · Init wizard ✅
 Cases: ONB-1, ONB-2, ONB-3, ONB-4, ONB-5, ONB-6, ONB-7, ONB-15, ONB-16, ONB-17, ONB-18, ONB-19, ONB-20, ONB-21, ONB-22, ONB-27, ONB-28, ONB-29, ONB-30, ONB-31, ONB-32, ONB-35, A11Y-48
 - Route `/init` shown when `/api/info` reports uninitialized
 - Form per C.7: project (name + prefix), skip-starter-docs

@@ -35,6 +35,18 @@ No parameters. Output includes the resolved LocTT directory, total task count, c
 
 If `.loctt/` is missing, returns a hint to run `loctt init`.
 
+If `.loctt/` exists but is **empty**, says so explicitly — "It is not a tracker
+yet. Run 'loctt init' to set one up in it." Do not read that as a schema
+problem: an empty directory has no schema because it is not yet a tracker, and
+`migrate` has nothing to migrate. Previously the schema guard refused every
+tool in this state with "No .schema-version file found … must be
+re-initialized", which sent agents to the wrong command.
+
+A `.loctt/` that is missing core files but still **holds tasks** is a different
+state: it is damaged, the schema guard still refuses, and the remedy is
+`loctt init --repair` in a terminal. Never initialize over it — that rebuilds
+`state.yaml` with the key counter reset, reissuing keys already in use.
+
 ### `doctor`
 
 Runs diagnostic checks on the tracker. Returns JSON:

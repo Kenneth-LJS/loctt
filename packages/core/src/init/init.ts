@@ -21,6 +21,7 @@ import {
 import { CURRENT_SCHEMA_VERSION } from "../schema/index.js";
 import { ensureDefaultUser } from "../users/index.js";
 import { fileExists } from "../utils/fs.js";
+import { missingCoreFiles } from "./core-files.js";
 import {
   defaultProjectsYaml,
   defaultQueriesYaml,
@@ -156,24 +157,6 @@ async function repairLoctt(
   }
 
   return { locttDir, created };
-}
-
-/**
- * Files init writes that a healthy tracker must have. Only the ones
- * whose absence stops the tracker loading — an absent `queries.yaml`
- * costs saved views and nothing else, so it is not listed here.
- */
-async function missingCoreFiles(locttDir: string): Promise<string[]> {
-  const required: [string, string][] = [
-    ["config/workflow.yaml", getWorkflowConfigPath(locttDir)],
-    ["config/projects.yaml", getProjectsConfigPath(locttDir)],
-    ["state.yaml", getStateFilePath(locttDir)],
-  ];
-  const missing: string[] = [];
-  for (const [label, path] of required) {
-    if (!(await fileExists(path))) missing.push(label);
-  }
-  return missing;
 }
 
 /**

@@ -14,6 +14,7 @@
 import { access } from "node:fs/promises";
 
 import {
+  getTrackerInfo,
   recoverInterruptedPrefixRename,
   requireSupportedSchema,
   resolveLocttDir,
@@ -73,6 +74,25 @@ async function dirExists(p: string): Promise<boolean> {
   }
 }
 
+/**
+ * Whether there is a tracker worth enforcing a schema version on.
+ *
+ * Deliberately not "does the directory exist". An **empty** `.loctt/`
+ * has no `.schema-version`, so the guard refused every tool with "No
+ * .schema-version file found … must be re-initialized" — a wrong
+ * diagnosis whose remedy (`migrate`) has nothing to migrate. It has no
+ * schema because it has no tracker; `init` is what it needs, and the
+ * `info` tool now says so.
+ *
+ * A `.loctt/` missing core files but still holding tasks stays
+ * guarded: that one is damaged and its data is real.
+ */
+async function trackerNeedsSchemaCheck(root: string, locttDir: string): Promise<boolean> {
+  if (!(await dirExists(locttDir))) return false;
+  const info = await getTrackerInfo(root);
+  return info.initState !== "empty";
+}
+
 /** Executes an MCP tool call. */
 export async function executeTool(
   root: string,
@@ -92,7 +112,7 @@ export async function executeTool(
   // partial reads against an unfamiliar schema. `init` is the one
   // legitimately tool that runs against a pre-version tracker; it
   // sets `exemptFromSchemaGuard: true`.
-  if (!registered.exemptFromSchemaGuard && (await dirExists(locttDir))) {
+  if (!registered.exemptFromSchemaGuard && (await trackerNeedsSchemaCheck(root, locttDir))) {
     try {
       await requireSupportedSchema(locttDir);
     } catch (err) {

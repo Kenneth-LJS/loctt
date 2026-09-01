@@ -56,6 +56,16 @@ export async function run(args: string[], root: string): Promise<void> {
     console.log("No .loctt directory found. Run 'loctt init' to get started.");
     return;
   }
+  // An empty `.loctt/` is not a tracker, and reporting its schema as
+  // "predates schema versioning" is a wrong diagnosis with a wrong
+  // remedy attached — that message sends the user to `migrate`, which
+  // has nothing to migrate. It is the same conflation ONB-16 fixed on
+  // the web; core now distinguishes the two, so this says so too.
+  if (info.initState === "empty") {
+    console.log(`Found an empty .loctt directory at ${info.locttDir}.`);
+    console.log("It is not a tracker yet. Run 'loctt init' to set one up in it.");
+    return;
+  }
   console.log(`LocTT directory: ${info.locttDir}`);
   console.log(`Tasks: ${info.taskCount}`);
   // getTrackerInfo has always computed this and no surface printed it,

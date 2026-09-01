@@ -24,6 +24,15 @@ export const TOOLS: readonly ToolDef[] = [
       if (!info.exists) {
         return text("No .loctt directory found. Run 'loctt init' to get started.");
       }
+      // Same distinction the CLI draws: an empty `.loctt/` reported as
+      // a schema-versioning problem sends an agent to `migrate`, which
+      // cannot help. It needs `init`.
+      if (info.initState === "empty") {
+        return text(
+          `Found an empty .loctt directory at ${info.locttDir}. `
+          + `It is not a tracker yet. Run 'loctt init' to set one up in it.`,
+        );
+      }
       const lines: string[] = [];
       lines.push(`LocTT directory: ${info.locttDir}`);
       lines.push(`Tasks: ${info.taskCount}`);
