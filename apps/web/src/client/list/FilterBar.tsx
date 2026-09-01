@@ -42,9 +42,38 @@ const FACET_LABELS: Record<FacetKey, string> = {
   sprint: "Sprint",
 };
 
-export function FilterBar() {
-  const search = useSearch({ from: "/list" });
-  const navigate = useNavigate({ from: "/list" });
+/**
+ * Where the bar reads and writes its state, and which facets it may
+ * offer.
+ *
+ * M4.7 (SPR-13) reuses this bar on `/sprints/$key`, which required
+ * exactly two things to stop being hardcoded: the route the search
+ * params belong to, and the ability to withhold one facet. Everything
+ * else — the facet list, the option building, the chips, the clear-all
+ * — is shared verbatim, which is what makes SPR-13's "no sprint-only
+ * filter dialect" true by construction rather than by two
+ * implementations agreeing for now.
+ */
+export interface FilterBarProps {
+  /** The route whose search params back the controls. */
+  readonly from?: "/list" | "/sprints/$key";
+  /**
+   * Facets to leave out. The sprint detail hides `sprint`: the page
+   * *is* a sprint scope, and a control that could change or clear it
+   * would let the user filter their way out of the route they are on.
+   */
+  readonly hiddenFacets?: readonly FacetKey[];
+  /** Hidden where a saved view would not reproduce the scope. */
+  readonly showSaveView?: boolean;
+}
+
+export function FilterBar({
+  from = "/list",
+  hiddenFacets = [],
+  showSaveView = true,
+}: FilterBarProps = {}) {
+  const search = useSearch({ from });
+  const navigate = useNavigate({ from });
 
   const projects = useProjects();
   const users = useUsers();
@@ -93,7 +122,10 @@ export function FilterBar() {
 
   const customFilters = readCustomFilters(search);
 
-  const activeChips = buildChips(search, options, customFields);
+  const activeChips = buildChips(search, options, customFields)
+    // A chip for a hidden facet would carry a ✕ that removes the very
+    // scope the route is defined by.
+    .filter(chip => !hiddenFacets.includes(chip.key as FacetKey));
 
   const clearAll = (): void => { void navigate({ search: clearedSearch }); };
 
@@ -102,7 +134,7 @@ export function FilterBar() {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        {FACET_KEYS.map(key => (
+        {FACET_KEYS.filter(key => !hiddenFacets.includes(key)).map(key => (
           <FilterDropdown
             key={key}
             label={FACET_LABELS[key]}
@@ -140,13 +172,15 @@ export function FilterBar() {
           Show archived
         </label>
 
-        <button
-          type="button"
-          onClick={() => setSaveOpen(true)}
-          className="inline-flex h-8 items-center gap-1 rounded-md border border-border-default bg-bg-surface px-2.5 text-[13px] text-text-secondary hover:bg-bg-muted"
-        >
-          ⭑ Save as view
-        </button>
+        {showSaveView && (
+          <button
+            type="button"
+            onClick={() => setSaveOpen(true)}
+            className="inline-flex h-8 items-center gap-1 rounded-md border border-border-default bg-bg-surface px-2.5 text-[13px] text-text-secondary hover:bg-bg-muted"
+          >
+            ⭑ Save as view
+          </button>
+        )}
       </div>
 
       {hasActive ? (

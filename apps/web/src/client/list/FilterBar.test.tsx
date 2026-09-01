@@ -85,6 +85,41 @@ function search(router: { state: { location: { search: unknown } } }): Record<st
   return router.state.location.search as Record<string, unknown>;
 }
 
+
+/**
+ * Mounts the bar the way the sprint detail does (M4.7 / SPR-13): on a
+ * different route, with the `sprint` facet withheld.
+ *
+ * The props exist so `/sprints/$key` can reuse this component instead
+ * of forking it; without a test here the only thing holding them is a
+ * Playwright spec, and a prop that silently stops being honoured would
+ * fail far from its cause.
+ */
+async function mountScopedFilterBar(initialSearch = "") {
+  stubFetch();
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const rootRoute = createRootRoute();
+  const detailRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/sprints/$key",
+    validateSearch: listSearchSchema,
+    component: () => (
+      <FilterBar from="/sprints/$key" hiddenFacets={["sprint"]} showSaveView={false} />
+    ),
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([detailRoute]),
+    history: createMemoryHistory({ initialEntries: [`/sprints/S1${initialSearch}`] }),
+  });
+  render(
+    <QueryClientProvider client={qc}>
+      <RouterProvider router={router as never} />
+    </QueryClientProvider>,
+  );
+  await screen.findByRole("button", { name: "Filter Status" });
+  return router;
+}
+
 describe("FilterBar", () => {
   it("selecting a status option writes it to the URL and shows a chip", async () => {
     const router = await mountFilterBar();
@@ -127,5 +162,34 @@ describe("FilterBar", () => {
       const s = search(router);
       expect(s.status).toEqual(["in_progress", "done"]);
     });
+  });
+
+  it("withholds a hidden facet's dropdown while keeping the rest (SPR-13)", async () => {
+    await mountScopedFilterBar();
+    // The shared facets are all still offered...
+    expect(screen.getByRole("button", { name: "Filter Status" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Filter Priority" })).toBeTruthy();
+    // ...and the withheld one is not.
+    expect(screen.queryByRole("button", { name: "Filter Sprint" })).toBeNull();
+  });
+
+  it("does not offer a chip that would clear a hidden facet (SPR-13)", async () => {
+    // The URL carries a sprint filter — the route's own scope. A chip
+    // for it would come with a ✕ that strands the page.
+    await mountScopedFilterBar("?sprint=S1&status=done");
+    // A positive control: the visible facet's chip IS offered, so a
+    // missing sprint chip is the hiding, not an empty chip row.
+    expect(screen.getByRole("button", { name: /Remove Status/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Remove Sprint/ })).toBeNull();
+  });
+
+  it("hides 'Save as view' when the scope would not be reproduced by one", async () => {
+    await mountScopedFilterBar();
+    expect(screen.queryByRole("button", { name: /Save as view/ })).toBeNull();
+  });
+
+  it("still shows 'Save as view' on the list, where the URL is the whole state", async () => {
+    await mountFilterBar();
+    expect(screen.getByRole("button", { name: /Save as view/ })).toBeTruthy();
   });
 });

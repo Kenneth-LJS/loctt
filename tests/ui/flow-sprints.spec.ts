@@ -696,3 +696,1013 @@ test.describe("SPR — sprints overview", () => {
     await expect(page.getByTestId(`sprint-column-${staleId}`)).toHaveCount(0);
   });
 });
+
+/**
+ * Assigns tasks to a sprint by its **ULID**, through the CLI.
+ *
+ * Deliberately not the `assign` helper above, which passes the sprint
+ * *name*. `setField` resolves a name to an id for the frontmatter but
+ * records the raw, unresolved value in `_history.yaml`
+ * (known-gaps.md), and the burndown replays history — so a
+ * name-assigned task is invisible to every burndown assertion below.
+ * The web client itself sends the id, so this is also the more
+ * faithful gesture.
+ */
+async function assignById(
+  tracker: { run(args: readonly string[]): Promise<string> },
+  pairs: readonly (readonly [key: string, sprintId: string])[],
+): Promise<void> {
+  for (const [key, id] of pairs) {
+    await tracker.run(["set", key, "sprint", id]);
+  }
+}
+
+/** Overwrites `workflow.yaml`'s `estimation:` block. */
+async function setEstimation(root: string, block: string): Promise<void> {
+  const file = path.join(root, ".loctt", "config", "workflow.yaml");
+  const text = await readFile(file, "utf8");
+  // The block runs to the next top-level key (a non-indented line).
+  const next = text.replace(/^estimation:\n(?:[ \t].*\n|\n)*/m, block);
+  if (next === text) throw new Error("estimation block not found in workflow.yaml");
+  await writeFile(file, next, "utf8");
+}
+
+/** Reads a sprint's raw record out of `sprints.yaml`. */
+async function readSprintRecord(
+  root: string,
+  id: string,
+): Promise<Record<string, string>> {
+  const text = await readFile(path.join(root, ".loctt", "config", "sprints.yaml"), "utf8");
+  const lines = text.split("\n");
+  const start = lines.findIndex(l => l.includes(`- id: ${id}`));
+  if (start < 0) throw new Error(`sprint ${id} not in sprints.yaml:\n${text}`);
+  const out: Record<string, string> = {};
+  for (let i = start; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (i > start && /^\s*- id:/.test(line)) break;
+    const m = /^\s*-?\s*(\w+):\s*(.*)$/.exec(line);
+    if (m?.[1] !== undefined) out[m[1]] = (m[2] ?? "").trim().replace(/^["']|["']$/g, "");
+  }
+  return out;
+}
+
+test.describe("SPR — sprint detail (M4.7)", () => {
+  // @verifies SPR-7
+  test("SPR-7: the detail header is populated from sprints.yaml and the URL reopens it", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run([
+      "sprint", "create", "Cadence", "--start", "2026-04-06", "--end", "2026-04-17",
+      "--state", "active", "--goal", "Land the importer",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+
+    // Navigating *from a column header* opens the detail route.
+    await page.goto(`${tracker.baseURL}/sprints`);
+    await page.getByTestId(`sprint-open-${id}`).click();
+    await expect(page.getByTestId("sprint-detail")).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe(`/sprints/${id}`);
+
+    // Every field is populated from the config, not from a default.
+    await expect(page.getByTestId("sprint-meta-name")).toHaveValue("Cadence");
+    await expect(page.getByTestId("sprint-meta-start_date")).toHaveValue("2026-04-06");
+    await expect(page.getByTestId("sprint-meta-end_date")).toHaveValue("2026-04-17");
+    await expect(page.getByTestId("sprint-meta-state")).toHaveValue("active");
+    await expect(page.getByTestId("sprint-meta-goal")).toHaveValue("Land the importer");
+
+    // The state control offers EXACTLY the three schema states — no
+    // invented fourth, no blank option.
+    const stateOptions = page.getByTestId("sprint-meta-state").locator("option");
+    await expect(stateOptions).toHaveCount(3);
+    expect(await stateOptions.evaluateAll(os => os.map(o => (o as HTMLOptionElement).value)))
+      .toEqual(["active", "completed", "future"]);
+
+    // The URL is pasteable: a cold load of the same address reopens
+    // the same sprint, rather than depending on the click that got here.
+    const pasted = new URL(page.url()).toString();
+    await page.goto("about:blank");
+    await page.goto(pasted);
+    await expect(page.getByTestId("sprint-detail")).toHaveAttribute("data-sprint-id", id);
+    await expect(page.getByTestId("sprint-meta-name")).toHaveValue("Cadence");
+  });
+
+  // @verifies SPR-7
+  test("SPR-7: an absent goal is an empty placeholder affordance, never the string 'undefined'", async ({
+    tracker,
+    page,
+  }) => {
+    // Created with no --goal: the key is absent from sprints.yaml.
+    await tracker.run([
+      "sprint", "create", "Goalless", "--start", "2026-05-04", "--end", "2026-05-15", "--state", "active",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+    const record = await readSprintRecord(tracker.root, id);
+    expect(record["goal"]).toBeUndefined(); // the seeding really is absent
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+
+    const goal = page.getByTestId("sprint-meta-goal");
+    // The *text*, not merely that an element exists — "an element is
+    // present" passes on a literal "undefined".
+    await expect(goal).toHaveValue("");
+    await expect(goal).not.toHaveValue("undefined");
+    await expect(goal).not.toHaveValue("null");
+    // Not a collapsed row: it is visible, editable, and invites a goal.
+    await expect(goal).toBeVisible();
+    await expect(goal).toBeEditable();
+    await expect(goal).toHaveAttribute("placeholder", /goal/i);
+    // And nothing anywhere in the header says "undefined".
+    await expect(page.getByTestId("sprint-meta")).not.toContainText("undefined");
+  });
+
+  // @verifies SPR-8
+  test("SPR-8: editing name and goal persists to sprints.yaml and survives reload", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run([
+      "sprint", "create", "Before", "--start", "2026-06-01", "--end", "2026-06-12", "--state", "active",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+    const seeded = await tracker.seed([{ title: "carried" }]);
+    await assignById(tracker, [[String(seeded[0]), id]]);
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+    await page.getByTestId("sprint-meta-name").fill("After");
+    await page.getByTestId("sprint-meta-name").blur();
+
+    // The far end: the file on disk, not the field on screen.
+    await expect
+      .poll(async () => (await readSprintRecord(tracker.root, id))["name"])
+      .toBe("After");
+
+    // The id is unchanged, so the task stays attached.
+    const record = await readSprintRecord(tracker.root, id);
+    expect(record["id"]).toBe(id);
+    expect(await readTaskFile(tracker.root, String(seeded[0])))
+      .toMatch(new RegExp(`^sprint: ${id}$`, "m"));
+
+    // The CLI read agrees — the change is on disk, not just in React.
+    expect(await tracker.run(["sprint", "list"])).toContain("After");
+
+    // And a reload shows it, plus the task still listed.
+    await page.reload();
+    await expect(page.getByTestId("sprint-meta-name")).toHaveValue("After");
+    await expect(page.getByTestId(`sprint-task-${String(seeded[0])}`)).toBeVisible();
+  });
+
+  // @verifies SPR-8
+  test("SPR-8: changing state to completed re-collapses that column on the overview", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run([
+      "sprint", "create", "Running", "--start", "2026-06-01", "--end", "2026-06-12", "--state", "active",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+    await page.getByTestId("sprint-meta-state").selectOption("completed");
+
+    await expect
+      .poll(async () => (await readSprintRecord(tracker.root, id))["state"])
+      .toBe("completed");
+
+    // SPR-2's rules now apply to it on the overview: completed starts
+    // collapsed, where active was expanded.
+    await page.goto(`${tracker.baseURL}/sprints`);
+    await expect(page.getByTestId(`sprint-toggle-${id}`)).toHaveAttribute("aria-expanded", "false");
+  });
+
+  // @verifies SPR-28
+  test("SPR-28: a UI name save does not clobber a goal set from the CLI meanwhile", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run([
+      "sprint", "create", "Concurrent", "--start", "2026-07-01", "--end", "2026-07-10", "--state", "active",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+    await expect(page.getByTestId("sprint-meta-name")).toHaveValue("Concurrent");
+
+    // The CLI changes `goal` underneath the open page.
+    await tracker.run(["sprint", "edit", "Concurrent", "--goal", "Set from the CLI"]);
+
+    // Now the UI saves `name`, having never seen that goal.
+    await page.getByTestId("sprint-meta-name").fill("Renamed in UI");
+    await page.getByTestId("sprint-meta-name").blur();
+
+    await expect
+      .poll(async () => (await readSprintRecord(tracker.root, id))["name"])
+      .toBe("Renamed in UI");
+
+    // The CLI's goal survived the save — not reverted to the empty
+    // value the page was holding.
+    const record = await readSprintRecord(tracker.root, id);
+    expect(record["goal"]).toBe("Set from the CLI");
+
+    // And the page reflects both.
+    await expect(page.getByTestId("sprint-meta-name")).toHaveValue("Renamed in UI");
+    await expect(page.getByTestId("sprint-meta-goal")).toHaveValue("Set from the CLI");
+  });
+
+  // @verifies SPR-33
+  test("SPR-33: an end_date before start_date is rejected inline, naming both values", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run([
+      "sprint", "create", "Window", "--start", "2026-08-03", "--end", "2026-08-14", "--state", "active",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+    await page.getByTestId("sprint-meta-end_date").fill("2026-07-01");
+    await page.getByTestId("sprint-meta-end_date").blur();
+
+    // The error is next to the end_date control, not only a toast.
+    const problem = page.getByTestId("sprint-meta-end_date-problem");
+    await expect(problem).toBeVisible();
+    // It names the constraint and BOTH offending values.
+    await expect(problem).toContainText("2026-07-01");
+    await expect(problem).toContainText("2026-08-03");
+    await expect(problem).toContainText(/before/i);
+
+    // The previous valid value is what is still on disk.
+    expect((await readSprintRecord(tracker.root, id))["end_date"]).toBe("2026-08-14");
+    // ...and the header does not keep showing the rejected value.
+    await expect(page.getByTestId("sprint-meta-end_date")).toHaveValue("2026-08-14");
+
+    // The user can correct it from the error state without reloading.
+    await page.getByTestId("sprint-meta-end_date").fill("2026-08-21");
+    await page.getByTestId("sprint-meta-end_date").blur();
+    await expect
+      .poll(async () => (await readSprintRecord(tracker.root, id))["end_date"])
+      .toBe("2026-08-21");
+    await expect(problem).toHaveCount(0);
+  });
+
+  // @verifies SPR-37
+  test("SPR-37: a save that fails mid-flight states the field, the sprint and the data state", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run([
+      "sprint", "create", "Flaky", "--start", "2026-09-01", "--end", "2026-09-12", "--state", "active",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+    await expect(page.getByTestId("sprint-meta-name")).toHaveValue("Flaky");
+
+    // The write fails in flight, after leaving the browser.
+    await page.route(`**/api/sprints/${id}`, route => {
+      if (route.request().method() === "PUT") {
+        void route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({
+            code: "internal", error: "the tracker could not be written",
+            message: "the tracker could not be written",
+            data_state: "not_saved", recovery: { kind: "retry" },
+          }),
+        });
+        return;
+      }
+      void route.continue();
+    });
+
+    await page.getByTestId("sprint-meta-name").fill("Attempted");
+    await page.getByTestId("sprint-meta-name").blur();
+
+    const problem = page.getByTestId("sprint-meta-name-problem");
+    await expect(problem).toBeVisible();
+    // Says whether it was saved and what to do — not just "error".
+    await expect(problem).toContainText(/not saved/i);
+
+    // The header does NOT show the attempted value as though saved.
+    await expect(page.getByTestId("sprint-meta-name")).toHaveValue("Flaky");
+    // And disk agrees with the screen.
+    expect((await readSprintRecord(tracker.root, id))["name"]).toBe("Flaky");
+  });
+
+  // @verifies SPR-38
+  test("SPR-38: an unknown key is a not-found state, distinguishable from an empty sprint", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run([
+      "sprint", "create", "Real", "--start", "2026-10-01", "--end", "2026-10-09", "--state", "active",
+    ]);
+    const realId = String((await readSprints(tracker.root))[0]?.id);
+
+    await page.goto(`${tracker.baseURL}/sprints/01ZZZZZZZZZZZZZZZZZZZZZZZZ`);
+    const nf = page.getByTestId("sprint-not-found");
+    await expect(nf).toBeVisible();
+    await expect(page.getByTestId("sprint-not-found-key")).toContainText("01ZZZZZZZZZZZZZZZZZZZZZZZZ");
+    // Offers a link back to the overview.
+    await page.getByTestId("sprint-not-found-back").click();
+    await expect(page.getByTestId("sprints")).toBeVisible();
+
+    // Positive control: a real sprint with zero tasks is NOT this
+    // state — it renders the full detail page with an empty list.
+    await page.goto(`${tracker.baseURL}/sprints/${realId}`);
+    await expect(page.getByTestId("sprint-not-found")).toHaveCount(0);
+    await expect(page.getByTestId("sprint-detail")).toBeVisible();
+    await expect(page.getByTestId("sprint-tasks-empty")).toBeVisible();
+  });
+
+  // @verifies SPR-26
+  test("SPR-26: an archived sprint's detail route stays reachable and says it is archived", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run([
+      "sprint", "create", "Retired", "--start", "2025-02-03", "--end", "2025-02-14", "--state", "completed",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+    await tracker.run(["sprint", "archive", "Retired"]);
+
+    // Reachable by URL, even though the overview omits its column.
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+    await expect(page.getByTestId("sprint-detail")).toBeVisible();
+    await expect(page.getByTestId("sprint-meta-name")).toHaveValue("Retired");
+    // Shown as archived rather than looking like an ordinary sprint.
+    await expect(page.getByTestId("sprint-meta-archived")).toBeVisible();
+
+    // Positive control for "not offered as a new target": the overview
+    // has no column for it.
+    await page.goto(`${tracker.baseURL}/sprints`);
+    await expect(page.getByTestId(`sprint-column-${id}`)).toHaveCount(0);
+  });
+
+  // @verifies SPR-25
+  test("SPR-25: a 200-char name and a long goal do not push the state control off-screen", async ({
+    tracker,
+    page,
+  }) => {
+    const longName = "N".repeat(200);
+    const longGoal = Array.from({ length: 8 }, (_, i) => `Paragraph ${String(i)} of a very long goal.`).join(" ");
+    await tracker.run([
+      "sprint", "create", longName, "--start", "2026-11-02", "--end", "2026-11-13",
+      "--state", "active", "--goal", longGoal,
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+
+    // The full text is present (not truncated in the data)...
+    await expect(page.getByTestId("sprint-meta-name")).toHaveValue(longName);
+    await expect(page.getByTestId("sprint-meta-goal")).toHaveValue(longGoal);
+
+    // ...and the state control is still inside the viewport.
+    const state = page.getByTestId("sprint-meta-state");
+    await expect(state).toBeVisible();
+    const box = await state.boundingBox();
+    const viewport = page.viewportSize();
+    expect(box).not.toBeNull();
+    expect(box?.x ?? 0).toBeGreaterThanOrEqual(0);
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual((viewport?.width ?? 0));
+
+    // The goal is bounded rather than growing the header without limit.
+    const goalBox = await page.getByTestId("sprint-meta-goal").boundingBox();
+    expect(goalBox?.height ?? 0).toBeLessThanOrEqual(200);
+    // The page itself does not scroll sideways.
+    expect(await page.evaluate(() =>
+      document.documentElement.scrollWidth <= document.documentElement.clientWidth
+    )).toBe(true);
+  });
+});
+
+test.describe("SPR — burndown (M4.7)", () => {
+  // @verifies SPR-9
+  test("SPR-9: numeric estimation sums estimates, one sample per day, ideal distinct", async ({
+    tracker,
+    page,
+  }) => {
+    // A window ending today, so the days have elapsed and the tasks
+    // (created today) are inside it.
+    const today = new Date().toISOString().slice(0, 10);
+    const start = addDays(today, -4);
+    await tracker.run([
+      "sprint", "create", "Points", "--start", start, "--end", today, "--state", "active",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+
+    const seeded = await tracker.seed([
+      { title: "three", fields: { estimate: "3" } },
+      { title: "five", fields: { estimate: "5" } },
+      { title: "unestimated" },
+    ]);
+    await assignById(tracker, seeded.map(k => [k, id] as const));
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+    await expect(page.getByTestId("burndown-chart")).toBeVisible();
+
+    // The Y axis is labelled with the CONFIGURED unit ("pts" from the
+    // default workflow), not a hardcoded "Story points" or "Tasks".
+    const axis = page.getByTestId("burndown-axis-label");
+    await expect(axis).toContainText("pts");
+    await expect(axis).not.toContainText(/story points/i);
+    await expect(axis).not.toContainText(/^Tasks/i);
+
+    // One sample per calendar day, inclusive, weekends included.
+    const days = daysBetween(start, today);
+    expect(days.length).toBe(5);
+    for (const d of days) {
+      await expect(page.getByTestId(`burndown-point-${d}`)).toHaveCount(1);
+    }
+
+    // The plotted starting value equals `initialTotal`, which the
+    // contract defines as the FIRST sample's remaining — not "the sum
+    // of every estimate". These tasks were created today, so on the
+    // window's first day they did not yet exist and the series
+    // correctly starts at 0.
+    const firstDay = String(days[0]);
+    const initial = await page.getByTestId("burndown-initial-total").textContent();
+    await expect(page.getByTestId(`burndown-point-${firstDay}`))
+      .toHaveAttribute("data-remaining", (initial ?? "").trim());
+
+    // The summed estimate appears on the day the tasks joined: today.
+    // 3 + 5 + 0 — the unestimated task contributes 0 to the sum.
+    await expect(page.getByTestId(`burndown-point-${today}`))
+      .toHaveAttribute("data-remaining", "8");
+
+    // The ideal line exists and is visually distinct from the actual —
+    // a different stroke pattern, not colour alone.
+    const ideal = page.getByTestId("burndown-ideal");
+    await expect(ideal).toHaveAttribute("stroke-dasharray", /\d/);
+    await expect(page.getByTestId("burndown-actual")).not.toHaveAttribute("stroke-dasharray", /\d/);
+
+    // The unestimated task still counts as an incomplete task, even
+    // contributing 0 to the sum: 3 tasks are in the sprint.
+    await expect(page.getByTestId("sprint-task-count")).toHaveText("3");
+  });
+
+  // @verifies SPR-10
+  test("SPR-10: with estimation disabled the axis counts tasks and no estimate input appears", async ({
+    tracker,
+    page,
+  }) => {
+    await setEstimation(tracker.root, "estimation:\n  enabled: false\n  unit: points\n\n");
+    const today = new Date().toISOString().slice(0, 10);
+    const start = addDays(today, -2);
+    await tracker.run([
+      "sprint", "create", "Counting", "--start", start, "--end", today, "--state", "active",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+    const seeded = await tracker.seed([
+      { title: "a", fields: { estimate: "8" } },
+      { title: "b" },
+    ]);
+    await assignById(tracker, seeded.map(k => [k, id] as const));
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+    await expect(page.getByTestId("burndown-chart")).toBeVisible();
+
+    // The unit resolved to tasks and the axis says so.
+    await expect(page.getByTestId("burndown-axis-label")).toHaveText(/tasks/i);
+    // Each day's value is the count of incomplete tasks (2), NOT the
+    // summed estimate (which would be 8).
+    await expect(page.getByTestId(`burndown-point-${today}`))
+      .toHaveAttribute("data-remaining", "2");
+
+    // No estimate input anywhere on the page — hidden entirely, not
+    // rendered empty.
+    await expect(page.getByTestId("sprint-estimate-header")).toHaveCount(0);
+    await expect(page.getByTestId(`sprint-estimate-${String(seeded[0])}`)).toHaveCount(0);
+  });
+
+  // @verifies SPR-11
+  test("SPR-11: custom_enum without weights falls back to tasks, says so, and shows per-category counts", async ({
+    tracker,
+    page,
+  }) => {
+    await setEstimation(
+      tracker.root,
+      "estimation:\n  enabled: true\n  unit: custom_enum\n  unit_label: size\n  preset_values: [XS, S, M, L]\n\n",
+    );
+    const today = new Date().toISOString().slice(0, 10);
+    const start = addDays(today, -2);
+    await tracker.run([
+      "sprint", "create", "Sized", "--start", start, "--end", today, "--state", "active",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+    const seeded = await tracker.seed([
+      { title: "a", fields: { estimate: "XS" } },
+      { title: "b", fields: { estimate: "M" } },
+      { title: "c", fields: { estimate: "M" } },
+    ]);
+    await assignById(tracker, seeded.map(k => [k, id] as const));
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+    await expect(page.getByTestId("burndown-chart")).toBeVisible();
+
+    // No NaN, no silently-empty plot: the line carries a real count.
+    await expect(page.getByTestId(`burndown-point-${today}`))
+      .toHaveAttribute("data-remaining", "3");
+    await expect(page.getByTestId("burndown")).not.toContainText("NaN");
+
+    // The axis says tasks, so the reader is not misled into reading
+    // summed effort.
+    await expect(page.getByTestId("burndown-axis-label")).toHaveText(/tasks/i);
+
+    // And it is STATED near the chart, with a pointer to `weights`.
+    const note = page.getByTestId("burndown-enum-fallback");
+    await expect(note).toBeVisible();
+    await expect(note).toContainText("weights");
+    await expect(note).toContainText("workflow.yaml");
+    await expect(note).toContainText(/custom_enum/);
+
+    // Per-category counts are available on the detail page.
+    await expect(page.getByTestId("burndown-enum-count-XS")).toContainText("1");
+    await expect(page.getByTestId("burndown-enum-count-M")).toContainText("2");
+    // A category with none is shown at 0, not silently missing.
+    await expect(page.getByTestId("burndown-enum-count-L")).toContainText("0");
+  });
+
+  // @verifies SPR-12
+  test("SPR-12: custom_enum WITH weights sums the weights and labels the axis with unit_label", async ({
+    tracker,
+    page,
+  }) => {
+    await setEstimation(
+      tracker.root,
+      "estimation:\n  enabled: true\n  unit: custom_enum\n  unit_label: size\n"
+      + "  preset_values: [XS, S, M, L]\n  weights:\n    XS: 1\n    S: 2\n    M: 3\n    L: 5\n\n",
+    );
+    const today = new Date().toISOString().slice(0, 10);
+    const start = addDays(today, -2);
+    await tracker.run([
+      "sprint", "create", "Weighted", "--start", start, "--end", today, "--state", "active",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+    const seeded = await tracker.seed([
+      { title: "a", fields: { estimate: "M" } }, // 3
+      { title: "b", fields: { estimate: "L" } }, // 5
+    ]);
+    await assignById(tracker, seeded.map(k => [k, id] as const));
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+    await expect(page.getByTestId("burndown-chart")).toBeVisible();
+
+    // remaining sums weights[estimate]: 3 + 5 = 8, NOT a task count of 2.
+    await expect(page.getByTestId(`burndown-point-${today}`))
+      .toHaveAttribute("data-remaining", "8");
+
+    // The axis uses the configured unit_label, never the raw
+    // "weighted_enum".
+    const axis = page.getByTestId("burndown-axis-label");
+    await expect(axis).toContainText("size");
+    await expect(axis).not.toContainText("weighted_enum");
+    // And the no-weights fallback note is absent, since weights exist.
+    await expect(page.getByTestId("burndown-enum-fallback")).toHaveCount(0);
+
+    // Completing the L task drops the line by exactly its weight (5).
+    await tracker.run(["set", String(seeded[1]), "status", "done"]);
+    await page.reload();
+    await expect(page.getByTestId(`burndown-point-${today}`))
+      .toHaveAttribute("data-remaining", "3");
+  });
+
+  // @verifies SPR-16
+  test("SPR-16: a sprint with zero tasks states 'nothing to burn down' rather than empty axes", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run([
+      "sprint", "create", "Empty", "--start", "2026-03-02", "--end", "2026-03-06", "--state", "future",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+
+    const empty = page.getByTestId("burndown-empty");
+    await expect(empty).toBeVisible();
+    await expect(empty).toContainText(/nothing to burn down/i);
+    await expect(page.getByTestId("burndown-initial-total")).toHaveText("0");
+    // No NaN-scaled axis, and no division-by-zero artifact anywhere.
+    await expect(page.getByTestId("burndown")).not.toContainText("NaN");
+    await expect(page.getByTestId("burndown")).not.toContainText("Infinity");
+  });
+
+  // @verifies SPR-18
+  test("SPR-18: a ~90-day window thins its tick labels but keeps one point per day", async ({
+    tracker,
+    page,
+  }) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const start = addDays(today, -89);
+    await tracker.run([
+      "sprint", "create", "Long", "--start", start, "--end", today, "--state", "active",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+    const seeded = await tracker.seed([{ title: "one", fields: { estimate: "2" } }]);
+    await assignById(tracker, seeded.map(k => [k, id] as const));
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+    await expect(page.getByTestId("burndown-chart")).toBeVisible();
+
+    // The series still has one data point per day — 90 of them.
+    const points = page.locator('[data-testid^="burndown-point-"]');
+    await expect(points).toHaveCount(90);
+
+    // But the labels are thinned rather than overprinted into a smear.
+    const ticks = page.locator('[data-testid^="burndown-tick-"]');
+    const tickCount = await ticks.count();
+    expect(tickCount).toBeGreaterThan(1);
+    expect(tickCount).toBeLessThanOrEqual(12);
+
+    // Positive control that thinning is real, not an empty selector.
+    await expect(page.getByTestId(`burndown-tick-${today}`)).toHaveCount(1);
+  });
+
+  // @verifies SPR-21
+  test("SPR-21: a wholly-future sprint draws the ideal line and marks days that have not happened", async ({
+    tracker,
+    page,
+  }) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const start = addDays(today, 10);
+    const end = addDays(today, 14);
+    await tracker.run([
+      "sprint", "create", "Ahead", "--start", start, "--end", end, "--state", "future",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+    const seeded = await tracker.seed([
+      { title: "a", fields: { estimate: "4" } },
+      { title: "b", fields: { estimate: "2" } },
+    ]);
+    await assignById(tracker, seeded.map(k => [k, id] as const));
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+    await expect(page.getByTestId("burndown-chart")).toBeVisible();
+
+    // The ideal line is drawn across the whole window.
+    await expect(page.getByTestId("burndown-ideal")).toBeVisible();
+    // The actual series is flat at initialTotal for days not yet happened.
+    await expect(page.getByTestId("burndown-initial-total")).toHaveText("6");
+    for (const d of daysBetween(start, end)) {
+      await expect(page.getByTestId(`burndown-point-${d}`))
+        .toHaveAttribute("data-remaining", "6");
+    }
+
+    // Future days are visually distinguished, so the flat line is not
+    // misread as "no progress".
+    await expect(page.getByTestId("burndown-future-region")).toBeVisible();
+  });
+
+  // @verifies SPR-22
+  test("SPR-22: a single-day sprint renders one visible point without NaN", async ({
+    tracker,
+    page,
+  }) => {
+    const today = new Date().toISOString().slice(0, 10);
+    await tracker.run([
+      "sprint", "create", "OneDay", "--start", today, "--end", today, "--state", "active",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+    const seeded = await tracker.seed([{ title: "a", fields: { estimate: "3" } }]);
+    await assignById(tracker, seeded.map(k => [k, id] as const));
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+    await expect(page.getByTestId("burndown-chart")).toBeVisible();
+
+    // Exactly one sample.
+    await expect(page.locator('[data-testid^="burndown-point-"]')).toHaveCount(1);
+    const point = page.getByTestId(`burndown-point-${today}`);
+    await expect(point).toHaveAttribute("data-remaining", "3");
+
+    // Rendered visibly, not as a zero-width plot pinned to the edge.
+    const cx = await point.getAttribute("cx");
+    const r = await point.getAttribute("r");
+    expect(Number(cx)).toBeGreaterThan(0);
+    expect(Number.isNaN(Number(cx))).toBe(false);
+    expect(Number(r)).toBeGreaterThan(0);
+
+    // The ideal degenerates without NaN or an infinite slope.
+    const idealPoints = await page.getByTestId("burndown-ideal").getAttribute("points");
+    expect(idealPoints ?? "").not.toContain("NaN");
+    expect(idealPoints ?? "").not.toContain("Infinity");
+  });
+
+  // @verifies SPR-23
+  test("SPR-23: a task joining mid-sprint steps the total UP on its join day", async ({
+    tracker,
+    page,
+  }) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const start = addDays(today, -3);
+    await tracker.run([
+      "sprint", "create", "Scope", "--start", start, "--end", today, "--state", "active",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+
+    // One task in from the beginning...
+    const seeded = await tracker.seed([
+      { title: "original", fields: { estimate: "4" } },
+      { title: "added later", fields: { estimate: "6" } },
+    ]);
+    await assignById(tracker, [[String(seeded[0]), id]]);
+    // ...and a second joining "later". Both histories are written
+    // today, so today is the join day for the second.
+    await assignById(tracker, [[String(seeded[1]), id]]);
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+    await expect(page.getByTestId("burndown-chart")).toBeVisible();
+
+    // The step is visible on the join day: the total rises to 10.
+    await expect(page.getByTestId(`burndown-point-${today}`))
+      .toHaveAttribute("data-remaining", "10");
+
+    // Earlier days are NOT retroactively rewritten to hide the change:
+    // before the tasks existed the remaining was 0.
+    await expect(page.getByTestId(`burndown-point-${String(start)}`))
+      .toHaveAttribute("data-remaining", "0");
+
+    // Removing a task steps the total back DOWN on its departure day.
+    await tracker.run(["unset", String(seeded[1]), "sprint"]);
+    await page.reload();
+    await expect(page.getByTestId(`burndown-point-${today}`))
+      .toHaveAttribute("data-remaining", "4");
+  });
+
+  // @verifies SPR-30
+  test("SPR-30: completing then reopening shows both transitions, keyed on status category", async ({
+    tracker,
+    page,
+  }) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const start = addDays(today, -2);
+    await tracker.run([
+      "sprint", "create", "Reopened", "--start", start, "--end", today, "--state", "active",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+    const seeded = await tracker.seed([{ title: "flips", fields: { estimate: "7" } }]);
+    await assignById(tracker, seeded.map(k => [k, id] as const));
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+    await expect(page.getByTestId(`burndown-point-${today}`))
+      .toHaveAttribute("data-remaining", "7");
+
+    // Completed → burns down.
+    await tracker.run(["set", String(seeded[0]), "status", "done"]);
+    await page.reload();
+    await expect(page.getByTestId(`burndown-point-${today}`))
+      .toHaveAttribute("data-remaining", "0");
+
+    // Reopened → rises again.
+    await tracker.run(["set", String(seeded[0]), "status", "in_progress"]);
+    await page.reload();
+    await expect(page.getByTestId(`burndown-point-${today}`))
+      .toHaveAttribute("data-remaining", "7");
+  });
+
+  // @verifies SPR-29
+  test("SPR-29: changing estimation.unit re-renders against the new unit on refresh", async ({
+    tracker,
+    page,
+  }) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const start = addDays(today, -2);
+    await tracker.run([
+      "sprint", "create", "Units", "--start", start, "--end", today, "--state", "active",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+    const seeded = await tracker.seed([{ title: "a", fields: { estimate: "3" } }]);
+    await assignById(tracker, seeded.map(k => [k, id] as const));
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+    await expect(page.getByTestId("burndown-axis-label")).toContainText("pts");
+
+    // Switch points → hours, with no server restart.
+    await setEstimation(
+      tracker.root,
+      "estimation:\n  enabled: true\n  unit: hours\n  unit_label: hrs\n  scale: free\n\n",
+    );
+    await page.reload();
+
+    await expect(page.getByTestId("burndown-axis-label")).toContainText("hrs");
+    // No stale "points"/"pts" label survives anywhere on the chart.
+    await expect(page.getByTestId("burndown")).not.toContainText("pts");
+    await expect(page.getByTestId("burndown")).not.toContainText(/points/i);
+    // The summed value is still read from the same estimates.
+    await expect(page.getByTestId(`burndown-point-${today}`))
+      .toHaveAttribute("data-remaining", "3");
+  });
+
+  // @verifies SPR-34
+  test("SPR-34: a burndown that fails to compute says so; the rest of the page stays editable", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run([
+      "sprint", "create", "Broken", "--start", "2026-02-02", "--end", "2026-02-06", "--state", "active",
+    ]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+
+    // Force the burndown read to fail, leaving every other route alone.
+    await page.route(`**/api/sprints/${id}/burndown`, route =>
+      void route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({
+          code: "internal", error: "history could not be read",
+          message: "history could not be read", recovery: { kind: "retry" },
+        }),
+      }),
+    );
+
+    await page.goto(`${tracker.baseURL}/sprints/${id}`);
+
+    // An error naming the sprint, in the chart's region.
+    const err = page.getByTestId("burndown-error");
+    await expect(err).toBeVisible();
+    await expect(err).toContainText("Broken");
+    // Never empty axes standing in for a failure — that reads as
+    // "no work", which is a different fact.
+    await expect(page.getByTestId("burndown-chart")).toHaveCount(0);
+    await expect(page.getByTestId("burndown-empty")).toHaveCount(0);
+
+    // The rest of the detail still renders AND stays editable.
+    await expect(page.getByTestId("sprint-meta")).toBeVisible();
+    await page.getByTestId("sprint-meta-name").fill("Still editable");
+    await page.getByTestId("sprint-meta-name").blur();
+    await expect
+      .poll(async () => (await readSprintRecord(tracker.root, id))["name"])
+      .toBe("Still editable");
+  });
+
+  // @verifies SPR-35
+  test("SPR-35: a weights key absent from preset_values is reported where the chart would be", async ({
+    tracker,
+    page,
+  }) => {
+    // `XXL` is not in preset_values — the schema rejects this outright.
+    await setEstimation(
+      tracker.root,
+      "estimation:\n  enabled: true\n  unit: custom_enum\n  unit_label: size\n"
+      + "  preset_values: [XS, S, M]\n  weights:\n    XS: 1\n    XXL: 9\n\n",
+    );
+    await tracker.run([
+      "sprint", "create", "BadWeights", "--start", "2026-02-02", "--end", "2026-02-06", "--state", "active",
+    ]).catch(() => undefined);
+
+    await page.goto(`${tracker.baseURL}/sprints`);
+
+    // The config error is surfaced, naming the offending key and that
+    // it is not in preset_values.
+    const region = page.getByTestId("board-config-error");
+    await expect(region).toBeVisible();
+    await expect(region).toContainText("XXL");
+    await expect(region).toContainText(/preset_values/);
+    // It is never silently ignored: no partially-weighted line is drawn.
+    await expect(page.getByTestId("burndown-actual")).toHaveCount(0);
+  });
+});
+
+/** Adds `n` days to a YYYY-MM-DD string, in UTC. */
+function addDays(date: string, n: number): string {
+  const t = new Date(`${date}T00:00:00Z`).getTime() + n * 86_400_000;
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+/** Every YYYY-MM-DD from `start` to `end` inclusive. */
+function daysBetween(start: string, end: string): string[] {
+  const out: string[] = [];
+  for (let d = start; d <= end; d = addDays(d, 1)) out.push(d);
+  return out;
+}
+
+test.describe("SPR — sprint-scoped task list (M4.7)", () => {
+  // @verifies SPR-13
+  test("SPR-13: the shared filter bar narrows within the sprint and never drops the scope", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run([
+      "sprint", "create", "Scoped", "--start", "2026-04-06", "--end", "2026-04-17", "--state", "active",
+    ]);
+    await tracker.run([
+      "sprint", "create", "Other", "--start", "2026-05-04", "--end", "2026-05-15", "--state", "future",
+    ]);
+    const byName = new Map((await readSprints(tracker.root)).map(s => [s.name, s.id]));
+    const scoped = String(byName.get("Scoped"));
+    const other = String(byName.get("Other"));
+
+    const seeded = await tracker.seed([
+      { title: "in scope open" },
+      { title: "in scope done", fields: { status: "done" } },
+      { title: "elsewhere" },
+    ]);
+    await assignById(tracker, [
+      [String(seeded[0]), scoped],
+      [String(seeded[1]), scoped],
+      [String(seeded[2]), other],
+    ]);
+
+    await page.goto(`${tracker.baseURL}/sprints/${scoped}`);
+
+    // Initially exactly this sprint's tasks — the same set as the
+    // overview column, and the same count.
+    await expect(page.getByTestId("sprint-task-count")).toHaveText("2");
+    await expect(page.getByTestId("sprint-task-list").locator("[data-task-key]")).toHaveCount(2);
+    await expect(page.getByTestId(`sprint-task-${String(seeded[2])}`)).toHaveCount(0);
+
+    // The bar is the shared one: it offers the list's facets.
+    await expect(page.getByRole("button", { name: "Status" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Priority" })).toBeVisible();
+    // ...minus `sprint`, which this route *is*.
+    await expect(page.getByRole("button", { name: "Sprint", exact: true })).toHaveCount(0);
+
+    // Applying a status filter narrows WITHIN the sprint.
+    await page.goto(`${tracker.baseURL}/sprints/${scoped}?status=done`);
+    await expect(page.getByTestId("sprint-task-list").locator("[data-task-key]")).toHaveCount(1);
+    await expect(page.getByTestId(`sprint-task-${String(seeded[1])}`)).toBeVisible();
+    // The scope is not dropped: the other sprint's task stays out even
+    // though it would match a bare `status` filter.
+    await expect(page.getByTestId(`sprint-task-${String(seeded[2])}`)).toHaveCount(0);
+
+    // Filter state serializes into the URL and the pasted URL
+    // reproduces the filtered, sprint-scoped list.
+    const pasted = page.url();
+    expect(pasted).toContain("status=done");
+    await page.goto("about:blank");
+    await page.goto(pasted);
+    await expect(page.getByTestId("sprint-detail")).toHaveAttribute("data-sprint-id", scoped);
+    await expect(page.getByTestId("sprint-task-list").locator("[data-task-key]")).toHaveCount(1);
+    await expect(page.getByTestId(`sprint-task-${String(seeded[1])}`)).toBeVisible();
+  });
+
+  // @verifies SPR-13
+  test("SPR-13: a hand-edited sprint param cannot retarget the page away from its route", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run([
+      "sprint", "create", "Here", "--start", "2026-04-06", "--end", "2026-04-17", "--state", "active",
+    ]);
+    await tracker.run([
+      "sprint", "create", "There", "--start", "2026-05-04", "--end", "2026-05-15", "--state", "future",
+    ]);
+    const byName = new Map((await readSprints(tracker.root)).map(s => [s.name, s.id]));
+    const here = String(byName.get("Here"));
+    const there = String(byName.get("There"));
+
+    const seeded = await tracker.seed([{ title: "mine" }, { title: "theirs" }]);
+    await assignById(tracker, [
+      [String(seeded[0]), here],
+      [String(seeded[1]), there],
+    ]);
+
+    // The URL asks for the OTHER sprint's tasks while the route says
+    // "Here". The route param wins — the header and the list must not
+    // describe two different sprints.
+    await page.goto(`${tracker.baseURL}/sprints/${here}?sprint=${there}`);
+    await expect(page.getByTestId("sprint-meta-name")).toHaveValue("Here");
+    await expect(page.getByTestId(`sprint-task-${String(seeded[0])}`)).toBeVisible();
+    await expect(page.getByTestId(`sprint-task-${String(seeded[1])}`)).toHaveCount(0);
+  });
+
+  // @verifies SPR-14
+  test("SPR-14: reassigning a task away drops it from the list and decrements the count", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run([
+      "sprint", "create", "From", "--start", "2026-04-06", "--end", "2026-04-17", "--state", "active",
+    ]);
+    await tracker.run([
+      "sprint", "create", "To", "--start", "2026-05-04", "--end", "2026-05-15", "--state", "future",
+    ]);
+    const byName = new Map((await readSprints(tracker.root)).map(s => [s.name, s.id]));
+    const from = String(byName.get("From"));
+    const to = String(byName.get("To"));
+
+    const seeded = await tracker.seed([{ title: "moving" }, { title: "staying" }]);
+    await assignById(tracker, [
+      [String(seeded[0]), from],
+      [String(seeded[1]), from],
+    ]);
+
+    await page.goto(`${tracker.baseURL}/sprints/${from}`);
+    await expect(page.getByTestId("sprint-task-count")).toHaveText("2");
+
+    // Reassign it to the other sprint, the way the task meta panel does.
+    await assignById(tracker, [[String(seeded[0]), to]]);
+    await page.reload();
+
+    // Dropped from this page's list; the count decrements.
+    await expect(page.getByTestId(`sprint-task-${String(seeded[0])}`)).toHaveCount(0);
+    await expect(page.getByTestId("sprint-task-count")).toHaveText("1");
+    await expect(page.getByTestId(`sprint-task-${String(seeded[1])}`)).toBeVisible();
+
+    // The overview shows the card in its new column.
+    await page.goto(`${tracker.baseURL}/sprints`);
+    await expect(page.getByTestId(`sprint-count-${from}`)).toHaveText("1");
+    await expect(page.getByTestId(`sprint-count-${to}`)).toHaveText("1");
+  });
+});

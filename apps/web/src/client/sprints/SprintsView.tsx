@@ -1,5 +1,5 @@
 import type { CardLayoutField, SprintDef, TaskFrontmatterPublic } from "@loctt/contracts";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -577,6 +577,26 @@ function Column({
             </span>
           </span>
         </button>
+
+        {/* SPR-7: navigating from the column header opens the detail
+            route. A sibling of the toggle rather than a child of it —
+            the header button owns the collapse gesture, and nesting an
+            anchor inside a button is invalid and swallows the click.
+            Only real sprints have a detail page: the "No sprint"
+            bucket and a dangling-id column are not rows in
+            `sprints.yaml` and have nothing to open. */}
+        {column.kind === "sprint" && (
+          <div className="px-3 pb-2">
+            <Link
+              to="/sprints/$key"
+              params={{ key: column.id }}
+              data-testid={`sprint-open-${column.id}`}
+              className="text-[11px] text-accent no-underline hover:underline"
+            >
+              Open sprint →
+            </Link>
+          </div>
+        )}
       </header>
 
       {/* SPR-20: the window is in the past while the state says active.
