@@ -891,10 +891,22 @@ loctt config get <key>
 loctt config set <key> <value>
 loctt config unset <key>
 loctt config list
+loctt config usage
 ```
 
 `get` prints the value (empty line if unset). `list` prints every known config
 key as `<key> = <value>`, with empty values for keys that aren't set.
+
+`usage` is different from the other four: it reports nothing about
+machine-local settings. It counts how many tasks reference each key in
+`workflow.yaml` — every status, priority, task type, relationship, and
+custom-field enum value — so you can see what a deletion would affect
+before making it. Removing a key that tasks still hold requires a remap
+(the web settings panels prompt for one); this is what tells you how
+many tasks that remap would move.
+
+Keys nothing references are omitted; a collection with no referenced
+keys prints `(none referenced)` rather than nothing at all.
 
 Examples:
 
@@ -902,6 +914,24 @@ Examples:
 loctt config set git.auto_push true
 loctt config get git.auto_push
 loctt config list
+loctt config usage
+```
+
+```
+$ loctt config usage
+statuses
+  in_progress = 9
+  backlog = 4
+priorities
+  (none referenced)
+task_types
+  bug = 3
+relationships
+  blocks = 2
+custom_fields
+  size
+    m = 5
+    s = 2
 ```
 
 ## Migration

@@ -1781,3 +1781,84 @@ Caught by the PRU-7 UI test, which archived a project and found the
 row still active.
 
 **Fixed** by handling `archived` in `handleUpdateProject`.
+
+## SET-24's stored-value display is unreachable: the calendar loader refuses an unknown timezone
+
+**Found in M4.2, 2026-09-01. NOT fixed.**
+
+SET-24's first three bullets assume the panel is handed a calendar
+config carrying an unresolvable timezone and renders around it: "the
+panel shows the stored value, marks it unresolvable, and names the file
+it came from", plus a stated rendering fallback.
+
+It cannot. `CalendarConfigSchema`'s `IanaTimezone` brand
+(`packages/contracts/src/brands.ts:77`) rejects any zone not in
+`Intl.supportedValuesOf("timeZone")`, so `loadCalendarConfig` throws and
+`GET /api/calendar` answers **400**. The panel never receives the
+document.
+
+Measured: with `timezone: Mars/Olympus_Mons` in `calendar.yaml`,
+`GET /api/calendar` returns
+`{"code":"config_invalid","message":"calendar.yaml is not valid:
+timezone unknown IANA timezone: Mars/Olympus_Mons", ...}`. The CLI
+(`loctt list`) tolerates the same file because `loadOptionalConfigs`
+catches and falls back to UTC — so the two surfaces disagree about
+whether that tracker is usable, which is its own P10 problem.
+
+**What ships instead.** The panel renders the error, which does name
+the file and the offending value and is not a stack trace, and the
+timezone picker never offers a zone this runtime cannot resolve. Both
+are tested (`tests/ui/flow-settings-workflow.spec.ts`, the two SET-24
+tests). The "shows the stored value in a form you can edit" half is
+not built.
+
+**To reproduce.** Write `timezone: Mars/Olympus_Mons` into
+`.loctt/config/calendar.yaml`, open `/settings/calendar`.
+
+**What fixing it would take.** Either a lenient read path that returns
+the raw document alongside its validation errors (the panel then owns
+the "unresolvable" state), or relaxing `IanaTimezone` to shape-only
+with resolution checked at use. The first is the honest one; both are
+larger than a panel and touch every calendar consumer.
+
+## SET-22's "every day non-working" state cannot be reached, so its other bullets are untestable
+
+**Found in M4.2, 2026-09-01. NOT fixed — see decisions.md A67.**
+
+SET-22 describes a tracker whose calendar has no working days, and
+asks what date pickers, working-day arithmetic, and Diagnostics do in
+that state. `CalendarConfigSchema` rejects `working_days: []`, so no
+supported path produces it: the panel blocks before the request (A67),
+the API returns 400, and a file hand-edited that way makes
+`loadCalendarConfig` throw rather than yielding an empty week.
+
+The bullet that *is* satisfied is the one about the user being told:
+the panel names the consequence ("working-day computations … cannot
+resolve") and disables Save. The other three describe behaviour of a
+state the schema forbids.
+
+**To reproduce.** Uncheck all seven days on `/settings/calendar`, or
+write `working_days: []` into `calendar.yaml`.
+
+## Deleting an in-use workflow key with no remap can surface a developer-facing message
+
+**Found in M4.2, 2026-09-01. Guarded by a test; the message path still exists.**
+
+`applyWorkflowEdit` refuses such an edit twice over. The intended
+refusal is `validateRemapCoversDeletions`, which names the key and what
+is missing. If that check is ever bypassed or its coverage narrows, the
+edit proceeds into `executeWorkflowRemap` and `applyScalarRemap` throws
+`internal: missing status remap for "in_review" on task T-1` — which the
+web route surfaces **verbatim** in the 400 envelope's `message`, the
+field the UI shows the user.
+
+Measured: disabling `validateRemapCoversDeletions` leaves the write
+correctly refused with nothing written, and the user-visible message
+becomes that `internal:` string. Both paths return 400 and write
+nothing, so a status-code assertion cannot tell them apart.
+
+`apps/web/src/server/server.workflow-panels.test.ts` now asserts the
+message does **not** start with `internal:` and does name the key, so
+the ordering is held in place. The underlying shape — a deliberately
+developer-facing exception reaching `message` rather than `detail` —
+is untouched, and is a candidate for K13's error-vocabulary audit.

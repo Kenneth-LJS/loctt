@@ -851,6 +851,16 @@ Restores a key to its default.
 
 No parameters. Returns JSON array of `{key, value, type, description}` for every known config key.
 
+### `get_workflow_key_usage`
+
+No parameters. Returns JSON `{statuses, priorities, task_types, relationships, custom_field_values}`. The first four are maps of workflow key to the number of tasks referencing it; `custom_field_values` is a map of field key to a map of value key to count.
+
+A key **absent** from a map is referenced by no task — the maps are sparse, built from what tasks actually hold. They can therefore also carry keys that are no longer in `workflow.yaml` at all, which is drift worth reporting to the user.
+
+Call this before proposing any deletion from `workflow.yaml`. Deleting a key that tasks still reference is refused unless the edit carries a remap directive saying where those tasks should go, and this is the only way to know how many tasks that is. A relationship is counted once per task holding at least one link of that type, not once per link — the number means "tasks a remap would rewrite".
+
+The same counts are available as `loctt config usage` on the CLI and `GET /api/workflow/usage` in the web UI.
+
 ### `enable_git`
 
 Enables git-backed mode for this tracker. Sets up a dedicated `loctt` branch, published via a temporary worktree. One-time infrastructure setup — only call when explicitly asked. No parameters.

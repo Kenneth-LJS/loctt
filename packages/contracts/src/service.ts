@@ -178,6 +178,30 @@ export interface TaskResponse {
   readonly relationships: readonly ResolvedRelationshipResponse[];
 }
 
+/**
+ * `GET /api/workflow/usage` — how many tasks reference each workflow
+ * key, plus the absolute path of the file the panels reflect.
+ *
+ * SET-17 and SET-19 need the count **before** a delete is confirmed;
+ * SET-3 wants the absolute path shown, so a user editing YAML by hand
+ * knows which file the panel is a lens onto. Both come from the same
+ * read of the tracker, so they ride one response rather than making
+ * the panel issue two requests that could disagree.
+ *
+ * Keys absent from a table have a count of zero — the tables are
+ * sparse, built from what tasks actually hold, so they also carry
+ * keys that are NOT in `workflow.yaml` (SET-18 drift).
+ */
+export interface WorkflowUsageResponse {
+  readonly path: string;
+  readonly statuses: Readonly<Record<string, number>>;
+  readonly priorities: Readonly<Record<string, number>>;
+  readonly task_types: Readonly<Record<string, number>>;
+  readonly relationships: Readonly<Record<string, number>>;
+  /** Field key → value key → task count. */
+  readonly custom_field_values: Readonly<Record<string, Readonly<Record<string, number>>>>;
+}
+
 /** Config response for API. */
 export interface ConfigResponse {
   readonly workflow: WorkflowConfig;

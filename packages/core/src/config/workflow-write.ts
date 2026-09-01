@@ -893,3 +893,64 @@ function buildPlainObject(config: WorkflowConfig): Record<string, unknown> {
   }
   return out;
 }
+
+/**
+ * Reference **counts** per workflow key, for the settings panels.
+ *
+ * `computeWorkflowKeyUsage` above answers "is this key in use?", which
+ * is all `validateRemapCoversDeletions` needs. SET-17 and SET-19 want
+ * the number — "9 tasks use `in_review`" — before the delete is
+ * confirmed, and a Set cannot answer that. Kept as a separate function
+ * rather than widening the Sets to Maps because the validator's
+ * membership checks are on the hot path of every workflow write and
+ * gain nothing from carrying counts.
+ *
+ * A relationship is counted once per task that holds at least one link
+ * of that type, not once per link: the number the panel reports is
+ * "tasks affected by deleting this", and a task with three `blocks`
+ * links is one task to rewrite.
+ */
+export function computeWorkflowKeyCounts(tasks: readonly Task[]): {
+  statuses: Record<string, number>;
+  priorities: Record<string, number>;
+  task_types: Record<string, number>;
+  relationships: Record<string, number>;
+  custom_field_values: Record<string, Record<string, number>>;
+} {
+  const statuses: Record<string, number> = {};
+  const priorities: Record<string, number> = {};
+  const task_types: Record<string, number> = {};
+  const relationships: Record<string, number> = {};
+  const custom_field_values: Record<string, Record<string, number>> = {};
+
+  const bump = (table: Record<string, number>, key: string): void => {
+    table[key] = (table[key] ?? 0) + 1;
+  };
+
+  for (const t of tasks) {
+    const fm = t.frontmatter;
+    if (fm.status) bump(statuses, fm.status);
+    if (fm.priority) bump(priorities, fm.priority);
+    if (fm.task_type) bump(task_types, fm.task_type);
+    if (fm.relationships) {
+      // Once per task per type — see the note above.
+      const typesOnThisTask = new Set(fm.relationships.map(r => r.type));
+      for (const type of typesOnThisTask) bump(relationships, type);
+    }
+    if (fm.fields) {
+      for (const [field, value] of Object.entries(fm.fields)) {
+        const perField = (custom_field_values[field] ??= {});
+        if (typeof value === "string") {
+          bump(perField, value);
+        } else if (Array.isArray(value)) {
+          // A multi-select holding the same key twice is one task.
+          for (const v of new Set(value.filter(x => typeof x === "string"))) {
+            bump(perField, v);
+          }
+        }
+      }
+    }
+  }
+
+  return { statuses, priorities, task_types, relationships, custom_field_values };
+}

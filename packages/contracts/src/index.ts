@@ -80,6 +80,7 @@ export type {
   TaskResponse,
   TrackerInfoResponse,
   UpdateTaskRequest,
+  WorkflowUsageResponse,
 } from "./service.js";
 export type {
   CreateViewRequest,

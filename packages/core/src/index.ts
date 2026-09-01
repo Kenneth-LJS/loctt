@@ -14,6 +14,7 @@ export type { ConfigKeyDef } from "./config/index.js";
 export type { ArchivedGuardConfigs } from "./config/index.js";
 export {
   applyWorkflowEdit,
+  computeWorkflowKeyCounts,
   computeWorkflowKeyUsage,
   saveWorkflowConfig,
   validateRemapCoversDeletions,

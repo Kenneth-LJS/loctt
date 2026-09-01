@@ -1070,6 +1070,182 @@ so no gating logic changes.
 
 ---
 
+### A65 · The workflow panels re-read `workflow.yaml` before every write
+
+**Ticket:** M4.2 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** `PUT /api/workflow` takes the **whole document**. A
+panel that edits one collection is therefore implicitly re-asserting
+every other collection from the copy it fetched when it mounted.
+
+Measured, before this existed: with `/settings/statuses` open, adding
+a status to `workflow.yaml` by hand and then dragging a row **deleted
+the hand-added status**. No error, no warning — the panel's stale
+`statuses` array simply won, and the server accepted it because
+nothing on disk referenced the deleted key. SET-28 forbids exactly
+this ("the panel does not save a stale copy over the new file").
+
+**What had to be decided.** How a panel avoids clobbering a file that
+changed underneath it, given a whole-document PUT and no `If-Match`
+anywhere in the config write path.
+
+**Options considered.**
+
+1. **Add a version/ETag precondition to `PUT /api/workflow`**, the way
+   K2/K10 did for task bodies. Correct and general, but it is a new
+   concurrency primitive on the config path, needs a token derived
+   from the file, and would have to be plumbed through CLI and MCP to
+   avoid being a web-only guard. Out of proportion to this ticket.
+2. **Poll and warn.** Detects the change only if the panel happens to
+   refetch; the race is still open at the moment of the write.
+3. **Re-read immediately before the PUT and apply the edit to what was
+   read.** Chosen.
+
+**Decided.** Option 3, as `useSaveWorkflowCollection`
+(`apps/web/src/client/api/hooks/useWorkflowMutations.ts`). The panel
+describes its edit as a *function of the fresh document* — by key, not
+by index — rather than handing over a whole document built from its
+own copy. Rows the panel never saw are appended rather than dropped;
+rows it deleted stay deleted, because those deletions came from the
+remap dialog and are intentional.
+
+**Why.** SET-28 admits either answer ("either it re-reads before
+writing or it detects the change and says so"), and this is the one
+that does not invent a concurrency protocol the other two surfaces
+would then lack. The remaining window is the request round-trip, not
+the whole time the panel sat open, and `applyWorkflowEdit` holds the
+state lock across the write itself.
+
+**Known limit, deliberately accepted.** Two people reordering the
+*same* collection simultaneously still last-write-wins. Merging two
+orderings has no correct answer, and no case asks for one. A
+precondition (option 1) is what would close it, and that is a decision
+about the whole config write path rather than about these panels.
+
+**To revert.** Delete `useSaveWorkflowCollection` and
+`ConcurrentWorkflowEditError` from `useWorkflowMutations.ts` and point
+the four panels back at `useSaveWorkflow`, passing
+`{workflow: {...workflow, [collection]: next}}`. `useSaveWorkflow` is
+still exported and unchanged.
+
+**Test.** `tests/ui/flow-settings-workflow.spec.ts` — "SET-28: a
+hand-rewrite under an open panel is not overwritten by a stale copy".
+Shown to fail: replacing the re-read with
+`qc.getQueryData(["workflow"])` (the pre-fix behaviour) reddens it.
+
+---
+
+### A66 · Reference counts are a separate endpoint, not part of `GET /api/workflow`
+
+**Ticket:** M4.2 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** SET-17 and SET-19 need the number of tasks holding
+a key *before* the delete is confirmed. Core had
+`computeWorkflowKeyUsage`, which returns `Set`s — presence, which is
+all `validateRemapCoversDeletions` needs and which cannot answer "how
+many".
+
+**What had to be decided.** Where counts come from, and whether to
+widen the existing usage function.
+
+**Options considered.**
+
+1. **Widen `computeWorkflowKeyUsage` to return Maps.** Its membership
+   checks are on the hot path of every workflow write and gain nothing
+   from carrying counts.
+2. **Fold counts into `GET /api/workflow`.** That response is the
+   config document itself, read on nearly every render by the list
+   view and every status dropdown. Counting requires walking every task
+   on disk, which would put a full tracker scan behind a config fetch.
+3. **A separate `computeWorkflowKeyCounts` in core, behind
+   `GET /api/workflow/usage`.** Chosen.
+
+**Decided.** Option 3. The response also carries `path` — the absolute
+path of `workflow.yaml`, which SET-3 wants shown — because it comes
+from the same read and two requests could disagree.
+
+A relationship is counted **once per task**, not once per link: the
+number means "tasks a remap would rewrite", and a task with three
+`blocks` links is one task.
+
+**Why.** The two questions have different costs and different callers.
+Keeping them apart means the panels pay for the scan and nothing else
+does.
+
+**Surfaces.** Per the standing rule that a core capability is not done
+until CLI and MCP have it: `loctt config usage` and the MCP
+`get_workflow_key_usage` tool, both documented in the reference docs
+and covered by integration tests that assert the two agree.
+
+**To revert.** Delete `computeWorkflowKeyCounts` from
+`packages/core/src/config/workflow-write.ts` and its two barrel
+exports, the `/api/workflow/usage` route and `WorkflowUsageResponse`
+contract, `useWorkflowUsage`, the `usage` branch of
+`apps/cli/src/commands/config.ts`, and the `get_workflow_key_usage`
+MCP tool. The panels then render `0` for every count, and
+`WorkflowPanelFrame` falls back to the relative config path.
+
+**Test.** `packages/core/src/config/workflow-key-counts.test.ts` (6),
+`apps/web/src/server/server.workflow-panels.test.ts`,
+`tests/integration/cli/config-usage.test.ts`,
+`tests/integration/mcp/get-workflow-key-usage.test.ts`. Shown to fail:
+`bump` assigning `1` instead of incrementing reddens four core tests;
+counting per link rather than per task reddens the relationship test;
+pooling custom-field values under one key reddens two more.
+
+---
+
+### A67 · SET-22's "the panel accepts it" is implemented as "the panel refuses it, and says why"
+
+**Ticket:** M4.2 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** SET-22's first bullet: "The panel accepts it but
+warns explicitly that no working days remain." `CalendarConfigSchema`
+(`packages/contracts/src/calendar.ts`) has a `superRefine` that
+**rejects** an empty `working_days` outright — "working_days must name
+at least one day" — and `loadCalendarConfig` would refuse to read the
+file back. A panel that "accepted" it would send a request the server
+returns 400 for, and a file written by hand that way would make the
+whole calendar unreadable.
+
+**What had to be decided.** Whether to change the schema so the panel
+can accept it, or change the panel's behaviour.
+
+**Options considered.**
+
+1. **Relax the schema.** Every consumer of `working_days` would then
+   have to decide what an empty week means — which is the reason the
+   schema's own comment gives for rejecting it. It would also make an
+   existing invariant weaker to satisfy one bullet of one case.
+2. **Let the panel send it and surface the 400.** The user gets a
+   server error for something the panel could have told them, and
+   ERR-16 wants the cause named where it is known.
+3. **Block before the request, with the case's own explanation.**
+   Chosen.
+
+**Decided.** Option 3. The panel disables Save and shows
+`calendar-no-working-days`: "No working days are left. Working-day
+computations — 'due this week', 'N working days from today' — cannot
+resolve against an empty week, and calendar.yaml will not accept one."
+
+**Why.** The substance of SET-22 is that the user is told
+working-day computations will not resolve and is not left with a
+silently broken calendar. That holds. Only the mechanism differs, and
+the alternative weakens a schema invariant to make a worse outcome
+possible.
+
+**Not satisfied by this.** SET-22's other three bullets — date pickers
+rendering every day non-working, "N working days from today" returning
+a designed state, Diagnostics flagging it — describe a tracker that
+*is* in that state, which this config cannot reach through any
+supported path. Recorded in `known-gaps.md`.
+
+**To revert.** Drop `noWorkingDays` from `blocked` in
+`apps/web/src/client/settings/CalendarPanel.tsx` and delete the
+`calendar-no-working-days` alert.
+
+---
+
 ## 9. Ken's rulings, 2026-08-29
 
 **These are Ken's, not an agent's.** Unlike § 8, they carry the

@@ -1,6 +1,11 @@
 import { Link } from "@tanstack/react-router";
 
+import { CalendarPanel } from "./CalendarPanel.tsx";
+import { CustomFieldsPanel } from "./CustomFieldsPanel.tsx";
+import { EnumCollectionPanel } from "./EnumCollectionPanel.tsx";
+import { EstimationPanel } from "./EstimationPanel.tsx";
 import { ProjectsPanel } from "./ProjectsPanel.tsx";
+import { RelationshipsSettingsPanel } from "./RelationshipsSettingsPanel.tsx";
 import {
   findSection,
   sectionsInGroup,
@@ -117,6 +122,14 @@ function NotBuiltYet({ section }: { readonly section: SettingsSection }) {
 function Panel({ section }: { readonly section: SettingsSection }) {
   if (section.id === "projects") return <ProjectsPanel />;
   if (section.id === "users") return <UsersPanel />;
+  if (section.id === "statuses") return <EnumCollectionPanel collection="statuses" />;
+  if (section.id === "priorities") return <EnumCollectionPanel collection="priorities" />;
+  if (section.id === "task-types") return <EnumCollectionPanel collection="task_types" />;
+
+  if (section.id === "relationships") return <RelationshipsSettingsPanel />;
+  if (section.id === "custom-fields") return <CustomFieldsPanel />;
+  if (section.id === "estimation") return <EstimationPanel />;
+  if (section.id === "calendar") return <CalendarPanel />;
   return <NotBuiltYet section={section} />;
 }
 
