@@ -1246,6 +1246,176 @@ supported path. Recorded in `known-gaps.md`.
 
 ---
 
+### A68 · The web's data deletes are hard-by-default, with `?soft=true` for archive
+
+**Ticket:** M4.3 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** `DELETE /api/labels/:id`, `/api/milestones/:id` and
+`/api/views/:ref` all called core's delete with no `hard` option. Core
+defaults `hard` to `false`, which **archives**. So all three answered
+`200 {"deleted": <id>}` while leaving the entry on disk with
+`archived: true` — a user who deleted a label still had it. Measured,
+not inferred: a probe against a real tracker returned
+`{"deleted":"01M1D6…","affectedTaskCount":0}` with the id still in
+`labels.yaml`.
+
+Worse, `?remap_to=` was **unreachable over HTTP**. Core's soft path
+throws when `remapTo` is set, so MSL-12's remap came back as
+`400 --remap-to only applies to --hard delete` — a CLI flag name
+leaked into an HTTP response, for the one operation MSL-12 exists to
+require.
+
+This is the third instance of the defect M4.1 fixed for
+`DELETE /api/projects/:id`.
+
+**What had to be decided.** Which of hard or soft is the default for
+the web, given the CLI passes `hard: true` explicitly and the flow
+docs demand a working remap.
+
+**Options considered.**
+
+1. **Keep archiving, expose `?hard=true`.** The verb DELETE would keep
+   meaning "archive" by default, and every existing caller would keep
+   getting the wrong behaviour silently. It also leaves the remap
+   unreachable unless the flag is passed, so MSL-12 stays broken for
+   anyone who does not know about it.
+2. **Hard by default, `?soft=true` to archive.** Chosen.
+
+**Decided.** Option 2, for all three routes. `hard: !soft` where
+`soft = searchParams.get("soft") === "true"`. This matches the
+contract M4.1 landed for projects, matches what `loctt label delete`
+does, and makes `remap_to` reachable.
+
+**Why.** DELETE meaning "archive" is a lie the response body actively
+tells. The archive intent still has a route — for labels it is now the
+dedicated `/archive` and `/unarchive` endpoints (MSL-10), and for
+views and milestones it is `?soft=true`.
+
+**Not satisfied by this.** Nothing regresses; archive stays reachable
+by an explicit opt-in.
+
+**To revert.** In `apps/web/src/server/server.ts`, drop the `soft`
+const and the `hard: !soft` argument from `handleDeleteLabel`,
+`handleDeleteMilestone` and `handleDeleteView`, and delete
+`apps/web/src/server/server.data-delete.test.ts` plus the
+`saved-view delete and unarchive` block in
+`server.views-invalid.test.ts`.
+
+---
+
+### A69 · The Git panel ships without a reconciliation UI, because there is no reconciliation model
+
+**Ticket:** M4.3 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** M4.3 owes GIT-1..GIT-38. Twenty-four of those cases
+describe a reconciliation surface: per-task rows, per-field local vs
+remote values, keep-local / keep-remote / pick-value, an Apply that
+writes the chosen values and reports partial failure, and a rekey
+summary confirmed before it applies.
+
+**Measured, with a positive control.** `ReconcileState` in
+`packages/contracts/src/state.ts:43-49` is a `.strict()` object with
+exactly four fields — `mode`, `base_commit`, `remote_commit`,
+`started_at`. There are no per-task entries, no per-field decisions and
+no chosen sides. `packages/core/src/state/reconcile.ts` exports only
+load / save / clear / parse / serialize. A grep for any decision-apply
+function (`applyReconcil|resolveReconcil|reconcileDecision|keepLocal|
+keepRemote|pickValue`) across `packages/core/src`, `apps/cli/src` and
+`apps/web/src` returns **0 hits**; the same grep technique returns
+real hits for `GitConflictError` in the same tree. `GitConflictError`
+itself carries a flat `readonly string[]` of file **paths**, not
+fields. And the CLI has no reconcile command at all — `git.ts:14-21`
+states that is deliberate.
+
+So `reconcile.yaml` is a crash sentinel, not a decision model, and the
+data those 24 cases render does not exist anywhere to be rendered.
+
+**What had to be decided.** Whether to build a reconciliation engine
+in core to satisfy them, or ship the panel that the existing model
+supports and say plainly which cases are not met.
+
+**Options considered.**
+
+1. **Build the engine.** A three-way per-field decision model,
+   persistence of partial decisions, a resumable apply with partial-
+   failure reporting, and a confirmed rekey pass. That is a core
+   subsystem — it changes `ReconcileStateSchema`, `GitConflictError`,
+   `sync`/`publish` return types, and owes CLI and MCP surfaces too
+   (CLAUDE.md: a capability in core is not done until both have it).
+   It is a ticket, not a panel, and it would change M4.3's scope.
+2. **Render a fake panel over the sentinel.** The rows would have to
+   be invented from file paths. Shape (a) vacuity by construction, and
+   worse than nothing: it would claim to have resolved conflicts it
+   never saw.
+3. **Ship what the model supports; report the rest.** Chosen.
+
+**Decided.** Option 3. `GitSyncPanel.tsx` covers enable/disable with
+their pre-run disclosures, status (branch, remote, short commit, the
+two drift readouts), publish, sync, the no-remote and not-a-repo
+refusals, the unreadable-`sync.yaml` state, and GIT-18's first duty —
+detecting an in-progress reconciliation and **blocking** publish and
+sync rather than starting a second one. The 24 reconciliation cases
+are reported unmet rather than tagged.
+
+**Why.** Building the engine changes the ticket's scope, which is a
+stop-the-run condition. Faking the panel is the vacuity this run has
+been finding all along.
+
+**Not satisfied by this.** GIT-5, GIT-6, GIT-7, GIT-8, GIT-9, GIT-11,
+GIT-12, GIT-13, GIT-14, GIT-15, GIT-16, GIT-17, GIT-19, GIT-21,
+GIT-22, GIT-23, GIT-25, GIT-26, GIT-29, GIT-31, GIT-32, GIT-33,
+GIT-34, GIT-35, GIT-36, GIT-37. Listed in `TEMP-RUN-WORKFLOW.md`
+under "Cases that cannot be satisfied yet".
+
+**To revert.** Delete `apps/web/src/client/settings/GitSyncPanel.tsx`
+and `apps/web/src/client/api/hooks/useGit.ts`, and set `sync` back to
+`built: false` in `sections.ts`.
+
+---
+
+### A70 · GIT-4's remote drift is rendered as a boolean, because core does not count it
+
+**Ticket:** M4.3 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
+
+**The situation.** GIT-4 asks for local drift and remote drift "as two
+separate counts, not one combined 'out of sync'".
+`GitStatusResult` (`packages/core/src/git/git-mode.ts:17-65`) gives
+`localChanges?: number` but `remoteChanges?: boolean` — computed as
+`branchCommit !== state.git.last_synced_commit`. Core knows *that* the
+branch moved, not by how much.
+
+**What had to be decided.** Whether to compute a remote count in the
+web layer, or render the boolean core actually has.
+
+**Options considered.**
+
+1. **Count remote changes in the web server.** It would mean diffing
+   the branch against the last synced commit in a second place, with
+   its own answer, which is exactly the drift CLAUDE.md warns about —
+   two surfaces answering the same question differently.
+2. **Render the boolean, keep the two readouts separate.** Chosen.
+
+**Decided.** Option 2. The panel shows two distinct rows with distinct
+`data-` attributes (`data-git-local-drift`, `data-git-remote-drift`),
+never one combined "out of sync". Local is a count; remote reads "the
+branch has moved since the last sync". Both distinguish `undefined`
+("could not determine") from zero/false, which core's docstring is
+emphatic about.
+
+**Why.** GIT-4's substance is that the two directions are reported
+separately and a stale zero is not mistaken for a fresh one — both
+hold. Only the remote side's granularity differs, and inventing a
+count in a second place would be worse than reporting honestly.
+
+**Not satisfied by this.** GIT-4's literal "two counts". The remote
+side is a boolean.
+
+**To revert.** In `GitSyncPanel.tsx`, replace the remote-drift row's
+boolean rendering with a computed count, which requires a new core
+function to produce it.
+
+---
+
 ## 9. Ken's rulings, 2026-08-29
 
 **These are Ken's, not an agent's.** Unlike § 8, they carry the

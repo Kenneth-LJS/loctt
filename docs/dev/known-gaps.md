@@ -1485,6 +1485,37 @@ query parser, applied to every optional field rather than to `sprint`
 alone. SPR-6's spec asserts the negation in the meantime — see
 `decisions.md` A55.
 
+## `npx tsc --noEmit -p apps/web` typechecks nothing and always exits 0
+
+**Measured 2026-09-01 during M4.3.**
+
+`apps/web/tsconfig.json` is a **solution-style** config:
+
+    { "files": [], "references": [
+        { "path": "./tsconfig.server.json" },
+        { "path": "./tsconfig.client.json" } ] }
+
+`"files": []` with `--noEmit` means the project has no input files, so
+`tsc` compiles nothing and exits **0** — regardless of how broken the
+source is. Project references are only followed under `--build`.
+
+This is a trap for the mutation protocol, which requires proving a
+mutation compiles before trusting that it reddened a test. During M4.3
+a mutation that put an out-of-scope identifier into
+`DiagnosticsPanel.tsx` was reported as compiling cleanly by
+`npx tsc --noEmit -p apps/web`. The same tree under `npm run typecheck`
+gave:
+
+    src/client/settings/DiagnosticsPanel.tsx(53,22):
+      error TS2304: Cannot find name 'check'.
+
+**Use `npm run typecheck`** (or `npx tsc --build`) to typecheck the web
+app. A per-project `-p apps/web` invocation is silently vacuous, and
+its exit code is worthless.
+
+**To reproduce:** introduce any type error under `apps/web/src`, then
+run `npx tsc --noEmit -p apps/web; echo $?` — it prints `0`.
+
 ## `toBeDisabled()` silently checks the wrong element inside a `<label>`
 
 **Measured 2026-08-31, Playwright 1.62.1, isolated from this app.**

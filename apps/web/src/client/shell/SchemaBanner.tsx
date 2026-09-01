@@ -1,4 +1,8 @@
-import type { SchemaStatusResponse } from "@loctt/contracts";
+import type { MigrateResponse, SchemaStatusResponse } from "@loctt/contracts";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+
+import { apiClient,ApiError } from "../api/client.ts";
 
 /**
  * Schema-mismatch banner (CW-18). Surfaces above the app shell when
@@ -7,9 +11,10 @@ import type { SchemaStatusResponse } from "@loctt/contracts";
  * 409 on a version mismatch for every non-exempt API route).
  *
  * Rendered for three kinds:
- *  - `outdated` — disk is behind; tell the user to run `loctt migrate`.
- *    The in-app "Migrate now" button + `POST /api/migrate` endpoint are
- *    deferred to M4; until then migration is CLI-driven.
+ *  - `outdated` — disk is behind. Carries the in-app **Migrate now**
+ *    button, which states what will happen before it runs and then
+ *    POSTs to `/api/migrate` (SET-15, XS-36). `loctt migrate` remains
+ *    equivalent from a terminal.
  *  - `future`   — disk is ahead of this build; the fix is to upgrade
  *    the app, not migrate (you can't downgrade a schema).
  *  - `unknown`  — couldn't read/parse the version; show the message.
@@ -42,7 +47,113 @@ export function SchemaBanner({ status }: { status: SchemaStatusResponse }) {
     >
       <span className="font-semibold">{title}</span>
       <span className="opacity-90">{detail}</span>
+      {/*
+        SET-30: Migrate is offered for `outdated` ONLY. On `future` it
+        would attempt a downgrade; on `missing`/`unknown` it would run
+        over a tracker whose layout is unconfirmed. The button's
+        *absence* on those kinds is the assertion, so this condition is
+        deliberately an equality check rather than a "not current".
+        `interrupted` never reaches here at all — AppBootstrap renders
+        a dedicated screen for it.
+      */}
+      {status.kind === "outdated" && (
+        <MigrateNow from={status.on_disk} to={status.current} />
+      )}
     </div>
+  );
+}
+
+/**
+ * SET-15 / XS-36: the in-app migration.
+ *
+ * Two-step by design. The first click reveals what will happen — the
+ * from/to versions and that a backup snapshot of `.loctt/` is written
+ * to a sibling directory first — and only the second runs it. That is
+ * SET-15's "states what will happen before it runs", and it also makes
+ * the button un-double-clickable: the confirm is a different control
+ * from the trigger, and it disables itself while pending.
+ */
+function MigrateNow({ from, to }: { readonly from: number; readonly to: number }) {
+  const qc = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  const migrate = useMutation<MigrateResponse, Error, void>({
+    mutationFn: () => apiClient.post<MigrateResponse>("/api/migrate", {}),
+    onSuccess: () => {
+      // The banner reads `/api/info`; dropping it is what clears the
+      // banner without a page reload, and re-enables the rest of the
+      // app in the same session (SET-15's last bullet).
+      void qc.invalidateQueries();
+    },
+  });
+
+  if (migrate.isSuccess) {
+    return (
+      <span data-testid="schema-migrate-success" className="opacity-90">
+        Migrated from v{String(migrate.data.from)} to v{String(migrate.data.to)}.
+        {migrate.data.backupPath !== undefined && ` Backup: ${migrate.data.backupPath}`}
+      </span>
+    );
+  }
+
+  if (migrate.isError) {
+    /*
+      SET-37 / XS-36's failure bullet: a partial migration is not a
+      success and must not be offered a bare "try again". The server
+      returns `data_state: "unknown"` with a `command` recovery
+      precisely because a multi-step run cannot say how far it got.
+    */
+    const envelope = migrate.error instanceof ApiError ? migrate.error.envelope : undefined;
+    return (
+      <span data-testid="schema-migrate-failed" data-migrate-state="failed" className="opacity-90">
+        The migration did not complete: {migrate.error.message} The tracker may
+        be part-migrated — check the backup directory before retrying, and
+        recover with{" "}
+        <code className="rounded bg-black/10 px-1 py-0.5 font-mono text-[12px] select-all">
+          {envelope?.recovery?.kind === "command" && envelope.recovery.command !== undefined
+            ? envelope.recovery.command
+            : "loctt migrate"}
+        </code>{" "}
+        from a terminal.
+      </span>
+    );
+  }
+
+  if (!confirming) {
+    return (
+      <button
+        type="button"
+        data-testid="schema-migrate-now"
+        onClick={() => { setConfirming(true); }}
+        className="rounded border border-current/30 px-2 py-0.5 text-[12px] font-medium"
+      >
+        Migrate now
+      </button>
+    );
+  }
+
+  return (
+    <span data-testid="schema-migrate-confirm" className="flex items-center gap-2">
+      <span className="opacity-90">
+        This will copy `.loctt/` to a sibling backup directory, then step the
+        schema from v{String(from)} to v{String(to)}.
+      </span>
+      <button
+        type="button"
+        data-testid="schema-migrate-confirm-button"
+        disabled={migrate.isPending}
+        onClick={() => { migrate.mutate(); }}
+        className="rounded border border-current/30 px-2 py-0.5 text-[12px] font-medium disabled:opacity-50"
+      >
+        {migrate.isPending ? "Migrating…" : "Run migration"}
+      </button>
+      <button
+        type="button"
+        onClick={() => { setConfirming(false); }}
+        className="rounded border border-current/30 px-2 py-0.5 text-[12px]"
+      >
+        Cancel
+      </button>
+    </span>
   );
 }
 

@@ -46,6 +46,7 @@ import {
   appendTaskBody,
   applyWorkflowEdit,
   ArchivedReferenceError,
+  archiveLabel,
   archiveProject,
   archiveTask,
   archiveUser,
@@ -142,6 +143,7 @@ import {
   ProjectError,
   publish,
   pushRecent,
+  QueriesConfigError,
   QueryValidationError,
   readBurndownSeries,
   readHistoryRows,
@@ -178,9 +180,11 @@ import {
   TaskUpdateError,
   todayInZone,
   TokenizeError,
+  unarchiveLabel,
   unarchiveProject,
   unarchiveTask,
   unarchiveUser,
+  unarchiveView,
   unlinkTask,
   unsetConfigValue,
   unsetField,
@@ -847,7 +851,10 @@ const LABEL_KEY_RE = /^\/api\/labels\/([^/]+)$/;
 const MILESTONE_KEY_RE = /^\/api\/milestones\/([^/]+)$/;
 const SPRINT_KEY_RE = /^\/api\/sprints\/([^/]+)$/;
 const VIEW_REF_RE = /^\/api\/views\/([^/]+)$/;
+const VIEW_UNARCHIVE_RE = /^\/api\/views\/([^/]+)\/unarchive$/;
 const USER_REF_RE = /^\/api\/users\/([^/]+)$/;
+const LABEL_ARCHIVE_RE = /^\/api\/labels\/([^/]+)\/archive$/;
+const LABEL_UNARCHIVE_RE = /^\/api\/labels\/([^/]+)\/unarchive$/;
 const USER_ARCHIVE_RE = /^\/api\/users\/([^/]+)\/archive$/;
 const USER_UNARCHIVE_RE = /^\/api\/users\/([^/]+)\/unarchive$/;
 const USER_AVATAR_RE = /^\/api\/users\/([^/]+)\/avatar$/;
@@ -1094,8 +1101,30 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleListViews: RouteHandler = async ({ res, locttDir }) => {
-    const cfg = await loadQueriesConfig(locttDir);
-    json(res, cfg);
+    try {
+      const cfg = await loadQueriesConfig(locttDir);
+      json(res, cfg);
+    } catch (err) {
+      // VUE-36 / XS-66: a queries.yaml that will not parse must reach
+      // the sidebar as a *named* failure, not as the generic 500
+      // "The server failed while handling GET /api/views" with
+      // `recovery: retry`. Retry is actively wrong advice for a
+      // malformed file — the file has to be edited — and a Views group
+      // that renders empty on this reads as "your saved views were
+      // deleted". `QueriesConfigError`'s own message carries the file
+      // name and the offending entry (`queries[0].query is required`,
+      // `duplicate query id: <id>`), so it is the headline verbatim
+      // per ERR-6.
+      if (err instanceof QueriesConfigError) {
+        error(res, err.message, 400, {
+          code: "config_invalid",
+          data_state: "not_saved",
+          recovery: { kind: "none" },
+        });
+        return;
+      }
+      throw err;
+    }
   };
 
   const handleCreateView: RouteHandler = async ({ req, res, locttDir }) => {
@@ -1137,14 +1166,40 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
-  const handleDeleteView: RouteHandler = async ({ res, locttDir, captures }) => {
+  const handleDeleteView: RouteHandler = async ({ res, url, locttDir, captures }) => {
     const ref = captures[0] ?? "";
+    // Same contract as labels and milestones: DELETE means delete.
+    // `deleteView`'s `hard` also defaults to false, so this route
+    // archived the view while answering `{"deleted": ref}` — the view
+    // stayed in queries.yaml and kept resolving by id. `?soft=true`
+    // is the way to archive (VUE-25), which is a different intent.
+    const soft = url.searchParams.get("soft") === "true";
     try {
-      await deleteView(locttDir, ref);
+      await deleteView(locttDir, ref, { hard: !soft });
       json(res, { deleted: ref });
     } catch (err) {
       // A delete names no field, and re-issuing it gets the same answer
       // (the view is gone, or was never there), so retry cannot help.
+      if (err instanceof ViewError) {
+        error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
+        return;
+      }
+      throw err;
+    }
+  };
+
+  /**
+   * VUE-25: an archived view is hidden from the sidebar but still
+   * runnable by id, and unarchiving restores it with the same id.
+   * `unarchiveView` is exported from core and — until now — called by
+   * nothing at all, so there was no way back from an archive.
+   */
+  const handleUnarchiveView: RouteHandler = async ({ res, locttDir, captures }) => {
+    const ref = captures[0] ?? "";
+    try {
+      await unarchiveView(locttDir, ref);
+      json(res, { unarchived: ref });
+    } catch (err) {
       if (err instanceof ViewError) {
         error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
         return;
@@ -1710,8 +1765,18 @@ export function createWebApp(options: WebAppOptions) {
   const handleDeleteMilestone: RouteHandler = async ({ res, url, locttDir, captures }) => {
     const id = captures[0] ?? "";
     const remapTo = url.searchParams.get("remap_to") ?? undefined;
+    // MSL-12/MSL-13: DELETE means delete. Core's `hard` defaults to
+    // false, so omitting it archived the milestone while answering 200
+    // — the caller was told it was deleted and it was not. Worse, the
+    // soft path *throws* on `remapTo`, so the remap MSL-12 requires was
+    // unreachable over HTTP: the request 400'd with the CLI's own
+    // `--remap-to only applies to --hard delete`. `?soft=true` keeps
+    // archive reachable, matching the contract M4.1 landed for
+    // `DELETE /api/projects/:id`.
+    const soft = url.searchParams.get("soft") === "true";
     try {
       const result = await deleteMilestone(locttDir, id, {
+        hard: !soft,
         ...(remapTo !== undefined ? { remapTo } : {}),
       });
       json(res, { deleted: id, ...result });
@@ -1778,11 +1843,51 @@ export function createWebApp(options: WebAppOptions) {
   const handleDeleteLabel: RouteHandler = async ({ res, url, locttDir, captures }) => {
     const id = captures[0] ?? "";
     const remapTo = url.searchParams.get("remap_to") ?? undefined;
+    // See handleDeleteMilestone: same defect, same contract. Without
+    // `hard` the label was archived, not deleted, and `remap_to` was
+    // rejected outright — MSL-12's remap could not be performed at all.
+    const soft = url.searchParams.get("soft") === "true";
     try {
       const result = await deleteLabel(locttDir, id, {
+        hard: !soft,
         ...(remapTo !== undefined ? { remapTo } : {}),
       });
       json(res, { deleted: id, ...result });
+    } catch (err) {
+      if (err instanceof LabelError) {
+        error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
+        return;
+      }
+      throw err;
+    }
+  };
+
+  /**
+   * MSL-10: archiving a label keeps existing references and removes it
+   * from the pickers. `archiveLabel`/`unarchiveLabel` were exported
+   * from core and reached only by the CLI, so the UI had no way to
+   * archive at all — a delete was the only option, which MSL-10 is
+   * specifically about not having to do.
+   */
+  const handleArchiveLabel: RouteHandler = async ({ res, locttDir, captures }) => {
+    const id = captures[0] ?? "";
+    try {
+      await archiveLabel(locttDir, id);
+      json(res, { archived: id });
+    } catch (err) {
+      if (err instanceof LabelError) {
+        error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
+        return;
+      }
+      throw err;
+    }
+  };
+
+  const handleUnarchiveLabel: RouteHandler = async ({ res, locttDir, captures }) => {
+    const id = captures[0] ?? "";
+    try {
+      await unarchiveLabel(locttDir, id);
+      json(res, { unarchived: id });
     } catch (err) {
       if (err instanceof LabelError) {
         error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
@@ -3837,6 +3942,11 @@ export function createWebApp(options: WebAppOptions) {
     { method: "POST", pattern: "/api/labels", handler: handleCreateLabel },
     { method: "PUT", pattern: LABEL_KEY_RE, handler: handleUpdateLabel },
     { method: "DELETE", pattern: LABEL_KEY_RE, handler: handleDeleteLabel },
+    // Before LABEL_KEY_RE would matter only if that pattern were a
+    // prefix match; it is anchored, so order is not load-bearing here.
+    // Kept adjacent for readability.
+    { method: "POST", pattern: LABEL_ARCHIVE_RE, handler: handleArchiveLabel },
+    { method: "POST", pattern: LABEL_UNARCHIVE_RE, handler: handleUnarchiveLabel },
     { method: "GET", pattern: "/api/milestones", handler: handleListMilestones },
     { method: "POST", pattern: "/api/milestones", handler: handleCreateMilestone },
     { method: "PUT", pattern: MILESTONE_KEY_RE, handler: handleUpdateMilestone },
@@ -3857,6 +3967,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "POST", pattern: "/api/views", handler: handleCreateView },
     { method: "PUT", pattern: VIEW_REF_RE, handler: handleUpdateView },
     { method: "DELETE", pattern: VIEW_REF_RE, handler: handleDeleteView },
+    { method: "POST", pattern: VIEW_UNARCHIVE_RE, handler: handleUnarchiveView },
     { method: "GET", pattern: "/api/sprints", handler: handleListSprints },
     { method: "POST", pattern: "/api/sprints", handler: handleCreateSprint },
     { method: "PUT", pattern: SPRINT_KEY_RE, handler: handleUpdateSprint },
