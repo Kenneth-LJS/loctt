@@ -184,6 +184,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "get_workflow_key_usage",
+            },
+            {
+              "hasDescription": true,
               "name": "info",
             },
             {

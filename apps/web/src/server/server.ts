@@ -23,6 +23,7 @@ import type {
   TaskResponse,
   TrackerInfoResponse,
   UpdateTaskRequest,
+  WorkflowUsageResponse,
 } from "@loctt/contracts";
 import {
   BulkArchiveRequestSchema,
@@ -66,6 +67,7 @@ import {
   BurndownError,
   completeInterruptedPrefixRename,
   computeSchemaStatus,
+  computeWorkflowKeyCounts,
   ConfigRouterError,
   countTasksByReferences,
   createLabel,
@@ -103,6 +105,7 @@ import {
   getCurrentUser,
   getGitStatus,
   getTrackerInfo,
+  getWorkflowConfigPath,
   GitConflictError,
   initLoctt,
   isMalformedHistoryEntry,
@@ -1182,6 +1185,27 @@ export function createWebApp(options: WebAppOptions) {
         recovery: { kind: "retry" },
       });
     }
+  };
+
+  /**
+   * SET-17 / SET-19: the reference count a delete confirm needs, and
+   * SET-3's absolute path, from one read.
+   *
+   * Deliberately NOT folded into `GET /api/workflow`. That response is
+   * the config document itself — the same shape `workflow.yaml` holds —
+   * and several consumers (the list view, every status dropdown) read it
+   * on every render. Walking every task on disk to answer them would put
+   * a full tracker scan behind a config fetch. The panels that need
+   * counts ask for them separately.
+   */
+  const handleWorkflowUsage: RouteHandler = async ({ res, locttDir }) => {
+    const tasks = await loadAllTasks(locttDir);
+    const counts = computeWorkflowKeyCounts(tasks);
+    const response: WorkflowUsageResponse = {
+      path: getWorkflowConfigPath(locttDir),
+      ...counts,
+    };
+    json(res, response);
   };
 
   const handleConfig: RouteHandler = async ({ res, locttDir }) => {
@@ -3822,6 +3846,11 @@ export function createWebApp(options: WebAppOptions) {
     { method: "GET", pattern: "/api/list-view", handler: handleGetListView },
     { method: "PUT", pattern: "/api/list-view", handler: handlePutListView },
     { method: "GET", pattern: SPRINT_BURNDOWN_RE, handler: handleSprintBurndown },
+    // Before the bare `/api/workflow` entry: the router matches in
+    // order and a bare-string pattern is compared whole, but keeping
+    // the more specific path first is the habit that survives someone
+    // later turning either into a prefix match.
+    { method: "GET", pattern: "/api/workflow/usage", handler: handleWorkflowUsage },
     { method: "GET", pattern: "/api/workflow", handler: handleGetWorkflow },
     { method: "PUT", pattern: "/api/workflow", handler: handlePutWorkflow },
     { method: "GET", pattern: "/api/views", handler: handleListViews },

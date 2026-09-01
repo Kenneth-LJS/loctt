@@ -83,6 +83,7 @@ export { loadWorkflowConfig, parseWorkflowConfig } from "./workflow.js";
 export type { WorkflowRemap } from "./workflow-write.js";
 export {
   applyWorkflowEdit,
+  computeWorkflowKeyCounts,
   computeWorkflowKeyUsage,
   saveWorkflowConfig,
   validateRemapCoversDeletions,

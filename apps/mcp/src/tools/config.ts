@@ -6,8 +6,10 @@
  */
 
 import {
+  computeWorkflowKeyCounts,
   CONFIG_KEYS,
   getConfigValue,
+  loadAllTasks,
   setConfigValue,
   unsetConfigValue,
 } from "@loctt/core";
@@ -98,6 +100,18 @@ export const TOOLS: readonly ToolDef[] = [
         });
       }
       return text(JSON.stringify(items, null, 2));
+    },
+  },
+  {
+    name: "get_workflow_key_usage",
+    description: "Counts how many tasks reference each workflow key — every status, priority, task type, relationship, and custom-field enum value. Returns JSON {statuses, priorities, task_types, relationships, custom_field_values}, each a map of key to task count; a key absent from a map is referenced by no task. Call this BEFORE proposing any deletion from workflow.yaml: removing a key that tasks still hold requires a remap, and this is what says how many tasks a remap would move.",
+    inputSchema: {},
+    handler: async ({ locttDir }) => {
+      // Counts rather than presence — the same answer the web settings
+      // panels get from GET /api/workflow/usage and the CLI from
+      // `loctt config usage`. One core function, three surfaces.
+      const counts = computeWorkflowKeyCounts(await loadAllTasks(locttDir));
+      return text(JSON.stringify(counts, null, 2));
     },
   },
 ];

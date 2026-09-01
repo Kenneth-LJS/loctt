@@ -701,7 +701,7 @@ Cases: SET-32, SET-42, PRU-3, PRU-5, PRU-6, PRU-7, PRU-8, PRU-9, PRU-10, PRU-11,
 - **Tests**: CRUD routes; reference-count endpoint; CW-20
   compressor (jpeg in → smaller jpeg/webp, dimensions clamped)
 
-### M4.2 · Settings — workflow panels ⬜
+### M4.2 · Settings — workflow panels ✅
 Cases: SET-3, SET-4, SET-5, SET-6, SET-7, SET-8, SET-9, SET-10, SET-16, SET-17, SET-18, SET-19, SET-20, SET-21, SET-22, SET-23, SET-24, SET-25, SET-28, SET-33, SET-34, SET-35, SET-36, SET-41, XS-31, SET-1
 - Statuses + Priorities + Task types + Relationships (C.10.3–C.10.6);
   drag-reorder; symmetric flag UX per CW-15

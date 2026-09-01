@@ -1,6 +1,8 @@
 import {
+  computeWorkflowKeyCounts,
   CONFIG_KEYS,
   getConfigValue,
+  loadAllTasks,
   resolveLocttDir,
   setConfigValue,
   unsetConfigValue,
@@ -10,10 +12,18 @@ import { rejectUnknownFlags } from "../runtime/args.js";
 import { EXIT } from "../runtime/errors.js";
 
 /**
- * `loctt config <get|set|unset|list>` — read/write machine-local
+ * `loctt config <get|set|unset|list|usage>` — read/write machine-local
  * tracker config (git remote/branch settings, user preferences).
  * Pulls the canonical set of keys from core's CONFIG_KEYS so a new
  * key needs zero CLI changes.
+ *
+ * `usage` is the odd one out: it reports how many tasks reference each
+ * *workflow* key rather than reading a machine-local setting. It lives
+ * here because it answers the question a user asks right before editing
+ * `workflow.yaml` — "what breaks if I delete this?" — and because the
+ * web settings panels ask exactly that through
+ * `GET /api/workflow/usage`. A capability in core that only one surface
+ * can reach is drift with a good address.
  */
 const ACCEPTED_FLAGS: readonly string[] = [];
 
@@ -86,8 +96,44 @@ export async function run(args: string[], root: string): Promise<void> {
       if (anyUnreadable) process.exitCode = EXIT.RUNTIME;
       break;
     }
+    case "usage": {
+      // Counts, not presence: the number is what tells a user whether
+      // deleting a status is a one-task change or a ninety-task one.
+      const counts = computeWorkflowKeyCounts(await loadAllTasks(locttDir));
+      const sections: readonly [string, Readonly<Record<string, number>>][] = [
+        ["statuses", counts.statuses],
+        ["priorities", counts.priorities],
+        ["task_types", counts.task_types],
+        ["relationships", counts.relationships],
+      ];
+      for (const [name, table] of sections) {
+        console.log(name);
+        const entries = Object.entries(table).sort((a, b) => b[1] - a[1]);
+        if (entries.length === 0) {
+          console.log("  (none referenced)");
+          continue;
+        }
+        for (const [key, n] of entries) {
+          console.log(`  ${key} = ${String(n)}`);
+        }
+      }
+      console.log("custom_fields");
+      const fields = Object.entries(counts.custom_field_values)
+        .filter(([, table]) => Object.keys(table).length > 0)
+        .sort(([a], [b]) => a.localeCompare(b));
+      if (fields.length === 0) {
+        console.log("  (none referenced)");
+      }
+      for (const [field, table] of fields) {
+        console.log(`  ${field}`);
+        for (const [key, n] of Object.entries(table).sort((a, b) => b[1] - a[1])) {
+          console.log(`    ${key} = ${String(n)}`);
+        }
+      }
+      break;
+    }
     default:
-      console.error("Usage: loctt config <get|set|unset|list> [key] [value]");
+      console.error("Usage: loctt config <get|set|unset|list|usage> [key] [value]");
       process.exitCode = EXIT.USAGE;
       break;
   }
