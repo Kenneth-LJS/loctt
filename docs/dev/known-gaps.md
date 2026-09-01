@@ -2399,3 +2399,59 @@ inventing scope.
 value schema, extend `compareTasks` to consult a per-field weight map
 rather than only `priorityMap`, and assert a **sorted list's row
 order** — not the panel's attribute.
+
+## PRU-46's pending-rename banner is unreachable dead code
+
+**Found:** M4 gate round 2 · 2026-09-02 · **Status:** open, needs
+Ken's ruling. Measured end to end, not argued.
+
+PRU-46 asks for an interrupted prefix rename to be **surfaced**: the
+panel shows the project mid-rename, names the prefix it was moving
+from and to, and offers a control to complete it.
+
+**The web server auto-heals before any handler runs.**
+`server.ts:4290-4295` calls `recoverInterruptedPrefixRename` on
+**every** `/api/*` request, with the comment "Finish an interrupted
+prefix rename before any handler reads a task key … every key the
+request would go on to return could be stale."
+
+So there are exactly two outcomes: recovery completes and deletes the
+sentinel, or it errors and the request 500s. A sentinel can never
+survive to `handleListProjects`.
+
+**Measured** with a schema-correct `.loctt/local/prefix-rename.yaml`
+written *after* server boot, then one `GET /api/projects`:
+
+    pending_prefix_rename present: False
+    Web App prefix now: SITE-        (flipped by the request itself)
+    sentinel on disk: gone
+
+So `pending !== undefined` in `ProjectsPanel.tsx:288` can never be
+true, and `handleCompletePrefixRename` (`server.ts:1481`) can never
+find anything to complete. Both were built for a boot-only-recovery
+design the middleware forecloses.
+
+**Why this needs a ruling rather than a patch.** Auto-recovery
+satisfies PRU-46's headline — the rename is never *silently
+half-applied*, because it is never half-applied — and its fourth
+bullet, "a control completes the change; it does not require dropping
+to the CLI", is satisfied more completely than the case imagined: no
+control is needed. But bullets 1-3 are physically unreachable from a
+browser. The two candidate reconciliations are:
+
+**(a) Keep auto-recovery.** Retag PRU-46 as satisfied-by-auto-heal,
+delete the banner and the completion endpoint as dead code, and assert
+the healed outcome instead. Cost: the case's wording no longer
+describes the product, and a user whose rename was interrupted is
+never told it happened.
+
+**(b) Make recovery boot-only or GET-exempt** so the panel surface
+works. Cost: a handler could then return stale keys — precisely what
+the middleware comment says it exists to prevent — and the CLI and MCP
+use the same auto-recover pattern, so they would diverge.
+
+**A test bug found alongside, and fixed:** the sentinel's on-disk shape
+is `PrefixRenameStateSchema` (`contracts/src/state.ts:64`) — snake_case,
+`.strict()`, and `started_at` is required. A malformed sentinel does
+not fail silently: `readPrefixRenameState` throws, and **every** `/api/*`
+request then 500s.
