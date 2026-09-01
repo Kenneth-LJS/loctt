@@ -2359,3 +2359,43 @@ polling `workflow.yaml`'s mtime. Both are app-wide mechanisms, not
 milestone-specific, which is why this was recorded rather than built
 inside M4.9.
 
+
+## SET-8's weight sorting is not built, and its test cannot see that
+
+**Found:** M4 gate round 2 · 2026-09-02 · **Status:** open, case
+partially covered.
+
+SET-8 bullet 2: "Setting weights XS=1, S=2, M=3, L=5 and sorting the
+list by that field orders rows by weight, not alphabetically."
+
+**Measured, two ways.**
+
+1. **The schema does not accept a per-value weight.** Adding
+   `weight: 1` to a custom enum's values gives
+   `custom_fields[0].values[0] has unrecognized key(s): "weight"`, and
+   the tracker will not load. The `weights` map that *does* exist
+   (`contracts/src/workflow.ts:302`) is an **estimation** feature —
+   its own docstring says "for `custom_enum` estimation" and "Burndown
+   uses `sum(weights)`" — not a sort key.
+
+2. **`compareTasks` applies the weight map only to `priority`**
+   (`core/src/query/list.ts:397-410`: `if (field === "priority")`).
+   Every other field, weighted or not, falls through to a string
+   compare on the raw key. So even if the schema accepted weights,
+   sorting would ignore them.
+
+**Why the test does not catch it.** SET-8's test asserts a
+`data-sort-basis` attribute on the *settings panel* and never sorts a
+list. The panel correctly reports which basis it *would* use; nothing
+checks that a sorted list honours it. Bullets 1 and 3 hold; bullet 2
+is untested and unmet.
+
+**Not fixed.** This is a schema addition plus a core sort change on a
+path the CLI, MCP and web share — a feature, not a repair, and no
+other case depends on it. Building it inside a section gate would be
+inventing scope.
+
+**To satisfy it later:** add an optional numeric `weight` to the enum
+value schema, extend `compareTasks` to consult a per-field weight map
+rather than only `priorityMap`, and assert a **sorted list's row
+order** — not the panel's attribute.
