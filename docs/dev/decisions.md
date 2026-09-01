@@ -1494,7 +1494,7 @@ the two MCP tools; inline the partition in `SidebarPinsPanel.tsx`.
 
 ---
 
-### A70 · `DELETE /api/views/:ref` hard-deletes, matching the projects route
+### A72 · `DELETE /api/views/:ref` hard-deletes, matching the projects route
 
 **Ticket:** M4.4 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
 
