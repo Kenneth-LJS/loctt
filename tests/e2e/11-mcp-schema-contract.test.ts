@@ -180,6 +180,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "get_user_settings",
+            },
+            {
+              "hasDescription": true,
               "name": "get_workflow_config",
             },
             {
@@ -277,6 +281,10 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "set_project_prefix",
+            },
+            {
+              "hasDescription": true,
+              "name": "sweep_sidebar_pins",
             },
             {
               "hasDescription": true,

@@ -220,6 +220,7 @@ loctt user edit <id-or-name> [--name <n>] [--email <e>] [--timezone <tz>] [--ava
 loctt user archive <id-or-name>
 loctt user unarchive <id-or-name>
 loctt user delete <id-or-name> [--remap-to <id-or-name> | --unassign]
+loctt user settings [--sweep-pins]
 ```
 
 `list` hides archived users unless `--all` is passed. The current user is
@@ -227,6 +228,16 @@ marked with `*`.
 
 `create --switch` makes the new user the current user immediately after
 creating them.
+
+`settings` prints the current user's personal preferences from
+`.loctt/users/<id>/settings.yaml` — theme, default project, board card
+layout, sidebar pins. These are per-user render preferences; the web UI
+writes them from Settings → Personal.
+
+`settings --sweep-pins` removes pinned saved views whose views no longer
+exist in `queries.yaml` and **names each one it removed**, then rewrites
+the file. Pins whose views merely match zero tasks are kept — the sweep
+checks existence, not results.
 
 `delete` requires choosing what to do with tasks the user is referenced on:
 either `--remap-to <other>` (move references) or `--unassign` (clear the

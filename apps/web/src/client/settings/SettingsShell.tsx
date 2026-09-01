@@ -1,13 +1,16 @@
 import { Link } from "@tanstack/react-router";
 
 import { CalendarPanel } from "./CalendarPanel.tsx";
+import { CardLayoutPanel } from "./CardLayoutPanel.tsx";
 import { CustomFieldsPanel } from "./CustomFieldsPanel.tsx";
 import { DiagnosticsPanel } from "./DiagnosticsPanel.tsx";
 import { EnumCollectionPanel } from "./EnumCollectionPanel.tsx";
 import { EstimationPanel } from "./EstimationPanel.tsx";
 import { GitSyncPanel } from "./GitSyncPanel.tsx";
+import { KeyboardPanel } from "./KeyboardPanel.tsx";
 import { LabelsPanel } from "./LabelsPanel.tsx";
 import { MilestonesPanel } from "./MilestonesPanel.tsx";
+import { PreferencesPanel } from "./PreferencesPanel.tsx";
 import { ProjectsPanel } from "./ProjectsPanel.tsx";
 import { RelationshipsSettingsPanel } from "./RelationshipsSettingsPanel.tsx";
 import { SavedViewsPanel } from "./SavedViewsPanel.tsx";
@@ -17,6 +20,7 @@ import {
   SETTINGS_GROUPS,
   type SettingsSection,
 } from "./sections.ts";
+import { SidebarPinsPanel } from "./SidebarPinsPanel.tsx";
 import { SprintsPanel } from "./SprintsPanel.tsx";
 import { UsersPanel } from "./UsersPanel.tsx";
 
@@ -142,6 +146,12 @@ function Panel({ section }: { readonly section: SettingsSection }) {
   if (section.id === "saved-views") return <SavedViewsPanel />;
   if (section.id === "sync") return <GitSyncPanel />;
   if (section.id === "diagnostics") return <DiagnosticsPanel />;
+
+  // Personal (M4.4).
+  if (section.id === "preferences") return <PreferencesPanel />;
+  if (section.id === "card-layout") return <CardLayoutPanel />;
+  if (section.id === "sidebar-pins") return <SidebarPinsPanel />;
+  if (section.id === "keyboard") return <KeyboardPanel />;
   return <NotBuiltYet section={section} />;
 }
 

@@ -1893,3 +1893,89 @@ message does **not** start with `internal:` and does name the key, so
 the ordering is held in place. The underlying shape — a deliberately
 developer-facing exception reaching `message` rather than `detail` —
 is untouched, and is a candidate for K13's error-vocabulary audit.
+
+## SET-13's third bullet still reads as the opposite of SET-27
+
+**Found in M4.4, 2026-09-01. Documentation drift, not a code defect.**
+
+`flow-settings.md` SET-13 says a pin whose view was deleted is "dropped
+**silently** from both the panel and the sidebar". SET-27, 115 lines
+below in the same file and carrying the same P7 tag, says the panel
+"**says** the pins were removed because their views no longer exist,
+rather than silently emptying".
+
+`docs/dev/ui-test-cases/README.md:191-198` already resolves this: "No
+carve-out for per-user preference drift … This resolves the SHL-32 /
+SET-13 / SET-27 / XS-28 disagreement in favour of the explaining
+cases." SET-13 is named explicitly as one of the corrected cases; its
+bullet text was simply never updated.
+
+M4.4 built to SET-27 and did **not** edit SET-13 — the flow docs are
+the specification and are read-only. The risk is that the next agent
+reads SET-13 first, treats the contradiction as unresolved, and either
+stops or builds the silent behaviour. Recorded as A71.
+
+**To reproduce.** Read `flow-settings.md` SET-13 and SET-27 without the
+README's P7 section.
+
+## `system` theme following a live OS change is not covered by a test
+
+**Found in M4.4, 2026-09-01. Behaviour exists; the assertion does not.**
+
+SET-11's fourth bullet: "`system` follows the OS preference live —
+toggling the OS theme repaints without a reload." `useTheme` installs a
+`prefers-color-scheme` listener while the preference is `system`, and
+`useTheme.test.tsx` covers the listener in isolation.
+
+What is *not* asserted is the bullet end-to-end after M4.4's change:
+that a user whose `settings.yaml` says `theme: system` still tracks the
+OS. Playwright can emulate `prefers-color-scheme`, so this is testable;
+it was left out because the three other SET-11 bullets carry the case
+and the fourth needs a fixture-level colour-scheme override the UI
+suite does not currently set up.
+
+**To reproduce.** Set `theme: system` in `settings.yaml`, load the app,
+and toggle the OS appearance.
+
+## `unarchiveView` is still exported from core with no caller
+
+**Confirmed in M4.4, 2026-09-01.**
+
+`TEMP-RUN-WORKFLOW.md`'s wire-up list pairs VUE-38 with
+"`unarchiveView` exists with no caller". VUE-38's text does not mention
+unarchiving: its three bullets are the confirmation naming the view,
+stale pins being swept, and the entry being removed from
+`queries.yaml` so `loctt list --view <name>` reports an unknown view.
+M4.4 satisfied all three by making `DELETE /api/views/:ref` hard-delete
+(A70), which is a different fix from wiring `unarchiveView`.
+
+So VUE-38 is covered, and `unarchiveView` is **still uncalled** —
+verified by grep across `apps/cli/src`, `apps/mcp/src` and
+`apps/web/src/server`. It remains on the dead-capability list, and the
+wire-up list's association of it with VUE-38 should not be read as
+"VUE-38 will wire it".
+
+**To reproduce.** `grep -rn unarchiveView apps/ packages/core/src` —
+only the two export lines in core.
+
+## SET-2's "no unimplemented placeholder" is only verified for the Personal group
+
+**Found in M4.4, 2026-09-01. Not a defect — a case that spans tickets.**
+
+SET-2's last bullet is "Every panel reachable from the nav resolves —
+no nav item routes to a 404 or an unimplemented placeholder **at M4
+close**". M4.4 built the four Personal panels and asserts those four
+resolve.
+
+Nine sections still render `settings-not-built`: General, Labels,
+Milestones, Sprints, Saved views, Board columns, Timeline defaults,
+Sync, Diagnostics. They belong to M4.3 and M4.5–M4.8, so the bullet
+cannot be satisfied until the last of those lands.
+
+The existing SET-2 test (`flow-settings-projects-users.spec.ts`) covers
+the grouping and active-marking bullets; M4.4's adds the Personal
+resolution check. **Whichever ticket closes M4 owes the full sweep** —
+assert every entry in `SETTINGS_SECTIONS` renders a real panel, and
+delete the `built` flag if it has no remaining false values.
+
+**To reproduce.** `grep 'built: false' apps/web/src/client/settings/sections.ts`.
