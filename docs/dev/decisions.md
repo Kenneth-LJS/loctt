@@ -5744,3 +5744,64 @@ would hide a value that really is on disk.
 **To revert.** Inline `formatWorkspaceDate` into `MilestonesView` and
 delete `client/dates/`. The timeline and task detail then each need
 their own, which is the drift this avoids.
+
+### K16 · An interrupted prefix rename is auto-completed and then *reported*, not surfaced mid-flight
+
+**Date:** 2026-09-02 · **Ken's ruling — an agent may not revert this.**
+
+**The situation.** PRU-46 asks for an interrupted prefix rename to be
+surfaced: the panel shows the project mid-rename, names the prefix it
+was moving from and to, and offers a control to complete it.
+
+`server.ts:4290` calls `recoverInterruptedPrefixRename` before **any**
+handler runs, with the comment: "Finish an interrupted prefix rename
+before any handler reads a task key … every key the request would go
+on to return could be stale." So a sentinel either heals or the
+request 500s. **Measured**: writing a valid sentinel after boot and
+issuing one `GET /api/projects` flipped the prefix, deleted the
+sentinel, and returned no `pending_prefix_rename`. The banner in
+`ProjectsPanel.tsx:288` and `handleCompletePrefixRename`
+(`server.ts:1481`) are unreachable dead code, built for a
+boot-only-recovery design the middleware forecloses.
+
+**Two options were put to Ken, and he took neither as written.**
+
+- *(a) Keep auto-recovery, delete the banner.* Robust, but the user is
+  never told their keys changed.
+- *(b) Make recovery boot-only or GET-exempt so the panel works.*
+  Reintroduces a window in which a handler serves stale keys — the
+  exact failure the middleware exists to prevent — and diverges from
+  the CLI and MCP, which use the same auto-recover pattern.
+
+**Ruling: keep the middleware exactly as it is, and stop discarding the
+success value.**
+
+`recoverInterruptedPrefixRename` already returns
+`{recovered?: SetPrefixResult, error?: Error}` (`prefix.ts:200-205`),
+and `SetPrefixResult` carries `from`, `to` and `renamed`
+(`prefix.ts:35-39`). The server handles the error branch and **throws
+the success branch away**. So today a user's primary identifiers change
+under them — `WEB-1` becomes `SITE-1` on reload — with nothing said.
+That is a silent mutation of the thing every link, filter and CLI
+cross-reference depends on, which is the P1 shape this project treats
+most seriously.
+
+Surface it **once, after the fact**: "A prefix rename that was
+interrupted has been completed: WEB- → SITE-, 3 tasks renamed. Old
+keys still resolve." Delivered through the same notice channel other
+post-hoc facts use — not a dialog, because there is nothing to decide.
+
+**Why this beats both options.** It keeps (a)'s correctness guarantee —
+no handler can ever serve a stale key — while giving better UX than
+(b) offered, because the user is *told what happened* rather than asked
+to do work the system has already done.
+
+**Consequence for the case.** PRU-46's first three bullets describe a
+mid-rename state that cannot exist and must be reworded; its headline,
+"surfaced, not silently half-applied", is served better by this than by
+either option. The case is **not** edited by an agent — flag it for
+Ken. The quarantined `test.fixme` stays until the notice is built, then
+asserts the notice rather than the banner.
+
+**To revert.** Drop the notice and delete the banner and
+`handleCompletePrefixRename`; that is option (a).
