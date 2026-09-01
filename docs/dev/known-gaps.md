@@ -1979,3 +1979,68 @@ assert every entry in `SETTINGS_SECTIONS` renders a real panel, and
 delete the `built` flag if it has no remaining false values.
 
 **To reproduce.** `grep 'built: false' apps/web/src/client/settings/sections.ts`.
+
+## One unparseable saved view makes `GET /api/tasks` fail for *every* view
+
+**Found in M4.5, 2026-09-01. Blocks VUE-22, and VUE-21's last bullet.**
+
+`handleListTasks` calls `loadOptionalConfigs`, which calls
+`loadQueriesConfig`, which parses **every** entry in `queries.yaml` and
+throws `QueriesConfigError` on the first bad one. Nothing catches it —
+`isQueryError` does not list `QueriesConfigError` — so the request
+becomes the generic 500 "The server failed while handling GET
+/api/tasks."
+
+The damage is not limited to the broken view. A hand-edited
+`queries.yaml` with one malformed entry takes down the list for a
+healthy view sitting next to it, and for no view at all. VUE-22 wants
+the opposite: "the sidebar still lists the view, marked as broken",
+"clicking it shows the parse error with the offending position", and
+"other views and the rest of the sidebar render normally".
+
+`GET /api/views` already handles this correctly — it returns 400
+`config_invalid` carrying the loader's own message, which
+`SavedViewsPanel` renders as a load failure naming the file. The task
+route needs the same treatment, plus a way to skip a bad entry rather
+than reject the document, before VUE-22 can pass.
+
+**To reproduce.** In a fresh tracker, write
+
+```yaml
+queries:
+  - id: 01J0000000000000000000001
+    name: ok
+    query: status = backlog
+  - id: 01J0000000000000000000002
+    name: broken
+    query: "status = = done"
+```
+
+then `GET /api/tasks?view=ok` → 500, though `ok` parses fine.
+
+## A saved view on a deleted custom field returns zero rows with no warning
+
+**Found in M4.5, 2026-09-01. Blocks VUE-21.**
+
+`listTasks` accepts an `onWarning` callback
+(`packages/core/src/query/list.ts:72`) and calls it when a *saved view*
+references something `validateQuery` rejects — the deliberate asymmetry
+noted in VUE-32's core resolution: an ad hoc query throws, but a view
+that used to work warns and still runs.
+
+The web server never passes it. `grep -n onWarning
+apps/web/src/server/server.ts` returns nothing, against three
+`listTasks(` call sites as a positive control. So the warning is
+raised in core and dropped on the floor, and the request returns **200
+with zero rows** — precisely VUE-21's stated failure mode, "it does not
+return zero rows presented as a legitimate empty result".
+
+Fixing this is a route change (thread `onWarning` into the response as
+a non-fatal `warnings` field, the way `unreadable` already reports
+per-file parse failures), plus a UI banner. The CLI and MCP surfaces
+need the same channel, so the response shape should be settled once.
+
+**To reproduce.** In a fresh tracker, write a view whose query is
+`fields.squad = platform` with no `squad` custom field in
+`workflow.yaml`, then `GET /api/tasks?view=<name>` → 200, `items: []`,
+no warning anywhere in the body.

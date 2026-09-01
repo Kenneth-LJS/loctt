@@ -229,6 +229,9 @@ function UNKNOWN_INFO(): TrackerInfoResponse {
     schemaStatus: { kind: "current", version: 0 },
     cwd: "",
     today: new Date().toISOString().slice(0, 10),
+    // Nothing is known here, so the zone matches the server's own
+    // fallback rather than the viewer's browser zone.
+    timezone: "UTC",
   };
 }
 
@@ -249,6 +252,9 @@ function PLACEHOLDER_INFO(schemaStatus: SchemaStatusResponse): TrackerInfoRespon
     schemaStatus,
     cwd: "",
     today: new Date().toISOString().slice(0, 10),
+    // Nothing is known here, so the zone matches the server's own
+    // fallback rather than the viewer's browser zone.
+    timezone: "UTC",
   };
 }
 

@@ -32,6 +32,21 @@ interface TasksPage {
    * is indistinguishable from an ordinary unfiltered result.
    */
   readonly missing_view?: string;
+  /**
+   * Warnings core raised while evaluating the query — an unknown field
+   * a saved view still filters on, for instance. The CLI and MCP both
+   * pass `onWarning` and print these; the web dropped them, so a view
+   * naming a deleted custom field returned 200 with zero rows and no
+   * reason. Same failure as `missing_view` above: silence here is
+   * indistinguishable from a legitimate empty result, which is what
+   * VUE-21's second bullet forbids.
+   */
+  readonly warnings?: readonly {
+    readonly field: string;
+    readonly message: string;
+    readonly position?: number;
+    readonly suggestions?: readonly string[];
+  }[];
 }
 
 /** Default page size for the list view (matches the mockup's "of N"). */

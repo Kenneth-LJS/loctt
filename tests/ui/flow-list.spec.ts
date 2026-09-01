@@ -4382,6 +4382,75 @@ test.describe("VUE — built-ins and saved views (M1.3)", () => {
 
 test.describe("VUE — saving a view (M1.3)", () => {
   // @verifies VUE-6
+  // @verifies VUE-21
+  //
+  // The server half of this was built with a server test asserting the
+  // response body. That is not what the case asks: "Applying the view
+  // *surfaces* that the query references an unknown field" and "does
+  // not return zero rows *presented as* a legitimate empty result" are
+  // both about what the user sees. The warning reached the wire and
+  // stopped there — `warnings` appeared in no client file, while
+  // `useTasks.ts` reads `unreadable` from the same response.
+  //
+  // Same shape as REL-49 in M2: the server serialised `attachmentsError`
+  // correctly and the client read it nowhere, so an unreadable
+  // directory rendered "No attachments on this task yet".
+  test("VUE-21: a view on a deleted field says so, rather than showing an empty list", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha" }, { title: "Beta" }]);
+
+    // A view filtering on a custom field, then the field removed from
+    // workflow.yaml — the case's own setup.
+    const wf = path.join(tracker.root, ".loctt", "config", "workflow.yaml");
+    const original = await readFile(wf, "utf8");
+    await writeFile(
+      wf,
+      original.replace(
+        "custom_fields: []",
+        "custom_fields:\n  - key: squad\n    label: Squad\n    type: text\n    multi: false\n    searchable: false",
+      ),
+      "utf8",
+    );
+    const queries = path.join(tracker.root, ".loctt", "config", "queries.yaml");
+    const before = await readFile(queries, "utf8");
+    await writeFile(
+      queries,
+      `${before.trimEnd()}\n  - id: 01M1GHOSTFIELD00000000001\n    name: By squad\n    query: "fields.squad = alpha"\n`,
+      "utf8",
+    );
+    // Now delete the field the view depends on.
+    await writeFile(wf, original, "utf8");
+
+    await page.goto(`${tracker.baseURL}/list?view=By%20squad`);
+
+    // The warning is on screen and names the field.
+    const warn = page.getByTestId("query-warnings");
+    await expect(warn).toBeVisible();
+    await expect(warn).toContainText(/squad/i);
+
+    // Bullet 2: the zero rows are not presented *as legitimate*. The
+    // empty state still renders — "No tasks match these filters" is a
+    // statement about the filter, not a claim the tracker is empty —
+    // and the case forbids the presentation, not the message. What
+    // makes it illegitimate is the warning standing above it, so the
+    // assertion is that the two appear together rather than that the
+    // empty state is suppressed.
+    //
+    // Measured: asserting `toHaveCount(0)` on the empty state failed
+    // here, and the case does not ask for that.
+    await expect(page.getByText(/No tasks match these filters/i)).toBeVisible();
+    await expect(warn).toBeVisible();
+
+    // Bullet 4: other saved views still work — the positive control,
+    // without which "the page shows a warning" could be true of a page
+    // that had simply broken.
+    await page.goto(`${tracker.baseURL}/list?view=recent-open`);
+    await expect(page.getByTestId("query-warnings")).toHaveCount(0);
+    await expect(page.getByText("Alpha")).toBeVisible();
+  });
+
   test("VUE-6: saving a view writes queries.yaml intact and works everywhere", async ({
     page,
     tracker,

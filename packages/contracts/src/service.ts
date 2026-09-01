@@ -272,6 +272,19 @@ export interface TrackerInfoResponse {
    * refreshes whenever tracker info is refetched.
    */
   readonly today: string;
+  /**
+   * The IANA zone `today` was resolved in — the workspace's
+   * `calendar.yaml` timezone, or `"UTC"` when there is no config or it
+   * could not be read.
+   *
+   * VUE-19 requires the resolved date to be *discoverable*: "the UI
+   * states the resolved date (and which timezone it used) rather than
+   * leaving an off-by-one-day result unexplained". `today` alone
+   * cannot satisfy that — a user seeing a date one day off the one on
+   * their wall clock needs to know which zone produced it before they
+   * can tell a bug from a correctly-configured workspace.
+   */
+  readonly timezone: string;
 }
 
 /**

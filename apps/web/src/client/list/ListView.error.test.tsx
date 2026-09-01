@@ -174,3 +174,44 @@ describe("the list when /api/tasks fails", () => {
     expect(alert.textContent).toMatch(/not known/i);
   });
 });
+
+describe("a query that fails server-side", () => {
+  // @verifies VUE-39
+  it("is reported as a failure, never as zero results", async () => {
+    // VUE-39: a query timing out or failing server-side must not reuse
+    // VUE-28's empty-state copy. The distinction matters most here,
+    // because both outcomes render an empty table body.
+    stubFetch(() => Promise.resolve(new Response(
+      JSON.stringify({
+        code: "unknown",
+        message: "The query could not be completed.",
+        recovery: { kind: "retry" },
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    )));
+    mount();
+
+    const alert = await screen.findByRole("alert");
+    // States what was attempted (ERR-30 / VUE-39's second bullet)...
+    expect(alert.textContent).toMatch(/could not load tasks/i);
+    // ...and the server's own reason.
+    expect(alert.textContent).toContain("The query could not be completed.");
+
+    // The load-bearing half: VUE-28's copy is never reused for this.
+    expect(screen.queryByText("No tasks match these filters.")).toBeNull();
+  });
+
+  // @verifies VUE-39
+  it("offers a retry for a failed query rather than leaving a dead end", async () => {
+    stubFetch(() => Promise.resolve(new Response(
+      JSON.stringify({
+        code: "unknown",
+        message: "The query could not be completed.",
+        recovery: { kind: "retry" },
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    )));
+    mount();
+    expect(await screen.findByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+});

@@ -87,6 +87,7 @@ export type {
   EditViewRequest,
   InitRequest,
   PutWorkflowRequest,
+  ValidateQueryRequest,
 } from "./service-schemas.js";
 export {
   BulkArchiveRequestSchema,
@@ -101,6 +102,7 @@ export {
   MAX_BULK_REFS,
   PostCommentRequestSchema,
   PutWorkflowRequestSchema,
+  ValidateQueryRequestSchema,
 } from "./service-schemas.js";
 export type { SprintDef, SprintsConfig, SprintState } from "./sprints.js";
 export {

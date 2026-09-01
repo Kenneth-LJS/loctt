@@ -30,6 +30,7 @@ const INFO: TrackerInfoResponse = {
   schemaStatus: { kind: "current", version: 3 },
   cwd: "~/PDev/loctt",
   today: "2026-08-14",
+    timezone: "UTC",
 };
 
 const OK = { items: [], total: 0, offset: 0, limit: 100 };

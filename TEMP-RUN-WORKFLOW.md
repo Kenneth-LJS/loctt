@@ -516,6 +516,48 @@ condition 2 working as intended: a feature existing nowhere is scope,
 and adding a field to a shared contract is Ken's call, not an
 agent's.
 
+#### M4.5 · VUE-22 needs `queries.yaml` to load per-entry, which is a core contract change
+
+**Measured 2026-09-01, with a positive control.**
+
+VUE-22 requires that a hand-edited saved view which no longer parses
+is "flagged, not hidden": the sidebar still lists it marked broken,
+clicking it shows the parse error, and **"other views and the rest of
+the sidebar render normally"**.
+
+Today one bad entry takes down every view. `parseQueriesConfig`
+(`packages/core/src/config/queries.ts:38-49`) maps over the entries
+and **throws** `QueriesConfigError` on the first unparseable query —
+directly under a comment that says such queries "shouldn't crash the
+rest of the load". The comment describes the intent; the code does the
+opposite. `loadOptionalConfigs` calls it, `handleListTasks` calls
+that, and nothing catches it, so `GET /api/tasks?view=<any>` becomes
+the generic 500 — including for a healthy view sitting next to the
+broken one.
+
+**Reproduced**: a `queries.yaml` with `ok` (`status = backlog`) and
+`broken` (`status = = done`) makes `GET /api/tasks?view=ok` return
+500. Positive control: with the `broken` entry removed, the same
+request returns 200.
+
+**Why this stops rather than being built.** The fix is per-entry
+tolerance on *load* while `saveQueriesConfig` stays strict — and
+`parseQueriesConfig` is the same function both use
+(`queries.ts:106` validates on save). Splitting them changes a core
+contract shared by CLI, MCP and web, and decides what a partially
+loadable config *is*. That is condition 2, not an agent's call.
+
+`GET /api/views` already does the right thing at its own layer: it
+returns 400 `config_invalid` with the loader's message, and
+`SavedViewsPanel` renders it as a load failure naming the file
+(VUE-36/XS-66). So the sidebar's *listing* half is solved; the task
+route's is not.
+
+The rest of M4.5 is built and tested. VUE-22 is the one case of the
+22 with no implementation, and VUE-21 — which shares its symptom —
+**was** buildable and is now wired (`onWarning` → a `warnings` field
+on the tasks response).
+
 #### M4.3 · The git reconciliation cases have no model to render
 
 **Measured 2026-09-01, with a positive control. Full reasoning in
