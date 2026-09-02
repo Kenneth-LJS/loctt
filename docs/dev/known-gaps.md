@@ -2677,3 +2677,38 @@ The root computes to 32px; `body` stays 14px.
 **Not fixed here.** Converting to relative units touches every type
 utility and the 123 fixed-height utilities sized to their text. See
 A95.
+
+## Removing a worktree leaves its `loctt ui` server running (tooling)
+
+`git worktree remove` deletes the directory; it does not stop anything
+the worktree started. The UI fixture spawns
+`apps/cli/dist/index.js ui --port <n> --no-open` as a child, and when a
+run is killed — or the worktree is harvested while a server is up — that
+process survives with no parent and no directory.
+
+Measured on this machine after a day of building: **three orphaned
+servers**, from `.claude/build-m47` (two) and `.claude/fix-cmt31` (one),
+the oldest alive **over 25 hours**, all pointing at worktree paths that
+no longer exist.
+
+**Why it is worth a gap entry rather than a shrug.** They are not idle.
+Each holds a port, a node heap, and file watches against a deleted tree,
+and they compete with a live suite for the same machine. A build agent
+spent a substantial part of its budget diagnosing disk and timing
+pressure before finding these were part of the picture — and the
+symptom, again, was test failures that looked like defects.
+
+**Find and clear them** (check the worktree still exists before killing,
+so a live run is not taken down):
+
+```bash
+ps -eo pid,etime,command | grep 'cli/dist/index.js ui' | grep -v grep
+```
+
+**Real fix**: the fixture should register the server for teardown on
+signal as well as on normal exit, so `SIGINT`/`SIGTERM` to the runner
+takes the server with it. A run that is killed mid-suite is exactly when
+the orphan is created, which is also exactly when nobody is watching.
+
+**Related**: `git worktree remove --force` on a tree whose suite is still
+running will orphan the server every time. Stop the run first.
