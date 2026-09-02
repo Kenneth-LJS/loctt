@@ -2540,7 +2540,7 @@ outside its ticket's roster? Where the answer is a group reason, that
 is fine — but the group must name its members, or the next audit
 cannot tell a deliberate decline from an omission.
 
-## Escape does not cancel a keyboard relationship reorder (REL-15, A11Y-29)
+## Escape does not cancel a keyboard relationship reorder (REL-15)
 
 `RelationshipsPanel.tsx:509` — the Escape branch sets `grabbed` to null
 and announces "Move cancelled". **It performs no move.** The row stays
@@ -2558,8 +2558,15 @@ sitting directly above the code:
    with the **current** position on every step. Even if Escape did move,
    the origin it needs was destroyed by the first arrow press.
 
-A11Y-29's fourth bullet ("cancelling restores the original position")
-and REL-15's third bullet are therefore both unmet.
+REL-15's third bullet is therefore unmet.
+
+**Not an A11Y-29 bullet — I got that wrong.** I first filed this against
+A11Y-29 and told the build agent so. A11Y-29 has exactly three bullets
+(reorder + announce, timeline both edges, neither pointer-only) and none
+mentions cancelling. The "cancelling restores the original position"
+wording is **A11Y-28**, the board's keyboard drag alternative, which is
+a different case on a different surface. The agent caught this and
+tagged A11Y-29 on its own three bullets, correctly.
 
 **Reproduce**: open a task with three ranked relationships, focus a
 reorder handle, press ArrowDown twice, then Escape. Expected: the row
@@ -2580,3 +2587,46 @@ announcement text, *and* the rank on disk. It is a good test. It simply
 never presses Escape, so it covers bullets 1 and 2 and claims all three.
 That is the `@verifies`-has-no-partial-marker problem again, not a test
 asserting the bug: nothing needs deleting, only extending.
+
+## Test runs leak temp trackers until the disk fills (tooling)
+
+The integration and UI fixtures create trackers under `$TMPDIR` as
+`loctt-<name>-<random>` and do not always remove them. After one long
+session this machine held **5,521** such directories totalling 516 MB,
+and free space reached 1.0 GiB of 460 GiB.
+
+**How it presents — and why it is worth writing down**: not as "disk
+full", but as ordinary-looking test failures.
+
+```
+fatal: Unable to create '…/T/loctt-unreadable-9c8yLO/.git/index.lock':
+No space left on device
+```
+
+14 integration tests across `git/`, `cli/` and `mcp/` went red at once,
+including several whose names suggest a real defect ("refuses to adopt a
+configured branch holding unrelated work", "unreachable remote: publish
+fails loudly"). Re-running after freeing space: **exit 0, 457 tests.**
+Nothing was wrong with the code.
+
+**Check this before diagnosing a broad, unfamiliar failure**, especially
+one spanning unrelated suites or mentioning locks, writes, or `ENOSPC`:
+
+```bash
+df -h ~ ; ls -d "${TMPDIR}"loctt-* 2>/dev/null | wc -l
+```
+
+**Cleanup** (age filter so a live run's fixtures survive):
+
+```bash
+find "${TMPDIR}" -maxdepth 1 -name 'loctt-*' -type d -mmin +5 -exec rm -rf {} +
+```
+
+**Real fix**: the fixtures should remove their tracker on teardown even
+when the test fails — a `finally`, not a happy-path cleanup. A run that
+crashes mid-test is exactly when the directory is left behind, so the
+leak is worst on the runs that already went badly.
+
+**Also note**: each build worktree carries its own `node_modules`
+(~293 MB), because a shared one breaks the vite config resolution.
+Three concurrent worktrees is most of a gigabyte before any test runs.
