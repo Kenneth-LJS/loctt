@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
-import { cp, mkdir, readdir, readFile,rm } from "node:fs/promises";
-import { dirname,join } from "node:path";
+import { cp, mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import type { ReconcileState, SyncState, Task } from "@loctt/contracts";
 
