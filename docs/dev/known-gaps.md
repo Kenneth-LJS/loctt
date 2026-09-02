@@ -2788,52 +2788,54 @@ report, then `loctt backup` and grep the JSONL for its text — absent.
 stays on disk in the tracker, so it survives everything except a
 round-trip through a backup.
 
-## The Playwright suite cannot complete at low free disk (tooling, 2026-09-02)
+## Long UI runs get killed with exit 144, and it is not the code (tooling, 2026-09-02)
 
 **Not a product defect — recorded so the next agent does not debug it as one.**
 
 The UI suite (`playwright test --config tests/ui/playwright.config.ts
 --workers=1`) ran to completion once during M5.1: **657 passed, 1
-skipped, 0 failed, exit 0**, finishing in 26.7 minutes with ~700 MiB
-free.
+skipped, 0 failed, exit 0**, in 26.7 minutes.
 
-A confirmatory re-run of the identical suite, started later the same
-day, was **killed at test 147 with exit code 144** (`SIGXFSZ`). Its log
-ends mid-run on a *passing* test with no error text, no `ENOSPC`
-string, and no failed assertion — the shape of a process killed from
-outside, not one that failed. Free space at the time: **155-320 MiB of
-460 GiB**, falling throughout the run.
+Two later attempts were both killed with **exit code 144** (`SIGXFSZ`,
+signal 16):
 
-**Why it looks like a code defect and is not:**
+| Attempt | Killed at | Free disk at kill |
+|---|---|---|
+| Full suite re-run | test 147, mid-run | ~155-320 MiB |
+| Per-spec-file slices | slice 3 of 22, test 11 | **1.2 GiB** |
 
-- The last line in the log is a green test, so a reader scanning the
-  tail sees "everything passing" and then nothing.
-- Exit 144 is not in Playwright's own vocabulary; it is the shell
-  reporting signal 16.
-- No `ENOSPC` appears anywhere, because the writer is killed rather
-  than receiving a write error.
+Both logs end on a **passing** test with no error text, no `ENOSPC`,
+and no failed assertion. Every test that ran, passed.
 
-**What to do:** run `df -h ~` *before* diagnosing. Below ~1 GiB free,
-the UI suite is not a trustworthy gate — its browser profiles, traces
-and per-test artifacts need more headroom than that. Either free space
-or run the suite in slices by spec file.
+**Disk was my first diagnosis and it was wrong.** The slices were
+killed with 1.2 GiB free — four to eight times the headroom of the
+first kill — and the two jobs died within about a minute of each other
+in wall-clock terms regardless of what each was doing. That is an
+external, time-based termination of long-running **background** jobs,
+not resource exhaustion. Disk pressure is real on this machine and
+worth checking, but it does not explain exit 144.
 
-**Slicing works and is the way to close the gate.** Running one spec
-file at a time (`playwright test --config … --workers=1
-tests/ui/<one>.spec.ts`) completes at ~300 MiB free where the whole
-suite does not, because artifacts from each file are the only ones
-alive at once.
+**What to do:**
 
-**A second trap found while doing that, worth more than the first.**
-The first sliced run reported 2 failures with
-`ENOENT: apps/cli/dist/index.js` and "server did not become ready".
-That is **not** disk and **not** a defect: `playwright test --config`
-bypasses the `pretest:ui` npm hook, so it never rebuilds — and any
-mutation-testing cycle (edit → build → revert) leaves `dist/` mid-write.
-The spec files spawn the real CLI binary, so they fail on a partially
-written `index.js`. **Run `npm run build` before any sliced UI run**;
-after rebuilding, the same slice passed 16/16, exit 0.
+- Run the UI suite in the **foreground** with a generous timeout, not
+  as a background task, if the run needs to exceed ~10 minutes.
+- Per-spec-file slicing is still the right shape when space is tight
+  (each slice's artifacts are freed before the next starts — free disk
+  went 302 MiB → 712 MiB → 1.2 GiB across three slices), but it does
+  not survive the background-job kill either.
+- `df -h ~` before diagnosing is still worth doing; just do not stop
+  there when the number looks fine.
 
-**Related:** the orphaned-`loctt ui`-server entry above compounds this,
-since each orphan holds a heap and file watches. Checked after this
-kill: no orphan was left, so the two are independent.
+**A second trap, independent of the above.** A sliced run reported 2
+failures with `ENOENT: apps/cli/dist/index.js` and "server did not
+become ready". That is **not** disk and **not** a defect:
+`playwright test --config` bypasses the `pretest:ui` npm hook, so it
+never rebuilds — and any mutation-testing cycle (edit → build → revert)
+leaves `dist/` mid-write. The spec files spawn the real CLI binary, so
+they fail on a partially written `index.js`. **Run `npm run build`
+before any sliced UI run**; after rebuilding, the same slice passed
+16/16, exit 0.
+
+**Related:** the orphaned-`loctt ui`-server entry above is a separate
+issue, but check for orphans after any such kill — each holds a port, a
+heap and file watches. Checked after both kills here: none were left.
