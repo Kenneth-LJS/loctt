@@ -2639,3 +2639,41 @@ between the README and the code rather than adding a second mechanism.
 **Also note**: each build worktree carries its own `node_modules`
 (~293 MB), because a shared one breaks the vite config resolution.
 Three concurrent worktrees is most of a gigabyte before any test runs.
+## Filter dropdowns have no arrow-key navigation (A11Y-10 bullet 1)
+
+**Found:** 2026-09-02. Recorded as decision A94.
+
+With a filter dropdown open on `/list`, `ArrowDown`, `ArrowUp`, `Home`
+and `End` leave focus on the trigger button; typing a letter does not
+jump to a matching option. Options are reachable only by continuing to
+`Tab`. `client/ui/Menu.tsx` implements no roving focus and no
+type-ahead; `client/editor/MentionMenu.tsx` does, so this is specific
+to `Menu`.
+
+**How to reproduce.** `/list`, `Tab` to "Filter Status", `Enter` to
+open, `ArrowDown`. Focus is still on the trigger.
+
+**Not fixed here.** `Menu` backs `list/FilterDropdown.tsx`,
+`shell/Header.tsx`, `settings/KeyboardPanel.tsx` and
+`task/TaskDetail.tsx`; adding roving focus is a cross-surface
+interaction change no ticket in this run owns. See A94.
+
+## Text-only zoom has no effect: the type scale is absolute (A11Y-39)
+
+**Found:** 2026-09-02. Recorded as decision A95.
+
+`styles/index.css` sets `html, body { font-size: 14px }` and components
+size type in absolute px (`text-[13px]`, …). A user agent's text-only
+zoom scales the root font size, which the body rule then overrides, so
+nothing on the page grows. All 233 elements rendered on `/list` resolve
+to an absolute px font-size.
+
+A11Y-39's bullets are technically satisfied — nothing is clipped —
+but only because nothing scales, which is not what the case is for.
+
+**How to reproduce.** Load `/list`, apply `html { font-size: 200% }`.
+The root computes to 32px; `body` stays 14px.
+
+**Not fixed here.** Converting to relative units touches every type
+utility and the 123 fixed-height utilities sized to their text. See
+A95.

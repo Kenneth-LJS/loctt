@@ -1297,3 +1297,450 @@ test.describe("A11Y — failure communication", () => {
     await expect(page.getByTestId("meta-field-error-state")).toBeVisible();
   });
 });
+
+test.describe("A11Y — keyboard-only end-to-end flows", () => {
+  /**
+   * A11Y-11: create a task with no pointer at all.
+   *
+   * Driven entirely through `page.keyboard`. Not one `.click()`
+   * appears below, deliberately: the case says "all without a
+   * pointer", and a `.click()`-driven test proves the handler runs,
+   * not that the flow is reachable by a keyboard user. Every control
+   * here is arrived at by `Tab` from wherever focus already was.
+   *
+   * The far end is the file on disk plus the announcement, not the
+   * dialog closing — a modal that closed while the write failed would
+   * satisfy a weaker test.
+   */
+  // @verifies A11Y-11
+  test("A11Y-11: a task is created end to end with no pointer, and its key is announced", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Pre-existing row" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Pre-existing row")).toBeVisible();
+
+    await page.locator("body").press("n");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+
+    // Focus starts in the title, so typing begins immediately.
+    await page.keyboard.type("Made with no pointer");
+
+    /*
+     * First bullet: "every field including the label multi-select, the
+     * date pickers, and the body editor is reachable and editable by
+     * keyboard."
+     *
+     * Walked as a real tab order rather than by focusing each control
+     * directly — `locator.focus()` would reach a control that `Tab`
+     * cannot, which is exactly the defect the case is about. The walk
+     * records what it passed so the assertions below are about the
+     * order a keyboard user actually traverses.
+     */
+    const seen: string[] = [];
+    let labelTrigger = false;
+    let dateInputs = 0;
+    let editor = false;
+    for (let i = 0; i < 40; i += 1) {
+      await page.keyboard.press("Tab");
+      const at = await page.evaluate(() => {
+        const a = document.activeElement as HTMLElement | null;
+        if (a === null) return { tag: "", name: "", type: "", editable: false };
+        return {
+          tag: a.tagName,
+          name: a.getAttribute("aria-label") ?? a.textContent?.trim().slice(0, 30) ?? "",
+          type: a.getAttribute("type") ?? "",
+          editable: a.getAttribute("contenteditable") === "true",
+        };
+      });
+      seen.push(`${at.tag}:${at.name}`);
+      if (at.name.startsWith("Add a label")) labelTrigger = true;
+      if (at.tag === "INPUT" && at.type === "date") dateInputs += 1;
+      if (at.editable) { editor = true; break; }
+    }
+
+    // The label multi-select and the body editor were both reached by
+    // Tab alone, and there are date inputs in the order.
+    expect(labelTrigger).toBe(true);
+    expect(editor).toBe(true);
+    expect(dateInputs).toBeGreaterThan(0);
+
+    /*
+     * Second bullet, the blocker one: "the date picker allows typed
+     * date entry — a calendar grid that can only be clicked is a
+     * blocker."
+     *
+     * Asserting the input's *value* after typing is the effect. A
+     * `type="date"` attribute check would pass for a readonly input
+     * fronting a click-only calendar.
+     */
+    const dateField = dialog.locator('input[type="date"]').first();
+    await dateField.focus();
+    await expect(dateField).toBeFocused();
+    // Eight digits typed as real keystrokes into the focused control's
+    // segments, which this engine orders day, month, year. The value
+    // only materialises once all three are filled, which is why the
+    // assertion is on the completed value.
+    //
+    // Typed rather than `fill()`ed on purpose: `fill` sets the value
+    // directly, bypassing the keyboard entirely, so a fill-based
+    // assertion would say nothing about keyboard operability.
+    //
+    // Mutation-proven by adding `disabled` to the create modal's own
+    // `FormDateField` input, which turns this red. Note the modal does
+    // NOT use `task/editors/DateField.tsx` — it defines its own
+    // `FormDateField` and imports only `nonWorkingNote` from that
+    // module, so mutating `DateField` leaves this test green.
+    await page.keyboard.type("17042026");
+    await expect(dateField).toHaveValue("2026-04-17");
+
+    /*
+     * Third bullet: "the body editor is escapable: `Tab` inside it
+     * either moves to the next control or a documented key does, so
+     * the user is never trapped."
+     *
+     * Typed into first, so this is a Tab out of an editor with content
+     * and a live selection — an empty editor can let Tab through while
+     * a populated one swallows it for indentation.
+     */
+    const body = dialog.locator('[contenteditable="true"]');
+    await body.focus();
+    await page.keyboard.type("Body written by keyboard");
+    await expect(body).toContainText("Body written by keyboard");
+    await page.keyboard.press("Tab");
+    // The positive assertion the brief warns to make: focus is on a
+    // real control, not merely "not the editor" (which `document.body`
+    // would satisfy while the user was in fact stranded).
+    const escaped = await page.evaluate(() => {
+      const a = document.activeElement as HTMLElement | null;
+      return {
+        editable: a?.getAttribute("contenteditable") === "true",
+        isBody: a === document.body || a === null,
+        tag: a?.tagName ?? "",
+      };
+    });
+    expect(escaped.editable).toBe(false);
+    expect(escaped.isBody).toBe(false);
+    expect(["INPUT", "BUTTON", "TEXTAREA", "SELECT", "A"]).toContain(escaped.tag);
+    // And the dialog did not close as a side effect of escaping.
+    await expect(dialog).toBeVisible();
+
+    /*
+     * Fourth bullet: "submit is reachable and the created task's key
+     * is announced."
+     *
+     * Reached by Tab from where the editor exit left focus, then
+     * activated with Enter — never clicked.
+     */
+    const submit = dialog.getByRole("button", { name: "Create task" });
+    let reachedSubmit = false;
+    for (let i = 0; i < 20; i += 1) {
+      await page.keyboard.press("Tab");
+      if (await submit.evaluate(el => el === document.activeElement)) {
+        reachedSubmit = true;
+        break;
+      }
+    }
+    expect(reachedSubmit).toBe(true);
+    await page.keyboard.press("Enter");
+
+    // The key is announced in a live region — the thing a non-sighted
+    // user is handed. Asserting the row appeared would not prove this.
+    await expect(page.locator('[aria-live="polite"]', { hasText: /Created T-2/ }))
+      .toBeVisible();
+
+    // And the far end: the task is on disk with the body and the date
+    // the keyboard put there. A dialog that closed on a failed write
+    // would pass every assertion above and fail here.
+    await expect
+      .poll(async () => tracker.run(["list"]))
+      .toContain("Made with no pointer");
+    const shown = await tracker.run(["show", "T-2"]);
+    expect(shown).toContain("Body written by keyboard");
+    expect(shown).toContain("2026-04-17");
+  });
+});
+
+test.describe("A11Y — drag affordances have keyboard alternatives", () => {
+  /**
+   * A11Y-29: neither ranked-relationship reorder nor timeline bar
+   * adjustment is pointer-only.
+   *
+   * REL-15 and TML-40 each cover one half against its own flow doc.
+   * This case is the cross-cutting claim that *both* hold — a
+   * regression in either one is a blocker here — so it asserts both
+   * ends rather than delegating to those tags.
+   *
+   * Both halves are driven with real key events on a focused control
+   * (`press`), never a synthesised drag or a click.
+   *
+   * What this test does NOT assert, deliberately: that `Escape`
+   * cancels an in-progress reorder. That is REL-15's third bullet, not
+   * one of A11Y-29's three, and it is **broken** — the Escape branch
+   * announces "Move cancelled" but performs no move, and every arrow
+   * press has already written to disk. See known-gaps, "Escape does
+   * not cancel a keyboard relationship reorder". Asserting it here
+   * would fail; asserting the announcement instead would pass against
+   * the bug.
+   */
+  // @verifies A11Y-29
+  test("A11Y-29: ranked rows reorder by keyboard with the position announced, and timeline bars adjust by keyboard", async ({
+    page,
+    tracker,
+  }) => {
+    /* ---- Half one: ranked relationship reorder ---- */
+    const [root, a, b] = await tracker.seed([
+      { title: "Reorder root" },
+      { title: "Ranked A" },
+      { title: "Ranked B" },
+    ]);
+    await tracker.run(["link", root ?? "", "blocks", a ?? ""]);
+    await tracker.run(["link", root ?? "", "blocks", b ?? ""]);
+
+    await page.goto(`${tracker.baseURL}/tasks/${root ?? ""}`);
+    await expect(page.getByTestId("relationships-panel")).toBeVisible();
+
+    const rows = page.locator('[data-group="blocks"] [data-testid="relationship-row"]');
+    const orderOf = async (): Promise<(string | undefined)[]> =>
+      rows.evaluateAll(els => els.map(e => (e as HTMLElement).dataset["target"]));
+
+    const before = await orderOf();
+    expect(before).toHaveLength(2);
+    const secondId = before[1] ?? "";
+
+    // The handle is a real focusable control — not a `div` with
+    // `draggable`, which is reachable by pointer only.
+    const handle = page.locator(
+      `[data-group="blocks"] [data-testid="relationship-row"][data-target="${secondId}"] `
+      + `[data-testid="drag-handle"]`,
+    );
+    await handle.focus();
+    await expect(handle).toBeFocused();
+
+    await handle.press("ArrowUp");
+
+    // First bullet, first half: the row moved. Asserted on the
+    // rendered order, and then on disk — a visual swap that never
+    // reached a file is the failure this catches.
+    await expect(rows.nth(0)).toHaveAttribute("data-target", secondId);
+
+    // First bullet, second half: "with the new position announced."
+    await expect(page.getByTestId("reorder-announcement"))
+      .toContainText(`${b ?? ""} moved to position 1 of 2`);
+
+    // The far end agrees, and survives a reload.
+    await page.reload();
+    await expect(page.getByTestId("relationships-panel")).toBeVisible();
+    await expect(rows.nth(0)).toHaveAttribute("data-target", secondId);
+
+    /* ---- Half two: timeline bar start and due, by keyboard ---- */
+    const [bar1] = await tracker.seed([{ title: "Bar task" }]);
+    const barKey = bar1 ?? "";
+    await tracker.run(["set", barKey, "start_date", "2026-03-02"]);
+    await tracker.run(["set", barKey, "due_date", "2026-03-06"]);
+
+    await page.goto(`${tracker.baseURL}/timeline?zoom=day`);
+    const bar = page.getByTestId(`timeline-bar-${barKey}`);
+    await expect(bar).toBeVisible();
+
+    // Second bullet: the bar itself is keyboard-reachable and carries
+    // its live dates as its accessible name.
+    await bar.focus();
+    await expect(bar).toBeFocused();
+    await expect(bar).toHaveAttribute("aria-label", /2026-03-02 to 2026-03-06/);
+
+    // Due edge, by keyboard.
+    await page.keyboard.press("Shift+ArrowRight");
+    await expect(bar).toHaveAttribute("data-due", "2026-03-07");
+
+    // Start edge, by keyboard. Both edges are required by the bullet
+    // ("a bar's start and due dates are adjustable"), so asserting one
+    // would leave the other free to be pointer-only.
+    await page.keyboard.press("Alt+ArrowRight");
+    await expect(bar).toHaveAttribute("data-start", "2026-03-03");
+
+    // Third bullet — "neither feature is pointer-only" — proved at the
+    // far end: both keyboard adjustments reached the file.
+    await expect
+      .poll(async () => tracker.run(["show", barKey]))
+      .toContain("2026-03-07");
+    const barShown = await tracker.run(["show", barKey]);
+    expect(barShown).toContain("2026-03-03");
+  });
+});
+
+test.describe("A11Y — filtering by keyboard", () => {
+  /**
+   * A11Y-10 is **not** claimed by this test, deliberately. See
+   * decision A94.
+   *
+   * The case's first bullet requires each filter dropdown's options to
+   * be "arrow-navigable with type-ahead". Measured against the built
+   * app: opening the Status dropdown and pressing ArrowDown, ArrowUp,
+   * Home or End leaves focus on the trigger button — `Menu` (the
+   * shared popover behind every `FilterDropdown`) implements neither
+   * roving focus nor a type-ahead jump, unlike `MentionMenu` which
+   * does. Options are reachable only by continuing to `Tab`.
+   *
+   * The rest of the case does hold, and is asserted below so that the
+   * parts that work are protected against regression while the gap
+   * stays visible. What is deliberately NOT asserted here is arrow
+   * navigation — writing a Tab-based walk and tagging the case would
+   * report a keyboard affordance the case asks for and the app lacks.
+   *
+   * This test fails the day roving focus is added (the ArrowDown
+   * assertion below inverts), which is the signal to replace it with
+   * the full transcription and add the tag.
+   */
+  test("A11Y-10 (partial): chips remove by keyboard and the count is announced; arrow navigation is absent", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "In-progress row", fields: { status: "in_progress" } },
+      { title: "Backlog row", fields: { status: "backlog" } },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("In-progress row")).toBeVisible();
+    await expect(page.getByText("Backlog row")).toBeVisible();
+
+    const trigger = page.getByRole("button", { name: "Filter Status" });
+
+    // The trigger is reachable by Tab from the page, not merely
+    // focusable programmatically.
+    let reached = false;
+    for (let i = 0; i < 60; i += 1) {
+      await page.keyboard.press("Tab");
+      if (await trigger.evaluate(el => el === document.activeElement)) {
+        reached = true;
+        break;
+      }
+    }
+    expect(reached).toBe(true);
+
+    // Second half of bullet one: it opens on Enter.
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("menu", { name: "Filter by Status" })).toBeVisible();
+
+    /*
+     * The gap, asserted as it actually is. This is the assertion that
+     * inverts when the feature lands.
+     *
+     * Asserted positively — focus is *on the trigger* — rather than as
+     * "focus is not on an option", which `document.body` would satisfy
+     * while proving nothing.
+     */
+    await page.keyboard.press("ArrowDown");
+    await expect(trigger).toBeFocused();
+
+    // Options are reachable by Tab, which is how a keyboard user must
+    // currently drive this. Applying the filter narrows the list — the
+    // far end, not the URL.
+    let onOption = false;
+    for (let i = 0; i < 12; i += 1) {
+      await page.keyboard.press("Tab");
+      const text = await page.evaluate(() => document.activeElement?.textContent ?? "");
+      if (text.includes("In progress")) { onOption = true; break; }
+    }
+    expect(onOption).toBe(true);
+    await page.keyboard.press("Enter");
+
+    await expect(page.getByText("Backlog row")).toBeHidden();
+    await expect(page.getByText("In-progress row")).toBeVisible();
+
+    /*
+     * Bullet two: the chip's remove control is keyboard-activatable
+     * and its accessible name names the filter being removed.
+     *
+     * The case illustrates this as "Remove filter: Status is In
+     * progress"; the app renders "Remove Status In progress". The
+     * binding requirement is the *name identifying which filter* —
+     * both the facet and the value — which this meets. Asserted
+     * against what the app actually says rather than the case's
+     * example wording, since matching the illustration verbatim would
+     * be asserting a string the case never required.
+     */
+    const remove = page.getByRole("button", { name: /^Remove Status/ });
+    await expect(remove).toHaveAccessibleName("Remove Status In progress");
+
+    // Bullet three: the result count change is announced.
+    await expect(page.locator('[aria-live="polite"]', { hasText: /1 task/ })).toBeVisible();
+
+    // Removed by keyboard, and the row comes back — the effect, not
+    // the click.
+    await remove.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByText("Backlog row")).toBeVisible();
+  });
+});
+
+test.describe("A11Y — text-only zoom", () => {
+  /**
+   * A11Y-39 is **not** claimed by this test, deliberately. See
+   * decision A95.
+   *
+   * Text-only zoom is the user agent scaling text while leaving page
+   * zoom alone — Firefox's "Zoom text only", or a browser minimum /
+   * default font-size preference. What it scales is the *root* font
+   * size; a layout expressed in `rem`/`em` grows with it, one
+   * expressed in absolute `px` does not move at all.
+   *
+   * Measured against the built app: `styles/index.css` sets
+   * `html, body { font-size: 14px }`, and every one of the 233
+   * elements rendered on `/list` resolves to an absolute px
+   * font-size. Doubling the root font size moves `html` to 32px and
+   * leaves `body` at 14px, because body's own absolute rule overrides
+   * the inherited value. Nothing downstream responds.
+   *
+   * That makes the case's three bullets *vacuously* true: text cannot
+   * be clipped by a fixed-height box when the text never grows. A test
+   * asserting "no text is clipped at 200% text zoom" would pass
+   * against an app with no text-zoom support whatsoever, which is
+   * precisely the tag-that-cannot-fail this run keeps finding. The
+   * case is therefore left uncovered rather than claimed.
+   *
+   * What is asserted instead is the *cause*, so the gap is visible and
+   * regression-guarded: the app opts out of text scaling. This test
+   * fails the day the type scale moves to relative units, which is the
+   * signal to write the real transcription and add the tag.
+   */
+  test("A11Y-39 (partial): the type scale is absolute, so text-only zoom has nothing to act on", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Text zoom subject" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Text zoom subject")).toBeVisible();
+
+    const rootBefore = await page.evaluate(
+      () => getComputedStyle(document.documentElement).fontSize,
+    );
+    const bodyBefore = await page.evaluate(
+      () => getComputedStyle(document.body).fontSize,
+    );
+    expect(bodyBefore).toBe("14px");
+
+    // Simulate what a user agent's text-only zoom does: scale the root
+    // font size, leaving page zoom untouched.
+    await page.addStyleTag({ content: "html { font-size: 200% !important; }" });
+
+    const rootAfter = await page.evaluate(
+      () => getComputedStyle(document.documentElement).fontSize,
+    );
+    const bodyAfter = await page.evaluate(
+      () => getComputedStyle(document.body).fontSize,
+    );
+
+    // The root did scale — proving the simulation itself works. This
+    // is the positive control: without it, "body did not change" would
+    // also pass if the style tag had silently failed to apply.
+    expect(parseFloat(rootAfter)).toBeGreaterThan(parseFloat(rootBefore));
+
+    // ...and the body did not follow, because its own rule is absolute.
+    // This is the gap. It inverts the day the type scale becomes
+    // relative.
+    expect(bodyAfter).toBe("14px");
+  });
+});
