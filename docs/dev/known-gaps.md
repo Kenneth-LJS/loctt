@@ -2839,3 +2839,40 @@ before any sliced UI run**; after rebuilding, the same slice passed
 **Related:** the orphaned-`loctt ui`-server entry above is a separate
 issue, but check for orphans after any such kill — each holds a port, a
 heap and file watches. Checked after both kills here: none were left.
+
+## Rebuilding while a UI suite runs corrupts it (tooling, 2026-09-02)
+
+**Not a product defect. I did this to myself, having written the rule
+into the build agent's brief an hour earlier.**
+
+The UI specs spawn the real CLI binary from `apps/cli/dist/index.js`.
+A `npm run build` while the suite is in flight rewrites that file, and
+any spec that shells out during the rewrite window fails with:
+
+```
+Error: ENOENT: no such file or directory, lstat '.../apps/cli/dist/index.js'
+Error: Cannot find module '.../apps/cli/dist/index.js'
+Error: loctt create Ranked B exited 1
+```
+
+Measured: the run started 13:44; `dist/index.js` has mtime 13:50, from
+my own restore-and-rebuild after a mutation. **3 failed, 654 passed.**
+Re-running the same three after the build settled: **12 passed, exit
+0** — the three plus their neighbours.
+
+**Why it is worth an entry.** The failures do not look environmental.
+They read as a genuine defect in whatever the spec was doing, and two of
+the three were tests I had personally mutation-verified hours before,
+which is exactly the evidence that makes "it must be a real regression"
+feel safe. The third named `settings.yaml` — a file M5.1 had just
+changed the handling of — so the most plausible story was a real
+regression in the ticket under test. It was not.
+
+**The rule, which already existed**: one suite at a time, and no build
+while a suite runs. Mutation testing makes this easy to break, because
+restore-and-rebuild is the correct end of every mutation cycle and it
+is tempting to do it while a long run is "just finishing".
+
+**Check first**: `ls -la apps/cli/dist/index.js` against the run's start
+time. An mtime inside the run window explains the failure, and no
+amount of reading the spec will.
