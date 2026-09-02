@@ -2622,10 +2622,19 @@ df -h ~ ; ls -d "${TMPDIR}"loctt-* 2>/dev/null | wc -l
 find "${TMPDIR}" -maxdepth 1 -name 'loctt-*' -type d -mmin +5 -exec rm -rf {} +
 ```
 
-**Real fix**: the fixtures should remove their tracker on teardown even
-when the test fails — a `finally`, not a happy-path cleanup. A run that
-crashes mid-test is exactly when the directory is left behind, so the
-leak is worst on the runs that already went badly.
+**Where it comes from, measured**: `tests/README.md` documents a global
+`afterAll` that sweeps stale workspaces — but that sweep is scoped to
+`tests/workspace/`, and 60 core test files instead call
+`mkdtemp(join(tmpdir(), "loctt-…"))`, outside its reach. All 60 do call
+`rm` on the happy path, so what accumulates is the residue of runs that
+failed, were interrupted, or were killed mid-suite — and this session
+killed several.
+
+**Real fix**: either widen the documented sweep to `$TMPDIR/loctt-*`
+(with an age filter, so a concurrent run's fixtures survive), or move
+core's fixtures under `tests/workspace/` where the existing sweep
+already reaches. The second is smaller and removes the discrepancy
+between the README and the code rather than adding a second mechanism.
 
 **Also note**: each build worktree carries its own `node_modules`
 (~293 MB), because a shared one breaks the vite config resolution.
