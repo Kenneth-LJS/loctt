@@ -2952,3 +2952,40 @@ caffeinate -dimsu npx playwright test --config tests/ui/playwright.config.ts --w
 three produce failures that look like defects in the code under test,
 and all three are diagnosed in seconds by one command that has nothing
 to do with the code. This session lost time to each in turn.
+
+## REL-32 failed once under full-suite load with a lost write (open)
+
+**Under investigation, 2026-09-02. Not caused by the change it surfaced
+in.** Recorded now so the next full run does not re-diagnose it.
+
+`tests/ui/flow-relationships.spec.ts:1058` — two tabs reordering the
+same ranked group. It failed once in a 658-test run, with the final
+order equal to the **original** `[a, b, c]`: neither tab's move landed.
+The test names that outcome as the forbidden one — "`[a, b,
+c]`-with-a-lost-write" — and its `acceptable` list deliberately
+enumerates the three orders the case permits rather than pinning one.
+
+**What is ruled out:**
+
+- **Not flake in the usual sense.** 3/3 in isolation and 5/5 in file
+  context (18 tests each) — but it is a *behavioural* mismatch, not a
+  strict-mode locator violation or a timeout, so a file-level pass is
+  not sufficient evidence either way.
+- **Not the environment.** The run was under `caffeinate`, took 28.5
+  min (normal), and had 11.6 GB free — so neither the system-sleep nor
+  the ENOSPC pattern recorded above.
+- **Not the batch that surfaced it.** That change touched
+  `config/projects.ts`, `config/workflow-write.ts` and
+  `schema/migrate.ts` only — nothing relationships, rank or lexorank
+  code reads.
+
+**Why it matters more than a flaky test.** If it is real, it is a lost
+write in relationship reordering: a read-modify-write racing another.
+This repo has already had exactly that shape once — the interrupted
+prefix rename read its sentinel *outside* `withStateLock`, so two
+concurrent callers both passed the check and the second overwrote a
+true count with zero (fixed 2026-09-02). One occurrence of that shape
+is a bug; two is a pattern worth a sweep of every read-modify-write.
+
+**Next step**: reproduce under load rather than reason about it. A
+diagnosis is running; this entry stands until it lands.
