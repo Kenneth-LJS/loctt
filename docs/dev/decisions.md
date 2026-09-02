@@ -5806,6 +5806,43 @@ asserts the notice rather than the banner.
 **To revert.** Drop the notice and delete the banner and
 `handleCompletePrefixRename`; that is option (a).
 
+### K17 · M5.1's backup covers attachments; history is opt-out; the cases are drafted and reviewed before building
+
+**Asked 2026-09-02**, because M5.1's ticket left three things unstated
+and its cases are Ken's to approve.
+
+**Rulings, in his words:**
+
+1. **Scope.** "frontmatter + body + Comments + attachments are
+   critical. history is optional, but allow opt out."
+
+   So attachments are **in**, and `_history.yaml` is in **by default
+   with a flag to exclude it** — "optional… allow opt out" means the
+   history ships unless the user says otherwise, not the reverse.
+
+   This overrides the recommendation put to him, which was to exclude
+   attachments because they are binary and would either inflate the
+   file with base64 or stop it being a single portable file. He chose
+   completeness over that constraint, so the format must now solve it
+   rather than dodge it.
+
+2. **Restore semantics.** Not settled — he asked for a proposal:
+   "what would a complete version look like? propose to me." **Still
+   open.** Nothing may be built that assumes an answer here.
+
+3. **Authorship.** "you write, you review the cases with another
+   agent, iterating until good. then you may implement."
+
+   This **supersedes the ticket's** "they are Ken's to approve, not an
+   agent's to author" and the condition-2 stop that followed from it.
+   The bar he set in its place is a drafting loop with an independent
+   reviewing agent, iterated to convergence, before any implementation.
+
+**To revert.** Rulings 1 and 3 are Ken's and are not an agent's to
+revert. If the split threshold or the attachment encoding proves
+unworkable, that is a new question to him, not a reinterpretation of
+this one.
+
 ### A94 · A11Y-10 is left uncovered: filter dropdowns have no arrow navigation
 
 **Ticket:** M4.8 follow-up (four unaccounted cases) · **Date:** 2026-09-02 · **Commit:** `6336592`
