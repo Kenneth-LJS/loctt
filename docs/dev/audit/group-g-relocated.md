@@ -78,3 +78,53 @@ Category labels from August are not a safe basis for scope. Of eight
 sampled, one was fixed, four "dead" exports were alive, and one
 "abstraction" was a bug. **Verify each item against the code as the
 first step of its batch**, not from this table.
+
+
+## Batch-by-batch outcome (2026-09-02)
+
+Verified item by item as each batch came up, rather than from the
+August table. The result is the argument for doing it that way.
+
+| Batch | Items | Fixed | Needed no change |
+|---|---|---|---|
+| cli + mcp | 7 | 4 | 3 (all already fixed) |
+| contracts | 7 | 3 | 4 |
+| query + rank | 9 | 3 | 6 |
+| config + schema | 7 | 2 | 5 |
+| git | 11 | 2 | 8 (4 already fixed) |
+| task | 14 | 4 | 10 |
+| **total** | **55** | **18** | **36** |
+
+**Two thirds of Group G needed no change.** Not because the audit was
+careless — it was accurate in August — but because Phase 5 rewrote the
+code underneath it and nobody closed the rows. Ten findings were
+already fixed; five "dead" exports had gained callers; and several
+were simply wrong when re-measured.
+
+**What the verification caught that a batch edit would not:**
+
+- `UserSettings` `.passthrough()` is **load-bearing**. Every settings
+  panel saves `{...stored, ...next}`, so `.strict()` would reject a key
+  one panel does not know about *on save* — editing a card layout
+  would destroy sidebar pins. "Fixing" that finding would have caused
+  data loss.
+- Five rank/config exports called dead now have real callers.
+  Deleting them would have broken the build.
+- `laterWins` "only ever called with `T = Task`" is false — the tests
+  instantiate it at `T = string`.
+- `evaluateTextAlias` "returns nonsense for every operator" — the bare
+  spelling errors cleanly; the documented `fields.<key>` form works. An
+  earlier probe of mine misread an *error's* zero rows as a silent
+  no-match.
+
+**What the fixes were actually worth:** three were latent bugs of the
+same shape — a field list written twice, where adding a field to one
+copy and forgetting the other loses data silently.
+`projectTaskFrontmatter` (the CLI's JSON, MCP output and web API at
+once), `saveProjectsConfig` (a config value), and the archive triple
+across three call sites. None was filed as a bug; all three were filed
+as "duplication".
+
+**And one hole the refactoring exposed rather than fixed**: sharing the
+archive mutation revealed that `bulkArchive` never asserted
+`archived_at` — 15 tests passed with the field dropped.
