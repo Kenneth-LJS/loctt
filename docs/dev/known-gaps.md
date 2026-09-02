@@ -2712,3 +2712,128 @@ the orphan is created, which is also exactly when nobody is watching.
 
 **Related**: `git worktree remove --force` on a tree whose suite is still
 running will orphan the server every time. Stop the run first.
+
+## The backup's dangling-reference handling reports rather than refuses (M5.1)
+
+**Found:** 2026-09-02, building M5.1 · **Case:** BAK-C18
+
+BAK-C18's second bullet asks that "a relationship whose target is in
+neither backup nor destination" fail with the target named and nothing
+partial written. What is built **restores the task and leaves the
+dangling relationship in place**, where `doctor` and the sync pre-flight
+report it as `inconsistent` — the P-12 path that already exists
+(`17fae3f`).
+
+**Why it was built that way, and why this is a gap and not a decision
+to close the case.** P-11 is the governing rule for data already on
+disk: "leniency means keeping, never destroying." A backup is the last
+copy of a tracker someone may have. Refusing the whole restore because
+one relationship points at a task the user deleted years ago would
+leave them with no tracker at all, and the failure is recoverable —
+`doctor` names it, and P-12 already classifies a dangling relationship
+as reportable rather than blocking.
+
+So the two halves of BAK-C18 are met differently:
+
+- **The missing-project half holds.** A restore never writes a
+  `projects.yaml` naming a project absent from its own list —
+  `ProjectsConfigSchema` refuses that file, so the merged config would
+  not load. Covered and mutation-proven.
+- **The dangling-relationship half does not refuse.** It restores and
+  the reference is reported downstream.
+
+**To reproduce:** export a tracker, hand-edit one task's line in the
+JSONL to point a relationship at a ULID that exists nowhere, restore
+into an empty tracker. The task appears; `loctt doctor` reports the
+dangling target.
+
+**The real question this leaves open**, and it needs Ken rather than an
+agent: whether a restore should refuse a backup carrying references it
+cannot satisfy, when refusing means the user cannot restore at all. The
+case says refuse; P-11 and the existing P-12 treatment say report. That
+is a contradiction between a case and an invariant, which is an
+escalation, not an agent call — so the tag on BAK-C18 covers the
+missing-project half honestly and this entry records the rest.
+
+## A displaced body is not carried by a later backup (M5.1)
+
+**Found:** 2026-09-02, building M5.1 · **Case:** BAK-C13 / K17 ruling 6
+
+`--overwrite` preserves the body it displaces as
+`.loctt/tasks/<id>/displaced-body-<ulid>.md`, named in the report. That
+file is **not** picked up by a subsequent `loctt backup`: the export
+carries `task.md`, `_comments.yaml`, `_history.yaml` and the contents
+of `attachments/`, and a displaced body is none of those.
+
+So the sequence "overwrite-restore, then back up, then restore
+elsewhere" loses the preserved text — while the report that named it
+has long scrolled away.
+
+**Not fixed here, deliberately.** The alternatives each cost something
+that needs a decision rather than an agent's preference:
+
+- Carrying every loose `.md` in a task directory makes the backup
+  format depend on whatever anyone drops there.
+- Writing displaced bodies into `attachments/` would make them show up
+  in the task's attachment list in every UI, which is a product change.
+- A dedicated record kind in the format is the clean fix, and is the
+  one I would propose — but the format is now specified by 24 cases and
+  adding a record kind mid-build is scope no case describes.
+
+**To reproduce:** restore with `--overwrite` over a task whose body
+differs, confirm `displaced-body-*.md` exists and is named in the
+report, then `loctt backup` and grep the JSONL for its text — absent.
+
+**Mitigation today:** the path is in the restore report, and the file
+stays on disk in the tracker, so it survives everything except a
+round-trip through a backup.
+
+## The Playwright suite cannot complete at low free disk (tooling, 2026-09-02)
+
+**Not a product defect — recorded so the next agent does not debug it as one.**
+
+The UI suite (`playwright test --config tests/ui/playwright.config.ts
+--workers=1`) ran to completion once during M5.1: **657 passed, 1
+skipped, 0 failed, exit 0**, finishing in 26.7 minutes with ~700 MiB
+free.
+
+A confirmatory re-run of the identical suite, started later the same
+day, was **killed at test 147 with exit code 144** (`SIGXFSZ`). Its log
+ends mid-run on a *passing* test with no error text, no `ENOSPC`
+string, and no failed assertion — the shape of a process killed from
+outside, not one that failed. Free space at the time: **155-320 MiB of
+460 GiB**, falling throughout the run.
+
+**Why it looks like a code defect and is not:**
+
+- The last line in the log is a green test, so a reader scanning the
+  tail sees "everything passing" and then nothing.
+- Exit 144 is not in Playwright's own vocabulary; it is the shell
+  reporting signal 16.
+- No `ENOSPC` appears anywhere, because the writer is killed rather
+  than receiving a write error.
+
+**What to do:** run `df -h ~` *before* diagnosing. Below ~1 GiB free,
+the UI suite is not a trustworthy gate — its browser profiles, traces
+and per-test artifacts need more headroom than that. Either free space
+or run the suite in slices by spec file.
+
+**Slicing works and is the way to close the gate.** Running one spec
+file at a time (`playwright test --config … --workers=1
+tests/ui/<one>.spec.ts`) completes at ~300 MiB free where the whole
+suite does not, because artifacts from each file are the only ones
+alive at once.
+
+**A second trap found while doing that, worth more than the first.**
+The first sliced run reported 2 failures with
+`ENOENT: apps/cli/dist/index.js` and "server did not become ready".
+That is **not** disk and **not** a defect: `playwright test --config`
+bypasses the `pretest:ui` npm hook, so it never rebuilds — and any
+mutation-testing cycle (edit → build → revert) leaves `dist/` mid-write.
+The spec files spawn the real CLI binary, so they fail on a partially
+written `index.js`. **Run `npm run build` before any sliced UI run**;
+after rebuilding, the same slice passed 16/16, exit 0.
+
+**Related:** the orphaned-`loctt ui`-server entry above compounds this,
+since each orphan holds a heap and file watches. Checked after this
+kill: no orphan was left, so the two are independent.

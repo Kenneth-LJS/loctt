@@ -52,6 +52,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "backup",
+            },
+            {
+              "hasDescription": true,
               "name": "bulk_update_tasks",
             },
             {
@@ -269,6 +273,10 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "replace_task_body",
+            },
+            {
+              "hasDescription": true,
+              "name": "restore",
             },
             {
               "hasDescription": true,

@@ -918,14 +918,23 @@ Cases: MSL-1, MSL-2, MSL-3, MSL-4, MSL-15, MSL-16, MSL-17, MSL-18, MSL-24, MSL-2
 
 ---
 
-### M5.1 · Structured export — the actual backup ⬜
+### M5.1 · Structured export — the actual backup ✅
 > **New ticket, 2026-08-29.** Ken's ruling K4, `decisions.md` § 9.
 > Deliberately **after M4**, and deliberately its own ticket: no case
 > describes it, so folding it into an existing one would put behaviour
 > in front of a gate that no case covers.
 
-Cases: none yet — **these must be written before this is built**, and
-they are Ken's to approve, not an agent's to author.
+Cases: **BAK-C1..C24**, in
+`docs/dev/surface-test-cases/flow-backup-restore.md`. Written and
+reviewed under K17 ruling 3, which replaced this ticket's original
+"Ken's to approve, not an agent's to author" bar with a drafting loop
+against an independent reviewing agent.
+
+**Built 2026-09-02.** All 24 tagged; `cases:coverage --require` exits 0.
+BAK-C18 is tagged on its missing-project half only — see
+`known-gaps.md` for the dangling-relationship half, which is a
+case-vs-invariant contradiction (the case says refuse, P-11 and the
+existing P-12 treatment say report) and needs Ken rather than an agent.
 
 **Why it exists.** Asked what the CSV export is *for*, Ken answered "a
 backup or archive". Measurement contradicted that: the CSV writes **18

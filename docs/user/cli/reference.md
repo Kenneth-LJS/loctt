@@ -990,13 +990,102 @@ sending you here:
 | Tracker is newer than this LocTT | Update LocTT. No local command can produce a newer version. |
 | A previous migration was interrupted | Restore from the backup named in the sentinel file, then remove the sentinel. |
 
+## Backup and restore
+
+The whole-tracker backup, and the only export you can restore from. The
+CSV/JSON export is a **report for a spreadsheet** and drops the body,
+relationships, custom fields, `key_history`, archive state and ranks —
+a restore from it would be a pile of disconnected, bodyless tasks.
+
+### `loctt backup`
+
+Writes a JSONL backup: one JSON value per line, so it streams and a
+large tracker restores without being parsed whole. Line 1 is a header
+carrying the schema version the backup was taken at.
+
+```
+loctt backup <file> [--no-history] [--split-bytes <n>]
+```
+
+| Flag | Description |
+|---|---|
+| `--no-history` | Leave `_history.yaml` out. History is included by default. |
+| `--output <file>` | Destination, if not given positionally |
+| `--split-bytes <n>` | Bytes per part; above this the output splits into `<file>`, `<file>.part2`, … |
+
+**What travels:** task frontmatter and body, `_comments.yaml`,
+`_history.yaml` (unless opted out), attachments (base64, inline),
+config (`workflow`, `projects`, `labels`, `milestones`, `sprints`,
+`queries`, `list-view`, `calendar`), each user's `profile.yaml` and
+avatar, and `state.yaml` — the key allocation counters, without which a
+restored tracker reissues keys already in use.
+
+**What does not, and why.** The export lists these itself every time it
+runs, so the list cannot drift from the code:
+
+| Excluded | Reason |
+|---|---|
+| `local/key-index.yaml` | Derived cache; rebuilt from the restored tasks |
+| `local/sync.yaml` | This checkout's git remote — restoring it would point your tracker at someone else's |
+| `local/reconcile.yaml`, `local/prefix-rename.yaml` | Operations in progress *on this checkout* |
+| `local/journal.yaml` | Per-machine crash recovery |
+| `users/<id>/settings.yaml`, `users/<id>/recents.yaml` | Machine-local; recents are never published |
+| `.schema-migration-in-progress` | Would present the destination as mid-migration |
+
+`.schema-version` is **recorded** in the header, not restored: the
+destination keeps its own.
+
+### `loctt restore`
+
+```
+loctt restore <file...> [--merge | --overwrite] [--dry-run]
+```
+
+Three modes. All three run under one lock, are journalled so an
+interrupted restore rolls back rather than leaving a half-written
+tracker, and report per-outcome counts rather than "OK".
+
+| Mode | Behaviour |
+|---|---|
+| *(bare)* | Refuses a non-empty tracker, naming the task count and both flags |
+| `--merge` | Creates tasks whose `id` is absent; never edits one that is present |
+| `--overwrite` | Replaces any `id` the backup carries; ids absent from it are untouched |
+
+`--overwrite` is the only mode that can lose work done since the
+backup, so a **displaced body is preserved**, written beside the task
+and named in the report.
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Predict the counts and write nothing. Works in all three modes. |
+
+**Collisions are resolved and reported**, not silently picked:
+
+- **Keys** — a restored task whose key is already taken gets a fresh
+  one from the destination project's counter; the original goes into
+  `key_history` and still resolves. `key-index.yaml` is rebuilt.
+- **Counters** — each project's counter becomes
+  `max(backup, destination, highest key in use + 1)`, so no key is ever
+  reissued even when both recorded counters have fallen behind.
+- **Project prefixes and slugs** — two independently `init`ed trackers
+  both mint `T-` and `tasks`; one of each is reassigned (and that
+  project's keys rewritten) so the two do not both issue `T-n`.
+- **Entity names** — a label, milestone or sprint whose name collides
+  keeps both and renames the incoming one to `bug (2)`, then `bug (3)`.
+
+A restore **refuses** a destination that is mid prefix-rename or
+mid schema-migration, and refuses a backup from a newer schema — or a
+split set with a part missing, naming which one. In each case nothing
+is written.
+
 ## Not on this surface
 
 Deliberately absent from the CLI, so you are not left hunting for them:
 
 - **Export (CSV / JSON)** — web only, via the list view's export menu.
   The CLI's `list --format json` covers scripting; export exists for the
-  spreadsheet round-trip, which is a UI workflow.
+  spreadsheet round-trip, which is a UI workflow. The **backup** is a
+  different thing and is on every surface — see `loctt backup` above.
 - **Board and timeline ordering** — `rerank` moves a single task; the
   drag-driven reordering those views do is web only.
 - **Creating and editing saved views** — web only. `loctt views` lists
