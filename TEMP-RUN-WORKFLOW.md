@@ -1327,3 +1327,43 @@ wire-up that fourteen capabilities in this run turned out to be.
 
 **Do not resolve this by writing the cases.** The whole arrangement
 rests on an agent not authoring the spec it is then measured against.
+
+#### The 44 uncovered cases that had only a group reason
+
+**Recorded 2026-09-02, after a full per-ticket gate sweep.**
+
+Running every ticket's `--require` roster individually — rather than
+trusting milestone gates — showed **15 of 25 tickets failing**, on 110
+cases. Every one of those 110 is already inside the known 134 uncovered:
+**zero new gaps**. They are recorded declines.
+
+But 44 of them had no reason **outside their ticket's own `Cases:`
+line**. Their status rows explain them collectively, which is real
+accounting; what was missing is the ability to check a specific ID. That
+is exactly how **A11Y-10, A11Y-11, A11Y-29 and A11Y-39** were lost
+earlier — absorbed into "25 itemised by what each needs" that itemised
+21, and all four turned out to be built and merely untested.
+
+So they are named here.
+
+**M4.3 (22)** — `GIT-10 GIT-2 GIT-20 GIT-24 GIT-27 GIT-28 GIT-3 GIT-30 MSL-14 MSL-28 MSL-33 MSL-9 SET-31 SET-37 SET-38 VUE-26 VUE-27 XS-38 XS-43 XS-44 XS-45 XS-48 `
+
+These are the git-sync surface. M4.3's row states the cause: core has no
+`reconcile`, `GitConflictError` carries a flat array of file paths,
+and the CLI has no reconcile command **by explicit design**. 38 GIT
+cases are uncovered in total; these 22 are the ones with no individual
+note.
+
+**M4.1 (22)** — `PRU-10 PRU-12 PRU-13 PRU-15 PRU-16 PRU-21 PRU-22 PRU-24 PRU-25 PRU-27 PRU-28 PRU-29 PRU-31 PRU-37 PRU-39 PRU-40 PRU-41 PRU-42 PRU-43 PRU-8 PRU-9 XS-55 `
+
+The projects-and-users surface. M4.1 shipped 20 of 46 and its row says
+"26 listed uncovered, honestly".
+
+**What would close them** is a ticket that builds `reconcile` in core
+(M4.3) and the remaining project/user management surface (M4.1). Neither
+is in this run's 23-ticket scope, so neither is a defect in it.
+
+**The check that matters, for whoever audits next**: for each uncovered
+case, is there a reason findable by its ID? A group reason is fine — but
+the group must name its members, or a decline and an omission look
+identical.
