@@ -128,3 +128,29 @@ as "duplication".
 **And one hole the refactoring exposed rather than fixed**: sharing the
 archive mutation revealed that `bulkArchive` never asserted
 `archived_at` — 15 tests passed with the field dropped.
+
+
+## #49, the five-dispatcher delete block — not taken
+
+Filed as "five entity dispatchers repeat an identical
+delete-confirm-and-remap block". Measured: the block is **not**
+identical, and the part that is has already been extracted.
+
+`confirmHardDelete` is the shared abstraction, and every one of the
+five calls it exactly once. What repeats around it is a four-line
+guard, and each of those four lines differs by entity:
+
+- a different usage string (`--unassign` for users, `--force` for
+  sprints, plain `--remap-to` for the rest),
+- a different confirmation sentence, naming the entity and, for
+  labels, pointing at `label archive` as the reversible alternative,
+- a different config loader, id resolver and delete function,
+- a different success message (`remapped to` vs `removed from`).
+
+Collapsing it means five entity-specific closures to save roughly
+twenty lines, and every reader then follows an indirection to find out
+what `loctt label delete` prints. That trade is worse than the
+duplication, so it stays.
+
+Recorded rather than silently skipped: the next audit will see the same
+shape and should not re-file it.
