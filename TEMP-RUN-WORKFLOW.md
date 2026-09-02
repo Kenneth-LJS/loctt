@@ -1295,3 +1295,35 @@ The ticket names these; none is an agent's call:
 git-friendly backup — copying the directory loses nothing. This ticket
 buys a portable single file and a defined restore path. That bounds the
 urgency, and it is the ticket's own framing, not a discouragement.
+
+### The run ends at M4's gate; M5.1 is outside it
+
+**Recorded 2026-09-02, because it was queried repeatedly.**
+
+The § Sections table above defines the run as **23 tickets**, ending at
+**🚦 M4 · v1**. M5.1 is not in it. It was added on 2026-08-29, after the
+table was written, and its own header says it is "deliberately **after
+M4**, and deliberately its own ticket". The standing goal likewise reads
+"through milestones M2, M3 and M4".
+
+So "every ticket has passed its section gate" is satisfied by M1–M4.
+M5.1 is post-v1 work, and it is blocked on something no agent may
+supply:
+
+> Cases: none yet — **these must be written before this is built**, and
+> they are Ken's to approve, not an agent's to author.
+
+That is **condition 2** verbatim — "No case covers the behaviour, and
+building it means authoring the spec. An agent that may write the spec
+has no spec." It is also condition 1, a feature existing nowhere.
+
+**What was done instead**, so the wait costs nothing: the capability was
+probed and the findings recorded under § M5.1 · probe findings. The
+useful one is that `exportTasksToJSON` already exists and **is not the
+backup** — it is column-projected through the same 18 columns as the
+CSV, so `relationships`, `fields` and `key_history` are unreachable
+through it whatever options are passed. M5.1 is a real build, not the
+wire-up that fourteen capabilities in this run turned out to be.
+
+**Do not resolve this by writing the cases.** The whole arrangement
+rests on an agent not authoring the spec it is then measured against.
