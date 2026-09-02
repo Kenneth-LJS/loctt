@@ -1,9 +1,9 @@
 {
   "generated_from": "docs/dev/ui-test-cases/, docs/dev/surface-test-cases/",
   "counts": {
-    "total": 937,
+    "total": 961,
     "ui": 869,
-    "surface": 68,
+    "surface": 92,
     "resolved": 3
   },
   "cases": [
@@ -890,6 +890,398 @@
       ],
       "surfaces": [
         "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C1",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 21,
+      "title": "A round-trip loses none of the seven things the CSV drops.",
+      "severity": "blocker",
+      "principles": [
+        "P1",
+        "P4"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C2",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 47,
+      "title": "The backup carries values, and the CSV is untouched by it.",
+      "severity": "blocker",
+      "principles": [
+        "P4"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C3",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 61,
+      "title": "A malformed line is reported and skipped; nothing else is lost.",
+      "severity": "major",
+      "principles": [
+        "P1"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C4",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 74,
+      "title": "History is in by default and can be opted out",
+      "severity": "major",
+      "principles": [
+        "P4"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C5",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 83,
+      "title": "A binary attachment survives byte-for-byte.",
+      "severity": "blocker",
+      "principles": [
+        "P9"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C6",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 92,
+      "title": "The export reports its own size cost.",
+      "severity": "minor",
+      "principles": [
+        "P9"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C7",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 98,
+      "title": "A tracker above the threshold splits and reconstructs.",
+      "severity": "minor",
+      "principles": [
+        "P9"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C8",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 110,
+      "title": "A partial set is refused, not half-restored.",
+      "severity": "blocker",
+      "principles": [
+        "P4",
+        "P5"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C9",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 123,
+      "title": "Bare restore refuses a non-empty tracker.",
+      "severity": "blocker",
+      "principles": [
+        "P4",
+        "P5"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C10",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 130,
+      "title": "`--merge` adds absent ids and edits nothing else.",
+      "severity": "blocker",
+      "principles": [
+        "P4"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C11",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 141,
+      "title": "A key collision reallocates and the old key still resolves.",
+      "severity": "blocker",
+      "principles": [
+        "P1",
+        "P7"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C12",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 158,
+      "title": "Key counters merge by max, so no key is ever reissued.",
+      "severity": "blocker",
+      "principles": [
+        "P1"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C13",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 187,
+      "title": "`--overwrite` replaces the ids it carries and says what it destroyed.",
+      "severity": "blocker",
+      "principles": [
+        "P4",
+        "P5"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C14",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 203,
+      "title": "Restore is atomic at every kill point.",
+      "severity": "blocker",
+      "principles": [
+        "P9"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C15",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 228,
+      "title": "`--dry-run` predicts accurately and changes nothing, in all three modes.",
+      "severity": "major",
+      "principles": [
+        "P4"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C16",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 238,
+      "title": "Config restores with its values, so a bare machine works.",
+      "severity": "blocker",
+      "principles": [
+        "P1"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C17",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 259,
+      "title": "A name collision keeps both and renames the incoming one.",
+      "severity": "blocker",
+      "principles": [
+        "P4"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C18",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 276,
+      "title": "A reference that cannot be satisfied fails with the thing named.",
+      "severity": "blocker",
+      "principles": [
+        "P4"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C19",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 288,
+      "title": "The file streams — it is read without parsing the whole of it.",
+      "severity": "major",
+      "principles": [
+        "P9"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C20",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 305,
+      "title": "Colliding project prefixes are resolved, not left to double-issue keys.",
+      "severity": "blocker",
+      "principles": [
+        "P1"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C21",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 333,
+      "title": "A backup carries its schema version, and a mismatch is refused with both versions named.",
+      "severity": "blocker",
+      "principles": [
+        "P4",
+        "P6"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C22",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 350,
+      "title": "Restoring into a tracker that is itself mid-operation refuses.",
+      "severity": "major",
+      "principles": [
+        "P4",
+        "P6"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C23",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 360,
+      "title": "The four merge hazards, together.",
+      "severity": "blocker",
+      "principles": [
+        "P9"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BAK-C24",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
+      "line": 374,
+      "title": "Restore's merge is sync's merge, not a second implementation.",
+      "severity": "blocker",
+      "principles": [
+        "P4",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
       ],
       "resolved": false
     },
