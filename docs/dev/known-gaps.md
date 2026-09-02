@@ -2495,27 +2495,28 @@ drift. The test must **switch modes and assert each surface in each
 mode** — an absence assertion alone cannot distinguish "correctly
 hidden" from "never built", which is exactly how this survived.
 
-## The coverage gate's count and its printed list disagree (tooling)
+## The coverage gate's truncation notice is easy to grep away (not a defect)
 
-`tools/coverage/main.ts` reports `uncovered: N` from the full set, but
-the scoped listing below it prints **at most 40 cases**
-(`scoped.slice(0, 40)`), with no note that it truncated. At M4 the
-milestone scope holds 112 uncovered cases and prints 40 of them.
+**Recorded because I got this wrong and the wrong version was committed
+first.** `tools/coverage/main.ts` caps its scoped listing at 40 cases —
+and it *does* announce the truncation, `… and N more` at line 112. The
+tool is honest.
 
-This cost real time twice in one session. Reading the printed list as
-the complete one, I twice computed a smaller uncovered set (112 against
-the true 136) and twice concluded the gate was inconsistent with itself.
-It was not; the parse was wrong. The number is authoritative, the list
-is a sample.
+What is not obvious is how easily that notice disappears. Filtering the
+output through a case-ID pattern (`grep -oE "^    [A-Z]+-[0-9]+"`, the
+natural way to collect the list) discards the one line that says the
+list is partial. At M4 that turns 112 uncovered cases into 40 with no
+visible sign, and the count above still reads 112 — so the output looks
+self-contradictory when it is merely filtered.
 
-**How to get the true list**: ask per-milestone *and* per-severity, or
-call `report()` from `scan.ts` directly and read `result.uncovered`.
-`--require <ids>` prints every untagged case with no cap, so a chunked
-`--require` over the whole index is the reliable route.
+I concluded twice from that filtered output that the gate was
+inconsistent with itself, and wrote it up as a tooling defect before
+reading line 112. **The count is authoritative; a filtered list is not.**
 
-**Fix**: print the count of what was elided ("… and 72 more"), or drop
-the cap when a scope is given. A truncation that does not announce
-itself reads as a complete answer.
+**To get the full list reliably**: `--require <ids>` prints every
+untagged case with no cap, so a chunked `--require` over the whole index
+works, as does calling `report()` from `scan.ts` and reading
+`result.uncovered` directly.
 
 ## Uncovered cases are accounted for by group, not by case
 
