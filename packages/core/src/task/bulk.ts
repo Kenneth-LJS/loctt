@@ -5,14 +5,13 @@ import { TaskFrontmatterSchema } from "@loctt/contracts";
 import { ulid } from "ulid";
 
 import type { ArchivedGuardConfigs } from "../config/archived-guard.js";
-import { loadCalendarConfig } from "../config/calendar.js";
 import { getTaskDir, getTaskFilePath } from "../paths/index.js";
 import { withStateLock } from "../state/lock.js";
 import { stagedSwap } from "../state/staged-swap.js";
-import { todayInZone } from "../utils/today.js";
 import { assembleTaskFile } from "./frontmatter.js";
 import { appendHistory } from "./history.js";
 import { readTask } from "./io.js";
+import { applyArchiveState } from "./lifecycle.js";
 import { lookupTask, TaskNotFoundError } from "./lookup.js";
 import { clearLookupCaches } from "./lookup-cache.js";
 import { linkTask } from "./relationships.js";
@@ -21,6 +20,11 @@ import {
   type DeferredFieldWrite,
   type SetFieldsEntry,
   setFieldsLocked,
+  // Shared rather than re-declared: bulk.ts carried a byte-identical
+  // private copy, and two implementations of "what is today, in the
+  // workspace's timezone" is exactly the pair that drifts silently —
+  // one honouring a calendar config change and the other not.
+  todayDateString,
 } from "./update.js";
 
 /**
@@ -59,14 +63,6 @@ export interface BulkSetFieldsOptions {
  * UTC stamps yesterday's date on anything completed before local
  * morning in an ahead-of-UTC workspace.
  */
-async function todayDateString(locttDir: string): Promise<string> {
-  try {
-    return todayInZone((await loadCalendarConfig(locttDir)).timezone);
-  } catch {
-    return todayInZone();
-  }
-}
-
 export async function bulkSetFields(opts: BulkSetFieldsOptions): Promise<BulkResult> {
   assertChangesWritable(opts.changes, "bulkSetFields");
   const bulkOpId = ulid();
@@ -191,17 +187,8 @@ export async function bulkArchive(opts: BulkArchiveOptions): Promise<BulkResult>
           unchanged.push(id);
           continue;
         }
-        const patch = { ...task.frontmatter } as Record<string, unknown>;
-        if (opts.archive) {
-          patch["archived"] = true;
-          patch["archived_at"] = now;
-        } else {
-          delete patch["archived"];
-          delete patch["archived_at"];
-        }
-        patch["updated_at"] = now;
         const next: Task = {
-          frontmatter: patch as unknown as Task["frontmatter"],
+          frontmatter: applyArchiveState(task.frontmatter, opts.archive, now),
           body: task.body,
         };
         TaskFrontmatterSchema.parse(next.frontmatter);
