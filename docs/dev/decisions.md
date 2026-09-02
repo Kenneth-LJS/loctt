@@ -6029,7 +6029,13 @@ case by case, pick the more intuitive option." This is one of those
 calls. It was put to Ken as a question and he gave the principle rather
 than the answer, so it is an agent decision under his delegation.
 
-**Measured, not assumed.** `.loctt/local/` holds exactly four things:
+**Measured — and I got the count wrong first time.** I wrote "exactly
+four things" from a partial grep and committed it. `local/` holds
+**five**; the fifth is the crash-recovery journal, whose own doc comment
+says "Local only; not shared across machines via git"
+(`paths/index.ts:176`). The conclusion held, but a list asserted as
+exhaustive and checked afterwards is the failure this run keeps
+repeating.
 
 | File | What it is |
 |---|---|
@@ -6037,6 +6043,7 @@ than the answer, so it is an agent decision under his delegation.
 | `sync.yaml` | this checkout's git sync state |
 | `reconcile.yaml` | an in-flight reconcile |
 | `prefix-rename.yaml` | a sentinel for a rename **in progress here** |
+| `journal.yaml` | crash-recovery journal for multi-step writes |
 
 **Decided.** `local/` is excluded; `state.yaml` is included.
 
