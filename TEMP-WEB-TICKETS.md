@@ -234,7 +234,7 @@ concurrency/scale cases (BLK-22, 23, 24, 34, 41, 42). M1.4 is not done.
 Goal: clicking a task opens the full detail view. You can edit every
 field inline, write the description body, post comments, see history.
 
-### M2.1 · Task detail — read shell ⬜
+### M2.1 · Task detail — read shell ✅
 > **Also closes SHL-44** (M1.1's, blocked here). A deep link to a key
 > that was never allocated must 404 *in the main pane*, naming the key
 > and distinguishing "no such key" from "not loaded". M1.1 cannot do
@@ -254,7 +254,7 @@ Cases: TSK-1, TSK-2, TSK-3, TSK-19, TSK-20, TSK-21, TSK-22, TSK-23, TSK-24, TSK-
 - **Tests**: route resolves task by key; 404 on unknown; pushRecent
   fires once per mount
 
-### M2.2 · Task detail — meta panel edits ⬜
+### M2.2 · Task detail — meta panel edits ✅
 > **Split into two subsections at step 1** (2026-08-29). 43 cases, 18
 > of them blockers, is more than one review diff can carry — and the
 > seam is real rather than arbitrary:
@@ -296,7 +296,7 @@ Cases: TSK-4, TSK-5, TSK-6, TSK-7, TSK-8, TSK-9, TSK-10, TSK-11, TSK-12, TSK-13,
   archived-reference rejection); UI test that inline edit posts the
   right payload and rolls back on error
 
-### M2.3 · Task detail — body editor (TipTap + CodeMirror) ⬜
+### M2.3 · Task detail — body editor (TipTap + CodeMirror) ✅
 Cases: TSK-15, TSK-16, TSK-17, TSK-18, TSK-27, TSK-35, TSK-38, TSK-48, ERR-12, ERR-27, XS-11, XS-12, XS-13, XS-14, XS-65, TSK-40, TSK-25
 - **Probed 2026-08-29: `apps/web/src/client/editor/` already exists —
   484 lines, tested, with no consumer.** `MarkdownEditor.tsx` is the
@@ -369,7 +369,7 @@ Cases: TSK-15, TSK-16, TSK-17, TSK-18, TSK-27, TSK-35, TSK-38, TSK-48, ERR-12, E
 - **Tests**: idle-debounce auto-save fires once after typing burst;
   mode toggle preserves content; mention picker filters by query
 
-### M2.4 · Task detail — comments + activity ⬜
+### M2.4 · Task detail — comments + activity ✅
 > **Split into two subsections at step 1** (2026-08-29). 39 cases, 18
 > of them blockers — the same size as M2.2, and the seam is two
 > independent surfaces rather than an arbitrary cut:
@@ -434,7 +434,7 @@ TSK-20's four bullets, each of which the test must reach:
 not the copy is correct, and whether or not the original survived.
 Assert the far end: read both files.
 
-### M2.5 · Task detail — relationships + attachments ⬜
+### M2.5 · Task detail — relationships + attachments ✅
 Cases: REL-1, REL-2, REL-3, REL-4, REL-5, REL-6, REL-7, REL-8, REL-9, REL-10, REL-11, REL-12, REL-13, REL-14, REL-15, REL-16, REL-17, REL-18, REL-19, REL-20, REL-21, REL-22, REL-23, REL-24, REL-25, REL-26, REL-27, REL-28, REL-29, REL-30, REL-31, REL-32, REL-33, REL-34, REL-35, REL-36, REL-37, REL-38, REL-39, REL-40, REL-41, REL-42, REL-43, REL-44, REL-45, REL-46, REL-47, REL-48, REL-49, REL-50, XS-25
 - Relationships panel: grouped by type (symmetric folds forward +
   inverse under one heading per CW-15); drag-reorder for ranked rels;
@@ -460,7 +460,7 @@ Cases: REL-1, REL-2, REL-3, REL-4, REL-5, REL-6, REL-7, REL-8, REL-9, REL-10, RE
 Goal: alternative views work, and the universal "+ Add task" creates
 tasks from anywhere.
 
-### M3.1 · Board view ⬜
+### M3.1 · Board view ✅
 Cases: BRD-1, BRD-2, BRD-3, BRD-4, BRD-5, BRD-6, BRD-7, BRD-8, BRD-14, BRD-15, BRD-16, BRD-17, BRD-18, BRD-19, BRD-20, BRD-21, BRD-22, BRD-23, BRD-24, BRD-33, BRD-39, BRD-40, BRD-45, BRD-46, BRD-47, BRD-48, ONB-11, MSL-5, MSL-20
 - Route `/board`
 - Status chips bar (toggle visibility), persists in user settings
@@ -472,7 +472,7 @@ Cases: BRD-1, BRD-2, BRD-3, BRD-4, BRD-5, BRD-6, BRD-7, BRD-8, BRD-14, BRD-15, B
 - **Tests**: column derivation; WIP over-cap class; card layout
   respects user settings
 
-### M3.2 · Board view — drag-drop ⬜
+### M3.2 · Board view — drag-drop ✅
 Cases: BRD-9, BRD-10, BRD-11, BRD-12, BRD-13, BRD-25, BRD-26, BRD-27, BRD-28, BRD-29, BRD-30, BRD-31, BRD-32, BRD-34, BRD-35, BRD-36, BRD-37, BRD-38, BRD-41, BRD-42, BRD-43, BRD-44, BRD-49, XS-9
 - Drag card between columns → `setFields` atomic status + board_rank
   (CW-5)
@@ -481,7 +481,7 @@ Cases: BRD-9, BRD-10, BRD-11, BRD-12, BRD-13, BRD-25, BRD-26, BRD-27, BRD-28, BR
 - **Tests**: drop into different column posts status + new
   board_rank in one call; intra-column posts board_rank only
 
-### M3.3 · Timeline view ⬜
+### M3.3 · Timeline view ✅
 Cases: TML-1, TML-2, TML-3, TML-4, TML-5, TML-6, TML-7, TML-8, TML-9, TML-10, TML-11, TML-12, TML-13, TML-14, TML-15, TML-16, TML-17, TML-18, TML-19, TML-20, TML-21, TML-22, TML-23, TML-24, TML-25, TML-26, TML-27, TML-28, TML-29, TML-30, TML-31, TML-32, TML-33, TML-34, TML-35, TML-36, TML-37, TML-38, TML-39, TML-40, TML-41, TML-42, TML-43, TML-44, TML-45, TML-46, TML-47, TML-48, TML-49, TML-50, PRU-1
 - Route `/timeline`
 - Zoom day/week/month (default from workflow.timeline CW-1 or
@@ -511,7 +511,7 @@ Cases: NEW-1, NEW-2, NEW-3, NEW-4, NEW-5, NEW-6, NEW-7, NEW-8, NEW-9, NEW-10, NE
 - **E2E**: open /board → drag card → open /timeline → edge-drag bar →
   hit `n` → create task
 
-### M3.5 · Sprints overview ⬜
+### M3.5 · Sprints overview ✅
 Cases: SPR-1, SPR-2, SPR-3, SPR-4, SPR-5, SPR-6, SPR-15, SPR-17, SPR-19, SPR-20, SPR-24, SPR-27, SPR-31, SPR-32, SPR-36
 - Route `/sprints` — the column view. Distinct from `/sprints/$key`
   (M4.7), which is one sprint's detail and burndown.
@@ -654,7 +654,7 @@ Cases: SPR-1, SPR-2, SPR-3, SPR-4, SPR-5, SPR-6, SPR-15, SPR-17, SPR-19, SPR-20,
 Goal: settings panels work end-to-end, the init wizard handles
 first-run, and the v1 polish (keyboard, errors, a11y) is done.
 
-### M4.1 · Settings shell + Projects + Users (with profile pics, CW-20) ⬜
+### M4.1 · Settings shell + Projects + Users (with profile pics, CW-20) ✅
 > **PRU-3 moved here from M1.2** (Ken, 2026-08-25). It needs an "All
 > projects" mode and a project switcher, and no ticket built either —
 > the same shape as the SPR/MSL gap, found while verifying M1.2. It
@@ -710,7 +710,7 @@ Cases: SET-3, SET-4, SET-5, SET-6, SET-7, SET-8, SET-9, SET-10, SET-16, SET-17, 
 - **Tests**: reorder routes; symmetric checkbox hides inverse fields;
   priority value auto-computed from position
 
-### M4.3 · Settings — data panels ⬜
+### M4.3 · Settings — data panels ✅
 Cases: SET-14, SET-15, SET-29, SET-30, SET-31, SET-37, SET-38, SET-40, MSL-8, MSL-9, MSL-10, MSL-11, MSL-12, MSL-13, MSL-14, MSL-27, MSL-28, MSL-31, MSL-32, MSL-33, MSL-34, MSL-37, GIT-1, GIT-2, GIT-3, GIT-4, GIT-5, GIT-6, GIT-7, GIT-8, GIT-9, GIT-10, GIT-11, GIT-12, GIT-13, GIT-14, GIT-15, GIT-16, GIT-17, GIT-18, GIT-19, GIT-20, GIT-21, GIT-22, GIT-23, GIT-24, GIT-25, GIT-26, GIT-27, GIT-28, GIT-29, GIT-30, GIT-31, GIT-32, GIT-33, GIT-34, GIT-35, GIT-36, GIT-37, GIT-38, VUE-25, VUE-26, VUE-27, VUE-36, XS-36, XS-38, XS-41, XS-43, XS-44, XS-45, XS-48, XS-50, XS-66
 - Labels + Milestones + Sprints (C.10.10–C.10.12); reference counts;
   sprint → burndown link
@@ -737,7 +737,7 @@ Cases: SET-11, SET-12, SET-13, SET-26, SET-27, PRU-14, SET-2, VUE-38
   (resolved in 0k), so a pinned view deleted from `queries.yaml` tells
   the user it was removed.
 
-### M4.5 · Saved-view editor — advanced DSL mode ⬜
+### M4.5 · Saved-view editor — advanced DSL mode ✅
 Cases: VUE-8, VUE-9, VUE-10, VUE-11, VUE-12, VUE-17, VUE-18, VUE-19, VUE-20, VUE-21, VUE-22, VUE-23, VUE-28, VUE-29, VUE-31, VUE-32, VUE-33, VUE-34, VUE-35, VUE-37, VUE-39, A11Y-53
 - Raw DSL textbox with live parse-error markers
 - Syntax-help popover (text, today, parent, `has_link(...)`,
@@ -766,7 +766,7 @@ Cases: SPR-7, SPR-8, SPR-9, SPR-10, SPR-11, SPR-12, SPR-13, SPR-14, SPR-16, SPR-
 - Task list filtered to sprint with the shared filter bar
 - **Tests**: burndown route shape; metadata edits persist
 
-### M4.8 · Polish + v1 cut ⬜
+### M4.8 · Polish + v1 cut ✅
 Cases: A11Y-1, A11Y-2, A11Y-3, A11Y-4, A11Y-5, A11Y-6, A11Y-7, A11Y-8, A11Y-9, A11Y-10, A11Y-11, A11Y-12, A11Y-13, A11Y-14, A11Y-15, A11Y-16, A11Y-17, A11Y-18, A11Y-19, A11Y-20, A11Y-21, A11Y-22, A11Y-23, A11Y-24, A11Y-25, A11Y-26, A11Y-27, A11Y-28, A11Y-29, A11Y-30, A11Y-31, A11Y-32, A11Y-33, A11Y-34, A11Y-35, A11Y-36, A11Y-37, A11Y-38, A11Y-39, A11Y-40, A11Y-41, A11Y-42, A11Y-43, A11Y-44, A11Y-45, A11Y-46, A11Y-47, A11Y-49, A11Y-50, A11Y-51, A11Y-52, A11Y-54, ERR-11, ERR-24, ERR-32, ERR-33, ERR-38, ERR-44, ERR-45, SET-39, XS-47, XS-49, XS-52, XS-64
 - Keyboard shortcuts (n, /, g l/b/t, ?, Esc, [, t per C.10.22)
 - Toast provider + top-level error boundary + API error toasts
