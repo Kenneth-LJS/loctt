@@ -726,13 +726,87 @@ Permanently removes the entry from `sprints.yaml`; the `sprint` field on each af
 
 Returns JSON `{id, ...result}`.
 
+## Backup and Restore
+
+The whole-tracker backup, and the only export a restore can read. The
+CSV/JSON export is a report for a spreadsheet: it drops the body,
+relationships, custom fields, `key_history`, archive state and ranks.
+
+**Both tools write to the filesystem and can take time on a large
+tracker.** Say what you are about to do before calling either, and do
+not call them speculatively.
+
+### `backup`
+
+Writes a JSONL backup — one JSON value per line, so it streams. Line 1
+is a header carrying the schema version.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `output` | string | yes | Destination path, relative to the tracker root |
+| `no_history` | boolean | no | Leave `_history.yaml` out. History is included by default. |
+| `split_bytes` | integer | no | Bytes per part; above this the output splits into numbered parts |
+
+Returns JSON `{files, bytes, tasks, configs, users, includedHistory,
+excluded, schemaVersion}`. `excluded` is a list of
+`{path, reason}` — the machine-local files that deliberately do not
+travel (`local/*`, each user's `settings.yaml` and `recents.yaml`, and
+`.schema-migration-in-progress`). Report `files` and `bytes` to the
+user; a backup with attachments can be large.
+
+Carries: task frontmatter and body, comments, history, attachments
+(base64, inline), config, user profiles and avatars, and `state.yaml`
+(the key counters — without them a restored tracker reissues keys).
+
+### `restore`
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `files` | string[] | yes | Backup paths. A split backup needs **every** part; a partial set is refused and nothing is written. |
+| `mode` | enum | no | `bare` (default), `merge`, or `overwrite` |
+| `dry_run` | boolean | no | Predict counts, write nothing |
+
+| Mode | Behaviour |
+|---|---|
+| `bare` | Refuses a non-empty tracker, naming the count |
+| `merge` | Creates absent ids; never edits one that is present |
+| `overwrite` | Replaces any id the backup carries; others untouched |
+
+Returns JSON `{mode, dryRun, created, skipped, overwritten,
+reallocatedKeys, reassignedPrefixes, reassignedSlugs, renamedEntities,
+displacedBodies, badLines}`.
+
+**Branch on the arrays, not on prose.** They are how the restore tells
+you what it had to change:
+
+- `reallocatedKeys` — `{from, to}` where a key was already taken. The
+  old key goes into `key_history` and still resolves.
+- `reassignedPrefixes` / `reassignedSlugs` — two independently `init`ed
+  trackers both mint `T-` and `tasks`; one of each is reassigned.
+- `renamedEntities` — a colliding label/milestone/sprint name kept both
+  and renamed the incoming one (`bug (2)`, then `bug (3)`).
+- `displacedBodies` — `{taskId, path}`. **`overwrite` only**, and worth
+  surfacing: it is the one mode that can lose work done since the
+  backup, so the replaced text is written beside the task rather than
+  discarded. Tell the user where it went.
+- `badLines` — `{line, file, reason}` for malformed lines, which are
+  skipped while everything else restores.
+
+Prefer `dry_run` first on any tracker that already holds tasks, and
+show the user the predicted counts before running it for real.
+
+A restore refuses — writing nothing — when the destination is mid
+prefix-rename or mid schema-migration, when the backup is from a newer
+schema, or when a part of a split set is missing.
+
 ## Not on this surface
 
 Deliberately absent from MCP, so an agent does not go looking:
 
 - **Export (CSV / JSON)** — web only. `list_tasks` returns structured
   JSON, which is what an agent wants; export exists for the spreadsheet
-  round-trip.
+  round-trip. The **backup** is a different thing and is available here
+  — see `backup` above.
 - **Creating and editing saved views** — web only. `list_views` reads
   them and `list_tasks` accepts a `view`, so a view saved in the UI is
   usable here.

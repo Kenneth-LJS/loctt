@@ -5928,7 +5928,30 @@ So `mergeTask` is used by `--overwrite` for its displaced-body half
 **only** — its field-level last-writer-wins resolution does not apply,
 because restore's three modes are deliberately not last-writer-wins.
 
-**To revert.** Rulings 1, 2, 4, 5 and 6 are Ken's. Ruling 5 delegates
+**Ruling 7, 2026-09-02 — a dangling relationship does not block a
+restore.**
+
+BAK-C18 as I wrote it said a relationship whose target is in neither
+backup nor destination must fail the restore with nothing written. The
+build agent hit that, saw it contradicted the invariants, and escalated
+rather than adjudicating — which is what `build-loop.md` asks for.
+
+It was right, and the case was wrong. **P-12** says cross-file
+dependency validation is "reported by `doctor` and sync pre-flight as
+`inconsistent`, **blocking neither**". **P-11** says leniency keeps
+rather than destroys. My wording would have let one stale reference —
+from a task deleted months ago on another machine — cost someone their
+entire restore.
+
+**Ken's answer: restore the task, report the dangling reference.** The
+edge is kept, not stripped: dropping it to leave a tidy tracker is what
+P-11 calls "destruction wearing leniency's clothes".
+
+The case has been corrected to match, and the correction is stated in
+the case itself so the next reader sees that a case was wrong against
+an invariant rather than an invariant bending to a case.
+
+**To revert.** Rulings 1, 2, 4, 5, 6 and 7 are Ken's. Ruling 5 delegates
 per-field calls to the agent; those are § 8 decisions and revertible,
 the delegation itself is not.
 ### A94 · A11Y-10 is left uncovered: filter dropdowns have no arrow navigation
@@ -6126,3 +6149,79 @@ paths are how they drift.
 counter merge instead of calling `deriveKeyState`. Doing so reintroduces
 the cross-machine sync-remote leak, the Q22 recents leak, and — on any
 tracker whose counters have fallen behind its tasks — reissued keys.
+
+### A97 · The backup's split threshold is 100 MB
+
+**Ticket:** M5.1 · **Date:** 2026-09-02 · **Commit:** (this one)
+
+**The situation.** BAK-C7 requires a tracker above a threshold to split
+into numbered parts, and says explicitly that the number is "an agent
+call recorded at step 1 with a revert path (as BLK-30's was)" — because
+otherwise whatever number the implementer picks satisfies the case by
+construction. K17 also lists the threshold among what remains an
+agent's call.
+
+**Decided.** `DEFAULT_SPLIT_THRESHOLD_BYTES = 100 * 1024 * 1024`
+(`packages/core/src/backup/format.ts`), measured against the bytes
+written to a part, and overridable per call via
+`ExportBackupOptions.splitThresholdBytes`.
+
+**Why 100 MB.**
+
+- Comfortably under Node's ~512 MB string limit even for a consumer
+  that buffers a whole part, which is the failure BAK-C19 names.
+- Large enough that an ordinary tracker is one file, so the common case
+  keeps the "single portable file" property K17 ruling 1 chose
+  attachments in order to preserve.
+- A round number a human recognises in a directory listing, which
+  matters because BAK-C8 asks the user to notice a part is missing.
+
+The threshold is deliberately a *byte* count of output, not a task
+count: one task with a 200 MB attachment is the case that motivates
+splitting, and a task-count rule would never fire on it.
+
+**The override exists for tests.** BAK-C7 and BAK-C8 have to force a
+split without seeding 100 MB of fixture, and a test that could only
+exercise splitting by writing 100 MB would not be written.
+
+**To revert.** Change the constant. Nothing branches on the specific
+value; the split logic reads it from one place, and both cases pass
+their own value in.
+
+### A98 · A backup from an older schema is refused, not migrated
+
+**Ticket:** M5.1 · **Date:** 2026-09-02 · **Commit:** (this one)
+
+**The situation.** BAK-C21 requires that restoring from an **older**
+schema "either migrates or refuses; which one is a decision to record,
+not an implementation detail to leave to whoever writes it first."
+
+**Decided.** Refuse, naming both versions and what to do instead.
+Nothing is written.
+
+**Why.** The migration framework (`schema/migrate.ts`) operates on a
+`.loctt/` **directory** — it takes a backup of the directory, holds a
+migration lock, and runs steps that read and write tracker files. A
+JSONL backup is not a directory, so "migrate the backup" would mean a
+second migration path that reimplements every step against a different
+input shape. That is precisely the drift argument BAK-C24 makes about
+the merge engine, and this run has already found fifteen capabilities
+built twice.
+
+The user has a better route that uses the existing, tested path:
+restore with the matching LocTT version and migrate afterwards, or
+migrate a copy of the original tracker and re-export. The error names
+both versions and says so.
+
+**What this does not cover.** `CURRENT_SCHEMA_VERSION` is 1, so there
+is no older version to carry today. The refusal is implemented and
+tested, but the test hand-edits a header to v0 and Zod's `min(1)`
+rejects it as a malformed header before the version comparison is
+reached — so what is proven is "refused, nothing written", not the
+specific message. The test says so in a comment. When a v2 lands, that
+test should be tightened to assert both versions are named.
+
+**To revert.** Add a migration path that operates on backup records
+rather than a directory, and call it instead of throwing. Doing so
+creates a second migration implementation whose steps must be kept in
+lockstep with the directory one.

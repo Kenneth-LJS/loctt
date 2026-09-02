@@ -1,5 +1,27 @@
 // @loctt/core — shared LocTT logic
 
+export type {
+  BackupAttachment,
+  BackupHeader,
+  BackupRecord,
+  BadLine,
+  ExportBackupOptions,
+  ExportBackupReport,
+  RestoreMode,
+  RestoreOptions,
+  RestoreReport,
+} from "./backup/index.js";
+export {
+  BackupFormatError,
+  DEFAULT_SPLIT_THRESHOLD_BYTES,
+  EXCLUDED_FROM_BACKUP,
+  EXCLUSION_REASONS,
+  exportBackup,
+  readBackupHeader,
+  resolveBackupSet,
+  restoreBackup,
+  RestoreRefusedError,
+} from "./backup/index.js";
 export type { BoardColumn, ColumnKind, ColumnTask } from "./board/index.js";
 export {
   bucketTasks,

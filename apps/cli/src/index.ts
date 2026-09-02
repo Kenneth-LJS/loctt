@@ -8,6 +8,7 @@ import {
   resolveLocttDir,
 } from "@loctt/core";
 
+import * as backupCmd from "./commands/backup.js";
 import * as calendarCmd from "./commands/calendar.js";
 import * as commentsCmd from "./commands/comments.js";
 import * as configCmd from "./commands/config.js";
@@ -95,6 +96,8 @@ export async function main(): Promise<void> {
       case "doctor": await runCommand(() => doctorCmd.run(args, root)); break;
       case "views":  await runCommand(() => viewsCmd.run(args, root));  break;
       case "schema": await runCommand(() => schemaCmd.run(args, root)); break;
+      case "backup":  await runCommand(() => backupCmd.backup(args, root));  break;
+      case "restore": await runCommand(() => backupCmd.restore(args, root)); break;
 
       case "create":    await runCommand(() => taskCrudCmd.create(args, root));    break;
       case "list":      await runCommand(() => taskCrudCmd.list(args, root));      break;

@@ -19,6 +19,7 @@
  * sorted name list — see registry.test.ts.
  */
 
+import { TOOLS as BACKUP_TOOLS } from "./tools/backup.js";
 import { TOOLS as COMMENT_TOOLS } from "./tools/comments.js";
 import { TOOLS as CONFIG_TOOLS } from "./tools/config.js";
 import { TOOLS as GIT_TOOLS } from "./tools/git.js";
@@ -44,6 +45,7 @@ import type { McpTool, ToolDef } from "./types.js";
  * this module.
  */
 const TOOL_GROUPS: readonly (readonly ToolDef[])[] = [
+  BACKUP_TOOLS,
   COMMENT_TOOLS,
   CONFIG_TOOLS,
   GIT_TOOLS,

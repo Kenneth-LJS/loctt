@@ -278,10 +278,23 @@ legal state, since `LabelsConfigSchema` dedupes on `id`
 
 - A task whose project is missing, with config restore disabled: the
   error names the project.
-- A relationship whose target is in neither backup nor destination: the
-  error names the target, and nothing partial is written (invariant
-  P-12 — a relationship implies its inverse, so a dangling one is not
-  merely cosmetic).
+- A relationship whose target is in neither backup nor destination:
+  **the task restores and the dangling edge is reported**, not blocked
+  (K17 ruling 7). `doctor` and sync pre-flight already surface it as
+  `inconsistent`.
+- The edge is **kept, not stripped**. Dropping it to leave a tidy
+  tracker is what invariant P-11 calls "destruction wearing leniency's
+  clothes".
+
+> **This case said the opposite until 2026-09-02**, and it was wrong
+> against two recorded invariants. P-12 says cross-file dependency
+> validation is "reported by `doctor` and sync pre-flight as
+> `inconsistent`, **blocking neither**"; P-11 says leniency keeps. The
+> original wording — "nothing partial is written" — would have let one
+> stale reference from a task deleted months ago on another machine
+> cost someone their whole restore. The build agent escalated rather
+> than adjudicating, which is what `build-loop.md` asks for; Ken ruled
+> for the invariants.
 
 ## D. Format
 
