@@ -6076,6 +6076,32 @@ the two**, so no key is ever reissued from either side. On a bare
 restore there is nothing to merge and the backup's counters are used
 as-is.
 
-**To revert.** Include `local/` in the export and drop the max-merge,
-using the backup's counters verbatim. Doing so reintroduces the
-cross-machine sync-remote leak and, on merge, reissues keys.
+**Two more exclusions, added after review round 2 found them.**
+
+- **`users/<id>/recents.yaml`** — invariant **Q22**: "machine-local and
+  gitignored — never published." The obvious implementation (copy the
+  user directory, skip `settings.yaml`) ships it and violates Q22 while
+  passing every other assertion, so BAK-C16 asserts its **absence after
+  restore** rather than describing the rule in prose.
+- **`.schema-migration-in-progress`** — restoring it would hand the
+  destination a tracker presenting as mid-migration. Same argument as
+  `prefix-rename.yaml`.
+
+**And the counter rule is not mine — it already exists.** Review round 2
+found `deriveKeyState` (`git/merge.ts:332`), which sync uses and which
+does more than this decision first specified: `max(local, incoming,
+highest key actually in use + 1)`. A max-of-counters-only rule still
+corrupts when **both** counters are stale — hand-edited or restored from
+an older backup — because it never looks at the tasks. `retired_keys` is
+merged there too (`merge.ts:383`), which matters because it is the
+high-water mark that stops a deleted project's keys being reissued while
+they are still live in some task's `key_history`.
+
+So restore **calls `deriveKeyState`** rather than implementing a third
+key-merge path. Sync solved this; restore is the same problem, and two
+paths are how they drift.
+
+**To revert.** Include `local/` in the export and write a bespoke
+counter merge instead of calling `deriveKeyState`. Doing so reintroduces
+the cross-machine sync-remote leak, the Q22 recents leak, and — on any
+tracker whose counters have fallen behind its tasks — reissued keys.
