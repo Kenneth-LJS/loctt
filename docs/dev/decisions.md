@@ -5907,7 +5907,28 @@ would stop the deliverable being one portable file.
    remote config, recents), and carrying it would move one machine's
    sync remote onto another's.
 
-**To revert.** Rulings 1, 2, 4 and 5 are Ken's. Ruling 5 delegates
+**Ruling 6, 2026-09-02 — `--overwrite` preserves displaced bodies.**
+
+Found while reviewing the cases, not while writing them: `mergeTask`
+(`git/merge.ts:73`) deliberately returns the **losing** body when two
+versions differ, so the caller can preserve it. Its comment says why —
+"a silently replaced body is the failure mode that costs most; people
+do not re-read their own paragraphs to check they survived" — and
+`merge.test.ts:186` asserts it.
+
+`--overwrite`, as approved in ruling 2, discards the destination's
+version outright. Same failure, chosen deliberately, and the only path
+in the product where a user's own writing could vanish without trace.
+
+Put to Ken with that framing. **His answer: preserve them, the same way
+sync does.** `--overwrite` still replaces the task; any displaced body
+is written somewhere recoverable and named in the report.
+
+So `mergeTask` is used by `--overwrite` for its displaced-body half
+**only** — its field-level last-writer-wins resolution does not apply,
+because restore's three modes are deliberately not last-writer-wins.
+
+**To revert.** Rulings 1, 2, 4, 5 and 6 are Ken's. Ruling 5 delegates
 per-field calls to the agent; those are § 8 decisions and revertible,
 the delegation itself is not.
 ### A94 · A11Y-10 is left uncovered: filter dropdowns have no arrow navigation
