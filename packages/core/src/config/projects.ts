@@ -51,7 +51,18 @@ export function parseProjectsConfig(yamlContent: string): ProjectsConfig {
   }
 }
 
-export function serializeProjectsConfig(config: ProjectsConfig): string {
+/**
+ * The on-disk shape, in one place.
+ *
+ * `serializeProjectsConfig` and `saveProjectsConfig` each built this
+ * literal independently, so a field added to one and forgotten in the
+ * other was silently dropped on save — the same failure
+ * `projectTaskFrontmatter`'s hand-written key list had, in a file
+ * where the loss is a config value rather than an API field.
+ *
+ * Follows `list-view.ts`'s `buildPlainObject`, which already did this.
+ */
+function buildPlainObject(config: ProjectsConfig): Record<string, unknown> {
   const out: Record<string, unknown> = {
     projects: config.projects.map(p => ({
       id: p.id,
@@ -64,7 +75,11 @@ export function serializeProjectsConfig(config: ProjectsConfig): string {
   if (config.default !== undefined) {
     out["default"] = config.default;
   }
-  return stringifyYaml(out);
+  return out;
+}
+
+export function serializeProjectsConfig(config: ProjectsConfig): string {
+  return stringifyYaml(buildPlainObject(config));
 }
 
 export async function loadProjectsConfig(locttDir: string): Promise<ProjectsConfig> {
@@ -86,16 +101,10 @@ export async function saveProjectsConfig(
 ): Promise<void> {
   // Round-trip through parse to enforce all invariants.
   const validated = parseProjectsConfig(serializeProjectsConfig(config));
-  await writeYamlAtomically(getProjectsConfigPath(locttDir), {
-    projects: validated.projects.map(p => ({
-      id: p.id,
-      name: p.name,
-      ...(p.slug !== undefined ? { slug: p.slug } : {}),
-      prefix: p.prefix,
-      ...(p.archived === true ? { archived: true } : {}),
-    })),
-    ...(validated.default !== undefined ? { default: validated.default } : {}),
-  });
+  await writeYamlAtomically(
+    getProjectsConfigPath(locttDir),
+    buildPlainObject(validated),
+  );
 }
 
 export async function projectsConfigExists(locttDir: string): Promise<boolean> {

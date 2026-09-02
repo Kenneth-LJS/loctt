@@ -1,8 +1,13 @@
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
   parseProjectsConfig,
   ProjectsConfigError,
+  saveProjectsConfig,
   serializeProjectsConfig,
 } from "./projects.js";
 import { YamlSyntaxError } from "./yaml-coerce.js";
@@ -173,5 +178,39 @@ describe("serializeProjectsConfig", () => {
     };
     const yaml = serializeProjectsConfig(cfg);
     expect(yaml).not.toContain("default:");
+  });
+});
+
+describe("saveProjectsConfig / serializeProjectsConfig agree", () => {
+  // The two built the on-disk field list independently, so a field
+  // added to one and forgotten in the other was dropped on save with
+  // nothing to say so. They now share `buildPlainObject`; this asserts
+  // it, so re-splitting them fails here rather than in a user's
+  // projects.yaml.
+  //
+  // Compares the WRITTEN FILE against the serializer, not two
+  // in-memory objects — the bug was in what reached disk.
+  it("writes exactly what the serializer produces", async () => {
+    const root = await mkdtemp(join(tmpdir(), "loctt-projcfg-"));
+    const config = parseProjectsConfig(`
+projects:
+  - id: 01HX0000000000000000000001
+    name: Alpha
+    slug: alpha
+    prefix: A-
+    archived: true
+  - id: 01HX0000000000000000000002
+    name: Beta
+    prefix: B-
+default: 01HX0000000000000000000002
+`);
+    await saveProjectsConfig(root, config);
+    const onDisk = await readFile(join(root, "config", "projects.yaml"), "utf-8");
+    expect(onDisk).toBe(serializeProjectsConfig(config));
+    // And every optional field survived the trip, since a serializer
+    // that dropped them all would still equal itself.
+    expect(onDisk).toContain("slug: alpha");
+    expect(onDisk).toContain("archived: true");
+    expect(onDisk).toContain("default: 01HX0000000000000000000002");
   });
 });

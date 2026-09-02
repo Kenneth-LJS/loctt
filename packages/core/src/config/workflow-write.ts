@@ -615,7 +615,7 @@ export async function applyWorkflowEdit(
     // write. If we crash between writes, the next withStateLock
     // caller replays this entry (see registerRecoveryHandler below).
     // The entry is cleared at the end of the happy path.
-    const journalEntryId = makeJournalEntryId();
+    const journalEntryId = ulid();
     const journal = await loadJournal(locttDir);
     const withEntry = appendJournalEntry(journal, {
       id: journalEntryId,
@@ -722,10 +722,6 @@ async function executeWorkflowRemap(
  * other journal handlers use, so log lines from a recovery run sort
  * naturally regardless of which kind of entry produced them.
  */
-function makeJournalEntryId(): string {
-  return ulid();
-}
-
 // Register the crash-recovery handler at module load.
 //
 // Recovery is straightforward: re-read the on-disk workflow config

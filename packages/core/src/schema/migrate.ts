@@ -192,7 +192,18 @@ export async function migrateToCurrent(
 
       for (const migration of path) {
         if (migration.from !== current) {
-          // Defensive: migration order broke our invariant. Bail loudly.
+          // Unreachable through `findMigrationPath`, which BFS-walks
+          // the edge graph and can only return steps that already
+          // chain. Kept anyway, and deliberately: it costs one
+          // comparison per step and it is the only thing standing
+          // between a mis-ordered MIGRATIONS table and a tracker
+          // migrated through the wrong steps.
+          //
+          // The audit filed it as dead code. It is not dead; it is
+          // untriggered, which is what a defensive assertion looks
+          // like when the code around it is correct. Deleting it
+          // would remove the guard exactly when someone edits the
+          // table by hand — the case it exists for.
           throw new SchemaVersionError(
             `migration ordering invariant violated: at v${current}, ` +
             `next migration starts at v${migration.from}`,
