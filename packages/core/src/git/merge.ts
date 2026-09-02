@@ -26,12 +26,6 @@ import { mergeKeyHistory, mergeRelationships } from "./reconcile.js";
  * rules can be tested without a git repository.
  */
 
-/** A merge that could not be resolved, for the caller to abort on. */
-export interface MergeConflict {
-  readonly path: string;
-  readonly reason: string;
-}
-
 export interface MergeOutcome<T> {
   readonly merged: T;
   /**
