@@ -204,3 +204,29 @@ export function hasFlag(args: string[], flag: string): boolean {
   }
   return present;
 }
+
+/**
+ * Reads a flag whose value must be a non-negative integer.
+ *
+ * Returns undefined when the flag is absent — the caller decides what
+ * "no limit" means. Rejects `abc`, `-1` and `1.5` alike, because
+ * `Number("abc")` is NaN and a NaN limit compares false against
+ * everything, so a bad value would silently mean "no limit" rather
+ * than an error.
+ *
+ * Extracted because `list --limit` and `log --limit` carried
+ * byte-identical copies of this in one file, which is how the two
+ * drift into disagreeing about what `--limit -1` means.
+ */
+export function getNonNegativeIntArg(
+  args: string[],
+  flag: string,
+): number | undefined {
+  const raw = getArg(args, flag);
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (Number.isNaN(value) || value < 0 || !Number.isInteger(value)) {
+    throw new UsageError(`${flag} must be a non-negative integer`);
+  }
+  return value;
+}

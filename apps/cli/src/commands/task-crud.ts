@@ -36,7 +36,7 @@ import {
 
 import type { HistoryDisplayContext } from "../format/history.js";
 import { formatHistoryEntry } from "../format/history.js";
-import { getArg, hasFlag, rejectUnknownFlags } from "../runtime/args.js";
+import { getArg, getNonNegativeIntArg, hasFlag, rejectUnknownFlags } from "../runtime/args.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, UsageError } from "../runtime/errors.js";
 import { assertWorkflowEnumKey } from "../runtime/workflow-assert.js";
@@ -146,14 +146,7 @@ export async function list(args: string[], root: string): Promise<void> {
   const tasks = await loadAllTasks(locttDir);
   const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
 
-  let limit: number | undefined;
-  const limitArg = getArg(args, "--limit");
-  if (limitArg !== undefined) {
-    limit = Number(limitArg);
-    if (Number.isNaN(limit) || limit < 0 || !Number.isInteger(limit)) {
-      throw new UsageError("--limit must be a non-negative integer");
-    }
-  }
+  const limit = getNonNegativeIntArg(args, "--limit");
 
   // `--project <name|id>` is a structured filter; passing it as an option
   // keeps user-supplied values away from the query parser so ones
@@ -677,14 +670,7 @@ export async function log(args: string[], root: string): Promise<void> {
   if (!ref) {
     throw new UsageError("missing task ref", "loctt log <task> [--limit <n>] [--offset <n>]");
   }
-  let limit: number | undefined;
-  const limitArg = getArg(args, "--limit");
-  if (limitArg !== undefined) {
-    limit = Number(limitArg);
-    if (Number.isNaN(limit) || limit < 0 || !Number.isInteger(limit)) {
-      throw new UsageError("--limit must be a non-negative integer");
-    }
-  }
+  const limit = getNonNegativeIntArg(args, "--limit");
   // Without offset a long history is reachable only from its newest
   // end: the older entries are on disk and nothing can display them
   // (CMT-C4). readHistory has supported offset all along.
