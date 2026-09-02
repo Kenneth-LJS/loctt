@@ -1367,3 +1367,35 @@ is in this run's 23-ticket scope, so neither is a defect in it.
 case, is there a reason findable by its ID? A group reason is fine — but
 the group must name its members, or a decline and an omission look
 identical.
+
+#### The run's "current state" line is a snapshot, not a live status
+
+**Recorded 2026-09-02 after re-deriving this three times.**
+
+The standing goal carries a *Current state* paragraph ending "M2.4a
+building in `.claude/build-m24a`". That text was written mid-session on
+an earlier day and **is not updated as the run advances**. Read as
+current it says M2.4 is unbuilt and an agent is mid-flight.
+
+Measured, 2026-09-02:
+
+- **`.claude/build-m24a` does not exist.** `git worktree list` shows one
+  entry: the main tree. No agent is holding anything.
+- **M2.4a and M2.4b are both committed** — `9966c2b` "the comments
+  section (M2.4a)" and `1ae1761` "the activity feed (M2.4b)".
+- **M2's gate closed at round 7 with 0 blockers.**
+- M2.4's roster leaves five uncovered — CMT-18, 20, 23, 24, 25 — all
+  five documented by ID in `known-gaps.md` as part of the fifteen M2
+  cases that gate round 7 found, with severities read from the flow
+  docs: **11 majors, 5 minors, no blockers**.
+
+Likewise "Coverage 379/937, UI suite 264" in that paragraph. Actual on
+this date: **827/961 and 658**.
+
+**So**: check the Status table and `git log`, never the goal's snapshot.
+The snapshot is how the run started; the table is where it is. A stale
+status line reading as live is the same failure that had fifteen Status
+rows saying `(uncommitted)` for shipped work, thirteen tickets marked
+`⬜` after their commits landed, and M1.4 sitting at `🔵` with "Not
+built" bullets against five cases that were built, tagged, and
+mutation-provable.
