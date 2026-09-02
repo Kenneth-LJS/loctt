@@ -352,7 +352,7 @@ describe("atomicity", () => {
 
 describe("dangling references", () => {
   // @verifies BAK-C18
-  it("refuses a relationship whose target is in neither side, naming it", async () => {
+  it("keeps and reports a relationship whose target is in neither side", async () => {
     const a = await seed(srcDir, "A");
     await exportBackup(srcDir, { outputPath: out });
 
@@ -373,9 +373,11 @@ describe("dangling references", () => {
     await emptyTasks(dstDir);
     const report = await restoreBackup(dstDir, [out], { mode: "bare" });
 
-    // The restore completes, and the dangling target is discoverable:
-    // it is reported by `doctor`/sync pre-flight as `inconsistent`
-    // (P-12, already implemented), not silently repaired here.
+    // K17 ruling 7: the task restores and the dangling edge is kept and
+    // reported, not blocked and not stripped. `doctor` and sync
+    // pre-flight surface it as `inconsistent` (P-12, "blocking
+    // neither"); dropping it to leave a tidy tracker is what P-11 calls
+    // destruction wearing leniency's clothes.
     const restored = await lookupTask(dstDir, a);
     const rels = restored.frontmatter.relationships ?? [];
     expect(rels.some(r => r.target === missing)).toBe(true);
