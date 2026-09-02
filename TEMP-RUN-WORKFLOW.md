@@ -1217,3 +1217,81 @@ the run log that the marks were re-earned rather than assumed.
   `updated_at` does not. Fix in M1.4 subsection 5.
 - 34 of 35 UI specs pass. Coverage 111/937.
 - Everything else green as of `f7ebbdf`.
+
+---
+
+## M5.1 · probe findings, 2026-09-02 — measured before any case exists
+
+**The run stops here by the ticket's own text**: "Cases: none yet —
+these must be written before this is built, and they are Ken's to
+approve, not an agent's to author." Authoring them would be condition 2,
+inventing a requirement. What follows is only measurement, so the
+decision is a short one rather than a blank page.
+
+**Nothing here is a proposed case.** These are facts about the code as
+it stands today.
+
+### The ticket's central claim checks out, with one nuance
+
+`DEFAULT_EXPORT_COLUMNS` (`packages/core/src/task/export.ts:8`) is
+**exactly 18 columns**, and the omissions the ticket names are all
+genuinely absent: `body`, `relationships`, `fields`, `key_history`,
+`archived`/`archived_at`, `rank`, `board_rank`.
+
+The "27 fields" figure resolves as **25 frontmatter fields**
+(`TaskFrontmatterSchema`, `packages/contracts/src/task.ts:50`) **plus
+`body`** (line 111, outside the schema) **plus `rank`**, which is
+per-relationship (line 39), not a top-level field. So the shortfall is
+real; `rank` is nested rather than a sibling of the others.
+
+### `exportTasksToJSON` already exists — and is not the backup
+
+`packages/core/src/task/export.ts:51`, exported from the barrel and
+already called by the web server (`apps/web/src/server/server.ts:3209`).
+
+**It is column-projected, not lossless.** It walks the same
+`DEFAULT_EXPORT_COLUMNS` as the CSV and takes `body` only behind an
+`includeBody` flag. `relationships`, `fields`, `key_history`,
+`archived`, `board_rank` are unreachable through it **whatever options
+are passed** — there is no column name for them, because
+`getColumnValue` has no case for them.
+
+So M5.1 is a genuine build, not the wire-up that fourteen capabilities
+in this run turned out to be. Worth stating plainly, because the
+opposite has been assumed twice and been wrong both times.
+
+### Comments are a separate file
+
+Comments live in `comments.yaml`, a sibling of `task.md`
+(`packages/core/src/task/comments.ts`). Any export that reads only
+`task.md` misses them entirely — which is the ticket's point, now
+confirmed rather than assumed.
+
+### What this means for the work, once cases exist
+
+- The lossless serialiser is **new code**, not a flag on the existing
+  one. Widening `DEFAULT_EXPORT_COLUMNS` would change the CSV too,
+  which K4 explicitly rules against: the CSV is a report for a human in
+  a spreadsheet.
+- It belongs in **core**, per the layer rule, so CLI and MCP both get
+  it. A backup only the web app can take is not a backup.
+- The **split threshold** is a number no case names. Per the ticket it
+  is decided at step 1 and recorded with a revert path, as BLK-30's was.
+
+### What is still Ken's to settle
+
+The ticket names these; none is an agent's call:
+
+1. **The cases themselves**, and their acceptance bar.
+2. **What "lossless" covers.** Frontmatter plus body plus comments is
+   the ticket's list. History (`.loctt/history/`) and attachments are
+   not named either way, and attachments are binary — including them
+   changes the format from "one portable file" to something else.
+3. **Restore semantics.** The ticket asks for a round-trip test but not
+   what restoring into a *non-empty* tracker should do: merge, refuse,
+   or overwrite. Each is defensible and they are not the same product.
+
+**Also worth his knowing**: `.loctt/` is already a complete, restorable,
+git-friendly backup — copying the directory loses nothing. This ticket
+buys a portable single file and a defined restore path. That bounds the
+urgency, and it is the ticket's own framing, not a discouragement.
