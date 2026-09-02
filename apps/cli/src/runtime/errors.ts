@@ -100,9 +100,15 @@ export const KNOWN_DOMAIN_ERRORS: ReadonlyArray<new (...args: never[]) => Error>
   StaleBodyWriteError,
   TaskNotFoundError,
   UserError,
-  // RelationshipError surfaces from link/unlink; not currently
-  // imported here because the existing handlers let it bubble.
-  // Add it when a future command catches it.
+  // RelationshipError is NOT listed, and does not need to be: it
+  // extends LocttError, which is, so the instanceof check above
+  // already catches it. Measured — `link T-1 blocks T-1` and a link to
+  // a missing target both exit 1 with no stack trace.
+  //
+  // The comment here used to say it was omitted "because the existing
+  // handlers let it bubble", which was false in a way that invited
+  // someone to add a redundant entry, or worse, to go hunting for a
+  // crash that does not happen.
 ];
 
 /**

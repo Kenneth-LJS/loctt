@@ -12,7 +12,6 @@ import {
   attachFile,
   AttachmentExistsError,
   AttachmentNotFoundError,
-  AttachmentSourceError,
   detachFile,
   lookupTask,
 } from "@loctt/core";
@@ -52,10 +51,12 @@ export const TOOLS: readonly ToolDef[] = [
         }, null, 2));
       } catch (err) {
         if (err instanceof AttachmentExistsError) {
+          // Kept: this arm ADDS something the dispatcher cannot — the
+          // `force: true` remedy. The AttachmentSourceError arm beside
+          // it only re-wrapped `err.message`, which
+          // `runtime/errors.ts` already does for every class in
+          // KNOWN_DOMAIN_ERRORS, AttachmentSourceError included.
           return errorResult(`${err.message}. Pass force: true to overwrite.`);
-        }
-        if (err instanceof AttachmentSourceError) {
-          return errorResult(err.message);
         }
         throw err;
       }

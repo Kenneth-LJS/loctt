@@ -914,6 +914,24 @@ describe("CLI commands", () => {
       expect(stderr).toMatch(/--limit must be a non-negative integer/);
     });
 
+    it("list --limit rejects a negative value the same way log does", async () => {
+      // `list` and `log` carried byte-identical --limit validation in
+      // one file, now shared. Only `log` was covered, so extracting
+      // the helper would have left half of it unguarded — and the two
+      // drifting apart is exactly what the duplication risked.
+      await initLoctt(root);
+      process.argv = ["node", "loctt", "create", "t"];
+      await main();
+      const errSpy = vi.mocked(console.error);
+      errSpy.mockClear();
+      process.exitCode = undefined;
+      process.argv = ["node", "loctt", "list", "--limit=-3"];
+      await main();
+      expect(process.exitCode).toBe(2);
+      const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(stderr).toMatch(/--limit must be a non-negative integer/);
+    });
+
     it("log --limit=0 returns no entries but is not an error", async () => {
       await initLoctt(root);
       process.argv = ["node", "loctt", "create", "t"];

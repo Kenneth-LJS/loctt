@@ -41,7 +41,7 @@ async function resolver(locttDir: string) {
   return buildMentionResolver(await loadAllUsers(locttDir));
 }
 
-export const TOOLS: ToolDef[] = [
+export const TOOLS: readonly ToolDef[] = [
   {
     name: "list_comments",
     description:
