@@ -5865,11 +5865,51 @@ BLK-30's was), and the attachment encoding, proposed as base64 in each
 task's own JSONL line under `{name, bytes}` since a sidecar directory
 would stop the deliverable being one portable file.
 
-**To revert.** Rulings 1 and 3 are Ken's and are not an agent's to
-revert. If the split threshold or the attachment encoding proves
-unworkable, that is a new question to him, not a reinterpretation of
-this one.
+**Rulings 4 and 5, 2026-09-02.**
 
+4. **Collision rule — "default to keep both, and rename the imported
+   one as Bug (2) or whatever that's non-colliding."** A user-selectable
+   flag, defaulting to keep-both-with-rename.
+
+   Asked whether the user could pick, he said yes and then chose the
+   default himself. Note what he did *not* pick: the unrenamed variant.
+   The schema permits duplicate names — `LabelsConfigSchema`'s
+   `superRefine` dedupes on **`id`** (`packages/contracts/src/labels.ts:32`),
+   not on name — and that fact was put to him explicitly. He still
+   wanted the rename, so the rename is a **deliberate UX choice, not a
+   schema requirement**, and must not be justified as the latter.
+
+   The suffix is "non-colliding", so a second merge produces `(3)`, not
+   a second `(2)`. `remap` remains available as a non-default option —
+   and if it is built it must be **per entity type**: remapping two
+   same-named sprints onto one id silently discards a `start_date`,
+   `end_date` and `state`, which labels do not have.
+
+5. **`state.yaml` and `.loctt/local/` — "some should be merged, some
+   project counters need to be re-calculated. case by case, pick the
+   more intuitive option."**
+
+   This is a **principle, not an enumeration**, and it is recorded as
+   such deliberately: he did not name which counters merge and which
+   recompute. The agent judgment it delegates is per-field, and each
+   call belongs in § 8 with its reasoning, not here.
+
+   The correctness problem behind the question is real and measured:
+   `LocttStateSchema` is `{keys, retired_keys}`
+   (`packages/contracts/src/state.ts:19`), the per-project key
+   allocation counters. A restore that omits them leaves a restored
+   tracker reissuing keys already in use, so the first `task create`
+   after a bare-machine restore collides — breaking P-1 invisibly until
+   then.
+
+   Not settled by this ruling, and needing its own answer before build:
+   whether `.loctt/local/` travels. It holds machine-local data (git
+   remote config, recents), and carrying it would move one machine's
+   sync remote onto another's.
+
+**To revert.** Rulings 1, 2, 4 and 5 are Ken's. Ruling 5 delegates
+per-field calls to the agent; those are § 8 decisions and revertible,
+the delegation itself is not.
 ### A94 · A11Y-10 is left uncovered: filter dropdowns have no arrow navigation
 
 **Ticket:** M4.8 follow-up (four unaccounted cases) · **Date:** 2026-09-02 · **Commit:** `6336592`
