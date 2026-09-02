@@ -2573,3 +2573,10 @@ half that actually escaped.
 
 **Shape**: same as A11Y-45 — a comment describing behaviour the code
 never implemented, which reads as done to a reviewer.
+
+**The existing REL-15 test is not vacuous — it is partial.**
+`tests/ui/flow-relationships.spec.ts:738` asserts the row moved, the
+announcement text, *and* the rank on disk. It is a good test. It simply
+never presses Escape, so it covers bullets 1 and 2 and claims all three.
+That is the `@verifies`-has-no-partial-marker problem again, not a test
+asserting the bug: nothing needs deleting, only extending.
