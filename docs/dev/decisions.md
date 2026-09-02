@@ -5838,6 +5838,33 @@ and its cases are Ken's to approve.
    The bar he set in its place is a drafting loop with an independent
    reviewing agent, iterated to convergence, before any implementation.
 
+**Ruling 2, answered 2026-09-02.** The proposal was put to him with the
+config question flagged as the hard one. He took the harder half.
+
+- **Restore shape: "Yes — build this shape."** One command, three
+  modes: bare `restore` refuses a non-empty tracker and names what is
+  in the way; `--merge` adds absent ids and never edits an existing
+  task; `--overwrite` replaces any id the backup carries. All three
+  atomic under one `withStateLock`, all with `--dry-run`, all reporting
+  per-outcome counts rather than "OK". Key collisions on merge reuse
+  the **existing** `move.ts:92` path — reallocate from the destination
+  project's counter and append the old key to `key_history`, so links
+  keep resolving (P-7). Verified that path exists before proposing it.
+
+- **Config scope: "Tasks + config."** Against the recommendation, which
+  was tasks-only. So the backup is a whole-tracker backup, restorable
+  onto a bare machine — and the config-merge collision the
+  recommendation was trying to avoid is now **in scope and must be
+  answered by a case**: two trackers each holding a label named "bug"
+  with different ids is the worked example. Picking a winner silently
+  is how data quietly goes wrong, so the cases must say what happens.
+
+**What remains an agent's call**: the split threshold (a number no
+case names — decided at step 1 and recorded with a revert path, as
+BLK-30's was), and the attachment encoding, proposed as base64 in each
+task's own JSONL line under `{name, bytes}` since a sidecar directory
+would stop the deliverable being one portable file.
+
 **To revert.** Rulings 1 and 3 are Ken's and are not an agent's to
 revert. If the split threshold or the attachment encoding proves
 unworkable, that is a new question to him, not a reinterpretation of
