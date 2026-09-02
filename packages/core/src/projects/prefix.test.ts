@@ -187,6 +187,43 @@ describe("completeInterruptedPrefixRename", () => {
     expect(await readPrefixRenameState(locttDir)).toBeUndefined();
   });
 
+  // @verifies PRU-46
+  it("concurrent callers do not overwrite a real count with zero", async () => {
+    const project = await resolveProjectIdForUser(locttDir);
+    await seed(3, project);
+    await writeYamlAtomically(getPrefixRenameStatePath(locttDir), {
+      project_id: project,
+      from: "T-",
+      to: "WEB-",
+      started_at: new Date().toISOString(),
+    });
+
+    // The web middleware runs recovery on EVERY request, and a page
+    // load fires several in parallel — so this is the real call
+    // pattern, not a contrived one. With the sentinel read outside
+    // `withStateLock`, both callers pass the check; the first renames
+    // 3 and the second, running against an already-recovered tracker,
+    // finds nothing and reports 0. Whoever reports last wins, and the
+    // user is told no tasks were affected when three were.
+    const results = await Promise.all([
+      completeInterruptedPrefixRename(locttDir),
+      completeInterruptedPrefixRename(locttDir),
+      completeInterruptedPrefixRename(locttDir),
+    ]);
+
+    // Exactly one caller does the work and reports the true count; the
+    // others report nothing. Asserting "some result has renamed === 3"
+    // would pass on a racy implementation that also returns a 0.
+    const reported = results.filter(r => r !== undefined);
+    expect(reported).toHaveLength(1);
+    expect(reported[0]?.renamed).toBe(3);
+
+    // The far end agrees: the rename really happened once.
+    const tasks = await loadAllTasks(locttDir);
+    expect(tasks.every(t => t.frontmatter.key.startsWith("WEB-"))).toBe(true);
+    expect(await readPrefixRenameState(locttDir)).toBeUndefined();
+  });
+
   it("is idempotent — a task already renamed is not renamed twice", async () => {
     const project = await resolveProjectIdForUser(locttDir);
     await seed(2, project);

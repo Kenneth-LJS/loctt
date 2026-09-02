@@ -485,18 +485,21 @@ test.describe("XS — cross-surface constraints", () => {
 // KNOWN FAILURE — awaiting Ken's ruling, see known-gaps.md "PRU-46's
 // pending-rename banner is unreachable dead code".
 //
-// `test.fixme` rather than `skip`: it runs and is expected to fail, so
-// it starts passing loudly the moment the design changes. Measured:
-// `server.ts:4290` recovers an interrupted rename before ANY handler
-// runs, so a sentinel either heals or 500s and can never reach
-// `handleListProjects`. The banner and its completion endpoint are
-// unreachable dead code built for a boot-only-recovery design the
-// middleware forecloses.
-test.fixme("PRU-46: an interrupted prefix rename is surfaced in the panel", async ({
+// Un-quarantined 2026-09-02 (K16). This was `test.fixme` because the
+// case asked the panel to show a rename as *pending* — a state the
+// middleware at `server.ts:4290` forecloses by finishing the rename
+// ahead of every handler. Ken's ruling kept that guarantee and changed
+// what the server does with the result it was discarding, so the case
+// now asserts the notice rather than the unreachable control.
+test("PRU-46: a completed prefix rename is reported once, with both prefixes", async ({
   page,
   tracker,
 }) => {
   await tracker.run(["project", "create", "Web App", "--prefix", "WEB-"]);
+  // A task on WEB-, so `renamed` is a real count rather than 0. A
+  // zero-task fixture cannot tell "counted the tasks" from "printed a
+  // constant".
+  await tracker.run(["create", "Needs rekeying", "--project", "Web App"]);
   const projects = await readFile(
     path.join(tracker.root, ".loctt", "config", "projects.yaml"), "utf8",
   );
@@ -524,10 +527,35 @@ test.fixme("PRU-46: an interrupted prefix rename is surfaced in the panel", asyn
 
   await page.goto(`${tracker.baseURL}/settings/projects`);
 
-  const banner = page.getByTestId("project-prefix-rename-pending");
-  await expect(banner).toBeVisible();
-  // Bullet 2: which prefix it was moving from and to. Asserting the
-  // banner alone would pass on one that named neither.
-  await expect(banner).toContainText("WEB-");
-  await expect(banner).toContainText("SITE-");
+  const notice = page.getByTestId("project-prefix-rename-completed");
+  await expect(notice).toBeVisible();
+  // Bullet 2: from, to, and the count. Asserting the notice alone
+  // would pass on one that named neither prefix — which is how the
+  // banner this replaced could have shipped empty.
+  await expect(notice).toContainText("WEB-");
+  await expect(notice).toContainText("SITE-");
+  await expect(notice).toContainText("1 task");
+  // ...and that old keys still resolve, which is the half that stops
+  // the notice reading as a problem report.
+  await expect(notice).toContainText("Old keys still resolve");
+
+  // The far end: the rename really happened, not just a message about
+  // it. The sentinel is gone and the task carries the new prefix.
+  await expect(async () => {
+    const after = await readFile(
+      path.join(tracker.root, ".loctt", "config", "projects.yaml"), "utf8",
+    );
+    expect(after).toContain("SITE-");
+  }).toPass();
+
+  // The notice survives a reload rather than being consumed by the
+  // first request that happens to arrive. A page load fires several
+  // API calls in parallel and the recovery runs ahead of whichever
+  // lands first — so a read-and-clear notice gets eaten by a request
+  // with nowhere to show it, and the user is never told. That was the
+  // first implementation, and this assertion is what caught it.
+  await page.reload();
+  await expect(page.getByTestId("settings-projects")).toBeVisible();
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText("SITE-");
 });

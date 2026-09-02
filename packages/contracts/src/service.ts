@@ -276,6 +276,22 @@ export interface TrackerInfoResponse {
   readonly nextKey: string | null;
   readonly schemaStatus: SchemaStatusResponse;
   /**
+   * A prefix rename that was interrupted and has since been completed
+   * by the server, reported once so the user learns their keys changed
+   * (K16, PRU-46).
+   *
+   * Present only on the response that performed the recovery. The
+   * server finishes an interrupted rename ahead of every handler, so
+   * there is no mid-rename state to expose and nothing for the user to
+   * do — this is a notice, not a prompt. Absent on every subsequent
+   * request.
+   */
+  readonly completedPrefixRename?: {
+    readonly from: string;
+    readonly to: string;
+    readonly renamed: number;
+  };
+  /**
    * Display-only label for the workspace the server is serving, shown
    * in the sidebar footer so the user can see which tracker they're
    * looking at. Deliberately NOT a raw absolute path: paths under the

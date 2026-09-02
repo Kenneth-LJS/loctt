@@ -189,7 +189,7 @@ Cases: LST-9, LST-10, LST-11, LST-12, LST-14, LST-15, LST-16, LST-17, LST-29, LS
 > `createView` rejects a bad query, and the route surfaces it as a
 > field-level error on `query`). Both re-verified, so the mark is ✅.
 
-### M1.4 · List view — pagination + bulk-bar + export 🔵
+### M1.4 · List view — pagination + bulk-bar + export ✅
 Cases: LST-13, LST-30, LST-35, LST-38, LST-43, LST-49, BLK-1, BLK-2, BLK-3, BLK-4, BLK-5, BLK-6, BLK-7, BLK-8, BLK-9, BLK-10, BLK-11, BLK-12, BLK-13, BLK-14, BLK-15, BLK-16, BLK-17, BLK-18, BLK-19, BLK-20, BLK-21, BLK-22, BLK-23, BLK-24, BLK-25, BLK-26, BLK-27, BLK-28, BLK-29, BLK-30, BLK-31, BLK-32, BLK-33, BLK-34, BLK-35, BLK-36, BLK-37, BLK-38, BLK-39, BLK-40, BLK-41, BLK-42, BLK-43, BLK-44, BLK-45, BLK-46, BLK-47, BLK-48, ERR-13, ERR-25, ERR-26, XS-6, XS-19, LST-18, LST-48, ONB-25
 - ✅ Pagination using `total` from `/api/tasks`; "Showing 1–50 of 128 ·
   Load more" pattern. Covers LST-13, LST-17, LST-30, LST-35, LST-43,
@@ -197,10 +197,14 @@ Cases: LST-13, LST-30, LST-35, LST-38, LST-43, LST-49, BLK-1, BLK-2, BLK-3, BLK-
 - ✅ Row checkboxes; select-all in header. Covers BLK-1, BLK-2, BLK-3,
   BLK-4, BLK-18. Bar shows count + scope + Clear; actions below are
   still unbuilt, so it carries no action buttons yet
-- 🔵 Sticky bulk-bar: Set status / priority, Archive, Delete (typed
+- ✅ Sticky bulk-bar: Set status / priority, Archive, Delete (typed
   confirm), Clear (×) — covers BLK-5, 11, 12, 13, 38, 39, 40.
-  **Not built**: Set assignee / milestone / sprint (BLK-7, 8), Move to
-  project (BLK-9, 26), Undo after archive (BLK-10)
+  **The "Not built" list here was stale from 2026-09-02**: Set
+  assignee / milestone / sprint (BLK-7, 8), Move to project (BLK-9,
+  26) and Undo after archive (BLK-10) were all built in M1.4's own
+  subsections 1-3 and are covered. Verified: all five tagged, the
+  62-case `--require` gate exits 0, and BLK-9 mutation-proven —
+  disabling `onMove` in `BulkBar.tsx` reddens its spec.
 - ⚠️ **BLK-10 is a removal as well as an addition.** Archive currently
   ships behind a typed confirm; the case says demanding one is itself a
   violation, because archive is reversible. It wants a lightweight

@@ -1103,6 +1103,31 @@ export function createWebApp(options: WebAppOptions) {
   const port = options.port ?? DEFAULT_PORT;
   const clientDir = options.clientDir ?? null;
 
+  /**
+   * A prefix rename the middleware completed, held for reporting.
+   *
+   * Scoped to this server instance rather than the module, so two
+   * servers in one process (the test fixtures run several) cannot
+   * report each other's recoveries.
+   *
+   * **Not cleared on read**, which the first version got wrong. A page
+   * load fires `/api/projects`, `/api/workflow` and `/api/info` in
+   * parallel, and the middleware runs ahead of *whichever lands
+   * first*. If that was not `/api/info`, a read-and-clear notice was
+   * consumed by a request that had nowhere to show it, and the user
+   * was never told — the exact silent-key-change K16 exists to
+   * prevent. Measured: the server returned the notice correctly to a
+   * lone `curl /api/info`, and the UI never saw it.
+   *
+   * It stays for the life of the server process instead. The recovery
+   * happens once per interruption (the sentinel is deleted), so this
+   * is set once and re-reported only across a page reload — cheap, and
+   * it fails toward telling the user rather than away from it.
+   */
+  let completedRenameNotice:
+    | { from: string; to: string; renamed: number }
+    | undefined;
+
   const server = createServer((req, res) => {
     void handleRequest(req, res);
   });
@@ -1139,6 +1164,12 @@ export function createWebApp(options: WebAppOptions) {
         ? `${primaryEntry.prefix}${primaryEntry.next_number}`
         : null,
       schemaStatus: info.schemaStatus,
+      // K16: reported once, then cleared. Read-and-clear rather than
+      // sticky, because a notice that persists reads as an unresolved
+      // problem when the work is already done.
+      ...(completedRenameNotice !== undefined
+        ? { completedPrefixRename: completedRenameNotice }
+        : {}),
       cwd: displayPath(root),
       // Named here rather than in the client so the wizard's note and
       // the user init actually creates cannot drift, and so an
@@ -4288,11 +4319,25 @@ export function createWebApp(options: WebAppOptions) {
         }
 
         // Finish an interrupted prefix rename before any handler reads a
-        // task key. Silent on success; a failure is a 500 rather than a
-        // degraded response, because every key the request would go on
-        // to return could be stale.
-        const { error: recoveryError } =
+        // task key. A failure is a 500 rather than a degraded response,
+        // because every key the request would go on to return could be
+        // stale.
+        //
+        // K16: success is no longer silent. The recovery renames a
+        // user's primary identifiers — WEB-1 becomes SITE-1 — and
+        // throwing the result away meant that happened with nothing
+        // said. It is held here for `/api/info` to report once; there
+        // is no mid-rename state to expose, because this middleware
+        // has already finished the work.
+        const { recovered, error: recoveryError } =
           await recoverInterruptedPrefixRename(locttDir);
+        if (recovered !== undefined) {
+          completedRenameNotice = {
+            from: recovered.from,
+            to: recovered.to,
+            renamed: recovered.renamed,
+          };
+        }
         if (recoveryError) {
           const isWrite = req.method !== "GET" && req.method !== "HEAD";
           error(
