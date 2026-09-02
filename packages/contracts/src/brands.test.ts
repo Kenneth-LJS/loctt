@@ -6,7 +6,6 @@ import {
   isIanaTimezoneShape,
   IsoDate,
   SlugKey,
-  SprintKey,
 } from "./brands.js";
 
 describe("IsoDate", () => {
@@ -64,27 +63,12 @@ describe("SlugKey", () => {
     expect(() => SlugKey.parse("a b")).toThrow();
   });
 
-  it("rejects dots (use SprintKey for sprints)", () => {
+  it("rejects dots", () => {
     expect(() => SlugKey.parse("v1.0")).toThrow();
   });
 
   it("rejects empty string", () => {
     expect(() => SlugKey.parse("")).toThrow();
-  });
-});
-
-describe("SprintKey", () => {
-  it("accepts dotted forms", () => {
-    expect(SprintKey.parse("sprint_2026.q1")).toBe("sprint_2026.q1");
-    expect(SprintKey.parse("2026.q1-iter-3")).toBe("2026.q1-iter-3");
-  });
-
-  it("accepts leading digit (different from SlugKey)", () => {
-    expect(SprintKey.parse("2026q1")).toBe("2026q1");
-  });
-
-  it("rejects uppercase", () => {
-    expect(() => SprintKey.parse("Q1")).toThrow();
   });
 });
 

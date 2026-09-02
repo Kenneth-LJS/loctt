@@ -173,16 +173,15 @@ export function projectTaskFrontmatter(fm: TaskFrontmatter): TaskFrontmatterPubl
   // parse to apply the schema's transforms (e.g. `estimate` →
   // string). Using `.parse()` rather than `.strip()` so we get
   // the typed result.
-  const KNOWN_KEYS = [
-    "id", "key", "project", "title", "created_at", "updated_at",
-    "status", "status_updated_at", "task_type", "priority", "labels",
-    "assignee", "reporter", "start_date", "due_date", "estimate",
-    "completed_date", "milestone", "sprint", "archived", "archived_at",
-    "relationships", "key_history", "fields", "board_rank",
-  ] as const;
+  // Derived from the schema, not written out beside it. The list was
+  // hand-maintained, so a field added to
+  // `TaskFrontmatterPublicSchema` and forgotten here was silently
+  // dropped from every public projection — the CLI's JSON, the MCP
+  // tools' output and the web API all — with no error anywhere. The
+  // schema is the single place a public field is declared.
   const out: Record<string, unknown> = {};
   const src = fm as unknown as Record<string, unknown>;
-  for (const k of KNOWN_KEYS) {
+  for (const k of Object.keys(TaskFrontmatterPublicSchema.shape)) {
     if (src[k] !== undefined) out[k] = src[k];
   }
   return TaskFrontmatterPublicSchema.parse(out);

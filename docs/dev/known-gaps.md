@@ -2908,3 +2908,47 @@ about the data flow does not.
 error. Not done here because adding a dependency is a scope call, and
 enabling `exhaustive-deps` across an existing codebase will surface a
 backlog that wants its own ticket.
+
+## System sleep during a long UI run looks like 13 defects (tooling)
+
+**Not a product defect.** A Group G batch-2 UI run reported **13 failed,
+645 passed** over a **2.5-hour** wall clock — against the suite's usual
+~32 minutes. Re-running the three affected spec files with
+`caffeinate -dimsu`: **95 passed, exit 0, 3.9 minutes.**
+
+`pmset -g log` shows the cause:
+
+```
+21:00:07  Entering Sleep state due to 'Maintenance Sleep'
+21:01:36  Entering Sleep state due to 'Notification Wake Back to Sleep'
+21:04:08  Wake from Deep Idle
+```
+
+**How it presents.** Not as "the machine slept" — as ordinary test
+failures spread across nine timeline specs and four others, which reads
+as a clustered regression in whatever the batch touched. The tells are
+in the error text, and they are worth memorising:
+
+- `net::ERR_NETWORK_IO_SUSPENDED` — the network stack was suspended.
+  This cannot be caused by application code.
+- `loctt create Beta task exited undefined` — **undefined**, not a
+  number. A process that never returned an exit code was killed by the
+  OS, not by a failing assertion.
+- A wall clock several times the suite's normal duration.
+
+**Check first**, before reading a single spec:
+
+```bash
+pmset -g log | grep -E "^[0-9]{4}-" | grep -iE "Entering Sleep|Wake from"
+```
+
+**Prevent it** on any run expected to exceed a few minutes:
+
+```bash
+caffeinate -dimsu npx playwright test --config tests/ui/playwright.config.ts --workers=1
+```
+
+**Why this belongs beside the stale-`dist` and ENOSPC entries.** All
+three produce failures that look like defects in the code under test,
+and all three are diagnosed in seconds by one command that has nothing
+to do with the code. This session lost time to each in turn.

@@ -3,7 +3,6 @@ export {
   IanaTimezone,
   IsoDate,
   SlugKey,
-  SprintKey,
 } from "./brands.js";
 export type {
   CalendarConfig,
