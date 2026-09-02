@@ -132,11 +132,17 @@ function betweenInner(a: string, b: string): string {
 }
 
 /**
- * Returns the shortest string `s` such that `aRest + ANY === aRest`
- * lexicographically and `(prefix) + s` is still less than `(prefix) + (next-digit) + 0...`.
+ * Returns the shortest suffix that sorts strictly after `aRest` while
+ * staying below the next digit up.
  *
- * In practice: if `aRest` is empty, return the midpoint digit `i`.
- * Otherwise we need to step one digit further than `aRest` allows.
+ * If `aRest` is empty, that is the midpoint digit `i`. Otherwise it
+ * steps one digit past what `aRest` allows, descending recursively
+ * when the leading digits are already at the top of the alphabet.
+ *
+ * The first line used to read "the shortest string `s` such that
+ * `aRest + ANY === aRest` lexicographically" — a condition that is
+ * never true for any non-empty string, so it described nothing. The
+ * "In practice" paragraph below it was doing all the work.
  */
 function midpointAfter(aRest: string): string {
   if (aRest === "") {

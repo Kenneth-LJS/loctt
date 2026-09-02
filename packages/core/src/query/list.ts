@@ -99,18 +99,6 @@ export function buildListContext(tasks: readonly Task[]): ListContext {
     // already in memory on these very tasks, so wiring it here costs a
     // map rather than any extra I/O.
     getBody: (id: string) => idToBody.get(id),
-    // `text ~ q` searches the body, but no caller ever supplied
-    // getBody — so body search was documented and reachable in the
-    // evaluator while matching nothing on every surface. The bodies are
-    // already in memory on these very tasks, so wiring it here costs a
-    // map rather than any extra I/O.
-
-    // `text ~ q` searches the body, but no caller ever supplied
-    // getBody — so body search was documented and reachable in the
-    // evaluator while matching nothing on every surface. The bodies are
-    // already in memory on these very tasks, so wiring it here costs a
-    // map rather than any extra I/O.
-
   };
 }
 

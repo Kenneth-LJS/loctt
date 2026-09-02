@@ -233,10 +233,19 @@ class Parser {
   /**
    * Parses `( "a", "b" )` into its string arguments.
    *
-   * Arguments must be strings: a bare word would put relationship kind
-   * names back into identifier position, which is the collision the
-   * function form exists to avoid. Numbers and booleans are rejected
-   * for the same reason — a kind is always a name.
+   * Arguments are names: a quoted string, or a bare word the tokenizer
+   * emitted as FIELD. Both are accepted, and `has_link(blocks)` works
+   * exactly as `has_link("blocks")` does — measured.
+   *
+   * Numbers and booleans are rejected, because a relationship kind is
+   * always a name.
+   *
+   * This comment used to say bare words were rejected, on the argument
+   * that they would "put relationship kind names back into identifier
+   * position". The code has always accepted FIELD tokens, so the
+   * docstring described a stricter parser than the one below it —
+   * which is the dangerous direction: a reader trusts it and quotes
+   * defensively, or files a bug when the bare form works.
    */
   private parseCallArgs(fn: string, min: number, max: number): string[] {
     this.expect("LPAREN");
