@@ -5808,7 +5808,7 @@ asserts the notice rather than the banner.
 
 ### A94 · A11Y-10 is left uncovered: filter dropdowns have no arrow navigation
 
-**Ticket:** M4.8 follow-up (four unaccounted cases) · **Date:** 2026-09-02 · **Commit:** `71d5e62`
+**Ticket:** M4.8 follow-up (four unaccounted cases) · **Date:** 2026-09-02 · **Commit:** `6336592`
 
 **The situation.** A11Y-10's first bullet requires each filter
 dropdown to be "reachable, open on `Enter`/`Space`, and its options
@@ -5868,7 +5868,7 @@ the partial test with the full transcription and tag it
 
 ### A95 · A11Y-39 is left uncovered: the type scale is absolute, so text-only zoom is a no-op
 
-**Ticket:** M4.8 follow-up (four unaccounted cases) · **Date:** 2026-09-02 · **Commit:** `71d5e62`
+**Ticket:** M4.8 follow-up (four unaccounted cases) · **Date:** 2026-09-02 · **Commit:** `6336592`
 
 **The situation.** A11Y-39 asks that text-only zoom to 200% — the user
 agent scaling text while leaving page zoom alone — reflow rather than
