@@ -16,9 +16,15 @@ import { todayDateString } from "./update.js";
 export interface CreateTaskOptions {
   readonly title: string;
   /**
-   * Project the task belongs to (matches `ProjectDef.key`).
-   * Required — caller must resolve the default-project rules
-   * before invoking createTask.
+   * Project the task belongs to: its **id**, a ULID.
+   *
+   * Not a key. `ProjectDef` has no `key` field — P-1 defines a project
+   * as `{id, name, slug?, prefix}` — and every caller passes the id:
+   * the CLI and MCP both resolve through `resolveProjectIdForUser`,
+   * and a created task's frontmatter carries a ULID, measured.
+   *
+   * Required — the caller resolves the default-project rules before
+   * invoking createTask.
    */
   readonly project: string;
   readonly status?: string;

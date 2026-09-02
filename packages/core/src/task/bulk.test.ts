@@ -142,6 +142,14 @@ describe("bulkArchive", () => {
     for (const id of [a, b]) {
       const t = await lookupTask(locttDir, id);
       expect(t.frontmatter.archived).toBe(true);
+      // `archived_at` too, not just the flag. bulkArchive and
+      // archiveTask now share `applyArchiveState`, and this asserted
+      // only `archived` — so the bulk path could have stopped writing
+      // the timestamp and all 15 tests here would still have passed.
+      // Found by mutation: dropping the field reddened the single-task
+      // test and nothing in this file.
+      expect(t.frontmatter.archived_at).toBeDefined();
+      expect(t.frontmatter.updated_at).toBe(t.frontmatter.archived_at);
       const h = await readHistory(locttDir, id);
       expect(h.some(e => e.kind === "archived" && e.bulk_op_id === result.bulk_op_id)).toBe(true);
     }

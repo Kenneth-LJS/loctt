@@ -7,7 +7,6 @@ import { withStateLock } from "../state/lock.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 import { clearLookupCaches } from "./lookup-cache.js";
-import { toFrontmatter, toMutable } from "./mutable.js";
 
 export class TaskLifecycleError extends Error {
   constructor(message: string) {
@@ -23,6 +22,34 @@ export class TaskLifecycleError extends Error {
  * the write but before the history append leaves an audit gap; the
  * lock keeps the pair coherent against other writers).
  */
+/**
+ * The frontmatter half of archiving, shared with `bulkArchive`.
+ *
+ * Only the mutation is shared, deliberately. The two paths differ on
+ * purpose everywhere else: `archiveTask` throws on an already-archived
+ * task, while `bulkArchive` counts it a success and reports it apart
+ * (BLK-27) — refusing would make archiving a mixed selection
+ * impossible. Sharing the *policy* would break one or the other; not
+ * sharing the *fields* is how "archived_at" ends up written by one
+ * path and not the other.
+ */
+export function applyArchiveState(
+  frontmatter: TaskFrontmatter,
+  archive: boolean,
+  now: string,
+): TaskFrontmatter {
+  const next = { ...frontmatter } as Record<string, unknown>;
+  if (archive) {
+    next["archived"] = true;
+    next["archived_at"] = now;
+  } else {
+    delete next["archived"];
+    delete next["archived_at"];
+  }
+  next["updated_at"] = now;
+  return next as unknown as TaskFrontmatter;
+}
+
 export async function archiveTask(locttDir: string, taskId: string): Promise<Task> {
   return withStateLock(locttDir, async () => {
     const task = await readTask(locttDir, taskId);
@@ -31,14 +58,10 @@ export async function archiveTask(locttDir: string, taskId: string): Promise<Tas
     }
 
     const now = new Date().toISOString();
-    const updated: TaskFrontmatter = {
-      ...task.frontmatter,
-      archived: true,
-      archived_at: now,
-      updated_at: now,
+    const result: Task = {
+      frontmatter: applyArchiveState(task.frontmatter, true, now),
+      body: task.body,
     };
-
-    const result: Task = { frontmatter: updated, body: task.body };
     await writeTask(locttDir, taskId, result);
     await appendHistory(locttDir, taskId, [{ timestamp: now, kind: "archived" }]);
     return result;
@@ -58,13 +81,10 @@ export async function unarchiveTask(locttDir: string, taskId: string): Promise<T
     }
 
     const now = new Date().toISOString();
-    const copy = toMutable(task.frontmatter);
-    delete copy["archived"];
-    delete copy["archived_at"];
-    copy["updated_at"] = now;
-    const updated = toFrontmatter(copy);
-
-    const result: Task = { frontmatter: updated, body: task.body };
+    const result: Task = {
+      frontmatter: applyArchiveState(task.frontmatter, false, now),
+      body: task.body,
+    };
     await writeTask(locttDir, taskId, result);
     await appendHistory(locttDir, taskId, [{ timestamp: now, kind: "unarchived" }]);
     return result;
