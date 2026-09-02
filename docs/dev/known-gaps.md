@@ -2876,3 +2876,35 @@ is tempting to do it while a long run is "just finishing".
 **Check first**: `ls -la apps/cli/dist/index.js` against the run's start
 time. An mtime inside the run window explains the failure, and no
 amount of reading the spec will.
+
+## No `eslint-plugin-react-hooks`, and it cost a real bug (2026-09-02)
+
+`eslint-plugin-react-hooks` is **neither installed nor configured**
+(`eslint.config.js` has no `react-hooks` rules; the package is absent
+from `node_modules`). So the two rules that catch the most common React
+defect class — Rules of Hooks and the exhaustive-deps warning — do not
+run on this repo at all.
+
+**What it let through, measured.** Implementing K16 I added
+`const info = useInfoFresh();` to `ProjectsPanel.tsx` *below* its
+`isError` / `isLoading` early returns. First render: projects loading,
+component returns early, the hook never runs. Second render: it does.
+React throws **error #310** — "rendered more hooks than during the
+previous render" — and the entire panel subtree fails to mount.
+
+`npm run build` exited 0. `npm run typecheck` exited 0. `npm run lint`
+exited 0. The Playwright test failed with "element(s) not found", which
+reads as a missing feature rather than a crashed component, and I
+misdiagnosed it **twice** — first as a read-and-clear bug, then as a
+TanStack `staleTime` cache issue — before escalating. The Fable agent
+found it in one pass by attaching `page.on("pageerror")`.
+
+**The lesson that generalises**: a React component that crashes on
+render produces exactly the same Playwright failure as one that renders
+nothing. `page.on("pageerror")` separates them in seconds; reasoning
+about the data flow does not.
+
+**Fix**: add the plugin and enable `react-hooks/rules-of-hooks` as an
+error. Not done here because adding a dependency is a scope call, and
+enabling `exhaustive-deps` across an existing codebase will surface a
+backlog that wants its own ticket.

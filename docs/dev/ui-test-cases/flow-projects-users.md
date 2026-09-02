@@ -366,9 +366,23 @@ project counters during git sync is in
 - Re-entering the project's *own* current prefix is accepted as a no-op rather than reported as a collision.
 
 ### PRU-46 · M4 · major · P4 P6
-**A prefix change interrupted server-side is surfaced, not silently half-applied.** Kill the server mid-rewrite, then reload.
+**A prefix change interrupted server-side is completed and then reported, not silently half-applied.** Kill the server mid-rewrite, then reload.
 
-- The projects panel shows the project as mid-rename rather than reporting a healthy tracker.
-- The message says which prefix it was moving from and to, and that some tasks may still carry the old one.
-- A control completes the change; it does not require dropping to the CLI.
-- After completion the list shows every task on the new prefix, with none left behind.
+- The rename is **already complete** by the time any panel renders. The server finishes an interrupted rename before any handler reads a task key, so a mid-rename state cannot be observed through the API — a request either heals it or fails, never serves a stale key.
+- The user is told, once, after the fact: which prefix it moved **from** and **to**, how many tasks were renamed, and that old keys still resolve.
+- It is a notice, not a dialog. There is nothing to decide and no control to complete — the work is done.
+- After the notice, every task is on the new prefix with none left behind, and the old keys still resolve via `key_history`.
+
+> **Reworded 2026-09-02 (K16).** The original asked the panel to show a
+> project "as mid-rename" and offer a control to finish it. Measured:
+> `recoverInterruptedPrefixRename` runs as middleware ahead of every
+> handler, so that state is unreachable — writing a valid sentinel and
+> issuing one `GET /api/projects` flipped the prefix, deleted the
+> sentinel, and returned no pending rename. The banner built for the
+> old wording was dead code.
+>
+> Ken's ruling kept the middleware and changed what happens to its
+> return value: it already reports `from`, `to` and `renamed`, and the
+> server was throwing that away — so a user's primary identifiers
+> changed under them with nothing said. The case now asserts the
+> notice instead of the unreachable control.

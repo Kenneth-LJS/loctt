@@ -217,10 +217,26 @@ export async function recoverInterruptedPrefixRename(
 export async function completeInterruptedPrefixRename(
   locttDir: string,
 ): Promise<SetPrefixResult | undefined> {
-  const pending = await readPrefixRenameState(locttDir);
-  if (!pending) return undefined;
+  // Cheap pre-check outside the lock: the overwhelming majority of
+  // calls have no sentinel and must not pay for a lock acquisition.
+  if (!(await readPrefixRenameState(locttDir))) return undefined;
 
   return withStateLock(locttDir, async () => {
+    // Re-read INSIDE the lock. The pre-check above is not the decision:
+    // a page load fires several API requests in parallel and the web
+    // middleware runs recovery on each, so two callers can both pass
+    // it. The first recovers and reports `renamed: 1`; the second then
+    // runs against an already-recovered tracker, finds no old keys, and
+    // reports `renamed: 0` — overwriting a true count with a false one.
+    // Measured: one curl → 1; three parallel curls → 0, with the task
+    // correctly renamed. Silent, and in the direction that says "no
+    // tasks were affected" when tasks were.
+    //
+    // Fixed here rather than in the web middleware so the CLI and MCP
+    // get it too — both call this on the same auto-recover path.
+    const pending = await readPrefixRenameState(locttDir);
+    if (!pending) return undefined;
+
     const config = await loadProjectsConfig(locttDir);
     const target = config.projects.find(p => p.id === pending.project_id);
     if (!target) {

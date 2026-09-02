@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { useProjects } from "../api/hooks/sidebarData.ts";
+import { useInfoFresh } from "../api/hooks/useInfo.ts";
 import {
   useArchiveProject,
   useCreateProject,
@@ -247,6 +248,16 @@ function ProjectRow({
 
 export function ProjectsPanel() {
   const projects = useProjects();
+  // K16: the completed-rename notice rides on /api/info, the same
+  // channel the schema banner uses for a server-side fact the client
+  // could not otherwise know.
+  //
+  // Must sit ABOVE the isError/isLoading early returns. It was below
+  // them, so the first render (projects loading) never ran its hooks
+  // and the second did — React error #310, "rendered more hooks than
+  // during the previous render", which crashed the whole panel
+  // subtree. typecheck cannot see that; only running it can.
+  const info = useInfoFresh();
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<ProjectDef | undefined>(undefined);
   const deleteProject = useDeleteProject();
@@ -270,7 +281,7 @@ export function ProjectsPanel() {
 
   const items = projects.data?.items ?? [];
   const counts = projects.data?.task_counts ?? {};
-  const pending = projects.data?.pending_prefix_rename;
+  const completed = info.data?.completedPrefixRename;
 
   return (
     <div className="p-8" data-testid="settings-projects">
@@ -283,22 +294,30 @@ export function ProjectsPanel() {
         .
       </p>
 
-      {/* PRU-46: a half-applied prefix rename is reported, not hidden
-          behind a healthy-looking list. */}
-      {pending !== undefined && (
+      {/* PRU-46 / K16: an interrupted rename is *already finished* by
+          the time this renders — the server completes one ahead of
+          every handler, so a mid-rename state cannot reach the client.
+          What the user needs is to be told their keys changed, once.
+          `role="status"`, not `alert`: nothing is wrong and there is
+          nothing to do. The panel previously rendered a "did not
+          finish" warning off `pending_prefix_rename`, a field the
+          middleware guarantees is never populated — dead code that
+          read as a working feature. */}
+      {completed !== undefined && (
         <div
-          role="alert"
-          data-testid="project-prefix-rename-pending"
-          className="mb-4 rounded-md border border-warn-fg/40 bg-bg-muted p-3 text-[13px]"
+          role="status"
+          data-testid="project-prefix-rename-completed"
+          className="mb-4 rounded-md border border-border-default bg-bg-muted p-3 text-[13px]"
         >
-          <p className="mb-1 font-medium text-warn-fg">
-            A prefix rename did not finish
+          <p className="mb-1 font-medium">
+            A prefix rename that was interrupted has been completed
           </p>
           <p className="text-text-secondary">
-            This project was being moved from{" "}
-            <code className="font-mono">{pending.from}</code> to{" "}
-            <code className="font-mono">{pending.to}</code>. Some tasks may
-            still carry the old prefix.
+            <code className="font-mono">{completed.from}</code> →{" "}
+            <code className="font-mono">{completed.to}</code>,{" "}
+            {completed.renamed}{" "}
+            {completed.renamed === 1 ? "task" : "tasks"} renamed. Old keys
+            still resolve.
           </p>
         </div>
       )}
