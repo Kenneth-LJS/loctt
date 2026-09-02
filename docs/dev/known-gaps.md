@@ -2494,3 +2494,47 @@ resolution `MetaPanel` already uses, so the three surfaces cannot
 drift. The test must **switch modes and assert each surface in each
 mode** — an absence assertion alone cannot distinguish "correctly
 hidden" from "never built", which is exactly how this survived.
+
+## The coverage gate's count and its printed list disagree (tooling)
+
+`tools/coverage/main.ts` reports `uncovered: N` from the full set, but
+the scoped listing below it prints **at most 40 cases**
+(`scoped.slice(0, 40)`), with no note that it truncated. At M4 the
+milestone scope holds 112 uncovered cases and prints 40 of them.
+
+This cost real time twice in one session. Reading the printed list as
+the complete one, I twice computed a smaller uncovered set (112 against
+the true 136) and twice concluded the gate was inconsistent with itself.
+It was not; the parse was wrong. The number is authoritative, the list
+is a sample.
+
+**How to get the true list**: ask per-milestone *and* per-severity, or
+call `report()` from `scan.ts` directly and read `result.uncovered`.
+`--require <ids>` prints every untagged case with no cap, so a chunked
+`--require` over the whole index is the reliable route.
+
+**Fix**: print the count of what was elided ("… and 72 more"), or drop
+the cap when a scope is given. A truncation that does not announce
+itself reads as a complete answer.
+
+## Uncovered cases are accounted for by group, not by case
+
+Every one of the 136 uncovered cases appears somewhere in the run's
+records. But 54 of them appear **only in their ticket's `Cases:`
+roster** — no per-case reason anywhere. Their tickets' Status rows
+explain them collectively (M4.3: "26 of them cannot be built" because
+core has no `reconcile`; M4.1: "26 listed uncovered, honestly"), which
+is real accounting, not silence.
+
+The failure mode this permits is specific: a case can be absorbed into
+an aggregate and never individually named, and nothing then flags it.
+That is exactly what happened to **A11Y-10, A11Y-11, A11Y-29 and
+A11Y-39** — three of them blockers — which M4.8's row described as
+"25 itemised by what each needs" while itemising 21. All four turned
+out to be *built and merely untested*, so the aggregate concealed
+finished work rather than missing work.
+
+**Check that matters**: for each uncovered case, does a reason exist
+outside its ticket's roster? Where the answer is a group reason, that
+is fine — but the group must name its members, or the next audit
+cannot tell a deliberate decline from an omission.
