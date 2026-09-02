@@ -2989,3 +2989,63 @@ is a bug; two is a pattern worth a sweep of every read-modify-write.
 
 **Next step**: reproduce under load rather than reason about it. A
 diagnosis is running; this entry stands until it lands.
+
+## Two ArrowUp presses before the refetch silently drop the second (REL-32 area)
+
+**App-side, minor, found while diagnosing a test failure 2026-09-02.**
+
+The relationships panel is deliberately **not** optimistic: `onSettled`
+invalidates and the rows move only after the `GET /api/tasks/:key`
+refetch renders. A user who presses ArrowUp twice inside that window
+has their second press computed against the **old** rendered index, so
+it re-sends the first move verbatim — same `before`, same resulting
+rank, a no-op on disk — and nothing tells them.
+
+**Measured** in a Playwright trace under CPU load: both POSTs carried
+`{"before":"T-3"}` and both were answered `{"rank":"v"}`, with
+identical response hashes. The second press did nothing and said
+nothing.
+
+**Not a data-integrity bug.** No write is lost in the sense that
+matters — `reorderRelationship` reads and writes entirely inside
+`withStateLock` (`rank/reorder.ts:65`), and the route adds nothing
+outside it. The server applied every request it received, correctly.
+What is lost is a *keystroke*, because the client re-derived a stale
+move.
+
+**Fix options, none taken:** make the reorder optimistic; or disable
+the handles until the refetch settles; or key the move off the last
+known rank rather than the rendered index. The third is smallest but
+needs care — that is what `keyboardMove(i, -1)` uses today.
+
+**Related and already fixed**: the test helper had the same blind spot
+and it is what made REL-32 fail ~30% of the time under load. See the
+entry below.
+
+## REL-32's helper read the DOM before the re-render (fixed)
+
+`moveUp` in `tests/ui/flow-relationships.spec.ts` waited for the write's
+**response**, then immediately read the DOM for the next step. The panel
+moves rows only after the invalidation refetch, so under load the second
+press was computed against the pre-move order and re-sent the first move.
+
+**The reproduction is the evidence, and it was worth doing twice.**
+Under 9 busy-loop processes on a 10-core box, `-g "REL-32"
+--repeat-each 15`:
+
+| | ordering failures | setup timeouts |
+|---|---|---|
+| before the fix | **5 / 15** | 0 |
+| after the fix | **0 / 15** | 1 |
+
+The one post-fix failure is `Test timeout exceeded while setting up
+"tracker"` — the fixture buckling under deliberately punishing load, not
+the assertion under test. **Reading the count alone said "1/15 still
+fails" and that reading was wrong**; the failure mode is what
+separated them.
+
+`moveUp` now waits for the rendered order to change before returning.
+Bounded at 5 s and **non-asserting** on purpose: a refused write leaves
+the order unchanged, and judging that is the caller's job, not the
+helper's — so a genuinely lost write still fails at the caller's
+assertion rather than being masked here.

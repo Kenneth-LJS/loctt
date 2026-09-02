@@ -206,6 +206,21 @@ function handleFor(page: Page, type: string, targetId: string) {
  * That is not a hypothetical: a mutation run failed here on a timeout
  * rather than on the assertion under test, which is a red for the
  * wrong reason and worthless as evidence.
+ *
+ * **The write's response is not the re-render.** The panel is not
+ * optimistic: `onSettled` invalidates, a fresh `GET /api/tasks/:key`
+ * runs, and only then do the rows move. A second step that read the
+ * DOM in that gap saw the *old* order and pressed ArrowUp on the row's
+ * old index — which re-sent the first move verbatim, a no-op on disk.
+ * Measured 2026-09-02 in REL-32 under CPU load (4 of 15 runs): both of
+ * tab A's POSTs were `{"before":"T-3"}` answering `rank: "v"`, the
+ * second issued 1 ms before the refetch completed, and the final order
+ * was `[b, a, c]` — tab A's second move lost, exactly the outcome the
+ * case forbids, produced by the test rather than the app. So each step
+ * waits for the rendered order to change before the next reads it.
+ * Bounded and non-asserting: a refused write leaves the order as it
+ * was, and that is for the caller's assertions to judge, not this
+ * helper's.
  */
 async function moveUp(
   page: Page,
@@ -221,6 +236,27 @@ async function moveUp(
     const handle = handleFor(page, type, targetId);
     await handle.focus();
     await settling(page, "/rerank", async () => { await handle.press("ArrowUp"); });
+    await renderedOrderChanged(page, type, order);
+  }
+}
+
+/**
+ * Waits until the panel renders an order other than `before`, or gives
+ * up after `timeoutMs` without complaint. See `moveUp` for why the
+ * write's response alone is not enough to read the DOM after.
+ */
+async function renderedOrderChanged(
+  page: Page,
+  type: string,
+  before: readonly (string | undefined)[],
+  timeoutMs = 5_000,
+): Promise<void> {
+  const was = before.join(",");
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const now = await renderedOrder(page, type);
+    if (now.join(",") !== was) return;
+    await page.waitForTimeout(25);
   }
 }
 
