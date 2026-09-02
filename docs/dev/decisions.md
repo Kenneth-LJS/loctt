@@ -5805,3 +5805,112 @@ asserts the notice rather than the banner.
 
 **To revert.** Drop the notice and delete the banner and
 `handleCompletePrefixRename`; that is option (a).
+
+### A94 · A11Y-10 is left uncovered: filter dropdowns have no arrow navigation
+
+**Ticket:** M4.8 follow-up (four unaccounted cases) · **Date:** 2026-09-02 · **Commit:** `71d5e62`
+
+**The situation.** A11Y-10's first bullet requires each filter
+dropdown to be "reachable, open on `Enter`/`Space`, and its options
+[to be] arrow-navigable with type-ahead". Measured against the built
+app, on `/list`:
+
+- Reachable by `Tab` and opens on `Enter` — both hold.
+- Options are reachable by continuing to `Tab`, and activating one
+  narrows the result set.
+- **Arrow navigation does not exist.** With the Status menu open,
+  `ArrowDown`, `ArrowUp`, `Home` and `End` all leave focus on the
+  trigger button. Typing a letter does not jump to a matching option.
+
+The cause is `client/ui/Menu.tsx`, the shared popover behind every
+`FilterDropdown`: it implements outside-click, `Escape` and item
+selection, but no roving focus and no type-ahead. `client/editor/
+MentionMenu.tsx` does implement `ArrowDown`, so the gap is specific to
+`Menu`, not a house style.
+
+The dropdown's *search box* is a separate thing and does exist, above
+`TYPEAHEAD_THRESHOLD` (12) options — that threshold is a deliberate
+MSL-19 decision and is not what this bullet is about.
+
+**What had to be decided.** Whether to add roving focus and type-ahead
+to `Menu` so A11Y-10 could be claimed.
+
+**Decided.** No. `Menu` is the shared popover behind three surfaces —
+`list/FilterDropdown.tsx`, `shell/Header.tsx` and
+`task/TaskDetail.tsx` — so giving it
+roving focus is a keyboard-interaction model change across all of
+them, with its own cases (focus wrap, `Escape` restoring focus to the
+trigger, `aria-activedescendant` vs. real focus). No ticket in this run
+owns it, and building it inside a coverage-gap ticket is inventing
+scope.
+
+**Why not tag it anyway.** Two of the case's three bullets do hold. A
+test that walked the options by `Tab` and tagged `@verifies A11Y-10`
+would report the gate green while a keyboard user still cannot arrow
+through a filter list — the case's own first bullet. `@verifies` has no
+partial marker, so a tag would claim all three.
+
+`tests/ui/flow-accessibility.spec.ts` carries a deliberately untagged
+test, "A11Y-10 (partial)", which asserts the parts that work (Tab
+reachability, `Enter` opens, options apply and narrow the list, the
+chip's accessible name is "Remove Status In progress", the count is
+announced, and the chip removes by keyboard) **and** asserts the gap
+positively: after `ArrowDown`, focus is still on the trigger. That last
+assertion inverts the day roving focus lands, which is the signal to
+restore the full transcription and the tag.
+
+Mutation-proven: replacing the chip's `aria-label` with a bare
+"Remove" turns that test red.
+
+**To revert.** Add roving focus and type-ahead to `Menu`, then replace
+the partial test with the full transcription and tag it
+`@verifies A11Y-10`.
+
+### A95 · A11Y-39 is left uncovered: the type scale is absolute, so text-only zoom is a no-op
+
+**Ticket:** M4.8 follow-up (four unaccounted cases) · **Date:** 2026-09-02 · **Commit:** `71d5e62`
+
+**The situation.** A11Y-39 asks that text-only zoom to 200% — the user
+agent scaling text while leaving page zoom alone — reflow rather than
+clip. Text-only zoom scales the *root* font size; a layout in
+`rem`/`em` grows with it, one in absolute `px` does not move.
+
+`client/styles/index.css` sets `html, body { font-size: 14px }`, and
+the component tree sizes type with absolute Tailwind arbitrary values
+(`text-[13px]`, `text-[12px]`, …). Measured on `/list`: all 233
+rendered elements resolve to an absolute px font-size, and forcing
+`html { font-size: 200% }` moves the root to 32px while `body` stays at
+14px, because body's own absolute rule overrides the inherited value.
+
+**What had to be decided.** Whether to tag A11Y-39, since its three
+bullets are all *satisfied* — no text is clipped, nothing becomes
+invisible — and whether to convert the type scale to relative units.
+
+**Decided.** Leave it uncovered, and do not convert the type scale.
+
+The bullets are satisfied **vacuously**: text cannot overflow a
+fixed-height box when the text never grows. A test asserting "no text
+is clipped at 200% text zoom" passes against an app with no text-zoom
+support at all, which is the tag-that-cannot-fail this run has found
+most often. Passing for the reason the case is trying to prevent is not
+coverage.
+
+Converting the scale is a global restyle — every `text-[Npx]`, every
+`h-N` on a control sized to its text, and the 123 fixed-height
+utilities that would then need to become min-heights. That is a visual
+regression surface across every view, owned by no ticket here.
+
+**Why this is a decision and not a known gap alone.** The gap is
+recorded in `known-gaps.md` too; what is decided here is the *coverage*
+call — that a green test would have been misleading.
+
+`tests/ui/flow-accessibility.spec.ts` carries a deliberately untagged
+test, "A11Y-39 (partial)", asserting the cause rather than the
+symptom: the root font-size does scale (the positive control, proving
+the simulation works) and `body` does not follow. Mutation-proven:
+changing body to `font-size: 1rem` turns it red — which is exactly the
+day the tag should be added.
+
+**To revert.** Move the type scale to relative units, then replace the
+partial test with the real transcription (assert reflow and no
+clipping at 200%) and tag it `@verifies A11Y-39`.
