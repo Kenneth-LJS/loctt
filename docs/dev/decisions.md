@@ -6018,3 +6018,57 @@ day the tag should be added.
 **To revert.** Move the type scale to relative units, then replace the
 partial test with the real transcription (assert reflow and no
 clipping at 200%) and tag it `@verifies A11Y-39`.
+
+### A96 · `.loctt/local/` is excluded from the backup; `state.yaml` travels
+
+**Ticket:** M5.1 · **Date:** 2026-09-02 · **Commit:** (this one)
+
+**The situation.** K17 ruling 5 delegates the state question per field —
+"some should be merged, some project counters need to be re-calculated.
+case by case, pick the more intuitive option." This is one of those
+calls. It was put to Ken as a question and he gave the principle rather
+than the answer, so it is an agent decision under his delegation.
+
+**Measured, not assumed.** `.loctt/local/` holds exactly four things:
+
+| File | What it is |
+|---|---|
+| `key-index.yaml` | a **derived cache** of key → id |
+| `sync.yaml` | this checkout's git sync state |
+| `reconcile.yaml` | an in-flight reconcile |
+| `prefix-rename.yaml` | a sentinel for a rename **in progress here** |
+
+**Decided.** `local/` is excluded; `state.yaml` is included.
+
+**Why, and the argument is the codebase's own.** `paths/index.ts:149`
+already says why `prefix-rename.yaml` lives there: it "describes an
+operation on this checkout, not shared tracker state: publishing a
+half-finished rename to the branch would hand the sentinel to every
+other clone." A backup carried to another machine is that same act.
+Restoring one person's `sync.yaml` onto a colleague's machine points
+their tracker at the first person's git remote — a correctness and
+privacy failure, not an inconvenience.
+
+`key-index.yaml` is excluded for a different reason: it is **derived**,
+so carrying it risks restoring a stale index that disagrees with the
+tasks. It must be **rebuilt** from the restored tasks instead, which is
+also the reviewer's point that BAK-C9's "the old key still resolves"
+could pass via a `key_history` scan while the index is silently wrong.
+
+`state.yaml` is the opposite case and is why the question was worth
+asking: `{keys, retired_keys}` are the per-project **allocation
+counters**, not a cache and not machine-local. Dropping them leaves a
+restored tracker reissuing keys already in use, breaking P-1 invisibly
+until the first `task create` after the restore.
+
+**The nuance Ken's "re-calculated" points at.** On `--merge` into a
+non-empty tracker the counters must not simply be overwritten by the
+backup's — the destination may have allocated further. The intuitive
+option, and the one taken: **each project's counter becomes the max of
+the two**, so no key is ever reissued from either side. On a bare
+restore there is nothing to merge and the backup's counters are used
+as-is.
+
+**To revert.** Include `local/` in the export and drop the max-merge,
+using the backup's counters verbatim. Doing so reintroduces the
+cross-machine sync-remote leak and, on merge, reissues keys.
