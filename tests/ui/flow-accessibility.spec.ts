@@ -492,6 +492,36 @@ test.describe("A11Y — semantics", () => {
   });
 
   // @verifies A11Y-45
+  // @verifies A11Y-45
+  //
+  // Bullet 2 — "Focus moves to the start of the new main content … not
+  // left on the sidebar link, and not dropped to `document.body`" —
+  // was asserted by nothing. `useRouteAnnouncement` had zero focus
+  // calls, while `AppShell.tsx:177`'s comment claimed "the route
+  // announcement (A11Y-45) land[s] focus here". The pane was made
+  // `tabIndex={-1}` for this case and then nothing focused it, and the
+  // comment read as though the work were done.
+  //
+  // Measured before the fix: after List → Board, focus was still on
+  // the sidebar's Board link — the exact element the case names.
+  test("A11Y-45: a route change moves focus to the main content", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Anything" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+
+    const boardLink = page.getByRole("link", { name: "Board", exact: true });
+    await boardLink.focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/board/);
+
+    // The positive control: focus is on main, not merely off the link.
+    // Asserting only "not the sidebar link" would pass on focus having
+    // been dropped to document.body, which the case forbids by name.
+    await expect(page.locator("#main-content")).toBeFocused();
+  });
+
   test("A11Y-45: a route change is announced and titles the document", async ({
     page,
     tracker,
@@ -514,6 +544,109 @@ test.describe("A11Y — semantics", () => {
 
 test.describe("A11Y — announcements and failure states", () => {
   // @verifies A11Y-25
+  //
+  // Bullet 2 — "fires once for the settled result, not once per
+  // intermediate loading state" — is the settled-only gate
+  // (`!tasks.isFetching`) in ListView's announcement effect.
+  //
+  // A plain filter change cannot exercise that gate, and a test built
+  // on one passes with the gate deleted. `keepPreviousData` means the
+  // in-flight render carries the *last settled* total, and the effect's
+  // own `previous === total` change-guard already swallows a value
+  // equal to the last announced one — the two guards overlap exactly
+  // there. The gate is only observable when the in-flight render's
+  // total *differs* from the last announced total, i.e. when React
+  // Query serves **stale cached data** for a revisited query key while
+  // revalidating. So this test stages precisely that: visit a filter
+  // (cache its count), leave it, change the true count behind the
+  // inactive query's back (a bulk status set invalidates inactive keys
+  // without refetching them), then revisit the filter with the network
+  // held open. The stale render says "1", the settled result says "3" —
+  // an ungated effect announces both, the gated one announces only the
+  // settled "3 tasks".
+  test("A11Y-25: a filter announces once, not once per loading state", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed(
+      Array.from({ length: 12 }, (_, i) => ({
+        title: `Task ${String(i)}`,
+        ...(i === 0 ? { fields: { status: "in_progress" } } : {}),
+      })),
+    );
+    await page.goto(`${tracker.baseURL}/list`);
+    const region = page.getByTestId("announcer-polite");
+    const rows = page.locator("tbody tr");
+    await expect(page.getByText("Task 0")).toBeVisible();
+
+    // Visit the In progress filter so its count (1) lands in the query
+    // cache, then leave it. Both transitions are genuine count changes
+    // and announce once each — that part is the existing A11Y-25
+    // test's ground; here they only set the stage.
+    await page.getByRole("button", { name: "Filter Status" }).click();
+    await page.getByRole("menu").getByText("In progress").click();
+    await page.keyboard.press("Escape");
+    await expect(region).toContainText("1 tasks");
+    await page.getByRole("button", { name: "Filter Status" }).click();
+    await page.getByRole("menu").getByText("In progress").click();
+    await page.keyboard.press("Escape");
+    await expect(region).toContainText("12 tasks");
+
+    // Make the cached count stale: move two more tasks to In progress.
+    // The bulk mutation invalidates the tasks feed, but inactive query
+    // keys are only *marked* stale, not refetched — the cache for the
+    // In progress filter still says total 1 while the truth is 3.
+    await rows.filter({ hasText: "Task 3" }).getByRole("checkbox").check();
+    await rows.filter({ hasText: "Task 4" }).getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByRole("menu", { name: "Set status" })
+      .getByRole("menuitem", { name: "In progress" }).click();
+    await expect(
+      page.getByRole("region", { name: "Bulk actions" }).getByRole("status"),
+    ).toHaveText("2 tasks updated");
+    await expect(page.getByRole("cell", { name: "In progress" })).toHaveCount(3);
+
+    // Record every distinct value the live region takes from here on,
+    // rather than its end state — the final text is "3 tasks" whether
+    // the stale "1 tasks" was announced on the way or not.
+    const seen: string[] = [];
+    await page.exposeFunction("recordAnnouncement", (text: string) => {
+      if (text.trim() !== "" && seen[seen.length - 1] !== text) seen.push(text);
+    });
+    await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="announcer-polite"]');
+      if (el === null) throw new Error("no announcer region");
+      new MutationObserver(() => {
+        void (window as unknown as {
+          recordAnnouncement: (t: string) => void;
+        }).recordAnnouncement(el.textContent ?? "");
+      }).observe(el, { childList: true, subtree: true, characterData: true });
+    });
+
+    // Hold the revalidation open so the stale-cache render is a real,
+    // painted loading state rather than a race the fetch usually wins.
+    await page.route(/\/api\/tasks\?/, async route => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get("status") === "in_progress") {
+        await new Promise(resolve => setTimeout(resolve, 600));
+      }
+      await route.continue();
+    });
+
+    // Revisit the filter. React Query renders the cached page (total
+    // 1, stale) immediately with isFetching=true, then settles at 3.
+    await page.getByRole("button", { name: "Filter Status" }).click();
+    await page.getByRole("menu").getByText("In progress").click();
+    await page.keyboard.press("Escape");
+    await expect(region).toContainText("3 tasks");
+
+    // The settled result, once — and never the stale in-flight "1
+    // tasks", which is "the previous filter's count" the case forbids
+    // reading out.
+    const counts = seen.filter(t => /^\d+ tasks$/.test(t.trim()));
+    expect(counts).toEqual(["3 tasks"]);
+  });
+
   test("A11Y-25: a filter's settled result count is announced, zero included", async ({
     page,
     tracker,

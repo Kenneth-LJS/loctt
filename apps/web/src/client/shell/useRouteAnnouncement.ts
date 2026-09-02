@@ -2,6 +2,7 @@ import { useRouterState } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
 import { useAnnouncer } from "../ui/Announcer.tsx";
+import { MAIN_CONTENT_ID } from "./SkipLink.tsx";
 
 /**
  * Names the current view for the document title and the live region
@@ -49,5 +50,16 @@ export function useRouteAnnouncement(): void {
     previous.current = pathname;
     if (isFirst || !changed || name === null) return;
     announce(name);
+    // A11Y-45 bullet 2: "Focus moves to the start of the new main
+    // content … not left on the sidebar link, and not dropped to
+    // `document.body`." Nothing did this. `AppShell.tsx` made the pane
+    // `tabIndex={-1}` and its comment said the route announcement
+    // lands focus here — but the only caller was the skip link, and
+    // this hook had zero focus calls. Measured: after List → Board,
+    // focus was still on the sidebar's Board link.
+    //
+    // Not on the first render: focus belongs wherever the page put it
+    // on load, and stealing it there would fight the skip link.
+    document.getElementById(MAIN_CONTENT_ID)?.focus();
   }, [pathname, announce]);
 }
