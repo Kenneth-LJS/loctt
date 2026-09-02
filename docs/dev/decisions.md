@@ -6225,3 +6225,34 @@ test should be tightened to assert both versions are named.
 rather than a directory, and call it instead of throwing. Doing so
 creates a second migration implementation whose steps must be kept in
 lockstep with the directory one.
+
+### A99 · `SprintKey` is removed, tests and all
+
+**Ticket:** Group G batch 2 (contracts) · **Date:** 2026-09-02 · **Commit:** (this one)
+
+**The situation.** `brands.ts` exported `SprintKey`, a regex validating
+dotted sprint keys, with three tests exercising it in
+`brands.test.ts`. The Phase 4 audit filed it as dead code alongside
+`SlugKey`.
+
+**Measured.** `SlugKey` is alive — `projects.ts:32` uses it, so that
+half of the finding is wrong. `SprintKey` has **zero consumers**:
+`sprints.ts` imports only `IsoDate`, and sprints are referenced by
+**id**, never by key (`sprints.ts:11`, `:49`). There is no field
+anywhere for it to validate.
+
+**Decided.** Remove the export and its tests.
+
+**Why the tests are the argument, not an obstacle.** Three green tests
+asserted the regex behaves as written. None asserted anything about
+LocTT, because nothing calls it — they validate a validator. That is
+the shape this project treats most seriously in reverse: a passing test
+that makes dead code look maintained.
+
+**Why this is safe.** `@loctt/contracts` is `private: true`, so no
+external consumer can be depending on the export.
+
+**To revert.** Restore the `SprintKey` const, its type alias, the
+`index.ts` re-export and the `describe("SprintKey")` block. Only do so
+alongside a field that actually uses it — a sprint `key` in
+`SprintDefSchema` — or it returns to validating nothing.

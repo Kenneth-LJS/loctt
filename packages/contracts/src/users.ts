@@ -117,6 +117,22 @@ export const SidebarPinsSchema = z
   });
 export type SidebarPins = z.infer<typeof SidebarPinsSchema>;
 
+/**
+ * `.passthrough()`, unlike its `.strict()` siblings above, and
+ * deliberately so.
+ *
+ * Every settings panel saves with `{...stored, ...next}` — it reads
+ * the whole object and writes it back
+ * (`PreferencesPanel.tsx:83`, `SidebarPinsPanel.tsx:94`,
+ * `CardLayoutPanel.tsx:96`). Under `.strict()`, a key one panel does
+ * not know about is rejected *on save*, so editing your card layout
+ * would destroy your sidebar pins the moment the two versions
+ * disagree — a newer client's key, or a hand-added one.
+ *
+ * The strictness that protects `profile.yaml` would corrupt this file.
+ * Flagged as an inconsistency by the Phase 4 audit; it is a load-bearing
+ * difference, not drift.
+ */
 export const UserSettingsSchema = z.object({
   default_project: z.string().min(1).optional(),
   card_layout: CardLayoutSchema.optional(),

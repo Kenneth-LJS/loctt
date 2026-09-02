@@ -11,6 +11,7 @@ import type {
 } from "./index.js";
 import {
   projectTaskFrontmatter,
+  TaskFrontmatterPublicSchema,
   TaskFrontmatterSchema,
 } from "./index.js";
 
@@ -129,6 +130,37 @@ describe("TaskFrontmatter round-trip", () => {
     expect(apiShape.status).toBe("in_progress");
     expect(apiShape.id).toBe(minimal.id);
     expect(apiShape.key).toBe(minimal.key);
+  });
+
+  it("projectTaskFrontmatter carries every field the public schema declares", () => {
+    // The projection used to hold a hand-written key list beside the
+    // schema. A field added to the schema and forgotten there was
+    // dropped from the CLI's JSON, the MCP tools' output and the web
+    // API at once, silently. This asserts the two agree, so adding a
+    // public field cannot half-land.
+    //
+    // Asserting a fixed count would be weaker: it passes when one
+    // field is added and another removed, and it says nothing about
+    // WHICH field went missing.
+    const declared = Object.keys(TaskFrontmatterPublicSchema.shape);
+    const populated: Record<string, unknown> = {
+      ...minimal,
+      status: "in_progress",
+      project: "proj", status_updated_at: minimal.created_at,
+      task_type: "task", priority: "high", labels: ["l1"],
+      assignee: "u1", reporter: "u2",
+      start_date: "2026-01-01", due_date: "2026-01-02",
+      estimate: 3, completed_date: "2026-01-03",
+      milestone: "m1", sprint: "s1",
+      archived: true, archived_at: minimal.created_at,
+      relationships: [], key_history: [], fields: { a: 1 },
+      board_rank: "n",
+    };
+    const apiShape = projectTaskFrontmatter(
+      TaskFrontmatterSchema.parse(populated),
+    ) as Record<string, unknown>;
+    const missing = declared.filter(k => apiShape[k] === undefined);
+    expect(missing).toEqual([]);
   });
 
   it("projectTaskFrontmatter preserves the custom fields map", () => {

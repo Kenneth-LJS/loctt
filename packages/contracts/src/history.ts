@@ -12,6 +12,11 @@ import { z } from "zod";
  * - `body_edited` — body content changed; `before` and `after` carry
  *   the full text, which is what makes a lost merge race recoverable
  * - `attachment_added` / `attachment_removed` — file attached/detached
+ * - `merge_resolved` — git-sync could not resolve a field from history
+ *   and fell back to whole-record last-write-wins; carries the losing
+ *   value, the winning one, and which side won. Documented here as
+ *   well as at its declaration because this list is what a reader
+ *   treats as the complete set, and it was the one kind missing.
  * - `comment_added` / `comment_edited` / `comment_deleted` — comment
  *   lifecycle. Anyone may edit or delete anyone's comment (LocTT is
  *   local and unauthenticated, so there's no trust boundary to

@@ -27,15 +27,6 @@ export const SlugKey = z
 export type SlugKey = z.infer<typeof SlugKey>;
 
 /**
- * Sprint keys allow dots in addition to slug characters. Common
- * pattern: sprint_2026.q1 or 2026.q1-iteration-3.
- */
-export const SprintKey = z
-  .string()
-  .regex(/^[a-z0-9][a-z0-9_.-]*$/, "must be a slug (lowercase letters, digits, hyphen, dot, underscore)");
-export type SprintKey = z.infer<typeof SprintKey>;
-
-/**
  * Hex color string. Accepts 3- and 6-digit lowercase or uppercase
  * forms, optionally prefixed with `#`. Stored as the value the
  * user wrote — no normalization.
