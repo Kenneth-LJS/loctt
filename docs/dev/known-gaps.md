@@ -3049,3 +3049,50 @@ Bounded at 5 s and **non-asserting** on purpose: a refused write leaves
 the order unchanged, and judging that is the caller's job, not the
 helper's — so a genuinely lost write still fails at the caller's
 assertion rather than being masked here.
+
+## The integration and e2e flakiness: over-parallelisation (diagnosed, fixed)
+
+**Phase 6's second item, open since the plan was written. Diagnosed
+2026-09-02 by provoking it rather than waiting for it.**
+
+The plan recorded "one run reported 5 failures; eight consecutive runs
+since have been green" and asked that the output be captured on the
+next occurrence. It never occurred on its own. Running the suite under
+9 busy-loop processes reproduced it immediately — **30 failed, 432
+passed** — and from there it reproduced without any load at all.
+
+**The output, which nobody had:**
+
+- **27 of 30 were `Test timed out in 15000ms`.** Not assertions.
+- The summed `import` time was **194 s against a 213 s wall clock** —
+  the tell. Workers were contending for the machine, not running slow
+  tests.
+
+**The cause.** Neither `tests/vitest.integration.config.ts` nor
+`tests/vitest.e2e.config.ts` set `maxWorkers`, so vitest defaults to
+one worker per core. These are not compute tests: each spawns the real
+`loctt` binary and, for the MCP cases, a stdio server. On a 10-core box
+that is ~10 processes each fanning out more, and the timeout fires on
+tests that were merely starved.
+
+**Measured, `npm run test:integration` on a 10-core box:**
+
+| workers | result |
+|---|---|
+| default (10) | 5, 8, 9 and 30 failures across four runs |
+| **2** | **462 passed, exit 0**, twice consecutively |
+
+**e2e had it too**, found while gating this fix: 2 of 21 failed in
+isolation, 1 of 21 alongside the integration run, always `Test timed
+out in 30000ms`, never an assertion. At two workers: 21 passed.
+
+**The earlier recorded diagnosis was wrong and the plan said so.** It
+blamed vitest's 5 s default; both configs have carried explicit
+timeouts since they were written. The plan's instruction — do not raise
+a timeout that may not be the cause — was right: raising it would have
+masked the contention. The fix is fewer workers, not longer waits.
+
+**Why it looked intermittent.** Whether a starved test crosses its
+timeout depends on what else the machine is doing, which is why it went
+eight runs green and then failed five at once. Anything else running —
+another suite, a build, a browser — changes the outcome.
