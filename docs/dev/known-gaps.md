@@ -2539,3 +2539,37 @@ finished work rather than missing work.
 outside its ticket's roster? Where the answer is a group reason, that
 is fine — but the group must name its members, or the next audit
 cannot tell a deliberate decline from an omission.
+
+## Escape does not cancel a keyboard relationship reorder (REL-15, A11Y-29)
+
+`RelationshipsPanel.tsx:509` — the Escape branch sets `grabbed` to null
+and announces "Move cancelled". **It performs no move.** The row stays
+wherever the arrow keys left it, and the writes have already landed.
+
+Two things make this wrong, and both are contradicted by comments
+sitting directly above the code:
+
+1. Line 440 says `grabbed` holds "where it started, so Escape can put it
+   back (REL-15's third bullet) **without a write ever leaving**". But
+   `keyboardMove` (line 449) calls `onMove(from, to)` on *every* arrow
+   press, so each keystroke is a real rerank write. There is no pickup
+   buffer.
+2. `keyboardMove` then does `setGrabbed(to)` — overwriting `grabbed`
+   with the **current** position on every step. Even if Escape did move,
+   the origin it needs was destroyed by the first arrow press.
+
+A11Y-29's fourth bullet ("cancelling restores the original position")
+and REL-15's third bullet are therefore both unmet.
+
+**Reproduce**: open a task with three ranked relationships, focus a
+reorder handle, press ArrowDown twice, then Escape. Expected: the row
+returns to position 1. Actual: it stays at position 3, and the file on
+disk has two rerank writes.
+
+**The trap for whoever fixes this**: a test that asserts only the
+"Move cancelled" announcement passes against the broken code. Assert
+the row's position — and read the task file, since the writes are the
+half that actually escaped.
+
+**Shape**: same as A11Y-45 — a comment describing behaviour the code
+never implemented, which reads as done to a reviewer.
