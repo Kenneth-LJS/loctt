@@ -57,6 +57,7 @@ export function OptionPicker({
   clearLabel,
   emptyText = "—",
   disabledReason,
+  errorId,
 }: {
   /** The field's own label, for the trigger's accessible name. */
   readonly label: string;
@@ -73,6 +74,18 @@ export function OptionPicker({
    * Archived entities are the only current use.
    */
   readonly disabledReason?: string;
+  /**
+   * A11Y-23: the id of the error text for this field, when the form
+   * has rejected it.
+   *
+   * The picker's trigger is a `button`, not an `input`, so nothing
+   * associates it with an error message by default. Setting
+   * `aria-invalid` and `aria-describedby` here is what makes a screen
+   * reader read the rule when focus lands on the trigger — the case's
+   * first two bullets — rather than only at the moment the red text
+   * appeared.
+   */
+  readonly errorId?: string | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -129,6 +142,8 @@ export function OptionPicker({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
+        aria-invalid={errorId !== undefined}
+        aria-describedby={errorId}
         onClick={() => { setOpen(o => !o); }}
         className="-mx-1 w-full rounded px-1 py-0.5 text-left text-[13px] text-text-primary hover:bg-bg-muted"
       >

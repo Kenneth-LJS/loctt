@@ -143,6 +143,14 @@ function ItemShell({
   return (
     <span
       data-active={active ? "true" : undefined}
+      // A11Y-30's fourth bullet: the active route must be marked by
+      // more than a colour change. `bg-accent-muted text-accent` is
+      // exactly and only colour, so in greyscale — or to a screen
+      // reader — the current entry was indistinguishable from the
+      // rest. `aria-current="page"` is the assistive-tech half the
+      // bullet names; the `font-semibold` below is the visual half,
+      // so the distinction survives a greyscale screenshot too.
+      aria-current={active === true ? "page" : undefined}
       // The tooltip lives on the enclosing <a> so keyboard focus
       // surfaces it too (SHL-19, SHL-22); repeating it here would nest
       // two tooltips on the same target. Kept for the non-link rows —
@@ -150,11 +158,11 @@ function ItemShell({
       // no anchor of their own.
       title={title}
       className={[
-        "flex h-8 items-center rounded-md text-[13px] font-medium",
+        "flex h-8 items-center rounded-md text-[13px]",
         collapsed ? "w-10 justify-center px-0" : "gap-2.5 px-2.5",
         active
-          ? "bg-accent-muted text-accent"
-          : "text-text-secondary hover:bg-bg-muted hover:text-text-primary",
+          ? "bg-accent-muted font-semibold text-accent"
+          : "font-medium text-text-secondary hover:bg-bg-muted hover:text-text-primary",
       ].join(" ")}
     >
       {children}

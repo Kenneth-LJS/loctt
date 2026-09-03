@@ -32,10 +32,38 @@
  * changed — not that a class or an attribute is present.
  */
 
-import { chmod, readdir, rm, stat } from "node:fs/promises";
+import { chmod, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { expect, test } from "./fixtures/tracker.ts";
+
+/**
+ * Reads one task's `task.md` from disk by key.
+ *
+ * A11Y-28 requires the keyboard move to be verified against the file,
+ * not the DOM — "the keyboard path must not be verified more weakly
+ * than the pointer path". Same shape as flow-board.spec.ts's helper,
+ * which BRD-9 uses for the drag path.
+ */
+async function readTaskFile(root: string, key: string): Promise<string> {
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  for (const id of await readdir(tasksDir)) {
+    try {
+      const text = await readFile(path.join(tasksDir, id, "task.md"), "utf8");
+      if (new RegExp(`^key: ${key}$`, "m").test(text)) return text;
+    } catch {
+      continue;
+    }
+  }
+  throw new Error(`no task.md for ${key}`);
+}
+
+/** Appends a `boards:` block to workflow.yaml. */
+async function setBoards(root: string, yaml: string): Promise<void> {
+  const file = path.join(root, ".loctt", "config", "workflow.yaml");
+  const text = await readFile(file, "utf8");
+  await writeFile(file, `${text}\n${yaml}\n`, "utf8");
+}
 
 test.describe("A11Y — global shortcuts", () => {
   // @verifies A11Y-1
@@ -1742,5 +1770,1384 @@ test.describe("A11Y — text-only zoom", () => {
     // This is the gap. It inverts the day the type scale becomes
     // relative.
     expect(bodyAfter).toBe("14px");
+  });
+});
+
+/**
+ * ============================================================
+ * Group 4 (built but untested) and Group 3 (needs axe).
+ * ============================================================
+ *
+ * `@axe-core/playwright` is now installed, which unblocks the two
+ * cases whose subject is contrast and focus-indicator *visibility* —
+ * quantities a hand-written assertion cannot honestly measure.
+ *
+ * Every axe scan below is **scoped** (`.include()` plus
+ * `.withRules([...])`). An unscoped "zero violations on the page"
+ * assertion fails on something unrelated to the case it claims, and
+ * becomes a test that gets re-run rather than fixed.
+ */
+
+test.describe("A11Y — layered dismissal", () => {
+  // @verifies A11Y-5
+  test("A11Y-5: Esc closes the dropdown inside the create modal first, then the modal", async ({
+    page,
+    tracker,
+  }) => {
+    // A second project makes the Project picker a real dropdown: with
+    // one project the field renders as static text (`create-project-sole`)
+    // and there is no layer to close, which would make the first Esc
+    // close the modal and the test pass for the wrong reason.
+    await tracker.run(["project", "create", "Second", "--prefix", "SEC"]);
+    await tracker.seed([{ title: "Layered dismissal subject" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Layered dismissal subject")).toBeVisible();
+
+    // Opened from a real trigger so the "returns focus to whatever
+    // opened it" bullet has something to return to. Focusing the
+    // element first is what makes that assertion meaningful — a modal
+    // opened by `n` from `body` would restore to `body` and pass a
+    // weaker test.
+    const trigger = page.getByRole("button", { name: "New task" });
+    await trigger.focus();
+    await expect(trigger).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+
+    const picker = dialog.getByTestId("meta-edit-project");
+    await picker.focus();
+    await page.keyboard.press("Enter");
+    // The dropdown is the topmost layer now.
+    await expect(dialog.getByTestId("meta-options-project")).toBeVisible();
+    await expect(picker).toHaveAttribute("aria-expanded", "true");
+
+    // First Esc: the dropdown goes, the modal stays.
+    await page.keyboard.press("Escape");
+    await expect(dialog.getByTestId("meta-options-project")).toBeHidden();
+    // The modal is still open — this is the assertion the case is
+    // really about. A single Escape handler on `document` would have
+    // closed both, and only this line would catch it.
+    await expect(dialog).toBeVisible();
+    // "...with focus back on the dropdown trigger."
+    await expect(picker).toBeFocused();
+
+    // Second Esc: the modal goes. The form is untouched, so NEW-27's
+    // discard confirmation does not stand in the way (third bullet,
+    // which defers to A11Y-33 for the dirty case).
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toBeHidden();
+    // "...and returns focus to whatever opened it."
+    await expect(trigger).toBeFocused();
+  });
+});
+
+test.describe("A11Y — error association", () => {
+  /**
+   * A11Y-23 spans "every form". This test takes the two the case names
+   * by hand — the init wizard's prefix (ONB-19) and a settings form —
+   * plus the create modal, which is where the gap actually was: it
+   * rendered `role="alert"` text beside three fields and associated
+   * none of them, so a screen reader announced the error once as it
+   * appeared and said nothing when focus later entered the field.
+   *
+   * `role="alert"` and `aria-describedby` are not interchangeable, and
+   * that is the distinction the case's first bullet draws. An alert
+   * fires once, at insertion. `aria-describedby` is what makes the
+   * rule readable *on entering the field*, which is how a user who
+   * tabbed away and came back finds out what is wrong.
+   */
+  /**
+   * The create modal's two *reachable* blocked-submit paths.
+   *
+   * Not the empty-title one: the Create button is
+   * `disabled={!titleFilled || ...}` and there is no `<form>`, so
+   * `showTitleRequired` cannot be reached by any keyboard or pointer
+   * route a user has. Its `aria-invalid` wiring is therefore present
+   * but unexercised, and asserting it here would need
+   * `dispatchEvent` on a disabled control — a test of React internals
+   * rather than of the case. Recorded in known-gaps.md instead.
+   */
+  // @verifies A11Y-23
+  test("A11Y-23: the create modal marks a blocked field invalid, describes it, and moves focus there", async ({
+    page,
+    tracker,
+  }) => {
+    // NEW-19's ask state, which is the only route to a blocked
+    // project submit: several projects **and no default anywhere**.
+    // With `init`'s default left in place the field is pre-filled,
+    // the submit is never blocked, and this test would pass its
+    // negative control and then find nothing to assert.
+    await tracker.seed([{ title: "Error association subject" }]);
+    await tracker.run(["project", "create", "Second", "--prefix", "SEC"]);
+    // Cleared *after* seeding: with no default and two projects,
+    // `loctt create` itself refuses without an explicit --project.
+    await tracker.run(["project", "set-default", "-"]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Error association subject")).toBeVisible();
+
+    await page.getByRole("button", { name: "New task" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+
+    await dialog.getByTestId("create-title").fill("A task that names no project");
+
+    const picker = dialog.getByTestId("meta-edit-project");
+    // Positive control: the picker is not marked invalid before the
+    // blocked submit. Without this, a hardcoded `aria-invalid="true"`
+    // would satisfy every assertion below.
+    await expect(picker).not.toHaveAttribute("aria-invalid", "true");
+
+    await dialog.getByRole("button", { name: "Create task", exact: true }).click();
+
+    // Second bullet: marked invalid programmatically, not styled red
+    // only. The control is a *button*, which nothing associates with
+    // an error by default — this is the half most likely to regress.
+    await expect(picker).toHaveAttribute("aria-invalid", "true");
+
+    // First bullet: the description resolves to a real element whose
+    // text states the rule. Asserting the attribute is merely present
+    // would pass with an id pointing at nothing.
+    const describedBy = await picker.getAttribute("aria-describedby");
+    expect(describedBy).not.toBeNull();
+    const described = dialog.locator(`#${String(describedBy)}`);
+    await expect(described).toBeVisible();
+    // Fourth bullet, the P4 half: names what is missing, not "invalid".
+    await expect(described).toContainText(/project/i);
+    await expect(described).not.toContainText(/^invalid$/i);
+
+    // Third bullet: on a blocked submit focus moves to the first
+    // invalid field.
+    await expect(picker).toBeFocused();
+  });
+
+  // @verifies A11Y-23
+  test("A11Y-23: an out-of-order date range marks the due date invalid and describes the rule", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Date range subject" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Date range subject")).toBeVisible();
+
+    await page.getByRole("button", { name: "New task" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+
+    const due = dialog.getByTestId("create-due");
+    await expect(due).not.toHaveAttribute("aria-invalid", "true");
+
+    await dialog.getByTestId("create-start").fill("2026-06-10");
+    await due.fill("2026-06-01");
+
+    await expect(due).toHaveAttribute("aria-invalid", "true");
+    const describedBy = await due.getAttribute("aria-describedby");
+    expect(describedBy).not.toBeNull();
+    await expect(dialog.locator(`#${String(describedBy)}`)).toContainText(/before/i);
+
+    // The start date is *not* marked: one problem, one invalid field.
+    // Marking both would tell a screen-reader user to fix a field
+    // that is fine.
+    await expect(dialog.getByTestId("create-start")).not.toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+
+    // And it clears when the range is fixed.
+    await due.fill("2026-06-20");
+    await expect(due).not.toHaveAttribute("aria-invalid", "true");
+  });
+});
+
+test.describe("A11Y — keyboard board moves", () => {
+  /**
+   * A11Y-28's last bullet is the one that matters most: "**Re-read the
+   * task file** to confirm the atomic write landed... the keyboard
+   * path must not be verified more weakly than the pointer path."
+   *
+   * So this asserts the *disk*, not the DOM. A status-only write —
+   * the plausible wrong implementation — leaves `board_rank`
+   * unchanged, which the announcement and the re-rendered column would
+   * both hide.
+   */
+  // @verifies A11Y-28
+  test("A11Y-28: Ctrl+Arrow moves a card across columns, announces it, and writes status + board_rank atomically", async ({
+    page,
+    tracker,
+  }) => {
+    const pageErrors: string[] = [];
+    // A component that throws on render and one that renders nothing
+    // produce identical "element not found" output. This separates
+    // them.
+    page.on("pageerror", e => pageErrors.push(e.message));
+
+    const [first, second] = await tracker.seed([
+      { title: "Card to move", fields: { status: "backlog" } },
+      { title: "Card that stays", fields: { status: "backlog" } },
+    ]);
+    await page.goto(`${tracker.baseURL}/board`);
+
+    const card = page.getByTestId(`board-card-${String(first)}`);
+    await expect(card).toBeVisible();
+    expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+
+    const before = await readTaskFile(tracker.root, String(first));
+    expect(before).toMatch(/^status: backlog$/m);
+
+    // First bullet: the card is focusable and a documented key enters
+    // the move. Driven by the keyboard only — a `.click()` here would
+    // not verify the case.
+    const cardButton = card.getByRole("button").first();
+    await cardButton.focus();
+    await expect(cardButton).toBeFocused();
+    await page.keyboard.press("Control+ArrowRight");
+
+    // Third bullet: committing announces the result, naming the task,
+    // the destination and the position.
+    const live = page.getByTestId("board-live-region");
+    await expect(live).toContainText(String(first));
+    await expect(live).toContainText(/position \d+/);
+
+    // Fourth and fifth bullets: the resulting write is the same one
+    // the drag produces — an atomic status + `board_rank` update, read
+    // back off disk rather than trusted from the UI.
+    await expect
+      .poll(async () => readTaskFile(tracker.root, String(first)), { timeout: 5_000 })
+      .not.toMatch(/^status: backlog$/m);
+
+    const after = await readTaskFile(tracker.root, String(first));
+    // A status-only write is the wrong implementation this bullet
+    // exists to catch, and it is invisible from the DOM.
+    expect(after, "the keyboard move wrote no board_rank").toMatch(/^board_rank:/m);
+
+    // The other card was not touched — the move is to one task, not a
+    // column-wide rewrite.
+    const untouched = await readTaskFile(tracker.root, String(second));
+    expect(untouched).toMatch(/^status: backlog$/m);
+
+    expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  });
+});
+
+test.describe("A11Y — dense rows stay navigable", () => {
+  // @verifies A11Y-42
+  test("A11Y-42: twenty labels collapse behind one focusable, counted affordance", async ({
+    page,
+    tracker,
+  }) => {
+    const names = Array.from({ length: 20 }, (_u, i) => `label-${String(i + 1)}`);
+    for (const n of names) await tracker.run(["label", "create", n]);
+    await tracker.seed([
+      { title: "Twenty labels", fields: { labels: `[${names.join(", ")}]` } },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Twenty labels")).toBeVisible();
+
+    // First bullet: an overflow affordance exists, is announced with
+    // the count, and is itself focusable.
+    const overflow = page.getByTestId("label-overflow-trigger");
+    await expect(overflow).toBeVisible();
+    // The accessible name carries the number — "button" alone tells a
+    // screen-reader user nothing about what "+14" is for. Computed
+    // from the browser's accessibility tree, not read off an
+    // attribute.
+    await expect(overflow).toHaveAccessibleName(/\d+ more labels?/);
+
+    await overflow.focus();
+    await expect(overflow).toBeFocused();
+
+    // Second bullet: the row does not cost twenty tab stops. Counting
+    // the *rendered pills* is the check — the case's concern is that
+    // every label is individually tabbable, and the cap is what
+    // prevents it.
+    // No testid exists on the labels cell, so the cell is reached
+    // through the overflow trigger it contains — the pills are its
+    // sibling buttons.
+    const labelsCell = page.locator("td").filter({ has: overflow });
+    const pillCount = await labelsCell.getByRole("button").count();
+    // 20 labels must not become 20 stops. The exact cap is the
+    // component's business; that it *is* capped well below twenty is
+    // the case's.
+    expect(pillCount).toBeLessThan(20);
+
+    // And the hidden ones are reachable — collapsed, not lost.
+    await page.keyboard.press("Enter");
+    const panel = page.getByTestId("label-overflow-panel");
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole("button").first()).toBeVisible();
+  });
+});
+
+test.describe("A11Y — persistent states and motion", () => {
+  // @verifies A11Y-52
+  test("A11Y-52: the server-unreachable state is a persistent region, not a transient toast", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Connectivity subject" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Connectivity subject")).toBeVisible();
+
+    const banner = page.locator("[data-server-unreachable]");
+    // Positive control: it is absent while the server answers. Without
+    // this, a banner rendered unconditionally would satisfy every
+    // assertion below.
+    await expect(banner).toHaveCount(0);
+
+    // Make every request fail, which is what SHL-41's stopped server
+    // looks like to the client. Aborting rather than killing the
+    // fixture's process keeps the tracker directory available for the
+    // recovery half below.
+    await page.route(/\/api\//, route => { void route.abort("connectionrefused"); });
+    await page.reload();
+
+    await expect(banner).toBeVisible({ timeout: 15_000 });
+
+    // First bullet, the "announced" half: it is a live region, so its
+    // appearance is spoken. `status` rather than `alert` is deliberate
+    // (standing context, not an interruption) and is what the case's
+    // "announced ... and remains discoverable" asks for.
+    await expect(banner).toHaveAttribute("role", "status");
+
+    // First bullet, the "persistent" half — the one that separates
+    // this from a toast. A toast would be gone by now; this must not
+    // be. Well past the 6s toast lifetime.
+    await page.waitForTimeout(7_000);
+    await expect(banner).toBeVisible();
+
+    // Second bullet: the recovery instruction is readable text, not an
+    // icon or a colour.
+    await expect(banner).toContainText(/restart/i);
+    await expect(banner).toContainText(/loctt ui/);
+
+    // Third bullet: when connectivity returns the recovery is
+    // announced too — the region goes, so the user knows they can
+    // resume.
+    await page.unroute(/\/api\//);
+    await banner.getByRole("button", { name: "Try now" }).click();
+    await expect(banner).toHaveCount(0, { timeout: 15_000 });
+  });
+
+  // @verifies A11Y-37
+  test("A11Y-37: reduced motion suppresses the transition but not the outcome or its announcement", async ({
+    page,
+    tracker,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const [first] = await tracker.seed([
+      { title: "Reduced motion card", fields: { status: "backlog" } },
+    ]);
+    await page.goto(`${tracker.baseURL}/board`);
+
+    const card = page.getByTestId(`board-card-${String(first)}`);
+    await expect(card).toBeVisible();
+
+    // First and second bullets: nothing animates. Asserted against the
+    // *computed* style of the elements actually on screen, which is
+    // what a user experiences — not against the presence of a CSS
+    // rule, which would pass even if a later selector overrode it.
+    const motion = await page.evaluate(() => {
+      const offenders: string[] = [];
+      for (const el of Array.from(document.querySelectorAll("*"))) {
+        const cs = getComputedStyle(el);
+        const dur = (v: string): number =>
+          Math.max(0, ...v.split(",").map(s => {
+            const t = s.trim();
+            return t.endsWith("ms") ? parseFloat(t) : parseFloat(t) * 1000;
+          }).filter(n => Number.isFinite(n)));
+        if (dur(cs.transitionDuration) > 1) offenders.push(`${el.tagName} transition ${cs.transitionDuration}`);
+        if (dur(cs.animationDuration) > 1) offenders.push(`${el.tagName} animation ${cs.animationDuration}`);
+        // Fourth bullet: no animation loops indefinitely.
+        if (cs.animationIterationCount === "infinite") {
+          offenders.push(`${el.tagName} animation-iteration-count: infinite`);
+        }
+      }
+      return offenders;
+    });
+    expect(motion, motion.join("\n")).toHaveLength(0);
+
+    // Third bullet, and the one a "nothing animates" test would miss
+    // entirely: suppressing motion must not suppress the *outcome*.
+    // The move still happens and is still announced.
+    const cardButton = card.getByRole("button").first();
+    await cardButton.focus();
+    await page.keyboard.press("Control+ArrowRight");
+
+    await expect(page.getByTestId("board-live-region")).toContainText(String(first));
+    await expect
+      .poll(async () => readTaskFile(tracker.root, String(first)), { timeout: 5_000 })
+      .not.toMatch(/^status: backlog$/m);
+  });
+
+  // @verifies A11Y-41
+  test("A11Y-41: a 300-character title keeps the row's semantics and its column widths", async ({
+    page,
+    tracker,
+  }) => {
+    const long = `Long ${"x".repeat(295)}`;
+    expect(long).toHaveLength(300);
+    const [longKey, shortKey] = await tracker.seed([
+      { title: long },
+      { title: "Short title" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByRole("link", { name: String(shortKey) })).toBeVisible();
+
+    const longRow = page.locator("tbody tr").filter({ hasText: String(longKey) });
+    const shortRow = page.locator("tbody tr").filter({ hasText: String(shortKey) });
+    await expect(longRow).toHaveCount(1);
+
+    // First bullet: the full title is available, not just the clipped
+    // glyphs. The `title` attribute is what a user gets on hover and
+    // what the accessible description carries.
+    // The project chip also carries a `title`, so the title cell is
+    // selected by its own text rather than by position.
+    const titleText = longRow.locator("span").filter({ hasText: /^Long x+$/ }).first();
+    await expect(titleText).toHaveAttribute("title", long);
+
+    // ...and the row still announces the task identifiably: the key
+    // link is intact rather than swallowed by the title's overflow.
+    await expect(longRow.getByRole("link", { name: String(longKey) })).toBeVisible();
+
+    // The title is *visually* truncated — the second bullet's "the
+    // title truncates visually but the full title is available". This
+    // is the assertion that catches a cap being removed: without it
+    // the rendered span is as wide as 300 characters and the table
+    // scrolls the page sideways, while row height and column
+    // alignment can both still look fine on a wide viewport.
+    const titleBox = await titleText.boundingBox();
+    const shortTitleBox = await shortRow
+      .locator("span")
+      .filter({ hasText: /^Short title$/ })
+      .first()
+      .boundingBox();
+    expect(titleBox).not.toBeNull();
+    expect(shortTitleBox).not.toBeNull();
+    // Bounded, not proportional to the character count. A 300-char
+    // title at ~7px/char would be ~2100px unclamped.
+    expect(titleBox!.width).toBeLessThan(600);
+
+    // ...and the table does not push the document into a horizontal
+    // scroll, which is what an unclamped title actually does to the
+    // user.
+    const overflows = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+    );
+    expect(overflows, "a long title made the page scroll sideways").toBe(false);
+
+    // Second bullet: row height does not grow to fill the viewport.
+    // Compared against the short row rather than an absolute pixel
+    // figure, so the assertion survives a type-scale change.
+    const longBox = await longRow.boundingBox();
+    const shortBox = await shortRow.boundingBox();
+    expect(longBox).not.toBeNull();
+    expect(shortBox).not.toBeNull();
+    expect(longBox!.height).toBeLessThanOrEqual(shortBox!.height * 1.5);
+
+    // ...and the remaining cells stay in their columns: the long row
+    // has the same cell count as the short one, and its last cell
+    // starts at the same x. A title that pushed the columns would move
+    // it.
+    expect(await longRow.locator("td").count()).toBe(await shortRow.locator("td").count());
+    const longLast = await longRow.locator("td").last().boundingBox();
+    const shortLast = await shortRow.locator("td").last().boundingBox();
+    expect(Math.abs(longLast!.x - shortLast!.x)).toBeLessThan(2);
+  });
+});
+
+/**
+ * A11Y-51 is **deliberately not tagged**. See known-gaps.md.
+ *
+ * Its first and third bullets hold: `describeBulkResult` produces
+ * "37 tasks archived, 3 failed" — the real numbers, never a bare
+ * "Done" — and `BulkResult` renders the whole sentence plus every
+ * failure inside one `role="status"`, so nothing is truncated to a
+ * first sentence.
+ *
+ * The second bullet does not hold, and it is not a test gap: "the
+ * failed items are reachable by keyboard from the result" requires the
+ * failures to be focusable. They are `readonly string[]` — already
+ * formatted as `"KEY: reason"` by `describeBulkResult` — rendered as
+ * `{result.failures.join("; ")}` inside a plain `<span>`. There is no
+ * link, no button and no `tabIndex` anywhere in that subtree, and the
+ * task key has been flattened into prose by the time the component
+ * sees it, so nothing downstream can reconstruct a target to link to.
+ *
+ * Making them reachable means changing the shape `describeBulkResult`
+ * returns and every call site that consumes it — an implementation
+ * change with its own message-logic tests, not a transcription. That
+ * is recorded rather than done here, and rather than tagged with two
+ * of three bullets asserted.
+ *
+ * What is asserted below is the part that *is* true, so the gap is
+ * visible and the working half is regression-guarded. It carries no
+ * `@verifies` tag: this test does not satisfy the case.
+ */
+test.describe("A11Y — bulk results", () => {
+  test("A11Y-51 (partial): a partial bulk result states the real numbers and names every failure, but the failures are not focusable", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([
+      { title: "Bulk one" },
+      { title: "Bulk two" },
+      { title: "Bulk three" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Bulk one")).toBeVisible();
+
+    // One of the three fails, so the result is genuinely partial. A
+    // route override is the only way to produce a mixed response
+    // deterministically.
+    const doomed = String(keys[2]);
+    await page.route(/\/api\/tasks\/bulk/, async route => {
+      const body = route.request().postDataJSON() as { refs?: string[] };
+      const refs = body.refs ?? [];
+      const failed = refs.slice(-1);
+      const succeeded = refs.slice(0, -1);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          succeeded,
+          failed: failed.map(id => ({ taskId: id, error: "locked by another process" })),
+        }),
+      });
+    });
+
+    for (const k of keys) {
+      await page.getByRole("checkbox", { name: `Select ${String(k)}` }).check();
+    }
+    await page.getByRole("region", { name: "Bulk actions" })
+      .getByRole("button", { name: "Archive", exact: true })
+      .click();
+
+    const status = page.getByRole("status").filter({ hasText: /archived/ }).first();
+    // First bullet: the real numbers, never a bare "Done".
+    await expect(status).toContainText("2 tasks archived");
+    await expect(status).toContainText("1 failed");
+    await expect(status).not.toHaveText(/^\s*Done\.?\s*$/);
+
+    // Third bullet: the failure detail is inside the same live region
+    // as the summary, so a reader is not handed a truncated first
+    // sentence.
+    await expect(status).toContainText(/locked by another process/);
+
+    // The second bullet, asserted as **false** so this test inverts
+    // the day it is fixed — at which point the case can be
+    // transcribed properly and tagged. A test that merely omitted this
+    // would go stale silently.
+    const focusableInResult = await status.getByRole("link").count()
+      + await status.getByRole("button").filter({ hasText: new RegExp(doomed) }).count();
+    expect(
+      focusableInResult,
+      "failures became focusable — write the real A11Y-51 transcription and tag it",
+    ).toBe(0);
+  });
+});
+
+/**
+ * ## Where axe was used, and why it is not in the assertions
+ *
+ * `@axe-core/playwright` was used to *investigate* these two cases: a
+ * scoped `color-contrast` scan on `/list` is what found the app's
+ * palette defect (`--text-tertiary` at 3.67:1) and confirmed the
+ * primary button's focus ring was invisible against its own fill.
+ *
+ * It is not in the final assertions, for two separate reasons, and
+ * both are worth stating so the next agent does not "fix" this by
+ * adding a scan back.
+ *
+ * 1. **A11Y-16's subject is a pair axe does not measure.** The bullet
+ *    asks whether the *focus ring* is visible against the surface it
+ *    sits on. `color-contrast` measures text against its background
+ *    and reports nothing about outlines, so it cannot answer the
+ *    question. The WCAG relative-luminance formula is applied
+ *    directly to that pair instead.
+ * 2. **A whole-page scan fails for a case it does not claim.** The
+ *    contrast defect it finds belongs to **A11Y-40**, which is not one
+ *    of the sixteen in this pass. Scanning here would fail A11Y-16 for
+ *    someone else's defect; scoping the scan tightly enough to pass
+ *    would be tuning it until it agrees, which is worse.
+ *
+ * A11Y-30 is about *meaning*, which axe cannot see at all: that a
+ * status chip carries a text label, an archived row a badge, an
+ * over-cap column a named warning. Those are asserted directly.
+ */
+test.describe("A11Y — colour and focus visibility", () => {
+  /**
+   * Both themes, because the case says so explicitly. The theme is
+   * stored in `localStorage` under `tt-theme` and applied as a `dark`
+   * class on `<html>`, so it is seeded before the app boots rather
+   * than toggled through the settings UI — which would make this a
+   * test of the settings form.
+   */
+  for (const theme of ["light", "dark"] as const) {
+    // @verifies A11Y-16
+    test(`A11Y-16: every focusable control on /list carries a visible focus indicator (${theme})`, async ({
+      page,
+      tracker,
+    }) => {
+      await tracker.seed([
+        { title: "Focus indicator subject", fields: { status: "backlog", priority: "high" } },
+      ]);
+      await page.addInitScript(t => {
+        window.localStorage.setItem("tt-theme", t);
+      }, theme);
+      await page.goto(`${tracker.baseURL}/list`);
+      await expect(page.getByText("Focus indicator subject")).toBeVisible();
+
+      // The theme really is applied — a positive control, because
+      // every assertion below would pass in light mode if the seed
+      // had silently failed.
+      const isDark = await page.evaluate(() =>
+        document.documentElement.classList.contains("dark"),
+      );
+      expect(isDark).toBe(theme === "dark");
+
+      // Fourth bullet: no control suppresses the browser default with
+      // nothing in its place. Walked over every focusable on the page,
+      // focusing each and comparing its *own* rendered style focused
+      // against unfocused — which is what "an unambiguous focus
+      // indicator" means and what reading a stylesheet cannot tell.
+      const bad = await page.evaluate(() => {
+        const sel = [
+          "a[href]",
+          "button:not([disabled])",
+          "input:not([disabled])",
+          "select:not([disabled])",
+          "textarea:not([disabled])",
+          '[tabindex]:not([tabindex="-1"])',
+        ].join(",");
+        const offenders: string[] = [];
+        const describe = (el: Element): string =>
+          `${el.tagName.toLowerCase()}${el.getAttribute("data-testid") !== null ? `[${el.getAttribute("data-testid") ?? ""}]` : ""}` +
+          `"${(el.textContent ?? "").trim().slice(0, 24)}"`;
+        const snapshot = (el: Element): string => {
+          const cs = getComputedStyle(el);
+          // The properties any of this app's indicators could use.
+          // Compared as a whole so a ring implemented as a box-shadow
+          // counts exactly as much as one implemented as an outline.
+          return [
+            cs.outlineStyle, cs.outlineWidth, cs.outlineColor, cs.outlineOffset,
+            cs.boxShadow, cs.borderColor, cs.borderWidth, cs.backgroundColor,
+          ].join("|");
+        };
+        for (const el of Array.from(document.querySelectorAll(sel))) {
+          const rect = el.getBoundingClientRect();
+          // Off-screen and zero-size controls have no indicator to
+          // show and no user who could see one.
+          if (rect.width === 0 || rect.height === 0) continue;
+          const before = snapshot(el);
+          (el as HTMLElement).focus();
+          if (document.activeElement !== el) continue; // refused focus
+          const after = snapshot(el);
+          (el as HTMLElement).blur();
+          if (before === after) offenders.push(describe(el));
+        }
+        return offenders;
+      });
+      expect(bad, `no focus indicator on: ${bad.join(", ")}`).toHaveLength(0);
+    });
+
+    /**
+     * The second bullet: the indicator "is visible against the
+     * element's own background in both themes, **including on
+     * coloured elements** (status chips, label pills, primary
+     * buttons)".
+     *
+     * That is a contrast measurement between the *ring* and the
+     * surface it is painted on — a pair no axe rule reports, because
+     * `color-contrast` measures text against its background and says
+     * nothing about outlines. So the WCAG relative-luminance formula
+     * is applied directly to that pair below.
+     *
+     * axe was used to *find* this: a scoped `color-contrast` scan on
+     * `main` is what surfaced the app's palette problem while this
+     * case was being scoped. That finding —`--text-tertiary` (#7b8699)
+     * at 3.67:1 on white — is **A11Y-40's** subject, not A11Y-16's,
+     * and it is recorded in known-gaps.md rather than being smuggled
+     * into this case's tag. Running that scan here would fail this
+     * test for a defect it does not claim.
+     */
+    // @verifies A11Y-16
+    test(`A11Y-16: the focus ring meets 3:1 against the control it surrounds, including coloured ones (${theme})`, async ({
+      page,
+      tracker,
+    }) => {
+      await tracker.seed([
+        { title: "Contrast subject", fields: { status: "backlog", priority: "high" } },
+      ]);
+      await page.addInitScript(t => {
+        window.localStorage.setItem("tt-theme", t);
+      }, theme);
+      await page.goto(`${tracker.baseURL}/list`);
+      await expect(page.getByText("Contrast subject")).toBeVisible();
+      expect(
+        await page.evaluate(() => document.documentElement.classList.contains("dark")),
+      ).toBe(theme === "dark");
+
+      const weak = await page.evaluate(() => {
+        const parse = (css: string): [number, number, number, number] | null => {
+          const m = /rgba?\(([^)]+)\)/.exec(css);
+          if (m === null) return null;
+          const parts = (m[1] ?? "").split(",").map(x => parseFloat(x.trim()));
+          const [r, g, b] = parts;
+          if (r === undefined || g === undefined || b === undefined) return null;
+          return [r, g, b, parts[3] ?? 1];
+        };
+        const lum = ([r, g, b]: [number, number, number, number]): number => {
+          const c = [r, g, b].map(v => {
+            const s = v / 255;
+            return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+          });
+          return 0.2126 * (c[0] ?? 0) + 0.7152 * (c[1] ?? 0) + 0.0722 * (c[2] ?? 0);
+        };
+        const ratio = (a: [number, number, number, number], b: [number, number, number, number]): number => {
+          const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+          return ((hi ?? 0) + 0.05) / ((lo ?? 0) + 0.05);
+        };
+        /**
+         * The surface the ring is actually painted on.
+         *
+         * With a positive `outline-offset` the ring sits *outside*
+         * the control, on whatever is behind it — so measuring it
+         * against the control's own fill asks the wrong question and
+         * fails a ring that is perfectly visible. With a zero or
+         * negative offset the ring overlaps the control, and the
+         * control's fill is the right background.
+         *
+         * Both are checked where the ring straddles the boundary, and
+         * the *better* of the two is what the user perceives: a ring
+         * only has to be distinguishable from one side to read as a
+         * ring.
+         */
+        const surfacesFor = (el: Element): {
+          own: [number, number, number, number];
+          outside: [number, number, number, number];
+        } => {
+          const own = ((): [number, number, number, number] => {
+            let cur: Element | null = el;
+            while (cur !== null) {
+              const c = parse(getComputedStyle(cur).backgroundColor);
+              if (c !== null && c[3] > 0) return c;
+              cur = cur.parentElement;
+            }
+            return [255, 255, 255, 1];
+          })();
+          const outside = ((): [number, number, number, number] => {
+            let cur: Element | null = el.parentElement;
+            while (cur !== null) {
+              const c = parse(getComputedStyle(cur).backgroundColor);
+              if (c !== null && c[3] > 0) return c;
+              cur = cur.parentElement;
+            }
+            return [255, 255, 255, 1];
+          })();
+          // A ring drawn *outside* the control only ever sits on the
+          // page behind it. A ring at zero or negative offset
+          // overlaps the control, so it has to clear the bar against
+          // the control's own fill — that is exactly the "including
+          // on coloured elements" half of the bullet, and taking the
+          // friendlier of the two surfaces would let an
+          // accent-on-accent ring pass.
+          return { own, outside };
+        };
+        const offenders: string[] = [];
+        const sel = [
+          "a[href]",
+          "button:not([disabled])",
+          "input:not([disabled])",
+          '[tabindex]:not([tabindex="-1"])',
+        ].join(",");
+        for (const el of Array.from(document.querySelectorAll(`main ${sel}, aside ${sel}`))) {
+          const rect = el.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) continue;
+          (el as HTMLElement).focus();
+          if (document.activeElement !== el) continue;
+          const cs = getComputedStyle(el);
+          // The ring is whichever of these the app actually paints.
+          const ringCss =
+            cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0
+              ? cs.outlineColor
+              : /rgba?\(/.exec(cs.boxShadow)?.[0] !== undefined
+                ? (/rgba?\([^)]+\)/.exec(cs.boxShadow)?.[0] ?? "")
+                : "";
+          // Read while still focused: `outline-offset` only takes its
+          // focused value while the element matches `:focus-visible`,
+          // and reading it after `blur()` reports the resting value —
+          // which sent every offset ring down the overlapping branch.
+          const offset = parseFloat(cs.outlineOffset);
+          (el as HTMLElement).blur();
+          if (ringCss === "") continue; // no ring: the other test's subject
+          const ring = parse(ringCss);
+          if (ring === null || ring[3] === 0) continue;
+          // 3:1 is the WCAG bar for a non-text indicator, against
+          // every surface the ring is actually painted on.
+          const { own, outside } = surfacesFor(el);
+          const surfaces = offset > 0 ? [outside] : [own];
+          const worst = Math.min(...surfaces.map(bg => ratio(ring, bg)));
+          if (worst < 3) {
+            offenders.push(
+              `${el.tagName.toLowerCase()}"${(el.textContent ?? "").trim().slice(0, 20)}" ring ${ringCss} — ${worst.toFixed(2)}:1`,
+            );
+          }
+        }
+        return offenders;
+      });
+
+      expect(weak, weak.join("\n")).toHaveLength(0);
+    });
+  }
+
+  // @verifies A11Y-30
+  test("A11Y-30: status, priority, archived rows and the active route all carry a non-colour signal", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["label", "create", "urgent"]);
+    // Frontmatter stores the label *id*, not its name — writing
+    // `[urgent]` renders as "unknown label", which would have made the
+    // fifth bullet's assertion pass against the wrong thing.
+    const labelId = /^\s*-?\s*id:\s*(\S+)/m.exec(
+      await readFile(path.join(tracker.root, ".loctt", "config", "labels.yaml"), "utf8"),
+    )?.[1];
+    expect(labelId, "could not read the seeded label's id").toBeDefined();
+    const [live, archived] = await tracker.seed([
+      { title: "Live task", fields: { status: "backlog", priority: "high", labels: `[${String(labelId)}]` } },
+      { title: "Archived task", fields: { status: "backlog", priority: "low" } },
+    ]);
+    await tracker.run(["archive", String(archived)]);
+    await page.goto(`${tracker.baseURL}/list?archived=true`);
+    await expect(page.getByText("Live task")).toBeVisible();
+
+    const liveRow = page.locator("tbody tr").filter({ hasText: String(live) });
+
+    // First bullet: status and priority carry a *text label*, so a
+    // greyscale screenshot stays readable. Asserted as text rather
+    // than as "an element exists", because a coloured dot with no
+    // label is exactly the failure this case names.
+    await expect(liveRow).toContainText("Backlog");
+    await expect(liveRow).toContainText("High");
+
+    // Third bullet: archived tasks are marked with a badge, not only
+    // dimmed. Opacity is the colour-only signal that must not be the
+    // whole story.
+    const archivedRow = page.locator("tbody tr").filter({ hasText: String(archived) });
+    await expect(archivedRow).toContainText("Archived");
+
+    // Fifth bullet: a label pill always renders its text name, because
+    // its colour is user-chosen and carries nothing reliable.
+    await expect(page.locator("tbody tr").filter({ hasText: String(live) })).toContainText("urgent");
+
+    // Fourth bullet: the active sidebar route is marked by more than a
+    // colour change. `aria-current="page"` is the assistive-tech
+    // signal the bullet names; the weight change is the visual one.
+    // The router also stamps `aria-current` on the matching <a>, so
+    // this targets the sidebar entry's own element — the one that
+    // carries the weight change as well.
+    const activeEntry = page.locator('span[aria-current="page"][data-active="true"]').first();
+    await expect(activeEntry).toBeVisible();
+
+    // Positive control: the marker is on *one* entry, not stamped on
+    // every one. Without this the assertion would pass against a
+    // sidebar that marked everything current, which distinguishes
+    // nothing.
+    const marked = await page.locator('span[aria-current="page"]').count();
+    const allEntries = await page.locator("aside span[data-active], aside a span").count();
+    expect(marked).toBeGreaterThan(0);
+    expect(marked).toBeLessThan(allEntries);
+
+    // ...and the visual half, so the distinction survives a greyscale
+    // screenshot too: the active entry is bolder, not merely tinted.
+    const activeWeight = Number(
+      await activeEntry.evaluate(el => getComputedStyle(el).fontWeight),
+    );
+    const inactiveWeight = Number(
+      // A sibling entry shell — matched by the same layout class the
+      // active one has, so this compares like with like rather than
+      // picking up a nested span inside the active row.
+      await page
+        .locator('aside a > span:not([data-active="true"])')
+        .first()
+        .evaluate(el => getComputedStyle(el).fontWeight),
+    );
+    expect(activeWeight).toBeGreaterThan(inactiveWeight);
+  });
+
+  // @verifies A11Y-30
+  test("A11Y-30: an over-cap column is identifiable without colour", async ({
+    page,
+    tracker,
+  }) => {
+    // A WIP cap of 1 with two tasks in the column is the over-cap
+    // state; the third bullet asks for both the count and a named
+    // warning glyph.
+    await tracker.seed([
+      { title: "Over cap one", fields: { status: "backlog" } },
+      { title: "Over cap two", fields: { status: "backlog" } },
+    ]);
+    await setBoards(
+      tracker.root,
+      [
+        "boards:",
+        "  columns:",
+        "    - key: todo",
+        "      label: To do",
+        "      statuses: [backlog]",
+        "      wip: 1",
+      ].join("\n"),
+    );
+    await page.goto(`${tracker.baseURL}/board`);
+
+    const count = page.getByTestId("board-count-todo");
+    await expect(count).toBeVisible();
+    // "a count like 6 / 4" — both numbers, readable in greyscale.
+    await expect(count).toHaveText(/2\s*\/\s*1/);
+    await expect(count).toHaveAttribute("data-wip-state", "over");
+
+    // "...and a warning glyph with an accessible name". The name is
+    // the point: a bare ⚠ with `aria-hidden` would leave a screen
+    // reader with only the numbers, and the numbers alone do not say
+    // that 2/1 is a violation rather than a target.
+    const warning = page.getByTestId("board-wip-warning-todo");
+    await expect(warning).toBeVisible();
+    await expect(warning).toHaveAccessibleName(/over wip limit/i);
+  });
+});
+
+test.describe("A11Y — focus through change", () => {
+  // @verifies A11Y-18
+  test("A11Y-18: opening an inline editor moves focus into it, and closing returns focus to the trigger", async ({
+    page,
+    tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Inline editor subject" }]);
+    await page.goto(`${tracker.baseURL}/tasks/${String(key)}`);
+    await expect(page.getByTestId("meta-panel")).toBeVisible();
+
+    // Driven from the keyboard: the trigger is reached and activated
+    // with the keyboard, so this verifies the path a keyboard user
+    // actually takes rather than a click's side effects.
+    const trigger = page.getByTestId("meta-edit-estimate");
+    await trigger.focus();
+    await expect(trigger).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    // First bullet: focus moves *into* the newly rendered input rather
+    // than staying behind it. This is the assertion a "the input is
+    // visible" check would miss entirely — an editor that renders and
+    // leaves focus on the trigger is the exact failure the case names.
+    const input = page.getByTestId("meta-input-estimate");
+    await expect(input).toBeVisible();
+    await expect(input).toBeFocused();
+
+    // ...and it is really usable from there, without a further click.
+    await page.keyboard.type("5");
+    await expect(input).toHaveValue("5");
+
+    // Second bullet: closing the inline editor returns focus to the
+    // field's trigger row — not to `document.body`, which would send
+    // the next Tab back to the top of the document.
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("meta-input-estimate")).toBeHidden();
+    // Asserted positively. "Focus is not on the input" would pass with
+    // focus on `body`, which A11Y-45 forbids by name.
+    await expect(page.getByTestId("meta-edit-estimate")).toBeFocused();
+  });
+
+  /**
+   * A11Y-17 is **deliberately not tagged**. See known-gaps.md.
+   *
+   * The case asks that focus survive an async content replacement:
+   * "focus stays on the equivalent row, or moves to a deliberate,
+   * announced location", and specifically not be "silently dropped to
+   * `document.body`".
+   *
+   * Neither half can be honestly asserted against this app:
+   *
+   * 1. **There is nothing on a row to keep focus on.** A list row is a
+   *    bare `<tr>` with an `onClick` — no `role`, no `tabIndex`, no key
+   *    handler (`ListView.tsx`). The only focusable thing in a row is
+   *    the key cell's `<a>`. So "focus stays on the equivalent row"
+   *    has no subject: rows are not focusable, and the app holds no
+   *    reference to a focused row to restore across a refetch.
+   *
+   * 2. **The absence assertion cannot fail.** The plausible test —
+   *    focus something, refetch, press Tab, assert focus is not on
+   *    body — passes whether or not anything preserves focus, because
+   *    Tab from `document.body` lands on the first focusable element
+   *    rather than staying on body. Verified by mutation: explicitly
+   *    blurring to body immediately before the assertion left the test
+   *    green.
+   *
+   * Writing it anyway would produce precisely the tag-that-cannot-fail
+   * this repo keeps finding. The prerequisite is row focusability
+   * (roving `tabindex` or a focusable row control) plus a restore
+   * across refetch; both are recorded rather than faked.
+   *
+   * What is asserted below is the *cause*, so the gap is visible and
+   * regression-guarded: rows are not focusable. This inverts the day
+   * they become so, which is the signal to write the real
+   * transcription and tag it. It carries no `@verifies` tag.
+   */
+  test("A11Y-17 (partial): list rows are not focusable, so there is no row focus to preserve across a refetch", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Kept alpha", fields: { status: "backlog" } },
+      { title: "Filtered away", fields: { status: "done" } },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Kept alpha")).toBeVisible();
+
+    // The rows exist — a positive control, so "no focusable row" is
+    // not passing because there are no rows.
+    const rows = page.locator("tbody tr");
+    expect(await rows.count()).toBeGreaterThan(1);
+
+    // No row carries a tabindex or an interactive role, so no row can
+    // hold focus across anything.
+    const rowFocusable = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("tbody tr")).filter(
+        tr =>
+          tr.hasAttribute("tabindex")
+          || ["row", "button", "link"].includes(tr.getAttribute("role") ?? ""),
+      ).length,
+    );
+    expect(
+      rowFocusable,
+      "rows became focusable — write the real A11Y-17 transcription and tag it",
+    ).toBe(0);
+
+    // ...and focusing a row programmatically does not take, which is
+    // the same statement from the user's side.
+    const took = await page.evaluate(() => {
+      const tr = document.querySelector("tbody tr");
+      if (tr === null) return false;
+      (tr as HTMLElement).focus();
+      return document.activeElement === tr;
+    });
+    expect(took).toBe(false);
+  });
+
+  // @verifies A11Y-19
+  test("A11Y-19: tab order follows visual order and uses no positive tabindex", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Tab order subject" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Tab order subject")).toBeVisible();
+
+    // Third bullet, asserted first because it is absolute: no positive
+    // `tabindex` anywhere. A positive value forces an order that
+    // fights the DOM and silently reorders everything else on the
+    // page.
+    const positives = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("[tabindex]"))
+        .map(el => ({ tag: el.tagName, ti: Number(el.getAttribute("tabindex")) }))
+        .filter(x => x.ti > 0)
+        .map(x => `${x.tag}[tabindex=${String(x.ti)}]`),
+    );
+    expect(positives, positives.join(", ")).toHaveLength(0);
+
+    // First bullet: header → sidebar → main pane. Walked by pressing
+    // Tab and recording which region each stop lands in, then checking
+    // the regions appear in that order and never interleave — which is
+    // what "matching what a sighted user reads" means, and what a test
+    // that only counted stops would miss.
+    await page.locator("body").click({ position: { x: 1, y: 1 } });
+    const regions: string[] = [];
+    const seen = new Set<string>();
+    for (let i = 0; i < 120; i += 1) {
+      await page.keyboard.press("Tab");
+      const stop = await page.evaluate(() => {
+        const el = document.activeElement;
+        if (el === null || el === document.body) return { region: "body", id: "" };
+        const region =
+          el.closest("header") !== null ? "header"
+          : el.closest("aside") !== null ? "aside"
+          : el.closest("main") !== null ? "main"
+          : "other";
+        // A stable-enough identity for one stop, to detect the wrap.
+        return {
+          region,
+          id: `${el.tagName}|${el.getAttribute("data-testid") ?? ""}|${(el.textContent ?? "").trim().slice(0, 20)}`,
+        };
+      });
+      if (stop.region === "body" || stop.region === "other") continue;
+      // Tab cycles: once a stop repeats, the walk has wrapped to the
+      // top and everything after it is the second lap. Without this
+      // the recorded order reads header,aside,main,header,aside and
+      // the assertion below fails on the app's *correct* behaviour.
+      const stopKey = `${stop.region}:${stop.id}`;
+      if (seen.has(stopKey)) break;
+      seen.add(stopKey);
+      if (regions[regions.length - 1] !== stop.region) regions.push(stop.region);
+    }
+
+    // Each region is entered once: a sequence like
+    // header,aside,main,aside would mean the order interleaves.
+    expect(regions, `tab order visited: ${regions.join(" → ")}`).toEqual(
+      Array.from(new Set(regions)),
+    );
+    // ...and in the documented order.
+    const expectedOrder = ["header", "aside", "main"].filter(r => regions.includes(r));
+    expect(regions).toEqual(expectedOrder);
+    // A positive control: the walk actually reached more than one
+    // region, so an "order is correct" pass cannot come from a walk
+    // that never left the header.
+    expect(regions.length).toBeGreaterThan(1);
+  });
+});
+
+test.describe("A11Y — undo without a pointer", () => {
+  // @verifies A11Y-36
+  test("A11Y-36: Undo after an archive is reachable and operable by keyboard, and does not expire", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([
+      { title: "Undo subject one" },
+      { title: "Undo subject two" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Undo subject one")).toBeVisible();
+
+    // Archive by keyboard throughout — the case says "reach Undo
+    // without a pointer", and a `.click()`-driven test would not
+    // verify it.
+    for (const k of keys) {
+      const box = page.getByRole("checkbox", { name: `Select ${String(k)}` });
+      await box.focus();
+      await page.keyboard.press("Space");
+    }
+    const archive = page
+      .getByRole("region", { name: "Bulk actions" })
+      .getByRole("button", { name: "Archive", exact: true });
+    await archive.focus();
+    await page.keyboard.press("Enter");
+
+    const undo = page.getByRole("button", { name: "Undo" });
+    await expect(undo).toBeVisible();
+
+    // The archive really happened, so the Undo below has something to
+    // undo. Read off disk — a UI-only check would let a no-op pass.
+    await expect
+      .poll(async () => readTaskFile(tracker.root, String(keys[0])), { timeout: 5_000 })
+      .toMatch(/^archived: true$/m);
+
+    // Second bullet: this affordance is not transient. It is still
+    // here well past the 6s toast lifetime, so a keyboard user who
+    // needed longer than a mouse user to reach it is not worse off —
+    // which is exactly what the bullet protects.
+    await page.waitForTimeout(7_000);
+    await expect(undo).toBeVisible();
+
+    // First bullet: reachable *by keyboard*, asserted by tabbing to it
+    // rather than by calling `.focus()` — a control that is visible
+    // but outside the tab order would pass the latter and fail the
+    // case.
+    let reached = false;
+    for (let i = 0; i < 80; i += 1) {
+      await page.keyboard.press("Tab");
+      if (await undo.evaluate(el => el === document.activeElement)) {
+        reached = true;
+        break;
+      }
+    }
+    expect(reached, "Undo was never reached by Tab").toBe(true);
+
+    // ...and it works from the keyboard, which is the whole point.
+    await page.keyboard.press("Enter");
+    await expect
+      .poll(async () => readTaskFile(tracker.root, String(keys[0])), { timeout: 10_000 })
+      .not.toMatch(/^archived: true$/m);
+  });
+});
+
+test.describe("A11Y — sidebar and full-cycle keyboard operation", () => {
+  /**
+   * A11Y-12 is **deliberately not tagged**. See known-gaps.md.
+   *
+   * Its first and third bullets hold, and are asserted below. The
+   * second does not, and it is not a test gap: "collapsible groups
+   * expose their expanded/collapsed state to assistive tech and toggle
+   * on `Enter`/`Space`" has **no subject in this app**. The sidebar's
+   * six groups (Projects, Saved filters, Milestones, Sprints, Labels,
+   * Recently viewed) render from a `GroupLabel`, which is a plain
+   * `<div>` with no control, no state and no handler; there is not one
+   * `aria-expanded` anywhere in `Sidebar.tsx`.
+   *
+   * The `collapsed` prop threaded through every group is the *whole
+   * sidebar's* rail toggle (SHL-21, and `aria-expanded` for it lives
+   * correctly on the header's hamburger, which A11Y-21 covers). It is
+   * not per-group collapse, and reading it as such is the mistake this
+   * note exists to prevent.
+   *
+   * Tagging on two of three bullets would claim a keyboard affordance
+   * that does not exist. Recorded instead.
+   */
+  test("A11Y-12 (partial): every sidebar entry is reachable in visual order and the inert one is announced, but no group is collapsible", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Sidebar subject" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Sidebar subject")).toBeVisible();
+
+    // First bullet: every entry is reachable, in the order it is
+    // rendered. Walked with Tab and compared against the sidebar's own
+    // DOM order — the two must agree, which is what "a predictable
+    // order" means.
+    const domOrder = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("aside a[href], aside button:not([disabled])"))
+        .filter(el => el.getBoundingClientRect().width > 0)
+        .map(el => (el.textContent ?? "").trim().slice(0, 24)),
+    );
+    expect(domOrder.length).toBeGreaterThan(3);
+
+    await page.locator("body").click({ position: { x: 1, y: 1 } });
+    const tabOrder: string[] = [];
+    for (let i = 0; i < 120; i += 1) {
+      await page.keyboard.press("Tab");
+      const hit = await page.evaluate(() => {
+        const el = document.activeElement;
+        if (el === null || el.closest("aside") === null) return null;
+        return (el.textContent ?? "").trim().slice(0, 24);
+      });
+      if (hit === null) {
+        if (tabOrder.length > 0) break; // walked out the far side
+        continue;
+      }
+      if (tabOrder[tabOrder.length - 1] !== hit) tabOrder.push(hit);
+    }
+    expect(tabOrder, `tab: ${tabOrder.join(" | ")}\ndom: ${domOrder.join(" | ")}`)
+      .toEqual(domOrder.slice(0, tabOrder.length));
+
+    // Third bullet: the non-interactive "Mentions me" entry (SHL-8)
+    // never presents as an actionable control that does nothing. It is
+    // `aria-disabled` and is not a link or a button, so it is skipped
+    // by the tab order *and* announced as unavailable.
+    const mentions = page.locator('[aria-disabled="true"]').filter({ hasText: /mentions me/i });
+    await expect(mentions).toHaveCount(1);
+    await expect(mentions).not.toHaveRole("link");
+    await expect(mentions).not.toHaveRole("button");
+    expect(tabOrder.some(t => /mentions me/i.test(t))).toBe(false);
+
+    // The second bullet's absence, asserted so this inverts the day
+    // collapsible groups are built — the signal to write the real
+    // transcription and tag the case.
+    const expandables = await page.locator("aside [aria-expanded]").count();
+    expect(
+      expandables,
+      "a sidebar group became collapsible — write the real A11Y-12 transcription and tag it",
+    ).toBe(0);
+  });
+
+  /**
+   * A11Y-9 is **deliberately not tagged**. See known-gaps.md.
+   *
+   * The case requires the whole list → open → edit → save → close
+   * cycle to work with no mouse, and names five specifics. Three fail
+   * against this app, and each is an implementation gap rather than a
+   * transcription difficulty:
+   *
+   * 1. **"Table rows are reachable and activatable — a row that only
+   *    responds to a click is a blocker."** A row is a bare `<tr>`
+   *    with an `onClick` and no key handler. The key cell's `<a>` is
+   *    the only keyboard route into a task, so the row itself is
+   *    exactly the click-only affordance the bullet calls a blocker.
+   *
+   * 2. **"The status dropdown ... options are traversable with arrow
+   *    keys."** `OptionPicker` has no `ArrowDown`/`ArrowUp`/`Home`/
+   *    `End` handling and no `aria-activedescendant` — the only key it
+   *    listens for is Escape. Options are reachable by Tab, which is
+   *    not what the bullet says.
+   *
+   * 3. **"Returning to the list restores focus at or near the row that
+   *    was opened, not at the top of the document."** Task detail is a
+   *    route, and nothing anywhere records which row was opened; there
+   *    is no restore to write a test against.
+   *
+   * The fourth bullet also fails for a different reason: `MetaPanel`
+   * has no live region, so a successful field save is silent (A11Y-24's
+   * subject, not this case's, but it is part of this cycle).
+   *
+   * A test asserting only the parts that work would tag a blocker as
+   * satisfied while three of its five bullets are unimplemented. The
+   * gaps are recorded instead; this asserts them so the note cannot
+   * quietly go stale.
+   */
+  test("A11Y-9 (partial): the keyboard cycle is broken in three named places", async ({
+    page,
+    tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Keyboard cycle subject" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Keyboard cycle subject")).toBeVisible();
+
+    // (1) The row is not activatable from the keyboard: focusing it
+    // does not take, and it carries no key handler. Asserted with a
+    // positive control — the key link *is* reachable — so this is a
+    // statement about rows, not about an empty table.
+    await expect(page.getByRole("link", { name: String(key) })).toBeVisible();
+    const rowActivatable = await page.evaluate(() => {
+      const tr = document.querySelector("tbody tr");
+      if (tr === null) return true;
+      (tr as HTMLElement).focus();
+      return document.activeElement === tr;
+    });
+    expect(
+      rowActivatable,
+      "rows became keyboard-activatable — revisit A11Y-9",
+    ).toBe(false);
+
+    // (2) The status dropdown does not traverse with arrow keys.
+    // Driven entirely from the keyboard, as the case requires.
+    await page.goto(`${tracker.baseURL}/tasks/${String(key)}`);
+    const trigger = page.getByTestId("meta-edit-status");
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    const listbox = page.getByTestId("meta-options-status");
+    await expect(listbox).toBeVisible();
+
+    // Focus stays on the trigger — nothing moved into the list, and
+    // ArrowDown does not move between options.
+    await expect(trigger).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    const movedByArrow = await listbox.evaluate(
+      el => el.contains(document.activeElement),
+    );
+    expect(
+      movedByArrow,
+      "the status listbox gained arrow traversal — revisit A11Y-9",
+    ).toBe(false);
+
+    // The Tab-and-Enter path *does* work, which is why the case is a
+    // partial rather than a total failure — and why asserting only
+    // this would have looked like a pass.
+    await page.keyboard.press("Tab");
+    expect(await listbox.evaluate(el => el.contains(document.activeElement))).toBe(true);
+
+    // (3) Nothing records the opened row, so there is no restore to
+    // assert. Going back lands focus nowhere near it.
+    await page.goBack();
+    // Scoped to the table: after visiting the task it also appears in
+    // the sidebar's "Recently viewed".
+    await expect(
+      page.locator("tbody tr").filter({ hasText: "Keyboard cycle subject" }),
+    ).toHaveCount(1);
+    const restored = await page.evaluate(() => {
+      const el = document.activeElement;
+      return el !== null && el !== document.body && el.closest("tbody tr") !== null;
+    });
+    expect(
+      restored,
+      "focus is now restored into a row on return — revisit A11Y-9",
+    ).toBe(false);
   });
 });

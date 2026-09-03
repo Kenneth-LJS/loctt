@@ -1576,6 +1576,170 @@ SET-27's coverage. If the amendment is ever withdrawn, delete the
 
 ---
 
+### A100 · A modal defers Escape to any open layer inside it, detected by `aria-expanded`
+
+**Ticket:** a11y Group 3/4 · **Date:** 2026-09-03 · **Commit:** (uncommitted)
+
+**The situation.** A11Y-5 requires "`Esc` closes the topmost dismissible
+layer, one at a time": a dropdown open inside the create modal must take
+the first Escape and leave the modal open. Measured: one Escape closed
+both. `OptionPicker` calls `e.stopPropagation()` on its own document
+listener, but `CreateTaskModal` also listens on `document` in the
+capture phase and mounts first, so capture order — which is registration
+order — gave the modal the keystroke first.
+
+**What had to be decided.** How should the modal know a layer above it
+is open, so it can decline the keystroke?
+
+**Options considered.**
+1. *Move the pickers' listeners to capture with higher priority.* Not
+   expressible: the DOM offers no priority within a phase, only
+   registration order, which the modal wins by construction.
+2. *A layer-registry context that dialogs and pickers both push to.*
+   Correct in the general case, but a new cross-cutting mechanism for
+   one keystroke, and every future layer must remember to register.
+3. *The modal checks its own panel for `[aria-expanded="true"]` before
+   claiming Escape.* Costs nothing structurally and works for any layer
+   that already marks itself expanded — but it is a convention, not an
+   enforced contract, so a future layer that opens without setting
+   `aria-expanded` would not be protected.
+
+**Decided.** Option 3: `CreateTaskModal`'s Escape branch returns early
+when `panelRef.current.querySelector('[aria-expanded="true"]')` matches
+and the discard confirmation is not showing.
+
+**Why.** `aria-expanded` is not an ad-hoc marker invented for this — it
+is already required on every disclosure the app builds, by A11Y-31 and
+by the pickers' own cases, so the convention is one the codebase must
+hold anyway. That makes option 3 free where option 2 adds a mechanism.
+The discard confirmation is checked first because it renders above
+everything else in the modal and must keep its own Escape (NEW-31).
+
+**To revert.** `apps/web/src/client/create/CreateTaskModal.tsx`, the
+`if (e.key === "Escape")` branch of the `useEffect` keydown handler —
+delete the early return. `tests/ui/flow-accessibility.spec.ts`'s
+"A11Y-5" test then fails, which is the intended signal.
+
+### A101 · A global `:focus-visible` ring, coloured `--text-primary` at a 2px offset
+
+**Ticket:** a11y Group 3/4 · **Date:** 2026-09-03 · **Commit:** (uncommitted)
+
+**The situation.** A11Y-16's second bullet requires the focus indicator
+to be "visible against the element's own background in both themes,
+including on coloured elements (status chips, label pills, primary
+buttons)". The app defined no focus style at all, so every control used
+Chrome's default `outline: auto`, painted in Chrome's own accent blue.
+Measured against the header's primary button, itself `bg-accent`: the
+ring came out at **1.05:1** in light and **1.71:1** in dark. The button
+gave no visible sign of being focused.
+
+**What had to be decided.** What focus indicator should the app paint,
+given it must clear 3:1 against both the page and every accent surface,
+in both themes?
+
+**Options considered.**
+1. *Per-component rings.* Precise, but the case is "every focusable
+   element" and one component added later without the class is a silent
+   regression — the same argument `index.css` already records for the
+   reduced-motion block.
+2. *A global ring in the accent colour.* Matches the app's palette and
+   fails the case: accent-on-accent is the defect being fixed.
+3. *A global ring in `--text-primary` at a positive offset.* Near-black
+   in light and near-white in dark, so it clears 3:1 against the page
+   and every accent surface; the offset puts it outside the control so
+   a dark ring on a dark button still reads. Costs a ring that is
+   monochrome rather than brand-coloured.
+
+**Decided.** Option 3: `:focus-visible { outline: 2px solid
+var(--text-primary); outline-offset: 2px; }` in `index.css`'s base
+layer.
+
+**Why.** Same reasoning the file already applies to reduced motion — a
+global rule because the requirement is universal and a per-component
+opt-in regresses silently. `:focus-visible` rather than `:focus` keeps
+the ring off mouse clicks while still satisfying the case's third
+bullet, since a control focused by keyboard after being clicked matches
+`:focus-visible`. The monochrome ring is a deliberate trade: it is the
+only colour that clears the bar against every surface the app paints in
+both themes.
+
+**To revert.** `apps/web/src/client/styles/index.css`, the
+`:focus-visible` rule in `@layer base` — delete it. Both A11Y-16 tests
+in `tests/ui/flow-accessibility.spec.ts` then fail.
+
+### A102 · The active sidebar route is marked with `aria-current` and a weight change
+
+**Ticket:** a11y Group 3/4 · **Date:** 2026-09-03 · **Commit:** (uncommitted)
+
+**The situation.** A11Y-30's fourth bullet: "the active sidebar route is
+marked by more than a colour change — a persistent indicator bar, bolder
+weight, or the current-page state exposed to assistive tech".
+`ItemShell` marked it with `bg-accent-muted text-accent` and nothing
+else: colour and background only, with `font-medium` unconditional.
+
+**What had to be decided.** Which of the bullet's three alternatives to
+build.
+
+**Options considered.**
+1. *An indicator bar.* A visual change only — a screen reader still
+   learns nothing about which route is current.
+2. *`aria-current="page"` alone.* Satisfies the bullet as written (the
+   three are offered as alternatives) but leaves a greyscale screenshot
+   unchanged, which is the section's framing.
+3. *Both `aria-current` and a weight change.* Covers the assistive-tech
+   half and the greyscale half. Costs a slight visual change to the
+   sidebar.
+
+**Decided.** Option 3: `aria-current="page"` on the active `ItemShell`,
+plus `font-semibold` for active against `font-medium` for inactive.
+
+**Why.** The case's own heading is "Colour is never the sole carrier of
+meaning" and it asks for the state to be inspectable "in greyscale", so
+an assistive-tech-only fix satisfies the letter and not the case. The
+weight change is the smallest visual signal that survives greyscale.
+
+**To revert.** `apps/web/src/client/shell/Sidebar.tsx`, `ItemShell` —
+remove the `aria-current` prop and restore the unconditional
+`font-medium`. The A11Y-30 sidebar assertions then fail.
+
+### A103 · An over-cap board column carries a named warning glyph
+
+**Ticket:** a11y Group 3/4 · **Date:** 2026-09-03 · **Commit:** (uncommitted)
+
+**The situation.** A11Y-30's second bullet asks that an over-cap column
+be "identifiable without colour (a count like `6 / 4` **and** a warning
+glyph with an accessible name), not by a red header alone". The column
+header showed the count, which is half of it; over-cap and at-cap were
+otherwise distinguished only by `text-danger-fg` versus
+`text-warning-fg`, plus a `data-wip-state` attribute that neither a
+greyscale screenshot nor a screen reader can see.
+
+**What had to be decided.** Whether the existing "6 / 4" count already
+satisfies the bullet, and if not, what to add.
+
+**Options considered.**
+1. *Treat the count as sufficient.* Defensible reading — the numbers are
+   readable in greyscale. But the bullet says "and a warning glyph",
+   and the numbers alone do not say that 6/4 is a violation rather than
+   a target.
+2. *A glyph marked `aria-hidden`, as decoration beside the count.*
+   Restores the greyscale signal and leaves a screen reader with only
+   the numbers, which the bullet's "with an accessible name" rules out.
+3. *A glyph with `role="img"` and a name stating the state.*
+
+**Decided.** Option 3: a `⚠` with `role="img"` and
+`aria-label="Over WIP limit: N of M"`, rendered only in the `over`
+state.
+
+**Why.** The bullet names both parts explicitly with "and", and the
+accessible name is what makes the glyph carry meaning rather than
+repeat colour in another form. Rendered only when over-cap so at-cap
+keeps its quieter treatment, which BRD-6 distinguishes.
+
+**To revert.** `apps/web/src/client/board/BoardView.tsx`, the `{over &&
+(...)}` block in the column header's count `<span>` — delete it. The
+A11Y-30 over-cap test then fails.
+
 ## 9. Ken's rulings, 2026-08-29
 
 **These are Ken's, not an agent's.** Unlike § 8, they carry the

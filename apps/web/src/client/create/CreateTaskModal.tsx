@@ -183,6 +183,24 @@ export function CreateTaskModal({
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
+        // A11Y-5: Escape closes the topmost dismissible layer, **one
+        // at a time**. A dropdown open inside this modal is above it,
+        // so it gets this keystroke and the modal keeps the next one.
+        //
+        // This cannot be left to the inner layer's own
+        // `stopPropagation`. Both listen on `document` in the capture
+        // phase, and capture order is registration order — the modal
+        // mounts first, so it ran first and closed the modal out from
+        // under the open dropdown. Measured: one Escape closed both.
+        //
+        // `aria-expanded="true"` inside the panel is the general
+        // signal rather than a list of component names: any layer
+        // that marks itself expanded gets first refusal, including
+        // ones added later. The discard confirmation is checked
+        // first because it renders above everything here.
+        if (!confirmDiscard && panelRef.current?.querySelector('[aria-expanded="true"]') != null) {
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         if (confirmDiscard) setConfirmDiscard(false);
@@ -231,6 +249,20 @@ export function CreateTaskModal({
     // the message at the field the user must act on.
     if (choice.kind === "ask" && form.project === undefined) {
       setShowProjectRequired(true);
+      // A11Y-23's third bullet: on a blocked submit focus moves to the
+      // first invalid field. Without this the message appears but
+      // focus stays on the Create button, so a keyboard user is told
+      // something is wrong and left to hunt for it — and a screen
+      // reader never reaches the description at all.
+      //
+      // Deferred: the trigger only gains its `aria-describedby` on the
+      // render this `setState` schedules, and focusing it before that
+      // lands would announce the field without its error.
+      queueMicrotask(() => {
+        panelRef.current
+          ?.querySelector<HTMLElement>('[data-testid="create-project"] button')
+          ?.focus();
+      });
       return;
     }
     if (dateProblem !== undefined) return;
@@ -376,6 +408,15 @@ export function CreateTaskModal({
               ref={titleRef}
               data-testid="create-title"
               value={form.title}
+              // A11Y-23: the error is associated with the input, not
+              // merely rendered next to it in red. `aria-invalid` is
+              // the programmatic mark the case's second bullet asks
+              // for, and `aria-describedby` is what makes a screen
+              // reader read the rule when focus enters the field —
+              // `role="alert"` alone only announces it once, at the
+              // moment it appears, and says nothing on re-entry.
+              aria-invalid={showTitleRequired}
+              aria-describedby={showTitleRequired ? "create-title-required" : undefined}
               onChange={e => {
                 setForm(f => ({ ...f, title: e.target.value }));
                 if (e.target.value.trim() !== "") setShowTitleRequired(false);
@@ -383,7 +424,12 @@ export function CreateTaskModal({
               className="w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 text-[13px] text-text-primary"
             />
             {showTitleRequired && (
-              <p role="alert" data-testid="create-title-required" className="mt-1 text-[11px] text-danger-fg">
+              <p
+                id="create-title-required"
+                role="alert"
+                data-testid="create-title-required"
+                className="mt-1 text-[11px] text-danger-fg"
+              >
                 A title is required.
               </p>
             )}
@@ -492,11 +538,22 @@ export function CreateTaskModal({
               testid="due"
               value={form.due_date}
               calendar={calendar.data}
+              // A11Y-23: the due date is the field marked invalid, not
+              // both. The rule is "the due date is before the start
+              // date" — the start date is not itself wrong, and
+              // marking two fields invalid for one problem tells a
+              // screen reader user to fix something that is fine.
+              errorId={dateProblem === undefined ? undefined : "create-date-problem"}
               onChange={v => { setForm(f => ({ ...f, due_date: v })); }}
             />
           </div>
           {dateProblem !== undefined && (
-            <p role="alert" data-testid="create-date-problem" className="text-[11px] text-danger-fg">
+            <p
+              id="create-date-problem"
+              role="alert"
+              data-testid="create-date-problem"
+              className="text-[11px] text-danger-fg"
+            >
               {dateProblem}
             </p>
           )}
@@ -768,10 +825,18 @@ function ProjectField({
           value={value}
           options={options}
           onSelect={onSelect}
+          // A11Y-23: the picker's trigger carries the invalid mark and
+          // points at the message below it.
+          errorId={required ? "create-project-required" : undefined}
         />
       </div>
       {required && (
-        <p role="alert" data-testid="create-project-required" className="mt-1 text-[11px] text-danger-fg">
+        <p
+          id="create-project-required"
+          role="alert"
+          data-testid="create-project-required"
+          className="mt-1 text-[11px] text-danger-fg"
+        >
           {NO_PROJECT_MESSAGE}
         </p>
       )}
@@ -928,12 +993,21 @@ function FormDateField({
   value,
   calendar,
   onChange,
+  errorId,
 }: {
   readonly label: string;
   readonly testid: string;
   readonly value: string | undefined;
   readonly calendar: CalendarConfig | undefined;
   readonly onChange: (value: string | undefined) => void;
+  /**
+   * A11Y-23: the id of the error text describing this field, when the
+   * form has one. The date range problem is a *cross-field* error
+   * rendered once below both inputs, so the message cannot live
+   * inside this component — but the association still has to reach
+   * the input the user must correct, which is what this passes in.
+   */
+  readonly errorId?: string | undefined;
 }) {
   const note = value === undefined ? undefined : nonWorkingNote(value, calendar);
   return (
@@ -945,6 +1019,8 @@ function FormDateField({
         min="1900-01-01"
         max="2099-12-31"
         value={value ?? ""}
+        aria-invalid={errorId !== undefined}
+        aria-describedby={errorId}
         onChange={e => { onChange(e.target.value === "" ? undefined : e.target.value); }}
         className="w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 text-[13px] text-text-primary"
       />

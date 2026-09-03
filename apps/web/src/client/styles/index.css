@@ -95,6 +95,32 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+  /*
+   * A11Y-16's second bullet: the focus indicator must be visible
+   * against the element's *own* background, "including on coloured
+   * elements (status chips, label pills, primary buttons)".
+   *
+   * The browser default is not enough, and this is measurable rather
+   * than a matter of taste. Chrome paints `outline: auto` in its own
+   * accent blue, so on the header's primary button — itself
+   * `bg-accent` — the ring came out at **1.05:1** against the button
+   * in light and 1.71:1 in dark. A sighted keyboard user could not
+   * tell the button was focused.
+   *
+   * `--text-primary` is near-black in light and near-white in dark,
+   * so it clears 3:1 against both the page and every accent surface
+   * the app paints. The offset puts the ring just outside the
+   * control, so a dark ring on a dark button still reads.
+   *
+   * `:focus-visible`, not `:focus`, so the ring appears for keyboard
+   * focus and not on every mouse click — while the third bullet still
+   * holds, because a control focused *by keyboard after being
+   * clicked* matches `:focus-visible`.
+   */
+  :focus-visible {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 2px;
+  }
   a {
     color: var(--accent);
     text-decoration: none;

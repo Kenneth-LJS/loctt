@@ -459,6 +459,69 @@ test("invalid prefix and empty name are rejected in-field, with the rule stated"
   }
 });
 
+/**
+ * A11Y-23 for the init wizard, which the case names by hand.
+ *
+ * The ONB-19 test above already asserts the *message* and that focus
+ * moves to the first invalid field. What it does not assert — and what
+ * A11Y-23 is actually about — is that the message is **programmatically
+ * associated** with the input, so a screen reader reads the rule when
+ * focus enters the field rather than only once, as the alert appeared.
+ *
+ * Kept here rather than in flow-accessibility.spec.ts because the
+ * wizard needs an uninitialised tracker, and `bootUninitialized` is
+ * this file's harness.
+ */
+// @verifies A11Y-23
+test("field errors in the init wizard are associated with their field", async ({ page }) => {
+  const t = await bootUninitialized();
+  try {
+    await page.goto(`${t.baseURL}/list`);
+    const prefix = page.getByLabel("Key prefix");
+    const name = page.getByLabel("Project name");
+
+    // Positive control: nothing is marked invalid before the error.
+    // Without this, an input hardcoded `aria-invalid="true"` would
+    // satisfy every assertion below.
+    await expect(prefix).not.toHaveAttribute("aria-invalid", "true");
+
+    await prefix.fill("we b/x");
+    await prefix.blur();
+
+    // Second bullet: marked invalid programmatically, not red only.
+    await expect(prefix).toHaveAttribute("aria-invalid", "true");
+
+    // First bullet: the description resolves to a real element whose
+    // text states the rule. Asserting the attribute is merely present
+    // would pass with an id pointing at nothing.
+    // `aria-describedby` is a *list* here — the error plus the help
+    // line. Resolving every id and requiring the rule to appear among
+    // them is the assertion; matching the attribute string would pass
+    // with an id that points at nothing.
+    const prefixIds = ((await prefix.getAttribute("aria-describedby")) ?? "").split(/\s+/).filter(Boolean);
+    expect(prefixIds.length).toBeGreaterThan(0);
+    const prefixText = (
+      await Promise.all(prefixIds.map(id => page.locator(`#${id}`).textContent()))
+    ).join(" ");
+    expect(prefixText).toMatch(/cannot contain/i);
+
+    // The name field is the other form control the wizard blocks on,
+    // and it takes the same treatment on a blocked submit.
+    await prefix.fill("T-");
+    await name.fill("");
+    await page.getByRole("button", { name: /set up tracker/i }).click();
+    await expect(name).toHaveAttribute("aria-invalid", "true");
+    const nameDescribedBy = await name.getAttribute("aria-describedby");
+    expect(nameDescribedBy).not.toBeNull();
+    // Fourth bullet: names what to do, not "invalid".
+    await expect(page.locator(`#${String(nameDescribedBy)}`)).toContainText(/enter a project name/i);
+    // Third bullet: focus is on the first invalid field.
+    await expect(name).toBeFocused();
+  } finally {
+    await t.stop();
+  }
+});
+
 // @verifies ONB-21
 test("$USER unset still names a real user, and init creates one with a non-empty name", async ({ page }) => {
   // `env` replaces the variable rather than adding one: the wizard's
