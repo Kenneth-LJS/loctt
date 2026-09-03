@@ -6420,3 +6420,53 @@ external consumer can be depending on the export.
 `index.ts` re-export and the `describe("SprintKey")` block. Only do so
 alongside a field that actually uses it — a sprint `key` in
 `SprintDefSchema` — or it returns to validating nothing.
+
+### K18 · The browser crops, the server compresses — avatars stay 500px
+
+**Date:** 2026-09-03 · **Ken's ruling — an agent may not revert this.**
+
+**The situation.** Three sources disagreed about avatar processing.
+
+- `copyAvatar` (`packages/core/src/users/avatar.ts`) **already**
+  validates, honours EXIF orientation, resizes to a longest edge of
+  **500px** and re-encodes via `sharp`. Built and working.
+- **PRU-13** requires the browser to compress *before* POST, to a
+  **256px** bound, and says the reduction is "verifiable from the
+  request body size in devtools".
+- **K14** ruled that crop-and-compress happens on the way in,
+  server-side, **once — not per render**, plus a cropper tool.
+
+So PRU-13 asks for a second pipeline, in a different place, at a
+different size, doing what the server already does.
+
+**Put to Ken as three options** — client-side per PRU-13; server-only
+with PRU-13 reworded; or split. **His answer: the split, at 500px.**
+
+**What that means concretely.**
+
+1. **The browser crops.** The cropper produces a crop rectangle and a
+   local preview. This is the half only the client can do, because it
+   is the user choosing the framing (K14 point 3).
+2. **The server compresses.** `copyAvatar` keeps ownership of the
+   stored bytes: validation, EXIF, resize to **500px** longest edge,
+   re-encode. One pipeline decides what lands on disk.
+3. **500px, not 256.** The bound that exists stays. PRU-13's 256 is the
+   number that is wrong.
+
+**Why this over the alternatives.** A cropper makes client-side
+*cropping* mandatory regardless, so the only question was whether to
+duplicate the *compression* too. Two pipelines at two sizes is a pair
+that drifts, and the server must validate anyway — a hostile client can
+POST whatever it likes, so client compression can never be the
+guarantee. This keeps exactly one place that decides what is stored.
+
+**Consequence for the case.** PRU-13's second bullet — "the uploaded
+payload is at most 256×256 … and is materially smaller than 2.1 MB" —
+describes the client-side pipeline this ruling declines, and **must be
+reworded by Ken**; an agent may not edit `docs/dev/ui-test-cases/`.
+Its other three bullets (preview renders from the crop, the stored file
+lands at `users/<id>/avatar.<ext>` with a matching extension recorded
+in `profile.yaml`, and the avatar appears in the header, list and
+detail) all hold as written and are buildable now.
+
+**To revert.** Ken's, not an agent's.
