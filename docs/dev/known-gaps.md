@@ -3210,3 +3210,44 @@ All three are body text below the WCAG AA minimum. One root cause: the
 token. **Reproduce:** scan `main` on `/list` with axe's
 `color-contrast` rule, either theme — the values are the same, because
 these all resolve against light backgrounds.
+
+
+## A third test helper read state before the re-render (SPR-6, fixed)
+
+**The same defect as REL-32's `moveUp`, in a different file. Two is a
+coincidence; the pattern is worth naming.**
+
+`dragCard` in `tests/ui/flow-sprints.spec.ts` ended at `mouse.up()` and
+waited for nothing — not the write's response, not the refetch. The
+sprints board is not optimistic: the drop POSTs, `onSettled`
+invalidates, and the counts move only once the refetch renders. A
+caller asserting immediately after the gesture was racing that round
+trip.
+
+Measured under nine busy-loop processes, `-g "SPR-6" --repeat-each 12`:
+
+| | result |
+|---|---|
+| before | **2 / 12 failed** — always `Expected: "1" / Received: "0"` |
+| after | **12 / 12 passed** |
+
+Never a timeout, never a locator error: a **behavioural** mismatch,
+which is why a file-level pass (3 × 44 green) was not sufficient
+evidence either way and the load reproduction was.
+
+**The shape to watch for**, now seen three times in this repo:
+
+> A helper drives a gesture, waits for the *write*, and then reads the
+> DOM. Any panel that re-renders from an invalidation refetch rather
+> than optimistically will fail that read under load.
+
+`moveUp` (REL-32), `dragCard` (SPR-6), and the K16 notice — where the
+same blind spot lived in the **app**, not the test: `/api/info` was
+read-and-clear, so a notice was consumed by whichever parallel request
+arrived first.
+
+**Both fixes are bounded and non-asserting on purpose.** A refused
+write leaves the state unchanged, and judging that belongs to the
+caller — verified by mutation here: disabling `setField.mutate` still
+reddens SPR-6, so the wait cannot swallow a drop that genuinely failed
+to land.

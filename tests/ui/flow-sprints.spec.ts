@@ -109,6 +109,33 @@ async function dragCard(
   await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2 + 20, { steps: 4 });
   await page.mouse.move(target.x, target.y, { steps: 12 });
   await page.mouse.up();
+
+  // Wait for the write AND the re-render it triggers, not just for the
+  // mouse gesture to end.
+  //
+  // The board is not optimistic here: the drop POSTs, `onSettled`
+  // invalidates, and the counts move only once the refetch renders. A
+  // caller asserting immediately after `mouse.up()` was racing that
+  // round trip — measured 2026-09-03, SPR-6 failed 2 of 12 under nine
+  // busy-loop processes, always `Expected: "1" / Received: "0"` at the
+  // first post-drop count, never a timeout or a locator error.
+  //
+  // This is the same defect REL-32's `moveUp` had, found the same way
+  // and fixed the same way: the response is not the re-render.
+  //
+  // Bounded and non-asserting. A refused drop leaves the counts as they
+  // were, and judging that is the caller's job — so a drop that
+  // genuinely fails to land still fails at the caller's assertion
+  // rather than being swallowed here.
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const pending = await page.evaluate(
+      () => document.querySelectorAll('[data-dragging="true"]').length,
+    );
+    if (pending === 0) break;
+    await page.waitForTimeout(25);
+  }
+  await page.waitForLoadState("networkidle").catch(() => undefined);
 }
 
 async function columnPoint(
