@@ -194,7 +194,19 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
               onChange={(e) => { setPrefix(e.target.value); setPrefixTouched(true); }}
               onBlur={() => { setShowProblems(true); }}
               aria-invalid={showProblems && prefixIssue !== null}
-              aria-describedby={`${prefixId}-help`}
+              // A11Y-23: when the prefix is rejected the description
+              // must reach the *error*, not only the help line. It
+              // used to point at `-help` unconditionally, so a
+              // screen reader entering the field read "No key preview
+              // — fix the prefix below" and never the rule that was
+              // broken. Both are listed while the error stands: the
+              // help text is still useful context, and `describedby`
+              // takes a list.
+              aria-describedby={
+                showProblems && prefixIssue !== null
+                  ? `${prefixId}-err ${prefixId}-help`
+                  : `${prefixId}-help`
+              }
               className="mt-1 w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 font-mono text-[13px] text-text-primary"
             />
             <p id={`${prefixId}-help`} className="mt-1 text-[12px] text-text-secondary">
@@ -209,7 +221,7 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
                 : <>No key preview — fix the prefix below.</>}
             </p>
             {showProblems && prefixIssue !== null && (
-              <p className="mt-1 text-[12px] text-danger-fg" role="alert">
+              <p id={`${prefixId}-err`} className="mt-1 text-[12px] text-danger-fg" role="alert">
                 {prefixIssue}
               </p>
             )}

@@ -3096,3 +3096,117 @@ masked the contention. The fix is fewer workers, not longer waits.
 timeout depends on what else the machine is doing, which is why it went
 eight runs green and then failed five at once. Anything else running —
 another suite, a build, a browser — changes the outcome.
+
+## A11Y Group 3/4 pass, 2026-09-03 — four cases declined, one contrast defect
+
+Sixteen a11y cases were transcribed. Twelve are tagged. **Four are
+deliberately untagged**, each because a bullet the case states is
+unimplemented rather than untested. `@verifies` has no partial marker,
+so tagging any of them would claim a blocker as satisfied.
+
+Each has a `(partial)` test in `tests/ui/flow-accessibility.spec.ts`
+that asserts the working half **and asserts the gap**, so these notes
+invert rather than going stale: the day the gap is fixed, that test
+fails and names this file.
+
+### A11Y-9 — the keyboard cycle is broken in three named places
+
+Three of five bullets fail. All are implementation gaps.
+
+1. **Rows are click-only.** `apps/web/src/client/list/ListView.tsx`
+   renders a task row as a bare `<tr>` with an `onClick` — no `role`,
+   no `tabIndex`, no key handler. The key cell's `<a>` is the only
+   keyboard route into a task. The case calls a click-only row "a
+   blocker" by name.
+2. **The status dropdown has no arrow traversal.**
+   `apps/web/src/client/task/editors/OptionPicker.tsx` listens for
+   Escape and nothing else — no `ArrowDown`/`ArrowUp`/`Home`/`End`, no
+   `aria-activedescendant`, and opening the listbox does not move
+   focus into it. Options are reachable by Tab, which is not what the
+   bullet says.
+3. **Nothing restores focus to the opened row.** Task detail is a
+   route (`router/index.tsx`, `/tasks/$key`); no module records which
+   row was opened, so "returning to the list restores focus at or near
+   the row" has nothing to restore from.
+
+Also in this cycle, though it belongs to A11Y-24: `MetaPanel` has no
+live region, so a successful field save is silent to a screen reader.
+
+**Reproduce:** `/list`, Tab through a row — only the key link stops.
+Open a task, Tab to Status, Enter, ArrowDown — focus stays on the
+trigger. Browser Back — focus is on `document.body`.
+
+### A11Y-12 — no sidebar group is collapsible
+
+Bullets one and three hold and are asserted. Bullet two —
+"collapsible groups expose their expanded/collapsed state to assistive
+tech and toggle on `Enter`/`Space`" — has **no subject**: the six
+sidebar groups render from `GroupLabel`, a plain `<div>` with no
+control, no state and no handler. There is not one `aria-expanded` in
+`apps/web/src/client/shell/Sidebar.tsx`.
+
+**The trap:** the `collapsed` prop threaded through every group is the
+*whole sidebar's* rail toggle (SHL-21), whose `aria-expanded` lives
+correctly on the header's hamburger. It is not per-group collapse.
+Reading it as such would tag this case wrongly.
+
+**Reproduce:** `/list`, Tab into the sidebar — every stop is an entry;
+no group header is reachable or toggleable.
+
+### A11Y-17 — rows cannot hold focus, and the obvious test cannot fail
+
+Two separate problems.
+
+1. **No subject.** "Focus stays on the equivalent row" needs a
+   focusable row; see A11Y-9 (1). The app also holds no reference to a
+   focused row to restore across a refetch.
+2. **The plausible test asserts nothing.** Focus a control, refetch,
+   press Tab, assert focus is not on `document.body` — this passes
+   whether or not anything preserved focus, because Tab from body
+   lands on the first focusable element rather than staying on body.
+   **Verified by mutation:** explicitly blurring to body immediately
+   before the assertion left the test green.
+
+This is the tag-that-cannot-fail shape. The prerequisite is row
+focusability plus a restore across refetch.
+
+### A11Y-51 — bulk failures are not reachable by keyboard
+
+Bullets one and three hold: `describeBulkResult`
+(`apps/web/src/client/api/hooks/useBulk.ts`) produces the real numbers
+("2 tasks archived, 1 failed", never a bare "Done"), and `BulkResult`
+(`list/BulkBar.tsx`) renders the whole sentence plus every failure
+inside one `role="status"`, so nothing is truncated.
+
+Bullet two fails: "the failed items are reachable by keyboard from the
+result". `failures` is `readonly string[]`, already flattened to
+`"KEY: reason"` prose by `describeBulkResult`, and rendered as
+`{result.failures.join("; ")}` inside a plain `<span>` — no link, no
+button, no `tabIndex` in that subtree. Nothing downstream can
+reconstruct a target, because the key is prose by the time the
+component sees it.
+
+**Fixing it is an implementation change, not a transcription:** the
+shape `describeBulkResult` returns has to carry the task ref
+alongside the message, and every call site consuming it changes, with
+its own message-logic tests.
+
+### Contrast: `--text-tertiary` is 3.67:1 on white (A11Y-40, not in this pass)
+
+Found by axe while scoping A11Y-16, and left unfixed because it
+belongs to **A11Y-40** ("Contrast holds in both light and dark
+themes"), which was not in this pass's sixteen.
+
+`--text-tertiary` is `#7b8699` (`styles/tokens.css`). Measured on
+`/list`:
+
+| element | ratio | required |
+|---|---|---|
+| task key link (`.hover\:text-accent`) | 3.67:1 | 4.5:1 |
+| relative timestamp ("just now") | 3.67:1 | 4.5:1 |
+| result count ("Showing 1–1 of 1") on `--bg-surface` | 3.45:1 | 4.5:1 |
+
+All three are body text below the WCAG AA minimum. One root cause: the
+token. **Reproduce:** scan `main` on `/list` with axe's
+`color-contrast` rule, either theme — the values are the same, because
+these all resolve against light backgrounds.

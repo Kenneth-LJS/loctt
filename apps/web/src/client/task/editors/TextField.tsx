@@ -149,7 +149,22 @@ export function TextField({
             setDraft(value ?? "");
             setLocalError(null);
             setEditing(false);
-            triggerRef.current?.focus();
+            // A11Y-18's second bullet: focus returns to the field's
+            // trigger row.
+            //
+            // Deferred, and that is the whole of it. The trigger only
+            // renders while `!editing`, so at this point
+            // `triggerRef.current` is still **null** — `setEditing`
+            // has not re-rendered yet — and the `?.` swallowed it
+            // silently, leaving focus on the unmounting input and
+            // therefore on `document.body`. Measured: Escape closed
+            // the editor and the next Tab went to the top of the
+            // document.
+            //
+            // A microtask is not enough (React has not re-rendered
+            // either); this waits for the paint that mounts the
+            // trigger.
+            requestAnimationFrame(() => { triggerRef.current?.focus(); });
           }
         }}
         className="w-full rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[13px] text-text-primary"

@@ -689,6 +689,33 @@ function Column({
             </div>
           )}
         </div>
+        {/* A11Y-30's second bullet: an over-cap column must be
+            identifiable without colour — "a count like 6 / 4 **and** a
+            warning glyph with an accessible name", not by a red header
+            alone. The count alone does not carry it: over-cap and
+            at-cap differ only in `text-danger-fg` vs `text-warning-fg`,
+            which is the colour-only signal the case forbids, and
+            `data-wip-state` is invisible to a greyscale screenshot and
+            to a screen reader alike.
+
+            A **sibling** of the count, not a child of it: BRD-6
+            asserts the count's exact text ("4 / 3"), and nesting the
+            glyph inside made that read "⚠4 / 3". The count element
+            holds the numbers and nothing else.
+
+            Not `aria-hidden`: this is the accessible carrier, so it
+            needs a name of its own rather than sitting decoratively
+            beside text that never says "over". */}
+        {over && (
+          <span
+            role="img"
+            aria-label={`Over WIP limit: ${String(tasks.length)} of ${String(column.wip ?? 0)}`}
+            data-testid={`board-wip-warning-${column.id}`}
+            className="ml-auto mr-1 shrink-0 text-[11px] text-danger-fg"
+          >
+            ⚠
+          </span>
+        )}
         <span
           data-testid={`board-count-${column.id}`}
           className={[
