@@ -16,7 +16,8 @@ export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
   const locttDir = resolveLocttDir(root);
   const { queriesConfig } = await loadOptionalConfigs(locttDir);
-  if (!queriesConfig || queriesConfig.queries.length === 0) {
+  const broken = queriesConfig?.broken ?? [];
+  if (!queriesConfig || (queriesConfig.queries.length === 0 && broken.length === 0)) {
     console.log("No saved views.");
     return;
   }
@@ -25,5 +26,13 @@ export async function run(args: string[], root: string): Promise<void> {
       ? `  [sort: ${v.sort.map(s => `${s.field} ${s.direction}`).join(", ")}]`
       : "";
     console.log(`${v.name}  ${v.query}${sortPart}`);
+  }
+  // VUE-22 / north-star principle 5 & parity: a view whose query no
+  // longer parses is listed here too, marked broken with the parser's
+  // message, rather than being dropped — one bad entry no longer hides
+  // itself or takes down the rest of the catalog. The UI marks these
+  // broken in the sidebar; the CLI does the same in text.
+  for (const b of broken) {
+    console.log(`${b.name}  ${b.query}  [broken: ${b.error}]`);
   }
 }

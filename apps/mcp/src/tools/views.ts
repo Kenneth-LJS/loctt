@@ -42,13 +42,29 @@ export const TOOLS: readonly ToolDef[] = [
       // throws on an ambiguous name (QRY-C6). Omitted rather than
       // nulled when absent, so "no sort" and "sorted by nothing"
       // stay distinguishable.
-      return text(JSON.stringify(config.queries.map(q => ({
+      //
+      // VUE-22 / north-star principle 5 & parity: a view whose query no
+      // longer parses is returned too, carrying `broken: true` and the
+      // parser's `error`/`position`, rather than being dropped or taking
+      // down the whole list. An agent must see the view exists and is
+      // broken — silently omitting it would let the agent recreate it
+      // over the file that still holds it.
+      const good = config.queries.map(q => ({
         id: q.id,
         name: q.name,
         query: q.query,
         ...(q.sort !== undefined ? { sort: q.sort } : {}),
         ...(q.archived !== undefined ? { archived: q.archived } : {}),
-      })), null, 2));
+      }));
+      const broken = (config.broken ?? []).map(b => ({
+        id: b.id,
+        name: b.name,
+        query: b.query,
+        broken: true as const,
+        error: b.error,
+        ...(b.position !== undefined ? { position: b.position } : {}),
+      }));
+      return text(JSON.stringify([...good, ...broken], null, 2));
     },
   },
   {

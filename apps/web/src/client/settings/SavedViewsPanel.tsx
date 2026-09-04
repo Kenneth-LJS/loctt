@@ -192,6 +192,10 @@ export function SavedViewsPanel() {
   const all = views.data.queries;
   const active = all.filter(v => v.archived !== true);
   const archived = all.filter(v => v.archived === true);
+  // VUE-22 / north-star principle 5: views present in queries.yaml whose
+  // query no longer parses. Listed here marked broken rather than hidden,
+  // so a hand edit that breaks one view does not read as "it was deleted".
+  const broken = views.data.broken ?? [];
 
   return (
     <div className="p-8" data-testid="saved-views-panel">
@@ -206,7 +210,7 @@ export function SavedViewsPanel() {
         from the sidebar.
       </p>
 
-      {all.length === 0
+      {all.length === 0 && broken.length === 0
         ? (
             <p data-testid="saved-views-empty" data-views-state="empty" className="text-[13px] text-text-tertiary">
               No saved views yet.
@@ -225,6 +229,43 @@ export function SavedViewsPanel() {
                   </h2>
                   <ul className="m-0 list-none p-0" data-testid="saved-views-archived-list">
                     {archived.map(v => <ViewRow key={v.id} view={v} />)}
+                  </ul>
+                </>
+              )}
+
+              {broken.length > 0 && (
+                <>
+                  <h2 className="mb-1 mt-5 text-[13px] font-semibold text-danger-fg">
+                    Broken
+                  </h2>
+                  <p className="mb-2 text-[12px] text-text-secondary">
+                    These views are still in the file, but their query no longer
+                    parses. Fix them from the list view or by hand in{" "}
+                    <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+                      .loctt/config/queries.yaml
+                    </code>.
+                  </p>
+                  <ul className="m-0 list-none p-0" data-testid="saved-views-broken-list">
+                    {broken.map(b => (
+                      <li
+                        key={b.id}
+                        data-testid={`view-row-${b.id}`}
+                        data-view-broken="true"
+                        className="flex flex-col gap-0.5 border-b border-border-subtle py-2 last:border-0"
+                      >
+                        <span className="text-[13px] font-medium text-text-primary">
+                          {b.name}
+                          <span data-testid="view-broken-marker" className="ml-2 text-danger-fg">
+                            (broken)
+                          </span>
+                        </span>
+                        <code className="font-mono text-[12px] text-text-secondary">{b.query}</code>
+                        <span className="text-[12px] text-danger-fg">
+                          {b.error}
+                          {b.position !== undefined ? ` (at position ${String(b.position)})` : ""}
+                        </span>
+                      </li>
+                    ))}
                   </ul>
                 </>
               )}

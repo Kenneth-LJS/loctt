@@ -4576,6 +4576,176 @@ test.describe("VUE — saving a view (M1.3)", () => {
     expect(yaml).toContain("in_progress");
     expect(yaml).not.toMatch(/query:.*In progress/);
   });
+
+  // @verifies VUE-22
+  test("VUE-22: a hand-broken view is flagged, not hidden, and other views still work", async ({
+    page,
+    tracker,
+  }) => {
+    // A component that throws on render looks identical to one that
+    // renders nothing in Playwright — so fail loudly on any page error.
+    const pageErrors: string[] = [];
+    page.on("pageerror", e => pageErrors.push(e.message));
+
+    await tracker.seed([{ title: "Alpha" }, { title: "Beta" }]);
+
+    // Append a view whose query will not parse — the case's own "hand
+    // edit" of queries.yaml. It sits *after* the two default views, so
+    // its blast radius (or lack of one) is visible against them.
+    const queries = path.join(tracker.root, ".loctt", "config", "queries.yaml");
+    const before = await readFile(queries, "utf8");
+    await writeFile(
+      queries,
+      `${before.trimEnd()}\n  - id: 01M2BROKENVIEW0000000000001\n    name: Busted\n    query: "status = = done"\n`,
+      "utf8",
+    );
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Bullet 4 first (the positive control): the rest of the sidebar and
+    // the other views render normally, not blanked by the one bad entry.
+    await expect(page.getByRole("link", { name: "recent-open" })).toBeVisible();
+
+    // Bullet 1: the sidebar still lists the broken view, marked broken.
+    const brokenLink = page.locator('a[data-broken-view="01M2BROKENVIEW0000000000001"]');
+    await expect(brokenLink).toBeVisible();
+    await expect(brokenLink).toContainText("Busted");
+    await expect(brokenLink).toContainText(/broken/i);
+
+    // Bullet 2: clicking it shows the parse error with the offending
+    // position, rather than an empty list.
+    await brokenLink.click();
+    const banner = page.getByTestId("broken-view");
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText(/Busted/);
+    await expect(page.getByTestId("broken-view-position")).toBeVisible();
+    // Not an empty result masquerading as "no matches".
+    await expect(page.getByText(/No tasks match these filters/i)).toHaveCount(0);
+
+    // Bullet 3: the advanced editor opens pre-populated with the broken
+    // query so it can be repaired in place.
+    await page.getByTestId("broken-view-fix").click();
+    const dsl = page.getByTestId("dsl-input");
+    await expect(dsl).toBeVisible();
+    await expect(dsl).toHaveValue("status = = done");
+
+    expect(pageErrors).toEqual([]);
+  });
+
+  // @verifies VUE-26
+  test("VUE-26: a view added to queries.yaml by another process appears on the next views refresh", async ({
+    page,
+    tracker,
+  }) => {
+    // Focus-refetch (not a full reload) is the "next refresh of the
+    // views data" the case names; that path only fires once the query is
+    // stale (staleTime 30s), so this waits it out like XS-2 / the
+    // activity specs do.
+    test.setTimeout(60_000);
+    const pageErrors: string[] = [];
+    page.on("pageerror", e => pageErrors.push(e.message));
+
+    await tracker.seed([{ title: "Alpha" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    // The view does not exist yet.
+    await expect(page.getByRole("link", { name: "cli-added" })).toHaveCount(0);
+
+    // Another process (the CLI, here the file it owns) appends a view
+    // with a specific query and sort.
+    const queries = path.join(tracker.root, ".loctt", "config", "queries.yaml");
+    const before = await readFile(queries, "utf8");
+    await writeFile(
+      queries,
+      `${before.trimEnd()}\n`
+        + `  - id: 01M2CLIADDED000000000000001\n`
+        + `    name: cli-added\n`
+        + `    query: text ~ "alpha"\n`
+        + `    sort:\n      - field: key\n        direction: asc\n`,
+      "utf8",
+    );
+
+    // Let the views query go stale, then a hidden → visible transition
+    // triggers exactly one refetch — no page.reload().
+    await page.waitForTimeout(31_000);
+    const refetched = page.waitForResponse(
+      r => r.url().includes("/api/views") && r.status() === 200,
+      { timeout: 15_000 },
+    );
+    await page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await refetched;
+
+    // It now appears in the sidebar without a reload.
+    await expect(page.getByRole("link", { name: "cli-added" })).toBeVisible();
+
+    // Its query and sort match the file exactly — asserted off disk via
+    // the CLI, and by running the view (the sort would only matter with
+    // more rows, so the query match is the observable one here).
+    const cli = await tracker.run(["views"]);
+    expect(cli).toContain("cli-added");
+    expect(cli).toContain('text ~ "alpha"');
+    expect(cli).toContain("[sort: key asc]");
+
+    expect(pageErrors).toEqual([]);
+  });
+
+  // @verifies VUE-27
+  test("VUE-27: saving a view does not clobber a concurrent edit to queries.yaml", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Bug", fields: { status: "in_progress" } },
+      { title: "Other" },
+    ]);
+
+    // View A lands first, written directly to the file the way a
+    // concurrent CLI create would — before the UI saves anything.
+    const queries = path.join(tracker.root, ".loctt", "config", "queries.yaml");
+    const before = await readFile(queries, "utf8");
+    await writeFile(
+      queries,
+      `${before.trimEnd()}\n`
+        + `  - id: 01M2CONCURRENTA00000000001\n`
+        + `    name: view-a\n`
+        + `    query: text ~ "bug"\n`,
+      "utf8",
+    );
+
+    // Now save view B through the UI.
+    await page.goto(`${tracker.baseURL}/list?status=in_progress`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await page.getByRole("button", { name: /Save as view/i }).click();
+    await page.getByRole("textbox").first().fill("view-b");
+    await page.getByRole("button", { name: "Save view" }).click();
+    await expect(page.getByRole("link", { name: "view-b" })).toBeVisible();
+
+    // Both A and B survive — asserted off disk, and the default views
+    // too, so a merge that dropped anything shows up.
+    const yaml = await readFile(queries, "utf8");
+    expect(yaml).toContain("view-a");
+    expect(yaml).toContain("view-b");
+    expect(yaml).toContain("recent-open");
+
+    // Neither write reordered the existing entries destructively: A was
+    // appended before B, and both keep their place after A's neighbours.
+    const idxA = yaml.indexOf("view-a");
+    const idxB = yaml.indexOf("view-b");
+    const idxRecent = yaml.indexOf("recent-open");
+    expect(idxRecent).toBeLessThan(idxA);
+    expect(idxA).toBeLessThan(idxB);
+
+    // And both are runnable through the CLI — the far end off disk.
+    expect(await tracker.run(["views"])).toContain("view-a");
+    expect(await tracker.run(["views"])).toContain("view-b");
+  });
 });
 
 test.describe("XS — UI/CLI parity (M1.3)", () => {

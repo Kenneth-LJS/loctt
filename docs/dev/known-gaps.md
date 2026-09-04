@@ -2023,6 +2023,16 @@ delete the `built` flag if it has no remaining false values.
 
 ## One unparseable saved view makes `GET /api/tasks` fail for *every* view
 
+**RESOLVED 2026-09-04 (VUE-22, decision A118).** `parseQueriesConfig`
+now collects per-entry DSL failures into `QueriesConfig.broken` instead
+of throwing on the first one; only object-fatal problems (whole-file
+YAML, missing array/id/name/query, duplicate id) still throw. `GET
+/api/tasks` returns the healthy rows plus a non-fatal `broken_view`
+field, and `loctt views` / the MCP `list_views` tool list broken views
+marked broken. See `packages/core/src/config/queries.ts` and the
+`per-entry degradation (VUE-22)` tests. The historical description is
+kept below for context.
+
 **Found in M4.5, 2026-09-01. Blocks VUE-22, and VUE-21's last bullet.**
 
 `handleListTasks` calls `loadOptionalConfigs`, which calls
@@ -3868,3 +3878,33 @@ record-hygiene task, not something to fold into a feature batch.
 **Why it matters.** decisions.md is the durable memory this whole run
 relies on — "recorded in A101" is worthless when A101 is two things.
 The revert-path discipline depends on each decision being addressable.
+
+## A UI view write drops a concurrently-present *broken* view from queries.yaml
+
+**Found 2026-09-04 while building VUE-22 (decision A118). Not fixed —
+out of VUE-22/26/27 scope; those cases use valid entries.**
+
+After VUE-22, `parseQueriesConfig` sorts a hand-broken entry into
+`QueriesConfig.broken`, not `queries`. Every view *write* in
+`packages/core/src/views/manage.ts` (`createView`, `editView`,
+`archiveView`, `unarchiveView`, delete) re-reads the config inside the
+state lock and calls `saveQueriesConfig(locttDir, { queries: next })` —
+where `next` is derived from `config.queries` only. `serializeQueriesConfig`
+never emits `broken`. So if the file holds a broken entry at the moment
+of a UI save, that entry is **silently dropped** from the written file.
+
+This is a principle-1 violation (never silently corrupt/lose data) that
+the pre-VUE-22 throw-on-load masked: before, a broken file could not be
+loaded at all, so no write proceeded over it. VUE-27 does not catch it
+because its concurrent entry is valid.
+
+**Why not fixed here.** The safe fix is to carry the broken entries
+through a view write — either re-serialize them verbatim alongside the
+good ones, or refuse the write and surface the broken file — which is a
+write-path design decision touching `saveQueriesConfig`/`serializeQueriesConfig`
+and every `manage.ts` writer, beyond VUE-22's read-path scope and worth
+its own ticket + Ken's call on refuse-vs-preserve.
+
+**To reproduce.** In a tracker, append a view with `query: "status =="`
+to `queries.yaml`, then create/rename/archive any *other* view through
+the UI or `createView`. Re-read the file: the broken entry is gone.

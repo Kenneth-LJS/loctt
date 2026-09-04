@@ -698,6 +698,20 @@ prefixes on the path where a collision is actually possible.
 
 #### M4.5 · VUE-22 needs `queries.yaml` to load per-entry, which is a core contract change
 
+**RESOLVED 2026-09-04 (decision A118).** Ken authorized the core
+contract change. `parseQueriesConfig` now collects per-entry DSL
+failures into a new `QueriesConfig.broken` sibling collection instead of
+throwing on the first one; object-fatal problems (whole-file YAML,
+missing array/id/name/query, duplicate id) still throw. All three
+surfaces list broken views marked broken (web sidebar + `broken_view`
+banner on click, `loctt views` `[broken: …]`, MCP `list_views`
+`broken:true`). `saveQueriesConfig` stays effectively strict because
+every write path (`createView`/`editView`) calls `assertQueryValid`
+first and `serializeQueriesConfig` only emits good `queries`; the one
+consequence — a UI write silently dropping a *concurrently-present*
+broken entry — is recorded in known-gaps and spun off, out of
+VUE-22/26/27 scope. Original analysis kept below.
+
 **Measured 2026-09-01, with a positive control.**
 
 VUE-22 requires that a hand-edited saved view which no longer parses

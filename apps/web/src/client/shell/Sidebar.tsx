@@ -564,12 +564,22 @@ function SavedFiltersGroup({
   const pins = readSidebarPins(settings.data?.settings);
   const allViews = views.data?.queries ?? [];
   const userViews = orderByPins(allViews, pins);
+  // VUE-22: views present in queries.yaml whose query no longer parses.
+  // Listed, marked broken, still clickable — the list route answers a
+  // broken view with the parse error and its position, not an empty
+  // table. One bad row never blanks the group (north-star principle 5).
+  const brokenViews = views.data?.broken ?? [];
   const failed = hasFailed(views);
   // SHL-32: a pin that vanished from `queries.yaml` is explained
   // rather than silently dropped. Only once the list has actually
   // loaded — a failed or in-flight read is not a deletion.
+  // A broken view is still in queries.yaml — it has just moved from
+  // `queries` to `broken`. Feed both to the vanished-view tracker so a
+  // view that broke is not also reported as *removed* (SHL-32): it
+  // already has its own "(broken)" row above, and the two signals would
+  // contradict each other.
   const { vanished, dismiss } = useVanishedViews(
-    views.isSuccess ? views.data.queries : undefined,
+    views.isSuccess ? [...views.data.queries, ...(views.data.broken ?? [])] : undefined,
   );
 
   return (
@@ -641,6 +651,36 @@ function SavedFiltersGroup({
           <ItemShell collapsed={collapsed} title={v.name}>
             <span className="w-4 shrink-0 text-center text-text-tertiary">★</span>
             {!collapsed ? <span className="truncate">{v.name}</span> : null}
+          </ItemShell>
+        </Link>
+      ))}
+
+      {brokenViews.map(v => (
+        // VUE-22: still a link — clicking shows the parse error with its
+        // position and opens the editor pre-populated, "rather than an
+        // empty list". Marked broken so it is not mistaken for a healthy
+        // view, and titled with the parser's message for a quick read.
+        <Link
+          key={v.id}
+          to="/list"
+          search={prev => ({ ...prev, view: v.id })}
+          title={`${v.name} — broken: ${v.error}`}
+          className="no-underline"
+          data-broken-view={v.id}
+        >
+          <ItemShell collapsed={collapsed} title={v.name}>
+            <span
+              aria-hidden="true"
+              className="w-4 shrink-0 text-center text-danger-fg"
+            >
+              ⚠
+            </span>
+            {!collapsed ? (
+              <span className="flex min-w-0 flex-1 items-center gap-1">
+                <span className="truncate text-text-secondary">{v.name}</span>
+                <span className="shrink-0 text-[11px] text-text-tertiary">(broken)</span>
+              </span>
+            ) : null}
           </ItemShell>
         </Link>
       ))}

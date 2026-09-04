@@ -101,14 +101,86 @@ queries:
     expect(() => parseQueriesConfig("42")).toThrow(QueriesConfigError);
   });
 
-  it("throws when a saved query string is unparseable", () => {
-    const yaml = `
+  // VUE-22 / north-star principle 5. This test previously asserted that
+  // one unparseable entry threw and took down the whole config — the bug
+  // the fix removes. A per-ENTRY DSL failure now degrades to a broken
+  // marker; the throw is reserved for object-fatal problems (see the
+  // "throws" tests above, which still stand).
+  describe("per-entry degradation (VUE-22)", () => {
+    it("collects an unparseable query as a broken marker instead of throwing", () => {
+      const yaml = `
 queries:
   - id: 01HQ000000000000000000000Y
     name: broken
     query: "status =="
 `;
-    expect(() => parseQueriesConfig(yaml)).toThrow(/not a valid query/);
+      // @verifies VUE-22
+      const config = parseQueriesConfig(yaml);
+      expect(config.queries).toHaveLength(0);
+      expect(config.broken).toHaveLength(1);
+      expect(config.broken?.[0]).toMatchObject({
+        id: "01HQ000000000000000000000Y",
+        name: "broken",
+        query: "status ==",
+        index: 0,
+      });
+      // The parser's own message and the offending position are carried
+      // so a surface can mark the fault in place.
+      expect(config.broken?.[0]?.error).toBeTruthy();
+      expect(typeof config.broken?.[0]?.position).toBe("number");
+    });
+
+    it("keeps a healthy entry sitting next to a broken one (one bad row never blanks the view)", () => {
+      const yaml = `
+queries:
+  - id: 01HQ00000000000000000000OK
+    name: ok
+    query: status = backlog
+  - id: 01HQ0000000000000000000BAD
+    name: broken
+    query: "status = = done"
+`;
+      // @verifies VUE-22
+      const config = parseQueriesConfig(yaml);
+      expect(config.queries).toHaveLength(1);
+      expect(config.queries[0]).toMatchObject({ id: "01HQ00000000000000000000OK", name: "ok" });
+      expect(config.broken).toHaveLength(1);
+      // `index` is the original position, so the broken one was second.
+      expect(config.broken?.[0]).toMatchObject({ name: "broken", index: 1 });
+    });
+
+    it("is not written back to disk (serialize drops the broken marker)", () => {
+      const yaml = `
+queries:
+  - id: 01HQ00000000000000000000OK
+    name: ok
+    query: status = backlog
+  - id: 01HQ0000000000000000000BAD
+    name: broken
+    query: "status = = done"
+`;
+      const config = parseQueriesConfig(yaml);
+      const roundTripped = parseQueriesConfig(serializeQueriesConfig(config));
+      // Serialize only emits the good `queries`; `broken` is a load-time
+      // diagnostic and must never leak into the file.
+      expect(roundTripped.queries).toHaveLength(1);
+      expect(roundTripped.broken).toBeUndefined();
+      expect(serializeQueriesConfig(config)).not.toContain("status = = done");
+    });
+
+    it("still throws QueriesConfigError on a duplicate id even when a query is broken (object-fatal)", () => {
+      const yaml = `
+queries:
+  - id: 01HQ000000000000000000DUPE
+    name: a
+    query: status = backlog
+  - id: 01HQ000000000000000000DUPE
+    name: b
+    query: "status =="
+`;
+      expect(() => parseQueriesConfig(yaml)).toThrow(QueriesConfigError);
+      expect(() => parseQueriesConfig(yaml)).toThrow(/duplicate query id/);
+    });
   });
 
   it("throws YamlSyntaxError on malformed YAML (tagged with file label)", () => {

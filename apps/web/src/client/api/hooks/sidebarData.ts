@@ -1,4 +1,5 @@
 import type {
+  BrokenSavedQuery,
   LabelDef,
   MilestoneDef,
   ProjectDef,
@@ -96,6 +97,12 @@ interface UsersPage extends Page<UserProfile> {
 /** Saved-view list: `GET /api/views` returns the raw queries.yaml. */
 interface ViewsConfig {
   readonly queries: readonly SavedQuery[];
+  /**
+   * Entries present in the file whose query no longer parses (VUE-22).
+   * Omitted when none are broken. The sidebar marks these broken rather
+   * than hiding them; the settings panel lists them alongside the good.
+   */
+  readonly broken?: readonly BrokenSavedQuery[];
 }
 
 export function useProjects() {
