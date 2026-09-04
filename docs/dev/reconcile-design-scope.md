@@ -59,3 +59,27 @@ These are small and mostly confirm what the cases already state; the
 build can proceed on the cases' stated behaviour and flag only a
 genuine ambiguity. Recorded here so the reconcile batch starts from
 scope, not discovery.
+
+## Additional case specifics (GIT-12, GIT-13) for the reconcile batch
+
+- **GIT-12 (bulk, 30 tasks)**: rows grouped by task with per-task
+  collapse (not a flat 90-row list); "keep all local" / "keep all
+  remote" bulk actions that still leave each row individually
+  re-overridable before Apply; an accurate undecided-count that updates
+  live; and Apply reporting the TRUE outcome — "28 of 30 written, these
+  2 failed", never 30 successes when 28 landed. That last part is the
+  same honest-partial-result discipline as PRU-34 / MSL-33.
+- **GIT-13 (parent conflicts)**: both sides render as task key + title
+  (ULID available, not primary); pick-value is a task picker, not a
+  free-text ULID box; and — the subtle one — choosing keep-remote must
+  fix the INVERSE edge: the losing parent's `child` edge is removed, not
+  left dangling. So resolution write-back is not just "set the field";
+  a relationship resolution must maintain the inverse per P-12. Reuse
+  the existing relationship-write path (`link`/`unlink` or `move.ts`)
+  rather than hand-writing frontmatter.
+
+**The single decision to escalate if genuinely unsettled** (per the
+scope above, the cases mostly answer it): GIT-14's keep-remote on a
+value that references a deleted local status — the case says allowed
+WITH a drift warning + Diagnostics visibility. Build to that; only
+escalate if a NEW principle is required, not mere uncertainty.
