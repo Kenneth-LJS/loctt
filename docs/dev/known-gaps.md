@@ -4190,3 +4190,40 @@ Ran the five as a scattered batch, each verified against the code first.
   would also change what the CLI/MCP do with a ghost default, so it is
   a cross-surface decision, not a UI-only tweak. Recorded as blocked on
   that decision; no spec written that asserts a weaker claim to pass.
+
+## Final coverage accounting, per-case verified (2026-09-05)
+
+Coverage 912/961; 49 uncovered. Every one checked against the code
+individually (not a group note). None is built-but-untested — the
+buildable frontier is genuinely reached. Breakdown:
+
+- **7 AVATAR** (PRU-13/27/28/29/31/39/40) — buildable the moment Ken
+  rewords PRU-13's "256×256" bullet to 500px (K20). The cropper UI +
+  the existing 500px copyAvatar pipeline. **Only Ken's one-line spec
+  edit blocks these.**
+- **10 SCHEMA** (SET-15/31/37, XS-36/38/43/44/45/48/56) — need
+  CURRENT_SCHEMA_VERSION > 1 to have a real migration to test. Unblock
+  FREE when the first post-release schema change ships.
+- **14 GIT-engine** (the GIT declines) — rekey-summary, progress
+  channel, fstype detection, adopt-branch, force-push ancestry, error-
+  class distinction. Each a core capability that does not exist. Phase Z
+  strict-parity slice.
+- **8 A11Y feature-gaps** — no search box (A11Y-2), no Menu arrow-nav
+  (A11Y-9/10/12), absolute type scale + contrast harness (A11Y-39/40),
+  and A11Y-17/51's positive-control/keyboard-reachability needs. Phase Z
+  a11y slice.
+- **9 OTHER, all confirmed feature-gaps or process** — CMT-20 (no
+  comment pagination), MSL-35/TML-26/TML-32 (no virtualization), SET-29
+  (diagnostics don't stream), ERR-23 (create is atomic — the multi-step
+  state can't arise), XS-50 (no proactive fstype detection; lock.ts's
+  text is advice in a contention error, not a load-time warning), ONB-18
+  (unreachable from the wizard), ERR-32 (an AUDIT process, not a
+  @verifies test — Phase Z).
+- **1 NEW-20** — ghost `default:` hard-rejects at schema parse
+  (config_invalid), never reaching the ask state. Whether that should be
+  a hard error or tolerated drift is a cross-surface Ken decision.
+
+So: 7 wait on one Ken spec edit, 10 on a schema bump, 1 on a Ken
+ruling, and 31 are Phase 7/Z feature work. Zero are "built but I didn't
+test them" — that was verified case by case, which is the check the
+aggregate notes kept failing.
