@@ -5,9 +5,10 @@ export {
   writeCurrentUserId,
 } from "./current.js";
 export { UserError } from "./errors.js";
-export type { CreateUserOptions, DeleteUserOptions, EditUserOptions } from "./lifecycle.js";
+export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserReferenceCounts } from "./lifecycle.js";
 export {
   archiveUser,
+  countUserReferences,
   createUser,
   deleteUser,
   detectSystemTimezone,

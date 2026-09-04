@@ -422,11 +422,12 @@ export { linkTask, RelationshipError,unlinkTask } from "./task/index.js";
 export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./task/index.js";
 export { computeProgress, milestoneProgress, sprintProgress } from "./task/index.js";
 export { bodyToken, StaleBodyWriteError } from "./task/io.js";
-export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserSettings } from "./users/index.js";
+export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserReferenceCounts, UserSettings } from "./users/index.js";
 export type { PinSweep } from "./users/index.js";
 export type { RecentEntry } from "./users/index.js";
 export {
   archiveUser,
+  countUserReferences,
   createUser,
   CurrentUserError,
   defaultUserDisplayName,

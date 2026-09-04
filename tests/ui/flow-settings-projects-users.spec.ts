@@ -8,7 +8,7 @@
  * so a client that posted the wrong value cannot pass.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { expect, test } from "./fixtures/tracker.ts";
@@ -16,6 +16,55 @@ import { expect, test } from "./fixtures/tracker.ts";
 /** Reads projects.yaml as text — the far end of every project write. */
 async function projectsYaml(root: string): Promise<string> {
   return readFile(path.join(root, ".loctt", "config", "projects.yaml"), "utf8");
+}
+
+/** Resolves a user's ULID by name via the CLI's `user list --all`. */
+async function userIdByName(
+  tracker: { run(args: readonly string[]): Promise<string> },
+  name: string,
+): Promise<string | undefined> {
+  const list = await tracker.run(["user", "list", "--all"]);
+  for (const line of list.split("\n")) {
+    const m = /^([0-9A-HJKMNP-TV-Z]{26})\s*\*?\t([^\t]+)\t/.exec(line);
+    if (m === null) continue;
+    const label = m[2]?.trim() ?? "";
+    if (label === name || label.startsWith(`${name}  `)) return m[1];
+  }
+  return undefined;
+}
+
+/** Reads one frontmatter field off the task with the given title. */
+async function fmByTitle(
+  root: string,
+  title: string,
+  field: string,
+): Promise<string | undefined> {
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  for (const id of await readdir(tasksDir)) {
+    let text: string;
+    try {
+      text = await readFile(path.join(tasksDir, id, "task.md"), "utf8");
+    } catch {
+      continue;
+    }
+    if (new RegExp(`^title:\\s*${title}\\s*$`, "m").test(text)) {
+      return new RegExp(`^${field}:\\s*(\\S+)\\s*$`, "m").exec(text)?.[1];
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Seeds the dangling-reference state PRU-25/PRU-42 describe.
+ *
+ * `deleteUser` refuses to leave a dangling reference (K21), so this is
+ * reached the only way the real world reaches it: the user's profile
+ * folder is removed out-of-band (a hand-edited/restored tracker) while
+ * tasks still carry their ULID. The ULID stays on disk in the task
+ * frontmatter; no profile resolves it.
+ */
+async function orphanUser(root: string, userId: string): Promise<void> {
+  await rm(path.join(root, ".loctt", "users", userId), { recursive: true, force: true });
 }
 
 test.describe("SET — the settings shell", () => {
@@ -688,4 +737,178 @@ test("PRU-46: a completed prefix rename is reported once, with both prefixes", a
   await expect(page.getByTestId("settings-projects")).toBeVisible();
   await expect(notice).toBeVisible();
   await expect(notice).toContainText("SITE-");
+});
+
+test.describe("PRU-25 — a hard-deleted user still referenced as reporter", () => {
+  // @verifies PRU-25
+  test("PRU-25: the reporter cell degrades to truncated-ULID + (deleted user), the row survives, and the filter offers only live users", async ({
+    page,
+    tracker,
+  }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", e => pageErrors.push(e.message));
+
+    // Dave reports two tasks; Erin is a live user who does not.
+    await tracker.run(["user", "create", "Dave", "--email", "dave@example.com"]);
+    await tracker.run(["user", "create", "Erin", "--email", "erin@example.com"]);
+    const [k1, k2] = await tracker.seed([
+      { title: "Daves first" },
+      { title: "Daves second" },
+    ]);
+    if (k1 === undefined || k2 === undefined) throw new Error("seed returned no keys");
+    await tracker.run(["set", k1, "reporter", "Dave"]);
+    await tracker.run(["set", k2, "reporter", "Dave"]);
+
+    const daveId = await userIdByName(tracker, "Dave");
+    if (daveId === undefined) throw new Error("no id for Dave");
+    // The tasks now hold Dave's ULID; confirm before orphaning so a
+    // later "(deleted user)" cannot come from the value never being set.
+    expect(await fmByTitle(tracker.root, "Daves first", "reporter")).toBe(daveId);
+
+    // Reach the dangling state out-of-band (K21): remove Dave's profile
+    // while the tasks keep his ULID. deleteUser would refuse this.
+    await orphanUser(tracker.root, daveId);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Daves first")).toBeVisible();
+
+    // The reporter cell for the orphaned row is degraded, not blank.
+    const row = page.getByText("Daves first").locator("xpath=ancestor::tr");
+    const reporterCell = row.locator('[data-col="reporter"]');
+    await expect(reporterCell).toContainText("(deleted user)");
+    // K22: the truncated tail is shown as the only remaining handle…
+    await expect(reporterCell).toContainText(daveId.slice(-6));
+    // …but never the raw full ULID (P-4 holds outside the error state).
+    expect(await reporterCell.innerText()).not.toContain(daveId);
+    // The row still renders the rest — the other columns are unaffected.
+    await expect(row.locator('[data-col="key"]')).toContainText(k1);
+    await expect(row.locator('[data-col="title"]')).toContainText("Daves first");
+
+    // A healthy reporter (Erin, set on nothing here) never shows the
+    // degraded form — prove the carve-out does not leak. Set Erin on k1
+    // via the picker below; first, the filter facet.
+
+    // The Reporter filter offers only existing users; the dangling ULID
+    // is not an option.
+    await page.getByRole("button", { name: "Filter Reporter" }).click();
+    await expect(page.getByRole("menuitemcheckbox", { name: "Erin" })).toBeVisible();
+    // Dave's profile is gone, so he is not offered; his ULID never is.
+    await expect(page.getByRole("menuitemcheckbox", { name: /Dave/ })).toHaveCount(0);
+    for (const opt of await page.getByRole("menuitemcheckbox").allInnerTexts()) {
+      expect(opt).not.toContain(daveId.slice(-6));
+    }
+    await page.keyboard.press("Escape");
+
+    // Setting a new reporter clears the dangling reference. Open the
+    // task detail and pick Erin.
+    await page.goto(`${tracker.baseURL}/tasks/${k1}`);
+    await page.getByTestId("meta-edit-reporter").click();
+    await page.getByTestId("meta-options-reporter").getByRole("option", { name: /Erin/ }).click();
+
+    const erinId = await userIdByName(tracker, "Erin");
+    expect(erinId).toBeDefined();
+    // The far end: the frontmatter now names Erin, not the dangling id.
+    await expect
+      .poll(async () => fmByTitle(tracker.root, "Daves first", "reporter"))
+      .toBe(erinId);
+
+    expect(pageErrors).toEqual([]);
+  });
+});
+
+test.describe("PRU-42 — deleting a user who is assignee on many tasks", () => {
+  // @verifies PRU-42
+  test("PRU-42: the confirm shows the count split by role, offers archive, and requires a typed confirmation", async ({
+    page,
+    tracker,
+  }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", e => pageErrors.push(e.message));
+
+    // Dave is assignee on 3 tasks and reporter on 1 — a split count.
+    await tracker.run(["user", "create", "Dave", "--email", "dave@example.com"]);
+    await tracker.run(["user", "create", "Erin", "--email", "erin@example.com"]);
+    const keys = await tracker.seed([
+      { title: "A one" },
+      { title: "A two" },
+      { title: "A three" },
+      { title: "R one" },
+    ]);
+    for (const k of keys.slice(0, 3)) await tracker.run(["set", k, "assignee", "Dave"]);
+    await tracker.run(["set", keys[3] as string, "reporter", "Dave"]);
+
+    await page.goto(`${tracker.baseURL}/settings/users`);
+    const daveRow = page.locator('[data-self="false"]', { hasText: "Dave" });
+    const daveId = (await daveRow.first().getAttribute("data-testid"))?.replace("user-row-", "") ?? "";
+    expect(daveId).not.toBe("");
+
+    await page.getByTestId(`user-delete-${daveId}`).click();
+    const dialog = page.getByTestId("user-delete-dialog");
+    await expect(dialog).toBeVisible();
+
+    // The reference count, split by role.
+    const refcount = page.getByTestId("user-delete-refcount");
+    await expect(refcount).toContainText("assignee on 3 tasks");
+    await expect(refcount).toContainText("reporter on 1 task");
+
+    // Archive is offered as the reversible alternative in the same dialog.
+    await expect(dialog).toContainText(/permanent/i);
+    await expect(page.getByTestId("user-delete-archive-instead")).toBeVisible();
+
+    // A single OK is not enough: the confirm button is disabled until a
+    // resolution is chosen AND the word is typed.
+    const confirm = page.getByTestId("user-delete-confirm");
+    await expect(confirm).toBeDisabled();
+    // Choose to reassign Dave's references to Erin.
+    await page.getByTestId(`user-delete-remap-${await userIdByName(tracker, "Erin")}`).click();
+    await expect(confirm).toBeDisabled(); // resolution alone is not enough
+    await page.getByTestId("user-delete-confirm-input").fill("DELETE");
+    await expect(confirm).toBeEnabled();
+
+    await confirm.click();
+
+    // The dialog closes and Dave is gone from the panel.
+    await expect(dialog).toBeHidden();
+    await expect(page.getByTestId(`user-row-${daveId}`)).toHaveCount(0);
+
+    // The far end (K21): no task is left dangling — Dave's references
+    // were remapped to Erin, and his profile folder is gone.
+    const erinId = await userIdByName(tracker, "Erin");
+    await expect
+      .poll(async () => fmByTitle(tracker.root, "A one", "assignee"))
+      .toBe(erinId);
+    await expect
+      .poll(async () => fmByTitle(tracker.root, "R one", "reporter"))
+      .toBe(erinId);
+    expect(await userIdByName(tracker, "Dave")).toBeUndefined();
+
+    expect(pageErrors).toEqual([]);
+  });
+
+  // @verifies PRU-42
+  test("PRU-42: choosing archive from the delete dialog takes the reversible path and leaves references intact", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["user", "create", "Dave", "--email", "dave@example.com"]);
+    const [k1] = await tracker.seed([{ title: "Kept task" }]);
+    await tracker.run(["set", k1 as string, "assignee", "Dave"]);
+    const daveId = await userIdByName(tracker, "Dave");
+    if (daveId === undefined) throw new Error("no id for Dave");
+
+    await page.goto(`${tracker.baseURL}/settings/users`);
+    await page.getByTestId(`user-delete-${daveId}`).click();
+    await expect(page.getByTestId("user-delete-dialog")).toBeVisible();
+
+    // The reversible path: archive instead.
+    await page.getByTestId("user-delete-archive-instead").click();
+
+    // Dave is archived, not deleted — his row is marked, and the task
+    // still names him (archive keeps references intact, unlike delete).
+    await expect(page.getByTestId(`user-row-${daveId}`))
+      .toHaveAttribute("data-archived", "true");
+    expect(await fmByTitle(tracker.root, "Kept task", "assignee")).toBe(daveId);
+    // And the profile still exists (it was archived, not removed).
+    expect(await userIdByName(tracker, "Dave")).toBe(daveId);
+  });
 });

@@ -577,6 +577,16 @@ Soft-deletes / restores a user. Hides them from pickers without breaking histori
 |---|---|---|---|
 | `ref` | string | yes | User UUID or name |
 
+### `count_user_references`
+
+Read-only. Counts how many tasks reference a user, split by role. Use it before `delete_user` to see what a remap or unassign will affect — the same split `delete_user` reports back.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ref` | string | yes | User UUID or name |
+
+Returns JSON `{id: <id>, assignee: <N>, reporter: <M>}`.
+
 ### `delete_user`
 
 Hard-deletes a user. When the user has task references (assignee/reporter), exactly one of `remap_to` or `unassign` is required — they are **mutually exclusive**. Blocked when the target is the active user. **Always requires `confirm: true`.**

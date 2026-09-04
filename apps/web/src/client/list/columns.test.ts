@@ -11,6 +11,19 @@ describe("resolveColumns", () => {
     expect(resolveColumns(undefined).map(c => c.id)).toEqual(ALL_COLUMNS.map(c => c.id));
   });
 
+  // @verifies PRU-25
+  it("offers a sortable reporter column, defaulting visible after assignee", () => {
+    const reporter = ALL_COLUMNS.find(c => c.id === "reporter");
+    expect(reporter).toBeDefined();
+    expect(reporter?.label).toBe("Reporter");
+    // reporter is a real TaskFrontmatter field, so the server can sort it.
+    expect(reporter?.sortable).toBe(true);
+    // Present in the default set, and sitting just after assignee.
+    const ids = resolveColumns(undefined).map(c => c.id);
+    expect(ids).toContain("reporter");
+    expect(ids.indexOf("reporter")).toBe(ids.indexOf("assignee") + 1);
+  });
+
   it("respects a user's column order + visibility", () => {
     const cols = resolveColumns(settings(["title", "status", "key"]));
     expect(cols.map(c => c.id)).toEqual(["title", "status", "key"]);

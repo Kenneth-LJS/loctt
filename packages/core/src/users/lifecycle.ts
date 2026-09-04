@@ -169,6 +169,44 @@ export interface DeleteUserOptions {
   readonly unassign?: boolean;
 }
 
+/** How many tasks reference a user, split by the role of the reference. */
+export interface UserReferenceCounts {
+  /** Tasks whose `assignee` is this user. */
+  readonly assignee: number;
+  /** Tasks whose `reporter` is this user. */
+  readonly reporter: number;
+}
+
+/**
+ * Counts how many tasks reference `userId` as assignee and as reporter,
+ * separately. Read-only: it mutates nothing and takes no lock.
+ *
+ * PRU-42's delete confirmation needs this split *before* the user
+ * commits ("assignee on 30, reporter on 4"), which the delete guard —
+ * whose count only surfaces as an error — cannot give. The two roles
+ * are counted independently, so a task that is both assignee and
+ * reporter is counted once in each, matching how `deleteUser` reports
+ * its `remappedAssigneeCount` / `remappedReporterCount`.
+ *
+ * The `userId` need not resolve to an existing profile: a dangling
+ * reference on a task (a hand-edited `users.yaml`, K21) still counts,
+ * which is exactly the state a caller wants to measure. Callers that
+ * want an "unknown user" guard should check `userExists` themselves.
+ */
+export async function countUserReferences(
+  locttDir: string,
+  userId: string,
+): Promise<UserReferenceCounts> {
+  const tasks = await loadAllTasks(locttDir);
+  let assignee = 0;
+  let reporter = 0;
+  for (const t of tasks) {
+    if (t.frontmatter.assignee === userId) assignee += 1;
+    if (t.frontmatter.reporter === userId) reporter += 1;
+  }
+  return { assignee, reporter };
+}
+
 /**
  * Hard-deletes a user. Refuses on the active user. When the user
  * has any task references, requires exactly one of `remapTo` or

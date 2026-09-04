@@ -131,6 +131,20 @@ describe("FilterBar", () => {
     expect(await screen.findByText("In progress")).toBeTruthy();
   });
 
+  // @verifies PRU-25
+  it("offers a Reporter facet whose options are existing users only", async () => {
+    const router = await mountFilterBar();
+    fireEvent.click(screen.getByRole("button", { name: "Filter Reporter" }));
+    // Every option in the menu is a known user; a dangling ULID (a
+    // deleted user, PRU-25) is never present because the options come
+    // from the users list, not from task values.
+    const options = await screen.findAllByRole("menuitemcheckbox");
+    expect(options.map(o => o.textContent)).toEqual(["Ken Loh"]);
+
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Ken Loh" }));
+    await vi.waitFor(() => expect(search(router).reporter).toEqual(["u_ken"]));
+  });
+
   it("removing a chip clears that filter from the URL", async () => {
     const router = await mountFilterBar("?status=in_progress");
     const removeBtn = await screen.findByRole("button", { name: /Remove Status In progress/ });

@@ -132,9 +132,9 @@ describe("ListView", () => {
   });
 
   // @verifies LST-2
-  it("renders all ten column headers", async () => {
+  it("renders all eleven column headers", async () => {
     await mountList();
-    for (const h of ["Key", "Project", "Title", "Status", "Priority", "Type", "Assignee", "Labels", "Due", "Updated"]) {
+    for (const h of ["Key", "Project", "Title", "Status", "Priority", "Type", "Assignee", "Reporter", "Labels", "Due", "Updated"]) {
       expect(screen.getByRole("columnheader", { name: new RegExp(h) })).toBeTruthy();
     }
   });
@@ -214,15 +214,20 @@ describe("ListView", () => {
     const cells = within(row);
     // Unknown status key renders the raw key, not a blank.
     expect(cells.getByText("ghost_status")).toBeTruthy();
-    // A user the tracker no longer knows is *named* as unresolved.
+    // A user the tracker no longer knows degrades to a diagnostic form.
     //
-    // This previously asserted a truncated id, which is what the cell
-    // rendered — eight characters of a ULID in UI content, which P-4
-    // forbids and which told the reader nothing. Per CLAUDE.md, a fix
-    // that requires editing a green test means that test was asserting
-    // the bug (LST-25).
-    expect(cells.getByText("unknown user")).toBeTruthy();
-    expect(row.textContent).not.toContain("u_delete");
+    // K22 (2026-09-05) amended P-4 for exactly this error state: the
+    // dangling reference now shows its truncated ULID tail *plus*
+    // "(deleted user)" (PRU-25), because there the id is the only
+    // remaining handle on which referent broke. This test asserted the
+    // pre-K22 "unknown user" wording (which hid the id); that expectation
+    // is now the wrong behaviour, so per CLAUDE.md it is updated here.
+    expect(cells.getByText(/\(deleted user\)/)).toBeTruthy();
+    // The truncated tail (last 6 chars of "u_deleted_0000000000").
+    expect(cells.getByText("000000")).toBeTruthy();
+    // The full id is still never shown — only the truncated tail.
+    expect(row.textContent).not.toContain("u_deleted_0000000000");
+    expect(cells.queryByText("unknown user")).toBeNull();
   });
 
   it("renders the empty state when no tasks match", async () => {

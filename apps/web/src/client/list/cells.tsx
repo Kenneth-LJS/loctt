@@ -140,14 +140,22 @@ export function ProjectChip({ def, raw }: { def: ProjectDef | undefined; raw: st
 export function AssigneeCell({ user, raw }: { user: UserProfile | undefined; raw: string | undefined }) {
   if (raw === undefined) return <Dash />;
   if (!user) {
-    // Assigned to someone the tracker no longer knows. Named as
-    // unresolved rather than shown as eight characters of a ULID, which
-    // P-4 keeps out of UI content and which told the reader nothing
-    // anyway. An *archived* user is not this case — those resolve, with
-    // their name (LST-25).
+    // A reference to a user the tracker no longer knows — a dangling
+    // ULID left by a hand-edited users file or a dropped user (K21).
+    // K22 amends P-4 for exactly this error state: show the truncated
+    // ULID *plus* "(deleted user)", because here the id is the only
+    // remaining handle on which referent broke — diagnostic, not
+    // vocabulary. An *archived* user is not this case: those resolve to
+    // their name (LST-25). The truncated tail (last 6 chars) matches
+    // the collision-disambiguation form already used for live users
+    // (PRU-23 in MetaPanel), so the two never use different lengths.
+    const short = raw.slice(-6);
     return (
-      <span title={`No user matches ${raw}`} className="text-[12px] italic text-text-tertiary">
-        unknown user
+      <span
+        title={`No user matches ${raw}`}
+        className="text-[12px] italic text-text-tertiary"
+      >
+        <code className="font-mono not-italic">{short}</code> (deleted user)
       </span>
     );
   }
