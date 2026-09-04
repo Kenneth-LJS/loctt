@@ -60,6 +60,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "count_user_references",
+            },
+            {
+              "hasDescription": true,
               "name": "create_label",
             },
             {
@@ -169,6 +173,10 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "get_git_status",
+            },
+            {
+              "hasDescription": true,
+              "name": "get_reconcile_status",
             },
             {
               "hasDescription": true,
