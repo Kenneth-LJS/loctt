@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadLabelsConfig } from "../config/labels.js";
 import { initLoctt } from "../init/init.js";
 import { resolveLocttDir } from "../paths/index.js";
+import { PartialRemapError } from "../projects/manage.js";
 import { loadState, saveState, withStateLock } from "../state/index.js";
 import { createTask } from "../task/create.js";
 import { loadAllTasks } from "../task/load-all.js";
@@ -151,6 +152,72 @@ describe("deleteLabel (hard)", () => {
     await expect(
       deleteLabel(locttDir, old.id, { hard: true, remapTo: dest.id }),
     ).rejects.toThrow(/archived/);
+  });
+
+  /**
+   * MSL-33: a label remap where some task writes fail must report the
+   * split honestly — how many moved, which failed by key, that the
+   * label was NOT removed — and offer a retry, rather than throwing a
+   * blanket abort or reporting success.
+   *
+   * This is deliberately the OPPOSITE contract from the sibling deletes
+   * (sprints/users/milestones), which stay on `replayTaskRemapStrict`
+   * and abort on any failure. Only labels route back to the reporting
+   * path, mirroring the project delete (PRU-34). The guard test
+   * `aborts and keeps the sprint when a task rewrite fails partway`
+   * proves the siblings did not move with it.
+   *
+   * Real write failure via `chmod 0o500`, not a mock: the behaviour is
+   * what the remap loop does when `writeTask` throws. Four tasks so
+   * "some moved, some did not" (remapped 3, failed 1) is distinguishable
+   * from both none-moved and all-moved.
+   */
+  // @verifies MSL-33
+  it("MSL-33: a partial remap reports the split and does not remove the label", async () => {
+    const old = await createLabel(locttDir, { name: "Old" });
+    const fresh = await createLabel(locttDir, { name: "New" });
+
+    const made: { key: string; id: string }[] = [];
+    await withStateLock(locttDir, async () => {
+      const state = await loadState(locttDir);
+      for (const title of ["a", "b", "c", "d"]) {
+        const t = await createTask({
+          locttDir, state,
+          options: { project: taskProjectId, title, labels: [old.id] },
+        });
+        made.push({ key: t.frontmatter.key, id: t.frontmatter.id });
+      }
+      await saveState(locttDir, state);
+    });
+
+    // Make exactly one task's dir unwritable so its rewrite fails.
+    const victim = made[1] as { key: string; id: string };
+    const victimDir = join(locttDir, "tasks", victim.id);
+    await chmod(victimDir, 0o500);
+
+    let err: unknown;
+    try {
+      await deleteLabel(locttDir, old.id, { hard: true, remapTo: fresh.id });
+    } catch (e) {
+      err = e;
+    } finally {
+      await chmod(victimDir, 0o700);
+    }
+
+    // Reports the split by key, names the label as NOT deleted, and is
+    // retryable — not a blanket failure and not silent success.
+    expect(err).toBeInstanceOf(PartialRemapError);
+    const partial = err as PartialRemapError;
+    expect(partial.remapped).toBe(3);
+    expect(partial.failedKeys).toEqual([victim.key]);
+    expect(partial.message).toContain(victim.key);
+    expect(partial.message).toMatch(/label has NOT been deleted/i);
+    expect(partial.recovery).toEqual({ kind: "retry" });
+
+    // The label is STILL in labels.yaml — removing it would strand the
+    // task that did not move.
+    const cfg = await loadLabelsConfig(locttDir);
+    expect(cfg.labels.some(l => l.id === old.id)).toBe(true);
   });
 });
 

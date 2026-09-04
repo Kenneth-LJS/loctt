@@ -290,6 +290,12 @@ positional argument selects which label to rename.
 dropped from every task that has it; with `--remap-to <other>`, it's replaced.
 Always prompts for confirmation; pass `--yes` to skip the prompt.
 
+If some task rewrites fail partway (e.g. an unwritable task file), the
+command exits non-zero with a message naming how many tasks moved and
+which failed (by key); the label is **not** removed while its tasks
+still reference it. Re-run the same delete to finish — tasks already
+moved are skipped.
+
 Examples:
 
 ```

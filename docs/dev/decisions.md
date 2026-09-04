@@ -6875,3 +6875,67 @@ state to resolve an internal ambiguity is engineering avoiding the
 decision.
 
 **To revert.** Ken's, not an agent's.
+
+### A111 · A label partial-remap reports the split; the other three siblings still throw
+
+**Ticket:** M4.3 (MSL-33) · **Date:** 2026-09-04
+
+**The situation.** MSL-33 requires a label delete-with-remap that fails
+partway to "report honestly": how many tasks were updated, how many
+failed (by key), whether the label entry was removed, and a retry path
+— *not* a blanket abort. This is the same shape PRU-34/A101 gave the
+project delete.
+
+But two days earlier, the PRU-34 fix's collecting `replayTaskRemap` had
+silently regressed four sibling deletes (sprints, LABELS, users,
+milestones): they discarded the result and deleted their config anyway,
+stranding tasks on a failed write (known-gaps, 2026-09-04). That was
+fixed by routing all four through `replayTaskRemapStrict`, which throws
+on any failed task. So labels were, correctly, on the strict throw —
+and MSL-33 now needs the opposite for labels specifically.
+
+**Decided.** Move **labels only** back to the reporting path, mirroring
+`deleteProject`:
+
+1. `deleteLabel`'s remap path calls the collecting `replayTaskRemap`,
+   inspects `.failed`, and throws `PartialRemapError` (before
+   `applyLabelConfigDeletion`, without clearing the journal) when
+   non-empty. The label stays in `labels.yaml`; a retry is safe.
+2. `PartialRemapError` gained an optional `noun` parameter
+   (default `"project"`, so the existing call site and its test are
+   untouched); the label path passes `"label"` so the message reads
+   "The label has NOT been deleted".
+3. The web route `handleDeleteLabel` gained a `PartialRemapError`
+   branch → 409 with `recovery: {kind: "retry"}` and per-key
+   `failures[]`, identical to `handleDeleteProject`.
+4. **Sprints, users and milestones stay on `replayTaskRemapStrict`** —
+   they have no "report the split" case, and weakening them would
+   reintroduce the very stranding the 2026-09-04 fix closed. The
+   guard test `aborts and keeps the sprint when a task rewrite fails
+   partway` stays green and was re-run.
+
+**Found in passing — the MCP surface swallowed the report.**
+`PartialRemapError extends LocttError` directly, not
+`ProjectError`/`LabelError`, so it was **not** in MCP's
+`isKnownDomainError` allow-list — an agent's `delete_label` (or
+`delete_project`) partial remap was rethrown as an opaque server fault
+instead of surfacing the honest split. Added `PartialRemapError` to the
+allow-list so both surface their message. This also closes the
+pre-existing project-side gap (PRU-34 never reached MCP cleanly). The
+classification is only observable at that layer (over stdio the SDK
+renders a rethrow as `isError:true` too), so it is asserted in
+`stale-body-error.test.ts` beside the K10 case, not end-to-end.
+
+**Mutation-proven.** Core: reverting `deleteLabel` to a blanket
+`LabelError` reddens the new `manage.test.ts` MSL-33 test; deleting the
+config before the failure check reddens its "label still in yaml" half;
+the sprint guard stays green throughout. Web: removing the route branch
+drops the 409 to a 500. MCP: removing `PartialRemapError` from the
+allow-list reddens the classification test.
+
+**To revert.** Return `deleteLabel` to `replayTaskRemapStrict` and its
+recovery handler likewise, drop the label branch in `handleDeleteLabel`,
+remove `PartialRemapError` from `isKnownDomainError`, and drop the
+`noun` parameter (the message reverts to hardcoded "project"). Doing so
+returns a partial label remap to a bare abort with no honest split and
+no retry, failing MSL-33.

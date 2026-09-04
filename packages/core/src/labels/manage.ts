@@ -7,12 +7,13 @@ import {
 } from "../config/labels.js";
 import type { LocttErrorOptions } from "../errors.js";
 import { LocttError } from "../errors.js";
+import { PartialRemapError } from "../projects/manage.js";
 import {
   appendJournalEntry,
   clearJournalEntry,
   loadJournal,
   registerRecoveryHandler,
-  replayTaskRemapStrict,
+  replayTaskRemap,
   saveJournal,
   withStateLock,
 } from "../state/index.js";
@@ -253,7 +254,21 @@ export async function deleteLabel(
     const journal = await loadJournal(locttDir);
     await saveJournal(locttDir, appendJournalEntry(journal, entry));
 
-    await replayTaskRemapStrict(locttDir, entry);
+    // MSL-33: a label remap that only partly lands must REPORT the split
+    // — how many tasks moved, which failed by key, and that the label
+    // was NOT removed — rather than throwing a blanket abort. This is
+    // the opposite of the strict path the other three siblings use: the
+    // case requires an honest partial result with a retry path, so it
+    // takes the same collecting-then-inspect treatment `deleteProject`
+    // got for PRU-34. The label is left in labels.yaml and the journal
+    // entry kept, so a retry (safe — moved tasks are skipped) or crash
+    // recovery can finish the stragglers.
+    const result = await replayTaskRemap(locttDir, entry);
+    if (result.failed.length > 0) {
+      const keys = result.failed.map(f => f.key ?? f.id);
+      throw new PartialRemapError(result.remapped, keys, "label");
+    }
+
     await applyLabelConfigDeletion(locttDir, id);
     await clearJournalEntry(locttDir, entry.id);
 
@@ -271,7 +286,13 @@ async function applyLabelConfigDeletion(locttDir: string, id: string): Promise<v
 
 registerRecoveryHandler("remap_label", async (locttDir, entry) => {
   if (entry.kind !== "remap_label") return;
-  await replayTaskRemapStrict(locttDir, entry);
+  // Mirrors the `remap_project` recovery handler: replay idempotently
+  // (already-moved tasks are skipped), drop the result, then finish the
+  // config deletion. A crash-recovery replay that still cannot write a
+  // task leaves the entry in place for the next boot rather than
+  // throwing out of the recovery sweep — the same contract PRU-34's
+  // project recovery uses.
+  await replayTaskRemap(locttDir, entry);
   await applyLabelConfigDeletion(locttDir, entry.from);
   await clearJournalEntry(locttDir, entry.id);
 });

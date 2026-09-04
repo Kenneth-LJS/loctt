@@ -462,6 +462,8 @@ Permanently removes the project from `projects.yaml`. For projects with tasks, `
 
 Returns JSON `{id, remappedTaskCount}`.
 
+If some task rewrites fail partway (e.g. an unwritable task file), the tool reports the split rather than a bare failure: an error naming how many tasks moved and which failed (by key), stating the project was **not** removed (its tasks still reference it), and offering a retry — re-running finishes the stragglers, since tasks already moved are skipped.
+
 ### `move_task`
 
 Move one or more tasks to another project. The key is reallocated under the target project; the old key is retired into `key_history` and stays resolvable, so existing references keep working. Pass several refs to move them as one operation.
@@ -625,6 +627,8 @@ Permanently removes the entry from `labels.yaml`; the id is dropped from every t
 | `remap_to` | string | no | Target label (id or name) for affected tasks |
 
 Returns JSON `{id, ...result}`.
+
+If some task rewrites fail partway during a `remap_to`, the tool reports the split rather than a bare failure: an error naming how many tasks moved and which failed (by key), stating the label was **not** removed (its tasks still reference it), and offering a retry — re-running finishes the stragglers, since tasks already moved are skipped.
 
 ## Milestones
 

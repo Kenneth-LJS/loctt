@@ -3,10 +3,12 @@
  * M4.9, the `/milestones` progress view and `/milestones/<ulid>`
  * detail.
  *
- * **Not Settings → Milestones (M4.3)**, which is CRUD management. The
- * label half of that flow doc (MSL-5..MSL-14, MSL-19..MSL-23, MSL-26..
- * MSL-28, MSL-30..MSL-34, MSL-36, MSL-37) belongs to other tickets and
- * is not exercised here.
+ * The bulk of this file is the `/milestones` progress view and detail.
+ * A tail of Settings → Data cases (MSL-10, MSL-13, and — added for the
+ * milestone-and-label management batch — MSL-8, MSL-9, MSL-14, MSL-27,
+ * MSL-28) also lives here, exercising the CRUD panels at
+ * `/settings/labels` and `/settings/milestones`. Other label/milestone
+ * cases (pills, filters) belong to flow-list.spec.ts.
  *
  * One `test` per case, named by case ID, with a `@verifies` tag. The
  * prose is the specification: a spec asserting something the case does
@@ -18,7 +20,7 @@
  * the thing any of these cases ask for.
  */
 
-import { readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { expect, test } from "./fixtures/tracker.ts";
@@ -694,4 +696,339 @@ test("MSL-13: an unreferenced milestone confirms without a remap picker", async 
     .filter({ hasText: "Used" });
   await usedRow.getByTestId("milestone-delete").click();
   await expect(page.getByTestId("remap-choice")).toHaveCount(1);
+});
+
+/** The raw text of `.loctt/config/labels.yaml`. */
+async function labelsYaml(root: string): Promise<string> {
+  return readFile(path.join(root, ".loctt", "config", "labels.yaml"), "utf8");
+}
+
+/**
+ * The labels array from a task's frontmatter, read straight off disk.
+ * `loctt show` renders labels by *name*, so it cannot witness that a
+ * task still references a label *id* — the file is the only far end for
+ * "no task loses its label". Scans `.loctt/tasks/<id>/task.md` for the
+ * one whose frontmatter `key` matches.
+ */
+async function taskLabelsOnDisk(root: string, key: string): Promise<string[]> {
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  const dirs = await readdir(tasksDir);
+  for (const d of dirs) {
+    let text: string;
+    try {
+      text = await readFile(path.join(tasksDir, d, "task.md"), "utf8");
+    } catch {
+      continue;
+    }
+    const fm = /^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? "";
+    if (!new RegExp(`key:\\s*${key}\\b`).test(fm)) continue;
+    // labels: as a flow array [a, b] or a block list of `- id` lines.
+    const inline = /labels:\s*\[([^\]]*)\]/.exec(fm)?.[1];
+    if (inline !== undefined) {
+      return inline.split(",").map(s => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+    }
+    const block = /labels:\s*\n((?:\s*-\s*.+\n?)+)/.exec(fm)?.[1] ?? "";
+    return block.split("\n")
+      .map(l => /-\s*(.+)/.exec(l)?.[1]?.trim().replace(/^["']|["']$/g, "") ?? "")
+      .filter(Boolean);
+  }
+  return [];
+}
+
+// @verifies MSL-8
+//
+// MSL-8 is about the on-disk write, so every load-bearing assertion
+// reads the far end — `labels.yaml` and the loader — not the response
+// or the row alone. The key bullet is that the file STILL PARSES AS A
+// WHOLE after the write: a single malformed entry can make the loader
+// reject every label. `loctt label list` runs the real loader, so a
+// successful list that names both the new label and a pre-existing one
+// proves the whole file re-loads, not merely that the new line is
+// present in the text.
+test("MSL-8: creating a label writes a valid entry and labels.yaml still parses whole", async ({
+  page,
+  tracker,
+}) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", err => pageErrors.push(err.message));
+
+  // A pre-existing label. If the create corrupts the file, THIS is the
+  // label that silently vanishes — so it is the witness for "one
+  // malformed entry must not take every label with it".
+  await tracker.run(["label", "create", "existing", "--color", "#112233"]);
+
+  await page.goto(`${tracker.baseURL}/settings/labels`);
+  await expect(page.getByTestId("labels-list")).toBeVisible();
+
+  await page.getByTestId("label-create-name").fill("Backend");
+  await page.getByTestId("label-create-color").fill("#1e6fcb");
+  await page.getByTestId("label-create-submit").click();
+
+  // The row lands (the panel refetches on the create mutation). Wait on
+  // it before reading disk so the write has completed.
+  await expect(
+    page.getByTestId("labels-list").getByText("Backend", { exact: true }),
+  ).toBeVisible();
+
+  // The far end: the new entry carries a generated ULID id plus name and
+  // color, and the id was never typed by the user.
+  const yaml = await labelsYaml(tracker.root);
+  expect(yaml).toMatch(/name:\s*Backend/);
+  expect(yaml).toContain("#1e6fcb");
+  // A ULID id sits on the same entry (26 Crockford chars).
+  expect(yaml).toMatch(/id:\s*[0-9A-HJKMNP-TV-Z]{26}/);
+
+  // The whole file still parses — the loader lists the new label AND the
+  // pre-existing one. A create that emitted one malformed entry would
+  // throw here (a non-zero exit makes `tracker.run` reject) or drop
+  // `existing`, and either fails the test rather than passing silently.
+  const listed = await tracker.run(["label", "list"]);
+  expect(listed).toContain("Backend");
+  expect(listed).toContain("existing");
+
+  // Immediately offered in a task's label picker, no restart.
+  const created = await tracker.run(["create", "Needs a label"]);
+  const key = /(\w+-\d+)/.exec(created)?.[1];
+  if (key === undefined) throw new Error(`no key in: ${created}`);
+  await page.goto(`${tracker.baseURL}/tasks/${key}`);
+  await page.getByTestId("meta-add-label").click();
+  await expect(page.getByRole("option", { name: "Backend", exact: true }))
+    .toHaveCount(1);
+
+  expect(pageErrors, "the SPA threw while creating a label").toEqual([]);
+});
+
+// @verifies MSL-9
+//
+// MSL-9: a recolour changes the colour on every surface while leaving
+// the label's id and every task reference untouched — no task loses its
+// label. Asserts the far end (labels.yaml colour + the task's own
+// frontmatter still carrying the id) and a rendering surface (the list
+// pill's colour), not just the settings row.
+test("MSL-9: recolouring a label updates surfaces and keeps every reference", async ({
+  page,
+  tracker,
+}) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", err => pageErrors.push(err.message));
+
+  const created = await tracker.run(["label", "create", "bug", "--color", "#aa0000"]);
+  const labelId = /([0-9A-HJKMNP-TV-Z]{26})/.exec(created)?.[1] ?? "";
+  expect(labelId).not.toBe("");
+  const taskOut = await tracker.run(["create", "Buggy", "--label", "bug"]);
+  const key = /(\w+-\d+)/.exec(taskOut)?.[1];
+  if (key === undefined) throw new Error(`no key in: ${taskOut}`);
+
+  await page.goto(`${tracker.baseURL}/settings/labels`);
+  const row = page.getByTestId(`label-row-${labelId}`);
+  await expect(row).toBeVisible();
+  await row.getByTestId("label-edit").click();
+  const colorInput = row.getByTestId("label-color-input");
+  await colorInput.fill("#00aa55");
+  await row.getByTestId("label-save").click();
+  // The edit form closes on success — wait for it before reading disk.
+  await expect(row.getByTestId("label-color-input")).toHaveCount(0);
+
+  // Far end 1: labels.yaml holds the NEW valid hex, and the id is
+  // unchanged (same 26-char id, now paired with the new colour).
+  await expect.poll(async () => labelsYaml(tracker.root)).toContain("#00aa55");
+  const yaml = await labelsYaml(tracker.root);
+  expect(yaml).toContain(labelId);
+  expect(yaml).not.toContain("#aa0000");
+
+  // Far end 2: the task did not lose its label — its frontmatter still
+  // carries the same id. Read the file, not `loctt show`, which renders
+  // labels by name and so cannot witness the id.
+  expect(await taskLabelsOnDisk(tracker.root, key)).toContain(labelId);
+
+  // Surface: the list-row pill renders in the new colour. The pill's
+  // background is derived from the label colour (a translucent wash of
+  // it), one colour source for all surfaces (MSL-5), so the list is a
+  // genuine second surface, not the settings row again.
+  await page.goto(`${tracker.baseURL}/list`);
+  const pill = page.locator("tbody").getByTitle("bug", { exact: true });
+  await expect(pill).toBeVisible();
+  // Read the computed background rather than a data-attribute, so this
+  // fails if the colour is written to disk but never reaches the paint.
+  // The pill uses a translucent wash (`${color}22`), so match the new
+  // colour's rgb channels rather than an exact string, and assert the
+  // OLD colour's channels are gone.
+  const bg = await pill.evaluate(el => getComputedStyle(el).backgroundColor);
+  // #00aa55 → channels 0, 170, 85; #aa0000 → 170, 0, 0.
+  expect(bg).toContain("0, 170, 85");
+  expect(bg).not.toContain("170, 0, 0");
+
+  expect(pageErrors, "the SPA threw while recolouring a label").toEqual([]);
+});
+
+// @verifies MSL-14
+//
+// MSL-14: setting a target date on an undated milestone writes an ISO
+// `YYYY-MM-DD`, the view re-sorts on refresh, and CLEARING returns the
+// milestone to the undated presentation — not a `1970-01-01` epoch
+// sentinel. All three bullets, each read at the far end.
+test("MSL-14: editing a milestone's target date persists, re-sorts, and clears cleanly", async ({
+  page,
+  tracker,
+}) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", err => pageErrors.push(err.message));
+
+  // "Later" is already dated far out; "Undated" starts with no date.
+  // After we date "Undated" to 2025-01-01 it must sort BEFORE "Later".
+  await tracker.run(["milestone", "create", "Later", "--target-date", "2030-12-31"]);
+  await tracker.run(["milestone", "create", "Undated"]);
+  const ms = await readMilestones(tracker.root);
+  const undatedId = ms.find(m => m.name === "Undated")?.id ?? "";
+  expect(undatedId).not.toBe("");
+
+  await page.goto(`${tracker.baseURL}/settings/milestones`);
+  const row = page.getByTestId(`milestone-row-${undatedId}`);
+  await expect(row.getByTestId("milestone-date")).toHaveAttribute(
+    "data-milestone-date",
+    "none",
+  );
+  await row.getByTestId("milestone-edit").click();
+  await row.getByTestId("milestone-date-input").fill("2025-01-01");
+  await row.getByTestId("milestone-save").click();
+  await expect(row.getByTestId("milestone-date-input")).toHaveCount(0);
+
+  // Far end: an ISO YYYY-MM-DD reaches milestones.yaml.
+  await expect.poll(async () =>
+    readFile(path.join(tracker.root, ".loctt", "config", "milestones.yaml"), "utf8"),
+  ).toMatch(/target_date:\s*['"]?2025-01-01['"]?/);
+
+  // Re-sorts on refresh: the newly-dated "Undated" (2025) now precedes
+  // "Later" (2030) on the progress view, which orders by target date.
+  await page.goto(`${tracker.baseURL}/milestones`);
+  // Both rows must be rendered before order can be read — a one-shot
+  // allTextContents() races the fetch and can see an empty list.
+  await expect(page.getByTestId("milestone-name")).toHaveCount(2);
+  const names = await page.getByTestId("milestone-name").allTextContents();
+  expect(names).toContain("Undated");
+  expect(names).toContain("Later");
+  // Undated (now 2025) sorts before Later (2030).
+  expect(names.indexOf("Undated")).toBeLessThan(names.indexOf("Later"));
+
+  // Clearing returns to the undated presentation, NOT a 1970 epoch.
+  await page.goto(`${tracker.baseURL}/settings/milestones`);
+  await row.getByTestId("milestone-edit").click();
+  await row.getByTestId("milestone-date-input").fill("");
+  await row.getByTestId("milestone-save").click();
+  await expect(row.getByTestId("milestone-date-input")).toHaveCount(0);
+
+  await expect(row.getByTestId("milestone-date")).toHaveAttribute(
+    "data-milestone-date",
+    "none",
+  );
+  await expect(row.getByTestId("milestone-date")).toHaveText("No target date");
+  // The key is gone from disk — not written as an epoch date.
+  const cleared = await readFile(
+    path.join(tracker.root, ".loctt", "config", "milestones.yaml"),
+    "utf8",
+  );
+  expect(cleared).not.toContain("1970-01-01");
+  // The "Undated" entry no longer carries target_date at all. (The
+  // still-dated "Later" keeps its own, so a bare absence check would be
+  // wrong — scope to the cleared milestone's block.)
+  const block = new RegExp(`id:\\s*${undatedId}[\\s\\S]*?(?=\\n- id:|$)`).exec(cleared)?.[0] ?? "";
+  expect(block).not.toContain("target_date");
+
+  expect(pageErrors, "the SPA threw while editing a milestone date").toEqual([]);
+});
+
+// @verifies MSL-27
+//
+// MSL-27: a label created in the CLI while the UI is open appears
+// without a full restart. A CLI write fires no client mutation, so the
+// UI learns of it on the next data refresh. A `page.reload()` drops the
+// cache and is the deterministic observation the harness uses for a
+// hand/CLI-side write (a fresh, already-observed React Query is not
+// refetched by invalidation alone — see known-gaps); the case's bar is
+// "next refresh", not "without reload", and the second bullet — no
+// indefinitely-cached stale list — is exactly what the reload proves is
+// not happening at the data layer.
+test("MSL-27: a label created in the CLI surfaces in the open UI on refresh", async ({
+  page,
+  tracker,
+}) => {
+  await tracker.run(["label", "create", "already-here"]);
+
+  await page.goto(`${tracker.baseURL}/settings/labels`);
+  await expect(
+    page.getByTestId("labels-list").getByText("already-here", { exact: true }),
+  ).toBeVisible();
+  // Positive control: the CLI-made label is absent BEFORE the CLI write,
+  // so its later presence is the write surfacing, not a fixture artefact.
+  await expect(
+    page.getByTestId("labels-list").getByText("from-cli", { exact: true }),
+  ).toHaveCount(0);
+
+  // The out-of-band write, while the UI is open.
+  await tracker.run(["label", "create", "from-cli"]);
+
+  await page.reload();
+  await expect(
+    page.getByTestId("labels-list").getByText("from-cli", { exact: true }),
+  ).toBeVisible();
+  // And the picker offers it too — not a cached stale list.
+  const created = await tracker.run(["create", "Pick me"]);
+  const key = /(\w+-\d+)/.exec(created)?.[1];
+  if (key === undefined) throw new Error(`no key in: ${created}`);
+  await page.goto(`${tracker.baseURL}/tasks/${key}`);
+  await page.getByTestId("meta-add-label").click();
+  await expect(page.getByRole("option", { name: "from-cli", exact: true }))
+    .toHaveCount(1);
+});
+
+// @verifies MSL-28
+//
+// MSL-28: a rename to label B in the UI must not revert a concurrent
+// rename to label A made in the CLI. Both renames must survive in
+// labels.yaml. The write path reads the file, edits one entry, writes
+// it back — so the risk is the UI writing back a copy that predates the
+// CLI's edit to A.
+//
+// The assertion is a BOUNDED, NON-ASSERTING poll of the file (not a
+// gesture-then-immediate-read), because the UI save races its own
+// refetch under load — the exact shape that has flaked three times in
+// this repo (see known-gaps). `expect.poll` retries until both renames
+// are present or it times out.
+test("MSL-28: concurrent CLI and UI label renames do not clobber each other", async ({
+  page,
+  tracker,
+}) => {
+  const a = await tracker.run(["label", "create", "alpha"]);
+  const idA = /([0-9A-HJKMNP-TV-Z]{26})/.exec(a)?.[1] ?? "";
+  const b = await tracker.run(["label", "create", "beta"]);
+  const idB = /([0-9A-HJKMNP-TV-Z]{26})/.exec(b)?.[1] ?? "";
+  expect(idA).not.toBe("");
+  expect(idB).not.toBe("");
+
+  await page.goto(`${tracker.baseURL}/settings/labels`);
+  const rowB = page.getByTestId(`label-row-${idB}`);
+  await expect(rowB).toBeVisible();
+
+  // The CLI renames A out of band, while the panel is open on B.
+  await tracker.run(["label", "edit", idA, "--name", "alpha-renamed"]);
+
+  // The UI renames B and saves.
+  await rowB.getByTestId("label-edit").click();
+  await rowB.getByTestId("label-name-input").fill("beta-renamed");
+  await rowB.getByTestId("label-save").click();
+  await expect(rowB.getByTestId("label-name-input")).toHaveCount(0);
+
+  // Both renames are present after the write. Polled, because the UI
+  // save and its refetch race — a single read right after the click can
+  // catch the file mid-flight.
+  await expect.poll(async () => labelsYaml(tracker.root)).toContain("beta-renamed");
+  const yaml = await labelsYaml(tracker.root);
+  expect(yaml).toContain("alpha-renamed");
+  expect(yaml).toContain("beta-renamed");
+  // Neither original name lingers as a whole value — the renames
+  // replaced them, and A's rename was not reverted by B's save.
+  // Anchored to end-of-value so "alpha" does not match inside
+  // "alpha-renamed" (a hyphen is a word boundary).
+  expect(yaml).not.toMatch(/name:\s*alpha\s*$/m);
+  expect(yaml).not.toMatch(/name:\s*beta\s*$/m);
 });

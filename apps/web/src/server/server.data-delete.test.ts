@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -128,6 +128,65 @@ describe("data-panel deletes are deletes", () => {
       const after = await labelsYaml();
       expect(after).toContain(label.id);
       expect(after).toContain("archived");
+    });
+
+    /**
+     * MSL-33: when a label remap only partly lands over HTTP, the route
+     * must report the split (409 conflict, retryable, failures named by
+     * key) rather than a blanket success or a rejected write, and must
+     * NOT remove the label — its tasks still reference it. Mirrors the
+     * project route's PartialRemapError branch. Two tasks so "some
+     * moved, some did not" is distinguishable.
+     */
+    /** @verifies MSL-33 */
+    it("reports a partial remap as a retryable 409 and keeps the label", async () => {
+      const from = await mkLabel("retiring");
+      const to = await mkLabel("survivor");
+      const moved = await mkTask("moves fine");
+      const stuck = await mkTask("cannot be written");
+      for (const t of [moved, stuck]) {
+        await fetch(`${base}/api/tasks/${t.key}/set`, {
+          method: "POST", headers: csrf,
+          body: JSON.stringify({ field: "labels", value: [from.id] }),
+        });
+      }
+
+      // Find the unwritable task's dir by its id (not key) and lock it.
+      const stuckDetail = await (await fetch(`${base}/api/tasks/${stuck.key}`)).json() as {
+        frontmatter: { id: string; key: string };
+      };
+      const victimDir = join(root, ".loctt", "tasks", stuckDetail.frontmatter.id);
+      await chmod(victimDir, 0o500);
+
+      let body: { code?: string; recovery?: unknown; failures?: { ref: string }[] };
+      let status: number;
+      try {
+        const res = await fetch(`${base}/api/labels/${from.id}?remap_to=${to.id}`, {
+          method: "DELETE", headers: csrf,
+        });
+        status = res.status;
+        body = await res.json() as typeof body;
+      } finally {
+        await chmod(victimDir, 0o700);
+      }
+
+      // Not 200 (blanket success) and not 400 (rejected write): a 409
+      // that says some tasks moved and names the failure by key.
+      expect(status).toBe(409);
+      expect(body.code).toBe("conflict");
+      expect(body.recovery).toEqual({ kind: "retry" });
+      expect(body.failures?.map(f => f.ref)).toEqual([stuckDetail.frontmatter.key]);
+
+      // The label is NOT gone — deleting it would strand `stuck`.
+      const after = await labelsYaml();
+      expect(after).toContain(from.id);
+
+      // And the task that COULD be written did move — the split is real,
+      // not an all-or-nothing rollback.
+      const movedDetail = await (await fetch(`${base}/api/tasks/${moved.key}`)).json() as {
+        frontmatter: { labels?: readonly string[] };
+      };
+      expect(movedDetail.frontmatter.labels).toEqual([to.id]);
     });
   });
 

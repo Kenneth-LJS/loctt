@@ -57,12 +57,20 @@ export class PartialRemapError extends LocttError {
   readonly remapped: number;
   readonly failedKeys: readonly string[];
 
-  constructor(remapped: number, failedKeys: readonly string[]) {
+  /**
+   * `noun` names the entity whose delete only partly landed so the
+   * message reads correctly for each caller: a label delete says "The
+   * label has NOT been deleted", a project delete "The project ...".
+   * Defaults to `"project"`, the original (PRU-34) caller, so that call
+   * site and its test are unchanged; the label delete (MSL-33) passes
+   * `"label"`.
+   */
+  constructor(remapped: number, failedKeys: readonly string[], noun = "project") {
     const n = failedKeys.length;
     super(
       "conflict",
       `remapped ${String(remapped)} task(s); ${String(n)} could not be written `
-      + `(${failedKeys.join(", ")}). The project has NOT been deleted and those `
+      + `(${failedKeys.join(", ")}). The ${noun} has NOT been deleted and those `
       + `tasks still reference it. Retry to finish — tasks already moved are skipped.`,
       // `saved` rather than `not_saved`: those 7 writes really did
       // land, and telling the user nothing was saved would send them

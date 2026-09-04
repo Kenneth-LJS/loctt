@@ -2046,6 +2046,22 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, { deleted: id, ...result });
     } catch (err) {
+      // MSL-33: a label remap that only partly landed is NOT a rejected
+      // write — some tasks moved. Report the split (409 + per-key
+      // failures) and offer Retry, which is safe because an
+      // already-moved task is skipped. Mirrors handleDeleteProject.
+      if (err instanceof PartialRemapError) {
+        error(res, err.message, 409, {
+          code: "conflict",
+          data_state: "saved",
+          recovery: { kind: "retry" },
+          failures: err.failedKeys.map(key => ({
+            ref: key,
+            message: "could not be written; still references the deleted label",
+          })),
+        });
+        return;
+      }
       if (err instanceof LabelError) {
         error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
         return;

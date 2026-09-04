@@ -3641,3 +3641,35 @@ cannot be green while the other 18 stand.
 **Reproduce:** for each utility U used in `apps/web/src/client/**.tsx`,
 `grep -qF "$U" apps/web/dist/client/assets/*.css` — absence means it
 renders colorless.
+## MCP swallowed a partial-remap report on label AND project delete (found and fixed 2026-09-04)
+
+**Found while building MSL-33, which needed the label delete to report
+a partial remap. The project side had the same gap since PRU-34.**
+
+`PartialRemapError` (`projects/manage.ts`) extends `LocttError`
+**directly**, not `ProjectError`/`LabelError`. MCP's dispatcher
+(`apps/mcp/src/index.ts`) surfaces only errors that
+`isKnownDomainError` (`apps/mcp/src/runtime/errors.ts`) recognises as
+an `errorResult` carrying the message; everything else is **rethrown as
+a server fault**. `PartialRemapError` was not in that allow-list, so an
+agent's `delete_project` (since PRU-34) or `delete_label` (as of
+MSL-33) whose remap only partly landed got an opaque server error
+instead of the honest "N moved, M failed by key, entry NOT removed,
+retry is safe" the error was built to carry — the exact report the
+whole partial-remap design exists to deliver.
+
+**Fixed** by adding `PartialRemapError` to `isKnownDomainError`. Both
+the label and project delete tools now surface the split. Asserted in
+`apps/mcp/src/runtime/stale-body-error.test.ts` beside the K10 case,
+because the classification is only observable at that layer — over
+stdio the SDK renders a rethrow as `isError: true` too, so an
+end-to-end test cannot distinguish the two paths (the K10 comment in
+that file explains this at length). Mutation-proven: removing
+`PartialRemapError` from the allow-list reddens the classification
+test.
+
+**How it was found.** Not by a failing test — no MCP test exercised a
+partial remap. By tracing which surfaces `PartialRemapError` reaches
+when wiring MSL-33's label path: the web route had a branch, the CLI
+prints `err.message` generically, but MCP's allow-list did not name the
+class. See decisions.md A111.

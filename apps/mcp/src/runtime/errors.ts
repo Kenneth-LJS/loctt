@@ -19,6 +19,7 @@ import {
   FsAccessError,
   LabelError,
   MilestoneError,
+  PartialRemapError,
   ProjectError,
   RelationshipError,
   ReorderError,
@@ -69,6 +70,13 @@ export function isKnownDomainError(err: unknown): err is Error {
     || err instanceof FsAccessError
     || err instanceof LabelError
     || err instanceof MilestoneError
+    // MSL-33 / PRU-34: a partly-landed remap on a label or project
+    // delete. Its message already names the split — how many tasks
+    // moved, which failed by key, that the entry was NOT removed, and
+    // that a retry is safe — which is exactly what an agent needs to
+    // act on. Without this it was rethrown as an opaque server fault,
+    // hiding the honest report the error was built to carry.
+    || err instanceof PartialRemapError
     || err instanceof ProjectError
     || err instanceof ReorderError
     || err instanceof SprintError
