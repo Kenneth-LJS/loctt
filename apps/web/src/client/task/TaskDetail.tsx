@@ -354,7 +354,7 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
               {archived && (
                 <span
                   data-testid="archived-badge"
-                  className="rounded bg-warning-fg/15 px-1.5 py-0.5 text-[11px] font-medium text-warning-fg"
+                  className="rounded bg-warn-fg/15 px-1.5 py-0.5 text-[11px] font-medium text-warn-fg"
                 >
                   Archived
                 </span>

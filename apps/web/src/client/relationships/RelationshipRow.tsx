@@ -108,7 +108,7 @@ export function RelationshipRowView({
         <span
           data-testid="relationship-duplicate"
           title={`${String(row.duplicates)} identical edges of type "${row.type}" point at this target in the task file.`}
-          className="shrink-0 rounded border border-dashed border-warning-fg/60 px-1 py-0.5 text-[11px] text-warning-fg"
+          className="shrink-0 rounded border border-dashed border-warn-fg/60 px-1 py-0.5 text-[11px] text-warn-fg"
         >
           ×{row.duplicates} duplicate
         </span>

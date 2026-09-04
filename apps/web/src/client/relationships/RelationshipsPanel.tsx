@@ -253,7 +253,7 @@ export function RelationshipsPanel({
                 {group.unknown && (
                   <span
                     data-testid="relationship-unknown"
-                    className="rounded border border-dashed border-warning-fg/60 px-1 py-0.5 text-[11px] font-normal normal-case text-warning-fg"
+                    className="rounded border border-dashed border-warn-fg/60 px-1 py-0.5 text-[11px] font-normal normal-case text-warn-fg"
                   >
                     Unknown relationship type
                   </span>
