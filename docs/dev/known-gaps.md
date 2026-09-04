@@ -4003,3 +4003,36 @@ them would be a tag that cannot fail:
 
 So the A11Y remainder is a 2-case batch, not 10 — the rest wait on the
 features named above.
+
+## Where the uncovered feature-gap cases get picked up (phase map, 2026-09-04)
+
+The uncovered cases that are neither built-but-untested nor blocked on a
+Ken ruling are genuine feature-gaps — a capability does not exist. They
+are NOT orphaned; each has a phase:
+
+- **Degradation / corruption cases** → **Phase 7** (corruption
+  framework). PRU-25/42 (dangling user reference, K21), and any case of
+  the "one bad row never blanks a view" family. Phase 7's audit step
+  explicitly reconciles north-star principles 5–7 against shipped code
+  and classifies every CRUD × corruption kind — these fall out of that.
+- **Git-engine cases** → **Phase Z**, strict-parity slice. GIT-8
+  (rekey summary), GIT-21 (force-push), GIT-9/19/33 (rekey confirm),
+  GIT-22 (fstype), GIT-23 (progress channel), GIT-25 (adopt-branch),
+  GIT-29 (error-class): each is a core capability that does not exist on
+  any surface. Phase Z's strict-parity cross-cut is where capability
+  gaps are surfaced on purpose (the pattern that found `unarchiveView`
+  by accident).
+- **A11Y feature-gaps** → **Phase Z**, a11y aspect slice. A11Y-2 (no
+  search box), A11Y-9/10/12 (no Menu arrow-nav / click-only rows),
+  A11Y-39/40 (absolute type scale, contrast harness).
+- **Migration-schema cases** → become testable **for free** when
+  `CURRENT_SCHEMA_VERSION` first advances past 1 (a real migration to
+  run). Not a phase item — a natural unblock. SET-15/31/37,
+  XS-36/43/44/45/48/56.
+- **Avatar cases** → buildable **now** once PRU-13's 256→500 bullet is
+  reworded (K20). PRU-13, 27, 28, 29, 31, 39, 40.
+
+So the coverage frontier for the current build is: the 2 A11Y cases
+(A11Y-38, A11Y-49), the reconcile batch (landing), and — after Ken's
+one spec edit — the 7 avatar cases. Everything else is a phase item or a
+schema-bump unblock, all with a home.
