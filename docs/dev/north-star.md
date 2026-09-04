@@ -1,5 +1,7 @@
 # LocTT — North Star
 
+> **APPROVED by Ken, 2026-09-04.** No longer a draft — agents may cite this for decisions.
+
 > Written from Ken's stated answers, 2026-09-04. Ken owns this file;
 > an agent proposes changes, it does not rewrite it.
 

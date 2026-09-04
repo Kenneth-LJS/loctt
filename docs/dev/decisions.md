@@ -7403,3 +7403,52 @@ banner + `edit` param in `apps/web/src/client/list/ListView.tsx` /
 Tests: the `per-entry degradation (VUE-22)` block in
 `packages/core/src/config/queries.test.ts` and the VUE-22/26/27 specs in
 `tests/ui/flow-list.spec.ts`.
+
+### K20 · Avatar upload: 500px, confirmed against PRU-13
+
+**Date:** 2026-09-04 · **Ken's ruling — an agent may not revert this.**
+
+K18 set avatar processing at 500px (browser crops, server compresses).
+PRU-13's spec still says "at most 256×256". Ken confirmed: **500px, and
+PRU-13's 256 bullet is the one to reword** — the case is otherwise
+correct (preview from the crop, stored file at users/<id>/avatar.<ext>
+recorded in profile.yaml, avatar shown in header/list/detail).
+
+Once PRU-13's second bullet is reworded from 256 to 500 (Ken's to edit;
+agents may not touch docs/dev/ui-test-cases/), the seven avatar cases
+(PRU-13, 27, 28, 29, 31, 39, 40) are buildable: the cropper UI + the
+existing copyAvatar 500px server pipeline.
+
+**To revert.** Ken's, not an agent's.
+
+### K21 · A dangling user reference degrades gracefully, but delete never creates one
+
+**Date:** 2026-09-04 · **Ken's ruling — an agent may not revert this.**
+
+PRU-25 and PRU-42 assume a task can reference a hard-deleted user's
+ULID (the "(deleted user)" state). `deleteUser` forbids this: it
+requires `--remap-to` or `--unassign` when the user has references. So
+the supported delete path never produces a dangling reference.
+
+**Ken's ruling — both halves:**
+
+1. **The guard stays absolute.** Delete always resolves references
+   first; there is NO `--force` that skips it. You cannot casually
+   orphan a reference through a LocTT command.
+2. **The degradation is still built.** A dangling reference CAN arise
+   out-of-band — a hand-edited `users.yaml`, a `git pull` that drops a
+   user, a restore of tasks referencing a since-deleted user. Files are
+   canonical and hand-editable (north-star principle 5), so the UI must
+   degrade such a reference to the "(deleted user)" form (PRU-25) rather
+   than breaking the row, and the delete confirmation must show the
+   reference count and offer archive (PRU-42).
+
+So PRU-25/42 are buildable, testing the degradation of an out-of-band
+dangling reference — NOT one produced by delete (which cannot happen).
+The test seeds the dangling state by hand-editing, exactly as the real
+world would reach it.
+
+This is the "external / missing reference" corruption kind the Phase 7
+framework will formalize; PRU-25/42 are an early instance of it.
+
+**To revert.** Ken's, not an agent's.
