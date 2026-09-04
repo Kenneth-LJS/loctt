@@ -38,6 +38,69 @@ below. Measured against the four bullets:
 `CommentsPanel`/`useComments`), then add a CMT-20 spec to
 `tests/ui/flow-comments.spec.ts` and delete this entry.
 
+### GIT-30 — Sync against an unreachable remote is a 200 warning, not the error surface the case needs (declined)
+
+**Found 2026-09-04 while covering the git-sync UI batch.** GIT-30
+(blocker, P4) — "Sync fails because the remote is unreachable" — is
+**declined, not tagged**, correcting A69, which omitted it, and
+`GitSyncPanel.tsx`'s header comment, which lists it as covered.
+
+**Measured, not inferred.** With `origin` set to `/nonexistent/path.git`,
+`POST /api/git/sync` returns **HTTP 200**
+`{updated:false, fetched:false, fetchError:"and the repository exists."}`.
+The panel renders its *success* branch (`git-sync-result`,
+`data-git-sync="no-op"`) with a warning span, not `git-sync-error`.
+
+Against GIT-30's bullets:
+
+| bullet | state |
+|---|---|
+| names the remote, says it could not be reached, distinct from "nothing to sync" | **partial/wrong** — the warning does not name the remote, and the `fetchError` is a truncated git-stderr fragment ("and the repository exists.") |
+| local state untouched and the panel says so explicitly | **absent** — the success branch has no "local state untouched" line (only the `git-sync-error` branch does) |
+| Retry is offered | **absent** — Retry lives on the error branch, which a 200 never reaches |
+
+The `git-sync-error` block is only reachable on a non-2xx (a reconcile
+block, or a thrown git error) — the network-down case produces neither.
+
+**To close:** either have core's `sync` raise on an unreachable remote
+(so `handleGitSync` hits `gitErrorResponse` and the panel's error branch,
+with a message naming the remote), or add a dedicated fetch-unreachable
+render to the panel's success branch that names the remote, states local
+state is untouched, and offers Retry. Then add a GIT-30 spec and delete
+this entry.
+
+### GIT-9/16/19/22/23/25/29/33/34/35/36 — git-sync cases with no engine behind them (declined)
+
+**Confirmed 2026-09-04 during the git-sync UI batch**, re-verifying the
+A69 declines that fell in this batch rather than trusting them:
+
+- **GIT-9, GIT-19, GIT-33** — rekey summary + confirm. `RekeyOutcome` is
+  flattened to `rekeyed: number` before it leaves `sync`; there is no
+  summary surface, no confirm step, no per-key old/new reporting.
+- **GIT-16** — delete-vs-edit reconciliation row. No reconciliation data
+  model (`ReconcileState` is a 4-field crash sentinel; A69).
+- **GIT-22** — advisory-lock warning by filesystem class. No fstype
+  detection exists anywhere in `packages`/`apps` (grep with positive
+  control, A69 / TEMP-RUN-WORKFLOW).
+- **GIT-23** — 500-task sync with progress + honest counts. `SyncOutcome`
+  is one file-count bucket, and there is no progress channel (no SSE /
+  generator / callback in the sync path).
+- **GIT-25** — adopt-existing-branch prompt. `enableGit` silently adopts
+  a LocTT-written branch (or throws on a foreign one); it neither shows
+  the branch head nor asks adopt-or-stop, and the panel has no UI for it.
+- **GIT-29** — non-fast-forward vs auth distinction. `gitErrorResponse`
+  maps everything non-conflict to one generic 500, and `PushResult.error`
+  is an opaque string — the two causes cannot be told apart.
+- **GIT-34, GIT-35, GIT-36** — malformed-remote-file, newer-schema-version,
+  and missing-worktree surfaces. Each needs task-and-field-granularity
+  reporting or a schema-version/worktree guard that the file-count sync
+  model does not carry.
+
+Each is a real product requirement whose engine does not exist; full
+reasoning in decisions.md A69 and TEMP-RUN-WORKFLOW.md § "Cases that
+cannot be satisfied yet". **To close:** build the missing engine (a
+ticket, not a wire-up), then tag the case.
+
 ### ERR-11 / ERR-12 have a client half that is not built
 
 The server side is done: `FsAccessError` names permission and disk-full
