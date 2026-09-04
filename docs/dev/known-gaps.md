@@ -1247,9 +1247,22 @@ this is a pure refactor whose regression surface is TSK-8/TSK-28 in
 `tests/ui/flow-task-meta.spec.ts` plus TML-13 in
 `tests/ui/flow-timeline.spec.ts`.
 
-## The timeline has no virtualization: TML-21, TML-26, TML-27, TML-30, TML-32 are unmet
+## The timeline has no virtualization: TML-21, TML-26, TML-32 unmet (TML-27, TML-30 covered for their satisfiable bullets)
 
 **Found:** M3.3b (2026-08-30). **Not fixed.**
+
+**Update 2026-09-04:** TML-27 and TML-30 are now **tagged and
+mutation-verified** for the bullets that hold. TML-27's case says
+"sticky *(or otherwise identifiable)*" — identifiable headers, per-band
+collapse and the `(archived)` marker all hold, so the case is satisfied
+without the sticky mechanism (verified: dropping the `(archived)` suffix
+reddens the test). TML-30's "each overlapping bar gets its own row"
+holds (the part this entry always said held). What remains genuinely
+unmet is the **windowing/virtualization** layer, which TML-21, TML-26
+and TML-32 depend on and which is a build of its own — those three stay
+uncovered. This entry previously listed all five as unmet, which was
+true when written but conflated "no virtualization" with "case not
+satisfiable".
 
 Five section-B cases ask the timeline to stay usable at scale, and each
 names a mechanism that does not exist:
@@ -3701,3 +3714,124 @@ partial remap. By tracing which surfaces `PartialRemapError` reaches
 when wiring MSL-33's label path: the web route had a branch, the CLI
 prints `err.message` generically, but MCP's allow-list did not name the
 class. See decisions.md A111.
+
+## TML-26 timeline rows do not virtualise — the 3,000-task case is unbuildable
+
+**Measured 2026-09-04 while covering the M3 scale cases.**
+
+TML-26 bullet 1: "Rows virtualize vertically; scrolling to the 2,900th
+row shows the right task, and its bar is at the right horizontal
+offset." The timeline renders **every** row unconditionally —
+`TimelineChart.tsx` maps `band.rows.map(...)` with no windowing, and
+`layout.ts` places all rows top-to-bottom into one absolutely-positioned
+body. There is no `virtual`, `overscan`, or visible-range slice anywhere
+in `apps/web/src/client/timeline/` (grepped: only `today.slice` in
+`TimelineView.tsx`, unrelated).
+
+So the case's central mechanism does not exist. The other two bullets
+(true group-header counts; a drag far down the list writes the right
+task) are testable and largely covered elsewhere (TML-6/7 counts,
+TML-9..12 drag), but bullet 1 is the point of TML-26 and `@verifies`
+has no partial marker — tagging it would claim virtualisation is built.
+
+**Not built here:** virtualising the timeline is a feature (a windowing
+layer with its own scroll math, drag-hit-testing across the window
+boundary, and arrow anchoring for off-window targets), not a test
+repair. It also raises design questions no case answers — whether to
+virtualise bands as well as rows, and how arrows to an un-rendered row
+interact with TML-31's off-screen-dependency badge.
+
+**Reproduce:** seed 3,000 dated tasks (the `seedDatedTasks` helper in
+`tests/ui/flow-timeline.spec.ts` does this without subprocess cost),
+open `/timeline`, count `[data-testid^="timeline-bar-"]` — all 3,000
+render, and the DOM node count, not a spinner, is what a slow tracker
+would feel.
+
+## TML-32 the timeline has no arrow hover-highlight
+
+**Measured 2026-09-04, same pass.**
+
+TML-32 bullet 2: "Hovering the source bar highlights its arrows so an
+individual dependency can be traced." The bar carries a CSS
+`hover:bg-accent/30` on itself, but nothing changes the **arrows** on
+hover: `TimelineChart.tsx` has no `hovered`/`highlight` state, no
+`onMouseEnter`/`onPointerEnter` on a bar that touches the arrow
+`<path>`s, and the arrows render at a fixed `stroke-text-secondary`
+`strokeWidth={1}` regardless of any bar being hovered.
+
+Bullets 1 (arrows drawn without hiding labels — arrows are a
+`pointer-events:none` SVG overlay above the bars, labels live inside the
+bars) and 3 (turning arrows off removes them — the toggle exists,
+covered by TML-15) are met. But bullet 2 is unbuilt, and it is the one
+that makes a 50-arrow fan *traceable* rather than merely drawn, which is
+what the case is named for. Not tagged: `@verifies` cannot say "two of
+three".
+
+**Not built here:** arrow-highlight-on-hover is a feature (a hovered-bar
+state threaded from the bar's pointer events into the arrow layer's
+per-edge styling, plus deciding whether highlight follows the source,
+the target, or both ends). No case specifies that shape.
+
+**Reproduce:** seed one task with 50 `blocks` targets, open
+`/timeline`, hover the source bar, observe every `timeline-arrow`
+`<path>` keeps its stroke — nothing distinguishes the hovered task's
+arrows from the rest.
+
+## ERR-23 has no multi-step create flow to fail in
+
+**Measured 2026-09-04.**
+
+ERR-23: "Interrupt a create-task submit after the task is created but
+before a subsequent link/label write lands." The web create modal makes
+**one** atomic `POST /api/tasks` carrying every field — title, status,
+assignee, and labels — via `toCreateRequest` (`create/formState.ts`).
+There is no subsequent link or label write: `CreateTaskModal.submit`
+awaits the single POST and, on failure, `describeFailure` reports the
+task as *not created* (a request that never returns created nothing).
+So the partial state ERR-23 describes — task written, follow-up write
+lost — cannot arise: creation is all-or-nothing on this surface.
+
+The nearest two-step flow is `LabelsField` on an **existing** task
+(`POST /api/labels` then `POST /api/tasks/:ref/set`), but that is not a
+create and is not what ERR-23 names.
+
+**Not tagged, and not a defect:** the guarantee ERR-23 wants (no
+orphaned task from a half-applied create) is provided *more* strongly
+here than the case assumes — by never splitting the create into steps.
+Verifying ERR-23 as written would require either inventing a multi-step
+create (a scope change) or asserting against a flow the case does not
+describe. If a future create flow does gain a distinct follow-up write,
+ERR-23 becomes live and should assert the step-named message then.
+
+**Reproduce:** open the create modal, fill a title and labels, and watch
+the network — one request to `/api/tasks`, no follow-up.
+
+## SET-29 diagnostics do not stream — they arrive in one batched response
+
+**Measured 2026-09-04.**
+
+SET-29 bullet 1: "Checks stream in individually as they complete rather
+than the whole panel sitting on one spinner." The `DiagnosticsPanel`
+runs a single `GET /api/doctor` that returns the whole
+`DiagnosticCheck[]` at once; while it is in flight the panel shows one
+`diagnostics-loading` spinner, then renders every check together. There
+is no streaming endpoint (`/api/doctor` is the only route;
+`grep` for `text/event-stream`/`res.write`/`EventSource` in the doctor
+path returns nothing) and no per-check "still running" state (bullet 2)
+because all checks land in the same tick.
+
+Bullet 3 (a way to leave without wedging; navigating away and back
+leaves no permanently-spinning check) IS met — the query is passed the
+request `signal`, so navigation aborts it and a return refetches. But
+bullets 1 and 2 are the substance of SET-29 and are unbuilt.
+
+**Not built here:** streaming diagnostics is a feature (a chunked or SSE
+`/api/doctor` that emits each check as it completes, core's `runDoctor`
+refactored to yield incrementally, and a panel that renders a per-check
+pending→result transition). No case beyond SET-29 asks for it, and it
+touches core, the web route, and the panel at once — an escalate-by-rule
+data-shape change, not a UI test.
+
+**Reproduce:** seed 5,000 tasks, open Settings → Diagnostics, click Run
+— one spinner, then all checks appear together; the Network panel shows
+a single `/api/doctor` request, not a stream.

@@ -113,6 +113,7 @@ import {
   initLoctt,
   isEmptyTracker,
   isMalformedHistoryEntry,
+  isMigrationLocked,
   LabelError,
   linkTask,
   listComments,
@@ -4188,6 +4189,31 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleMigrate: RouteHandler = async ({ res, locttDir }) => {
+    // SET-38: a `loctt migrate` running in a terminal holds the migration
+    // lock. Check it up front and fail fast, rather than calling
+    // migrateToCurrent — which would either block on the lock for up to
+    // the 5-minute stale timeout while the CLI runs, or, when the tracker
+    // is already at the current version, no-op past the lock entirely and
+    // report a success the UI never actually performed. Neither is what
+    // the case wants: the honest answer is that another process is
+    // migrating, the UI wrote nothing, and the user should wait and
+    // reload. `isMigrationLocked` is the fail-fast check `withMigrationLock`
+    // documents for exactly this.
+    if (await isMigrationLocked(locttDir)) {
+      error(
+        res,
+        "A schema migration is already running in another process "
+        + "(for example `loctt migrate` in a terminal). The migration was "
+        + "not started here. Wait for it to finish, then reload.",
+        409,
+        {
+          code: "conflict",
+          data_state: "not_saved",
+          recovery: { kind: "reload" },
+        },
+      );
+      return;
+    }
     try {
       const result = await migrateToCurrent(locttDir);
       json(res, {

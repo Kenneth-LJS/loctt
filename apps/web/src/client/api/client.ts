@@ -286,12 +286,38 @@ async function postFile<T>(
 ): Promise<T> {
   const form = new FormData();
   form.append(fieldName, file, file.name);
-  const res = await fetch(endpoint, {
-    method: "POST",
-    // No Content-Type: the browser writes it, with the boundary.
-    headers: { [CLIENT_HEADER]: CLIENT_NAME, Accept: "application/json" },
-    body: form,
-  });
+  let res: Response;
+  try {
+    res = await fetch(endpoint, {
+      method: "POST",
+      // No Content-Type: the browser writes it, with the boundary.
+      headers: { [CLIENT_HEADER]: CLIENT_NAME, Accept: "application/json" },
+      body: form,
+    });
+  } catch {
+    // REL-47: the connection dropped mid-upload — `fetch` rejects with a
+    // bare `TypeError` ("Failed to fetch") that names nothing. The upload
+    // route is atomic: it parses the body into an OS temp dir and only
+    // renames into `tasks/<id>/attachments/` on success, removing the
+    // temp dir in a `finally`. So a dropped connection means the file was
+    // never attached — nothing partial is left on disk (proven by
+    // ERR-24's server test) — which makes the state knowable as
+    // "incomplete", not the P4 "unknown" write case, and makes retry
+    // safe (it cannot duplicate a write that never landed). The panel
+    // frames the file name and the retry; this only has to say, in the
+    // envelope, that the transfer did not complete and may be retried.
+    throw new ApiError(`${endpoint}: the upload did not complete`, {
+      status: 0,
+      body: undefined,
+      endpoint,
+      envelope: {
+        code: "unknown",
+        message: "the upload did not complete",
+        data_state: "not_saved",
+        recovery: { kind: "retry" },
+      },
+    });
+  }
   const body = await parseBody(res);
   if (!res.ok) {
     throw new ApiError(errorMessage(endpoint, res.status, body), {
