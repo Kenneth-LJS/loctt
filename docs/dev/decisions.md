@@ -7554,3 +7554,29 @@ the refuse-until-fixed reading.
 keep-remote (mark the conflict unresolvable when `remote.drift` is set);
 the panel would then disable the keep-remote button on a drift row.
 Reverting contradicts GIT-14's stated behaviour.
+
+### K22 · P-4 softens for error states: a dangling reference may show its truncated ULID
+
+**Date:** 2026-09-05 · **Ken's ruling — an agent may not revert this.**
+
+PRU-25 requires a deleted user's reporter cell to show "the truncated
+ULID plus (deleted user)". P-4 said a ULID is NEVER shown in UI content.
+The current AssigneeCell sided with P-4 — "unknown user", no ULID.
+
+**Ken's ruling: PRU-25 wins, and "never" softens.** In his words: this
+is "an error state of sorts, so we want to give the user information to
+help them debug". A dangling reference is precisely where names have
+failed — the ULID is the only remaining handle on which referent broke,
+so showing a truncated form is diagnostic, not vocabulary. P-4 is
+amended with the exception (invariants.md).
+
+Scope: the exception is for **degraded/error references** — a deleted
+user on a task, a broken saved view's stored query — NOT for healthy
+content (a live user still shows their name, a picker still lists names).
+The truncated ULID appears only when the thing it names is gone.
+
+Applies to PRU-25 (assignee/reporter cells) and consistently to any
+other dangling-reference degradation (the broken-view case VUE-22 could
+adopt the same form).
+
+**To revert.** Ken's, not an agent's.
