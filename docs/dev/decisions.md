@@ -1414,6 +1414,82 @@ side is a boolean.
 boolean rendering with a computed count, which requires a new core
 function to produce it.
 
+### A119 · GIT-2/GIT-3 are tagged for their no-op distinction and far-end, not their task-and-field granularity; GIT-30 is re-classified as unmet
+
+**Ticket:** M4.3 (git-sync UI test batch) · **Date:** 2026-09-04 · **Commit:** (uncommitted)
+
+**The situation.** The git-sync UI test batch owed 20 non-conflict
+cases (GIT-1, 2, 3, 4, 9, 16, 19, 20, 22, 23, 24, 25, 27, 28, 29, 30,
+33, 34, 35, 36). A69 had already recorded that the reconciliation /
+rekey / granularity engine does not exist, listing most of these as
+unmet — but two facts needed settling before tagging:
+
+1. **GIT-2 and GIT-3 are partly unmet, yet A69 did not list them.**
+   GIT-2's second/third bullets ask Publish to "name the three tasks by
+   key ... at field granularity" and "report the new
+   `last_synced_commit`" *in the result*. GIT-3's second bullet asks
+   Sync to "distinguish created from updated". `SyncOutcome` reports
+   file counts (`copied`/`merged`/`deleted`) in one bucket and the
+   publish result carries no commit — the exact granularity A69's own
+   "task-and-field granularity" paragraph records as absent. So GIT-2
+   and GIT-3 are *partially* satisfiable, not fully.
+
+2. **GIT-30 is not satisfiable, though A69 omitted it and
+   `GitSyncPanel.tsx`'s header comment claims it.** Measured: with
+   `origin` pointed at a nonexistent path, `POST /api/git/sync` returns
+   **HTTP 200** with `{updated:false, fetched:false, fetchError:"…"}` —
+   the panel's *success* branch with a soft warning, not an error
+   surface. GIT-30 requires the message to "name the remote", say
+   "could not be reached" as distinct from "nothing to sync", state
+   local state is untouched, and *offer Retry*. The 200-with-warning
+   path names none of these, the `fetchError` string is a truncated git
+   stderr fragment ("and the repository exists."), and no Retry control
+   renders because it is not the error branch. The `git-sync-error`
+   block is only reachable on a non-2xx (reconcile-block or a thrown git
+   error), which the network-down case is not.
+
+**What had to be decided.** Whether to tag GIT-2/GIT-3 at all given the
+unmet bullets, and whether to trust A69's implicit "GIT-30 is met".
+
+**Options considered.**
+
+1. **Decline GIT-2 and GIT-3 entirely.** They each carry a real,
+   far-end-verifiable behaviour the panel *does* implement — the
+   no-op-vs-success distinction (`data-git-publish`
+   committed/nothing-to-publish; `data-git-sync` updated/no-op) and, for
+   GIT-2, a commit that actually lands on the bare remote. Declining
+   them would leave that genuine behaviour untested.
+2. **Tag GIT-2/GIT-3 for the bullets the model supports, and record the
+   unmet bullets here.** Chosen. Tag GIT-30 nowhere — it is unmet.
+
+**Decided.** Option 2.
+- **GIT-2** is tagged asserting: the first publish's commit reaches the
+  bare remote's `loctt` ref and equals `last_synced_commit`; the second
+  publish renders the *distinct* "nothing to publish" outcome and moves
+  no ref. **Not** asserting per-task/per-field naming or a commit in the
+  result — those have no data.
+- **GIT-3** is tagged asserting: the remote's two new tasks land on disk
+  and appear in the list without a forced reload; `last_synced_commit`
+  advances to the remote head; a second sync renders the *distinct*
+  no-op. **Not** asserting created-vs-updated — one file-count bucket.
+- **GIT-30** is left untagged and recorded in known-gaps.md.
+
+**Why.** The build-loop bar is that a tag asserts the case's substance,
+not that the case ID appears in a comment. GIT-2/GIT-3 have substance
+the panel meets and far-end state that proves it; tagging them for that,
+with the gaps recorded, is honest. GIT-30 has no branch that meets its
+requirement, so tagging it would be the "green hides a gap" failure the
+loop exists to catch.
+
+**Not satisfied by this.** GIT-2's task/field-granularity and
+commit-in-result bullets; GIT-3's created-vs-updated bullet; GIT-30
+entirely; and the pre-existing A69 declines that fell in this batch
+(GIT-9, 16, 19, 22, 23, 25, 29, 33, 34, 35, 36).
+
+**To revert.** Delete the `GIT-2`, `GIT-3` and (if added later) `GIT-30`
+tags in `tests/ui/flow-git-sync.spec.ts`. The fixture and the other
+tags stand independently.
+
 ### A68 · `theme` and `sidebar_pins` become typed fields on `UserSettingsSchema`
 
 **Ticket:** M4.4 · **Date:** 2026-09-01 · **Commit:** (uncommitted)

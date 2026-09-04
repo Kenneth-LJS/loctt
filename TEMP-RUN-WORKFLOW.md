@@ -775,7 +775,8 @@ returns 0 hits; the same technique returns real hits for
 it, since task frontmatter merges per field. The CLI has no reconcile
 command by explicit design (`apps/cli/src/commands/git.ts:14-21`).
 
-**26 cases cannot be satisfied**, and none of them is wrong — each
+**27 cases cannot be satisfied** (GIT-30 added 2026-09-04), and none of
+them is wrong — each
 describes a real product requirement whose engine does not exist:
 
 - **Conflict resolution UI (no data model):** GIT-5, GIT-6, GIT-7,
@@ -801,6 +802,18 @@ describes a real product requirement whose engine does not exist:
 - **Non-fast-forward vs auth distinction (GIT-29).** `gitErrorResponse`
   maps exactly two shapes — conflict → 409, everything else → 500 —
   and `PushResult.error` is an opaque string.
+
+- **Unreachable-remote sync error surface (GIT-30).** Added
+  2026-09-04, correcting A69, which had it as satisfiable, and
+  `GitSyncPanel.tsx`'s header comment, which claims it. Measured: an
+  unreachable remote makes `POST /api/git/sync` return **HTTP 200**
+  `{updated:false, fetched:false, fetchError:"…"}` — the panel's
+  *success* branch with a soft warning, not an error surface. GIT-30
+  needs the remote named, "could not be reached" stated as distinct
+  from "nothing to sync", "local state untouched" said explicitly, and
+  Retry offered — none of which the 200-with-warning path does. Full
+  detail in known-gaps.md. Fixing it means core's `sync` raising on an
+  unreachable fetch, or a dedicated panel render for it.
 
 **Also unsatisfiable, unrelated to git:** **SET-29** ("checks stream in
 individually"). `runDoctor` accumulates into a local array and returns
