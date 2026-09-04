@@ -4076,3 +4076,33 @@ features with no existing core support — not reconciliation-detail work:
 
 Both are scoped as their own tickets. The reconciliation feature does not
 depend on either.
+
+## Re-audit 2026-09-05: some "blocked" cases were mis-filed built-but-untested
+
+The stop-gate pushed back on "everything achievable is done" and it was
+right to. Re-checking the uncovered set against the CODE (not the
+collective M4.1 "22-case group" note, which is the aggregate-hiding
+pattern that lost cases twice before) found several I had filed as
+blocked that are actually buildable:
+
+- **PRU-25/42** — I recorded K21 (delete semantics) but the cases had a
+  SECOND, separate conflict: P-4 (no ULID in UI) vs PRU-25's required
+  "truncated ULID + (deleted user)". That was a Ken decision I could
+  have surfaced sooner, not a feature-gap. Ken ruled K22 (P-4 softens
+  for error states); now building.
+- **XS-10** (optimistic reconciliation), **XS-55** (current-user
+  reflected cross-surface), **SHL-33** (10 statuses don't distort the
+  shell), **NEW-20** (ghost default → ask state) — mechanisms exist;
+  these read as built-but-untested, swept into the M4.1 group note
+  rather than checked individually. Queued for a scattered batch.
+
+Genuinely still blocked, re-confirmed: XS-38 (needs migration path),
+CMT-20 / TML-26 / TML-32 (no virtualization/pagination), ERR-23 (create
+is atomic), SET-29 (diagnostics don't stream), MSL-35 / ONB-18
+(unreachable). XS-65 (conflict-write-fails) — worth re-checking now that
+reconcile exists.
+
+The lesson, again: a collective "N cases uncovered, honestly" note is
+not per-case verification. Each uncovered case needs checking against
+the code before it is called blocked — the aggregate is where buildable
+work hides.
