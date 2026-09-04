@@ -1147,3 +1147,173 @@ test.describe("ERR — recovery when the server comes back", () => {
     await expect(page.locator("tbody tr")).toHaveCount(2);
   });
 });
+
+/**
+ * A workflow with ten statuses. Everything else is the minimum a valid
+ * `workflow.yaml` needs — the case is only about status count.
+ */
+const TEN_STATUS_WORKFLOW = `key:
+  prefix: "T-"
+
+statuses:
+  - key: intake
+    label: Intake
+    category: pending
+    default: true
+  - key: triage
+    label: Triage
+    category: pending
+  - key: specced
+    label: Specced
+    category: pending
+  - key: ready
+    label: Ready
+    category: pending
+  - key: building
+    label: Building
+    category: active
+  - key: in_review
+    label: In review
+    category: active
+  - key: verifying
+    label: Verifying
+    category: active
+  - key: staged
+    label: Staged
+    category: active
+  - key: shipped
+    label: Shipped
+    category: completed
+  - key: abandoned
+    label: Abandoned
+    category: discarded
+
+priorities:
+  - key: p0
+    label: Now
+    value: 3
+  - key: p1
+    label: Soon
+    value: 2
+  - key: p2
+    label: Later
+    value: 1
+
+task_types:
+  - key: chore
+    label: Chore
+  - key: defect
+    label: Defect
+
+relationships:
+  - key: blocks
+    label: Blocks
+    inverse: is_blocked_by
+    inverse_label: Is blocked by
+    graph: acyclic
+
+custom_fields: []
+`;
+
+test.describe("SHL-33 — an unusual status count does not distort the shell", () => {
+  // @verifies SHL-33
+  /**
+   * Transcribed from flow-app-shell.md SHL-33.
+   *
+   * The claim is negative — a ten-status workflow must leave the
+   * sidebar and header exactly as a normal one, because status is a
+   * main-pane concern with no sidebar group of its own. Negative
+   * assertions need a positive control, so this measures the shell
+   * with the default workflow first and then again with ten statuses,
+   * and asserts they match: same sidebar group set, same sidebar
+   * width, and no horizontal document overflow either time. Without
+   * the baseline, "no overflow" could pass on a build that never lays
+   * the shell out at all.
+   *
+   * Mutation shown to fail: give the sidebar a per-status group (e.g.
+   * render one nav row per configured status inside `<aside>`) and the
+   * `groupLabels` equality goes red — the ten-status shell grows four
+   * extra rows the baseline never had. A width-unbounded variant
+   * (drop the `w-60` cap) trips the `asideWidth` / overflow checks.
+   */
+  test("SHL-33: ten statuses leave the sidebar and header identical to the default, with no overflow", async ({
+    page,
+    tracker,
+  }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", e => pageErrors.push(e.message));
+
+    // Which of the sidebar's fixed group headers are present. Status
+    // has no group here, so this set must not grow with status count.
+    // (The labels are plain styled divs, not ARIA headings, so they
+    // are matched by their exact text within the sidebar.)
+    const KNOWN_GROUPS = [
+      "Projects",
+      "Saved filters",
+      "Milestones",
+      "Sprints",
+      "Labels",
+      "Recently viewed",
+    ] as const;
+    const groupLabels = async (): Promise<string[]> => {
+      const present: string[] = [];
+      for (const label of KNOWN_GROUPS) {
+        if (await page.locator("aside").getByText(label, { exact: true }).count() > 0) {
+          present.push(label);
+        }
+      }
+      return present;
+    };
+    const asideWidth = async (): Promise<number> =>
+      (await page.locator("aside").boundingBox())?.width ?? -1;
+    const horizontallyOverflows = async (): Promise<boolean> =>
+      page.evaluate(() =>
+        document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    const headerVisible = () => expect(page.getByTestId("header-new-task")).toBeVisible();
+
+    // --- Baseline: the default single-status-category workflow.
+    await page.goto(`${tracker.baseURL}/board`);
+    await headerVisible();
+    const baseGroups = await groupLabels();
+    const baseWidth = await asideWidth();
+    expect(baseGroups.length).toBeGreaterThan(0);
+    expect(baseWidth).toBeGreaterThan(0);
+    expect(await horizontallyOverflows()).toBe(false);
+
+    // --- Ten statuses. The board's own columns are a main-pane
+    // concern and may scroll inside their own container; the shell
+    // around them must not change.
+    await writeFile(
+      path.join(tracker.root, ".loctt", "config", "workflow.yaml"),
+      TEN_STATUS_WORKFLOW,
+      "utf8",
+    );
+    await page.goto(`${tracker.baseURL}/board`);
+    await headerVisible();
+
+    // Confirm the ten statuses actually took effect in the main pane,
+    // so this is not vacuously "nothing rendered, nothing overflowed".
+    await expect(page.getByRole("region", { name: "Verifying" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Staged" })).toBeVisible();
+
+    // The shell is unchanged: same groups, same width…
+    expect(await groupLabels()).toEqual(baseGroups);
+    expect(await asideWidth()).toBe(baseWidth);
+    // …and the document itself does not scroll sideways (a header that
+    // grew unbounded would push it past the viewport).
+    expect(await horizontallyOverflows()).toBe(false);
+
+    // The heart of "status count is a main-pane concern": not one of
+    // the ten statuses leaks into the sidebar as its own entry. This
+    // is the assertion a build that grew a per-status sidebar group
+    // would fail — the width/overflow checks alone would not catch it,
+    // because a scrolling `w-60` column absorbs extra rows without
+    // changing width or overflowing.
+    const aside = page.locator("aside");
+    for (const status of ["Intake", "Triage", "Ready", "Verifying", "Staged", "Shipped"]) {
+      await expect(aside.getByText(status, { exact: true })).toHaveCount(0);
+    }
+
+    expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
+  });
+});

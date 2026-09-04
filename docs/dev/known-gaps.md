@@ -4138,3 +4138,55 @@ The lesson, again: a collective "N cases uncovered, honestly" note is
 not per-case verification. Each uncovered case needs checking against
 the code before it is called blocked — the aggregate is where buildable
 work hides.
+
+### Scattered batch outcome (2026-09-05): 4 built-but-untested, NEW-20 genuinely blocked
+
+Ran the five as a scattered batch, each verified against the code first.
+
+- **XS-10, XS-55, SHL-33, XS-65** — confirmed built, now covered by
+  mutation-proven UI tests (`flow-task-meta.spec.ts`,
+  `flow-cross-surface.spec.ts`, `flow-app-shell.spec.ts`,
+  `flow-task-body.spec.ts`). XS-65 in particular is buildable now that
+  the body-precondition path landed: a resolution write that hits a
+  real filesystem failure (task dir made read-only) returns 500
+  `io_failed` and `writeFileAtomically`'s temp-file+rename leaves
+  `task.md` byte-for-byte unchanged — verified, and the mutation
+  (non-atomic direct write) turns the byte-unchanged assertion red.
+
+- **NEW-20 — genuinely blocked, NOT built-but-untested.** The re-audit
+  guessed "mechanism exists"; it does not, for the case as written.
+
+  NEW-20 requires `projects.yaml#default: ghost` (a hand-edited drift
+  naming a project that does not exist) to **degrade to the NEW-19 ask
+  state** — the create modal shows the empty/required project picker,
+  not an error, not a silent pick of ghost.
+
+  What actually happens: `ProjectsConfigSchema.superRefine`
+  (`packages/contracts/src/projects.ts:95-100`) **hard-rejects** a
+  `default` not in the projects list at *parse* time —
+  `"default project 'ghost' is not in the projects list"`. So
+  `loadProjectsConfig` throws before any resolution runs. The
+  unguarded `const cfg = await loadProjectsConfig(locttDir)` in
+  `handleListProjects` (`apps/web/src/server/server.ts:1490`) means
+  `GET /api/projects` returns **400 `config_invalid`**, and the create
+  modal degrades to a *config-error* surface, never the ask state.
+  (Verified against a live server: GET /api/projects → 400
+  config_invalid with that message.)
+
+  The client-side `resolveProjectChoice`
+  (`apps/web/src/client/create/projectChoice.ts`) *does* correctly fall
+  through to `ask` when `effective_default` names a non-selectable
+  project — but that path is for a default pointing at a *deleted or
+  archived* project (still a valid ULID reference the schema accepts).
+  It is never reached for a ghost default, because the config never
+  parses.
+
+  This is a design decision the case predates, and it belongs to Ken,
+  not an agent: **should a `default` naming a nonexistent project be a
+  hard config error (current behaviour), or a tolerated drift that the
+  resolution chain skips over (what NEW-20 assumes)?** NEW-19 (no
+  default → ask) is built and satisfiable; NEW-20 (broken default →
+  ask) is not, until that call is made. Making the schema lenient here
+  would also change what the CLI/MCP do with a ghost default, so it is
+  a cross-surface decision, not a UI-only tweak. Recorded as blocked on
+  that decision; no spec written that asserts a weaker claim to pass.

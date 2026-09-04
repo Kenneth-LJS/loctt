@@ -1813,3 +1813,92 @@ test.describe("TSK-43 / TSK-55 — immutable key, and a failed inline label", ()
     expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
   });
 });
+
+test.describe("XS-10 — optimistic edits reconcile against the server", () => {
+  // @verifies XS-10
+  /**
+   * Transcribed from flow-cross-surface.md XS-10.
+   *
+   * The reconciliation is asserted at the one value the optimistic
+   * path deliberately does NOT invent: `updated_at`. `applyLocally`
+   * (useSetField.ts) touches only the field named — never the
+   * timestamp — so during the optimistic window the footer still shows
+   * the *pre-edit* time. Only the settling refetch (onSettled →
+   * invalidate → GET) brings the server's freshly-stamped time. So a
+   * footer that ends on the server's `updated_at` is proof the settled
+   * state came from the response, not from the browser (XS-10 bullet
+   * 2), and a value that never moved would be proof the optimistic
+   * guess was left standing.
+   *
+   * The assertion is tied to disk: the footer's ISO must equal the
+   * `updated_at` core actually wrote. A test that only checked "the
+   * time changed" would pass on any client clock; equality with disk
+   * is what makes it the *server's* value.
+   *
+   * Mutation shown to fail: delete the three `invalidateQueries` calls
+   * in `useSetField`'s `onSettled` and this goes red — the footer
+   * keeps the stale pre-edit `updated_at` because nothing refetches
+   * the reconciled task. (Verified while writing: with onSettled
+   * gutted the final `toBe(diskUpdatedAt)` fails, footer frozen at the
+   * seed timestamp.)
+   */
+  test("XS-10: the settled footer timestamp is the server's, not the optimistic guess", async ({
+    page,
+    tracker,
+  }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", e => pageErrors.push(e.message));
+
+    await writeWorkflow(tracker.root, SEVEN_STATUS_WORKFLOW);
+    const [key] = await tracker.seed([{ title: "Reconciled task" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+
+    // The pre-edit timestamp, as the server currently reports it.
+    const updated = () =>
+      page.getByTestId("meta-updated").locator("time").getAttribute("title");
+    const beforeIso = await updated();
+    expect(beforeIso).toBeTruthy();
+    const beforeDisk = /^updated_at:\s*(\S+)/m.exec(
+      await frontmatterOf(tracker.root, key),
+    )?.[1];
+    expect(beforeIso).toBe(beforeDisk);
+
+    // Change a field. The optimistic path repaints the status at once
+    // but leaves `updated_at` alone — so if reconciliation never
+    // happened, the footer would stay on `beforeIso` forever.
+    await trigger(page, "status").click();
+    await options(page, "status").getByRole("option", { name: "Building" }).click();
+    await expect(trigger(page, "status")).toContainText("Building");
+
+    // The far end moves first: core stamps a new updated_at on write.
+    const fm = await waitForFile(
+      tracker.root,
+      key,
+      t => /^status:\s*building\s*$/m.test(t),
+      "settled on building",
+    );
+    const diskUpdatedAt = /^updated_at:\s*(\S+)/m.exec(fm)?.[1];
+    expect(diskUpdatedAt).toBeDefined();
+    expect(diskUpdatedAt).not.toBe(beforeIso);
+
+    // The footer settles onto exactly the server's timestamp — the
+    // reconciled value, not the stale optimistic one and not a browser
+    // clock reading.
+    await expect(async () => {
+      expect(await updated()).toBe(diskUpdatedAt);
+    }).toPass({ timeout: 8000 });
+
+    // XS-10 bullet 3: nothing that exists only in browser state
+    // survives a reload. The reconciled value is already on disk, so a
+    // reload shows the same time — not a regression to the optimistic
+    // guess.
+    await page.reload();
+    await expect(async () => {
+      expect(await updated()).toBe(diskUpdatedAt);
+    }).toPass({ timeout: 8000 });
+
+    expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
+  });
+});
