@@ -6421,6 +6421,193 @@ external consumer can be depending on the export.
 alongside a field that actually uses it — a sprint `key` in
 `SprintDefSchema` — or it returns to validating nothing.
 
+### A100 · A retired key counter is reclaimed by **prefix**, not by id or slug
+
+**Ticket:** M4.1 (PRU-18) · **Date:** 2026-09-03 · **Commit:** (this one)
+
+**The situation.** PRU-18 requires that re-creating a hard-deleted
+project resumes its numbering — "the first task created in it gets
+`BACKEND-48`, not `BACKEND-1`". Two sources disagreed about whether
+that was already true:
+
+- `contracts/state.ts:13-16` says it is: "Re-creating a project with
+  the same key restores numbering from where it left off, avoiding key
+  collisions with surviving tasks."
+- `projects/manage.ts:216-224` said the opposite, in a comment
+  explaining that retired counters "are NOT auto-restored under this
+  code path", with recovery left to "an admin recovery script".
+
+The code matched the second. `createProject` called
+`initKeyAllocation(state, id, prefix, 1)` — hardcoded 1 — so a
+re-created project restarted at 1 and could mint a key that a
+surviving task still answers to via `key_history`.
+
+**The problem with the case's own wording.** PRU-18 says
+"`state.retired_keys.backend` holds 47", i.e. keyed by slug.
+`retired_keys` is keyed by **project ULID**, and a re-created project
+gets a *fresh* ULID — so no id-based or slug-based lookup can ever
+match. Taking the case literally would mean re-keying `retired_keys`,
+a state-schema change affecting sync's `deriveKeyState` merge.
+
+**Decided.** Match on **prefix**, leaving the storage shape alone.
+`createProject` scans `retired_keys` for entries whose `prefix` equals
+the new project's, takes the **highest** `next_number` among them, and
+starts there; the matched entries are removed from `retired_keys` in
+the same `saveState` as the new counter.
+
+**Why prefix is the right key.** A task key is `<prefix><number>`, so
+the prefix is precisely what decides whether two projects can mint the
+same key — regardless of id, slug or name. Two projects that never
+shared a prefix cannot collide; two that do, can. Matching on anything
+else answers a different question than the one `retired_keys` exists
+to answer.
+
+**Why the highest, not the first.** More than one deleted project may
+have used the prefix over a tracker's life. The high-water mark is the
+only value below which no surviving `key_history` entry can be
+shadowed.
+
+**Scope.** Core only, so all three surfaces get it from one place —
+`createProject` is called by `apps/cli/src/commands/project.ts:77`,
+`apps/mcp/src/tools/project.ts:56` and `server.ts:1539`. No CLI or MCP
+change was needed and none was made.
+
+**To revert.** Restore the `startNumber = 1` hardcode in
+`createProject` and drop the `retired_keys` write-back. Doing so
+returns the tracker to reissuing keys that surviving tasks still
+resolve, and re-contradicts `contracts/state.ts`.
+
+### A101 · A partial remap reports the split and refuses to finish the delete
+
+**Ticket:** M4.1 (PRU-34) · **Date:** 2026-09-03 · **Commit:** (this one)
+
+**The situation.** PRU-34 requires that a delete-with-remap failing
+partway through 12 tasks "reports the true split: 7 remapped, 5 not,
+naming the 5 by key", leaves the project in `projects.yaml`, and
+offers a Retry that is safe.
+
+`replayTaskRemap` (`state/journal.ts`) returned `Promise<void>` and
+`await writeTask(...)` inside a plain loop, so the first unwritable
+file threw out of the loop. The count was lost, the remaining tasks
+were never attempted, and the server surfaced whatever the exception
+said under `REJECTED_WRITE_NO_RETRY` — which offers no Retry at all.
+
+**Decided.** Three changes:
+
+1. `replayTaskRemap` returns `TaskRemapResult` — `{remapped, skipped,
+   failed}` — and **continues past a failed task write**, recording
+   `{id, key, reason}`. `skipped` counts tasks needing no change,
+   which is what makes a retry provably idempotent.
+2. `deleteProject` throws a new `PartialRemapError` when `failed` is
+   non-empty, **before** `applyProjectConfigDeletion` and **without**
+   clearing the journal entry.
+3. The server maps it to a 409 carrying `recovery: {kind: "retry"}`
+   and per-key `failures[]`, rather than the non-retryable envelope.
+
+**The return type is additive on purpose.** Nine other call sites
+across sprints, labels, milestones and users ignore the result and are
+unchanged; only `deleteProject` inspects it. A shared recovery
+primitive is the wrong place to change behaviour for every caller at
+once.
+
+**`data_state: "saved"`, which reads oddly and is correct.**
+`ErrorDataState` is `saved | not_saved | unknown` — there is no
+`partially_saved`. Those 7 writes really did land, so `not_saved`
+would send the user looking for tasks that have already moved. The
+split lives in the message, which names both halves and the affected
+keys. Adding a fourth `ErrorDataState` would touch the contract every
+surface reads and was out of scope for a test-coverage pass.
+
+**What the test proved that the case did not anticipate.** The journal
+entry deliberately survives, so the *next* critical section's recovery
+hook replays it and completes the delete. Retry and crash-recovery
+therefore reach the same end state, which is what makes offering Retry
+honest — but it also means "the project is still present" is a
+statement about the moment of failure, not a steady state. The test
+asserts the end state rather than which route reached it.
+
+**To revert.** Restore `Promise<void>` and the throwing loop, drop
+`PartialRemapError` and the server branch. Doing so returns the user
+to a half-migrated tracker described only as a bare failure.
+
+### A102 · PRU-16's "point at Settings" is appended to the shared no-project message
+
+**Ticket:** M4.1 (PRU-16) · **Date:** 2026-09-03 · **Commit:** (this one)
+
+**The situation.** PRU-16's third bullet asks the create modal's block
+to point at Settings → Projects "as the place to set a workspace
+default so this stops recurring". The first two bullets were already
+built (`projectChoice.ts:47`, `CreateTaskModal.tsx:250-266`, `:819-843`).
+
+`NO_PROJECT_MESSAGE` is shared with **NEW-19**, whose third bullet
+quotes the existing text.
+
+**Decided.** Append rather than rewrite. The constant now reads
+"Pick a project — this workspace has no default. Set one in
+Settings → Projects so this stops recurring."
+
+**Why this does not break NEW-19.** NEW-19 quotes its sentence as a
+parenthetical example of "naming what's needed and why", not as an
+exact-match assertion; the existing sentence is untouched and leads.
+Verified: all ten pre-existing `projectChoice` tests stayed green, and
+the new PRU-16 test asserts the first sentence still contains "this
+workspace has no default".
+
+**To revert.** Drop the appended sentence. PRU-16's third bullet then
+has no implementation.
+
+### A103 · PRU-43's filesystem caveat moves from a source comment into the message
+
+**Ticket:** M4.1 (PRU-43) · **Date:** 2026-09-03 · **Commit:** (this one)
+
+**The situation.** PRU-43 requires that a project write hitting state-lock
+contention "states that POSIX advisory locks are not reliable on
+iCloud/Dropbox/NFS/SMB/OneDrive" and "recommends moving the tracker to
+a local disk rather than only offering Retry".
+
+Every one of those facts was already written down — as a **source
+comment** on `withStateLock` (`state/lock.ts:162-164`). A grep across
+`packages/*/src` and `apps/*/src` found no runtime string naming any of
+those filesystems.
+
+**Decided.** Append the caveat and the recommendation to
+`StateLockedError`'s message. `recovery` stays `retry`.
+
+**Why not a new recovery kind.** On a local disk the error genuinely is
+transient and Retry is the right control; on a sync folder it is not,
+and the server cannot tell which it is looking at. Naming both cases in
+the message lets the user make the distinction the server cannot.
+
+**Blast radius.** The message is shared by every state-locked write on
+every surface, which is the point — the CLI and MCP hit the same lock.
+No test asserted the old text (grepped); the 107 `state/` tests and the
+16 `server.errors` tests stayed green.
+
+**To revert.** Restore the two-clause message. The caveat returns to
+being true, documented, and invisible to the person hitting it.
+
+### A104 · `MenuItem` gained a declared `testId` prop rather than a spread
+
+**Ticket:** M4.1 (PRU-8) · **Date:** 2026-09-03 · **Commit:** (this one)
+
+**The situation.** PRU-8 needs to click a specific user in the header's
+switch list. `MenuItem` (`ui/Menu.tsx:98`) destructures exactly
+`{children, onSelect, className}` and renders its own `<button>`.
+
+Writing `data-testid={...}` on the call site **type-checks** — JSX
+permits any dashed attribute — and then silently never reaches the DOM.
+That was caught here only by reading the component; it would otherwise
+have surfaced as a locator timeout indistinguishable from a component
+that failed to render.
+
+**Decided.** Declare an explicit optional `testId` prop, applied as
+`data-testid` on the button. Not a `...rest` spread: a spread on a
+menu item invites arbitrary DOM props onto a `role="menuitem"` control
+whose ARIA contract the component owns.
+
+**To revert.** Remove the prop and the two `testId` call sites in
+`Header.tsx`. PRU-8's switch-target click then has no stable selector.
+
 ### K18 · The browser crops, the server compresses — avatars stay 500px
 
 **Date:** 2026-09-03 · **Ken's ruling — an agent may not revert this.**
@@ -6468,5 +6655,223 @@ Its other three bullets (preview renders from the crop, the stored file
 lands at `users/<id>/avatar.<ext>` with a matching extension recorded
 in `profile.yaml`, and the avatar appears in the header, list and
 detail) all hold as written and are buildable now.
+
+**To revert.** Ken's, not an agent's.
+
+### A105 · The project list column is shown/hidden by the active project scope
+
+**Ticket:** M4.1 (PRU-3) · **Date:** 2026-09-04 · **Commit:** (this one)
+
+**The situation.** PRU-3 requires the `project` list column to appear in
+"all projects" mode and hide when exactly one project is scoped — and to
+do so without permanently mutating the user's saved `list_columns`.
+
+`resolveColumns` (`list/columns.ts`) took only `settings` and always
+included `project` from `ALL_COLUMNS`; nothing consulted the active
+`?project=` filter.
+
+**Decided.** `resolveColumns` gained an optional `scope:
+{activeProjectCount}`. In `ListView` it is passed
+`search.project?.length ?? 0`. Exactly one scoped project drops the
+`project` column; zero or several (all-projects) ensures it is present —
+inserting it after `key` even when the user's saved order omits it,
+because PRU-3 says it must "appear without the user having to add it via
+column settings". The result is derived per render; the saved order is
+never written back, so a scope toggle cannot lose it.
+
+**Why the count, not the ids.** The only thing that decides the column
+is "is the view constant in project?" — i.e. exactly one — so the count
+is the whole input. Passing ids would couple column resolution to
+identity it does not use.
+
+**To revert.** Drop the `scope` parameter and the `applyProjectScope`
+step, and the `activeProjectCount` argument in `ListView`. The column
+then shows in every scope, constant and uninformative under a single
+project.
+
+### A106 · The create modal pre-fills the active switcher project, above the resolved default
+
+**Ticket:** M4.1 (PRU-4) · **Date:** 2026-09-04 · **Commit:** (this one)
+
+**The situation.** PRU-4 requires the create modal to pre-select the
+top-bar switcher's project (the single `?project=` scope). The modal
+seeded only from `effective_default` (the per-user / workspace default
+core computes), so a user scoped to Web still opened the modal on their
+default project.
+
+**Decided.** `resolveProjectChoice` gained an optional `activeProjectId`
+that, when it names a still-selectable project and more than one project
+exists, returns `{kind: "prefilled"}` for it — ranking **above**
+`effective_default` but below an explicit in-modal choice (protected by
+the form's seed-once guard). The modal reads the scope route-agnostically
+via `useRouterState` (it is mounted app-wide, so `useSearch({from:
+"/list"})` would throw off `/list`), normalising `project` from either
+the validated `string[]` or the raw comma-joined string.
+
+**Why above the default, below explicit.** The switcher is the strongest
+standing signal of where the user means to file; an explicit pick inside
+the modal is stronger still and must win (NEW-14). Archived or unknown
+scopes fall through to the existing chain rather than pre-filling a
+destination the picker cannot show (NEW-16/17).
+
+**To revert.** Drop the third argument to `resolveProjectChoice` and the
+`activeProject` read in `CreateTaskModal`. The modal then ignores the
+switcher and opens on `effective_default` alone.
+
+### A107 · The sidebar projects group is searchable, pins "All projects", and truncates with "+N more"
+
+**Ticket:** M4.1 (PRU-21) · **Date:** 2026-09-04 · **Commit:** (this one)
+
+**The situation.** PRU-21 requires a 30-project switcher to stay usable:
+a type-to-filter box, "All projects" reachable without scrolling, and
+the group truncating with a count rather than pushing the rest of the
+sidebar off-screen. The sidebar (which *is* the switcher — there is no
+separate top-bar control; PRU-1/2/3 are driven by the URL) rendered
+every project as a flat, unbounded list with no "All projects" item.
+
+**Decided.** `ProjectsGroup` now renders a pinned "All projects" row
+(active when nothing is scoped, clears the `project` facet), a
+type-to-filter `<input>` shown past `PROJECT_SEARCH_THRESHOLD` (8)
+filtering on **name and prefix**, and — when not searching — caps the
+list at `PROJECT_COLLAPSE_LIMIT` (8) behind a "+N more" toggle. Search
+and expand state are UI-local; they never touch the URL, so filtering
+the switcher does not change what the list is scoped to until a project
+is clicked.
+
+**Why the sidebar, not a new top-bar switcher.** The projects group is
+already the project-selection surface the covered PRU-1/2 cases exercise
+(via `?project=`). Adding a second switcher would be scope the case does
+not ask for.
+
+**To revert.** Restore the flat `items.map(...)` render and drop the
+"All projects" row, the search input and the "+N more" toggle. A
+30-project tracker then scrolls the sidebar unboundedly.
+
+### A108 · The header marks an archived current user and prompts a switch
+
+**Ticket:** M4.1 (PRU-24) · **Date:** 2026-09-04 · **Commit:** (this one)
+
+**The situation.** PRU-24: the current user can be archived while the UI
+is open, and the header must stop presenting them as a normal active
+user — an "(archived)" marker plus a prompt to switch. The data was
+already available (`getCurrentUser` returns the archived profile
+unchanged) but nothing consumed it.
+
+**Decided.** `UserMenu` computes `currentArchived` from
+`currentUser.archived` and renders: a dashed warning ring on the header
+avatar, an "(archived)" marker beside the current-user name, and a
+`role="alert"` prompt pointing at the switch list below it. Switching
+clears the state through the existing `useSwitchUser` invalidation, with
+no reload. `identityUnknown` takes precedence — an unknown identity is
+not an archived one.
+
+**On the scenario's reachability.** Core refuses to archive the *active*
+user (`assertNotActiveUser`), so the reachable route to "current user is
+archived" is switch-away → archive → switch-back, after which
+`state.yaml`'s current points at an archived profile. The UI behaviour
+PRU-24 specifies is faithful to that end state; the spec sets it up that
+way rather than by the doc's literal single `archive` call.
+
+**To revert.** Remove `currentArchived` and the three rendered pieces in
+`Header.tsx`. Writes then still succeed with the archived actor (core's
+behaviour), but the UI gives no acknowledgement — the silent-failure
+PRU-24 forbids.
+
+### A109 · The archived-reference guard message offers both next actions
+
+**Ticket:** M4.1 (PRU-41) · **Date:** 2026-09-04 · **Commit:** (this one)
+
+**The situation.** PRU-41 requires the archived-reference rejection to
+offer "unarchive them, or pick a different assignee". The guard's scalar
+message said only "unarchive it first". The `recovery` kinds
+(`retry|reload|command|none`) cannot represent a two-way "unarchive or
+choose", and adding a kind is a contract change touching every surface.
+
+**Decided.** The message itself now reads `…; unarchive it first, or
+choose a different <field>` (`config/archived-guard.ts`), matching the
+remap-target messages the sprint/label/project/user/milestone managers
+already emit. `recovery` stays `{kind: "none"}` — retrying the same
+archived value fails identically (ERR-15), so the second action lives in
+the message, not a control. Because the message is core's and all three
+surfaces (detail, create, bulk) surface it verbatim, "identical text
+across surfaces" holds by construction — and for an *archived* user the
+name resolves via `displayNameFor(aux.users, …)`, so no ULID leaks.
+
+**Layer.** Core, so all surfaces get it from one place. No CLI/MCP doc
+quoted the old wording, so no reference-doc change was needed.
+
+**To revert.** Restore `; unarchive it first` in the scalar branch of
+`assertNotArchivedReferences`. PRU-41's "offers the next action" is then
+unmet on every surface.
+
+### A110 · PRU-25 and PRU-42 declined — the delete path cannot produce their precondition
+
+**Ticket:** M4.1 (PRU-25, PRU-42) · **Date:** 2026-09-04 · **Commit:** (this one)
+
+**The situation.** Both cases assert against a "(deleted user)" degraded
+form on tasks that still carry a hard-deleted user's ULID. PRU-25 needs
+it in the list's reporter cell; PRU-42's final bullet needs the 34
+affected tasks to render it after a delete.
+
+**Why declined, not built.** `deleteUser` (`users/lifecycle.ts`) refuses
+to hard-delete a referenced user without `--remap-to`/`--unassign`, on
+all three surfaces — so after a delete **no task carries the deleted
+ULID**, and the "(deleted user)" state is unreachable through the
+supported path. PRU-25 additionally asserts against a **reporter list
+column and a reporter filter facet that do not exist**. The coverage
+gate is per-case and binary; tagging either would assert a weaker claim
+than the prose (silently dropping the unsatisfiable bullet), which the
+build loop forbids. Both are written up in `known-gaps.md`. The earlier
+"P-4 forbids a truncated ULID" framing was **corrected**: the app
+already shows `id.slice(-6)` as a live-user disambiguation hint (PRU-23,
+covered), so that is not the blocker — reachability and missing surfaces
+are.
+
+**To revert.** N/A — nothing was built to revert. Reversing the decline
+requires Ken to rule on the delete semantics and list surfaces (see
+`known-gaps.md`).
+
+### K19 · Explicit list_columns wins over PRU-3's auto-inserted project column
+
+**Date:** 2026-09-04 · **Ken's ruling — an agent may not revert this.**
+
+**The conflict, surfaced by building PRU-3.** LST-6: "only the columns
+listed in `list_columns` render, in that order." PRU-3: "switching to
+All projects makes the project column appear without the user having to
+add it via column settings." The app treats *no project filter* as
+all-projects mode (`Sidebar.tsx:440`, "All projects is active exactly
+when nothing is scoped"), so a user with `list_columns: [title, key]`
+on a fresh `/list` got a project column auto-inserted (PRU-3) that
+LST-6 says must not be there. LST-6 failed deterministically once PRU-3
+shipped.
+
+**Put to Ken as a product decision, not a mechanism.** His steer:
+what makes the robust product call.
+
+**Ruling: an explicit `list_columns` is honored verbatim; the
+auto-insert applies only to the default column set.**
+
+The governing principle is that a deliberate user choice is never
+silently overridden. Auto-showing the project column is a helpful
+default for a user who has *not* customised their columns — exactly
+PRU-3's stated case ("without the user having to add it via column
+settings"). The moment a user has set `list_columns`, the help becomes
+interference. A single-project scope still *hides* the column (it is
+constant and carries no information), but all-projects mode no longer
+*inserts* it over an explicit list.
+
+**Both cases hold as written, neither reworded.** PRU-3's own test uses
+the default column set, so it is unaffected. LST-6 sets an explicit
+subset and is now honored. PRU-3's spirit — a user who hasn't touched
+columns can tell same-titled rows apart — survives, because the key
+column already carries the prefix (`BACKEND-14` vs `WEB-3`).
+
+**Rejected alternatives.** (b) auto-insert always, overriding the
+explicit list — would make LST-6 false and needs it reworded; declined
+because it overrides a deliberate choice. (c) distinguish "no filter
+yet" from "explicitly picked All projects" via new URL state — declined
+because those are the same view to the user, and adding user-visible
+state to resolve an internal ambiguity is engineering avoiding the
+decision.
 
 **To revert.** Ken's, not an agent's.

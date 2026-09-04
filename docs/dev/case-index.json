@@ -1190,7 +1190,7 @@
       "id": "BAK-C19",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
-      "line": 288,
+      "line": 301,
       "title": "The file streams — it is read without parsing the whole of it.",
       "severity": "major",
       "principles": [
@@ -1206,7 +1206,7 @@
       "id": "BAK-C20",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
-      "line": 305,
+      "line": 318,
       "title": "Colliding project prefixes are resolved, not left to double-issue keys.",
       "severity": "blocker",
       "principles": [
@@ -1222,7 +1222,7 @@
       "id": "BAK-C21",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
-      "line": 333,
+      "line": 346,
       "title": "A backup carries its schema version, and a mismatch is refused with both versions named.",
       "severity": "blocker",
       "principles": [
@@ -1239,7 +1239,7 @@
       "id": "BAK-C22",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
-      "line": 350,
+      "line": 363,
       "title": "Restoring into a tracker that is itself mid-operation refuses.",
       "severity": "major",
       "principles": [
@@ -1256,7 +1256,7 @@
       "id": "BAK-C23",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
-      "line": 360,
+      "line": 373,
       "title": "The four merge hazards, together.",
       "severity": "blocker",
       "principles": [
@@ -1272,7 +1272,7 @@
       "id": "BAK-C24",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-backup-restore.md",
-      "line": 374,
+      "line": 387,
       "title": "Restore's merge is sync's merge, not a second implementation.",
       "severity": "blocker",
       "principles": [
@@ -8891,7 +8891,7 @@
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-projects-users.md",
       "line": 368,
-      "title": "A prefix change interrupted server-side is surfaced, not silently half-applied.",
+      "title": "A prefix change interrupted server-side is completed and then reported, not silently half-applied.",
       "milestone": "M4",
       "severity": "major",
       "principles": [

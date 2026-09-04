@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -226,6 +226,46 @@ describe("deleteSprint (hard)", () => {
     expect(result.affectedTaskCount).toBe(1);
     const tasks = await loadAllTasks(locttDir);
     expect(tasks[0]?.frontmatter.sprint).toBe(b.id);
+  });
+
+  it("aborts and keeps the sprint when a task rewrite fails partway", async () => {
+    // Regression guard, 2026-09-04. `replayTaskRemap` was changed to
+    // collect per-task outcomes for PRU-34's project case. The sprint
+    // delete discards that result and then deletes its config, so a
+    // failed task write would have been swallowed — sprint removed,
+    // journal cleared, tasks still pointing at it. `replayTaskRemapStrict`
+    // restores the throw. Without it this test's config assertion fails.
+    const a = await createSampleSprint("S-1");
+    const b = await createSampleSprint("S-2");
+    const ids: string[] = [];
+    await withStateLock(locttDir, async () => {
+      const state = await loadState(locttDir);
+      for (const title of ["one", "two"]) {
+        const t = await createTask({
+          locttDir, state,
+          options: { project: taskProjectId, title, sprint: a.id },
+        });
+        ids.push(t.frontmatter.id);
+      }
+      await saveState(locttDir, state);
+    });
+
+    const victimDir = join(locttDir, "tasks", ids[1] as string);
+    await chmod(victimDir, 0o500);
+    let threw = false;
+    try {
+      await deleteSprint(locttDir, a.id, { hard: true, remapTo: b.id });
+    } catch {
+      threw = true;
+    } finally {
+      await chmod(victimDir, 0o700);
+    }
+
+    expect(threw).toBe(true);
+    // The sprint is NOT gone — deleting it would strand the tasks still
+    // referencing it.
+    const cfg = await loadSprintsConfig(locttDir);
+    expect(cfg.sprints.some(sp => sp.id === a.id)).toBe(true);
   });
 
   it("rejects remap to self", async () => {

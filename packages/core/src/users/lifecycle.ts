@@ -9,7 +9,7 @@ import {
   clearJournalEntry,
   loadJournal,
   registerRecoveryHandler,
-  replayTaskRemap,
+  replayTaskRemapStrict,
   saveJournal,
   withStateLock,
 } from "../state/index.js";
@@ -239,7 +239,7 @@ export async function deleteUser(
     await saveJournal(locttDir, appendJournalEntry(journal, entry));
 
     if (affected.length > 0) {
-      await replayTaskRemap(locttDir, entry);
+      await replayTaskRemapStrict(locttDir, entry);
     }
 
     // Pre-compute return value before the user dir disappears —
@@ -275,7 +275,7 @@ async function assertNotActiveUser(
 // (idempotent rm -rf), drop the journal entry.
 registerRecoveryHandler("remap_user", async (locttDir, entry) => {
   if (entry.kind !== "remap_user") return;
-  await replayTaskRemap(locttDir, entry);
+  await replayTaskRemapStrict(locttDir, entry);
   await rm(getUserDir(locttDir, entry.from), { recursive: true, force: true });
   await clearJournalEntry(locttDir, entry.id);
 });

@@ -99,16 +99,27 @@ export function MenuItem({
   children,
   onSelect,
   className,
+  testId,
 }: {
   readonly children: ReactNode;
   readonly onSelect?: () => void;
   readonly className?: string;
+  /**
+   * Optional `data-testid` on the rendered button.
+   *
+   * Declared rather than spread: a caller writing `data-testid=…`
+   * directly type-checks (JSX allows any dashed attribute) and then
+   * silently never reaches the DOM, because this component renders its
+   * own `<button>` and forwards nothing.
+   */
+  readonly testId?: string;
 }) {
   return (
     <button
       type="button"
       role="menuitem"
       onClick={onSelect}
+      {...(testId !== undefined ? { "data-testid": testId } : {})}
       className={[
         "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[13px]",
         "text-text-secondary hover:bg-bg-muted hover:text-text-primary",

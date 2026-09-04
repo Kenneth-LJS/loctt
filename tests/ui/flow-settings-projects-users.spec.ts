@@ -310,6 +310,136 @@ test.describe("PRU — the projects panel", () => {
   });
 });
 
+/**
+ * Reads `.loctt/.current-user` — the far end of a user switch. The
+ * file holds the acting user's ULID and nothing else.
+ */
+async function currentUserFile(root: string): Promise<string> {
+  return (await readFile(path.join(root, ".loctt", ".current-user"), "utf8")).trim();
+}
+
+test.describe("PRU — identity and the user menu", () => {
+  // @verifies PRU-8
+  test("PRU-8: switching user updates the header, .current-user, and the CLI", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["user", "create", "Alice", "--email", "alice@example.com", "--switch"]);
+    const bobOut = await tracker.run([
+      "user", "create", "Bob", "--email", "bob@example.com",
+    ]);
+    const bobId = /\b([0-9A-HJKMNP-TV-Z]{26})\b/.exec(bobOut)?.[1];
+    expect(bobId, "could not read Bob's ULID from `user create`").toBeDefined();
+
+    // A crash on render and a component that renders nothing look
+    // identical to a locator that times out. This separates them.
+    const pageErrors: string[] = [];
+    page.on("pageerror", err => pageErrors.push(err.message));
+
+    await page.goto(`${tracker.baseURL}/`);
+    await page.getByTestId("user-menu-trigger").click();
+
+    // The menu shows name and email, not an anonymous icon.
+    const current = page.getByTestId("user-menu-current");
+    await expect(current).toContainText("Alice");
+    await expect(current).toContainText("alice@example.com");
+
+    const routeBefore = page.url();
+    await page.getByTestId(`user-switch-${bobId ?? ""}`).click();
+
+    // The header updates in place — no reload, and the route survives.
+    // "AL" -> "BO": the initials of the acting user, so this fails on
+    // a header that kept rendering Alice.
+    await expect(page.getByTestId("user-menu-trigger")).toHaveText("BO");
+    expect(page.url()).toBe(routeBefore);
+
+    // The far end, twice over: the file on disk and the CLI reading it.
+    await expect.poll(async () => currentUserFile(tracker.root)).toBe(bobId);
+    // PRU-8 names `loctt whoami`; the command is `loctt user current`.
+    await expect.poll(async () => tracker.run(["user", "current"])).toContain("Bob");
+
+    expect(pageErrors, "the SPA threw while switching users").toEqual([]);
+  });
+
+  // @verifies PRU-10
+  test("PRU-10: each change is attributed to whoever was acting at the time", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["user", "create", "Alice", "--email", "alice@example.com", "--switch"]);
+    const bobOut = await tracker.run(["user", "create", "Bob", "--email", "bob@example.com"]);
+    const bobId = /\b([0-9A-HJKMNP-TV-Z]{26})\b/.exec(bobOut)?.[1] ?? "";
+    const [key] = await tracker.seed([{ title: "Attributed" }]);
+
+    // Alice makes the first change...
+    await tracker.run(["set", key ?? "", "status", "in_progress"]);
+    // ...then Bob makes the second, through the CLI's own switch so
+    // the two entries differ only in who was acting.
+    await tracker.run(["user", "switch", bobId]);
+    await tracker.run(["set", key ?? "", "priority", "high"]);
+
+    await page.goto(`${tracker.baseURL}/tasks/${key ?? ""}`);
+
+    const actors = page.getByTestId("activity-actor");
+    // Both names appear — the second write did not rewrite the first.
+    await expect(actors.filter({ hasText: "Alice" }).first()).toBeVisible();
+    await expect(actors.filter({ hasText: "Bob" }).first()).toBeVisible();
+
+    // And the CLI agrees, in the same order. PRU-10 names
+    // `loctt history <key>`; the command is `loctt log`.
+    const history = await tracker.run(["log", key ?? ""]);
+    // Assert the pairing, not the order: `log` renders newest-first,
+    // and "both names appear" would pass even if the two entries had
+    // swapped actors — which is exactly the regression PRU-10 is
+    // about. Each line must carry the actor who made *that* change.
+    const line = (field: string): string =>
+      history.split("\n").find(l => l.includes(field)) ?? "";
+    expect(line("status")).toContain("Alice");
+    expect(line("priority")).toContain("Bob");
+    // The earlier entry was not retroactively reattributed.
+    expect(line("status")).not.toContain("Bob");
+  });
+
+  // @verifies PRU-12
+  test("PRU-12: archiving a user keeps their assignments readable and named", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["user", "create", "Alice", "--email", "alice@example.com", "--switch"]);
+    const carolOut = await tracker.run([
+      "user", "create", "Carol", "--email", "carol@example.com",
+    ]);
+    const carolId = /\b([0-9A-HJKMNP-TV-Z]{26})\b/.exec(carolOut)?.[1] ?? "";
+
+    await tracker.seed([
+      { title: "Carol one", fields: { assignee: carolId } },
+      { title: "Carol two", fields: { assignee: carolId } },
+    ]);
+
+    // Positive control: before archiving, the cell is a plain name —
+    // so the "(archived)" assertion below cannot pass by accident.
+    await page.goto(`${tracker.baseURL}/`);
+    const firstRow = page.getByRole("row").filter({ hasText: "Carol one" });
+    await expect(firstRow).toContainText("Carol");
+    await expect(firstRow).not.toContainText("(archived)");
+
+    await tracker.run(["user", "archive", carolId]);
+    await page.reload();
+
+    // Still named, now marked — not blank, not a raw ULID, not
+    // "Unknown user".
+    await expect(firstRow).toContainText("Carol");
+    await expect(firstRow).toContainText("(archived)");
+    await expect(firstRow).not.toContainText(carolId);
+    await expect(firstRow).not.toContainText(/unknown user/i);
+
+    // She is gone from the picker on a *new* task.
+    await page.getByTestId("header-new-task").click();
+    await expect(page.getByTestId("create-assignee")).toHaveCount(1);
+    await expect(page.getByTestId("create-assignee")).not.toContainText("Carol");
+  });
+});
+
 test.describe("PRU — the users panel", () => {
   // @verifies PRU-11
   test("PRU-11: creating a user asks for name/email/timezone and never an id", async ({

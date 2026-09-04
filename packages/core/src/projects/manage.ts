@@ -42,6 +42,42 @@ export class ProjectError extends LocttError {
 }
 
 /**
+ * A hard-delete whose task remap only partly landed (PRU-34).
+ *
+ * Carries the true split so the surface can say what the user's data
+ * looks like *now* rather than reporting a bare failure: `remapped`
+ * tasks moved, the tasks in `failedKeys` did not, and the project is
+ * still in `projects.yaml` because removing it would strand them.
+ *
+ * `recovery: retry` because it is genuinely retryable — a remap skips
+ * tasks already at the target, so re-running finishes the stragglers
+ * rather than double-applying anything.
+ */
+export class PartialRemapError extends LocttError {
+  readonly remapped: number;
+  readonly failedKeys: readonly string[];
+
+  constructor(remapped: number, failedKeys: readonly string[]) {
+    const n = failedKeys.length;
+    super(
+      "conflict",
+      `remapped ${String(remapped)} task(s); ${String(n)} could not be written `
+      + `(${failedKeys.join(", ")}). The project has NOT been deleted and those `
+      + `tasks still reference it. Retry to finish — tasks already moved are skipped.`,
+      // `saved` rather than `not_saved`: those 7 writes really did
+      // land, and telling the user nothing was saved would send them
+      // looking for tasks that have already moved. There is no
+      // `partially_saved` in `ErrorDataState`, so the split lives in
+      // the message, which names both halves and the affected keys.
+      { dataState: "saved", recovery: { kind: "retry" } },
+    );
+    this.name = "PartialRemapError";
+    this.remapped = remapped;
+    this.failedKeys = failedKeys;
+  }
+}
+
+/**
  * Result of looking up a project by name.
  *
  *  - `ok`: a single match (or no matches with `notFound: true`)
@@ -219,11 +255,23 @@ export interface CreateProjectInput {
  * is written first so a crash mid-operation never leaves a project
  * visible without a counter.
  *
- * Retired counters from previously-hard-deleted projects with the
- * same prefix are NOT auto-restored under this code path — ids are
- * unique per creation, so collisions don't apply. Counter recovery
- * for repeated deletion+creation cycles is handled at the prefix
- * level by `next_number`.
+ * **A retired counter for the same prefix is reclaimed** (PRU-18).
+ * Hard-deleting a project moves its counter to `state.retired_keys`;
+ * re-creating a project on that prefix resumes from where it left off
+ * rather than restarting at 1.
+ *
+ * The match is on **prefix**, not on id or slug. The id is a fresh
+ * ULID per creation, so it can never match. The prefix is the thing
+ * that actually decides collisions: a key is `<prefix><number>`, so
+ * two projects that never shared a prefix cannot mint the same key,
+ * and two that do share one can — regardless of what they are called.
+ * Restarting at 1 on a reused prefix reissues keys that surviving
+ * tasks still answer to through `key_history`, which is precisely
+ * what `retired_keys` exists to prevent (`contracts/state.ts`).
+ *
+ * The reclaimed entry is removed from `retired_keys` — it has moved
+ * back under `keys`, and leaving a copy behind would let a second
+ * delete/create cycle read a stale, lower high-water mark.
  *
  * Returns the created project (including the generated id).
  */
@@ -274,8 +322,27 @@ export async function createProject(
 
     // 1. Write state first (counter under the new id).
     const state = await loadState(locttDir);
+
+    // Reclaim a retired counter for this prefix, if one is held. More
+    // than one retired project could have used the prefix over the
+    // tracker's life, so take the highest — the high-water mark below
+    // which some surviving task may still resolve an old key.
+    let retiredKeys = state.retired_keys;
+    let startNumber = 1;
+    if (retiredKeys !== undefined) {
+      const matches = Object.entries(retiredKeys)
+        .filter(([, v]) => v.prefix === input.prefix);
+      if (matches.length > 0) {
+        startNumber = Math.max(...matches.map(([, v]) => v.next_number));
+        const remaining = Object.fromEntries(
+          Object.entries(retiredKeys).filter(([k]) => !matches.some(([m]) => m === k)),
+        );
+        retiredKeys = Object.keys(remaining).length > 0 ? remaining : undefined;
+      }
+    }
+
     try {
-      initKeyAllocation(state, id, input.prefix, 1);
+      initKeyAllocation(state, id, input.prefix, startNumber);
     } catch (err) {
       if (err instanceof KeyAllocationError) {
         // Collision on a freshly-generated ULID is essentially impossible
@@ -285,6 +352,13 @@ export async function createProject(
         );
       }
       throw err;
+    }
+    // Persist the reclaim alongside the new counter: same write, so a
+    // crash cannot leave the counter moved but still listed as retired.
+    if (retiredKeys !== undefined) {
+      state.retired_keys = retiredKeys;
+    } else {
+      delete state.retired_keys;
     }
     await saveState(locttDir, state);
 
@@ -492,7 +566,15 @@ export async function deleteProject(
     await saveJournal(locttDir, appendJournalEntry(journal, entry));
 
     if (remapTo !== undefined) {
-      await replayTaskRemap(locttDir, entry);
+      const result = await replayTaskRemap(locttDir, entry);
+      if (result.failed.length > 0) {
+        // PRU-34: do NOT remove the project from projects.yaml while
+        // tasks still reference it, and do NOT clear the journal —
+        // the entry is what makes a retry (or crash recovery) able to
+        // finish the job.
+        const keys = result.failed.map(f => f.key ?? f.id);
+        throw new PartialRemapError(result.remapped, keys);
+      }
     }
 
     await applyProjectConfigDeletion(locttDir, id);

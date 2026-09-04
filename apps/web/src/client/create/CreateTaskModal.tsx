@@ -1,6 +1,6 @@
 import type { CalendarConfig, CustomFieldDef, ProjectDef } from "@loctt/contracts";
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { apiClient,ApiError, UnparseableBodyError } from "../api/client.ts";
@@ -88,9 +88,32 @@ export function CreateTaskModal({
 
   const wf = workflow.data;
   const projectList = useMemo(() => projects.data?.items ?? [], [projects.data]);
+  // PRU-4: the top-bar switcher's single-project scope pre-selects
+  // that project in the modal. Read route-agnostically — the modal is
+  // owned by the app-level provider and opens from board/timeline/list
+  // alike, so `useSearch({ from: "/list" })` would throw off `/list`.
+  // Exactly one scoped project is a switcher selection; zero or several
+  // is "all projects", which carries no single destination to pre-fill.
+  const activeProject = useRouterState({
+    select: s => {
+      // Route-agnostic: on `/list` the search is validated to a
+      // `string[]`, but read from outside that route's match (this
+      // provider is mounted app-wide) `project` is the raw
+      // comma-joined string. Normalise both to a list, then take it
+      // only when it scopes to exactly one project.
+      const raw = (s.location.search as { project?: string | string[] }).project;
+      const scoped =
+        raw === undefined
+          ? []
+          : Array.isArray(raw)
+            ? raw
+            : raw.split(",").map(p => p.trim()).filter(Boolean);
+      return scoped.length === 1 ? scoped[0] : undefined;
+    },
+  });
   const choice = useMemo(
-    () => resolveProjectChoice(projectList, projects.data?.effective_default),
-    [projectList, projects.data],
+    () => resolveProjectChoice(projectList, projects.data?.effective_default, activeProject),
+    [projectList, projects.data, activeProject],
   );
 
   // The form's starting point, recomputed only when the resolved

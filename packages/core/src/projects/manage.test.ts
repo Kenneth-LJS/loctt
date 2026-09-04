@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,13 +10,18 @@ import { resolveLocttDir } from "../paths/index.js";
 import { loadState, saveState, withStateLock } from "../state/index.js";
 import { createTask } from "../task/create.js";
 import { loadAllTasks } from "../task/load-all.js";
+import { createUser } from "../users/lifecycle.js";
+import { switchCurrentUser } from "../users/manage.js";
+import { saveUserSettings } from "../users/settings.js";
 import {
   createProject,
   deleteProject,
   editProject,
+  PartialRemapError,
   ProjectError,
   resolveProjectByName,
   resolveProjectId,
+  resolveProjectIdForUser,
   resolveProjectIdFromInput,
   setDefaultProject,
 } from "./manage.js";
@@ -33,6 +38,18 @@ beforeEach(async () => {
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
+
+/**
+ * Removes `default` from projects.yaml.
+ *
+ * `setDefaultProject` can only *set* one, so peeling this rung means
+ * writing the config without it.
+ */
+async function clearDefaultProject(): Promise<void> {
+  const cfg = await loadProjectsConfig(locttDir);
+  const { saveProjectsConfig } = await import("../config/projects.js");
+  await saveProjectsConfig(locttDir, { projects: cfg.projects });
+}
 
 /** Helper: pick the seeded "Tasks" project's id from a fresh init. */
 async function defaultProjectId(): Promise<string> {
@@ -160,6 +177,160 @@ describe("deleteProject (hard)", () => {
     expect(state.retired_keys?.[extra.id]).toEqual({ prefix: "X-", next_number: 1 });
   });
 
+  /**
+   * PRU-18: re-creating a project on a hard-deleted project's prefix
+   * resumes its numbering instead of restarting at 1.
+   *
+   * Seeded so a wrong implementation looks different: the deleted
+   * project allocates three keys (X-1..X-3, counter left at 4), and
+   * the surviving task keeps `X-2`. A `createProject` that restarts at
+   * 1 would mint `X-1` here — a key that is one below a live one and
+   * on a direct path to colliding with it — so the assertion is on the
+   * *number*, not merely on "it did not throw".
+   */
+  // @verifies PRU-18
+  it("PRU-18: re-creating a project on a retired prefix resumes its counter", async () => {
+    const main = await defaultProjectId();
+    const extra = await createProject(locttDir, { name: "Extra", prefix: "X-" });
+
+    // Allocate X-1, X-2, X-3 in the doomed project.
+    const keys: string[] = [];
+    await withStateLock(locttDir, async () => {
+      const state = await loadState(locttDir);
+      for (const title of ["one", "two", "three"]) {
+        const t = await createTask({
+          locttDir,
+          state,
+          options: { project: extra.id, title },
+        });
+        keys.push(t.frontmatter.key);
+      }
+      await saveState(locttDir, state);
+    });
+    expect(keys).toEqual(["X-1", "X-2", "X-3"]);
+
+    await deleteProject(locttDir, extra.id, { hard: true, remapTo: main });
+
+    // The counter is retired at its high-water mark, not lost.
+    const retired = await loadState(locttDir);
+    expect(retired.retired_keys?.[extra.id]).toEqual({ prefix: "X-", next_number: 4 });
+
+    // Re-create on the same prefix.
+    const reborn = await createProject(locttDir, { name: "Extra Again", prefix: "X-" });
+
+    // The far end, read off state.yaml: the counter is back under
+    // `keys` at the retired high-water mark, and no longer retired.
+    const after = await loadState(locttDir);
+    expect(after.keys[reborn.id]).toEqual({ prefix: "X-", next_number: 4 });
+    expect(after.retired_keys?.[extra.id]).toBeUndefined();
+
+    // And the observable consequence: the first task minted in the
+    // re-created project continues the sequence rather than colliding
+    // with the surviving X-2.
+    let mintedKey = "";
+    await withStateLock(locttDir, async () => {
+      const state = await loadState(locttDir);
+      const t = await createTask({
+        locttDir,
+        state,
+        options: { project: reborn.id, title: "after rebirth" },
+      });
+      mintedKey = t.frontmatter.key;
+      await saveState(locttDir, state);
+    });
+    expect(mintedKey).toBe("X-4");
+
+    // The surviving task still holds X-2, unshadowed by any new task.
+    const all = await loadAllTasks(locttDir);
+    const withX2 = all.filter(t => t.frontmatter.key === "X-2");
+    expect(withX2).toHaveLength(1);
+  });
+
+  /**
+   * PRU-34: a remap that fails partway reports the true split and
+   * leaves the project in place.
+   *
+   * The failure is induced by making one task's *directory*
+   * read-only, so `writeTask` genuinely cannot replace the file. That
+   * is a real write failure rather than a stubbed one, which matters:
+   * the behaviour under test is what the loop does when a write
+   * throws, and a mock of `writeTask` would be testing the mock.
+   *
+   * Seeded with four tasks so "some moved, some did not" is
+   * distinguishable from both "none moved" and "all moved" — with one
+   * task each of those collapses to the same observation.
+   */
+  // @verifies PRU-34
+  it("PRU-34: a partial remap reports the split and does not delete the project", async () => {
+    const main = await defaultProjectId();
+    const extra = await createProject(locttDir, { name: "Extra", prefix: "X-" });
+
+    const made: { key: string; id: string }[] = [];
+    await withStateLock(locttDir, async () => {
+      const state = await loadState(locttDir);
+      for (const title of ["a", "b", "c", "d"]) {
+        const t = await createTask({
+          locttDir,
+          state,
+          options: { project: extra.id, title },
+        });
+        made.push({ key: t.frontmatter.key, id: t.frontmatter.id });
+      }
+      await saveState(locttDir, state);
+    });
+
+    // Make exactly one task unwritable.
+    const victim = made[1] as { key: string; id: string };
+    const victimDir = join(locttDir, "tasks", victim.id);
+    await chmod(victimDir, 0o500);
+
+    let err: unknown;
+    try {
+      await deleteProject(locttDir, extra.id, { hard: true, remapTo: main });
+    } catch (e) {
+      err = e;
+    } finally {
+      await chmod(victimDir, 0o700);
+    }
+
+    // It names the split and the offending task by key — not a bare
+    // failure, and not "Project deleted".
+    expect(err).toBeInstanceOf(PartialRemapError);
+    const partial = err as PartialRemapError;
+    expect(partial.remapped).toBe(3);
+    expect(partial.failedKeys).toEqual([victim.key]);
+    expect(partial.message).toContain(victim.key);
+    expect(partial.message).toMatch(/not been deleted/i);
+    expect(partial.recovery).toEqual({ kind: "retry" });
+
+    // The project is still in projects.yaml — removing it would have
+    // stranded the task that did not move.
+    const cfg = await loadProjectsConfig(locttDir);
+    expect(cfg.projects.some(p => p.id === extra.id)).toBe(true);
+
+    // And the far end on disk: three tasks moved, the victim did not.
+    const all = await loadAllTasks(locttDir);
+    const stillExtra = all.filter(t => t.frontmatter.project === extra.id);
+    expect(stillExtra.map(t => t.frontmatter.key)).toEqual([victim.key]);
+
+    // Retry is genuinely safe, and finishes the job. The journal
+    // entry survived the partial failure, so the next critical
+    // section's recovery hook replays it — the remaining task moves
+    // and the project is removed. Either route reaches the same
+    // place, which is what makes offering Retry honest; the assertion
+    // is on the end state rather than on which of the two got there.
+    await withStateLock(locttDir, async () => { /* trigger recovery */ });
+
+    const after = await loadProjectsConfig(locttDir);
+    expect(after.projects.some(p => p.id === extra.id)).toBe(false);
+    const moved = await loadAllTasks(locttDir);
+    expect(moved.filter(t => t.frontmatter.project === extra.id)).toHaveLength(0);
+    // The task that had failed is now on the target project, keeping
+    // its own key — nothing was renumbered by the recovery.
+    const healed = moved.find(t => t.frontmatter.key === victim.key);
+    expect(healed?.frontmatter.project).toBe(main);
+  });
+
   it("requires remapTo when project has tasks", async () => {
     const extra = await createProject(locttDir, { name: "Extra", prefix: "X-" });
     await withStateLock(locttDir, async () => {
@@ -229,6 +400,66 @@ describe("resolveProjectByName", () => {
     const cfg = await loadProjectsConfig(locttDir);
     expect(resolveProjectByName(cfg, "Extra").kind).toBe("not_found");
     expect(resolveProjectByName(cfg, "Extra", { includeArchived: true }).kind).toBe("match");
+  });
+});
+
+/**
+ * PRU-15: the resolution order, peeled one rung at a time.
+ *
+ * Exercised through `resolveProjectIdForUser` because that is the
+ * single function the web server, the CLI and the MCP server all call
+ * (`server.ts`, `task-crud.ts`, `tools/task-crud.ts`) — so "the UI has
+ * not invented its own order" is a property of there being one
+ * implementation, and this is it.
+ *
+ * Each rung is removed in turn and the answer must change to the next
+ * one down. Seeding matters here: the workspace default and the user
+ * default are deliberately set to *different* projects, so an
+ * implementation that consulted them in the wrong order would return a
+ * visibly different id rather than the same one by luck.
+ */
+describe("resolveProjectIdForUser (PRU-15)", () => {
+  // @verifies PRU-15
+  it("PRU-15: explicit > user default > workspace default > sole project", async () => {
+    const tasks = await defaultProjectId();
+    const web = await createProject(locttDir, { name: "Web", prefix: "WEB-" });
+    const backend = await createProject(locttDir, { name: "Backend", prefix: "BE-" });
+
+    const user = await createUser(locttDir, { name: "Alice" });
+    await switchCurrentUser(locttDir, user.id);
+
+    // Workspace default = web; user default = backend. Different, so
+    // the two rungs are distinguishable.
+    await setDefaultProject(locttDir, web.id);
+    await saveUserSettings(locttDir, user.id, { default_project: backend.id });
+
+    // 1. Explicit wins over both.
+    expect(await resolveProjectIdForUser(locttDir, web.id)).toBe(web.id);
+    // ...and an explicit choice that is NOT either default still wins,
+    // which a "prefer a default when one exists" bug would break.
+    expect(await resolveProjectIdForUser(locttDir, tasks)).toBe(tasks);
+
+    // 2. No explicit → the user's default, not the workspace's.
+    expect(await resolveProjectIdForUser(locttDir)).toBe(backend.id);
+
+    // 3. Clear the personal default → falls to the workspace default.
+    await saveUserSettings(locttDir, user.id, {});
+    expect(await resolveProjectIdForUser(locttDir)).toBe(web.id);
+
+    // 4. Remove the workspace default with several projects → no
+    // guessing. (The sole-project rung is checked below; with three
+    // projects present it must NOT silently pick one.)
+    await clearDefaultProject();
+    await expect(resolveProjectIdForUser(locttDir)).rejects.toThrow(/no default project/);
+  });
+
+  // @verifies PRU-15
+  it("PRU-15: with no default anywhere and exactly one project, it picks that one", async () => {
+    const tasks = await defaultProjectId();
+    await clearDefaultProject();
+    // A fresh tracker has exactly one project, so this is the last
+    // rung reached only once every rung above it is empty.
+    expect(await resolveProjectIdForUser(locttDir)).toBe(tasks);
   });
 });
 

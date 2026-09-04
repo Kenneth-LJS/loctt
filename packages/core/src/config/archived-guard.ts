@@ -270,9 +270,15 @@ export function assertNotArchivedReferences(
       continue;
     }
     if (archived.has(next)) {
+      // PRU-41: offer *both* next actions, matching the remap-target
+      // messages in sprints/labels/projects/users/milestones which
+      // already say "unarchive it first or pick an active <kind>". A
+      // stale picker that submitted an archived user needs to hear it
+      // can either unarchive them or choose someone else — the field
+      // has already reverted, so "choose a different" is actionable.
       errors.push(
         `cannot assign archived ${kindLabel} "${displayNameFor(defs, next)}" `
-        + `to ${field}; unarchive it first`,
+        + `to ${field}; unarchive it first, or choose a different ${field}`,
       );
     }
   }

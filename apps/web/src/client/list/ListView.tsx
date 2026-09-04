@@ -69,9 +69,14 @@ export function ListView() {
 
   const { announce } = useAnnouncer();
 
+  // PRU-3: the project column is shown/hidden by how many projects the
+  // URL scopes to — one project hides it (constant), all-projects shows
+  // it (so same-titled rows in different projects stay distinguishable).
+  // Derived here, never written back to `list_columns`.
+  const activeProjectCount = search.project?.length ?? 0;
   const columns = useMemo(
-    () => resolveColumns(userSettings.data?.settings),
-    [userSettings.data?.settings],
+    () => resolveColumns(userSettings.data?.settings, { activeProjectCount }),
+    [userSettings.data?.settings, activeProjectCount],
   );
 
   const lookups = useMemo(

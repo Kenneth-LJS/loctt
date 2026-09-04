@@ -12,7 +12,7 @@ import {
   clearJournalEntry,
   loadJournal,
   registerRecoveryHandler,
-  replayTaskRemap,
+  replayTaskRemapStrict,
   saveJournal,
   withStateLock,
 } from "../state/index.js";
@@ -197,7 +197,7 @@ export async function deleteMilestone(
     const journal = await loadJournal(locttDir);
     await saveJournal(locttDir, appendJournalEntry(journal, entry));
 
-    await replayTaskRemap(locttDir, entry);
+    await replayTaskRemapStrict(locttDir, entry);
     await applyMilestoneConfigDeletion(locttDir, id);
     await clearJournalEntry(locttDir, entry.id);
 
@@ -215,7 +215,7 @@ async function applyMilestoneConfigDeletion(locttDir: string, id: string): Promi
 
 registerRecoveryHandler("remap_milestone", async (locttDir, entry) => {
   if (entry.kind !== "remap_milestone") return;
-  await replayTaskRemap(locttDir, entry);
+  await replayTaskRemapStrict(locttDir, entry);
   await applyMilestoneConfigDeletion(locttDir, entry.from);
   await clearJournalEntry(locttDir, entry.id);
 });

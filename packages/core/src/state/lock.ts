@@ -48,13 +48,23 @@ const LOCK_OPTIONS = {
  * *timing* — wait, then try again — because `ErrorRecoveryKind` has no
  * "wait" and offering no control at all would leave the user with a
  * transient failure and nothing to do about it.
+ *
+ * PRU-43 adds the second half. On a sync folder this error is not
+ * transient at all: advisory locks are unreliable there, so Retry
+ * alone sends the user round a loop that cannot terminate. The
+ * filesystem caveat was a source comment on `withStateLock` below —
+ * true, and invisible to the person actually hitting it — so the
+ * message now names the filesystems and the fix.
  */
 class StateLockedError extends LocttError {
   constructor(detail: string) {
     super(
       "conflict",
       "another LocTT process is writing to this tracker; wait for it to "
-      + "finish and try again",
+      + "finish and try again. If no other process is running, note that "
+      + "the state lock uses POSIX advisory locks, which are not reliable "
+      + "on iCloud Drive, Dropbox, OneDrive, NFS or SMB — move the tracker "
+      + "to a local disk.",
       {
         // Nothing was attempted: the lock is taken before any write.
         dataState: "not_saved",

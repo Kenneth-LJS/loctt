@@ -234,6 +234,7 @@ export {
   findProject,
   findProjectBySlug,
   isValidSlug,
+  PartialRemapError,
   ProjectError,
   projectSlug,
   resolveProjectByName,

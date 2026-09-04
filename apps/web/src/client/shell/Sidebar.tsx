@@ -374,6 +374,19 @@ function GroupEmpty({ collapsed, children }: { collapsed: boolean; children: Rea
   );
 }
 
+/**
+ * Above this many projects the group becomes searchable (PRU-21): a
+ * type-to-filter box, rather than an unbounded scrolling list.
+ */
+const PROJECT_SEARCH_THRESHOLD = 8;
+
+/**
+ * When not searching, at most this many project rows show at once; the
+ * rest collapse behind a "+N more" toggle (PRU-21) so a 30-project
+ * tracker does not push Milestones, Sprints and Labels off-screen.
+ */
+const PROJECT_COLLAPSE_LIMIT = 8;
+
 function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
   const projects = useProjects();
   const activeProjects = useRouterState({
@@ -393,6 +406,42 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
       : "effective_default" in projects.data
         ? (projects.data.effective_default ?? null)
         : (projects.data.default ?? null);
+
+  // PRU-21: type-to-filter and expand state. Both are UI-local — they
+  // do not touch the URL, so a filtered switcher never changes what
+  // the list is scoped to until a project is actually clicked.
+  const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState(false);
+
+  // The searchable affordance appears only past the threshold, and
+  // never while the sidebar is collapsed to icons (there is no room to
+  // type). Below the threshold the old flat list is unchanged.
+  const searchable = !collapsed && items.length > PROJECT_SEARCH_THRESHOLD;
+
+  const q = query.trim().toLowerCase();
+  const filtered = q === ""
+    ? items
+    // Filter on both the display name and the key prefix (PRU-21) — a
+    // user who thinks in `WEB-` should find Web by typing "web".
+    : items.filter(
+        p =>
+          p.name.toLowerCase().includes(q) ||
+          p.prefix.toLowerCase().includes(q),
+      );
+
+  // While searching, every match shows (the whole point of the box).
+  // Otherwise the list truncates unless the user expanded it.
+  const truncate = !searchable || q === "";
+  const visible = truncate && !expanded
+    ? filtered.slice(0, PROJECT_COLLAPSE_LIMIT)
+    : filtered;
+  const hiddenCount = filtered.length - visible.length;
+
+  // "All projects" is active exactly when nothing is scoped. Pinned
+  // above the (scrollable) list and the search box so it is always
+  // reachable without scrolling (PRU-21).
+  const allActive = activeProjects.length === 0;
+
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Projects</GroupLabel>
@@ -402,7 +451,49 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
       {!failed && hasAnswered(projects) && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>No projects yet</GroupEmpty>
       ) : null}
-      {items.map(p => {
+
+      {!failed && items.length > 0 ? (
+        <Link
+          to="/list"
+          data-testid="project-all"
+          // Clears the project facet (and only it — the other filters
+          // are left alone, matching a project click).
+          search={prev => {
+            const { project: _drop, ...rest } = prev as { project?: unknown };
+            return rest;
+          }}
+          title="All projects"
+          className="no-underline"
+        >
+          <ItemShell active={allActive} collapsed={collapsed} title="All projects">
+            <ColorDot color="#8A94A6" />
+            {!collapsed ? <span className="truncate">All projects</span> : null}
+          </ItemShell>
+        </Link>
+      ) : null}
+
+      {searchable ? (
+        <input
+          type="search"
+          value={query}
+          onChange={e => { setQuery(e.target.value); }}
+          placeholder="Filter projects…"
+          aria-label="Filter projects"
+          data-testid="project-search"
+          className="mx-2.5 mb-0.5 h-7 rounded-md border border-border-default bg-bg-surface px-2 text-[12px] text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-2 focus:outline-accent"
+        />
+      ) : null}
+
+      {searchable && q !== "" && filtered.length === 0 ? (
+        <div
+          data-testid="project-search-empty"
+          className="px-2.5 py-1 text-[12px] text-text-tertiary"
+        >
+          No projects match “{query.trim()}”
+        </div>
+      ) : null}
+
+      {visible.map(p => {
         const active = activeProjects.includes(p.id);
         return (
           <Link
@@ -436,6 +527,17 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
           </Link>
         );
       })}
+
+      {!collapsed && hiddenCount > 0 ? (
+        <button
+          type="button"
+          onClick={() => { setExpanded(true); }}
+          data-testid="project-more"
+          className="mx-2.5 rounded-md px-0 py-1 text-left text-[12px] font-medium text-text-tertiary hover:text-text-primary"
+        >
+          +{hiddenCount} more
+        </button>
+      ) : null}
     </div>
   );
 }
