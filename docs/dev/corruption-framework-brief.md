@@ -1,5 +1,7 @@
 # Corruption-handling framework — brief for the Phase 7 proposal
 
+> **APPROVED by Ken, 2026-09-04.** No longer a draft — agents may cite this for decisions.
+
 > Ken's framing, 2026-09-04. This is the **input to a Fable-agent
 > proposal**, not the framework itself. The order is: spike one cell →
 > Fable reviews the spike and proposes the framework below → Ken
