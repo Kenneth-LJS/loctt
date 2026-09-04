@@ -1,5 +1,6 @@
 import {
   archiveUser,
+  countUserReferences,
   createUser,
   deleteUser,
   getCurrentUser,
@@ -275,8 +276,27 @@ export async function run(args: string[], root: string): Promise<void> {
       });
       break;
     }
+    case "references": {
+      const ref = args[2];
+      if (!ref) {
+        console.error(`Error: missing user ref`);
+        console.error(`Usage: loctt user references <id-or-name>`);
+        process.exitCode = EXIT.USAGE;
+        break;
+      }
+      await runCommand(async () => {
+        // Read-only parity for the web delete confirmation (PRU-42):
+        // the reference count split by role, before any delete.
+        const target = await resolveUserRef(locttDir, ref);
+        const counts = await countUserReferences(locttDir, target.id);
+        console.log(
+          `${target.name}\tassignee ${String(counts.assignee)}\treporter ${String(counts.reporter)}`,
+        );
+      });
+      break;
+    }
     default:
-      console.error(`Usage: loctt user <list|current|switch|create|edit|archive|unarchive|delete> ...`);
+      console.error(`Usage: loctt user <list|current|switch|create|edit|archive|unarchive|references|delete> ...`);
       process.exitCode = EXIT.USAGE;
       break;
   }

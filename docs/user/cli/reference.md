@@ -237,6 +237,7 @@ loctt user create <name> [--email <e>] [--timezone <tz>] [--avatar <path>] [--sw
 loctt user edit <id-or-name> [--name <n>] [--email <e>] [--timezone <tz>] [--avatar <path>]
 loctt user archive <id-or-name>
 loctt user unarchive <id-or-name>
+loctt user references <id-or-name>
 loctt user delete <id-or-name> [--remap-to <id-or-name> | --unassign]
 loctt user settings [--sweep-pins]
 ```
@@ -256,6 +257,11 @@ writes them from Settings → Personal.
 exist in `queries.yaml` and **names each one it removed**, then rewrites
 the file. Pins whose views merely match zero tasks are kept — the sweep
 checks existence, not results.
+
+`references` prints how many tasks reference the user, split by role —
+`<name>\tassignee <N>\treporter <M>`. It is read-only and does not
+delete anything; use it to see what a `delete` would need to remap or
+unassign.
 
 `delete` requires choosing what to do with tasks the user is referenced on:
 either `--remap-to <other>` (move references) or `--unassign` (clear the

@@ -1,5 +1,5 @@
 import type { UserProfile } from "@loctt/contracts";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../client.ts";
 
@@ -50,12 +50,59 @@ export function useArchiveUser() {
   });
 }
 
+export interface DeleteUserResult {
+  readonly deleted: string;
+  readonly remappedAssigneeCount: number;
+  readonly remappedReporterCount: number;
+}
+
+export interface DeleteUserVars {
+  readonly id: string;
+  /**
+   * Where the deleted user's references go. `deleteUser` refuses to
+   * leave a dangling reference (K21), so a referenced user must be
+   * deleted with exactly one of these — mirrored from the server's
+   * `remap_to` / `unassign` query params. A user with no references
+   * needs neither.
+   */
+  readonly remapTo?: string;
+  readonly unassign?: boolean;
+}
+
 export function useDeleteUser() {
   const qc = useQueryClient();
-  return useMutation<unknown, Error, { id: string }>({
-    mutationFn: ({ id }) =>
-      apiClient.delete(`/api/users/${encodeURIComponent(id)}?confirm=true`),
+  return useMutation<DeleteUserResult, Error, DeleteUserVars>({
+    mutationFn: ({ id, remapTo, unassign }) => {
+      const params = new URLSearchParams({ confirm: "true" });
+      if (remapTo !== undefined) params.set("remap_to", remapTo);
+      if (unassign === true) params.set("unassign", "true");
+      return apiClient.delete<DeleteUserResult>(
+        `/api/users/${encodeURIComponent(id)}?${params.toString()}`,
+      );
+    },
     onSuccess: () => { invalidateUserConsumers(qc); },
+  });
+}
+
+export interface UserReferenceCounts {
+  readonly id: string;
+  readonly assignee: number;
+  readonly reporter: number;
+}
+
+/**
+ * PRU-42: the reference count, split by role, that the delete
+ * confirmation shows *before* the user commits. Read-only; enabled
+ * only while the dialog is open for `id`.
+ */
+export function useUserReferences(id: string | undefined) {
+  return useQuery<UserReferenceCounts, Error>({
+    queryKey: ["users", "references", id],
+    enabled: id !== undefined,
+    queryFn: () =>
+      apiClient.get<UserReferenceCounts>(
+        `/api/users/${encodeURIComponent(id as string)}/usage`,
+      ),
   });
 }
 

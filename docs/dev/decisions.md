@@ -7580,3 +7580,59 @@ other dangling-reference degradation (the broken-view case VUE-22 could
 adopt the same form).
 
 **To revert.** Ken's, not an agent's.
+
+### A123 · PRU-25/42 build calls: a read-only user-usage capability across all three surfaces, a 6-char ULID tail, and the reporter column visible by default
+
+**Ticket:** PRU-25 + PRU-42 (deleted-user degradation) · **Date:** 2026-09-05 · **Commit:** (this one)
+
+**The situation.** K21 and K22 unblocked PRU-25/42. Building them
+surfaced three calls the cases and rulings did not fully specify.
+
+**What had to be decided.** (1) K22's example writes the truncated ULID
+as `a1b2c3d4` — eight characters. What length does the degraded cell
+actually use? (2) PRU-42 needs the reference count "split by role"
+*before* the delete is confirmed; `deleteUser`'s count only surfaces as
+an error. Where does that count come from? (3) A reporter column did not
+exist; PRU-25 needs the reporter cell in the list. Is it visible by
+default?
+
+**Options considered.**
+- ULID length: 8 chars (literal to K22's example) vs the 6-char tail the
+  app already uses everywhere else it disambiguates a user by id
+  (`UsersPanel` qualifier, `MetaPanel`/`comments` collision hints). Eight
+  would make the deleted-user tail a different length from every other
+  user-id hint in the product.
+- Count source: reuse `deleteUser`'s error message (couples a read to a
+  failed write, and the UI wants it before committing) vs a new
+  read-only core query. A UI-only count in the web server would answer
+  the same question differently from CLI/MCP — the drift CLAUDE.md warns
+  about.
+- Reporter column: visible by default (matches assignee, gives PRU-25 a
+  cell to assert) vs opt-in via column settings (PRU-25 says "the other
+  four columns are unaffected", implying it renders alongside them).
+
+**Decided.** (1) 6-char tail (`raw.slice(-6)`), consistent with the
+app's existing user-id disambiguation. (2) A new core
+`countUserReferences(locttDir, userId) → {assignee, reporter}`, surfaced
+on all three surfaces: web `GET /api/users/:ref/usage`, CLI `loctt user
+references`, MCP `user_references`. (3) Visible by default, inserted
+after assignee in `ALL_COLUMNS`.
+
+**Why.** (1) K22 says "e.g." — the example is illustrative, and one
+length across the product beats literal fidelity to a sample. (2)
+CLAUDE.md: a capability in core is not done until CLI and MCP have it;
+one read answers the count identically everywhere. (3) PRU-25's "the
+other four columns are unaffected" reads the reporter cell as present in
+the default table, and mirroring assignee is the least surprising.
+
+**To revert.** (1) `raw.slice(-6)` in `apps/web/src/client/list/cells.tsx`
+(and the matching `.slice(-6)` assertions in `cells.test.tsx`,
+`FilterBar.test.tsx`, and the PRU-25 UI spec). (2) Remove
+`countUserReferences` (`packages/core/src/users/lifecycle.ts` + exports),
+`handleUserUsage`/`USER_USAGE_RE` in `apps/web/src/server/server.ts`, the
+CLI `references` case in `apps/cli/src/commands/user.ts`, the MCP
+`user_references` tool in `apps/mcp/src/tools/user.ts`, and
+`useUserReferences` in `useUserMutations.ts` — the dialog would then need
+another count source. (3) Drop the `reporter` entry from `ALL_COLUMNS`
+in `apps/web/src/client/list/columns.ts` and the `reporter` case in
+`ListView.tsx`'s `Cell`.

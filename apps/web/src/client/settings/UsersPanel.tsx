@@ -7,12 +7,14 @@ import { useCurrentUser } from "../api/hooks/useCurrentUser.ts";
 import {
   useArchiveUser,
   useCreateUser,
+  useDeleteUser,
   useUploadAvatar,
 } from "../api/hooks/useUserMutations.ts";
 import { avatarPalette, initials } from "../ui/avatar.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Modal } from "../ui/Modal.tsx";
 import { AvatarRejected, compressImage } from "./compressImage.ts";
+import { UserDeleteDialog } from "./UserDeleteDialog.tsx";
 
 /**
  * Settings → Users (PRU-11, PRU-12, PRU-13, PRU-23, PRU-26, PRU-27,
@@ -213,7 +215,9 @@ export function UsersPanel() {
   const users = useUsers();
   const current = useCurrentUser();
   const archive = useArchiveUser();
+  const del = useDeleteUser();
   const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState<UserProfile | null>(null);
 
   if (users.isError) {
     return (
@@ -297,6 +301,25 @@ export function UsersPanel() {
                   >
                     {u.archived === true ? "Unarchive" : "Archive"}
                   </button>
+                  {/* PRU-42: delete is the permanent path, offered
+                      beside archive. Disabled for the active user for
+                      the same reason archive is — core refuses to
+                      delete whoever you are acting as. */}
+                  <button
+                    type="button"
+                    data-testid={`user-delete-${u.id}`}
+                    disabled={isSelf}
+                    title={isSelf
+                      ? "You cannot delete the user you are acting as. Switch to another user first."
+                      : undefined}
+                    onClick={() => {
+                      del.reset();
+                      setDeleting(u);
+                    }}
+                    className="ml-1 h-8 rounded-md px-2 text-[13px] text-danger-fg hover:bg-bg-muted disabled:opacity-50"
+                  >
+                    Delete
+                  </button>
                   {isSelf && (
                     <p
                       data-testid={`user-archive-blocked-${u.id}`}
@@ -328,6 +351,19 @@ export function UsersPanel() {
         <Modal title="New user" onClose={() => { setCreating(false); }}>
           <CreateUserForm onDone={() => { setCreating(false); }} />
         </Modal>
+      )}
+
+      {deleting !== null && (
+        <UserDeleteDialog
+          user={deleting}
+          others={items.filter(u => u.id !== deleting.id && u.archived !== true)}
+          mutation={del}
+          onArchive={() => {
+            archive.mutate({ id: deleting.id, archived: true });
+            setDeleting(null);
+          }}
+          onClose={() => { setDeleting(null); }}
+        />
       )}
     </div>
   );

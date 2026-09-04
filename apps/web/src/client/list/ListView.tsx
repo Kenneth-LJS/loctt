@@ -747,11 +747,11 @@ export function ListView() {
                     // task* the row is rather than reading a bare
                     // cell value with no subject.
                     return col.id === "key" ? (
-                      <th key={col.id} scope="row" className="text-left align-middle font-normal">
+                      <th key={col.id} scope="row" data-col={col.id} className="text-left align-middle font-normal">
                         {cell}
                       </th>
                     ) : (
-                      <td key={col.id} className="align-middle">
+                      <td key={col.id} data-col={col.id} className="align-middle">
                         {cell}
                       </td>
                     );
@@ -927,6 +927,10 @@ function Cell({
       return <TypeBadge def={lookups.taskType(task.task_type)} raw={task.task_type} />;
     case "assignee":
       return <AssigneeCell user={lookups.user(task.assignee)} raw={task.assignee} />;
+    case "reporter":
+      // Same cell as assignee — a user reference resolves, degrades and
+      // disambiguates identically whichever role names it (PRU-25).
+      return <AssigneeCell user={lookups.user(task.reporter)} raw={task.reporter} />;
     case "labels":
       return (
         <LabelsCell

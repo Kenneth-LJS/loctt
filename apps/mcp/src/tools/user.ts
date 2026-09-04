@@ -10,6 +10,7 @@
 
 import {
   archiveUser,
+  countUserReferences,
   createUser,
   deleteUser,
   getCurrentUser,
@@ -167,6 +168,16 @@ export const TOOLS: readonly ToolDef[] = [
       const target = await resolveUserRef(locttDir, args["ref"] as string);
       await unarchiveUser(locttDir, target.id);
       return text(`Unarchived ${target.name}`);
+    },
+  },
+  {
+    name: "count_user_references",
+    description: "Counts how many tasks reference a user, split by role (assignee vs reporter). Read-only. Use it before delete_user to see what a remap or unassign will affect — the same split delete_user reports back.",
+    inputSchema: { ref: z.string() },
+    handler: async ({ locttDir }, args) => {
+      const target = await resolveUserRef(locttDir, args["ref"] as string);
+      const counts = await countUserReferences(locttDir, target.id);
+      return text(JSON.stringify({ id: target.id, ...counts }, null, 2));
     },
   },
   {

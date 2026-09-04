@@ -74,6 +74,7 @@ import {
   computeWorkflowKeyCounts,
   ConfigRouterError,
   countTasksByReferences,
+  countUserReferences,
   createLabel,
   createMilestone,
   createProject,
@@ -944,6 +945,7 @@ const LABEL_UNARCHIVE_RE = /^\/api\/labels\/([^/]+)\/unarchive$/;
 const USER_ARCHIVE_RE = /^\/api\/users\/([^/]+)\/archive$/;
 const USER_UNARCHIVE_RE = /^\/api\/users\/([^/]+)\/unarchive$/;
 const USER_AVATAR_RE = /^\/api\/users\/([^/]+)\/avatar$/;
+const USER_USAGE_RE = /^\/api\/users\/([^/]+)\/usage$/;
 const TASK_ACTIVITY_RE = /^\/api\/tasks\/([^/]+)\/activity$/;
 const TASK_COMMENTS_RE = /^\/api\/tasks\/([^/]+)\/comments$/;
 const TASK_COMMENT_ID_RE = /^\/api\/tasks\/([^/]+)\/comments\/([^/]+)$/;
@@ -2348,6 +2350,24 @@ export function createWebApp(options: WebAppOptions) {
       const target = await resolveUserRef(locttDir, ref);
       await unarchiveUser(locttDir, target.id);
       json(res, { unarchived: target.id });
+    } catch (err) {
+      if (err instanceof UserError) {
+        error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
+        return;
+      }
+      throw err;
+    }
+  };
+
+  const handleUserUsage: RouteHandler = async ({ res, locttDir, captures }) => {
+    const ref = captures[0] ?? "";
+    try {
+      // PRU-42: the delete confirmation shows the reference count split
+      // by role *before* the user commits. resolveUserRef first so an
+      // unknown ref is a clean 400, not a silent zero-count.
+      const target = await resolveUserRef(locttDir, ref);
+      const counts = await countUserReferences(locttDir, target.id);
+      json(res, { id: target.id, ...counts });
     } catch (err) {
       if (err instanceof UserError) {
         error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
@@ -4415,6 +4435,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "DELETE", pattern: USER_REF_RE, handler: handleDeleteUser },
     { method: "POST", pattern: USER_ARCHIVE_RE, handler: handleArchiveUser },
     { method: "POST", pattern: USER_UNARCHIVE_RE, handler: handleUnarchiveUser },
+    { method: "GET", pattern: USER_USAGE_RE, handler: handleUserUsage },
     { method: "GET", pattern: USER_AVATAR_RE, handler: handleGetAvatar },
     { method: "POST", pattern: USER_AVATAR_RE, handler: handleUploadAvatar },
     { method: "GET", pattern: TASK_COMMENTS_RE, handler: handleListComments },

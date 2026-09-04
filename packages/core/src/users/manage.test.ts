@@ -13,6 +13,7 @@ import { readCurrentUserId, writeCurrentUserId } from "./current.js";
 import { UserError } from "./errors.js";
 import {
   archiveUser,
+  countUserReferences,
   createUser,
   deleteUser,
   unarchiveUser,
@@ -326,6 +327,61 @@ describe("deleteUser", () => {
     await deleteUser(locttDir, u.id, { unassign: true });
     const tasks = await loadAllTasks(locttDir);
     expect(tasks[0]?.frontmatter.assignee).toBeUndefined();
+  });
+});
+
+describe("countUserReferences", () => {
+  async function makeTask(fields: { assignee?: string; reporter?: string }): Promise<void> {
+    await withStateLock(locttDir, async () => {
+      const state = await loadState(locttDir);
+      await createTask({
+        locttDir,
+        state,
+        options: { project: taskProjectId, title: "T", ...fields },
+      });
+      await saveState(locttDir, state);
+    });
+  }
+
+  // @verifies PRU-42
+  it("counts assignee and reporter references separately", async () => {
+    const u = await createUser(locttDir, { name: "Dave" });
+    const other = await createUser(locttDir, { name: "Erin" });
+    await makeTask({ assignee: u.id });
+    await makeTask({ assignee: u.id, reporter: u.id }); // both roles, one task
+    await makeTask({ reporter: u.id });
+    await makeTask({ assignee: other.id, reporter: other.id }); // noise
+
+    const counts = await countUserReferences(locttDir, u.id);
+    // assignee on 2 (task 1 + task 2), reporter on 2 (task 2 + task 3).
+    expect(counts).toEqual({ assignee: 2, reporter: 2 });
+  });
+
+  // @verifies PRU-42
+  it("returns zero for a user referenced by nothing", async () => {
+    const u = await createUser(locttDir, { name: "Idle" });
+    await makeTask({ assignee: (await getCurrentUser(locttDir))!.id });
+    expect(await countUserReferences(locttDir, u.id)).toEqual({ assignee: 0, reporter: 0 });
+  });
+
+  // @verifies PRU-25
+  it("counts a dangling reference to a user who no longer exists (K21 out-of-band)", async () => {
+    // The state PRU-25 describes: a task carries a user id no profile
+    // resolves — reached out-of-band (a hand-edited users file / a
+    // restore), never by deleteUser (which refuses to leave one). Seed
+    // it as the real world does: create the user, reference them, then
+    // remove the profile folder while the tasks keep the ULID. The
+    // count must still see it; countUserReferences must not gate on
+    // userExists.
+    const gone = await createUser(locttDir, { name: "Dave" });
+    await makeTask({ reporter: gone.id });
+    await makeTask({ assignee: gone.id, reporter: gone.id });
+
+    // Orphan the reference out-of-band.
+    await rm(join(locttDir, "users", gone.id), { recursive: true, force: true });
+    expect(await userExists(locttDir, gone.id)).toBe(false);
+
+    expect(await countUserReferences(locttDir, gone.id)).toEqual({ assignee: 1, reporter: 2 });
   });
 });
 

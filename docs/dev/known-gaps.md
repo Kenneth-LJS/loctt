@@ -3401,6 +3401,21 @@ around.
 
 ## PRU-25 cannot be honestly tagged — its premise is unreachable and its surfaces do not exist
 
+**RESOLVED 2026-09-05 by K21 + K22 (built).** The escalation below was
+answered: K21 rules the dangling state is reached out-of-band (a
+hand-edited/restored tracker), not by `user delete` — so the test
+*seeds* it by removing the user's profile folder while tasks keep the
+ULID. K22 amends P-4 so the degraded cell may show the truncated ULID.
+Built: a reporter column (`list/columns.ts` + `ListView` dispatch,
+reusing `AssigneeCell`), the reporter filter facet (`FilterBar.tsx`,
+options from the users list so a dangling ULID is never offered), and
+the degraded cell now shows `<last-6-of-ULID> (deleted user)`
+(`list/cells.tsx`). Setting a new reporter clears the ref via the
+existing `MetaPanel` picker. Covered by `list/cells.test.tsx`,
+`columns.test.ts`, `FilterBar.test.tsx`, and the PRU-25 spec in
+`tests/ui/flow-settings-projects-users.spec.ts`. The record below is
+kept for the reasoning.
+
 **Found 2026-09-03; re-measured and declined 2026-09-04. A
 case/implementation conflict — escalated, not adjudicated.**
 
@@ -3457,6 +3472,23 @@ by `user delete`), or a reporter column + reporter facet are added and
 the delete semantics reconsidered — a scope call, not an agent's.
 
 ## PRU-42's user-delete dialog was never built
+
+**RESOLVED 2026-09-05 by K21 (built).** The fourth-bullet objection
+below is answered by K21: the "(deleted user)" render is reached
+out-of-band, not by `user delete` (which still refuses to leave a
+dangling ref), so the degraded render is proven by a hand-seeded
+dangling ref and the *delete* path is proven to leave nothing dangling.
+Built: `UserDeleteDialog.tsx` — reference count split by role (from a
+new read-only `GET /api/users/:ref/usage` backed by core
+`countUserReferences`), permanent-vs-archive copy with archive offered
+in the same dialog, and the typed-`DELETE` confirmation reused from
+`DeleteConfirmDialog`. `useDeleteUser` was fixed to pass
+`remap_to`/`unassign` (it was dead code hardcoding neither). Wired into
+`UsersPanel` with a per-row Delete (disabled for the active user).
+Covered by the PRU-42 specs in
+`tests/ui/flow-settings-projects-users.spec.ts` and the
+`countUserReferences` unit tests in `users/manage.test.ts`. Record kept
+below.
 
 **Found 2026-09-03.** `UsersPanel.tsx`'s row actions (`:283-309`) offer
 Archive/Unarchive only. There is no Delete control, no reference count

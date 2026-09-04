@@ -21,6 +21,7 @@ export const ALL_COLUMNS: readonly ColumnDef[] = [
   { id: "priority", label: "Priority", sortable: true },
   { id: "task_type", label: "Type", sortable: true },
   { id: "assignee", label: "Assignee", sortable: true },
+  { id: "reporter", label: "Reporter", sortable: true },
   { id: "labels", label: "Labels", sortable: false },
   { id: "due_date", label: "Due", sortable: true },
   { id: "updated_at", label: "Updated", sortable: true },

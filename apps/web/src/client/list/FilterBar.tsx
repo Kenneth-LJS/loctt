@@ -30,7 +30,7 @@ import { SaveViewDialog } from "./SaveViewDialog.tsx";
 /** Filter facets backed by a fixed URL param + a data source. */
 type FacetKey =
   | "project" | "status" | "priority" | "type"
-  | "assignee" | "labels" | "milestone" | "sprint";
+  | "assignee" | "reporter" | "labels" | "milestone" | "sprint";
 
 const FACET_LABELS: Record<FacetKey, string> = {
   project: "Project",
@@ -38,6 +38,7 @@ const FACET_LABELS: Record<FacetKey, string> = {
   priority: "Priority",
   type: "Type",
   assignee: "Assignee",
+  reporter: "Reporter",
   labels: "Label",
   milestone: "Milestone",
   sprint: "Sprint",
@@ -133,7 +134,7 @@ export function FilterBar({
   // are, so a new facet cannot silently miss out.
   const failedFacets = new Set<FacetKey>([
     ...(projects.isError ? (["project"] as const) : []),
-    ...(users.isError ? (["assignee"] as const) : []),
+    ...(users.isError ? (["assignee", "reporter"] as const) : []),
     ...(labels.isError ? (["labels"] as const) : []),
     ...(milestones.isError ? (["milestone"] as const) : []),
     ...(sprints.isError ? (["sprint"] as const) : []),
@@ -303,7 +304,7 @@ export function clearedSearch<T extends Record<string, unknown>>(prev: T): T {
 }
 
 const FACET_KEYS: readonly FacetKey[] = [
-  "project", "status", "priority", "type", "assignee", "labels", "milestone", "sprint",
+  "project", "status", "priority", "type", "assignee", "reporter", "labels", "milestone", "sprint",
 ];
 
 interface FacetOptions {
@@ -312,6 +313,7 @@ interface FacetOptions {
   priority: FilterOption[];
   type: FilterOption[];
   assignee: FilterOption[];
+  reporter: FilterOption[];
   labels: FilterOption[];
   milestone: FilterOption[];
   sprint: FilterOption[];
@@ -333,14 +335,22 @@ function buildFacetOptions(input: {
 }): FacetOptions {
   const live = <T extends { archived?: boolean | undefined }>(xs: readonly T[]): readonly T[] =>
     xs.filter(x => x.archived !== true);
+  const userOpts: FilterOption[] = input.users.map(u => ({
+    value: u.id,
+    label: u.archived ? `${u.name} (archived)` : u.name,
+  }));
   return {
     project: live(input.projects).map(p => ({ value: p.id, label: p.name })),
     status: (input.workflow?.statuses ?? []).map(s => ({ value: s.key, label: s.label })),
     priority: (input.workflow?.priorities ?? []).map(p => ({ value: p.key, label: p.label })),
     type: (input.workflow?.task_types ?? []).map(t => ({ value: t.key, label: t.label })),
-    // Assignee includes archived users (greyed) so you can still filter
-    // historical assignments.
-    assignee: input.users.map(u => ({ value: u.id, label: u.archived ? `${u.name} (archived)` : u.name })),
+    // Assignee and reporter share one option set built from the known
+    // users — archived ones included (greyed) so historical filters
+    // still work. Because the options come from the users list and not
+    // from task values, a dangling ULID (a deleted user, PRU-25) is
+    // never offered on either facet.
+    assignee: userOpts,
+    reporter: userOpts,
     labels: live(input.labels).map(l => ({ value: l.id, label: l.name })),
     milestone: live(input.milestones).map(m => ({ value: m.id, label: m.name })),
     sprint: live(input.sprints).map(s => ({ value: s.id, label: s.name })),
