@@ -258,10 +258,20 @@ test.describe("CMT — comments", () => {
     const dir = await taskDir(tracker.root, key);
     const file = path.join(dir, "_comments.yaml");
     const raw = await readFile(file, "utf8");
+    // Seed RELATIVE TO NOW, not fixed dates: the face shows a relative
+    // time (Nm/Nh/Nd ago) that buckets coarsely, so fixed 2026-08
+    // dates all collapsed to "1w ago" once the clock passed them —
+    // the test rotted. These offsets (5m, 2h, 2d, 3d, 4d) land in five
+    // distinct buckets on any run date, and stay strictly ordered so
+    // the oldest-first check still holds.
+    const now = Date.now();
+    const MIN = 60_000, HR = 60 * MIN, DAY = 24 * HR;
     const days = [
-      "2026-08-26T09:00:00.000Z", "2026-08-26T15:00:00.000Z",
-      "2026-08-27T09:00:00.000Z", "2026-08-28T09:00:00.000Z",
-      "2026-08-28T18:00:00.000Z",
+      new Date(now - 4 * DAY).toISOString(),
+      new Date(now - 3 * DAY).toISOString(),
+      new Date(now - 2 * DAY).toISOString(),
+      new Date(now - 2 * HR).toISOString(),
+      new Date(now - 5 * MIN).toISOString(),
     ];
     let i = 0;
     await writeFile(
