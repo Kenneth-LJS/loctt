@@ -3835,3 +3835,36 @@ data-shape change, not a UI test.
 **Reproduce:** seed 5,000 tasks, open Settings → Diagnostics, click Run
 — one spinner, then all checks appear together; the Network panel shows
 a single `/api/doctor` request, not a stream.
+
+## Six duplicate decision numbers in decisions.md § 8 (record hygiene)
+
+**Found 2026-09-04 during a coverage batch merge. Pre-existing — not
+introduced by the batch that surfaced it.**
+
+Six A-numbers each name two DIFFERENT decisions, from earlier parallel
+batches that both minted the next number off the same base:
+
+| Number | Decision A | Decision B |
+|---|---|---|
+| A68 | web deletes hard-by-default | `theme`/`sidebar_pins` typed on UserSettings |
+| A69 | Git panel ships without reconcile UI | pin sweep lives in core |
+| A100 | modal defers Escape to inner layer | retired key counter reclaimed by prefix |
+| A101 | global `:focus-visible` ring | partial remap reports the split |
+| A102 | active route `aria-current` | PRU-16 "point at Settings" |
+| A103 | over-cap column warning glyph | PRU-43 filesystem caveat |
+
+**Why it was not fixed on the spot.** A68 and A69 each have four
+cross-references elsewhere in the docs, and A101 one — and because the
+number is ambiguous, a grep cannot tell which of the two decisions a
+given reference points at. Blind renumbering would silently
+re-target those references. This needs a careful pass that reads each
+reference in context, not a sed.
+
+**The fix.** Renumber the second occurrence of each to A118-A123 (the
+next free slots; 1-117 are contiguous), then resolve each
+cross-reference by reading what it actually cites. A focused
+record-hygiene task, not something to fold into a feature batch.
+
+**Why it matters.** decisions.md is the durable memory this whole run
+relies on — "recorded in A101" is worthless when A101 is two things.
+The revert-path discipline depends on each decision being addressable.
