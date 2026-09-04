@@ -10,6 +10,34 @@ things that merely might be wrong. Delete an entry when it is fixed.
 
 ## Code
 
+### CMT-20 — the comments list has none of the four scale affordances (declined)
+
+**Found 2026-09-04 while covering the CMT batch.** CMT-20 (major, P9)
+— "80 comments render without collapsing the page" — is **declined,
+not tagged**. `@verifies` has no partial marker, so tagging it would
+claim a major case satisfied when most of it is unbuilt (see
+decisions.md § 8 A114).
+
+`CommentsPanel` (`apps/web/src/client/comments/CommentsPanel.tsx`)
+renders the whole thread in one flat `<ul>` (`list.map`), composer
+below. Measured against the four bullets:
+
+| bullet | state |
+|---|---|
+| list scrollable/paginated, composer reachable without scrolling all 80 | **absent** — no own scroll container, no pagination; the composer sits after all rows in document flow |
+| paginated list states the remaining count | **absent** — `useComments` is a plain `useQuery`, not `useInfiniteQuery`; no "Load more" |
+| posting scrolls to the new comment | **absent** — `onSuccess` only bumps a reset token; no `scrollIntoView`, no ref |
+| a very long single comment truncated with "Show more" | **absent** — `CommentItem` renders the full body via `renderCommentBody` with no clamp |
+
+**The contrast is the activity feed**, which *does* paginate
+(`useActivity` / `useInfiniteQuery`, `activity-load-more`,
+`activity-scope`) — so the pattern to copy exists one directory over.
+
+**To close:** build a scroll container + post-scroll at minimum
+(plausibly a "Show more" clamp in `CommentItem` and pagination in
+`CommentsPanel`/`useComments`), then add a CMT-20 spec to
+`tests/ui/flow-comments.spec.ts` and delete this entry.
+
 ### ERR-11 / ERR-12 have a client half that is not built
 
 The server side is done: `FsAccessError` names permission and disk-full

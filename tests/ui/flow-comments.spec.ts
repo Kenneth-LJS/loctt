@@ -1287,3 +1287,144 @@ test.describe("CMT — failed writes keep what the user typed", () => {
     expect(await commentsOnDisk(tracker.root, key)).toEqual([]);
   });
 });
+
+/* ================================================================== *
+ * CMT-18 — Comments and Activity are separate, addressable sections
+ * CMT-23 — a comment posted from another surface appears in the UI
+ * CMT-24 — editing a comment deleted elsewhere fails cleanly
+ * ================================================================== */
+
+test.describe("CMT — cross-surface and section layout", () => {
+  // @verifies CMT-18
+  test("CMT-18: Comments and Activity are both present on one page load, each with its own query", async ({
+    page, tracker,
+  }) => {
+    // A component that crashes on render looks identical to one that
+    // renders nothing — watch for it.
+    const pageErrors: string[] = [];
+    page.on("pageerror", err => pageErrors.push(err.message));
+
+    const key = onlyKey(await tracker.seed([{ title: "Two sections" }]));
+    await tracker.run(["comment", key, "a comment so the list is non-empty"]);
+
+    // Count the task fetches: the case's third bullet is that reaching
+    // one section does not refetch the whole task. The two sections are
+    // stacked (not tabs, so nothing "switches"), and each drives its
+    // own query — so the task itself is fetched for the detail view and
+    // not again on behalf of either section.
+    const taskFetches: string[] = [];
+    page.on("response", r => {
+      const u = new URL(r.url());
+      // The task read is `/api/tasks/:key` exactly — not
+      // `/comments`, not `/activity`, not the config lists.
+      if (/^\/api\/tasks\/[^/]+$/.test(u.pathname) && r.request().method() === "GET") {
+        taskFetches.push(u.pathname);
+      }
+    });
+
+    await openTask(page, tracker, key);
+
+    // Both sections are reachable on the detail without a full page
+    // load — both rendered, no navigation between them.
+    await expect(page.getByRole("heading", { name: "Comments" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
+    // Each has its own content, driven by its own query.
+    await expect(page.getByTestId("comments-list")).toBeVisible();
+    await expect(page.getByTestId("activity-day").first()).toBeVisible();
+
+    // The activity feed and the comments thread are distinct queries:
+    // their own endpoints were fetched, and the task read was not
+    // repeated on their behalf.
+    const reqUrls = await page.evaluate(() =>
+      performance.getEntriesByType("resource").map(e => (e as PerformanceResourceTiming).name),
+    );
+    expect(reqUrls.some(u => /\/comments$/.test(u))).toBe(true);
+    expect(reqUrls.some(u => /\/activity(\?|$)/.test(u))).toBe(true);
+    // The whole-task read happened once (the initial load), not once
+    // per section.
+    expect(taskFetches.length).toBeLessThanOrEqual(1);
+
+    expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
+  });
+
+  // @verifies CMT-23
+  test("CMT-23: a CLI-posted comment appears in position, without losing the composer's draft", async ({
+    page, tracker,
+  }) => {
+    // Waiting out the real 30s `staleTime` and driving a real focus
+    // transition is what makes the open page notice the write — a
+    // reload would refetch regardless and mask the mechanism.
+    test.setTimeout(120_000);
+    const key = onlyKey(await tracker.seed([{ title: "Cross-surface comment" }]));
+    await tracker.run(["comment", key, "first, from the CLI"]);
+
+    await openTask(page, tracker, key);
+    await expect(page.getByTestId("comment")).toHaveCount(1);
+    await expect(renderedBodies(page)).resolves.toEqual(["first, from the CLI"]);
+
+    // Type a draft into the composer but do NOT submit it. This is the
+    // "pending comment" the refetch must not lose.
+    await composerSurface(page).click();
+    await page.keyboard.type("a draft I have not posted yet");
+
+    // A second surface posts while the page is open and unaware.
+    await tracker.run(["comment", key, "second, also from the CLI"]);
+
+    // The open page notices on the focus-driven refetch — not a reload.
+    await refocus(page);
+
+    // The new comment appears in correct chronological position
+    // (oldest-first, so appended at the end).
+    await expect(page.getByTestId("comment")).toHaveCount(2, { timeout: 20_000 });
+    await expect(renderedBodies(page)).resolves.toEqual([
+      "first, from the CLI",
+      "second, also from the CLI",
+    ]);
+
+    // The unsent draft survived the refetch — it is not blown away by
+    // the invalidation.
+    await expect(composerSurface(page)).toContainText("a draft I have not posted yet");
+  });
+
+  // @verifies CMT-24
+  test("CMT-24: editing a comment deleted elsewhere reports it is gone and keeps the typed text", async ({
+    page, tracker,
+  }) => {
+    const key = onlyKey(await tracker.seed([{ title: "Edit a ghost" }]));
+    await tracker.run(["comment", key, "about to be deleted"]);
+
+    await openTask(page, tracker, key);
+    await expect(page.getByTestId("comment")).toHaveCount(1);
+
+    // The comment's id, off disk, so we can delete it from the CLI.
+    const stored = await commentsOnDisk(tracker.root, key);
+    const commentId = stored[0]?.id;
+    if (commentId === undefined) throw new Error("no stored comment id");
+
+    // Open the edit and retype — this is the text that must not be lost.
+    await page.getByTestId("comment-edit").first().click();
+    await retypeEdit(page, "my carefully rewritten comment");
+
+    // Delete the comment from another surface, then try to save.
+    await tracker.run(["comment-delete", key, commentId, "--yes"]);
+
+    const rejected = page.waitForResponse(
+      r => /\/comments\//.test(r.url())
+        && r.request().method() === "PUT"
+        && r.status() === 400,
+    );
+    await page.getByTestId("comment-edit-composer-submit").click();
+    await rejected;
+
+    // First bullet: the save reports that the comment no longer exists,
+    // in words — not a raw "unknown comment id: <ulid>".
+    const err = page.getByTestId("comment-edit-composer-error");
+    await expect(err).toBeVisible();
+    await expect(err).toContainText(/already gone|no longer exists|someone else deleted/i);
+    await expect(err).not.toContainText(commentId);
+
+    // Third bullet: the edit text is preserved where the user can copy
+    // it — the composer is still open holding what they typed.
+    await expect(editSurface(page)).toContainText("my carefully rewritten comment");
+  });
+});

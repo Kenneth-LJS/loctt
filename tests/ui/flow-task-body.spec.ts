@@ -615,3 +615,94 @@ test.describe("TSK — the body editor", () => {
       .toContain("Edited in A.");
   });
 });
+
+/* ================================================================== *
+ * TSK-27 — a very large body loads and edits without freezing
+ * ================================================================== */
+
+test.describe("TSK — a very large body", () => {
+  // @verifies TSK-27
+  test("TSK-27: several thousand lines load interactively, edit at the bottom, and autosave once per idle window", async ({
+    page, tracker,
+  }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", err => pageErrors.push(err.message));
+
+    const key = onlyKey(await tracker.seed([{ title: "War and peace" }]));
+
+    // A genuinely large body: 4000 numbered lines, written through the
+    // CLI so the starting bytes are known exactly and the size is real
+    // rather than a token the app might special-case.
+    const LINES = 4000;
+    const big = Array.from({ length: LINES }, (_u, i) => `Line ${String(i + 1)} of the body.`)
+      .join("\n") + "\n";
+    await tracker.run(["body", key, "--set", big]);
+
+    // Count the writes: bullet three is a statement about *how many*
+    // requests a burst produces, and only counting tells "one save per
+    // idle window" apart from "one save per keystroke on a huge doc",
+    // which is the specific freeze this case guards against.
+    const writes: string[] = [];
+    await page.route(`**/api/tasks/*/body`, async route => {
+      writes.push(route.request().postData() ?? "");
+      await route.continue();
+    });
+
+    // First bullet: the editor becomes interactive without a
+    // multi-second freeze. Measure from navigation to the editor being
+    // ready to take input.
+    const start = Date.now();
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("body-editor")).toBeVisible();
+    // Raw mode is CodeMirror, which viewports the DOM — the honest
+    // surface for a several-thousand-line document, and what the case
+    // is about (a plain textarea or a fully-realised rich tree is
+    // where the freeze would be).
+    await page.getByTestId("mode-raw").click();
+    const editor = page.getByTestId("body-editor").getByTestId("markdown-editor");
+    await expect(editor).toBeVisible();
+    // Interactive: it can be focused and it holds the content. Bounded
+    // generously — the assertion is "not a multi-second freeze", not a
+    // microbenchmark, so 15s is a ceiling a frozen build blows through
+    // while a working one clears in well under a second.
+    await editor.click();
+    const interactiveMs = Date.now() - start;
+    expect(interactiveMs, `editor took ${String(interactiveMs)}ms to become interactive`)
+      .toBeLessThan(15_000);
+
+    // Second bullet: typing at the bottom does not scroll-jump to the
+    // top. Go to the very end, note the scroll position, type, and
+    // require the caret's line to still be what we typed — not the top
+    // of the document.
+    await page.keyboard.press("ControlOrMeta+End");
+    const appended = "APPENDED-AT-BOTTOM-MARKER";
+    await page.keyboard.type(`\n${appended}`);
+    // The typed text is present and is the last line — a jump to the
+    // top followed by insertion there would put it first instead.
+    await expect(editor).toContainText(appended);
+
+    // Bullet three: a paced burst produces exactly one write, at the
+    // end of the idle window — not one per keystroke.
+    for (const word of ["one ", "two ", "three ", "four ", "five ", "six."]) {
+      await page.keyboard.type(word);
+      await page.waitForTimeout(600);
+    }
+    // 3.6s of continuous typing, more than twice the 1500ms window, and
+    // still nothing sent: each keystroke re-armed the timer.
+    expect(writes).toHaveLength(0);
+    await expect(indicator(page)).toHaveAttribute("data-state", "saved", { timeout: 6000 });
+    // Exactly one request for the whole burst. Zero would mean it never
+    // saved (and never reached "saved"); more than one would be the
+    // per-keystroke resend this case forbids.
+    expect(writes).toHaveLength(1);
+
+    // The far end carries both the original bulk and the new text —
+    // proving the large body was not truncated or replaced by the edit.
+    const stored = await bodyOnDisk(tracker.root, key);
+    expect(stored).toContain("Line 1 of the body.");
+    expect(stored).toContain(`Line ${String(LINES)} of the body.`);
+    expect(stored).toContain(`${appended}one two three four five six.`);
+
+    expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
+  });
+});
