@@ -115,6 +115,11 @@ surface drift (the "key index" check turns to `!`), then rerun with
 List saved views from `.loctt/config/queries.yaml`. Prints `<name>  <query>`,
 with a sort suffix when one is configured.
 
+A view whose query no longer parses (usually a hand edit) is still listed,
+marked `[broken: <parser message>]`, rather than being dropped or taking
+down the rest of the list — one bad entry never hides the healthy views
+beside it.
+
 ```
 loctt views
 ```

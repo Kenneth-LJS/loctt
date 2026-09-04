@@ -7245,3 +7245,85 @@ keydown handler to the `ToastProvider`/`ToastViewport` in
 when no modal/dropdown layer is open** (respecting A11Y-2), and change
 the ERR-44 test in `flow-task-create.spec.ts` to press `Escape` for the
 toast rather than activating `toast-dismiss`.
+
+### A118 · A broken saved view is represented as a `broken` sibling collection, listed on every surface, and clicking it in the UI shows the parse error rather than falling back
+
+**Ticket:** VUE-22 · **Date:** 2026-09-04 · **Commit:** (this one)
+
+**The situation.** `parseQueriesConfig`
+(`packages/core/src/config/queries.ts`) mapped every entry in
+`queries.yaml` and threw `QueriesConfigError` on the first `parseQuery`
+failure. `handleListTasks` → `loadOptionalConfigs` → `loadQueriesConfig`
+did not catch it, so one hand-broken entry 500'd `GET /api/tasks` for a
+healthy view beside it and for no view at all (known-gaps: "One
+unparseable saved view makes `GET /api/tasks` fail for *every* view").
+VUE-22 wants the opposite: "the sidebar still lists the view, marked as
+broken", "clicking it shows the parse error with the offending position",
+"the advanced editor opens pre-populated with the broken query", "other
+views and the rest of the sidebar render normally". North-star principle
+5 (per-element degradation — DRAFT, awaiting Ken) names this exactly.
+
+**What had to be decided.** How is a broken view represented in the
+contract and on each surface, and specifically: (a) where does the
+broken marker live in `QueriesConfig`; (b) does the CLI/MCP list broken
+views by default or behind a flag; (c) what does the UI show when a
+broken view is *clicked*.
+
+**Options considered.**
+- *(a) Represent broken entries in-band* — widen `SavedQuery` with an
+  optional `broken`/`error` and keep them in `queries`. Cost: every
+  existing consumer that iterates `queries` to run them must now filter
+  out broken ones or risk handing an unparseable query to the evaluator;
+  the healthy path is no longer byte-identical.
+- *(a) A sibling `broken` collection* — `queries` stays all-good
+  `SavedQuery[]`, broken entries go in a new optional
+  `QueriesConfig.broken: BrokenSavedQuery[]`. Cost: a consumer that wants
+  to *show* broken views has to read a second field; but no runnable-path
+  consumer can accidentally execute a broken query.
+- *(b) CLI/MCP behind a `--broken` flag* vs *listed by default, marked*.
+  A flag hides a data-integrity problem behind a discovery step; an agent
+  or user told "you have 2 views" over a file that holds 3 may recreate
+  the third over the file that still holds it.
+- *(c) On click, treat broken like missing* (XS-28 fallback: widen to
+  unfiltered + `missing_view` banner) vs *a distinct `broken_view`
+  error state carrying the parse error, position, and raw query*.
+
+**Decided.** (a) A sibling `broken` collection: `QueriesConfig.broken?:
+BrokenSavedQuery[]`, omitted when none are broken, never serialized to
+disk. (b) CLI (`loctt views`) and MCP (`list_views`) list broken views
+**by default, marked broken** with the parser's message (MCP also carries
+`broken:true`/`error`/`position`). (c) The list route returns a non-fatal
+`broken_view` field (sibling of `missing_view`/`warnings`) with `id`,
+`name`, `query`, `error`, `position`; the sidebar lists broken views
+marked broken, clicking one shows the error+position and a "Fix this
+view" button that opens the advanced editor pre-populated via a new
+`?edit=1` list-search param. A whole-file YAML failure, a missing
+`queries` array/id/name/query, or a duplicate id stays object-fatal and
+still throws.
+
+**Why.** Principle 5 (per-element degradation) and principle 3 (strict
+parity). The sibling collection keeps the runnable path from ever seeing
+an unparseable query while still surfacing the fault — the safest reading
+of principle 1 (never silently corrupt: a broken entry is preserved and
+never written back). Listing by default follows the MCP tool's own
+existing reasoning ("this is not the same as having none — do not create
+or overwrite views until this file can be read"). A distinct `broken_view`
+state (not the `missing_view` fallback) is what VUE-22's "shows the parse
+error … rather than an empty list" requires — a widened list would read
+as a legitimate result.
+
+**To revert.** Remove `BrokenSavedQuery`/`BrokenSavedQuerySchema` and
+`QueriesConfig.broken` from `packages/contracts/src/query.ts` (+ index
+exports); restore the throw in `parseQueriesConfig`
+(`packages/core/src/config/queries.ts`) — the pre-change body is one
+`.map` that threw `QueriesConfigError` on a bad `parseQuery`; drop the
+`broken`/`broken_view` handling in `apps/web/src/server/server.ts`
+(`handleListTasks`), the broken-view rows in
+`apps/web/src/client/shell/Sidebar.tsx` and
+`apps/web/src/client/settings/SavedViewsPanel.tsx`, the `broken_view`
+banner + `edit` param in `apps/web/src/client/list/ListView.tsx` /
+`FilterBar.tsx` / `router/listSearch.ts`, and the broken-view lines in
+`apps/cli/src/commands/views.ts` and `apps/mcp/src/tools/views.ts`.
+Tests: the `per-entry degradation (VUE-22)` block in
+`packages/core/src/config/queries.test.ts` and the VUE-22/26/27 specs in
+`tests/ui/flow-list.spec.ts`.

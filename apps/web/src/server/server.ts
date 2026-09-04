@@ -3010,6 +3010,24 @@ export function createWebApp(options: WebAppOptions) {
     const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
 
     const requestedView = url.searchParams.get("view") ?? undefined;
+    // VUE-22 / north-star principle 5: a saved view whose query no longer
+    // parses (a hand edit) is not gone and is not a fallback case — it is
+    // *broken*. `loadOptionalConfigs` no longer 500s on it; the entry is
+    // carried in `queriesConfig.broken` with its parse error and offending
+    // position. Clicking such a view must show that error, "rather than an
+    // empty list" (the case) and rather than the XS-28 missing-view
+    // widening below, which would read as an ordinary unfiltered result.
+    //
+    // Reported as a non-fatal `broken_view` field alongside the rows (like
+    // `missing_view`/`warnings`) rather than as an error page: it carries
+    // the raw query so the advanced editor can open pre-populated to repair
+    // it in place, and the surface renders a deliberate error state.
+    const brokenView =
+      requestedView !== undefined
+        ? queriesConfig?.broken?.find(
+            b => b.id === requestedView || b.name === requestedView,
+          )
+        : undefined;
     // XS-28 / SHL-32: a view deleted from `queries.yaml` while a tab
     // holds its URL must not error the list. The case is explicit —
     // "the list falls back to a defined default view and says so — it
@@ -3020,14 +3038,20 @@ export function createWebApp(options: WebAppOptions) {
     //
     // A missing `queries.yaml` is not a missing view: with no config
     // at all there is nothing to check against, so the ref is passed
-    // through and core decides.
+    // through and core decides. A *broken* view is not missing either —
+    // it is present in the file — so it is excluded here and reported as
+    // `broken_view` instead.
     const viewMissing =
       requestedView !== undefined
+      && brokenView === undefined
       && queriesConfig !== undefined
       && !queriesConfig.queries.some(
         q => q.id === requestedView || q.name === requestedView,
       );
-    const view = viewMissing ? undefined : requestedView;
+    // A broken view has no runnable query, so we do not hand it to core;
+    // the list falls back to unfiltered rows and the `broken_view` banner
+    // explains why the filter did not apply.
+    const view = viewMissing || brokenView !== undefined ? undefined : requestedView;
     const includeArchived = url.searchParams.get("archived") === "true";
     // Fold the free-text `query` and the structured filter params
     // (project/status/priority/type/assignee/…, plus custom
@@ -3150,6 +3174,20 @@ export function createWebApp(options: WebAppOptions) {
       // unfiltered result, and the user has no way to learn that the
       // view they asked for is gone.
       ...(viewMissing ? { missing_view: requestedView } : {}),
+      // VUE-22: the clicked view is present but its query will not parse.
+      // The error and position let the surface mark the fault; the raw
+      // query lets the advanced editor open pre-populated to repair it.
+      ...(brokenView !== undefined
+        ? {
+            broken_view: {
+              id: brokenView.id,
+              name: brokenView.name,
+              query: brokenView.query,
+              error: brokenView.error,
+              ...(brokenView.position !== undefined ? { position: brokenView.position } : {}),
+            },
+          }
+        : {}),
       // VUE-21: a saved view that ran but referenced something the
       // workflow no longer defines. Non-fatal by design — the rows are
       // real — but the user must be told, or a short result reads as a

@@ -67,7 +67,43 @@ export const SavedQuerySchema = z.object({
 }).strict();
 export type SavedQuery = z.infer<typeof SavedQuerySchema>;
 
+/**
+ * A saved view whose stored shape is valid (id/name/query all present)
+ * but whose `query` string no longer parses — typically the result of a
+ * hand edit to `queries.yaml`. Per north-star principle 5 (per-element
+ * degradation), one such entry must not blank the whole catalog: the
+ * loader keeps every good entry as a `SavedQuery` and records each bad
+ * one here instead of throwing.
+ *
+ * `id`, `name` and `query` are the raw values from the file (they passed
+ * schema validation; only the DSL failed). `error` is the parser's own
+ * message and `position` the offending character offset when the parser
+ * reported one — enough for a surface to mark the fault in place. `index`
+ * is the entry's original position in the `queries:` array, so a message
+ * can name `queries[N]` the way the fatal errors already do.
+ *
+ * This is only for per-ENTRY DSL failures. A whole-file YAML failure, a
+ * missing `queries` array, a missing `id`/`name`/`query`, or a duplicate
+ * id is object-fatal and still throws `QueriesConfigError`.
+ */
+export const BrokenSavedQuerySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  query: z.string().min(1),
+  error: z.string().min(1),
+  position: z.number().int().nonnegative().optional(),
+  index: z.number().int().nonnegative(),
+}).strict();
+export type BrokenSavedQuery = z.infer<typeof BrokenSavedQuerySchema>;
+
 export const QueriesConfigSchema = z.object({
   queries: z.array(SavedQuerySchema),
+  /**
+   * Per-entry DSL failures, if any. Omitted (not `[]`) when every entry
+   * parsed, so existing consumers that read only `queries` are
+   * unaffected and "no broken views" stays distinguishable from "did not
+   * look". Never written back to disk — it is a load-time diagnostic.
+   */
+  broken: z.array(BrokenSavedQuerySchema).optional(),
 }).strict();
 export type QueriesConfig = z.infer<typeof QueriesConfigSchema>;

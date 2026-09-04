@@ -159,6 +159,13 @@ export function ListView() {
   // `queries.yaml`. The server fell back to the unfiltered list; this
   // is what makes that visible rather than a silent widening.
   const missingView = pages[pages.length - 1]?.missing_view;
+  // VUE-22: the URL named a saved view that is present in queries.yaml
+  // but whose query no longer parses. The server returns the parse error
+  // and its position rather than 500-ing or silently widening; this
+  // renders that as a deliberate error state (not an empty result) and
+  // offers to open the advanced editor pre-populated with the broken
+  // query so it can be repaired in place.
+  const brokenView = pages[pages.length - 1]?.broken_view;
   // VUE-21: core raises a warning when a query names a field that no
   // longer exists, and the CLI and MCP both print it. The web dropped
   // it, so a saved view filtering on a deleted custom field answered
@@ -485,6 +492,43 @@ export function ListView() {
           {queryWarnings.map(w => (
             <p key={`${w.field}:${w.message}`}>{w.message}</p>
           ))}
+        </div>
+      )}
+      {brokenView !== undefined && (
+        <div
+          role="alert"
+          data-testid="broken-view"
+          data-broken-view-position={brokenView.position ?? ""}
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[12px] text-danger-fg"
+        >
+          <p className="font-medium">
+            The saved view <code className="font-mono">{brokenView.name}</code> could
+            not be run: its query no longer parses.
+          </p>
+          <p className="mt-1">
+            {brokenView.error}
+            {brokenView.position !== undefined
+              ? <> (at position <span data-testid="broken-view-position">{brokenView.position}</span>)</>
+              : null}
+          </p>
+          <p className="mt-1 font-mono text-[11px] text-text-secondary">{brokenView.query}</p>
+          <button
+            type="button"
+            data-testid="broken-view-fix"
+            onClick={() => {
+              void navigate({
+                search: prev => ({
+                  ...prev,
+                  view: undefined,
+                  q: brokenView.query,
+                  edit: true,
+                }),
+              });
+            }}
+            className="mt-1 underline hover:text-text-primary"
+          >
+            Fix this view in the editor
+          </button>
         </div>
       )}
       {missingView !== undefined && (

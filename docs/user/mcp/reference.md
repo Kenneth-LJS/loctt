@@ -167,7 +167,16 @@ The one exception is a saved view referencing a since-deleted custom field: it s
 
 ### `list_views`
 
-Lists saved views from `queries.yaml`. No parameters. Returns JSON `[{name, query}]`, or the prose `No saved views configured.` when the file is absent.
+Lists saved views from `queries.yaml`. No parameters. Returns JSON
+`[{id, name, query, sort?, archived?}]`, or the prose `No saved views
+configured.` when the file is absent.
+
+A view whose query no longer parses (usually a hand edit) is still
+returned, carrying `broken: true` plus the parser's `error` and
+`position`, rather than being dropped — a broken entry no longer hides
+itself or the healthy views beside it. Do not create or overwrite views
+in response to a broken entry: the view exists, it just needs its query
+fixed.
 
 ### `get_workflow_config`
 

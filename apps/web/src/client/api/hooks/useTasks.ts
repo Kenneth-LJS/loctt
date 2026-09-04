@@ -33,6 +33,20 @@ interface TasksPage {
    */
   readonly missing_view?: string;
   /**
+   * The saved view the URL asked for is present in `queries.yaml` but its
+   * query no longer parses (VUE-22 / P7). Unlike `missing_view`, the view
+   * is not gone — it is broken — so the surface shows the parse error at
+   * its position rather than a widened unfiltered result, and pre-fills
+   * the advanced editor with `query` so it can be repaired in place.
+   */
+  readonly broken_view?: {
+    readonly id: string;
+    readonly name: string;
+    readonly query: string;
+    readonly error: string;
+    readonly position?: number;
+  };
+  /**
    * Warnings core raised while evaluating the query — an unknown field
    * a saved view still filters on, for instance. The CLI and MCP both
    * pass `onWarning` and print these; the web dropped them, so a view

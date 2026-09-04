@@ -1,6 +1,6 @@
 import type { WorkflowConfig } from "@loctt/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   useLabels,
@@ -82,11 +82,27 @@ export function FilterBar({
   // times in the built assets — while six blocker cases stayed green,
   // because every one of them was verified against the server API or
   // the unmounted module rather than the rendered page.
-  const [advanced, setAdvanced] = useState(false);
   const query = typeof (search as { q?: unknown }).q === "string"
     ? (search as { q: string }).q
     : "";
+  // VUE-22: `?edit=1` opens the advanced editor pre-populated, so the
+  // "fix this view" button on a broken saved view lands the malformed
+  // query straight in the editor to repair in place.
+  const openEditorRequested = (search as { edit?: unknown }).edit === true;
+  const [advanced, setAdvanced] = useState(openEditorRequested);
   const [draft, setDraft] = useState(query);
+
+  // When `?edit=1` arrives while the bar is already mounted (the user
+  // was on /list and clicked a broken view), open the editor and seed it
+  // from the URL query, then strip `edit` so switching back to basic
+  // does not immediately re-open it. Initial mount is covered by the
+  // useState seed above; this handles the in-place navigation.
+  useEffect(() => {
+    if (!openEditorRequested) return;
+    setDraft(query);
+    setAdvanced(true);
+    void navigate({ search: (prev: Record<string, unknown>) => ({ ...prev, edit: undefined }) });
+  }, [openEditorRequested, query, navigate]);
 
   const projects = useProjects();
   const users = useUsers();

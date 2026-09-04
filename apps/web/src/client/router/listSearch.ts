@@ -109,6 +109,12 @@ export const listSearchSchema = z.object({
   // Toggles
   archived: urlBool,
 
+  // VUE-22: open the advanced DSL editor on load, pre-populated from
+  // `q`. Set by the "fix this view" affordance on a broken saved view,
+  // so the malformed query lands in the editor to be repaired in place
+  // rather than the user having to re-open it by hand.
+  edit: urlBool,
+
   // Saved-view id — when set, the view's own filters/sort apply and
   // the params above act as overrides
   view: z.string().optional(),

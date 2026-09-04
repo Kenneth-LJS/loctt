@@ -1,5 +1,5 @@
 
-import type { QueriesConfig, SavedQuery } from "@loctt/contracts";
+import type { BrokenSavedQuery, QueriesConfig, SavedQuery } from "@loctt/contracts";
 import { SavedQuerySchema } from "@loctt/contracts";
 import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
@@ -35,37 +35,67 @@ export function parseQueriesConfig(yamlContent: string): QueriesConfig {
     throw err;
   }
 
+  // Per north-star principle 5: one entry whose DSL no longer parses
+  // (a hand edit, most often) must not blank the whole catalog. Good
+  // entries become `SavedQuery`s; a bad one becomes a `BrokenSavedQuery`
+  // marker carrying its raw text, the parser's message and the offending
+  // position, so a surface can list it as broken and mark the fault in
+  // place (VUE-22) rather than 500-ing the healthy views beside it.
+  //
+  // Object-fatal problems still throw: the duplicate-id check below, and
+  // everything the schema already rejected above (missing array, missing
+  // id/name/query, bad sort). Only a per-ENTRY query error degrades.
   const seenIds = new Set<string>();
-  const queries: SavedQuery[] = parsed.queries.map((item, i) => {
-    // DSL validation. Bad query strings are user-fixable and
-    // shouldn't crash the rest of the load.
-    try {
-      parseQuery(tokenize(item.query));
-    } catch (err) {
-      if (err instanceof TokenizeError || err instanceof ParseError) {
-        throw new QueriesConfigError(
-          `queries[${i}].query is not a valid query: ${err.message}`,
-        );
-      }
-      throw err;
-    }
-
+  const queries: SavedQuery[] = [];
+  const broken: BrokenSavedQuery[] = [];
+  parsed.queries.forEach((item, i) => {
+    // Duplicate ids are object-fatal: two entries sharing an id makes
+    // "run view <id>" ambiguous, so we cannot silently pick one. Checked
+    // before DSL parsing so a duplicate is reported the same way whether
+    // or not the query also happens to be broken.
     if (seenIds.has(item.id)) {
       throw new QueriesConfigError(`duplicate query id: ${item.id}`);
     }
     seenIds.add(item.id);
 
-    return {
+    // DSL validation. Bad query strings are user-fixable and degrade to
+    // a broken marker rather than crashing the rest of the load.
+    try {
+      parseQuery(tokenize(item.query));
+    } catch (err) {
+      if (err instanceof TokenizeError || err instanceof ParseError) {
+        broken.push({
+          id: item.id,
+          name: item.name,
+          query: item.query,
+          error: err.message,
+          // Both carry a numeric character offset; kept so a surface can
+          // mark the exact spot (VUE-22: "the offending position").
+          position: err.position,
+          index: i,
+        });
+        return;
+      }
+      throw err;
+    }
+
+    queries.push({
       id: item.id,
       name: item.name,
       query: item.query,
       ...(item.sort !== undefined ? { sort: item.sort } : {}),
       ...(item.display !== undefined ? { display: item.display } : {}),
       ...(item.archived === true ? { archived: true } : {}),
-    };
+    });
   });
 
-  return { queries };
+  return {
+    queries,
+    // Omitted, not `[]`, when everything parsed — so a consumer reading
+    // only `queries` is unaffected and "none broken" stays distinct from
+    // "not inspected". Never serialized back to disk.
+    ...(broken.length > 0 ? { broken } : {}),
+  };
 }
 
 /** Build a plain serializable object for one SavedQuery. */

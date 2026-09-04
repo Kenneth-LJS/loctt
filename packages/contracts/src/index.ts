@@ -37,6 +37,7 @@ export {
 } from "./projects.js";
 export type {
   BoardGrouping,
+  BrokenSavedQuery,
   QueriesConfig,
   QuerySort,
   SavedQuery,
@@ -46,6 +47,7 @@ export type {
 } from "./query.js";
 export {
   BoardGroupingSchema,
+  BrokenSavedQuerySchema,
   QueriesConfigSchema,
   QuerySortSchema,
   SavedQuerySchema,
