@@ -186,7 +186,7 @@ export function AttachmentsPanel({
         className={
           "rounded-md border border-dashed px-3 py-4 text-center "
           + (dragOver
-            ? "border-accent-fg bg-bg-muted"
+            ? "border-accent bg-bg-muted"
             : "border-border-subtle")
         }
       >

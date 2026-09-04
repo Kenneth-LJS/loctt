@@ -23,7 +23,7 @@ export function SaveIndicator(
         role="alert"
         data-testid="save-indicator"
         data-state="failed"
-        className="flex items-center gap-2 text-[12px] text-status-danger"
+        className="flex items-center gap-2 text-[12px] text-danger-fg"
       >
         <span>{state.message}</span>
         {/* ERR-12's fourth bullet: freeing space and retrying is the

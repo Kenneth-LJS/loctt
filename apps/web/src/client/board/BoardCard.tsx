@@ -83,10 +83,10 @@ export function BoardCard({
       // *move* gesture on top of this in M3.2; reachability is here).
       data-placeholder={placeholder ? "true" : undefined}
       className={[
-        "rounded border focus-within:ring-2 focus-within:ring-accent-fg",
+        "rounded border focus-within:ring-2 focus-within:ring-accent",
         placeholder
           ? "border-dashed border-border-subtle bg-bg-muted/40 opacity-40 [&_*]:invisible"
-          : "border-border-subtle bg-bg-base",
+          : "border-border-subtle bg-bg-canvas",
       ].join(" ")}
       onPointerDown={onPointerDown}
     >

@@ -98,13 +98,13 @@ function LabelRow({ label, count, allLabels }: {
                 reaches labels.yaml.
               */}
               {!colorOk && (
-                <p role="alert" data-testid="label-color-invalid" className="text-[12px] text-status-danger">
+                <p role="alert" data-testid="label-color-invalid" className="text-[12px] text-danger-fg">
                   Colour must be a 6-digit hex value like{" "}
                   <code className="font-mono">#aabbcc</code>. Leave it empty for no colour.
                 </p>
               )}
               {update.isError && (
-                <p role="alert" className="text-[12px] text-status-danger">
+                <p role="alert" className="text-[12px] text-danger-fg">
                   {update.error instanceof ApiError ? update.error.message : "Could not save."}
                 </p>
               )}
@@ -291,7 +291,7 @@ function CreateLabelForm({ existing }: { readonly existing: readonly LabelDef[] 
       </div>
 
       {!colorOk && (
-        <p role="alert" data-testid="label-create-color-invalid" className="text-[12px] text-status-danger">
+        <p role="alert" data-testid="label-create-color-invalid" className="text-[12px] text-danger-fg">
           Colour must be a 6-digit hex value like <code className="font-mono">#aabbcc</code>.
         </p>
       )}
@@ -300,7 +300,7 @@ function CreateLabelForm({ existing }: { readonly existing: readonly LabelDef[] 
         <p
           data-testid="label-duplicate-warning"
           data-label-duplicate="warning"
-          className="text-[12px] text-status-warn"
+          className="text-[12px] text-warn-fg"
         >
           A label with this name already exists. Label names do not have to be
           unique — you can create it anyway, and both will be shown with their
@@ -309,7 +309,7 @@ function CreateLabelForm({ existing }: { readonly existing: readonly LabelDef[] 
       )}
 
       {create.isError && (
-        <p role="alert" className="text-[12px] text-status-danger">
+        <p role="alert" className="text-[12px] text-danger-fg">
           {create.error instanceof ApiError ? create.error.message : "Could not create the label."}
         </p>
       )}

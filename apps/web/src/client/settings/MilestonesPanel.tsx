@@ -70,12 +70,12 @@ function MilestoneRow({ milestone, count, all }: {
                 />
               </div>
               {!dateOk && (
-                <p role="alert" className="text-[12px] text-status-danger">
+                <p role="alert" className="text-[12px] text-danger-fg">
                   Target date must be an ISO date like <code className="font-mono">2026-03-31</code>.
                 </p>
               )}
               {update.isError && (
-                <p role="alert" className="text-[12px] text-status-danger">
+                <p role="alert" className="text-[12px] text-danger-fg">
                   {update.error instanceof ApiError ? update.error.message : "Could not save."}
                 </p>
               )}
@@ -274,7 +274,7 @@ export function MilestonesPanel() {
       </form>
 
       {create.isError && (
-        <p role="alert" className="mb-3 text-[12px] text-status-danger">
+        <p role="alert" className="mb-3 text-[12px] text-danger-fg">
           {create.error instanceof ApiError ? create.error.message : "Could not create."}
         </p>
       )}
