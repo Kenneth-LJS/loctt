@@ -182,3 +182,48 @@ describe("apiRequest", () => {
     expect(headers["X-Loctt-Client"]).toBe("vscode-ext");
   });
 });
+
+describe("postFile", () => {
+  // @verifies REL-47
+  it("frames a dropped connection as an incomplete, retryable, not-saved upload", async () => {
+    // A killed connection mid-upload: `fetch` rejects with a bare
+    // TypeError that names neither the file nor what happened. Without
+    // the framing in `postFile`, that reaches the panel verbatim as
+    // "Failed to fetch" — no data_state, no recovery — and the panel
+    // cannot offer the retry REL-47 requires.
+    vi.mocked(globalThis.fetch).mockRejectedValueOnce(
+      new TypeError("Failed to fetch"),
+    );
+    const file = new File(["x".repeat(64)], "big.bin", { type: "application/octet-stream" });
+    const err = await apiClient
+      .postFile("/api/tasks/T-1/attachments", file)
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ApiError);
+    const api = err as ApiError;
+    // Not the P4 "unknown" write case: the route is atomic, so the file
+    // was demonstrably not attached — the state is knowable as not_saved
+    // and the safe action is retry, not reload.
+    expect(api.envelope?.data_state).toBe("not_saved");
+    expect(api.envelope?.recovery?.kind).toBe("retry");
+    expect(api.envelope?.message).toMatch(/did not complete/i);
+    expect(api.status).toBe(0);
+  });
+
+  it("still throws the server's own envelope on a 4xx rejection", async () => {
+    // The network-error branch must not swallow a real HTTP rejection:
+    // a 400 with a server envelope keeps its status and envelope, so the
+    // panel's retry-vs-not decision stays the server's to make.
+    mockFetchOnce({
+      status: 400,
+      body: { code: "validation_failed", message: "bad file", field: "file" },
+    });
+    const file = new File(["x"], "small.txt", { type: "text/plain" });
+    const err = await apiClient
+      .postFile("/api/tasks/T-1/attachments", file)
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(400);
+    expect((err as ApiError).envelope?.code).toBe("validation_failed");
+  });
+});

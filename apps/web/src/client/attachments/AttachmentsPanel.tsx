@@ -117,10 +117,20 @@ export function AttachmentsPanel({
           patch(id, { state: "conflict", message: err.message, file });
           return;
         }
-        patch(id, {
-          state: "failed",
-          message: err instanceof Error ? err.message : String(err),
-        });
+        // REL-47: a dropped connection mid-upload reaches here. `postFile`
+        // frames that as a `not_saved` failure with a `retry` recovery —
+        // the upload route is atomic, so nothing partial is on disk and
+        // re-sending cannot duplicate. Keep `file` so the failed row can
+        // offer Retry, and phrase the message to name the file and say
+        // the upload did not complete rather than surfacing a bare
+        // "Failed to fetch". A server-side rejection (a 400 with its own
+        // envelope) keeps its message and its file for retry too.
+        const incomplete =
+          err instanceof ApiError && err.envelope?.recovery?.kind === "retry";
+        const message = incomplete
+          ? `${file.name} did not finish uploading — it was not attached. You can retry.`
+          : err instanceof Error ? err.message : String(err);
+        patch(id, { state: "failed", message, file });
       }
     },
     [patch, upload],
@@ -342,13 +352,37 @@ export function AttachmentsPanel({
                   </span>
                 )}
                 {item.state === "failed" && (
-                  <span
-                    role="alert"
-                    data-testid="attachment-queue-error"
-                    className="text-danger-fg"
-                  >
-                    {item.message}
-                  </span>
+                  <>
+                    <span
+                      role="alert"
+                      data-testid="attachment-queue-error"
+                      className="text-danger-fg"
+                    >
+                      {item.message}
+                    </span>
+                    {/*
+                      REL-47: a failed upload offers retry. Only when the
+                      original File is still in hand (a dropped connection
+                      or a server-side rejection keeps it; an oversize
+                      refusal, caught before anything is sent, does not —
+                      there is nothing to resend it against). Retry re-runs
+                      the same attempt; the route is atomic, so a retry
+                      after an incomplete transfer cannot duplicate.
+                    */}
+                    {item.file !== undefined && (
+                      <button
+                        type="button"
+                        data-testid="attachment-retry-upload"
+                        onClick={() => {
+                          const f = item.file;
+                          if (f !== undefined) void attempt(item.id, f, false);
+                        }}
+                        className="rounded border border-border-subtle px-1.5 py-0.5 hover:bg-bg-muted"
+                      >
+                        Retry
+                      </button>
+                    )}
+                  </>
                 )}
                 {item.state === "conflict" && (
                   <>

@@ -932,6 +932,93 @@ test.describe("NEW — create task modal", () => {
       .toMatch(/^WEB-/);
   });
 
+  // @verifies ERR-44
+  test("ERR-44: a placed field error and a toast are both keyboard-reachable, announced, and the field takes focus", async ({
+    page,
+    tracker,
+  }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", e => pageErrors.push(e.message));
+
+    // Two projects, no default: submitting without a project produces a
+    // placed field error — the "placed field error" ERR-44 needs, and
+    // one reachable from the keyboard alone.
+    await tracker.run(["project", "create", "Backend", "--prefix", "BE-"]);
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    const projectsPath = path.join(tracker.root, ".loctt", "config", "projects.yaml");
+    const projectsText = await readFile(projectsPath, "utf8");
+    await writeFile(
+      projectsPath,
+      projectsText.split("\n").filter(l => !l.startsWith("default:")).join("\n"),
+    );
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await openModal(page);
+
+    // Keyboard only from here. Type a title, then drive the submit
+    // button with the keyboard rather than a click.
+    await page.getByTestId("create-title").fill("Keyboard error");
+    const submit = page.getByTestId("create-submit");
+    await submit.focus();
+    await expect(submit).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    // The message is placed at the field, is readable without a mouse,
+    // and carries a live-region role so a screen reader announces it.
+    const fieldError = page.getByTestId("create-project-required");
+    await expect(fieldError).toBeVisible();
+    await expect(fieldError).toHaveAttribute("role", "alert");
+
+    // Focus moved to (or into) the offending field after the failed
+    // submit — a keyboard user is taken to what they must fix, not left
+    // on the Create button.
+    const projectControl = page.getByTestId("create-project");
+    await expect(async () => {
+      const focusedInProject = await projectControl.evaluate(
+        el => el.contains(document.activeElement),
+      );
+      expect(focusedInProject).toBe(true);
+    }).toPass({ timeout: 2_000 });
+
+    // Nothing was created by the failed submit — the far end agrees the
+    // error stopped the write.
+    expect(await allTaskFiles(tracker.root)).toHaveLength(0);
+
+    // Choose a project by keyboard and submit again: this time it
+    // succeeds and raises a toast.
+    await page.getByTestId("create-project").getByRole("button").first().click();
+    await page.getByRole("option").filter({ hasText: "Web" }).click();
+    await submit.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("create-task-modal")).toBeHidden();
+
+    // The toast is announced via a live region (a screen reader reads it
+    // without focus moving there).
+    const toastRegion = page.getByTestId("toast-region");
+    await expect(toastRegion).toHaveAttribute("aria-live", /polite|assertive/);
+    const toast = page.getByTestId("toast");
+    await expect(toast).toBeVisible();
+    await expect(toast).toContainText("Keyboard error");
+
+    // The toast is dismissable from the keyboard: its dismiss control is
+    // a real tab stop that can be focused and activated without a mouse.
+    // (The a11y contract, flow-accessibility.md, accepts a tab stop in
+    // the natural order as the toast's keyboard path.)
+    const dismiss = page.getByTestId("toast-dismiss");
+    await dismiss.focus();
+    await expect(dismiss).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(toast).toHaveCount(0);
+
+    // Esc is the keyboard dismissal for a dialog: reopen the modal and
+    // close it with Escape alone.
+    await openModal(page);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("create-task-modal")).toBeHidden();
+
+    expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  });
+
   // @verifies NEW-14
   test("NEW-14: an explicit project wins and only its counter moves", async ({
     page,

@@ -241,6 +241,35 @@ async function moveUp(
 }
 
 /**
+ * Moves one row down by `steps`, the mirror of `moveUp`.
+ *
+ * Stops when the row is already last: ArrowDown on the final row is a
+ * no-op in the panel, issues no request, and pressing regardless would
+ * sit on `waitForResponse` until timeout — the same read-the-DOM-before
+ * -the-re-render trap `moveUp`'s docstring records, in the other
+ * direction. Each step re-reads the rendered order, re-resolves and
+ * re-focuses the handle (the refetch replaced the element the previous
+ * press went to), and waits for the render to change before the next
+ * step reads it.
+ */
+async function moveDown(
+  page: Page,
+  type: string,
+  targetId: string,
+  steps: number,
+): Promise<void> {
+  for (let i = 0; i < steps; i += 1) {
+    const order = await renderedOrder(page, type);
+    const idx = order.indexOf(targetId);
+    if (idx === -1 || idx >= order.length - 1) return;
+    const handle = handleFor(page, type, targetId);
+    await handle.focus();
+    await settling(page, "/rerank", async () => { await handle.press("ArrowDown"); });
+    await renderedOrderChanged(page, type, order);
+  }
+}
+
+/**
  * Waits until the panel renders an order other than `before`, or gives
  * up after `timeoutMs` without complaint. See `moveUp` for why the
  * write's response alone is not enough to read the DOM after.
@@ -768,6 +797,87 @@ test("REL-13: a reorder rewrites only the moved edge's rank, and the new rank so
   // And it survives a reload: the order is on disk, not in the tab.
   await page.reload();
   await expect(groupRows(page, "blocks").nth(1)).toHaveAttribute("data-target", ids.d);
+});
+
+// @verifies REL-14
+test("REL-14: reordering into first and last position works, and renumbers no other row", async ({ page, tracker }) => {
+  const pageErrors: string[] = [];
+  // Built-but-untested has hidden a live render crash before (colorless
+  // utilities, a swallowed remap). A first/last move that threw would
+  // otherwise read as an ordering assertion failure, not a crash.
+  page.on("pageerror", e => pageErrors.push(e.message));
+
+  const [root, a, b, c, d] = await tracker.seed([
+    { title: "Root" }, { title: "A" }, { title: "B" }, { title: "C" }, { title: "D" },
+  ]);
+  for (const t of [a, b, c, d]) await tracker.run(["link", root ?? "", "blocks", t ?? ""]);
+  // Every edge ranked, so "renumbers no other row" has something to be
+  // false about — an implementation that rewrote all ranks would pass
+  // an order-only assertion.
+  for (const t of [a, b, c, d]) await tracker.run(["rerank", root ?? "", "blocks", t ?? ""]);
+
+  const before = await edgesOf(tracker.root, root ?? "");
+  expect(before.every(e => e.rank !== undefined)).toBe(true);
+  const rankOf = (edges: StoredEdge[], id: string): string | undefined =>
+    edges.find(e => e.target === id)?.rank;
+
+  const ids = {
+    a: await taskId(tracker.root, a ?? ""),
+    b: await taskId(tracker.root, b ?? ""),
+    c: await taskId(tracker.root, c ?? ""),
+    d: await taskId(tracker.root, d ?? ""),
+  };
+
+  await openTask(page, tracker, root ?? "");
+  await expect(groupRows(page, "blocks")).toHaveCount(4);
+  expect(await renderedOrder(page, "blocks")).toEqual([ids.a, ids.b, ids.c, ids.d]);
+
+  // --- Into first: move C (index 2) above the current first (A). ---
+  await moveUp(page, "blocks", ids.c, 2);
+  await expect(groupRows(page, "blocks").nth(0)).toHaveAttribute("data-target", ids.c);
+
+  const afterFirst = await edgesOf(tracker.root, root ?? "");
+  const cRank = rankOf(afterFirst, ids.c) ?? "";
+  // "a rank below every existing rank" — strictly below all the others,
+  // read off disk, not from the rendered order.
+  for (const id of [ids.a, ids.b, ids.d]) {
+    expect(cRank < (rankOf(afterFirst, id) ?? "")).toBe(true);
+  }
+  // "Neither operation renumbers the other rows": A, B, D byte-identical
+  // to before the move.
+  for (const id of [ids.a, ids.b, ids.d]) {
+    expect(rankOf(afterFirst, id)).toBe(rankOf(before, id));
+  }
+  // A fresh lexorank must leave room below it.
+  expect(cRank.endsWith("0")).toBe(false);
+
+  // --- Into last: move A (now index 1) below the current last (D). ---
+  // Order on disk now: C, A, B, D.
+  await moveDown(page, "blocks", ids.a, 3);
+  await expect(groupRows(page, "blocks").nth(3)).toHaveAttribute("data-target", ids.a);
+
+  const afterLast = await edgesOf(tracker.root, root ?? "");
+  const aRank = rankOf(afterLast, ids.a) ?? "";
+  // "a rank above every existing rank" — strictly above all the others.
+  for (const id of [ids.b, ids.c, ids.d]) {
+    expect(aRank > (rankOf(afterLast, id) ?? "")).toBe(true);
+  }
+  // The last move renumbers nobody else either: C, B, D unchanged from
+  // the post-first-move state.
+  for (const id of [ids.b, ids.c, ids.d]) {
+    expect(rankOf(afterLast, id)).toBe(rankOf(afterFirst, id));
+  }
+
+  // The reorder writes the source only — the targets' inverse edges are
+  // untouched (they carry no rank).
+  expect((await edgesOf(tracker.root, a ?? "")).map(e => e.rank)).toEqual([undefined]);
+
+  // On disk, not in the tab: a reload shows the same first and last.
+  await page.reload();
+  await expect(groupRows(page, "blocks").nth(0)).toHaveAttribute("data-target", ids.c);
+  await expect(groupRows(page, "blocks").nth(3)).toHaveAttribute("data-target", ids.a);
+
+  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
 });
 
 // @verifies REL-15

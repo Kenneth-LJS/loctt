@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { MigrateResponse, MigrationPlanResponse } from "@loctt/contracts";
-import { initLoctt } from "@loctt/core";
+import { initLoctt, withMigrationLock } from "@loctt/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createWebApp } from "./server.js";
@@ -108,5 +108,53 @@ describe("migration endpoints", () => {
     expect(res.status).toBe(409);
     // Unchanged — a newer schema cannot be downgraded.
     expect((await readFile(versionPath(), "utf8")).trim()).toBe("9999");
+  });
+
+  // @verifies SET-38
+  it("fails fast, names the concurrent migration, and writes nothing while the migration lock is held", async () => {
+    // SET-38: `loctt migrate` is running in a terminal, so the migration
+    // lock is held. The UI's Migrate must fail fast — not block on the
+    // lock for the 5-minute stale timeout, and not slip past it via the
+    // already-current no-op and report a success the UI never performed.
+    //
+    // Observable at CURRENT_SCHEMA_VERSION === 1, unlike the guard
+    // exemption above: holding the lock changes the answer regardless of
+    // version, so this is a real executing assertion rather than a
+    // documented limit. Removing the `isMigrationLocked` fail-fast from
+    // handleMigrate reddens it (the request would 200 with an empty plan
+    // instead).
+    const before = await readFile(versionPath(), "utf8");
+
+    const { status, body, elapsedMs } = await withMigrationLock(locttDir, async () => {
+      const start = Date.now();
+      const res = await fetch(`${base}/api/migrate`, { method: "POST", headers: csrf });
+      return {
+        status: res.status,
+        body: (await res.json()) as { error?: string; message?: string; code?: string; data_state?: string },
+        elapsedMs: Date.now() - start,
+      };
+    });
+
+    // Fails fast: nowhere near the 5-minute stale window. A generous
+    // bound — the point is "did not block on the lock", not a benchmark.
+    expect(elapsedMs).toBeLessThan(10_000);
+    // A conflict, not a 500 and not a success.
+    expect(status).toBe(409);
+    // The message names the concurrent process and the wait-then-reload
+    // action, rather than a generic error.
+    const text = body.error ?? body.message ?? "";
+    expect(text).toMatch(/another process|already running/i);
+    expect(text).toMatch(/reload/i);
+    expect(body.data_state).toBe("not_saved");
+
+    // Nothing was written by the UI's attempt: the version file is
+    // byte-for-byte unchanged.
+    expect(await readFile(versionPath(), "utf8")).toBe(before);
+
+    // Positive control: once the lock is released, a migrate succeeds
+    // (a no-op here, but a real answer from the handler) — proving the
+    // 409 above was the lock's doing, not a permanently wedged endpoint.
+    const after = await fetch(`${base}/api/migrate`, { method: "POST", headers: csrf });
+    expect(after.status).toBe(200);
   });
 });

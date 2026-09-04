@@ -55,6 +55,100 @@ async function readTaskFile(root: string, key: string): Promise<string> {
 }
 
 /**
+ * Writes `count` users straight to `.loctt/users/<id>/profile.yaml`,
+ * returning their ids in order.
+ *
+ * The scale cases (TML-27) need dozens of users; `loctt user create`
+ * is a subprocess each, so forty of them would pay ten seconds of
+ * spawn time before the page loads — the starvation the fixture's
+ * `seedBulk` docstring records. These are the same shape `user create`
+ * writes: an id, a name, a timezone, and `archived: true` on the ones
+ * the caller marks. Ids are monotonic 26-char ULatiish strings, unique
+ * within the call, and distinct from `seedBulk`'s `01M…` task ids.
+ */
+async function seedUsers(
+  root: string,
+  count: number,
+  opts?: { archivedIndexes?: readonly number[]; name?: (n: number) => string },
+): Promise<string[]> {
+  const { mkdir } = await import("node:fs/promises");
+  const archived = new Set(opts?.archivedIndexes ?? []);
+  const ids: string[] = [];
+  await Promise.all(
+    Array.from({ length: count }, async (_u, i) => {
+      const id = `01U${String(i).padStart(23, "0")}`;
+      ids[i] = id;
+      const dir = path.join(root, ".loctt", "users", id);
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        path.join(dir, "profile.yaml"),
+        `id: ${id}\nname: ${opts?.name?.(i) ?? `User ${String(i)}`}\n`
+        + `timezone: UTC\n${archived.has(i) ? "archived: true\n" : ""}`,
+        "utf8",
+      );
+    }),
+  );
+  return ids;
+}
+
+/**
+ * Writes `count` dated tasks straight to disk, one per caller-supplied
+ * spec, returning their keys. Bypasses the CLI for the same reason
+ * `seedBulk` does — the scale cases need dozens or thousands of rows,
+ * and a subprocess each starves the suite.
+ *
+ * Each task carries `start_date`/`due_date` and, optionally, an
+ * `assignee`, so the timeline has bars to lay out and bands to group.
+ * `state.yaml`'s counter is advanced past the block so a later
+ * `create` cannot collide.
+ */
+async function seedDatedTasks(
+  root: string,
+  specs: readonly { start: string; due: string; assignee?: string; title?: string }[],
+): Promise<string[]> {
+  const { mkdir } = await import("node:fs/promises");
+  const statePath = path.join(root, ".loctt", "state.yaml");
+  const stateText = await readFile(statePath, "utf8");
+  const projectId = /^\s{2}([0-9A-Z]{26}):/m.exec(stateText)?.[1];
+  if (projectId === undefined) throw new Error("no project in state.yaml");
+  const rawPrefix = /^\s{4}prefix:\s*(\S+)\s*$/m.exec(stateText)?.[1];
+  const keyPrefix = rawPrefix?.replace(/^["']|["']$/g, "") ?? "T-";
+  const sep = keyPrefix.endsWith("-") ? "" : "-";
+  const first = Number(/^\s{4}next_number:\s*(\d+)\s*$/m.exec(stateText)?.[1] ?? "1");
+  const stamp = "2026-01-01T00:00:00.000Z";
+  const keys: string[] = [];
+  await Promise.all(
+    specs.map(async (spec, i) => {
+      const n = first + i;
+      const id = `01T${String(n).padStart(23, "0")}`;
+      keys[i] = `${keyPrefix}${sep}${String(n)}`;
+      const dir = path.join(root, ".loctt", "tasks", id);
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        path.join(dir, "task.md"),
+        `---\nid: ${id}\nkey: ${keyPrefix}${sep}${String(n)}\n`
+        + `title: ${spec.title ?? `Task ${String(n)}`}\n`
+        + `created_at: ${stamp}\nupdated_at: ${stamp}\nproject: ${projectId}\n`
+        + `status: backlog\nstart_date: ${spec.start}\ndue_date: ${spec.due}\n`
+        + (spec.assignee !== undefined ? `assignee: ${spec.assignee}\n` : "")
+        + `---\n`,
+        "utf8",
+      );
+    }),
+  );
+  await writeFile(
+    statePath,
+    stateText.replace(
+      /^(\s{4}next_number:\s*)(\d+)\s*$/m,
+      (_m, head: string, cur: string) =>
+        `${head}${String(Math.max(Number(cur), first + specs.length))}`,
+    ),
+    "utf8",
+  );
+  return keys;
+}
+
+/**
  * Two dated tasks and one undated one, with a `blocks` link.
  *
  * T-1 spans 2026-03-02 → 2026-03-06 (5 days), which is the exact span
@@ -1942,5 +2036,159 @@ test.describe("TML — remaining section B cases (M3.3b)", () => {
     const onDisk = await datesOf(tracker.root, key);
     expect(onDisk.start).toBe("2026-03-04");
     expect(onDisk.due).toBe("2026-03-08");
+  });
+
+  // @verifies TML-27
+  test("TML-27: grouping by 40 assignees produces 40 identifiable bands, collapse is per-band, and an archived user is marked", async ({ page, tracker }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", e => pageErrors.push(e.message));
+
+    // 40 users; user 0 is archived. Names, not ULIDs, are what the
+    // bands must show.
+    const N = 40;
+    const users = await seedUsers(tracker.root, N, {
+      archivedIndexes: [0],
+      name: i => `Member ${String(i)}`,
+    });
+
+    // Every user gets a task or two, so each is a non-empty band —
+    // rows.ts emits only bands that have rows in scope. Users 0..9 get
+    // two tasks so at least some bands are multi-row.
+    const specs = users.flatMap((uid, i) => {
+      const start = `2026-0${String((i % 9) + 1)}-0${String((i % 8) + 1)}`;
+      const one = { start, due: start, assignee: uid, title: `T for ${String(i)}` };
+      return i < 10 ? [one, { ...one, title: `T2 for ${String(i)}` }] : [one];
+    });
+    const keys = await seedDatedTasks(tracker.root, specs);
+    const expectedTasks = specs.length; // 40 + 10 = 50
+
+    await page.goto(`${tracker.baseURL}/timeline?zoom=month&grouping=assignee`);
+
+    // The page is responsive: the total is the true count and a first
+    // bar renders. Await a positive signal before any absence check so
+    // a `toHaveCount(0)` cannot pass vacuously against an empty page.
+    await expect(page.getByTestId("timeline-total")).toHaveText(`${String(expectedTasks)} tasks`);
+    await expect(page.getByTestId(`timeline-bar-${keys[0]}`)).toBeVisible();
+
+    // 40 bands, one per user. Not 39, not 41 — the archived user still
+    // gets a band, and there is no stray "Unassigned" band because
+    // every task has an assignee.
+    const bandHeaders = page.locator('[data-testid^="timeline-band-"]:not([data-testid*="-count-"])');
+    await expect(bandHeaders).toHaveCount(N);
+    await expect(page.getByTestId("timeline-band-__none__")).toHaveCount(0);
+
+    // Bands are identifiable by the user's NAME, never the raw ULID.
+    const firstBand = page.getByTestId(`timeline-band-${users[1] ?? ""}`);
+    await expect(firstBand).toContainText("Member 1");
+    await expect(firstBand).not.toContainText(users[1] ?? "@@@");
+
+    // The archived user's band carries the (archived) marker rather
+    // than vanishing or showing a ULID.
+    const archivedBand = page.getByTestId(`timeline-band-${users[0] ?? ""}`);
+    await expect(archivedBand).toContainText("Member 0");
+    await expect(archivedBand).toContainText("(archived)");
+
+    // Counts in the header are the true totals. User 0 has two tasks,
+    // user 20 has one — the header count is the real number, not the
+    // number of rendered rows.
+    await expect(page.getByTestId(`timeline-band-count-${users[0] ?? ""}`)).toHaveText("(2)");
+    await expect(page.getByTestId(`timeline-band-count-${users[20] ?? ""}`)).toHaveText("(1)");
+
+    // Collapsing is per-band and independent: collapse three, and
+    // expanding one leaves the other two collapsed. "Expanding one
+    // does not reset the others."
+    const b0 = page.getByTestId(`timeline-band-${users[0] ?? ""}`);
+    const b1 = page.getByTestId(`timeline-band-${users[1] ?? ""}`);
+    const b2 = page.getByTestId(`timeline-band-${users[2] ?? ""}`);
+    for (const b of [b0, b1, b2]) await b.click();
+    for (const b of [b0, b1, b2]) await expect(b).toHaveAttribute("aria-expanded", "false");
+    // Re-expand only b1.
+    await b1.click();
+    await expect(b1).toHaveAttribute("aria-expanded", "true");
+    await expect(b0).toHaveAttribute("aria-expanded", "false");
+    await expect(b2).toHaveAttribute("aria-expanded", "false");
+    // And a band the run never touched is still expanded — collapsing
+    // some did not collapse all.
+    await expect(page.getByTestId(`timeline-band-${users[30] ?? ""}`))
+      .toHaveAttribute("aria-expanded", "true");
+
+    // Collapsing every band leaves a compact list of 40 headers with no
+    // bars showing. The header count on a collapsed band is still the
+    // true total, so the counts survive the collapse.
+    for (let i = 0; i < N; i += 1) {
+      const b = page.getByTestId(`timeline-band-${users[i] ?? ""}`);
+      if ((await b.getAttribute("aria-expanded")) === "true") await b.click();
+    }
+    await expect(bandHeaders).toHaveCount(N);
+    for (const b of await bandHeaders.all()) {
+      await expect(b).toHaveAttribute("aria-expanded", "false");
+    }
+    await expect(page.getByTestId(`timeline-band-count-${users[0] ?? ""}`)).toHaveText("(2)");
+    // No bar is rendered while all are collapsed.
+    await expect(page.getByTestId(`timeline-bar-${keys[0]}`)).toHaveCount(0);
+
+    expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  });
+
+  // @verifies TML-30
+  test("TML-30: many overlapping bars each get their own row, and rows do not stack", async ({ page, tracker }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", e => pageErrors.push(e.message));
+
+    // 60 tasks whose dates all overlap the same fortnight, ungrouped.
+    const N = 60;
+    const specs = Array.from({ length: N }, (_v, i) => ({
+      start: "2026-03-02",
+      due: "2026-03-13",
+      title: `Overlap ${String(i)}`,
+    }));
+    const keys = await seedDatedTasks(tracker.root, specs);
+
+    await page.goto(`${tracker.baseURL}/timeline?zoom=week&grouping=none`);
+
+    // Responsive and complete: the total is the real count and the
+    // first bar renders before any geometry is read.
+    await expect(page.getByTestId("timeline-total")).toHaveText(`${String(N)} tasks`);
+    await expect(page.getByTestId(`timeline-bar-${keys[0]}`)).toBeVisible();
+
+    // Each task gets its OWN row — bars are not stacked in one row where
+    // only the topmost is clickable. Read the vertical offset of every
+    // bar; there must be 60 distinct `top` values, one per task.
+    const tops = await page
+      .locator('[data-testid^="timeline-bar-"]')
+      .evaluateAll(els =>
+        els.map(e => Math.round(parseFloat((e as HTMLElement).style.top))));
+    expect(tops).toHaveLength(N);
+    expect(new Set(tops).size).toBe(N);
+
+    // The rows are stacked vertically at a constant pitch — consecutive
+    // rows differ by the same delta, which is what "its own row" means
+    // geometrically and what a single-row overlap would violate (every
+    // top equal).
+    const sorted = [...tops].sort((a, b) => a - b);
+    const deltas = sorted.slice(1).map((t, i) => t - (sorted[i] ?? 0));
+    expect(Math.min(...deltas)).toBeGreaterThan(0);
+    expect(new Set(deltas).size).toBe(1);
+
+    // The vertical extent scrolls: the content is taller than the
+    // scroll viewport, and the date header is sticky so it stays put
+    // as the rows scroll under it.
+    const scroll = page.getByTestId("timeline-scroll");
+    const metrics = await scroll.evaluate(el => ({
+      scrollH: el.scrollHeight,
+      clientH: el.clientHeight,
+    }));
+    expect(metrics.scrollH).toBeGreaterThan(metrics.clientH);
+
+    const header = page.getByTestId("timeline-header");
+    const headerTopBefore = await header.evaluate(el => el.getBoundingClientRect().top);
+    await scroll.evaluate(el => { el.scrollTop = 400; });
+    // A last row that only exists if all 60 laid out: scroll reaches it.
+    const headerTopAfter = await header.evaluate(el => el.getBoundingClientRect().top);
+    // The header did not scroll away with the rows (sticky): its
+    // viewport-relative top is unchanged after a 400px scroll.
+    expect(headerTopAfter).toBeCloseTo(headerTopBefore, 0);
+
+    expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
   });
 });

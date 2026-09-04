@@ -1169,3 +1169,72 @@ test("REL-18: attachments are stored raw — byte-identical, undimmed, across fo
     expect({ name, w: m.width, h: m.height }).toEqual({ name, w: 800, h: 600 });
   }
 });
+
+// @verifies REL-47
+test("REL-47: a connection killed mid-upload leaves no partial file, names the file, says it did not complete, and offers retry", async ({
+  page,
+  tracker,
+}) => {
+  const pageErrors: string[] = [];
+  // A failure-path panel that threw on the error state would read as a
+  // missing queue row, not a crash — separate them.
+  page.on("pageerror", e => pageErrors.push(e.message));
+
+  const [key] = await tracker.seed([{ title: "Upload target" }]);
+  const k = key ?? "";
+  await openTask(page, tracker, k);
+
+  // Nothing attached yet, and nothing on disk. The positive control for
+  // the absence assertions below is the successful retry at the end: it
+  // proves this directory does take uploads, so an empty listing after
+  // the abort is the abort's doing, not a broken fixture.
+  expect(await stored(tracker.root, k)).toEqual([]);
+
+  // "Kill the connection mid-upload of a 30 MB file." A route that
+  // aborts the POST is the browser-side of a dropped connection: `fetch`
+  // rejects with the bare TypeError REL-47's framing turns into an
+  // incomplete-upload failure. 30 MB is a real file so the size is not
+  // the thing under test — the abort is.
+  let aborted = false;
+  await page.route(`**/api/tasks/${k}/attachments`, async route => {
+    if (!aborted && route.request().method() === "POST") {
+      aborted = true;
+      await route.abort("connectionreset");
+      return;
+    }
+    await route.continue();
+  });
+
+  const big = await sized("dropped.bin", 30 * 1024 * 1024);
+  await drop(page, [big]);
+
+  const row = queueRow(page, "dropped.bin");
+  await expect(row).toHaveAttribute("data-state", "failed");
+
+  // No partial tile: the failed upload is a queue row, never a grid tile.
+  await expect(tile(page, "dropped.bin")).toHaveCount(0);
+
+  // The message names the file and says the upload did not complete.
+  const err = row.getByTestId("attachment-queue-error");
+  await expect(err).toContainText("dropped.bin");
+  await expect(err).toContainText(/did not (finish|complete)/i);
+
+  // Retry is offered.
+  const retry = row.getByTestId("attachment-retry-upload");
+  await expect(retry).toBeVisible();
+
+  // No stray file under attachments/ — the far end, off disk. The upload
+  // route is atomic (parse to an OS temp dir, rename on success), so a
+  // dropped connection attaches nothing.
+  expect(await stored(tracker.root, k)).toEqual([]);
+
+  // Positive control: let the retry through. It must land exactly once,
+  // proving the directory takes uploads and that "retrying does not
+  // create a duplicate".
+  await retry.click();
+  await expect(row).toHaveAttribute("data-state", "done");
+  await expect(tile(page, "dropped.bin")).toBeVisible();
+  expect(await stored(tracker.root, k)).toEqual(["dropped.bin"]);
+
+  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+});

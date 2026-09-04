@@ -7081,3 +7081,167 @@ remove `PartialRemapError` from `isKnownDomainError`, and drop the
 `noun` parameter (the message reverts to hardcoded "project"). Doing so
 returns a partial label remap to a bare abort with no honest split and
 no retry, failing MSL-33.
+
+### A115 · A dropped upload connection is framed as an incomplete, retryable failure — not a bare `Failed to fetch`
+
+**Ticket:** M2.5b (REL-47) · **Date:** 2026-09-04 · **Commit:** <pending>
+
+**The situation.** REL-47 kills the connection mid-upload of a large
+file and requires: no partial file, no stray file under
+`attachments/`, and a message that "names the file, says the upload did
+not complete, and offers retry." The server half was already atomic —
+`multipart.ts` writes to an OS temp dir and the route renames into
+`attachments/` only on success, removing the temp dir in a `finally`
+(proven by ERR-24's server test). But the **client** half was missing:
+a dropped connection makes `postFile`'s `fetch` reject with a bare
+`TypeError` ("Failed to fetch"), which reached the queue row verbatim —
+no data-state, no recovery — and the failed-upload row had **no retry
+control** at all (retry existed only for the 409 conflict case).
+
+**What had to be decided.** How should a network-dropped upload be
+reported to the panel, and does it get a retry or a reload?
+
+**Options considered.**
+- *Leave the raw `TypeError`.* Zero code, but fails REL-47 on three of
+  four bullets (no file name, no "did not complete", no retry).
+- *Treat it as the P4 "unknown" write case (reload, not retry).* Honest
+  for a write whose outcome is genuinely unknown — but the upload route
+  is atomic, so a dropped connection means the file was demonstrably
+  **not** attached. Telling the user to reload-and-check would be
+  needlessly alarming, and retry cannot duplicate a write that never
+  landed (ERR-24 proves the retry lands exactly once).
+- *Frame it as `not_saved` + `retry` and add a retry control.* Matches
+  REL-47's bullets exactly and is safe given the atomic route.
+
+**Decided.** `postFile` catches the network rejection and throws an
+`ApiError` with `envelope: { code: "unknown", message: "the upload did
+not complete", data_state: "not_saved", recovery: { kind: "retry" } }`;
+the panel's failed-upload row keeps the `File`, phrases the message to
+name the file and say it did not complete, and renders a `Retry` button
+(absent only for the oversize refusal, which is caught before any bytes
+are sent and has no File to resend).
+
+**Why.** The atomic upload route makes the outcome knowable as "not
+attached", so P4's rare "unknown" exception does not apply — the
+stronger, truthful claim is that the file was not attached and retry is
+safe. `code: "unknown"` (not a new code) because `ErrorCode` has no
+`upload_incomplete` member and the network-failure path in `apiRequest`
+already uses `"unknown"` for the same class of failure.
+
+**To revert.** In `apps/web/src/client/api/client.ts`, drop the
+`try/catch` around `postFile`'s `fetch` (return to letting the
+`TypeError` propagate). In
+`apps/web/src/client/attachments/AttachmentsPanel.tsx`, drop the
+`incomplete`/`message` framing in `attempt`'s catch and the
+`attachment-retry-upload` button in the failed-row branch. Doing so
+returns a dropped upload to a bare "Failed to fetch" with no retry,
+failing REL-47's third bullet.
+
+### A116 · The migrate endpoint fails fast when the migration lock is held, instead of blocking or no-op-lying
+
+**Ticket:** M4.3 (SET-38) · **Date:** 2026-09-04 · **Commit:** <pending>
+
+**The situation.** SET-38: `loctt migrate` is running in a terminal
+(holding the migration lock); the UI's Migrate must "fail fast rather
+than blocking the UI for the 5-minute stale timeout", say a migration
+is already running elsewhere, write nothing, and — once the CLI
+finishes — show the schema as current on reload. Measured against the
+built server: `POST /api/migrate` with the lock held returned **200
+`{from:1,to:1,steps:[]}` in 8 ms** — because at `CURRENT_SCHEMA_VERSION
+=== 1` `migrateToCurrent` takes its already-current no-op fast path
+*before* it ever contends for the lock. So the UI's attempt neither
+blocked nor detected the concurrent migration; it reported a success it
+never performed.
+
+**What had to be decided.** Should the web migrate route detect a held
+lock and refuse, or leave `migrateToCurrent` to handle it?
+
+**Options considered.**
+- *Leave it.* At v1 the no-op path means the lock is never consulted;
+  at a future v2 the call would block on the lock for up to the 5-minute
+  stale window. Both contradict SET-38's "fail fast" and "say a
+  migration is running".
+- *Check `isMigrationLocked` in `handleMigrate` and 409 if held.*
+  `isMigrationLocked` exists in core for exactly this ("writers that
+  want to fail fast rather than block when a migration is in progress").
+  Observable at every version, including v1.
+
+**Decided.** `handleMigrate` calls `isMigrationLocked(locttDir)` up
+front and, if held, returns 409 with `code: "conflict"`, `data_state:
+"not_saved"`, `recovery: { kind: "reload" }` and a message naming the
+concurrent process and the wait-then-reload action — before calling
+`migrateToCurrent` at all.
+
+**Why.** A held lock means another process is mid-migration (or
+crashed); the honest answer is "someone else is migrating, I wrote
+nothing, wait and reload", regardless of what version this build reads
+on disk. This is the reachable, version-independent half of SET-38.
+
+**Honest limit — the UI Migrate button is unreachable at v1.** SET-38
+is a UI case, but the Migrate control renders only for schema status
+`outdated` (SET-30), and `outdated` is unreachable while
+`CURRENT_SCHEMA_VERSION === 1` (a `.schema-version` below 1 is rejected
+as `unknown`, not `outdated` — see TEMP-RUN-WORKFLOW's cannot-satisfy
+notes and NEW-20/NEW-41). So the fail-fast is verified where it is
+reachable — the **API**, in
+`apps/web/src/server/server.migrate.test.ts` (`@verifies SET-38`),
+which holds the real lock via `withMigrationLock` and asserts the 409,
+the message, `not_saved`, an unchanged version file, and a positive
+control that a post-release migrate succeeds. The end-to-end UI banner
+path (click Migrate while the CLI runs) needs a v2 schema to make the
+button appear, exactly like SET-31/37.
+
+**To revert.** Remove the `isMigrationLocked` guard at the top of
+`handleMigrate` in `apps/web/src/server/server.ts` (and its import), and
+delete the SET-38 test in `server.migrate.test.ts`. Doing so returns a
+migrate-with-lock-held to a no-op 200 at v1 (and a lock-blocked call at
+a future v2), failing SET-38.
+
+### A117 · ERR-44's "Esc for toasts" is read as illustrative; the toast's keyboard path is its tab-stop dismiss control
+
+**Ticket:** M4 (ERR-44) · **Date:** 2026-09-04 · **Commit:** <pending>
+
+**The situation.** ERR-44 requires error surfaces to be
+keyboard-reachable and announced, and parenthesises the keyboard
+dismissal path as "(`Esc` for toasts and dialogs)". The toast component
+(`ui/Toast.tsx`) has a focusable `toast-dismiss` button and a
+`toast-action` button in the natural tab order, `role="status"` +
+`aria-live="polite"` — but **no `Esc` handler**. Dialogs (`ui/Modal.tsx`)
+do close on `Esc`.
+
+**What had to be decided.** Does ERR-44 require adding `Esc`-to-dismiss
+to toasts, or is the existing tab-stop dismissal a compliant keyboard
+path?
+
+**Options considered.**
+- *Add a global `Esc`-dismisses-toast handler.* Matches ERR-44's
+  parenthetical literally, but a global `Esc` for a non-modal toast is
+  in real tension with A11Y-2's "`Esc` closes the topmost dismissible
+  **layer**, one at a time" — a toast shown while a modal is open must
+  not let `Esc` eat the toast before the modal. Building it correctly
+  (yield to modals/dropdowns) is non-trivial and risks contradicting the
+  Esc-layering contract.
+- *Treat the tab-stop dismiss button as the keyboard path.* The
+  authoritative toast contract in `flow-accessibility.md` (the A11Y-24
+  toast case) states the toast is "reachable by keyboard without hunting
+  — a documented key **or a tab stop that appears in the natural
+  order**." So a tab stop is contract-compliant, and ERR-44's
+  parenthetical is the compressed illustration in an error-focused case.
+
+**Decided.** ERR-44 is verified against the tab-stop reading for toasts
+(focus `toast-dismiss`, activate with the keyboard) plus `Esc` for the
+dialog. No `Esc`-for-toasts handler is added.
+
+**Why.** The detailed toast contract (flow-accessibility.md) is the
+authority on toast keyboard behaviour and explicitly accepts a tab stop;
+adding a global toast-`Esc` would risk contradicting A11Y-2's
+Esc-layering. Where two docs appear to disagree, the specific one
+governs its surface, and no behaviour is built that a case does not
+unambiguously require.
+
+**To revert.** If Ken rules that toasts must dismiss on `Esc`: add a
+keydown handler to the `ToastProvider`/`ToastViewport` in
+`ui/Toast.tsx` that dismisses the most recent toast on `Esc` **only
+when no modal/dropdown layer is open** (respecting A11Y-2), and change
+the ERR-44 test in `flow-task-create.spec.ts` to press `Escape` for the
+toast rather than activating `toast-dismiss`.

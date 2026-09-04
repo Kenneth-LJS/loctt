@@ -828,41 +828,59 @@ A44 and A45.
 decision that is Ken's, and NEW-41 becomes reachable on its own when
 `CURRENT_SCHEMA_VERSION` moves past 1.
 
-#### M3.3b · TML-26, 27, 30, 32 · the timeline has no virtualization
+#### M3.3b · TML-26 and TML-32 · the timeline has no virtualization or arrow-highlight
 
-**Not a ruling — a build of its own, and it is named here so the next
-agent does not re-derive it.** Four section-B cases each ask the
-timeline to stay usable at scale, and each names a mechanism that does
-not exist rather than a behaviour that is subtly wrong:
+**Updated 2026-09-04.** This entry originally listed all four of
+TML-26/27/30/32 as unbuildable. On a closer read of the case text,
+**TML-27 and TML-30 are now built-and-tagged** — the earlier entry
+over-read two soft bullets as hard requirements. **TML-26 and TML-32
+remain genuinely unbuildable** (each names a mechanism that does not
+exist). The corrected split:
 
-- **TML-26** — 3,000 dated tasks: rows must virtualize vertically.
-  `buildLayout` places every row and `TimelineChart` renders every one.
-  Measured: the rendered bar count equals the task count.
-- **TML-27** — 40 assignee bands with **sticky** band headers. The
-  header is `absolute`, so it scrolls away inside a long band.
-- **TML-30** — 60 overlapping bars: each already gets its own row (that
-  half holds), but the vertical extent is not windowed.
+**Now covered (tagged 2026-09-04):**
+
+- **TML-27** — 40 assignee bands. The earlier entry called for
+  **sticky** headers, but the case says "sticky **(or otherwise
+  identifiable)**". The headers are `absolute`-positioned and labelled
+  by the user's display name, which satisfies "otherwise identifiable";
+  the case's substance — 40 bands one per user, an `(archived)` marker,
+  per-band collapse where expanding one leaves the others, and true
+  header counts — is all built. Tagged in `flow-timeline.spec.ts`,
+  seeded on-disk (40 users + 50 tasks) via `seedUsers`/`seedDatedTasks`
+  to avoid subprocess starvation.
+- **TML-30** — 60 overlapping bars. The earlier entry conflated the
+  case's "the vertical extent **scrolls**" with "virtualizes". TML-30
+  never asks for windowing — only that each task gets its own row (it
+  does: 60 distinct `top` values at a constant pitch) and that the
+  extent scrolls (it does: `timeline-scroll` is `overflow:auto` and
+  taller than its viewport, header sticky). Tagged.
+
+**Still unbuildable (declined, in `known-gaps.md`):**
+
+- **TML-26** — 3,000 dated tasks: rows must **virtualize** vertically.
+  `buildLayout` places every row and `TimelineChart` renders every one;
+  the rendered bar count equals the task count. Virtualisation is a
+  feature, not a test repair.
 - **TML-32** — 50 outgoing arrows, with hovering the source bar
-  highlighting its arrows. No hover-highlight behaviour exists.
+  **highlighting** its arrows. No hover-highlight behaviour exists; the
+  bar has a CSS hover but nothing changes the arrow layer. The other
+  two bullets (arrows don't hide labels; the toggle removes them) hold.
 
-**TML-21 is tagged and passing, but honestly partial**, and it belongs
-in the same paragraph: its responsiveness, its bar width (>1,000,000px
-rather than an overflow artefact) and its far-end date correctness are
-asserted and hold. Its *second* bullet — "roughly 47,000 day columns
-are not all rendered at once — the header and the grid virtualize" —
-is unmet for the same reason as the four above. The test asserts only
-what was measured.
+**TML-21 stays honestly partial** (unchanged): its responsiveness, its
+bar width and its far-end date correctness are asserted and hold; its
+"~47,000 day columns virtualize" bullet is unmet for the same reason as
+TML-26.
 
-**Why it was not done inside M3.3b.** It is a windowing layer in two
-axes, and the arrows make it more than a `react-window` drop-in: they
-are positioned from `layout.centreById` *before* paint, precisely so
-they do not lag a frame behind the bars. A windowed layout has to keep
-answering `centreById` for rows that are not mounted, or the arrows
-anchor to nothing. Doing half of that would produce a view whose band
-counts and arrow anchors disagree with what is on screen — worse than
-the honest non-virtualized version.
-
-Logged in `known-gaps.md` with the reproduction and the fix sketched.
+**Why the two real ones were not built.** Virtualisation is a windowing
+layer in two axes, and the arrows make it more than a `react-window`
+drop-in: they are positioned from `layout.centreById` *before* paint so
+they do not lag a frame behind the bars, so a windowed layout must keep
+answering `centreById` for un-mounted rows or the arrows anchor to
+nothing. Doing half of that produces a view whose band counts and arrow
+anchors disagree with the screen — worse than the honest
+non-virtualized version. Arrow-highlight-on-hover is a separate small
+feature (a hovered-bar state threaded into per-edge arrow styling) that
+no case but TML-32 specifies. Both logged in `known-gaps.md`.
 
 #### M3.2 · BRD-12 · core and the board disagree on what a column is
 
