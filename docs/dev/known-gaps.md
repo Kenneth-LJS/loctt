@@ -3544,3 +3544,54 @@ strict-mode "resolved to N elements" violation is a locator defect and
 can *never* be load- or timing-dependent — so a file-level pass in
 isolation is not evidence it is fixed. The tell was the error naming
 the second element (the path div), which pointed straight at the cause.
+
+## Eighteen more colorless color utilities beyond warning-fg (design-token audit needed)
+
+**Found 2026-09-04 while fixing `warning-fg`, by writing a guard that
+checks every color utility against the built CSS.** The `warning-fg`
+fix (→ `warn-fg`, 13 sites, committed) was the tip of it.
+
+Tailwind v4 silently drops an unknown utility, so a color class naming
+a token that does not exist renders **colorless** with no error —
+build, lint and typecheck all pass. A scan of every
+`text-/bg-/border-<token>` in the client against the actually-built CSS
+found **18 more** broken utilities the `warning-fg` rename did not
+touch:
+
+```
+bg-accent-fg      border-accent-fg     text-accent-fg
+bg-attention-fg   border-attention-fg  text-attention-fg
+bg-bg-base        border-border-muted  text-fg-default
+bg-canvas-default border-status-danger text-fg-muted
+bg-canvas-subtle                       text-status-danger
+bg-fg-default                          text-status-done
+                                       text-status-warn
+                                       text-text-inverse
+```
+
+These are **not** a blind rename: each names a token that does not
+exist, and the correct target is a per-site judgment. `status-danger`
+is probably `danger-fg`; `status-warn` probably `warn-fg`;
+`status-done` probably `success-fg`; `accent-fg` probably
+`accent-contrast`; `fg-default`/`fg-muted` probably
+`text-primary`/`text-secondary`; `text-inverse` probably
+`accent-contrast`. But "probably" is why this is its own focused pass,
+not folded into a feature batch — a wrong mapping is a new colour bug.
+
+Affected components include GitSyncPanel, LabelsPanel, MilestonesPanel,
+DiagnosticsPanel, BoardView/BoardCard, the comment renderers,
+AttachmentsPanel, and the editor dialogs — so warning/status/accent
+text and borders are invisible across settings, the board, and comments.
+
+**The tool to fix it is written and worth keeping**: a unit test that
+walks the client's TSX, extracts every `(text|bg|border)-<token>`
+utility, and asserts each appears in the built CSS (the authoritative
+check — a token grep gives false positives on compound names like
+`bg-muted-hover`). It failed on exactly these 18 + `warning-fg`. Add it
+green once the 18 are mapped, and it prevents the whole class
+permanently. It was removed from the `warning-fg` commit because it
+cannot be green while the other 18 stand.
+
+**Reproduce:** for each utility U used in `apps/web/src/client/**.tsx`,
+`grep -qF "$U" apps/web/dist/client/assets/*.css` — absence means it
+renders colorless.

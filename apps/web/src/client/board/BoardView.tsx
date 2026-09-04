@@ -515,7 +515,7 @@ function ColumnDriftBanner({ columns }: { readonly columns: readonly BoardColumn
     <div
       role="alert"
       data-testid="board-column-drift"
-      className="rounded-md border border-warning-fg/30 bg-warning-fg/5 px-3 py-2 text-[12px] text-warning-fg"
+      className="rounded-md border border-warn-fg/30 bg-warn-fg/5 px-3 py-2 text-[12px] text-warn-fg"
     >
       {drifted.map(c => (
         <div key={c.id}>
@@ -693,7 +693,7 @@ function Column({
             identifiable without colour — "a count like 6 / 4 **and** a
             warning glyph with an accessible name", not by a red header
             alone. The count alone does not carry it: over-cap and
-            at-cap differ only in `text-danger-fg` vs `text-warning-fg`,
+            at-cap differ only in `text-danger-fg` vs `text-warn-fg`,
             which is the colour-only signal the case forbids, and
             `data-wip-state` is invisible to a greyscale screenshot and
             to a screen reader alike.
@@ -723,7 +723,7 @@ function Column({
             over
               ? "bg-danger-fg/10 font-semibold text-danger-fg"
               : atCap
-                ? "bg-warning-fg/10 font-semibold text-warning-fg"
+                ? "bg-warn-fg/10 font-semibold text-warn-fg"
                 : "text-text-tertiary",
           ].join(" ")}
           data-wip-state={over ? "over" : atCap ? "at-cap" : "under"}

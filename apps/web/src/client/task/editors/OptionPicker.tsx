@@ -165,7 +165,7 @@ export function OptionPicker({
           // Flagged, and the stored value shown, because the user has
           // to know *which* value to fix. "Unrecognized" alone would
           // send them to the file to find out what it says.
-          <span data-testid={`meta-unrecognized-${fieldSlug(label)}`} className="text-warning-fg">
+          <span data-testid={`meta-unrecognized-${fieldSlug(label)}`} className="text-warn-fg">
             {value} — not in the current config
           </span>
         ) : (

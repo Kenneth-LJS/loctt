@@ -82,7 +82,7 @@ export function customFieldRows({
           <span data-testid={`meta-orphan-${key}`} className="break-words text-[13px] text-text-primary">
             {displayScalar(value)}
           </span>
-          <span className="mt-0.5 block text-[11px] text-warning-fg">
+          <span className="mt-0.5 block text-[11px] text-warn-fg">
             No longer configured — kept in the file, not editable here.
           </span>
         </div>
@@ -225,7 +225,7 @@ function MultiEnum({
               data-testid={`meta-multi-${def.key}`}
               className={
                 "inline-flex items-center gap-1 rounded bg-bg-muted px-1.5 py-0.5 text-[11px] " +
-                (opt === undefined ? "text-warning-fg" : "text-text-secondary")
+                (opt === undefined ? "text-warn-fg" : "text-text-secondary")
               }
             >
               {opt?.label ?? `${key} — not in the current config`}

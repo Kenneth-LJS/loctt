@@ -173,7 +173,7 @@ export function LinkPicker({
                 </span>
                 <StatusBadge def={statusOf(hit.status)} raw={hit.status} />
                 {hit.archived && (
-                  <span className="shrink-0 rounded bg-warning-fg/15 px-1 py-0.5 text-[11px] text-warning-fg">
+                  <span className="shrink-0 rounded bg-warn-fg/15 px-1 py-0.5 text-[11px] text-warn-fg">
                     Archived
                   </span>
                 )}

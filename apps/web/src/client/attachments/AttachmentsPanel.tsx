@@ -360,7 +360,7 @@ export function AttachmentsPanel({
                     <span
                       role="alert"
                       data-testid="attachment-conflict"
-                      className="text-warning-fg"
+                      className="text-warn-fg"
                     >
                       A file called {item.name} is already attached to this task.
                     </span>

@@ -176,7 +176,7 @@ function Value({
     <span
       data-testid={testId}
       {...(value.drifted ? { "data-drifted": "true" } : {})}
-      className={value.drifted ? "text-warning-fg" : undefined}
+      className={value.drifted ? "text-warn-fg" : undefined}
     >
       {value.text}
       {value.drifted && (

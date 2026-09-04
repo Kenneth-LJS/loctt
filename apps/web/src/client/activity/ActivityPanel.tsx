@@ -282,7 +282,7 @@ function IncompleteNotice({ count }: { readonly count: number }): React.JSX.Elem
     <p
       role="status"
       data-testid="activity-incomplete"
-      className="text-[13px] text-warning-fg"
+      className="text-[13px] text-warn-fg"
     >
       This list is incomplete: {String(count)}
       {" "}
