@@ -3908,3 +3908,35 @@ its own ticket + Ken's call on refuse-vs-preserve.
 **To reproduce.** In a tracker, append a view with `query: "status =="`
 to `queries.yaml`, then create/rename/archive any *other* view through
 the UI or `createView`. Re-read the file: the broken entry is gone.
+
+## A11Y remainder assessment (2026-09-04): 2 buildable, 8 feature-gaps
+
+Of the 10 uncovered A11Y cases, only two are cleanly buildable now:
+
+- **A11Y-38** (browser zoom 200% keeps flows usable) — testable via
+  Playwright viewport scaling + a horizontal-scroll / reachability
+  assertion. Fresh, buildable.
+- **A11Y-49** (crashed-migration screen readable by screen reader) —
+  `InterruptedMigration.tsx` exists; assert its heading is an alert, the
+  from/to versions and backup path are selectable text, and the steps
+  are a list. Fresh, buildable.
+
+The other eight are recorded feature-gaps, not test-repairs, and tagging
+them would be a tag that cannot fail:
+- **A11Y-2** — `/` focuses a search box that does not exist (no search
+  box is built; the binding is registered but disabled).
+- **A11Y-9, A11Y-10, A11Y-12** — full keyboard operation blocked by
+  `ui/Menu.tsx` having no arrow-key/type-ahead navigation (A94) and
+  table rows being click-only.
+- **A11Y-17** — the obvious test cannot fail (focus-to-body then Tab
+  lands on the first focusable anyway); needs a positive-control design
+  that does not yet exist.
+- **A11Y-39, A11Y-40** — text-only zoom (absolute type scale, A95) and
+  full contrast audit (needs the axe-contrast harness across every
+  themed surface; partly built in the token work).
+- **A11Y-51** — bullet 2 (bulk failures reachable by keyboard) needs
+  `describeBulkResult` to return focusable failure items, a shape change
+  to every call site.
+
+So the A11Y remainder is a 2-case batch, not 10 — the rest wait on the
+features named above.
