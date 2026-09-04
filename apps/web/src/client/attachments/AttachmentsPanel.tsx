@@ -125,9 +125,16 @@ export function AttachmentsPanel({
         // the upload did not complete rather than surfacing a bare
         // "Failed to fetch". A server-side rejection (a 400 with its own
         // envelope) keeps its message and its file for retry too.
-        const incomplete =
-          err instanceof ApiError && err.envelope?.recovery?.kind === "retry";
-        const message = incomplete
+        // REL-47 vs REL-36: the generic "did not finish" phrasing is
+        // ONLY for a network drop, which postFile throws as an ApiError
+        // with status 0 and no server body. A server 400 (a dotfile
+        // rejection, a bad name) also carries recovery:retry in its
+        // envelope, so keying off recovery alone swallowed its specific
+        // message — the dotfile reason became "did not finish uploading".
+        // Key off status 0 instead: the drop has no server message to
+        // show, a 400 does and must keep it.
+        const droppedMidUpload = err instanceof ApiError && err.status === 0;
+        const message = droppedMidUpload
           ? `${file.name} did not finish uploading — it was not attached. You can retry.`
           : err instanceof Error ? err.message : String(err);
         patch(id, { state: "failed", message, file });
