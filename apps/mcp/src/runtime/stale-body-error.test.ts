@@ -1,4 +1,4 @@
-import { StaleBodyWriteError, TaskNotFoundError } from "@loctt/core";
+import { PartialRemapError, StaleBodyWriteError, TaskNotFoundError } from "@loctt/core";
 import { describe, expect, it } from "vitest";
 
 import { isKnownDomainError } from "./errors.js";
@@ -32,5 +32,31 @@ describe("StaleBodyWriteError classification (K10)", () => {
     expect(isKnownDomainError(new TypeError("undefined is not a function"))).toBe(false);
     // And a control on the positive: an unrelated known error is known.
     expect(isKnownDomainError(new TaskNotFoundError("T-9"))).toBe(true);
+  });
+});
+
+/**
+ * MSL-33 (and PRU-34). A partly-landed remap on a label or project
+ * delete must reach the agent as an errorResult carrying the honest
+ * split, not be rethrown as an opaque server fault. `PartialRemapError`
+ * extends `LocttError` directly rather than `ProjectError`/`LabelError`,
+ * so it was NOT in the classifier's list until MSL-33 — an agent's
+ * `delete_label` / `delete_project` with a failing task write saw a
+ * server error instead of the "N moved, M failed by key, NOT deleted,
+ * retry" message the error was built to carry.
+ *
+ * Same rationale as the K10 block above: over stdio the SDK renders a
+ * rethrow as `isError: true` too, so the classification is only
+ * observable at this layer.
+ */
+describe("PartialRemapError classification (MSL-33)", () => {
+  // @verifies MSL-33
+  it("is a known domain error, so the agent gets the split and the retry path", () => {
+    const err = new PartialRemapError(3, ["T-2"], "label");
+    expect(isKnownDomainError(err)).toBe(true);
+    // The message is the whole report: what moved, what did not, and
+    // that the label survives for a retry.
+    expect(err.message).toContain("T-2");
+    expect(err.message).toMatch(/label has NOT been deleted/i);
   });
 });
