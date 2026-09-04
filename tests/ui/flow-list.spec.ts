@@ -5413,13 +5413,17 @@ test.describe("SHL — the sidebar groups (M1.1)", () => {
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
 
     const aside = page.locator("aside");
-    // Rendered by label, and archived entries are excluded.
-    await expect(aside.getByText("v1")).toBeVisible();
-    await expect(aside.getByText("old")).toHaveCount(0);
-    await expect(aside.getByText("bug")).toBeVisible();
+    // Rendered by label, and archived entries are excluded. Match the
+    // sidebar LINK, not any text: the workspace-path footer
+    // (`text-text-tertiary`) also renders `aside`'s path, which
+    // contains "v1" whenever the random temp dir happens to — a
+    // strict-mode collision that flaked this test intermittently.
+    await expect(aside.getByRole("link", { name: /v1/ })).toBeVisible();
+    await expect(aside.getByRole("link", { name: /\bold\b/ })).toHaveCount(0);
+    await expect(aside.getByRole("link", { name: /bug/ })).toBeVisible();
 
     // Clicking filters the view and shows it in the URL.
-    await aside.getByText("v1").click();
+    await aside.getByRole("link", { name: /v1/ }).click();
     await expect(page).toHaveURL(/milestone=/);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
   });

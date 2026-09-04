@@ -3251,3 +3251,296 @@ write leaves the state unchanged, and judging that belongs to the
 caller — verified by mutation here: disabling `setField.mutate` still
 reddens SPR-6, so the wait cannot swallow a drop that genuinely failed
 to land.
+
+## The top-bar project switcher does not exist (PRU-3, 4, 21, 22)
+
+**Found 2026-09-03 while covering the PRU non-avatar cases.** The
+flow doc's opening line says it "covers the project switcher in the
+top bar", and fourteen PRU cases refer to it. `Header.tsx` renders a
+sidebar toggle, brand, a disabled search stub, the theme toggle, the
+New-task button and the user menu — and nothing else.
+
+Project scoping today is the sidebar's `ProjectsGroup`
+(`Sidebar.tsx:377-439`, single-select, writes `?project=<id>`) and the
+list `FilterBar`'s multi-select Project dropdown.
+
+`TEMP-WEB-TICKETS.md` M4.1 already records half of this: PRU-3 was
+moved there by Ken on 2026-08-25 because it "needs an 'All projects'
+mode and a project switcher, and no ticket built either". The note
+under-states the scope — PRU-1 and PRU-2 (both **blockers**, in M1.2)
+are the switcher itself, so the four cases below are blocked on a
+feature two blockers own.
+
+**What each of the four still needs:**
+
+| Case | Blocked on |
+|---|---|
+| PRU-3 | An explicit "All projects" mode, plus auto show/hide of the project column keyed to it. `resolveColumns` (`list/columns.ts:42`) takes no scope argument at all. |
+| PRU-4 | The create modal reading the active scope. `CreateTaskModal` never reads `?project=` (no `useSearch` anywhere in `create/`); it defaults to the server's `effective_default`. Its key-preview bullet also has no implementation. |
+| PRU-21 | A searchable switcher and a pinned "All projects". The sidebar renders every project unbounded (`Sidebar.tsx:405-438`) with no "+N more". `FilterDropdown` does have type-to-filter above 12 options but filters on label only, not key. |
+| PRU-22 | The switcher's truncation + hover. The sidebar item *does* truncate with `title={p.name}` (`Sidebar.tsx:419,429`), but that is not the surface the case names. The list's project column renders the **prefix**, not the label (`cells.tsx:136`), so a 120-character label never reaches that cell — the column is fine, for a different reason than the case gives. |
+
+**Deliberately not tagged.** Tagging any of the four against the
+sidebar would assert a weaker claim than the case makes, which
+`build-loop.md` names as the thing to escalate rather than work
+around.
+
+## PRU-25 cannot be honestly tagged — its premise is unreachable and its surfaces do not exist
+
+**Found 2026-09-03; re-measured and declined 2026-09-04. A
+case/implementation conflict — escalated, not adjudicated.**
+
+PRU-25's scenario: "Dave was deleted with `loctt user delete`; five
+tasks still carry his ULID as `reporter`", and those tasks must render
+a degraded "truncated ULID + (deleted user)" reporter cell, the
+reporter filter must offer only live users, and setting a new reporter
+must clear the dangling value.
+
+Three things block an honest tag, in order of how decisive they are:
+
+1. **The dangling state is unreachable through `loctt user delete`.**
+   `deleteUser` (`users/lifecycle.ts:178-262`) refuses to hard-delete a
+   referenced user unless `--remap-to` or `--unassign` is given, and
+   all three surfaces enforce that (`server.ts:2306-2325` requires
+   `?confirm=true` and passes remap/unassign through). After a
+   successful delete, **no task carries the deleted ULID** — it was
+   remapped or unassigned. So PRU-25's opening ("deleted with `loctt
+   user delete` … still carry his ULID") describes a state the
+   supported delete path is specifically designed *not* to produce. It
+   arises only from hand-editing a file or a bug. This is the same
+   invariant PRU-42's final bullet leans on, and it is why PRU-42 is
+   declined too.
+
+2. **There is no reporter column.** `ALL_COLUMNS` (`list/columns.ts`)
+   is key/project/title/status/priority/task_type/assignee/labels/
+   due_date/updated_at, and `ListView` renders no `reporter` case. So
+   "the reporter cell … the other four columns are unaffected" has no
+   cell in the list to assert against — reporter lives only in the task
+   detail `MetaPanel`.
+
+3. **There is no reporter filter facet.** `FACET_KEYS`
+   (`FilterBar.tsx`) has no `reporter`, so bullet 3's "filtering by
+   reporter offers only existing users" has nothing to assert against.
+
+The P-4 angle the earlier version of this note led with is **not** the
+blocker: the app already shows a truncated ULID (`id.slice(-6)`) as a
+disambiguation hint for live users whose names collide — `MetaPanel`
+and `comments/users.ts`, the mechanism PRU-23 (covered) turns on. A
+degraded reporter cell showing the same six-char tail plus "(deleted
+user)" would be the same kind of carve-out P-4 already tolerates, not a
+new violation. The dangling `unknown user` rendering built at
+`cells.tsx` for assignee is a considered choice, but it is not what
+makes PRU-25 untaggable.
+
+Bullet 4 (setting a new reporter clears the dangling value) does work
+in isolation, via `MetaPanel.tsx`.
+
+**Needs Ken:** PRU-25 as worded asserts against a delete path that
+cannot produce its precondition and two list surfaces that do not
+exist. Either the case is rewritten (degraded-reference rendering in
+the task detail, produced by a hand-edited or migrated file rather than
+by `user delete`), or a reporter column + reporter facet are added and
+the delete semantics reconsidered — a scope call, not an agent's.
+
+## PRU-42's user-delete dialog was never built
+
+**Found 2026-09-03.** `UsersPanel.tsx`'s row actions (`:283-309`) offer
+Archive/Unarchive only. There is no Delete control, no reference count
+split by role, no permanent-vs-reversible copy and no deliberate
+confirmation.
+
+The layers beneath it are complete:
+
+- `deleteUser` (`users/lifecycle.ts:174-262`) counts assignee and
+  reporter references separately, refuses when references exist
+  without a remap or unassign, journals the remap, and returns
+  `{remappedAssigneeCount, remappedReporterCount}`.
+- `DELETE /api/users/:ref` (`server.ts:2289-2325`) requires
+  `?confirm=true`.
+- `useDeleteUser` (`api/hooks/useUserMutations.ts:53-60`) exists but is
+  **dead code** — nothing imports it — and hardcodes `?confirm=true`
+  while passing neither `remap_to` nor `unassign`, so it could not
+  drive the dialog as specified anyway.
+
+`UsersPanel.tsx`'s docblock (`:17-20`) claims PRU-42 coverage. That
+claim is stale and was not removed here, only recorded.
+
+**Declined 2026-09-04, and the dialog deliberately not built.** The
+first three bullets (reference count split by role, permanent-vs-archive
+copy, deliberate confirmation) are buildable. The **fourth is not**:
+"the 34 affected tasks render the degraded '(deleted user)' form from
+PRU-25 rather than breaking." As above, `deleteUser` requires remap or
+unassign for a referenced user, so after a delete the 34 tasks show the
+remap target or a cleared assignee — **never** the "(deleted user)"
+form. The bullet describes a state the delete path cannot reach.
+
+The coverage gate is per-case and binary; a tag on PRU-42 would assert
+a weaker claim than the prose (it would quietly drop the fourth bullet),
+which the build loop forbids. Building the dialog without being able to
+tag the case moves the gate nowhere and adds a feature outside these
+eight cases' scope, so it was left unbuilt pending Ken's call on the
+same delete-semantics question PRU-25 raises. `useDeleteUser` remains
+dead code.
+
+## PRU-24 and PRU-41 — built 2026-09-04
+
+**Found 2026-09-03; both closed 2026-09-04.** Kept as a record of the
+one PRU-41 claim below that turned out to be about a *different* case.
+
+**PRU-24** (current user archived from the CLI mid-session): now built.
+`Header.tsx`'s `UserMenu` computes `currentArchived` from
+`currentUser.archived` and renders an "(archived)" marker on the
+current-user chip, a warning ring on the header avatar, and a
+`role="alert"` prompt to switch to an active user; switching clears it
+via the existing `useSwitchUser` invalidation without a reload. The
+reachable setup (core refuses to archive the *active* user) is: switch
+away, archive, switch back — after which `state.yaml`'s current user
+points at an archived profile and `getCurrentUser` returns it
+unchanged. Covered by `tests/ui/flow-projects-users-switcher.spec.ts`.
+
+**PRU-41** (assigning an archived user through a stale picker): now
+built. The remaining gap was only the message's second next-action.
+The guard message now reads `…; unarchive it first, or choose a
+different <field>` (`config/archived-guard.ts`), matching the
+remap-target messages the other four managers already emit, so it
+offers *both* actions PRU-41 requires. `recovery` stays `{kind:
+"none"}` — retrying the same archived value fails identically, so no
+retry control is offered (ERR-15); the second action lives in the
+message, not a control.
+
+The earlier "the three surfaces show different text (bulk leaks the
+ULID)" note was **misattributed to PRU-41**. Core resolves the
+assignee *name* via `displayNameFor(aux.users, …)`, and an *archived*
+user is still in `aux.users` — so all three surfaces surface core's
+identically-constructed, name-bearing message. The ULID would only
+appear for a *deleted* user (absent from `aux.users`), which is
+PRU-25's scenario, not PRU-41's. Verified against the built app in the
+PRU-41 spec (`meta-field-error-message` asserts the name, the two
+actions, and no 26-char ULID).
+
+## `mentionCode.test.ts` fails the web suite intermittently
+
+**Found 2026-09-03. Pre-existing at 48fdc5f — not introduced by the
+PRU work.**
+
+`npm run test` intermittently exits non-zero with every test passing:
+
+```
+Test Files  120 passed (120)
+     Tests  1091 passed (1091)
+    Errors  1 error
+```
+
+The error is an uncaught `ReferenceError: document is not defined`
+thrown from `prosemirror-view`'s `DOMObserver.flush` on a `setTimeout`
+that outlives the jsdom environment teardown, attributed to
+`apps/web/src/client/editor/mentionCode.test.ts`.
+
+**Reproduced at clean HEAD** in a separate worktree (so the tree held
+none of this session's changes): three consecutive `vitest run` in
+`apps/web` gave exit 0, **exit 1**, exit 0 — the failing run carrying
+the identical stack. The file passes on its own every time; it only
+appears under the full parallel suite, which points at teardown
+timing rather than the test.
+
+**Likely fix:** have the editor test destroy its `EditorView` in an
+`afterEach` so the observer's pending timeout is cancelled before the
+environment goes away. Not attempted here.
+
+## A PRU-34 fix silently regressed four sibling deletes (found and fixed 2026-09-04)
+
+**Introduced by the PRU build agent, which stalled before I could
+review it, and caught only by tracing every caller of the function it
+changed.**
+
+`replayTaskRemap` (`state/journal.ts`) was rewritten for PRU-34 from
+throw-on-first-failure to collect-every-outcome, returning a
+`TaskRemapResult` so `deleteProject` could report a partial remap. The
+project delete inspects `result.failed` and raises `PartialRemapError`.
+
+But `replayTaskRemap` is called from **five** entity managers —
+sprints, labels, users, milestones, projects — and their recovery
+handlers. The other four call it and **discard the result**, then
+delete their config and clear the journal unconditionally. The old
+version threw on a failed task write, aborting before the config
+deletion; the new version swallowed it. So a sprint/label/user/
+milestone hard-delete where one task could not be rewritten would
+**remove the config entry and clear the journal while tasks still
+referenced it** — the exact stranding PRU-34 fixed for projects,
+reintroduced for the other four.
+
+**How it was found.** Not by a failing test — the four had no
+partial-failure test. By reading every call site of a signature that
+changed from `Promise<void>` to `Promise<TaskRemapResult>` and noticing
+eight of them dropped the result on the floor.
+
+**Fix.** `replayTaskRemapStrict` wraps `replayTaskRemap` and throws when
+`failed.length > 0`, restoring the all-or-nothing contract for callers
+that have not opted into the split. The four siblings use it; the
+project delete keeps the collecting version because it reports the
+split itself.
+
+**Guarded.** A new sprint partial-failure test (`chmod 0o500` on one
+task's dir) asserts the delete throws and the sprint survives.
+Mutation-proven: reverting sprints to the collecting `replayTaskRemap`
+reddens it — the sprint is deleted despite the failed write.
+
+**The lesson.** A stalled agent's diff is not safe to land on the
+verified subset alone. A change can be correct for the case it targets
+and a regression for four cases it never mentions. The tell was a
+changed function signature with more callers than the agent touched.
+
+## `text-warning-fg` is an undefined utility — 13 call sites render colourless
+
+**Found 2026-09-04 while building PRU-24.**
+
+The feedback-warning token is exposed to Tailwind v4 as `--color-warn-fg`
+(`styles/index.css:43`), so the working utilities are `text-warn-fg` /
+`border-warn-fg` / `bg-warn-fg`. But **13 call sites across 10 files**
+use `text-warning-fg` / `border-warning-fg` / `bg-warning-fg` — a name
+with no matching `--color-warning-*` token. Tailwind v4 emits **no
+rule** for an unknown token utility (confirmed: `text-warning-fg` does
+not appear in the built CSS, `text-warn-fg` does), so every one of those
+elements renders with the **inherited** colour, not amber.
+
+Affected files include `board/BoardView.tsx`, `activity/ActivityEntry.tsx`,
+`activity/ActivityPanel.tsx`, `task/TaskDetail.tsx`,
+`task/editors/CustomFields.tsx`, `task/editors/OptionPicker.tsx`,
+`attachments/AttachmentsPanel.tsx`, and the three relationships panels.
+
+**Fix:** rename `warning-fg`/`warning-bg` → `warn-fg`/`warn-bg` at those
+call sites (or add `--color-warning-*` aliases in `index.css`). PRU-24's
+new Header code already uses the correct `warn-fg`, so it is not in the
+affected set.
+
+**Not fixed here:** outside the eight PRU cases this session covered, and
+it touches ten unrelated components; recorded rather than swept in.
+
+## SHL-9 flaked when the temp path contained "v1" (fixed 2026-09-04)
+
+**A pre-existing test-locator defect, not a regression — fixed
+opportunistically after it failed twice in PRU-batch full runs.**
+
+`SHL-9` asserted `aside.getByText("v1")` for a milestone named "v1".
+The sidebar footer renders the workspace path (`text-text-tertiary`,
+inside `aside`) as an abbreviated `~/…` string. When the fixture's
+random temp directory happened to contain "v1" as a substring, the
+`getByText` matched two elements — the milestone link and the path —
+and Playwright's strict mode failed it. It passed whenever the random
+suffix did not contain "v1", which is why it was intermittent and
+passed in isolation.
+
+Not caused by the PRU batch: `git` confirms it passed on `main` in one
+run and failed in the worktree in another, with identical test logic —
+the difference was the temp path, not the code.
+
+**Fix**: assert `aside.getByRole("link", { name: /v1/ })` instead of
+`getByText`, so only the sidebar entry matches and the path div cannot
+collide. Same for the "bug" and archived-"old" assertions and the
+click.
+
+**The lesson, already recorded elsewhere but earned again here**: a
+strict-mode "resolved to N elements" violation is a locator defect and
+can *never* be load- or timing-dependent — so a file-level pass in
+isolation is not evidence it is fixed. The tell was the error naming
+the second element (the path div), which pointed straight at the cause.

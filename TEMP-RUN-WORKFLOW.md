@@ -516,6 +516,64 @@ condition 2 working as intended: a feature existing nowhere is scope,
 and adding a field to a shared contract is Ken's call, not an
 agent's.
 
+#### M4.1 · Nine PRU cases blocked on a switcher, a column, a dialog and a P-4 conflict
+
+**2026-09-03, from the PRU non-avatar pass.** Ten of the nineteen were
+built or fixed and tagged; nine were declined. Sorted by the table
+above, they are four distinct blockers, not nine problems.
+
+**A genuine feature — the top-bar project switcher (PRU-3, 4, 21, 22).**
+It does not exist. `Header.tsx` renders the sidebar toggle, brand, a
+disabled search stub, the theme toggle, New-task and the user menu.
+The flow doc's opening line assumes it, fourteen PRU cases refer to it,
+and **PRU-1 and PRU-2 — both blockers, in M1.2 — are the switcher
+itself**. `TEMP-WEB-TICKETS.md` M4.1 already carries Ken's 2026-08-25
+note moving PRU-3 here for exactly this reason; the note under-states
+the scope, since the thing PRU-3 waits on is owned by two blockers in
+an earlier milestone. Condition 1: stop.
+
+**A genuine feature — the user-delete dialog (PRU-42).** Core, the
+route and the reference counts are all built and correct;
+`UsersPanel.tsx` has no Delete control at all, and `useDeleteUser` is
+dead code that passes neither `remap_to` nor `unassign`. The dialog —
+counts split by role, permanent-vs-reversible copy, archive offered as
+the alternative, deliberate confirmation — is UI that exists nowhere.
+Note `UsersPanel.tsx`'s docblock claims PRU-42 coverage; that claim is
+stale.
+
+**A genuine feature — the reporter column and facet (PRU-25).** There
+is no reporter column in `ALL_COLUMNS` and no reporter facet in
+`buildFacetOptions`, so two of the case's four bullets have no surface
+to assert against.
+
+**A case/invariant conflict — PRU-25 again, and PRU-42's last bullet.**
+PRU-25 requires a dangling reference to render as "the truncated ULID
+plus '(deleted user)'". **P-4** says a ULID is never shown in UI
+content, and a list cell is content. `cells.tsx:140-153` already made
+this call the other way, deliberately, with the reasoning in a comment:
+it renders `unknown user` and puts the raw value in a `title`. Two
+sources of truth disagree, so this is escalation territory, not an
+agent's call. **Needs Ken:** either P-4 gains a carve-out for degraded
+references, or PRU-25 is reworded to the form already built.
+
+**Wire-ups that were left (PRU-24, PRU-41).** Both are partially built
+and both were declined rather than half-tagged:
+
+- **PRU-24** — the server already sends `archived: true` for the
+  current user; nothing in `Header.tsx` consumes it. No marker, no
+  prompt to switch.
+- **PRU-41** — the guard, the envelope and the field revert all work.
+  Missing: the envelope carries `recovery: {kind: "none"}` so no next
+  action is offered, and `BulkBar.tsx:234-245` renders the raw message
+  so a bulk rejection shows a **ULID** where the detail panel shows a
+  name — the same P-4 breach, on a path nobody had compared.
+
+These two are genuinely "build it" under the table above and were
+skipped for budget, not for principle. They are the cheapest of the
+nine to close next.
+
+Full reproduction detail for all nine is in `known-gaps.md`.
+
 #### M4.9 · MSL-35 needs a progress shape the server cannot produce
 
 **A wire-up that is really a feature, so the case is left uncovered.**

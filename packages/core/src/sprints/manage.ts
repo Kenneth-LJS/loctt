@@ -12,7 +12,7 @@ import {
   clearJournalEntry,
   loadJournal,
   registerRecoveryHandler,
-  replayTaskRemap,
+  replayTaskRemapStrict,
   saveJournal,
   withStateLock,
 } from "../state/index.js";
@@ -301,7 +301,7 @@ export async function deleteSprint(
     const journal = await loadJournal(locttDir);
     await saveJournal(locttDir, appendJournalEntry(journal, entry));
 
-    await replayTaskRemap(locttDir, entry);
+    await replayTaskRemapStrict(locttDir, entry);
     await applySprintConfigDeletion(locttDir, id);
     await clearJournalEntry(locttDir, entry.id);
 
@@ -319,7 +319,7 @@ async function applySprintConfigDeletion(locttDir: string, id: string): Promise<
 
 registerRecoveryHandler("remap_sprint", async (locttDir, entry) => {
   if (entry.kind !== "remap_sprint") return;
-  await replayTaskRemap(locttDir, entry);
+  await replayTaskRemapStrict(locttDir, entry);
   await applySprintConfigDeletion(locttDir, entry.from);
   await clearJournalEntry(locttDir, entry.id);
 });

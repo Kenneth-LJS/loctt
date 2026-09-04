@@ -1,7 +1,7 @@
 import type { ProjectDef } from "@loctt/contracts";
 import { describe, expect, it } from "vitest";
 
-import { resolveProjectChoice } from "./projectChoice.ts";
+import { NO_PROJECT_MESSAGE, resolveProjectChoice } from "./projectChoice.ts";
 
 /**
  * NEW-14 through NEW-20 — how the project field opens.
@@ -41,6 +41,23 @@ describe("resolveProjectChoice", () => {
     const choice = resolveProjectChoice([web, backend], null);
     expect(choice).toEqual({ kind: "ask" });
     expect(choice).not.toMatchObject({ id: "id-web" });
+  });
+
+  /**
+   * PRU-16's third bullet: the block must point at where a workspace
+   * default is set, so the user can stop it recurring. Asserted on
+   * the message rather than on a rendered modal because this constant
+   * is the single source both the field and its `role="alert"` read.
+   */
+  // @verifies PRU-16
+  it("PRU-16: the no-project message names Settings → Projects as the fix", () => {
+    // Still leads with what and why (NEW-19's quoted sentence)...
+    expect(NO_PROJECT_MESSAGE).toContain("this workspace has no default");
+    // ...and now also says where to go so it stops happening.
+    expect(NO_PROJECT_MESSAGE).toContain("Settings");
+    expect(NO_PROJECT_MESSAGE).toContain("Projects");
+    // Not a generic form error — the failure PRU-16 and NEW-19 share.
+    expect(NO_PROJECT_MESSAGE).not.toMatch(/^this field is required/i);
   });
 
   it("auto-selects a sole project with no default anywhere (NEW-18)", () => {
@@ -92,5 +109,42 @@ describe("resolveProjectChoice", () => {
     // An older server, or a response that omitted the field. It must
     // not be read as "a project whose id is undefined".
     expect(resolveProjectChoice([web, backend], undefined)).toEqual({ kind: "ask" });
+  });
+
+  /**
+   * PRU-4 — the active switcher project pre-selects in the create
+   * modal. The active project is passed as the third argument (the URL
+   * `?project=` when it scopes to exactly one project).
+   */
+  // @verifies PRU-4
+  it("PRU-4: the active switcher project is pre-filled, editable", () => {
+    // Switcher set to Web, no default resolved: the modal still opens
+    // on Web rather than asking.
+    expect(resolveProjectChoice([web, backend], null, "id-web"))
+      .toEqual({ kind: "prefilled", id: "id-web" });
+  });
+
+  // @verifies PRU-4
+  it("PRU-4: the active project beats a differing resolved default", () => {
+    // The switcher is the stronger signal of intent than the per-user
+    // or workspace default — the user is looking at Web, so a new task
+    // opens on Web even though the default is Backend.
+    expect(resolveProjectChoice([web, backend], "id-be", "id-web"))
+      .toEqual({ kind: "prefilled", id: "id-web" });
+  });
+
+  // @verifies PRU-4
+  it("PRU-4: an archived active project falls through to the normal chain", () => {
+    // A scope naming an archived project cannot be a destination, so it
+    // does not pre-fill; resolution continues as if it were absent —
+    // here to the ask state (two live projects, no default).
+    expect(resolveProjectChoice([web, backend, archived], null, "id-old"))
+      .toEqual({ kind: "ask" });
+  });
+
+  // @verifies PRU-4
+  it("PRU-4: an active project not among the projects is ignored", () => {
+    expect(resolveProjectChoice([web, backend], "id-be", "id-ghost"))
+      .toEqual({ kind: "prefilled", id: "id-be" });
   });
 });

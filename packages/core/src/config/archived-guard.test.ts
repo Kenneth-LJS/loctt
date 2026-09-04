@@ -244,6 +244,33 @@ describe("archived-reference guard: setField", () => {
     ).rejects.toThrow(ArchivedReferenceError);
   });
 
+  // @verifies PRU-41
+  it("PRU-41: an archived-assignee rejection names the user and offers both next actions", async () => {
+    const taskId = await createBaseTask();
+    const user = await createUser(locttDir, { name: "Dave" });
+    await archiveUser(locttDir, user.id);
+    const archivedGuard = await loadArchivedGuardConfigs(locttDir);
+
+    const err = await setField({
+      locttDir, taskId, field: "assignee", value: user.id, archivedGuard,
+    }).then(
+      () => { throw new Error("expected the archived assignee to be rejected"); },
+      (e: unknown) => e as Error,
+    );
+
+    expect(err).toBeInstanceOf(ArchivedReferenceError);
+    // Names the user, not the ULID (P-4).
+    expect(err.message).toContain('"Dave"');
+    expect(err.message).not.toContain(user.id);
+    // States they are archived.
+    expect(err.message).toMatch(/archived user/);
+    // Offers BOTH next actions — PRU-41's "unarchive them, or pick a
+    // different assignee". The remap-target messages already read this
+    // way; the field guard now matches.
+    expect(err.message).toMatch(/unarchive/i);
+    expect(err.message).toMatch(/choose a different assignee/i);
+  });
+
   it("rejects adding an archived label via setField", async () => {
     const taskId = await createBaseTask();
     const bug = await createLabel(locttDir, { name: "Bug" });

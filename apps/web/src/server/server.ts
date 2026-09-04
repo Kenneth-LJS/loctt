@@ -141,6 +141,7 @@ import {
   milestoneProgress,
   ParseError,
   parseQuery,
+  PartialRemapError,
   planMigration,
   postComment,
   type Progress,
@@ -1653,6 +1654,23 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, { deleted: id, remappedTaskCount: result.remappedTaskCount });
     } catch (err) {
+      // PRU-34: a remap that only partly landed is NOT a rejected
+      // write — some tasks moved. Report the split and offer Retry,
+      // which is safe because an already-moved task is skipped.
+      // Checked before ProjectError: this is a different class, but
+      // ordering makes the intent explicit for the next reader.
+      if (err instanceof PartialRemapError) {
+        error(res, err.message, 409, {
+          code: "conflict",
+          data_state: "saved",
+          recovery: { kind: "retry" },
+          failures: err.failedKeys.map(key => ({
+            ref: key,
+            message: "could not be written; still references the deleted project",
+          })),
+        });
+        return;
+      }
       // Delete guards (project still has tasks, remap target missing)
       // reject the whole operation before anything is rewritten.
       if (err instanceof ProjectError) {

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -130,6 +130,45 @@ describe("a config file that fails its schema", () => {
     expect(text).not.toMatch(/must contain at least one item/);
     // "The fix is stated" — add a project, or use the CLI.
     expect(text).toMatch(/loctt project create/);
+  });
+
+  /**
+   * PRU-37 first bullet: a hand edit that removes a required field
+   * must surface as a validation error naming the file **and the
+   * offending entry** — not an empty project list, which would read
+   * as "you have no projects" and invite the user to recreate them.
+   *
+   * Distinct from XS-62 above: that one is the empty-array
+   * constraint. This is a structurally valid file with one bad entry,
+   * which is the shape a hand edit actually produces.
+   */
+  // @verifies PRU-37
+  it("PRU-37: names the file and the offending entry when a project loses its prefix", async () => {
+    const { root, base } = await harness();
+    const cfgPath = join(root, ".loctt/config/projects.yaml");
+    const original = await readFile(cfgPath, "utf8");
+    // Drop the required `prefix` from the first entry only.
+    await writeFile(cfgPath, original.replace(/^\s*prefix:.*\n/m, ""), "utf8");
+
+    const res = await fetch(`${base}/api/projects`);
+    // Not a 200 carrying an empty list — the panel must be able to
+    // tell "broken" from "none".
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    const body = await res.json() as Envelope;
+    const text = `${body.message ?? ""} ${body.detail ?? ""}`;
+
+    // The file...
+    expect(text).toContain("projects.yaml");
+    // ...the offending entry, and the field it is missing.
+    expect(text).toMatch(/projects\[0\]/);
+    expect(text).toMatch(/prefix/);
+
+    // Positive control: with the file restored the same endpoint
+    // answers normally, so the assertions above are about the bad
+    // edit and not about a permanently broken harness.
+    await writeFile(cfgPath, original, "utf8");
+    const ok = await fetch(`${base}/api/projects`);
+    expect(ok.status).toBe(200);
   });
 });
 

@@ -56,14 +56,29 @@ describe("validateNewProject", () => {
     expect(problems.prefix).toContain("case");
   });
 
-  it("blames the slug, not the prefix, when the slug collides (PRU-35)", () => {
+  /**
+   * PRU-35 wants the *existing project named by label and key*, and
+   * the error attributed to the field that actually conflicts.
+   *
+   * The fixture is chosen so the two halves cannot be confused: the
+   * colliding slug is "web" and the label is "Web", so asserting only
+   * the slug would pass on a message that never names the project.
+   * The prefix supplied ("FRESH-") is free, so a message on the prefix
+   * field would be blaming a field with nothing wrong with it.
+   */
+  // @verifies PRU-35
+  it("PRU-35: blames the slug, not the prefix, and names the project holding it", () => {
     const problems = validateNewProject(
       { name: "Another", prefix: "FRESH-", slug: "web" },
       existing,
     );
+    // The key that conflicts...
     expect(problems.slug).toContain("web");
+    // ...and the label of the project already holding it.
+    expect(problems.slug).toContain("Web");
     // The field that is fine must not be blamed.
     expect(problems.prefix).toBeUndefined();
+    expect(problems.name).toBeUndefined();
   });
 
   it("states the slug rule and suggests a fix for a malformed slug (PRU-36)", () => {

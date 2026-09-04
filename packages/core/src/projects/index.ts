@@ -5,6 +5,7 @@ export {
   deleteProject,
   editProject,
   findProject,
+  PartialRemapError,
   ProjectError,
   resolveProjectByName,
   resolveProjectId,

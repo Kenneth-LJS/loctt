@@ -298,25 +298,65 @@ export type TaskRemapEntry = Exclude<
   { kind: "remap_workflow" } | { kind: "staged_swap" }
 >;
 
-export async function replayTaskRemap(locttDir: string, entry: TaskRemapEntry): Promise<void> {
+/**
+ * What a remap actually managed to do (PRU-34).
+ *
+ * `remapped` counts tasks this call rewrote. `skipped` counts tasks
+ * that needed no change — already at the target value, or no longer
+ * present — which is what makes a retry safe to offer: re-running a
+ * partially-applied remap moves the stragglers and skips the rest.
+ * `failed` names the tasks whose write did not land, **by key** where
+ * one could be read, so the caller can tell the user which of their
+ * tasks are still on the old value.
+ */
+export interface TaskRemapResult {
+  readonly remapped: number;
+  readonly skipped: number;
+  readonly failed: readonly { readonly id: string; readonly key: string | undefined;
+    readonly reason: string }[];
+}
+
+/**
+ * Applies a remap entry to its tasks, returning what landed.
+ *
+ * **A failed task write no longer aborts the remaining tasks.** The
+ * loop used to throw out on the first unwritable file, which left the
+ * caller with no idea how many of its tasks had already moved — and
+ * the user with a half-migrated tracker described only as an error.
+ * PRU-34 requires the true split, so each task is attempted and its
+ * outcome recorded.
+ *
+ * A caller that wants the old all-or-nothing behaviour inspects
+ * `failed` and throws; `deleteProject` does exactly that, because
+ * removing the project from `projects.yaml` while tasks still point
+ * at it would strand them.
+ */
+export async function replayTaskRemap(
+  locttDir: string,
+  entry: TaskRemapEntry,
+): Promise<TaskRemapResult> {
+  let remapped = 0;
+  let skipped = 0;
+  const failed: { id: string; key: string | undefined; reason: string }[] = [];
+
   for (const taskId of entry.task_ids) {
     let task;
     try {
       task = await lookupById(locttDir, taskId);
     } catch (err) {
-      if (err instanceof TaskNotFoundError) continue;
+      if (err instanceof TaskNotFoundError) { skipped += 1; continue; }
       throw err;
     }
     const fm = task.frontmatter;
     let updated = fm;
     switch (entry.kind) {
       case "remap_project":
-        if (fm.project !== entry.from) continue;
+        if (fm.project !== entry.from) { skipped += 1; continue; }
         updated = { ...fm, project: entry.to };
         break;
       case "remap_label": {
         const labels = fm.labels ?? [];
-        if (!labels.includes(entry.from)) continue;
+        if (!labels.includes(entry.from)) { skipped += 1; continue; }
         const to = entry.to;
         const next: string[] = to === null
           ? labels.filter(l => l !== entry.from)
@@ -336,7 +376,7 @@ export async function replayTaskRemap(locttDir: string, entry: TaskRemapEntry): 
         break;
       }
       case "remap_milestone":
-        if (fm.milestone !== entry.from) continue;
+        if (fm.milestone !== entry.from) { skipped += 1; continue; }
         if (entry.to === null) {
           const { milestone: _drop, ...rest } = fm;
           updated = rest as typeof fm;
@@ -345,7 +385,7 @@ export async function replayTaskRemap(locttDir: string, entry: TaskRemapEntry): 
         }
         break;
       case "remap_sprint":
-        if (fm.sprint !== entry.from) continue;
+        if (fm.sprint !== entry.from) { skipped += 1; continue; }
         if (entry.to === null) {
           const { sprint: _drop, ...rest } = fm;
           updated = rest as typeof fm;
@@ -366,7 +406,7 @@ export async function replayTaskRemap(locttDir: string, entry: TaskRemapEntry): 
             changed = true;
           }
         }
-        if (!changed) continue;
+        if (!changed) { skipped += 1; continue; }
         updated = next;
         break;
       }
@@ -375,10 +415,57 @@ export async function replayTaskRemap(locttDir: string, entry: TaskRemapEntry): 
     // know recovery touched them. Don't touch tasks already at the
     // target value (handled by the early-continue paths above).
     const now = new Date().toISOString();
-    await writeTask(locttDir, taskId, {
-      ...task,
-      frontmatter: { ...updated, updated_at: now },
-    });
+    try {
+      await writeTask(locttDir, taskId, {
+        ...task,
+        frontmatter: { ...updated, updated_at: now },
+      });
+      remapped += 1;
+    } catch (err) {
+      // Keep going. The point of this loop is to report the true
+      // split, and stopping here would make every task after the
+      // first bad file indistinguishable from one that was never
+      // reached.
+      failed.push({
+        id: taskId,
+        key: task.frontmatter.key,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return { remapped, skipped, failed };
+}
+
+/**
+ * `replayTaskRemap`, but preserving the pre-2026-09-04 all-or-nothing
+ * contract: if any task's write did not land, throw rather than
+ * returning the split.
+ *
+ * `replayTaskRemap` was changed to collect every task's outcome so
+ * `deleteProject` could report a partial remap (PRU-34). But the
+ * sprint, label, user and milestone deletes call it and then delete
+ * their config unconditionally — so with the collecting version a
+ * failed task write would be *swallowed*, the config removed, and the
+ * journal cleared while tasks still referenced the old value. That is
+ * the exact stranding PRU-34 fixed for projects, reintroduced for the
+ * other four. This restores the throw for callers that have not opted
+ * into the split, so those deletes still abort before touching config.
+ *
+ * A project delete does NOT use this — it inspects `failed` itself and
+ * raises `PartialRemapError` with the real numbers.
+ */
+export async function replayTaskRemapStrict(
+  locttDir: string,
+  entry: TaskRemapEntry,
+): Promise<void> {
+  const result = await replayTaskRemap(locttDir, entry);
+  if (result.failed.length > 0) {
+    const keys = result.failed.map(f => f.key ?? f.id).join(", ");
+    throw new Error(
+      `remap could not write ${String(result.failed.length)} task(s) `
+      + `(${keys}); config was not changed and can be retried`,
+    );
   }
 }
 

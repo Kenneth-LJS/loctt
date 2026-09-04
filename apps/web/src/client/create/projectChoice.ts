@@ -51,12 +51,33 @@ export type ProjectChoice =
 export function resolveProjectChoice(
   projects: readonly ProjectDef[],
   effectiveDefault: string | null | undefined,
+  activeProjectId?: string | null,
 ): ProjectChoice {
   // NEW-17: an archived project is not a valid destination, so it can
   // neither be pre-selected nor offered. Filtering here rather than at
   // each call site keeps "which projects exist" and "which projects
   // can receive a task" from drifting apart.
   const selectable = projects.filter(p => p.archived !== true);
+
+  // PRU-4: when the top-bar switcher scopes the view to a single
+  // project, opening the create modal pre-selects that project — the
+  // switcher is the strongest available signal of where the user
+  // means to file. It ranks *above* the resolved default (which is
+  // the per-user / workspace default), but below an explicit choice
+  // made inside the modal, which the form's seed-once guard protects.
+  // Only a still-selectable project qualifies: a scope naming an
+  // archived project falls through to the normal chain rather than
+  // pre-filling a destination the picker cannot show. `prefilled`
+  // (not `sole`) because the field stays editable — the user can
+  // still file elsewhere from within this create.
+  if (
+    activeProjectId !== null &&
+    activeProjectId !== undefined &&
+    selectable.length > 1 &&
+    selectable.some(p => p.id === activeProjectId)
+  ) {
+    return { kind: "prefilled", id: activeProjectId };
+  }
 
   if (effectiveDefault !== null && effectiveDefault !== undefined) {
     // NEW-16 / NEW-17: the server resolved to something. Trust it only
@@ -88,6 +109,12 @@ export function resolveProjectChoice(
  * "required" — the user is being asked because their workspace has no
  * default, and that is actionable (they can set one) in a way that
  * "This field is required" is not.
+ *
+ * PRU-16's third bullet adds where to act: naming Settings → Projects
+ * turns "you have no default" into something the user can go and fix,
+ * rather than a condition they have to re-encounter on every create.
+ * NEW-19 quotes only the first sentence, so both cases hold.
  */
 export const NO_PROJECT_MESSAGE =
-  "Pick a project — this workspace has no default.";
+  "Pick a project — this workspace has no default. "
+  + "Set one in Settings \u2192 Projects so this stops recurring.";

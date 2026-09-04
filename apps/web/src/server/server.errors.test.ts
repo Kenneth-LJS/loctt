@@ -504,6 +504,56 @@ describe("state-lock contention", () => {
     expect(task.frontmatter.priority).toBe("high");
   }, 20_000);
 
+  /**
+   * PRU-43: the same contention, on a **project** write, plus the
+   * half SET-39 does not ask for — the message must say *why* Retry
+   * may not help.
+   *
+   * On a sync folder the failure is not transient: POSIX advisory
+   * locks are unreliable there, so a message offering only "try
+   * again" sends the user round a loop that never terminates. The
+   * caveat existed as a source comment on `withStateLock`; this
+   * asserts it reaches the person who hit it.
+   */
+  // @verifies PRU-43
+  it("PRU-43: a project write under a held lock names the lock and the sync-folder caveat", async () => {
+    const locttDir = join(root, ".loctt");
+
+    const listBefore = await fetch(`${base}/api/projects`);
+    const projectsBefore = await listBefore.text();
+
+    let res!: Response;
+    await withStateLock(locttDir, async () => {
+      res = await fetch(`${base}/api/projects`, {
+        method: "POST",
+        headers: csrf,
+        body: JSON.stringify({ name: "Docs", prefix: "DOCS-" }),
+      });
+    });
+
+    expect(res.ok).toBe(false);
+    const envelope = (await res.json()) as ErrorResponse;
+
+    // Names the lock, and says the write did not complete.
+    expect(envelope.code).toBe("conflict");
+    expect(envelope.message).toMatch(/another LocTT process/i);
+    expect(envelope.data_state).toBe("not_saved");
+
+    // Names the filesystems where the lock is not trustworthy...
+    expect(envelope.message).toMatch(/iCloud/i);
+    expect(envelope.message).toMatch(/Dropbox/i);
+    expect(envelope.message).toMatch(/OneDrive/i);
+    expect(envelope.message).toMatch(/NFS/i);
+    expect(envelope.message).toMatch(/SMB/i);
+    // ...and recommends the fix, rather than only offering Retry.
+    expect(envelope.message).toMatch(/local disk/i);
+
+    // The panel must not show the project as created and then have it
+    // vanish: nothing was written, so the list is byte-identical.
+    const listAfter = await fetch(`${base}/api/projects`);
+    expect(await listAfter.text()).toBe(projectsBefore);
+  }, 20_000);
+
   // @verifies SET-39
   it("refuses a tracker settings write under a held lock, naming it and not corrupting", async () => {
     const locttDir = join(root, ".loctt");

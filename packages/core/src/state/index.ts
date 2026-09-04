@@ -7,6 +7,7 @@ export {
   registerRecoveryHandler,
   removeJournalEntry,
   replayTaskRemap,
+  replayTaskRemapStrict,
   saveJournal,
 } from "./journal.js";
 export type { KeyIndex } from "./key-index.js";

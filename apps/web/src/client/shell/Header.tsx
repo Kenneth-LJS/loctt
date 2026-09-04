@@ -203,6 +203,15 @@ function UserMenu({
     u => u.id !== currentUser?.id && u.archived !== true,
   );
 
+  // PRU-24: the current user can be archived from the CLI while the UI
+  // is open. The next `users`/`current` fetch carries `archived: true`,
+  // and here it stops presenting the actor as a normal active user —
+  // the chip is marked and the menu prompts a switch. `identityUnknown`
+  // is the read-failed case and takes precedence: an unknown identity
+  // is not an archived one.
+  const currentArchived =
+    !identityUnknown && currentUser !== null && currentUser.archived === true;
+
   return (
     <Menu
       align="end"
@@ -211,15 +220,32 @@ function UserMenu({
         <button
           type="button"
           onClick={toggle}
-          aria-label={identityUnknown ? "User menu — signed-in user unknown" : "User menu"}
-          title={identityUnknown ? UNKNOWN_IDENTITY_REASON : undefined}
+          data-testid="user-menu-trigger"
+          aria-label={
+            identityUnknown
+              ? "User menu — signed-in user unknown"
+              : currentArchived
+                ? `User menu — ${currentUser.name} is archived`
+                : "User menu"
+          }
+          title={
+            identityUnknown
+              ? UNKNOWN_IDENTITY_REASON
+              : currentArchived
+                ? `${currentUser.name} is archived — switch to an active user`
+                : undefined
+          }
           className={[
             "grid h-[22px] w-[22px] place-items-center rounded-full text-[11px] font-semibold",
             // An explicit unknown mark, not a blank circle and not a
-            // palette slot borrowed from an id we do not have.
+            // palette slot borrowed from an id we do not have. An
+            // archived actor keeps their palette colour but gains a
+            // dashed warning ring so the header itself signals it.
             identityUnknown
               ? "border border-dashed border-danger-fg/60 text-danger-fg"
-              : avatarPalette(currentUser?.id ?? ""),
+              : currentArchived
+                ? `${avatarPalette(currentUser.id)} ring-1 ring-warn-fg ring-offset-1 ring-offset-bg-surface`
+                : avatarPalette(currentUser?.id ?? ""),
           ].join(" ")}
           {...aria}
         >
@@ -241,7 +267,10 @@ function UserMenu({
               <div className="mt-0.5">{UNKNOWN_IDENTITY_REASON}</div>
             </div>
           ) : (
-            <div className="flex items-center gap-2.5 border-b border-border-subtle px-3 py-2.5">
+            <div
+              data-testid="user-menu-current"
+              className="flex items-center gap-2.5 border-b border-border-subtle px-3 py-2.5"
+            >
               <span
                 className={[
                   "grid h-[22px] w-[22px] place-items-center rounded-full text-[11px] font-semibold",
@@ -253,6 +282,14 @@ function UserMenu({
               <div className="min-w-0">
                 <div className="truncate text-[13px] font-medium text-text-primary">
                   {currentUser.name}
+                  {currentArchived ? (
+                    <span
+                      data-testid="user-menu-current-archived"
+                      className="ml-1.5 font-normal text-warn-fg"
+                    >
+                      (archived)
+                    </span>
+                  ) : null}
                 </div>
                 {currentUser.email ? (
                   <div className="truncate text-[11px] text-text-tertiary">
@@ -263,6 +300,23 @@ function UserMenu({
             </div>
           )}
 
+          {currentArchived ? (
+            // PRU-24: the actor is archived. Say so and point at the
+            // fix — switching to an active user — rather than leaving
+            // the writes to fail (or land under an archived actor)
+            // without explanation. The switch list below is the action.
+            <div
+              role="alert"
+              data-testid="user-menu-archived-prompt"
+              className="border-b border-border-subtle px-3 py-2.5 text-[12px] text-text-secondary"
+            >
+              <div className="font-medium text-warn-fg">You are acting as an archived user</div>
+              <div className="mt-0.5">
+                Switch to an active user below to keep your changes attributed to a current user.
+              </div>
+            </div>
+          ) : null}
+
           {others.length > 0 ? (
             <div className="py-1">
               <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
@@ -271,6 +325,7 @@ function UserMenu({
               {others.map(u => (
                 <MenuItem
                   key={u.id}
+                  testId={`user-switch-${u.id}`}
                   onSelect={() => {
                     switchUser.mutate(u.id);
                     close();
