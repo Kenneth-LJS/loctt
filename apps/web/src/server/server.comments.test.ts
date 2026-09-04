@@ -88,6 +88,30 @@ describe("comment routes", () => {
     expect(await list()).toEqual([]);
   });
 
+  // @verifies CMT-24
+  it("editing a comment deleted elsewhere reports it is gone, not a raw id", async () => {
+    // CMT-24's first bullet: the save must *report that the comment no
+    // longer exists*, in words a user can act on — not core's raw
+    // "unknown comment id: <ulid>", which reads as malformed input and
+    // names an id the user never typed. This mirrors the delete path,
+    // which already translates the same core error (CMT-34).
+    const { comment } = await post("about to vanish");
+    // Delete it out from under the pending edit.
+    await fetch(`${base}/api/tasks/T-1/comments/${comment.id}`, {
+      method: "DELETE", headers: csrf,
+    });
+    const res = await fetch(`${base}/api/tasks/T-1/comments/${comment.id}`, {
+      method: "PUT", headers: csrf, body: JSON.stringify({ body: "too late" }),
+    });
+    expect(res.status).toBe(400);
+    const env = (await res.json()) as { error: string; recovery?: { kind: string } };
+    // The message names the situation, and does NOT leak the ulid.
+    expect(env.error).toMatch(/already gone|no longer exists|someone else deleted/i);
+    expect(env.error).not.toContain(comment.id);
+    // Refresh is the way out — the same recovery the delete path gives.
+    expect(env.recovery?.kind).toBe("reload");
+  });
+
   it("resolves @user:<id> mentions against the user list", async () => {
     // The seeded user's id, taken from a comment's own author — the
     // author IS the current user, so this needs no extra endpoint.

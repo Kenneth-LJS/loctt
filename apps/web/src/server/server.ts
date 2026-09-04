@@ -3644,7 +3644,26 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, comment satisfies CommentResponse);
     } catch (err) {
-      error(res, (err as Error).message, 400, { ...REJECTED_WRITE, field: "body" });
+      // CMT-24's first bullet: editing a comment deleted elsewhere must
+      // *report that the comment no longer exists*. Core's "unknown
+      // comment id: <ulid>" is accurate but reads as a malformed-input
+      // error, and the id it names is one the user never typed and
+      // cannot act on — the same reasoning `handleDeleteComment` applies
+      // below (CMT-34). A missing comment cannot be fixed by retrying
+      // the same edit, so this rejection is no-retry with a reload hint;
+      // the typed edit text stays in the still-open composer either way.
+      const raw = (err as Error).message;
+      if (/unknown comment id/i.test(raw)) {
+        error(
+          res,
+          "That comment is already gone — someone else deleted it. "
+            + "Your edit was not saved; refreshing will bring this list up to date.",
+          400,
+          { ...REJECTED_WRITE_NO_RETRY, recovery: { kind: "reload" } },
+        );
+        return;
+      }
+      error(res, raw, 400, { ...REJECTED_WRITE, field: "body" });
     }
   };
 
@@ -3736,6 +3755,27 @@ export function createWebApp(options: WebAppOptions) {
       if (err instanceof ZodError) {
         error(res, zodIssueSummary(err), 400, {
           code: "validation_failed",
+          field: request.field,
+          data_state: "not_saved",
+          recovery: { kind: "retry" },
+        });
+        return;
+      }
+      // TSK-56. A field write started while a schema migration holds the
+      // lock is refused by `withStateLock` *before* it mutates anything
+      // (`isMigrationLocked` is checked both sides of acquiring the state
+      // lock), throwing a `SchemaVersionError`. This is a distinct state
+      // from the boot-guard version mismatch handled far above: the
+      // version on disk is fine, a concurrent `loctt migrate` merely
+      // holds the lock. Left to fall through, it reached the top-level
+      // fallback as a generic 500 `unknown` with the real cause buried
+      // in `detail` — the case's third bullet ("not a generic error")
+      // inverted. Classify it as the transient schema state it is:
+      // nothing was saved, the user is told to wait, and retrying is
+      // the right action once the migration finishes.
+      if (err instanceof SchemaVersionError) {
+        error(res, err.message, 409, {
+          code: "schema_mismatch",
           field: request.field,
           data_state: "not_saved",
           recovery: { kind: "retry" },

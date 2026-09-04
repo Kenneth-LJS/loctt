@@ -937,3 +937,142 @@ estimation:
   unit: points
   unit_label: pts
 `;
+
+/* ================================================================== *
+ * TSK-39 — a task deleted underneath an open detail view
+ * TSK-56 — a save blocked by an in-progress schema migration
+ * ================================================================== */
+
+test.describe("TSK-39 — the open task is deleted elsewhere", () => {
+  // @verifies TSK-39
+  test("TSK-39: a hard-delete under the open view is reported, naming the key, with a way back", async ({
+    page,
+    tracker,
+  }) => {
+    // Waiting out the real 30-second `staleTime` and driving a real
+    // focus transition is what makes the *view* notice the deletion
+    // rather than a reload manufacturing a fresh fetch (the XS-1
+    // vacuity). So this needs the longer budget.
+    test.setTimeout(120_000);
+
+    // A component that crashes on render looks identical in Playwright
+    // to one that renders nothing — so watch for it explicitly.
+    const pageErrors: string[] = [];
+    page.on("pageerror", err => pageErrors.push(err.message));
+
+    const [key] = await tracker.seed([{ title: "About to vanish" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("task-key-chip")).toHaveText(key);
+    // The editing surfaces are live before the delete — so their
+    // disappearance afterwards is a real change, not a page that never
+    // rendered them.
+    await expect(page.getByTestId("meta-edit-status")).toBeVisible();
+
+    // Hard-delete from the CLI while the page is open and unaware.
+    await tracker.run(["delete", key, "--yes"]);
+    // The task file is gone on disk.
+    await expect
+      .poll(async () => {
+        const dir = path.join(tracker.root, ".loctt", "tasks");
+        const ids = await readdir(dir);
+        for (const id of ids) {
+          try {
+            const t = await readFile(path.join(dir, id, "task.md"), "utf8");
+            if (new RegExp(`^key:\\s*${key}\\s*$`, "m").test(t)) return true;
+          } catch { /* not a task dir */ }
+        }
+        return false;
+      }, { timeout: 10_000 })
+      .toBe(false);
+
+    // The view notices on the next focus-driven refetch — not a reload.
+    await refocus(page);
+
+    // First bullet: the view states the task no longer exists, naming
+    // the key. `TaskNotFound` renders `role="alert"` and puts the key
+    // in the heading.
+    const notFound = page.getByRole("alert").filter({ hasText: "No task with the key" });
+    await expect(notFound).toBeVisible({ timeout: 20_000 });
+    await expect(notFound).toContainText(key);
+
+    // Second bullet: the user is not left editing a phantom — the meta
+    // panel and its edit controls are unmounted, not merely disabled.
+    await expect(page.getByTestId("meta-edit-status")).toHaveCount(0);
+    await expect(page.getByTestId("task-key-chip")).toHaveCount(0);
+
+    // Third bullet: a route back to the list is offered.
+    const back = page.getByRole("link", { name: /task list/i });
+    await expect(back).toBeVisible();
+    await back.click();
+    await expect(page).toHaveURL(/\/list$/);
+
+    expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
+  });
+});
+
+test.describe("TSK-56 — a field write during an in-progress migration", () => {
+  // @verifies TSK-56
+  test("TSK-56: the panel explains the migration, rolls the value back, and tells the user to wait", async ({
+    page,
+    tracker,
+  }) => {
+    // Holding the lock uses core's own helper; importing it here keeps
+    // the hold in this process rather than spawning a second `loctt`.
+    const { withMigrationLock } = await import("@loctt/core");
+
+    const pageErrors: string[] = [];
+    page.on("pageerror", err => pageErrors.push(err.message));
+
+    await writeWorkflow(tracker.root, SEVEN_STATUS_WORKFLOW);
+    const [key] = await tracker.seed([{ title: "Blocked by migration" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(trigger(page, "status")).toContainText("Triaging");
+
+    // Hold the migration lock for the duration of the edit attempt.
+    // `isMigrationLocked` checks only the advisory lock on
+    // `.schema-version`, so this needs no schema-version bump — the
+    // tracker stays at its current, supported version, and the boot
+    // guard (a *version* mismatch) never fires.
+    let release!: () => void;
+    const held = new Promise<void>(r => { release = r; });
+    const lockDone = withMigrationLock(
+      path.join(tracker.root, ".loctt"),
+      () => held,
+    );
+    // Give the lock a moment to be acquired before the write races it.
+    await new Promise(r => setTimeout(r, 100));
+
+    // Attempt a field edit. The panel is optimistic, so it will show
+    // "Verifying" momentarily before the rejection rolls it back.
+    await trigger(page, "status").click();
+    await options(page, "status").getByRole("option", { name: "Verifying" }).click();
+
+    // First bullet: the failure states the tracker is being migrated
+    // and that the change was not saved — not a generic error.
+    await expect(notice(page)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("meta-field-error-message"))
+      .toContainText(/migration is in progress/i);
+    // Third bullet: told to wait, in words.
+    await expect(page.getByTestId("meta-field-error-message"))
+      .toContainText(/wait/i);
+    // "not saved" is the data-state the notice reports.
+    await expect(page.getByTestId("meta-field-error-state"))
+      .toContainText(/not.*saved/i);
+
+    // Second bullet: the optimistic value is rolled back — the trigger
+    // shows the original status again, and nothing was written to disk.
+    await expect(trigger(page, "status")).toContainText("Triaging");
+    const fm = await frontmatterOf(tracker.root, key);
+    expect(fm).toMatch(/^status:\s*triage\s*$/m);
+
+    // Release the lock so the fixture tears down cleanly.
+    release();
+    await lockDone;
+
+    expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
+  });
+});

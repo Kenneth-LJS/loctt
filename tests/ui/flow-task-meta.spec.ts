@@ -1650,3 +1650,166 @@ const CUSTOM_FIELDS_BLOCK = `custom_fields:
       - key: android
         label: Android
 `;
+
+/* ================================================================== *
+ * TSK-43 — key and key history are not editable from the UI
+ * TSK-55 — inline label creation failing does not attach a phantom
+ * ================================================================== */
+
+test.describe("TSK-43 / TSK-55 — immutable key, and a failed inline label", () => {
+  // @verifies TSK-43
+  test("TSK-43: the key and key history are shown read-only, with no edit affordance", async ({
+    page,
+    tracker,
+  }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", err => pageErrors.push(err.message));
+
+    // A task moved to a second project gains a key_history entry, so
+    // the footer that TSK-43 forbids editing actually renders — an
+    // absence case is only meaningful if its subject is present.
+    await tracker.run(["project", "create", "Backend", "--prefix", "BE"]);
+    const [key] = await tracker.seed([{ title: "Immutable key" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    const moved = await tracker.run(["move", key, "Backend"]);
+    // `Moved <old> → <new>`; the new key carries the BE prefix.
+    const newKey = /→\s*(\S+)/.exec(moved)?.[1];
+    if (newKey === undefined || newKey === key) {
+      throw new Error(`could not parse the moved key from: ${moved}`);
+    }
+
+    await page.goto(`${tracker.baseURL}/tasks/${newKey}`);
+
+    // Positive control: the key chip is present and shows the current
+    // key. Asserting "no edit control found" alone would pass if the
+    // chip were missing entirely — the case is that it is read-only,
+    // not that it is absent.
+    const chip = page.getByTestId("task-key-chip");
+    await expect(chip).toHaveText(newKey);
+    // It is inert: not a button, not an input, no click handler that
+    // opens an editor.
+    expect(await chip.evaluate(el => el.tagName)).toBe("SPAN");
+    await expect(chip.getByRole("button")).toHaveCount(0);
+    await expect(chip.getByRole("textbox")).toHaveCount(0);
+    // Clicking it opens nothing.
+    await chip.click();
+    await expect(chip.getByRole("textbox")).toHaveCount(0);
+
+    // Positive control: the key-history footer is present and names the
+    // retired key as prose.
+    const footer = page.getByTestId("meta-key-history");
+    await expect(footer).toBeVisible();
+    await expect(footer).toContainText(key);
+    await expect(footer).toContainText(newKey);
+    // …and holds no edit affordance of its own.
+    await expect(footer.getByRole("button")).toHaveCount(0);
+    await expect(footer.getByRole("textbox")).toHaveCount(0);
+    await footer.getByText(key).click();
+    await expect(footer.getByRole("textbox")).toHaveCount(0);
+
+    // Nothing in the More menu edits key or key_history. Copy key is
+    // a read, Move rekeys via a project change (TSK-21) — neither is a
+    // direct key edit.
+    await page.getByRole("button", { name: "More", exact: true }).click();
+    const menu = page.getByRole("menu");
+    await expect(menu).toBeVisible();
+    const itemText = (await menu.getByRole("menuitem").allInnerTexts())
+      .map(t => t.toLowerCase());
+    for (const item of itemText) {
+      // "Copy key" and "Copy link" are the only items that mention the
+      // key at all, and both are reads. No item offers to change it.
+      expect(item).not.toMatch(/edit key|change key|rename key|edit history/);
+    }
+
+    expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
+  });
+
+  // @verifies TSK-55
+  test("TSK-55: a failed inline label create leaves no pill and no orphan in labels.yaml", async ({
+    page,
+    tracker,
+  }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", err => pageErrors.push(err.message));
+
+    const [key] = await tracker.seed([{ title: "No stray labels" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+
+    // Fail the label-create write at the network edge. The create is a
+    // POST /api/labels; anything else (the labels list read, the task
+    // read, the set write) is left alone.
+    await page.route("**/api/labels", async route => {
+      if (route.request().method() === "POST") {
+        await route.fulfill({
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({
+            code: "config_invalid",
+            message: "The label store could not be written (simulated failure).",
+            data_state: "not_saved",
+            recovery: { kind: "retry" },
+          }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+
+    await page.getByTestId("meta-add-label").click();
+    await expect(page.getByTestId("meta-label-input")).toBeVisible();
+    await page.getByTestId("meta-label-input").fill("phantomlabel");
+    const failed = page.waitForResponse(
+      r => /\/api\/labels$/.test(r.url())
+        && r.request().method() === "POST"
+        && r.status() === 400,
+    );
+    await page.getByTestId("meta-create-label").click();
+    await failed;
+
+    // Second bullet: the message states the label was not created and
+    // why — not a silent swallow.
+    const err = page.getByTestId("meta-label-error");
+    await expect(err).toBeVisible();
+    await expect(err).toContainText("phantomlabel");
+    await expect(err).toContainText(/not created|could not be written/i);
+
+    // First bullet: no pill is left attached. The task started with no
+    // labels and the create failed, so there must be *zero* pills —
+    // not merely no pill whose text reads "phantomlabel". An
+    // optimistically attached phantom renders as an unresolved pill
+    // ("unresolved — not in the current config") rather than the typed
+    // name, so a name-filtered count would miss it; the total count
+    // will not.
+    await expect(page.getByTestId("label-pill")).toHaveCount(0);
+
+    // The task's labels on disk do not contain the failed label —
+    // frontmatter should carry no labels list at all, since none was
+    // ever attached.
+    const fm = await frontmatterOf(tracker.root, key);
+    // No labels list was ever written, so the failed label cannot be in one.
+    expect(fm).not.toContain("phantomlabel");
+    expect(fm).not.toMatch(/^labels:/m);
+
+    // labels.yaml has no orphan. It may not exist at all (nothing was
+    // ever created); if it does, it does not name the failed label.
+    const labelsPath = path.join(tracker.root, ".loctt", "config", "labels.yaml");
+    let labelsYaml = "";
+    try {
+      labelsYaml = await readFile(labelsPath, "utf8");
+    } catch { /* absent is the strongest form of "no orphan" */ }
+    expect(labelsYaml).not.toContain("phantomlabel");
+
+    // Third bullet: the label is not offered in other pickers or the
+    // list view's Label filter afterwards. Drop the route so the real
+    // list read is honest, then check the filter.
+    await page.unroute("**/api/labels");
+    await page.goto(`${tracker.baseURL}/list`);
+    await page.getByRole("button", { name: "Filter Label" }).click();
+    await expect(page.getByRole("menuitemcheckbox", { name: "phantomlabel" }))
+      .toHaveCount(0);
+
+    expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
+  });
+});

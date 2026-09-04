@@ -1740,6 +1740,148 @@ keeps its quieter treatment, which BRD-6 distinguishes.
 (...)}` block in the column header's count `<span>` — delete it. The
 A11Y-30 over-cap test then fails.
 
+### A112 · Editing a comment deleted elsewhere gets the delete path's "already gone" message
+
+**Ticket:** M2.4 (CMT batch) · **Date:** 2026-09-04 · **Commit:** (this one)
+
+**The situation.** CMT-24 (major, P1): "Editing a comment that was
+deleted elsewhere fails cleanly", first bullet "The save reports that
+the comment no longer exists." `handleDeleteComment` already translates
+core's `unknown comment id: <ulid>` into "That comment is already gone
+— someone else deleted it…" (citing CMT-34). `handleEditComment` did
+**not**: it relayed the raw core message verbatim as a generic 400,
+leaking a ULID the user never typed and reading as malformed input.
+Edit text was already preserved (the composer stays open on error), so
+only bullet one failed.
+
+**What had to be decided.** Fix the edit path to match the delete
+path's translation, or decline CMT-24 as unimplemented?
+
+**Options considered.**
+
+1. **Fix — mirror the delete handler.** Small, follows an established
+   in-repo pattern two functions down. Costs: a server behaviour
+   change (an envelope's code/message/recovery for one error case).
+2. **Decline.** Costs: leaves a major P1 case unsatisfied over a
+   one-branch omission the delete path already showed how to handle;
+   the "report that the comment no longer exists" bullet stays failed.
+
+**Decided.** Option 1 — added a `unknown comment id` branch to
+`handleEditComment` returning "That comment is already gone — someone
+else deleted it. Your edit was not saved; refreshing will bring this
+list up to date." with `REJECTED_WRITE_NO_RETRY` + `recovery: reload`.
+
+**Why.** The translation already exists for the identical core error on
+the delete path (CMT-34); not doing it on edit was an inconsistency,
+not a design choice — the delete handler's own comment says the raw
+message "reads as a malformed-input error, and the id it names is one
+the user never typed and cannot act on."
+
+**To revert.** `apps/web/src/server/server.ts`, `handleEditComment`'s
+catch — remove the `if (/unknown comment id/i.test(raw))` block so it
+falls through to `error(res, raw, 400, { ...REJECTED_WRITE, field:
+"body" })`. The CMT-24 UI test (`tests/ui/flow-comments.spec.ts`) and
+the server unit test (`server.comments.test.ts`, "editing a comment
+deleted elsewhere…") then fail.
+
+### A113 · A field write blocked by the migration lock is a `schema_mismatch`, not a generic 500
+
+**Ticket:** M2.2 (TSK batch) · **Date:** 2026-09-04 · **Commit:** (this one)
+
+**The situation.** TSK-56 (minor, P4): "A save blocked by an
+in-progress schema migration is explained" — the failure must state
+the tracker is being migrated, the change was not saved, and the user
+should wait, "rather than being shown a generic error". A field write
+during a held migration lock is refused inside `withStateLock` (which
+checks `isMigrationLocked` both sides of acquiring the state lock),
+throwing `SchemaVersionError` **before** any mutation. But
+`handleSetField` caught only `LocttError` and `ZodError`;
+`SchemaVersionError` is a plain `Error`, so it fell through to the
+top-level fallback and returned HTTP 500 `code: "unknown"` with the
+real cause buried in `detail`. The optimistic value already rolls back
+(second bullet held); bullets one and three failed. This is a distinct
+state from the boot-guard version mismatch handled far above — the
+on-disk version is fine, a concurrent `loctt migrate` merely holds the
+lock — so the guard never fires and the request reaches `handleSetField`.
+
+**What had to be decided.** Where and how to classify the
+migration-lock error so the surface can explain it, without a
+schema-version bump?
+
+**Options considered.**
+
+1. **Catch `SchemaVersionError` in `handleSetField`** and emit a
+   `schema_mismatch` envelope (`data_state: not_saved`, `recovery:
+   retry`), carrying core's own "A schema migration is in progress…
+   Wait…" message. The client's generic `fieldFailure` branch already
+   renders a `not_saved` message with Retry, so no client change is
+   needed. Costs: one server branch.
+2. **Make `SchemaVersionError` a `LocttError`** so `toEnvelope` carries
+   it. Costs: changes an error class used across CLI/MCP/core with its
+   own tests; far wider blast radius for a web-only symptom.
+3. **Decline.** Costs: a stated, buildable case left unsatisfied.
+
+**Decided.** Option 1 — a `SchemaVersionError` branch in
+`handleSetField` returning 409 `schema_mismatch`, `not_saved`, `recovery:
+retry`, message = core's migration text.
+
+**Why.** Smallest correct change, and it reuses the existing
+`schema_mismatch` ErrorCode (a first-class cause designed for schema
+states) and the existing client `not_saved`+retry rendering. `retry`
+is right because the block is transient: once the migration finishes,
+the same edit succeeds. Option 2's broader reclassification is not
+warranted by a web-surface bullet.
+
+**To revert.** `apps/web/src/server/server.ts`, `handleSetField`'s
+catch — remove the `if (err instanceof SchemaVersionError)` block so it
+falls through to `throw err` (the generic 500). The TSK-56 UI test
+(`tests/ui/flow-task-failure.spec.ts`) and the server unit test
+(`server.migration-lock.test.ts`) then fail.
+
+### A114 · CMT-20 is declined — comments render flat, with none of the four scale affordances
+
+**Ticket:** M2.4 (CMT batch) · **Date:** 2026-09-04 · **Commit:** (this one)
+
+**The situation.** CMT-20 (major, P9): "80 comments render without
+collapsing the page", with four bullets — the list is scrollable or
+progressively loaded and the composer stays reachable without
+scrolling past all 80; a paginated list states the remaining count;
+posting scrolls to the new comment; a very long single comment is
+truncated with "Show more". `CommentsPanel` renders the entire thread
+in one flat `<ul>` (`list.map`) with the composer below it: **no**
+pagination, **no** virtualization, **no** own scroll container, **no**
+`scrollIntoView` on post, and **no** per-comment "Show more" (verified
+in `CommentsPanel.tsx` / `CommentItem.tsx`).
+
+**What had to be decided.** Tag CMT-20, or decline it?
+
+**Options considered.**
+
+1. **Tag it.** Costs: three of the four bullets have no subject in the
+   code; a test could only assert the composer exists and rows render,
+   which passes on a build that fails the case (the tag-that-cannot-
+   fail shape). Dishonest.
+2. **Build the missing affordances.** Costs: this is net-new
+   feature work (a scroll container + post-scroll at minimum, plausibly
+   a "Show more" clamp and pagination), well beyond verifying a
+   built-but-untested case, and beyond this batch's remit.
+3. **Decline, with a written gap.** Costs: a major case stays
+   unsatisfied and visible in the coverage report.
+
+**Decided.** Option 3 — declined and recorded in `known-gaps.md`. Not
+tagged.
+
+**Why.** `@verifies` has no partial marker; tagging would claim a major
+case satisfied when three of four bullets are unimplemented. The build
+loop's rule is to escalate/record an unbuildable case rather than write
+a weaker spec that can pass. The absence is a feature gap, not a test
+gap.
+
+**To revert.** When the affordances are built in
+`apps/web/src/client/comments/CommentsPanel.tsx` (and `CommentItem.tsx`
+for "Show more"), add a CMT-20 spec to `tests/ui/flow-comments.spec.ts`
+and delete the known-gaps entry.
+
 ## 9. Ken's rulings, 2026-08-29
 
 **These are Ken's, not an agent's.** Unlike § 8, they carry the

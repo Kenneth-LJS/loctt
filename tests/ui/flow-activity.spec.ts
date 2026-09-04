@@ -1261,3 +1261,141 @@ test.describe("CMT — activity", () => {
     expect(actors.join(" ")).not.toContain(ken.id);
   });
 });
+
+/* ================================================================== *
+ * CMT-25 — 300 history entries collapsing into few bulk groups still
+ * paginate correctly.
+ * ================================================================== */
+
+test.describe("CMT — activity pagination under bulk collapse", () => {
+  // @verifies CMT-25
+  test("CMT-25: pagination counts entries, merges a boundary-straddling group, and is untouched by expansion", async ({
+    page, tracker,
+  }) => {
+    test.setTimeout(120_000);
+    const pageErrors: string[] = [];
+    page.on("pageerror", err => pageErrors.push(err.message));
+
+    const key = onlyKey(await tracker.seed([{ title: "Deep history" }]));
+    const ken = await currentUser(tracker);
+
+    /**
+     * 300 hand-written entries in **display order** (index 0 = newest,
+     * the top of page 1), of which 200 share three `bulk_op_id`s in
+     * three contiguous blocks:
+     *
+     *  - OP-A: display 45–84 (40 entries) — **straddles the 50-entry
+     *    page-1/page-2 boundary**, which is the second bullet's whole
+     *    point.
+     *  - OP-B: display 120–199 (80 entries).
+     *  - OP-C: display 210–289 (80 entries).
+     *
+     * The remaining 100 are single entries. The file is append-order,
+     * which the server reverses to newest-first — so the file is the
+     * display array reversed. A contiguous run in the file stays
+     * contiguous (and same-ordered relative to itself) after reversal,
+     * so a block that straddles a display page boundary is exactly what
+     * this produces.
+     */
+    const opFor = (d: number): string | null => {
+      if (d >= 45 && d <= 84) return "OP-A";
+      if (d >= 120 && d <= 199) return "OP-B";
+      if (d >= 210 && d <= 289) return "OP-C";
+      return null;
+    };
+    const disp: string[] = [];
+    for (let d = 0; d < 300; d++) {
+      // A single day for all of them: this case is about entry-level
+      // pagination and bulk merging, not day cutting (that is CMT-17).
+      const mm = String(Math.floor(d / 60)).padStart(2, "0");
+      const ss = String(d % 60).padStart(2, "0");
+      const op = opFor(d);
+      disp.push(
+        `- timestamp: 2026-08-20T10:${mm}:${ss}.000Z`,
+        `  kind: field_change`,
+        `  field: marker`,
+        `  before: null`,
+        `  after: d-${String(d).padStart(3, "0")}`,
+        `  actor: ${ken.id}`,
+        ...(op !== null ? [`  bulk_op_id: ${op}`] : []),
+      );
+    }
+    // File order is the display array reversed: split back into
+    // per-entry chunks (each entry is 6 or 7 lines) and reverse the
+    // chunks, not the lines.
+    const chunks: string[][] = [];
+    let cur: string[] = [];
+    for (const line of disp) {
+      if (line.startsWith("- ") && cur.length > 0) { chunks.push(cur); cur = []; }
+      cur.push(line);
+    }
+    if (cur.length > 0) chunks.push(cur);
+    chunks.reverse();
+    await appendHistory(tracker.root, key, `${chunks.flat().join("\n")}\n`);
+
+    await openTask(page, tracker, key);
+    await expect(page.getByTestId("activity-scope")).toBeVisible();
+
+    // First bullet: the count is in *entries*, and it counts the
+    // underlying entries (301 with the CLI's `created`), not the
+    // collapsed rows above them. Page one is 50 entries.
+    await expect(page.getByTestId("activity-scope")).toHaveText("50 of 301 entries");
+
+    const bulkRows = () => page.getByTestId("activity-bulk-row");
+    const opA = () => page.locator('[data-testid="activity-bulk-row"][data-bulk-op-id="OP-A"]');
+
+    // On page 1 only OP-A's newest five entries (display 45–49) are
+    // loaded, so its row is present but partial.
+    await expect(opA()).toHaveCount(1);
+    await expect(opA()).toHaveAttribute("data-entry-count", "5");
+
+    // Second bullet: load page 2, and OP-A is ONE row spanning the
+    // boundary — not two. Its full span is now loaded (display 45–84,
+    // 40 entries), all under a single row.
+    await page.getByTestId("activity-load-more").click();
+    await expect(page.getByTestId("activity-scope")).toHaveText("100 of 301 entries");
+    await expect(opA()).toHaveCount(1);
+    await expect(opA()).toHaveAttribute("data-entry-count", "40");
+
+    // Third bullet: expanding a group does not consume a page of the
+    // pagination budget or reset the loaded offset. Capture the state,
+    // expand OP-A, and require pagination unchanged.
+    const scopeBefore = await page.getByTestId("activity-scope").innerText();
+    const rowsBefore = await bulkRows().count();
+    const loadMoreLabelBefore = await page.getByTestId("activity-load-more").innerText();
+
+    await opA().getByTestId("activity-bulk-toggle").click();
+    await expect(opA().getByTestId("activity-bulk-entries")).toBeVisible();
+    // The individual entries are now visible…
+    await expect(opA().getByTestId("activity-bulk-entries").getByTestId("activity-entry"))
+      .toHaveCount(40);
+    // …but the pagination scope, the number of loaded pages (as the
+    // "remaining" label), and the row set are all unchanged. Expansion
+    // is local component state, not a fetch.
+    await expect(page.getByTestId("activity-scope")).toHaveText(scopeBefore);
+    await expect(page.getByTestId("activity-load-more")).toHaveText(loadMoreLabelBefore);
+    expect(await bulkRows().count()).toBe(rowsBefore);
+
+    // And loading the rest still pages by entries to completion: 301
+    // total means five more presses from 100 (150, 200, 250, 300, 301).
+    for (const expected of [150, 200, 250, 300, 301]) {
+      await page.getByTestId("activity-load-more").click().catch(() => { /* last press may vanish */ });
+      await expect(page.getByTestId("activity-scope"))
+        .toHaveText(expected === 301 ? "301 entries" : `${String(expected)} of 301 entries`);
+    }
+    await expect(page.getByTestId("activity-load-more")).toHaveCount(0);
+
+    // With everything loaded, each bulk op is exactly one row of its
+    // full size — no split anywhere across all the boundaries crossed.
+    await expect(page.locator('[data-testid="activity-bulk-row"][data-bulk-op-id="OP-A"]'))
+      .toHaveCount(1);
+    await expect(page.locator('[data-testid="activity-bulk-row"][data-bulk-op-id="OP-A"]'))
+      .toHaveAttribute("data-entry-count", "40");
+    await expect(page.locator('[data-testid="activity-bulk-row"][data-bulk-op-id="OP-B"]'))
+      .toHaveAttribute("data-entry-count", "80");
+    await expect(page.locator('[data-testid="activity-bulk-row"][data-bulk-op-id="OP-C"]'))
+      .toHaveAttribute("data-entry-count", "80");
+
+    expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
+  });
+});
