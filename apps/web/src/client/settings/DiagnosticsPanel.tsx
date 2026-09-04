@@ -70,9 +70,9 @@ const STATUS_LABEL: Record<CheckStatus, string> = {
 };
 
 const STATUS_CLASS: Record<CheckStatus, string> = {
-  ok: "text-status-done",
-  warn: "text-status-warn",
-  error: "text-status-danger",
+  ok: "text-success-fg",
+  warn: "text-warn-fg",
+  error: "text-danger-fg",
 };
 
 export function DiagnosticsPanel() {

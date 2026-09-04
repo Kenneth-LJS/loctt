@@ -169,7 +169,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
               scroll under them. */}
           <div
             data-testid="timeline-header"
-            className="sticky top-0 z-20 flex h-6 border-b border-border-default bg-canvas-default"
+            className="sticky top-0 z-20 flex h-6 border-b border-border-default bg-bg-canvas"
             style={{ width: props.width }}
           >
             {props.cells.map(c => (
@@ -181,7 +181,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                 // without assuming the chart's origin — which moves
                 // whenever the dated range widens.
                 data-date={c.key}
-                className="shrink-0 border-r border-border-muted text-center text-[10px] leading-6 text-fg-muted"
+                className="shrink-0 border-r border-border-subtle text-center text-[10px] leading-6 text-text-secondary"
                 style={{ width: c.width }}
               >
                 {c.label}
@@ -201,7 +201,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                 data-date={s.date}
                 {...(s.reason !== "" ? { title: s.reason } : {})}
                 aria-hidden="true"
-                className="absolute top-0 bg-fg-default/[0.045]"
+                className="absolute top-0 bg-text-primary/[0.045]"
                 style={{
                   left: dateToX(props.range, s.date, props.zoom),
                   width: px,
@@ -221,7 +221,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
               // marker's position was only a pixel offset.
               data-today={props.today}
               aria-hidden="true"
-              className="absolute top-0 z-10 w-px bg-accent-fg/70"
+              className="absolute top-0 z-10 w-px bg-accent/70"
               style={{ left: todayX, height: layout.height, pointerEvents: "none" }}
             />
 
@@ -233,13 +233,13 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                   data-testid={`timeline-band-${band.id}`}
                   aria-expanded={!collapsed.has(band.id)}
                   onClick={() => { toggle(band.id); }}
-                  className="absolute left-0 z-10 flex items-center gap-2 border-b border-border-muted bg-canvas-subtle/90 px-2 text-left text-[11px] font-semibold"
+                  className="absolute left-0 z-10 flex items-center gap-2 border-b border-border-subtle bg-bg-muted/90 px-2 text-left text-[11px] font-semibold"
                   style={{ top: band.y, height: BAND_HEADER_H, width: props.width }}
                 >
                   <span aria-hidden="true">{collapsed.has(band.id) ? "▸" : "▾"}</span>
                   <span>{band.label}</span>
                   <span
-                    className="font-normal text-fg-muted"
+                    className="font-normal text-text-secondary"
                     data-testid={`timeline-band-count-${band.id}`}
                   >
                     ({band.count})
@@ -313,7 +313,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                         props.onBarKeyAdjust?.(row.task.id, edge, dir);
                       }}
                       aria-label={`${row.task.key} ${row.task.title}, ${start} to ${due}`}
-                      className="absolute overflow-hidden rounded border border-accent-fg/40 bg-accent-fg/20 px-1 text-left text-[11px] leading-none hover:bg-accent-fg/30"
+                      className="absolute overflow-hidden rounded border border-accent/40 bg-accent/20 px-1 text-left text-[11px] leading-none hover:bg-accent/30"
                       style={{
                         left: bar.left,
                         width: bar.width,
@@ -332,7 +332,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                         <span
                           data-testid={`timeline-offscreen-dep-${row.task.key}`}
                           title="This task has a dependency on a task that is not shown"
-                          className="absolute right-0 top-0 z-10 px-0.5 text-[9px] leading-none text-attention-fg"
+                          className="absolute right-0 top-0 z-10 px-0.5 text-[9px] leading-none text-warn-fg"
                         >
                           &#8674;
                         </span>
@@ -398,7 +398,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                     refY="3"
                     orient="auto"
                   >
-                    <path d="M0,0 L6,3 L0,6 Z" className="fill-fg-muted" />
+                    <path d="M0,0 L6,3 L0,6 Z" className="fill-text-secondary" />
                   </marker>
                 </defs>
                 {visibleEdges.map(edge => {
@@ -429,7 +429,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                         { x: toBar.left, y: toY },
                       )}
                       fill="none"
-                      className="stroke-fg-muted"
+                      className="stroke-text-secondary"
                       strokeWidth={1}
                       markerEnd="url(#tl-arrowhead)"
                     />

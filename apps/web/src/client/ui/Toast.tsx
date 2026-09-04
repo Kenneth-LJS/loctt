@@ -138,7 +138,7 @@ function ToastItem({
             toast.action?.onAct();
             onDismiss(id);
           }}
-          className="shrink-0 font-medium text-accent-fg underline underline-offset-2 hover:text-text-primary"
+          className="shrink-0 font-medium text-accent underline underline-offset-2 hover:text-text-primary"
         >
           {toast.action.label}
         </button>

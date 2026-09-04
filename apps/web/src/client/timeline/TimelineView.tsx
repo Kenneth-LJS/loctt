@@ -453,7 +453,7 @@ export function TimelineView() {
         <div
           role="alert"
           data-testid="timeline-dependency-config-error"
-          className="rounded-md border border-attention-fg/40 bg-attention-fg/5 px-3 py-2 text-[12px] text-fg-default"
+          className="rounded-md border border-warn-fg/40 bg-warn-bg/5 px-3 py-2 text-[12px] text-text-primary"
         >
           <strong>workflow.yaml</strong>: <code>timeline.dependency_relationship</code>
           {" "}names <code data-testid="timeline-dependency-missing-key">{depStatus.key}</code>,
@@ -467,7 +467,7 @@ export function TimelineView() {
         <div
           role="alert"
           data-testid="timeline-calendar-error"
-          className="rounded-md border border-attention-fg/40 bg-attention-fg/5 px-3 py-2 text-[12px] text-fg-default"
+          className="rounded-md border border-warn-fg/40 bg-warn-bg/5 px-3 py-2 text-[12px] text-text-primary"
         >
           <strong>calendar.yaml</strong> could not be read, so weekend and holiday
           {" "}shading is switched off and the today-marker is placed in{" "}
@@ -555,14 +555,14 @@ export function TimelineView() {
           never sees a complete empty timeline that fills in. */}
       {loading ? (
         <div
-          className="min-h-0 flex-1 animate-pulse rounded-md border border-border-default bg-canvas-subtle"
+          className="min-h-0 flex-1 animate-pulse rounded-md border border-border-default bg-bg-muted"
           data-testid="timeline-skeleton"
           aria-busy="true"
           aria-label="Loading the timeline"
         />
       ) : noRows ? (
         <div
-          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 rounded-md border border-border-default text-[12px] text-fg-muted"
+          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 rounded-md border border-border-default text-[12px] text-text-secondary"
           data-testid="timeline-empty"
         >
           <span>No tasks match this view.</span>
@@ -579,7 +579,7 @@ export function TimelineView() {
               the Unscheduled lane below is where the tasks are. */}
           {noBars && (
             <div
-              className="rounded-md border border-border-default px-3 py-2 text-[12px] text-fg-muted"
+              className="rounded-md border border-border-default px-3 py-2 text-[12px] text-text-secondary"
               data-testid="timeline-no-dated-tasks"
             >
               None of these tasks has both a start date and a due date, so there is
@@ -615,7 +615,7 @@ export function TimelineView() {
                   data-testid="timeline-drag-label"
                   data-start={drag.start}
                   data-due={drag.due}
-                  className="pointer-events-none fixed z-50 rounded border border-border-default bg-canvas-default px-1.5 py-0.5 font-mono text-[11px] shadow"
+                  className="pointer-events-none fixed z-50 rounded border border-border-default bg-bg-canvas px-1.5 py-0.5 font-mono text-[11px] shadow"
                   style={{ left: drag.x + 12, top: drag.y + 12 }}
                 >
                   {drag.edge === "start"
@@ -632,7 +632,7 @@ export function TimelineView() {
 
       <UnscheduledLane rows={model.unscheduled} onOpenTask={openTask} />
 
-      <div className="text-[11px] text-fg-muted" data-testid="timeline-total">
+      <div className="text-[11px] text-text-secondary" data-testid="timeline-total">
         {totalRows(model)} {totalRows(model) === 1 ? "task" : "tasks"}
         {unreadable.length > 0 && (
           <span data-testid="timeline-total-unreadable">
@@ -686,8 +686,8 @@ function Toolbar(props: {
             onClick={() => { props.onZoom(z); }}
             className={`rounded border px-2 py-0.5 text-[12px] capitalize ${
               props.zoom === z
-                ? "border-accent-fg bg-accent-fg/10 text-accent-fg"
-                : "border-border-default text-fg-muted hover:bg-canvas-subtle"
+                ? "border-accent bg-accent/10 text-accent"
+                : "border-border-default text-text-secondary hover:bg-bg-muted"
             }`}
           >
             {z}
@@ -695,13 +695,13 @@ function Toolbar(props: {
         ))}
       </div>
 
-      <label className="flex items-center gap-1 text-[12px] text-fg-muted">
+      <label className="flex items-center gap-1 text-[12px] text-text-secondary">
         Group by
         <select
           data-testid="timeline-grouping"
           value={props.grouping}
           onChange={e => { props.onGrouping(e.target.value as TimelineGrouping); }}
-          className="rounded border border-border-default bg-canvas-default px-1 py-0.5 text-[12px] capitalize"
+          className="rounded border border-border-default bg-bg-canvas px-1 py-0.5 text-[12px] capitalize"
         >
           {groupings.map(g => (
             <option key={g} value={g}>{g}</option>
@@ -712,7 +712,7 @@ function Toolbar(props: {
       {/* TML-15: the toggle reflects the state even when no
           relationship is configured — "the arrows toggle reflects that
           state" — so it is disabled rather than hidden. */}
-      <label className="flex items-center gap-1 text-[12px] text-fg-muted">
+      <label className="flex items-center gap-1 text-[12px] text-text-secondary">
         <input
           type="checkbox"
           data-testid="timeline-arrows"
@@ -727,7 +727,7 @@ function Toolbar(props: {
         type="button"
         data-testid="timeline-today"
         onClick={() => { props.onToday(); }}
-        className="rounded border border-border-default px-2 py-0.5 text-[12px] text-fg-muted hover:bg-canvas-subtle"
+        className="rounded border border-border-default px-2 py-0.5 text-[12px] text-text-secondary hover:bg-bg-muted"
       >
         Today
       </button>
@@ -750,12 +750,12 @@ function UnscheduledLane(props: {
   if (props.rows.length === 0) return null;
   return (
     <div
-      className="rounded-md border border-border-default bg-canvas-subtle"
+      className="rounded-md border border-border-default bg-bg-muted"
       data-testid="timeline-unscheduled"
     >
       <div className="border-b border-border-default px-3 py-1.5 text-[12px] font-semibold">
         Unscheduled{" "}
-        <span className="font-normal text-fg-muted" data-testid="timeline-unscheduled-count">
+        <span className="font-normal text-text-secondary" data-testid="timeline-unscheduled-count">
           ({props.rows.length})
         </span>
       </div>
@@ -766,10 +766,10 @@ function UnscheduledLane(props: {
               type="button"
               data-testid={`timeline-unscheduled-row-${r.task.key}`}
               onClick={() => { props.onOpenTask(r.task.key); }}
-              className="flex w-full items-center gap-2 px-3 py-1 text-left text-[12px] hover:bg-canvas-default"
+              className="flex w-full items-center gap-2 px-3 py-1 text-left text-[12px] hover:bg-bg-canvas"
               style={{ height: ROW_H }}
             >
-              <span className="font-mono text-fg-muted">{r.task.key}</span>
+              <span className="font-mono text-text-secondary">{r.task.key}</span>
               <span className="truncate">{r.task.title}</span>
               {/* TML-19 ("hovering explains the missing date"), TML-20
                   and TML-48 ("the message names the task and the
@@ -782,7 +782,7 @@ function UnscheduledLane(props: {
               {r.problem !== undefined && (
                 <span
                   data-testid={`timeline-unscheduled-reason-${r.task.key}`}
-                  className="ml-auto shrink-0 rounded border border-border-muted px-1 text-[11px] text-fg-muted"
+                  className="ml-auto shrink-0 rounded border border-border-subtle px-1 text-[11px] text-text-secondary"
                 >
                   {dateProblemNote(r.problem)}
                 </span>

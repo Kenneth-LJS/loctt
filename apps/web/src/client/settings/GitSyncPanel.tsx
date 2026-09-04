@@ -75,7 +75,7 @@ function DisabledState({ status }: { readonly status: GitStatus }) {
           Git sync is off. LocTT works fully without it — it stores tasks as
           files either way.
         </p>
-        <p role="alert" className="mb-2 text-[13px] text-status-danger">
+        <p role="alert" className="mb-2 text-[13px] text-danger-fg">
           This directory is not a git repository, so git sync cannot be
           enabled here.
         </p>
@@ -111,7 +111,7 @@ function DisabledState({ status }: { readonly status: GitStatus }) {
           role="alert"
           data-testid="git-no-remote"
           data-git-warning="no-remote"
-          className="mb-3 text-[13px] text-status-warn"
+          className="mb-3 text-[13px] text-warn-fg"
         >
           This repository has no remote configured. Git sync can still be
           enabled, and the panel will show it as local-only: commits land on
@@ -239,7 +239,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
                 // GIT-27: `remote` always holds a name because it
                 // defaults to "origin", so the name alone would announce
                 // a remote this repo does not have.
-                <span data-git-remote="none" className="text-status-warn">
+                <span data-git-remote="none" className="text-warn-fg">
                   none configured — local-only
                 </span>
               )}
@@ -306,7 +306,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
           role="alert"
           data-testid="git-reconcile-blocked"
           data-git-blocked="reconcile-in-progress"
-          className="mb-3 rounded-md border border-status-danger p-2 text-[13px] text-status-danger"
+          className="mb-3 rounded-md border border-danger-fg p-2 text-[13px] text-danger-fg"
         >
           A reconciliation is already in progress for this tracker. Publish and
           sync are blocked until it is finished or abandoned — neither ran, and
@@ -378,13 +378,13 @@ function EnabledState({ status, checkedAt, onRefresh }: {
               + `${String(sync.data.merged ?? 0)} merged, ${String(sync.data.deleted ?? 0)} removed.`
             : "Already up to date — the branch has not moved since the last sync."}
           {sync.data.fetchError !== undefined && (
-            <span className="ml-1 text-status-warn">
+            <span className="ml-1 text-warn-fg">
               The remote could not be reached ({sync.data.fetchError}), so this
               compared against the local copy of the branch only.
             </span>
           )}
           {sync.data.unresolvedKeys !== undefined && sync.data.unresolvedKeys.length > 0 && (
-            <span className="ml-1 text-status-warn">
+            <span className="ml-1 text-warn-fg">
               Unresolved keys: {sync.data.unresolvedKeys.join(", ")}.
             </span>
           )}
@@ -503,7 +503,7 @@ export function GitSyncPanel() {
       */}
       {status.data?.unreadable !== undefined && (
         <div role="alert" data-testid="git-status-unreadable" data-git-status="unreadable">
-          <p className="mb-2 text-[13px] text-status-danger">
+          <p className="mb-2 text-[13px] text-danger-fg">
             Git sync settings could not be read, so this panel cannot report
             whether git mode is on.
           </p>

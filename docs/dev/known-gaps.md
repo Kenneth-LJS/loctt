@@ -3545,7 +3545,53 @@ can *never* be load- or timing-dependent — so a file-level pass in
 isolation is not evidence it is fixed. The tell was the error naming
 the second element (the path div), which pointed straight at the cause.
 
-## Eighteen more colorless color utilities beyond warning-fg (design-token audit needed)
+## ~~Eighteen more colorless color utilities beyond warning-fg~~ — FIXED 2026-09-04
+
+**FIXED 2026-09-04 (design-token audit pass).** All 18 phantom tokens
+were remapped to real `--color-*` tokens, and the guard test now ships
+green: `apps/web/src/client/styles/colorTokens.test.ts`. It walks every
+client `.ts`/`.tsx`, pulls each `(text|bg|border)-<token>` out of the
+`className` strings, and asserts the utility appears in the built CSS
+(the authoritative oracle — Tailwind emits a rule only for a token it
+recognised). It was shown to fail on a reintroduced `text-status-danger`
+before being restored. Six representative sites were verified with a
+real `getComputedStyle` (danger red, warn amber, accent indigo, canvas
+bg) across GitSyncPanel, the comment renderers, BoardCard and
+TimelineChart.
+
+Final mapping (every site decided; none left open):
+
+| Phantom | → Real token | Why |
+|---|---|---|
+| `text/border-status-danger` | `danger-fg` | error/alert text + its border |
+| `bg-status-danger` | `danger-bg` | (no site used it; bg pairs with the fg above) |
+| `text-status-warn` | `warn-fg` | warning text |
+| `text-status-done` | `success-fg` | Diagnostics "Pass" row |
+| `accent-fg` (text/bg/border/ring/fill/stroke) | `accent` | every site wants the accent hue: links, drop-target rings, the "Active" pill, the filled submit button (its `text-white` supplies contrast), the timeline "today" line |
+| `text/border-attention-fg` | `warn-fg` | config-error alert boxes + the offscreen-dependency marker read as warnings |
+| `bg-attention-fg` | `warn-bg` | same alert boxes' tint |
+| `text-fg-default` | `text-primary` | body text inside the alert boxes |
+| `bg-fg-default` | `text-primary` (as `bg-text-primary`) | a faint neutral shade (4.5% alpha) over non-working days |
+| `fg-muted` (text/fill/stroke) | `text-secondary` | muted axis labels / counts |
+| `text-text-inverse` | `accent-contrast` | text on an accent fill |
+| `bg-bg-base` | `bg-canvas` (as `bg-bg-canvas`) | base surface |
+| `bg-canvas-default` | `bg-canvas` (as `bg-bg-canvas`) | base surface |
+| `bg-canvas-subtle` | `bg-muted` (as `bg-bg-muted`) | subtle raised canvas |
+| `border-border-muted` | `border-subtle` (as `border-border-subtle`) | muted border |
+
+Two notes for a spot-check. (1) The tokens live under compound names,
+so the *utility* is `bg-bg-canvas` / `bg-bg-muted` /
+`border-border-subtle` (prefix + full token) — my first pass wrote the
+bare `bg-canvas` etc., which is itself a phantom (`canvas` is not a
+token); the guard caught it and it was corrected. (2) The only site I'd
+call genuinely ambiguous was `bg-fg-default/[0.045]` (the non-working-day
+shade): decided `text-primary` because it is a neutral foreground tint
+and `text-primary` is the near-black/near-white that reads in both
+themes — but a dedicated neutral could be argued.
+
+Original report retained below.
+
+---
 
 **Found 2026-09-04 while fixing `warning-fg`, by writing a guard that
 checks every color utility against the built CSS.** The `warning-fg`

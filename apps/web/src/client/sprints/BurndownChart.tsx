@@ -186,7 +186,7 @@ export function BurndownChart(props: Props) {
             data-testid="burndown-actual"
             points={plot(geo.actual)}
             fill="none"
-            className="stroke-accent-fg"
+            className="stroke-accent"
             strokeWidth={2}
           />
 
@@ -200,7 +200,7 @@ export function BurndownChart(props: Props) {
               cx={p.x + PAD_L}
               cy={p.y + PAD_T}
               r={geo.actual.length === 1 ? 4 : 2}
-              className="fill-accent-fg"
+              className="fill-accent"
             />
           ))}
 

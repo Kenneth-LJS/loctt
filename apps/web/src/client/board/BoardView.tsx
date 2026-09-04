@@ -668,7 +668,7 @@ function Column({
       className={[
         "flex h-full w-[280px] shrink-0 flex-col rounded-md border bg-bg-surface transition-colors",
         isDropTarget
-          ? "border-accent-fg ring-1 ring-accent-fg/40"
+          ? "border-accent ring-1 ring-accent/40"
           : "border-border-subtle",
       ].join(" ")}
     >
@@ -832,7 +832,7 @@ function DropIndicator({ active }: { readonly active: boolean }) {
       data-active={active ? "true" : "false"}
       className={[
         "overflow-hidden rounded transition-all duration-150",
-        active ? "my-1 h-10 border-2 border-dashed border-accent-fg bg-accent-fg/10" : "h-0",
+        active ? "my-1 h-10 border-2 border-dashed border-accent bg-accent/10" : "h-0",
       ].join(" ")}
     />
   );

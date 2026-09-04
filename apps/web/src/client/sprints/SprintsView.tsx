@@ -517,12 +517,12 @@ function Column({
         "flex w-[280px] shrink-0 flex-col rounded-md border bg-bg-surface transition-colors",
         expanded ? "h-full" : "h-auto",
         isDropTarget
-          ? "border-accent-fg ring-1 ring-accent-fg/40"
+          ? "border-accent ring-1 ring-accent/40"
           // SPR-2: the active column's highlight is not colour alone —
           // it carries a heavier border AND the "Active" pill below,
           // so it is distinguishable without relying on hue.
           : active
-            ? "border-accent-fg/70 border-l-4"
+            ? "border-accent/70 border-l-4"
             : "border-border-subtle",
       ].join(" ")}
     >
@@ -562,7 +562,7 @@ function Column({
           </span>
           <span className="flex shrink-0 items-center gap-1.5">
             {active && (
-              <span className="rounded-full bg-accent-fg/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-accent-fg">
+              <span className="rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-accent">
                 Active
               </span>
             )}
@@ -693,7 +693,7 @@ function DropIndicator({ active }: { readonly active: boolean }) {
       data-active={active ? "true" : "false"}
       className={[
         "overflow-hidden rounded transition-all duration-150",
-        active ? "my-1 h-10 border-2 border-dashed border-accent-fg bg-accent-fg/10" : "h-0",
+        active ? "my-1 h-10 border-2 border-dashed border-accent bg-accent/10" : "h-0",
       ].join(" ")}
     />
   );

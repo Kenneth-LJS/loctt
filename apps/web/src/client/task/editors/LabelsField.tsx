@@ -203,7 +203,7 @@ export function LabelsField({
               else void create();
             }}
             placeholder="Find or create…"
-            className="mb-1 w-full rounded border border-border-subtle bg-bg-base px-1.5 py-1 text-[12px] text-text-primary"
+            className="mb-1 w-full rounded border border-border-subtle bg-bg-canvas px-1.5 py-1 text-[12px] text-text-primary"
           />
           {candidates.map(l => (
             <button

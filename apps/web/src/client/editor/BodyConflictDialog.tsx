@@ -130,7 +130,7 @@ export function BodyConflictDialog({
             data-testid="conflict-apply"
             disabled={preview === null}
             onClick={() => { if (preview !== null) onResolve(preview); }}
-            className="rounded bg-accent px-3 py-1 text-[13px] text-text-inverse disabled:opacity-50"
+            className="rounded bg-accent px-3 py-1 text-[13px] text-accent-contrast disabled:opacity-50"
           >
             Apply
           </button>

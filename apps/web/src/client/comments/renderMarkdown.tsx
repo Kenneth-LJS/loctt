@@ -212,7 +212,7 @@ function renderText(node: JSONContent): React.ReactNode {
                 href={href}
                 rel="noreferrer noopener"
                 target="_blank"
-                className="text-accent-fg underline"
+                className="text-accent underline"
               >
                 {out}
               </a>
@@ -310,7 +310,7 @@ function MentionChip({
     "mx-px inline-flex items-baseline rounded border px-1 align-baseline text-[12px] font-medium "
     + (target.archived
       ? "border-border-subtle bg-bg-muted text-text-tertiary line-through decoration-1"
-      : "border-accent-fg/30 bg-accent-muted text-accent-fg");
+      : "border-accent/30 bg-accent-muted text-accent");
 
   if (activate === undefined) {
     return (

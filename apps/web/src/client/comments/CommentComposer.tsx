@@ -269,7 +269,7 @@ export function CommentComposer({
             "rounded-md px-3 py-1.5 text-[13px] font-medium "
             + (disabled
               ? "cursor-not-allowed bg-bg-muted text-text-tertiary"
-              : "bg-accent-fg text-white hover:opacity-90")
+              : "bg-accent text-white hover:opacity-90")
           }
         >
           {pending ? "Saving…" : submitLabel}
