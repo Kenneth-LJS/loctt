@@ -56,6 +56,26 @@ export {
   SortDirectionSchema,
 } from "./query.js";
 export type {
+  AutoMergedField,
+  ConflictChoice,
+  ConflictFieldKind,
+  ConflictOption,
+  ConflictValue,
+  ReconcileDecision,
+  ReconcilePlan,
+  TaskConflictField,
+} from "./reconcile.js";
+export {
+  AutoMergedFieldSchema,
+  ConflictChoiceSchema,
+  ConflictFieldKindSchema,
+  ConflictOptionSchema,
+  ConflictValueSchema,
+  ReconcileDecisionSchema,
+  ReconcilePlanSchema,
+  TaskConflictFieldSchema,
+} from "./reconcile.js";
+export type {
   AttachmentResponse,
   AttachResultResponse,
   BulkResponse,

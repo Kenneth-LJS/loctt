@@ -4036,3 +4036,43 @@ So the coverage frontier for the current build is: the 2 A11Y cases
 (A11Y-38, A11Y-49), the reconcile batch (landing), and — after Ken's
 one spec edit — the 7 avatar cases. Everything else is a phase item or a
 schema-bump unblock, all with a home.
+## Reconcile batch declines: GIT-8 (rekey summary) and GIT-21 (force-push)
+
+Recorded 2026-09-04 by the git-reconcile batch. The 18 conflict cases
+built the per-field conflict-detail model, reporting, write-back and the
+resolution panel (GIT-5/6/7/10/11/12/13/14/15/17/18/26/31/32/37/38). Two
+of the batch's cases are declined here because they are genuine separate
+features with no existing core support — not reconciliation-detail work:
+
+- **GIT-8 · rekey summary before applying.** When reconciliation leaves
+  two tasks sharing a key with different ULIDs, the case wants a summary
+  shown *before* any write: which key collided, which task keeps it (the
+  earlier `created_at`, with both timestamps shown and the rule stated),
+  which is renumbered and to what, then an explicit confirm — no
+  auto-apply. `rekeyCollisions` (`git/reconcile.ts`) picks the keeper and
+  allocates the new key, but it runs *inside* `normaliseAfterMerge`
+  during the sync write with no summary and no confirm step, and the
+  panel has no rekey-summary UI or its `/api/git/reconcile/rekey-preview`
+  channel. Building GIT-8 (and GIT-9's ULID tiebreak display, GIT-33's
+  partial-rekey report) needs: a preview that returns the planned
+  renumbers without applying, a confirm gate, and the panel surface. To
+  reproduce the gap: sync two clones that each created a task offline
+  under the same key — the rekey happens silently, no summary is shown.
+
+- **GIT-21 · force-pushed branch no longer contains the last synced
+  commit.** The case wants sync to detect that `last_synced_commit` is
+  not an ancestor of the remote head, stop, say the history was
+  rewritten (naming the missing commit), refuse to silently re-base, and
+  offer concrete next actions (inspect in git, or re-establish a base).
+  There is no ancestry check anywhere: `planSync` treats a missing base
+  as "no base available" and classifies conflicts, and `pullFromLocttBranch`
+  has no "is last_synced an ancestor of remote head" guard. Building
+  GIT-21 needs a `git merge-base --is-ancestor` check before planning,
+  a dedicated `GitHistoryRewrittenError` carrying the missing commit,
+  and the two recovery actions on the panel. To reproduce: publish, then
+  `git push --force` a rewritten `loctt` history to the remote, then
+  sync — it currently proceeds as an ordinary divergence rather than
+  naming the rewrite.
+
+Both are scoped as their own tickets. The reconciliation feature does not
+depend on either.

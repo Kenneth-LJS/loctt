@@ -129,25 +129,43 @@ export { blockingFindings, checkDataIntegrity, runDoctor } from "./diagnostics/i
 export type { LocttErrorOptions } from "./errors.js";
 export { errorEnvelope, LocttError } from "./errors.js";
 export type { FetchResult, GitStatusResult, PreflightReport, PushResult } from "./git/index.js";
-export type { RekeyOutcome, RekeyResult, RekeySkip } from "./git/index.js";
+export type {
+  ApplyReconcileOutcome,
+  ApplyReconcileResult,
+  ConflictComputation,
+  RekeyOutcome,
+  RekeyResult,
+  RekeySkip,
+  TaskApplyResult,
+} from "./git/index.js";
 export {
+  abandonReconcile,
+  applyReconcile,
+  applyReconcileDecisions,
   commitToLocttBranch,
+  computeReconcilePlan,
+  computeTaskConflicts,
   disableGit,
   enableGit,
   fetchLocttBranch,
   getGitStatus,
+  getReconcileState,
   // Re-exported so callers can distinguish a conflict from any other git
   // failure (GIT-C5). It lived in git/index.ts only, which put it out of
   // reach of apps/web — the reason every git error there was reported
   // identically.
   GitConflictError,
   GitReconcileInterruptedError,
+  GitReconcileNeededError,
   GitSyncError,
+  loadReconcileSession,
   preflight,
   PreflightError,
   publish,
   pullFromLocttBranch,
   pushLocttBranch,
+  saveReconcileDecisions,
+  statusExistsLocally,
   sync,
 } from "./git/index.js";
 export { mergeKeyHistory,mergeRelationships, rekeyCollisions } from "./git/index.js";

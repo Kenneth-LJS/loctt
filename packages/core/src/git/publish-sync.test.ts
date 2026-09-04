@@ -13,7 +13,8 @@ import { loadSyncState, saveSyncState } from "../state/sync.js";
 import { createTask } from "../task/create.js";
 import { setField } from "../task/update.js";
 import { enableGit } from "./git-mode.js";
-import { publish, sync } from "./publish-sync.js";
+import { GitReconcileNeededError, publish, sync } from "./publish-sync.js";
+import { abandonReconcile } from "./reconcile-session.js";
 
 describe("publish-sync", () => {
   let root: string;
@@ -232,13 +233,22 @@ describe("publish-sync", () => {
       }, "hand-add on branch");
       await writeFile(join(dir, "task.md"), withAssignee(published, "u-local"));
 
-      await sync(locttDir, root);
-
-      const history = await readFile(join(dir, "_history.yaml"), "utf-8");
-      expect(history).toContain("merge_resolved");
-      expect(history).toContain("assignee");
-      // The losing value is the whole point of the entry.
-      expect(history).toContain("u-local");
+      // Both sides set `assignee` to different values from an absent base
+      // — a genuine two-sided conflict. Since reconciliation landed
+      // (GIT-6, GIT-11), this is surfaced for the user to resolve rather
+      // than silently last-write-wins-merged with a `merge_resolved`
+      // audit entry. (This test previously asserted the audit entry,
+      // encoding that pre-reconciliation auto-merge; the one-sided
+      // fallback that entry documents is still exercised by "keeps both
+      // sides' structured edits to different fields", where only one side
+      // moves a field.)
+      let caught: unknown;
+      try {
+        await sync(locttDir, root);
+      } catch (err) { caught = err; }
+      expect(caught).toBeInstanceOf(GitReconcileNeededError);
+      expect((caught as GitReconcileNeededError).plan.conflicts.some(c => c.field === "assignee")).toBe(true);
+      await abandonReconcile(locttDir);
     });
 
     it("reports a key collision it could not resolve", async () => {
@@ -459,11 +469,21 @@ describe("publish-sync", () => {
       }, "branch edit");
       await writeFile(taskFile, published.replace(/^title: .*$/m, "title: Local side"));
 
-      // A task.md now merges, so this no longer aborts. The path-naming
-      // contract is asserted below on a file that genuinely has no
-      // merge rule.
-      const result = await sync(locttDir, root);
-      expect(result.merged).toBe(1);
+      // Both sides moved `title` from the base to different values — a
+      // genuine conflict. Since the reconciliation feature landed (GIT-6,
+      // GIT-11), sync no longer silently last-write-wins this: it opens
+      // reconciliation and names the field. (This test previously
+      // asserted `result.merged === 1`, encoding the pre-reconciliation
+      // auto-merge that GIT-6 forbids — "Sync stops and opens the
+      // reconciliation panel instead of picking a winner".)
+      let caught: unknown;
+      try {
+        await sync(locttDir, root);
+      } catch (err) { caught = err; }
+      expect(caught).toBeInstanceOf(GitReconcileNeededError);
+      expect((caught as GitReconcileNeededError).plan.conflicts.some(c => c.field === "title")).toBe(true);
+      // Leave no sentinel behind for the next test in the suite.
+      await abandonReconcile(locttDir);
     });
 
     it("still aborts, naming the path, for a file with no merge rule", async () => {

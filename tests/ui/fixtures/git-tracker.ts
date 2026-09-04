@@ -74,9 +74,16 @@ export interface GitTrackerFixture {
  * the tasks it publishes are real loctt tasks a sync will parse and
  * write, not a hand-rolled marker file.
  */
-export async function publishFromOtherClone(
+/**
+ * Runs a batch of loctt subcommands in a throwaway clone that first
+ * `init`s, enables git, and fast-forwards onto the branch, then publishes
+ * afterwards — the shared shape every "another machine did X" helper
+ * needs. `build(cli)` issues the clone-specific commands (create, set,
+ * link). Returns the bare `loctt` head after publishing.
+ */
+async function inOtherClone(
   remoteRepo: string,
-  titles: readonly string[],
+  build: (cli: (args: readonly string[]) => Promise<unknown>) => Promise<void>,
 ): Promise<string> {
   const other = await mkdtemp(path.join(workspaceRoot, "loctt-other-"));
   const env = { ...process.env, ...GIT_ENV };
@@ -89,16 +96,60 @@ export async function publishFromOtherClone(
       execa(process.execPath, [cliEntry, ...args], { cwd: other, env });
     await cli(["init"]);
     await cli(["git", "enable"]);
-    // Pick up whatever is already on the branch so this clone's publish
-    // is a fast-forward on top of it, not a divergent history.
+    // Adopt the branch's current state so this clone's publish is a
+    // fast-forward on top of it, not a divergent history.
     await cli(["git", "sync"]).catch(() => undefined);
-    for (const title of titles) await cli(["create", title]);
+    await build(cli);
     await cli(["git", "publish"]);
     const head = await execa("git", ["--git-dir", remoteRepo, "rev-parse", "loctt"], { env });
     return head.stdout.trim();
   } finally {
     await rm(other, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+export async function publishFromOtherClone(
+  remoteRepo: string,
+  titles: readonly string[],
+): Promise<string> {
+  return inOtherClone(remoteRepo, async (cli) => {
+    for (const title of titles) await cli(["create", title]);
+  });
+}
+
+/**
+ * Applies a set of `loctt set <key> <field> <value>` edits in a throwaway
+ * clone that first fast-forwards onto the branch, then publishes — the
+ * "remote side changed it too" half of a two-sided divergence the
+ * reconciliation cases need (GIT-6, GIT-11, GIT-13, GIT-14). Returns the
+ * branch head after the remote edits.
+ *
+ * Independent full tracker (its own clone of the bare remote), so the
+ * edits it publishes are real loctt writes a sync will classify, not a
+ * hand-rolled diff.
+ */
+export async function editFromOtherClone(
+  remoteRepo: string,
+  edits: readonly { key: string; field: string; value: string }[],
+): Promise<string> {
+  return inOtherClone(remoteRepo, async (cli) => {
+    for (const e of edits) await cli(["set", e.key, e.field, e.value]);
+  });
+}
+
+/**
+ * Like {@link editFromOtherClone} but runs `loctt link <task>
+ * <relationship> <target>` on the remote side — for the parent-conflict
+ * case (GIT-13), where the divergent value is a relationship edge, not a
+ * scalar. Returns the branch head after publishing.
+ */
+export async function linkFromOtherClone(
+  remoteRepo: string,
+  links: readonly { task: string; type: string; target: string }[],
+): Promise<string> {
+  return inOtherClone(remoteRepo, async (cli) => {
+    for (const l of links) await cli(["link", l.task, l.type, l.target]);
+  });
 }
 
 export interface NonRepoTrackerFixture {

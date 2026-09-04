@@ -8,8 +8,10 @@ import {
   useGitPublish,
   useGitStatus,
   useGitSync,
+  useReconcileSession,
 } from "../api/hooks/useGit.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { ReconcilePanel } from "./ReconcilePanel.tsx";
 
 /**
  * Settings → Tracker → Sync (GIT-1..GIT-4, GIT-10, GIT-20, GIT-24,
@@ -213,12 +215,17 @@ function EnabledState({ status, checkedAt, onRefresh }: {
   const busy = publish.isPending || sync.isPending;
 
   /**
-   * GIT-18/GIT-31: a 409 from either operation carrying the
-   * reconciliation sentinel means the tracker is mid-reconcile. Neither
-   * operation may be presented as having succeeded, and retrying is not
-   * the remedy — the file has to be dealt with first.
+   * GIT-18/GIT-31: the reconciliation sentinel is the source of truth for
+   * whether the tracker is mid-reconcile — driven by the session query so
+   * it is present on a fresh load, a reload, and a browser restart
+   * (GIT-26), not only after a mutation returns 409. A 409 from either
+   * operation carrying the sentinel is the same state seen from the other
+   * direction; either way neither op may be presented as having
+   * succeeded, and retrying is not the remedy.
    */
-  const reconcileBlocked = [publish.error, sync.error].some(
+  const reconcileSession = useReconcileSession();
+  const reconcileInProgress = reconcileSession.data?.reconcile != null;
+  const reconcileBlocked = reconcileInProgress || [publish.error, sync.error].some(
     e => e instanceof ApiError && /reconcil/i.test(e.message),
   );
 
@@ -310,19 +317,20 @@ function EnabledState({ status, checkedAt, onRefresh }: {
         >
           A reconciliation is already in progress for this tracker. Publish and
           sync are blocked until it is finished or abandoned — neither ran, and
-          nothing was pushed. Resolve{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px] select-all">
-            .loctt/local/reconcile.yaml
-          </code>{" "}
-          before retrying.
+          nothing was pushed. Resolve it below, or abandon it, before retrying.
         </p>
       )}
+
+      {/* GIT-6, GIT-18, GIT-26: the per-field reconciliation, rendered
+          whenever the sentinel is present — reachable from Settings → Sync
+          without re-triggering the operation. */}
+      <ReconcilePanel />
 
       <section className="mb-5 flex gap-2">
         <button
           type="button"
           data-testid="git-publish"
-          disabled={busy}
+          disabled={busy || reconcileInProgress}
           onClick={() => { publish.mutate(); }}
           className="rounded-md border border-border-subtle bg-bg-surface px-3 py-1.5 text-[13px] disabled:opacity-50"
         >
@@ -331,7 +339,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
         <button
           type="button"
           data-testid="git-sync"
-          disabled={busy}
+          disabled={busy || reconcileInProgress}
           onClick={() => { sync.mutate(); }}
           className="rounded-md border border-border-subtle bg-bg-surface px-3 py-1.5 text-[13px] disabled:opacity-50"
         >

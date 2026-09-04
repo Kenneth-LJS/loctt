@@ -7452,3 +7452,105 @@ This is the "external / missing reference" corruption kind the Phase 7
 framework will formalize; PRU-25/42 are an early instance of it.
 
 **To revert.** Ken's, not an agent's.
+### A121 · Per-field git reconciliation: a conflict-detail model, and both-sides-same-field now opens the panel instead of silently merging
+
+**Ticket:** reconcile batch (GIT-5..38 conflict cases) · **Date:** 2026-09-04 · **Commit:** (this one)
+
+**The situation.** `three-way.ts` classified whole files; `merge.ts`
+`mergeTask` resolved task frontmatter by last-write-wins (M2) and, for a
+field history could not explain, wrote a `merge_resolved` audit entry and
+picked the newer whole-record. `GitConflictError` carried only file
+*paths*. So the conflict-resolution cases (GIT-6/7/11/13/14 …) had no
+data model and no engine: a same-field two-sided edit was auto-resolved
+silently, which GIT-6 explicitly forbids ("Sync stops and opens the
+reconciliation panel instead of picking a winner").
+
+**What was decided (and built).**
+
+1. **A conflict-DETAIL model** (`packages/contracts/src/reconcile.ts`):
+   `TaskConflictField` (task, field, `fieldLabel`, `kind` of
+   scalar/enum/relationship_parent, `local`/`remote` `ConflictValue` with
+   an optional `drift` marker, and enum/task-picker `options`),
+   `ReconcilePlan` (conflicts + `autoMerged`), `ReconcileDecision`. The
+   sentinel (`ReconcileStateSchema`) gained optional `decisions` and
+   `applied` — the journal that makes the panel survive reload (GIT-26)
+   and a partial Apply resumable (GIT-32).
+
+2. **A REPORTING variant of the merge**
+   (`git/reconcile-plan.ts` `computeTaskConflicts` /
+   `computeReconcilePlan`). It reuses the merge's own classification —
+   different-key → union (GIT-5), identical-both-sides → converged
+   (GIT-17), same-key-different-value → conflict (GIT-6/11) — but a field
+   is a conflict **only when both sides moved from the last-synced base**.
+   A one-sided edit (local === base, or remote === base) is *not* a
+   conflict and still merges silently, exactly as `planSync`/`mergeTask`
+   would resolve it. Without a base (first sync, history rewritten) every
+   divergence is treated as a conflict, because nothing can prove it was
+   one-sided.
+
+3. **Write-back** (`git/reconcile-apply.ts`, `git/reconcile-session.ts`):
+   applies per-field picks grouped by task, reports the honest split
+   (GIT-12/32/37), journals applied ids and keeps the sentinel on partial
+   failure, and completes the original sync/publish on success. A
+   `parent` resolution goes through `linkTask`/`unlinkTask` so the inverse
+   `child` edge stays consistent (GIT-13, P-12) — never a hand-written
+   edge.
+
+4. **Surfaces**: `POST/GET /api/git/reconcile[/decisions|/apply|/abandon]`,
+   the panel (`ReconcilePanel.tsx`), CLI `loctt git reconcile
+   <status|apply|abandon>`, and MCP `get_reconcile_status` + reconcile-
+   needed reporting on publish/sync.
+
+**The behaviour change worth flagging.** Before this, a sync where both
+sides set the same field to different values (including two hand-edits
+with no history) resolved silently by last-write-wins with a
+`merge_resolved` entry. It now **opens reconciliation**. Two tests in
+`publish-sync.test.ts` asserted the old auto-merge ("names the conflicting
+paths in the error", "writes the merge_resolved entry to history") — those
+were green tests encoding the pre-reconciliation behaviour that GIT-6/11
+override, and were rewritten to assert `GitReconcileNeededError` with the
+conflicting field named. The `merge_resolved` fallback still runs for
+genuinely one-sided edits (only one side moved the field), which is what
+"keeps both sides' structured edits to different fields" exercises.
+
+**Why (north-star).** Principle 1 (never lose or silently corrupt data)
+and principle 5 (per-element degradation): a two-sided disagreement is the
+user's to settle, not the merge's to guess. The one-sided case keeps M2's
+convergence guarantee. Reused rather than rebuilt: `mergeTask`'s
+classification, `planSync`'s three-way base, the `link`/`unlink`
+relationship path.
+
+**To revert.** Remove the reconcile-needed throw in `pullFromLocttBranch`
+/ `publish` (the `computeReconcilePlan` block + `detectPublishReconcile`)
+and the `GitReconcileNeededError`; sync/publish fall back to
+`mergeTask`'s silent last-write-wins for two-sided field conflicts, and
+the two rewritten tests revert to asserting `result.merged === 1` /
+the `merge_resolved` entry. The contracts model, panel, and CLI/MCP
+surfaces become dead but harmless. Reverting loses GIT-6/7/11/12/13/14/
+15/17/26/31/32/37.
+
+### A122 · GIT-14: keep-remote on a value referencing a deleted local status is allowed, with a drift warning
+
+**Ticket:** reconcile batch (GIT-14) · **Date:** 2026-09-04 · **Commit:** (this one)
+
+**The situation.** GIT-14: remote's `status` is `in_review`, deleted from
+local `workflow.yaml`. The scope doc flagged this as the one candidate to
+escalate — refuse keep-remote until the status is re-added, or allow it
+with a warning?
+
+**Decided.** The **case settles it**: "Choosing keep-remote is allowed
+but warns that the task will render with a drift marker and appear in
+Diagnostics", and "pick-value offers only the statuses that actually
+exist locally". Built to that — not escalated, because it is a stated
+requirement, not a new principle. `ConflictValue.drift` carries the
+reason; the remote side renders the raw key with a `⚠ drift` marker
+(never blank); keep-remote is selectable and shows a warning that the
+task will appear in Diagnostics; the pick-value `options` exclude the
+drift value. This is consistent with P-11/P-12's existing treatment of a
+dangling reference (report as `inconsistent`, block nothing) rather than
+the refuse-until-fixed reading.
+
+**To revert.** Make the drift branch in `computeReconcilePlan` refuse
+keep-remote (mark the conflict unresolvable when `remote.drift` is set);
+the panel would then disable the keep-remote button on a drift row.
+Reverting contradicts GIT-14's stated behaviour.

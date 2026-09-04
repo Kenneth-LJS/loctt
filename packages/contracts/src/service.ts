@@ -545,6 +545,19 @@ export interface ErrorResponse {
    * branches on a kind rather than on the message text.
    */
   readonly schema_status?: SchemaStatusResponse;
+  /**
+   * Present on `reconcile_needed` (GIT-6, GIT-15): the full per-field
+   * conflict plan, so the panel renders rows without a second fetch.
+   * Typed as `ReconcilePlan` at the call site; kept `unknown` here to
+   * avoid service.ts importing reconcile.ts.
+   */
+  readonly reconcile?: unknown;
+  /**
+   * Present on `reconcile_in_progress` (GIT-18, GIT-31): the sentinel
+   * state (mode, commits, started_at) so the block can name what is in
+   * flight.
+   */
+  readonly reconcile_state?: unknown;
 }
 
 /**
@@ -563,6 +576,8 @@ export type ErrorCode =
   | "config_invalid"
   | "schema_mismatch"
   | "git_failed"
+  | "reconcile_needed"
+  | "reconcile_in_progress"
   | "io_failed"
   | "partial_failure"
   | "unknown";

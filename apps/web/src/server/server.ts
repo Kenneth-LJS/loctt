@@ -44,7 +44,9 @@ import {
   ValidateQueryRequestSchema,
 } from "@loctt/contracts";
 import {
+  abandonReconcile,
   appendTaskBody,
+  applyReconcileDecisions,
   applyWorkflowEdit,
   ArchivedReferenceError,
   archiveLabel,
@@ -110,6 +112,8 @@ import {
   getTrackerInfo,
   getWorkflowConfigPath,
   GitConflictError,
+  GitReconcileInterruptedError,
+  GitReconcileNeededError,
   initLoctt,
   isEmptyTracker,
   isMalformedHistoryEntry,
@@ -129,6 +133,7 @@ import {
   loadOptionalConfigs,
   loadProjectsConfig,
   loadQueriesConfig,
+  loadReconcileSession,
   loadSprintsConfig,
   loadState,
   loadUserSettings,
@@ -166,6 +171,7 @@ import {
   runDoctor,
   saveCalendarConfig,
   saveListViewConfig,
+  saveReconcileDecisions,
   saveState,
   saveUserSettings,
   SchemaTooNewError,
@@ -423,6 +429,36 @@ function gitErrorResponse(err: unknown): {
   extra: Omit<Partial<ErrorResponse>, "message">;
   message: string;
 } {
+  if (err instanceof GitReconcileNeededError) {
+    // Per-field reconciliation is needed (GIT-6, GIT-15). Carries the
+    // full plan so the panel can render rows without a second fetch; the
+    // sentinel is already written, so a reload recomputes the same plan.
+    return {
+      status: 409,
+      message: err.message,
+      extra: {
+        code: "reconcile_needed",
+        data_state: "not_saved",
+        recovery: { kind: "none" },
+        reconcile: err.plan,
+      },
+    };
+  }
+  if (err instanceof GitReconcileInterruptedError) {
+    // A reconciliation is already in progress (GIT-18, GIT-31). Publish
+    // and sync are blocked until it is finished or abandoned; retrying is
+    // not the remedy.
+    return {
+      status: 409,
+      message: err.message,
+      extra: {
+        code: "reconcile_in_progress",
+        data_state: "not_saved",
+        recovery: { kind: "none" },
+        reconcile_state: err.state,
+      },
+    };
+  }
   if (err instanceof GitConflictError) {
     return {
       status: 409,
@@ -2638,6 +2674,46 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
+  /**
+   * The in-progress reconciliation, recomputed from the sentinel (GIT-18,
+   * GIT-26). Returns `{ reconcile: null }` when none is in progress, so a
+   * fresh panel load and a reload both resolve the same way.
+   */
+  const handleGitReconcileGet: RouteHandler = async ({ res, locttDir }) => {
+    const session = await loadReconcileSession(locttDir, root);
+    if (session === undefined) { json(res, { reconcile: null }); return; }
+    json(res, { reconcile: { state: session.state, plan: session.plan } });
+  };
+
+  /** Persists the decisions-so-far without applying (GIT-26). */
+  const handleGitReconcileDecisions: RouteHandler = async ({ req, res, locttDir }) => {
+    const raw = await parseJsonBody<{ decisions?: unknown }>(req, res);
+    if (raw === null) return;
+    const decisions = Array.isArray(raw.decisions) ? raw.decisions : [];
+    await saveReconcileDecisions(locttDir, decisions as never);
+    json(res, { saved: true });
+  };
+
+  /** Applies the decisions and completes the original operation (GIT-7, GIT-12, GIT-32). */
+  const handleGitReconcileApply: RouteHandler = async ({ req, res, locttDir }) => {
+    const raw = await parseJsonBody<{ decisions?: unknown }>(req, res);
+    if (raw === null) return;
+    const decisions = Array.isArray(raw.decisions) ? raw.decisions : [];
+    try {
+      const outcome = await applyReconcileDecisions(locttDir, root, decisions as never);
+      json(res, outcome);
+    } catch (err) {
+      const { status, message, extra } = gitErrorResponse(err);
+      error(res, message, status, extra);
+    }
+  };
+
+  /** Clears the sentinel, leaving local files as they are (GIT-18). */
+  const handleGitReconcileAbandon: RouteHandler = async ({ res, locttDir }) => {
+    await abandonReconcile(locttDir);
+    json(res, { abandoned: true });
+  };
+
   const handleGetUserSettings: RouteHandler = async ({ res, locttDir }) => {
     const current = await getCurrentUser(locttDir);
     if (!current) { error(res, NO_USERS_MESSAGE, 404, NO_USERS_ENVELOPE); return; }
@@ -4376,6 +4452,10 @@ export function createWebApp(options: WebAppOptions) {
     { method: "POST", pattern: "/api/git/sync", handler: handleGitSync },
     { method: "POST", pattern: "/api/git/enable", handler: handleGitEnable },
     { method: "POST", pattern: "/api/git/disable", handler: handleGitDisable },
+    { method: "GET", pattern: "/api/git/reconcile", handler: handleGitReconcileGet },
+    { method: "POST", pattern: "/api/git/reconcile/decisions", handler: handleGitReconcileDecisions },
+    { method: "POST", pattern: "/api/git/reconcile/apply", handler: handleGitReconcileApply },
+    { method: "POST", pattern: "/api/git/reconcile/abandon", handler: handleGitReconcileAbandon },
     { method: "GET", pattern: "/api/user-settings", handler: handleGetUserSettings },
     { method: "PUT", pattern: "/api/user-settings", handler: handlePutUserSettings },
   ];

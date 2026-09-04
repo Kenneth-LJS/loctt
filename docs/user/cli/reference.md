@@ -901,7 +901,28 @@ loctt git disable
 loctt git status
 loctt git publish
 loctt git sync
+loctt git reconcile <status|apply|abandon>
 ```
+
+When `publish` or `sync` finds the same task fields changed on both sides
+since the last sync, it does not pick a winner: it opens a reconciliation
+and stops with a non-zero exit, naming each conflicting field with both
+values (and a drift note when a value references config missing locally).
+Resolution is UI-primary — resolve it in the web UI (Settings → Sync) —
+but the CLI mirrors it:
+
+- `loctt git reconcile status` — lists the in-progress reconciliation's
+  mode, commits, and each conflicting field with both sides.
+- `loctt git reconcile apply --decisions <file.json>` — applies a JSON
+  array of `{ taskId, field, choice, value? }` (`choice` is `local`,
+  `remote`, or `value`), writes the chosen values, and completes the
+  originating publish/sync. Reports the true split on a partial failure
+  and stays resumable.
+- `loctt git reconcile abandon` — clears the in-progress reconciliation,
+  leaving local files exactly as they are (not a revert).
+
+A parent (relationship) resolution maintains the inverse edge: choosing a
+new parent removes the losing parent's child edge.
 
 `status` prints whether git mode is enabled, the configured branch and remote,
 auto-push / auto-fetch settings, whether the working directory is a git repo,
