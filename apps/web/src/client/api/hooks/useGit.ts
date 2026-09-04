@@ -108,3 +108,107 @@ export function useGitEnable() {
 export function useGitDisable() {
   return useGitMutation<{ enabled: boolean }>("/api/git/disable");
 }
+
+/**
+ * The per-field reconciliation model (GIT-6, GIT-11, GIT-13, GIT-14).
+ * Mirrors core's `ReconcilePlan` / `ReconcileState` exactly.
+ */
+export interface ReconcileConflictValue {
+  readonly raw: unknown;
+  readonly display: string;
+  readonly drift?: { readonly reason: string };
+}
+export interface ReconcileConflict {
+  readonly taskId: string;
+  readonly taskKey: string;
+  readonly taskTitle: string;
+  readonly field: string;
+  readonly fieldLabel: string;
+  readonly kind: "scalar" | "enum" | "relationship_parent";
+  readonly local: ReconcileConflictValue;
+  readonly remote: ReconcileConflictValue;
+  readonly options?: readonly { readonly key: string; readonly label: string }[];
+}
+export interface ReconcileAutoMerged {
+  readonly taskKey: string;
+  readonly fields: readonly string[];
+  readonly kind: "union" | "converged";
+}
+export interface ReconcilePlan {
+  readonly mode: "publish" | "sync";
+  readonly base_commit: string;
+  readonly remote_commit: string;
+  readonly conflicts: readonly ReconcileConflict[];
+  readonly autoMerged: readonly ReconcileAutoMerged[];
+}
+export interface ReconcileSentinel {
+  readonly mode: "publish" | "sync";
+  readonly base_commit: string;
+  readonly remote_commit: string;
+  readonly started_at: string;
+  readonly decisions?: readonly ReconcileDecision[];
+  readonly applied?: readonly string[];
+}
+export interface ReconcileDecision {
+  readonly taskId: string;
+  readonly field: string;
+  readonly choice: "local" | "remote" | "value";
+  readonly value?: unknown;
+}
+export interface ReconcileSessionResponse {
+  readonly reconcile: { readonly state: ReconcileSentinel; readonly plan: ReconcilePlan } | null;
+}
+export interface ApplyReconcileResponse {
+  readonly reconciled: boolean;
+  readonly complete: boolean;
+  readonly results: readonly {
+    readonly taskId: string; readonly taskKey: string; readonly ok: boolean;
+    readonly error?: string;
+    readonly resolved: readonly { readonly field: string; readonly value: string }[];
+  }[];
+  readonly appliedTaskIds: readonly string[];
+}
+
+/**
+ * The in-progress reconciliation, recomputed from the sentinel on the
+ * server (GIT-18, GIT-26). Polled on the same `["git"]` key so any git
+ * write refreshes it. `null` reconcile means none in progress.
+ */
+export function useReconcileSession() {
+  return useQuery({
+    queryKey: ["git", "reconcile"],
+    queryFn: ({ signal }) =>
+      apiClient.get<ReconcileSessionResponse>("/api/git/reconcile", { signal }),
+    staleTime: 0,
+  });
+}
+
+/** Persists the decisions-so-far without applying (GIT-26). */
+export function useSaveReconcileDecisions() {
+  const qc = useQueryClient();
+  return useMutation<{ saved: boolean }, Error, readonly ReconcileDecision[]>({
+    mutationFn: decisions => apiClient.post("/api/git/reconcile/decisions", { decisions }),
+    onSettled: () => { void qc.invalidateQueries({ queryKey: ["git", "reconcile"] }); },
+  });
+}
+
+/** Applies the decisions and completes the operation (GIT-7, GIT-12, GIT-32). */
+export function useApplyReconcile() {
+  const qc = useQueryClient();
+  return useMutation<ApplyReconcileResponse, Error, readonly ReconcileDecision[]>({
+    mutationFn: decisions => apiClient.post("/api/git/reconcile/apply", { decisions }),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["git"] });
+      void qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+}
+
+/** Abandons the in-progress reconciliation (GIT-18). */
+export function useAbandonReconcile() {
+  const qc = useQueryClient();
+  return useMutation<{ abandoned: boolean }, Error, void>({
+    mutationFn: () => apiClient.post("/api/git/reconcile/abandon", {}),
+    onSettled: () => { void qc.invalidateQueries({ queryKey: ["git"] }); },
+  });
+}

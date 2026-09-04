@@ -1,7 +1,11 @@
 import {
+  abandonReconcile,
+  applyReconcileDecisions,
   disableGit,
   enableGit,
   getGitStatus,
+  GitReconcileNeededError,
+  loadReconcileSession,
   preflight,
   publish,
   resolveLocttDir,
@@ -117,7 +121,17 @@ export async function run(args: string[], root: string): Promise<void> {
         }
         break;
       }
-      const result = await publish(locttDir, root);
+      let result;
+      try {
+        result = await publish(locttDir, root);
+      } catch (err) {
+        if (err instanceof GitReconcileNeededError) {
+          reportReconcileNeeded(err);
+          process.exitCode = EXIT.RUNTIME;
+          break;
+        }
+        throw err;
+      }
       if (result.committed) {
         // Name the configured branch, not the literal "loctt": the
         // branch is user-configurable, and this line used to report a
@@ -137,8 +151,22 @@ export async function run(args: string[], root: string): Promise<void> {
       }
       break;
     }
+    case "reconcile": {
+      await runReconcile(args, locttDir, root);
+      break;
+    }
     case "sync": {
-      const result = await sync(locttDir, root);
+      let result;
+      try {
+        result = await sync(locttDir, root);
+      } catch (err) {
+        if (err instanceof GitReconcileNeededError) {
+          reportReconcileNeeded(err);
+          process.exitCode = EXIT.RUNTIME;
+          break;
+        }
+        throw err;
+      }
       if (result.fetched === true) {
         console.log("Fetched from remote");
       }
@@ -165,8 +193,85 @@ export async function run(args: string[], root: string): Promise<void> {
       break;
     }
     default:
-      console.error("Usage: loctt git <enable|disable|status|publish|sync>");
+      console.error("Usage: loctt git <enable|disable|status|publish|sync|reconcile>");
       process.exitCode = EXIT.USAGE;
       break;
   }
+}
+
+/**
+ * Prints the per-field reconciliation the sync/publish surfaced, so a CLI
+ * user sees the same conflicts the panel would (parity). The CLI does not
+ * offer inline per-field pickers; it names the conflicts and points at
+ * `loctt git reconcile status` / `apply` / `abandon`.
+ */
+function reportReconcileNeeded(err: GitReconcileNeededError): void {
+  const plan = err.plan;
+  console.error(
+    `Reconciliation needed: ${String(plan.conflicts.length)} field conflict(s) `
+    + `across ${String(new Set(plan.conflicts.map(c => c.taskKey)).size)} task(s).`,
+  );
+  for (const c of plan.conflicts) {
+    const drift = c.remote.drift ? " (remote value not in local config)" : "";
+    console.error(`  ${c.taskKey} · ${c.fieldLabel}: local="${c.local.display}" remote="${c.remote.display}"${drift}`);
+  }
+  console.error(
+    "\nResolve in the web UI (Settings → Sync), or run "
+    + "'loctt git reconcile status' to inspect and "
+    + "'loctt git reconcile abandon' to discard the in-progress reconciliation.",
+  );
+}
+
+/**
+ * `loctt git reconcile <status|apply|abandon>` — the CLI face of an
+ * in-progress reconciliation (parity with the panel; resolution is
+ * UI-primary, so `apply` accepts a JSON decisions file rather than
+ * prompting per field).
+ */
+async function runReconcile(args: string[], locttDir: string, root: string): Promise<void> {
+  const action = args[2] ?? "status";
+  if (action === "status") {
+    const session = await loadReconcileSession(locttDir, root);
+    if (session === undefined) {
+      console.log("No reconciliation in progress.");
+      return;
+    }
+    const { state, plan } = session;
+    console.log(`Reconciliation in progress (${state.mode}), started ${state.started_at}.`);
+    console.log(`  base ${state.base_commit.slice(0, 8)} → remote ${state.remote_commit.slice(0, 8)}`);
+    console.log(`  ${String(plan.conflicts.length)} conflict(s):`);
+    for (const c of plan.conflicts) {
+      console.log(`    ${c.taskKey} · ${c.fieldLabel}: local="${c.local.display}" remote="${c.remote.display}"`);
+    }
+    return;
+  }
+  if (action === "abandon") {
+    await abandonReconcile(locttDir);
+    console.log("Reconciliation abandoned. Local files are unchanged.");
+    return;
+  }
+  if (action === "apply") {
+    // `--decisions <path>` names a JSON file of {taskId,field,choice,value?}.
+    const idx = args.indexOf("--decisions");
+    if (idx === -1 || args[idx + 1] === undefined) {
+      console.error("Usage: loctt git reconcile apply --decisions <file.json>");
+      process.exitCode = EXIT.USAGE;
+      return;
+    }
+    const { readFile } = await import("node:fs/promises");
+    const decisions = JSON.parse(await readFile(args[idx + 1] as string, "utf-8")) as never;
+    const outcome = await applyReconcileDecisions(locttDir, root, decisions);
+    for (const r of outcome.results) {
+      console.log(r.ok ? `  ${r.taskKey}: applied` : `  ${r.taskKey}: FAILED — ${r.error ?? "unknown"}`);
+    }
+    if (outcome.reconciled) {
+      console.log("Reconciliation complete; the operation finished.");
+    } else {
+      console.error("Reconciliation incomplete — some tasks failed; rerun after fixing them.");
+      process.exitCode = EXIT.RUNTIME;
+    }
+    return;
+  }
+  console.error("Usage: loctt git reconcile <status|apply|abandon>");
+  process.exitCode = EXIT.USAGE;
 }

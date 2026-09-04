@@ -13,6 +13,8 @@ import {
   disableGit,
   enableGit,
   getGitStatus,
+  GitReconcileNeededError,
+  loadReconcileSession,
   publish,
   sync,
 } from "@loctt/core";
@@ -82,7 +84,13 @@ export const TOOLS: readonly ToolDef[] = [
     description: "Commits the current task state to the configured loctt branch (name is user-configurable via git.branch) and (if remote+auto_push are set) pushes to remote. Call when the user has indicated they want to share or sync tasks — not speculatively after routine task edits.",
     inputSchema: {},
     handler: async ({ locttDir, root }) => {
-      const result = await publish(locttDir, root);
+      let result;
+      try {
+        result = await publish(locttDir, root);
+      } catch (err) {
+        if (err instanceof GitReconcileNeededError) return reconcileNeededResult(err);
+        throw err;
+      }
       const lines: string[] = [];
       if (result.committed) {
         lines.push(`Published local state to ${result.branch} branch`);
@@ -102,7 +110,13 @@ export const TOOLS: readonly ToolDef[] = [
     description: "Pulls the configured loctt branch (name is user-configurable via git.branch) state into the local workspace. If a remote is configured and auto_fetch is set, fetches first. Call when the user wants to bring in changes from another machine.",
     inputSchema: {},
     handler: async ({ locttDir, root }) => {
-      const result = await sync(locttDir, root);
+      let result;
+      try {
+        result = await sync(locttDir, root);
+      } catch (err) {
+        if (err instanceof GitReconcileNeededError) return reconcileNeededResult(err);
+        throw err;
+      }
       const lines: string[] = [];
       if (result.fetched === true) {
         lines.push("Fetched from remote");
@@ -126,4 +140,54 @@ export const TOOLS: readonly ToolDef[] = [
       return text(lines.join("\n"));
     },
   },
+  {
+    name: "get_reconcile_status",
+    description: "Returns structured JSON for an in-progress git reconciliation, or {\"in_progress\": false} when none. Reconciliation is opened by publish_to_git / sync_from_git when both sides changed the same task fields; it is resolved in the web UI (Settings → Sync). Each conflict names the task, the field, and both values, with drift flagged when a value references config missing locally. Use this to explain to the user what must be resolved before publish/sync can complete.",
+    inputSchema: {},
+    handler: async ({ locttDir, root }) => {
+      const session = await loadReconcileSession(locttDir, root);
+      if (session === undefined) {
+        return text(JSON.stringify({ in_progress: false }, null, 2));
+      }
+      const { state, plan } = session;
+      return text(JSON.stringify({
+        in_progress: true,
+        mode: state.mode,
+        base_commit: state.base_commit,
+        remote_commit: state.remote_commit,
+        started_at: state.started_at,
+        conflicts: plan.conflicts.map(c => ({
+          task_key: c.taskKey,
+          field: c.field,
+          field_label: c.fieldLabel,
+          kind: c.kind,
+          local: c.local.display,
+          remote: c.remote.display,
+          remote_drift: c.remote.drift?.reason ?? null,
+          local_drift: c.local.drift?.reason ?? null,
+        })),
+        auto_merged: plan.autoMerged,
+      }, null, 2));
+    },
+  },
 ];
+
+/**
+ * The reconcile-needed outcome for publish/sync (parity with the panel).
+ * Reports the conflicts the agent must tell the user to resolve in the
+ * web UI; nothing was written.
+ */
+function reconcileNeededResult(err: GitReconcileNeededError) {
+  const lines = [
+    `Reconciliation needed before ${err.plan.mode} can complete — `
+    + `${String(err.plan.conflicts.length)} field conflict(s) changed on both sides. `
+    + "Nothing was written.",
+    "",
+  ];
+  for (const c of err.plan.conflicts) {
+    const drift = c.remote.drift ? " (remote value not in local config)" : "";
+    lines.push(`  ${c.taskKey} · ${c.fieldLabel}: local="${c.local.display}" remote="${c.remote.display}"${drift}`);
+  }
+  lines.push("", "Resolve these in the web UI (Settings → Sync); the operation completes after Apply.");
+  return text(lines.join("\n"));
+}

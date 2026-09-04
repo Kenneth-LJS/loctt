@@ -3,9 +3,10 @@ import { readdirSync } from "node:fs";
 import { cp, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import type { ReconcileState, SyncState, Task } from "@loctt/contracts";
+import type { ReconcilePlan, ReconcileState, SyncState, Task } from "@loctt/contracts";
 
 import { loadProjectsConfig } from "../config/projects.js";
+import { loadWorkflowConfig } from "../config/workflow.js";
 import type { IntegrityFinding } from "../diagnostics/integrity.js";
 import { blockingFindings, checkDataIntegrity } from "../diagnostics/integrity.js";
 import { getLocalDir } from "../paths/index.js";
@@ -18,9 +19,10 @@ import { parseFrontmatter, splitTaskFile } from "../task/frontmatter.js";
 import { writeTask } from "../task/io.js";
 import { loadAllTasks } from "../task/load-all.js";
 import { rekeyCollisions } from "./reconcile.js";
+import { computeReconcilePlan } from "./reconcile-plan.js";
 import type { ResolveResult } from "./resolve-conflicts.js";
 import { applyResolution, resolveConflicts } from "./resolve-conflicts.js";
-import type { SyncPlan } from "./three-way.js";
+import type { PathPlan, SyncPlan } from "./three-way.js";
 import { LOCAL_OWNED,NEVER_MIRROR, planSync } from "./three-way.js";
 
 async function mirrorDir(
@@ -98,6 +100,36 @@ export class GitReconcileInterruptedError extends GitSyncError {
     );
     this.name = "GitReconcileInterruptedError";
     this.state = state;
+  }
+}
+
+/**
+ * Raised when a sync or publish found per-field conflicts that need a
+ * human decision (GIT-6, GIT-11, GIT-13, GIT-14, GIT-15).
+ *
+ * Unlike {@link GitConflictError} — a flat list of file paths, aborting
+ * with nothing to do but hand-edit — this carries the full
+ * {@link ReconcilePlan}: which task, which field, both values, enum
+ * options and drift markers. The reconciliation sentinel is written
+ * before this throws, so a re-fetch of status recomputes the same plan
+ * (GIT-26) and publish/sync are blocked until it is resolved (GIT-31).
+ *
+ * Nothing was written to task files: the plan is computed read-only from
+ * the branch worktree, and the caller aborts before `applyPlan`. The
+ * originally-requested operation completes only after the panel's Apply.
+ */
+export class GitReconcileNeededError extends GitSyncError {
+  readonly plan: ReconcilePlan;
+  constructor(plan: ReconcilePlan) {
+    const n = plan.conflicts.length;
+    super(
+      `reconciliation needed: ${n} field conflict(s) across `
+      + `${new Set(plan.conflicts.map(c => c.taskKey)).size} task(s) changed on `
+      + `both sides since the last sync. Nothing was written — resolve them in `
+      + `Settings → Sync, then the ${plan.mode} completes.`,
+    );
+    this.name = "GitReconcileNeededError";
+    this.plan = plan;
   }
 }
 
@@ -819,14 +851,102 @@ export async function preflight(locttDir: string): Promise<PreflightReport> {
  * machines will sync from — that turns one machine's damage into
  * everyone's.
  */
+/**
+ * Whether a publish must reconcile first (GIT-15), and the plan if so.
+ *
+ * Divergence means the branch head moved since `last_synced_commit`
+ * (someone else published) while local also changed the same task files.
+ * A three-way plan against the last sync base names those conflicts; if
+ * any are per-field conflicts the user must resolve them before the push.
+ * Returns undefined when there is nothing to reconcile — a fast-forward
+ * publish, or a first publish with no base.
+ */
+async function detectPublishReconcile(
+  locttDir: string,
+  root: string,
+  syncState: SyncState,
+): Promise<{ plan: ReconcilePlan; baseCommit: string; remoteHead: string } | undefined> {
+  const branch = syncState.git.branch;
+  const base = syncState.git.last_synced_commit;
+  if (base === undefined) return undefined; // first publish: nothing to diverge from
+  // Bring the local branch ref up to date with the remote before checking
+  // for divergence — another clone's publish lives on the remote until we
+  // fetch it, and a publish that pushed without seeing it would be
+  // rejected non-fast-forward (or clobber it). Best-effort: an
+  // unreachable remote just means we compare against the local ref.
+  if (syncState.git.remote !== undefined && remoteExists(root, syncState.git.remote)) {
+    fetchLocttBranch(root, { remote: syncState.git.remote, branch });
+  }
+  if (!branchExists(root, branch)) return undefined;
+  const remoteHead = git(["rev-parse", branch], root);
+  if (remoteHead === base) return undefined; // branch has not moved: fast-forward publish
+
+  const worktreeDir = join(getLocalDir(locttDir), ".worktree-publish-check");
+  await rm(worktreeDir, { recursive: true, force: true });
+  gitSafe(["worktree", "prune"], root);
+  try {
+    git(["worktree", "add", "--detach", worktreeDir, remoteHead], root);
+    const plan = await planSync({
+      root, incomingDir: worktreeDir, localDir: locttDir, baseCommit: base,
+    });
+    const config = await loadWorkflowConfig(locttDir).catch(() => undefined);
+    const reconcilePlan = await computeReconcilePlan({
+      localDir: locttDir, incomingDir: worktreeDir, conflicts: plan.conflicts,
+      config, mode: "publish", baseCommit: base, remoteCommit: remoteHead, root,
+    });
+    if (reconcilePlan.conflicts.length === 0) return undefined;
+    return { plan: reconcilePlan, baseCommit: base, remoteHead };
+  } finally {
+    try { gitSafe(["worktree", "remove", worktreeDir, "--force"], root); } catch { /* best-effort */ }
+    await rm(worktreeDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 export async function publish(
   locttDir: string,
   root: string,
+  /**
+   * Set on the completion pass after a publish-mode reconciliation was
+   * resolved (GIT-15): the sentinel is already cleared and the divergence
+   * check is skipped, because the resolved local state is exactly what
+   * should now be committed onto the branch tip.
+   */
+  opts?: { readonly afterReconcile?: boolean },
 ): Promise<{ committed: boolean; branch: string; pushed?: boolean; pushError?: string }> {
+  // GIT-31: a reconciliation in progress blocks publish outright — the
+  // block names it and nothing is pushed.
+  if (opts?.afterReconcile !== true) {
+    const pending = await readReconcileState(locttDir);
+    if (pending !== undefined) {
+      throw new GitReconcileInterruptedError(pending);
+    }
+  }
   const report = await preflight(locttDir);
   if (report.wouldBlock) {
     throw new PreflightError(blockingFindings(report.findings));
   }
+
+  // GIT-15: publish does not push-then-ask. If the branch moved since the
+  // last sync *and* local diverged, both sides changed the same files —
+  // pushing would either be rejected or clobber the remote. Detect it and
+  // open reconciliation first, tagged `mode: publish`, so the push happens
+  // only after Apply.
+  if (opts?.afterReconcile !== true) {
+    const preState = await loadSyncState(locttDir);
+    if (preState.git.enabled) {
+      const needed = await detectPublishReconcile(locttDir, root, preState);
+      if (needed !== undefined) {
+        await saveReconcileState(locttDir, {
+          mode: "publish",
+          base_commit: needed.baseCommit,
+          remote_commit: needed.remoteHead,
+          started_at: new Date().toISOString(),
+        });
+        throw new GitReconcileNeededError(needed.plan);
+      }
+    }
+  }
+
   const commitResult = await commitToLocttBranch(locttDir, root);
   const syncState = commitResult.syncState;
   // Returned on every path so callers can name the branch they actually
@@ -869,26 +989,57 @@ export async function publish(
 }
 
 /**
+ * Drops the conflicting task-file paths whose task the user already
+ * resolved, so the completion pass keeps local for them (GIT-7) instead
+ * of re-halting or last-write-wins-merging over the resolved values.
+ *
+ * The task id is the directory name in `tasks/<id>/task.md`. A resolved
+ * task's `_history.yaml`/`_comments.yaml` conflicts are left in place —
+ * those union safely and losing that content is the failure M2 exists to
+ * prevent.
+ */
+function filterResolvedTaskConflicts(
+  conflicts: readonly PathPlan[],
+  resolvedTaskIds: ReadonlySet<string>,
+): PathPlan[] {
+  return conflicts.filter((c) => {
+    const m = /^tasks\/([^/]+)\/task\.md$/.exec(c.path);
+    if (m === null) return true;
+    return !resolvedTaskIds.has(m[1] as string);
+  });
+}
+
+/**
  * Mirrors the loctt branch state into the local .loctt workspace.
  */
 export async function pullFromLocttBranch(
   locttDir: string,
   root: string,
   preloadedState?: SyncState,
+  /**
+   * Set when this pull is the *completion* of a reconciliation the user
+   * already resolved (GIT-7). The named task ids' conflicts are treated
+   * as settled — the resolved values are already on disk locally — so
+   * the sync keeps local for them and does not re-halt. The sentinel
+   * check is skipped, because completing is precisely what clears it.
+   */
+  reconcileResolution?: { readonly resolvedTaskIds: readonly string[] },
 ): Promise<SyncOutcome> {
   const syncState = preloadedState ?? await loadSyncState(locttDir);
   if (!syncState.git.enabled) {
     throw new GitSyncError("Git-backed mode is not enabled");
   }
 
-  // A sentinel here means the previous reconciliation died between its
-  // first write and its last. The workspace is in neither the old state
-  // nor the new one, so the base commit this run would plan against is a
-  // lie — proceeding would compute a diff from a state that no longer
-  // exists on disk. Name it and stop (GIT-C3).
-  const interrupted = await readReconcileState(locttDir);
-  if (interrupted) {
-    throw new GitReconcileInterruptedError(interrupted);
+  // A sentinel here means either a reconciliation is in progress (the
+  // user must finish it — GIT-31) or a previous one died mid-write
+  // (GIT-C3). Either way this run must not proceed and re-plan against a
+  // base that no longer describes the workspace. The one exception is a
+  // completion pass, which is what clears the sentinel.
+  if (reconcileResolution === undefined) {
+    const interrupted = await readReconcileState(locttDir);
+    if (interrupted) {
+      throw new GitReconcileInterruptedError(interrupted);
+    }
   }
 
   const branch = syncState.git.branch;
@@ -927,6 +1078,47 @@ export async function pullFromLocttBranch(
       baseCommit: syncState.git.last_synced_commit,
     });
 
+    // Per-field reconciliation (GIT-6, GIT-11, GIT-13, GIT-14, GIT-17).
+    // Before the silent last-write-wins merge, ask whether any
+    // conflicting TASK file changed the same field to two genuinely
+    // different values. If so, that is a decision for the user, not one
+    // for the merge to settle: write the sentinel and stop, carrying the
+    // per-field plan. The auto-mergeable cases (different keys → union,
+    // identical → converge) produce no conflicts and fall through to the
+    // existing merge untouched (GIT-5).
+    // A completion pass carries the tasks the user already resolved; their
+    // conflicting files keep local (the resolved values are on disk), so
+    // they are dropped from the conflict set the merge sees and never
+    // re-halt or get last-write-wins-merged over the user's picks.
+    const resolvedTaskIds = new Set(reconcileResolution?.resolvedTaskIds ?? []);
+    const activePlan: SyncPlan = resolvedTaskIds.size === 0
+      ? plan
+      : { ...plan, conflicts: filterResolvedTaskConflicts(plan.conflicts, resolvedTaskIds) };
+
+    const workflowForPlan = await loadWorkflowConfig(locttDir).catch(() => undefined);
+    const reconcilePlan = await computeReconcilePlan({
+      localDir: locttDir,
+      incomingDir: worktreeDir,
+      conflicts: activePlan.conflicts,
+      config: workflowForPlan,
+      mode: "sync",
+      baseCommit: syncState.git.last_synced_commit ?? remoteHead,
+      remoteCommit: remoteHead,
+      root,
+    });
+    if (reconcilePlan.conflicts.length > 0) {
+      // Sentinel first, so a reload recomputes the same plan (GIT-26) and
+      // publish/sync stay blocked until it resolves (GIT-31). No task
+      // file has been touched — the plan is read-only.
+      await saveReconcileState(locttDir, {
+        mode: "sync",
+        base_commit: syncState.git.last_synced_commit ?? remoteHead,
+        remote_commit: remoteHead,
+        started_at: new Date().toISOString(),
+      });
+      throw new GitReconcileNeededError(reconcilePlan);
+    }
+
     // Field-level merge (decisions M1-M4). A path both sides changed is
     // no longer fatal by itself: task frontmatter merges per field,
     // history and comments union, and config lists union by id. Only
@@ -935,10 +1127,10 @@ export async function pullFromLocttBranch(
     // Two passes. The first merges everything except state.yaml; the
     // second derives the counters from the task set that results (M1),
     // which cannot be known until the tasks themselves have merged.
-    const firstPass = await resolveConflicts(plan.conflicts, worktreeDir, locttDir);
+    const firstPass = await resolveConflicts(activePlan.conflicts, worktreeDir, locttDir);
     const resolution = firstPass.unresolved.some(c => c.path === "state.yaml")
       ? await resolveConflicts(
-        plan.conflicts,
+        activePlan.conflicts,
         worktreeDir,
         locttDir,
         await mergedTaskSet(plan, firstPass, worktreeDir, locttDir),
@@ -993,7 +1185,7 @@ export async function pullFromLocttBranch(
     // case GIT-C2 names: two clones each creating a task offline. The
     // task exists on only one side, so it is copied rather than merged —
     // and a copied task can collide on a key just as a merged one can.
-    const normalised = resolution.merged.length > 0 || plan.copies.length > 0
+    const normalised = resolution.merged.length > 0 || activePlan.copies.length > 0
       ? await normaliseAfterMerge(locttDir)
       : { rekeyed: 0, reprefixed: 0, unresolvedKeys: [] as readonly string[] };
 
@@ -1002,7 +1194,7 @@ export async function pullFromLocttBranch(
     // stale — including one that only *copied* tasks, which never
     // reaches normaliseAfterMerge. Rebuilding here rather than there
     // covers both paths.
-    if (plan.copies.length > 0 || plan.deletes.length > 0 || resolution.merged.length > 0) {
+    if (activePlan.copies.length > 0 || activePlan.deletes.length > 0 || resolution.merged.length > 0) {
       await rebuildKeyIndex(locttDir);
     }
 
@@ -1021,12 +1213,12 @@ export async function pullFromLocttBranch(
     return {
       branch,
       updated:
-        plan.copies.length > 0 ||
-        plan.deletes.length > 0 ||
+        activePlan.copies.length > 0 ||
+        activePlan.deletes.length > 0 ||
         resolution.merged.length > 0,
-      copied: plan.copies.length,
-      deleted: plan.deletes.length,
-      kept: plan.keeps.length,
+      copied: activePlan.copies.length,
+      deleted: activePlan.deletes.length,
+      kept: activePlan.keeps.length,
       merged: resolution.merged.length,
       ...(normalised.rekeyed > 0 ? { rekeyed: normalised.rekeyed } : {}),
       ...(normalised.reprefixed > 0 ? { reprefixed: normalised.reprefixed } : {}),

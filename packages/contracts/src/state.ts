@@ -45,6 +45,33 @@ export const ReconcileStateSchema = z.object({
   base_commit: z.string().min(1),
   remote_commit: z.string().min(1),
   started_at: z.string().min(1),
+  /**
+   * Per-field decisions the user has made so far (GIT-6/GIT-7). Persisted
+   * as they are made so the panel survives navigation, reload and a
+   * browser restart (GIT-26), and so a partial Apply is resumable
+   * (GIT-32). Each entry is `{ taskId, field, choice, value? }`.
+   *
+   * Kept structural (not the imported `ReconcileDecisionSchema`) so
+   * state.ts has no dependency on reconcile.ts; the reconcile module
+   * validates the richer shape where it is used.
+   */
+  decisions: z
+    .array(
+      z.object({
+        taskId: z.string().min(1),
+        field: z.string().min(1),
+        choice: z.enum(["local", "remote", "value"]),
+        value: z.unknown().optional(),
+      }).strict(),
+    )
+    .optional(),
+  /**
+   * Task ids whose resolution was already written to disk (GIT-32). On a
+   * partial Apply the sentinel is NOT cleared; reopening shows only the
+   * rows for tasks absent from this list, and a retry re-applies only
+   * those (GIT-37).
+   */
+  applied: z.array(z.string().min(1)).optional(),
 }).strict();
 export type ReconcileState = z.infer<typeof ReconcileStateSchema>;
 

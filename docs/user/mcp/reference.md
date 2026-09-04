@@ -1002,3 +1002,9 @@ Output is prose: which of `Published local state to <branch> branch` / `No chang
 Pulls the `loctt` branch state into the local workspace. If a remote is configured and `auto_fetch` is set, fetches first. No parameters.
 
 Output is prose: fetch result (or `Remote fetch failed: <reason>`), then either `Synced loctt branch into local workspace` or `Already up to date`.
+
+When both sides changed the same task fields since the last sync, `publish_to_git` / `sync_from_git` do not pick a winner: they open a reconciliation and return the conflicts (task, field, both values, and a drift note when a value references config missing locally), stating nothing was written. Resolution is web-UI-primary — tell the user to resolve it in Settings → Sync; the operation completes after they Apply.
+
+### `get_reconcile_status`
+
+Returns structured JSON for an in-progress reconciliation, or `{ "in_progress": false }` when none. When in progress, reports `mode`, `base_commit`, `remote_commit`, `started_at`, and a `conflicts` array — each with `task_key`, `field`, `field_label`, `kind`, `local`, `remote`, and `remote_drift` / `local_drift` (the reason a value references config or a task missing locally, else null) — plus `auto_merged` (fields that merged or converged without a conflict). No parameters. Use it to explain to the user what must be resolved before publish/sync can complete.
