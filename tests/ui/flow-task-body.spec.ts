@@ -17,7 +17,7 @@
  * XS-1 vacuous.
  */
 
-import { readdir, readFile } from "node:fs/promises";
+import { chmod, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { Page } from "@playwright/test";
@@ -54,6 +54,27 @@ async function bodyOnDisk(root: string, key: string): Promise<string> {
     return text.slice(text.indexOf("\n", close + 1) + 1);
   }
   throw new Error(`no task on disk with key ${key}`);
+}
+
+/** The directory holding the task with the given key (…/tasks/<id>). */
+async function taskDirOf(root: string, key: string): Promise<string> {
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  for (const id of await readdir(tasksDir)) {
+    const dir = path.join(tasksDir, id);
+    let text: string;
+    try {
+      text = await readFile(path.join(dir, "task.md"), "utf8");
+    } catch {
+      continue;
+    }
+    if (new RegExp(`^key:\\s*${key}\\s*$`, "m").test(text)) return dir;
+  }
+  throw new Error(`no task on disk with key ${key}`);
+}
+
+/** The whole task.md file (frontmatter + body) for byte-equality checks. */
+async function rawTaskFile(root: string, key: string): Promise<string> {
+  return readFile(path.join(await taskDirOf(root, key), "task.md"), "utf8");
 }
 
 /** Types into whichever surface is showing. */
@@ -702,6 +723,124 @@ test.describe("TSK — a very large body", () => {
     expect(stored).toContain("Line 1 of the body.");
     expect(stored).toContain(`Line ${String(LINES)} of the body.`);
     expect(stored).toContain(`${appended}one two three four five six.`);
+
+    expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
+  });
+});
+
+test.describe("XS-65 — a conflict resolution that itself fails leaves the file untouched", () => {
+  // @verifies XS-65
+  /**
+   * Transcribed from flow-cross-surface.md XS-65.
+   *
+   * The whole point of this case over TSK-48 (a failing *first* write)
+   * is that the write which fails is the **resolution** of a conflict
+   * the user is standing in front of, and that a failed resolution
+   * must not leave a half-merged body behind. So the failure is
+   * injected as a *real* filesystem write failure — the task directory
+   * is made read-only, so core's atomic temp-write + rename in that
+   * directory throws EACCES — rather than a mocked HTTP 500. That is
+   * what actually exercises the byte-unchanged guarantee: the server
+   * runs, attempts the write, and the atomic-write's temp file never
+   * makes it into `task.md`. A route-mocked 500 would leave the file
+   * unchanged trivially, because the server never touched it.
+   *
+   * Verified by scratch harness while writing: POST /api/tasks/:key/body
+   * against a chmod 0o555 task dir returns 500 `io_failed`
+   * (data_state: not_saved, path named), and task.md is byte-for-byte
+   * identical afterward.
+   *
+   * Mutation shown to fail: replace `writeFileAtomically`'s
+   * temp-file+rename (packages/core/src/utils/atomic-yaml.ts) with a
+   * direct `writeFile(path, contents)` and the byte-unchanged
+   * assertion goes red — a direct write truncates `task.md` to zero
+   * before the permission error fires, so the file is left mangled.
+   * The atomicity is the mechanism under test, and that is the edit
+   * that removes it.
+   */
+  test("XS-65: a resolution write that fails on disk leaves task.md byte-for-byte unchanged", async ({
+    page,
+    tracker,
+  }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", err => pageErrors.push(err.message));
+
+    const key = onlyKey(await tracker.seed([{ title: "Conflict then fail" }]));
+    await tracker.run(["body", key, "--set", "Theirs on disk.\n"]);
+
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("body-editor")).toBeVisible();
+    await typeInBody(page, "Mine in the editor.");
+
+    // Force the XS-12 conflict: the CLI rewrites the same body the
+    // editor holds a stale token for.
+    await tracker.run(["body", key, "--set", "Their newer text.\n"]);
+    const dialog = page.getByTestId("body-conflict");
+    await expect(dialog).toBeVisible({ timeout: 8000 });
+
+    // Snapshot the exact bytes on disk now, before any resolution is
+    // attempted. This is what must survive a failed resolution.
+    const beforeBytes = await rawTaskFile(tracker.root, key);
+    expect(beforeBytes).toContain("Their newer text.");
+
+    // Make the resolution write fail for real: the task directory
+    // goes read-only, so the atomic write's temp file cannot be
+    // created there and the rename never happens.
+    const taskDir = await taskDirOf(tracker.root, key);
+    await chmod(taskDir, 0o555);
+    try {
+      // "Keep mine" → Apply. The resolution write leaves (resolve()
+      // clears the conflict ref synchronously, so it is not the
+      // suppressed-while-open kind), reaches the server, and fails on
+      // the filesystem.
+      await page.getByTestId("conflict-choice-mine").click();
+      await page.getByTestId("conflict-apply").click();
+
+      // The failure is explicit: not "saved", and it says the text was
+      // not saved and names the path (both from the server's io_failed
+      // envelope).
+      await expect(indicator(page)).toHaveAttribute("data-state", "failed", { timeout: 8000 });
+      await expect(indicator(page)).toContainText("not been saved");
+      await expect(indicator(page)).toContainText("task.md");
+
+      // The editor's content survives so the user can retry or copy it
+      // out (XS-65 bullet 3).
+      await expect(
+        page.getByTestId("body-editor").getByTestId("rich-editor"),
+      ).toContainText("Mine in the editor.");
+      // And a way back is offered.
+      await expect(page.getByTestId("save-retry")).toBeVisible();
+    } finally {
+      // Restore permissions no matter what, so teardown can clean up.
+      await chmod(taskDir, 0o755);
+    }
+
+    // XS-65 bullet 1, the headline: the file on disk is byte-for-byte
+    // what it was before the doomed resolution — no half-merged body.
+    expect(await rawTaskFile(tracker.root, key)).toBe(beforeBytes);
+
+    // XS-65 bullet 4: the surface "can be re-entered; it does not
+    // vanish leaving the user with no way back to their text." A failed
+    // *io* resolution (500), unlike a dismissed conflict, holds the
+    // editor in the failed state with its Retry — that is the route
+    // back. Prove it is still live *while the write still fails*: with
+    // the directory read-only again, clicking Retry re-attempts and
+    // lands back in the same explicit failed state, the text intact —
+    // rather than silently succeeding or dropping to a dead page.
+    await chmod(taskDir, 0o555);
+    try {
+      await page.getByTestId("save-retry").click();
+      await expect(indicator(page)).toHaveAttribute("data-state", "failed", { timeout: 8000 });
+      await expect(indicator(page)).toContainText("not been saved");
+      await expect(page.getByTestId("save-retry")).toBeVisible();
+      await expect(
+        page.getByTestId("body-editor").getByTestId("rich-editor"),
+      ).toContainText("Mine in the editor.");
+    } finally {
+      await chmod(taskDir, 0o755);
+    }
+    // Still byte-unchanged after the second failed attempt.
+    expect(await rawTaskFile(tracker.root, key)).toBe(beforeBytes);
 
     expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
   });
