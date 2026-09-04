@@ -73,7 +73,12 @@ Three defences, in order of how much they carry:
                Break the behaviour, watch each spec go red, restore.
                GATE  npm run test:ui
 
- 6. REVIEW-2   Deep review (/review) on the diff.
+ 6. REVIEW-2   Deep review (/review) on the diff — correctness and bugs.
+               THEN a smell/efficiency pass (/simplify) for reuse,
+               heavy-compute paths, and code smell. (Ken, 2026-09-04:
+               a lightweight quality lens on every commit now, so the
+               final Phase Z review inherits cleaner code. Z stays the
+               deep full-codebase sweep; this is continuous hygiene.)
 
  7. FIX        Loop 3–6 until clean.
 
