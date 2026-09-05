@@ -150,6 +150,16 @@ function routeFetch(path: string): unknown {
 }
 
 function stubFetch() {
+  // A few SHL-32 tests call renderSidebarAt twice in one test (render,
+  // cleanup, render again). Re-`spyOn`-ing an already-spied `fetch`
+  // stacks a second spy over the first; the earlier render's in-flight
+  // count query then resolves against a detached mock and its promise
+  // never settles — which wedged the whole file at that test, past any
+  // testTimeout (the hang is between the two renders, not inside a test
+  // body vitest can interrupt). Restore any prior spy first so each
+  // render installs exactly one live fetch stub.
+  const current = globalThis.fetch as typeof globalThis.fetch & { mockRestore?: () => void };
+  current.mockRestore?.();
   vi.spyOn(globalThis, "fetch").mockImplementation(
     (input: RequestInfo | URL, init?: RequestInit) => {
     const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -189,11 +199,24 @@ function stubFetch() {
   );
 }
 
+// The QueryClient from the previous renderSidebarAt in this test, if
+// any. A few SHL-32 tests render twice (or thrice) with a cleanup
+// between; the earlier client keeps in-flight count queries alive after
+// its DOM is gone, and their unsettled promises wedged the file. We
+// cancel and clear the prior client before the next render installs a
+// fresh one.
+let priorQc: QueryClient | undefined;
+
 async function renderSidebarAt(pathname: string, search: Record<string, unknown> = {}) {
+  if (priorQc) {
+    await priorQc.cancelQueries();
+    priorQc.clear();
+  }
   stubFetch();
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
+  priorQc = qc;
 
   const rootRoute = createRootRoute();
   const listRoute = createRoute({
@@ -228,6 +251,7 @@ async function renderSidebarAt(pathname: string, search: Record<string, unknown>
 
 afterEach(() => {
   cleanup();
+  if (priorQc) { priorQc.clear(); priorQc = undefined; }
   vi.restoreAllMocks();
   RECENTS = [];
   EFFECTIVE_DEFAULT = undefined;
