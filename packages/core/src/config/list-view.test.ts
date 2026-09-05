@@ -62,6 +62,99 @@ filters:
   });
 });
 
+describe("parseListViewConfig — per-entry corruption degrades", () => {
+  it("degrades a non-string chip key to a broken entry, keeps the good ones", () => {
+    // A hand edit left a number in `visible`. The good keys must still
+    // load (north-star P5) rather than the whole saved view blanking.
+    const cfg = parseListViewConfig(`
+filters:
+  visible:
+    - status
+    - 5
+    - priority
+`);
+    expect(cfg.filters?.visible).toEqual(["status", "priority"]);
+    expect(cfg.broken).toHaveLength(1);
+    expect(cfg.broken?.[0]).toMatchObject({ index: 1 });
+    expect(cfg.broken?.[0]?.rawText).toBeTruthy();
+    expect(cfg.broken?.[0]?.error).toBeTruthy();
+  });
+
+  it("degrades an empty-string chip key to a broken entry", () => {
+    const cfg = parseListViewConfig(`
+filters:
+  hidden:
+    - type
+    - ""
+`);
+    expect(cfg.filters?.hidden).toEqual(["type"]);
+    expect(cfg.broken).toHaveLength(1);
+    expect(cfg.broken?.[0]?.index).toBe(1);
+  });
+
+  it("collects broken entries from both visible and hidden", () => {
+    const cfg = parseListViewConfig(`
+filters:
+  visible:
+    - status
+    - 5
+  hidden:
+    - type
+    - []
+`);
+    expect(cfg.filters?.visible).toEqual(["status"]);
+    expect(cfg.filters?.hidden).toEqual(["type"]);
+    expect(cfg.broken).toHaveLength(2);
+  });
+
+  it("omits `broken` entirely when every entry parses (distinct from [])", () => {
+    const cfg = parseListViewConfig(`
+filters:
+  visible: [status, priority]
+`);
+    expect(cfg.broken).toBeUndefined();
+  });
+
+  it("keeps a malformed outer structure object-fatal (visible not an array)", () => {
+    // No coherent list of entries to degrade around — must still throw.
+    expect(() =>
+      parseListViewConfig(`
+filters:
+  visible: status
+`),
+    ).toThrow(ListViewConfigError);
+  });
+
+  it("keeps an unknown top-level key object-fatal", () => {
+    expect(() =>
+      parseListViewConfig(`
+bogus: true
+`),
+    ).toThrow(ListViewConfigError);
+  });
+
+  it("still rejects a stray hand-edited `broken:` key (loader owns it)", () => {
+    expect(() =>
+      parseListViewConfig(`
+broken: []
+filters:
+  visible: [status]
+`),
+    ).toThrow(ListViewConfigError);
+  });
+
+  it("keeps duplicate-within-array object-fatal even alongside a degradable entry", () => {
+    // The duplicate is an ambiguity the loader cannot silently resolve,
+    // so it throws — it does not degrade to a broken entry.
+    expect(() =>
+      parseListViewConfig(`
+filters:
+  visible: [status, status]
+`),
+    ).toThrow(/duplicate entry 'status' in visible/);
+  });
+});
+
 describe("loadListViewConfig / saveListViewConfig", () => {
   it("returns an empty config when no file exists", async () => {
     expect(await loadListViewConfig(locttDir)).toEqual({});

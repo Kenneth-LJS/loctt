@@ -551,13 +551,18 @@ export async function deleteComment(opts: DeleteCommentOptions): Promise<void> {
  * behaviour — a typo must not fail the post.
  */
 export function buildMentionResolver(
-  users: readonly { readonly id: string; readonly name: string }[],
+  // `name` is optional: Phase-7B (K26/O5) made a user's name a degradable
+  // field, so a hand-corrupted profile can load with no name. A nameless
+  // user still resolves by id; it simply cannot be @-mentioned by name.
+  users: readonly { readonly id: string; readonly name?: string | undefined }[],
 ): (token: string) => string | undefined {
   const byId = new Map<string, string>();
   const byName = new Map<string, string[]>();
   for (const u of users) {
     byId.set(u.id, u.id);
-    byName.set(u.name, [...(byName.get(u.name) ?? []), u.id]);
+    if (u.name !== undefined) {
+      byName.set(u.name, [...(byName.get(u.name) ?? []), u.id]);
+    }
   }
   return (token: string) => {
     const byIdHit = byId.get(token);

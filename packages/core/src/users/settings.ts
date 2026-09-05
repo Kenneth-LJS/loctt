@@ -22,12 +22,73 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 }
 
 /**
+ * The KNOWN (schema-typed) top-level settings keys. A wrong-typed value
+ * for one of these degrades to the field's default; anything NOT in this
+ * set is an unknown key and passes through untouched via `.passthrough()`
+ * (Group-G: load-bearing — every panel saves `{...stored, ...next}`, so
+ * dropping unknown keys would destroy data like sidebar pins).
+ */
+const KNOWN_SETTINGS_KEYS: ReadonlySet<string> = new Set([
+  "default_project",
+  "card_layout",
+  "editor_mode",
+  "theme",
+  "sidebar_pins",
+]);
+
+/**
+ * Parses a settings payload **tolerantly** (Phase-7B).
+ *
+ * `UserSettings` is `.passthrough()` by design, so unknown keys are not
+ * corruption — they must survive untouched. What CAN be corrupt is a
+ * genuinely wrong-typed KNOWN key (a hand edit like `theme: 42` or
+ * `card_layout: "big"`). Under a plain `.parse()` that throws and locks
+ * the user out of their *whole* settings file — every panel 500s and no
+ * pin, default project or layout loads. Instead we degrade: the bad
+ * KNOWN key is dropped (falls back to the field's default / absent), and
+ * everything else — the healthy known keys AND all unknown passthrough
+ * keys — still loads.
+ *
+ * This never makes the schema strict and never drops an unknown key: it
+ * only lifts out a known key whose typed value failed its own contract.
+ */
+function parseSettingsTolerant(candidate: Record<string, unknown>): UserSettings {
+  const strict = UserSettingsSchema.safeParse(candidate);
+  if (strict.success) return strict.data;
+
+  // Only KNOWN keys can fault (passthrough never rejects an unknown key),
+  // so every issue's top-level key is a schema-typed field we can drop.
+  const faultKeys = new Set(
+    strict.error.issues
+      .map(i => i.path[0])
+      .filter((k): k is string => typeof k === "string" && KNOWN_SETTINGS_KEYS.has(k)),
+  );
+
+  const cleaned: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(candidate)) {
+    // Drop a known-but-corrupt key (degrade to default); keep everything
+    // else, INCLUDING every unknown passthrough key, byte-for-byte.
+    if (!faultKeys.has(k)) cleaned[k] = v;
+  }
+
+  const reparsed = UserSettingsSchema.safeParse(cleaned);
+  if (!reparsed.success) {
+    // A fault we could not attribute to a known key: fail closed rather
+    // than half-degrade. In practice unreachable — every issue on a
+    // passthrough object is a known-key fault handled above.
+    throw reparsed.error;
+  }
+  return reparsed.data;
+}
+
+/**
  * Loads a user's settings.yaml. Returns `{}` when absent or empty.
  *
- * Throws when the file is present and validates against
- * `UserSettingsSchema` (currently: `default_project` must be a
- * non-empty string when set). UI-only keys are accepted via the
- * schema's passthrough policy and survive round-trip unchanged.
+ * A wrong-typed KNOWN setting (e.g. `theme: 42`) degrades to its default
+ * rather than throwing — a hand edit to one field must not lock the user
+ * out of their whole settings surface. Unknown keys are accepted via the
+ * schema's passthrough policy and survive round-trip unchanged (Group-G,
+ * load-bearing).
  */
 export async function loadUserSettings(
   locttDir: string,
@@ -40,9 +101,9 @@ export async function loadUserSettings(
   const parsed: unknown = parseYaml(raw);
   // Coerce non-object payloads to empty rather than crashing — matches
   // the previous behaviour for malformed-but-not-invalid YAML (e.g. a
-  // bare list). Hand edits that violate the typed shape still throw.
+  // bare list). A wrong-typed KNOWN key degrades to default below.
   const candidate = isPlainObject(parsed) ? parsed : {};
-  return UserSettingsSchema.parse(candidate);
+  return parseSettingsTolerant(candidate);
 }
 
 /**

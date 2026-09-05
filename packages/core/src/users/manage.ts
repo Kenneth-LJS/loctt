@@ -32,14 +32,14 @@ export async function resolveUserRef(
     );
   }
   const lowered = ref.toLowerCase();
-  const prefix = all.filter(u => u.name.toLowerCase().startsWith(lowered));
+  const prefix = all.filter(u => u.name?.toLowerCase().startsWith(lowered) ?? false);
   if (prefix.length === 1) {
     const only = prefix[0];
     if (only) return only;
   }
   if (prefix.length > 1) {
     throw new UserError(
-      `'${ref}' matches ${prefix.length} users (${prefix.map(u => u.name).join(", ")}); ` +
+      `'${ref}' matches ${prefix.length} users (${prefix.map(u => u.name ?? u.id).join(", ")}); ` +
       `refer by ID or full name instead`,
     );
   }

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { IsoDate } from "./brands.js";
+import { BrokenEntrySchema } from "./health.js";
 
 /**
  * A single milestone definition. Milestones are named checkpoints
@@ -24,6 +25,15 @@ export type MilestoneDef = z.infer<typeof MilestoneDefSchema>;
 
 export const MilestonesConfigSchema = z.object({
   milestones: z.array(MilestoneDefSchema),
+  /**
+   * Per-entry corruption, if any. One milestone whose fields no longer
+   * validate (a hand edit, most often) becomes a `BrokenEntry` rather
+   * than blanking the whole milestones surface (north-star principle 5).
+   * Omitted (not `[]`) when every entry parsed, so a consumer reading
+   * only `milestones` is unaffected and "none broken" stays distinct
+   * from "not inspected". A load-time diagnostic — never written to disk.
+   */
+  broken: z.array(BrokenEntrySchema).optional(),
 }).strict().superRefine((cfg, ctx) => {
   const seen = new Set<string>();
   for (const [i, m] of cfg.milestones.entries()) {

@@ -282,7 +282,10 @@ async function buildHistoryDisplayContext(
   }
   try {
     const users = await loadAllUsers(locttDir);
-    ctx.users = new Map(users.map(u => [u.id, u.name]));
+    // K26/O5: a user's name is now degradable — a corrupt profile may
+    // have none. Fall back to the id so a nameless actor still renders as
+    // something (its id), never `undefined`.
+    ctx.users = new Map(users.map(u => [u.id, u.name ?? u.id]));
   } catch {
     // Leave undefined — actor ids render in place of names.
   }

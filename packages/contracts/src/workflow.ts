@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { HexColor } from "./brands.js";
+import { BrokenEntrySchema } from "./health.js";
 
 /**
  * Display-only icon identifier on a workflow entity. The UI renders this
@@ -479,6 +480,34 @@ export const CliConfigSchema = z.object({
 }).strict();
 export type CliConfig = z.infer<typeof CliConfigSchema>;
 
+/**
+ * Per-entry corruption in workflow.yaml, grouped by sub-list.
+ *
+ * workflow.yaml is a record of several independent sub-lists (statuses,
+ * priorities, task_types, relationships, custom_fields). One corrupt
+ * entry in one sub-list — a hand-edited status with a bad `category`, a
+ * relationship missing its `inverse` — degrades to a `BrokenEntry`
+ * rather than blanking the entire workflow, which drives rendering on
+ * every task surface (north-star principle 5). Because `BrokenEntry.index`
+ * is 0-based within its own sub-array, corruption is grouped by which
+ * sub-list it came from rather than flattened into one list where indices
+ * would collide and the sub-list name would be lost.
+ *
+ * Each sub-list key is present only when that sub-list has at least one
+ * broken entry; `broken` itself is omitted (not `{}`) when every entry in
+ * every sub-list parsed, so a consumer reading only `statuses` etc. is
+ * unaffected and "none broken" stays distinct from "not inspected". A
+ * load-time diagnostic — never written to disk.
+ */
+export const WorkflowBrokenSchema = z.object({
+  statuses: z.array(BrokenEntrySchema).optional(),
+  priorities: z.array(BrokenEntrySchema).optional(),
+  task_types: z.array(BrokenEntrySchema).optional(),
+  relationships: z.array(BrokenEntrySchema).optional(),
+  custom_fields: z.array(BrokenEntrySchema).optional(),
+}).strict();
+export type WorkflowBroken = z.infer<typeof WorkflowBrokenSchema>;
+
 /** The full workflow.yaml shape. */
 export const WorkflowConfigSchema = z.object({
   key: KeyConfigSchema,
@@ -491,6 +520,13 @@ export const WorkflowConfigSchema = z.object({
   estimation: EstimationConfigSchema.optional(),
   boards: BoardsConfigSchema.optional(),
   timeline: TimelineConfigSchema.optional(),
+  /**
+   * Per-sub-list corruption found at load time, if any. Populated by the
+   * tolerant loader (`parseWorkflowConfig`), omitted when everything
+   * parsed. Never serialized: writes go through the strict per-entry
+   * schemas, so a corrupt entry can never round-trip back to disk.
+   */
+  broken: WorkflowBrokenSchema.optional(),
 }).strict().superRefine((config, ctx) => {
   // Exactly one default status. A per-def check cannot see siblings,
   // so this is the only place the rule can live.

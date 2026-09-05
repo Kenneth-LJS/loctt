@@ -101,44 +101,73 @@ extra: nope
     expect(() => parseProjectsConfig(yaml)).toThrow(/unrecognized key/);
   });
 
-  it("rejects unknown per-project keys", () => {
+  it("degrades a project with an unknown key to a broken entry (was object-fatal)", () => {
+    // Behaviour changed in Phase 7B / O1: an unknown key inside ONE
+    // project entry is now per-entry corruption — it becomes a
+    // BrokenEntry and the rest of the file loads — not a whole-file
+    // reject. This test previously asserted the old object-fatal
+    // /unrecognized key/ throw; rewritten to assert the degrade, since
+    // that expectation now encodes the pre-fix behaviour. Unknown
+    // TOP-LEVEL keys are still object-fatal (see next test).
     const yaml = `projects:
+  - id: 01HX0000000000000000000440
+    name: Fine
+    prefix: "F-"
   - id: 01HX0000000000000000000444
     name: X
     prefix: "X-"
     description: nope
 `;
-    expect(() => parseProjectsConfig(yaml)).toThrow(/unrecognized key/);
+    const cfg = parseProjectsConfig(yaml);
+    expect(cfg.projects).toHaveLength(1);
+    expect(cfg.projects[0]?.id).toBe("01HX0000000000000000000440");
+    expect(cfg.broken).toHaveLength(1);
+    expect(cfg.broken?.[0]?.id).toBe("01HX0000000000000000000444");
+    expect(cfg.broken?.[0]?.error).toMatch(/unrecognized key/);
   });
 
-  it("rejects an empty prefix", () => {
+  it("degrades a project with an empty prefix to a broken entry", () => {
     const yaml = `
 projects:
   - id: 01HX0000000000000000000555
     name: X
     prefix: ""
 `;
-    expect(() => parseProjectsConfig(yaml)).toThrow(ProjectsConfigError);
+    const cfg = parseProjectsConfig(yaml);
+    expect(cfg.projects).toHaveLength(0);
+    expect(cfg.broken).toHaveLength(1);
+    expect(cfg.broken?.[0]?.error).toMatch(/prefix/);
   });
 
-  it("rejects an empty id", () => {
+  it("degrades a project with an empty id to a broken entry", () => {
+    // A per-entry fault (blank id) degrades: the entry becomes broken and
+    // the file loads. With only this one project, `projects` is empty but
+    // `broken` names it — NOT a "no projects" error, which would blank the
+    // surface over one corrupt entry (PRU-37 / north-star P5). The
+    // downstream "cannot allocate a key with no valid project" concern is
+    // enforced where keys are allocated, not by blanking the read.
     const yaml = `
 projects:
   - id: ""
     name: X
     prefix: "X-"
 `;
-    expect(() => parseProjectsConfig(yaml)).toThrow(ProjectsConfigError);
+    const cfg = parseProjectsConfig(yaml);
+    expect(cfg.projects).toHaveLength(0);
+    expect(cfg.broken).toHaveLength(1);
   });
 
-  it("rejects an empty name", () => {
+  it("degrades a project with an empty name to a broken entry", () => {
     const yaml = `
 projects:
   - id: 01HX0000000000000000000666
     name: ""
     prefix: "X-"
 `;
-    expect(() => parseProjectsConfig(yaml)).toThrow(ProjectsConfigError);
+    const cfg = parseProjectsConfig(yaml);
+    expect(cfg.projects).toHaveLength(0);
+    expect(cfg.broken).toHaveLength(1);
+    expect(cfg.broken?.[0]?.error).toMatch(/name/);
   });
 
   it("tolerates a default that doesn't reference any project (K23 / NEW-20)", () => {
@@ -160,6 +189,126 @@ default: 01HX0000NONEXISTENT00000000
   it("throws YamlSyntaxError on malformed YAML (tagged with file label)", () => {
     expect(() => parseProjectsConfig("{ projects: [")).toThrow(YamlSyntaxError);
     expect(() => parseProjectsConfig("{ projects: [")).toThrow(/projects\.yaml/);
+  });
+
+  describe("per-entry corruption degrades instead of blanking the surface (Phase 7B / O1)", () => {
+    // Before: ProjectsConfigSchema.parse(raw) threw on ANY wrong-typed
+    // field in ANY project, so one bad entry blanked the whole projects
+    // surface. Now a valid project loads and a corrupt one becomes a
+    // BrokenEntry (north-star principle 5, the VUE-22 pattern).
+    it("loads valid projects and sets a corrupt one aside as broken", () => {
+      const yaml = `
+projects:
+  - id: 01HX0000000000000000000001
+    name: Good
+    prefix: "G-"
+  - id: 01HX0000000000000000000002
+    name: 123
+    prefix: []
+  - id: 01HX0000000000000000000003
+    name: AlsoGood
+    prefix: "A-"
+`;
+      const cfg = parseProjectsConfig(yaml);
+      // The two good projects load; the bad one does not blank them.
+      expect(cfg.projects).toHaveLength(2);
+      expect(cfg.projects.map(p => p.id)).toEqual([
+        "01HX0000000000000000000001",
+        "01HX0000000000000000000003",
+      ]);
+      // The corrupt entry is surfaced, not hidden.
+      expect(cfg.broken).toHaveLength(1);
+      expect(cfg.broken?.[0]?.index).toBe(1);
+      expect(cfg.broken?.[0]?.id).toBe("01HX0000000000000000000002");
+      // rawText preserves the stored (corrupt) values for display.
+      expect(cfg.broken?.[0]?.rawText).toContain("prefix");
+      // The validator's message names what was wrong.
+      expect(cfg.broken?.[0]?.error).toMatch(/prefix/);
+    });
+
+    it("omits `broken` entirely when every project is valid", () => {
+      const yaml = `
+projects:
+  - id: 01HX0000000000000000000001
+    name: Good
+    prefix: "G-"
+`;
+      const cfg = parseProjectsConfig(yaml);
+      // Omitted (not []) so "none broken" stays distinct from "not
+      // inspected" and existing consumers reading only .projects are
+      // unaffected.
+      expect(cfg.broken).toBeUndefined();
+    });
+
+    it("degrades even a corrupt entry that carries no readable id", () => {
+      const yaml = `
+projects:
+  - id: 01HX0000000000000000000001
+    name: Good
+    prefix: "G-"
+  - name: NoId
+    prefix: "N-"
+`;
+      const cfg = parseProjectsConfig(yaml);
+      expect(cfg.projects).toHaveLength(1);
+      expect(cfg.broken).toHaveLength(1);
+      // No id to name it by, but the index is always available.
+      expect(cfg.broken?.[0]?.id).toBeUndefined();
+      expect(cfg.broken?.[0]?.index).toBe(1);
+    });
+
+    it("degrades even when EVERY project entry is corrupt (a broken project is not 'no projects')", () => {
+      // Coordinator correction to O1: a file whose only project is corrupt
+      // is NOT "no projects" — it HAS a project, and it is broken. The
+      // read must degrade (projects empty, broken names the entry) so the
+      // panel shows it as broken rather than reporting the whole surface
+      // gone (PRU-37: "tell broken from none"). The "cannot allocate a key
+      // with zero VALID projects" concern is real but belongs at key
+      // allocation, not at load — the read never blanks over corruption.
+      const yaml = `
+projects:
+  - id: 01HX0000000000000000000001
+    name: Bad
+    prefix: 42
+`;
+      const cfg = parseProjectsConfig(yaml);
+      expect(cfg.projects).toHaveLength(0);
+      expect(cfg.broken).toHaveLength(1);
+      expect(cfg.broken?.[0]?.error).toMatch(/prefix/);
+    });
+
+    it("still throws 'at least one project' when the file has ZERO entries (valid or broken)", () => {
+      // The genuine emptiness case stays object-fatal: an empty list is
+      // not corruption to degrade, it is a tracker that cannot allocate a
+      // key and has nothing to show as broken either.
+      expect(() => parseProjectsConfig("projects: []")).toThrow(/at least one/);
+    });
+
+    it("keeps object-fatal cross-entry checks throwing (duplicate prefix among VALID entries)", () => {
+      // Two well-formed projects sharing a prefix is ambiguous, not
+      // degradable — it must still throw even though each entry parses.
+      const yaml = `
+projects:
+  - id: 01HX00000000000000000000A1
+    name: A
+    prefix: "DUP-"
+  - id: 01HX00000000000000000000A2
+    name: B
+    prefix: "DUP-"
+`;
+      expect(() => parseProjectsConfig(yaml)).toThrow(/duplicate project prefix/);
+    });
+
+    it("rejects a stray `broken:` key in the file (load-time diagnostic, not on-disk)", () => {
+      const yaml = `
+projects:
+  - id: 01HX0000000000000000000001
+    name: Good
+    prefix: "G-"
+broken: []
+`;
+      expect(() => parseProjectsConfig(yaml)).toThrow(/unrecognized key/);
+    });
   });
 });
 

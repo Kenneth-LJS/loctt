@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
-import type { LabelsConfig } from "@loctt/contracts";
-import { LabelsConfigSchema } from "@loctt/contracts";
+import type { LabelDef, LabelsConfig } from "@loctt/contracts";
+import { LabelDefSchema } from "@loctt/contracts";
 import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
@@ -10,6 +10,7 @@ import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
+import { collectValidEntries } from "./health.js";
 import { safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
@@ -34,6 +35,17 @@ export function getLabelsConfigPath(locttDir: string): string {
   return join(getConfigDir(locttDir), LABELS_FILE);
 }
 
+/**
+ * The object-fatal outer shape. `labels` must be an array, and no unknown
+ * top-level keys are allowed — but the entries stay `unknown` so a single
+ * structurally-corrupt label does not fail the whole `.parse()` and blank
+ * the surface. The per-ENTRY validation happens afterwards through
+ * `collectValidEntries`, which degrades a bad entry to a `BrokenEntry`.
+ */
+const RawLabelsConfigSchema = z.object({
+  labels: z.array(z.unknown()),
+}).strict();
+
 /** Parses raw YAML content into a LabelsConfig. */
 /**
  * Drops a `color` that is not a hex value, keeping the label.
@@ -55,35 +67,65 @@ export function getLabelsConfigPath(locttDir: string): string {
  * would punish every other label in the file for one typo in one
  * cosmetic field.
  */
-function dropInvalidColors(raw: unknown): unknown {
-  if (typeof raw !== "object" || raw === null) return raw;
-  const labels = (raw as { labels?: unknown }).labels;
-  if (!Array.isArray(labels)) return raw;
-  const cleaned: unknown[] = (labels as unknown[]).map((l): unknown => {
-    if (typeof l !== "object" || l === null) return l;
-    const entry = l as Record<string, unknown>;
-    const color = entry["color"];
-    if (typeof color !== "string") return l;
-    if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(color)) return l;
-    const { color: _dropped, ...rest } = entry;
-    return rest;
-  });
-  return { ...raw, labels: cleaned };
+function dropInvalidColor(l: unknown): unknown {
+  if (typeof l !== "object" || l === null) return l;
+  const entry = l as Record<string, unknown>;
+  const color = entry["color"];
+  if (typeof color !== "string") return l;
+  if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(color)) return l;
+  const { color: _dropped, ...rest } = entry;
+  return rest;
 }
 
 export function parseLabelsConfig(yamlContent: string): LabelsConfig {
   const raw: unknown = safeParseYaml(yamlContent, "labels.yaml");
-  let parsed: LabelsConfig;
+
+  // Object-fatal: the file must be `{ labels: [...] }` with no stray
+  // top-level keys. A file that is not even a list has no coherent
+  // collection to degrade around, so it still throws (ground rule 1).
+  let outer: z.infer<typeof RawLabelsConfigSchema>;
   try {
-    parsed = LabelsConfigSchema.parse(dropInvalidColors(raw));
+    outer = RawLabelsConfigSchema.parse(raw);
   } catch (err) {
     if (err instanceof z.ZodError) {
       throw new LabelsConfigError(`labels.yaml is not valid: ${formatZodIssues("labels config", err)}`);
     }
     throw err;
   }
-  // Schema already enforces uniqueness on id via superRefine.
-  return parsed;
+
+  // Per-ENTRY degrade (north-star principle 5). A wrong-typed field on
+  // one label — an unknown key, a bad `name`, a non-boolean `archived` —
+  // no longer blanks every label in the file: that entry becomes a
+  // `BrokenEntry` and the rest load. A bad `color` is a narrower salvage
+  // the schema already tolerates (MSL-22): the color is dropped per-field
+  // *before* per-entry parse, so a label with a typo'd colour and no
+  // other fault loads as a valid label, not a broken entry.
+  const salvaged = outer.labels.map(dropInvalidColor);
+  const { valid: labels, broken } = collectValidEntries<LabelDef>(
+    salvaged,
+    LabelDefSchema,
+    "label",
+  );
+
+  // Duplicate ids are object-fatal: two labels sharing an id makes a
+  // reference ambiguous, so we cannot silently pick one. Checked only
+  // across the entries that actually validated — a `BrokenEntry` has no
+  // trustworthy id to collide on.
+  const seen = new Set<string>();
+  for (const l of labels) {
+    if (seen.has(l.id)) {
+      throw new LabelsConfigError(`labels.yaml is not valid: duplicate label id: ${l.id}`);
+    }
+    seen.add(l.id);
+  }
+
+  return {
+    labels,
+    // Omitted, not `[]`, when everything parsed — so a consumer reading
+    // only `labels` is unaffected and "none broken" stays distinct from
+    // "not inspected". Never serialized back to disk.
+    ...(broken.length > 0 ? { broken } : {}),
+  };
 }
 
 /** Serializes a LabelsConfig to YAML with stable key order. */

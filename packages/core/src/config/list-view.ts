@@ -1,12 +1,13 @@
 
-import type { ListViewConfig } from "@loctt/contracts";
-import { ListViewConfigSchema } from "@loctt/contracts";
+import type { BrokenEntry, ListViewConfig, ListViewFilters } from "@loctt/contracts";
+import { ListViewConfigSchema, RawListViewConfigSchema } from "@loctt/contracts";
 import { z } from "zod";
 
 import { LocttError } from "../errors.js";
 import { getListViewConfigPath } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
+import { collectValidEntries } from "./health.js";
 import { coerceYaml, safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
@@ -30,19 +31,120 @@ export class ListViewConfigError extends LocttError {
   }
 }
 
+/** One filter-chip key: a non-empty string. The per-ENTRY unit that degrades. */
+const ChipKeySchema = z.string().min(1);
+
 /**
  * Parses raw YAML content into a `ListViewConfig`. Throws
- * `ListViewConfigError` with a formatted message on schema violation.
+ * `ListViewConfigError` with a formatted message on an object-fatal
+ * schema violation; degrades a per-entry one to a `BrokenEntry`.
+ *
+ * list-view.yaml is more record-shaped than the other list configs:
+ * its only genuine per-entry lists are the `filters.visible` and
+ * `filters.hidden` chip-key arrays. Those degrade per entry (a
+ * non-string or empty chip key becomes a `BrokenEntry`; the good keys
+ * in the same array still load) — the VUE-22 pattern generalized via
+ * `collectValidEntries`.
+ *
+ * Everything else stays object-fatal, because there is no coherent
+ * collection to degrade around (ground rule 1):
+ *  - a malformed outer structure (not an object, unknown top-level or
+ *    `filters` keys, `filters` not an object);
+ *  - a `visible`/`hidden` that is not an array at all;
+ *  - the cross-entry checks (a duplicate within an array, a key in both
+ *    arrays) — a duplicate or an overlap is an *ambiguity* the loader
+ *    cannot silently resolve, exactly like the duplicate-id check in
+ *    `queries.ts`, so it throws rather than degrading.
  */
 export function parseListViewConfig(yamlContent: string): ListViewConfig {
   const raw = coerceYaml(safeParseYaml(yamlContent, "list-view.yaml"));
+
+  // Object-fatal outer shape: `{ filters?: { visible?: [], hidden?: [] } }`
+  // with no stray keys and both sub-fields genuine arrays. The entries
+  // stay `unknown` here so one corrupt chip key does not fail the whole
+  // `.parse()` and blank the saved view (that is the per-entry degrade
+  // below). A stray `broken:` is rejected: RawListViewConfigSchema has no
+  // such key.
+  let outer: z.infer<typeof RawListViewConfigSchema>;
   try {
-    return ListViewConfigSchema.parse(raw);
+    outer = RawListViewConfigSchema.parse(raw);
   } catch (err) {
     if (err instanceof z.ZodError) {
       throw new ListViewConfigError(`list-view.yaml is not valid: ${formatZodIssues("list-view config", err)}`);
     }
     throw err;
+  }
+
+  if (!outer.filters) return {};
+
+  // Per-ENTRY degrade (north-star principle 5). A wrong-typed or empty
+  // chip key in one array no longer blanks every chip in the file: that
+  // entry becomes a `BrokenEntry` (index + raw text + validator message)
+  // and the rest load. `label` names which array so a surface can point
+  // at the right one — a chip key has no id to name it by.
+  const broken: BrokenEntry[] = [];
+  const filters: ListViewFilters = {};
+
+  if (outer.filters.visible !== undefined) {
+    const { valid, broken: brk } = collectValidEntries<string>(
+      outer.filters.visible, ChipKeySchema, "list-view visible chip",
+    );
+    broken.push(...brk);
+    filters.visible = valid;
+  }
+  if (outer.filters.hidden !== undefined) {
+    const { valid, broken: brk } = collectValidEntries<string>(
+      outer.filters.hidden, ChipKeySchema, "list-view hidden chip",
+    );
+    broken.push(...brk);
+    filters.hidden = valid;
+  }
+
+  // Cross-entry, object-fatal — run only over the entries that validated
+  // (a `BrokenEntry` has no trustworthy key to collide on). A duplicate
+  // within an array or a key in both arrays is an ambiguity the loader
+  // cannot silently resolve, so it throws exactly as before.
+  assertNoDuplicates(filters.visible, "visible");
+  assertNoDuplicates(filters.hidden, "hidden");
+  assertNoOverlap(filters.visible, filters.hidden);
+
+  // Re-run the full contract schema over the reassembled, salvaged config
+  // so the returned value is exactly a `ListViewConfig` and any invariant
+  // not covered above still holds. It cannot fail on the checks above
+  // (already enforced) and the entries are now known-good strings.
+  const parsed = ListViewConfigSchema.parse({
+    ...(Object.keys(filters).length > 0 ? { filters } : {}),
+  });
+
+  return {
+    ...parsed,
+    // Omitted, not `[]`, when everything parsed — so a consumer reading
+    // only `filters` is unaffected and "none broken" stays distinct from
+    // "not inspected". Never serialized back to disk.
+    ...(broken.length > 0 ? { broken } : {}),
+  };
+}
+
+/** Object-fatal: a chip key repeated within one array is ambiguous. */
+function assertNoDuplicates(arr: readonly string[] | undefined, field: "visible" | "hidden"): void {
+  if (!arr) return;
+  const seen = new Set<string>();
+  for (const k of arr) {
+    if (seen.has(k)) {
+      throw new ListViewConfigError(`list-view.yaml is not valid: duplicate entry '${k}' in ${field}`);
+    }
+    seen.add(k);
+  }
+}
+
+/** Object-fatal: a key in both `visible` and `hidden` is contradictory. */
+function assertNoOverlap(visible: readonly string[] | undefined, hidden: readonly string[] | undefined): void {
+  if (!visible || !hidden) return;
+  const hiddenSet = new Set(hidden);
+  for (const k of visible) {
+    if (hiddenSet.has(k)) {
+      throw new ListViewConfigError(`list-view.yaml is not valid: '${k}' appears in both visible and hidden`);
+    }
   }
 }
 

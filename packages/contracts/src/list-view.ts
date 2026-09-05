@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { BrokenEntrySchema } from "./health.js";
+
 /**
  * Built-in field keys recognised as filter chips on the list view.
  * Used as the allowlist for entries in
@@ -82,5 +84,47 @@ export type ListViewFilters = z.infer<typeof ListViewFiltersSchema>;
 
 export const ListViewConfigSchema = z.object({
   filters: ListViewFiltersSchema.optional(),
+  /**
+   * Per-entry corruption, if any — an individual filter-chip key inside
+   * `filters.visible` / `filters.hidden` that no longer validates (a
+   * non-string or empty string, a hand edit most often) becomes a
+   * `BrokenEntry` rather than blanking the whole saved view (north-star
+   * principle 5, the VUE-22 pattern generalized). The good keys in the
+   * same array still load.
+   *
+   * Omitted (not `[]`) when every entry parsed, so a consumer reading
+   * only `filters` is unaffected and "none broken" stays distinct from
+   * "not inspected". A load-time diagnostic only — never serialized back
+   * to disk. The loader parses the file through a separate raw schema
+   * that has no `broken` key, so a stray `broken:` in a hand-edited file
+   * is still rejected.
+   *
+   * Attached by `parseListViewConfig` after the fact, not by this
+   * schema's own validation: object-fatal problems — a malformed outer
+   * structure, a non-array `visible`/`hidden`, a duplicate within an
+   * array, or a key in both arrays — still throw. list-view.yaml is more
+   * record-shaped than the other configs; only these two sub-arrays hold
+   * a genuine list of entries to degrade around.
+   */
+  broken: z.array(BrokenEntrySchema).optional(),
 }).strict();
 export type ListViewConfig = z.infer<typeof ListViewConfigSchema>;
+
+/**
+ * The object-fatal outer shape used by the loader. `filters` (when
+ * present) must be an object whose `visible`/`hidden` are arrays, and no
+ * unknown keys are allowed at either level — but the array *entries* stay
+ * `unknown` so a single corrupt chip key does not fail the whole
+ * `.parse()` and blank the saved view. Per-ENTRY validation happens
+ * afterwards through `collectValidEntries` in the loader.
+ *
+ * No `broken` key here: a stray `broken:` in a hand-edited file is
+ * rejected, and the loader attaches the real diagnostic itself.
+ */
+export const RawListViewConfigSchema = z.object({
+  filters: z.object({
+    visible: z.array(z.unknown()).optional(),
+    hidden: z.array(z.unknown()).optional(),
+  }).strict().optional(),
+}).strict();
+export type RawListViewConfig = z.infer<typeof RawListViewConfigSchema>;

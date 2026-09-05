@@ -21,11 +21,12 @@ export {
   LabelDefSchema,
   LabelsConfigSchema,
 } from "./labels.js";
-export type { ListViewConfig, ListViewFilters } from "./list-view.js";
+export type { ListViewConfig, ListViewFilters, RawListViewConfig } from "./list-view.js";
 export {
   BUILTIN_FILTER_FIELD_KEYS,
   ListViewConfigSchema,
   ListViewFiltersSchema,
+  RawListViewConfigSchema,
 } from "./list-view.js";
 export type { MilestoneDef, MilestonesConfig } from "./milestones.js";
 export {
@@ -210,6 +211,7 @@ export type {
   TimelineConfig,
   TimelineGrouping,
   TimelineZoom,
+  WorkflowBroken,
   WorkflowConfig,
 } from "./workflow.js";
 export {
@@ -240,5 +242,6 @@ export {
   TimelineConfigSchema,
   TimelineGroupingSchema,
   TimelineZoomSchema,
+  WorkflowBrokenSchema,
   WorkflowConfigSchema,
 } from "./workflow.js";

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { HexColor } from "./brands.js";
+import { BrokenEntrySchema } from "./health.js";
 
 /**
  * A single label definition. Labels live in `.loctt/config/labels.yaml`
@@ -26,6 +27,16 @@ export type LabelDef = z.infer<typeof LabelDefSchema>;
 /** The full labels.yaml shape. */
 export const LabelsConfigSchema = z.object({
   labels: z.array(LabelDefSchema),
+  /**
+   * Per-entry corruption, if any. A structurally-corrupt label entry
+   * (a wrong-typed field other than the salvaged `color`) degrades to a
+   * `BrokenEntry` rather than blanking the whole labels surface, exactly
+   * like `QueriesConfig.broken`. Omitted (not `[]`) when every entry
+   * parsed, so existing consumers that read only `labels` are unaffected
+   * and "none broken" stays distinct from "not inspected". Never written
+   * back to disk — it is a load-time diagnostic.
+   */
+  broken: z.array(BrokenEntrySchema).optional(),
 }).strict().superRefine((cfg, ctx) => {
   const seen = new Set<string>();
   for (const [i, l] of cfg.labels.entries()) {

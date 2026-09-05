@@ -73,27 +73,72 @@ holidays: []
     expect(() => parseCalendarConfig(yaml)).toThrow(/working_days\[1\]/);
   });
 
-  it("rejects a holiday with a malformed date", () => {
-    const yaml = `timezone: UTC
+  it("degrades a holiday with a malformed date to a BrokenEntry, keeping the rest", () => {
+    // SET-36: one unparseable holiday marks that row and is listed as
+    // broken; the other valid holidays are not discarded and the whole
+    // calendar does not blank. (Previously this threw CalendarConfigError,
+    // blanking every holiday beside the bad one — that test asserted the
+    // pre-tolerance bug; see the final message's "green test edited".)
+    const cfg = parseCalendarConfig(`timezone: UTC
 first_day_of_week: 1
 working_days: [1, 2, 3, 4, 5]
 holidays:
-  - date: "01-01-2026"
+  - date: 2026-01-01
     label: New Year
-`;
-    expect(() => parseCalendarConfig(yaml)).toThrow(CalendarConfigError);
-    expect(() => parseCalendarConfig(yaml)).toThrow(/YYYY-MM-DD/);
+  - date: "01-01-2026"
+    label: Bad Row
+  - date: 2026-12-25
+    label: Christmas
+`);
+    // Valid holidays survive, in order, values preserved.
+    expect(cfg.holidays).toEqual([
+      { date: "2026-01-01", label: "New Year" },
+      { date: "2026-12-25", label: "Christmas" },
+    ]);
+    // The bad row is set aside as a BrokenEntry naming its index, raw text
+    // and what was expected — not silently dropped.
+    expect(cfg.broken).toHaveLength(1);
+    const entry = cfg.broken?.[0];
+    expect(entry?.index).toBe(1);
+    expect(entry?.rawText).toContain("01-01-2026");
+    expect(entry?.error).toMatch(/YYYY-MM-DD/);
   });
 
-  it("rejects a holiday with empty label", () => {
-    const yaml = `timezone: UTC
+  it("degrades a holiday with an empty label to a BrokenEntry", () => {
+    const cfg = parseCalendarConfig(`timezone: UTC
 first_day_of_week: 1
 working_days: [1, 2, 3, 4, 5]
 holidays:
   - date: 2026-01-01
     label: ""
+`);
+    expect(cfg.holidays).toEqual([]);
+    expect(cfg.broken).toHaveLength(1);
+    expect(cfg.broken?.[0]?.index).toBe(0);
+    expect(cfg.broken?.[0]?.error).toMatch(/label must be a non-empty string/);
+  });
+
+  it("omits `broken` when every holiday parses", () => {
+    const cfg = parseCalendarConfig(`timezone: UTC
+first_day_of_week: 1
+working_days: [1, 2, 3, 4, 5]
+holidays:
+  - date: 2026-01-01
+    label: New Year
+`);
+    // Omitted, not [], so "none broken" stays distinct from "not inspected".
+    expect(cfg.broken).toBeUndefined();
+  });
+
+  it("keeps a wholly non-array holidays value object-fatal", () => {
+    // A `holidays` that is not even a list is not a collection to degrade
+    // around — it still throws, exactly as before.
+    const yaml = `timezone: UTC
+first_day_of_week: 1
+working_days: [1, 2, 3, 4, 5]
+holidays: not-a-list
 `;
-    expect(() => parseCalendarConfig(yaml)).toThrow("holidays[0].label must be a non-empty string");
+    expect(() => parseCalendarConfig(yaml)).toThrow(CalendarConfigError);
   });
 
   it("throws YamlSyntaxError on malformed YAML (tagged with file label)", () => {
