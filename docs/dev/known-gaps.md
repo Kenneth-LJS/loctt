@@ -4240,3 +4240,32 @@ So: 7 wait on one Ken spec edit, 10 on a schema bump, 1 on a Ken
 ruling, and 31 are Phase 7/Z feature work. Zero are "built but I didn't
 test them" — that was verified case by case, which is the check the
 aggregate notes kept failing.
+
+
+## Test infra: `Sidebar.test.tsx` hangs under vitest (pre-existing, environmental)
+
+**Found:** 2026-09-05, while gating the NEW-20 / K23 change.
+
+`apps/web/src/client/shell/Sidebar.test.tsx` wedges — the worker sits at
+0% CPU (blocked, not spinning) and the run never prints a result line.
+Every other file in `shell/` passes in isolation; the whole client
+suite only stalls because this one file never returns, which is what
+made `vitest run --dir apps/web/src/client` look like a fork-contention
+wedge. It is not contention: the file hangs even alone and even with
+`--no-file-parallelism`.
+
+**Proven pre-existing.** Restoring `sidebarData.ts` to its committed
+HEAD version (dropping the NEW-20 `default_drift` field) and running
+the file still hangs — so the NEW-20 change did not cause it. It
+reproduces on the clean baseline.
+
+**Effect on gating.** The rest of the web client suite is green when
+this file is excluded (settings 68, create 33, list 139, sidebar 15,
+and the other nine shell files all pass). To gate a change that does
+not touch Sidebar, run the client suite excluding this file, or run the
+touched subdirs directly.
+
+**Not yet root-caused.** No timers/polling in the test or in
+`Sidebar.tsx`; likely a `waitFor` on a condition that never settles
+under jsdom, or a hung microtask. Needs its own investigation — folded
+into Phase Z's test-infra pass rather than fixed inline here.

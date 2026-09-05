@@ -1,27 +1,42 @@
 import type { UserSettings } from "@loctt/contracts";
 import { describe, expect, it } from "vitest";
 
-import { ALL_COLUMNS, resolveColumns } from "./columns.ts";
+import { ALL_COLUMNS, DEFAULT_COLUMNS, resolveColumns } from "./columns.ts";
 
 const settings = (list_columns: unknown): UserSettings =>
   ({ list_columns }) as unknown as UserSettings;
 
 describe("resolveColumns", () => {
-  it("returns all columns in default order when no setting is present", () => {
-    expect(resolveColumns(undefined).map(c => c.id)).toEqual(ALL_COLUMNS.map(c => c.id));
+  it("returns the default columns in order when no setting is present", () => {
+    // K24: the default set is the ten LST-2 columns, NOT the whole
+    // catalog — the catalog includes the opt-in reporter column.
+    expect(resolveColumns(undefined).map(c => c.id)).toEqual(DEFAULT_COLUMNS.map(c => c.id));
+  });
+
+  // @verifies LST-2
+  it("LST-2: the default set is exactly the ten columns, with reporter absent (K24)", () => {
+    const ids = resolveColumns(undefined).map(c => c.id);
+    expect(ids).toEqual([
+      "key", "project", "title", "status", "priority",
+      "task_type", "assignee", "labels", "due_date", "updated_at",
+    ]);
+    // reporter is a real catalog column, just not a default one.
+    expect(ids).not.toContain("reporter");
   });
 
   // @verifies PRU-25
-  it("offers a sortable reporter column, defaulting visible after assignee", () => {
+  it("offers a sortable reporter column in the catalog, added opt-in via list_columns", () => {
     const reporter = ALL_COLUMNS.find(c => c.id === "reporter");
     expect(reporter).toBeDefined();
     expect(reporter?.label).toBe("Reporter");
     // reporter is a real TaskFrontmatter field, so the server can sort it.
     expect(reporter?.sortable).toBe(true);
-    // Present in the default set, and sitting just after assignee.
-    const ids = resolveColumns(undefined).map(c => c.id);
-    expect(ids).toContain("reporter");
-    expect(ids.indexOf("reporter")).toBe(ids.indexOf("assignee") + 1);
+    // K24: NOT in the default view — a user must opt in.
+    expect(resolveColumns(undefined).map(c => c.id)).not.toContain("reporter");
+    // ...and when they do opt in, it resolves and renders (PRU-25's
+    // degraded reporter cell has a column to live in).
+    const opted = resolveColumns(settings(["key", "assignee", "reporter"])).map(c => c.id);
+    expect(opted).toEqual(["key", "assignee", "reporter"]);
   });
 
   it("respects a user's column order + visibility", () => {
@@ -36,13 +51,13 @@ describe("resolveColumns", () => {
 
   it("falls back to defaults when the setting resolves to nothing", () => {
     expect(resolveColumns(settings(["totally", "unknown"])).map(c => c.id)).toEqual(
-      ALL_COLUMNS.map(c => c.id),
+      DEFAULT_COLUMNS.map(c => c.id),
     );
   });
 
   it("ignores a non-array list_columns", () => {
     expect(resolveColumns(settings("title,status")).map(c => c.id)).toEqual(
-      ALL_COLUMNS.map(c => c.id),
+      DEFAULT_COLUMNS.map(c => c.id),
     );
   });
 });
@@ -54,7 +69,7 @@ describe("resolveColumns — project scope (PRU-3)", () => {
     expect(cols.map(c => c.id)).not.toContain("project");
     // Every other default column survives — only project is dropped.
     expect(cols.map(c => c.id)).toEqual(
-      ALL_COLUMNS.filter(c => c.id !== "project").map(c => c.id),
+      DEFAULT_COLUMNS.filter(c => c.id !== "project").map(c => c.id),
     );
   });
 
@@ -62,7 +77,7 @@ describe("resolveColumns — project scope (PRU-3)", () => {
   it("shows the project column in all-projects mode (nothing scoped)", () => {
     const cols = resolveColumns(undefined, { activeProjectCount: 0 });
     expect(cols.map(c => c.id)).toContain("project");
-    expect(cols.map(c => c.id)).toEqual(ALL_COLUMNS.map(c => c.id));
+    expect(cols.map(c => c.id)).toEqual(DEFAULT_COLUMNS.map(c => c.id));
   });
 
   // @verifies PRU-3

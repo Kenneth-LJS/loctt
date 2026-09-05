@@ -132,11 +132,15 @@ describe("ListView", () => {
   });
 
   // @verifies LST-2
-  it("renders all eleven column headers", async () => {
+  // @verifies LST-2
+  it("renders the ten default column headers (reporter is opt-in, K24)", async () => {
     await mountList();
-    for (const h of ["Key", "Project", "Title", "Status", "Priority", "Type", "Assignee", "Reporter", "Labels", "Due", "Updated"]) {
+    for (const h of ["Key", "Project", "Title", "Status", "Priority", "Type", "Assignee", "Labels", "Due", "Updated"]) {
       expect(screen.getByRole("columnheader", { name: new RegExp(h) })).toBeTruthy();
     }
+    // K24: reporter is not a default column, so its header is absent
+    // until the user adds it via list_columns.
+    expect(screen.queryByRole("columnheader", { name: /Reporter/ })).toBeNull();
   });
 
   // @verifies LST-3

@@ -13,6 +13,17 @@ export interface ColumnDef {
   readonly sortable: boolean;
 }
 
+/**
+ * The catalog of every column a user *can* show. Order here is the
+ * canonical left-to-right order used to place any column the user adds.
+ *
+ * `reporter` lives in the catalog (so the settings editor offers it and
+ * PRU-25's degraded-reporter cell has somewhere to render) but is NOT
+ * in the default set below — K24: reporter is opt-in, not a default
+ * column. LST-2 enumerates the default list as exactly ten columns
+ * without reporter, and an eleventh column pushed the table into
+ * horizontal overflow (LST-20). A user adds reporter via `list_columns`.
+ */
 export const ALL_COLUMNS: readonly ColumnDef[] = [
   { id: "key", label: "Key", sortable: true },
   { id: "project", label: "Project", sortable: true },
@@ -27,8 +38,19 @@ export const ALL_COLUMNS: readonly ColumnDef[] = [
   { id: "updated_at", label: "Updated", sortable: true },
 ];
 
+/**
+ * The columns shown when the user has no saved `list_columns`. These
+ * are LST-2's exact ten, in order — every catalog column except
+ * `reporter` (K24). Kept as its own list, not derived from
+ * `ALL_COLUMNS`, so adding a future catalog column does not silently
+ * change the default view.
+ */
+export const DEFAULT_COLUMNS: readonly ColumnDef[] = ALL_COLUMNS.filter(
+  c => c.id !== "reporter",
+);
+
 /** Default visible column order when the user has no saved preference. */
-export const DEFAULT_COLUMN_ORDER: readonly string[] = ALL_COLUMNS.map(c => c.id);
+export const DEFAULT_COLUMN_ORDER: readonly string[] = DEFAULT_COLUMNS.map(c => c.id);
 
 /**
  * How the active project filter should affect the project column.
@@ -70,9 +92,12 @@ export function resolveColumns(
   settings: UserSettings | undefined,
   scope?: ColumnScope,
 ): readonly ColumnDef[] {
+  // Resolve ids against the full catalog so an explicit list_columns
+  // may name `reporter` (opt-in, K24); the *default* base is the ten
+  // DEFAULT_COLUMNS, which omit it.
   const byId = new Map(ALL_COLUMNS.map(c => [c.id, c]));
   const raw = (settings as { list_columns?: unknown } | undefined)?.list_columns;
-  let base: readonly ColumnDef[] = ALL_COLUMNS;
+  let base: readonly ColumnDef[] = DEFAULT_COLUMNS;
   // Whether the user set their own columns. K19: the auto-insert of
   // the project column in all-projects mode is a default-only help —
   // an explicit list is honored verbatim and never gains a column the
