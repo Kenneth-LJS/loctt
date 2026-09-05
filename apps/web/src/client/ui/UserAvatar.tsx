@@ -14,7 +14,12 @@ import { avatarPalette, initials } from "./avatar.ts";
  */
 export interface UserAvatarLike {
   readonly id: string;
-  readonly name: string;
+  /**
+   * May be `undefined` when the profile's `name` is corrupt or absent
+   * (O5 — name is field-local, so the profile still loads). The initials
+   * fallback then derives from the id, so the chip is never blank.
+   */
+  readonly name?: string | undefined;
   readonly avatar?: string | undefined;
 }
 
@@ -61,7 +66,7 @@ export function UserAvatar({
       data-testid={initialsTestId ?? testId}
       className={`${shared} grid place-items-center font-semibold ${avatarPalette(user.id)}`}
     >
-      {initials(user.name)}
+      {initials(user.name ?? user.id)}
     </span>
   );
 }

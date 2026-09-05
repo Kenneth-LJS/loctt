@@ -39,7 +39,13 @@ interface SearchPage {
 export interface TaskSearchHit {
   readonly id: string;
   readonly key: string;
-  readonly title: string;
+  /**
+   * May be `undefined` when the task's `title` frontmatter is corrupt or
+   * absent (K26 — title is field-local, so the task still loads). The
+   * picker pairs it with {@link key}, so consumers fall back to a
+   * placeholder rather than the key (which is already shown beside it).
+   */
+  readonly title: string | undefined;
   readonly status: string | undefined;
   readonly archived: boolean;
   /**

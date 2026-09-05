@@ -159,7 +159,10 @@ export function AssigneeCell({ user, raw }: { user: UserProfile | undefined; raw
       </span>
     );
   }
-  const firstName = user.name.split(/\s+/)[0] ?? user.name;
+  // O5: a resolved-but-nameless profile (corrupt/absent `name`) degrades
+  // to its id — a known user, so not the "(deleted user)" branch above.
+  const display = user.name ?? user.id;
+  const firstName = user.name === undefined ? display : (display.split(/\s+/)[0] ?? display);
   return (
     <span className="inline-flex items-center gap-1.5">
       {/* PRU-13: the stored avatar appears in the list assignee cell,

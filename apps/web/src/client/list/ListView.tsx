@@ -952,7 +952,12 @@ function Cell({
         </span>
       );
     case "updated_at":
-      return (
+      // K26: `updated_at` is field-local — a corrupt/absent timestamp
+      // still loads the task, so the cell degrades to a dash rather than
+      // rendering "Invalid Date".
+      return task.updated_at === undefined ? (
+        <Dash />
+      ) : (
         <span className="whitespace-nowrap font-mono text-text-tertiary">
           {relativeTime(task.updated_at, now)}
         </span>

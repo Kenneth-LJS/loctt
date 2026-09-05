@@ -325,9 +325,21 @@ interface NamedEntity {
   readonly archived?: boolean | undefined;
 }
 
+/**
+ * Like {@link NamedEntity} but `name` may be `undefined` (O5 — a corrupt
+ * or absent profile name is field-local; the user still loads). Only the
+ * user facet degrades this way, so it is a separate shape rather than
+ * loosening every entity's `name`.
+ */
+interface NamedUser {
+  readonly id: string;
+  readonly name?: string | undefined;
+  readonly archived?: boolean | undefined;
+}
+
 function buildFacetOptions(input: {
   projects: readonly NamedEntity[];
-  users: readonly NamedEntity[];
+  users: readonly NamedUser[];
   labels: readonly NamedEntity[];
   milestones: readonly NamedEntity[];
   sprints: readonly NamedEntity[];
@@ -335,10 +347,15 @@ function buildFacetOptions(input: {
 }): FacetOptions {
   const live = <T extends { archived?: boolean | undefined }>(xs: readonly T[]): readonly T[] =>
     xs.filter(x => x.archived !== true);
-  const userOpts: FilterOption[] = input.users.map(u => ({
-    value: u.id,
-    label: u.archived ? `${u.name} (archived)` : u.name,
-  }));
+  const userOpts: FilterOption[] = input.users.map(u => {
+    // O5: a nameless profile degrades to its id so the facet option is
+    // never blank.
+    const name = u.name ?? u.id;
+    return {
+      value: u.id,
+      label: u.archived ? `${name} (archived)` : name,
+    };
+  });
   return {
     project: live(input.projects).map(p => ({ value: p.id, label: p.name })),
     status: (input.workflow?.statuses ?? []).map(s => ({ value: s.key, label: s.label })),

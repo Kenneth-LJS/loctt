@@ -354,7 +354,15 @@ function Footer({
   return (
     <div className="mt-4 space-y-1 border-t border-border-subtle pt-3 text-[11px] text-text-tertiary">
       <p data-testid="meta-created">
-        Created <time title={fm.created_at}>{relativeTime(fm.created_at, now)}</time>
+        {/* K26: `created_at` is field-local — a corrupt/absent stamp
+            still loads the task, so the footer shows a dash rather than
+            "Invalid Date". */}
+        Created{" "}
+        {fm.created_at === undefined ? (
+          <span>—</span>
+        ) : (
+          <time title={fm.created_at}>{relativeTime(fm.created_at, now)}</time>
+        )}
       </p>
       {/* **Relative, not a short date.** This block's own comment has
           said "relative times" since M2.1 while the code rendered
@@ -366,7 +374,12 @@ function Footer({
           the list's Updated column; the footer now uses it, and the
           exact instant stays recoverable on `title` as before. */}
       <p data-testid="meta-updated">
-        Updated <time title={fm.updated_at}>{relativeTime(fm.updated_at, now)}</time>
+        Updated{" "}
+        {fm.updated_at === undefined ? (
+          <span>—</span>
+        ) : (
+          <time title={fm.updated_at}>{relativeTime(fm.updated_at, now)}</time>
+        )}
       </p>
       {history.length > 0 && (
         <p data-testid="meta-key-history">
@@ -473,15 +486,19 @@ function userOptions(
   users: readonly UserProfile[],
   _current: string | undefined,
 ): readonly PickerOption[] {
+  // O5: a corrupt/absent profile name is field-local; the picker
+  // degrades that user's label to its id so no option renders blank.
+  const displayName = (u: UserProfile) => u.name ?? u.id;
   const nameCounts = new Map<string, number>();
   for (const u of users) {
-    nameCounts.set(u.name, (nameCounts.get(u.name) ?? 0) + 1);
+    const n = displayName(u);
+    nameCounts.set(n, (nameCounts.get(n) ?? 0) + 1);
   }
   return users.map(u => ({
     key: u.id,
-    label: u.name,
+    label: displayName(u),
     ...(u.archived === true ? { disabled: true, suffix: "(archived)" } : {}),
-    ...((nameCounts.get(u.name) ?? 0) > 1 ? { hint: u.id.slice(-6) } : {}),
+    ...((nameCounts.get(displayName(u)) ?? 0) > 1 ? { hint: u.id.slice(-6) } : {}),
   }));
 }
 

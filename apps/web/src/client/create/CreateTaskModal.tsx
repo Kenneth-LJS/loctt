@@ -967,14 +967,24 @@ function UserField({
 }: {
   readonly label: string;
   readonly testid: string;
-  readonly users: readonly { id: string; name: string; archived?: boolean | undefined }[];
+  readonly users: readonly {
+    id: string;
+    // O5: a corrupt/absent profile name still loads; the picker degrades
+    // that user's label to its id (see `displayName` below).
+    name?: string | undefined;
+    archived?: boolean | undefined;
+  }[];
   readonly value: string | undefined;
   readonly onSelect: (key: string) => void;
   readonly onClear: () => void;
 }) {
   const live = users.filter(u => u.archived !== true);
+  const displayName = (u: { id: string; name?: string | undefined }) => u.name ?? u.id;
   const nameCounts = new Map<string, number>();
-  for (const u of live) nameCounts.set(u.name, (nameCounts.get(u.name) ?? 0) + 1);
+  for (const u of live) {
+    const n = displayName(u);
+    nameCounts.set(n, (nameCounts.get(n) ?? 0) + 1);
+  }
 
   return (
     <Field label={label}>
@@ -984,9 +994,9 @@ function UserField({
           value={value}
           options={live.map(u => ({
             key: u.id,
-            label: (nameCounts.get(u.name) ?? 0) > 1
-              ? `${u.name} (${u.id.slice(-6)})`
-              : u.name,
+            label: (nameCounts.get(displayName(u)) ?? 0) > 1
+              ? `${displayName(u)} (${u.id.slice(-6)})`
+              : displayName(u),
           }))}
           onSelect={onSelect}
           onClear={onClear}

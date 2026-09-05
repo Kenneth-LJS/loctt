@@ -169,7 +169,10 @@ export function LinkPicker({
                 {/* REL-8's fourth bullet: key + title + status, so two
                     similarly-titled tasks are distinguishable. */}
                 <span className="min-w-0 flex-1 truncate text-text-primary">
-                  {hit.title}
+                  {/* K26: a task whose title is corrupt/absent still
+                      loads — show a placeholder rather than a blank cell.
+                      The key is already shown to the left. */}
+                  {hit.title ?? <span className="italic text-text-secondary">(untitled)</span>}
                 </span>
                 <StatusBadge def={statusOf(hit.status)} raw={hit.status} />
                 {hit.archived && (

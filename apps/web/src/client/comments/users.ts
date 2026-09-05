@@ -51,12 +51,20 @@ export function buildUserIndex(users: readonly UserProfile[]): UserIndex {
   for (const u of users) byId.set(u.id, u);
 
   return {
-    name: (userId: string) => byId.get(userId)?.name ?? UNKNOWN_AUTHOR,
+    // A resolved-but-nameless profile (O5: corrupt/absent `name`) is a
+    // known user, so it degrades to its id, not to UNKNOWN_AUTHOR — the
+    // latter is reserved for an id that resolves to nobody.
+    name: (userId: string) => {
+      const u = byId.get(userId);
+      return u === undefined ? UNKNOWN_AUTHOR : u.name ?? u.id;
+    },
     known: (userId: string) => byId.has(userId),
     mention: (userId: string) => {
       const u = byId.get(userId);
       if (u === undefined) return undefined;
-      return { id: u.id, name: u.name, archived: u.archived === true };
+      // O5: a profile whose `name` is corrupt/absent still resolves — a
+      // mention chip must show something, so fall back to the id.
+      return { id: u.id, name: u.name ?? u.id, archived: u.archived === true };
     },
     /**
      * CMT-8's first two bullets. Archiving a user is the gesture that
@@ -93,7 +101,9 @@ function mentionable(users: readonly UserProfile[]): readonly MentionCandidate[]
     .filter(u => u.archived !== true)
     .map(u => ({
       id: u.id,
-      name: u.name,
+      // O5: a nameless profile degrades to its id so the picker row is
+      // never blank; the hint (email or id tail) still disambiguates.
+      name: u.name ?? u.id,
       hint: u.email ?? `…${u.id.slice(-6)}`,
     }));
 }

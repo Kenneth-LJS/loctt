@@ -250,7 +250,7 @@ function UserMenu({
           ].join(" ")}
           {...aria}
         >
-          {identityUnknown ? "?" : initials(currentUser?.name ?? "")}
+          {identityUnknown ? "?" : initials(currentUser?.name ?? currentUser?.id ?? "")}
         </button>
       )}
     >
@@ -281,7 +281,7 @@ function UserMenu({
               />
               <div className="min-w-0">
                 <div className="truncate text-[13px] font-medium text-text-primary">
-                  {currentUser.name}
+                  {currentUser.name ?? currentUser.id}
                   {currentArchived ? (
                     <span
                       data-testid="user-menu-current-archived"
@@ -337,9 +337,9 @@ function UserMenu({
                       avatarPalette(u.id),
                     ].join(" ")}
                   >
-                    {initials(u.name)}
+                    {initials(u.name ?? u.id)}
                   </span>
-                  <span className="truncate">{u.name}</span>
+                  <span className="truncate">{u.name ?? u.id}</span>
                 </MenuItem>
               ))}
             </div>

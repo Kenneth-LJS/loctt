@@ -304,10 +304,14 @@ function bySprint(rows: readonly TimelineRow[], lookups: RowLookups): readonly T
  */
 function byAssignee(rows: readonly TimelineRow[], lookups: RowLookups): readonly TimelineBand[] {
   const defs = lookups.users ?? [];
-  const order = defs.map(u => ({
-    id: u.id,
-    label: u.archived === true ? `${u.name} (archived)` : u.name,
-  }));
+  const order = defs.map(u => {
+    // O5: a corrupt/absent profile name degrades to the id for the band.
+    const name = u.name ?? u.id;
+    return {
+      id: u.id,
+      label: u.archived === true ? `${name} (archived)` : name,
+    };
+  });
   return bucket(rows, t => t.assignee ?? NONE, order, "Unassigned");
 }
 
