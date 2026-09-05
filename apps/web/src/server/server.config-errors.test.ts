@@ -101,8 +101,14 @@ describe("a config file that fails its schema", () => {
       "utf8",
     );
 
-    // Labels itself fails...
-    expect((await fetch(`${base}/api/labels`)).status).toBeGreaterThanOrEqual(400);
+    // Phase-7B: a corrupt label entry no longer takes labels down — it
+    // degrades. /api/labels returns 200 with the bad entry surfaced in
+    // `broken` (there were no good ones here, so the list is empty AND
+    // broken names why). The point this test guards is unchanged: a
+    // corrupt config never white-screens surfaces that don't read it.
+    const labelsRes = await fetch(`${base}/api/labels`);
+    expect(labelsRes.status).toBe(200);
+    expect(((await labelsRes.json()) as { broken?: unknown[] }).broken).toBeDefined();
     // ...while the surfaces that never read it keep working.
     expect((await fetch(`${base}/api/info`)).status).toBe(200);
     expect((await fetch(`${base}/api/workflow`)).status).toBe(200);
@@ -151,24 +157,28 @@ describe("a config file that fails its schema", () => {
     await writeFile(cfgPath, original.replace(/^\s*prefix:.*\n/m, ""), "utf8");
 
     const res = await fetch(`${base}/api/projects`);
-    // Not a 200 carrying an empty list — the panel must be able to
-    // tell "broken" from "none".
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    const body = await res.json() as Envelope;
-    const text = `${body.message ?? ""} ${body.detail ?? ""}`;
+    // Phase-7B: PRU-37's intent is "the panel must tell broken from
+    // none" — do NOT render an empty list as if there are no projects,
+    // and name the offending entry. Its MECHANISM changed from a ≥400
+    // whole-surface error to a 200 that carries the good projects plus a
+    // `broken` list naming the bad one, exactly like VUE-22 does for
+    // saved views (north-star P5: one bad project must not blank the
+    // rest). This test previously asserted the ≥400 mechanism; rewritten
+    // to assert the degrade, which meets the intent more precisely (it
+    // distinguishes healthy / broken / absent, not just broken / not).
+    expect(res.status).toBe(200);
+    const body = await res.json() as { broken?: { index: number; error: string }[] };
+    // The offending entry is surfaced as broken, named by index, with
+    // the field it is missing in the error — not silently dropped.
+    expect(body.broken).toBeDefined();
+    expect(body.broken?.some(b => b.index === 0 && /prefix/.test(b.error))).toBe(true);
 
-    // The file...
-    expect(text).toContain("projects.yaml");
-    // ...the offending entry, and the field it is missing.
-    expect(text).toMatch(/projects\[0\]/);
-    expect(text).toMatch(/prefix/);
-
-    // Positive control: with the file restored the same endpoint
-    // answers normally, so the assertions above are about the bad
-    // edit and not about a permanently broken harness.
+    // Positive control: with the file restored the endpoint carries no
+    // `broken`, so the assertion above is about the bad edit.
     await writeFile(cfgPath, original, "utf8");
-    const ok = await fetch(`${base}/api/projects`);
-    expect(ok.status).toBe(200);
+    const okRes = await fetch(`${base}/api/projects`);
+    expect(okRes.status).toBe(200);
+    expect(((await okRes.json()) as { broken?: unknown }).broken).toBeUndefined();
   });
 });
 
@@ -265,18 +275,26 @@ describe("a malformed sprints.yaml", () => {
     );
 
     const res = await fetch(`${base}/api/sprints`);
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    const body = await res.json() as Envelope & { recovery?: { kind?: string } };
-
-    // The file is named, so the user knows where to look (SPR-31).
-    const text = `${body.message ?? ""} ${body.detail ?? ""}`;
-    expect(text).toContain("sprints.yaml");
-
-    // The distinguishing bit (SPR-32). `io_failed` + retry is the
-    // failed-fetch envelope; a broken file must not wear it.
-    expect(body.code).toBe("config_invalid");
+    // Phase-7B: a per-entry sprint fault (SPR-31's end<start fixture) now
+    // DEGRADES rather than failing the whole surface (north-star P5). The
+    // distinguishability SPR-32 demands is preserved and sharpened: the
+    // response is a 200 carrying a `broken` list — which is neither the
+    // failed-fetch envelope (io_failed + retry) NOR a plain empty state
+    // (no `broken`). This test previously asserted the ≥400 mechanism;
+    // the intent (broken ≠ failed-fetch ≠ empty) holds, via `broken`.
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      items: unknown[];
+      broken?: { index: number; error: string }[];
+      code?: string;
+      recovery?: { kind?: string };
+    };
+    // It is NOT the failed-fetch envelope.
     expect(body.code).not.toBe("io_failed");
     expect(body.recovery?.kind).not.toBe("retry");
+    // The broken entry is surfaced, naming the rule it broke.
+    expect(body.broken).toBeDefined();
+    expect(body.broken?.some(b => /end_date|start_date|before|after/i.test(b.error))).toBe(true);
 
     // One bad file does not blank unrelated views.
     const tasks = await fetch(`${base}/api/tasks`);

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { IanaTimezone, IsoDate } from "./brands.js";
+import { BrokenEntrySchema } from "./health.js";
 
 /**
  * A single non-working day. `date` is a YYYY-MM-DD string;
@@ -32,6 +33,24 @@ export const CalendarConfigSchema = z.object({
   first_day_of_week: Weekday,
   working_days: z.array(Weekday),
   holidays: z.array(HolidayDefSchema),
+  /**
+   * Per-entry corruption in the holidays list, if any. One holiday whose
+   * fields no longer validate (a hand-edited `date` in the wrong format,
+   * a missing `label`) becomes a `BrokenEntry` rather than blanking the
+   * whole calendar (north-star principle 5) — exactly like
+   * `QueriesConfig.broken` / `MilestonesConfig.broken`. Omitted (not `[]`)
+   * when every holiday parsed, so a consumer reading only `holidays` is
+   * unaffected and "none broken" stays distinct from "not inspected". A
+   * load-time diagnostic — never written back to disk.
+   *
+   * Only the `holidays` list degrades this way. The scalar fields
+   * (`timezone`, `first_day_of_week`, `working_days`) stay object-fatal:
+   * they are single values other rendering references, not a collection
+   * to degrade around. An unresolvable `timezone` in particular keeps its
+   * existing fatal behaviour (SET-24 handles the render-time fallback on
+   * the surface, not by salvaging a partial calendar here).
+   */
+  broken: z.array(BrokenEntrySchema).optional(),
 }).strict().superRefine((cfg, ctx) => {
   // An empty working week is not a configuration, it is a tracker where
   // no date calculation can land anywhere. Rejecting it here beats

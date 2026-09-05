@@ -233,13 +233,13 @@ export function assertNotArchivedReferences(
       field: "assignee",
       archived: archivedUserIds(aux.users),
       kindLabel: "user",
-      defs: aux.users?.map(u => ({ id: u.id, name: u.name })),
+      defs: aux.users?.map(u => (u.name !== undefined ? { id: u.id, name: u.name } : { id: u.id })),
     },
     {
       field: "reporter",
       archived: archivedUserIds(aux.users),
       kindLabel: "user",
-      defs: aux.users?.map(u => ({ id: u.id, name: u.name })),
+      defs: aux.users?.map(u => (u.name !== undefined ? { id: u.id, name: u.name } : { id: u.id })),
     },
   ];
 

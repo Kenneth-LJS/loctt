@@ -8061,3 +8061,141 @@ CST-preserving writer that buys the user nothing.
 
 **To revert.** Ken's, not an agent's. (Resolves the review's M1 and
 proposal § 13.4's escalation.)
+
+### A137 · The UI reads a per-field `{value?, health?}` view-model; the DATA stays split
+
+**Date:** 2026-09-05 · Agent · revertable. (Coordinator call, at Ken's
+request — "make the call, then have engineering agents review it".)
+
+**Question (Ken).** Should a field become `{value, status}` end-to-end,
+so the UI reads one uniform shape whether the field is valid or corrupt?
+
+**Call.** No at the DATA layer, yes at the RENDER layer.
+
+- **Data/wire unchanged** — healthy values stay bare in `frontmatter`
+  (and in each config's valid entries); corrupt ones stay in the
+  separate `health` / `broken` list. This is the framework's proven
+  spine: putting the corrupt value back under its typed key gives every
+  downstream consumer a typed lie (the review's #1 spike dead-end,
+  `corruption-framework-review.md`), and a `{value,status}` envelope on
+  *every* field would spread that lie to the ~50 readers of every field
+  and tax the all-healthy path (99.99% of fields) forever. `FieldHealth`
+  also models a richer status than valid/corrupt (wrong_type /
+  missing_required / unrecognised / invalid_value / dangling) and
+  per-element array faults that a flat `{value,status}` cannot.
+- **UI reads one uniform shape** — a small client helper computes, per
+  field, a view-model `{ field, value?, health? }` by merging
+  `frontmatter[f]` with any `health` entry for `f`, AT THE RENDER EDGE.
+  Every `Row` (`MetaPanel.tsx`) and every list cell reads that one shape
+  and never special-cases "is this in health?" inline. This delivers
+  Ken's `{value, status}` mental model where it is cheap (render time),
+  not where it is costly (stored/wire). It is a view-model, not a stored
+  shape — computed, never persisted.
+
+The proposal § 8 already routes field rendering through one `Row` with an
+`error` prop; A137 makes the "one uniform shape" explicit as a
+view-model so the surface agents build it once, consistently, rather than
+each re-deriving the two-place lookup.
+
+**To revert.** Drop the view-model helper; Rows read `frontmatter`/
+`health` directly (still works, just less uniform). The data model is
+unaffected either way.
+
+### A137.1 · View-model refinement after code-grounded review
+
+**Date:** 2026-09-05 · Agent · revertable. Amends A137 after tracing how
+`health` is actually emitted in core (verified against file:line, since
+the Fable design-review agent failed to produce its file).
+
+The naive `{ field, value?, health? }` (value XOR health) is **wrong** —
+two real cases break it:
+
+1. **A field can have BOTH a value and health at once.** Extrinsic
+   findings (`classifyTaskHealth`) leave the value in `frontmatter` and
+   add an **element-indexed** health entry (`labels[2]`,
+   `relationships[1].target`, `fields.points[i]`). So `labels` can be a
+   present, mostly-valid array AND carry a health entry for one bad
+   element. `health` must therefore be a **list** on the view-model, and
+   value and health **co-exist**, not exclude.
+2. **Intrinsic vs extrinsic put the same field in different places.** An
+   intrinsic wrong-typed `labels` collapses the WHOLE array into `health`
+   (`field: "labels"`, value absent from `frontmatter`); an extrinsic
+   dangling label leaves the array in `frontmatter` and indexes the bad
+   element (`field: "labels[2]"`). The view-model must normalise both so
+   a Row does not care which path produced the finding.
+
+**Corrected view-model** (computed at the render edge, per top-level
+field `f`):
+```
+{ field: f,
+  value?:        frontmatter[f],                 // present unless intrinsic lifted it
+  fieldHealth?:  health entry whose field === f, // whole-field fault
+  elementHealth: health entries whose field starts with `${f}[` or `${f}.` } // per-element faults
+```
+A Row is "needs attention" if `fieldHealth` OR any `elementHealth`
+exists. A cell/Row renders `value` when present and overlays element
+markers from `elementHealth`; when `value` is absent it renders the
+`fieldHealth.rawText`. This one shape covers scalar, whole-array,
+per-element, unrecognised (a `fieldHealth` with kind `unrecognised`),
+and config-entry-adjacent surfaces read the analogous `broken` list.
+
+**Also recorded as gaps for the surface agents / a fix pass (NOT Ken):**
+- The contract comment on `Task.health`/`frontmatter` ("corrupt fields
+  are NOT in frontmatter") is only true for INTRINSIC findings; extrinsic
+  element findings leave the value in place. The comment should be
+  corrected (known-gaps).
+- `rawForField`'s `fields.<key>[i]` branch returns the whole array, not
+  the element (inconsistent with the `labels[i]` branch) — a real bug to
+  fix in the sweep.
+- `renderRawText` on a whole array/object is multi-line, despite the
+  "one-line" contract promise — surface agents must not assume single
+  line for whole-field raws.
+- No test asserts an indexed `FieldHealth.field` through
+  `classifyTaskHealth` — a coverage hole the relationship/label surface
+  agents must close.
+
+**To revert.** Same as A137.
+
+### A138 · Corrupt config READ degrades; the WRITE/allocation path still refuses
+
+**Date:** 2026-09-06 · Agent · revertable. Coordinator correction to O1,
+settled by PRU-37 (a Ken-approved @verifies case).
+
+O1's projects loader ran the "at least one project" rule (XS-62) over the
+*collected-valid* set, so a tracker whose ONLY project is corrupt threw
+"no projects" — one bad entry blanked the whole surface, the exact
+regression Phase-7B removes and PRU-37 forbids ("tell broken from none").
+Caught by coordinator verification (O1's own test used multiple projects
+and never hit the empty-valid case).
+
+**Rule.** A corrupt config entry is surfaced, never fatal to the READ:
+- **Read** (`parseProjectsConfig`, `GET /api/projects`): degrades. A file
+  with one broken project returns the good projects (here none) plus a
+  `broken` list naming it. The emptiness rule fires only when the file has
+  ZERO entries total (valid + broken) — a genuinely empty list, not a
+  corrupt one.
+- **Write / key allocation** (`resolveProjectIdForUser`, `createTask`):
+  still refuses when there are zero VALID projects — verified it throws
+  rather than silently filing a task against a broken project. So
+  integrity holds (no key allocated against a corrupt project) without the
+  read blanking the surface.
+
+The same all-broken case was checked for sprints/labels/milestones — they
+have no min-1 rule, so they already degraded correctly; only projects
+needed the fix.
+
+**Surface wire (Phase-7B integration).** `GET /api/projects`,
+`/api/labels`, `/api/sprints`, `/api/milestones` now carry the `broken`
+list (like VUE-22's `broken_view`), so the degradation is visible on the
+wire. Full UI rendering of `broken` is the surface-agent wave; the wire
+contract + "not empty, here is what's broken" lands now so no commit is a
+net regression. Three web config-error tests (PRU-37, SPR-32, the
+labels-don't-take-down case) asserted the old ≥400 mechanism and were
+rewritten to assert 200-with-broken.
+
+**Polish (known-gap, not blocking).** With zero valid projects,
+`resolveProjectIdForUser` throws the generic "no default project" message
+rather than a specific "your only project is broken — fix projects.yaml".
+Safe, but could be clearer.
+
+**To revert.** Restore XS-62 over the valid set (re-introduces the blank).

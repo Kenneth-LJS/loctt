@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { IsoDate } from "./brands.js";
+import { BrokenEntrySchema } from "./health.js";
 
 /**
  * A single sprint definition. Time-boxed work intervals with no
@@ -42,6 +43,15 @@ export type SprintDef = z.infer<typeof SprintDefSchema>;
 /** The full sprints.yaml shape. */
 export const SprintsConfigSchema = z.object({
   sprints: z.array(SprintDefSchema),
+  /**
+   * Per-entry corruption, if any. One sprint whose fields no longer
+   * validate (a hand edit, most often) becomes a `BrokenEntry` rather
+   * than blanking the whole sprints surface (north-star principle 5).
+   * Omitted (not `[]`) when every entry parsed, so a consumer reading
+   * only `sprints` is unaffected and "none broken" stays distinct from
+   * "not inspected". A load-time diagnostic — never written to disk.
+   */
+  broken: z.array(BrokenEntrySchema).optional(),
 }).strict().superRefine((cfg, ctx) => {
   const seen = new Set<string>();
   for (const [i, s] of cfg.sprints.entries()) {

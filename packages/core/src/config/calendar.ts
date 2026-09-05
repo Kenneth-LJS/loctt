@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
-import type { CalendarConfig } from "@loctt/contracts";
-import { CalendarConfigSchema } from "@loctt/contracts";
+import type { CalendarConfig, HolidayDef } from "@loctt/contracts";
+import { HolidayDefSchema, IanaTimezone } from "@loctt/contracts";
 import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
@@ -10,6 +10,7 @@ import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
+import { collectValidEntries } from "./health.js";
 import { coerceYaml, safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
@@ -34,16 +35,90 @@ export function getCalendarConfigPath(locttDir: string): string {
   return join(getConfigDir(locttDir), CALENDAR_FILE);
 }
 
+/** Weekday index, 0..6 with 0 = Sunday — mirrors the contract's `Weekday`. */
+const Weekday = z.number().int().min(0).max(6);
+
+/**
+ * The object-fatal outer shape. The scalar fields validate strictly here —
+ * an unresolvable `timezone` (SET-24), a weekday out of range, or an empty
+ * / duplicate working week are all single values the whole calendar hangs
+ * on, so they still throw and blank nothing that could be salvaged. Only
+ * `holidays` is left as `z.array(z.unknown())`: a single wrong-typed
+ * holiday must not fail the whole `.parse()` and blank the surface, so the
+ * per-ENTRY validation happens afterwards through `collectValidEntries`.
+ *
+ * A file that is not even a list of holidays — `holidays` missing or not an
+ * array — is object-fatal and still throws, because there is no coherent
+ * collection to degrade around.
+ */
+const RawCalendarConfigSchema = z.object({
+  timezone: IanaTimezone,
+  first_day_of_week: Weekday,
+  working_days: z.array(Weekday),
+  holidays: z.array(z.unknown()),
+}).strict().superRefine((cfg, ctx) => {
+  // An empty working week is not a configuration, it is a tracker where no
+  // date calculation can land anywhere. Object-fatal, exactly as before.
+  if (cfg.working_days.length === 0) {
+    ctx.addIssue({
+      code: "custom",
+      message: "working_days must name at least one day",
+      path: ["working_days"],
+    });
+  }
+  const seen = new Set<number>();
+  for (const [i, d] of cfg.working_days.entries()) {
+    if (seen.has(d)) {
+      ctx.addIssue({
+        code: "custom",
+        message: `duplicate working day ${d}`,
+        path: ["working_days", i],
+      });
+    }
+    seen.add(d);
+  }
+});
+
 export function parseCalendarConfig(yamlContent: string): CalendarConfig {
   const raw = coerceYaml(safeParseYaml(yamlContent, "calendar.yaml"));
+
+  // Object-fatal: the scalar fields and the outer `{ …, holidays: [...] }`
+  // shape must be valid. A bad timezone, a bad weekday, an empty/duplicate
+  // working week, a missing or non-array `holidays` — none is a collection
+  // we can degrade around, so each still throws, exactly as before.
+  let outer: z.infer<typeof RawCalendarConfigSchema>;
   try {
-    return CalendarConfigSchema.parse(raw);
+    outer = RawCalendarConfigSchema.parse(raw);
   } catch (err) {
     if (err instanceof z.ZodError) {
       throw new CalendarConfigError(`calendar.yaml is not valid: ${formatZodIssues("calendar config", err)}`);
     }
     throw err;
   }
+
+  // Per north-star principle 5: one holiday whose fields no longer validate
+  // (a hand-edited date in the wrong format, a missing label) must not blank
+  // the whole calendar. Good holidays load; a bad one becomes a `BrokenEntry`
+  // carrying its index, raw text and the validator's message, so a surface
+  // can list it as broken beside the healthy ones (VUE-22, SET-36). Holidays
+  // carry no `id`, so the default `idOf` yields none — a broken entry is
+  // named by its index and raw text.
+  const { valid, broken } = collectValidEntries<HolidayDef>(
+    outer.holidays,
+    HolidayDefSchema,
+    "holiday",
+  );
+
+  return {
+    timezone: outer.timezone,
+    first_day_of_week: outer.first_day_of_week,
+    working_days: outer.working_days,
+    holidays: valid,
+    // Omitted, not `[]`, when everything parsed — a consumer reading only
+    // `holidays` is unaffected and "none broken" stays distinct from "not
+    // inspected". Never serialized back to disk.
+    ...(broken.length > 0 ? { broken } : {}),
+  };
 }
 
 export function serializeCalendarConfig(config: CalendarConfig): string {

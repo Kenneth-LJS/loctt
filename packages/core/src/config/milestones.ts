@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
-import type { MilestonesConfig } from "@loctt/contracts";
-import { MilestonesConfigSchema } from "@loctt/contracts";
+import type { MilestoneDef, MilestonesConfig } from "@loctt/contracts";
+import { MilestoneDefSchema } from "@loctt/contracts";
 import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
@@ -10,8 +10,21 @@ import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
+import { collectValidEntries } from "./health.js";
 import { coerceYaml, safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
+
+/**
+ * The outer shape only: `milestones` is an array. Each entry is left as
+ * `unknown` here so a single wrong-typed field degrades to a `BrokenEntry`
+ * (via `collectValidEntries`) instead of the strict per-entry schema
+ * throwing and blanking every milestone beside it. A file that is not even
+ * a list — `milestones` missing or not an array — is object-fatal and
+ * still throws, because there is no coherent collection to degrade around.
+ */
+const RawMilestonesConfigSchema = z.object({
+  milestones: z.array(z.unknown()),
+}).strict();
 
 export class MilestonesConfigError extends LocttError {
   constructor(message: string) {
@@ -36,17 +49,50 @@ export function getMilestonesConfigPath(locttDir: string): string {
 
 export function parseMilestonesConfig(yamlContent: string): MilestonesConfig {
   const raw = coerceYaml(safeParseYaml(yamlContent, "milestones.yaml"));
-  let parsed: MilestonesConfig;
+
+  // Object-fatal: the file must be a `{ milestones: [...] }`. A missing or
+  // non-array `milestones` is not a collection we can degrade around, so it
+  // still throws — exactly as before.
+  let outer: z.infer<typeof RawMilestonesConfigSchema>;
   try {
-    parsed = MilestonesConfigSchema.parse(raw);
+    outer = RawMilestonesConfigSchema.parse(raw);
   } catch (err) {
     if (err instanceof z.ZodError) {
       throw new MilestonesConfigError(`milestones.yaml is not valid: ${formatZodIssues("milestones config", err)}`);
     }
     throw err;
   }
-  // Schema enforces uniqueness on id via superRefine.
-  return parsed;
+
+  // Per north-star principle 5: one milestone whose fields no longer
+  // validate (a hand-edited target_date, a wrong-typed name) must not blank
+  // the whole milestones surface. Good entries load; a bad one becomes a
+  // `BrokenEntry` carrying its index, raw text and the validator's message,
+  // so a surface can list it as broken beside the healthy ones (VUE-22).
+  const { valid, broken } = collectValidEntries<MilestoneDef>(
+    outer.milestones,
+    MilestoneDefSchema,
+    "milestone",
+  );
+
+  // Duplicate ids stay object-fatal: two milestones sharing an id makes a
+  // task's `milestone: <id>` reference ambiguous, so we cannot silently
+  // pick one. Checked over the entries that parsed — a duplicate whose
+  // partner is itself broken simply drops out of contention.
+  const seen = new Set<string>();
+  for (const m of valid) {
+    if (seen.has(m.id)) {
+      throw new MilestonesConfigError(`milestones.yaml is not valid: duplicate milestone id: ${m.id}`);
+    }
+    seen.add(m.id);
+  }
+
+  return {
+    milestones: valid,
+    // Omitted, not `[]`, when everything parsed — a consumer reading only
+    // `milestones` is unaffected and "none broken" stays distinct from
+    // "not inspected". Never serialized back to disk.
+    ...(broken.length > 0 ? { broken } : {}),
+  };
 }
 
 export function serializeMilestonesConfig(config: MilestonesConfig): string {

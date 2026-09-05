@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { IanaTimezone } from "./brands.js";
+import type { FieldHealth } from "./task.js";
 
 /**
  * A single user's profile. Stored as `.loctt/users/<id>/profile.yaml`.
@@ -13,12 +14,33 @@ import { IanaTimezone } from "./brands.js";
  *
  * `archived` hides the user from default pickers; tasks already
  * assigned to them continue to display the name.
+ *
+ * **Corruption model (Phase-7B, per-FIELD like a task).** A profile is
+ * a single addressable record, so it degrades exactly like task
+ * frontmatter (`FieldHealth`): only `id` is object-fatal — a user is
+ * *addressed* by id, so a bad/absent id has no record to degrade around
+ * and still throws. Every other field is field-local: a hand-corrupted
+ * `email`/`timezone`/`avatar`/`name` (or an unknown key) is lifted out
+ * of the record into `health` with its raw value preserved, and the
+ * profile still loads. That is why `name` and `timezone` are optional
+ * *in the type* even though they are required on disk — a corrupt value
+ * is dropped to `undefined` here and carried in `health`, mirroring how
+ * `title`/`created_at`/`updated_at` are modelled on `TaskFrontmatter`
+ * (K26). `health` is omitted (not `[]`) when the profile is clean, the
+ * same convention as `Task.health` and `QueriesConfig.broken`.
  */
 export const UserProfileSchema = z.object({
   id: z.string().min(1),
-  name: z.string().min(1),
+  // Field-local (Phase-7B): a missing/blank/wrong-typed `name` degrades
+  // to a health finding rather than making the user unreadable. Only
+  // `id` is object-fatal. Optional here so a corrupt value drops to
+  // undefined and travels in `health`.
+  name: z.string().min(1).optional(),
   email: z.email().optional(),
-  timezone: IanaTimezone,
+  // Field-local, like `name`: a hand-edited unresolvable timezone must
+  // not lock the user out of their whole profile. Optional so a corrupt
+  // value degrades into `health`.
+  timezone: IanaTimezone.optional(),
   // Avatar is the basename of a file inside the user's folder
   // (e.g. "avatar.png"). Reject path separators and traversal at
   // the contract layer so a hand-edited profile.yaml can't point
@@ -31,7 +53,19 @@ export const UserProfileSchema = z.object({
     .optional(),
   archived: z.boolean().optional(),
 }).strict();
-export type UserProfile = z.infer<typeof UserProfileSchema>;
+
+/**
+ * A parsed user profile.
+ *
+ * The base type is the schema inference (healthy fields only). `health`
+ * is added on top: field-level corruption findings gathered while
+ * loading — the corrupt fields are NOT on the record (they were lifted
+ * out), a surface renders them from `health` using `rawText`. Omitted
+ * when the profile is clean.
+ */
+export type UserProfile = z.infer<typeof UserProfileSchema> & {
+  readonly health?: readonly FieldHealth[];
+};
 
 /** A list of registered user profiles. */
 export const UsersListSchema = z.object({

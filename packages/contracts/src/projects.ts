@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { SlugKey } from "./brands.js";
+import { BrokenEntrySchema } from "./health.js";
 
 /**
  * A single project definition. A LocTT tracker can host multiple
@@ -52,6 +53,22 @@ export const ProjectsConfigSchema = z.object({
     + "or run 'loctt project create'",
   ),
   default: z.string().optional(),
+  /**
+   * Per-entry corruption, if any — a project whose fields no longer
+   * validate (a hand edit, most often) becomes a `BrokenEntry` rather
+   * than blanking the whole projects surface (north-star principle 5,
+   * the VUE-22 pattern generalized). Omitted (not `[]`) when every entry
+   * parsed, so a consumer reading only `projects` is unaffected and "no
+   * broken projects" stays distinct from "not inspected". A load-time
+   * diagnostic only — never serialized back to disk. The loader parses
+   * the file through a separate raw schema that has no `broken` key, so
+   * a stray `broken:` in a hand-edited file is still rejected.
+   *
+   * Attached by `parseProjectsConfig` after the fact, not by this
+   * schema's own validation: object-fatal problems (not a list, unknown
+   * keys, duplicate ids/prefixes/slugs, an archived default) still throw.
+   */
+  broken: z.array(BrokenEntrySchema).optional(),
 }).strict().superRefine((cfg, ctx) => {
   const seenIds = new Set<string>();
   // Name the *first* holder of a duplicated value, not just the second

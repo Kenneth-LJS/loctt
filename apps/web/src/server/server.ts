@@ -1556,6 +1556,15 @@ export function createWebApp(options: WebAppOptions) {
       ...(pendingPrefixRename !== undefined
         ? { pending_prefix_rename: pendingPrefixRename }
         : {}),
+      // Phase-7B: a project entry that would not parse (e.g. a hand-edit
+      // dropped its `prefix`) no longer 400s the whole surface — the good
+      // projects load and the bad one rides here in `broken`, named by
+      // index with its error, so the panel can tell "broken" from "none"
+      // (PRU-37) exactly the way saved views do (VUE-22). Omitted when
+      // every project parsed.
+      ...(cfg.broken !== undefined && cfg.broken.length > 0
+        ? { broken: cfg.broken }
+        : {}),
     });
   };
 
@@ -1875,7 +1884,12 @@ export function createWebApp(options: WebAppOptions) {
     const cfg = await loadSprintsConfig(locttDir);
     const counted = await withCounts(locttDir, url, "sprint", cfg.sprints);
     const items = await withProgress(locttDir, url, "sprint", counted);
-    json(res, paginated(items, page.offset, page.limit));
+    json(res, {
+      ...paginated(items, page.offset, page.limit),
+      // Phase-7B: a corrupt sprint entry degrades (the rest load); it
+      // rides here so the surface can show it as broken, not vanished.
+      ...(cfg.broken !== undefined && cfg.broken.length > 0 ? { broken: cfg.broken } : {}),
+    });
   };
 
   const handleCreateSprint: RouteHandler = async ({ req, res, locttDir }) => {
@@ -1962,7 +1976,11 @@ export function createWebApp(options: WebAppOptions) {
     const cfg = await loadMilestonesConfig(locttDir);
     const counted = await withCounts(locttDir, url, "milestone", cfg.milestones);
     const items = await withProgress(locttDir, url, "milestone", counted);
-    json(res, paginated(items, page.offset, page.limit));
+    json(res, {
+      ...paginated(items, page.offset, page.limit),
+      // Phase-7B: a corrupt milestone entry degrades; surfaced here.
+      ...(cfg.broken !== undefined && cfg.broken.length > 0 ? { broken: cfg.broken } : {}),
+    });
   };
 
   const handleCreateMilestone: RouteHandler = async ({ req, res, locttDir }) => {
@@ -2043,7 +2061,11 @@ export function createWebApp(options: WebAppOptions) {
     if (!page) return;
     const cfg = await loadLabelsConfig(locttDir);
     const items = await withCounts(locttDir, url, "label", cfg.labels);
-    json(res, paginated(items, page.offset, page.limit));
+    json(res, {
+      ...paginated(items, page.offset, page.limit),
+      // Phase-7B: a corrupt label entry degrades; surfaced here.
+      ...(cfg.broken !== undefined && cfg.broken.length > 0 ? { broken: cfg.broken } : {}),
+    });
   };
 
   const handleCreateLabel: RouteHandler = async ({ req, res, locttDir }) => {
