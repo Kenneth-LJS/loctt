@@ -8,18 +8,23 @@ import { withTmpLoctt } from "../../fixtures/tmp-loctt.js";
  * `delete` is always permanent; `archive` is the reversible path.
  */
 describe("CLI delete edge cases (spawned binary)", () => {
-  it("archive on an already-archived task surfaces a domain error", async () => {
+  // K25: idempotent archive/unarchive (behavior recorded in decisions.md K25/A127; no canonical case)
+  it("archive on an already-archived task is an idempotent no-op success (K25)", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "t"], { cwd: root });
       await runCli(["archive", "T-1"], { cwd: root });
 
+      // K25: the second archive no longer errors — the task is already
+      // in the requested state, so the CLI succeeds (matching the web
+      // and bulk paths, and never surfacing the old generic 500 that
+      // the web layer produced from the thrown TaskLifecycleError).
       const result = await runCli(["archive", "T-1"], { cwd: root });
-      expect(result.exitCode).not.toBe(0);
-      expect(result.stderr).toMatch(/already archived/);
+      expect(result.exitCode).toBe(0);
 
-      // Task should still exist on disk.
+      // Task should still exist on disk and still be archived.
       const show = await runCli(["show", "T-1"], { cwd: root });
       expect(show.exitCode).toBe(0);
+      expect(show.stdout).toMatch(/archived/i);
     });
   });
 

@@ -846,13 +846,17 @@ command still succeeds and prints the rank.
 Soft-delete a task (reversible). The task is marked `archived: true` and
 hidden from default lists, but its directory and history are preserved.
 
+Idempotent: archiving a task that is already archived succeeds and
+changes nothing (no new history entry) rather than erroring.
+
 ```
 loctt archive <task>
 ```
 
 ### `loctt unarchive`
 
-Restore an archived task.
+Restore an archived task. Idempotent in the same way — unarchiving a task
+that is not archived succeeds and changes nothing.
 
 ```
 loctt unarchive <task>
