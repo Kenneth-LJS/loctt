@@ -58,6 +58,7 @@ export {
   serializeProjectsConfig,
 } from "./config/index.js";
 export { loadOptionalConfigs } from "./config/index.js";
+export { collectValidEntries } from "./config/index.js";
 export { validateTaskAgainstWorkflow, validateWorkflowConfig } from "./config/index.js";
 export {
   ArchivedReferenceError,
