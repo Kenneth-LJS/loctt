@@ -6,7 +6,7 @@ import { type Task, TaskFrontmatterSchema } from "@loctt/contracts";
 import { getTaskFilePath } from "../paths/index.js";
 import { withStateLock } from "../state/lock.js";
 import { writeFileAtomically } from "../utils/atomic-yaml.js";
-import { assembleTaskFile,parseFrontmatter, splitTaskFile } from "./frontmatter.js";
+import { assembleTaskFile,parseFrontmatter, parseFrontmatterTolerant, splitTaskFile } from "./frontmatter.js";
 import { appendHistory } from "./history.js";
 import { clearLookupCaches } from "./lookup-cache.js";
 
@@ -20,6 +20,26 @@ export async function readTask(locttDir: string, taskId: string): Promise<Task> 
   const { rawYaml, body } = splitTaskFile(content);
   const frontmatter = parseFrontmatter(rawYaml);
   return { frontmatter, body };
+}
+
+/**
+ * Phase-7 SPIKE — tolerant read.
+ *
+ * Reads a task whose frontmatter may carry a field-local corruption (a
+ * wrong-typed `due_date`) without throwing. The corrupt field is kept in
+ * `frontmatter` under its raw value and also reported in `corruptions`,
+ * so a surface can render it degraded and offer repair. A task with no
+ * corruption returns `corruptions: []` and is identical to `readTask`.
+ *
+ * Object-fatal corruption (bad identity/timestamps) still throws — this
+ * only softens the field-local case the spike covers.
+ */
+export async function readTaskTolerant(locttDir: string, taskId: string): Promise<Task> {
+  const filePath = getTaskFilePath(locttDir, taskId);
+  const content = await readFile(filePath, "utf-8");
+  const { rawYaml, body } = splitTaskFile(content);
+  const { frontmatter, corruptions } = parseFrontmatterTolerant(rawYaml);
+  return { frontmatter, body, corruptions };
 }
 
 /**
@@ -42,6 +62,29 @@ export async function writeTask(locttDir: string, taskId: string, task: Task): P
 
   const filePath = getTaskFilePath(locttDir, taskId);
   const content = assembleTaskFile(task.frontmatter, task.body);
+  await writeFileAtomically(filePath, content);
+  clearLookupCaches(locttDir);
+}
+
+/**
+ * Phase-7 SPIKE — tolerant write.
+ *
+ * `writeTask` validates strictly, so it refuses to write back a task that
+ * still carries a field-local corruption (a preserved wrong-typed
+ * `due_date`). This variant validates the SERIALIZED result through the
+ * tolerant parser instead: it succeeds when the file is clean OR its only
+ * faults are the field-local corruptions the spike tolerates, and throws
+ * on anything object-fatal. So editing another field on a corrupt task
+ * (set `status`, preserve the bad `due_date`) round-trips the corrupt
+ * value untouched, while a genuinely broken write is still refused.
+ */
+export async function writeTaskTolerant(locttDir: string, taskId: string, task: Task): Promise<void> {
+  const filePath = getTaskFilePath(locttDir, taskId);
+  const content = assembleTaskFile(task.frontmatter, task.body);
+  const { rawYaml } = splitTaskFile(content);
+  // Throws (TaskParseError) if the serialized frontmatter is object-fatal;
+  // returns normally when clean or only field-locally corrupt.
+  parseFrontmatterTolerant(rawYaml);
   await writeFileAtomically(filePath, content);
   clearLookupCaches(locttDir);
 }
@@ -161,7 +204,11 @@ export class StaleBodyWriteError extends Error {
 export async function bodyToken(locttDir: string, taskId: string): Promise<string> {
   const content = await readFile(getTaskFilePath(locttDir, taskId), "utf-8");
   const { rawYaml, body } = splitTaskFile(content);
-  return tokenFor(parseFrontmatter(rawYaml).updated_at, body);
+  // Phase-7 SPIKE: parse tolerantly. The token needs only `updated_at`
+  // and the body — both survive a field-local corruption — so a
+  // wrong-typed due_date must not make the token uncomputable and take
+  // the whole task detail down. Object-fatal corruption still throws.
+  return tokenFor(parseFrontmatterTolerant(rawYaml).frontmatter.updated_at, body);
 }
 
 function tokenFor(updatedAt: string | undefined, body: string): string {

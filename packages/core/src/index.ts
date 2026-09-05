@@ -390,9 +390,9 @@ export {
   detachFile,
 } from "./task/index.js";
 export { appendHistory, isMalformedHistoryEntry, readHistory, readHistoryRows, validHistory } from "./task/index.js";
-export { assembleTaskFile, parseFrontmatter, serializeFrontmatter, splitTaskFile, TaskParseError } from "./task/index.js";
-export { appendTaskBody, readTask, readTaskBody, writeTask, writeTaskBody } from "./task/index.js";
-export { listTaskIds, loadAllTasks, loadAllTasksDetailed, lookupById, lookupByKey, lookupTask, TaskNotFoundError, type UnreadableTask, UnreadableTaskError } from "./task/index.js";
+export { assembleTaskFile, parseFrontmatter, parseFrontmatterTolerant, serializeFrontmatter, splitTaskFile, TaskParseError } from "./task/index.js";
+export { appendTaskBody, readTask, readTaskBody, readTaskTolerant, writeTask, writeTaskBody, writeTaskTolerant } from "./task/index.js";
+export { listTaskIds, loadAllTasks, loadAllTasksDetailed, lookupById, lookupByKey, lookupTask, lookupTaskTolerant, TaskNotFoundError, type UnreadableTask, UnreadableTaskError } from "./task/index.js";
 export { createTask } from "./task/index.js";
 export { duplicateTask } from "./task/index.js";
 export { buildShowModel,discoverAttachments } from "./task/index.js";

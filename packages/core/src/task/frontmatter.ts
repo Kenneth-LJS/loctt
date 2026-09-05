@@ -1,4 +1,4 @@
-import type { TaskFrontmatter } from "@loctt/contracts";
+import type { FieldCorruption, TaskFrontmatter } from "@loctt/contracts";
 import { TaskFrontmatterSchema } from "@loctt/contracts";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
@@ -118,6 +118,108 @@ export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
     }
     throw err;
   }
+}
+
+/**
+ * Frontmatter fields whose value has no stable identity role, so a
+ * wrong-typed value in one of them is field-LOCAL corruption (Phase-7
+ * spike) rather than object-fatal. A violation here degrades: the raw
+ * value is kept, a `FieldCorruption` is recorded, and the rest of the
+ * task loads. Everything NOT in this set — `id`, `key`, `title`, the
+ * required timestamps, and structural fields like `relationships` /
+ * `fields` — stays object-fatal, because there is no coherent object to
+ * degrade around if identity or structure is broken.
+ *
+ * The spike scope is deliberately narrow: exactly one field, `due_date`.
+ * The set is a single entry so the audit (step 4) and the Fable proposal
+ * (step 2) decide the full membership rather than the spike presuming it.
+ */
+const SPIKE_DEGRADABLE_FIELDS: ReadonlySet<string> = new Set(["due_date"]);
+
+/**
+ * Phase-7 SPIKE — tolerant frontmatter parse.
+ *
+ * Like `parseFrontmatter`, but a wrong-typed value in a
+ * `SPIKE_DEGRADABLE_FIELDS` field does not throw: the field is lifted out
+ * before schema validation (so the rest parses), then re-attached under
+ * its raw stored value, and a `FieldCorruption` is recorded. Any other
+ * violation — a required field, or a degradable field that is missing vs
+ * merely wrong-typed is not our concern here — still throws exactly as
+ * `parseFrontmatter` does, so object-fatal corruption is unchanged.
+ *
+ * Returns the (possibly corrupt) frontmatter plus the corruptions found.
+ * The raw value stays in `frontmatter[field]`, so a caller that writes
+ * the task back round-trips it byte-for-byte unless it deliberately
+ * overwrites that field (override-on-direct-write).
+ */
+export function parseFrontmatterTolerant(
+  rawYaml: string,
+): { frontmatter: TaskFrontmatter; corruptions: FieldCorruption[] } {
+  let raw: unknown;
+  try {
+    raw = coerceFrontmatter(parseYaml(rawYaml));
+  } catch (err) {
+    throw new TaskParseError(err instanceof Error ? err.message : String(err));
+  }
+
+  // First attempt the strict parse. A clean task takes this path and
+  // carries no corruptions — the tolerant path costs nothing for the
+  // overwhelmingly common case.
+  const strict = TaskFrontmatterSchema.safeParse(raw);
+  if (strict.success) {
+    return { frontmatter: strict.data, corruptions: [] };
+  }
+
+  // Only degrade when EVERY issue is a wrong-typed value on a degradable
+  // field. If any issue falls outside that — a required field, a
+  // structural field, or a degradable field with a non-type problem — the
+  // object is fatally corrupt and we throw, identical to parseFrontmatter.
+  const issues = strict.error.issues;
+  const degradableIssue = (issue: z.ZodIssue): boolean => {
+    if (issue.path.length !== 1) return false;
+    const key = issue.path[0];
+    return typeof key === "string" && SPIKE_DEGRADABLE_FIELDS.has(key);
+  };
+  if (!issues.every(degradableIssue)) {
+    throw new TaskParseError(formatZodIssues("frontmatter", strict.error));
+  }
+
+  // Lift each corrupt field out, parse the remainder (which must now
+  // succeed — the only issues were the fields we removed), then put the
+  // raw values back and record them.
+  const rawObj = raw as Record<string, unknown>;
+  const corruptFields = new Set(
+    issues.map(i => i.path[0]).filter((k): k is string => typeof k === "string"),
+  );
+  const cleaned: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(rawObj)) {
+    if (!corruptFields.has(k)) cleaned[k] = v;
+  }
+
+  const reparsed = TaskFrontmatterSchema.safeParse(cleaned);
+  if (!reparsed.success) {
+    // Removing the corrupt fields did not make it parse, so something
+    // else is wrong after all — fail closed rather than half-degrade.
+    throw new TaskParseError(formatZodIssues("frontmatter", reparsed.error));
+  }
+
+  const frontmatter = toMutable(reparsed.data) as Record<string, unknown>;
+  const corruptions: FieldCorruption[] = [];
+  for (const field of corruptFields) {
+    const raw_ = rawObj[field];
+    frontmatter[field] = raw_; // preserve verbatim for round-trip
+    const issue = issues.find(i => i.path[0] === field);
+    corruptions.push({
+      field,
+      raw: raw_,
+      error: issue?.message ?? "value has the wrong type",
+    });
+  }
+
+  return {
+    frontmatter: frontmatter as unknown as TaskFrontmatter,
+    corruptions,
+  };
 }
 
 /**

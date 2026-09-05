@@ -142,6 +142,7 @@ import {
   LocttError,
   lookupById,
   lookupTask,
+  lookupTaskTolerant,
   MAX_AVATAR_BYTES,
   migrateToCurrent,
   MilestoneError,
@@ -201,6 +202,7 @@ import {
   unarchiveUser,
   unarchiveView,
   unlinkTask,
+  UnreadableTaskError,
   unsetConfigValue,
   unsetField,
   updateUser,
@@ -3550,7 +3552,32 @@ export function createWebApp(options: WebAppOptions) {
   const handleGetTask: RouteHandler = async ({ res, locttDir, captures }) => {
     const ref = requireValidRef(captures, res);
     if (ref === null) return;
-    const task = await lookupTask(locttDir, ref);
+    // Phase-7 SPIKE: a task with a field-local corruption (a wrong-typed
+    // due_date) throws UnreadableTaskError on the strict path, so it was
+    // unopenable in the UI. Fall back to the tolerant read, which keeps
+    // the raw value and reports the corruption in the response, so the
+    // detail view opens and can offer repair. Object-fatal corruption
+    // still throws from lookupTaskTolerant and surfaces as before.
+    let task: Awaited<ReturnType<typeof lookupTask>>;
+    try {
+      task = await lookupTask(locttDir, ref);
+    } catch (err) {
+      if (err instanceof UnreadableTaskError) {
+        // Only a FIELD-LOCAL corruption is recoverable. If the tolerant
+        // read also throws (an object-fatal corruption — a YAML syntax
+        // error, broken identity), the original UnreadableTaskError is
+        // the well-attributed one (path + parse line + recovery:none,
+        // TSK-54), so re-throw THAT rather than the tolerant read's raw
+        // error, which would collapse to a generic 500.
+        try {
+          task = await lookupTaskTolerant(locttDir, ref);
+        } catch {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
     const model = await buildShowModel(locttDir, task);
     // "Recently viewed" is written here, on task-detail fetch. The read
     // route (GET /api/recents) shipped without this, so the sidebar
@@ -3565,8 +3592,21 @@ export function createWebApp(options: WebAppOptions) {
     } catch {
       // ignored — see above
     }
+    // Phase-7 SPIKE: the public projection re-parses through the schema,
+    // which throws on a raw corrupt value. Strip the corrupt fields
+    // before projecting — the client learns about them from the
+    // `corruptions` array below, not from a frontmatter value it could
+    // not use anyway. (A full framework would give the projection its
+    // own tolerant mode; the spike keeps the change local.)
+    const projectable = task.corruptions !== undefined && task.corruptions.length > 0
+      ? (() => {
+          const copy = { ...model.task.frontmatter } as Record<string, unknown>;
+          for (const c of task.corruptions ?? []) delete copy[c.field];
+          return copy as unknown as typeof model.task.frontmatter;
+        })()
+      : model.task.frontmatter;
     const response: TaskResponse = {
-      frontmatter: projectTaskFrontmatter(model.task.frontmatter),
+      frontmatter: projectTaskFrontmatter(projectable),
       body: model.task.body,
       // K2. Computed from the file rather than from `model`, so it
       // describes the bytes on disk at the moment of this read — the
@@ -3600,6 +3640,12 @@ export function createWebApp(options: WebAppOptions) {
         ...(r.resolvedStatus !== undefined ? { resolvedStatus: r.resolvedStatus } : {}),
         missing: r.missing,
       })),
+      // Phase-7 SPIKE: field-local corruptions found on load, so the
+      // detail view can render the field degraded and offer repair
+      // instead of the whole task being unopenable. Omitted when clean.
+      ...(task.corruptions !== undefined && task.corruptions.length > 0
+        ? { corruptions: task.corruptions.map(c => ({ field: c.field, error: c.error })) }
+        : {}),
     };
     json(res, response);
   };
