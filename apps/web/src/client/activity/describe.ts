@@ -281,7 +281,8 @@ export function renderValue(
     case "assignee":
     case "reporter": {
       const u = ctx.users.find(x => x.id === key) ?? ctx.users.find(x => x.name === key);
-      return u === undefined ? drifted(key) : known(u.name);
+      // O5: a corrupt/absent profile name degrades to the id.
+      return u === undefined ? drifted(key) : known(u.name ?? u.id);
     }
     case "milestone": {
       const m = ctx.milestones.find(x => x.id === key)

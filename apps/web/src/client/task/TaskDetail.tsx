@@ -215,7 +215,11 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
     priorities: workflow.data?.priorities,
     taskTypes: workflow.data?.task_types,
     customFields: workflow.data?.custom_fields,
-    users: users.data?.items,
+    // O5: `UserProfile.name` is now optional (a corrupt/absent name is
+    // field-local). The label index needs a name string per id, so a
+    // nameless user degrades to its id here — an id-shaped message beats
+    // one with a blank where the name should be.
+    users: users.data?.items.map(u => ({ id: u.id, name: u.name ?? u.id })),
     labels: labels.data?.items,
     milestones: milestones.data?.items,
     sprints: sprints.data?.items,
@@ -536,7 +540,10 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
                 taskRef={taskRef}
                 taskId={fm.id}
                 taskKey={fm.key}
-                taskTitle={fm.title}
+                // K26: title may be absent. It feeds only the link
+                // picker's self-match predicate (not display), so an empty
+                // string is honest — the key self-matches via `selfKey`.
+                taskTitle={fm.title ?? ""}
                 taskKeyHistory={fm.key_history ?? []}
                 relationships={task.data.relationships}
                 stored={fm.relationships}
@@ -626,7 +633,9 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
       {confirming === "delete" && (
         <DeleteTaskDialog
           taskKey={fm.key}
-          title={fm.title}
+          // K26: an untitled task shows a placeholder; the dialog heading
+          // already names the key.
+          title={fm.title ?? "(untitled)"}
           pending={del.isPending}
           error={writeError ?? undefined}
           onCancel={() => {

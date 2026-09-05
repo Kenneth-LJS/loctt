@@ -149,7 +149,7 @@ export function BulkBar({
       />
       <BulkPicker
         label="Set assignee"
-        options={active(users).map(u => ({ id: u.id, label: u.name }))}
+        options={active(users).map(u => ({ id: u.id, label: u.name ?? u.id }))}
         clearLabel="Unassign"
         disabled={busy || overCap}
         onPick={v => { onSetField("assignee", v); }}
