@@ -3366,7 +3366,12 @@ caller — verified by mutation here: disabling `setField.mutate` still
 reddens SPR-6, so the wait cannot swallow a drop that genuinely failed
 to land.
 
-## The top-bar project switcher does not exist (PRU-3, 4, 21, 22)
+## The top-bar project switcher does not exist (PRU-3, 4, 21, 22) — RESOLVED (built since)
+
+**RESOLVED 2026-09-05 (stale entry).** PRU-3, 4, 21, 22 are all built and
+covered by committed tests (`tests/ui/flow-projects-users-switcher.spec.ts`
+and the list column/scope tests). This writeup predates that work; kept
+below for history.
 
 **Found 2026-09-03 while covering the PRU non-avatar cases.** The
 flow doc's opening line says it "covers the project switcher in the
@@ -3399,7 +3404,12 @@ sidebar would assert a weaker claim than the case makes, which
 `build-loop.md` names as the thing to escalate rather than work
 around.
 
-## PRU-25 cannot be honestly tagged — its premise is unreachable and its surfaces do not exist
+## PRU-25 cannot be honestly tagged — its premise is unreachable and its surfaces do not exist — RESOLVED (K21/K22)
+
+**RESOLVED 2026-09-05 (stale entry).** Under K21 the dangling-reference
+premise is reachable (a hand-edit can orphan a user), and K22 defined the
+degraded reporter cell. PRU-25 is built and covered
+(`flow-settings-projects-users.spec.ts`). Kept below for history.
 
 **RESOLVED 2026-09-05 by K21 + K22 (built).** The escalation below was
 answered: K21 rules the dangling state is reached out-of-band (a
@@ -3471,7 +3481,12 @@ the task detail, produced by a hand-edited or migrated file rather than
 by `user delete`), or a reporter column + reporter facet are added and
 the delete semantics reconsidered — a scope call, not an agent's.
 
-## PRU-42's user-delete dialog was never built
+## PRU-42's user-delete dialog was never built — RESOLVED (built since)
+
+**RESOLVED 2026-09-05 (stale entry).** The `UserDeleteDialog` exists
+(reference count split by role, archive-instead, typed confirmation) and
+PRU-42 is covered. The archive-instead path's idempotency was further
+hardened under K25. Kept below for history.
 
 **RESOLVED 2026-09-05 by K21 (built).** The fourth-bullet objection
 below is answered by K21: the "(deleted user)" render is reached
@@ -3661,7 +3676,11 @@ verified subset alone. A change can be correct for the case it targets
 and a regression for four cases it never mentions. The tell was a
 changed function signature with more callers than the agent touched.
 
-## `text-warning-fg` is an undefined utility — 13 call sites render colourless
+## `text-warning-fg` is an undefined utility — 13 call sites render colourless — RESOLVED (migrated to warn-fg)
+
+**RESOLVED 2026-09-05 (stale entry).** Zero occurrences of `warning-fg`
+remain in `apps/web/src`; the call sites were migrated to the defined
+`warn-fg` / `warn-bg` tokens. Kept below for history.
 
 **Found 2026-09-04 while building PRU-24.**
 
