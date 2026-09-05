@@ -6,6 +6,7 @@ export {
   editProject,
   findProject,
   PartialRemapError,
+  projectDefaultIsGhost,
   ProjectError,
   resolveProjectByName,
   resolveProjectId,

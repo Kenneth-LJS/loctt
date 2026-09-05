@@ -87,6 +87,15 @@ export interface ProjectsPage extends Page<ProjectDef> {
    * than healthy.
    */
   readonly pending_prefix_rename?: PrefixRenameSentinel;
+  /**
+   * Present only when the workspace `default:` names a project that no
+   * longer exists (NEW-20 / K23). A stale pointer is tolerated drift,
+   * not a config error — the list still loads and `effective_default`
+   * has already fallen through to null. This carries the stale id so
+   * the panel can name it in a "your default no longer exists" notice,
+   * which is where the case asks the drift to surface.
+   */
+  readonly default_drift?: { readonly kind: "missing"; readonly default: string };
 }
 
 interface UsersPage extends Page<UserProfile> {

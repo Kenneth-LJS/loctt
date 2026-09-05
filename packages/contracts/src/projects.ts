@@ -53,7 +53,6 @@ export const ProjectsConfigSchema = z.object({
   ),
   default: z.string().optional(),
 }).strict().superRefine((cfg, ctx) => {
-  const ids = new Set(cfg.projects.map(p => p.id));
   const seenIds = new Set<string>();
   // Name the *first* holder of a duplicated value, not just the second
   // one: XS-63 wants both entries that carry it, so the user can tell
@@ -92,16 +91,23 @@ export const ProjectsConfigSchema = z.object({
       }
     }
   }
-  if (cfg.default !== undefined && !ids.has(cfg.default)) {
-    ctx.addIssue({
-      code: "custom",
-      message: `default project '${cfg.default}' is not in the projects list`,
-      path: ["default"],
-    });
-  }
-  // Existing was checked; archived was not. An archived default is a
-  // project hidden from every picker that new tasks land in anyway —
-  // the user cannot see where their work went.
+  // K23: a `default:` naming a project that no longer exists is NOT a
+  // parse-time rejection. It is out-of-band drift — a rename or a
+  // hand-edit left the pointer stale — and per north-star principle 5
+  // one bad value must not blank the whole projects surface. A ghost
+  // default is tolerated at load; resolution ignores it and falls
+  // through to the unique-single-project rung, then to NEW-19's ask
+  // state, and the drift is surfaced as a notice (see
+  // `projectDefaultIsGhost` in core, and the `default_drift` field on
+  // GET /api/projects). This matches VUE-22 (a broken saved view is
+  // listed, not fatal) and PRU-25 (a dangling user ref degrades).
+  //
+  // Note the deliberate asymmetry with the archived case below: an
+  // *archived* default names a project that DOES exist but is hidden
+  // from every picker — new tasks would silently land somewhere the
+  // user cannot see. That is a live, resolvable destination pointed at
+  // wrongly, so it stays a hard error. A ghost default resolves to
+  // nothing and is caught by the resolver's existence check instead.
   const defaultProject = cfg.projects.find(p => p.id === cfg.default);
   if (defaultProject?.archived === true) {
     ctx.addIssue({
