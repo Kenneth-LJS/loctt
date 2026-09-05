@@ -7693,3 +7693,33 @@ field; un-export from `users/index.ts`. (3) Remove `handleRemoveAvatar`
 `useRemoveAvatar` in `useUserMutations.ts`, and the remove button in
 `UsersPanel.tsx`. (4) Drop `--remove-avatar` from `apps/cli/src/commands/
 user.ts` and `remove_avatar` from `apps/mcp/src/tools/user.ts`.
+
+### K23 · A ghost project default degrades to the ask state, it does not fail the surface
+
+**Date:** 2026-09-05 · **Ken's ruling — an agent may not revert this.**
+
+`ProjectsConfigSchema.superRefine` (`packages/contracts/src/projects.ts:95`)
+hard-rejected a `default:` naming a nonexistent project — so
+`loadProjectsConfig` threw, `GET /api/projects` returned 400, and the
+whole projects surface failed to load over one stale pointer.
+
+**Ken's ruling: degrade.** A ghost default is ignored (resolution falls
+through to the unique-single-project rung, then to NEW-19's ask state —
+an empty, required project field), and the drift is surfaced as a
+notice (banner or Settings), not a wall. This is the same per-element
+degradation as K19-adjacent VUE-22 (a broken saved view is listed, not
+fatal) and K22/PRU-25 (a dangling user ref degrades) — north-star
+principle 5: one bad value never blanks the surface. A `default` is a
+pointer that goes stale from a rename or a hand-edit, exactly the
+out-of-band drift the framework tolerates.
+
+**Scope.** The `default`-existence check moves from *reject* to
+*ignore-and-flag*. The rest of ProjectsConfigSchema stays strict
+(malformed structure, duplicate ids, etc. still throw) — only a
+non-existent `default` pointer degrades. The drift is reported through
+the same notice channel other post-hoc facts use (see K16), and
+`doctor` should name it.
+
+Makes NEW-20 buildable, as written.
+
+**To revert.** Ken's, not an agent's.
