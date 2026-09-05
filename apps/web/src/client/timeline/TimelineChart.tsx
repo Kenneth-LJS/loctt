@@ -279,7 +279,8 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                         }}
                       >
                         <span aria-hidden="true">⚠</span>
-                        <span className="block truncate">{row.task.title}</span>
+                        {/* K26: fall back to the key when title is the corrupt field. */}
+                        <span className="block truncate">{row.task.title ?? row.task.key}</span>
                       </button>
                     );
                   }
@@ -293,7 +294,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                       data-task-key={row.task.key}
                       data-start={start}
                       data-due={due}
-                      title={`${row.task.key} · ${row.task.title} · ${start} → ${due}`}
+                      title={`${row.task.key} · ${row.task.title ?? row.task.key} · ${start} → ${due}`}
                       onClick={() => { props.onOpenTask(row.task.key); }}
                       onPointerDown={e => { props.onBarPointerDown?.(e, row.task.id, "body"); }}
                       /* TML-40: documented keys, announced via the
@@ -312,7 +313,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                         e.preventDefault();
                         props.onBarKeyAdjust?.(row.task.id, edge, dir);
                       }}
-                      aria-label={`${row.task.key} ${row.task.title}, ${start} to ${due}`}
+                      aria-label={`${row.task.key} ${row.task.title ?? row.task.key}, ${start} to ${due}`}
                       className="absolute overflow-hidden rounded border border-accent/40 bg-accent/20 px-1 text-left text-[11px] leading-none hover:bg-accent/30"
                       style={{
                         left: bar.left,
@@ -322,8 +323,9 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                       }}
                     >
                       {/* Truncated with an ellipsis when the bar is
-                          narrow (TML-4's third bullet). */}
-                      <span className="block truncate">{row.task.title}</span>
+                          narrow (TML-4's third bullet). K26: fall back to
+                          the key when title is the corrupt field. */}
+                      <span className="block truncate">{row.task.title ?? row.task.key}</span>
                       {/* TML-31: "the source bar carries an indicator
                           that it has an off-screen dependency (a stub
                           arrow or a badge), rather than the link

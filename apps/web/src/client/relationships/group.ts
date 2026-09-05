@@ -73,6 +73,19 @@ export interface RelationshipRow {
   readonly resolvedStatus: string | undefined;
   /** True when the target ULID resolves to no task on disk (REL-24). */
   readonly missing: boolean;
+  /**
+   * True when the target is corrupt as opposed to merely missing (S4 /
+   * corruption sweep). Two shapes:
+   *   - `missing:false` + `targetCorrupt:true` — the target loaded via
+   *     the tolerant read but carries health findings; the row links and
+   *     keeps its key/title, marked as needing attention.
+   *   - `missing:true` + `targetCorrupt:true` — the target is on disk but
+   *     object-fatally unreadable: corrupt, not deleted.
+   * A missing row with `targetCorrupt` falsy is a genuine dangling link.
+   * Optional so the many test fixtures and the TreeRows synthetic-parent
+   * row (never corrupt by construction) need not spell out `false`.
+   */
+  readonly targetCorrupt?: boolean;
   /** The edge's lexorank, when it carries one. */
   readonly rank: string | undefined;
   /** Index in the task's own `relationships` array — REL-34's fallback. */
@@ -177,6 +190,7 @@ export function buildRows(
     resolvedTitle: r.resolvedTitle,
     resolvedStatus: r.resolvedStatus,
     missing: r.missing,
+    targetCorrupt: r.targetCorrupt === true,
     rank: stored?.[i]?.rank,
     index: i,
     duplicates: 1,

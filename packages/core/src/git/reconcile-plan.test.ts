@@ -76,6 +76,28 @@ describe("computeTaskConflicts", () => {
     expect(autoMerged.some(a => a.kind === "union" && a.fields.includes("Relationships"))).toBe(true);
   });
 
+  it("marks a conflict side as corrupt when that side's task has health on the field (Phase-7B)", () => {
+    // The local side's `priority` is corrupt: it carries a health finding
+    // (the wrong-typed value was lifted out of frontmatter). The conflict
+    // side must be marked `corrupt` so the reconcile UI ⚠s it and the raw
+    // bytes are shown — not the degraded blank a user might merge over.
+    const local: Task = {
+      ...task(WEB3, "WEB-3", { priority: "high" }),
+      health: [{
+        field: "priority", kind: "wrong_type", raw: 42, rawText: "42",
+        error: "priority must be a string", repair: "set_or_remove",
+      }],
+    };
+    const remote = task(WEB3, "WEB-3", { priority: "low" });
+    const { conflicts } = computeTaskConflicts(local, remote, config, taskById);
+    const pri = conflicts.find(c => c.field === "priority");
+    expect(pri).toBeDefined();
+    // The corrupt marker is on the LOCAL side, carrying the stored bytes.
+    expect(pri?.local.corrupt).toEqual({ rawText: "42", error: "priority must be a string" });
+    // The healthy remote side has no corrupt marker.
+    expect(pri?.remote.corrupt).toBeUndefined();
+  });
+
   it("reports a conflict when the same custom-field key differs (GIT-11)", () => {
     // @verifies GIT-11
     const local = task(WEB3, "WEB-3", { fields: { team: "platform" } });

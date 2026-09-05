@@ -46,8 +46,16 @@ const TASKS = {
 /** Set to make /api/tasks report a dropped saved view (XS-28). */
 let MISSING_VIEW: string | undefined;
 
+/**
+ * Set to replace the /api/tasks page wholesale — used by the corruption
+ * cases (S3), which need a row carrying `health` and/or no title. Kept
+ * separate from `TASKS` so the default cases are unaffected.
+ */
+let TASKS_OVERRIDE: unknown;
+
 function routeFetch(path: string): unknown {
   if (path.startsWith("/api/tasks")) {
+    if (TASKS_OVERRIDE !== undefined) return TASKS_OVERRIDE;
     return MISSING_VIEW === undefined ? TASKS : { ...TASKS, missing_view: MISSING_VIEW };
   }
   if (path.startsWith("/api/projects")) {
@@ -87,7 +95,7 @@ function stubFetch() {
   });
 }
 
-async function mountList(initialSearch = "") {
+async function mountList(initialSearch = "", settleText = "First task") {
   stubFetch();
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const rootRoute = createRootRoute();
@@ -106,7 +114,7 @@ async function mountList(initialSearch = "") {
       <RouterProvider router={router as never} />
     </QueryClientProvider>,
   );
-  await screen.findByText("First task");
+  await screen.findByText(settleText);
   return router;
 }
 
@@ -114,6 +122,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   MISSING_VIEW = undefined;
+  TASKS_OVERRIDE = undefined;
 });
 
 describe("ListView", () => {
@@ -131,7 +140,91 @@ describe("ListView", () => {
     expect(cells.getByText("frontend")).toBeTruthy(); // label name
   });
 
-  // @verifies LST-2
+  // @verifies K26 (untitled task title fallback)
+  it("renders a task with no title by its key, not a blank cell", async () => {
+    TASKS_OVERRIDE = {
+      items: [{
+        id: "01TASKBBBB0000000000000000",
+        key: "WEB-9",
+        project: "p_web",
+        // title deliberately absent — a corrupt/absent title still loads
+        // the task (K26), so the title cell must fall back to the key.
+        status: "in_progress",
+        created_at: "2026-06-01T00:00:00.000Z",
+        updated_at: "2026-06-07T00:00:00.000Z",
+      }],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    };
+    // Settle on the status label (unique on the page); the key "WEB-9"
+    // appears twice — the key cell and the title fallback — so it is not
+    // a safe settle target.
+    await mountList("", "In progress");
+    const row = screen.getByText("In progress").closest("tr") as HTMLElement;
+    const titleCell = row.querySelector('[data-col="title"]') as HTMLElement;
+    // The title cell is NOT blank — it shows the key as a fallback.
+    expect(titleCell.textContent).toContain("WEB-9");
+  });
+
+  // @verifies A137 / A137.1 (per-row health marker in the list)
+  it("marks a degraded field on a row that carries health", async () => {
+    TASKS_OVERRIDE = {
+      items: [{
+        id: "01TASKCCCC0000000000000000",
+        key: "WEB-7",
+        project: "p_web",
+        title: "Corrupt status task",
+        // `status` is absent from frontmatter (lifted into health) — an
+        // intrinsic wrong_type fault.
+        created_at: "2026-06-01T00:00:00.000Z",
+        updated_at: "2026-06-07T00:00:00.000Z",
+        health: [{
+          field: "status",
+          kind: "wrong_type",
+          rawText: "42",
+          error: "status must be a string",
+          repair: "set_or_remove",
+        }],
+      }],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    };
+    await mountList("", "Corrupt status task");
+    const row = screen.getByText("Corrupt status task").closest("tr") as HTMLElement;
+    // The corruption is VISIBLE, not hidden: the raw value and the
+    // broken marker both render in the status cell.
+    expect(within(row).getByText(/\(broken\)/)).toBeTruthy();
+    expect(row.querySelector('[data-testid="field-health-status"]')).toBeTruthy();
+    expect(within(row).getByText("42")).toBeTruthy();
+  });
+
+  // @verifies ERR-9 (an object-fatally unreadable task still surfaces)
+  it("still lists an unreadable task in the affordance and does not crash", async () => {
+    TASKS_OVERRIDE = {
+      items: [{
+        id: "01TASKAAAA0000000000000000",
+        key: "WEB-1",
+        project: "p_web",
+        title: "First task",
+        status: "in_progress",
+        created_at: "2026-06-01T00:00:00.000Z",
+        updated_at: "2026-06-07T00:00:00.000Z",
+      }],
+      total: 1,
+      offset: 0,
+      limit: 50,
+      unreadable: [{ id: "01BAD0000000000000000000AA", path: ".loctt/tasks/01BAD.../task.md", reason: "bad indentation" }],
+    };
+    await mountList("", "First task");
+    // The unreadable affordance names the file and reason…
+    expect(screen.getByText(/could not be read/)).toBeTruthy();
+    expect(screen.getByText(/bad indentation/)).toBeTruthy();
+    // …and the readable row still renders (the list did not crash).
+    expect(screen.getByText("First task")).toBeTruthy();
+  });
+
   // @verifies LST-2
   it("renders the ten default column headers (reporter is opt-in, K24)", async () => {
     await mountList();

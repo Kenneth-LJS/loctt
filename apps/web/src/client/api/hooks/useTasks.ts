@@ -1,11 +1,43 @@
 import type { TaskFrontmatterPublic } from "@loctt/contracts";
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
+import type { WireHealth } from "../../health/fieldHealth.ts";
 import type { ListSearch } from "../../router/listSearch.ts";
 import { apiClient } from "../client.ts";
 
+/**
+ * A list row = the public frontmatter plus, when the task is degraded,
+ * its per-field health findings (A137 / A137.1).
+ *
+ * ## CROSS-LANE DEPENDENCY (Phase-7B S3 → coordinator)
+ *
+ * The list server (`handleListTasks` in `apps/web/src/server/server.ts`,
+ * ~line 3334) currently maps each row through `projectTaskFrontmatter(
+ * t.frontmatter)`, which drops `t.health`. So `health` below never
+ * arrives on the wire yet, and every list cell renders exactly as
+ * before. For the list to SHOW per-row corruption (not hide it), the
+ * server must attach the task's `health` list to each row it emits —
+ * e.g. `{ ...projectTaskFrontmatter(t.frontmatter), ...(t.health ? {
+ * health: t.health } : {}) }`. That file is another agent's lane; this
+ * is the client half, ready for that wire. The detail route already
+ * carries `health` (`GET /api/tasks/:ref`), so the shape is proven —
+ * the list read is the only place that still strips it.
+ *
+ * The render (cells.tsx / ListView.tsx) is written and tested against a
+ * row carrying `health`, so it lights up the moment the server attaches
+ * it, with no further client change.
+ */
+export interface TaskListRow extends TaskFrontmatterPublic {
+  /**
+   * Field-level health findings on this task. Omitted when the task is
+   * clean (same convention as `Task.health`). The list cells read this
+   * via `fieldView` to mark a degraded/corrupt field.
+   */
+  readonly health?: readonly WireHealth[];
+}
+
 interface TasksPage {
-  readonly items: readonly TaskFrontmatterPublic[];
+  readonly items: readonly TaskListRow[];
   readonly total: number;
   readonly offset: number;
   readonly limit: number;

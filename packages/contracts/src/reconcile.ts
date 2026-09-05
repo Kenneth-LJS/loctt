@@ -58,6 +58,17 @@ export const ConflictValueSchema = z.object({
   drift: z
     .object({ reason: z.string().min(1) })
     .optional(),
+  /**
+   * Phase-7B: set when THIS side's value for the field is corrupt — the
+   * side's task has a `health` finding on it, so `raw`/`display` above are
+   * the degraded stand-in (the value was lifted out of frontmatter). The
+   * reconcile UI marks the side ⚠ so the user does not merge a corrupt
+   * value thinking it is merely empty. `rawText` is the stored corrupt
+   * value; `error` is what was expected.
+   */
+  corrupt: z
+    .object({ rawText: z.string(), error: z.string().min(1) })
+    .optional(),
 }).strict();
 export type ConflictValue = z.infer<typeof ConflictValueSchema>;
 

@@ -770,7 +770,12 @@ function UnscheduledLane(props: {
               style={{ height: ROW_H }}
             >
               <span className="font-mono text-text-secondary">{r.task.key}</span>
-              <span className="truncate">{r.task.title}</span>
+              {/* K26: a corrupt title is absent from frontmatter, so
+                  fall back to the key rather than rendering an empty
+                  span — the task must never look untitled-and-nameless.
+                  The key is already shown alongside, but titling with it
+                  keeps the row honest when title is the corrupt field. */}
+              <span className="truncate">{r.task.title ?? r.task.key}</span>
               {/* TML-19 ("hovering explains the missing date"), TML-20
                   and TML-48 ("the message names the task and the
                   offending field value"). Rendered as text, not only as
@@ -778,12 +783,22 @@ function UnscheduledLane(props: {
                   explicit treatment those cases ask for, and TML-48's
                   verbatim value has to be readable without hovering.
                   `dateProblemNote` formats from the raw strings, so no
-                  `Invalid Date` can reach here. */}
+                  `Invalid Date` can reach here. A corrupt date (Phase-7B)
+                  reaches the lane as `problem.kind === "corrupt"`; it
+                  gets a ⚠ marker and danger styling so it reads as
+                  BROKEN, distinct from a deliberately-undated row's plain
+                  reason chip — the two must not look alike. */}
               {r.problem !== undefined && (
                 <span
                   data-testid={`timeline-unscheduled-reason-${r.task.key}`}
-                  className="ml-auto shrink-0 rounded border border-border-subtle px-1 text-[11px] text-text-secondary"
+                  data-corrupt={r.problem.kind === "corrupt" ? "true" : undefined}
+                  className={
+                    r.problem.kind === "corrupt"
+                      ? "ml-auto flex shrink-0 items-center gap-1 rounded border border-danger-fg/50 bg-danger-fg/10 px-1 text-[11px] text-danger-fg"
+                      : "ml-auto shrink-0 rounded border border-border-subtle px-1 text-[11px] text-text-secondary"
+                  }
                 >
+                  {r.problem.kind === "corrupt" && <span aria-hidden="true">⚠</span>}
                   {dateProblemNote(r.problem)}
                 </span>
               )}

@@ -73,6 +73,7 @@ function resolved(
     resolvedTitle?: string | undefined;
     resolvedStatus?: string | undefined;
     missing?: boolean;
+    targetCorrupt?: boolean;
   } = {},
 ): ResolvedRelationshipResponse {
   const key = "resolvedKey" in extra ? extra.resolvedKey : `K-${target}`;
@@ -88,6 +89,7 @@ function resolved(
     ...(title !== undefined ? { resolvedTitle: title } : {}),
     ...(status !== undefined ? { resolvedStatus: status } : {}),
     missing: extra.missing ?? false,
+    ...(extra.targetCorrupt === true ? { targetCorrupt: true } : {}),
   };
 }
 
@@ -299,6 +301,26 @@ describe("buildRows", () => {
     // is a different answer.
     const groups = groupRelationships(resolvedEdges, stored, WORKFLOW);
     expect(groups[0]?.rows.map(r => r.target)).toEqual(["t4", "t2", "t3"]);
+  });
+
+  /**
+   * @verifies corruption sweep S4
+   *
+   * `targetCorrupt` must survive the response→row mapping, or the row
+   * view has nothing to key its corrupt affordance off. A healthy edge
+   * carries a falsy value; a corrupt one carries `true`. Without the
+   * threading in `buildRows`, the second assertion goes red.
+   */
+  it("threads targetCorrupt from the response onto the row", () => {
+    const rows = buildRows(
+      [
+        resolved("blocks", "t2"),
+        resolved("blocks", "t3", { targetCorrupt: true }),
+      ],
+      undefined,
+    );
+    expect(rows[0]?.targetCorrupt).toBeFalsy();
+    expect(rows[1]?.targetCorrupt).toBe(true);
   });
 });
 

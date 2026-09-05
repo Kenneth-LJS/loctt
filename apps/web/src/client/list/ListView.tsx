@@ -18,8 +18,10 @@ import {
   useBulkSet,
 } from "../api/hooks/useBulk.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
+import type { TaskListRow } from "../api/hooks/useTasks.ts";
 import { buildQueryString, DEFAULT_LIST_LIMIT, tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
+import { fieldView } from "../health/fieldHealth.ts";
 import { useAnnouncer } from "../ui/Announcer.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { BulkBar, BulkResult } from "./BulkBar.tsx";
@@ -872,13 +874,21 @@ function Cell({
   onFilterLabel,
 }: {
   colId: string;
-  task: import("@loctt/contracts").TaskFrontmatterPublic;
+  task: TaskListRow;
   lookups: ReturnType<typeof buildLookups>;
   /** Clicking a label pill filters to it (MSL-6). */
   onFilterLabel: (id: string) => void;
   now: number;
   today: string;
 }) {
+  // Per-field view-model (A137 / A137.1): merges the row's value with any
+  // matching `health` finding. `fieldHealth` is a whole-field fault (the
+  // value was lifted into `health`); when it is present a cell shows the
+  // raw + ⚠ marker rather than a blank. When absent, cells render exactly
+  // as before — so a clean row (and the board, which passes no health) is
+  // unchanged. `column → frontmatter field` is 1:1 except `task_type`,
+  // whose column id already matches the field name.
+  const health = task.health;
   switch (colId) {
     case "key":
       // A real Link makes the row reachable by keyboard and supports
@@ -906,31 +916,46 @@ function Cell({
       );
     case "project":
       return <ProjectChip def={lookups.project(task.project)} raw={task.project} />;
-    case "title":
+    case "title": {
+      // K26: `title` is field-local. A corrupt/absent title still loads
+      // the task (its identity is `id`/`key`), so the cell must not go
+      // blank — a blank title cell hides the task, the exact failure this
+      // sweep removes. Fall back to the key, and when the title was
+      // corrupt (lifted into `health`) mark it so the fault is visible.
+      const titleView = fieldView<string>("title", task.title, health);
+      const titleHealth = titleView.fieldHealth;
+      const shown = task.title ?? task.key;
       // LST-20: an unbroken 400-char title had nothing to stop it, so
       // it widened the column and scrolled the whole table sideways.
       // Truncation is visual only — `title` puts the full string on
       // hover and the stored value is untouched.
       return (
         <span
-          title={task.title}
-          className="block max-w-[42ch] truncate font-medium text-text-primary"
+          title={titleHealth?.error ?? task.title ?? task.key}
+          className={[
+            "flex max-w-[42ch] items-center gap-1 truncate font-medium",
+            task.title === undefined ? "italic text-text-tertiary" : "text-text-primary",
+          ].join(" ")}
         >
-          {task.title}
+          <span className="truncate">{shown}</span>
+          {titleHealth !== undefined && (
+            <span aria-hidden="true" title={titleHealth.error} className="shrink-0 text-danger-fg">⚠</span>
+          )}
         </span>
       );
+    }
     case "status":
-      return <StatusBadge def={lookups.status(task.status)} raw={task.status} />;
+      return <StatusBadge def={lookups.status(task.status)} raw={task.status} health={fieldView("status", task.status, health).fieldHealth} />;
     case "priority":
-      return <PriorityCell def={lookups.priority(task.priority)} raw={task.priority} />;
+      return <PriorityCell def={lookups.priority(task.priority)} raw={task.priority} health={fieldView("priority", task.priority, health).fieldHealth} />;
     case "task_type":
-      return <TypeBadge def={lookups.taskType(task.task_type)} raw={task.task_type} />;
+      return <TypeBadge def={lookups.taskType(task.task_type)} raw={task.task_type} health={fieldView("task_type", task.task_type, health).fieldHealth} />;
     case "assignee":
-      return <AssigneeCell user={lookups.user(task.assignee)} raw={task.assignee} />;
+      return <AssigneeCell user={lookups.user(task.assignee)} raw={task.assignee} health={fieldView("assignee", task.assignee, health).fieldHealth} />;
     case "reporter":
       // Same cell as assignee — a user reference resolves, degrades and
       // disambiguates identically whichever role names it (PRU-25).
-      return <AssigneeCell user={lookups.user(task.reporter)} raw={task.reporter} />;
+      return <AssigneeCell user={lookups.user(task.reporter)} raw={task.reporter} health={fieldView("reporter", task.reporter, health).fieldHealth} />;
     case "labels":
       return (
         <LabelsCell

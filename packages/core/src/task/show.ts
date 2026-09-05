@@ -44,6 +44,31 @@ export interface ResolvedRelationship {
    */
   readonly resolvedTitle?: string;
   readonly resolvedStatus?: string;
+  /**
+   * The target is corrupt — distinct from missing (S4 / corruption
+   * sweep). `missing` alone conflated three states an edge can be in:
+   *
+   *   1. **resolved-healthy** — `missing:false`, `targetCorrupt` absent.
+   *   2. **resolved-but-corrupt** — `missing:false`, `targetCorrupt:true`.
+   *      The tolerant `readTask` loaded the target but it carries
+   *      `health` findings (e.g. a wrong-typed `title`). Before this the
+   *      edge rendered as an ordinary, untitled-but-fine row — a corrupt
+   *      task disguised as a healthy one with no title.
+   *   3. **corrupt-but-unreadable** — `missing:true`, `targetCorrupt:true`.
+   *      The target is on disk but object-fatally unreadable
+   *      (`UnreadableTaskError` — a bad `id`/`key` or a YAML syntax
+   *      error). Before this it rendered identically to a *deleted*
+   *      target, telling the user a file that exists was removed.
+   *   4. **absent/deleted** — `missing:true`, `targetCorrupt` absent.
+   *      `TaskNotFoundError`: no task directory at all.
+   *
+   * The absent-vs-unreadable split (3 vs 4) is free: the two are already
+   * distinct exception classes (`TaskNotFoundError` vs
+   * `UnreadableTaskError`) caught in the same block. Omitted (not
+   * `false`) on the healthy path so a consumer that ignores it — and the
+   * existing wire/tests that assert exact edge shapes — behave as before.
+   */
+  readonly targetCorrupt?: boolean;
 }
 
 /** A structured task summary for display. */
@@ -134,6 +159,12 @@ export async function resolveRelationships(
         const target = await lookupById(locttDir, r.target);
         const status = target.frontmatter.status;
         const title = target.frontmatter.title;
+        // The tolerant `readTask` returns a Task even when a field-local
+        // corruption was lifted into `health` (a wrong-typed title, an
+        // unrecognised key, etc.). Such a target resolves — it has a key
+        // and often a title — but the edge must say it needs attention
+        // rather than pass as an ordinary row (sweep § "Surface it").
+        const corrupt = (target.health?.length ?? 0) > 0;
         return {
           type: r.type,
           target: r.target,
@@ -143,6 +174,7 @@ export async function resolveRelationships(
           ...(title !== undefined ? { resolvedTitle: title } : {}),
           ...(status !== undefined ? { resolvedStatus: status } : {}),
           missing: false,
+          ...(corrupt ? { targetCorrupt: true } : {}),
         };
       } catch (err) {
         // A target that is absent and a target that will not parse are
@@ -166,8 +198,19 @@ export async function resolveRelationships(
         // A permission or disk failure still propagates: those are not
         // "this edge is broken", they are "this tracker cannot be
         // read", and hiding them would be the LST-33 mistake.
-        if (err instanceof TaskNotFoundError || err instanceof UnreadableTaskError) {
+        // Genuinely absent: no task directory. `missing` alone — this is
+        // the deleted/dangling case REL-24 renders as "no task with id".
+        if (err instanceof TaskNotFoundError) {
           return { type: r.type, target: r.target, missing: true };
+        }
+        // On disk but object-fatally unreadable (bad id/key, YAML syntax
+        // error). Still `missing` from this task's point of view — the
+        // edge cannot be followed to a readable task — but corrupt, NOT
+        // deleted: the file exists and the fix is to repair it, not to
+        // accept it as gone. Distinguishing the two costs nothing: they
+        // are already separate exception classes.
+        if (err instanceof UnreadableTaskError) {
+          return { type: r.type, target: r.target, missing: true, targetCorrupt: true };
         }
         throw err;
       }

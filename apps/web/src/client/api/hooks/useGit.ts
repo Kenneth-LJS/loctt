@@ -117,6 +117,13 @@ export interface ReconcileConflictValue {
   readonly raw: unknown;
   readonly display: string;
   readonly drift?: { readonly reason: string };
+  /**
+   * Phase-7B: set when this side's value for the field is corrupt — the
+   * side's task carries a `health` finding on it, so `display` is the
+   * degraded stand-in. The panel marks the side ⚠ so a corrupt value is
+   * not merged as if it were merely empty. `rawText` is the stored bytes.
+   */
+  readonly corrupt?: { readonly rawText: string; readonly error: string };
 }
 export interface ReconcileConflict {
   readonly taskId: string;

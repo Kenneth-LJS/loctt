@@ -112,6 +112,24 @@ export interface ResolvedRelationshipResponse {
   readonly resolvedTitle?: string;
   readonly resolvedStatus?: string;
   readonly missing: boolean;
+  /**
+   * The target is corrupt, as distinct from missing (S4 / corruption
+   * sweep). `missing` conflated three cases; this splits corruption out:
+   *
+   *   - `missing:false`, `targetCorrupt` absent — resolved & healthy.
+   *   - `missing:false`, `targetCorrupt:true` — the tolerant read loaded
+   *     the target but it carries `health` findings (e.g. a wrong-typed
+   *     title). The row links (the task opens) and keeps its key/title,
+   *     but is marked as needing attention.
+   *   - `missing:true`, `targetCorrupt:true` — on disk but object-fatally
+   *     unreadable (bad id/key, YAML syntax error). Corrupt, not deleted.
+   *   - `missing:true`, `targetCorrupt` absent — genuinely absent (no
+   *     task directory): the dangling/deleted link REL-24 renders.
+   *
+   * Omitted (not `false`) on the healthy path so a client that ignores
+   * it behaves as before.
+   */
+  readonly targetCorrupt?: boolean;
 }
 
 /** Task response for API. */

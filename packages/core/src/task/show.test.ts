@@ -275,6 +275,105 @@ describe("task show model", () => {
   });
 
   /**
+   * @verifies REL-25 (corruption sweep S4)
+   *
+   * A target with a FIELD-LOCAL corruption (a wrong-typed `title`) loads
+   * via the tolerant read, so its edge is NOT missing — before this it
+   * rendered as an ordinary untitled-but-fine row, disguising a corrupt
+   * task as a healthy one. The edge now carries `targetCorrupt: true`,
+   * keeps its key, and stays `missing: false` so the row still links.
+   */
+  it("marks a resolved-but-corrupt target as corrupt, not missing", async () => {
+    const source: Task = {
+      frontmatter: {
+        id: "abc123", key: "T-1", title: "Source",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+        relationships: [{ type: "blocks", target: "corrupt-id" }],
+      },
+      body: "",
+    };
+    await writeTask(locttDir, "abc123", source);
+
+    // A target whose `title` is wrong-typed: field-local (K26), so the
+    // tolerant read returns a Task with `health` rather than throwing.
+    // id/key are valid so it is addressable and resolves.
+    await mkdir(getTaskDir(locttDir, "corrupt-id"), { recursive: true });
+    await writeFile(
+      join(getTaskDir(locttDir, "corrupt-id"), "task.md"),
+      "---\nid: corrupt-id\nkey: T-9\ntitle: [not, a, string]\n"
+      + "created_at: 2026-01-01T00:00:00Z\nupdated_at: 2026-01-01T00:00:00Z\n---\n",
+      "utf-8",
+    );
+
+    const model = await buildShowModel(locttDir, source);
+    expect(model.relationships).toHaveLength(1);
+    const edge = model.relationships[0];
+    expect(edge?.missing).toBe(false);
+    expect(edge?.targetCorrupt).toBe(true);
+    // It still resolved to a real key — the row links and can be repaired.
+    expect(edge?.resolvedKey).toBe("T-9");
+  });
+
+  /**
+   * @verifies REL-25 (corruption sweep S4)
+   *
+   * An OBJECT-FATALLY unreadable target (a YAML syntax error) is on disk
+   * but cannot be turned into a Task, so it is `missing` from this task's
+   * point of view — but `targetCorrupt: true` distinguishes it from a
+   * *deleted* target. Before this it rendered identically to a link whose
+   * target had been removed, telling the user a file that exists was gone.
+   */
+  it("marks an unreadable (object-fatal) target as missing AND corrupt", async () => {
+    const source: Task = {
+      frontmatter: {
+        id: "abc123", key: "T-1", title: "Source",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+        relationships: [{ type: "blocks", target: "broken-id" }],
+      },
+      body: "",
+    };
+    await writeTask(locttDir, "abc123", source);
+
+    await mkdir(getTaskDir(locttDir, "broken-id"), { recursive: true });
+    await writeFile(
+      join(getTaskDir(locttDir, "broken-id"), "task.md"),
+      '---\nid: broken-id\nkey: T-9\nstatus: "backlog\n---\n',
+      "utf-8",
+    );
+
+    const model = await buildShowModel(locttDir, source);
+    const edge = model.relationships[0];
+    expect(edge?.missing).toBe(true);
+    expect(edge?.targetCorrupt).toBe(true);
+  });
+
+  /**
+   * @verifies REL-24 (corruption sweep S4)
+   *
+   * The absent-vs-unreadable split: a target with no directory at all is
+   * `missing` but NOT `targetCorrupt` — a genuine dangling link, distinct
+   * from the object-fatal case above. This is the guard that keeps the
+   * unreadable test honest: if `targetCorrupt` were set unconditionally
+   * on every missing edge, this would go red.
+   */
+  it("leaves a genuinely-absent target missing but not corrupt", async () => {
+    const source: Task = {
+      frontmatter: {
+        id: "abc123", key: "T-1", title: "Source",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+        relationships: [{ type: "blocks", target: "vanished-id" }],
+      },
+      body: "",
+    };
+    await writeTask(locttDir, "abc123", source);
+
+    const model = await buildShowModel(locttDir, source);
+    const edge = model.relationships[0];
+    expect(edge?.missing).toBe(true);
+    expect(edge?.targetCorrupt).toBeUndefined();
+  });
+
+  /**
    * @verifies REL-25
    *
    * The guard the fix must not lose: a healthy target still resolves.

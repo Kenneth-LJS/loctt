@@ -9,6 +9,7 @@ import type {
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import type { WireHealth } from "../health/fieldHealth.ts";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
 
 /**
@@ -27,7 +28,10 @@ const STATUS_CATEGORY_CLASS: Record<string, string> = {
   discarded: "bg-status-discarded-bg text-status-discarded-fg",
 };
 
-export function StatusBadge({ def, raw }: { def: StatusDef | undefined; raw: string | undefined }) {
+export function StatusBadge({ def, raw, health }: { def: StatusDef | undefined; raw: string | undefined; health?: WireHealth | undefined }) {
+  // Whole-field corrupt (value lifted into `health`): show the raw text
+  // and marker rather than a dash that hides the fault.
+  if (raw === undefined && health !== undefined) return <BrokenValue health={health} />;
   if (raw === undefined) return <Dash />;
   const cls = def ? STATUS_CATEGORY_CLASS[def.category] ?? "" : "";
   // A status the workflow no longer defines is drift, not an ordinary
@@ -49,6 +53,10 @@ export function StatusBadge({ def, raw }: { def: StatusDef | undefined; raw: str
       {orphaned && <span aria-hidden="true">⚠</span>}
       {def?.label ?? raw}
       {orphaned && <span className="sr-only"> (unknown status)</span>}
+      {/* Distinct from "orphaned" above: orphaned is a value the workflow
+          no longer defines (drift); `health` is a per-element or
+          co-existing corruption finding (A137.1). Both can be true. */}
+      {health !== undefined && <FieldWarning health={health} />}
     </span>
   );
 }
@@ -60,7 +68,8 @@ const PRIORITY_DOT_CLASS: Record<string, string> = {
   low: "bg-priority-low",
 };
 
-export function PriorityCell({ def, raw }: { def: PriorityDef | undefined; raw: string | undefined }) {
+export function PriorityCell({ def, raw, health }: { def: PriorityDef | undefined; raw: string | undefined; health?: WireHealth | undefined }) {
+  if (raw === undefined && health !== undefined) return <BrokenValue health={health} />;
   if (raw === undefined) return <Dash />;
   // Prefer the workflow's own colour; else fall back to a key-based
   // dot class so the common critical/high/medium/low keys still tint.
@@ -75,6 +84,7 @@ export function PriorityCell({ def, raw }: { def: PriorityDef | undefined; raw: 
     <span className="inline-flex items-center gap-1.5 text-[13px] text-text-secondary">
       <span className={["h-2 w-2 rounded-full", dotClass].join(" ")} style={dotStyle} />
       {def.label}
+      {health !== undefined && <FieldWarning health={health} />}
     </span>
   );
 }
@@ -99,7 +109,58 @@ function UnknownValue({ raw }: { raw: string }) {
   );
 }
 
-export function TypeBadge({ def, raw }: { def: TaskTypeDef | undefined; raw: string | undefined }) {
+/**
+ * A ⚠ attention marker for a field carrying a health finding (A137 /
+ * A138). Matches the "(broken)" precedent Sidebar/SavedViewsPanel use
+ * for a `broken_view`: a ⚠ glyph in `danger-fg`, the validator's message
+ * on hover, and a screen-reader-only word so the fault is not colour- or
+ * glyph-only. It sits *beside* a still-rendered value — the value is not
+ * hidden — so a partially-degraded field reads as "here it is, and it
+ * needs attention", never as blank.
+ */
+function FieldWarning({ health }: { health: WireHealth }) {
+  return (
+    <span
+      // The full validator message on hover; the glyph carries the
+      // signal at a glance, colour is only the third cue.
+      title={health.error}
+      data-testid={`field-health-${health.field}`}
+      className="ml-1 inline-flex items-center text-danger-fg"
+    >
+      <span aria-hidden="true">⚠</span>
+      <span className="sr-only"> (broken)</span>
+    </span>
+  );
+}
+
+/**
+ * A whole-field-corrupt cell (A137.1 intrinsic fault): the value was
+ * lifted out of `frontmatter` into `health`, so there is no def/value to
+ * resolve. Rather than a blank cell — which hides the corruption, the
+ * exact failure this sweep removes — the raw stored text is shown
+ * (value-preserved, K27) with the ⚠ "(broken)" marker.
+ */
+function BrokenValue({ health }: { health: WireHealth }) {
+  return (
+    <span
+      title={health.error}
+      data-testid={`field-health-${health.field}`}
+      className="inline-flex items-center gap-1 rounded-md border border-dashed border-danger-fg/50 px-1.5 py-0.5 text-[12px] font-medium text-danger-fg"
+    >
+      <span aria-hidden="true">⚠</span>
+      {/* The raw stored value — the only remaining handle on what the
+          task actually holds. `rawText` is core-rendered so all three
+          surfaces print the same string. */}
+      <span className="font-mono">{health.rawText}</span>
+      <span className="sr-only"> (broken)</span>
+    </span>
+  );
+}
+
+export function TypeBadge({ def, raw, health }: { def: TaskTypeDef | undefined; raw: string | undefined; health?: WireHealth | undefined }) {
+  // A whole-field fault lifted the value out of frontmatter: render the
+  // raw text + marker rather than a dash that hides it.
+  if (raw === undefined && health !== undefined) return <BrokenValue health={health} />;
   if (raw === undefined) return <Dash />;
   if (!def) return <UnknownValue raw={raw} />;
   return (
@@ -108,6 +169,9 @@ export function TypeBadge({ def, raw }: { def: TaskTypeDef | undefined; raw: str
       style={def?.color ? { borderColor: def.color, color: def.color } : undefined}
     >
       {def?.label ?? raw}
+      {/* An element-level fault can co-exist with a present value
+          (A137.1): show the value AND the marker. */}
+      {health !== undefined && <FieldWarning health={health} />}
     </span>
   );
 }
@@ -137,7 +201,10 @@ export function ProjectChip({ def, raw }: { def: ProjectDef | undefined; raw: st
   );
 }
 
-export function AssigneeCell({ user, raw }: { user: UserProfile | undefined; raw: string | undefined }) {
+export function AssigneeCell({ user, raw, health }: { user: UserProfile | undefined; raw: string | undefined; health?: WireHealth | undefined }) {
+  // Whole-field corrupt (e.g. an assignee that is not a string): the
+  // value is in `health`, not `frontmatter` — show the raw + marker.
+  if (raw === undefined && health !== undefined) return <BrokenValue health={health} />;
   if (raw === undefined) return <Dash />;
   if (!user) {
     // A reference to a user the tracker no longer knows — a dangling
@@ -172,6 +239,7 @@ export function AssigneeCell({ user, raw }: { user: UserProfile | undefined; raw
         {firstName}
         {user.archived ? " (archived)" : ""}
       </span>
+      {health !== undefined && <FieldWarning health={health} />}
     </span>
   );
 }

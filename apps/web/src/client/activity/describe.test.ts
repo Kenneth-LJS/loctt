@@ -183,6 +183,48 @@ describe("orphaned config values (CMT-26)", () => {
     expect(v.drifted).toBe(true);
     expect(v.text).toBe("01GONE0000000000000000000");
   });
+
+  /**
+   * @verifies O5 / K26
+   *
+   * A user whose profile is PRESENT but whose `name` is field-local
+   * corrupt degrades to `undefined` on the record (Phase-7B — the
+   * `UserProfile.name` is optional so a bad value drops out and travels
+   * in `health`). This is distinct from the hard-deleted case above:
+   * the user IS found in `ctx.users`, so the code takes the `known(...)`
+   * branch, not the `drifted` one. Without the `?? u.id` fallback the
+   * cell renders the string "undefined". The key that shares no
+   * substring with the id proves the fallback fired rather than some
+   * other resolution.
+   */
+  it("falls back to the id when a present user has no name (O5)", () => {
+    const nameless: UserProfile = {
+      id: "01NAMELESS0000000000000000",
+      timezone: "UTC",
+    } as UserProfile;
+    const localCtx: DescribeContext = { ...ctx, users: [ANA, KEN, nameless] };
+
+    const v = renderValue(localCtx, "field_change", "assignee", nameless.id);
+    // Not drifted — the user exists; the *name* is what is missing.
+    expect(v.drifted).toBe(false);
+    // The id, never the literal "undefined".
+    expect(v.text).toBe(nameless.id);
+    expect(v.text).not.toBe("undefined");
+    expect(v.text).not.toContain("undefined");
+  });
+
+  it("falls back to the id for a nameless reporter too (O5)", () => {
+    const nameless: UserProfile = {
+      id: "01NOREPORTER00000000000000",
+      timezone: "UTC",
+    } as UserProfile;
+    const localCtx: DescribeContext = { ...ctx, users: [ANA, KEN, nameless] };
+
+    const v = renderValue(localCtx, "field_change", "reporter", nameless.id);
+    expect(v.drifted).toBe(false);
+    expect(v.text).toBe(nameless.id);
+    expect(v.text).not.toContain("undefined");
+  });
 });
 
 /* ------------------------------------------------------------------ *

@@ -1,4 +1,5 @@
 import type {
+  BrokenEntry,
   BrokenSavedQuery,
   LabelDef,
   MilestoneDef,
@@ -54,6 +55,17 @@ interface Page<T> {
   readonly total: number;
   readonly offset: number;
   readonly limit: number;
+}
+
+/**
+ * A config list page that may carry `broken` — the per-entry corruption
+ * markers a tolerant loader sets aside (Phase-7B, A138). Omitted when
+ * every entry parsed, same convention as the saved-views `broken`. The
+ * projects/labels/milestones/sprints reads all populate it now, so the
+ * pickers and panels can list a broken entry rather than dropping it.
+ */
+interface BrokenPage<T> extends Page<T> {
+  readonly broken?: readonly BrokenEntry[];
 }
 
 export interface PrefixRenameSentinel {
@@ -131,21 +143,21 @@ export function useViews() {
 export function useLabels() {
   return useQuery({
     queryKey: ["labels"],
-    queryFn: ({ signal }) => apiClient.get<Page<LabelDef>>(`/api/labels?limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
+    queryFn: ({ signal }) => apiClient.get<BrokenPage<LabelDef>>(`/api/labels?limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
   });
 }
 
 export function useMilestones() {
   return useQuery({
     queryKey: ["milestones"],
-    queryFn: ({ signal }) => apiClient.get<Page<MilestoneDef>>(`/api/milestones?limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
+    queryFn: ({ signal }) => apiClient.get<BrokenPage<MilestoneDef>>(`/api/milestones?limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
   });
 }
 
 export function useSprints() {
   return useQuery({
     queryKey: ["sprints"],
-    queryFn: ({ signal }) => apiClient.get<Page<SprintDef>>(`/api/sprints?limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
+    queryFn: ({ signal }) => apiClient.get<BrokenPage<SprintDef>>(`/api/sprints?limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
   });
 }
 

@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import type { UserProfile } from "@loctt/contracts";
-import { cleanup, render, screen } from "@testing-library/react";
+import type { StatusDef, UserProfile } from "@loctt/contracts";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { AssigneeCell } from "./cells.tsx";
+import type { WireHealth } from "../health/fieldHealth.ts";
+import { AssigneeCell, PriorityCell, StatusBadge, TypeBadge } from "./cells.tsx";
 
 /**
  * AssigneeCell degradation (PRU-25). The same cell renders both the
@@ -81,5 +82,82 @@ describe("AssigneeCell", () => {
   it("renders a dash when the reference is unset", () => {
     const { container } = render(<AssigneeCell user={undefined} raw={undefined} />);
     expect(container.textContent).not.toContain("deleted user");
+  });
+});
+
+/**
+ * Per-field corruption markers (A137 / A137.1, corruption-sweep S3).
+ *
+ * A degraded field must be VISIBLE as needing attention on the list —
+ * "surface it, don't hide it" — matching the ⚠ + "(broken)" precedent
+ * that Sidebar/SavedViewsPanel use for a broken saved view. Two shapes:
+ *
+ * - A whole-field-corrupt (intrinsic) fault lifts the value out of
+ *   `frontmatter` into `health`, so the cell has no def/raw: it renders
+ *   the `rawText` + marker rather than a dash that would hide the fault.
+ * - A co-existing (element/extrinsic) fault leaves the value in place:
+ *   the cell renders the value AND the marker.
+ */
+const STATUS_DEF: StatusDef = { key: "in_progress", label: "In progress", category: "active" };
+
+function health(field: string, over: Partial<WireHealth> = {}): WireHealth {
+  return {
+    field,
+    kind: "wrong_type",
+    rawText: "[1, 2]",
+    error: `${field} must be a string`,
+    repair: "set_or_remove",
+    ...over,
+  };
+}
+
+describe("cell corruption markers", () => {
+  // @verifies A137.1 (whole-field intrinsic fault)
+  it("StatusBadge with no value but a health finding shows the raw text + (broken), not a dash", () => {
+    const { container } = render(
+      <StatusBadge def={undefined} raw={undefined} health={health("status", { rawText: "42" })} />,
+    );
+    // The raw stored value is preserved and shown (K27)…
+    expect(container.textContent).toContain("42");
+    // …with the broken marker, and NOT the plain em-dash.
+    expect(screen.getByText(/\(broken\)/)).toBeTruthy();
+    expect(container.querySelector('[data-testid="field-health-status"]')).toBeTruthy();
+    expect(container.textContent).not.toContain("—");
+  });
+
+  // @verifies A137.1 (co-existing value + element fault)
+  it("StatusBadge with a valid value AND a health finding shows the value and the marker", () => {
+    const { container } = render(
+      <StatusBadge def={STATUS_DEF} raw="in_progress" health={health("status")} />,
+    );
+    expect(screen.getByText("In progress")).toBeTruthy();
+    expect(screen.getByText(/\(broken\)/)).toBeTruthy();
+    expect(container.querySelector('[data-testid="field-health-status"]')).toBeTruthy();
+  });
+
+  // @verifies "no health → unchanged" (board reuses these cells with no health)
+  it("a clean cell (no health) renders no broken marker", () => {
+    const { container } = render(<StatusBadge def={STATUS_DEF} raw="in_progress" />);
+    expect(screen.getByText("In progress")).toBeTruthy();
+    expect(container.textContent).not.toContain("(broken)");
+    expect(container.querySelector('[data-testid^="field-health-"]')).toBeNull();
+  });
+
+  it("PriorityCell and TypeBadge with no value but a health finding show the raw + (broken)", () => {
+    const p = render(<PriorityCell def={undefined} raw={undefined} health={health("priority", { rawText: "99" })} />);
+    expect(p.container.textContent).toContain("99");
+    expect(within(p.container).getByText(/\(broken\)/)).toBeTruthy();
+
+    const t = render(<TypeBadge def={undefined} raw={undefined} health={health("task_type", { rawText: "true" })} />);
+    expect(t.container.textContent).toContain("true");
+    expect(within(t.container).getByText(/\(broken\)/)).toBeTruthy();
+  });
+
+  it("AssigneeCell with a resolved user AND a health finding shows the name and the marker", () => {
+    const { container } = render(
+      <AssigneeCell user={LIVE} raw={LIVE.id} health={health("assignee")} />,
+    );
+    expect(screen.getByText("Ken")).toBeTruthy();
+    expect(within(container).getByText(/\(broken\)/)).toBeTruthy();
   });
 });

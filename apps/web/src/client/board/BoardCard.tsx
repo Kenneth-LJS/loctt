@@ -1,5 +1,7 @@
 import type { CardLayoutField, TaskFrontmatterPublic } from "@loctt/contracts";
 
+import type { WireHealth } from "../health/fieldHealth.ts";
+import { fieldView } from "../health/fieldHealth.ts";
 import {
   AssigneeCell,
   LabelsCell,
@@ -29,6 +31,7 @@ import type { buildLookups } from "../list/lookups.ts";
  */
 export function BoardCard({
   task,
+  health,
   layout,
   lookups,
   milestones,
@@ -41,6 +44,15 @@ export function BoardCard({
   placeholder = false,
 }: {
   readonly task: TaskFrontmatterPublic;
+  /**
+   * The task's field-level health findings (A137 / A137.1), threaded
+   * from the list feed the board reads (`TaskListRow.health`). Absent
+   * when the task is clean — a clean card renders exactly as before.
+   * Passed to the shared list cells so their existing ⚠/"(broken)"
+   * markers light up on the card, and read here for the title's own
+   * fallback + marker.
+   */
+  readonly health?: readonly WireHealth[] | undefined;
   readonly layout: readonly CardLayoutField[];
   readonly lookups: ReturnType<typeof buildLookups>;
   readonly milestones: readonly { id: string; name: string }[];
@@ -72,6 +84,14 @@ export function BoardCard({
 }) {
   const milestoneName = milestones.find(m => m.id === task.milestone)?.name;
   const sprintName = sprints.find(s => s.id === task.sprint)?.name;
+
+  // K26: `title` is field-local. A corrupt/absent title still loads the
+  // task (its identity is `id`/`key`), so the card title must never go
+  // blank — a blank title hides the card, the exact failure this sweep
+  // removes. Fall back to the key, and when the title was corrupt
+  // (lifted whole into `health`) mark it with the same ⚠ the list uses.
+  const titleHealth = fieldView<string>("title", task.title, health).fieldHealth;
+  const shownTitle = task.title ?? task.key;
 
   return (
     <article
@@ -115,8 +135,17 @@ export function BoardCard({
       >
         {/* BRD-22: a 300-character title clamps to a fixed number of
             lines rather than growing the card to fill the column. */}
-        <span className="line-clamp-3 text-[13px] text-text-primary">
-          {task.title}
+        <span
+          title={titleHealth?.error ?? task.title ?? task.key}
+          className={[
+            "flex items-start gap-1 text-[13px]",
+            task.title === undefined ? "italic text-text-tertiary" : "text-text-primary",
+          ].join(" ")}
+        >
+          <span className="line-clamp-3">{shownTitle}</span>
+          {titleHealth !== undefined && (
+            <span aria-hidden="true" title={titleHealth.error} className="shrink-0 text-danger-fg">⚠</span>
+          )}
         </span>
       </button>
 
@@ -125,6 +154,7 @@ export function BoardCard({
           const rendered = renderField({
             field,
             task,
+            health,
             lookups,
             milestoneName,
             sprintName,
@@ -155,6 +185,7 @@ export function BoardCard({
 function renderField({
   field,
   task,
+  health,
   lookups,
   milestoneName,
   sprintName,
@@ -163,6 +194,7 @@ function renderField({
 }: {
   field: CardLayoutField;
   task: TaskFrontmatterPublic;
+  health: readonly WireHealth[] | undefined;
   lookups: ReturnType<typeof buildLookups>;
   milestoneName: string | undefined;
   sprintName: string | undefined;
@@ -182,22 +214,36 @@ function renderField({
           <span className="font-mono text-[11px] text-text-tertiary">{task.key}</span>
         </span>
       );
-    case "status":
-      return task.status === undefined
+    // A field's value can be absent because the task simply has none
+    // (render nothing — the board's dense layout, unlike the table, does
+    // not hold an empty slot) OR because a whole-field fault lifted its
+    // value into `health` (A137.1 intrinsic). The latter must still show
+    // the shared cell's ⚠/"(broken)" marker rather than vanish, so a
+    // present `fieldHealth` overrides the "absent → null" shortcut.
+    case "status": {
+      const fh = fieldView("status", task.status, health).fieldHealth;
+      return task.status === undefined && fh === undefined
         ? null
-        : <StatusBadge def={lookups.status(task.status)} raw={task.status} />;
-    case "priority":
-      return task.priority === undefined
+        : <StatusBadge def={lookups.status(task.status)} raw={task.status} health={fh} />;
+    }
+    case "priority": {
+      const fh = fieldView("priority", task.priority, health).fieldHealth;
+      return task.priority === undefined && fh === undefined
         ? null
-        : <PriorityCell def={lookups.priority(task.priority)} raw={task.priority} />;
-    case "task_type":
-      return task.task_type === undefined
+        : <PriorityCell def={lookups.priority(task.priority)} raw={task.priority} health={fh} />;
+    }
+    case "task_type": {
+      const fh = fieldView("task_type", task.task_type, health).fieldHealth;
+      return task.task_type === undefined && fh === undefined
         ? null
-        : <TypeBadge def={lookups.taskType(task.task_type)} raw={task.task_type} />;
-    case "assignee":
-      return task.assignee === undefined
+        : <TypeBadge def={lookups.taskType(task.task_type)} raw={task.task_type} health={fh} />;
+    }
+    case "assignee": {
+      const fh = fieldView("assignee", task.assignee, health).fieldHealth;
+      return task.assignee === undefined && fh === undefined
         ? null
-        : <AssigneeCell user={lookups.user(task.assignee)} raw={task.assignee} />;
+        : <AssigneeCell user={lookups.user(task.assignee)} raw={task.assignee} health={fh} />;
+    }
     case "labels": {
       const ids = task.labels ?? [];
       if (ids.length === 0) return null;
