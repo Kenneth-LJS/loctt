@@ -8349,7 +8349,7 @@
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-projects-users.md",
       "line": 112,
-      "title": "Avatar upload compresses in the browser before POST.",
+      "title": "Avatar upload: the browser crops, the server compresses and stores.",
       "milestone": "M4",
       "severity": "major",
       "principles": [
