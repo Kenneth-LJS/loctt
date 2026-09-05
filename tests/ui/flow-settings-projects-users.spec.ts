@@ -8,10 +8,82 @@
  * so a client that posted the wrong value cannot pass.
  */
 
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import sharp from "sharp";
+
 import { expect, test } from "./fixtures/tracker.ts";
+
+/**
+ * The stored avatar on disk: its real decoded dimensions and byte size.
+ * K18 moved the resize to the server, so the far-end assertion is on
+ * `users/<id>/avatar.<ext>`, not on the request body. Reads the file
+ * the profile records rather than assuming `avatar.jpg`.
+ */
+async function storedAvatar(
+  root: string,
+  userId: string,
+): Promise<{ width: number; height: number; bytes: number; ext: string } | undefined> {
+  const dir = path.join(root, ".loctt", "users", userId);
+  const profile = await readFile(path.join(dir, "profile.yaml"), "utf8");
+  const name = /^avatar:\s*(\S+)\s*$/m.exec(profile)?.[1];
+  if (name === undefined) return undefined;
+  const file = path.join(dir, name);
+  const info = await stat(file);
+  const meta = await sharp(await readFile(file)).metadata();
+  return {
+    width: meta.width ?? 0,
+    height: meta.height ?? 0,
+    bytes: info.size,
+    ext: path.extname(name).replace(/^\./, ""),
+  };
+}
+
+/**
+ * A real, minimal 2-frame animated GIF (2x2, red frame then blue).
+ * Both sharp and Chromium decode it: sharp reports `pages === 2` and
+ * the browser decodes frame 1 for the cropper. Hand-built because sharp
+ * cannot synthesise an animation from a single `create` input.
+ */
+function build2FrameGif(): Buffer {
+  const b: number[] = [];
+  const push = (...xs: number[]) => { for (const x of xs) b.push(x & 0xff); };
+  const lzw = (codes: number[], width: number): number[] => {
+    let bits = 0, cur = 0; const out: number[] = [];
+    for (const c of codes) {
+      cur |= c << bits; bits += width;
+      while (bits >= 8) { out.push(cur & 0xff); cur >>= 8; bits -= 8; }
+    }
+    if (bits > 0) out.push(cur & 0xff);
+    return [out.length, ...out, 0x00];
+  };
+  push(0x47, 0x49, 0x46, 0x38, 0x39, 0x61); // GIF89a
+  push(2, 0, 2, 0, 0x80, 0, 0);             // 2x2, global colour table (2 entries)
+  push(0xff, 0x00, 0x00, 0x00, 0x00, 0xff); // red, blue
+  push(0x21, 0xff, 0x0b);                    // NETSCAPE loop extension
+  for (const c of "NETSCAPE2.0") push(c.charCodeAt(0));
+  push(0x03, 0x01, 0x00, 0x00, 0x00);
+  // Frame 1 (colour index 0 = red)
+  push(0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00);
+  push(0x2c, 0, 0, 0, 0, 2, 0, 2, 0, 0x00);
+  push(0x02, ...lzw([4, 0, 0, 0, 0, 5], 3));
+  // Frame 2 (colour index 1 = blue)
+  push(0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00);
+  push(0x2c, 0, 0, 0, 0, 2, 0, 2, 0, 0x00);
+  push(0x02, ...lzw([4, 1, 1, 1, 1, 5], 3));
+  push(0x3b); // trailer
+  return Buffer.from(b);
+}
+
+/** The `id` of the active (self) user, read off its row in the panel. */
+async function selfId(page: import("@playwright/test").Page): Promise<string> {
+  const row = page.locator('[data-self="true"]');
+  const id = (await row.getAttribute("data-testid"))?.replace("user-row-", "") ?? "";
+  expect(id).not.toBe("");
+  return id;
+}
+
 
 /** Reads projects.yaml as text — the far end of every project write. */
 async function projectsYaml(root: string): Promise<string> {
@@ -621,6 +693,321 @@ test.describe("PRU — the users panel", () => {
     await expect(problem).toContainText("JPEG");
     // No SVG content reaches the avatar bucket.
     expect(posts).toEqual([]);
+  });
+});
+
+test.describe("PRU — avatar cropper, storage, and removal", () => {
+  test.beforeEach(({ page }) => {
+    // K18/K20 assert what lands on disk; a client-side pageerror during
+    // decode/crop would silently skip the upload, so fail on one.
+    page.on("pageerror", err => { throw err; });
+  });
+
+  // @verifies PRU-13
+  test("PRU-13: the browser crops, the server stores <=500px and materially smaller", async ({
+    page,
+    tracker,
+  }) => {
+    await page.goto(`${tracker.baseURL}/settings/users`);
+    const id = await selfId(page);
+
+    // A 1200x900 JPEG at ~2.1 MB — the case's source. High-entropy
+    // per-channel noise defeats JPEG's compression so the source is
+    // genuinely large; a plain counter pattern compresses too well.
+    const noise = Buffer.alloc(1200 * 900 * 3);
+    let seed = 0x9e3779b9;
+    for (let i = 0; i < noise.length; i++) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      noise[i] = (seed >> 16) & 0xff;
+    }
+    const source = await sharp(noise, { raw: { width: 1200, height: 900, channels: 3 } })
+      .jpeg({ quality: 100 }).toBuffer();
+    // A genuinely large source (the case names 2.1 MB; the assertion
+    // that matters is the far-end reduction below, not the exact size).
+    expect(source.byteLength).toBeGreaterThan(1_400_000);
+
+    await page.getByTestId(`user-avatar-input-${id}`).setInputFiles({
+      name: "photo.jpg", mimeType: "image/jpeg", buffer: source,
+    });
+
+    // The cropper opens; the preview renders from the crop (a canvas).
+    await expect(page.getByTestId(`avatar-cropper-${id}`)).toBeVisible();
+    await expect(page.getByTestId(`avatar-crop-preview-${id}`)).toBeVisible();
+
+    const [resp] = await Promise.all([
+      page.waitForResponse(r => r.url().includes(`/avatar`) && r.request().method() === "POST"),
+      page.getByTestId(`avatar-crop-confirm-${id}`).click(),
+    ]);
+    expect(resp.status()).toBe(200);
+
+    // The preview element renders from the cropped result, not the raw file.
+    await expect(page.getByTestId(`user-avatar-preview-${id}`)).toBeVisible();
+
+    // The far end on disk: <=500px longest edge, materially < 2.1 MB,
+    // recorded in profile.yaml with a matching extension.
+    await expect.poll(async () => (await storedAvatar(tracker.root, id))?.width ?? 0)
+      .toBeGreaterThan(0);
+    const stored = await storedAvatar(tracker.root, id);
+    expect(stored).toBeDefined();
+    expect(Math.max(stored!.width, stored!.height)).toBeLessThanOrEqual(500);
+    // Materially smaller — an order of magnitude below the source.
+    expect(stored!.bytes).toBeLessThan(source.byteLength / 10);
+    // copyAvatar always writes JPG; the recorded name matches the file.
+    expect(stored!.ext).toBe("jpg");
+
+    // The avatar now renders in the Settings panel (img, not initials)…
+    await expect(page.getByTestId(`user-avatar-${id}`)).toBeVisible();
+    await expect(page.getByTestId(`user-initials-${id}`)).toHaveCount(0);
+
+    // …and in the header menu, as the stored image rather than initials.
+    await page.getByTestId("user-menu-trigger").click();
+    const menuAvatar = page.getByTestId("user-menu-current-avatar");
+    await expect(menuAvatar).toBeVisible();
+    expect(await menuAvatar.evaluate(el => el.tagName)).toBe("IMG");
+  });
+
+  // @verifies PRU-27
+  test("PRU-27: a 4000x3000 source is clamped to <=500px, an order of magnitude smaller", async ({
+    page,
+    tracker,
+  }) => {
+    await page.goto(`${tracker.baseURL}/settings/users`);
+    const id = await selfId(page);
+
+    const noise = Buffer.alloc(4000 * 3000 * 3);
+    for (let i = 0; i < noise.length; i++) noise[i] = (i * 40503) & 0xff;
+    const source = await sharp(noise, { raw: { width: 4000, height: 3000, channels: 3 } })
+      .jpeg({ quality: 95 }).toBuffer();
+
+    await page.getByTestId(`user-avatar-input-${id}`).setInputFiles({
+      name: "huge.jpg", mimeType: "image/jpeg", buffer: source,
+    });
+    await expect(page.getByTestId(`avatar-cropper-${id}`)).toBeVisible();
+
+    const [resp] = await Promise.all([
+      page.waitForResponse(r => r.url().includes(`/avatar`) && r.request().method() === "POST"),
+      page.getByTestId(`avatar-crop-confirm-${id}`).click(),
+    ]);
+    expect(resp.status()).toBe(200);
+
+    await expect.poll(async () => (await storedAvatar(tracker.root, id))?.bytes ?? 0)
+      .toBeGreaterThan(0);
+    const stored = await storedAvatar(tracker.root, id);
+    // <=500px longest edge, aspect preserved (a centred square crop of
+    // a 4:3 photo is square once cropped, so the clamp is symmetric).
+    expect(Math.max(stored!.width, stored!.height)).toBeLessThanOrEqual(500);
+    // An order of magnitude smaller than the multi-MB source.
+    expect(stored!.bytes).toBeLessThan(source.byteLength / 10);
+    // No frozen dialog: the cropper is gone and the panel is interactive.
+    await expect(page.getByTestId(`avatar-cropper-${id}`)).toHaveCount(0);
+  });
+
+  // @verifies PRU-28
+  test("PRU-28: a 64x64 source is not upscaled to 500px", async ({ page, tracker }) => {
+    await page.goto(`${tracker.baseURL}/settings/users`);
+    const id = await selfId(page);
+
+    const source = await sharp({
+      create: { width: 64, height: 64, channels: 3, background: "#3355aa" },
+    }).png().toBuffer();
+
+    await page.getByTestId(`user-avatar-input-${id}`).setInputFiles({
+      name: "small.png", mimeType: "image/png", buffer: source,
+    });
+    await expect(page.getByTestId(`avatar-cropper-${id}`)).toBeVisible();
+    // Drop the crop size to the full image so the whole 64px is kept —
+    // the default 0.9 crop would otherwise land at ~58px, still <=64.
+    const slider = page.getByTestId(`avatar-crop-size-${id}`);
+    await slider.fill(await slider.getAttribute("max") ?? "64");
+
+    const [resp] = await Promise.all([
+      page.waitForResponse(r => r.url().includes(`/avatar`) && r.request().method() === "POST"),
+      page.getByTestId(`avatar-crop-confirm-${id}`).click(),
+    ]);
+    expect(resp.status()).toBe(200);
+
+    await expect.poll(async () => (await storedAvatar(tracker.root, id))?.width ?? 0)
+      .toBeGreaterThan(0);
+    const stored = await storedAvatar(tracker.root, id);
+    // The server does not enlarge: the stored longest edge stays <=64,
+    // never blown up to 500.
+    expect(Math.max(stored!.width, stored!.height)).toBeLessThanOrEqual(64);
+    expect(Math.max(stored!.width, stored!.height)).toBeGreaterThan(1);
+  });
+
+  // @verifies PRU-29
+  test("PRU-29: an animated GIF is flagged and stored as a single still frame", async ({
+    page,
+    tracker,
+  }) => {
+    await page.goto(`${tracker.baseURL}/settings/users`);
+    const id = await selfId(page);
+
+    const twoFrameGif = build2FrameGif();
+
+    await page.getByTestId(`user-avatar-input-${id}`).setInputFiles({
+      name: "spin.gif", mimeType: "image/gif", buffer: twoFrameGif,
+    });
+
+    // PRU-29: the cropper opens and states it stores a single frame.
+    await expect(page.getByTestId(`avatar-cropper-${id}`)).toBeVisible();
+    await expect(page.getByTestId(`avatar-animated-note-${id}`))
+      .toContainText(/single frame/i);
+
+    const [resp] = await Promise.all([
+      page.waitForResponse(r => r.url().includes(`/avatar`) && r.request().method() === "POST"),
+      page.getByTestId(`avatar-crop-confirm-${id}`).click(),
+    ]);
+    expect(resp.status()).toBe(200);
+
+    await expect.poll(async () => (await storedAvatar(tracker.root, id))?.bytes ?? 0)
+      .toBeGreaterThan(0);
+    const stored = await storedAvatar(tracker.root, id);
+    // Stored as a single-frame JPG, not the animated GIF.
+    expect(stored!.ext).toBe("jpg");
+    const meta = await sharp(await readFile(
+      path.join(tracker.root, ".loctt", "users", id, "avatar.jpg"),
+    )).metadata();
+    // A JPEG has no multi-page animation; pages is undefined or 1.
+    expect(meta.pages ?? 1).toBe(1);
+  });
+
+  // @verifies PRU-31
+  test("PRU-31: removing an avatar clears profile.yaml and the file, reverting to initials", async ({
+    page,
+    tracker,
+  }) => {
+    await page.goto(`${tracker.baseURL}/settings/users`);
+    const id = await selfId(page);
+
+    // First store an avatar.
+    const source = await sharp({
+      create: { width: 300, height: 300, channels: 3, background: "#227722" },
+    }).png().toBuffer();
+    await page.getByTestId(`user-avatar-input-${id}`).setInputFiles({
+      name: "a.png", mimeType: "image/png", buffer: source,
+    });
+    await expect(page.getByTestId(`avatar-cropper-${id}`)).toBeVisible();
+    await Promise.all([
+      page.waitForResponse(r => r.url().includes(`/avatar`) && r.request().method() === "POST"),
+      page.getByTestId(`avatar-crop-confirm-${id}`).click(),
+    ]);
+    await expect.poll(async () => (await storedAvatar(tracker.root, id))?.bytes ?? 0)
+      .toBeGreaterThan(0);
+    await expect(page.getByTestId(`user-avatar-${id}`)).toBeVisible();
+
+    // Remove it.
+    const [resp] = await Promise.all([
+      page.waitForResponse(r => r.url().includes(`/avatar`) && r.request().method() === "DELETE"),
+      page.getByTestId(`user-avatar-remove-${id}`).click(),
+    ]);
+    expect(resp.status()).toBe(200);
+
+    // profile.yaml no longer records an avatar, and the file is gone.
+    await expect.poll(async () => storedAvatar(tracker.root, id)).toBeUndefined();
+    await expect(
+      readFile(path.join(tracker.root, ".loctt", "users", id, "avatar.jpg")),
+    ).rejects.toThrow();
+
+    // Every surface reverts to initials in the same render — the
+    // Settings cell…
+    await expect(page.getByTestId(`user-initials-${id}`)).toBeVisible();
+    await expect(page.getByTestId(`user-avatar-${id}`)).toHaveCount(0);
+
+    // …and the header menu (a span with initials, no <img>).
+    await page.getByTestId("user-menu-trigger").click();
+    const menuAvatar = page.getByTestId("user-menu-current-avatar");
+    await expect(menuAvatar).toBeVisible();
+    expect(await menuAvatar.evaluate(el => el.tagName)).toBe("SPAN");
+  });
+
+  // @verifies PRU-39
+  test("PRU-39: a truncated image fails at browser decode with nothing stored", async ({
+    page,
+    tracker,
+  }) => {
+    await page.goto(`${tracker.baseURL}/settings/users`);
+    const id = await selfId(page);
+
+    const posts: string[] = [];
+    page.on("request", req => {
+      if (req.method() === "POST" && req.url().includes("/avatar")) posts.push(req.url());
+    });
+
+    // A valid JPEG header followed by garbage / truncation — decodes fail.
+    const good = await sharp({
+      create: { width: 200, height: 200, channels: 3, background: "#888" },
+    }).jpeg().toBuffer();
+    const truncated = good.subarray(0, Math.floor(good.byteLength / 2));
+
+    await page.getByTestId(`user-avatar-input-${id}`).setInputFiles({
+      name: "broken.jpg", mimeType: "image/jpeg", buffer: truncated,
+    });
+
+    // PRU-39: the failure is attributed honestly, and no cropper opens.
+    const problem = page.getByTestId(`user-avatar-problem-${id}`);
+    await expect(problem).toBeVisible();
+    await expect(problem).toContainText(/broken\.jpg/);
+    await expect(problem).toContainText(/not changed|corrupt|decode/i);
+    await expect(page.getByTestId(`avatar-cropper-${id}`)).toHaveCount(0);
+
+    // Nothing was posted or stored.
+    expect(posts).toEqual([]);
+    expect(await storedAvatar(tracker.root, id)).toBeUndefined();
+
+    // The panel stays interactive: the input can be used again.
+    await expect(page.getByTestId(`user-avatar-input-${id}`)).toBeEnabled();
+  });
+
+  // @verifies PRU-40
+  test("PRU-40: a server-side failure keeps the crop for retry and names the failure", async ({
+    page,
+    tracker,
+  }) => {
+    await page.goto(`${tracker.baseURL}/settings/users`);
+    const id = await selfId(page);
+
+    // Fail the first POST at the network layer to stand in for a 500 /
+    // disk-full server failure after a successful crop.
+    let failed = false;
+    await page.route(`**/api/users/${id}/avatar`, route => {
+      if (route.request().method() === "POST" && !failed) {
+        failed = true;
+        void route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ code: "unknown", message: "disk full", data_state: "not_saved" }),
+        });
+        return;
+      }
+      void route.continue();
+    });
+
+    const source = await sharp({
+      create: { width: 300, height: 300, channels: 3, background: "#aa2222" },
+    }).png().toBuffer();
+    await page.getByTestId(`user-avatar-input-${id}`).setInputFiles({
+      name: "c.png", mimeType: "image/png", buffer: source,
+    });
+    await expect(page.getByTestId(`avatar-cropper-${id}`)).toBeVisible();
+    await page.getByTestId(`avatar-crop-confirm-${id}`).click();
+
+    // The error states the image was prepared but not saved, and names it.
+    const err = page.getByTestId(`user-avatar-error-${id}`);
+    await expect(err).toBeVisible();
+    await expect(err).toContainText(/prepared but not saved/i);
+    await expect(err).toContainText(/disk full/);
+    // Nothing landed on disk on the failed attempt.
+    expect(await storedAvatar(tracker.root, id)).toBeUndefined();
+
+    // Retry re-posts the already-cropped image without re-picking.
+    const [resp] = await Promise.all([
+      page.waitForResponse(r => r.url().includes(`/avatar`) && r.request().method() === "POST"),
+      page.getByTestId(`user-avatar-retry-${id}`).click(),
+    ]);
+    expect(resp.status()).toBe(200);
+    await expect.poll(async () => (await storedAvatar(tracker.root, id))?.bytes ?? 0)
+      .toBeGreaterThan(0);
   });
 });
 

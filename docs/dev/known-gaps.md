@@ -3490,6 +3490,19 @@ Covered by the PRU-42 specs in
 `countUserReferences` unit tests in `users/manage.test.ts`. Record kept
 below.
 
+**Flaky (pre-existing, found 2026-09-05).** The PRU-42 spec
+"choosing archive from the delete dialog … leaves references intact"
+(`flow-settings-projects-users.spec.ts:~1276`) intermittently fails at
+`expect(await userIdByName(tracker, "Dave")).toBe(daveId)` with
+`Received: undefined`. `userIdByName` parses `loctt user list --all`
+stdout with a tab-anchored regex; under parallel Playwright load the
+lookup sometimes returns undefined (a list-parse/timing issue in the
+spec helper, not the avatar work). Confirmed present on the clean
+baseline with the avatar changes stashed, so it is unrelated to the
+avatar cropper/removal build. Not fixed here (out of the avatar
+scope). To reproduce: run the spec file under `--workers=5`; it passes
+in isolation.
+
 **Found 2026-09-03.** `UsersPanel.tsx`'s row actions (`:283-309`) offer
 Archive/Unarchive only. There is no Delete control, no reference count
 split by role, no permanent-vs-reversible copy and no deliberate

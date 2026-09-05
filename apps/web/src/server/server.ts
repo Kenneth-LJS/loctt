@@ -2329,6 +2329,37 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
+  const handleRemoveAvatar: RouteHandler = async ({ res, locttDir, captures }) => {
+    // PRU-31: remove clears the profile's `avatar` key and deletes the
+    // file under users/<id>/. Idempotent in core, so a double-remove
+    // (or removing from a user who has none) is a clean 200, not a 404.
+    const ref = captures[0] ?? "";
+    let target;
+    try {
+      target = await resolveUserRef(locttDir, ref);
+    } catch (err) {
+      if (err instanceof UserError) {
+        error(res, err.message, 404, {
+          code: "not_found",
+          data_state: "not_saved",
+          recovery: { kind: "reload" },
+        });
+        return;
+      }
+      throw err;
+    }
+    try {
+      const updated = await updateUser(locttDir, target.id, { removeAvatar: true });
+      json(res, updated);
+    } catch (err) {
+      if (err instanceof UserError) {
+        error(res, err.message, 400, REJECTED_WRITE);
+        return;
+      }
+      throw err;
+    }
+  };
+
   const handleArchiveUser: RouteHandler = async ({ res, locttDir, captures }) => {
     const ref = captures[0] ?? "";
     try {
@@ -4438,6 +4469,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "GET", pattern: USER_USAGE_RE, handler: handleUserUsage },
     { method: "GET", pattern: USER_AVATAR_RE, handler: handleGetAvatar },
     { method: "POST", pattern: USER_AVATAR_RE, handler: handleUploadAvatar },
+    { method: "DELETE", pattern: USER_AVATAR_RE, handler: handleRemoveAvatar },
     { method: "GET", pattern: TASK_COMMENTS_RE, handler: handleListComments },
     { method: "POST", pattern: TASK_COMMENTS_RE, handler: handlePostComment },
     { method: "PUT", pattern: TASK_COMMENT_ID_RE, handler: handleEditComment },

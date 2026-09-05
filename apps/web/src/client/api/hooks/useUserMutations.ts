@@ -107,9 +107,9 @@ export function useUserReferences(id: string | undefined) {
 }
 
 /**
- * PRU-13/PRU-27/PRU-40: the file posted here is the **already
- * compressed** one, so a retry re-posts it rather than making the user
- * re-pick the original.
+ * PRU-13/PRU-27/PRU-40: the file posted here is the **already cropped**
+ * one, so a retry re-posts it rather than making the user re-pick and
+ * re-crop the original.
  */
 export function useUploadAvatar() {
   const qc = useQueryClient();
@@ -118,6 +118,22 @@ export function useUploadAvatar() {
       apiClient.postFile<UserProfile>(
         `/api/users/${encodeURIComponent(id)}/avatar`,
         file,
+      ),
+    onSuccess: () => { invalidateUserConsumers(qc); },
+  });
+}
+
+/**
+ * PRU-31: removing an avatar clears the `avatar` key from profile.yaml
+ * and deletes the file. Invalidating the user consumers reverts every
+ * surface — header, list, detail — to the initials fallback.
+ */
+export function useRemoveAvatar() {
+  const qc = useQueryClient();
+  return useMutation<UserProfile, Error, { id: string }>({
+    mutationFn: ({ id }) =>
+      apiClient.delete<UserProfile>(
+        `/api/users/${encodeURIComponent(id)}/avatar`,
       ),
     onSuccess: () => { invalidateUserConsumers(qc); },
   });

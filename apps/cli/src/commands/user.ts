@@ -40,7 +40,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--avatar", "--email", "--name", "--remap-to", "--sweep-pins", "--switch", "--timezone", "--unassign", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--avatar", "--email", "--name", "--remap-to", "--remove-avatar", "--sweep-pins", "--switch", "--timezone", "--unassign", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -126,13 +126,21 @@ export async function run(args: string[], root: string): Promise<void> {
         const email = getArg(args, "--email");
         const timezone = getArg(args, "--timezone");
         const avatarSourcePath = getArg(args, "--avatar");
+        const removeAvatar = hasFlag(args, "--remove-avatar");
+        if (removeAvatar && avatarSourcePath !== undefined) {
+          throw new UsageError(
+            "--avatar and --remove-avatar are mutually exclusive",
+            "loctt user edit <id-or-name> [--avatar <path> | --remove-avatar]",
+          );
+        }
         // An edit that names nothing to change reported "Updated" and
         // exited 0, which reads as confirmation that a rename landed.
         if (name === undefined && email === undefined
-            && timezone === undefined && avatarSourcePath === undefined) {
+            && timezone === undefined && avatarSourcePath === undefined
+            && !removeAvatar) {
           throw new UsageError(
             "nothing to change",
-            "loctt user edit <id-or-name> [--name <n>] [--email <e>] [--timezone <tz>] [--avatar <path>]",
+            "loctt user edit <id-or-name> [--name <n>] [--email <e>] [--timezone <tz>] [--avatar <path> | --remove-avatar]",
           );
         }
         await updateUser(locttDir, target.id, {
@@ -140,6 +148,7 @@ export async function run(args: string[], root: string): Promise<void> {
           ...(email !== undefined ? { email } : {}),
           ...(timezone !== undefined ? { timezone } : {}),
           ...(avatarSourcePath !== undefined ? { avatarSourcePath } : {}),
+          ...(removeAvatar ? { removeAvatar: true } : {}),
         });
         console.log(`Updated user ${target.id}`);
       });

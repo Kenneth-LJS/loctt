@@ -1,4 +1,4 @@
-export { MAX_AVATAR_BYTES } from "./avatar.js";
+export { MAX_AVATAR_BYTES, removeAvatar } from "./avatar.js";
 export {
   CurrentUserError,
   readCurrentUserId,

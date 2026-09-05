@@ -560,7 +560,9 @@ Returns the created user as JSON.
 
 ### `edit_user`
 
-Avatars are not settable via MCP — use the CLI or web UI.
+*Setting* an avatar is not exposed via MCP (binary upload is a poor
+protocol fit) — use the CLI or web UI. *Removing* one needs no binary,
+so `remove_avatar` is available here.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -568,6 +570,7 @@ Avatars are not settable via MCP — use the CLI or web UI.
 | `name` | string | no | New display name |
 | `email` | string \| null | no | Pass `null` to clear |
 | `timezone` | string | no | New IANA timezone |
+| `remove_avatar` | boolean | no | Clear the avatar (deletes the file and the profile reference) |
 
 ### `archive_user` / `unarchive_user`
 

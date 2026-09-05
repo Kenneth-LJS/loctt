@@ -15,7 +15,7 @@ import {
 } from "../state/index.js";
 import type { JournalEntry } from "../state/journal.js";
 import { loadAllTasks } from "../task/load-all.js";
-import { copyAvatar } from "./avatar.js";
+import { copyAvatar, removeAvatar } from "./avatar.js";
 import { readCurrentUserId, writeCurrentUserId } from "./current.js";
 import { UserError } from "./errors.js";
 import { loadUserProfile, saveUserProfile, userExists } from "./profile.js";
@@ -97,6 +97,7 @@ export interface EditUserOptions {
   readonly email?: string | null;        // null clears the field
   readonly timezone?: string;
   readonly avatarSourcePath?: string;    // replaces existing avatar
+  readonly removeAvatar?: boolean;       // clears the avatar (PRU-31)
 }
 
 /** Mutates an existing user's profile. */
@@ -109,7 +110,14 @@ export async function updateUser(
     const existing = await loadUserProfile(locttDir, userId);
 
     let avatar = existing.avatar;
-    if (changes.avatarSourcePath !== undefined) {
+    if (changes.removeAvatar === true) {
+      // PRU-31: remove wins over a same-call set (which would be a
+      // contradictory request); clear the file and drop the key.
+      if (existing.avatar !== undefined) {
+        await removeAvatar(locttDir, userId, existing.avatar);
+      }
+      avatar = undefined;
+    } else if (changes.avatarSourcePath !== undefined) {
       avatar = await copyAvatar(locttDir, userId, changes.avatarSourcePath);
     }
 
