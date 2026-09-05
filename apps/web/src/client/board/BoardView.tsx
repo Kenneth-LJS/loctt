@@ -1,4 +1,4 @@
-import type { CardLayoutField, TaskFrontmatterPublic } from "@loctt/contracts";
+import type { CardLayoutField } from "@loctt/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -6,6 +6,7 @@ import { ApiError } from "../api/client.ts";
 import { useLabels, useMilestones, useProjects, useSprints, useUsers } from "../api/hooks/sidebarData.ts";
 import { useBoardMove } from "../api/hooks/useBoardMove.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
+import type { TaskListRow } from "../api/hooks/useTasks.ts";
 import { tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
@@ -477,6 +478,7 @@ export function BoardView() {
         >
           <BoardCard
             task={draggedTask}
+            health={draggedTask.health}
             layout={cardLayout}
             lookups={lookups}
             milestones={milestones.data?.items ?? []}
@@ -537,7 +539,7 @@ function ChipsBar({
   loading,
 }: {
   readonly columns: readonly BoardColumn[];
-  readonly counts: ReadonlyMap<string, readonly TaskFrontmatterPublic[]>;
+  readonly counts: ReadonlyMap<string, readonly TaskListRow[]>;
   readonly hidden: readonly string[];
   readonly onToggle: (id: string) => void;
   readonly loading: boolean;
@@ -594,7 +596,7 @@ function Column({
   onKeyboardMove,
 }: {
   readonly column: BoardColumn;
-  readonly tasks: readonly TaskFrontmatterPublic[];
+  readonly tasks: readonly TaskListRow[];
   readonly layout: readonly CardLayoutField[];
   readonly lookups: ReturnType<typeof buildLookups>;
   readonly milestones: readonly { id: string; name: string }[];
@@ -780,6 +782,7 @@ function Column({
                 <DropIndicator active={dropIndex === i} />
                 <BoardCard
                   task={task}
+                  health={task.health}
                   layout={columnLayout}
                   lookups={lookups}
                   milestones={milestones}

@@ -380,6 +380,7 @@ function ConflictRow({ conflict, decision, onChoose }: {
           label="Local"
           value={conflict.local.display}
           drift={conflict.local.drift?.reason}
+          corrupt={conflict.local.corrupt}
           selected={chosen === "local"}
           onClick={() => { onChoose("local"); }}
         />
@@ -388,6 +389,7 @@ function ConflictRow({ conflict, decision, onChoose }: {
           label="Remote"
           value={conflict.remote.display}
           drift={conflict.remote.drift?.reason}
+          corrupt={conflict.remote.corrupt}
           selected={chosen === "remote"}
           onClick={() => { onChoose("remote"); }}
         />
@@ -443,11 +445,12 @@ function ConflictRow({ conflict, decision, onChoose }: {
   );
 }
 
-function SideButton({ testId, label, value, drift, selected, onClick }: {
+function SideButton({ testId, label, value, drift, corrupt, selected, onClick }: {
   readonly testId: string;
   readonly label: string;
   readonly value: string;
   readonly drift: string | undefined;
+  readonly corrupt: { readonly rawText: string; readonly error: string } | undefined;
   readonly selected: boolean;
   readonly onClick: () => void;
 }) {
@@ -463,7 +466,15 @@ function SideButton({ testId, label, value, drift, selected, onClick }: {
     >
       <div className="text-[11px] uppercase text-text-tertiary">{label}</div>
       <div className="text-text-primary" data-testid={`${testId}-value`}>
-        {value}
+        {/* Phase-7B: a corrupt side shows the stored (corrupt) bytes, not
+            the degraded "(none)" — and a ⚠ so it is never mistaken for an
+            empty value the user might safely merge over. */}
+        {corrupt !== undefined ? corrupt.rawText : value}
+        {corrupt !== undefined && (
+          <span data-testid="git-reconcile-corrupt-marker" className="ml-1 text-danger-fg" title={corrupt.error}>
+            ⚠ corrupt
+          </span>
+        )}
         {drift !== undefined && (
           <span data-testid="git-reconcile-drift-marker" className="ml-1 text-warn-fg" title={drift}>
             ⚠ drift

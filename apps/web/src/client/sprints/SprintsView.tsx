@@ -1,4 +1,4 @@
-import type { CardLayoutField, SprintDef, TaskFrontmatterPublic } from "@loctt/contracts";
+import type { BrokenEntry, CardLayoutField, SprintDef, TaskFrontmatterPublic } from "@loctt/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -94,6 +94,18 @@ export function SprintsView() {
   );
 
   const sprintDefs: readonly SprintDef[] = sprints.data?.items ?? [];
+
+  // A138 wire: `GET /api/sprints` rides a `broken` list — sprint entries
+  // in `sprints.yaml` whose fields no longer validate (a hand edit, most
+  // often). Core degrades the READ (the good sprints still load), so this
+  // view MUST surface the broken ones rather than let them vanish
+  // silently (corruption-sweep § "surface it, don't hide it"; the same
+  // treatment Sidebar gives a broken saved view). The shared
+  // `useSprints` hook (api/hooks/sidebarData.ts) does not yet type
+  // `broken` on its `Page<SprintDef>`; reading it through a narrow
+  // accessor here keeps the wire contract honest without editing a hook
+  // another agent owns. See the REPORT note in the handoff.
+  const brokenSprints: readonly BrokenEntry[] = brokenOf(sprints.data);
 
   const columns = useMemo(
     () => deriveSprintColumns(sprintDefs, items),
@@ -320,6 +332,54 @@ export function SprintsView() {
         </div>
       )}
 
+      {/* A138 / corruption-sweep: broken `sprints.yaml` entries surfaced,
+          not dropped. Distinct from the *whole-file* parse failure above
+          (which returns an error page): here the file parsed, most
+          sprints loaded, and one or more entries are individually
+          corrupt. Named, marked ⚠, and shown even when there are healthy
+          sprints — the same "one bad entry never blanks the surface"
+          contract Sidebar honours for a broken saved view. */}
+      {brokenSprints.length > 0 && (
+        <div
+          role="alert"
+          data-testid="sprints-broken-config"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+        >
+          <p className="font-medium">
+            {brokenSprints.length === 1
+              ? "1 sprint could not be read from sprints.yaml"
+              : `${String(brokenSprints.length)} sprints could not be read from sprints.yaml`}
+            {" "}— fix{" "}
+            <code className="font-mono">.loctt/config/sprints.yaml</code> to
+            restore {brokenSprints.length === 1 ? "it" : "them"}.
+          </p>
+          <ul className="mt-1.5 space-y-1">
+            {brokenSprints.map(b => (
+              <li
+                key={b.id ?? `index-${String(b.index)}`}
+                data-testid={`sprint-broken-${b.id ?? `index-${String(b.index)}`}`}
+                data-broken-sprint={b.id ?? `index-${String(b.index)}`}
+                className="flex items-start gap-1.5"
+              >
+                <span aria-hidden="true" className="shrink-0">⚠</span>
+                <span className="min-w-0 flex-1">
+                  <span className="font-medium">
+                    {/* Name the entry: its id when the loader could read
+                        one, otherwise its position in the file (BrokenEntry
+                        drops `id` only when the id itself is what failed). */}
+                    {b.id ?? `Sprint entry #${String(b.index + 1)}`}
+                  </span>
+                  <span className="text-text-tertiary"> (broken)</span>
+                  <span className="mt-0.5 block break-words font-mono text-[11px] text-danger-fg/90">
+                    {b.error}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {unreadable.length > 0 && (
         <div
           role="alert"
@@ -337,7 +397,12 @@ export function SprintsView() {
           the fetch succeeded — a failed load and a parse failure both
           returned above, which is what makes the three
           distinguishable. */}
-      {!loading && realColumns.length === 0 && (
+      {/* `brokenSprints.length === 0` guard (A138 "tell broken from
+          none"): a tracker whose only sprint is corrupt has zero *valid*
+          columns, but it is not empty — the broken-config notice above
+          already explains it, and claiming "No sprints yet" here would
+          contradict that and hide the corruption. */}
+      {!loading && realColumns.length === 0 && brokenSprints.length === 0 && (
         <div
           data-testid="sprints-empty"
           className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[13px] text-text-tertiary"
@@ -454,6 +519,21 @@ function SprintWriter({
     );
   }
   return null;
+}
+
+/**
+ * The `broken` list off the sprints response, if the server sent one.
+ *
+ * `GET /api/sprints` rides a `broken: BrokenEntry[]` (A138), omitted when
+ * every entry parsed. The shared `useSprints` hook types its result as
+ * `Page<SprintDef>` and does not (yet) surface `broken`, so this reads it
+ * through a narrow structural check rather than a blind cast — an older
+ * server, or a clean file, simply has no `broken` and yields `[]`.
+ */
+function brokenOf(data: unknown): readonly BrokenEntry[] {
+  if (data === null || typeof data !== "object") return [];
+  const b = (data as { broken?: unknown }).broken;
+  return Array.isArray(b) ? (b as readonly BrokenEntry[]) : [];
 }
 
 /** Pulls a `config_invalid` envelope off a query error, if that is what it is. */

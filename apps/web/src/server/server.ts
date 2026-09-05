@@ -14,6 +14,7 @@ import type {
   DoctorCheckResponse,
   ErrorCode,
   ErrorResponse,
+  FieldHealth,
   LinkRequest,
   ListTasksRequest,
   MigrateResponse,
@@ -353,6 +354,36 @@ async function readBody(req: import("node:http").IncomingMessage, maxBytes = 102
 function json(res: import("node:http").ServerResponse, data: unknown, status = 200): void {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(data));
+}
+
+/**
+ * Projects a task's `health` findings to the wire shape (Phase-7B) — the
+ * same one `GET /api/tasks/:ref` uses (`raw` dropped, `rawText` kept), so
+ * the list/board/timeline surfaces read one shape everywhere. Returns
+ * `{}` when the task is clean so it spreads to nothing.
+ *
+ * SCOPE: this carries the INTRINSIC health the tolerant parse produced
+ * (a wrong-typed field lifted out of frontmatter). It does NOT run the
+ * extrinsic `classifyTaskHealth` pass (dangling refs / invalid enum
+ * values) — that needs the workflow/config and only the detail route's
+ * `buildShowModel` computes it. So a list row shows a wrong-typed field
+ * as broken, but a dangling assignee is surfaced on the detail view, not
+ * the list cell. A deliberate boundary: the list stays a cheap corpus
+ * scan; the full picture is one click away.
+ */
+function wireHealth(task: { readonly health?: readonly FieldHealth[] }): {
+  health?: readonly { field: string; kind: FieldHealth["kind"]; rawText: string; error: string; repair: FieldHealth["repair"] }[];
+} {
+  if (task.health === undefined || task.health.length === 0) return {};
+  return {
+    health: task.health.map(h => ({
+      field: h.field,
+      kind: h.kind,
+      rawText: h.rawText,
+      error: h.error,
+      repair: h.repair,
+    })),
+  };
 }
 
 /**
@@ -3331,7 +3362,7 @@ export function createWebApp(options: WebAppOptions) {
       }
       throw err;
     }
-    const frontmatters = result.map(t => projectTaskFrontmatter(t.frontmatter));
+    const frontmatters = result.map(t => ({ ...projectTaskFrontmatter(t.frontmatter), ...wireHealth(t) }));
     json(res, {
       ...paginated(frontmatters, page.offset, page.limit),
       // ERR-9: the count above is honest about what loaded; this says
@@ -3405,7 +3436,7 @@ export function createWebApp(options: WebAppOptions) {
       ...(workflowConfig !== undefined ? { workflowConfig } : {}),
       ctx: buildListContext(tasks),
     });
-    const frontmatters = result.map(t => projectTaskFrontmatter(t.frontmatter));
+    const frontmatters = result.map(t => ({ ...projectTaskFrontmatter(t.frontmatter), ...wireHealth(t) }));
     json(res, paginated(frontmatters, page.offset, page.limit));
   };
 
@@ -3654,6 +3685,10 @@ export function createWebApp(options: WebAppOptions) {
         ...(r.resolvedTitle !== undefined ? { resolvedTitle: r.resolvedTitle } : {}),
         ...(r.resolvedStatus !== undefined ? { resolvedStatus: r.resolvedStatus } : {}),
         missing: r.missing,
+        // S4 / corruption sweep: a corrupt target (present but with
+        // `health`, or object-fatally unreadable) reads distinctly from a
+        // deleted one. Thin passthrough of the core resolver's signal.
+        ...(r.targetCorrupt === true ? { targetCorrupt: true } : {}),
       })),
       // Field-level health (intrinsic + extrinsic) found on load, so the
       // detail view can render a degraded field with its stored value and

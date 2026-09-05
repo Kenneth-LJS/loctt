@@ -1,7 +1,18 @@
 import type { TaskFrontmatterPublic } from "@loctt/contracts";
 import { describe, expect, it } from "vitest";
 
+import type { WireHealth } from "../health/fieldHealth.ts";
 import { buildRows, dateProblem, dateProblemNote } from "./rows.ts";
+
+function health(over: Partial<WireHealth> & { field: string }): WireHealth {
+  return {
+    kind: "wrong_type",
+    rawText: "true",
+    error: "expected a date",
+    repair: "set_or_remove",
+    ...over,
+  };
+}
 
 /**
  * Date-anomaly classification (TML-18, TML-19, TML-20, TML-48).
@@ -89,6 +100,54 @@ describe("dateProblem", () => {
   it("TML-5: neither date is reported as undated", () => {
     expect(dateProblem(task({}))).toEqual({ kind: "undated" });
   });
+
+  // Phase-7B corruption sweep (S5).
+  it("reports a corrupt due_date (lifted to health, absent from frontmatter) as corrupt — not undated", () => {
+    // The disk value was wrong-typed, so the loader stripped it from
+    // frontmatter and recorded it in health. Frontmatter alone shows
+    // NOTHING, so a classifier that ignored health would call this
+    // `undated` and hide the corruption behind a deliberately-undated
+    // reason. The whole point of the case: the two must not conflate.
+    const p = dateProblem({
+      ...task({}),
+      health: [health({ field: "due_date", rawText: "true" })],
+    });
+    expect(p).toEqual({ kind: "corrupt", field: "due_date", rawText: "true" });
+    // The note names it corrupt and preserves the raw value (K27) —
+    // never presenting it as a plain missing date.
+    expect(dateProblemNote(p!)).toContain("corrupt");
+    expect(dateProblemNote(p!)).toContain("true");
+    expect(dateProblemNote(p!)).not.toContain("Invalid Date");
+  });
+
+  it("reports a corrupt start_date as corrupt, naming the field", () => {
+    const p = dateProblem({
+      ...task({ due_date: "2026-03-06" }),
+      health: [health({ field: "start_date", rawText: "[1, 2]" })],
+    });
+    expect(p).toEqual({ kind: "corrupt", field: "start_date", rawText: "[1, 2]" });
+  });
+
+  it("prefers the corrupt classification over the value branches", () => {
+    // A present, valid due_date does not make a task with a corrupt
+    // start_date read as `open_due`: corruption is the more important
+    // fact and is checked first.
+    const p = dateProblem({
+      ...task({ due_date: "2026-03-06" }),
+      health: [health({ field: "start_date", rawText: "42" })],
+    });
+    expect(p?.kind).toBe("corrupt");
+  });
+
+  it("ignores health on unrelated fields — a corrupt title does not fake a date problem", () => {
+    // A non-date corruption must not push a normally-dated task off the
+    // chart. Only start_date / due_date health counts here.
+    const p = dateProblem({
+      ...task({ start_date: "2026-03-01", due_date: "2026-03-05" }),
+      health: [health({ field: "title", kind: "missing_required", rawText: "" })],
+    });
+    expect(p).toBeUndefined();
+  });
 });
 
 describe("buildRows carries the problem onto the row", () => {
@@ -127,5 +186,45 @@ describe("buildRows carries the problem onto the row", () => {
       ["T-3", "invalid"],
       ["T-4", "undated"],
     ]);
+  });
+
+  // Phase-7B corruption sweep (S5).
+  it("routes a corrupt-dated task to the Unscheduled lane, marked corrupt and NOT dropped", () => {
+    const corrupt = {
+      ...task({ id: "c", key: "T-9" }),
+      health: [health({ field: "due_date", rawText: "true" })],
+    };
+    const undated = task({ id: "u", key: "T-8" });
+    const fine = task({ id: "ok", key: "T-1", start_date: "2026-03-01", due_date: "2026-03-05" });
+    const model = buildRows([corrupt, undated, fine], "none", {});
+
+    // The corrupt task is VISIBLE — present in the lane, not silently
+    // dropped (corruption must never make a task vanish).
+    const laneKeys = model.unscheduled.map(r => r.task.key).sort();
+    expect(laneKeys).toEqual(["T-8", "T-9"]);
+    // And it is DISTINCT from the deliberately-undated one: corrupt vs
+    // undated, not conflated.
+    const corruptRow = model.unscheduled.find(r => r.task.key === "T-9");
+    const undatedRow = model.unscheduled.find(r => r.task.key === "T-8");
+    expect(corruptRow?.problem?.kind).toBe("corrupt");
+    expect(undatedRow?.problem?.kind).toBe("undated");
+    // The fine task still charts normally — one corrupt neighbour does
+    // not blank the surface (P5).
+    expect(model.bands.flatMap(b => b.rows).map(r => r.task.key)).toEqual(["T-1"]);
+  });
+
+  it("still counts a corrupt-dated task under every grouping (no vanish)", () => {
+    // corrupt-date routing must not break TML-7's identical-count
+    // invariant: the task is unscheduled, so it is in the lane under
+    // every grouping.
+    const corrupt = {
+      ...task({ id: "c", key: "T-9", milestone: "m1" }),
+      health: [health({ field: "start_date", rawText: "{}" })],
+    };
+    for (const g of ["none", "milestone", "assignee", "status", "sprint"] as const) {
+      const model = buildRows([corrupt], g, {});
+      expect(model.unscheduled).toHaveLength(1);
+      expect(model.bands).toHaveLength(0);
+    }
   });
 });

@@ -7,7 +7,50 @@ import type {
   WorkflowConfig,
 } from "@loctt/contracts";
 
+import type { WireHealth } from "../health/fieldHealth.ts";
 import { parseDay } from "./geometry.ts";
+
+/**
+ * A task as the timeline receives it from the list feed: the public
+ * frontmatter projection, plus the optional per-field `health` list
+ * (A137 / A137.1) the feed carries for a corrupt task.
+ *
+ * The timeline reads `TaskFrontmatterPublic` everywhere for its dates,
+ * grouping keys and title; `health` is additive and omitted when the
+ * task is clean, so every existing call site (and every fixture that
+ * passes a bare frontmatter) is unaffected.
+ */
+export type TimelineTask = TaskFrontmatterPublic & {
+  readonly health?: readonly WireHealth[];
+};
+
+/**
+ * The health findings that make a date field unusable on the timeline.
+ *
+ * When a `start_date` / `due_date` is wrong-typed on disk, the tolerant
+ * loader lifts the whole field into `health` and leaves it *absent* from
+ * frontmatter (A137: the value is not put back under its typed key). So
+ * from the timeline's seat a corrupt date is indistinguishable, by the
+ * frontmatter alone, from a date the author never set — both are
+ * `undefined`. That is the silent conflation corruption must never do:
+ * a corrupt-dated task would land in the Unscheduled lane wearing the
+ * "No start or due date" reason of a *deliberately* undated task, and
+ * nothing would say the file is broken.
+ *
+ * Reading `health` here is what keeps the two apart. A whole-field
+ * finding on `start_date` or `due_date` (never an element index — dates
+ * are scalars) means the value on disk is corrupt, not absent.
+ */
+function corruptDateHealth(
+  task: TimelineTask,
+): { readonly field: "start_date" | "due_date"; readonly rawText: string } | undefined {
+  const health = task.health ?? [];
+  for (const field of ["start_date", "due_date"] as const) {
+    const h = health.find(e => e.field === field);
+    if (h !== undefined) return { field, rawText: h.rawText };
+  }
+  return undefined;
+}
 
 /**
  * Row grouping for the timeline (M3.3a: TML-5 through TML-8).
@@ -52,12 +95,20 @@ import { parseDay } from "./geometry.ts";
  *  - `open_start` — TML-19: a start with no due.
  *  - `open_due`   — TML-20: a due with no start.
  *  - `undated`    — TML-5: neither.
+ *  - `corrupt`    — Phase-7B: a date field is corrupt on disk (lifted to
+ *                   `health`, absent from frontmatter). Distinct from
+ *                   `undated`: the author *did* set a date; the stored
+ *                   value is wrong-typed. The verbatim `rawText` is
+ *                   carried so the marker preserves and shows the bad
+ *                   value (K27) instead of blanking it, and so the row
+ *                   reads as broken rather than merely unscheduled.
  */
 export type DateProblem =
   | { readonly kind: "reversed"; readonly start: string; readonly due: string }
   | { readonly kind: "invalid"; readonly field: "start_date" | "due_date"; readonly value: string }
   | { readonly kind: "open_start"; readonly start: string }
   | { readonly kind: "open_due"; readonly due: string }
+  | { readonly kind: "corrupt"; readonly field: "start_date" | "due_date"; readonly rawText: string }
   | { readonly kind: "undated" };
 
 /**
@@ -71,7 +122,17 @@ export type DateProblem =
  * `reversed` is checked last, since it is the only one that needs both
  * dates to have parsed.
  */
-export function dateProblem(task: TaskFrontmatterPublic): DateProblem | undefined {
+export function dateProblem(task: TimelineTask): DateProblem | undefined {
+  // Checked first: a corrupt date is absent from frontmatter (A137), so
+  // every branch below would read it as `undefined` and mis-report the
+  // task as merely undated / open-ended — the silent conflation this
+  // classifier exists to prevent. `health` is the only place the fault
+  // is recorded, so it has to be consulted before the value branches.
+  const corrupt = corruptDateHealth(task);
+  if (corrupt !== undefined) {
+    return { kind: "corrupt", field: corrupt.field, rawText: corrupt.rawText };
+  }
+
   const rawStart = task.start_date;
   const rawDue = task.due_date;
   const start = parseDay(rawStart);
@@ -107,6 +168,10 @@ export function dateProblemNote(problem: DateProblem): string {
       return `Due date is before start date (${problem.start} → ${problem.due})`;
     case "invalid":
       return `${problem.field} is not a date: "${problem.value}"`;
+    case "corrupt":
+      // Preserve and show the corrupt value verbatim (K27); name it as
+      // corrupt so the row is not read as a plain missing date.
+      return `${problem.field} is corrupt: ${problem.rawText}`;
     case "open_start":
       return `No due date — starts ${problem.start}`;
     case "open_due":
@@ -118,7 +183,7 @@ export function dateProblemNote(problem: DateProblem): string {
 
 /** One task's row in the chart. */
 export interface TimelineRow {
-  readonly task: TaskFrontmatterPublic;
+  readonly task: TimelineTask;
   /** Both dates present and parseable — the only rows that get a bar. */
   readonly scheduled: boolean;
   /**
@@ -174,7 +239,12 @@ const NONE = "__none__";
  * "not a date" cannot produce a bar, and treating it as scheduled would
  * render a bar at NaN pixels.
  */
-export function isScheduled(task: TaskFrontmatterPublic): boolean {
+export function isScheduled(task: TimelineTask): boolean {
+  // A corrupt date is absent from frontmatter, so `parseDay(undefined)`
+  // already fails this check and the task falls to the Unscheduled lane
+  // — where `dateProblem` marks it corrupt. No separate guard needed:
+  // a corrupt-dated task is never "scheduled", never gets a bar drawn
+  // at a NaN offset, and never silently disappears.
   return parseDay(task.start_date) !== undefined && parseDay(task.due_date) !== undefined;
 }
 
@@ -185,11 +255,11 @@ export function isScheduled(task: TaskFrontmatterPublic): boolean {
  * every task in one flat lane").
  */
 export function buildRows(
-  tasks: readonly TaskFrontmatterPublic[],
+  tasks: readonly TimelineTask[],
   grouping: TimelineGrouping,
   lookups: RowLookups,
 ): RowModel {
-  const scheduled: TaskFrontmatterPublic[] = [];
+  const scheduled: TimelineTask[] = [];
   const unscheduled: TimelineRow[] = [];
   for (const t of tasks) {
     if (isScheduled(t)) {

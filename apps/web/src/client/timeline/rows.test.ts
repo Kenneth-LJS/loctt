@@ -184,4 +184,15 @@ describe("buildRows — grouping", () => {
     const model = buildRows(tasks, "milestone", lookups);
     expect(model.bands[model.bands.length - 1]?.id).toBe("__none__");
   });
+
+  // O5 / integration-repair: a user whose profile name is corrupt or
+  // absent degrades to the id for the band label — it must not render a
+  // nameless "undefined" band or drop the assignee band entirely.
+  it("falls back to the user id when a user's name is absent", () => {
+    const nameless: UserProfile = { id: "u3", timezone: "UTC" } as UserProfile;
+    const t = task({ id: "n", start_date: "2026-03-02", due_date: "2026-03-03", assignee: "u3" });
+    const model = buildRows([t], "assignee", { ...lookups, users: [nameless] });
+    expect(model.bands.map(b => b.label)).toEqual(["u3"]);
+    expect(model.bands.map(b => b.label)).not.toContain("undefined");
+  });
 });

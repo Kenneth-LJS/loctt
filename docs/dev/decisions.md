@@ -8199,3 +8199,52 @@ rather than a specific "your only project is broken — fix projects.yaml".
 Safe, but could be clearer.
 
 **To revert.** Restore XS-62 over the valid set (re-introduces the blank).
+
+### A139 · A relationship edge reads corrupt vs missing vs healthy (S4)
+
+**Date:** 2026-09-06 · Agent · revertable. Surface agent S4 of the
+corruption sweep (`corruption-sweep-plan.md`).
+
+**Gap.** `resolveRelationships` (`core/task/show.ts`) collapsed three
+target states into two signals. A target corrupt in a *field* (e.g. a
+wrong-typed `title`) loaded via the tolerant `readTask` and rendered as an
+ordinary untitled-but-fine row — a corrupt task disguised as healthy. An
+*object-fatally* unreadable target (bad `id`/`key`, YAML syntax error)
+was caught alongside a genuinely-absent one and both rendered `missing:
+true` — the on-disk-but-broken file read as **deleted**.
+
+**Call.** Add `targetCorrupt?: boolean` to the resolved edge
+(`ResolvedRelationship` in core, `ResolvedRelationshipResponse` on the
+wire, `RelationshipRow` in the client). Four states, from `missing` ×
+`targetCorrupt`:
+- resolved-healthy — `missing:false`, corrupt absent → plain link.
+- resolved-but-corrupt — `missing:false`, `targetCorrupt:true` → the row
+  STILL links (task opens, can be repaired), keeps its key/title, and
+  wears a ⚠ "corrupt" affordance.
+- corrupt-but-unreadable — `missing:true`, `targetCorrupt:true` → reads as
+  corrupt (repair the file), not deleted.
+- absent/deleted — `missing:true`, corrupt absent → the REL-24 "no task
+  with id" dangling treatment, unchanged.
+
+The corrupt signal is derived, not stored: `(target.health?.length ?? 0)
+> 0` on the tolerant read, and the `UnreadableTaskError` vs
+`TaskNotFoundError` split (already distinct classes) for the missing case.
+Omitted (not `false`) on the healthy path so existing exact-shape edge
+tests and the wire stay unchanged.
+
+**Absent vs unreadable — distinguished, for free.** The two were already
+separate exception classes caught in one block; the split cost nothing.
+
+**Out-of-lane touch (flagged for coordinator).** The wire mapper in
+`apps/web/src/server/server.ts` (not an S4-assigned file) needed a
+one-line passthrough or the field would be dead on the wire — a thin
+`...(r.targetCorrupt === true ? { targetCorrupt: true } : {})`.
+
+**Cross-surface parity (for coordinator, NOT built here).** CLI `loctt
+show` and MCP `get_task` render relationship targets too and should mirror
+this corrupt-vs-missing distinction; S4's lane was web + core only. The
+core signal is now on `ResolvedRelationship` for both to consume.
+
+**To revert.** Drop `targetCorrupt` from the three shapes and the server
+passthrough; edges collapse back to resolved/missing (corrupt-in-title
+reads untitled, unreadable reads deleted).

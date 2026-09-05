@@ -16,6 +16,22 @@ import type { RelationshipRow as Row } from "./group.ts";
  * and it keeps its remove control, because a link the user cannot
  * clean up is the one thing worse than a broken one.
  *
+ * ## Corrupt is not missing (S4 / corruption sweep)
+ *
+ * A target can be *corrupt* rather than gone, and the two must not read
+ * alike. Three treatments, driven by `missing` × `targetCorrupt`:
+ *
+ *   - `missing:false`, `targetCorrupt:true` — the tolerant read loaded
+ *     the target but it carries health findings (e.g. a wrong-typed
+ *     title). The row STILL links (the task opens and can be repaired)
+ *     and keeps its key/title, but wears a ⚠ "corrupt" affordance so it
+ *     is not mistaken for an ordinary untitled-but-fine row.
+ *   - `missing:true`, `targetCorrupt:true` — on disk but object-fatally
+ *     unreadable (bad id/key, YAML syntax error). Reads as corrupt, NOT
+ *     as the deleted "no task with id" it used to show, so the user
+ *     knows there is a file to repair rather than a link to drop.
+ *   - `missing:true`, `targetCorrupt:false` — the genuine dangling link.
+ *
  * ## The remove control is present, not hover-only
  *
  * REL-12's first bullet asks for it on hover *and* on keyboard focus.
@@ -55,8 +71,16 @@ export function RelationshipRowView({
   readonly children?: React.ReactNode;
 }): React.JSX.Element {
   const label = row.missing
-    ? `Missing task ${row.target}`
+    ? row.targetCorrupt
+      ? `Corrupt task ${row.target}`
+      : `Missing task ${row.target}`
     : `${row.resolvedKey ?? row.target} ${row.resolvedTitle ?? ""}`.trim();
+
+  // A missing-and-corrupt target is on disk but object-fatally
+  // unreadable: corrupt, not deleted. It has no resolvable key/title (the
+  // read never produced a Task), so like the dangling case the id is all
+  // there is — but the treatment says "corrupt", not "no task with id".
+  const missingCorrupt = row.missing && row.targetCorrupt;
 
   return (
     <div
@@ -64,24 +88,36 @@ export function RelationshipRowView({
       data-target={row.target}
       data-type={row.type}
       data-missing={row.missing ? "true" : "false"}
+      data-corrupt={row.targetCorrupt ? "true" : "false"}
       className="group/row flex items-center gap-2 rounded px-1.5 py-1 hover:bg-bg-muted"
     >
       {children}
 
       {row.missing ? (
         <span
-          data-testid="relationship-broken"
+          data-testid={missingCorrupt ? "relationship-corrupt" : "relationship-broken"}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-danger-fg"
         >
           <span aria-hidden="true">⚠</span>
           <span className="truncate">
-            Broken link — no task with id{" "}
-            <code className="font-mono text-[12px]">{row.target}</code>
+            {missingCorrupt ? (
+              <>
+                Corrupt task — cannot be read; repair its file{" "}
+                <code className="font-mono text-[12px]">{row.target}</code>
+              </>
+            ) : (
+              <>
+                Broken link — no task with id{" "}
+                <code className="font-mono text-[12px]">{row.target}</code>
+              </>
+            )}
           </span>
         </span>
       ) : (
         <>
-          {/* REL-1's fourth bullet: the row links to /tasks/$key. */}
+          {/* REL-1's fourth bullet: the row links to /tasks/$key. A
+              corrupt-but-resolved target still links — the task opens and
+              can be repaired — it just carries the marker below. */}
           <Link
             to="/tasks/$key"
             params={{ key: row.resolvedKey ?? row.target }}
@@ -95,6 +131,19 @@ export function RelationshipRowView({
               {row.resolvedTitle}
             </span>
           </Link>
+          {row.targetCorrupt && (
+            /* S4: the target resolved but carries health findings. Mark
+               it so a corrupt task is not mistaken for a healthy,
+               untitled one. The row keeps its link and key/title. */
+            <span
+              data-testid="relationship-corrupt"
+              title="This linked task has a corrupt field. Open it to see and repair the problem."
+              className="flex shrink-0 items-center gap-1 rounded border border-danger-fg/50 px-1 py-0.5 text-[11px] text-danger-fg"
+            >
+              <span aria-hidden="true">⚠</span>
+              <span>corrupt</span>
+            </span>
+          )}
           <span className="shrink-0">
             <StatusBadge def={statusOf(row.resolvedStatus)} raw={row.resolvedStatus} />
           </span>

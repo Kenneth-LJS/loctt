@@ -115,6 +115,22 @@ function scalarValue(raw: unknown): ConflictValue {
   return { raw, display: JSON.stringify(raw) };
 }
 
+/**
+ * Phase-7B: if `side` (the local or remote task) has a `health` finding
+ * on `field` — whole-field or an element of it — attach a `corrupt`
+ * marker to the ConflictValue so the reconcile UI can ⚠ it and the user
+ * does not merge a corrupt value as if it were merely empty. The corrupt
+ * value was lifted out of frontmatter, so `value.display` here is the
+ * degraded "(none)" stand-in; the marker carries the real stored bytes.
+ */
+function withCorrupt(value: ConflictValue, side: Task, field: string): ConflictValue {
+  const h = side.health?.find(
+    e => e.field === field || e.field.startsWith(`${field}[`) || e.field.startsWith(`${field}.`),
+  );
+  if (h === undefined) return value;
+  return { ...value, corrupt: { rawText: h.rawText, error: h.error } };
+}
+
 /** A `parent` ULID resolved to `key · title` (GIT-13). */
 function relationshipValue(
   targetId: string | undefined,
@@ -224,8 +240,8 @@ export function computeTaskConflicts(
         taskId, taskKey, taskTitle,
         field, fieldLabel: label,
         kind: "enum",
-        local: resolveEnum(l, defs),
-        remote: resolveEnum(r, defs),
+        local: withCorrupt(resolveEnum(l, defs), local, field),
+        remote: withCorrupt(resolveEnum(r, defs), remote, field),
         options: defs.map(d => ({ key: d.key, label: d.label } satisfies ConflictOption)),
       });
     } else {
@@ -233,8 +249,8 @@ export function computeTaskConflicts(
         taskId, taskKey, taskTitle,
         field, fieldLabel: label,
         kind: "scalar",
-        local: scalarValue(l),
-        remote: scalarValue(r),
+        local: withCorrupt(scalarValue(l), local, field),
+        remote: withCorrupt(scalarValue(r), remote, field),
       });
     }
   }
