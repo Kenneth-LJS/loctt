@@ -12,6 +12,8 @@ export {
   CalendarConfigSchema,
   HolidayDefSchema,
 } from "./calendar.js";
+export type { BrokenEntry } from "./health.js";
+export { BrokenEntrySchema } from "./health.js";
 export type { HistoryEntry, HistoryKind } from "./history.js";
 export { HISTORY_KINDS, HistoryEntrySchema } from "./history.js";
 export type { LabelDef, LabelsConfig } from "./labels.js";
