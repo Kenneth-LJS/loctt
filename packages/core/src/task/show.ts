@@ -1,9 +1,11 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { Task } from "@loctt/contracts";
+import type { Task, WorkflowConfig } from "@loctt/contracts";
 
+import type { AuxConfigs } from "../config/validation.js";
 import { getAttachmentsDir } from "../paths/index.js";
+import { classifyTaskHealth, withExtrinsicHealth } from "./health.js";
 import { lookupById, TaskNotFoundError, UnreadableTaskError } from "./lookup.js";
 import { mimeForFilename } from "./mime.js";
 
@@ -131,11 +133,14 @@ export async function resolveRelationships(
       try {
         const target = await lookupById(locttDir, r.target);
         const status = target.frontmatter.status;
+        const title = target.frontmatter.title;
         return {
           type: r.type,
           target: r.target,
           resolvedKey: target.frontmatter.key,
-          resolvedTitle: target.frontmatter.title,
+          // title is optional now (K26 — a target with a degraded title
+          // still resolves); include it only when present.
+          ...(title !== undefined ? { resolvedTitle: title } : {}),
           ...(status !== undefined ? { resolvedStatus: status } : {}),
           missing: false,
         };
@@ -177,6 +182,14 @@ export async function resolveRelationships(
 export async function buildShowModel(
   locttDir: string,
   task: Task,
+  /**
+   * Configs for extrinsic health classification (proposal § 4.6). When
+   * given, `invalid_value` / `dangling` findings are computed and merged
+   * onto `model.task.health` alongside the intrinsic findings, so a
+   * surface reads one list. Omit to report intrinsic health only (the
+   * detail view without a workflow loaded).
+   */
+  health?: { workflow?: WorkflowConfig; aux?: AuxConfigs },
 ): Promise<TaskShowModel> {
   // **Not `Promise.all` over both.** It was, and that made an
   // attachments failure reject the whole model — so once
@@ -195,12 +208,19 @@ export async function buildShowModel(
   // resolved has no honest page to show, and `resolveRelationships`
   // already tolerates the per-edge failures that are survivable.
   const relationships = await resolveRelationships(locttDir, task);
+  // Merge extrinsic health (invalid_value / dangling) onto the intrinsic
+  // health, so the model's task carries one list a surface can render.
+  let modelTask = task;
+  if (health !== undefined) {
+    const extrinsic = await classifyTaskHealth(locttDir, task, health.workflow, health.aux ?? {});
+    if (extrinsic.length > 0) modelTask = withExtrinsicHealth(task, extrinsic);
+  }
   try {
     const attachments = await discoverAttachments(locttDir, task.frontmatter.id);
-    return { task, attachments, relationships };
+    return { task: modelTask, attachments, relationships };
   } catch (err) {
     return {
-      task,
+      task: modelTask,
       attachments: [],
       relationships,
       attachmentsError: (err as Error).message,

@@ -1,5 +1,5 @@
 import type { QueriesConfig,QuerySort } from "./query.js";
-import type { TaskFrontmatterPublic } from "./task.js";
+import type { FieldHealthKind, TaskFrontmatterPublic } from "./task.js";
 import type { WorkflowConfig } from "./workflow.js";
 
 /** Request to create a new task. */
@@ -178,13 +178,23 @@ export interface TaskResponse {
   readonly relationships: readonly ResolvedRelationshipResponse[];
 
   /**
-   * Phase-7 SPIKE — field-local corruptions found while loading this
-   * task (a wrong-typed known field, e.g. `due_date`). Absent when the
-   * task is clean. Present so the detail view can render the field
-   * degraded and offer repair, instead of the whole task being
-   * unopenable. Each entry names the field and what the value should be.
+   * Field-level health findings for this task (proposal § 4.5). Absent
+   * when the task is clean. Present so the detail view can render a
+   * degraded field with its stored value (`rawText`) and offer repair,
+   * instead of the whole task being unopenable.
+   *
+   * `raw` is deliberately omitted from the wire — `rawText` is the
+   * one-line display form the client needs, and `raw` can be an
+   * arbitrary object the client never inspects (§ 4.5, review N3: one
+   * answer for every surface).
    */
-  readonly corruptions?: readonly { readonly field: string; readonly error: string }[];
+  readonly health?: readonly {
+    readonly field: string;
+    readonly kind: FieldHealthKind;
+    readonly rawText: string;
+    readonly error: string;
+    readonly repair: "set" | "remove" | "set_or_remove";
+  }[];
 }
 
 /**

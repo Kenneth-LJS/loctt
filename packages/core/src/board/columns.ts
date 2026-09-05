@@ -54,7 +54,10 @@ export interface ColumnTask {
   readonly id: string;
   readonly status?: string | undefined;
   readonly board_rank?: string | undefined;
-  readonly created_at: string;
+  // Optional (K26): a task with a degraded `created_at` still boards; it
+  // sorts as "" (earliest) among same-rank cards, then by id, which stays
+  // stable across reloads.
+  readonly created_at?: string | undefined;
 }
 
 /** Where a column came from, so the UI can explain the odd ones. */
@@ -242,8 +245,11 @@ export function sortColumn<T extends ColumnTask>(
     if (ra !== undefined && rb === undefined) return -1;
     if (ra === undefined && rb !== undefined) return 1;
     // Same rank, or both unranked: creation order, then id. Both are
-    // stable across reloads, which is the whole point (BRD-29).
-    if (a.created_at !== b.created_at) return a.created_at < b.created_at ? -1 : 1;
+    // stable across reloads, which is the whole point (BRD-29). A degraded
+    // created_at sorts as "" (earliest); the id tie-break keeps it stable.
+    const ac = a.created_at ?? "";
+    const bc = b.created_at ?? "";
+    if (ac !== bc) return ac < bc ? -1 : 1;
     return a.id < b.id ? -1 : 1;
   });
 }

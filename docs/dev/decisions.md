@@ -7964,3 +7964,100 @@ and `corruption-framework-review.md`.
 scope (`{id,key}` vs `{id,key,title,created_at,updated_at}`) and the
 byte-preserved→value-preserved P7 rewording. Both are pending his ruling
 before step-4 implementation of the parts they gate.
+
+### A136 · Corruption framework — build-time calls (Phase 7, step 3/4)
+
+**Date:** 2026-09-05 · Agent · revertable. Calls the proposal/§13 did not
+spell out at the code level, settled while building. See
+`docs/dev/corruption-audit.md`.
+
+1. **The write guard's "no new finding" (rule 1) is not exempt for
+   whole-record writers; it compares reparse-health against what the Task
+   *declares* in `after.health`.** § 13.1 B1 exempted "universal"
+   (whole-record) writers from the whole guard. But a `createTask` with a
+   malformed new value (a bad `due_date`) is a whole-record write that
+   *introduces* corruption, and must be refused — not written as a corrupt
+   task. So rule 1 fires for every writer: a finding present after the
+   write must have existed *before*, or be explicitly declared on the
+   `after.health` the writer handed in. Restore/merge declare their
+   carried health (so they pass); create declares none (so a bad new value
+   is refused as `CorruptWriteError` → `validation_failed` → 400). Only
+   rule 2 (a finding may leave only for a touched field) keeps the
+   whole-record exemption. `assertWriteSafe`, `io.ts`.
+   *To revert:* exempt universal writers from rule 1 too (reintroduces the
+   create-with-bad-value silent write).
+
+2. **`writeTask`'s `touched` defaults to `ALL_FIELDS_TOUCHED` ("*").** The
+   proposal has every writer *declare* its touched set. Rather than change
+   `writeTask`'s 21 call sites at once, its `touched` parameter defaults to
+   the whole-record sentinel; the mutation-style writers that must preserve
+   others (`setField`/`setFields`/`unsetField`, archive/unarchive, link/
+   unlink, bulk) pass an explicit narrow set. A caller that authors the
+   whole record (create, restore) keeps the default.
+   *To revert:* make `touched` required and thread it through all callers.
+
+3. **`buildShowModel` gains an optional `health` arg** (`{workflow, aux}`)
+   so extrinsic classification (`invalid_value`/`dangling`) runs where the
+   surfaces already load configs, merged onto the model task. The three
+   surfaces pass `loadArchivedGuardConfigs` as `aux` (it is a structural
+   superset of `AuxConfigs`). Omitting the arg reports intrinsic health
+   only. `show.ts`.
+   *To revert:* drop the arg; classify extrinsic health at each surface
+   instead.
+
+4. **CLI `show` filters dangling relationship-target findings out of its
+   health block and truncates any ULID in `rawText`.** A dangling
+   relationship edge is already rendered (truncated) in the Relationships
+   section; repeating it in "Needs attention" with the full 26-char target
+   ULID both duplicated the row and leaked the ULID K22 truncates.
+   `apps/cli/.../task-crud.ts`.
+   *To revert:* stop filtering; print every health entry verbatim.
+
+### K26 · Corruption fatal set is `{id, key}` — title and timestamps degrade
+
+**Date:** 2026-09-05 · **Ken's ruling — an agent may not revert this.**
+
+For the Phase-7 corruption framework: a wrong-typed frontmatter field
+makes the whole task object-fatal **only** when the offending field is
+`id` or `key` (the fields needed to *address* the task). `title`,
+`created_at`, and `updated_at` are **field-local** — a task with a broken
+title or timestamp loads in a degraded state (the bad field set aside in
+`health`, the rest intact) rather than becoming unreadable. This fully
+honors north-star principle 5 ("one bad field never blanks the object").
+
+Ken's reasoning: shrink to `{id, key}` if feasible, use 5 only if the
+shrink is never feasible. It is feasible — a bounded "thread `undefined`
+through the consumers of these three fields" change, the same pattern
+already applied to genuinely-optional fields — so it is done now, not
+deferred.
+
+**Cost accepted:** `title: string` (and the two timestamps) become
+optional in `TaskFrontmatter` AND the `.strict()` public projection,
+rippling into every list row, sort, export and API consumer at once.
+Done in the framework build rather than as a later step, because
+retrofitting the load path twice is worse.
+
+**To revert.** Ken's, not an agent's. (Supersedes proposal § 12 item 1
+and § 3.3's step-1 boundary, and the spike's `{id,key,title,created_at,
+updated_at}` boundary.)
+
+### K27 · North-star P7 is "value-preserved", not "byte-preserved"
+
+**Date:** 2026-09-05 · **Ken's ruling — an agent may not revert this.**
+
+North-star principle 7 said a corrupt/unknown field is left
+"byte-preserved". It is reworded to **value-preserved (YAML-equivalent)**:
+a field's *value* is never changed, but its YAML formatting (quote style,
+spacing) may shift because every write re-serializes through
+`stringifyYaml`.
+
+Ken's reasoning: value-preservation is what matters for UX/product — a
+user never perceives or depends on quote style, only on their data's
+meaning, which is guaranteed. And the literal "byte-preserved" wording is
+**already unmet today** (`frontmatter.ts:283` re-serializes every field
+on every write, corruption or not), so this makes the principle honest
+rather than weakening real behavior. Byte-identity would require a
+CST-preserving writer that buys the user nothing.
+
+**To revert.** Ken's, not an agent's. (Resolves the review's M1 and
+proposal § 13.4's escalation.)

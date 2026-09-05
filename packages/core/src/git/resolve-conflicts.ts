@@ -48,10 +48,19 @@ export interface ResolveResult {
   readonly unresolved: readonly PathPlan[];
 }
 
-/** Parses a raw `task.md` into frontmatter + body. */
+/**
+ * Parses a raw `task.md` into a Task, carrying `health` (§ 13.2 B2).
+ *
+ * Tolerant: a field-local corruption on either side degrades into
+ * `health` rather than throwing, and `health` is threaded to
+ * `assembleTaskFile` so the merged output re-emits the preserved raw
+ * value — a corrupt or unrecognised field must survive a git merge, not
+ * be dropped by an assemble that forgot it.
+ */
 function readTaskFile(raw: string): Task {
   const { rawYaml, body } = splitTaskFile(raw);
-  return { frontmatter: parseFrontmatter(rawYaml), body };
+  const { frontmatter, health } = parseFrontmatter(rawYaml);
+  return { frontmatter, body, ...(health.length > 0 ? { health } : {}) };
 }
 
 /** Recognises `tasks/<id>/task.md`. */
@@ -166,7 +175,7 @@ export async function resolveConflicts(
         const out = mergeTask(readTaskFile(localRaw), readTaskFile(incomingRaw), history);
         merged.push({
           path: conflict.path,
-          content: assembleTaskFile(out.merged.frontmatter, out.merged.body),
+          content: assembleTaskFile(out.merged),
         });
         // Buffer rather than push: `_history.yaml` may also arrive as
         // its own conflict in this same loop, and two entries for one

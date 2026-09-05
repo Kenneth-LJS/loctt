@@ -301,7 +301,10 @@ function replayTaskState(
   let inSprint = curSprint === sprintId;
 
   const snapshots: TaskReplayState[] = [
-    { inSprint, status, estimate, at: task.frontmatter.created_at },
+    // created_at is optional now (K26); a task with a degraded timestamp
+    // replays from "" — the earliest boundary — so it is treated as
+    // present for the whole window rather than dropping out of the chart.
+    { inSprint, status, estimate, at: task.frontmatter.created_at ?? "" },
   ];
 
   for (const e of sorted) {

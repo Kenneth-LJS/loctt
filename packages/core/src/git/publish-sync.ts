@@ -160,7 +160,8 @@ async function mergedTaskSet(
     try {
       const raw = await readFile(join(dir, rel), "utf-8");
       const { rawYaml, body } = splitTaskFile(raw);
-      return { frontmatter: parseFrontmatter(rawYaml), body };
+      const { frontmatter, health } = parseFrontmatter(rawYaml);
+      return { frontmatter, body, ...(health.length > 0 ? { health } : {}) };
     } catch {
       return undefined;
     }
@@ -181,7 +182,8 @@ async function mergedTaskSet(
   for (const m of firstPass.merged) {
     if (!/^tasks\/[^/]+\/task\.md$/.test(m.path)) continue;
     const { rawYaml, body } = splitTaskFile(m.content);
-    byPath.set(m.path, { frontmatter: parseFrontmatter(rawYaml), body });
+    const { frontmatter, health } = parseFrontmatter(rawYaml);
+    byPath.set(m.path, { frontmatter, body, ...(health.length > 0 ? { health } : {}) });
   }
   // Tasks the branch deleted are not part of the result.
   for (const d of plan.deletes) byPath.delete(d.path);

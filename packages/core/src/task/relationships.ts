@@ -4,10 +4,31 @@ import { effectiveInverseKey, isSymmetricRelationship, relationshipTypeKeys } fr
 import type { LocttErrorOptions } from "../errors.js";
 import { LocttError } from "../errors.js";
 import { withStateLock } from "../state/lock.js";
+import { CorruptFieldError } from "./health.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 import { lookupById, TaskNotFoundError } from "./lookup.js";
 import { toFrontmatter, toMutable } from "./mutable.js";
+
+/**
+ * The derived operation rule (proposal § 3.2): link/unlink must *read*
+ * `relationships` to merge an edge into it, so a wrong-typed
+ * `relationships` value (lifted into `health`) is a refuse, not a
+ * silent overwrite that discards the corrupt array. A135 keeps the
+ * shipped refusal here rather than defaulting the structure away.
+ */
+function assertRelationshipsReadable(task: Task): void {
+  const bad = (task.health ?? []).find(
+    h => h.field === "relationships" && h.kind === "wrong_type",
+  );
+  if (bad) throw new CorruptFieldError("relationships", bad.rawText);
+}
+
+/** Carries a task's health forward across a relationships write. */
+function carryRelHealth(task: Task): Task["health"] {
+  const carried = (task.health ?? []).filter(h => h.field !== "relationships");
+  return carried.length > 0 ? carried : undefined;
+}
 
 export class RelationshipError extends LocttError {
   constructor(message: string, opts: LocttErrorOptions = {}) {
@@ -244,6 +265,9 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
 
     // Forward side
     const task = await readTask(locttDir, taskId);
+    // Link must read+merge `relationships`; a wrong-typed value refuses
+    // rather than being overwritten (§ 3.2, A135).
+    assertRelationshipsReadable(task);
 
     if (task.frontmatter.id === target) {
       throw new RelationshipError(
@@ -329,6 +353,7 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
 
     if (inverseType) {
       inverseTask = await readTask(locttDir, target);
+      assertRelationshipsReadable(inverseTask);
       const inverseExisting = inverseTask.frontmatter.relationships ?? [];
       inverseUpdatedRels = addEdge(inverseExisting, inverseType, taskId);
     }
@@ -344,8 +369,9 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
     let result: Task;
     if (forwardUpdatedRels !== null) {
       const updatedFrontmatter = applyRelationships(task.frontmatter, forwardUpdatedRels, now);
-      result = { frontmatter: updatedFrontmatter, body: task.body };
-      await writeTask(locttDir, taskId, result);
+      const carried = carryRelHealth(task);
+      result = { frontmatter: updatedFrontmatter, body: task.body, ...(carried ? { health: carried } : {}) };
+      await writeTask(locttDir, taskId, result, new Set(["relationships", "updated_at"]));
       await appendHistory(locttDir, taskId, [{
         timestamp: now,
         kind: "link_added",
@@ -358,7 +384,10 @@ export async function linkTask(opts: LinkTaskOptions): Promise<Task> {
     // Persist inverse side
     if (inverseUpdatedRels !== null && inverseTask && inverseType) {
       const updatedInverse = applyRelationships(inverseTask.frontmatter, inverseUpdatedRels, now);
-      await writeTask(locttDir, target, { frontmatter: updatedInverse, body: inverseTask.body });
+      const carriedInv = carryRelHealth(inverseTask);
+      await writeTask(locttDir, target,
+        { frontmatter: updatedInverse, body: inverseTask.body, ...(carriedInv ? { health: carriedInv } : {}) },
+        new Set(["relationships", "updated_at"]));
       await appendHistory(locttDir, target, [{
         timestamp: now,
         kind: "link_added",
@@ -392,6 +421,9 @@ export async function unlinkTask(opts: UnlinkTaskOptions): Promise<Task> {
 
     // Forward side
     const task = await readTask(locttDir, taskId);
+    // Unlink must read+edit `relationships`; a wrong-typed value refuses
+    // rather than being overwritten (§ 3.2, A135).
+    assertRelationshipsReadable(task);
     const forwardExisting = task.frontmatter.relationships ?? [];
     const forwardUpdatedRels = removeEdge(forwardExisting, type, target);
 
@@ -445,8 +477,9 @@ export async function unlinkTask(opts: UnlinkTaskOptions): Promise<Task> {
     let result: Task;
     if (forwardUpdatedRels !== null) {
       const updatedFrontmatter = applyRelationships(task.frontmatter, forwardUpdatedRels, now);
-      result = { frontmatter: updatedFrontmatter, body: task.body };
-      await writeTask(locttDir, taskId, result);
+      const carried = carryRelHealth(task);
+      result = { frontmatter: updatedFrontmatter, body: task.body, ...(carried ? { health: carried } : {}) };
+      await writeTask(locttDir, taskId, result, new Set(["relationships", "updated_at"]));
       const entry: HistoryEntry = {
         timestamp: now,
         kind: "link_removed",
@@ -460,7 +493,10 @@ export async function unlinkTask(opts: UnlinkTaskOptions): Promise<Task> {
     // Persist inverse side
     if (inverseUpdatedRels !== null && inverseTask && inverseType) {
       const updatedInverse = applyRelationships(inverseTask.frontmatter, inverseUpdatedRels, now);
-      await writeTask(locttDir, target, { frontmatter: updatedInverse, body: inverseTask.body });
+      const carriedInv = carryRelHealth(inverseTask);
+      await writeTask(locttDir, target,
+        { frontmatter: updatedInverse, body: inverseTask.body, ...(carriedInv ? { health: carriedInv } : {}) },
+        new Set(["relationships", "updated_at"]));
       await appendHistory(locttDir, target, [{
         timestamp: now,
         kind: "link_removed",

@@ -303,9 +303,11 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
       return 0;
     });
   } else {
-    // Default sort: most recently updated first
+    // Default sort: most recently updated first. updated_at is optional
+    // now (K26); a task with a degraded timestamp sorts as "" (oldest),
+    // which lands it at the end of a most-recent-first list.
     filtered.sort((a, b) =>
-      b.frontmatter.updated_at.localeCompare(a.frontmatter.updated_at),
+      (b.frontmatter.updated_at ?? "").localeCompare(a.frontmatter.updated_at ?? ""),
     );
   }
 

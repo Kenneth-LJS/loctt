@@ -72,7 +72,15 @@ export const TOOLS: readonly ToolDef[] = [
       const ref = args["ref"] as string;
       const includeBody = (args["include_body"] as boolean | undefined) ?? true;
       const task = await lookupTask(locttDir, ref);
-      const model = await buildShowModel(locttDir, task);
+      // Load configs so extrinsic health (invalid_value / dangling) is
+      // classified alongside intrinsic. archived-guard configs are a
+      // structural superset of AuxConfigs, so they double as `aux`.
+      const { workflowConfig } = await loadOptionalConfigs(locttDir);
+      const aux = await loadArchivedGuardConfigs(locttDir);
+      const model = await buildShowModel(locttDir, task, {
+        ...(workflowConfig !== undefined ? { workflow: workflowConfig } : {}),
+        aux,
+      });
       const result: Record<string, unknown> = {
         ...model.task.frontmatter,
         relationships: model.relationships.map(r => ({
@@ -99,6 +107,19 @@ export const TOOLS: readonly ToolDef[] = [
       };
       if (model.relationships.length === 0) {
         delete result["relationships"];
+      }
+      // Field-level health (proposal § 6): a degraded field is NOT in the
+      // main object above — its stored value is `rawText`. `set_field`
+      // replaces it, `unset_field` removes it. Omitted when the task is
+      // clean; `raw` is omitted (rawText is the display form).
+      if (model.task.health !== undefined && model.task.health.length > 0) {
+        result["health"] = model.task.health.map(h => ({
+          field: h.field,
+          kind: h.kind,
+          rawText: h.rawText,
+          error: h.error,
+          repair: h.repair,
+        }));
       }
       if (includeBody) {
         result["body"] = model.task.body;

@@ -82,8 +82,14 @@ export async function duplicateTask(params: DuplicateTaskParams): Promise<Task> 
     return source;
   }
 
+  // A corrupt field is lifted off `frontmatter` into `src.health`, so
+  // reading `fm.<field>` here copies only HEALTHY values into the new
+  // task — a raw corrupt value is never carried in (§ 13.3). A degraded
+  // title falls back to the key so the copy title is never "undefined
+  // (copy)".
+  const srcTitle = fm.title ?? fm.key;
   const createOptions: CreateTaskOptions = {
-    title: overrides.title ?? `${fm.title} (copy)`,
+    title: overrides.title ?? `${srcTitle} (copy)`,
     project: overrides.project ?? fm.project ?? "",
     ...(inherit(overrides.status, fm.status) !== undefined ? { status: inherit(overrides.status, fm.status) as string } : {}),
     ...(inherit(overrides.priority, fm.priority) !== undefined ? { priority: inherit(overrides.priority, fm.priority) as string } : {}),
@@ -105,7 +111,16 @@ export async function duplicateTask(params: DuplicateTaskParams): Promise<Task> 
   };
 
   if (!createOptions.project) {
-    throw new Error("duplicateTask: source task has no project and no override was supplied");
+    // A wrong-typed `project` is lifted into health, so `fm.project` is
+    // undefined here — duplicate must read it to allocate the copy's key,
+    // so it refuses (§ 13.3) rather than minting a key under a broken
+    // project. Name the corruption when that is the cause.
+    const projectCorrupt = (src.health ?? []).some(h => h.field === "project");
+    throw new Error(
+      projectCorrupt
+        ? "duplicateTask: source task's project is corrupt; repair it or pass --project"
+        : "duplicateTask: source task has no project and no override was supplied",
+    );
   }
 
   return createTask({

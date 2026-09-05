@@ -61,9 +61,11 @@ export function rekeyCollisions(
   for (const [, group] of byKey) {
     if (group.length <= 1) continue;
 
-    // Sort: earlier created_at keeps the key, tie-break by id
+    // Sort: earlier created_at keeps the key, tie-break by id. created_at
+    // is optional now (K26); a degraded timestamp sorts as "" (earliest),
+    // and the id tie-break keeps the order deterministic regardless.
     group.sort((a, b) => {
-      const cmp = a.frontmatter.created_at.localeCompare(b.frontmatter.created_at);
+      const cmp = (a.frontmatter.created_at ?? "").localeCompare(b.frontmatter.created_at ?? "");
       if (cmp !== 0) return cmp;
       return a.frontmatter.id.localeCompare(b.frontmatter.id);
     });

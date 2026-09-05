@@ -73,7 +73,7 @@ function loadAll(): LoadedTask[] {
       continue;
     }
     const { rawYaml, body } = splitTaskFile(raw);
-    const fm = parseFrontmatter(rawYaml);
+    const { frontmatter: fm } = parseFrontmatter(rawYaml);
     out.push({ id, frontmatter: fm, body });
   }
   return out;
@@ -367,7 +367,8 @@ export function allTasks(): ReadonlyArray<{ id: string; key: string; title: stri
   return loadAll().map(t => ({
     id: t.id,
     key: t.frontmatter.key,
-    title: t.frontmatter.title,
+    // title is optional now (K26); a degraded title falls back to the key.
+    title: t.frontmatter.title ?? t.frontmatter.key,
     ...(t.frontmatter.status !== undefined ? { status: t.frontmatter.status } : {}),
     ...(t.frontmatter.archived !== undefined ? { archived: t.frontmatter.archived } : {}),
     ...(t.frontmatter.priority !== undefined ? { priority: t.frontmatter.priority } : {}),

@@ -191,7 +191,9 @@ export function computeTaskConflicts(
     return localMoved && remoteMoved;
   };
   const taskKey = local.frontmatter.key;
-  const taskTitle = local.frontmatter.title;
+  // title is optional now (K26); a task with a degraded title still
+  // conflicts, so fall back to its key rather than dropping the row.
+  const taskTitle = local.frontmatter.title ?? local.frontmatter.key;
   const taskId = local.frontmatter.id;
 
   const conflicts: TaskConflictField[] = [];
@@ -352,7 +354,8 @@ async function readTaskFileAt(dir: string, path: string): Promise<Task | undefin
   try {
     const raw = await readFile(join(dir, path), "utf-8");
     const { rawYaml, body } = splitTaskFile(raw);
-    return { frontmatter: parseFrontmatter(rawYaml), body };
+    const { frontmatter, health } = parseFrontmatter(rawYaml);
+    return { frontmatter, body, ...(health.length > 0 ? { health } : {}) };
   } catch {
     return undefined;
   }
@@ -398,19 +401,21 @@ export async function computeReconcilePlan(input: {
     if (raw === undefined) return undefined;
     try {
       const { rawYaml, body } = splitTaskFile(raw);
-      return { frontmatter: parseFrontmatter(rawYaml), body };
+      const { frontmatter, health } = parseFrontmatter(rawYaml);
+      return { frontmatter, body, ...(health.length > 0 ? { health } : {}) };
     } catch {
       return undefined;
     }
   };
 
   // key/title for every local task, so `parent` targets render as tasks
-  // and the picker can list them (GIT-13).
+  // and the picker can list them (GIT-13). title is optional now (K26);
+  // a degraded title falls back to the key so the picker still lists it.
   const taskById = new Map<string, { key: string; title: string }>();
   for (const t of await loadAllTasks(localDir)) {
     taskById.set(t.frontmatter.id, {
       key: t.frontmatter.key,
-      title: t.frontmatter.title,
+      title: t.frontmatter.title ?? t.frontmatter.key,
     });
   }
 

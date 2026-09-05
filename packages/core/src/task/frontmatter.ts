@@ -1,7 +1,6 @@
-import type { FieldCorruption, TaskFrontmatter } from "@loctt/contracts";
+import type { FieldHealth, FieldHealthKind, Task, TaskFrontmatter } from "@loctt/contracts";
 import { TaskFrontmatterSchema } from "@loctt/contracts";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { z } from "zod";
 
 import { formatZodIssues } from "../config/zod-error.js";
 import { toMutable } from "./mutable.js";
@@ -43,10 +42,37 @@ export function splitTaskFile(content: string): { rawYaml: string; body: string 
  * a real error (use of YAML `~` to "clear" a required field), so
  * we keep the null and let zod surface "expected string" rather
  * than the misleading "title is required".
+ *
+ * `title`/`created_at`/`updated_at` are required-but-degradable (K26):
+ * a null/absent/wrong-typed value is field-local (`missing_required` or
+ * `wrong_type` in `health`), not object-fatal. Only `id`/`key` are
+ * object-fatal — see {@link FATAL_IDENTITY_FIELDS}.
  */
 const REQUIRED_FRONTMATTER_FIELDS = new Set([
   "id",
   "key",
+  "title",
+  "created_at",
+  "updated_at",
+]);
+
+/**
+ * The object-fatal identity set (K26). A wrong-typed / absent value in
+ * one of these makes the whole task object-fatal — there is no coherent
+ * object to degrade around because the task cannot be *addressed*.
+ * Everything else (including `title`/`created_at`/`updated_at` and the
+ * structural fields `relationships`/`fields`/`labels`/`key_history`,
+ * A135) is field-local: the value is lifted into `health` and the rest
+ * of the task loads.
+ */
+const FATAL_IDENTITY_FIELDS: ReadonlySet<string> = new Set(["id", "key"]);
+
+/**
+ * Required fields that degrade rather than fatalling (K26). A missing or
+ * null value for one of these is a `missing_required` health finding;
+ * a present-but-wrong-typed value is `wrong_type`.
+ */
+const DEGRADABLE_REQUIRED_FIELDS: ReadonlySet<string> = new Set([
   "title",
   "created_at",
   "updated_at",
@@ -88,73 +114,66 @@ function coerceFrontmatter(raw: unknown): unknown {
 }
 
 /**
- * Parses raw YAML frontmatter into a TaskFrontmatter.
- *
- * Both failure modes leave as `TaskParseError`: a schema violation
- * (a Zod issue) and a YAML *syntax* error such as an unclosed quote.
- * The second used to escape as the `yaml` package's own
- * `YAMLParseError`, and callers that wanted to distinguish "the file
- * will not parse" from "the file is not there" had no type to test —
- * `YAMLParseError` even carries a `code` (`MISSING_CHAR`), so an
- * errno-shaped check reads it as a filesystem error. Wrapping it here
- * gives `lookupByKey` one class to branch on (TSK-54).
- *
- * The message is passed through verbatim: it already names the line
- * and column, which is precisely the detail P-4 wants and what makes
- * the surface message actionable.
+ * One-line YAML rendering of a raw stored value, computed in core so
+ * every surface (`loctt show`, `get_task`, the web UI) prints the same
+ * string for a corrupt field (proposal § 4.2, `FieldHealth.rawText`).
  */
-export function parseFrontmatter(rawYaml: string): TaskFrontmatter {
-  let raw: unknown;
+export function renderRawText(raw: unknown): string {
+  if (raw === undefined) return "";
   try {
-    raw = coerceFrontmatter(parseYaml(rawYaml));
-  } catch (err) {
-    throw new TaskParseError(err instanceof Error ? err.message : String(err));
-  }
-  try {
-    return TaskFrontmatterSchema.parse(raw);
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      throw new TaskParseError(formatZodIssues("frontmatter", err));
+    // `lineWidth: 0` disables wrapping; trim the trailing newline
+    // stringifyYaml appends.
+    return stringifyYaml(raw, { lineWidth: 0 }).replace(/\n$/, "");
+  } catch {
+    // Last resort for a value stringifyYaml cannot render — a JSON form
+    // rather than `[object Object]`.
+    try {
+      return JSON.stringify(raw) ?? "";
+    } catch {
+      return "";
     }
-    throw err;
   }
 }
 
 /**
- * Frontmatter fields whose value has no stable identity role, so a
- * wrong-typed value in one of them is field-LOCAL corruption (Phase-7
- * spike) rather than object-fatal. A violation here degrades: the raw
- * value is kept, a `FieldCorruption` is recorded, and the rest of the
- * task loads. Everything NOT in this set — `id`, `key`, `title`, the
- * required timestamps, and structural fields like `relationships` /
- * `fields` — stays object-fatal, because there is no coherent object to
- * degrade around if identity or structure is broken.
+ * Builds a `FieldHealth` entry from an intrinsic (schema) fault.
  *
- * The spike scope is deliberately narrow: exactly one field, `due_date`.
- * The set is a single entry so the audit (step 4) and the Fable proposal
- * (step 2) decide the full membership rather than the spike presuming it.
+ * Kind and repair follow proposal § 6/§ 7.3:
+ *   - a degradable *required* field that is null/absent → `missing_required`
+ *     (repair: `set` — there is nothing to remove);
+ *   - any other schema-known field with a wrong-typed value → `wrong_type`
+ *     (repair: `set_or_remove`).
  */
-const SPIKE_DEGRADABLE_FIELDS: ReadonlySet<string> = new Set(["due_date"]);
+function intrinsicHealth(field: string, raw: unknown, error: string): FieldHealth {
+  const missing =
+    DEGRADABLE_REQUIRED_FIELDS.has(field) && (raw === null || raw === undefined);
+  const kind: FieldHealthKind = missing ? "missing_required" : "wrong_type";
+  const repair: FieldHealth["repair"] = missing ? "set" : "set_or_remove";
+  return { field, kind, raw, rawText: renderRawText(raw), error, repair };
+}
 
 /**
- * Phase-7 SPIKE — tolerant frontmatter parse.
+ * Parses raw YAML frontmatter tolerantly (proposal § 4.3).
  *
- * Like `parseFrontmatter`, but a wrong-typed value in a
- * `SPIKE_DEGRADABLE_FIELDS` field does not throw: the field is lifted out
- * before schema validation (so the rest parses), then re-attached under
- * its raw stored value, and a `FieldCorruption` is recorded. Any other
- * violation — a required field, or a degradable field that is missing vs
- * merely wrong-typed is not our concern here — still throws exactly as
- * `parseFrontmatter` does, so object-fatal corruption is unchanged.
+ * `frontmatter` holds only the fields that passed the schema; `health`
+ * names every field that did not, with its raw stored value and the
+ * reason. A clean task takes the strict fast path and returns an empty
+ * `health`, so the tolerant path costs the common case nothing.
  *
- * Returns the (possibly corrupt) frontmatter plus the corruptions found.
- * The raw value stays in `frontmatter[field]`, so a caller that writes
- * the task back round-trips it byte-for-byte unless it deliberately
- * overwrites that field (override-on-direct-write).
+ * Object-fatal cases still throw `TaskParseError`, unchanged, so
+ * `lookup.ts`'s attribution to `UnreadableTaskError` keeps working:
+ *   - a YAML *syntax* error (unclosed quote, etc.) — wrapped here so
+ *     `lookupByKey` has one class to branch on (TSK-54);
+ *   - a bad `id` or `key` — the fields needed to *address* the task (K26);
+ *   - a remainder that still fails after lifting the corrupt fields out
+ *     (fail closed rather than half-degrade).
+ *
+ * The message is passed through verbatim: it names the YAML line and
+ * column, which is what P-4 wants and what makes the surface actionable.
  */
-export function parseFrontmatterTolerant(
+export function parseFrontmatter(
   rawYaml: string,
-): { frontmatter: TaskFrontmatter; corruptions: FieldCorruption[] } {
+): { frontmatter: TaskFrontmatter; health: FieldHealth[] } {
   let raw: unknown;
   try {
     raw = coerceFrontmatter(parseYaml(rawYaml));
@@ -162,64 +181,123 @@ export function parseFrontmatterTolerant(
     throw new TaskParseError(err instanceof Error ? err.message : String(err));
   }
 
-  // First attempt the strict parse. A clean task takes this path and
-  // carries no corruptions — the tolerant path costs nothing for the
-  // overwhelmingly common case.
+  // Strict fast path: a clean task pays nothing and carries no health.
   const strict = TaskFrontmatterSchema.safeParse(raw);
+  const rawObj = (raw !== null && typeof raw === "object" && !Array.isArray(raw))
+    ? raw as Record<string, unknown>
+    : undefined;
+
+  // Unrecognised top-level keys: the schema is `.passthrough()`, so they
+  // are NOT Zod issues. Split them out by hand — they move into `health`
+  // (kind `unrecognised`) rather than staying on `frontmatter` (§ 4.3
+  // change 3), so a healthy object contains exactly the schema's keys.
+  const unrecognised: FieldHealth[] = [];
+  if (rawObj !== undefined) {
+    for (const [k, v] of Object.entries(rawObj)) {
+      if (!KNOWN_FRONTMATTER_KEYS.has(k)) {
+        unrecognised.push({
+          field: k,
+          kind: "unrecognised",
+          raw: v,
+          rawText: renderRawText(v),
+          error: "LocTT has no type for this key",
+          repair: "remove",
+        });
+      }
+    }
+  }
+
+  // A degradable-required field (title/created_at/updated_at, K26) that
+  // is simply ABSENT produces no Zod issue now that the field is
+  // optional, so detect it here and record `missing_required`. A `null`
+  // value (YAML `~`) is a Zod issue instead and is handled below via
+  // `intrinsicHealth` (which maps null-on-required to missing_required).
+  const missingRequired: FieldHealth[] = [];
+  for (const field of DEGRADABLE_REQUIRED_FIELDS) {
+    if (rawObj === undefined || !(field in rawObj)) {
+      missingRequired.push({
+        field,
+        kind: "missing_required",
+        raw: undefined,
+        rawText: "",
+        error: `${field} is required but absent`,
+        repair: "set",
+      });
+    }
+  }
+
   if (strict.success) {
-    return { frontmatter: strict.data, corruptions: [] };
+    // `.passthrough()` keeps unrecognised keys on `strict.data`; strip
+    // them so `frontmatter` holds only schema keys (they travel in
+    // `health`). The serializer re-emits them from `health`.
+    const fm = stripUnrecognised(strict.data, unrecognised);
+    return { frontmatter: fm, health: [...unrecognised, ...missingRequired] };
   }
 
-  // Only degrade when EVERY issue is a wrong-typed value on a degradable
-  // field. If any issue falls outside that — a required field, a
-  // structural field, or a degradable field with a non-type problem — the
-  // object is fatally corrupt and we throw, identical to parseFrontmatter.
+  // Collect the set of top-level keys with schema issues.
   const issues = strict.error.issues;
-  const degradableIssue = (issue: z.ZodIssue): boolean => {
-    if (issue.path.length !== 1) return false;
-    const key = issue.path[0];
-    return typeof key === "string" && SPIKE_DEGRADABLE_FIELDS.has(key);
-  };
-  if (!issues.every(degradableIssue)) {
-    throw new TaskParseError(formatZodIssues("frontmatter", strict.error));
-  }
-
-  // Lift each corrupt field out, parse the remainder (which must now
-  // succeed — the only issues were the fields we removed), then put the
-  // raw values back and record them.
-  const rawObj = raw as Record<string, unknown>;
-  const corruptFields = new Set(
-    issues.map(i => i.path[0]).filter((k): k is string => typeof k === "string"),
+  const faultKeys = new Set(
+    issues
+      .map(i => i.path[0])
+      .filter((k): k is string => typeof k === "string"),
   );
-  const cleaned: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(rawObj)) {
-    if (!corruptFields.has(k)) cleaned[k] = v;
-  }
 
+  // Object-fatal: a fault on `id`/`key` means the task cannot be
+  // addressed (K26). Fail exactly as the old strict parse did.
+  for (const k of faultKeys) {
+    if (FATAL_IDENTITY_FIELDS.has(k)) {
+      throw new TaskParseError(formatZodIssues("frontmatter", strict.error));
+    }
+  }
+  // A deep issue (path length > 1, e.g. inside `relationships`) whose
+  // top-level key is identity is caught above; any other deep issue is
+  // handled by lifting its top-level key.
+
+  // Lift every faulting top-level key out, reparse the remainder. If the
+  // remainder still fails, the object is fatal (fail closed).
+  const source = rawObj ?? {};
+  const cleaned: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(source)) {
+    if (!faultKeys.has(k) && KNOWN_FRONTMATTER_KEYS.has(k)) cleaned[k] = v;
+    else if (!faultKeys.has(k) && !KNOWN_FRONTMATTER_KEYS.has(k)) {
+      // Unrecognised key: already lifted into `health` above; drop here.
+    }
+  }
   const reparsed = TaskFrontmatterSchema.safeParse(cleaned);
   if (!reparsed.success) {
-    // Removing the corrupt fields did not make it parse, so something
-    // else is wrong after all — fail closed rather than half-degrade.
     throw new TaskParseError(formatZodIssues("frontmatter", reparsed.error));
   }
 
-  const frontmatter = toMutable(reparsed.data) as Record<string, unknown>;
-  const corruptions: FieldCorruption[] = [];
-  for (const field of corruptFields) {
-    const raw_ = rawObj[field];
-    frontmatter[field] = raw_; // preserve verbatim for round-trip
+  // Build the health list for the faulting schema keys, plus any
+  // absent-required fields (dedup by field: a null-valued required field
+  // is a fault key, so it is not also in missingRequired).
+  const health: FieldHealth[] = [...unrecognised];
+  for (const field of faultKeys) {
+    const raw_ = source[field];
     const issue = issues.find(i => i.path[0] === field);
-    corruptions.push({
-      field,
-      raw: raw_,
-      error: issue?.message ?? "value has the wrong type",
-    });
+    health.push(intrinsicHealth(field, raw_, issue?.message ?? "value has the wrong type"));
+  }
+  for (const m of missingRequired) {
+    if (!faultKeys.has(m.field)) health.push(m);
   }
 
-  return {
-    frontmatter: frontmatter as unknown as TaskFrontmatter,
-    corruptions,
-  };
+  return { frontmatter: reparsed.data, health };
+}
+
+/**
+ * Returns a copy of a parsed frontmatter with the unrecognised keys
+ * removed, so `frontmatter` holds only schema-declared keys. The
+ * unrecognised values are preserved in the passed `health` list and
+ * re-emitted by `serializeFrontmatter`.
+ */
+function stripUnrecognised(
+  fm: TaskFrontmatter,
+  unrecognised: readonly FieldHealth[],
+): TaskFrontmatter {
+  if (unrecognised.length === 0) return fm;
+  const copy = toMutable(fm);
+  for (const u of unrecognised) delete copy[u.field];
+  return copy as unknown as TaskFrontmatter;
 }
 
 /**
@@ -231,42 +309,79 @@ export function parseFrontmatterTolerant(
  * This means `parse → serialize` is round-trip-stable even for
  * frontmatter with experimental or plugin-defined fields the
  * schema hasn't enumerated.
+ *
+ * `health` (proposal § 4.4): each health entry's raw stored value is
+ * re-emitted under its `field` **unless `fm` now has that key** —
+ * override-on-direct-write wins. A degraded field lives only in `health`
+ * (it was lifted off `frontmatter` at parse time), so without this
+ * argument the write would drop it. Known fields go at their canonical
+ * slot; unrecognised ones last, exactly where the passthrough loop puts
+ * them. This is what preserves the value of a corrupt or unrecognised
+ * field across a write to another field (north-star P5/P7).
  */
-export function serializeFrontmatter(fm: TaskFrontmatter): string {
-  const obj: Record<string, unknown> = {
-    id: fm.id,
-    key: fm.key,
-    title: fm.title,
-    created_at: fm.created_at,
-    updated_at: fm.updated_at,
-  };
+export function serializeFrontmatter(
+  fm: TaskFrontmatter,
+  health?: readonly FieldHealth[],
+): string {
+  // Health entries whose field is NOT present on `fm`: their raw value
+  // must be re-emitted. Only top-level (non-indexed) fields carry a raw
+  // scalar/structure to re-emit; an indexed path like `labels[2]` or
+  // `relationships[1].target` describes a sub-position of a field that
+  // is itself present, so there is nothing separate to re-emit for it.
+  const fmObj = toMutable(fm);
+  const reEmit = new Map<string, unknown>();
+  for (const h of health ?? []) {
+    if (h.field.includes("[") || h.field.includes(".")) continue;
+    if (Object.prototype.hasOwnProperty.call(fmObj, h.field) && fmObj[h.field] !== undefined) {
+      continue; // override wins
+    }
+    if (h.raw === undefined) continue;
+    reEmit.set(h.field, h.raw);
+  }
 
-  if (fm.project !== undefined) obj["project"] = fm.project;
-  if (fm.status !== undefined) obj["status"] = fm.status;
-  if (fm.status_updated_at !== undefined) obj["status_updated_at"] = fm.status_updated_at;
-  if (fm.task_type !== undefined) obj["task_type"] = fm.task_type;
-  if (fm.priority !== undefined) obj["priority"] = fm.priority;
+  const obj: Record<string, unknown> = {};
+  // Identity first (always present — object-fatal otherwise).
+  obj["id"] = fm.id;
+  obj["key"] = fm.key;
+  // K26: title/timestamps are optional now. Emit the healthy value if
+  // present; otherwise fall back to the re-emitted raw value from health.
+  const emitKnown = (k: string, v: unknown): void => {
+    if (v !== undefined) obj[k] = v;
+    else if (reEmit.has(k)) { obj[k] = reEmit.get(k); reEmit.delete(k); }
+  };
+  emitKnown("title", fm.title);
+  emitKnown("created_at", fm.created_at);
+  emitKnown("updated_at", fm.updated_at);
+
+  emitKnown("project", fm.project);
+  emitKnown("status", fm.status);
+  emitKnown("status_updated_at", fm.status_updated_at);
+  emitKnown("task_type", fm.task_type);
+  emitKnown("priority", fm.priority);
   if (fm.labels !== undefined) obj["labels"] = [...fm.labels];
-  if (fm.assignee !== undefined) obj["assignee"] = fm.assignee;
-  if (fm.reporter !== undefined) obj["reporter"] = fm.reporter;
-  if (fm.start_date !== undefined) obj["start_date"] = fm.start_date;
-  if (fm.due_date !== undefined) obj["due_date"] = fm.due_date;
-  if (fm.estimate !== undefined) obj["estimate"] = fm.estimate;
-  if (fm.completed_date !== undefined) obj["completed_date"] = fm.completed_date;
-  if (fm.milestone !== undefined) obj["milestone"] = fm.milestone;
-  if (fm.sprint !== undefined) obj["sprint"] = fm.sprint;
-  if (fm.archived !== undefined) obj["archived"] = fm.archived;
-  if (fm.archived_at !== undefined) obj["archived_at"] = fm.archived_at;
+  else emitKnown("labels", undefined);
+  emitKnown("assignee", fm.assignee);
+  emitKnown("reporter", fm.reporter);
+  emitKnown("start_date", fm.start_date);
+  emitKnown("due_date", fm.due_date);
+  emitKnown("estimate", fm.estimate);
+  emitKnown("completed_date", fm.completed_date);
+  emitKnown("milestone", fm.milestone);
+  emitKnown("sprint", fm.sprint);
+  emitKnown("archived", fm.archived);
+  emitKnown("archived_at", fm.archived_at);
   if (fm.relationships !== undefined && fm.relationships.length > 0) {
     obj["relationships"] = fm.relationships.map(r => ({
       type: r.type,
       target: r.target,
       ...(r.rank !== undefined ? { rank: r.rank } : {}),
     }));
-  }
+  } else emitKnown("relationships", undefined);
   if (fm.key_history !== undefined) obj["key_history"] = [...fm.key_history];
+  else emitKnown("key_history", undefined);
   if (fm.fields !== undefined) obj["fields"] = { ...fm.fields };
-  if (fm.board_rank !== undefined) obj["board_rank"] = fm.board_rank;
+  else emitKnown("fields", undefined);
+  emitKnown("board_rank", fm.board_rank);
 
   // Pass-through preservation: any extra key the schema didn't
   // enumerate but accepted via .passthrough() is emitted last,
@@ -274,17 +389,33 @@ export function serializeFrontmatter(fm: TaskFrontmatter): string {
   // edits. We skip `undefined` (the field isn't really there); a
   // `foo: null` source ends up filtered out earlier by
   // coerceFrontmatter so it doesn't reach this loop.
-  for (const [k, v] of Object.entries(toMutable(fm))) {
+  for (const [k, v] of Object.entries(fmObj)) {
     if (KNOWN_FRONTMATTER_KEYS.has(k)) continue;
     if (v === undefined) continue;
+    obj[k] = v;
+  }
+  // Unrecognised keys carried only in `health` (they were lifted off
+  // frontmatter at parse time). Re-emit last, preserving them across a
+  // write to any other field — the round-trip P6 depends on.
+  for (const [k, v] of reEmit) {
+    if (KNOWN_FRONTMATTER_KEYS.has(k)) continue; // already handled above
     obj[k] = v;
   }
 
   return stringifyYaml(obj, { lineWidth: 0 });
 }
 
-/** Assembles a full task.md file from frontmatter and body. */
-export function assembleTaskFile(fm: TaskFrontmatter, body: string): string {
-  const yamlStr = serializeFrontmatter(fm);
-  return `---\n${yamlStr}---\n${body}`;
+/**
+ * Assembles a full task.md file from a `Task` (proposal § 13.2 B2).
+ *
+ * Takes a whole `Task` — not `(fm, body)` — so its `health` is threaded
+ * to the serializer and the raw values of degraded/unrecognised fields
+ * are re-emitted. Making it take a `Task` is deliberate: the compiler
+ * then flags every one of the six writers that would otherwise assemble
+ * `{frontmatter, body}` without `health` and silently drop passthrough
+ * and degraded fields.
+ */
+export function assembleTaskFile(task: Task): string {
+  const yamlStr = serializeFrontmatter(task.frontmatter, task.health);
+  return `---\n${yamlStr}---\n${task.body}`;
 }
