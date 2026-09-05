@@ -1490,7 +1490,7 @@ entirely; and the pre-existing A69 declines that fell in this batch
 tags in `tests/ui/flow-git-sync.spec.ts`. The fixture and the other
 tags stand independently.
 
-### A68 · `theme` and `sidebar_pins` become typed fields on `UserSettingsSchema`
+### A128 · `theme` and `sidebar_pins` become typed fields on `UserSettingsSchema`
 
 **Ticket:** M4.4 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
 
@@ -1527,7 +1527,7 @@ working as passthrough values.
 
 ---
 
-### A69 · The pin sweep lives in core and ships to CLI and MCP
+### A129 · The pin sweep lives in core and ships to CLI and MCP
 
 **Ticket:** M4.4 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
 
@@ -6639,7 +6639,7 @@ external consumer can be depending on the export.
 alongside a field that actually uses it — a sprint `key` in
 `SprintDefSchema` — or it returns to validating nothing.
 
-### A100 · A retired key counter is reclaimed by **prefix**, not by id or slug
+### A130 · A retired key counter is reclaimed by **prefix**, not by id or slug
 
 **Ticket:** M4.1 (PRU-18) · **Date:** 2026-09-03 · **Commit:** (this one)
 
@@ -6695,7 +6695,7 @@ change was needed and none was made.
 returns the tracker to reissuing keys that surviving tasks still
 resolve, and re-contradicts `contracts/state.ts`.
 
-### A101 · A partial remap reports the split and refuses to finish the delete
+### A131 · A partial remap reports the split and refuses to finish the delete
 
 **Ticket:** M4.1 (PRU-34) · **Date:** 2026-09-03 · **Commit:** (this one)
 
@@ -6748,7 +6748,7 @@ asserts the end state rather than which route reached it.
 `PartialRemapError` and the server branch. Doing so returns the user
 to a half-migrated tracker described only as a bare failure.
 
-### A102 · PRU-16's "point at Settings" is appended to the shared no-project message
+### A132 · PRU-16's "point at Settings" is appended to the shared no-project message
 
 **Ticket:** M4.1 (PRU-16) · **Date:** 2026-09-03 · **Commit:** (this one)
 
@@ -6774,7 +6774,7 @@ workspace has no default".
 **To revert.** Drop the appended sentence. PRU-16's third bullet then
 has no implementation.
 
-### A103 · PRU-43's filesystem caveat moves from a source comment into the message
+### A133 · PRU-43's filesystem caveat moves from a source comment into the message
 
 **Ticket:** M4.1 (PRU-43) · **Date:** 2026-09-03 · **Commit:** (this one)
 
@@ -7101,7 +7101,7 @@ decision.
 **The situation.** MSL-33 requires a label delete-with-remap that fails
 partway to "report honestly": how many tasks were updated, how many
 failed (by key), whether the label entry was removed, and a retry path
-— *not* a blanket abort. This is the same shape PRU-34/A101 gave the
+— *not* a blanket abort. This is the same shape PRU-34/A131 gave the
 project delete.
 
 But two days earlier, the PRU-34 fix's collecting `replayTaskRemap` had
@@ -7834,3 +7834,58 @@ K24 (Ken's) made reporter opt-in. Implementation:
 
 **To revert.** Fold reporter back into a single `ALL_COLUMNS`-as-default
 and restore the three tests. (K24's behaviour is Ken's.)
+
+### K25 · Archiving an already-archived task is an idempotent no-op success, not an error (TSK-57)
+
+**Date:** 2026-09-05 · **Ken's ruling — an agent may not revert this.**
+
+The single-task `archiveTask` threw `TaskLifecycleError("task is already
+archived")` (and `unarchiveTask` threw "task is not archived"). That
+class extends plain `Error`, not `LocttError`, so the web layer could
+not classify it and returned a **generic 500** ("Internal server
+error") — the B16 fallout TSK-57 names. Meanwhile `bulkArchive` had
+always treated an already-archived task as a **success** (reported apart
+under `unchanged`, BLK-27). Two paths, two answers for the identical
+situation.
+
+**Ken's ruling: idempotent success.** Archiving a task that is already
+archived — or unarchiving one that is not archived — leaves it in the
+requested state, writes nothing, appends no history entry, and returns
+the task. No error on any surface. This is the parity-preserving,
+predictable-over-clever choice: archive is not destructive, the end
+state the caller asked for is already true, and forcing every surface to
+handle a non-error "error" (a 500, no less) served no one. It also
+brings the single-task path into line with the bulk path that already
+worked this way.
+
+This **overturns a previously-documented deliberate split** (the old
+`applyArchiveState` docblock said the throw-vs-success difference was on
+purpose). That rationale is superseded and the docblock rewritten.
+
+**To revert.** Ken's, not an agent's.
+
+### A127 · Implementing K25 — idempotent archive/unarchive
+
+**Date:** 2026-09-05 · Agent · revertable.
+
+- `packages/core/src/task/lifecycle.ts` — `archiveTask` returns the task
+  unchanged when it is already archived (was `throw
+  TaskLifecycleError`); `unarchiveTask` mirrors it for the not-archived
+  case. No write, no history append on the no-op. The
+  `applyArchiveState` docblock (which had documented the throw as
+  deliberate) was rewritten to state the new shared idempotency policy.
+  `TaskLifecycleError` stays — `deleteTask` still throws it for the
+  `--force` guard, and MCP still classifies it.
+- CLI (`task-archive.ts`) and MCP (`tools/task-archive.ts`) call the
+  core functions directly, so both inherit idempotency with no code
+  change — the parity was free.
+- Two green core tests asserted the old throw and were rewritten to
+  assert no-op success + no new history entry (`lifecycle.test.ts`).
+  One CLI integration test (`edges/delete.test.ts`) asserted the CLI
+  surfaced a domain error; rewritten to assert exit 0 and the task
+  still archived. A new web server test asserts the route returns 200
+  (not the old 500) on a repeat archive.
+- CLI and MCP reference docs updated to state the idempotency.
+
+**To revert.** Restore the two throws and the four tests. (K25's
+behaviour is Ken's.)
