@@ -7921,3 +7921,46 @@ array/object): none found.
 
 **To revert.** Restore `}, [current]);` and drop the `signature`. (But
 that reintroduces the loop.)
+
+### A135 · Corruption framework — agent-settled calls (Phase 7, step 2/3)
+
+**Date:** 2026-09-05 · Agent · revertable. Settled by the approved
+corruption brief, north star, and existing decisions — recorded so they
+are not re-opened. See `docs/dev/corruption-framework-proposal.md` § 13
+and `corruption-framework-review.md`.
+
+1. **Unrecognised frontmatter keys are surfaced to the UI as read-only
+   strings with an X-to-remove.** Not a Ken decision — the approved brief
+   §1/§4 already says exactly this. They travel in the `health` list, not
+   in `frontmatter`, so `.passthrough()` and byte round-trip are
+   unaffected. UI label: **"Not recognised"** for the `unrecognised`
+   kind; "Needs attention" for wrong-typed / invalid-value; corrupt
+   language is reserved for object-fatal.
+   *To revert:* stop emitting `unrecognised` entries in `health`.
+
+2. **Publishing a tracker that has field-local corruption is allowed, not
+   gated.** Settled by `integrity.ts` (`malformed` is "reported, never
+   blocking … unpublishable would be destruction by another route") and
+   V2. The data is preserved, so nothing is at risk.
+   *To revert:* add a `--force`-skippable warning that counts corrupt
+   fields before publish.
+
+3. **Structural fields (`relationships`, `fields`, `labels`,
+   `key_history`) are field-local, not object-fatal.** Reverses the
+   spike's boundary (`frontmatter.ts:129-131`). Principle 7's own
+   `relationships`-as-object example settles it: the object opens
+   (degraded), and only the operation that must interpret it refuses.
+   *To revert:* add these keys back to the object-fatal set.
+
+4. **Unlink/link over an object-fatal relationships value keeps the
+   shipped refusal** (`relationships.ts:407-411`) — the framework does
+   NOT reverse it. (Review S5/M2. If the P-12 tension here is ever judged
+   load-bearing, it becomes a Ken decision; today it is a
+   keep-what-shipped call.)
+   *To revert:* allow unlink to proceed over a structurally-broken
+   relationships array.
+
+**Two decisions were escalated to Ken, NOT settled here:** the fatal-set
+scope (`{id,key}` vs `{id,key,title,created_at,updated_at}`) and the
+byte-preserved→value-preserved P7 rewording. Both are pending his ruling
+before step-4 implementation of the parts they gate.
