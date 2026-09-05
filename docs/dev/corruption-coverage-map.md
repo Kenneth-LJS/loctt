@@ -1,3 +1,39 @@
+# Corruption coverage — UPDATED after the Phase-7B full sweep (2026-09-06)
+
+The full sweep (Ken-requested) is landed. What was "load-safe only" or
+"not covered" below is now health-aware or degrades. Current state:
+
+## Objects — ALL config loaders degrade per-entry now
+projects, labels, milestones, sprints, calendar(holidays), list-view,
+users(profile per-field; settings passthrough preserved), workflow(five
+sub-lists) — a corrupt entry becomes a `BrokenEntry`, the rest loads, and
+`broken` rides the read endpoints. state.yaml stays object-fatal by
+necessity (key-counter integrity) with improved attribution.
+
+## Task surfaces — now health-AWARE (show corruption, not just load it)
+- task detail (web/CLI/MCP) + repair: ✅ (Phase 7)
+- list: ✅ ⚠/rawText/(broken) cells + untitled→key; per-row health on wire
+- board: ✅ inherits list cells + untitled→key
+- relationships: ✅ 4 states (healthy/corrupt/corrupt-unreadable/deleted)
+- sprints: ✅ broken-config notice; corrupt tasks stay on cards
+- timeline: ✅ corrupt-dated distinguished from undated
+- activity: ✅ already-correct + coverage; malformed-history IncompleteNotice
+- attachments: ✅ orthogonal + REL-49 confirmed
+- reconcile: ✅ corrupt side marked ⚠ (not merged as empty)
+
+## Known boundaries (documented, not gaps-in-hiding)
+- List rows carry INTRINSIC health only (wrong-typed fields); EXTRINSIC
+  (dangling refs / invalid enum) is on the detail view — the list stays a
+  cheap corpus scan. See wireHealth() in server.ts.
+- Reconcile: the "corruption is the ONLY difference between sides" edge
+  (no conflict row forms) is not yet surfaced — a bounded follow-up.
+- BrokenEntry has wire + hook types; per-surface RENDERING of config
+  `broken` is done for sprints (notice) and consumed where hooks expose it;
+  a settings-panel "broken entries" list for labels/milestones/projects is
+  a thin follow-up (the data is on the wire).
+
+---
+
 # Corruption framework — what is actually covered (honest map, 2026-09-05)
 
 Written after Ken pushed on thoroughness. The Phase-7 framework covers
