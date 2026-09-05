@@ -12,7 +12,7 @@ import {
   saveKeyIndex,
 } from "../state/key-index.js";
 import { TaskParseError } from "./frontmatter.js";
-import { readTask, readTaskTolerant } from "./io.js";
+import { readTask } from "./io.js";
 import { listTaskIds } from "./list-ids.js";
 import { hasNegativeLookup, rememberNegativeLookup } from "./lookup-cache.js";
 
@@ -372,46 +372,4 @@ export async function lookupTask(locttDir: string, ref: string): Promise<Task> {
   }
 
   return await lookupByKey(locttDir, ref);
-}
-
-/**
- * Phase-7 SPIKE — tolerant task lookup.
- *
- * Resolves a ref the same way `lookupTask` does, but reads the resolved
- * task with `readTaskTolerant`, so a task carrying a field-local
- * corruption (a wrong-typed `due_date`) opens instead of throwing
- * `UnreadableTaskError`. The returned `Task` carries `corruptions`, which
- * a surface reports and offers to repair.
- *
- * Resolution reuses the strict path only to turn a ref into an id: for a
- * key we read the key index (which does not parse the task body), and for
- * a ULID we use it directly. An object-fatal corruption still throws.
- */
-export async function lookupTaskTolerant(locttDir: string, ref: string): Promise<Task> {
-  const id = await resolveRefToId(locttDir, ref);
-  return await readTaskTolerant(locttDir, id);
-}
-
-/**
- * Turns a ref (ULID or key) into a task id without fully parsing the
- * task — so a corrupt task can still be located. A ULID is taken as the
- * id if a file exists for it; otherwise the key index resolves the key.
- */
-async function resolveRefToId(locttDir: string, ref: string): Promise<string> {
-  const looksLikeUlid = /^[0-9A-Z]{26}$/i.test(ref);
-  if (looksLikeUlid) {
-    const { access } = await import("node:fs/promises");
-    try {
-      await access(getTaskFilePath(locttDir, ref));
-      return ref;
-    } catch {
-      // Not a task id after all — fall through to key resolution.
-    }
-  }
-  if (hasNegativeLookup(locttDir, ref)) throw new TaskNotFoundError(ref);
-  let index = await loadKeyIndex(locttDir);
-  if (!index) index = await rebuildKeyIndex(locttDir);
-  const indexedId = lookupKeyInIndex(index, ref);
-  if (indexedId) return indexedId;
-  throw new TaskNotFoundError(ref);
 }

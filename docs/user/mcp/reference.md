@@ -145,6 +145,20 @@ error says LocTT cannot confirm whether the task exists — the ref it
 would have matched lives inside the file that would not parse. Relay
 the named path and ask for it to be repaired.
 
+**Field-level problems do NOT make the task unreadable** — only a broken
+`id`/`key` or unparseable YAML does. A single bad field is kept as
+stored, lifted out of the main object, and reported under **`health`**: a
+list of `{ field, kind, rawText, error, repair }`, omitted when the task
+is clean. A field named in `health` is **not** among the frontmatter
+fields above — its stored value is `rawText`. `kind` is one of
+`wrong_type`, `missing_required`, `unrecognised` (a key LocTT has no type
+for), `invalid_value` (a value the workflow does not define), or
+`dangling` (a reference whose target is gone). To repair one: `set_field`
+writes a valid value over it (`repair` is `set` or `set_or_remove`);
+`unset_field` removes it (`repair` is `remove` or `set_or_remove`) — this
+now works for an unrecognised top-level key too. Repairing one field
+leaves every other field's stored value untouched.
+
 ### `list_tasks`
 
 List tasks with optional query, view, and limit.

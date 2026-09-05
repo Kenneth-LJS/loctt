@@ -54,21 +54,41 @@ export function applyArchiveState(
   return next as unknown as TaskFrontmatter;
 }
 
+/** True when `archived` is field-locally corrupt (its value is in health). */
+function archivedIsCorrupt(task: Task): boolean {
+  return (task.health ?? []).some(h => h.field === "archived");
+}
+
+/** Health to carry across an archive write (everything but `archived`). */
+function carryArchiveHealth(task: Task): Task["health"] {
+  const carried = (task.health ?? []).filter(h => h.field !== "archived");
+  return carried.length > 0 ? carried : undefined;
+}
+
+const ARCHIVE_TOUCHED: ReadonlySet<string> = new Set(["archived", "archived_at", "updated_at"]);
+
 export async function archiveTask(locttDir: string, taskId: string): Promise<Task> {
   return withStateLock(locttDir, async () => {
     const task = await readTask(locttDir, taskId);
     // K25 / TSK-57: already archived is a no-op success, matching
     // bulkArchive. Return the task untouched — no write, no history.
-    if (task.frontmatter.archived) {
+    // BUT: a *corrupt* `archived` reads as undefined (not archived), so
+    // the write must proceed to repair it rather than no-op over garbage
+    // (§ 13.3 S1: an idempotency read never silently persists a corrupt
+    // value). `archived` here is the write's own target, so setting it is
+    // the repair.
+    if (task.frontmatter.archived && !archivedIsCorrupt(task)) {
       return task;
     }
 
     const now = new Date().toISOString();
+    const carried = carryArchiveHealth(task);
     const result: Task = {
       frontmatter: applyArchiveState(task.frontmatter, true, now),
       body: task.body,
+      ...(carried ? { health: carried } : {}),
     };
-    await writeTask(locttDir, taskId, result);
+    await writeTask(locttDir, taskId, result, ARCHIVE_TOUCHED);
     await appendHistory(locttDir, taskId, [{ timestamp: now, kind: "archived" }]);
     return result;
   });
@@ -84,16 +104,22 @@ export async function unarchiveTask(locttDir: string, taskId: string): Promise<T
     const task = await readTask(locttDir, taskId);
     // K25 / TSK-57 (mirror): not archived is a no-op success for
     // unarchive — the task is already in the requested state.
-    if (!task.frontmatter.archived) {
+    // BUT: a *corrupt* `archived` reads as undefined; a no-op would leave
+    // the corrupt flag on disk (the audit defect this fix closes, § 13.3
+    // S1). So when `archived` is corrupt, proceed and clear it — the
+    // write's own target field, so writing it is the repair.
+    if (!task.frontmatter.archived && !archivedIsCorrupt(task)) {
       return task;
     }
 
     const now = new Date().toISOString();
+    const carried = carryArchiveHealth(task);
     const result: Task = {
       frontmatter: applyArchiveState(task.frontmatter, false, now),
       body: task.body,
+      ...(carried ? { health: carried } : {}),
     };
-    await writeTask(locttDir, taskId, result);
+    await writeTask(locttDir, taskId, result, ARCHIVE_TOUCHED);
     await appendHistory(locttDir, taskId, [{ timestamp: now, kind: "unarchived" }]);
     return result;
   });

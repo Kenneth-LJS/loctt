@@ -1,6 +1,37 @@
-import type { HistoryEntry, LocttState, Task } from "@loctt/contracts";
+import type { FieldHealth, HistoryEntry, LocttState, Task, TaskFrontmatter } from "@loctt/contracts";
 
 import { mergeKeyHistory, mergeRelationships } from "./reconcile.js";
+
+/**
+ * Merges two sides' field-health lists for a task merge (§ 13.2 B2):
+ * a union of the raw values keyed by `(field, kind)`, minus any entry
+ * whose field the merged frontmatter now holds a healthy value for
+ * (the winning side repaired it). A top-level field present-and-defined
+ * on `frontmatter` counts as healthy; an indexed path (`labels[2]`) is
+ * kept unless its base field is absent.
+ */
+function mergeHealth(
+  localHealth: readonly FieldHealth[],
+  incomingHealth: readonly FieldHealth[],
+  frontmatter: TaskFrontmatter,
+): FieldHealth[] {
+  const fmObj = frontmatter as unknown as Record<string, unknown>;
+  const out: FieldHealth[] = [];
+  const seen = new Set<string>();
+  for (const h of [...localHealth, ...incomingHealth]) {
+    const k = `${h.field} ${h.kind}`;
+    if (seen.has(k)) continue;
+    // A top-level field the merged record now holds a value for is healed.
+    const base = h.field.replace(/[[.].*$/, "");
+    if (!h.field.includes("[") && !h.field.includes(".")
+      && fmObj[base] !== undefined) {
+      continue;
+    }
+    seen.add(k);
+    out.push(h);
+  }
+  return out;
+}
 
 /**
  * Field-level merging for git sync — the layer `three-way.ts` classifies
@@ -91,8 +122,10 @@ export function mergeTask(
   const inf = incoming.frontmatter;
 
   // Whole-record recency. Still the rule for the body, and the fallback
-  // for any field history cannot explain.
-  const winner = laterWins(local, incoming, lf.updated_at, inf.updated_at);
+  // for any field history cannot explain. `updated_at` is optional now
+  // (K26): a side whose timestamp is degraded reads as "" — the earliest
+  // possible, so a side with a real timestamp wins, which is correct.
+  const winner = laterWins(local, incoming, lf.updated_at ?? "", inf.updated_at ?? "");
   const loser = winner === local ? incoming : local;
 
   const resolved = resolveFieldsFromHistory(local, incoming, winner, mergedHistory);
@@ -119,7 +152,21 @@ export function mergeTask(
       : {}),
   };
 
-  const merged: Task = { frontmatter, body: winner.body };
+  // Merge the two sides' health (§ 13.2 B2): union of raw values, with a
+  // healthy value on the winning side overriding that field's entry. A
+  // field the merged frontmatter now holds a real value for is no longer
+  // corrupt, so its entry drops; otherwise the entry survives so the
+  // preserved raw value is re-emitted on write.
+  const mergedHealth = mergeHealth(
+    local.health ?? [],
+    incoming.health ?? [],
+    frontmatter,
+  );
+  const merged: Task = {
+    frontmatter,
+    body: winner.body,
+    ...(mergedHealth.length > 0 ? { health: mergedHealth } : {}),
+  };
   const additions = resolved.fallbacks.length > 0
     ? { historyAdditions: resolved.fallbacks }
     : {};
@@ -202,7 +249,9 @@ function resolveFieldsFromHistory(
     const lost = winner === local ? inf[field] : lf[field];
     fields[field] = won;
     fallbacks.push({
-      timestamp: winner.frontmatter.updated_at,
+      // updated_at is optional now (K26); a degraded winner timestamp
+      // falls back to "" so the entry still carries a (deterministic) key.
+      timestamp: winner.frontmatter.updated_at ?? "",
       kind: "merge_resolved",
       field,
       before: lost ?? null,

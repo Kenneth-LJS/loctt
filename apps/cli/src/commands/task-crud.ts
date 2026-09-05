@@ -295,9 +295,17 @@ export async function show(args: string[], root: string): Promise<void> {
   if (!ref) throw new UsageError("missing task ref", "loctt show <task>");
   const locttDir = resolveLocttDir(root);
   const task = await lookupTask(locttDir, ref);
-  const model = await buildShowModel(locttDir, task);
+  // Load configs so extrinsic health (invalid_value / dangling) is
+  // classified alongside intrinsic health. The archived-guard configs are
+  // a structural superset of AuxConfigs, so they double as `aux`.
+  const { workflowConfig } = await loadOptionalConfigs(locttDir);
+  const aux = await loadArchivedGuardConfigs(locttDir);
+  const model = await buildShowModel(locttDir, task, {
+    ...(workflowConfig !== undefined ? { workflow: workflowConfig } : {}),
+    aux,
+  });
 
-  console.log(`${model.task.frontmatter.key}: ${model.task.frontmatter.title}`);
+  console.log(`${model.task.frontmatter.key}: ${model.task.frontmatter.title ?? "(no title)"}`);
   const fm = model.task.frontmatter;
   if (fm.status) console.log(`Status: ${fm.status}`);
   if (fm.priority) console.log(`Priority: ${fm.priority}`);
@@ -355,6 +363,36 @@ export async function show(args: string[], root: string): Promise<void> {
     console.log(`Attachments:`);
     for (const a of model.attachments) {
       console.log(`  ${a.name} (${a.size} bytes)`);
+    }
+  }
+  // Field-level health (proposal § 6). A degraded field is not in
+  // `frontmatter`; its stored value is printed from `rawText` so the user
+  // can see what is there and repair it with `loctt set` / `loctt unset`.
+  //
+  // A dangling relationship *target* is already rendered (truncated) in
+  // the Relationships section above, so it is filtered out here — showing
+  // it again would duplicate the row and leak the full 26-char target
+  // ULID that K22 deliberately truncates. Any other rawText that is a
+  // bare ULID is truncated as defence-in-depth.
+  const truncateUlids = (s: string): string =>
+    s.replace(/\b[0-9A-HJKMNP-TV-Z]{26}\b/gi, m => `${m.slice(0, 8)}…`);
+  const health = (model.task.health ?? []).filter(
+    h => !(h.kind === "dangling" && /^relationships\[\d+\]\.target$/.test(h.field)),
+  );
+  if (health.length > 0) {
+    const unrecognised = health.filter(h => h.kind === "unrecognised");
+    const needsAttention = health.filter(h => h.kind !== "unrecognised");
+    if (needsAttention.length > 0) {
+      console.log(`\nNeeds attention:`);
+      for (const h of needsAttention) {
+        console.log(`  ⚠ ${h.field}: ${truncateUlids(h.rawText)} — ${truncateUlids(h.error)}`);
+      }
+    }
+    if (unrecognised.length > 0) {
+      console.log(`\nNot recognised:`);
+      for (const h of unrecognised) {
+        console.log(`  ${h.field}: ${truncateUlids(h.rawText)}`);
+      }
     }
   }
   if (model.task.body.trim()) {

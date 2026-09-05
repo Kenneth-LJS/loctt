@@ -46,7 +46,7 @@ export {
 export {
   assembleTaskFile,
   parseFrontmatter,
-  parseFrontmatterTolerant,
+  renderRawText,
   serializeFrontmatter,
   splitTaskFile,
   TaskParseError,
@@ -66,18 +66,19 @@ export {
 } from "./history.js";
 export type { BodyWriteOptions } from "./io.js";
 export {
+  ALL_FIELDS_TOUCHED,
   appendTaskBody,
+  assertWriteSafe,
+  CorruptWriteError,
   readTask,
   readTaskBody,
-  readTaskTolerant,
   writeTask,
   writeTaskBody,
-  writeTaskTolerant,
 } from "./io.js";
 export { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./lifecycle.js";
 export { listTaskIds } from "./list-ids.js";
 export { loadAllTasks, loadAllTasksDetailed, type UnreadableTask } from "./load-all.js";
-export { lookupById, lookupByKey, lookupTask, lookupTaskTolerant, TaskNotFoundError, UnreadableTaskError } from "./lookup.js";
+export { lookupById, lookupByKey, lookupTask, TaskNotFoundError, UnreadableTaskError } from "./lookup.js";
 export { clearLookupCaches } from "./lookup-cache.js";
 export { mimeForFilename } from "./mime.js";
 export type {

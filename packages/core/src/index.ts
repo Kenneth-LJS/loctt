@@ -345,6 +345,7 @@ export { loadSyncState, parseSyncState, saveSyncState, serializeSyncState, SyncS
 export { clearReconcileState, loadReconcileState, parseReconcileState, readReconcileState, ReconcileStateError,saveReconcileState, serializeReconcileState } from "./state/index.js";
 export { allocateKey, appendKeyHistory, initKeyAllocation, KeyAllocationError } from "./state/index.js";
 export { addToKeyIndex, loadKeyIndex, lookupKeyInIndex, rebuildKeyIndex, removeFromKeyIndex, saveKeyIndex } from "./state/index.js";
+export { classifyTaskHealth, CorruptFieldError } from "./task/health.js";
 export { HistoryParseError } from "./task/history.js";
 export type { AttachOptions, AttachResult, DetachOptions } from "./task/index.js";
 export type { CreateTaskOptions, CreateTaskParams } from "./task/index.js";
@@ -390,9 +391,9 @@ export {
   detachFile,
 } from "./task/index.js";
 export { appendHistory, isMalformedHistoryEntry, readHistory, readHistoryRows, validHistory } from "./task/index.js";
-export { assembleTaskFile, parseFrontmatter, parseFrontmatterTolerant, serializeFrontmatter, splitTaskFile, TaskParseError } from "./task/index.js";
-export { appendTaskBody, readTask, readTaskBody, readTaskTolerant, writeTask, writeTaskBody, writeTaskTolerant } from "./task/index.js";
-export { listTaskIds, loadAllTasks, loadAllTasksDetailed, lookupById, lookupByKey, lookupTask, lookupTaskTolerant, TaskNotFoundError, type UnreadableTask, UnreadableTaskError } from "./task/index.js";
+export { assembleTaskFile, parseFrontmatter, renderRawText, serializeFrontmatter, splitTaskFile, TaskParseError } from "./task/index.js";
+export { ALL_FIELDS_TOUCHED, appendTaskBody, assertWriteSafe, CorruptWriteError, readTask, readTaskBody, writeTask, writeTaskBody } from "./task/index.js";
+export { listTaskIds, loadAllTasks, loadAllTasksDetailed, lookupById, lookupByKey, lookupTask, TaskNotFoundError, type UnreadableTask, UnreadableTaskError } from "./task/index.js";
 export { createTask } from "./task/index.js";
 export { duplicateTask } from "./task/index.js";
 export { buildShowModel,discoverAttachments } from "./task/index.js";

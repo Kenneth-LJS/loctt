@@ -169,6 +169,42 @@ describe("an unreadable file is reported and blocks", () => {
   });
 });
 
+describe("task frontmatter field-health (Phase-7 § 10)", () => {
+  function taskPath(id: string): string {
+    return join(dir, "tasks", id, "task.md");
+  }
+  async function seedTaskFile(id: string, extraFm: string): Promise<void> {
+    await mkdir(join(dir, "tasks", id), { recursive: true });
+    const fm =
+      `id: ${id}\nkey: T-9\ntitle: T\n`
+      + `created_at: 2026-01-01T00:00:00Z\nupdated_at: 2026-01-01T00:00:00Z\n`
+      + extraFm;
+    await writeFile(taskPath(id), `---\n${fm}---\nBody.\n`, "utf-8");
+  }
+
+  it("reports a field-local corruption as non-blocking malformed", async () => {
+    const id = "01J000000000000000000FLD1";
+    await seedTaskFile(id, "due_date: 42\n");
+    const findings = await checkDataIntegrity(dir);
+    const fm = findings.find(f => f.path === taskPath(id));
+    expect(fm?.severity).toBe("malformed");
+    expect(fm?.message).toMatch(/due_date/);
+    // Malformed never blocks a publish.
+    expect(blockingFindings(findings)).toHaveLength(0);
+  });
+
+  it("reports an object-fatal task.md as unreadable (blocks publish)", async () => {
+    const id = "01J000000000000000000FLD2";
+    // Unparseable YAML — object-fatal.
+    await mkdir(join(dir, "tasks", id), { recursive: true });
+    await writeFile(taskPath(id), `---\nid: ${id}\nkey: T-8\ntitle: "unterminated\n---\nB\n`, "utf-8");
+    const findings = await checkDataIntegrity(dir);
+    const fm = findings.find(f => f.path === taskPath(id));
+    expect(fm?.severity).toBe("unreadable");
+    expect(blockingFindings(findings).length).toBeGreaterThan(0);
+  });
+});
+
 describe("the two severities stay distinguishable", () => {
   it("reports both without collapsing them", async () => {
     // One task with a malformed entry, one unreadable.

@@ -34,7 +34,9 @@ import {
   getWorkflowConfigPath,
 } from "../paths/index.js";
 import { isMalformedComment, listCommentEntries } from "../task/comments.js";
+import { TaskParseError } from "../task/frontmatter.js";
 import { isMalformedHistoryEntry, readHistoryRows } from "../task/history.js";
+import { readTask } from "../task/io.js";
 import { listTaskIds } from "../task/list-ids.js";
 import { validateRelationships } from "../task/traversal.js";
 import { isMissingFile, readFileState, UnreadableFileError } from "../utils/read-state.js";
@@ -123,6 +125,42 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
           ? err.message
           : `could not be read: ${messageOf(err)}`,
       });
+    }
+
+    // Task frontmatter field-health (proposal § 10). `readTask` is
+    // tolerant: a field-local corruption degrades into `health` (reported
+    // here as `malformed`, non-blocking — the data is preserved), while
+    // object-fatal corruption throws TaskParseError (reported as
+    // `unreadable`, which blocks a publish, exactly as before).
+    const taskPath = getTaskFilePath(locttDir, taskId);
+    try {
+      const task = await readTask(locttDir, taskId);
+      for (const h of task.health ?? []) {
+        findings.push({
+          severity: "malformed",
+          path: taskPath,
+          message:
+            `field "${h.field}" ${h.kind === "unrecognised" ? "is not recognised" : "is corrupt"} `
+            + `(${h.kind}: ${h.rawText || "malformed"} — ${h.error}). It has been kept `
+            + `in place and is preserved by every write; repair it with `
+            + `\`loctt set\` / \`loctt unset\`, or edit the file by hand.`,
+        });
+      }
+    } catch (err) {
+      if (err instanceof TaskParseError) {
+        findings.push({
+          severity: "unreadable",
+          path: taskPath,
+          message: `task.md could not be parsed: ${messageOf(err)}`,
+        });
+      } else if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        findings.push({
+          severity: "unreadable",
+          path: taskPath,
+          message: `could not be read: ${messageOf(err)}`,
+        });
+      }
+      // ENOENT: a directory with no task.md is not a task — skip.
     }
   }
 

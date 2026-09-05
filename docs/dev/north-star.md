@@ -113,11 +113,13 @@ Consistent with `invariants.md` (hard constraints) and `decisions.md`
      operation can touch what it needs without interpreting or
      rewriting the corrupted parts.
      - bulkSetFields on a corrupted task: **set the target field**
-       (even if it was absent), and **leave every other field exactly
-       as it was on disk** — expected, unexpected, or wrong-typed,
-       byte-preserved. The operation must never make corruption worse,
-       and a field LocTT does not understand survives untouched. Only
-       the field being set changes.
+       (even if it was absent), and **leave every other field's value
+       exactly as it was on disk** — expected, unexpected, or
+       wrong-typed, value-preserved (YAML-equivalent; a re-serialize may
+       shift quoting or spacing but never the value — K27). The
+       operation must never make corruption worse, and a field LocTT
+       does not understand survives untouched. Only the field being set
+       changes.
      - But if the thing the operation needs is *structurally* broken —
        e.g. `relationships` is an object where an array is expected and
        the operation is a link — **stop and warn.** Do not attempt the

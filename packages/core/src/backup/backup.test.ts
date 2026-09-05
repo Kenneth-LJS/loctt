@@ -139,7 +139,13 @@ describe("export/restore round trip", () => {
     expect(restoredA.frontmatter.relationships).toEqual([{ type: "blocks", target: b }]);
     expect(restoredA.frontmatter.fields).toEqual({ severity: "high" });
     expect(restoredA.frontmatter.key_history).toEqual(["OLD-9"]);
-    expect(restoredA.frontmatter.rank).toBe("0|hzzzzz:");
+    // `rank` is not a schema-known key, so the corruption framework lifts
+    // it into `health` (kind unrecognised) rather than onto `frontmatter`
+    // — but its VALUE still survives the round trip byte-for-byte, which
+    // is what this test checks. (Previously this asserted
+    // `frontmatter.rank`; the value moved home, not the guarantee. A135.)
+    const rankEntry = (restoredA.health ?? []).find(h => h.field === "rank");
+    expect(rankEntry?.raw).toBe("0|hzzzzz:");
     expect(restoredA.frontmatter.board_rank).toBe("0|i00000:");
 
     const restoredC = await lookupTask(dstDir, c);

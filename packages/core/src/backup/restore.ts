@@ -246,10 +246,16 @@ async function assertNotMidOperation(locttDir: string): Promise<void> {
   }
 }
 
-/** Parses a backup task record into a `Task` plus its raw text. */
+/**
+ * Parses a backup task record into a `Task`, carrying `health` (§ 13.2
+ * B2). A backup of a corrupt task must restore it byte-for-byte (§ 11.4),
+ * so its degraded/unrecognised fields ride in `health` and are re-emitted
+ * by `assembleTaskFile` rather than dropped.
+ */
 function toTask(record: BackupRecord & { kind: "task" }): Task {
   const { rawYaml, body } = splitTaskFile(record.raw);
-  return { frontmatter: parseFrontmatter(rawYaml), body };
+  const { frontmatter, health } = parseFrontmatter(rawYaml);
+  return { frontmatter, body, ...(health.length > 0 ? { health } : {}) };
 }
 
 /**
@@ -357,7 +363,8 @@ export async function restoreBackup(
       if (raw === undefined) continue;
       try {
         const { rawYaml, body } = splitTaskFile(raw);
-        const t = { frontmatter: parseFrontmatter(rawYaml), body };
+        const { frontmatter, health } = parseFrontmatter(rawYaml);
+        const t: Task = { frontmatter, body, ...(health.length > 0 ? { health } : {}) };
         localTasks.push(t);
         usedKeys.add(t.frontmatter.key);
       } catch { /* unparseable local task: never written over (P-11) */ }
@@ -403,7 +410,8 @@ export async function restoreBackup(
         if (localRaw !== undefined) {
           try {
             const { rawYaml, body } = splitTaskFile(localRaw);
-            const local: Task = { frontmatter: parseFrontmatter(rawYaml), body };
+            const { frontmatter, health } = parseFrontmatter(rawYaml);
+            const local: Task = { frontmatter, body, ...(health.length > 0 ? { health } : {}) };
             const outcome = mergeTask(local, task);
             if (outcome.displaced !== undefined && local.body !== task.body) {
               // A ULID rather than a timestamp: two restores in the
@@ -614,7 +622,9 @@ export async function restoreBackup(
     for (const { id, task, record } of taskWrites) {
       writes.push({
         path: getTaskFilePath(locttDir, id),
-        content: assembleTaskFile(task.frontmatter, task.body),
+        // `task` carries `health` (§ 13.2 B2), so a restored corrupt task
+        // round-trips its degraded/unrecognised fields (§ 11.4 BAK).
+        content: assembleTaskFile(task),
       });
       if (record.comments !== undefined) {
         // Two edits to one comment resolve by updated_at, and a merged

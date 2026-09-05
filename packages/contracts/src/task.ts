@@ -51,9 +51,15 @@ export const TaskFrontmatterSchema = z.object({
   id: z.string().min(1),
   key: z.string().min(1),
   project: z.string().min(1).optional(),
-  title: z.string().min(1),
-  created_at: IsoTimestamp,
-  updated_at: IsoTimestamp,
+  // K26: the object-fatal fatal set is `{id, key}` only — the fields
+  // needed to *address* a task. `title` and the two required timestamps
+  // are field-LOCAL: a task with a broken title or timestamp loads in a
+  // degraded state (the bad field set aside in `health`) rather than
+  // becoming unreadable. They are therefore optional in the type; a
+  // corrupt value is dropped to `undefined` here and carried in `health`.
+  title: z.string().min(1).optional(),
+  created_at: IsoTimestamp.optional(),
+  updated_at: IsoTimestamp.optional(),
   status: z.string().optional(),
   status_updated_at: IsoTimestamp.optional(),
   task_type: z.string().optional(),
@@ -106,43 +112,61 @@ export const TaskFrontmatterSchema = z.object({
 export type TaskFrontmatter = z.infer<typeof TaskFrontmatterSchema>;
 
 /**
- * A known, typed frontmatter field whose stored value does not match its
- * type — e.g. `due_date: 42` or `due_date: "someday"`. This is the
- * Phase-7 corruption-framework SPIKE: one corruption kind (wrong-typed
- * known optional field), field-local severity.
+ * The kind of a field-level health problem. Named by *what a reader or
+ * writer can do about it*, not by cause (proposal § 2). The first three
+ * are **intrinsic** — decided by parsing the file against the schema,
+ * with no config. The last two are **extrinsic** — decided against the
+ * workflow/aux configs and the rest of the tracker (`classifyTaskHealth`).
+ */
+export type FieldHealthKind =
+  | "wrong_type"        // a schema-known field whose value fails its type/format
+  | "missing_required"  // a required field (title/created_at/updated_at) absent or null
+  | "unrecognised"      // a top-level key the schema does not declare
+  | "invalid_value"     // right type, but the value the workflow does not define
+  | "dangling";         // a reference whose target does not exist
+
+/**
+ * One field-level health finding on a task (proposal § 4.2). Replaces the
+ * Phase-7-spike `FieldCorruption`.
  *
  * Modelled on `BrokenSavedQuery` (VUE-22): a per-element degradation
- * marker, not a thrown error. The raw stored value is preserved verbatim
- * so a tolerant write round-trips it byte-for-byte (north-star principle
- * 5: one bad field must not blank or rewrite the whole object), and the
- * parser's message is carried so a surface can explain the fault and
- * offer repair.
+ * marker, not a thrown error. The corrupt field is NOT in `frontmatter`
+ * (a healthy object holds only healthy values); its raw stored value
+ * lives here in `raw` so a tolerant write round-trips it (north-star
+ * principle 5/7: one bad field must not blank or rewrite the whole
+ * object), and the validator's message is carried so a surface can
+ * explain the fault and offer repair.
  *
- * Object-fatal violations (a missing/blank `id`/`key`/`title`, a
- * malformed required timestamp) are NOT field corruptions — they still
- * throw, because the object has no stable identity to degrade around.
+ * Object-fatal violations (a missing/blank `id`/`key`, a YAML syntax
+ * error) are NOT field-health findings — they still throw, because the
+ * object has no stable identity to degrade around (K26).
  */
-export interface FieldCorruption {
-  /** The frontmatter key whose value is wrong-typed (e.g. "due_date"). */
+export interface FieldHealth {
+  /** Path as the validator reports it: "due_date", "labels[2]", "fields.points", "relationships[1].target". */
   readonly field: string;
-  /** The offending value exactly as stored, preserved for round-trip. */
+  readonly kind: FieldHealthKind;
+  /** The stored value, JSON-safe (YAML Dates are already ISO strings via coerceFrontmatter). */
   readonly raw: unknown;
-  /** The type-check message (what was expected). */
+  /** One-line YAML rendering of `raw`, computed in core so all three surfaces print the same string. */
+  readonly rawText: string;
+  /** The validator's message — what was expected. */
   readonly error: string;
+  /** What the user may do: set a valid value, remove the field, or both. */
+  readonly repair: "set" | "remove" | "set_or_remove";
 }
 
 /** A full task: frontmatter + markdown body. */
 export interface Task {
-  readonly frontmatter: TaskFrontmatter;
+  readonly frontmatter: TaskFrontmatter;   // HEALTHY fields only
   readonly body: string;
   /**
-   * Field-local corruptions found while loading (Phase-7 spike). Absent
-   * or empty on a clean task. The corrupt fields are kept in
-   * `frontmatter` under their raw stored value so nothing is lost; this
-   * list is how a surface knows which fields to render as degraded and
-   * offer to repair.
+   * Field-level health findings gathered while loading (intrinsic) and,
+   * where configs are available, against the workflow/tracker
+   * (extrinsic). Omitted (not `[]`) when clean — same convention as
+   * `QueriesConfig.broken`. The corrupt fields are NOT in `frontmatter`;
+   * a surface renders them from `health`, using `rawText` for display.
    */
-  readonly corruptions?: readonly FieldCorruption[];
+  readonly health?: readonly FieldHealth[];
 }
 
 /**
@@ -167,9 +191,12 @@ export const TaskFrontmatterPublicSchema = z.object({
   id: z.string().min(1),
   key: z.string().min(1),
   project: z.string().min(1).optional(),
-  title: z.string().min(1),
-  created_at: IsoTimestamp,
-  updated_at: IsoTimestamp,
+  // K26: field-local, so optional here too. When one of these is corrupt
+  // it is absent from `frontmatter` (the value lives in `health`), so the
+  // public projection must accept its absence rather than throwing.
+  title: z.string().min(1).optional(),
+  created_at: IsoTimestamp.optional(),
+  updated_at: IsoTimestamp.optional(),
   status: z.string().optional(),
   status_updated_at: IsoTimestamp.optional(),
   task_type: z.string().optional(),

@@ -1,7 +1,6 @@
 import { rm } from "node:fs/promises";
 
 import type { Task, WorkflowConfig } from "@loctt/contracts";
-import { TaskFrontmatterSchema } from "@loctt/contracts";
 import { ulid } from "ulid";
 
 import type { ArchivedGuardConfigs } from "../config/archived-guard.js";
@@ -10,7 +9,7 @@ import { withStateLock } from "../state/lock.js";
 import { stagedSwap } from "../state/staged-swap.js";
 import { assembleTaskFile } from "./frontmatter.js";
 import { appendHistory } from "./history.js";
-import { readTask } from "./io.js";
+import { assertWriteSafe, readTask } from "./io.js";
 import { applyArchiveState } from "./lifecycle.js";
 import { lookupTask, TaskNotFoundError } from "./lookup.js";
 import { clearLookupCaches } from "./lookup-cache.js";
@@ -123,14 +122,17 @@ async function runBulk(
   // Phase 2: stage, back up, journal, swap. Either every task.md in
   // the batch lands or none does.
   if (pending.length > 0) {
-    // Same shape check `writeTask` performs, run before anything is
-    // staged so an invalid frontmatter cannot reach the swap.
-    for (const p of pending) TaskFrontmatterSchema.parse(p.write.task.frontmatter);
+    // Same guard `writeTask` performs, run before anything is staged so
+    // a write that would introduce or drop corruption cannot reach the
+    // swap. `touched` is the change set — a preserved corrupt value on
+    // any *other* field must survive the bulk write (§ 13.1 B1).
+    const touched = new Set(changes.map(c => c.field));
+    for (const p of pending) await assertWriteSafe(locttDir, p.id, p.write.task, touched);
     await stagedSwap(
       locttDir,
       pending.map(p => ({
         path: getTaskFilePath(locttDir, p.id),
-        content: assembleTaskFile(p.write.task.frontmatter, p.write.task.body),
+        content: assembleTaskFile(p.write.task),
       })),
     );
     // History follows the swap. It is append-only and best-effort by
@@ -178,7 +180,11 @@ export async function bulkArchive(opts: BulkArchiveOptions): Promise<BulkResult>
         const id = looked.frontmatter.id;
         const task = await readTask(opts.locttDir, id);
         const currentlyArchived = task.frontmatter.archived === true;
-        if (currentlyArchived === opts.archive) {
+        // A corrupt `archived` reads as undefined; do NOT no-op over it —
+        // the write must proceed to clear/repair the corrupt value (§ 13.3
+        // S1, mirroring archiveTask/unarchiveTask).
+        const archivedCorrupt = (task.health ?? []).some(h => h.field === "archived");
+        if (currentlyArchived === opts.archive && !archivedCorrupt) {
           // Already in the target state: no write, no history entry.
           // Still a success — refusing would make archiving a mixed
           // selection impossible — but reported apart from the tasks
@@ -190,8 +196,16 @@ export async function bulkArchive(opts: BulkArchiveOptions): Promise<BulkResult>
         const next: Task = {
           frontmatter: applyArchiveState(task.frontmatter, opts.archive, now),
           body: task.body,
+          // Carry the source health so a preserved corrupt/unrecognised
+          // field round-trips through the archive write (preserve-others).
+          ...(task.health !== undefined ? { health: task.health } : {}),
         };
-        TaskFrontmatterSchema.parse(next.frontmatter);
+        await assertWriteSafe(
+          opts.locttDir,
+          id,
+          next,
+          new Set(["archived", "archived_at", "updated_at"]),
+        );
         pending.push({ id, task: next });
       } catch (err) {
         if (err instanceof TaskNotFoundError) {
@@ -207,7 +221,7 @@ export async function bulkArchive(opts: BulkArchiveOptions): Promise<BulkResult>
         opts.locttDir,
         pending.map(p => ({
           path: getTaskFilePath(opts.locttDir, p.id),
-          content: assembleTaskFile(p.task.frontmatter, p.task.body),
+          content: assembleTaskFile(p.task),
         })),
       );
       clearLookupCaches(opts.locttDir);

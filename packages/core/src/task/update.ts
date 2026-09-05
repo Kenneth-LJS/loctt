@@ -1,4 +1,4 @@
-import type { HistoryEntry, Task, TaskFrontmatter, WorkflowConfig } from "@loctt/contracts";
+import type { FieldHealth, HistoryEntry, Task, TaskFrontmatter, WorkflowConfig } from "@loctt/contracts";
 
 import type { ArchivedGuardConfigs } from "../config/archived-guard.js";
 import { assertNotArchivedReferences } from "../config/archived-guard.js";
@@ -18,6 +18,33 @@ import { todayInZone } from "../utils/today.js";
 import { appendHistory } from "./history.js";
 import { readTask, writeTask } from "./io.js";
 import { readField, toFrontmatter, toMutable } from "./mutable.js";
+
+/**
+ * The `touched` set a single-field write declares for the write guard
+ * (§ 13.1 B1): the field itself plus the auto-managed fields every write
+ * stamps. A preserved corrupt value on any *other* field must survive.
+ */
+function touchedFor(field: string): ReadonlySet<string> {
+  const t = new Set<string>([field, "updated_at"]);
+  if (field === "status") { t.add("status_updated_at"); t.add("completed_date"); }
+  return t;
+}
+
+/**
+ * Carries a task's health forward across a write to `writtenField`.
+ *
+ * Every entry except those on `writtenField` survives so its raw value is
+ * re-emitted (preserve-others). The written field's entries drop — the
+ * validated write repairs it (override-on-direct-write). An indexed entry
+ * whose base field is the written field also drops.
+ */
+function carryHealth(
+  health: readonly FieldHealth[] | undefined,
+  writtenField: string,
+): FieldHealth[] {
+  if (health === undefined) return [];
+  return health.filter(h => h.field.replace(/[[.].*$/, "") !== writtenField);
+}
 
 export class TaskUpdateError extends LocttError {
   /**
@@ -481,8 +508,17 @@ async function setFieldLocked(opts: SetFieldOptions): Promise<Task> {
     assertNotArchivedReferences(updated, task.frontmatter, archivedGuard);
   }
 
-  const updatedTask: Task = { frontmatter: updated, body: task.body };
-  await writeTask(locttDir, taskId, updatedTask);
+  // Carry the preserved health forward (preserve-others): every degraded
+  // /unrecognised field except the one just written stays in `health` so
+  // its raw value is re-emitted. Writing `field` repairs it, so its entry
+  // is dropped (override-on-direct-write).
+  const carried = carryHealth(task.health, field);
+  const updatedTask: Task = {
+    frontmatter: updated,
+    body: task.body,
+    ...(carried.length > 0 ? { health: carried } : {}),
+  };
+  await writeTask(locttDir, taskId, updatedTask, touchedFor(field));
 
   // Emit history entries
   const historyEntries = buildSetFieldHistory(task.frontmatter, field, value, now);
@@ -580,11 +616,26 @@ async function unsetFieldLocked(
   const task = await readTask(locttDir, taskId);
   const now = new Date().toISOString();
 
+  // Is `field` degraded (its value lives only in `health`, not on
+  // `frontmatter`)? A wrong-typed known field, an unrecognised top-level
+  // key, or an extrinsic dangling/invalid value. Removing it drops its
+  // health entry so the serializer stops re-emitting the raw value.
+  const healthForField = (task.health ?? []).filter(
+    h => h.field.replace(/[[.].*$/, "") === field,
+  );
+
   let updated: TaskFrontmatter;
 
   if (BUILTIN_OPTIONAL_FIELDS.has(field)) {
     const copy = toMutable(task.frontmatter);
     delete copy[field];
+    copy["updated_at"] = now;
+    updated = toFrontmatter(copy);
+  } else if (healthForField.length > 0 && !(field in (task.frontmatter.fields ?? {}))) {
+    // Health-only field (an unrecognised top-level key, or a wrong-typed
+    // non-builtin). There is nothing on `frontmatter` to delete — dropping
+    // the health entry below is the removal. Just bump updated_at.
+    const copy = toMutable(task.frontmatter);
     copy["updated_at"] = now;
     updated = toFrontmatter(copy);
   } else {
@@ -605,8 +656,15 @@ async function unsetFieldLocked(
     updated = toFrontmatter(copy);
   }
 
-  const updatedTask: Task = { frontmatter: updated, body: task.body };
-  await writeTask(locttDir, taskId, updatedTask);
+  // Drop this field's health entries so its raw value is not re-emitted;
+  // carry every other field's health forward (preserve-others).
+  const carried = carryHealth(task.health, field);
+  const updatedTask: Task = {
+    frontmatter: updated,
+    body: task.body,
+    ...(carried.length > 0 ? { health: carried } : {}),
+  };
+  await writeTask(locttDir, taskId, updatedTask, touchedFor(field));
 
   // Emit history entries
   const historyEntries = buildUnsetFieldHistory(task.frontmatter, field, now);
@@ -864,7 +922,18 @@ export async function setFieldsLocked(
     assertNotArchivedReferences(updated, task.frontmatter, archivedGuard);
   }
 
-  const updatedTask: Task = { frontmatter: updated, body: task.body };
+  // Carry health for every field the batch did NOT touch (preserve-
+  // others); each touched field's entries drop (override-on-direct-write).
+  const changedFields = new Set(changes.map(c => c.field));
+  let carried = task.health ?? [];
+  for (const f of changedFields) carried = carryHealth(carried, f);
+  const touched = new Set<string>([...changedFields, "updated_at"]);
+  if (changedFields.has("status")) { touched.add("status_updated_at"); touched.add("completed_date"); }
+  const updatedTask: Task = {
+    frontmatter: updated,
+    body: task.body,
+    ...(carried.length > 0 ? { health: [...carried] } : {}),
+  };
 
   const historyEntries: HistoryEntry[] = [];
   for (const { field, value } of changes) {
@@ -887,7 +956,7 @@ export async function setFieldsLocked(
     return { task: updatedTask, history: stamped };
   }
 
-  await writeTask(locttDir, taskId, updatedTask);
+  await writeTask(locttDir, taskId, updatedTask, touched);
   if (stamped.length > 0) {
     await appendHistory(locttDir, taskId, stamped);
   }

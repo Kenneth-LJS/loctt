@@ -562,6 +562,28 @@ match anything, LocTT says it cannot confirm whether the task exists —
 the key it would have matched lives inside the file it could not
 parse. Repair the named file and run the command again.
 
+**Field-level problems degrade in place, they do not make the task
+unreadable.** Only a broken `id`/`key` or unparseable YAML stops a task
+from opening. A single bad field — a wrong-typed `due_date`, a missing
+`title`, a value the workflow no longer defines, a reference whose target
+is gone, or a key LocTT does not recognise — is kept exactly as stored
+and the rest of the task shows normally. `show` lists these below the
+task under two groups:
+
+```
+Needs attention:
+  ⚠ due_date: 42 — must be YYYY-MM-DD or full ISO-8601 timestamp
+
+Not recognised:
+  jira_id: ABC-1
+```
+
+To repair one: `loctt set <task> <field> <value>` writes a valid value
+over it, and `loctt unset <task> <field>` removes it (this now works for
+an unrecognised top-level key too). Every other field's stored value is
+preserved untouched when you repair one. `loctt doctor` lists the same
+problems across the whole tracker as non-blocking `malformed` findings.
+
 ### `loctt set`
 
 Set a field on one task, or on several at once. Works for both built-in
