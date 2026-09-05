@@ -151,6 +151,7 @@ export {
   SyncStateSchema,
 } from "./state.js";
 export type {
+  FieldCorruption,
   Task,
   TaskFrontmatter,
   TaskFrontmatterPublic,

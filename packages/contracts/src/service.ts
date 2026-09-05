@@ -176,6 +176,15 @@ export interface TaskResponse {
    * was unbuildable.
    */
   readonly relationships: readonly ResolvedRelationshipResponse[];
+
+  /**
+   * Phase-7 SPIKE — field-local corruptions found while loading this
+   * task (a wrong-typed known field, e.g. `due_date`). Absent when the
+   * task is clean. Present so the detail view can render the field
+   * degraded and offer repair, instead of the whole task being
+   * unopenable. Each entry names the field and what the value should be.
+   */
+  readonly corruptions?: readonly { readonly field: string; readonly error: string }[];
 }
 
 /**

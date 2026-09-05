@@ -105,10 +105,44 @@ export const TaskFrontmatterSchema = z.object({
 }).passthrough();
 export type TaskFrontmatter = z.infer<typeof TaskFrontmatterSchema>;
 
+/**
+ * A known, typed frontmatter field whose stored value does not match its
+ * type — e.g. `due_date: 42` or `due_date: "someday"`. This is the
+ * Phase-7 corruption-framework SPIKE: one corruption kind (wrong-typed
+ * known optional field), field-local severity.
+ *
+ * Modelled on `BrokenSavedQuery` (VUE-22): a per-element degradation
+ * marker, not a thrown error. The raw stored value is preserved verbatim
+ * so a tolerant write round-trips it byte-for-byte (north-star principle
+ * 5: one bad field must not blank or rewrite the whole object), and the
+ * parser's message is carried so a surface can explain the fault and
+ * offer repair.
+ *
+ * Object-fatal violations (a missing/blank `id`/`key`/`title`, a
+ * malformed required timestamp) are NOT field corruptions — they still
+ * throw, because the object has no stable identity to degrade around.
+ */
+export interface FieldCorruption {
+  /** The frontmatter key whose value is wrong-typed (e.g. "due_date"). */
+  readonly field: string;
+  /** The offending value exactly as stored, preserved for round-trip. */
+  readonly raw: unknown;
+  /** The type-check message (what was expected). */
+  readonly error: string;
+}
+
 /** A full task: frontmatter + markdown body. */
 export interface Task {
   readonly frontmatter: TaskFrontmatter;
   readonly body: string;
+  /**
+   * Field-local corruptions found while loading (Phase-7 spike). Absent
+   * or empty on a clean task. The corrupt fields are kept in
+   * `frontmatter` under their raw stored value so nothing is lost; this
+   * list is how a surface knows which fields to render as degraded and
+   * offer to repair.
+   */
+  readonly corruptions?: readonly FieldCorruption[];
 }
 
 /**
