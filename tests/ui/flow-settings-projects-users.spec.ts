@@ -99,8 +99,16 @@ async function userIdByName(
   for (const line of list.split("\n")) {
     const m = /^([0-9A-HJKMNP-TV-Z]{26})\s*\*?\t([^\t]+)\t/.exec(line);
     if (m === null) continue;
-    const label = m[2]?.trim() ?? "";
-    if (label === name || label.startsWith(`${name}  `)) return m[1];
+    // The label column is "Name", "Name  <email>", or — for an archived
+    // user — "Name (archived)  <email>". Reduce it to the bare display
+    // name before comparing: drop the email tail, then the archived
+    // marker, so an archived user still matches by name (PRU-42 archives
+    // Dave and then looks him up).
+    const label = (m[2] ?? "")
+      .replace(/\s{2,}<[^>]*>\s*$/, "")
+      .replace(/\s*\(archived\)\s*$/, "")
+      .trim();
+    if (label === name) return m[1];
   }
   return undefined;
 }
@@ -137,6 +145,31 @@ async function fmByTitle(
  */
 async function orphanUser(root: string, userId: string): Promise<void> {
   await rm(path.join(root, ".loctt", "users", userId), { recursive: true, force: true });
+}
+
+/**
+ * Writes `list_columns` to the active (current) user's settings.yaml.
+ *
+ * K24 made `reporter` an opt-in column, so a test that needs the
+ * reporter column visible seeds it here rather than relying on it being
+ * default. The active user is whoever `.current-user` names — the one
+ * the list view renders as. Merges into any existing settings so it
+ * does not clobber other keys.
+ */
+async function setActiveUserListColumns(
+  tracker: { root: string },
+  columns: readonly string[],
+): Promise<void> {
+  const currentId = (
+    await readFile(path.join(tracker.root, ".loctt", ".current-user"), "utf8")
+  ).trim();
+  const file = path.join(tracker.root, ".loctt", "users", currentId, "settings.yaml");
+  let existing = "";
+  try {
+    existing = (await readFile(file, "utf8")).replace(/^list_columns:.*(\n {2}-.*)*\n?/m, "");
+  } catch { /* no settings yet */ }
+  const block = `list_columns:\n${columns.map(c => `  - ${c}`).join("\n")}\n`;
+  await writeFile(file, `${existing.trimEnd()}\n${block}`.replace(/^\n/, ""), "utf8");
 }
 
 test.describe("SET — the settings shell", () => {
@@ -1155,6 +1188,15 @@ test.describe("PRU-25 — a hard-deleted user still referenced as reporter", () 
     // Reach the dangling state out-of-band (K21): remove Dave's profile
     // while the tasks keep his ULID. deleteUser would refuse this.
     await orphanUser(tracker.root, daveId);
+
+    // K24: reporter is an opt-in column, not a default one. This case is
+    // about the reporter *cell* degrading, so the viewing user opts the
+    // reporter column in via list_columns before we look at the list.
+    // Written to the active (init) user, who is whoever the list view
+    // renders as — the users created above are additional profiles.
+    await setActiveUserListColumns(tracker, [
+      "key", "title", "assignee", "reporter", "status",
+    ]);
 
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Daves first")).toBeVisible();

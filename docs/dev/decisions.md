@@ -7723,3 +7723,114 @@ the same notice channel other post-hoc facts use (see K16), and
 Makes NEW-20 buildable, as written.
 
 **To revert.** Ken's, not an agent's.
+
+### A125 · Implementing K23 — where the ghost-default check moved to
+
+**Date:** 2026-09-05 · Agent · revertable.
+
+K23 (Ken's) ruled a ghost workspace `default:` degrades rather than
+failing. This records *how* it was implemented, because the check moved
+across three layers and the moves are coupled:
+
+1. **Schema (`packages/contracts/src/projects.ts`)** — the
+   `superRefine` that rejected a `default` not in the projects list was
+   removed (its now-dead `ids` set with it). The **archived-default**
+   reject stays: an archived default names a project that *exists* but
+   is hidden, so a task would silently land unseen — a different, worse
+   failure that stays fatal. The asymmetry is commented in place.
+
+2. **Resolver (`resolveProjectId`, `packages/core/src/projects/manage.ts`)**
+   — the `config.default` rung now returns the default **only if it
+   names a real project**; otherwise it falls through to the
+   unique-single rung and then throws (the ask state). Before K23 this
+   guard was unnecessary because the schema guaranteed existence;
+   without it, a ghost default would be *returned* and a task filed into
+   a nonexistent project, burning the wrong key counter (NEW-14's second
+   bullet, not undoable). This is the load-bearing half — proven by
+   mutation (forcing the old blind return reddens the NEW-20 resolver
+   tests).
+
+3. **Surface (`GET /api/projects`)** — `effectiveDefault` now
+   initialises to `null` (was `cfg.default ?? null`): when resolution
+   throws, the catch must leave "no defensible default", not the ghost.
+   A `default_drift: { kind: "missing", default }` advisory rides the
+   response and `projectDefaultIsGhost(cfg)` (new, exported from core)
+   decides when to include it. `ProjectsPanel` renders it as a
+   `role="alert"` warn banner naming the stale id.
+
+Two green tests were asserting the *old* hard-reject and were rewritten
+to assert tolerate-and-degrade (`config-validation.test.ts`,
+`config/projects.test.ts`) — flagged per the repo's "editing a green
+test means it encoded the bug" rule.
+
+**To revert.** Restore the two `superRefine` issues (nonexistent +
+keep archived), drop the resolver existence guard, restore
+`effectiveDefault = cfg.default ?? null`, remove `projectDefaultIsGhost`,
+the `default_drift` field, and the panel banner. Re-word NEW-20 to
+assert the config-error surface. (But this is K23's implementation —
+reverting the behaviour needs Ken.)
+
+### K24 · The reporter column is opt-in, not a default list column
+
+**Date:** 2026-09-05 · **Ken's ruling — an agent may not revert this.**
+
+Commit `1ff660a` (PRU-25/42) added a **Reporter** column to
+`DEFAULT_COLUMNS` in `apps/web/src/client/list/columns.ts`. That
+contradicts **LST-2**, a blocker-severity M1 case that enumerates the
+default list columns as exactly ten and does not include reporter:
+*key, project, title, status, priority, type, assignee, labels, due,
+updated*. The extra column also broke **LST-20** (an eleventh column
+pushed the table into horizontal overflow past its 50px tolerance).
+Both tests had been red since that commit; the break went unseen
+because the full UI suite never ran green to completion (the
+`Sidebar.test.tsx` wedge and CPU-starvation flakiness masked it).
+
+The tension is a genuine cross-case contradiction: **PRU-25** requires
+that a task whose reporter was hard-deleted shows a *degraded reporter
+cell* in the list — which needs a reporter column to exist somewhere.
+
+**Ken's ruling: reporter is opt-in.** It is removed from
+`DEFAULT_COLUMNS` and kept as an **available** column the user can add
+through `list_columns`. The default view is LST-2's exact ten. PRU-25's
+degraded-cell behaviour still holds when the reporter column is shown —
+its UI test seeds `list_columns` to include reporter before asserting
+(a `tests/` edit, permitted; it does not touch the read-only cases).
+
+**To revert.** Ken's, not an agent's.
+
+### A126 · Implementing K24 — DEFAULT_COLUMNS split from the catalog
+
+**Date:** 2026-09-05 · Agent · revertable.
+
+K24 (Ken's) made reporter opt-in. Implementation:
+
+- `apps/web/src/client/list/columns.ts` — `ALL_COLUMNS` stays the
+  catalog (still includes reporter, for the future settings editor and
+  PRU-25's opt-in cell). A new `DEFAULT_COLUMNS = ALL_COLUMNS without
+  reporter` is the fallback base when a user has no `list_columns`.
+  `resolveColumns` now falls back to `DEFAULT_COLUMNS`; it still
+  resolves ids against the full catalog, so an explicit `list_columns`
+  may name reporter. `DEFAULT_COLUMN_ORDER` derives from
+  `DEFAULT_COLUMNS`.
+
+- Three green tests encoded the reverted behaviour and were rewritten:
+  `columns.test.ts` (default == catalog; "reporter defaulting visible")
+  and `ListView.test.tsx` ("eleven column headers"). Now assert the ten
+  and reporter's absence-by-default + opt-in resolution.
+
+- `tests/ui/flow-settings-projects-users.spec.ts` — PRU-25's UI test
+  seeds `list_columns` (via new `setActiveUserListColumns` helper)
+  before asserting the degraded reporter cell, since reporter is no
+  longer shown by default.
+
+- Same file — `userIdByName` was silently failing to match an
+  **archived** user, whose `user list --all` label is
+  `Name (archived)  <email>`. Rewrote it to strip the email tail and
+  the `(archived)` marker before comparing. This was the PRU-42
+  failure: the product archived the user correctly (the row showed
+  `data-archived`, the reference was kept), but the test helper could
+  not find the archived profile and read it as "removed". A
+  test-observation bug, not a data-loss defect.
+
+**To revert.** Fold reporter back into a single `ALL_COLUMNS`-as-default
+and restore the three tests. (K24's behaviour is Ken's.)
