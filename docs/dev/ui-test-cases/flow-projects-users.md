@@ -110,10 +110,10 @@ project counters during git sync is in
 - Unarchive restores her to the pickers immediately.
 
 ### PRU-13 · M4 · major · P1 P9
-**Avatar upload compresses in the browser before POST.** A 1200×900 JPEG, 2.1 MB, selected in the Users panel.
+**Avatar upload: the browser crops, the server compresses and stores.** A 1200×900 JPEG, 2.1 MB, selected in the Users panel. (K18/K20: the browser lets the user choose the crop; the server resizes and re-encodes. 500px longest edge.)
 
-- The preview renders from the compressed result, not the original file.
-- The uploaded payload is at most 256×256 (aspect preserved, so 256×192 here) and is materially smaller than 2.1 MB — this is verifiable from the request body size in devtools.
+- The preview renders from the chosen crop, not the raw original file.
+- The stored avatar is at most 500px on its longest edge (aspect preserved) and materially smaller than the 2.1 MB original — verifiable from `users/<id>/avatar.<ext>` on disk.
 - The stored file lands at `users/<id>/avatar.<ext>` with a JPG or WebP extension matching what was actually encoded, and `profile.yaml` records that filename.
 - The avatar appears in the header menu, in the assignee cell in the list, and on the task detail panel after the upload completes.
 
@@ -228,29 +228,29 @@ project counters during git sync is in
 ### PRU-27 · M4 · major · P9
 **A 4000×3000 JPEG avatar is clamped and materially smaller.**
 
-- The browser resizes before upload: the posted image is 256×192, not 4000×3000.
-- The posted payload is a small fraction of the original — an order of magnitude smaller for a typical photo — verifiable from the request size.
+- The server resizes on store (K18): the stored image is at most 500px on its longest edge (so 500×375 here), not 4000×3000.
+- The stored file is a small fraction of the original — an order of magnitude smaller for a typical photo — verifiable from its byte size on disk.
 - The UI does not freeze during compression; either it completes fast enough to be imperceptible or it shows progress, but it never presents an unexplained frozen dialog.
 - The rendered avatar is not visibly stretched — the aspect ratio of the source is preserved by the clamp.
-- **Check what landed on disk** at `users/<id>/avatar.<ext>`: its dimensions and byte size match what was posted. PRU-13 checks disk; this case asserted only the request, so a server that stored the original would pass.
+- **Check what landed on disk** at `users/<id>/avatar.<ext>`: its longest edge is at most 500px and its byte size is materially smaller than the source. (K18 moved the resize to the server, so the assertion is on the stored file, not the request body.)
 
 ### PRU-28 · M4 · minor · P9
 **An avatar smaller than the cap is not upscaled.** A 64×64 PNG.
 
-- The stored image stays 64×64; the compressor does not blow it up to 256×256 and store a blurrier, larger file.
+- The stored image stays 64×64; the compressor does not upscale it to 500px and store a blurrier, larger file.
 - The result is not larger than the original file; if re-encoding would grow it, the original bytes are kept.
 
 ### PRU-29 · M4 · minor · P4
 **An animated GIF avatar is accepted as a still or rejected explicitly.**
 
 - Whichever the app does, it says so: either "Animated images are stored as a single frame" shown before/with the upload, or a rejection naming the format.
-- What it must not do is post the full animated file untouched to a bucket documented as 256×256 static, nor silently drop the upload with no feedback.
+- What it must not do is store the full animated file untouched where a 500px static image is expected, nor silently drop the upload with no feedback.
 - If flattened, the preview shows the exact frame that will be stored.
 
 ### PRU-30 · M4 · minor · P4
 **An SVG avatar is handled deliberately.**
 
-- SVG is either rejected with a reason naming the format, or rasterised to a 256×256 raster before POST — not passed through as inline markup.
+- SVG is either rejected with a reason naming the format, or rasterised to a raster (500px longest edge) — not passed through as inline markup.
 - If rejected, the message lists the accepted formats.
 - No SVG content reaches the avatar bucket unrasterised (it would otherwise be served back to the browser).
 
@@ -323,7 +323,7 @@ project counters during git sync is in
 **Avatar upload fails server-side after successful compression.** The POST returns 500 or the disk is full.
 
 - The error states that the image was prepared but not saved, and that the previous avatar is still in effect.
-- Retry re-posts the already-compressed image rather than forcing the user to re-pick the file.
+- Retry re-posts the already-cropped image rather than forcing the user to re-pick and re-crop the file.
 - The header does not optimistically show the new avatar and then silently revert without saying why.
 
 ### PRU-41 · M4 · major · P4 P7
