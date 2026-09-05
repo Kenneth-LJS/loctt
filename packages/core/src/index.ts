@@ -253,6 +253,7 @@ export {
   findProjectBySlug,
   isValidSlug,
   PartialRemapError,
+  projectDefaultIsGhost,
   ProjectError,
   projectSlug,
   resolveProjectByName,

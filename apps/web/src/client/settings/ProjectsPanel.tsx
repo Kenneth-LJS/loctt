@@ -322,6 +322,31 @@ export function ProjectsPanel() {
         </div>
       )}
 
+      {/* NEW-20 / K23: the workspace `default:` points at a project
+          that no longer exists (a rename or hand-edit left it stale).
+          This is tolerated drift, not a config error — the list below
+          is healthy — but new tasks now fall to the ask state instead
+          of landing in that default, so the user is told once, where
+          they can fix it. `role="alert"`: unlike the completed-rename
+          notice above, there is something to do. */}
+      {projects.data?.default_drift !== undefined && (
+        <div
+          role="alert"
+          data-testid="project-default-drift"
+          className="mb-4 rounded-md border border-border-subtle bg-warn-bg p-3 text-[13px] text-warn-fg"
+        >
+          <p className="mb-1 font-medium">Your workspace default no longer exists</p>
+          <p>
+            <code className="font-mono">
+              {projects.data.default_drift.default}
+            </code>{" "}
+            is set as the default project but is not in the list below. New
+            tasks will ask you to pick a project until you set a default that
+            exists.
+          </p>
+        </div>
+      )}
+
       <table className="w-full border-collapse text-left">
         <thead>
           <tr className="text-[11px] uppercase tracking-wide text-text-tertiary">

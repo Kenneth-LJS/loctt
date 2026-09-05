@@ -79,12 +79,20 @@ describe("projects default", () => {
     })).not.toThrow();
   });
 
-  it("still rejects a default that names no project", () => {
-    // The pre-existing rule, kept working alongside the new one.
+  it("tolerates a default that names no project (K23 / NEW-20)", () => {
+    // Was a hard reject. K23: a `default:` pointing at a project that no
+    // longer exists is out-of-band drift (a rename or hand-edit left the
+    // pointer stale), not a parse error — one bad value must not blank
+    // the whole projects surface (north-star principle 5). The config
+    // parses; the ghost is caught downstream by the resolver (which
+    // ignores it and falls to the ask state) and surfaced as a notice.
+    // The asymmetry with the archived case below is deliberate: an
+    // archived default names a project that EXISTS but is hidden, so a
+    // task would silently land somewhere unseen — that stays fatal.
     expect(() => ProjectsConfigSchema.parse({
       projects: [project()],
       default: ID_B,
-    })).toThrow(/not in the projects list/);
+    })).not.toThrow();
   });
 
   it("rejects an archived default", () => {

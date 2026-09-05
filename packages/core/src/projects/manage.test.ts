@@ -18,6 +18,7 @@ import {
   deleteProject,
   editProject,
   PartialRemapError,
+  projectDefaultIsGhost,
   ProjectError,
   resolveProjectByName,
   resolveProjectId,
@@ -460,6 +461,75 @@ describe("resolveProjectIdForUser (PRU-15)", () => {
     // A fresh tracker has exactly one project, so this is the last
     // rung reached only once every rung above it is empty.
     expect(await resolveProjectIdForUser(locttDir)).toBe(tasks);
+  });
+});
+
+/**
+ * NEW-20 / K23: a workspace `default:` naming a project that no longer
+ * exists is tolerated drift, not a config error. It must (a) still
+ * load, (b) be reported as drift, and (c) be *ignored* by resolution —
+ * which falls through to the unique-single rung and then the ask
+ * state, never returning the ghost id (that would file the task into a
+ * nonexistent project and burn the wrong key counter).
+ *
+ * The ghost is written straight to projects.yaml because no API can
+ * create one — `setDefaultProject` validates. That is exactly how the
+ * drift arises in the wild: a hand-edit, or a rename that left the
+ * pointer behind.
+ */
+describe("ghost workspace default (NEW-20 / K23)", () => {
+  async function writeGhostDefault(): Promise<void> {
+    const { writeFile } = await import("node:fs/promises");
+    const cfg = await loadProjectsConfig(locttDir);
+    const { getProjectsConfigPath } = await import("../config/projects.js");
+    const { stringify } = await import("yaml");
+    await writeFile(
+      getProjectsConfigPath(locttDir),
+      stringify({
+        projects: cfg.projects.map(p => ({
+          id: p.id, name: p.name, prefix: p.prefix,
+          ...(p.slug !== undefined ? { slug: p.slug } : {}),
+        })),
+        default: "PROJ-does-not-exist",
+      }),
+      "utf8",
+    );
+  }
+
+  // @verifies NEW-20
+  it("NEW-20: a ghost default still loads and is reported as drift, not rejected", async () => {
+    await writeGhostDefault();
+    // The load must NOT throw — before K23 the schema's superRefine
+    // rejected this and the whole projects surface went dark.
+    const cfg = await loadProjectsConfig(locttDir);
+    expect(cfg.default).toBe("PROJ-does-not-exist");
+    expect(projectDefaultIsGhost(cfg)).toBe(true);
+  });
+
+  // @verifies NEW-20
+  it("NEW-20: resolution ignores a ghost default and falls to the ask state when several projects exist", async () => {
+    await createProject(locttDir, { name: "Web", prefix: "WEB-" });
+    await writeGhostDefault();
+    // Two projects + a default that resolves to nothing = no defensible
+    // answer. The resolver must throw (the ask state), NOT return the
+    // ghost id. A resolver that returned `config.default` blindly would
+    // resolve to "PROJ-does-not-exist" and file the task there.
+    await expect(resolveProjectIdForUser(locttDir)).rejects.toThrow(/no default project/);
+  });
+
+  // @verifies NEW-20
+  it("NEW-20: with exactly one project a ghost default falls through to that sole project", async () => {
+    const tasks = await defaultProjectId();
+    await writeGhostDefault();
+    // One project and a ghost default: the ask state would be busywork,
+    // so it lands on the sole project — reached only because the ghost
+    // is skipped rather than returned.
+    expect(await resolveProjectIdForUser(locttDir)).toBe(tasks);
+  });
+
+  it("a real default is not flagged as drift", async () => {
+    const cfg = await loadProjectsConfig(locttDir);
+    expect(projectDefaultIsGhost(cfg)).toBe(false);
   });
 });
 

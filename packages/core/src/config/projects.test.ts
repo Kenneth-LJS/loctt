@@ -141,7 +141,11 @@ projects:
     expect(() => parseProjectsConfig(yaml)).toThrow(ProjectsConfigError);
   });
 
-  it("rejects a default that doesn't reference any project", () => {
+  it("tolerates a default that doesn't reference any project (K23 / NEW-20)", () => {
+    // Was a hard reject. K23: a stale `default:` pointer is drift, not a
+    // parse error — it parses through, the resolver ignores it and falls
+    // to the ask state, and the drift is surfaced as a notice. The
+    // parsed value keeps the ghost id so a surface can name it.
     const yaml = `
 projects:
   - id: 01HX0000000000000000000777
@@ -149,7 +153,8 @@ projects:
     prefix: "X-"
 default: 01HX0000NONEXISTENT00000000
 `;
-    expect(() => parseProjectsConfig(yaml)).toThrow(/not in the projects list/);
+    const cfg = parseProjectsConfig(yaml);
+    expect(cfg.default).toBe("01HX0000NONEXISTENT00000000");
   });
 
   it("throws YamlSyntaxError on malformed YAML (tagged with file label)", () => {

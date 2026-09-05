@@ -152,6 +152,7 @@ import {
   planMigration,
   postComment,
   type Progress,
+  projectDefaultIsGhost,
   ProjectError,
   publish,
   pushRecent,
@@ -1506,7 +1507,14 @@ export function createWebApp(options: WebAppOptions) {
     // stars a project the user's own writes would not go to. Carried
     // as a separate field so `default` keeps meaning "the workspace
     // default" for the settings panel that edits it.
-    let effectiveDefault: string | null = cfg.default ?? null;
+    // Starts null, not `cfg.default`: when resolution throws (ambiguous,
+    // or a ghost default that resolves to nothing — NEW-20), the catch
+    // must leave the answer as "no defensible default", i.e. the ask
+    // state. Seeding it with `cfg.default` used to be harmless because
+    // the schema guaranteed the default existed; under K23 a ghost
+    // default survives parse, and seeding it here would report the
+    // ghost id as the effective default it just fell through.
+    let effectiveDefault: string | null = null;
     try {
       effectiveDefault = await resolveProjectIdForUser(locttDir);
     } catch {
@@ -1535,6 +1543,16 @@ export function createWebApp(options: WebAppOptions) {
       default: cfg.default ?? null,
       effective_default: effectiveDefault,
       task_counts: taskCounts,
+      // NEW-20 / K23: a `default:` naming a project that no longer
+      // exists no longer fails config parse — it is tolerated drift.
+      // The list renders healthy and `effective_default` has already
+      // fallen through to null (the resolver ignores a ghost). We ship
+      // the stale id so the panel can say "your default 'X' no longer
+      // exists" — the case's third bullet asks for the drift to surface
+      // somewhere actionable rather than silently swallowing it.
+      ...(projectDefaultIsGhost(cfg)
+        ? { default_drift: { kind: "missing" as const, default: cfg.default } }
+        : {}),
       ...(pendingPrefixRename !== undefined
         ? { pending_prefix_rename: pendingPrefixRename }
         : {}),

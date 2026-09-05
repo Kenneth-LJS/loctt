@@ -195,7 +195,18 @@ export function resolveProjectId(
     }
   }
   if (config.default !== undefined) {
-    return config.default;
+    // K23 / NEW-20: the schema no longer guarantees the default names a
+    // real project — a rename or hand-edit can leave it pointing at
+    // nothing. Returning it blindly would file the task into a
+    // nonexistent project and consume the wrong key counter (NEW-14's
+    // second bullet, not undoable). So a ghost default is ignored here
+    // and resolution falls through to the unique-single rung, then to
+    // the ask state — exactly NEW-20's first bullet. The drift is
+    // surfaced separately (see `projectDefaultIsGhost`); it is not an
+    // error at this rung, just an absent answer.
+    if (config.projects.some(p => p.id === config.default)) {
+      return config.default;
+    }
   }
   const active = config.projects.filter(p => p.archived !== true);
   if (active.length === 1) {
@@ -233,6 +244,23 @@ export async function resolveProjectIdForUser(
     ...(explicit !== undefined ? { explicit } : {}),
     ...(userDefault !== undefined ? { userDefault } : {}),
   });
+}
+
+/**
+ * K23 / NEW-20: is the workspace `default:` a stale pointer — a project
+ * id that no longer appears in the projects list? A rename or a
+ * hand-edit can leave it behind. This is drift, not a parse error (the
+ * schema tolerates it), so surfaces call this to decide whether to show
+ * a "your default no longer exists" notice while still rendering a
+ * healthy projects list. Returns false when there is no default at all,
+ * or when the default names a real project (archived or not — an
+ * archived default is a different, harder failure the schema rejects).
+ */
+export function projectDefaultIsGhost(config: ProjectsConfig): boolean {
+  return (
+    config.default !== undefined &&
+    !config.projects.some(p => p.id === config.default)
+  );
 }
 
 /** Returns the project definition for an id, or throws. */
