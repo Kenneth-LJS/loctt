@@ -38,9 +38,21 @@ function open(html: string): Editor {
   return editor;
 }
 
-/** Puts the caret at the end of the document. */
+/**
+ * Puts the caret at the end of the document.
+ *
+ * Uses `setTextSelection`, NOT `focus("end")`. `focus` moves the real
+ * DOM selection, and ProseMirror's focus path schedules a 50ms
+ * `setTimeout` (a selection-reset in prosemirror-view) that, in the
+ * full parallel suite, fires *after* vitest tears down this file's
+ * jsdom environment — throwing an uncaught `document is not defined`
+ * from `DOMObserver`/`selectionToDOM` that failed the whole web run
+ * intermittently. `inCodeContext` reads `editor.state.selection`, not
+ * DOM focus, so a selection transaction gives the identical caret with
+ * no stray timer to outlive teardown.
+ */
 function caretAtEnd(ed: Editor): void {
-  ed.commands.focus("end");
+  ed.commands.setTextSelection(ed.state.doc.content.size);
 }
 
 describe("inCodeContext", () => {

@@ -70,7 +70,17 @@ uniqueness, and a rename policy — M-ticket work, not settled here.
 
 ## 2. Existing cases that will fail as written
 
-| Case | File | Why it fails today |
+> **✅ RESOLVED-BY-BUILD (2026-09-05).** Every case in this section is now
+> covered — they were built during the M-phases and after, so the
+> "fails today" descriptions below are historical. Verified with
+> `cases:coverage --require` against each of: SET-14/16/18/22/24/28/33,
+> SET-10, LST-13/15/16/44/45, REL-40, VUE-1/16/31/32/33/34, ERR-30,
+> XS-33/34/35, PRU-18/31/33, SPR-26, and the MSL-progress family. Kept
+> for the reasoning trail; no action remains here. (TSK-57 from Section 3
+> was decided as K25; TSK-58's Duplicate/Move cases — TSK-20/21/51 — are
+> also built and covered.)
+
+| Case | File | Why it failed when this was written (all built since) |
 |---|---|---|
 | **SET-14, SET-18, SET-33** | `flow-settings.md` | All three depend on Diagnostics reporting workflow-key drift. `doctor.ts:263-270` explicitly filters workflow-key errors out (B10). SET-14's "the check set matches what `loctt doctor` reports" would make the UI *inherit* the omission — reword so the UI is not bound to doctor's current blindness. |
 | **SET-16** | `flow-settings.md` | "No request that would change `type` is accepted server-side either" is false: `assertCustomFieldTypeChangesAreSafe` allows `number → string` when no task data is incompatible (`workflow-write.test.ts:895`). Either the case or the guard moves. |

@@ -3577,7 +3577,19 @@ PRU-25's scenario, not PRU-41's. Verified against the built app in the
 PRU-41 spec (`meta-field-error-message` asserts the name, the two
 actions, and no 26-char ULID).
 
-## `mentionCode.test.ts` fails the web suite intermittently
+## `mentionCode.test.ts` fails the web suite intermittently — FIXED 2026-09-05
+
+**FIXED 2026-09-05.** The test's `caretAtEnd` helper called
+`editor.commands.focus("end")`. ProseMirror's focus path schedules a
+50ms `setTimeout` (a selection-reset in prosemirror-view,
+`selectionToDOM`) that, under the full parallel suite, fired *after*
+vitest tore down this file's jsdom environment — the uncaught
+`document is not defined` from `DOMObserver`/`selectionToDOM`.
+`inCodeContext` reads `editor.state.selection`, not DOM focus, so the
+helper now uses `setTextSelection(doc.content.size)` — identical caret,
+no DOM focus, no stray timer to outlive teardown. Verified: three
+consecutive full-editor-dir runs, no `Errors` line, no
+`document is not defined`.
 
 **Found 2026-09-03. Pre-existing at 48fdc5f — not introduced by the
 PRU work.**
@@ -3954,7 +3966,20 @@ data-shape change, not a UI test.
 — one spinner, then all checks appear together; the Network panel shows
 a single `/api/doctor` request, not a stream.
 
-## Six duplicate decision numbers in decisions.md § 8 (record hygiene)
+## Six duplicate decision numbers in decisions.md § 8 (record hygiene) — FIXED 2026-09-05
+
+**FIXED 2026-09-05.** The second occurrence of each duplicated number was
+renumbered to **A128–A133** (not A118–A123 as first planned — A118–A127
+had since been minted): A68b→A128 (theme/sidebar_pins typed),
+A69b→A129 (pin sweep in core), A100b→A130 (retired counter reclaimed by
+prefix), A101b→A131 (partial remap reports the split), A102b→A132
+(PRU-16 point-at-Settings), A103b→A133 (PRU-43 filesystem caveat). Every
+content cross-reference was read in context: all A68/A69 refs cited the
+*first* decision (deletes-hard, reconcile-model) and were left; the one
+A101 content reference (decisions.md "PRU-34/A101 gave the project
+delete") cited the *partial-remap* decision and was retargeted to A131.
+The rest were the known-gaps table rows below, kept for the record.
+Verified: no duplicate `### A<n>` headings remain.
 
 **Found 2026-09-04 during a coverage batch merge. Pre-existing — not
 introduced by the batch that surfaced it.**
@@ -4077,10 +4102,17 @@ are NOT orphaned; each has a phase:
 - **Avatar cases** → buildable **now** once PRU-13's 256→500 bullet is
   reworded (K20). PRU-13, 27, 28, 29, 31, 39, 40.
 
-So the coverage frontier for the current build is: the 2 A11Y cases
-(A11Y-38, A11Y-49), the reconcile batch (landing), and — after Ken's
-one spec edit — the 7 avatar cases. Everything else is a phase item or a
-schema-bump unblock, all with a home.
+**Frontier update, 2026-09-05.** The frontier this paragraph once
+described is built: the 2 A11Y cases (A11Y-38, A11Y-49), the reconcile
+batch, PRU-25/42 (K21/K22), and all 7 avatar cases (K18/K20) are landed
+and covered. NEW-20 landed too (K23). Coverage is now 920/961. What
+remains uncovered is exactly the 41 cases enumerated by
+`cases:coverage --severity <sev>`: all are either a **Phase 7**
+degradation case, a **Phase Z** git-engine or a11y slice, or a
+**schema-bump** unblock — none is orphaned (each is named somewhere in
+this file). The only open spec *decisions* are the residual
+`PROPOSED-UI-CASES.md` items — see that file; its Section 2 is now
+resolved-by-build.
 ## Reconcile batch declines: GIT-8 (rekey summary) and GIT-21 (force-push)
 
 Recorded 2026-09-04 by the git-reconcile batch. The 18 conflict cases
@@ -4265,7 +4297,20 @@ and the other nine shell files all pass). To gate a change that does
 not touch Sidebar, run the client suite excluding this file, or run the
 touched subdirs directly.
 
-**Not yet root-caused.** No timers/polling in the test or in
-`Sidebar.tsx`; likely a `waitFor` on a condition that never settles
-under jsdom, or a hung microtask. Needs its own investigation — folded
-into Phase Z's test-infra pass rather than fixed inline here.
+**Not yet root-caused — narrowed 2026-09-05.** The wedge is NOT in a
+test body: it survives `--testTimeout`, `--teardownTimeout` and
+`--hookTimeout` all at 8s, and **zero** test lines print before it hangs
+— so it stalls during module *collection/import*, before the first test
+runs. The individual suspect tests (`SLOW_COUNTS` never-resolving fetch,
+`FAILED_COUNTS`, `FAIL_VIEWS`) each pass and complete cleanly in
+isolation (`-t`), and the flags are all reset in `afterEach`, so it is
+not a per-test hang or a flag leak. It points at an import-time side
+effect in something Sidebar.test.tsx pulls in transitively that
+deadlocks under jsdom in the full-suite context. Chasing it is a
+bounded-but-deep task; deferred to Phase Z's test-infra pass.
+
+**Gate workaround (reliable):** run the web client suite with this one
+file excluded — the other 769 client unit tests pass green
+(settings 68, list 140, create 33, sidebar 15, the 9 non-Sidebar shell
+files 67, plus the rest by subdir). The server suite (301) and every
+other suite are unaffected.
