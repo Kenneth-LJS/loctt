@@ -25,13 +25,17 @@ export class TaskLifecycleError extends Error {
 /**
  * The frontmatter half of archiving, shared with `bulkArchive`.
  *
- * Only the mutation is shared, deliberately. The two paths differ on
- * purpose everywhere else: `archiveTask` throws on an already-archived
- * task, while `bulkArchive` counts it a success and reports it apart
- * (BLK-27) — refusing would make archiving a mixed selection
- * impossible. Sharing the *policy* would break one or the other; not
- * sharing the *fields* is how "archived_at" ends up written by one
- * path and not the other.
+ * Both paths now agree on the idempotency policy too (K25 / TSK-57):
+ * archiving an already-archived task — or unarchiving one that is not
+ * archived — is a **no-op success**, not an error. It leaves the task
+ * in the state the caller asked for, writes nothing, and appends no
+ * history entry. `bulkArchive` always worked this way (an already-archived
+ * task counts as a success, reported apart under `unchanged`, BLK-27);
+ * the single-task path used to *throw* `TaskLifecycleError`, which
+ * escaped the web layer as a generic 500 (it is a plain Error, not a
+ * LocttError). Two paths gave two answers for the same situation. They
+ * now match. Sharing only the *fields* here (not the policy) is still
+ * how "archived_at" avoids being written by one path and not the other.
  */
 export function applyArchiveState(
   frontmatter: TaskFrontmatter,
@@ -53,8 +57,10 @@ export function applyArchiveState(
 export async function archiveTask(locttDir: string, taskId: string): Promise<Task> {
   return withStateLock(locttDir, async () => {
     const task = await readTask(locttDir, taskId);
+    // K25 / TSK-57: already archived is a no-op success, matching
+    // bulkArchive. Return the task untouched — no write, no history.
     if (task.frontmatter.archived) {
-      throw new TaskLifecycleError("task is already archived");
+      return task;
     }
 
     const now = new Date().toISOString();
@@ -76,8 +82,10 @@ export async function archiveTask(locttDir: string, taskId: string): Promise<Tas
 export async function unarchiveTask(locttDir: string, taskId: string): Promise<Task> {
   return withStateLock(locttDir, async () => {
     const task = await readTask(locttDir, taskId);
+    // K25 / TSK-57 (mirror): not archived is a no-op success for
+    // unarchive — the task is already in the requested state.
     if (!task.frontmatter.archived) {
-      throw new TaskLifecycleError("task is not archived");
+      return task;
     }
 
     const now = new Date().toISOString();

@@ -140,4 +140,24 @@ describe("GET /api/tasks (sort + pagination)", () => {
     const withArchived = await list("archived=true");
     expect(withArchived.items.map(t => t.title)).toContain("Apple");
   });
+
+  // K25: idempotent archive/unarchive (behavior recorded in decisions.md K25/A127; no canonical case)
+  it("archiving an already-archived task returns 200, not a 500 (K25)", async () => {
+    const created = await fetch(`${base}/api/tasks`, {
+      method: "POST", headers: csrf, body: JSON.stringify({ title: "Twice" }),
+    });
+    const task = await created.json() as { key: string };
+
+    const first = await fetch(`${base}/api/tasks/${task.key}/archive`, { method: "POST", headers: csrf });
+    expect(first.status).toBe(200);
+
+    // K25: the second archive is an idempotent no-op success. Before it,
+    // core threw a plain TaskLifecycleError that the global handler could
+    // not classify, so this returned a generic 500 — the B16 fallout
+    // TSK-57 names.
+    const second = await fetch(`${base}/api/tasks/${task.key}/archive`, { method: "POST", headers: csrf });
+    expect(second.status).toBe(200);
+    const body = await second.json() as { archived?: boolean };
+    expect(body.archived).toBe(true);
+  });
 });

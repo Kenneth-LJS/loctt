@@ -307,7 +307,9 @@ Returns: `Deleted <KEY>.`. Errors: `delete_task requires confirm: true to procee
 
 ### `archive_task` / `unarchive_task`
 
-Reversible soft-delete and its inverse.
+Reversible soft-delete and its inverse. Both are idempotent: archiving a
+task that is already archived (or unarchiving one that is not) succeeds
+and changes nothing — no error, no new history entry.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
