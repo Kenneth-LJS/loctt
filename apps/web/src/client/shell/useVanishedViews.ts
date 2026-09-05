@@ -54,6 +54,18 @@ export function useVanishedViews(
   // re-render does not resurrect them before the store write lands.
   const dismissed = useRef(new Set<string>());
 
+  // The caller builds `current` fresh on every render (it spreads
+  // `views.data.queries` with `broken`), so depending on the array
+  // *reference* re-ran this effect every render — and each run calls
+  // `setVanished(gone)` with a new array, forcing another render, an
+  // endless loop that a dismiss click tipped into a hang. Depend on a
+  // stable signature of the contents instead, so the effect runs only
+  // when the set of views actually changes.
+  const signature =
+    current === undefined
+      ? undefined
+      : current.map(v => `${v.id} ${v.name}`).join("");
+
   useEffect(() => {
     // `undefined` is "not loaded yet", which is not the same as "no
     // views" — treating it as the latter would report every pin as
@@ -73,7 +85,11 @@ export function useVanishedViews(
       STORAGE_KEY,
       JSON.stringify([...current.map(v => ({ id: v.id, name: v.name })), ...gone]),
     );
-  }, [current]);
+    // `current` is intentionally read inside but not a dependency — the
+    // stable `signature` stands in for it, so an unchanged view set does
+    // not re-run the effect on every render. (No eslint-disable needed:
+    // this project does not enable react-hooks/exhaustive-deps.)
+  }, [signature]);
 
   const dismiss = (id: string): void => {
     dismissed.current.add(id);

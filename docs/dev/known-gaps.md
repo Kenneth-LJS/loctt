@@ -4274,7 +4274,30 @@ test them" — that was verified case by case, which is the check the
 aggregate notes kept failing.
 
 
-## Test infra: `Sidebar.test.tsx` hangs under vitest (pre-existing, environmental)
+## Test infra: `Sidebar.test.tsx` hangs under vitest — FIXED 2026-09-05 (was a real render-loop bug)
+
+**FIXED 2026-09-05, and it was not environmental after all — it was a
+product bug.** Verbose per-test reporting showed the file passed 25 tests
+and hung at the SHL-32 "stays dismissed once dismissed" test, right after
+a dismiss click. Root cause: `useVanishedViews` (`shell/useVanishedViews.ts`)
+had a `useEffect` depending on its `current` argument, which `Sidebar.tsx`
+rebuilds as a **new array every render** (`[...queries, ...broken]`). The
+effect ran every render and called `setVanished` with a new array →
+another render → rebuilt array → effect again: an infinite render loop.
+In production, wasted renders; in the test, a dismiss click sustained the
+loop and `cleanup()` could never unmount, hanging the whole file past any
+`testTimeout` (a synchronous re-render loop is not an awaitable a timeout
+can break — which is why it looked like a collection-time wedge).
+
+Fixed by depending on a stable content signature instead of the array
+reference (decision **A134**). Mutation-proven: reverting re-wedges the
+test. The entire web client suite now runs green under parallelism (84
+files, 823 tests) with no file excluded — **the gate workaround below is
+obsolete.**
+
+The original writeup is kept below for the record.
+
+### (obsolete) original writeup — treated as environmental
 
 **Found:** 2026-09-05, while gating the NEW-20 / K23 change.
 

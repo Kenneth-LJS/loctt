@@ -7889,3 +7889,35 @@ purpose). That rationale is superseded and the docblock rewritten.
 
 **To revert.** Restore the two throws and the four tests. (K25's
 behaviour is Ken's.)
+
+### A134 · `useVanishedViews` depends on a stable signature, not the array reference (fixes a render loop / test wedge)
+
+**Date:** 2026-09-05 · Agent · revertable.
+
+**The bug.** `Sidebar.tsx` calls `useVanishedViews([...views.data.queries,
+...(views.data.broken ?? [])])` — a **new array on every render**. The
+hook's `useEffect` depended on that array (`[current]`), so it ran every
+render; each run calls `setVanished(gone)` with a freshly-built array,
+which forces another render, which rebuilds `current`, which re-runs the
+effect. An endless render loop. In production it is wasted renders; in
+`Sidebar.test.tsx` a dismiss click tipped it into a sustained loop that
+`cleanup()` could not unmount — the whole test file **hung at that test**,
+past any `testTimeout` (the loop is synchronous re-rendering, not an
+awaitable a timeout can interrupt), which is what made the file look like
+an import-time wedge.
+
+**The fix.** Depend on a stable content signature
+(`current.map(v => `${v.id} ${v.name}`).join("")`) instead of the array
+reference, so the effect runs only when the view set actually changes.
+`current` is still read inside the effect (guarded eslint-disable).
+
+**Proven.** Reverting the dep to `[current]` re-wedges the "stays
+dismissed once dismissed" test (mutation-confirmed); with the fix the
+whole file passes 30/30 and the entire web **client** suite runs green
+under parallelism (84 files, 823 tests) with no exclusion — the gate
+workaround the wedge forced is no longer needed. Scanned the rest of the
+client for the same anti-pattern (an effect depending on a freshly-built
+array/object): none found.
+
+**To revert.** Restore `}, [current]);` and drop the `signature`. (But
+that reintroduces the loop.)
