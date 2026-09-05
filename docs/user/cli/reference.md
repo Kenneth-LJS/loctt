@@ -234,7 +234,7 @@ loctt user list [--all]
 loctt user current
 loctt user switch <id-or-name>
 loctt user create <name> [--email <e>] [--timezone <tz>] [--avatar <path>] [--switch]
-loctt user edit <id-or-name> [--name <n>] [--email <e>] [--timezone <tz>] [--avatar <path>]
+loctt user edit <id-or-name> [--name <n>] [--email <e>] [--timezone <tz>] [--avatar <path> | --remove-avatar]
 loctt user archive <id-or-name>
 loctt user unarchive <id-or-name>
 loctt user references <id-or-name>
@@ -247,6 +247,12 @@ marked with `*`.
 
 `create --switch` makes the new user the current user immediately after
 creating them.
+
+`--avatar <path>` on `create`/`edit` imports an image: it is validated,
+EXIF-oriented, resized to a 500px longest edge and re-encoded as JPEG,
+then stored at `.loctt/users/<id>/avatar.jpg` and recorded in
+`profile.yaml`. `edit --remove-avatar` deletes that file and clears the
+`avatar` reference; it is mutually exclusive with `--avatar`.
 
 `settings` prints the current user's personal preferences from
 `.loctt/users/<id>/settings.yaml` — theme, default project, board card

@@ -4,8 +4,11 @@
  * be resolved one way or the other — leaving dangling assignees
  * would silently corrupt task views.
  *
- * Avatars are intentionally not settable via MCP (binary upload is
- * a poor fit for the protocol); CLI and web UI cover that path.
+ * Setting an avatar is intentionally not exposed via MCP (binary
+ * upload is a poor fit for the protocol); CLI and web UI cover that
+ * path. Removing one needs no binary, so `edit_user` accepts
+ * `remove_avatar` — the layer rule (a core capability reaches all
+ * three surfaces) applies to the clear even where the set does not.
  */
 
 import {
@@ -131,12 +134,13 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "edit_user",
-    description: "Edit an existing user's profile fields. Avatars are not settable via MCP — use the CLI or web UI.",
+    description: "Edit an existing user's profile fields. Setting an avatar needs an image file, so that stays on the CLI or web UI; but an existing avatar can be removed here with remove_avatar.",
     inputSchema: {
       ref: z.string(),
       name: z.string().optional(),
       email: z.string().nullable().optional().describe("Pass null to clear"),
       timezone: z.string().optional(),
+      remove_avatar: z.boolean().optional().describe("Clear the user's avatar (deletes the file and the profile reference)"),
     },
     handler: async ({ locttDir }, args) => {
       const target = await resolveUserRef(locttDir, args["ref"] as string);
@@ -146,6 +150,7 @@ export const TOOLS: readonly ToolDef[] = [
           ? { email: args["email"] as string | null }
           : {}),
         ...(args["timezone"] !== undefined ? { timezone: args["timezone"] as string } : {}),
+        ...(args["remove_avatar"] === true ? { removeAvatar: true } : {}),
       });
       return text(JSON.stringify(updated, null, 2));
     },

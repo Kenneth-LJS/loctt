@@ -222,6 +222,38 @@ describe("avatar handling", () => {
     const storedMeta = await sharp(stored).metadata();
     expect(storedMeta.exif).toBeUndefined();
   });
+
+  // @verifies PRU-31
+  it("removeAvatar clears the profile key and deletes the file on disk", async () => {
+    const sharp = (await import("sharp")).default;
+    const u = await createUser(locttDir, { name: "X" });
+    const png = join(root, "pic.png");
+    const buf = await sharp({
+      create: { width: 50, height: 50, channels: 3, background: "#ff0000" },
+    }).png().toBuffer();
+    await writeFile(png, buf);
+
+    const set = await updateUser(locttDir, u.id, { avatarSourcePath: png });
+    expect(set.avatar).toBe("avatar.jpg");
+    const storedPath = join(locttDir, "users", u.id, "avatar.jpg");
+    await expect(readFile(storedPath)).resolves.toBeInstanceOf(Buffer);
+
+    const cleared = await updateUser(locttDir, u.id, { removeAvatar: true });
+    // The profile no longer records an avatar…
+    expect(cleared.avatar).toBeUndefined();
+    // …and the file is gone from disk.
+    await expect(readFile(storedPath)).rejects.toThrow();
+
+    // The persisted profile.yaml has no `avatar:` line either.
+    const yaml = await readFile(join(locttDir, "users", u.id, "profile.yaml"), "utf-8");
+    expect(yaml).not.toMatch(/^avatar:/m);
+  });
+
+  it("removeAvatar is a no-op for a user who has none", async () => {
+    const u = await createUser(locttDir, { name: "X" });
+    const cleared = await updateUser(locttDir, u.id, { removeAvatar: true });
+    expect(cleared.avatar).toBeUndefined();
+  });
 });
 
 describe("archiveUser", () => {

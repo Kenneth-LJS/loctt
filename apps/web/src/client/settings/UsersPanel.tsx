@@ -1,5 +1,5 @@
 import type { UserProfile } from "@loctt/contracts";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { useUsers } from "../api/hooks/sidebarData.ts";
@@ -8,12 +8,14 @@ import {
   useArchiveUser,
   useCreateUser,
   useDeleteUser,
+  useRemoveAvatar,
   useUploadAvatar,
 } from "../api/hooks/useUserMutations.ts";
-import { avatarPalette, initials } from "../ui/avatar.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Modal } from "../ui/Modal.tsx";
-import { AvatarRejected, compressImage } from "./compressImage.ts";
+import { UserAvatar } from "../ui/UserAvatar.tsx";
+import { AvatarCropper } from "./AvatarCropper.tsx";
+import { AvatarRejected, type DecodedImage, decodeImageFile } from "./prepareAvatar.ts";
 import { UserDeleteDialog } from "./UserDeleteDialog.tsx";
 
 /**
@@ -36,52 +38,78 @@ export function qualifier(
 }
 
 function AvatarCell({ user }: { readonly user: UserProfile }) {
-  const hasAvatar = typeof user.avatar === "string" && user.avatar.length > 0;
-  if (hasAvatar) {
-    return (
-      <img
-        src={`/api/users/${encodeURIComponent(user.id)}/avatar`}
-        alt=""
-        data-testid={`user-avatar-${user.id}`}
-        className="h-8 w-8 rounded-full object-cover"
-      />
-    );
-  }
+  // The shared chip, with per-branch test ids because these specs
+  // (PRU-31/38) assert on *which* branch shows.
   return (
-    <span
-      data-testid={`user-initials-${user.id}`}
-      className={`grid h-8 w-8 place-items-center rounded-full text-[11px] font-medium ${avatarPalette(user.id)}`}
-    >
-      {initials(user.name)}
-    </span>
+    <UserAvatar
+      user={user}
+      sizeClass="h-8 w-8 text-[11px]"
+      className="font-medium"
+      imageTestId={`user-avatar-${user.id}`}
+      initialsTestId={`user-initials-${user.id}`}
+    />
   );
 }
 
 function AvatarUpload({ user }: { readonly user: UserProfile }) {
   const upload = useUploadAvatar();
+  const remove = useRemoveAvatar();
   const [problem, setProblem] = useState<string | undefined>(undefined);
+  // The blob-URL preview of what was actually cropped and posted
+  // (PRU-13: the preview renders from the crop, not the raw file).
   const [preview, setPreview] = useState<string | undefined>(undefined);
   const [prepared, setPrepared] = useState<File | undefined>(undefined);
+  // The decoded source while the cropper is open (its `animated` flag
+  // lives on the decoded image, not duplicated here).
+  const [cropping, setCropping] = useState<
+    { decoded: DecodedImage; fileName: string } | undefined
+  >(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Revoke any live object URL on unmount: the preview blob and the
+  // decoded source (a full-resolution bitmap) both leak otherwise if
+  // the row unmounts with the cropper or a preview still open. Refs so
+  // the cleanup sees the latest values without re-subscribing.
+  const previewRef = useRef(preview);
+  previewRef.current = preview;
+  const croppingRef = useRef(cropping);
+  croppingRef.current = cropping;
+  useEffect(() => () => {
+    if (previewRef.current !== undefined) URL.revokeObjectURL(previewRef.current);
+    croppingRef.current?.decoded.revoke();
+  }, []);
+
+  const hasAvatar = typeof user.avatar === "string" && user.avatar.length > 0;
 
   const pick = async (file: File) => {
     setProblem(undefined);
+    upload.reset();
     try {
-      const result = await compressImage(file);
-      setPrepared(result.file);
-      // PRU-13: the preview renders from the compressed result, not
-      // the original file.
-      setPreview(URL.createObjectURL(result.file));
-      upload.mutate({ id: user.id, file: result.file });
+      // Validate + decode BEFORE opening the cropper. PRU-38/30 (type),
+      // PRU-39 (corrupt decode) reject here with no POST and no cropper.
+      const decoded = await decodeImageFile(file);
+      setCropping({ decoded, fileName: file.name });
     } catch (err) {
       if (err instanceof AvatarRejected) {
-        // PRU-38/PRU-39: rejected client-side; no POST was made and the
-        // existing avatar is untouched.
         setProblem(err.message);
         return;
       }
       throw err;
     }
+  };
+
+  const post = (file: File) => {
+    setPrepared(file);
+    if (preview !== undefined) URL.revokeObjectURL(preview);
+    setPreview(URL.createObjectURL(file));
+    upload.mutate({ id: user.id, file });
+  };
+
+  const closeCropper = () => {
+    cropping?.decoded.revoke();
+    setCropping(undefined);
+    // Reset the input so re-picking the same file fires onChange again.
+    if (inputRef.current) inputRef.current.value = "";
   };
 
   const serverMessage = upload.error instanceof ApiError
@@ -101,6 +129,21 @@ function AvatarUpload({ user }: { readonly user: UserProfile }) {
         }}
         className="text-[12px]"
       />
+      {hasAvatar && (
+        <button
+          type="button"
+          data-testid={`user-avatar-remove-${user.id}`}
+          disabled={remove.isPending}
+          onClick={() => {
+            setProblem(undefined);
+            if (preview !== undefined) { URL.revokeObjectURL(preview); setPreview(undefined); }
+            remove.mutate({ id: user.id });
+          }}
+          className="h-7 justify-self-start rounded-md border border-border-default px-2 text-[12px] text-text-secondary disabled:opacity-50"
+        >
+          {remove.isPending ? "Removing…" : "Remove"}
+        </button>
+      )}
       {preview !== undefined && (
         <img
           src={preview}
@@ -125,6 +168,7 @@ function AvatarUpload({ user }: { readonly user: UserProfile }) {
             type="button"
             data-testid={`user-avatar-retry-${user.id}`}
             onClick={() => {
+              // PRU-40: re-post the already-cropped file, no re-pick.
               if (prepared) upload.mutate({ id: user.id, file: prepared });
             }}
             className="mt-1 h-7 rounded-md border border-border-default px-2 text-[12px] text-text-primary"
@@ -132,6 +176,19 @@ function AvatarUpload({ user }: { readonly user: UserProfile }) {
             Retry
           </button>
         </div>
+      )}
+      {cropping !== undefined && (
+        <AvatarCropper
+          decoded={cropping.decoded}
+          fileName={cropping.fileName}
+          animated={cropping.decoded.animated}
+          testIdSuffix={user.id}
+          onConfirm={result => {
+            post(result.file);
+            closeCropper();
+          }}
+          onCancel={closeCropper}
+        />
       )}
     </div>
   );

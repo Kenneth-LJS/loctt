@@ -209,3 +209,29 @@ export async function copyAvatar(
 
   return AVATAR_FILENAME;
 }
+
+/**
+ * Deletes the stored avatar file for a user, if one exists. Idempotent:
+ * a missing file is not an error, so removing an avatar twice — or from
+ * a user who never had one — is a no-op rather than a throw.
+ *
+ * The caller (`updateUser`) is responsible for clearing the `avatar`
+ * key from `profile.yaml`; this only owns the bytes on disk. Given a
+ * `filename`, only that file is removed (the profile's recorded
+ * basename); it is validated to be a bare basename so a hand-edited
+ * profile cannot point the delete outside the user's folder.
+ */
+export async function removeAvatar(
+  locttDir: string,
+  userId: string,
+  filename: string,
+): Promise<void> {
+  // Reject any path separator or traversal: the profile's `avatar`
+  // value is user-editable text, and this turns into an `rm`.
+  if (filename.length === 0 || filename.includes("/") || filename.includes("\\")
+      || filename === "." || filename === "..") {
+    throw new UserError(`avatar filename is not a usable basename: ${filename}`);
+  }
+  const userDir = getUserDir(locttDir, userId);
+  await rm(`${userDir}/${filename}`, { force: true });
+}

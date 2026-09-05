@@ -7,6 +7,7 @@ import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { useTheme } from "../theme/useTheme.ts";
 import { avatarPalette, initials } from "../ui/avatar.ts";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
+import { UserAvatar } from "../ui/UserAvatar.tsx";
 
 /**
  * App header: sidebar toggle, brand, a (stub) search box, theme
@@ -271,14 +272,13 @@ function UserMenu({
               data-testid="user-menu-current"
               className="flex items-center gap-2.5 border-b border-border-subtle px-3 py-2.5"
             >
-              <span
-                className={[
-                  "grid h-[22px] w-[22px] place-items-center rounded-full text-[11px] font-semibold",
-                  avatarPalette(currentUser.id),
-                ].join(" ")}
-              >
-                {initials(currentUser.name)}
-              </span>
+              {/* PRU-13: the stored avatar appears in the header menu,
+                  reverting to initials on removal (PRU-31). */}
+              <UserAvatar
+                user={currentUser}
+                sizeClass="h-[22px] w-[22px] text-[11px]"
+                testId="user-menu-current-avatar"
+              />
               <div className="min-w-0">
                 <div className="truncate text-[13px] font-medium text-text-primary">
                   {currentUser.name}

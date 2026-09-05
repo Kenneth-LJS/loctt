@@ -7636,3 +7636,60 @@ CLI `references` case in `apps/cli/src/commands/user.ts`, the MCP
 another count source. (3) Drop the `reporter` entry from `ALL_COLUMNS`
 in `apps/web/src/client/list/columns.ts` and the `reporter` case in
 `ListView.tsx`'s `Cell`.
+
+### A124 · Avatar cropper on the client, avatar removal in core (CLI+MCP+web), no client-side compression
+
+**Ticket:** M4.1 (PRU-13, 27, 28, 29, 31, 39, 40) · **Date:** 2026-09-05 · **Commit:** (this one)
+
+**The situation.** K18/K20 ruled the split: **the browser crops, the
+server compresses to 500px.** The client that existed did the opposite —
+`compressImage.ts` resized every avatar to a **256px** cap client-side
+and re-encoded before POST (the CW-20 pipeline), which is precisely the
+client-side *compression* K18 declined, at the wrong size. There was no
+cropper, and no way to remove an avatar at all (no core function, no
+route, no UI).
+
+**Decided.**
+
+1. **A hand-rolled canvas cropper — no dependency.** `AvatarCropper.tsx`
+   overlays a draggable/resizable square on the decoded image with a
+   live preview canvas, and `prepareAvatar.ts` `cropRectToBlob` does a
+   `drawImage(sx,sy,sw,sh → 0,0,sw,sh)` at the crop's **source**
+   resolution. It deliberately does **not** downscale — the server's
+   `copyAvatar` owns the 500px resize (K18 point 2). The brief allowed a
+   tiny lib or a hand-rolled canvas; the canvas is enough, so **no new
+   dependency was added.**
+
+2. **`compressImage.ts` + its test are deleted.** They encoded the
+   declined 256px client-compression design; leaving them would be a
+   second pipeline at the wrong size. Client validation they carried
+   (SVG/non-image reject, corrupt-decode reject) moved into
+   `prepareAvatar.ts`, plus animated-GIF detection (`isAnimatedGif`, a
+   byte-level frame count) for PRU-29's still-frame notice.
+
+3. **Avatar removal added to core and all three surfaces.** `removeAvatar`
+   (`packages/core/src/users/avatar.ts`) deletes the stored file
+   (basename-guarded, idempotent); `updateUser` gained a `removeAvatar`
+   flag that also drops the `avatar` key from `profile.yaml`. Wired to:
+   web `DELETE /api/users/:ref/avatar` (`handleRemoveAvatar`), CLI
+   `user edit --remove-avatar`, and MCP `edit_user`'s `remove_avatar`.
+   **Setting** an avatar stays off MCP (binary upload is a poor protocol
+   fit, per the existing note); **removing** needs no binary, so the
+   layer rule (core capability reaches CLI+MCP) applies to the clear.
+
+**Why this over the alternatives.** A cropper is mandatory under K18
+regardless, and a square canvas crop is the whole of "the user chooses
+the framing" without a library's weight or supply-chain surface. Keeping
+`compressImage` would have re-introduced the two-pipelines-at-two-sizes
+drift K18 exists to prevent.
+
+**To revert.** (1) Delete `apps/web/src/client/settings/AvatarCropper.tsx`
+and `prepareAvatar.ts` (+ its test); restore `compressImage.ts` from
+history if the client-compression design is reinstated. (2) In
+`packages/core/src/users/avatar.ts` remove `removeAvatar`; in
+`lifecycle.ts` drop the `removeAvatar` branch and `EditUserOptions`
+field; un-export from `users/index.ts`. (3) Remove `handleRemoveAvatar`
++ the `DELETE USER_AVATAR_RE` route in `apps/web/src/server/server.ts`,
+`useRemoveAvatar` in `useUserMutations.ts`, and the remove button in
+`UsersPanel.tsx`. (4) Drop `--remove-avatar` from `apps/cli/src/commands/
+user.ts` and `remove_avatar` from `apps/mcp/src/tools/user.ts`.

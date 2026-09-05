@@ -9,7 +9,7 @@ import type {
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { avatarPalette, initials } from "../ui/avatar.ts";
+import { UserAvatar } from "../ui/UserAvatar.tsx";
 
 /**
  * Cell renderers for the list table. Each takes an already-resolved
@@ -162,9 +162,9 @@ export function AssigneeCell({ user, raw }: { user: UserProfile | undefined; raw
   const firstName = user.name.split(/\s+/)[0] ?? user.name;
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className={["grid h-5 w-5 place-items-center rounded-full text-[10px] font-semibold", avatarPalette(user.id)].join(" ")}>
-        {initials(user.name)}
-      </span>
+      {/* PRU-13: the stored avatar appears in the list assignee cell,
+          reverting to initials on removal (PRU-31). */}
+      <UserAvatar user={user} sizeClass="h-5 w-5 text-[10px]" testId={`list-user-avatar-${user.id}`} />
       <span className={["truncate text-[13px]", user.archived ? "text-text-tertiary" : "text-text-secondary"].join(" ")}>
         {firstName}
         {user.archived ? " (archived)" : ""}
