@@ -141,12 +141,14 @@ This case previously asserted the panels were read-only. That was an early draft
 ### B1. Workflow and custom fields
 
 ### SET-16 · M4 · blocker · P3 P7
-**A custom field's type is locked after creation.** Field `story_points` exists as `number` with values on 40 tasks.
+**A custom field's type is locked after creation, inside the Edit dialog.** Field `story_points` exists as `number` with values on 40 tasks.
 
-- The type control on an existing field is disabled, not merely validated on submit, and states why: existing task values were stored under this type.
-- Label, `searchable`, and (where safe) `multi` remain editable in the same form, so the lock reads as targeted.
+- Opening the field's **Edit dialog**, the type control is disabled (not merely validated on submit) and states why: existing task values were stored under this type.
+- Label, `searchable`, and (where safe) `multi` remain editable in the same dialog, so the lock reads as targeted.
 - No request that would change `type` is accepted server-side either — re-enabling the control in devtools and submitting is rejected.
-- The panel offers the honest alternative: create a new field and migrate values, rather than pretending the change is possible.
+- The dialog offers the honest alternative: create a new field and migrate, rather than pretending the change is possible.
+
+> The existing SET-16 caveat that `number → string` is allowed when no task data is incompatible (`assertCustomFieldTypeChangesAreSafe`) still applies to the "where safe" wording. This case supersedes the earlier inline-field-row form; the guarantees are the same, the surface moves to the Edit dialog.
 
 ### SET-17 · M4 · major · P5 P7
 **Deleting a status still referenced by tasks.** `in_review` is the status of 9 tasks.
@@ -234,11 +236,13 @@ This case previously asserted the panels were read-only. That was an early draft
 - The user's `settings.yaml` is rewritten to drop the dead references, so the sweep does not have to re-run every load.
 
 ### SET-28 · M4 · major · P1 P7
-**`workflow.yaml` is rewritten by hand while a settings panel is open.**
+**`workflow.yaml` is rewritten by hand while a settings panel is open, with edits gated behind a dialog.**
 
-- The panel does not save a stale copy over the new file; either it re-reads before writing or it detects the change and says so.
-- If a drag-reorder was in flight when the file changed underneath, the save is refused with a message naming the file and offering to reload the panel.
+- The panel does not save a stale copy over the new file; it re-reads before writing or detects the change and says so.
+- If an Edit dialog was open (or a drag-reorder in flight) when the file changed underneath, the save is refused with a message naming the file and offering to reload the panel — the dialog does not silently clobber the hand edit on Save.
 - After reloading, the panel shows the hand-edited content, not a merged hybrid.
+
+> Broadened from the earlier drag-reorder-only framing to the Edit-dialog save path, which is now the primary value-edit surface.
 
 ### SET-29 · M4 · major · P6
 **Diagnostics on a large or slow tracker.** 5,000 tasks.
@@ -343,3 +347,40 @@ This case previously asserted the panels were read-only. That was an early draft
 - The nav still renders so the user can see where they are; each panel's content pane shows an unreachable-server state naming the endpoint.
 - No panel renders an empty list that would read as "you have no statuses configured".
 - A retry action re-fetches, and recovering the server clears every panel's error without a reload.
+
+### SET-46 · M4 · major · P3 P4
+**A status can be created from the panel.** Statuses panel, Create dialog.
+
+- The Create dialog takes key + label + category + default; the key is validated for uniqueness and the "key is permanent" copy is shown.
+- On Save the new status is written to `workflow.yaml` and renders in file order.
+- Creating a duplicate key is rejected before `PUT` with a message naming the collision (cf. SET-44).
+
+### SET-47 · M4 · major · P3 P4
+**A priority / task-type can be created.** Priorities / task-types panels, Create dialog.
+
+- The Create dialog takes key + label the same way a status does (priority additionally gets a computed `value`).
+- On Save the new priority/task-type is written to `workflow.yaml` and renders in file order.
+- Creating a duplicate key is rejected before `PUT` with a message naming the collision.
+
+### SET-48 · M4 · major · P3 P4
+**A relationship type can be created.** Relationship-types panel, Create dialog.
+
+- The Create dialog takes key + label + symmetric/inverse + inverse_label + graph + ranked (`RelationshipDef`).
+- On Save the new relationship type is written to `workflow.yaml` and is usable when linking tasks.
+- Creating a duplicate key is rejected before `PUT` with a message naming the collision.
+
+### SET-49 · M4 · major · P3 P4
+**Custom fields have full CRUD in the UI.** Custom-fields panel — create, edit, delete — not YAML-only.
+
+- Create takes key + label + type + multi + searchable + enum values with weights.
+- `type` and `multi` lock after create, in the Edit dialog (the SET-16 shape).
+- Delete goes through remap-or-clear (the SET-19 shape) when tasks still hold the field's values.
+
+### SET-51 · M4 · major · P4
+**A failed Edit-dialog Save stays open with an anchored error.** The Edit-dialog Save (the primary value-edit surface) hits a write error.
+
+- The dialog **stays open with the value un-committed** — the field is not written and the panel is not left showing a value that did not persist.
+- The error is shown **anchored in the dialog** (the `-edit-error` `Callout`), not as a bare toast, and names the next action.
+- **Cancel still closes cleanly**, discarding the un-committed edit.
+
+> Additive, not a reversal. SET-34's drag-reorder-failure behaviour is unchanged (reorder stays inline per open decision #3); this ID covers the Edit-dialog Save-failure path SET-34 never described.

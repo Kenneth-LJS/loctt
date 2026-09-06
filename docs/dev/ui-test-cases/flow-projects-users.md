@@ -380,6 +380,19 @@ project counters during git sync is in
 > issuing one `GET /api/projects` flipped the prefix, deleted the
 > sentinel, and returned no pending rename. The banner built for the
 > old wording was dead code.
+
+### PRU-47 · M4 · major · P1 P8
+**An existing user's name, email and timezone can be edited from the UI**, via a per-row Edit → dialog (`PUT /api/users/:id`).
+
+- Today email is shown read-only and settable only in the create form, so a blank email cannot be fixed in-app; the Edit dialog closes that gap.
+- The avatar is set through a proper control, not a raw `<input type="file">`.
+- Reloading shows the edited values; `loctt user` agrees (P10).
+
+### PRU-48 · M4 · major · P1 P8
+**A project can be set as the default from the Projects panel.**
+
+- Today only a personal default exists and core `setDefaultProject` is called only internally — this needs a new endpoint.
+- Setting default writes to config, the marker moves, and the new default is where new tasks land / the default filter opens.
 >
 > Ken's ruling kept the middleware and changed what happens to its
 > return value: it already reports `from`, `to` and `renamed`, and the
