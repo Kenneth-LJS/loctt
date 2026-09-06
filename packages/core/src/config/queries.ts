@@ -123,20 +123,47 @@ function serializeDisplay(d: NonNullable<QueriesConfig["queries"][number]["displ
   };
 }
 
+/**
+ * A broken entry (K28) re-serialized to its minimal on-disk shape. It is
+ * emitted alongside the valid queries so a write NEVER drops a
+ * corrupt-but-preserved sibling the write did not touch (the config
+ * analogue of the task write guard). `{id, name, query}` is exactly the
+ * on-disk shape of a saved query, and `BrokenSavedQuery` carries all
+ * three (the query string is the one that failed to parse — kept
+ * verbatim so a later fix edits the real text).
+ */
+function serializeBrokenQuery(b: BrokenSavedQuery): Record<string, unknown> {
+  return { id: b.id, name: b.name, query: b.query };
+}
+
 export function serializeQueriesConfig(config: QueriesConfig): string {
-  return stringifyYaml({
-    queries: config.queries.map(serializeSavedQuery),
-  });
+  return stringifyYaml(buildQueriesPlainObject(config));
+}
+
+/**
+ * The written shape: valid queries AND any preserved broken entries, in a
+ * single `queries` array (a broken entry is a saved query whose `query`
+ * does not parse — it belongs in the same list, and re-loading re-sorts
+ * it into `broken`). K28: dropping the broken entries here is silent data
+ * loss.
+ */
+function buildQueriesPlainObject(config: QueriesConfig): { queries: Record<string, unknown>[] } {
+  return {
+    queries: [
+      ...config.queries.map(serializeSavedQuery),
+      ...(config.broken ?? []).map(serializeBrokenQuery),
+    ],
+  };
 }
 
 export async function saveQueriesConfig(
   locttDir: string,
   config: QueriesConfig,
 ): Promise<void> {
-  const validated = parseQueriesConfig(serializeQueriesConfig(config));
-  await writeYamlAtomically(getQueriesConfigPath(locttDir), {
-    queries: validated.queries.map(serializeSavedQuery),
-  });
+  // Validate the VALID entries round-trip (the broken ones are, by
+  // definition, not valid — they are carried verbatim, not re-validated).
+  parseQueriesConfig(stringifyYaml({ queries: config.queries.map(serializeSavedQuery) }));
+  await writeYamlAtomically(getQueriesConfigPath(locttDir), buildQueriesPlainObject(config));
 }
 
 export async function loadQueriesConfig(locttDir: string): Promise<QueriesConfig> {

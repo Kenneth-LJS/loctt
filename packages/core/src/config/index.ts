@@ -19,7 +19,7 @@ export {
   saveCalendarConfig,
   serializeCalendarConfig,
 } from "./calendar.js";
-export { collectValidEntries } from "./health.js";
+export { brokenEntriesToPlain, collectValidEntries } from "./health.js";
 export {
   getLabelsConfigPath,
   LabelsConfigError,
