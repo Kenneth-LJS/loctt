@@ -23,7 +23,7 @@ import { computeReconcilePlan } from "./reconcile-plan.js";
 import type { ResolveResult } from "./resolve-conflicts.js";
 import { applyResolution, resolveConflicts } from "./resolve-conflicts.js";
 import type { PathPlan, SyncPlan } from "./three-way.js";
-import { LOCAL_OWNED,NEVER_MIRROR, planSync } from "./three-way.js";
+import { LOCAL_OWNED,NEVER_MIRROR, planSync, readTreeFile } from "./three-way.js";
 
 async function mirrorDir(
   srcDir: string,
@@ -130,6 +130,40 @@ export class GitReconcileNeededError extends GitSyncError {
     );
     this.name = "GitReconcileNeededError";
     this.plan = plan;
+  }
+}
+
+/**
+ * Raised when a publish cannot proceed because the branch has advanced
+ * with remote-only work that local has not incorporated — a divergence
+ * that is *not* a per-field conflict (a task the branch added, or a task
+ * the branch edited that local never touched) and so produces no
+ * {@link ReconcilePlan}, yet is destroyed by the blind mirror in
+ * `commitToLocttBranch`.
+ *
+ * The Phase Z finding G1: `detectPublishReconcile` opened reconciliation
+ * only on field conflicts, treating "no field conflicts" as "safe to
+ * fast-forward mirror". It is not — the mirror deletes every branch entry
+ * absent from local, so a remote-only task or edit was silently deleted
+ * from the branch *and pushed away on the remote*. "No field conflict"
+ * means "safe to auto-merge", which is exactly what `sync` does — so the
+ * safe, predictable answer (P-2) is to refuse the publish and send the
+ * user through `sync` first, which merges the remote work in. Nothing is
+ * written when this throws.
+ */
+export class GitSyncFirstError extends GitSyncError {
+  /** The remote-only paths that would be lost, for the message + callers. */
+  readonly incomingPaths: readonly string[];
+  constructor(incomingPaths: readonly string[]) {
+    const n = incomingPaths.length;
+    super(
+      `the sync branch has ${n} change(s) you have not synced `
+      + `(work published from another clone). Publishing now would overwrite `
+      + `them. Run 'loctt git sync' first to merge the branch's changes into `
+      + `your workspace, then publish. Nothing was written.`,
+    );
+    this.name = "GitSyncFirstError";
+    this.incomingPaths = incomingPaths;
   }
 }
 
@@ -863,11 +897,50 @@ export async function preflight(locttDir: string): Promise<PreflightReport> {
  * Returns undefined when there is nothing to reconcile — a fast-forward
  * publish, or a first publish with no base.
  */
+/**
+ * Whether a path's content on the branch tip genuinely differs from the
+ * last-synced base — i.e. the branch changed it, as opposed to local
+ * having deleted a base file the branch never touched.
+ *
+ * G1 uses this to tell a real remote-only add/edit (branch content ≠
+ * base, or the path is new on the branch and absent from base) from a
+ * local deletion (`planSync` labels both `copy`, but only the former is
+ * remote work the publish must not clobber). A path absent from base but
+ * present on the branch is a remote add → differs. A path whose branch
+ * content equals its base content was not changed on the branch, so the
+ * only change is local's own deletion → does not differ.
+ */
+function branchDiffersFromBase(
+  root: string,
+  base: string,
+  remoteHead: string,
+  path: string,
+): boolean {
+  const baseText = readTreeFile(root, base, path);
+  const branchText = readTreeFile(root, remoteHead, path);
+  return baseText !== branchText;
+}
+
+/**
+ * The outcome of the pre-publish divergence check:
+ *  - `undefined` — a true fast-forward (branch has not moved past base, or
+ *    local strictly contains the branch): the blind mirror is safe.
+ *  - `{ kind: "reconcile" }` — per-field task conflicts need a human
+ *    decision; open reconciliation tagged `mode: publish`.
+ *  - `{ kind: "sync-first" }` — the branch has remote-only work (adds /
+ *    remote-only edits) with no field conflict. The mirror would delete
+ *    it (G1), so publish must refuse and route through `sync`, which
+ *    merges it in. `incomingPaths` names what would be lost.
+ */
+type PublishDivergence =
+  | { kind: "reconcile"; plan: ReconcilePlan; baseCommit: string; remoteHead: string }
+  | { kind: "sync-first"; incomingPaths: readonly string[] };
+
 async function detectPublishReconcile(
   locttDir: string,
   root: string,
   syncState: SyncState,
-): Promise<{ plan: ReconcilePlan; baseCommit: string; remoteHead: string } | undefined> {
+): Promise<PublishDivergence | undefined> {
   const branch = syncState.git.branch;
   const base = syncState.git.last_synced_commit;
   if (base === undefined) return undefined; // first publish: nothing to diverge from
@@ -896,8 +969,42 @@ async function detectPublishReconcile(
       localDir: locttDir, incomingDir: worktreeDir, conflicts: plan.conflicts,
       config, mode: "publish", baseCommit: base, remoteCommit: remoteHead, root,
     });
-    if (reconcilePlan.conflicts.length === 0) return undefined;
-    return { plan: reconcilePlan, baseCommit: base, remoteHead };
+    if (reconcilePlan.conflicts.length > 0) {
+      return { kind: "reconcile", plan: reconcilePlan, baseCommit: base, remoteHead };
+    }
+    // G1: no field conflict does NOT mean fast-forward. `planSync`
+    // classifies remote-only work — a task the branch added, or a task
+    // the branch changed that local did not — as `copies`, and a
+    // branch-side deletion of a file local still has as `deletes`. The
+    // blind mirror in `commitToLocttBranch` would delete or overwrite
+    // every one of those on the branch and push the loss to the remote.
+    // Only a true fast-forward is safe to mirror; genuine remote-only
+    // work must go through `sync` first, which merges it.
+    //
+    // But NOT every `copy` is remote work: `planSync` labels a path that
+    // is on the branch and absent locally `copy` whether the branch added
+    // it (remote work — must not be lost) or LOCAL deleted a base file
+    // (the user's own intent — the mirror rightly removes it from the
+    // branch). The two are told apart by the branch content: a genuine
+    // remote change differs from base; a local-delete leaves the branch
+    // side identical to base. Fold only the genuinely-remote copies into
+    // the refusal, so a plain local delete still publishes (G1 review).
+    const remoteCopies: string[] = [];
+    for (const c of plan.copies) {
+      if (branchDiffersFromBase(root, base, remoteHead, c.path)) {
+        remoteCopies.push(c.path);
+      }
+    }
+    const incomingPaths = [
+      ...remoteCopies,
+      // A branch-side deletion local has not taken up is remote work too:
+      // mirroring local would resurrect the file on the branch.
+      ...plan.deletes.map(p => p.path),
+    ];
+    if (incomingPaths.length > 0) {
+      return { kind: "sync-first", incomingPaths };
+    }
+    return undefined;
   } finally {
     try { gitSafe(["worktree", "remove", worktreeDir, "--force"], root); } catch { /* best-effort */ }
     await rm(worktreeDir, { recursive: true, force: true }).catch(() => {});
@@ -937,7 +1044,12 @@ export async function publish(
     const preState = await loadSyncState(locttDir);
     if (preState.git.enabled) {
       const needed = await detectPublishReconcile(locttDir, root, preState);
-      if (needed !== undefined) {
+      if (needed?.kind === "sync-first") {
+        // G1: remote-only work would be clobbered by the mirror. Refuse
+        // and route through sync — nothing has been written.
+        throw new GitSyncFirstError(needed.incomingPaths);
+      }
+      if (needed?.kind === "reconcile") {
         await saveReconcileState(locttDir, {
           mode: "publish",
           base_commit: needed.baseCommit,

@@ -20,6 +20,8 @@
 
 import { readFile } from "node:fs/promises";
 
+import { LocttError } from "../errors.js";
+
 /** True when the error is "the file does not exist", not "it will not parse". */
 export function isMissingFile(err: unknown): boolean {
   return (err as NodeJS.ErrnoException)?.code === "ENOENT";
@@ -121,16 +123,35 @@ function describeUnreadable(path: string, code: string): string {
  *
  * Carries the path and errno so a surface can render the cause rather
  * than reporting a knowable failure as unknown (ERR-31).
+ *
+ * It extends `LocttError` (`code:"io_failed"`) so every surface's
+ * top-level catch renders `describeUnreadable`'s sentence — which
+ * already names the file and the fix — as the headline, instead of
+ * flattening it to `code:"unknown"` `recovery:"retry"` and blaming the
+ * server for a file only the user can fix (the ERR-31 class). The
+ * recovery is `none`, not `retry`: an unreadable file (a permission
+ * denial, a directory where a file was expected) does not become
+ * readable by re-issuing the same request — the user must go and fix
+ * the file `path` names. The errno lands in `detail`, behind a "Show
+ * details" affordance, per ERR-16. `fileErrno` keeps the raw errno for
+ * callers that still branch on `instanceof UnreadableFileError` and its
+ * `.code` — `LocttError.code` is the envelope's `ErrorCode`, a
+ * different axis, so the two must not collide.
  */
-export class UnreadableFileError extends Error {
-  readonly name = "UnreadableFileError" as const;
+export class UnreadableFileError extends LocttError {
   readonly path: string;
-  readonly code: string;
+  /** The filesystem errno (e.g. `EACCES`), distinct from `LocttError.code`. */
+  readonly fileErrno: string;
 
   constructor(file: UnreadableFile) {
-    super(file.reason, { cause: file.cause });
+    super("io_failed", file.reason, {
+      recovery: { kind: "none" },
+      detail: file.code.length > 0 ? `${file.code}: ${file.path}` : file.path,
+      cause: file.cause,
+    });
+    this.name = "UnreadableFileError";
     this.path = file.path;
-    this.code = file.code;
+    this.fileErrno = file.code;
   }
 }
 

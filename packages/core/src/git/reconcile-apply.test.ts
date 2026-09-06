@@ -144,4 +144,43 @@ describe("applyReconcile", () => {
     const bad2 = await readTask(locttDir, "bad");
     expect(bad2.frontmatter.title).toBe("b2");
   });
+
+  // Phase Z G2: `complete` used to be `results.every(r => r.ok)`, which is
+  // vacuously true for an empty or under-covering decision set — an
+  // undecided conflict produces no `results` row, so "nothing I attempted
+  // failed" wrongly read as "done". In publish mode that cleared the
+  // reconcile sentinel and ran a divergence-bypassing publish, silently
+  // local-winning every conflict the user never resolved (and pushing the
+  // loss to the remote). Completeness must be measured against the plan's
+  // conflict set.
+  it("does NOT complete when no decisions cover the conflicts (Phase Z G2)", async () => {
+    await writeTask(locttDir, "w3", task("w3", "WEB-3", { title: "local title" }));
+    const conflicts: TaskConflictField[] = [
+      { taskId: "w3", taskKey: "WEB-3", taskTitle: "Task WEB-3", field: "title", fieldLabel: "Title", kind: "scalar",
+        local: { raw: "local title", display: "local title" }, remote: { raw: "remote title", display: "remote title" } },
+    ];
+    // Empty decisions: the vacuous-true bug returned complete === true here.
+    const empty = await applyReconcile(locttDir, conflicts, [], workflow);
+    expect(empty.complete).toBe(false);
+    expect(empty.results).toEqual([]);
+    // Disk is untouched — no silent local-win.
+    expect((await readTask(locttDir, "w3")).frontmatter.title).toBe("local title");
+  });
+
+  it("does NOT complete when only some of a task's conflict fields are decided (Phase Z G2)", async () => {
+    await writeTask(locttDir, "w3", task("w3", "WEB-3", { title: "local title", status: "todo" }));
+    const conflicts: TaskConflictField[] = [
+      { taskId: "w3", taskKey: "WEB-3", taskTitle: "Task WEB-3", field: "title", fieldLabel: "Title", kind: "scalar",
+        local: { raw: "local title", display: "local title" }, remote: { raw: "remote title", display: "remote title" } },
+      { taskId: "w3", taskKey: "WEB-3", taskTitle: "Task WEB-3", field: "status", fieldLabel: "Status", kind: "enum",
+        local: { raw: "todo", display: "To Do" }, remote: { raw: "done", display: "Done" },
+        options: [{ key: "todo", label: "To Do" }, { key: "done", label: "Done" }] },
+    ];
+    // Decide only `title`; `status` is left unresolved. The task write
+    // succeeds (so the old by-task coverage would have called it complete),
+    // but a conflict field remains undecided.
+    const partial = await applyReconcile(locttDir, conflicts,
+      [{ taskId: "w3", field: "title", choice: "local" }], workflow);
+    expect(partial.complete).toBe(false);
+  });
 });

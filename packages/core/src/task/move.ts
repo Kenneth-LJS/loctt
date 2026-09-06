@@ -16,6 +16,19 @@ import { writeTask } from "./io.js";
 import { lookupTask, TaskNotFoundError } from "./lookup.js";
 import { clearLookupCaches } from "./lookup-cache.js";
 
+/**
+ * The fields a move is answerable for. A move is a preserve-others edit
+ * — it changes exactly these — so it must NOT be written with the
+ * universal `["*"]` touched (which would let the write guard's rule 2
+ * wave through the loss of an untouched corrupt field).
+ */
+const MOVE_TOUCHED: ReadonlySet<string> = new Set([
+  "project",
+  "key",
+  "key_history",
+  "updated_at",
+]);
+
 export class MoveTaskError extends Error {
   constructor(message: string) {
     super(message);
@@ -99,6 +112,11 @@ function performMove(args: {
       updated_at: now,
     },
     body: source.body,
+    // Carry the source's health so assembleTaskFile re-emits any
+    // preserved corrupt/unrecognised field. Without this a
+    // field-local corruption lifted into `source.health` is dropped
+    // on the rebuild (§ 13.1 B1 preserve-others, P-11).
+    ...(source.health !== undefined ? { health: source.health } : {}),
   };
   const historyEntries: HistoryEntry[] = [
     {
@@ -144,7 +162,7 @@ export async function moveTaskToProject(
     const { task, oldKey, newKey, historyEntries } = performMove({
       state, source, targetProjectId: opts.targetProjectId, now,
     });
-    await writeTask(opts.locttDir, task.frontmatter.id, task);
+    await writeTask(opts.locttDir, task.frontmatter.id, task, MOVE_TOUCHED);
     await saveState(opts.locttDir, state);
     await reindexKey(opts.locttDir, task.frontmatter.id, oldKey, newKey);
     clearLookupCaches(opts.locttDir);
@@ -204,7 +222,7 @@ export async function bulkMoveTasksToProject(
         // in the sequence, while reissuing one collides with a key the
         // user may still hold in key_history (P-7).
         mutated = true;
-        await writeTask(opts.locttDir, task.frontmatter.id, task);
+        await writeTask(opts.locttDir, task.frontmatter.id, task, MOVE_TOUCHED);
         await reindexKey(opts.locttDir, task.frontmatter.id, oldKey, newKey);
         await appendHistory(opts.locttDir, task.frontmatter.id, historyEntries);
         succeeded.push({ taskId: task.frontmatter.id, oldKey, newKey });

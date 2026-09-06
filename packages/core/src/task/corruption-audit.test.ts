@@ -10,7 +10,7 @@ import { CorruptWriteError, readTask, writeTask } from "./io.js";
 import { archiveTask, unarchiveTask } from "./lifecycle.js";
 import { loadAllTasks } from "./load-all.js";
 import { lookupByKey, lookupTask, UnreadableTaskError } from "./lookup.js";
-import { setField, unsetField } from "./update.js";
+import { setField, setFields, unsetField } from "./update.js";
 
 /**
  * Phase-7 corruption AUDIT (proposal § 11), executed as a table-driven
@@ -271,6 +271,38 @@ describe("audit: bulk writes preserve untouched corrupt fields", () => {
     const res = await bulkArchive({ locttDir, taskRefs: [ID], archive: true });
     expect(res.succeeded).toContain(ID);
     expect(await onDisk()).toContain("jira_id: ABC-1");
+  });
+
+  // @verifies DEG-4 — parity with the single-task `unsetField` at :190.
+  // setFields/bulkSetFields must be able to unset a health-only field
+  // (value:undefined on an unrecognised top-level key), the same removal
+  // unsetField performs, rather than throwing `custom field ... is not set`
+  // for a value that is present in health. The single/bulk parity
+  // invariant (update.ts:770-779) forbids this drift.
+  it("HANDLED: setFields unset of a health-only unrecognised key removes it", async () => {
+    await seedCorruptTask("unrecognised:jira_id");
+    await setFields({
+      locttDir,
+      taskId: ID,
+      changes: [{ field: "jira_id", value: undefined }],
+    });
+    const after = await readTask(locttDir, ID);
+    expect((after.health ?? []).some(h => h.field === "jira_id")).toBe(false);
+    expect(await onDisk()).not.toContain("jira_id");
+  });
+
+  it("HANDLED: bulkSetFields unset of a health-only unrecognised key removes it", async () => {
+    await seedCorruptTask("unrecognised:jira_id");
+    const res = await bulkSetFields({
+      locttDir,
+      taskRefs: [ID],
+      changes: [{ field: "jira_id", value: undefined }],
+    });
+    expect(res.failed).toEqual([]);
+    expect(res.succeeded).toContain(ID);
+    const after = await readTask(locttDir, ID);
+    expect((after.health ?? []).some(h => h.field === "jira_id")).toBe(false);
+    expect(await onDisk()).not.toContain("jira_id");
   });
 });
 

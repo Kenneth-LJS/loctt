@@ -194,6 +194,111 @@ custom_fields: []
     const raw = await readFile(join(locttDir, "config/workflow.yaml"), "utf-8");
     expect(raw).toContain("not_a_category");
   });
+
+  it("does not write a duplicate key when a valid entry re-uses a hidden broken key (C3)", async () => {
+    // A status keyed `done` is hand-broken (bad category), so the loader
+    // sets it aside in broken.statuses and the Settings form never renders
+    // it. The user, seeing no `done`, adds a VALID status also keyed
+    // `done`. The valid entry supersedes the broken one — merging must
+    // drop the broken twin rather than append it, or two `key: done`
+    // entries reach disk past validateWorkflowConfig (which only sees the
+    // valid set) and doctor never flags it, silently bricking every later
+    // workflow write once the user repairs the broken twin.
+    const brokenYaml = `
+key:
+  prefix: T-
+statuses:
+  - key: not_started
+    label: Not started
+    category: pending
+    default: true
+  - key: done
+    label: Done (broken)
+    category: bogus
+priorities: []
+task_types: []
+relationships: []
+custom_fields: []
+`;
+    await writeFile(join(locttDir, "config/workflow.yaml"), brokenYaml, "utf-8");
+
+    const before = await loadWorkflowConfig(locttDir);
+    expect(before.statuses.map(s => s.key)).toEqual(["not_started"]);
+    expect(before.broken?.statuses?.[0]?.id).toBe("done");
+
+    // Add a valid status keyed `done` — the collision. `before` carries
+    // no knowledge of the broken twin (Settings PUT never rendered it).
+    await applyWorkflowEdit(locttDir, {
+      ...before,
+      statuses: [
+        ...before.statuses,
+        { key: "done", label: "Done", category: "completed" },
+      ],
+    });
+
+    // Exactly one `key: done` reached disk — the broken twin was dropped.
+    const raw = await readFile(join(locttDir, "config/workflow.yaml"), "utf-8");
+    const doneCount = raw.match(/key: done\b/g)?.length ?? 0;
+    expect(doneCount).toBe(1);
+
+    // The valid `done` loads; no broken `done` lingers.
+    const after = await loadWorkflowConfig(locttDir);
+    expect(after.statuses.map(s => s.key).sort()).toEqual(["done", "not_started"]);
+    expect(after.broken?.statuses ?? []).toHaveLength(0);
+
+    // A subsequent unrelated write succeeds — it would be refused with
+    // "duplicate status key done" if the duplicate had reached disk.
+    await expect(applyWorkflowEdit(locttDir, {
+      ...after,
+      priorities: [{ key: "p1", label: "High" }],
+    })).resolves.toBeDefined();
+  });
+
+  it("preserves a broken sibling whose key does NOT collide with the added entry (C3)", async () => {
+    // The other half of the fix: dropping the colliding broken twin must
+    // not drop broken siblings the user has not replaced. Two broken
+    // statuses (`done`, `rotten`); the user adds a valid `done`. `done`'s
+    // broken twin is superseded and dropped, `rotten` survives.
+    const brokenYaml = `
+key:
+  prefix: T-
+statuses:
+  - key: not_started
+    label: Not started
+    category: pending
+    default: true
+  - key: done
+    label: Done (broken)
+    category: bogus
+  - key: rotten
+    label: Rotten
+    category: also_bogus
+priorities: []
+task_types: []
+relationships: []
+custom_fields: []
+`;
+    await writeFile(join(locttDir, "config/workflow.yaml"), brokenYaml, "utf-8");
+
+    const before = await loadWorkflowConfig(locttDir);
+    expect((before.broken?.statuses ?? []).map(s => s.id).sort()).toEqual(["done", "rotten"]);
+
+    await applyWorkflowEdit(locttDir, {
+      ...before,
+      statuses: [
+        ...before.statuses,
+        { key: "done", label: "Done", category: "completed" },
+      ],
+    });
+
+    const after = await loadWorkflowConfig(locttDir);
+    // `done` is valid now; `rotten` is still a preserved broken sibling.
+    expect(after.statuses.map(s => s.key).sort()).toEqual(["done", "not_started"]);
+    expect((after.broken?.statuses ?? []).map(s => s.id)).toEqual(["rotten"]);
+    const raw = await readFile(join(locttDir, "config/workflow.yaml"), "utf-8");
+    expect(raw.match(/key: done\b/g)?.length ?? 0).toBe(1);
+    expect(raw).toContain("also_bogus");
+  });
 });
 
 describe("applyWorkflowEdit — priority value (D20)", () => {

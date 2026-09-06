@@ -116,7 +116,9 @@ import {
   GitConflictError,
   GitReconcileInterruptedError,
   GitReconcileNeededError,
+  GitSyncFirstError,
   initLoctt,
+  InitRepairNeededError,
   isEmptyTracker,
   isMalformedHistoryEntry,
   isMigrationLocked,
@@ -490,6 +492,23 @@ function gitErrorResponse(err: unknown): {
         data_state: "not_saved",
         recovery: { kind: "none" },
         reconcile_state: err.state,
+      },
+    };
+  }
+  if (err instanceof GitSyncFirstError) {
+    // Phase Z G1: the branch has remote-only work a blind publish would
+    // clobber. Nothing was written; the remedy is `sync`, not retry.
+    return {
+      status: 409,
+      message: err.message,
+      extra: {
+        code: "sync_needed",
+        data_state: "not_saved",
+        recovery: { kind: "none" },
+        failures: err.incomingPaths.map((path: string) => ({
+          ref: path,
+          message: "changed on the branch since your last sync",
+        })),
       },
     };
   }
@@ -2713,8 +2732,47 @@ export function createWebApp(options: WebAppOptions) {
       });
       json(res, { locttDir: result.locttDir, created: result.created.length }, 201);
     } catch (err) {
-      // initLoctt refuses on an existing tracker and on a bad prefix;
-      // either way nothing was created.
+      // `initLoctt` fails for unrelated reasons, and only one of them is
+      // about the prefix. Attributing every failure to `field:"prefix"`
+      // (ERR-14 pins a red error on that input) tells a caller who sent
+      // a perfectly good prefix to fix the one thing that is not wrong,
+      // and offers a retry that cannot succeed for a disk or permission
+      // fault (ERR-31: a knowable cause must not be reported as the
+      // wrong cause).
+      //
+      // A raw filesystem error from the mkdir/writeFile/rename sequence
+      // carries an errno on `.code` — attribute it to io_failed and name
+      // the real cause, not the prefix. Nothing landed under `.loctt/`:
+      // init stages in a sibling temp directory and renames only at the
+      // very end, so `not_saved` is accurate for every branch here.
+      const errno = (err as NodeJS.ErrnoException).code;
+      if (typeof errno === "string" && /^E[A-Z]+$/.test(errno)) {
+        error(res, `LocTT could not create the tracker: ${(err as Error).message}`, 500, {
+          code: "io_failed",
+          data_state: "not_saved",
+          recovery: { kind: "none" },
+          detail: `${errno}${(err as NodeJS.ErrnoException).path !== undefined ? `: ${(err as NodeJS.ErrnoException).path ?? ""}` : ""}`,
+        });
+        return;
+      }
+      // A damaged/incomplete `.loctt/` reaching init is a repair problem,
+      // not a prefix problem: surface its own message (which already names
+      // the missing files and the `loctt init --repair` route), with no
+      // field to pin on the wizard's prefix input. Kept a 400 like the
+      // other init refusals — nothing about the request was retryable and
+      // nothing was written — but attributed as a config-state problem
+      // rather than a prefix-validation one.
+      if (err instanceof InitRepairNeededError) {
+        error(res, err.message, 400, {
+          code: "config_invalid",
+          data_state: "not_saved",
+          recovery: { kind: "command", command: "loctt init --repair" },
+        });
+        return;
+      }
+      // What remains is genuine input validation (empty prefix, empty
+      // project name, an invalid timezone) or an already-healthy tracker
+      // — the cases where blaming the request body reads correctly.
       error(res, (err as Error).message, 400, { ...REJECTED_WRITE, field: "prefix" });
     }
   };
@@ -3437,7 +3495,15 @@ export function createWebApp(options: WebAppOptions) {
       return;
     }
 
-    const tasks = await loadAllTasks(locttDir);
+    // Detailed, so a task file that will not parse can be *named*
+    // rather than silently dropped (ERR-9). Search is a read surface
+    // like the list and export, and must report the same short-result
+    // reason they do: a user searching for a task they know exists is
+    // otherwise told, in effect, "no such task" when the truth is "one
+    // file could not be read." A file that cannot be read cannot match
+    // `q` anyway, so the rows stay honest; the `unreadable` set names
+    // what the search could not see.
+    const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
     const { workflowConfig, today } = await loadOptionalConfigs(locttDir);
     const includeArchived = url.searchParams.get("archived") === "true";
 
@@ -3453,7 +3519,13 @@ export function createWebApp(options: WebAppOptions) {
       ctx: buildListContext(tasks),
     });
     const frontmatters = result.map(t => ({ ...projectTaskFrontmatter(t.frontmatter), ...wireHealth(t) }));
-    json(res, paginated(frontmatters, page.offset, page.limit));
+    json(res, {
+      ...paginated(frontmatters, page.offset, page.limit),
+      // Same channel and shape as `/api/tasks` (server.ts handleListTasks):
+      // by path, with the parse error, so the UI can say "1 task could
+      // not be read" beside the results.
+      ...(unreadable.length > 0 ? { unreadable } : {}),
+    });
   };
 
   const handleExportTasks: RouteHandler = async ({ res, url, locttDir }) => {

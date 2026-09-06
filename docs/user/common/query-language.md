@@ -66,13 +66,16 @@ Trackers without a `calendar.yaml` fall back to UTC. See
 [`loctt init --timezone`](../cli/reference.md#loctt-init).
 
 Task dates are plain calendar dates (`YYYY-MM-DD`), so `due_date <
-today` compares dates, not instants.
+today` compares dates, not instants. A date field that happens to carry
+a time (a stored ISO-8601 timestamp) is still compared by its calendar
+day, so a task due today at any time matches `due_date = today` and
+`due_date <= today`, and is not counted as `due_date > today`.
 
 ## Special Aliases
 
 | Alias | Description |
 |---|---|
-| `text` | Substring search across the title, built-in text fields, the task **body**, and custom fields declared `searchable: true`. A custom field with `searchable: false` is excluded — it stays directly queryable by `fields.<key>`. Does not include attachment contents or filenames. |
+| `text` | Substring search across the title, built-in text fields, the task **body**, and custom fields declared `searchable: true`. A custom field with `searchable: false` is excluded — it stays directly queryable by `fields.<key>`. Does not include attachment contents or filenames. Only the `~` operator is supported: write `text ~ term`. Any other operator (`=`, `!=`, `<`, `in`, …) is rejected, because a substring alias has no exact-match or ordering meaning. |
 | `parent` | Filter by parent task — accepts task keys (e.g., `parent = T-5`) |
 
 ## Relationship Filtering
@@ -199,6 +202,7 @@ Four cases are distinguished, because they mean different things:
 | Unknown field name | Error, with suggestions |
 | Unknown `fields.<key>` custom field | Error, listing declared custom fields |
 | Known field, unknown enum value | Error, listing valid values |
+| `text` with any operator but `~` | Error — `text` is substring search, use `text ~ <term>` |
 | Valid query that matches no tasks | **Not an error** — an empty result |
 
 The last row is the point of the other three. Without validation, a

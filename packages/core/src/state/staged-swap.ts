@@ -224,6 +224,19 @@ export async function recoverStagedSwap(
   const swap = entry.swap;
   if (swap === undefined) return;
 
+  // "Did this swap finish?" — step 5 removes `base_dir` as one unit
+  // *before* clearing the journal entry, so a stranded entry whose
+  // `base_dir` is already gone means the swap completed and only the
+  // cleanup was interrupted: every destination is already correct and
+  // must be left alone. A `base_dir` still on disk means the op was
+  // interrupted mid-swap and must be rolled back.
+  //
+  // This is the created-file (`had_original:false`) analogue of the
+  // per-file `fileExists(f.backup)` guard below: a created file has no
+  // backup to key on (line 136-138 never writes one), so the
+  // op-completed signal is the base dir, not a per-file backup.
+  const opUnfinished = await fileExists(swap.base_dir);
+
   for (const f of swap.files) {
     if (f.had_original) {
       // Only restore when the backup is still there: a completed swap
@@ -233,7 +246,12 @@ export async function recoverStagedSwap(
         await mkdir(dirname(f.dest), { recursive: true });
         await copyFile(f.backup, f.dest);
       }
-    } else if (await fileExists(f.backup)) {
+    } else if (opUnfinished) {
+      // A created destination has no backup file — rollback means
+      // delete it. Gate on the swap being unfinished so a completed
+      // swap (base dir already gone) does not delete a file that is
+      // correctly in place, which would roll one file back while a
+      // sibling stays forward — the split state V6 exists to prevent.
       await rm(f.dest, { force: true });
     }
   }

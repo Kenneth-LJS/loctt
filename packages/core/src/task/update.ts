@@ -870,12 +870,26 @@ export async function setFieldsLocked(
       const existingFields = (patch["fields"] as Record<string, unknown> | undefined) ?? {};
       if (value === undefined) {
         if (!(field in existingFields)) {
-          throw new TaskUpdateError(`custom field "${field}" is not set`);
+          // Health-only field (an unrecognised top-level key, or a
+          // wrong-typed non-builtin): its value lives only in `health`,
+          // not in `fields`. Same branch `unsetFieldLocked` has at :634
+          // — removal is accomplished by the carryHealth loop below
+          // dropping the entry, so there is nothing to delete here.
+          // Without this parity, `setFields`/`bulkSetFields` throw
+          // "not set" for a field a single-task `unsetField` removes
+          // happily (the invariant at :770-779 forbids this drift).
+          const healthOnly = (task.health ?? []).some(
+            h => h.field.replace(/[[.].*$/, "") === field,
+          );
+          if (!healthOnly) {
+            throw new TaskUpdateError(`custom field "${field}" is not set`);
+          }
+        } else {
+          const next = { ...existingFields };
+          delete next[field];
+          if (Object.keys(next).length === 0) delete patch["fields"];
+          else patch["fields"] = next;
         }
-        const next = { ...existingFields };
-        delete next[field];
-        if (Object.keys(next).length === 0) delete patch["fields"];
-        else patch["fields"] = next;
       } else {
         patch["fields"] = { ...existingFields, [field]: value };
       }

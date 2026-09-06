@@ -14,6 +14,7 @@ import {
   enableGit,
   getGitStatus,
   GitReconcileNeededError,
+  GitSyncFirstError,
   loadReconcileSession,
   publish,
   sync,
@@ -89,6 +90,10 @@ export const TOOLS: readonly ToolDef[] = [
         result = await publish(locttDir, root);
       } catch (err) {
         if (err instanceof GitReconcileNeededError) return reconcileNeededResult(err);
+        // G1: the branch has remote-only work a blind publish would
+        // clobber. Surface the actionable "run sync first" message rather
+        // than letting it fall through as a framework fault.
+        if (err instanceof GitSyncFirstError) return text(err.message);
         throw err;
       }
       const lines: string[] = [];

@@ -141,6 +141,40 @@ describe("validateQuery — valid queries pass", () => {
   });
 });
 
+describe("validateQuery — the text alias only accepts ~ (Q2)", () => {
+  // `text` is a substring-search alias. Every non-`~` operator parsed and
+  // validated, then evaluated wrongly — `text = x` returned the tasks that
+  // did NOT contain x (the evaluator's match exits all test `op === "~"`).
+  // The operator is nonsensical on a substring alias, so reject it at
+  // validation with a clear message rather than answer wrongly.
+  it.each([
+    ["=", "text = urgent"],
+    ["!=", "text != urgent"],
+    ["<", "text < urgent"],
+    ["<=", "text <= urgent"],
+    [">", "text > urgent"],
+    [">=", "text >= urgent"],
+    ["in", "text in (urgent, blocker)"],
+  ])("rejects text with %s", (_op, query) => {
+    const err = expectInvalid(query);
+    expect(err.message).toContain('"text" is a substring search');
+  });
+
+  it("still accepts text ~ term", () => {
+    expect(() => validateQuery(q("text ~ urgent"), { workflow })).not.toThrow();
+  });
+
+  it("rejects text = even without workflow config", () => {
+    let caught: unknown;
+    try {
+      validateQuery(q("text = urgent"));
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(QueryValidationError);
+  });
+});
+
 describe("validateQuery — error positions", () => {
   // Positions make the error underlinable, matching how the tokenizer
   // and parser already report syntax errors.

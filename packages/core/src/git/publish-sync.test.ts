@@ -13,7 +13,7 @@ import { loadSyncState, saveSyncState } from "../state/sync.js";
 import { createTask } from "../task/create.js";
 import { setField } from "../task/update.js";
 import { enableGit } from "./git-mode.js";
-import { GitReconcileNeededError, publish, sync } from "./publish-sync.js";
+import { GitReconcileNeededError, GitSyncFirstError, publish, sync } from "./publish-sync.js";
 import { abandonReconcile } from "./reconcile-session.js";
 
 describe("publish-sync", () => {
@@ -701,6 +701,141 @@ describe("publish-sync", () => {
         cwd: root, stdio: "pipe", encoding: "utf-8",
       });
       expect(listed).toContain("precious.txt");
+    });
+  });
+
+  // Phase Z G1: publish blind-mirrored the branch whenever there were no
+  // per-FIELD conflicts, treating "no field conflict" as "safe to
+  // fast-forward". It is not: a task the branch added, or a task the
+  // branch edited that local never touched, is classified `copy` by
+  // planSync (not `conflict`), so the mirror deleted it from the branch —
+  // and pushed the loss to the remote. Publish must refuse and route
+  // through `sync` (which merges the branch's work) when the branch holds
+  // remote-only changes.
+  describe("publish refuses to clobber remote-only branch work (Phase Z G1)", () => {
+    async function commitOnBranch(
+      mutate: (worktreeDir: string) => Promise<void>,
+      message: string,
+    ): Promise<void> {
+      const wt = join(root, `.branch-edit-${Math.random().toString(36).slice(2)}`);
+      execSync(`git worktree add ${wt} loctt`, { cwd: root, stdio: "pipe" });
+      try {
+        await mutate(wt);
+        execSync(`git add -A && git commit -m '${message}'`, { cwd: wt, stdio: "pipe" });
+      } finally {
+        execSync(`git worktree remove ${wt} --force`, { cwd: root, stdio: "pipe" });
+      }
+    }
+
+    it("throws GitSyncFirstError instead of deleting a task the branch added", async () => {
+      // Base: one published task.
+      const s1 = await loadState(locttDir);
+      const base = await createTask({
+        locttDir, state: s1, options: { project: taskProjectId, title: "Base" },
+      });
+      await saveState(locttDir, s1);
+      await publish(locttDir, root);
+
+      // The branch gains a task this clone never synced (another clone's
+      // publish). Written as a real task dir so planSync sees a `copy`.
+      const remoteId = "01M0REMOTEONLY0000000000AB";
+      await commitOnBranch(async wt => {
+        await mkdir(join(wt, "tasks", remoteId), { recursive: true });
+        await writeFile(
+          join(wt, "tasks", remoteId, "task.md"),
+          `---\nid: ${remoteId}\nkey: TBASE-2\ntitle: Remote only\n`
+          + `project: ${taskProjectId}\ncreated_at: 2026-01-01T00:00:00Z\n`
+          + `updated_at: 2026-01-01T00:00:00Z\nstatus: todo\n---\nRemote body.\n`,
+        );
+      }, "remote-only task");
+
+      // An unrelated local edit, then publish. Before the fix this
+      // returned committed:true and the branch tip lost the remote task.
+      await writeFile(join(locttDir, "config", "queries.yaml"), "queries: []\n");
+      await expect(publish(locttDir, root)).rejects.toBeInstanceOf(GitSyncFirstError);
+
+      // Nothing was written: the branch tip still holds the remote task.
+      const listed = execSync("git ls-tree -r --name-only loctt", {
+        cwd: root, stdio: "pipe", encoding: "utf-8",
+      });
+      expect(listed).toContain(`tasks/${remoteId}/task.md`);
+      expect(listed).toContain(`tasks/${base.frontmatter.id}/task.md`);
+    });
+
+    it("still publishes a plain local delete — the branch did not change (G1 review regression)", async () => {
+      // The review of the G1 fix caught this: `planSync` labels a
+      // locally-deleted, still-on-branch file `copy` ("present on branch,
+      // absent locally") — the SAME class as a remote add. Folding all
+      // copies into the refusal wrongly blocked a legitimate delete, and
+      // the `sync` it routed to resurrected the task. When the branch has
+      // NOT moved this is a true fast-forward and publish proceeds; the
+      // interesting case (below) is a delete alongside a real branch move.
+      const s1 = await loadState(locttDir);
+      const keep = await createTask({
+        locttDir, state: s1, options: { project: taskProjectId, title: "Keep" },
+      });
+      const doomed = await createTask({
+        locttDir, state: s1, options: { project: taskProjectId, title: "Doomed" },
+      });
+      await saveState(locttDir, s1);
+      await publish(locttDir, root); // base now has both
+
+      // Delete one task locally; the branch is untouched.
+      const { deleteTask } = await import("../task/lifecycle.js");
+      await deleteTask(locttDir, doomed.frontmatter.id, { force: true });
+
+      // Publish must SUCCEED (not throw GitSyncFirstError) and remove the
+      // deleted task from the branch — honouring the user's delete.
+      const result = await publish(locttDir, root);
+      expect(result.committed).toBe(true);
+      const listed = execSync("git ls-tree -r --name-only loctt", {
+        cwd: root, stdio: "pipe", encoding: "utf-8",
+      });
+      expect(listed).toContain(`tasks/${keep.frontmatter.id}/task.md`);
+      expect(listed).not.toContain(`tasks/${doomed.frontmatter.id}/task.md`);
+    });
+
+    it("names only the genuinely-remote path when the branch moved AND local deleted a base file (G1 review)", async () => {
+      // The exact regression the fix review probed: the branch advances
+      // with a real remote add (R) while local ALSO deletes a base file
+      // (B). Publish must refuse (R is real remote work), but the refusal
+      // must name ONLY R — never B — because listing B as "changed on the
+      // branch" is false and routes the user to a sync that resurrects
+      // their deleted task. `branchDiffersFromBase` filters B out because
+      // its branch content still equals base (the branch never touched
+      // it); this test reddens if that filter is removed.
+      const s1 = await loadState(locttDir);
+      await createTask({ locttDir, state: s1, options: { project: taskProjectId, title: "Base" } });
+      const doomed = await createTask({
+        locttDir, state: s1, options: { project: taskProjectId, title: "Doomed" },
+      });
+      await saveState(locttDir, s1);
+      await publish(locttDir, root); // base has Base + Doomed
+
+      // Remote add on the branch (moves the branch head).
+      const remoteId = "01M0REMOTEADD00000000000CD";
+      await commitOnBranch(async wt => {
+        await mkdir(join(wt, "tasks", remoteId), { recursive: true });
+        await writeFile(
+          join(wt, "tasks", remoteId, "task.md"),
+          `---\nid: ${remoteId}\nkey: TBASE-3\ntitle: Remote add\n`
+          + `project: ${taskProjectId}\ncreated_at: 2026-01-01T00:00:00Z\n`
+          + `updated_at: 2026-01-01T00:00:00Z\nstatus: todo\n---\nR.\n`,
+        );
+      }, "remote add");
+
+      // Local deletes a base file, unrelated to the remote add.
+      const { deleteTask } = await import("../task/lifecycle.js");
+      await deleteTask(locttDir, doomed.frontmatter.id, { force: true });
+
+      // Publish refuses (R is real remote work)…
+      let caught: unknown;
+      try { await publish(locttDir, root); } catch (e) { caught = e; }
+      expect(caught).toBeInstanceOf(GitSyncFirstError);
+      // …and names ONLY the remote add, never the locally-deleted task.
+      const paths = (caught as GitSyncFirstError).incomingPaths.join("\n");
+      expect(paths).toContain(remoteId);
+      expect(paths).not.toContain(doomed.frontmatter.id);
     });
   });
 });

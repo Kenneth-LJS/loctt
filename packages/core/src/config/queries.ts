@@ -1,12 +1,13 @@
 
 import type { BrokenSavedQuery, QueriesConfig, SavedQuery } from "@loctt/contracts";
 import { SavedQuerySchema } from "@loctt/contracts";
-import { stringify as stringifyYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
 import { getQueriesConfigPath } from "../paths/index.js";
 import { ParseError, parseQuery } from "../query/parser.js";
 import { tokenize, TokenizeError } from "../query/tokenizer.js";
+import { renderRawText } from "../task/frontmatter.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
 import { safeParseYaml } from "./yaml-coerce.js";
@@ -73,6 +74,11 @@ export function parseQueriesConfig(yamlContent: string): QueriesConfig {
           // mark the exact spot (VUE-22: "the offending position").
           position: err.position,
           index: i,
+          // The entry's FULL schema-valid YAML (id/name/query and any
+          // sort/display/archived), so a write re-emits every field rather
+          // than only {id,name,query} — Phase Z C2. Mirrors how the six
+          // object-shaped configs preserve via `BrokenEntry.rawText`.
+          rawText: renderRawText(item),
         });
         return;
       }
@@ -124,15 +130,32 @@ function serializeDisplay(d: NonNullable<QueriesConfig["queries"][number]["displ
 }
 
 /**
- * A broken entry (K28) re-serialized to its minimal on-disk shape. It is
+ * A broken entry (K28) re-serialized to its FULL on-disk shape. It is
  * emitted alongside the valid queries so a write NEVER drops a
  * corrupt-but-preserved sibling the write did not touch (the config
- * analogue of the task write guard). `{id, name, query}` is exactly the
- * on-disk shape of a saved query, and `BrokenSavedQuery` carries all
- * three (the query string is the one that failed to parse — kept
- * verbatim so a later fix edits the real text).
+ * analogue of the task write guard).
+ *
+ * `b.rawText` is the entry's own YAML (`renderRawText` = `stringifyYaml`),
+ * so re-parsing it reconstructs every field the entry had on disk —
+ * `id/name/query` and any `sort`/`display`/`archived`. Emitting only
+ * `{id,name,query}` (as this once did) silently stripped a broken view's
+ * optional fields on any unrelated write: Phase Z finding C2, the residual
+ * loss inside K28. This mirrors `brokenEntriesToPlain` (health.ts).
+ *
+ * Fallback: if `rawText` will not re-parse to an object (should not happen
+ * for a schema-valid entry, whose YAML `renderRawText` produced), fall back
+ * to `{id,name,query}` rather than writing a broken shape — the query
+ * string is kept verbatim so a later fix edits the real text.
  */
 function serializeBrokenQuery(b: BrokenSavedQuery): Record<string, unknown> {
+  try {
+    const parsed: unknown = parseYaml(b.rawText);
+    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Unparseable rawText — fall through to the minimal shape below.
+  }
   return { id: b.id, name: b.name, query: b.query };
 }
 
