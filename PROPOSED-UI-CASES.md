@@ -288,3 +288,554 @@ nobody can read defeats the point just as thoroughly.
 
 Option 2 is the only one that does not lose something, but it is also
 the only one that changes the column count, which BLK-36 pins.
+
+---
+
+# ═══════════════════════════════════════════════════════════════
+# UI-RELEASE PASS (2026-09-06) — cases-before-code gate
+# ═══════════════════════════════════════════════════════════════
+
+Drafted for the single UI release (`ui-review-tracker.md` +
+`ui-implementation-batches.md`). This is the **cases-before-code gate**
+(`build-loop.md` step 1 / run-workflow step 0): a lane opens only once
+its cases are accepted here into the flow docs. **Everything in this
+section is PROPOSED — awaiting Ken.** Nothing has been applied to the
+locked `docs/dev/ui-test-cases/*.md` files.
+
+Two Ken rulings (2026-09-06) drive the reversals below and are treated as
+decided; the case text is drafted to match them:
+- **BUG-2 → fix the copy.** "Leave it" clears the field (that is what the
+  server does); the dialog must say so. Reverses SET-17 (+ SET-19).
+- **A task's relationships → inline kebab (⋯) + confirm** (not a dialog,
+  not hover-remove). Reverses REL-12.
+- **Config panels → view + Edit-dialog** (supersedes K1). Genuinely
+  reverses/rewords the inline-edit assertions in **SET-16/17/19/28** and
+  **SPR-8**; **PRU-44** is preserved (not reversed).
+
+**Review-2 correction — SET-6 and SET-34 are NOT superseded.** Both are
+reorder-only in the current flow doc (SET-6: drop indicator + `workflow.yaml`
+order + cold reload + board columns + priority `value`; SET-34: a reorder
+write failure). Neither asserts inline *value* editing, so neither
+contradicts the edit model — superseding them would redden four green
+tagged tests. The Edit-gated value-edit behaviour is therefore in **new
+additive IDs SET-50 (value edits behind Edit) and SET-51 (a failed dialog
+Save stays open)**, leaving SET-6/34 intact. That also makes decision #3
+(reorder stays inline) a one-line `decisions.md §9` record rather than a
+case rewrite. So the true reversals in this section are six:
+**SET-16, SET-17, SET-19, SET-28, SPR-8, REL-12**.
+
+Format follows the house shape: `### PREFIX-N · M· sev · P-principles`,
+a bold one-line claim, then bullets. Milestone tags reuse the flow doc's
+own (`M4` for settings/sprints/projects, `M2` for relationships/editor,
+`M2`/`M4` as the original case carried). New IDs continue each file's
+existing numbering; **no renumbering** (and no `-N#` placeholders — every
+new ID is a real next-free number that the case-index parser can ingest).
+
+---
+
+## A. Reversals of approved cases (supersede)
+
+### SET-50 · M4 · major · P1 P8 — NEW (additive; SET-6 stays intact)
+**A status's value edits are gated behind an explicit Edit control →
+dialog.** Statuses panel.
+
+*(Review-2 correction: the current SET-6 is reorder-only — drop indicator,
+`workflow.yaml` order, cold reload, board columns, priority `value`. It
+asserts nothing about inline value editing and so contradicts nothing;
+superseding it would redden four green tagged tests
+(`flow-settings-workflow.spec.ts:146,183,1011,1099`,
+`server.workflow-panels.test.ts:116`). So SET-6 is left untouched and the
+Edit-gated value-edit behaviour lives in this new ID instead.)*
+
+- **All edits to a status (label, category, default, delete) are
+  view-by-default and happen behind an explicit Edit control → dialog**,
+  never by an inline text input auto-saving on blur. (This is the K1
+  supersession; the panel no longer auto-saves a field edit in place.)
+- **Reorder is unaffected and stays inline** (Ken, open decision #3 — plan
+  default keep): reorder is a position change, not a value edit, so SET-6's
+  drag-reorder behaviour continues to hold exactly as written.
+
+> Additive, not a reversal. `decisions.md §9 K1` made the panel
+> inline-editable; Ken's 2026-09-06 edit-model ruling gates *value* edits
+> behind Edit. Recording decision #3 (reorder stays inline) is a one-line
+> `decisions.md §9` note, not a SET-6 rewrite.
+
+### SET-16 · M4 · blocker · P3 P7 — SUPERSEDES the current SET-16
+**A custom field's type is locked after creation, inside the Edit
+dialog.** Field `story_points` exists as `number` with values on 40 tasks.
+
+- Opening the field's **Edit dialog**, the type control is disabled (not
+  merely validated on submit) and states why: existing task values were
+  stored under this type.
+- Label, `searchable`, and (where safe) `multi` remain editable in the
+  same dialog, so the lock reads as targeted.
+- No request that would change `type` is accepted server-side either —
+  re-enabling the control in devtools and submitting is rejected.
+- The dialog offers the honest alternative: create a new field and
+  migrate, rather than pretending the change is possible.
+
+> Supersedes: current SET-16 (describes the lock on an inline field row).
+> Same guarantees; the surface moves from an inline form to the Edit
+> dialog. Note the existing SET-16 caveat that `number → string` is
+> allowed when no task data is incompatible still applies to the "where
+> safe" wording.
+
+### SET-17 · M4 · major · P5 P7 — SUPERSEDES the current SET-17 (BUG-2)
+**Deleting a status still referenced by tasks; the "leave" option clears
+the field.** `in_review` is the status of 9 tasks.
+
+- The delete dialog shows the reference count before the delete is
+  confirmed.
+- The confirm requires either a remap target (another status) **or the
+  explicit choice to clear the status on those tasks** — no silent
+  orphaning.
+- Choosing remap moves all 9 tasks and reports the count moved.
+- **Choosing to clear is allowed; the dialog states plainly that the
+  status field will be cleared on those 9 tasks (they become
+  status-less), and after confirming, the field is cleared on disk — no
+  dangling reference is created and no drift marker or Diagnostics warning
+  results.** The old copy promised a dangling ref + drift marker; that was
+  never the behaviour (the server clears the field), so the copy is
+  corrected to match. (BUG-2, decided 2026-09-06: fix the copy.)
+
+> Supersedes: current SET-17 (bullet 4 promised "render with a drift
+> marker and appear in Diagnostics as a failing check — and after
+> confirming, they do"). That branch was never exercised by a test
+> (`flow-settings-workflow.spec.ts` runs only the remap branch; SET-18
+> reaches the dangling state by hand-editing YAML), and the server clears
+> the field. Reworded to the real behaviour.
+
+### SET-19 · M4 · major · P3 — SUPERSEDES the current SET-19 (BUG-2 sibling)
+**Deleting an enum value that tasks still hold; the "clear" option clears
+it.** Custom enum value `sprint_1` is set on 12 tasks.
+
+- The value row shows its own reference count.
+- Deleting demands remap-or-**clear** the same way statuses do; the count
+  is repeated in the confirm.
+- **Choosing clear removes the value from those 12 tasks' frontmatter (the
+  field is emptied), stated plainly in the dialog; after confirming, the
+  value is gone from disk with no dangling key and no drift marker.**
+
+> Supersedes: current SET-19 (bullet 3 said cleared tasks "render it as
+> the raw key with a drift marker and are surfaced by Diagnostics").
+> Same BUG-2 correction as SET-17.
+
+### SET-28 · M4 · major · P1 P7 — SUPERSEDES the current SET-28
+**`workflow.yaml` is rewritten by hand while a settings panel is open,
+with edits gated behind a dialog.**
+
+- The panel does not save a stale copy over the new file; it re-reads
+  before writing or detects the change and says so.
+- **If an Edit dialog was open (or a drag-reorder in flight) when the file
+  changed underneath, the save is refused with a message naming the file
+  and offering to reload the panel** — the dialog does not silently
+  clobber the hand edit on Save.
+- After reloading, the panel shows the hand-edited content, not a merged
+  hybrid.
+
+> Supersedes: current SET-28 (frames the in-flight edit as a drag-reorder
+> only). Broadened to the Edit-dialog save path, which is now the primary
+> value-edit surface.
+
+### SET-51 · M4 · major · P4 — NEW (additive; SET-34 stays intact)
+**A failed Edit-dialog Save stays open with an anchored error.** The
+Edit-dialog Save (the new primary value-edit surface) hits a write error.
+
+*(Review-2 correction: the current SET-34 is a drag-reorder write failure
+(snap-back, file-named error, re-draggable) — it is not a value edit and
+contradicts nothing. Superseding it would redden the tagged test that
+guards the reorder-failure path. So SET-34 is left untouched and the
+dialog-Save-failure behaviour lives in this new ID.)*
+
+- The dialog **stays open with the value un-committed** — the field is not
+  written and the panel is not left showing a value that did not persist.
+- The error is shown **anchored in the dialog** (the `-edit-error`
+  `Callout`), not as a bare toast, and names the next action.
+- **Cancel still closes cleanly**, discarding the un-committed edit.
+
+> Additive, not a reversal. SET-34's reorder-failure behaviour is unchanged
+> (reorder stays inline per open decision #3); this ID covers the
+> Edit-dialog Save-failure path SET-34 never described.
+
+### SPR-8 · M4 · blocker · P1 — SUPERSEDES the current SPR-8
+**Editing sprint metadata behind an Edit control persists to
+`sprints.yaml`.** Sprint detail header.
+
+- The detail header is **read-by-default**; an explicit Edit control opens
+  the fields for editing (name/start/goal/state) — they no longer
+  commit-on-blur/commit-on-change in place.
+- Changing `name` and saving writes the new name; reloading shows it.
+- The sprint's `id` is unchanged by any edit — tasks referencing it stay
+  attached and their cards still appear.
+- `loctt sprint list` shows the edited values.
+- Changing `state` to `completed` re-collapses that column on the overview
+  per SPR-2.
+
+> Supersedes: current SPR-8 (commit-on-blur / commit-on-change). Same
+> persistence guarantees; the trigger moves behind Edit per "inline is
+> for tasks". (Config surfaces, including sprint config, are gated;
+> sprint config is not a task field.)
+
+### REL-12 · M2 · major · P5 P8 — SUPERSEDES the current REL-12 (K-4)
+**Removing a link is a deliberate, aligned action: a kebab menu with a
+confirm.**
+
+- Each relationship row exposes a **persistent kebab (⋯) control in a
+  fixed slot** — not a hover-only affordance — so the row's label/status
+  pill align correctly and the control is reachable by mouse and by
+  keyboard focus.
+- Opening the kebab offers **Remove** (with room for future per-link
+  actions).
+- **Removal asks for a brief confirm** ("Remove this link?" Remove /
+  Cancel) — a single deliberate step, not a typed confirmation. This
+  guards against the accidental one-click removal the old hover-`✕`
+  allowed.
+- The confirm/kebab is the only remove path; there is no stray hover-`✕`.
+
+> Supersedes: current REL-12 (bullets: "remove control on hover and on
+> keyboard focus", "does not require a typed confirmation", "undoable from
+> the confirmation message"). Ken's 2026-09-06 ruling: inline kebab +
+> confirm. Undo-from-message is dropped in favour of a pre-action confirm;
+> re-adding a link in one action still holds via "+ Add link". Note this
+> reverses the no-confirm bullet deliberately — the confirm is the point.
+
+### PRU-44 · (existing) — PRESERVE, re-home into the Projects Edit dialog
+**The editable project prefix keeps its confirm-dialog shape when the
+Projects panel becomes view + Edit-dialog.** (PRU-44 is already built —
+editable prefix via a confirm dialog; slug is the readOnly field.)
+
+- The Projects Edit dialog carries the prefix control; editing the prefix
+  **does not save on blur** — it goes through the existing confirm dialog
+  that states the blast radius in numbers (keys to rewrite).
+- The slug remains the read-only field.
+- **PRU-44/45 are already tagged and green** — `server.test.ts:779`
+  (`@verifies PRU-44, PRU-45, PRU-46`) and `ProjectsPanel.test.tsx:10`
+  (`@verifies PRU-44, PRU-45`); `cases:coverage --require PRU-44,PRU-45`
+  passes. The real risk is the opposite of the earlier "no tags exist"
+  claim (false, corrected review-2): `ProjectsPanel.test.tsx` is a **green,
+  tagged** test the Projects restructure will *edit*. Per CLAUDE.md's
+  "editing a green test" rule, that edit must be named in the B2 Projects
+  commit message.
+
+> Not a reversal — a preservation note. No new capability; the pinned
+> PRU-44/45 behaviour must survive the Projects-panel restructure. The
+> tests that guard it already exist and are green; the restructure edits
+> `ProjectsPanel.test.tsx`, so name it in the commit.
+
+---
+
+## B. New cases for un-cased items
+
+### `flow-tasks.md` / editor (K-7, K-7b, ED-1/2/3) — new IDs
+*(the body/editor cases live in `flow-tasks.md`, which ends at TSK-56)*
+
+- **TSK-59 · M2 · major · P3 P8** — **The heading control offers every
+  level, not just H2.** The description/comment toolbar exposes a level
+  picker (Paragraph, H1…H6). Selecting a level applies it
+  (`setHeading({level})` / `setParagraph()`); the control shows the
+  current block's level; each level round-trips through save+reload
+  (`#`×level serialised, `#{1,6}` parsed). (K-7, the reported P1 — only
+  H2 is reachable today.)
+- **TSK-60 · M2 · major · P8** — **Applying a block type to a whole-
+  paragraph selection leaves the caret in the transformed block**, so the
+  control reflects the new state immediately and repeated toggles do not
+  accumulate trailing empty blocks. (K-7 caret quirk.)
+- **TSK-61 · M2 · major · P3** — **An ordered-list button exists and
+  round-trips.** The toolbar can create an ordered list (`1.` items);
+  `fromMarkdown`/`toMarkdown` already support it. (K-7b.)
+- **TSK-62 · M2 · minor · P8** — **The rich editor shows a placeholder
+  when empty**, matching the raw CodeMirror editor's "Describe this
+  task…", so an empty rich editor does not read as broken/blank. (K-7b.)
+- **TSK-63 · M2 · major · P1 P8** — **Pasting markdown into the rich
+  editor parses it**, not inserts it as literal text. Pasting
+  `# Heading\n\n- item\n- item` yields a heading + list, not three literal
+  paragraphs. (K-7b — markdown paste is the common case for this
+  audience.)
+- **TSK-64 · M2 · minor · P8** — **The description toolbar is collapsed in
+  view mode** and appears only when the field is focused/edited; no format
+  button renders in an active state while merely viewing. (UX-9.)
+- **TSK-65 · M2 · minor · P8** — *(scope-call, ED-1)* Strikethrough /
+  superscript / subscript / math / mention have toolbar buttons in rich
+  mode, or the flow doc scopes them out. These marks/nodes round-trip
+  already; only the toolbar affordance is missing.
+- **TSK-66 · M2 · minor · P7** — *(ED-2)* A GFM pipe-table in the body is
+  either parsed to a table or forces raw mode via lossy-content detection
+  — never shown as literal paragraph text.
+- **TSK-67 · M2 · minor · P8** — *(ED-3, test-hygiene)* The description
+  and comment editors carry **distinct** test-ids so the DOM is
+  unambiguous (both are `rich-editor` today).
+
+### `flow-saved-views.md` (K-8, u3) — new IDs
+
+*(VUE ends at VUE-39 in the flow doc; continue at 40)*
+
+- **VUE-40 · M4 · major · P2 P10** — **A saved view can be created from
+  the UI.** The sidebar "+ New filter" (disabled today,
+  `Sidebar.tsx:715`) opens a create-view flow (name + query, reusing the
+  advanced query editor); the created view is written to `queries.yaml`,
+  appears in the sidebar, and is runnable via `loctt views` (P10 parity).
+  The write cannot poison the file (cf. VUE-37).
+- **VUE-41 · M4 · major · P1 P2** — **A saved view can be renamed and its
+  query edited from the UI**, via an Edit dialog on the Saved views panel
+  (`PUT /api/views/:id` / core `editView`). Reloading shows the new
+  name/query; `loctt views` agrees.
+
+### `flow-settings.md` — workflow create + custom-field CRUD (new IDs)
+
+- **SET-46 · M4 · major · P3 P4** — **A status can be created from the
+  panel.** The Create dialog takes key + label + category + default; the
+  key is validated for uniqueness and the "key is permanent" copy is
+  shown; on Save the new status is written to `workflow.yaml` and renders
+  in file order. Creating a duplicate key is rejected before `PUT` with a
+  message naming the collision (cf. SET-44).
+- **SET-47 · M4 · major · P3 P4** — **A priority / task-type can be
+  created** the same way (key + label; priority gets a computed `value`).
+- **SET-48 · M4 · major · P3 P4** — **A relationship type can be created**
+  — key + label + symmetric/inverse + inverse_label + graph + ranked
+  (`RelationshipDef`) — written to `workflow.yaml` and usable when linking.
+- **SET-49 · M4 · major · P3 P4** — **Custom fields have full CRUD in the
+  UI** (create/edit/delete), not YAML-only. Create takes key + label +
+  type + multi + searchable + enum values with weights; `type`/`multi`
+  lock after create (SET-16 shape); delete goes through remap-or-clear
+  (SET-19 shape).
+
+### `flow-projects-users.md` (K-11, p1) — new IDs
+
+- **PRU-47 · M4 · major · P1 P8** — **An existing user's name, email and
+  timezone can be edited from the UI**, via a per-row Edit → dialog
+  (`PUT /api/users/:id`). Today email is shown read-only and settable only
+  in the create form, so a blank email cannot be fixed in-app (K-11). The
+  avatar is set through a proper control, not a raw `<input type="file">`.
+  Reloading shows the edited values; `loctt user` agrees (P10).
+- **PRU-48 · M4 · major · P1 P8** — **A project can be set as the default
+  from the Projects panel.** Today only a personal default exists and core
+  `setDefaultProject` is called only internally — this needs a new
+  endpoint. Setting default writes to config, the marker moves, and the
+  new default is where new tasks land / the default filter opens.
+
+### `flow-sprints.md` (K-14, u2 create/delete/archive) — new IDs
+
+*(Review-2 correction: SPR-27 and SPR-28 already exist in the index — SPR
+max is 38 — so the proposed IDs collided. Renumbered to the next free
+SPR-39/40.)*
+
+- **SPR-39 · M4 · major · P8** — **The sprints overview surfaces
+  at-a-glance data per card.** Each sprint card shows progress (done /
+  total), the date range, days-remaining (or overdue), and a mini-burndown
+  or equivalent; the whole card is clickable → detail. (K-14 — the data
+  exists on the detail page only today.)
+- **SPR-40 · M4 · major · P10** — **Sprint create / delete / archive /
+  unarchive are reachable from the Settings panel**, reaching parity with
+  the CLI (`sprint archive`, `--all`). Archive needs `archived` on
+  `handleUpdateSprint` (server) + a "show archived" toggle; the CLI and
+  MCP already have the concept, so this is web reaching parity (P10).
+
+### `flow-app-shell.md` (K-10 sidebar editor, UX-12 header search) — new IDs
+
+*(Review-2 correction: SHL-N1/SHL-N2 were unindexable — the case-index
+parser (`tools/case-index/parse.ts:67`) and the coverage scanner
+(`tools/coverage/scan.ts:27`) require digits after the dash
+(`[A-Z][A-Z0-9]*-C?\d+`), so a `-N#` heading is silently skipped and
+`cases:coverage --require SHL-N1` fails as unknown. Renumbered to the next
+free SHL-45/46. SHL max is 44.)*
+
+- **SHL-45 · M4 · major · P2 P8** — **The sidebar's top-level groups can
+  be shown/hidden and reordered.** A settings editor lets the user hide or
+  reorder the built-in groups (Projects, Milestones, Sprints, Labels,
+  Recently viewed) and built-in filters; the choice is a **per-user
+  setting** (mirrors `sidebar_pins`), persists across reload, and — per
+  the which-layer rule — is exposed on CLI + MCP with both reference docs
+  updated, and degrades on an unknown/duplicate group id per the
+  corruption-handling guide. Note this needs a carve-out against SHL-9
+  bullet 4 / SHL-5 / SHL-10 ("a group whose config file has no entries
+  renders an explicit empty affordance rather than vanishing"): "hidden by
+  the user" is not "vanished". **(K-10 — Ken open decision #5 must settle
+  the shape before this is final: per-user vs tracker-wide; whether
+  built-in filters and "Recently viewed" may be hidden. PM proposes
+  per-user + built-ins hideable; escalate only if that forks.)**
+- **SHL-46 · M1 · blocker · P2 P8** — **The global header search works.**
+  Typing in the header "Search tasks…" box and pressing Enter (or as-you-
+  type) queries `/api/search` and shows results / navigates; a real
+  network request fires. The box is not a dead input. (UX-12 — the input
+  has no handler today.) Once wired, `/` focuses it (A11Y-2 becomes
+  reachable).
+
+### Degradation visible in working surfaces (UX-11, UX-7, UX-13) — new IDs
+
+These belong in `flow-degradation.md` (and cross-ref detail/list/labels).
+They are the signature-feature gap: corruption is loud in doctor/Timeline
+and silent where users work.
+
+*(Review-2 corrections: (1) the `-N#` IDs were unindexable — renumbered to
+the next free DEG-29..31 (DEG max is 28). (2) The proposed DEG-N2
+("unrecognised preserved fields are visible") **duplicated the existing
+DEG-7** (`flow-degradation.md:81-85`: an unrecognised key "is shown in a
+'Not recognised' group, read-only, with a remove control"), so it is
+dropped as a standalone case; the UX-7 unrecognised-field-in-detail
+behaviour folds into a client-facing bullet on DEG-29 instead — see the
+DEG-7 blind-spot note below.)*
+
+> **DEG-7 coverage blind spot (record in `decisions.md §8` +
+> `known-gaps.md`).** `cases:coverage` reports DEG-7 **covered**, but its
+> only `@verifies` tag is a *core* round-trip test
+> (`packages/core/src/task/frontmatter.test.ts:171`). No **client** file
+> renders any "Not recognised" unrecognised-field group (a grep of
+> `apps/web/src/client` finds only `cells.tsx:107`'s sr-only
+> "(unrecognised)"). So DEG-7's green tag must **not** be mistaken for the
+> surface existing: the UX-7 lane must tag DEG-7 from a *client* test that
+> renders the group on the task-detail page. This is a coverage-tool blind
+> spot — a core `@verifies` can satisfy a UI case — worth its own
+> `decisions.md §8` + `known-gaps.md` note.
+
+- **DEG-29 · M2 · major · P7** — **A corrupt field renders with an inline
+  warning on the task-detail page, not as an empty "—".** A task with
+  `due_date: 42` shows `Due ⚠ corrupt: 42` (with a tooltip and a
+  clear/repair action), distinguishable from a legitimately empty due
+  date; saving an unrelated field does not silently drop the bad value.
+  **Also: an unrecognised preserved field (e.g. `jira_id: ABC-123`) is
+  visible on the task-detail page in DEG-7's "Not recognised" group,
+  rendered by a client component (closing the DEG-7 client blind spot
+  above), so the person editing the task can see it exists.** (UX-7.)
+- **DEG-30 · M4 · major · P7** — **An unreadable label is shown and
+  repairable in Settings → Labels, not omitted.** A label with a
+  non-string name (`l_broken`, `name: 999`) renders as a disabled/error
+  row ("⚠ l_broken — couldn't be read (name must be text)") with a
+  Repair or Delete action, rather than vanishing from the list with no
+  notice. (UX-13.)
+- **DEG-31 · M1 · major · P7 P8** — **A global data-integrity indicator
+  points users to Diagnostics.** When doctor/Diagnostics would report
+  warnings, a lightweight badge (header or sidebar) shows the count and
+  links to Diagnostics, so corruption is discoverable without three
+  clicks behind a manual Run; the corrupt task also carries a marker in
+  the List view. (UX-11 — the cross-cutting fix.) **Sizing note:** a badge
+  that polls `/api/doctor` runs a full `runDoctor(root)` scan per page load
+  (`server.ts:1288` `handleDoctor`); this case needs a cheap data source
+  (a cached/summary warning-count endpoint or a count derived from what the
+  list already returns) — that is server work the lane must budget for.
+
+### Board / list / create polish (UX-5, UX-6, UX-14) — new IDs
+
+*(Review-2 corrections: the `-N#` IDs were unindexable — renumbered to the
+next free BRD-50/51 (BRD max is 49) and NEW-42 (NEW max is 41). NEW-42 is
+narrowed — see its note.)*
+
+- **BRD-50 · M3 · major · P3 P8** — **Board cards surface "blocked" and
+  "epic".** A blocked card shows a blocked marker/pill; an epic card shows
+  a child-count badge (e.g. "◇ 3"); a subtask shows a "belongs to epic"
+  hint. (UX-5.)
+- **BRD-51 · M3 · minor · P8** — **The board header status pills read as
+  visibility toggles.** Each pill has a tooltip/label ("Hide/show column")
+  or an explicit eye/checkbox affordance, so a dimmed pill next to a
+  missing column is not misread as "no tasks". **Extends BRD-3** (which
+  pins that the pills *are* toggles); this adds the discoverability
+  affordance. (UX-6.)
+- **NEW-42 · M3 · major · P4 P3** — **The New-task modal shows the empty-
+  title block as a visible cue and pre-fills configured defaults.**
+  *(Review-2 correction: UX-14's premise is half-false — Create is
+  **already disabled** on an empty title (`CreateTaskModal.tsx:181,265,665`)
+  and **NEW-2 (tagged, passing) already pins** submit-enabled-only-when-
+  title-non-empty. So this case does NOT re-assert the disable; it would
+  fail step 1 as a duplicate of NEW-2 if it did.)* The residual, narrowed:
+  the disabled Create is a **visible** cue (`disabled:opacity-60`, not a
+  live-looking button), and Status and Type **pre-fill** from the
+  `workflow.yaml` defaults (`backlog` etc.) rather than showing "—".
+  (UX-14.)
+
+### List / sidebar polish (UX-1, UX-2, UX-3, UX-4) — new IDs
+*(LST ends at LST-52 in the flow doc; continue at 53)*
+
+- **LST-53 · M1 · major · P2 P4** — **A free-query (`q=`) filter shows a
+  chip and a Clear-all.** Landing on a `q=` URL (as every sidebar saved
+  filter does) renders a removable chip (the saved-filter name or
+  "Filtered query ✕") and/or highlights Advanced, and exposes Clear all —
+  so a short list is explained and reversible in-page, matching how facet
+  chips already work. (UX-1.)
+- **LST-54 · M1 · minor · P8** — **The first click on a priority (and due)
+  sort header sorts the most-useful direction.** Clicking Priority sorts
+  Critical-first on the first click (not Low-first); the sort-arrow
+  direction is legible. (UX-2 — decide deliberately per the workflow's
+  documented priority order.)
+- **LST-55 · M1 · minor · P2** — **Sidebar links do not silently carry the
+  ambient sort** (or, if they deliberately do, that is documented and
+  consistent). A saved "blocked" filter does not open Low-first because
+  the user happened to be sorting ascending. (UX-3.)
+- **LST-56 · M1 · minor · P8** — **Facet dropdown items show a multi-select
+  affordance before the first click** — empty checkboxes (using the B1
+  Checkbox) or a hover state — so multi-select is discoverable. (UX-4.)
+
+---
+
+## C. Existing cases — corrected scope (review-2: NOT "unsatisfied")
+
+*(Review-2 correction: the earlier "tag-only, currently-unsatisfied" claim
+was false for **both** named cases. CMT-18 and MSL-1 are already **tagged
+and passing**, so K-5 and K-9 are re-scoped to what is actually missing.)*
+
+- **CMT-18** (`flow-comments-activity.md`) is **tagged and green**
+  (`tests/ui/flow-comments.spec.ts:1308` — the test's own comment notes the
+  sections are "stacked (not tabs)"). It is **not** unsatisfied. So K-5's
+  real scope is the **Comments/Activity tab split** — a shape CMT-18
+  permits either way — which means K-5 **edits the green CMT-18 test**
+  rather than tagging a fresh one. Per CLAUDE.md's "editing a green test"
+  rule, name that edit in the K-5 (B3 Activity) commit. No new case.
+- **MSL-1** (`flow-milestones-labels.md`) is **tagged and green**
+  (`flow-milestones.spec.ts:78` plus 9 unit tags): it asserts the `4 / 8`
+  readout + `data-fill`, and **the progress bar K-9 wants already renders**
+  (`MilestonesView.tsx` → `ProgressReadout`). So K-9's real scope is
+  **full-card click + countdown/overdue + status breakdown** — not the
+  progress bar, which exists. Those three need the new MSL IDs **now** (not
+  "when the lane opens" — step 0 forbids deferring the case). Drafted as
+  MSL-39/40/41 below.
+- **A11Y-2** (`/` focuses the search input) becomes reachable once SHL-46
+  wires the header search — tag it when UX-12 lands.
+
+### K-9 milestones-overview residual — new IDs
+*(MSL max is 38; continue at 39. The progress bar is MSL-1, already green;
+these are the residual K-9 items.)*
+
+- **MSL-39 · M4 · major · P8** — **A milestone card is fully clickable →
+  detail.** The whole card (not only a sub-target) opens the milestone.
+  (K-9(a).)
+- **MSL-40 · M4 · minor · P8** — **Each milestone card shows target date +
+  countdown/overdue.** A dated milestone shows days-remaining or an overdue
+  marker; an undated one degrades cleanly. (K-9(b).)
+- **MSL-41 · M4 · minor · P8** — **Each milestone card shows a task-count
+  breakdown by status**, plus the K28 `unreadable` notice where present, so
+  the overview reads at a glance rather than "very plain". (K-9(b).)
+
+### UX-15 milestones-copy residual — new ID
+*(Review-2 correction: UX-15's premise is **false at HEAD** — the sidebar
+**does** link the Milestones view (`Sidebar.tsx:749-751`
+`sidebar-milestones-link`; routed at `router/index.tsx:183`). So the
+"points at a view the nav never links to" framing is wrong; the residual
+is copy/discoverability only.)*
+
+- **MSL-42 · M4 · minor · P4** — **Settings → Milestones copy points where
+  milestone progress actually renders.** The copy names the reachable
+  Milestones view (which the sidebar already links), or a progress display
+  is added to the filtered-list header — not a "view" the user cannot find.
+  (UX-15, narrowed to copy after the nav-link premise was corrected.)
+
+---
+
+## D. Still-open decisions this pass could NOT resolve (Ken)
+
+These are carried in `ui-review-tracker.md` § "Still-open decisions" and
+`ui-plan-revision-summary.md`. They gate parts of the build and are not an
+agent's to make:
+
+1. Are all newly-ingested UX/editor findings in *this* release? (default:
+   yes.)
+2. Undo on successful board/timeline drop + bulk Set-field — in or out?
+3. Config-row **reorder** — stays inline (SET-6 kept intact; SET-50 gates
+   value edits only) or moves into the Edit dialog (would then revise
+   SET-6/21/28/34).
+4. Does "Edit → dialog" require a **modal**, or does an already-Edit-gated
+   inline form (Labels/Milestones) satisfy it? (Affects whether those two
+   lanes churn and whether `dataPanels.test.tsx` stays green.)
+5. **K-10 sidebar-groups shape** (SHL-45) — per-user vs tracker-wide;
+   hideable built-ins; CLI/MCP exposure. Load-bearing data shape. (PM
+   proposes; escalate only if forked.)
+6. Design-system open decisions 1–6 (`ui-design-system-spec.md`).
+7. Doctor/journal **P-11** — may recovery ever give up on a
+   deterministic replay failure?
