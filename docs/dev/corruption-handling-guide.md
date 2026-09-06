@@ -192,12 +192,17 @@ mismatch when every other command refuses to run.
   **cross-file inverse disagreement** (principle 1 / P-12 consistency)
 - **config per-entry `broken` markers** — the A138/K28 degrade for
   projects, labels, milestones, sprints, saved views, list-view chips,
-  and workflow sub-lists. `checkDataIntegrity` runs each loader and
-  emits a `malformed` finding per degraded entry, naming it by id (or
-  position). **When you add a new config object, add its
+  calendar holidays, and workflow sub-lists. `checkDataIntegrity` runs
+  each loader and emits a `malformed` finding per degraded entry, naming
+  it by id (or position). **When you add a new config object, add its
   `collectConfigBroken(...)` call** — the loop is right there in
   `integrity.ts` and a new config that skips it makes its degrades
   invisible again.
+- **user-profile field-health** — a profile degrades per-field like a
+  task (bad timezone, wrong-typed/unrecognised key; only `id` is fatal,
+  K13). `checkDataIntegrity` reports each degraded field as `malformed`
+  and each unreadable profile as `unreadable`, via
+  `loadAllUsersDetailed`.
 - key-index drift, interrupted prefix-rename / reconciliation / migration
 
 **It does NOT currently cover (known gaps — fix when you touch them):**
