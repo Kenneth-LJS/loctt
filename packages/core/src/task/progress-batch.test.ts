@@ -8,9 +8,9 @@ import { loadProjectsConfig } from "../config/projects.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
 import { initLoctt } from "../init/init.js";
 import { resolveLocttDir } from "../paths/index.js";
+import { getTaskFilePath } from "../paths/index.js";
 import { loadState, saveState, withStateLock } from "../state/index.js";
 import { createTask } from "./create.js";
-import { getTaskFilePath } from "../paths/index.js";
 import { milestoneProgress, milestoneProgressDetailed } from "./progress.js";
 import { setFields } from "./update.js";
 
