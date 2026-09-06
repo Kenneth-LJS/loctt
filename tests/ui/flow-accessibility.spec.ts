@@ -98,29 +98,21 @@ test.describe("A11Y — global shortcuts", () => {
     await expect(title).toHaveValue("noun");
   });
 
+  // @verifies A11Y-2
   /**
-   * A11Y-2 is **not** claimed by this test, deliberately.
-   *
-   * The case requires `/` to move focus to "the filter/search input".
-   * The app's only global search box is the header's, and it is
-   * `disabled` with the title "Search arrives in a later milestone" —
-   * no ticket in this run builds it. A disabled input cannot take
-   * focus, so the case's first bullet is unsatisfiable at this SHA,
-   * and no amount of test-writing changes that.
-   *
-   * The `/` binding itself *is* built and registered, and its
-   * suppression rule is covered by
-   * `useShortcuts.test.tsx` ("does not fire `/` inside a field") —
-   * which is A11Y-2's third bullet and is genuinely verifiable today.
-   * What is untestable is the first two bullets, which need a focusable
-   * target.
-   *
-   * Tagging this case would be a false claim: the gate
-   * would read the case as covered while the behaviour a user needs
-   * does not exist. Recorded as blocked in the ticket report and in
-   * decisions.md § 8 (A84) instead.
+   * A11Y-2 is now claimed: SHL-46 built the header search box (it is no
+   * longer disabled), so `/` has a focusable target. This also guards
+   * A11Y-8 / the B2 fix-review's duplicate-`/`-binding bug: there is a
+   * SINGLE owner of the `/` key (the shell's global shortcut registry).
+   * Header used to add its own document `keydown` for `/` as well, so the
+   * key was bound twice; the second listener bypassed the registry's
+   * dialog guard. One press must move focus once and leave the box
+   * holding a single caret — a double-fire would still land focus but is
+   * the shape of the bug, so the meaningful assertion is that `/` did NOT
+   * type a literal slash into the box (which a second, guard-bypassing
+   * handler racing focus would allow).
    */
-  test("A11Y-2 (partial): the `/` target is disabled, so focus cannot land", async ({
+  test("A11Y-2 / A11Y-8: `/` focuses the search box once, no literal slash", async ({
     page,
     tracker,
   }) => {
@@ -128,11 +120,24 @@ test.describe("A11Y — global shortcuts", () => {
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Searchable task")).toBeVisible();
 
-    // This documents the blocker rather than asserting the case. If
-    // search is ever built, this test fails — which is the signal to
-    // restore the real A11Y-2 assertions and the `@verifies` tag.
-    const search = page.getByRole("searchbox", { name: "Search tasks" });
-    await expect(search).toHaveJSProperty("disabled", true);
+    // The header search is an autocomplete: it carries role="combobox"
+    // (with a results listbox), which overrides the implicit searchbox
+    // role, so select it by its stable testid. The `focus-search`
+    // shortcut finds it by type="search", not by role, so `/` still works.
+    const search = page.getByTestId("header-search");
+    await expect(search).toBeEnabled();
+    await expect(search).not.toBeFocused();
+
+    await page.locator("body").press("/");
+    await expect(search).toBeFocused();
+    // The `/` press was consumed to focus the box, not typed into it. A
+    // duplicate handler that focused mid-keystroke (the old bug) would
+    // leave a literal "/" in the value.
+    await expect(search).toHaveValue("");
+
+    // Typing after focus lands in the box (a single, working caret).
+    await search.pressSequentially("bug");
+    await expect(search).toHaveValue("bug");
   });
 
   // @verifies A11Y-3
@@ -1123,40 +1128,57 @@ test.describe("A11Y — state exposure", () => {
     page,
     tracker,
   }) => {
-    await tracker.seed([{ title: "Disabled neighbour" }]);
-    await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByText("Disabled neighbour")).toBeVisible();
-
-    // The header search box is the app's standing example of a control
-    // disabled by state (see known-gaps.md — search is unbuilt).
+    // Subject: the Projects settings panel's Delete button for the sole
+    // project. This case originally used the header search box as its
+    // "control disabled by state", but B2/SHL-46 built search into a
+    // live combobox autocomplete — its subject is gone. The delete
+    // button is a better fit anyway: it is disabled by genuine state
+    // (`isOnlyProject`, ProjectsPanel.tsx) rather than by an unbuilt
+    // stub, and it carries a keyboard-available reason.
     //
+    // A freshly `init`-ed tracker has exactly one project, so no setup
+    // is needed to reach the disabled state — the only-project rule
+    // holds the moment the panel loads. This makes the state stable and
+    // non-brittle: nothing to delete down to one first.
+    await page.goto(`${tracker.baseURL}/settings/projects`);
+
+    // Wait for the panel's own table to render before selecting the row
+    // control, so the assertion is not racing an empty list.
+    await expect(page.getByRole("columnheader", { name: "Name" })).toBeVisible();
+    const del = page.locator('[data-testid^="project-delete-"]');
+    await expect(del).toHaveCount(1);
+
     // First bullet: it "exposes a disabled state to assistive tech
     // rather than being merely greyed and unresponsive".
     //
-    // `toHaveJSProperty` rather than `toBeDisabled`: Playwright's
-    // `toBeDisabled` retargets inside a `<label>` to the label's
-    // control, which silently checks a different element than the one
-    // named. The JS property is read off the element itself.
-    const search = page.getByRole("searchbox", { name: "Search tasks" });
-    await expect(search).toHaveJSProperty("disabled", true);
+    // `toHaveJSProperty` rather than `toBeDisabled` for the same reason
+    // the old test used it: `toBeDisabled` can retarget inside a label
+    // and check a different element than the one named. The JS property
+    // is read off the element itself. This is a real `<button disabled>`
+    // (ProjectsPanel passes `disabled` through to the DOM button), so
+    // the property is genuine, not an aria attribute painted on.
+    await expect(del).toHaveJSProperty("disabled", true);
 
     // Third bullet: "a control that is inert but announces as
     // actionable is a defect" — the disabled state must be genuine, so
     // the control really does not take focus or input.
-    await search.focus().catch(() => undefined);
-    await expect(search).not.toBeFocused();
+    await del.focus().catch(() => undefined);
+    await expect(del).not.toBeFocused();
 
     // Second bullet: "a reason is available to keyboard users — via
     // accessible description or an adjacent explanation — not only in
     // a pointer-hover tooltip."
     //
-    // This one is only partially met: the reason lives in `title`,
-    // which is a hover tooltip. It is *also* exposed as the accessible
-    // description by every current browser when no other description
-    // source exists, which is why this assertion holds — but a `title`
-    // is the weakest form the bullet permits, and the case says "not
-    // only in a pointer-hover tooltip".
-    await expect(search).toHaveAttribute("title", /later milestone/i);
+    // Honest caveat, unchanged from the old subject: the reason lives in
+    // `title`, which is primarily a pointer-hover tooltip. It is *also*
+    // exposed as the accessible description by every current browser
+    // when no other description source exists, which is why this
+    // assertion holds — but `title` is the weakest form the bullet
+    // permits, and the case says "not only in a pointer-hover tooltip".
+    await expect(del).toHaveAttribute(
+      "title",
+      /at least one project/i,
+    );
   });
 });
 

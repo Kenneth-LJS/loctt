@@ -29,6 +29,33 @@ export function useCreateUser() {
   });
 }
 
+export interface UpdateUserVars {
+  readonly id: string;
+  readonly name?: string;
+  /** `null` clears the email; omit to leave it unchanged (mirrors the server). */
+  readonly email?: string | null;
+  readonly timezone?: string;
+}
+
+/**
+ * PRU-47: edit an existing user's name, email and timezone from the UI
+ * (`PUT /api/users/:id`). The create form was the only place these were
+ * settable, so a blank email could not be fixed in-app; the Edit dialog
+ * closes that gap. Core/CLI/MCP `updateUser` already backed this.
+ */
+export function useUpdateUser() {
+  const qc = useQueryClient();
+  return useMutation<UserProfile, Error, UpdateUserVars>({
+    mutationFn: ({ id, name, email, timezone }) =>
+      apiClient.put<UserProfile>(`/api/users/${encodeURIComponent(id)}`, {
+        ...(name !== undefined ? { name } : {}),
+        ...(email !== undefined ? { email } : {}),
+        ...(timezone !== undefined ? { timezone } : {}),
+      }),
+    onSuccess: () => { invalidateUserConsumers(qc); },
+  });
+}
+
 export function useArchiveUser() {
   const qc = useQueryClient();
   return useMutation<UserProfile, Error, { id: string; archived: boolean }>({

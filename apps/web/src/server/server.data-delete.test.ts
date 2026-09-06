@@ -49,6 +49,19 @@ describe("data-panel deletes are deletes", () => {
 
   const labelsYaml = () => readFile(join(root, ".loctt/config/labels.yaml"), "utf8");
   const milestonesYaml = () => readFile(join(root, ".loctt/config/milestones.yaml"), "utf8");
+  const sprintsYaml = () => readFile(join(root, ".loctt/config/sprints.yaml"), "utf8");
+
+  const mkSprint = async (name: string) =>
+    (await (await fetch(`${base}/api/sprints`, {
+      method: "POST",
+      headers: csrf,
+      body: JSON.stringify({
+        name,
+        start_date: "2026-01-01",
+        end_date: "2026-01-14",
+        state: "active",
+      }),
+    })).json()) as { id: string; name: string };
 
   const mkLabel = async (name: string, color?: string) =>
     (await (await fetch(`${base}/api/labels`, {
@@ -295,6 +308,67 @@ describe("data-panel deletes are deletes", () => {
       const after = await milestonesYaml();
       expect(after).toContain(ms.id);
       expect(after).toContain("archived");
+    });
+  });
+
+  describe("sprint archive/unarchive routes", () => {
+    /**
+     * SPR-40. `archiveSprint`/`unarchiveSprint` were exported from core
+     * and called only by the CLI and MCP — the web had no route and
+     * `handleUpdateSprint` never accepted `archived`, so the SprintsPanel
+     * could split archived from active for reading but had no way to
+     * archive. Mirrors the label archive/unarchive routes.
+     */
+    /** @verifies SPR-40 */
+    it("archives a sprint, setting the flag without removing the entry", async () => {
+      const sprint = await mkSprint("Q1 push");
+      expect(await sprintsYaml()).not.toContain("archived");
+
+      const res = await fetch(`${base}/api/sprints/${sprint.id}/archive`, {
+        method: "POST", headers: csrf, body: "{}",
+      });
+      expect(res.status).toBe(200);
+      expect((await res.json() as { archived: string }).archived).toBe(sprint.id);
+
+      const after = await sprintsYaml();
+      expect(after).toContain(sprint.id);
+      expect(after).toContain("archived");
+    });
+
+    /** @verifies SPR-40 */
+    it("unarchives a sprint, clearing the flag (round-trip)", async () => {
+      const sprint = await mkSprint("returning");
+      await fetch(`${base}/api/sprints/${sprint.id}/archive`, {
+        method: "POST", headers: csrf, body: "{}",
+      });
+      expect(await sprintsYaml()).toContain("archived");
+
+      const res = await fetch(`${base}/api/sprints/${sprint.id}/unarchive`, {
+        method: "POST", headers: csrf, body: "{}",
+      });
+      expect(res.status).toBe(200);
+      expect((await res.json() as { unarchived: string }).unarchived).toBe(sprint.id);
+      expect(await sprintsYaml()).not.toContain("archived");
+    });
+
+    it("enforces CSRF on the archive route", async () => {
+      const sprint = await mkSprint("guarded");
+      const res = await fetch(`${base}/api/sprints/${sprint.id}/archive`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      expect(res.status).toBe(403);
+      // The write did not happen.
+      expect(await sprintsYaml()).not.toContain("archived");
+    });
+
+    it("reports an unknown sprint rather than 404ing the route itself", async () => {
+      const res = await fetch(`${base}/api/sprints/NOPE/archive`, {
+        method: "POST", headers: csrf, body: "{}",
+      });
+      expect(res.status).toBe(400);
+      expect((await res.json() as { message: string }).message).toContain("unknown sprint");
     });
   });
 });

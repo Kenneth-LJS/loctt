@@ -8,17 +8,37 @@ import {
   useArchiveProject,
   useCreateProject,
   useDeleteProject,
+  useSetDefaultProject,
   useSetProjectPrefix,
   useUpdateProject,
 } from "../api/hooks/useProjectMutations.ts";
+import { Button } from "../ui/Button.tsx";
+import { Dialog, DialogActions } from "../ui/Dialog.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Modal } from "../ui/Modal.tsx";
+import { TextField } from "../ui/TextField.tsx";
 import { DeleteProjectDialog } from "./DeleteProjectDialog.tsx";
 import { slugify, validateNewProject } from "./projectForm.ts";
 
 /**
  * Settings → Projects (PRU-5, PRU-6, PRU-7, PRU-17, PRU-19, PRU-20,
- * PRU-32, PRU-33, PRU-35, PRU-36, PRU-44, PRU-45, PRU-46, XS-63).
+ * PRU-32, PRU-33, PRU-35, PRU-36, PRU-44, PRU-45, PRU-46, PRU-48,
+ * XS-63).
+ *
+ * Edit-model (B2): a project row is read-by-default. The name is no
+ * longer a bare input that saves on blur — it now sits behind a per-row
+ * **Edit** control that opens an inline form (matching Milestones and
+ * Labels, which already gate their field edits the same way). Only the
+ * name is a free field; the slug stays read-only (links depend on it)
+ * and the prefix keeps its own confirm dialog (PRU-44) inside the form,
+ * since a prefix change rewrites every task key and must never ride a
+ * blur or a stray Save. Low-risk, non-field affordances — Make default
+ * (PRU-48), Archive, Delete — stay as row-level controls in view mode.
+ *
+ * PRU-48: "Make default" sets the *workspace* default. It rides the
+ * existing `PUT /api/projects/:id` (`default: true` → core
+ * `setDefaultProject`), so no server route was added in this lane. The
+ * current default is marked in the row and its button is inert.
  *
  * PRU-44/PRU-45: the per-project prefix is an editable control
  * (`PrefixEdit`) wired to `useSetProjectPrefix`, with a confirm dialog
@@ -225,23 +245,25 @@ function PrefixEdit({
 
   return (
     <>
-      <input
+      <TextField
+        size="sm"
         aria-label={`Prefix of project ${project.name}`}
         data-testid={`project-prefix-${project.id}`}
         value={draft}
         onChange={e => { setDraft(e.target.value); setPrefix.reset(); }}
-        aria-invalid={problem !== undefined ? true : undefined}
-        className="h-8 w-24 rounded-md border border-border-subtle bg-bg-surface px-2 font-mono text-[13px] hover:border-border-default focus:border-border-default"
+        invalid={problem !== undefined}
+        className="w-24 font-mono"
       />
-      <button
-        type="button"
-        data-testid={`project-prefix-save-${project.id}`}
+      <Button
+        size="sm"
+        variant="ghost"
+        testId={`project-prefix-save-${project.id}`}
         disabled={!changed || problem !== undefined}
         onClick={() => { setConfirming(true); }}
-        className="ml-2 h-8 rounded-md px-2 text-[13px] text-text-secondary hover:bg-bg-muted disabled:opacity-40"
+        className="ml-2"
       >
         Change
-      </button>
+      </Button>
       {problem !== undefined && changed && (
         <p
           role="alert"
@@ -253,34 +275,22 @@ function PrefixEdit({
       )}
 
       {confirming && (
-        <Modal title={`Change ${project.name} prefix?`} onClose={reset}>
-          <div className="grid gap-3" data-testid={`project-prefix-confirm-${project.id}`}>
-            <p className="text-[13px] text-text-secondary">
-              Changing the prefix to{" "}
-              <code className="font-mono">{trimmed}</code> renames{" "}
-              {taskCount} {taskCount === 1 ? "task" : "tasks"} in this
-              project. Their numbers are preserved, and their old keys will
-              keep resolving.
-            </p>
-
-            {setPrefix.isError && serverError !== undefined && (
-              <p role="alert" data-testid={`project-prefix-confirm-error-${project.id}`} className="text-[12px] text-danger-fg">
-                {serverError} Nothing was renamed.
-              </p>
-            )}
-
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                data-testid={`project-prefix-cancel-${project.id}`}
+        <Dialog
+          title={`Change ${project.name} prefix?`}
+          onClose={reset}
+          testId={`project-prefix-confirm-${project.id}`}
+          actions={(
+            <DialogActions>
+              <Button
+                variant="ghost"
+                testId={`project-prefix-cancel-${project.id}`}
                 onClick={reset}
-                className="h-8 rounded-md px-3 text-[13px] text-text-secondary"
               >
                 Cancel
-              </button>
-              <button
-                type="button"
-                data-testid={`project-prefix-confirm-btn-${project.id}`}
+              </Button>
+              <Button
+                variant="primary"
+                testId={`project-prefix-confirm-btn-${project.id}`}
                 disabled={setPrefix.isPending}
                 onClick={() => {
                   setPrefix.mutate(
@@ -288,13 +298,26 @@ function PrefixEdit({
                     { onSuccess: () => { setConfirming(false); } },
                   );
                 }}
-                className="h-8 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast disabled:opacity-50"
               >
                 {setPrefix.isPending ? "Renaming…" : `Rename ${taskCount} ${taskCount === 1 ? "task" : "tasks"}`}
-              </button>
-            </div>
-          </div>
-        </Modal>
+              </Button>
+            </DialogActions>
+          )}
+        >
+          <p className="text-[13px] text-text-secondary">
+            Changing the prefix to{" "}
+            <code className="font-mono">{trimmed}</code> renames{" "}
+            {taskCount} {taskCount === 1 ? "task" : "tasks"} in this
+            project. Their numbers are preserved, and their old keys will
+            keep resolving.
+          </p>
+
+          {setPrefix.isError && serverError !== undefined && (
+            <p role="alert" data-testid={`project-prefix-confirm-error-${project.id}`} className="mt-3 text-[12px] text-danger-fg">
+              {serverError} Nothing was renamed.
+            </p>
+          )}
+        </Dialog>
       )}
     </>
   );
@@ -305,84 +328,225 @@ function ProjectRow({
   taskCount,
   others,
   isOnlyProject,
+  isDefault,
   onDelete,
 }: {
   readonly project: ProjectDef;
   readonly taskCount: number;
   readonly others: readonly ProjectDef[];
   readonly isOnlyProject: boolean;
+  readonly isDefault: boolean;
   readonly onDelete: () => void;
 }) {
+  const [editing, setEditing] = useState(false);
   const [name, setName] = useState(project.name);
   const update = useUpdateProject();
   const archive = useArchiveProject();
+  const setDefault = useSetDefaultProject();
+
+  const archived = project.archived === true;
+  const trimmed = name.trim();
+  const nameOk = trimmed.length > 0;
 
   const commitName = () => {
-    const next = name.trim();
-    if (next.length === 0 || next === project.name) {
+    // PRU-6: the name is the only free field, saved on an explicit Save
+    // rather than on blur (edit-model). An unchanged or empty value is a
+    // no-op — the form just closes without a write.
+    if (!nameOk || trimmed === project.name) {
       setName(project.name);
+      setEditing(false);
       return;
     }
-    update.mutate({ id: project.id, name: next });
+    update.mutate(
+      { id: project.id, name: trimmed },
+      { onSuccess: () => { setEditing(false); } },
+    );
+  };
+
+  const cancelEdit = () => {
+    setName(project.name);
+    update.reset();
+    setEditing(false);
   };
 
   return (
-    <tr data-testid={`project-row-${project.id}`} data-archived={project.archived === true ? "true" : "false"}>
-      <td className="py-2 pr-3">
-        <input
-          aria-label={`Name of project ${project.name}`}
-          data-testid={`project-name-${project.id}`}
-          value={name}
-          onChange={e => { setName(e.target.value); }}
-          onBlur={commitName}
-          className="h-8 w-full rounded-md border border-transparent bg-transparent px-2 text-[13px] hover:border-border-subtle focus:border-border-default"
-        />
+    <tr data-testid={`project-row-${project.id}`} data-archived={archived ? "true" : "false"}>
+      <td className="py-2 pr-3 align-top">
+        {editing
+          ? (
+              <div className="flex flex-col gap-1">
+                <TextField
+                  size="sm"
+                  aria-label={`Name of project ${project.name}`}
+                  data-testid={`project-name-input-${project.id}`}
+                  value={name}
+                  onChange={e => { setName(e.target.value); }}
+                />
+                {update.isError && (
+                  <p role="alert" data-testid={`project-name-error-${project.id}`} className="text-[12px] text-danger-fg">
+                    {update.error instanceof ApiError ? update.error.message : "Could not save."}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    testId={`project-name-save-${project.id}`}
+                    disabled={!nameOk || update.isPending}
+                    onClick={commitName}
+                  >
+                    {update.isPending ? "Saving…" : "Save"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    testId={`project-edit-cancel-${project.id}`}
+                    onClick={cancelEdit}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )
+          : (
+              <div className="flex items-center gap-2">
+                <span data-testid={`project-name-${project.id}`} className="text-[13px] text-text-primary">
+                  {project.name}
+                </span>
+                {isDefault && (
+                  <span
+                    data-testid={`project-default-marker-${project.id}`}
+                    className="rounded bg-bg-muted px-1.5 py-0.5 text-[11px] font-medium text-text-secondary"
+                  >
+                    Default
+                  </span>
+                )}
+                {archived && (
+                  <span data-testid={`project-archived-marker-${project.id}`} className="text-[11px] text-text-tertiary">
+                    (archived)
+                  </span>
+                )}
+              </div>
+            )}
       </td>
       {/* PRU-6/PRU-20: the slug is fixed — links depend on it — so it
           stays disabled and says why. The prefix, unlike the slug, IS
           editable (PRU-44), through its own confirm dialog: a change
-          rewrites every task key, so it does not save on blur. */}
-      <td className="py-2 pr-3">
-        <input
-          readOnly
-          disabled
-          aria-label={`Slug of project ${project.name}`}
-          data-testid={`project-slug-${project.id}`}
-          title="A project's slug is fixed so existing links keep working."
-          value={project.slug ?? ""}
-          className="h-8 w-full rounded-md bg-bg-muted px-2 font-mono text-[13px] text-text-secondary"
-        />
+          rewrites every task key, so it does not save on blur. Both are
+          only reachable in the edit form, per the edit-model. */}
+      <td className="py-2 pr-3 align-top">
+        {editing
+          ? (
+              <TextField
+                size="sm"
+                readOnly
+                disabled
+                aria-label={`Slug of project ${project.name}`}
+                data-testid={`project-slug-${project.id}`}
+                title="A project's slug is fixed so existing links keep working."
+                value={project.slug ?? ""}
+                className="font-mono"
+              />
+            )
+          : (
+              <span data-testid={`project-slug-${project.id}`} className="font-mono text-[13px] text-text-secondary">
+                {project.slug ?? ""}
+              </span>
+            )}
       </td>
-      <td className="py-2 pr-3">
-        <PrefixEdit project={project} taskCount={taskCount} others={others} />
+      <td className="py-2 pr-3 align-top">
+        {editing
+          ? <PrefixEdit project={project} taskCount={taskCount} others={others} />
+          : (
+              <span data-testid={`project-prefix-display-${project.id}`} className="font-mono text-[13px] text-text-secondary">
+                {project.prefix}
+              </span>
+            )}
       </td>
-      <td className="py-2 pr-3 text-[13px] text-text-secondary">
+      <td className="py-2 pr-3 align-top text-[13px] text-text-secondary">
         {/* PRU-17: the count is visible before any dialog opens. */}
         <span data-testid={`project-refcount-${project.id}`}>{taskCount}</span>
       </td>
-      <td className="py-2 text-right">
-        <button
-          type="button"
-          data-testid={`project-archive-${project.id}`}
-          onClick={() => {
-            archive.mutate({ id: project.id, archived: project.archived !== true });
-          }}
-          className="h-8 rounded-md px-2 text-[13px] text-text-secondary hover:bg-bg-muted"
+      <td className="py-2 text-right align-top">
+        {!editing && (
+          <Button
+            size="sm"
+            variant="ghost"
+            testId={`project-edit-${project.id}`}
+            onClick={() => {
+              // B2 bug 5: re-seed the draft from the CURRENT prop when
+              // opening Edit. `useState(project.name)` seeds once at
+              // mount, so after an external rename the stale draft would
+              // be written back on Save, silently reverting the rename.
+              setName(project.name);
+              update.reset();
+              setEditing(true);
+            }}
+          >
+            Edit
+          </Button>
+        )}
+        {/* PRU-48: set the workspace default. The current default's
+            button is inert and labelled, so the marker and the control
+            cannot disagree. Archived projects cannot be made default —
+            new tasks must not land in a hidden project. */}
+        <Button
+          size="sm"
+          variant="ghost"
+          testId={`project-set-default-${project.id}`}
+          disabled={isDefault || archived || setDefault.isPending}
+          title={archived
+            ? "An archived project cannot be the default."
+            : undefined}
+          onClick={() => { setDefault.reset(); setDefault.mutate({ id: project.id }); }}
         >
-          {project.archived === true ? "Unarchive" : "Archive"}
-        </button>
-        <button
-          type="button"
-          data-testid={`project-delete-${project.id}`}
+          {isDefault ? "Default" : "Make default"}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          testId={`project-archive-${project.id}`}
+          onClick={() => {
+            archive.reset();
+            archive.mutate({ id: project.id, archived: !archived });
+          }}
+        >
+          {archived ? "Unarchive" : "Archive"}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          testId={`project-delete-${project.id}`}
           disabled={isOnlyProject}
           title={isOnlyProject
             ? "A tracker must have at least one project. Create the replacement first."
             : undefined}
           onClick={onDelete}
-          className="h-8 rounded-md px-2 text-[13px] text-danger-fg hover:bg-danger-bg disabled:opacity-50"
+          className="text-danger-fg hover:bg-danger-bg"
         >
           Delete
-        </button>
+        </Button>
+        {/* B2 bug 3: a failed Make-default or Archive must be visible —
+            both mutations used to fail silently, leaving the marker and
+            the on-disk state disagreeing with what the user saw. */}
+        {setDefault.isError && (
+          <p
+            role="alert"
+            data-testid={`project-set-default-error-${project.id}`}
+            className="mt-1 text-[12px] text-danger-fg"
+          >
+            {setDefault.error instanceof ApiError ? setDefault.error.message : "Could not set the default project."}
+          </p>
+        )}
+        {archive.isError && (
+          <p
+            role="alert"
+            data-testid={`project-archive-error-${project.id}`}
+            className="mt-1 text-[12px] text-danger-fg"
+          >
+            {archive.error instanceof ApiError ? archive.error.message : "Could not change the archived state."}
+          </p>
+        )}
       </td>
     </tr>
   );
@@ -423,6 +587,7 @@ export function ProjectsPanel() {
 
   const items = projects.data?.items ?? [];
   const counts = projects.data?.task_counts ?? {};
+  const defaultId = projects.data?.default ?? null;
   const completed = info.data?.completedPrefixRename;
 
   return (
@@ -507,6 +672,7 @@ export function ProjectsPanel() {
               taskCount={counts[p.id] ?? 0}
               others={items.filter(o => o.id !== p.id)}
               isOnlyProject={items.length === 1}
+              isDefault={defaultId === p.id}
               onDelete={() => { setDeleting(p); }}
             />
           ))}

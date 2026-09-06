@@ -235,8 +235,15 @@ export interface WorkflowUsageResponse {
   readonly priorities: Readonly<Record<string, number>>;
   readonly task_types: Readonly<Record<string, number>>;
   readonly relationships: Readonly<Record<string, number>>;
-  /** Field key → value key → task count. */
+  /** Field key → value key → task count (enum values only). */
   readonly custom_field_values: Readonly<Record<string, Readonly<Record<string, number>>>>;
+  /**
+   * Field key → count of tasks holding any value for the field, whatever
+   * its type. This is the blast radius of a whole-field delete: a number
+   * or boolean field has no enum values, so `custom_field_values` sums to
+   * zero for it even when tasks store data under it.
+   */
+  readonly custom_fields: Readonly<Record<string, number>>;
 }
 
 /** Config response for API. */

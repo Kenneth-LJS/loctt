@@ -51,6 +51,7 @@ import { readTask } from "../task/io.js";
 import { listTaskIds } from "../task/list-ids.js";
 import { validateRelationships } from "../task/traversal.js";
 import { loadAllUsersDetailed } from "../users/profile.js";
+import { collectSidebarGroupsDrops } from "../users/settings.js";
 import { isMissingFile, readFileState, UnreadableFileError } from "../utils/read-state.js";
 
 export type IntegritySeverity = "unreadable" | "malformed" | "inconsistent";
@@ -332,6 +333,47 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
     // The users dir being absent is normal; anything else that throws
     // here (a scan error) is not corruption-of-a-record and is left to
     // doctor's own users/ load check.
+  }
+
+  // Per-user `sidebar_groups` salvage (SHL-45). A hand-edited unknown or
+  // duplicate id is lifted out on load so the sidebar still renders (P7);
+  // that silent salvage is exactly what doctor must name. `malformed`,
+  // never blocking — the setting is a preserved-and-salvaged render pref,
+  // and the valid ids still load.
+  try {
+    for (const report of await collectSidebarGroupsDrops(locttDir)) {
+      if (report.wholeValueDropped) {
+        findings.push({
+          severity: "malformed",
+          path: report.path,
+          message:
+            `setting "sidebar_groups" is not a valid { order?, hidden? } object, `
+            + `so it was ignored (the sidebar falls back to the default order, all `
+            + `groups visible). Repair or remove it to customize the sidebar again.`,
+        });
+      }
+      for (const d of report.dropped) {
+        const what =
+          d.reason === "duplicate"
+            ? `references a duplicate id "${d.id}"`
+            : d.reason === "unknown"
+              ? `references an unknown sidebar id "${d.id}"`
+              // malformed: a non-list value, a non-string element, or a
+              // stray/typo'd key — the id field carries a safe description.
+              : `has a malformed part (${d.id})`;
+        findings.push({
+          severity: "malformed",
+          path: report.path,
+          message:
+            `setting "sidebar_groups.${d.list}" ${what}, `
+            + `which was dropped on load (any other valid ids in the list are kept). `
+            + `Repair it by hand, or re-save it through the app, to remove this notice.`,
+        });
+      }
+    }
+  } catch {
+    // The users dir being absent is normal; a scan error here is left to
+    // doctor's own users/ load check, same as the profile loop above.
   }
 
   return findings;

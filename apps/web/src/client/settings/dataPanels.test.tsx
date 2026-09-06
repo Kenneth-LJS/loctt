@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DiagnosticsPanel } from "./DiagnosticsPanel.tsx";
 import { LabelsPanel } from "./LabelsPanel.tsx";
+import { MilestonesPanel } from "./MilestonesPanel.tsx";
 
 /**
  * Settings → Data panel behaviour that turns on what the client sends
@@ -212,6 +213,195 @@ describe("LabelsPanel", () => {
       expect(del).toBeDefined();
       expect(String(del?.[0])).toContain("remap_to=L2");
     });
+  });
+});
+
+describe("MilestonesPanel", () => {
+  const twoMilestones = {
+    items: [
+      { id: "M1", name: "v1", target_date: "2026-03-31", taskCount: 2 },
+      { id: "M2", name: "old", archived: true, taskCount: 0 },
+    ],
+    total: 2,
+  };
+
+  // Retag (B2): this asserts the *management panel's* archive/unarchive
+  // TOGGLE — the PUT it issues and the marker it renders — which is
+  // panel CRUD, MSL-11's surface. It is NOT MSL-25, whose claim is that
+  // an archived milestone still *resolves on tasks and by URL* with a
+  // "show archived" affordance in the /milestones view — a different
+  // surface, covered by the milestones-view ticket. The mis-tag made
+  // MSL-25 look verified here when its far-end was untested.
+  /** @verifies MSL-11 */
+  it("archives a milestone by PUTting { archived: true } and marks the archived one", async () => {
+    fetchMock.mockImplementation((url: unknown): Promise<Response> =>
+      Promise.resolve(
+        String(url).includes("/api/milestones/")
+          ? jsonResponse({ id: "M1", name: "v1", archived: true })
+          : jsonResponse(twoMilestones),
+      ));
+    render(<MilestonesPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("milestones-list");
+
+    // MSL-25: an already-archived milestone is shown here and marked,
+    // not hidden — this is the management surface.
+    const archivedRow = screen.getByTestId("milestone-row-M2");
+    expect(archivedRow.getAttribute("data-milestone-archived")).toBe("true");
+    expect(archivedRow.querySelector("[data-testid='milestone-archived-marker']")).not.toBeNull();
+
+    // Archiving M1 sends the archived flag on the milestone PUT — the row
+    // toggle only ever sent name/date before, so the flag had no caller.
+    const activeRow = screen.getByTestId("milestone-row-M1");
+    fireEvent.click(activeRow.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement);
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find((c) => {
+        const init = c[1] as RequestInit | undefined;
+        return String(c[0]).includes("/api/milestones/M1")
+          && String(init?.method).toUpperCase() === "PUT";
+      });
+      expect(put).toBeDefined();
+      const raw = (put?.[1] as RequestInit | undefined)?.body;
+      const body = typeof raw === "string" ? (JSON.parse(raw) as unknown) : undefined;
+      expect(body).toEqual({ archived: true });
+    });
+  });
+
+  // Retag (B2): same as above — the panel unarchive toggle is MSL-11's
+  // panel-CRUD surface, not MSL-25's task/URL-resolution claim.
+  /** @verifies MSL-11 */
+  it("unarchives an archived milestone by PUTting { archived: false }", async () => {
+    fetchMock.mockImplementation((url: unknown): Promise<Response> =>
+      Promise.resolve(
+        String(url).includes("/api/milestones/")
+          ? jsonResponse({ id: "M2", name: "old" })
+          : jsonResponse(twoMilestones),
+      ));
+    render(<MilestonesPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("milestones-list");
+
+    const archivedRow = screen.getByTestId("milestone-row-M2");
+    const toggle = archivedRow.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement;
+    expect(toggle.textContent).toMatch(/unarchive/i);
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find((c) => {
+        const init = c[1] as RequestInit | undefined;
+        return String(c[0]).includes("/api/milestones/M2")
+          && String(init?.method).toUpperCase() === "PUT";
+      });
+      expect(put).toBeDefined();
+      const raw = (put?.[1] as RequestInit | undefined)?.body;
+      const body = typeof raw === "string" ? (JSON.parse(raw) as unknown) : undefined;
+      expect(body).toEqual({ archived: false });
+    });
+  });
+});
+
+describe("MilestonesPanel silent-write + staleness (B2 bugs 3, 4, 5)", () => {
+  const twoMilestones = {
+    items: [
+      { id: "M1", name: "v1", target_date: "2026-03-31", taskCount: 2 },
+      { id: "M2", name: "old", archived: true, taskCount: 0 },
+    ],
+    total: 2,
+  };
+
+  /** @verifies MSL-11 */
+  it("surfaces an error when the archive toggle fails, instead of silence (bug 3)", async () => {
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (String(url).includes("/api/milestones/") && method === "PUT") {
+        return Promise.resolve(jsonResponse({ code: "rejected_write", message: "Archive write failed." }, 500));
+      }
+      return Promise.resolve(jsonResponse(twoMilestones));
+    });
+    render(<MilestonesPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("milestones-list");
+
+    const row = screen.getByTestId("milestone-row-M1");
+    fireEvent.click(row.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement);
+
+    const err = await screen.findByTestId("milestone-archive-error");
+    expect(err.textContent).toContain("Archive write failed.");
+  });
+
+  /** @verifies MSL-11 */
+  it("invalidates the milestones-progress query after an archive so /milestones is not stale (bug 4)", async () => {
+    const qc = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: 0 },
+        mutations: { retry: false },
+      },
+    });
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
+
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (String(url).includes("/api/milestones/") && method === "PUT") {
+        return Promise.resolve(jsonResponse({ id: "M1", name: "v1", archived: true }));
+      }
+      return Promise.resolve(jsonResponse(twoMilestones));
+    });
+
+    render(
+      <QueryClientProvider client={qc}>
+        <MilestonesPanel />
+      </QueryClientProvider>,
+    );
+    await screen.findByTestId("milestones-list");
+
+    const row = screen.getByTestId("milestone-row-M1");
+    fireEvent.click(row.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement);
+
+    // After a successful archive, the milestones-progress key (the
+    // /milestones view's query) must be invalidated — the exact fix for
+    // the 30s staleness. The pre-fix invalidator only touched
+    // ["milestones"] and ["tasks"].
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["workflow", "milestones-progress"],
+      });
+    });
+  });
+
+  /** @verifies MSL-14 */
+  it("seeds the Edit inputs from the CURRENT milestone after an external rename (bug 5)", async () => {
+    let fetches = 0;
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (String(url).includes("/api/milestones/") && method === "PUT") {
+        return Promise.resolve(jsonResponse({ id: "M1", name: "v1", archived: true }));
+      }
+      // The counted list GET: first "v1", then "v1 renamed" after the
+      // archive invalidates ["milestones"].
+      fetches += 1;
+      const name = fetches === 1 ? "v1" : "v1 renamed";
+      return Promise.resolve(jsonResponse({
+        items: [
+          { id: "M1", name, target_date: "2026-03-31", taskCount: 2 },
+          { id: "M2", name: "old", archived: true, taskCount: 0 },
+        ],
+        total: 2,
+      }));
+    });
+    render(<MilestonesPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("milestones-list");
+
+    // Trigger the external rename to land: archiving M1 invalidates
+    // ["milestones"], so the row re-renders with the new name.
+    const row = screen.getByTestId("milestone-row-M1");
+    fireEvent.click(row.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement);
+    await waitFor(() => {
+      expect(screen.getByTestId("milestone-row-M1").textContent).toContain("v1 renamed");
+    });
+
+    // Regression: the name draft was seeded once at mount ("v1") and not
+    // reset on Edit-open, so Save would revert the external rename.
+    fireEvent.click(screen.getByTestId("milestone-row-M1").querySelector("[data-testid='milestone-edit']") as HTMLButtonElement);
+    const input = screen.getByTestId<HTMLInputElement>("milestone-name-input");
+    expect(input.value).toBe("v1 renamed");
   });
 });
 

@@ -1253,6 +1253,32 @@ wrong.
 On a stop: write it in the run log, mark the section ⛔, and stop
 cleanly. No half-committed work.
 
+#### B2 · SPR-40 sprint archive/unarchive has no web route (same root as SPR-26)
+
+**2026-09-06, B2 lane.** SPR-40 wants create / delete / archive /
+unarchive of sprints from Settings. Create, delete and metadata-edit
+routes exist and are wired + tested. **Archive/unarchive is a wire-up
+that is missing its route** — the same root cause already logged above
+for SPR-26: core has `archiveSprint`/`unarchiveSprint`, the CLI has
+`sprint archive`, but the web layer exposes no `/api/sprints/:id/archive`
+(or `/unarchive`), and `handleUpdateSprint` does not accept `archived`.
+
+Per the "core has it; nothing wired it" row this is buildable, but the
+route lives in `server.ts` (another lane) and the B2 brief said to STOP
+and report rather than add a route. So the first B2 pass shipped create +
+delete + the read-side "show archived" split and left the archive *write*
+for the server/route owner.
+
+**Resolved (B2 fix wave).** The route owner then built it:
+`POST /api/sprints/:id/archive` and `/unarchive` (`handleArchiveSprint` /
+`handleUnarchiveSprint`, mirroring the label pattern), a `useArchiveSprint`
+hook, and the per-row Archive/Unarchive button, all tested (red-first).
+SPR-40's acceptance bullet was updated to the route-based design because
+the old `archived`-on-`handleUpdateSprint` design could not work
+(`editSprint` never sets `archived`, so a PUT field would be silently
+ignored — a lying control). Details: `decisions.md` A149,
+`known-gaps.md` (SPR-40 → FIXED).
+
 ---
 
 ## The run log

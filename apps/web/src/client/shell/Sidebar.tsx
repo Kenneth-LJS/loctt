@@ -1,4 +1,5 @@
-import type { TrackerInfoResponse } from "@loctt/contracts";
+import type { SidebarGroupId, TrackerInfoResponse } from "@loctt/contracts";
+import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS } from "@loctt/contracts";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 
@@ -14,7 +15,9 @@ import {
 import { useBuiltinCounts } from "../api/hooks/useBuiltinCounts.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { RegionErrorBoundary } from "../error/RegionErrorBoundary.tsx";
+import { readSidebarGroups, resolveSidebarOrder } from "../settings/sidebarGroups.ts";
 import { readSidebarPins } from "../settings/sidebarPins.ts";
+import { ViewFormDialog } from "../settings/ViewFormDialog.tsx";
 import { BUILTIN_FILTERS } from "../sidebar/builtinFilters.ts";
 import { useVanishedViews } from "./useVanishedViews.ts";
 
@@ -60,31 +63,102 @@ export function Sidebar({
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto" data-sidebar-scroll="true">
         {/* ERR-34: a render throw in one group must not white-page the
             app. Each group is its own boundary, so the rest of the
-            sidebar, the header and the main pane keep working. */}
-        <RegionErrorBoundary region="the view switcher">
-          <ViewSwitcher collapsed={collapsed} />
-        </RegionErrorBoundary>
-        <RegionErrorBoundary region="the projects list">
-          <ProjectsGroup collapsed={collapsed} />
-        </RegionErrorBoundary>
-        <RegionErrorBoundary region="the saved filters">
-          <SavedFiltersGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />
-        </RegionErrorBoundary>
-        <RegionErrorBoundary region="the milestones list">
-          <MilestonesGroup collapsed={collapsed} />
-        </RegionErrorBoundary>
-        <RegionErrorBoundary region="the sprints list">
-          <SprintsGroup collapsed={collapsed} />
-        </RegionErrorBoundary>
-        <RegionErrorBoundary region="the labels list">
-          <LabelsGroup collapsed={collapsed} />
-        </RegionErrorBoundary>
-        <RegionErrorBoundary region="recently viewed">
-          <RecentsGroup collapsed={collapsed} />
-        </RegionErrorBoundary>
+            sidebar, the header and the main pane keep working.
+
+            SHL-45: the groups render in the user's chosen order, and a
+            group the user hid is not rendered at all. `resolveSidebarOrder`
+            turns the (tolerant) `sidebar_groups` setting into the ordered,
+            hide-annotated list; an absent setting yields the default order
+            with everything visible. */}
+        <SidebarGroups
+          collapsed={collapsed}
+          currentUserId={currentUserId}
+          today={today}
+        />
       </div>
       <Footer collapsed={collapsed} info={info} />
     </aside>
+  );
+}
+
+/**
+ * The ordered, visibility-filtered set of sidebar groups (SHL-45).
+ *
+ * Reads the per-user `sidebar_groups` setting, resolves it against the
+ * built-in group catalog, and renders each visible group in order, each
+ * wrapped in its own error boundary (ERR-34). A hidden group is not
+ * rendered — a deliberate choice, distinct from the SHL-9 "empty
+ * affordance" a group with no *entries* shows.
+ *
+ * While the setting is still loading (or if it failed), we fall back to
+ * the default order with everything visible rather than blanking the
+ * sidebar: the customization is a preference, and its absence must never
+ * make navigation disappear (P7).
+ */
+const GROUP_REGION: Record<SidebarGroupId, string> = {
+  views: "the view switcher",
+  projects: "the projects list",
+  "saved-filters": "the saved filters",
+  milestones: "the milestones list",
+  sprints: "the sprints list",
+  labels: "the labels list",
+  recents: "recently viewed",
+};
+
+function SidebarGroups({
+  collapsed,
+  currentUserId,
+  today,
+}: {
+  collapsed: boolean;
+  currentUserId: string | null;
+  today: string;
+}) {
+  const settings = useUserSettings();
+  // A failed / in-flight settings read is not a customization — fall
+  // back to the default (every group, default order, all visible).
+  const groups = readSidebarGroups(settings.data?.settings);
+  const resolved = resolveSidebarOrder(groups, [...SIDEBAR_GROUP_IDS]);
+  // Resolved against the group-only catalog, so every id is a group id;
+  // the guard narrows `SidebarItemId` to `SidebarGroupId` for TS.
+  const isGroupId = (id: string): id is SidebarGroupId =>
+    (SIDEBAR_GROUP_IDS as readonly string[]).includes(id);
+
+  const render = (id: SidebarGroupId): ReactNode => {
+    switch (id) {
+      case "views":
+        return <ViewSwitcher collapsed={collapsed} />;
+      case "projects":
+        return <ProjectsGroup collapsed={collapsed} />;
+      case "saved-filters":
+        return (
+          <SavedFiltersGroup
+            collapsed={collapsed}
+            currentUserId={currentUserId}
+            today={today}
+          />
+        );
+      case "milestones":
+        return <MilestonesGroup collapsed={collapsed} />;
+      case "sprints":
+        return <SprintsGroup collapsed={collapsed} />;
+      case "labels":
+        return <LabelsGroup collapsed={collapsed} />;
+      case "recents":
+        return <RecentsGroup collapsed={collapsed} />;
+    }
+  };
+
+  return (
+    <>
+      {resolved.map(item =>
+        item.hidden || !isGroupId(item.id) ? null : (
+          <RegionErrorBoundary key={item.id} region={GROUP_REGION[item.id]}>
+            {render(item.id)}
+          </RegionErrorBoundary>
+        ),
+      )}
+    </>
   );
 }
 
@@ -562,6 +636,27 @@ function SavedFiltersGroup({
   // the pins panel is what tells the user it went.
   const settings = useUserSettings();
   const pins = readSidebarPins(settings.data?.settings);
+  // SHL-45: the built-in filters can be hidden/reordered by the same
+  // per-user setting. `resolveSidebarOrder` against the filter catalog
+  // gives their order + hidden flags; a hidden filter renders nothing.
+  const filterOrder = resolveSidebarOrder(
+    readSidebarGroups(settings.data?.settings),
+    [...SIDEBAR_FILTER_IDS],
+  );
+  const filterById = new Map(BUILTIN_FILTERS.map(f => [f.id, f]));
+  const orderedFilters = filterOrder
+    .filter(f => !f.hidden)
+    .flatMap(f => {
+      const def = filterById.get(f.id);
+      return def === undefined ? [] : [def];
+    });
+  // The create-view dialog (VUE-40): the "+ New filter" entry point.
+  // Opens `ViewFormDialog` in create mode — the same dialog the Saved-
+  // views settings panel uses, with the reused AdvancedQueryEditor — so
+  // the user can type a query. The old wiring opened `SaveViewDialog`
+  // with `search={}`, whose read-only DSL was always `archived != true`,
+  // silently making every sidebar-created view "all open tasks".
+  const [creating, setCreating] = useState(false);
   const allViews = views.data?.queries ?? [];
   const userViews = orderByPins(allViews, pins);
   // VUE-22: views present in queries.yaml whose query no longer parses.
@@ -589,7 +684,7 @@ function SavedFiltersGroup({
         <GroupError collapsed={collapsed} error={views.error} onRetry={() => { void views.refetch(); }} />
       )}
 
-      {BUILTIN_FILTERS.map(f => {
+      {orderedFilters.map(f => {
         const search = f.resolve(ctx);
         const count = counts[f.id]?.count;
         const countPending = counts[f.id]?.isLoading === true;
@@ -712,13 +807,21 @@ function SavedFiltersGroup({
       {!collapsed ? (
         <button
           type="button"
-          disabled
-          title="Saved-view editor arrives in a later milestone"
-          className="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] font-medium text-accent hover:bg-bg-muted disabled:cursor-not-allowed disabled:opacity-70"
+          data-testid="sidebar-new-filter"
+          onClick={() => { setCreating(true); }}
+          title="Create a saved view"
+          className="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] font-medium text-accent hover:bg-bg-muted"
         >
           <span className="w-4 shrink-0 text-center">+</span>
           New filter…
         </button>
+      ) : null}
+
+      {creating ? (
+        // Create mode: empty name + query with the advanced query editor,
+        // so a view created from the sidebar carries a typed query (VUE-40)
+        // rather than the fixed `archived != true` of the old dialog.
+        <ViewFormDialog onClose={() => { setCreating(false); }} />
       ) : null}
     </div>
   );

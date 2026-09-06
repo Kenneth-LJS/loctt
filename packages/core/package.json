@@ -18,6 +18,10 @@
       "types": "./dist/users/pins.d.ts",
       "import": "./dist/users/pins.js"
     },
+    "./users/sidebarGroups.js": {
+      "types": "./dist/users/sidebarGroups.d.ts",
+      "import": "./dist/users/sidebarGroups.js"
+    },
     "./query/parser.js": {
       "types": "./dist/query/parser.d.ts",
       "import": "./dist/query/parser.js"

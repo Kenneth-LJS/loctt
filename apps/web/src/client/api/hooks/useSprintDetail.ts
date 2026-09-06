@@ -97,7 +97,10 @@ export interface SprintMetaPatch {
 }
 
 /**
- * `PUT /api/sprints/:id` — one field at a time, as the header edits it.
+ * `PUT /api/sprints/:id` — a combined patch of the fields the header
+ * changed (A147 option 2). `SprintMetaPatch` carries every editable
+ * field as optional, so the header sends one request with all changed
+ * fields rather than one PUT per field.
  *
  * Deliberately **not** optimistic. SPR-37 requires that a failed save
  * never leaves the attempted value on screen looking saved, and
@@ -107,10 +110,13 @@ export interface SprintMetaPatch {
  * into; awaiting the server and re-reading is both simpler and the
  * only version that cannot lie.
  *
- * The server applies a read-modify-write (`editSprint`), so sending
- * only the changed field is what makes SPR-28 hold: a `goal` set from
- * the CLI while this page was open is not in this request and is
- * therefore not overwritten by it.
+ * The server applies a read-modify-write (`editSprint`) that merges the
+ * whole body and validates the window rule against the *final* record,
+ * so a combined patch is also what lets a forward window move (new
+ * start after the old end) succeed — a per-field sequence would 400 on
+ * the first partial merge. Sending only the *changed* fields is what
+ * makes SPR-28 hold: a `goal` set from the CLI while this page was open
+ * is not in this request and is therefore not overwritten by it.
  */
 export function useUpdateSprintMeta() {
   const qc = useQueryClient();

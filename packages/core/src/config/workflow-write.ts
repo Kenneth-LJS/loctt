@@ -1133,18 +1133,36 @@ function buildPlainObject(config: WorkflowConfig): Record<string, unknown> {
  * "tasks affected by deleting this", and a task with three `blocks`
  * links is one task to rewrite.
  */
+/**
+ * True when a frontmatter field slot holds an actual value that a
+ * field delete would have to clear. An empty array (a multi-field with
+ * no selections) and `null`/`undefined` are absences, not values.
+ */
+function holdsFieldValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
 export function computeWorkflowKeyCounts(tasks: readonly Task[]): {
   statuses: Record<string, number>;
   priorities: Record<string, number>;
   task_types: Record<string, number>;
   relationships: Record<string, number>;
   custom_field_values: Record<string, Record<string, number>>;
+  custom_fields: Record<string, number>;
 } {
   const statuses: Record<string, number> = {};
   const priorities: Record<string, number> = {};
   const task_types: Record<string, number> = {};
   const relationships: Record<string, number> = {};
   const custom_field_values: Record<string, Record<string, number>> = {};
+  // Tasks holding *any* value for the field, whatever its type. This is
+  // the blast radius of a whole-field delete (SET-49): `custom_field_values`
+  // above is per enum value, so a number or boolean field — which has no
+  // enum values — sums to 0 there even when tasks store data under it,
+  // and the delete confirm would claim it affects nothing.
+  const custom_fields: Record<string, number> = {};
 
   const bump = (table: Record<string, number>, key: string): void => {
     table[key] = (table[key] ?? 0) + 1;
@@ -1171,9 +1189,15 @@ export function computeWorkflowKeyCounts(tasks: readonly Task[]): {
             bump(perField, v);
           }
         }
+        // The whole-field count, once per task, for any type. A number,
+        // boolean or date value never appears in `custom_field_values`
+        // (only enum-value keys do), but it is still a stored value the
+        // field delete must account for. An empty list or a null/undefined
+        // slot is not a held value, so it does not count.
+        if (holdsFieldValue(value)) bump(custom_fields, field);
       }
     }
   }
 
-  return { statuses, priorities, task_types, relationships, custom_field_values };
+  return { statuses, priorities, task_types, relationships, custom_field_values, custom_fields };
 }

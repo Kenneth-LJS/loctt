@@ -1958,6 +1958,109 @@ gap.
 for "Show more"), add a CMT-20 spec to `tests/ui/flow-comments.spec.ts`
 and delete the known-gaps entry.
 
+### A152 · Email is validated on the server write path; the client gate is only a courtesy
+
+**Ticket:** B2 fix-review (Users/Projects/Milestones lane) · **Date:** 2026-09-06 · **Commit:** (this one)
+
+**The situation.** B2 bug 1: `UsersPanel` Edit → email `"bob"` → Save
+returned 200, the dialog closed, and the row went blank. `z.email()`
+guards only the *read* path (`UserProfileSchema.email`), so a bad value
+was persisted by core, degraded into `health` on the next load, and read
+back blank — silent data loss reported as success. The write handlers
+(`handleCreateUser` / `handleUpdateUser`) did no email validation.
+
+**What had to be decided.** Where does the email get rejected, and with
+what shape, so the field is never silently cleared?
+
+**Options considered.**
+
+1. **Client-only check.** Cheapest. Costs: the CLI/MCP and any direct
+   API caller still corrupt the field; the guarantee is cosmetic.
+2. **Server write-path validation, client gate as courtesy.** The server
+   rejects a malformed non-null email with a 400 `field: "email"` before
+   core can persist it; the client adds a light `looksLikeEmail` gate so
+   the obvious case never round-trips, and renders the server's 400 in
+   the existing Callout. Costs: a new `EmailSchema` export in contracts;
+   two guards in the server user region.
+3. **Fix core `updateUser`/`createUser` to reject.** Most central.
+   Costs: crosses into core + CLI/MCP `updateUser`, owned by another
+   lane this wave; larger blast radius than the bug needs.
+
+**Decided.** Option 2 as the first step, then Option 3 folded in at the
+B2 merge reconciliation — the final state is **both**: core validates
+(the shared authority) and the server keeps its field-attributed 400.
+
+**Correction (merge reconciliation).** The original "Why" claimed the
+server "is the authority every surface shares, so validating there fixes
+the CLI/MCP paths too". **That was false** — the CLI and MCP do not go
+through the web server's HTTP handlers; they call core (`createUser`/
+`updateUser`) directly, so `loctt user edit --email bob` still corrupted
+the field. The authority the three surfaces actually share is **core**.
+Validating only in the server was drift with a good address, exactly what
+the parity rule forbids ("a capability in core is not done until CLI and
+MCP have it"). Option 3 was therefore added: `assertValidEmail` in
+`packages/core/src/users/lifecycle.ts` rejects a malformed non-null email
+in both write functions, which covers web/CLI/MCP at once. The server's
+400 pre-check and the client `looksLikeEmail` courtesy gate are kept
+because they give the field-attributed error shape before core is
+reached; `null` still clears the email (a valid operation). See the
+(now FIXED) email known-gap entry.
+
+**To revert.** Remove `EmailSchema` from
+`packages/contracts/src/users.ts` (and its `index.ts` re-export), drop
+the two `EmailSchema.safeParse` guards in `handleCreateUser` /
+`handleUpdateUser` in `apps/web/src/server/server.ts`, remove
+`looksLikeEmail` + the `emailOk` blocks in
+`apps/web/src/client/settings/UsersPanel.tsx`, and remove
+`assertValidEmail` (and its two call sites + the `EmailSchema` import) in
+`packages/core/src/users/lifecycle.ts` plus the two email tests in
+`packages/core/src/users/manage.test.ts`.
+
+### A153 · The user Edit dialog drops the "(none)" timezone option rather than making the zone clearable
+
+**Ticket:** B2 fix-review (Users/Projects/Milestones lane) · **Date:** 2026-09-06 · **Commit:** (this one)
+
+**The situation.** B2 bug 2: the Edit-user dialog offered a `(none)`
+timezone option. Selecting it and saving reported success but kept the
+old zone — `save()` omits an empty timezone, and core's `updateUser`
+does `timezone: changes.timezone ?? existing.timezone`, so an omitted or
+empty value preserves the existing zone. The option therefore lied.
+
+**What had to be decided.** Make `(none)` actually clear the timezone, or
+remove the option because the zone is effectively required?
+
+**Options considered.**
+
+1. **Make `(none)` clear it.** `saveUserProfile` already omits an
+   undefined timezone, so the *storage* supports a cleared zone. Costs:
+   core's `updateUser` has no "clear timezone" signal — `EditUserOptions`
+   makes only `email` nullable. Adding one means changing core
+   `updateUser` + its `EditUserOptions` and the CLI/MCP `updateUser`
+   twins, all owned by other lanes this wave. Cross-lane, load-bearing.
+2. **Remove the option; treat the zone as required in the UI.** The
+   create form already defaults the zone to the resolved system zone, so
+   a user almost always has one; a blank-zone user (degraded/hand-edited)
+   sees a disabled placeholder and must pick a real zone before Save.
+   Costs: a user genuinely cannot blank their zone from this dialog —
+   but nothing in PRU-47 asks for that, and the previous option did not
+   deliver it either (it silently kept the old value).
+
+**Decided.** Option 2 — remove the `(none)` option; Save is blocked
+until a real zone is chosen.
+
+**Why.** Option 1's only honest form crosses three other lanes' code for
+a capability no case requires. Option 2 removes a control that lied and
+matches the effective contract (create always sets a zone). This is the
+choice the fix-review's task explicitly permitted ("remove the '(none)'
+option if tz is required").
+
+**To revert.** In `apps/web/src/client/settings/UsersPanel.tsx`
+`EditUserDialog`: restore `<option value="">(none)</option>`, drop the
+`tzOk` gate and the disabled-placeholder branch. To instead adopt option
+1, thread a nullable `timezone` through core `updateUser`
+(`EditUserOptions` + `lifecycle.ts`) and its CLI/MCP callers, and have
+`save()` send `timezone: null` on `(none)`.
+
 ## 9. Ken's rulings, 2026-08-29
 
 **These are Ken's, not an agent's.** Unlike § 8, they carry the
@@ -5743,6 +5846,15 @@ assertions and the tag.
 **To revert.** Build the header search box, then replace that test
 with the two focus assertions and tag it `@verifies A11Y-2`.
 
+**RESOLVED (B2, 2026-09-06, staged).** SHL-46 built the header search box
+(no longer disabled), so A11Y-2 now has a focusable target. The
+"A11Y-2 (partial)" placeholder in `flow-accessibility.spec.ts` was
+replaced by a real "A11Y-2 / A11Y-8" test (`/` focuses the enabled box,
+does not type a literal slash, typing lands a single caret) and tagged
+`@verifies A11Y-2`. The test also guards the B2 duplicate-`/`-binding fix
+(one owner: the global shortcut registry; Header's own `/` listener
+removed — see A151). A11Y-2 is no longer uncovered.
+
 ### A85 · The global shortcut table is one registry that both dispatches and documents
 
 **Ticket:** M4.8 · **Date:** 2026-09-01 · **Commit:** (uncommitted)
@@ -8596,3 +8708,567 @@ root-cause the review named — surface exclusions must live in
 `decisions.md`, not only in user docs.
 
 **To revert.** Ken's, not an agent's.
+
+### A143 · The Projects panel adopts the Edit-gated inline-form model, matching Milestones/Labels
+
+**Ticket:** B2 · **Date:** 2026-09-06 · **Commit:** (staged)
+
+**The situation.** The Projects panel edited a project's name by an
+always-visible input that saved on **blur** — inline auto-save. The
+edit-model (Ken) requires config panels to be read-by-default and gate
+field-value edits behind an explicit Edit. Milestones and Labels already
+did this with an Edit-gated inline form (an "Edit" button reveals the
+fields + Save/Cancel). Ken left the shape per-panel: "Edit-gated inline
+form OR modal for low-risk fields — your call, be consistent."
+
+**What had to be decided.** Inline-form or modal for the Projects row's
+low-risk name edit?
+
+**Options considered.**
+- *Modal Edit dialog* (like the Users panel, PRU-47). Cost: a second
+  dialog shape in the same lane, and it diverges from the two sibling
+  panels in the same settings section.
+- *Edit-gated inline form* (like Milestones/Labels). Cost: the row grows
+  a small form region in edit mode; the immutable slug/prefix have to be
+  shown inside it.
+
+**Decided.** Edit-gated inline form, matching Milestones and Labels.
+
+**Why.** Consistency within the Settings → Data/Projects section carries
+more than matching the Users panel, which is a different section with a
+richer per-user dialog (avatar, email, timezone). The name is a single
+low-risk field; a full modal is heavier than it needs. The prefix keeps
+its own confirm dialog (PRU-44) *inside* the form, since a prefix change
+rewrites every task key and must never ride a blur or a plain Save.
+
+**To revert.** `apps/web/src/client/settings/ProjectsPanel.tsx`
+(`ProjectRow` `editing` state and the read/edit branches). The
+vitest `ProjectsPanel.test.tsx` "edit-model (PRU-6)" block and the
+`flow-settings-projects-users.spec.ts` PRU-6/PRU-20 specs assert the
+inline form and would change with it.
+
+### A144 · Set-default (PRU-48) rides the existing project PUT; no new endpoint
+
+**Ticket:** B2 · **Date:** 2026-09-06 · **Commit:** (staged)
+
+**The situation.** PRU-48 ("a project can be set as the default from the
+Projects panel") notes "core `setDefaultProject` is called only
+internally — this needs a new endpoint." But `PUT /api/projects/:id`
+already maps `default: true` onto `setDefaultProject` (added for the
+create/edit/delete flows; `server.ts` handleUpdateProject ~1705), and
+`GET /api/projects` already returns the workspace `default` id at
+top-level. So the plumbing the case predicted was missing already
+existed.
+
+**What had to be decided.** Add the new endpoint the case anticipated, or
+use the existing PUT path?
+
+**Options considered.**
+- *New dedicated route* (e.g. `POST /api/projects/:id/default`). Cost: a
+  redundant second write path onto the same core call; the case doc's
+  prediction was written before the PUT gained `default`.
+- *Ride the existing PUT with `{ default: true }`.* Cost: none observed —
+  the handler, the core call, and the response marker are all present.
+
+**Decided.** Ride the existing `PUT /api/projects/:id` with
+`{ default: true }`. No server route was added in this lane.
+
+**Why.** "A capability in core is not done until CLI and MCP have it" and
+"check before claiming something does not exist" (CLAUDE.md): the
+endpoint the case called for was already built. Adding a second one would
+be drift. The set-default is the only server-adjacent concern in this
+lane, and it needed no server touch.
+
+**To revert.** `useSetDefaultProject` in
+`apps/web/src/client/api/hooks/useProjectMutations.ts` and the
+`project-set-default-*` / `project-default-marker-*` controls in
+`ProjectsPanel.tsx`. If a dedicated route is later wanted, the handler at
+`server.ts` handleUpdateProject already contains the mapping to copy.
+
+### A145 · SET-28's Edit-dialog stale detection is a per-entry baseline diff, not a whole-document version check
+
+**Ticket:** B2 (workflow settings panels) · **Date:** 2026-09-06 · **Commit:** (staged)
+
+**The situation.** SET-28 (reworded, now the primary value-edit path):
+"If an Edit dialog was open when the file changed underneath, the save is
+refused with a message naming the file and offering to reload — the dialog
+does not silently clobber the hand edit on Save." The existing
+`useSaveWorkflowCollection` already re-reads the whole document before the
+PUT and *merges* the panel's edit onto it (so hand-added rows survive).
+That merge is right for reorder/create, but for an Edit dialog it would
+silently overwrite a hand-edited version of the *same* row the dialog is
+editing — exactly what SET-28 forbids.
+
+**What had to be decided.** How does the Edit-dialog path detect that the
+row it opened over changed on disk, given there is no per-document version
+token or ETag on `/api/workflow`?
+
+**Options considered.**
+- *Whole-document hash / version token.* Cost: no such token exists on the
+  route; adding one is a server change (out of lane — no new routes, and
+  server.ts is off-limits), and it would refuse a save for an unrelated
+  hand edit elsewhere in the file, which SET-28 does not ask for.
+- *Per-entry baseline diff.* The Edit dialog captures the row as it was
+  when opened; before the PUT, `apply(fresh)` compares the freshly-read
+  version of that same key (`entryChangedOnDisk`, a `JSON.stringify`
+  equality) and throws `ConcurrentWorkflowEditError` if it differs or the
+  key vanished. Cost: a byte-identical rewrite (e.g. reordered keys within
+  the row object) would false-positive; acceptable, since the honest
+  answer to "the file moved under you" is to reload.
+
+**Decided.** Per-entry baseline diff, thrown from inside `apply` so it
+lands before the PUT (nothing is written) and surfaces as the dialog's
+anchored `Callout` (shared with SET-51).
+
+**Why.** It satisfies SET-28 without a server change or a new route, and it
+scopes the refusal to the row actually being edited — a hand edit to a
+*different* row still merges through the existing path, matching the "does
+not silently clobber the hand edit" wording without over-refusing. Reorder
+stays inline and unaffected (open decision #3).
+
+**To revert.** `entryChangedOnDisk` in
+`apps/web/src/client/settings/workflowForms.ts`, and the `staleBaseline`
+branch of `commit`/`commitFields` in `EnumCollectionPanel.tsx`,
+`RelationshipsSettingsPanel.tsx`, and `CustomFieldsPanel.tsx`. To drop the
+check, remove the `staleBaseline` option and the throw; to strengthen it to
+whole-document, a version token on `GET/PUT /api/workflow` would be needed.
+
+### A146 · Deleting a whole custom field offers clear-only (no remap target), reusing RemapDeleteDialog
+
+**Ticket:** B2 (workflow settings panels) · **Date:** 2026-09-06 · **Commit:** (staged)
+
+**The situation.** SET-49 requires full custom-field CRUD, including
+delete, and says "Delete goes through remap-or-clear (the SET-19 shape)
+when tasks still hold the field's values." SET-19 (deleting an enum
+*value*) offers remap-to-another-value or clear. But deleting the *whole
+field* has no sibling to remap to — fields are not interchangeable the way
+two enum values of one field are.
+
+**What had to be decided.** What does "remap-or-clear" mean for a
+field-level delete, where there is no meaningful remap target?
+
+**Options considered.**
+- *Offer remap to another field.* Cost: incoherent — moving a `number`
+  field's values onto a `date` field is not a remap; the server's
+  `remap.custom_fields` table is keyed value→value within one field, not
+  field→field.
+- *Clear-only.* Reuse `RemapDeleteDialog` with `alternatives={[]}`, so it
+  degrades to a clear-or-cancel confirm, and send a per-value `null` remap
+  table (`{ [fieldKey]: { [valueKey]: null, … } }`) for an enum field so
+  the server clears the field on the tasks that hold it. Cost: the dialog's
+  copy is value-oriented ("clear the field on them"), which reads correctly
+  for a field delete too since a field-level clear empties the field.
+
+**Decided.** Clear-only, reusing `RemapDeleteDialog` with no alternatives;
+for an enum field the confirm sends every value key mapped to `null`.
+
+**Why.** It honours SET-49's "remap-or-clear" intent (a choice is required
+before anything is orphaned) with the only branch that is coherent at field
+granularity, and it reuses the shared dialog B0b already fixed rather than
+authoring a new one. The RemapDeleteDialog copy was not re-edited (it is
+shared and out of lane); it is only *called* here.
+
+**To revert.** The `deletingField` state and its `RemapDeleteDialog` block
+in `apps/web/src/client/settings/CustomFieldsPanel.tsx`. If a
+field-to-field remap is ever wanted, it would need a new server remap shape
+(field→field), which does not exist today.
+
+### A147 · SPR-8's Edit gate collects one draft and commits per-field on Save
+
+**Ticket:** B2 (M4.7 / M4-settings) · **Date:** 2026-09-06 · **Commit:** (staged)
+
+**The situation.** `SprintMetaHeader` committed each field on blur (and
+`state` on change) in place. SPR-8 supersedes that framing: the header
+is "read-by-default; an explicit Edit control opens the fields for
+editing (name/start/goal/state) — they no longer commit-on-blur/
+commit-on-change in place."
+
+**What had to be decided.** With editing now behind Edit, does Save
+send one combined request or one request per changed field, and what
+happens to the draft on a rejected save?
+
+**Options considered.**
+1. **One PUT per changed field, sequential, stop on first error.**
+   Reuses the existing `useUpdateSprintMeta` (single-field PUT, which
+   the server's read-modify-write needs for SPR-28's concurrent-goal
+   guarantee). Costs: N requests for N changed fields.
+2. **One combined PUT of all changed fields.** One request. Costs: the
+   server's `handleUpdateSprint` does apply a merge, but the existing
+   client hook and its SPR-28 reasoning are per-field; a combined write
+   would need a new hook and re-argue SPR-28. More surface for one save.
+
+**Decided (superseded — see below).** Originally option 1: collect a
+single draft, and on Save commit each changed field with the existing
+per-field PUT, stopping on the first rejection.
+
+**Switched to option 2 (combined PUT) — B2 fix-review.** Option 1 has a
+cross-field defect that the fix-review caught: core's `editSprint`
+validates the window rule (`end < start`) against the *merged* record.
+A forward window move (new start after the old end) sends `{start_date}`
+as PUT#1, which merges against the *old* `end_date` and 400s — an edit
+that is valid as a whole is silently blocked, and a multi-field save
+could land PUT#1 and then fail PUT#2, leaving a partial write. The
+server's `handleUpdateSprint` already merges the whole body, so a single
+`{name?,start_date?,end_date?,state?,goal?}` request validates against
+the final record. `save()` now builds one combined patch of the changed
+fields and issues **one** mutation; `useUpdateSprintMeta`'s
+`SprintMetaPatch` already carried every field as optional, so no new
+hook was needed. SPR-28 still holds — only the fields the user changed
+are in the body, so a concurrent CLI edit to an untouched field is not
+overwritten.
+
+**Why option 2.** It removes the forward-move block and the
+partial-save window, keeps SPR-33/SPR-37 (on rejection the disk keeps
+the last accepted value and the editor stays open with an anchored
+error), and is one request instead of N. The per-field reasoning
+option 1 was meant to preserve turned out to be the thing causing the
+bug, not protecting against it.
+
+**State-error attribution (same fix).** The server stamps *every*
+`SprintError` from `handleUpdateSprint` with `field: "end_date"`. The
+header no longer trusts that blindly: `attributeSprintError` reads the
+message so a `state transition … not allowed` rejection anchors under
+the State control (now rendered — `errorFor("state")` was computed but
+never shown before), the window rule keeps `end_date`, and anything
+else falls back to the generic `Callout` — a state error is never
+stapled under End date. Server-side attribution was left alone (server.ts
+logic is out of this lane); the client correction is sufficient and the
+message strings are core's, tested by the SPR-37 state-transition case.
+
+**To revert.** `apps/web/src/client/sprints/SprintMetaHeader.tsx`
+(`editing` draft state, `save` combined-PUT, `attributeSprintError`,
+`ANCHORABLE`). The old commit-on-blur version is in git history. Tests:
+`apps/web/src/client/sprints/SprintMetaHeader.test.tsx` and the SPR-7/
+8/13/25/26/28/33/34/37 cases in `tests/ui/flow-sprints.spec.ts`, which
+were updated from the commit-on-blur interaction to click Edit → fill →
+Save (see A148's note that this is an interaction change, not a
+bug-encoding test).
+
+### A148 · The SPR-7/8/… e2e specs were updated for the Edit gate — an interaction change, not a bug fix
+
+**Ticket:** B2 · **Date:** 2026-09-06 · **Commit:** (staged)
+
+**The situation.** `tests/ui/flow-sprints.spec.ts` had ~10 tests that
+drove the header by `fill()` + `blur()` on `sprint-meta-*` inputs and
+read fields back via `toHaveValue`. SPR-8's move to read-by-default
+means those inputs exist only in edit mode, and reads now target the
+`sprint-meta-*-value` read elements.
+
+**What had to be decided.** These are green tests being edited by a
+change — is any of them encoding the old (superseded) behaviour as a
+bug (per the CLAUDE.md rule "if a fix requires editing a green test,
+that test was asserting the bug")?
+
+**Decided.** No — this is an interaction-model change SPR-8 explicitly
+mandates ("Supersedes the earlier commit-on-blur / commit-on-change
+framing"), not a corrected bug. The specs were updated to: read the new
+`*-value` elements in read mode; click `sprint-meta-edit` before
+touching inputs; click `sprint-meta-save` to commit. SPR-33/SPR-37 were
+reworked so the rejected draft stays in the open editor (the case's
+"correct it without reloading") rather than reverting the field in
+place, which was the old blur model's behaviour.
+
+**Why.** The persistence guarantees each case asserts are unchanged;
+only the trigger moved, exactly as SPR-8 states. `flow-sprints.spec.ts`
+is normally the E2E lane's file — this cross-lane edit was unavoidable
+because the SPR-8 component change breaks the old interaction; flagged
+as a handoff so the E2E lane is not surprised.
+
+**To revert.** The SPR-7/8/13/25/26/28/33/34/37 test bodies in
+`tests/ui/flow-sprints.spec.ts`.
+
+### A149 · Sprint archive/unarchive from the web is NOT built — no server route exists
+
+**Ticket:** B2 (SPR-40) · **Date:** 2026-09-06 · **Commit:** (staged)
+
+**The situation.** SPR-40 asks for "create / delete / archive /
+unarchive … reachable from the Settings panel", and itself notes
+"Archive needs `archived` on `handleUpdateSprint` (server) plus a
+'show archived' toggle." Create (`POST /api/sprints`), delete
+(`DELETE /api/sprints/:id`) and edit (`PUT /api/sprints/:id`) routes
+exist. **No web route archives a sprint:** there is no
+`/api/sprints/:id/archive`, and `handleUpdateSprint` does not accept
+`archived` (core's `editSprint` preserves `archived` untouched and
+never sets it). Core has `archiveSprint`/`unarchiveSprint`, unused by
+the web layer. Labels/milestones/users/tasks all have `/archive` +
+`/unarchive` routes; sprints are the one config object that does not.
+
+**What had to be decided.** Build the archive/unarchive control by
+adding the missing route (out of my lane — server.ts is owned
+elsewhere and the ticket says "STOP and report" if a new route is
+needed), or ship the buildable parts and flag the gap?
+
+**Decided.** Shipped **create + delete + the "show archived" split**
+(the split reads correctly today because `GET /api/sprints?counts=true`
+returns archived sprints via `loadSprintsConfig`). Did **not** build
+archive/unarchive controls, because wiring a button to a route that
+does not exist would be a dead or lying control. Reported as a blocking
+handoff.
+
+**Why.** The instruction was explicit: do not add routes; STOP and
+report if one is needed. SPR-40's archive bullet is not satisfiable
+from the client alone.
+
+**To revert / to complete.** Add either `POST /api/sprints/:id/archive`
++ `/unarchive` (mirroring labels) calling core `archiveSprint`/
+`unarchiveSprint`, OR accept `archived` on `handleUpdateSprint`. Then
+add a `useArchiveSprint` hook and an Archive/Unarchive button per row
+in `apps/web/src/client/settings/SprintsPanel.tsx` (the archived-split
+UI is already there). See `known-gaps.md`.
+
+**RESOLVED (B2 follow-up, 2026-09-06, staged).** Took the first option:
+added `POST /api/sprints/:id/archive` and `/unarchive` mirroring the
+label routes (dedicated routes, not an `archived` field on PUT, because
+core's `editSprint` preserves `archived` untouched). Added
+`useArchiveSprint` (mirroring `useArchiveLabel`) and a per-row
+Archive/Unarchive `Button` in `SprintsPanel`. Server round-trip +
+CSRF + unknown-sprint tests in `server.data-delete.test.ts`; client
+button tests in `SprintsPanel.test.tsx`, both shown red-first. CLI
+(`sprint archive`/`unarchive`) and MCP already had this — web-only
+parity, no CLI/MCP change. SPR-40 is now fully met.
+
+**SPR-40 acceptance-criterion rewrite (B2 fix-review, verified).** The
+SPR-40 case in `flow-sprints.md` originally read "Archive needs
+`archived` on `handleUpdateSprint` (server) plus a 'show archived'
+toggle." The follow-up rewrote that bullet to "Archive/unarchive are
+their own routes — `POST /api/sprints/:id/archive` and `/unarchive`
+(mirroring labels, since core's `editSprint` preserves `archived`
+untouched) — with a per-row Archive/Unarchive button and a 'show
+archived' toggle." The fix-review flagged this as a ticket editing its
+own criterion. **Verdict: the rewrite is correct and is kept.** The old
+criterion described a design that cannot work: `editSprint` never sets
+`archived`, so an `archived` field on PUT would be silently ignored — a
+lying control. The route-based design supersedes it, the routes exist
+and match (`SPRINT_ARCHIVE_RE`/`SPRINT_UNARCHIVE_RE` → `handleArchiveSprint`
+/`handleUnarchiveSprint`, dispatched in `createWebApp`), and the client
+(`useArchiveSprint`, `SprintsPanel`) calls exactly those paths. The
+"would ship a 404" staging split the fix-review warned of was already
+resolved in the tree by the time of this pass: the server routes,
+regex constants, imports, and dispatch entries are all staged alongside
+the UI, so the committed index does not point a button at a missing
+route.
+
+### A150 · `sidebar_groups` shape (SHL-45): two ordered id lists, tolerant reader
+
+**Ticket:** B2 (K-10 / SHL-45) · **Date:** 2026-09-06 · **Commit:** (staged)
+
+**What had to be decided.** The stored shape of the per-user
+`sidebar_groups` setting — one array of `{id, hidden}` vs two ordered
+lists — and where corruption tolerance lives.
+
+**Decided.** `sidebar_groups: { order?: SidebarItemId[]; hidden?:
+SidebarItemId[] }` — two ordered id lists. `order` holds the ids the
+user has an opinion about (any built-in not listed follows in default
+position, still visible); `hidden` holds the ids to hide. Ids cover both
+the built-in **groups** (`views`, `projects`, `saved-filters`,
+`milestones`, `sprints`, `labels`, `recents`) and the built-in
+**filters** (`assigned-to-me`, `reported-by-me`, `mentions-me`,
+`due-this-week`, `overdue`, `high-priority`) — both hideable AND
+reorderable per Ken's 2026-09-06 ruling. The catalog lives in
+`@loctt/contracts` (`SIDEBAR_GROUP_IDS` / `SIDEBAR_FILTER_IDS` /
+`SIDEBAR_ITEM_IDS`); the schema (`SidebarGroupsSchema`) is `.strict()`
+and rejects duplicates so a clean save stays clean.
+
+**Why two lists.** A single ordered `{id, hidden}` array cannot express
+"hidden but remembered in this position", which reorder-then-hide-then-
+show needs. Two lists can, and each degrades independently.
+
+**Corruption model (per corruption-handling-guide).** Tolerance lives in
+the *reader* (`core/users/sidebarGroups.ts`), not the schema, and it is
+**field-local**: an unknown or duplicate id is dropped from its list, the
+other valid ids in the list are kept, and only a wholly-unshaped value (a
+scalar, a bare list — no `{ order?, hidden? }` structure to preserve)
+becomes "no customization" (default order, all visible). The single
+tolerance point is `salvageSidebarGroups`, which `readSidebarGroups`
+delegates to.
+
+**B2 fix (bug 5): the loader now salvages per-field too.** Originally
+`sidebar_groups` was a KNOWN key in `settings.ts`'s `KNOWN_SETTINGS_KEYS`
+that the tolerant loader (`parseSettingsTolerant`) dropped **whole** when
+corrupt — so the reader's per-field salvage was dead on the loaded-
+settings path, and this record + the docstrings claimed a per-group
+degrade the code did not deliver. Fixed by option (a): `parseSettings-
+Tolerant` runs a faulting `sidebar_groups` through `salvageSidebarGroups`
+and keeps the salvaged value in-place (falling back to a full drop only
+when nothing survives). Every other known key still degrades whole; only
+`sidebar_groups` is salvaged per-field, because it holds two independent
+id lists. Chosen over option (b) (correct the docs to whole-key drop)
+because the guide's building blocks made it contained and it is what the
+framework's field-local principle wants. The green test that asserted the
+whole-key drop (`sidebarGroups.test.ts`) was one of the "green test
+asserting the bug" class and was rewritten.
+
+**Doctor (bug 6).** `checkDataIntegrity` now reports a salvaged
+`sidebar_groups` per user: `collectSidebarGroupsDrops` reads the raw
+settings and names each dropped id (`malformed`, non-blocking — the valid
+ids still load and the sidebar renders). Built rather than deferred (the
+guide's "what to add to doctor" made it small).
+
+`resolveSidebarOrder` turns the stored setting into the ordered, hide-
+annotated list every surface renders from; it is resolved against the
+FULL item catalog (groups + built-in filters), so a hidden *filter*
+round-trips through read on every surface (B2 bug 3).
+
+**Parity.** Web (Settings → Personal → Sidebar groups panel +
+Sidebar.tsx render), CLI (`loctt user sidebar-groups`), MCP
+(`get_sidebar_groups` / `set_sidebar_groups`). All three resolve the full
+catalog on read, and both write surfaces (CLI `--order`/`--hidden`, MCP
+`set_sidebar_groups`) **reject** an unknown id with an error naming it
+rather than silently dropping it (B2 bug 4) — a typo must not no-op.
+Duplicates are de-duplicated silently. CLI + MCP reference docs updated.
+
+**To revert.** Remove `sidebar_groups` from `UserSettingsSchema` and
+`KNOWN_SETTINGS_KEYS`, delete `core/users/sidebarGroups.ts` (incl.
+`salvageSidebarGroups` / `validateSidebarIds`) + its barrel/index/
+package.json subpath export, the `collectSidebarGroupsDrops` collector in
+`settings.ts` and its wiring in `diagnostics/integrity.ts`, the salvage
+call in `parseSettingsTolerant`, the web `SidebarGroupsPanel.tsx` +
+`settings/sidebarGroups.ts` + the section entry + the `SidebarGroups`
+wrapper in `Sidebar.tsx` (restore the inline group list), the CLI
+subcommand, and the two MCP tools (+ the e2e schema snapshot). The
+setting degrades to absent, so any stored value is simply ignored.
+
+### A151 · Header search (SHL-46) is a debounced dropdown + Enter-to-list
+
+**Ticket:** B2 (K-10 / SHL-46) · **Date:** 2026-09-06 · **Commit:** (staged)
+
+**What had to be decided.** How the dead header search box (Header.tsx,
+input had no handler) should behave once wired to `/api/search`.
+
+**Decided.** As-you-type (250ms debounce) fires `GET /api/search?q=…`
+and shows a results dropdown; clicking a hit navigates to that task;
+pressing Enter navigates to `/list?q=…` (the full result set, browsable
+with the list's own tooling); `/` focuses the box from anywhere unless
+already typing in a field (A11Y-2 reachable). Consumes the existing
+`/api/search` endpoint unchanged.
+
+**Why.** SHL-46 offers "shows results / navigates" as alternatives; the
+dropdown gives the fast path (jump to a known task) and Enter gives the
+thorough path (browse all matches) without a new results route. The
+"+ New filter" entry in Sidebar.tsx (hardcoded disabled) was enabled in
+the same lane to open the existing `SaveViewDialog` (create-view flow).
+
+**B2 fix (bug 1): Enter must emit a valid DSL query, not raw text.** The
+list's `q` is a DSL expression fed straight to `/api/tasks?query=…` (via
+`tasksParamsFromSearch`) and parsed by core's query DSL — `buildDslFrom-
+Search` even wraps it in parens as `(q)`. Enter used to route
+`q: "<raw>"`, so a plain word (`hello`) or a parenthesised one (`(bug)`)
+became `(hello)` / `((bug))` → ParseError → "Could not load tasks". SHL-
+46's headline path was broken end-to-end. Fixed: `goToList` wraps the
+text in the same `text ~ "<q>"` clause `/api/search` builds (server.ts
+quotes with `JSON.stringify`), so a plain-word Enter resolves to the
+identical substring match the dropdown just ran. "See all results" shares
+`goToList`, so it is fixed by the same change.
+
+**B2 fix (bug 2): one owner for `/`.** `/` → focus-search is owned solely
+by the shell's global shortcut registry (AppShell → `useGlobalShortcuts`
+→ the `focus-search` shortcut, which finds the box by `type="search"`).
+Header had ALSO added its own `document` `keydown` for `/`, double-
+binding the key and bypassing the registry's dialog/typing guard. Header's
+listener was removed; the registry is the single owner (covered by
+`useShortcuts.test.tsx` / `shortcuts.test.ts`, and end-to-end by the
+A11Y-2/A11Y-8 test in `flow-accessibility.spec.ts`, which was un-blocked
+now that the box is enabled).
+
+**To revert.** Restore the disabled `<input>` in Header.tsx and remove
+`HeaderSearch` + `api/hooks/useSearch.ts`; re-disable the "+ New filter"
+button in Sidebar.tsx. (The Enter-DSL wrap and the `/`-listener removal
+are corrections, not reversible design choices — reverting them
+re-introduces the two bugs.)
+
+### A154 · Workflow key-usage gains a whole-field count (`custom_fields`); the field-delete blast radius counts every type
+
+**Ticket:** B2 (workflow settings — fix wave) · **Date:** 2026-09-06 · **Commit:** (staged)
+
+**The situation.** `computeWorkflowKeyCounts` returned `custom_field_values`
+(field key → enum-value key → task count) and the Custom fields panel drove
+the whole-field delete confirm off `sumCounts(custom_field_values[field])`.
+A number or boolean field has no enum values, so that sum is always 0 —
+the destructive confirm told the user "affects nothing" while the server's
+field-level sweep silently cleared the field from every task holding it
+(the silent-loss shape). Confirmed by the B2 fix-review (Workflow bug #8).
+
+**What had to be decided.** Where the whole-field blast radius is computed,
+and how the surfaces report it.
+
+**Decided.** Add `custom_fields: Record<string, number>` to
+`computeWorkflowKeyCounts` — tasks holding *any* value for the field,
+whatever its type (a non-empty array counts once; `null`/`undefined`/`[]`
+do not). It is orthogonal to `custom_field_values`, which stays per enum
+value. Surfaced for parity on all three read surfaces (P10): the web
+confirm now reads `custom_fields[field]`; `loctt config usage` prints a
+per-field total line with the enum breakdown nested under it; MCP
+`get_workflow_key_usage` returns the new map (its description names it).
+`WorkflowUsageResponse` gained the typed field.
+
+**Why.** The count is a property of the tasks, not of any one surface, so
+it belongs in core with one definition three surfaces read. Fixing it only
+in the web panel would leave the CLI/MCP reporting the same blind spot.
+
+**To revert.** Remove the `custom_fields` accumulator and `holdsFieldValue`
+from `packages/core/src/config/workflow-write.ts` (`computeWorkflowKeyCounts`),
+the field from `WorkflowUsageResponse`, the `fieldCounts` prop in
+`CustomFieldsPanel.tsx` (restore `sumCounts`), the CLI per-field line in
+`apps/cli/src/commands/config.ts`, and the MCP description note.
+
+### A155 · Workflow Edit dialogs carry presentational fields (icon/color) through unedited
+
+**Ticket:** B2 (workflow settings — fix wave) · **Date:** 2026-09-06 · **Commit:** (staged)
+
+**The situation.** The Relationship and Custom-field Edit dialogs rebuilt
+the saved row from the draft alone (`buildRelationship` / `buildCustomField`),
+and neither renders an icon or color control. So editing a relationship's
+label wiped its `icon`/`color`, and editing an enum field wiped every
+value's `icon`/`color` — a silent drop of valid config. (The statuses /
+priorities / task-types Edit path already spread `...target`, so it was
+already safe; a regression test now locks that.) Confirmed by the B2
+fix-review (Workflow bug #7).
+
+**What had to be decided.** How a dialog that does not render a field
+preserves it on save.
+
+**Decided.** Seed the dropped fields into the draft from the row being
+edited and re-emit them: `RelationshipDraft` and `CustomFieldDraft.values`
+carry optional `icon`/`color`; the dialogs seed them from `initial`, and
+the `build*` helpers spread them back onto the written row (only when
+present, to respect `exactOptionalPropertyTypes`).
+
+**Why.** It matches the pattern the statuses path already used (preserve
+the original, edit the fields the dialog owns) and keeps the fix in the
+pure form helpers, where the wire shape is pinned by unit tests, rather
+than in the panels.
+
+**To revert.** Drop the `icon`/`color` fields from `RelationshipDraft` and
+`CustomFieldDraft.values` in `workflowForms.ts` and stop seeding/spreading
+them in `RelationshipEditDialog.tsx` / `CustomFieldEditDialog.tsx`.
+
+### A156 · The workflow panels surface the tolerant `broken` config as an error pane (fixes K32 / SET-33)
+
+**Ticket:** B2 (workflow settings — fix wave) · **Date:** 2026-09-06 · **Commit:** (staged)
+
+**The situation.** `loadWorkflowConfig` degrades a hand-broken entry
+tolerantly: `GET /api/workflow` returns 200 with the bad entry omitted
+from its sub-list and recorded under `broken`, never a 400. But
+`WorkflowPanelFrame` only rendered its error pane on a hard `isError`
+(a 400), so a broken `workflow.yaml` rendered an empty list — exactly
+SET-33's forbidden outcome ("not an empty list, which would read as you
+have no statuses"). Recorded as K32, pre-existing, and the
+flow-settings-workflow spec's SET-33 failed on it.
+
+**What had to be decided.** Whether to reword SET-33 to the tolerant
+reality or make the panel surface `broken`.
+
+**Decided.** Make the panel surface it. When `workflow.data.broken` has
+any entry, `WorkflowPanelFrame` renders the same `workflow-panel-error`
+surface an unparseable config would (`data-workflow-error="config-invalid"`,
+a `workflow-broken-list` naming each entry's validator error, the file
+path, and a `workflow-reload` button that re-reads without a server
+restart), and does not render the collection list.
+
+**Why.** The flow doc is the spec, and SET-33 is right that an empty list
+is the wrong signal for a broken file. The tolerant degrade is the correct
+*data* behavior (P5); the panel's job is to make it visible, the same way
+`SavedViewsPanel` already surfaces its own `broken` list.
+
+**To revert.** Remove the `brokenEntries` branch from
+`apps/web/src/client/settings/WorkflowPanelFrame.tsx`.

@@ -2,28 +2,34 @@ import type { RelationshipDef, WorkflowConfig } from "@loctt/contracts";
 import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
-import { useSaveWorkflowCollection } from "../api/hooks/useWorkflowMutations.ts";
+import {
+  ConcurrentWorkflowEditError,
+  useSaveWorkflowCollection,
+} from "../api/hooks/useWorkflowMutations.ts";
+import { Button } from "../ui/Button.tsx";
+import { type RelationshipDialogResult,RelationshipEditDialog } from "./RelationshipEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { ReorderableRows } from "./ReorderableRows.tsx";
-import { isSymmetric, reorder, setRelationshipSymmetric } from "./workflowEdits.ts";
+import { isSymmetric, reorder } from "./workflowEdits.ts";
+import { buildRelationship, collectionKeys, entryChangedOnDisk } from "./workflowForms.ts";
 import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
 
 /**
- * Settings → Workflow → Relationships (SET-4, SET-5).
+ * Settings → Workflow → Relationships (SET-4, SET-5, SET-48, SET-28,
+ * SET-51).
  *
  * The one thing this panel must get right is the symmetric
  * discriminator. It is `kind: "symmetric"` — not an inferred
  * same-key inverse, and not a separate `symmetric` boolean, which
  * `RelationshipDefSchema` has no field for and would reject under
- * `.strict()`. The checkbox writes `kind`; ticking it drops `inverse`
- * and `inverse_label` in the same interaction, and unticking restores
- * the values the row had rather than blanks (SET-5's third bullet).
+ * `.strict()`. The Create/Edit dialog writes `kind`; ticking symmetric
+ * drops `inverse` and `inverse_label`.
  *
- * `graph` and `ranked` are rendered as labelled controls, not icons
- * (SET-4). `graph` replaced the former `structural` boolean.
+ * **Edit model (B2):** value edits (label, symmetric, inverse, graph,
+ * ranked) live behind an **Edit** dialog — view-by-default. Creating a
+ * relationship goes through the same dialog in create mode (SET-48).
+ * REORDER stays inline (open decision #3).
  */
-
-const GRAPHS = ["none", "acyclic", "tree"] as const;
 
 export function RelationshipsSettingsPanel() {
   return (
@@ -50,44 +56,61 @@ function RelationshipsEditor({
 }) {
   const save = useSaveWorkflowCollection<"relationships">();
   const [deleting, setDeleting] = useState<RelationshipDef | null>(null);
+  const [dialog, setDialog] = useState<
+    | { readonly mode: "create" }
+    | { readonly mode: "edit"; readonly row: RelationshipDef }
+    | null
+  >(null);
   const [inFlight, setInFlight] = useState<readonly RelationshipDef[] | null>(null);
-  /**
-   * The inverse fields a row had before its symmetric box was ticked,
-   * so unticking restores them (SET-5). Keyed by relationship key and
-   * held only for this session — the file no longer carries them, so
-   * there is nowhere else they could come from.
-   */
-  const [restore, setRestore] = useState<
-    Record<string, { inverse?: string; inverse_label?: string }>
-  >({});
 
-  const rows = inFlight ?? workflow.relationships;
+  const stored = workflow.relationships;
+  const rows = inFlight ?? stored;
 
   const commit = (
     next: readonly RelationshipDef[],
-    remap?: Record<string, string | null>,
+    opts?: {
+      remap?: Record<string, string | null>;
+      staleBaseline?: RelationshipDef;
+      onDone?: () => void;
+    },
   ): void => {
     setInFlight(next);
     // SET-28: expressed against the freshly-read document — see the
     // note on `useSaveWorkflowCollection`.
     const orderedKeys = next.map(r => r.key);
     const byKey = new Map(next.map(r => [r.key, r]));
-    const known = new Set(workflow.relationships.map(r => r.key));
+    const known = new Set(stored.map(r => r.key));
     save.mutate(
       {
         collection: "relationships",
-        apply: fresh => [
-          ...orderedKeys.flatMap(k => {
-            const row = byKey.get(k);
-            return row === undefined ? [] : [row];
-          }),
-          ...fresh.relationships.filter(r => !known.has(r.key) && !byKey.has(r.key)),
-        ],
-        ...(remap !== undefined ? { remap: { relationships: remap } } : {}),
+        apply: fresh => {
+          if (
+            opts?.staleBaseline !== undefined
+            && entryChangedOnDisk(opts.staleBaseline, fresh.relationships)
+          ) {
+            throw new ConcurrentWorkflowEditError(
+              `.loctt/config/workflow.yaml changed on disk while this dialog was `
+              + `open — the relationship "${opts.staleBaseline.key}" is not what it `
+              + `was. Reload the panel to see the current file, then re-apply your `
+              + `change. Your edit was not saved.`,
+            );
+          }
+          return [
+            ...orderedKeys.flatMap(k => {
+              const row = byKey.get(k);
+              return row === undefined ? [] : [row];
+            }),
+            ...fresh.relationships.filter(r => !known.has(r.key) && !byKey.has(r.key)),
+          ];
+        },
+        ...(opts?.remap !== undefined ? { remap: { relationships: opts.remap } } : {}),
       },
       {
         onSettled: () => { setInFlight(null); },
-        onSuccess: () => { setDeleting(null); },
+        onSuccess: () => {
+          setDeleting(null);
+          opts?.onDone?.();
+        },
       },
     );
   };
@@ -97,9 +120,27 @@ function RelationshipsEditor({
     ? undefined
     : envelope?.message ?? (save.error as Error | null)?.message;
 
+  const dialogError = dialog !== null && save.isError ? saveError : undefined;
+  const inlineError = dialog === null && save.isError;
+
+  const applyDialog = (result: RelationshipDialogResult): void => {
+    if (dialog === null) return;
+    const built = buildRelationship(result.draft);
+    if (dialog.mode === "create") {
+      commit([...rows, built], { onDone: () => { setDialog(null); } });
+      return;
+    }
+    const target = dialog.row;
+    // The key never changes on edit, so `built.key` equals `target.key`.
+    commit(
+      rows.map(r => (r.key === target.key ? built : r)),
+      { staleBaseline: target, onDone: () => { setDialog(null); } },
+    );
+  };
+
   return (
     <div>
-      {save.isError && (
+      {inlineError && (
         <div
           role="alert"
           data-testid="workflow-save-error"
@@ -111,6 +152,18 @@ function RelationshipsEditor({
           <p className="mt-1 text-text-secondary">{saveError}</p>
         </div>
       )}
+
+      <div className="mb-3 flex justify-end">
+        <Button
+          variant="secondary"
+          size="sm"
+          data-testid="relationships-create"
+          disabled={save.isPending}
+          onClick={() => { save.reset(); setDialog({ mode: "create" }); }}
+        >
+          + Add relationship
+        </Button>
+      </div>
 
       <div data-testid="relationships-list" data-row-count={String(rows.length)}>
         <ReorderableRows
@@ -126,28 +179,24 @@ function RelationshipsEditor({
               rel={rel}
               count={counts[rel.key] ?? 0}
               disabled={save.isPending}
-              restore={restore[rel.key]}
-              onToggleSymmetric={symmetric => {
-                if (symmetric) {
-                  setRestore(prev => ({
-                    ...prev,
-                    [rel.key]: {
-                      ...(rel.inverse !== undefined ? { inverse: rel.inverse } : {}),
-                      ...(rel.inverse_label !== undefined
-                        ? { inverse_label: rel.inverse_label }
-                        : {}),
-                    },
-                  }));
-                }
-                const next = setRelationshipSymmetric(rel, symmetric, restore[rel.key]);
-                commit(rows.map(r => (r.key === rel.key ? next : r)));
-              }}
-              onChange={next => { commit(rows.map(r => (r.key === rel.key ? next : r))); }}
-              onDelete={() => { setDeleting(rel); }}
+              onEdit={() => { save.reset(); setDialog({ mode: "edit", row: rel }); }}
+              onDelete={() => { save.reset(); setDeleting(rel); }}
             />
           )}
         </ReorderableRows>
       </div>
+
+      {dialog !== null && (
+        <RelationshipEditDialog
+          mode={dialog.mode}
+          existingKeys={collectionKeys(workflow, "relationships")}
+          initial={dialog.mode === "edit" ? dialog.row : undefined}
+          pending={save.isPending}
+          error={dialogError}
+          onSubmit={applyDialog}
+          onClose={() => { setDialog(null); save.reset(); }}
+        />
+      )}
 
       {deleting !== null && (
         <RemapDeleteDialog
@@ -163,7 +212,7 @@ function RelationshipsEditor({
           onConfirm={choice => {
             commit(
               rows.filter(r => r.key !== deleting.key),
-              { [deleting.key]: choice.kind === "remap" ? choice.to : null },
+              { remap: { [deleting.key]: choice.kind === "remap" ? choice.to : null } },
             );
           }}
           onClose={() => { setDeleting(null); save.reset(); }}
@@ -173,21 +222,21 @@ function RelationshipsEditor({
   );
 }
 
+/**
+ * A view-by-default relationship row: label, key, symmetric/graph/ranked
+ * read out, the inverse note, refcount, and Edit / Delete controls.
+ */
 function RelationshipRow({
   rel,
   count,
   disabled,
-  restore,
-  onToggleSymmetric,
-  onChange,
+  onEdit,
   onDelete,
 }: {
   readonly rel: RelationshipDef;
   readonly count: number;
   readonly disabled: boolean;
-  readonly restore: { inverse?: string; inverse_label?: string } | undefined;
-  readonly onToggleSymmetric: (symmetric: boolean) => void;
-  readonly onChange: (next: RelationshipDef) => void;
+  readonly onEdit: () => void;
   readonly onDelete: () => void;
 }) {
   const symmetric = isSymmetric(rel);
@@ -206,43 +255,29 @@ function RelationshipRow({
           {rel.key}
         </code>
 
-        <label className="flex items-center gap-1 text-[12px] text-text-secondary">
-          <input
-            type="checkbox"
-            data-testid={`relationship-symmetric-${rel.key}`}
-            checked={symmetric}
-            disabled={disabled}
-            onChange={e => { onToggleSymmetric(e.target.checked); }}
-          />
-          symmetric
-        </label>
+        <span
+          data-testid={`relationship-symmetric-${rel.key}`}
+          data-symmetric={symmetric ? "true" : "false"}
+          className="rounded bg-bg-muted px-1.5 py-0.5 text-[12px] text-text-secondary"
+        >
+          {symmetric ? "symmetric" : "directional"}
+        </span>
 
-        <label className="flex items-center gap-1 text-[12px] text-text-secondary">
-          graph
-          <select
-            data-testid={`relationship-graph-${rel.key}`}
-            value={rel.graph ?? "none"}
-            disabled={disabled}
-            onChange={e => {
-              onChange({ ...rel, graph: e.target.value as RelationshipDef["graph"] });
-            }}
-            aria-label={`Graph constraint for ${rel.key}`}
-            className="h-7 rounded-md border border-border-default bg-bg-surface px-1 text-[12px]"
-          >
-            {GRAPHS.map(g => <option key={g} value={g}>{g}</option>)}
-          </select>
-        </label>
+        <span
+          data-testid={`relationship-graph-${rel.key}`}
+          className="text-[12px] text-text-tertiary"
+        >
+          graph: {rel.graph ?? "none"}
+        </span>
 
-        <label className="flex items-center gap-1 text-[12px] text-text-secondary">
-          <input
-            type="checkbox"
+        {rel.ranked === true && (
+          <span
             data-testid={`relationship-ranked-${rel.key}`}
-            checked={rel.ranked === true}
-            disabled={disabled}
-            onChange={e => { onChange({ ...rel, ranked: e.target.checked }); }}
-          />
-          ranked
-        </label>
+            className="text-[12px] text-text-tertiary"
+          >
+            ranked
+          </span>
+        )}
 
         <span
           data-testid={`relationships-refcount-${rel.key}`}
@@ -250,6 +285,16 @@ function RelationshipRow({
         >
           {String(count)} task{count === 1 ? "" : "s"}
         </span>
+
+        <button
+          type="button"
+          data-testid={`relationships-edit-${rel.key}`}
+          disabled={disabled}
+          onClick={onEdit}
+          className="h-7 rounded-md border border-border-default px-2 text-[12px] disabled:opacity-40"
+        >
+          Edit
+        </button>
 
         <button
           type="button"
@@ -262,53 +307,20 @@ function RelationshipRow({
         </button>
       </div>
 
-      {/* SET-5: hidden when symmetric, and replaced by an explicit
-          "same as forward" rather than left as blank inputs that would
-          read as a misconfigured row. */}
-      {symmetric
-        ? (
-          <p data-testid={`relationship-inverse-note-${rel.key}`} className="text-[12px] text-text-tertiary">
-            Inverse: same as forward — a symmetric relationship reads
-            identically from both sides.
-            {restore !== undefined && restore.inverse !== undefined && (
-              <span> Unticking restores <code className="font-mono">{restore.inverse}</code>.</span>
-            )}
-          </p>
-        )
-        : (
-          <div className="flex flex-wrap items-center gap-2 text-[12px] text-text-secondary">
-            <label className="flex items-center gap-1">
-              inverse
-              <input
-                data-testid={`relationship-inverse-${rel.key}`}
-                defaultValue={rel.inverse ?? ""}
-                disabled={disabled}
-                onBlur={e => {
-                  const v = e.target.value.trim();
-                  if (v.length > 0 && v !== rel.inverse) onChange({ ...rel, inverse: v });
-                }}
-                aria-label={`Inverse key for ${rel.key}`}
-                className="h-7 w-32 rounded-md border border-border-default bg-bg-surface px-2 font-mono text-[12px]"
-              />
-            </label>
-            <label className="flex items-center gap-1">
-              inverse label
-              <input
-                data-testid={`relationship-inverse-label-${rel.key}`}
-                defaultValue={rel.inverse_label ?? ""}
-                disabled={disabled}
-                onBlur={e => {
-                  const v = e.target.value.trim();
-                  if (v.length > 0 && v !== rel.inverse_label) {
-                    onChange({ ...rel, inverse_label: v });
-                  }
-                }}
-                aria-label={`Inverse label for ${rel.key}`}
-                className="h-7 w-40 rounded-md border border-border-default bg-bg-surface px-2 text-[12px]"
-              />
-            </label>
-          </div>
-        )}
+      {/* SET-5: the inverse read-out — "same as forward" when symmetric,
+          the forward/inverse pair otherwise. */}
+      {symmetric ? (
+        <p data-testid={`relationship-inverse-note-${rel.key}`} className="text-[12px] text-text-tertiary">
+          Inverse: same as forward — a symmetric relationship reads
+          identically from both sides.
+        </p>
+      ) : (
+        <p data-testid={`relationship-inverse-note-${rel.key}`} className="text-[12px] text-text-tertiary">
+          Inverse:{" "}
+          <code className="font-mono">{rel.inverse ?? "—"}</code>
+          {rel.inverse_label !== undefined && <> ({rel.inverse_label})</>}
+        </p>
+      )}
     </div>
   );
 }

@@ -628,7 +628,8 @@ No parameters. Returns the active user's profile JSON, or errors with `no users 
 
 No parameters. Returns `{user: <id>, settings: {...}}` — the active
 user's personal preferences from `.loctt/users/<id>/settings.yaml`
-(`theme`, `default_project`, `card_layout`, `sidebar_pins`). These are
+(`theme`, `default_project`, `card_layout`, `sidebar_pins`,
+`sidebar_groups`). These are
 per-user render preferences; unrecognised keys round-trip untouched.
 
 ### `sweep_sidebar_pins`
@@ -638,6 +639,31 @@ No parameters. Removes pinned saved views whose views no longer exist in
 `{removed: [...], kept: [...], changed: <bool>}` — the removed ids are
 reported rather than dropped silently. Pins whose views merely match
 zero tasks are kept: this checks existence, not results.
+
+### `get_sidebar_groups`
+
+No parameters. Returns the active user's sidebar-groups customization —
+which built-in sidebar groups/filters show and in what order (SHL-45).
+The payload is `{user, stored, resolved}`: `stored` is the raw
+`sidebar_groups` setting (`{order?: [...], hidden?: [...]}`), and
+`resolved` is the full ordered list with a `hidden` flag per item — every
+group **and** every built-in filter, so a hidden filter appears in
+`resolved` with `hidden: true`. Group ids: `views`, `projects`,
+`saved-filters`, `milestones`, `sprints`, `labels`, `recents`. Built-in
+filter ids: `assigned-to-me`, `reported-by-me`, `mentions-me`,
+`due-this-week`, `overdue`, `high-priority`.
+
+### `set_sidebar_groups`
+
+Sets the active user's sidebar-groups customization (SHL-45).
+Parameters (all optional): `order` (ids in render order — any built-in
+not listed follows in default order), `hidden` (ids to hide — a hidden
+group renders nothing, a deliberate choice distinct from an empty
+group), and `reset: true` (clear the setting back to the default order,
+everything visible; cannot be combined with `order`/`hidden`). An
+**unknown id is rejected** with an error naming it (a typo must not
+silently no-op); a repeated valid id is de-duplicated. Returns the same
+`{user, stored, resolved}` shape as `get_sidebar_groups`.
 
 ### `switch_user`
 
@@ -654,7 +680,7 @@ Names are not unique (UUIDs disambiguate). Timezone defaults to the system timez
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `name` | string | yes | Display name |
-| `email` | string | no | Email |
+| `email` | string | no | Email — validated; a malformed address is rejected and nothing is written |
 | `timezone` | string | no | IANA timezone |
 | `switch_to_on_create` | boolean | no | Switch to this user after creation |
 
@@ -670,7 +696,7 @@ so `remove_avatar` is available here.
 |---|---|---|---|
 | `ref` | string | yes | User UUID or name |
 | `name` | string | no | New display name |
-| `email` | string \| null | no | Pass `null` to clear |
+| `email` | string \| null | no | Pass `null` to clear; a non-null value is validated and a malformed address is rejected |
 | `timezone` | string | no | New IANA timezone |
 | `remove_avatar` | boolean | no | Clear the avatar (deletes the file and the profile reference) |
 

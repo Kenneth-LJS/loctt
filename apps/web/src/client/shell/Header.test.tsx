@@ -47,6 +47,12 @@ const switchCalls: string[] = [];
 /** Renders the header in its unknown-identity state (SHL-40). */
 let UNKNOWN = false;
 
+/** Search hits returned by /api/search, per-test (SHL-46). */
+let SEARCH_HITS: { key: string; title: string }[] = [];
+
+/** Every /api/search request path, in order (SHL-46). */
+const SEARCH_CALLS: string[] = [];
+
 function stubFetch() {
   vi.spyOn(globalThis, "fetch").mockImplementation(
     (input: RequestInfo | URL, init?: RequestInit) => {
@@ -57,6 +63,15 @@ function stubFetch() {
         switchCalls.push(typeof init?.body === "string" ? init.body : "");
         return Promise.resolve(
           new Response(JSON.stringify({ current: "u_sam" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (path.startsWith("/api/search")) {
+        SEARCH_CALLS.push(path);
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: SEARCH_HITS, total: SEARCH_HITS.length, offset: 0, limit: 8 }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           }),
@@ -94,6 +109,7 @@ async function renderHeader() {
   const listRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/list",
+    validateSearch: (s: Record<string, unknown>) => s,
     // The provider is required because the header's "+ New task"
     // button opens the shared create modal (M3.4, NEW-1) — one modal
     // for all three entry points, so the button reaches it through
@@ -111,8 +127,13 @@ async function renderHeader() {
     path: "/settings/$section",
     component: () => <div>settings pane</div>,
   });
+  const taskRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/tasks/$key",
+    component: () => <div>task detail</div>,
+  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([listRoute, settingsRoute]),
+    routeTree: rootRoute.addChildren([listRoute, settingsRoute, taskRoute]),
     history: createMemoryHistory({ initialEntries: ["/list"] }),
   });
   render(
@@ -138,6 +159,8 @@ beforeEach(() => {
   window.localStorage.clear();
   switchCalls.length = 0;
   UNKNOWN = false;
+  SEARCH_HITS = [];
+  SEARCH_CALLS.length = 0;
   installMatchMedia(false);
 });
 
@@ -271,4 +294,79 @@ describe("Header with an unknown identity (SHL-40)", () => {
     const settings = screen.getByText("Settings").closest("a") as HTMLAnchorElement;
     expect(settings.getAttribute("href")).toContain("/settings/");
   });
+});
+
+describe("Header search (SHL-46)", () => {
+  it("fires a real /api/search request as the user types", async () => {
+    // @verifies SHL-46
+    SEARCH_HITS = [{ key: "WEB-3", title: "Fix login" }];
+    await renderHeader();
+    const box = screen.getByTestId("header-search");
+    await act(async () => {
+      fireEvent.change(box, { target: { value: "login" } });
+      await Promise.resolve();
+    });
+    // Debounced — wait for the request to fire.
+    await vi.waitFor(() => {
+      expect(SEARCH_CALLS.some(p => p.includes("q=login"))).toBe(true);
+    });
+    // And the matching task shows in the dropdown.
+    await screen.findByTestId("header-search-hit-WEB-3");
+  });
+
+  it("navigates to a task when a result is clicked", async () => {
+    // @verifies SHL-46
+    SEARCH_HITS = [{ key: "WEB-3", title: "Fix login" }];
+    const router = await renderHeader();
+    const box = screen.getByTestId("header-search");
+    await act(async () => {
+      fireEvent.change(box, { target: { value: "login" } });
+      await Promise.resolve();
+    });
+    const hit = await screen.findByTestId("header-search-hit-WEB-3");
+    await act(async () => { fireEvent.click(hit); await Promise.resolve(); });
+    await vi.waitFor(() => {
+      expect(router.state.location.pathname).toBe("/tasks/WEB-3");
+    });
+  });
+
+  it("navigates to the list with a valid DSL text-search clause on Enter", async () => {
+    // @verifies SHL-46 — Enter must produce a query the list can PARSE.
+    // A plain word sent as `q: "bug"` is fed to the query DSL as `(bug)`
+    // and fails to parse ("Could not load tasks"); the header must wrap
+    // it in the same `text ~ "<q>"` clause /api/search builds.
+    const router = await renderHeader();
+    const box = screen.getByTestId("header-search");
+    await act(async () => {
+      fireEvent.change(box, { target: { value: "bug" } });
+      fireEvent.keyDown(box, { key: "Enter" });
+      await Promise.resolve();
+    });
+    await vi.waitFor(() => {
+      expect(router.state.location.pathname).toBe("/list");
+      expect(router.state.location.search).toMatchObject({ q: 'text ~ "bug"' });
+    });
+  });
+
+  it("quotes/escapes a word so a plain search never injects DSL structure", async () => {
+    // @verifies SHL-46 — `(bug)` used to become `((bug))` → ParseError.
+    const router = await renderHeader();
+    const box = screen.getByTestId("header-search");
+    await act(async () => {
+      fireEvent.change(box, { target: { value: "(bug)" } });
+      fireEvent.keyDown(box, { key: "Enter" });
+      await Promise.resolve();
+    });
+    await vi.waitFor(() => {
+      expect(router.state.location.search).toMatchObject({ q: 'text ~ "(bug)"' });
+    });
+  });
+
+  // The `/` → focus-search binding is owned by the shell's global
+  // shortcut registry (AppShell → useGlobalShortcuts → the `focus-search`
+  // shortcut, which finds this input by `type="search"`), and is covered
+  // there (useShortcuts.test.tsx, shortcuts.test.ts). Header no longer
+  // adds its own `/` document listener — that was a duplicate binding
+  // that bypassed the registry's dialog guard (B2 fix-review, bug 2) —
+  // so there is deliberately no Header-isolation test for `/` here.
 });

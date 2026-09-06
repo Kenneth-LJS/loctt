@@ -2,15 +2,27 @@ import type { PriorityDef, StatusDef, TaskTypeDef, WorkflowConfig } from "@loctt
 import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
-import { useSaveWorkflowCollection } from "../api/hooks/useWorkflowMutations.ts";
+import {
+  ConcurrentWorkflowEditError,
+  useSaveWorkflowCollection,
+} from "../api/hooks/useWorkflowMutations.ts";
+import { Button } from "../ui/Button.tsx";
+import { type EntryDialogResult,EntryEditDialog } from "./EntryEditDialog.tsx";
 import { type RemapChoice,RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { ReorderableRows } from "./ReorderableRows.tsx";
 import { renumberPriorities, reorder, setDefaultStatus } from "./workflowEdits.ts";
+import {
+  buildPriority,
+  buildStatus,
+  buildTaskType,
+  collectionKeys,
+  entryChangedOnDisk,
+} from "./workflowForms.ts";
 import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
 
 /**
  * Statuses, Priorities and Task types (SET-3, SET-4, SET-6, SET-17,
- * SET-20, SET-21, SET-28, SET-34).
+ * SET-20, SET-21, SET-28, SET-34, SET-46, SET-47, SET-51).
  *
  * One component for three collections because the cases treat them as
  * one shape: each is an ordered list of `{key, label, …}` where the
@@ -18,11 +30,16 @@ import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
  * an in-use key demands a remap, and the key itself is immutable
  * (`docs/dev/invariants.md`) while the label is not.
  *
- * **The key is never editable.** Stored task frontmatter holds keys,
- * not labels, so renaming a key in place would orphan every task
- * holding it with no remap to describe the move. Changing a key is
+ * **The key is never editable after creation.** Stored task frontmatter
+ * holds keys, not labels, so renaming a key in place would orphan every
+ * task holding it with no remap to describe the move. Changing a key is
  * delete-with-remap plus create, which the panel supports as two
  * explicit steps.
+ *
+ * **The edit model (B2):** value edits (label, category, default) live
+ * behind an **Edit** dialog — view-by-default, per open decision #3.
+ * REORDER stays inline (Ken's decision — drag-reorder is not gated).
+ * Creating goes through the same dialog in create mode (SET-46/47).
  */
 
 type Collection = "statuses" | "priorities" | "task_types";
@@ -33,8 +50,6 @@ const NOUN: Record<Collection, string> = {
   priorities: "priority",
   task_types: "task type",
 };
-
-const CATEGORIES = ["pending", "active", "completed", "discarded"] as const;
 
 export function EnumCollectionPanel({ collection }: { readonly collection: Collection }) {
   return (
@@ -73,6 +88,10 @@ function CollectionEditor({
 }) {
   const save = useSaveWorkflowCollection<Collection>();
   const [deleting, setDeleting] = useState<Row | null>(null);
+  /** The row an Edit dialog is open over, or "create" for a new one. */
+  const [dialog, setDialog] = useState<
+    { readonly mode: "create" } | { readonly mode: "edit"; readonly row: Row } | null
+  >(null);
   /**
    * SET-34: the order shown while a write is in flight. On failure it
    * is dropped, so the list snaps back to `workflow[collection]` — the
@@ -91,11 +110,20 @@ function CollectionEditor({
    * the PUT and calls this with what it found, so a status added to
    * the file by hand while the panel sat open survives the write.
    *
-   * The edit is described by key rather than by index for the same
-   * reason: positions in the panel's copy mean nothing in a document
-   * that gained or lost a row underneath it.
+   * `staleBaseline`, when set, is the row the Edit dialog opened over.
+   * If the freshly-read document's version of that key differs, the
+   * file was hand-edited underneath the dialog and the save is refused
+   * (`ConcurrentWorkflowEditError`) rather than clobbering the hand
+   * edit — SET-28's Edit-dialog path.
    */
-  const commit = (next: readonly Row[], remap?: Record<string, string | null>): void => {
+  const commit = (
+    next: readonly Row[],
+    opts?: {
+      remap?: Record<string, string | null>;
+      staleBaseline?: Row;
+      onDone?: () => void;
+    },
+  ): void => {
     setInFlight(next);
     const orderedKeys = next.map(r => r.key);
     const byKey = new Map(next.map(r => [r.key, r]));
@@ -104,6 +132,17 @@ function CollectionEditor({
         collection,
         apply: fresh => {
           const freshRows = fresh[collection] as readonly Row[];
+          if (
+            opts?.staleBaseline !== undefined
+            && entryChangedOnDisk(opts.staleBaseline, freshRows)
+          ) {
+            throw new ConcurrentWorkflowEditError(
+              `.loctt/config/workflow.yaml changed on disk while this dialog was `
+              + `open — the ${NOUN[collection]} "${opts.staleBaseline.key}" is not `
+              + `what it was. Reload the panel to see the current file, then re-apply `
+              + `your change. Your edit was not saved.`,
+            );
+          }
           // Rows this panel edited, in the order it put them…
           const edited = orderedKeys.flatMap(k => {
             const row = byKey.get(k);
@@ -122,14 +161,17 @@ function CollectionEditor({
             ? (renumberPriorities(merged as readonly PriorityDef[]) as WorkflowConfig[Collection])
             : merged;
         },
-        ...(remap !== undefined ? { remap: { [collection]: remap } } : {}),
+        ...(opts?.remap !== undefined ? { remap: { [collection]: opts.remap } } : {}),
       },
       {
         // SET-34: on either outcome the optimistic copy is dropped.
         // On success the refetch brings the saved order; on failure
         // the render falls back to `stored`, which never moved.
         onSettled: () => { setInFlight(null); },
-        onSuccess: () => { setDeleting(null); },
+        onSuccess: () => {
+          setDeleting(null);
+          opts?.onDone?.();
+        },
       },
     );
   };
@@ -139,6 +181,7 @@ function CollectionEditor({
     // SET-21: priorities carry a numeric `value` that decides sort
     // order, so a reorder that only moved array positions would leave
     // the list sorting by the old values. Recomputed from position.
+    // Reorder stays inline (open decision #3) — no dialog.
     commit(
       collection === "priorities"
         ? renumberPriorities(moved as readonly PriorityDef[])
@@ -151,12 +194,51 @@ function CollectionEditor({
     ? undefined
     : envelope?.message ?? (save.error as Error | null)?.message;
 
+  // A dialog is open: its own error is anchored inside it (SET-51). The
+  // inline banner is for the reorder path, which has no dialog.
+  const dialogError = dialog !== null && save.isError ? saveError : undefined;
+  const inlineError = dialog === null && save.isError;
+
+  const applyDialog = (result: EntryDialogResult): void => {
+    if (dialog === null) return;
+    if (dialog.mode === "create") {
+      const built: Row =
+        collection === "statuses"
+          ? buildStatus({ key: result.key, label: result.label, category: result.category ?? "pending" })
+          : collection === "priorities"
+            ? buildPriority({ key: result.key, label: result.label })
+            : buildTaskType({ key: result.key, label: result.label });
+      let next: readonly Row[] = [...rows, built];
+      if (collection === "statuses" && result.makeDefault === true) {
+        next = setDefaultStatus(next as readonly StatusDef[], built.key);
+      }
+      commit(next, { onDone: () => { setDialog(null); } });
+      return;
+    }
+    // Edit: replace the row, carrying the un-editable fields through.
+    const target = dialog.row;
+    const nextRow: Row =
+      collection === "statuses"
+        ? { ...(target as StatusDef), label: result.label, category: result.category ?? (target as StatusDef).category }
+        : { ...target, label: result.label };
+    let next = rows.map(r => (r.key === target.key ? nextRow : r));
+    if (collection === "statuses" && result.makeDefault === true) {
+      next = setDefaultStatus(next as readonly StatusDef[], target.key);
+    } else if (collection === "statuses" && result.makeDefault === false && (target as StatusDef).default === true) {
+      // Unticking default on the current default would leave the
+      // document with none, which the schema rejects — so it is kept.
+      next = next.map(r => (r.key === target.key ? { ...r, default: true } as Row : r));
+    }
+    commit(next, { staleBaseline: target, onDone: () => { setDialog(null); } });
+  };
+
   return (
     <div>
       {/* SET-34: the failure names the file, says the change was not
           saved, and gives the next action — and the list is already
-          back to the previous order by the time it renders. */}
-      {save.isError && (
+          back to the previous order by the time it renders. Shown only
+          for the inline (reorder) path; a dialog anchors its own. */}
+      {inlineError && (
         <div
           role="alert"
           data-testid="workflow-save-error"
@@ -172,6 +254,18 @@ function CollectionEditor({
           </p>
         </div>
       )}
+
+      <div className="mb-3 flex justify-end">
+        <Button
+          variant="secondary"
+          size="sm"
+          data-testid={`${collection}-create`}
+          disabled={save.isPending}
+          onClick={() => { save.reset(); setDialog({ mode: "create" }); }}
+        >
+          + Add {NOUN[collection]}
+        </Button>
+      </div>
 
       {/* SET-20: 25 statuses scroll rather than clip. The panel owns a
           bounded height so the page chrome stays reachable. */}
@@ -192,20 +286,28 @@ function CollectionEditor({
             <RowFields
               collection={collection}
               row={row}
-              workflow={workflow}
               count={counts[row.key] ?? 0}
               disabled={save.isPending}
-              onChange={next => {
-                commit(rows.map(r => (r.key === row.key ? next : r)));
-              }}
-              onSetDefault={() => {
-                commit(setDefaultStatus(rows as readonly StatusDef[], row.key));
-              }}
-              onDelete={() => { setDeleting(row); }}
+              onlyRow={stored.length === 1}
+              onEdit={() => { save.reset(); setDialog({ mode: "edit", row }); }}
+              onDelete={() => { save.reset(); setDeleting(row); }}
             />
           )}
         </ReorderableRows>
       </div>
+
+      {dialog !== null && (
+        <EntryEditDialog
+          collection={collection}
+          mode={dialog.mode}
+          existingKeys={collectionKeys(workflow, collection)}
+          initial={dialog.mode === "edit" ? dialog.row : undefined}
+          pending={save.isPending}
+          error={dialogError}
+          onSubmit={applyDialog}
+          onClose={() => { setDialog(null); save.reset(); }}
+        />
+      )}
 
       {deleting !== null && (
         <RemapDeleteDialog
@@ -224,7 +326,7 @@ function CollectionEditor({
               collection === "priorities"
                 ? renumberPriorities(next as readonly PriorityDef[])
                 : next,
-              { [deleting.key]: choice.kind === "remap" ? choice.to : null },
+              { remap: { [deleting.key]: choice.kind === "remap" ? choice.to : null } },
             );
           }}
           onClose={() => { setDeleting(null); save.reset(); }}
@@ -234,45 +336,37 @@ function CollectionEditor({
   );
 }
 
+/**
+ * A view-by-default row: label, key, category/default/value read out,
+ * refcount, and an **Edit** control that opens the dialog. No inline
+ * inputs — the value-edit surface moved to the dialog (open decision
+ * #3).
+ */
 function RowFields({
   collection,
   row,
-  workflow,
   count,
   disabled,
-  onChange,
-  onSetDefault,
+  onlyRow,
+  onEdit,
   onDelete,
 }: {
   readonly collection: Collection;
   readonly row: Row;
-  readonly workflow: WorkflowConfig;
   readonly count: number;
   readonly disabled: boolean;
-  readonly onChange: (next: Row) => void;
-  readonly onSetDefault: () => void;
+  readonly onlyRow: boolean;
+  readonly onEdit: () => void;
   readonly onDelete: () => void;
 }) {
-  const [label, setLabel] = useState(row.label);
   const isStatus = collection === "statuses";
   const isDefault = isStatus && (row as StatusDef).default === true;
-  const onlyRow = (workflow[collection] as readonly Row[]).length === 1;
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-[13px]">
-      <input
-        data-testid={`${collection}-label-${row.key}`}
-        value={label}
-        disabled={disabled}
-        onChange={e => { setLabel(e.target.value); }}
-        onBlur={() => {
-          const trimmed = label.trim();
-          if (trimmed.length === 0) { setLabel(row.label); return; }
-          if (trimmed !== row.label) onChange({ ...row, label: trimmed });
-        }}
-        className="h-7 w-40 rounded-md border border-border-default bg-bg-surface px-2 text-[13px]"
-        aria-label={`Label for ${row.key}`}
-      />
+      <span data-testid={`${collection}-label-${row.key}`} className="w-40 font-medium">
+        {row.label}
+      </span>
 
       {/* The key, shown and never editable — see the header comment. */}
       <code
@@ -284,21 +378,12 @@ function RowFields({
       </code>
 
       {isStatus && (
-        <select
+        <span
           data-testid={`statuses-category-${row.key}`}
-          value={(row as StatusDef).category}
-          disabled={disabled}
-          onChange={e => {
-            onChange({
-              ...row,
-              category: e.target.value as StatusDef["category"],
-            } as StatusDef);
-          }}
-          aria-label={`Category for ${row.key}`}
-          className="h-7 rounded-md border border-border-default bg-bg-surface px-1 text-[12px]"
+          className="rounded bg-bg-muted px-1.5 py-0.5 text-[12px] text-text-secondary"
         >
-          {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
+          {(row as StatusDef).category}
+        </span>
       )}
 
       {collection === "priorities" && (
@@ -312,20 +397,14 @@ function RowFields({
       )}
 
       {isStatus && (
-        <label className="flex items-center gap-1 text-[12px] text-text-secondary">
-          <input
-            type="radio"
-            name="default-status"
-            data-testid={`statuses-default-${row.key}`}
-            checked={isDefault}
-            disabled={disabled}
-            onChange={onSetDefault}
-          />
-          {/* SET-3: the marker is visible and says what it decides. */}
-          <span data-default-status={isDefault ? "true" : "false"}>
-            default{isDefault ? " — new tasks land here" : ""}
-          </span>
-        </label>
+        // SET-3: the default marker stays visible and says what it decides.
+        <span
+          data-testid={`statuses-default-${row.key}`}
+          data-default-status={isDefault ? "true" : "false"}
+          className="text-[12px] text-text-secondary"
+        >
+          {isDefault ? "default — new tasks land here" : ""}
+        </span>
       )}
 
       <span
@@ -334,6 +413,16 @@ function RowFields({
       >
         {String(count)} task{count === 1 ? "" : "s"}
       </span>
+
+      <button
+        type="button"
+        data-testid={`${collection}-edit-${row.key}`}
+        disabled={disabled}
+        onClick={onEdit}
+        className="h-7 rounded-md border border-border-default px-2 text-[12px] disabled:opacity-40"
+      >
+        Edit
+      </button>
 
       <button
         type="button"

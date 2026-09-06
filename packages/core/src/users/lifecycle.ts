@@ -1,6 +1,7 @@
 import { mkdir, rm } from "node:fs/promises";
 
 import type { UserProfile } from "@loctt/contracts";
+import { EmailSchema } from "@loctt/contracts";
 import { ulid } from "ulid";
 
 import { getUserDir } from "../paths/index.js";
@@ -19,6 +20,20 @@ import { copyAvatar, removeAvatar } from "./avatar.js";
 import { readCurrentUserId, writeCurrentUserId } from "./current.js";
 import { UserError } from "./errors.js";
 import { loadUserProfile, saveUserProfile, userExists } from "./profile.js";
+
+/**
+ * Rejects a malformed non-null email before it reaches the profile
+ * writer. Core is the authority the web/CLI/MCP surfaces share; validating
+ * here is what makes `loctt user edit --email bob` fail loudly instead of
+ * corrupting the field (which the read path would then degrade to blank).
+ * A `null`/absent email is a valid clear and passes through untouched.
+ */
+function assertValidEmail(email: string | null | undefined): void {
+  if (email === null || email === undefined) return;
+  if (!EmailSchema.safeParse(email).success) {
+    throw new UserError(`invalid email: ${JSON.stringify(email)}`);
+  }
+}
 
 /**
  * Returns the system-detected timezone, falling back to UTC if the
@@ -63,6 +78,7 @@ export async function createUser(
   if (options.name.trim().length === 0) {
     throw new UserError("name must be non-empty");
   }
+  assertValidEmail(options.email);
 
   return withStateLock(locttDir, async () => {
     const id = ulid();
@@ -106,6 +122,7 @@ export async function updateUser(
   userId: string,
   changes: EditUserOptions,
 ): Promise<UserProfile> {
+  assertValidEmail(changes.email);
   return withStateLock(locttDir, async () => {
     const existing = await loadUserProfile(locttDir, userId);
 

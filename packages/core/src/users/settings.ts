@@ -1,11 +1,12 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 
 import { type UserSettings, UserSettingsSchema } from "@loctt/contracts";
 import { parse as parseYaml } from "yaml";
 
-import { getUserSettingsPath } from "../paths/index.js";
+import { getUsersDir, getUserSettingsPath } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
+import { salvageSidebarGroups, type SidebarGroupsDrop } from "./sidebarGroups.js";
 
 /**
  * Per-user settings. `default_project` is the one core-interpreted
@@ -34,6 +35,7 @@ const KNOWN_SETTINGS_KEYS: ReadonlySet<string> = new Set([
   "editor_mode",
   "theme",
   "sidebar_pins",
+  "sidebar_groups",
 ]);
 
 /**
@@ -51,6 +53,16 @@ const KNOWN_SETTINGS_KEYS: ReadonlySet<string> = new Set([
  *
  * This never makes the schema strict and never drops an unknown key: it
  * only lifts out a known key whose typed value failed its own contract.
+ *
+ * **`sidebar_groups` is salvaged per-FIELD, not dropped whole (SHL-45).**
+ * Every other known key degrades to its default when corrupt, but
+ * `sidebar_groups` holds two independent id lists, and the field-local
+ * principle (corruption-handling-guide) says a single stray id must drop
+ * one entry, not the user's whole customization. So a faulting
+ * `sidebar_groups` is run through `salvageSidebarGroups` — keeping the
+ * valid ids, lifting out the bad ones — and the salvaged value replaces
+ * it in-place. It falls back to a full drop only when nothing survives
+ * (a scalar / bare-list value with no per-field structure to keep).
  */
 function parseSettingsTolerant(candidate: Record<string, unknown>): UserSettings {
   const strict = UserSettingsSchema.safeParse(candidate);
@@ -64,11 +76,27 @@ function parseSettingsTolerant(candidate: Record<string, unknown>): UserSettings
       .filter((k): k is string => typeof k === "string" && KNOWN_SETTINGS_KEYS.has(k)),
   );
 
+  // Per-field salvage for `sidebar_groups` (see the note above): recover
+  // the valid ids rather than dropping the whole key. Only when the
+  // salvage keeps something do we stop treating the key as a fault; an
+  // empty salvage still degrades to absent, same as any other bad key.
+  let salvagedSidebarGroups: UserSettings["sidebar_groups"] | undefined;
+  if (faultKeys.has("sidebar_groups")) {
+    const salvaged = salvageSidebarGroups(candidate["sidebar_groups"]);
+    if (salvaged.groups.order !== undefined || salvaged.groups.hidden !== undefined) {
+      salvagedSidebarGroups = salvaged.groups;
+      faultKeys.delete("sidebar_groups");
+    }
+  }
+
   const cleaned: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(candidate)) {
     // Drop a known-but-corrupt key (degrade to default); keep everything
     // else, INCLUDING every unknown passthrough key, byte-for-byte.
-    if (!faultKeys.has(k)) cleaned[k] = v;
+    if (faultKeys.has(k)) continue;
+    cleaned[k] = k === "sidebar_groups" && salvagedSidebarGroups !== undefined
+      ? salvagedSidebarGroups
+      : v;
   }
 
   const reparsed = UserSettingsSchema.safeParse(cleaned);
@@ -121,4 +149,64 @@ export async function saveUserSettings(
 ): Promise<void> {
   const safe = UserSettingsSchema.parse(settings);
   await writeYamlAtomically(getUserSettingsPath(locttDir, userId), safe);
+}
+
+/**
+ * A user whose `sidebar_groups` setting had ids salvaged out on load.
+ *
+ * The loader keeps the valid ids and lifts out the bad ones silently
+ * (P7 — the sidebar must render); this is how doctor learns what was
+ * dropped so it can report it (corruption-handling-guide § "what to add
+ * to doctor"). `wholeValueDropped` is true when the value was not a
+ * shaped object at all and degraded to "no customization" entirely.
+ */
+export interface SidebarGroupsDropReport {
+  readonly userId: string;
+  readonly path: string;
+  readonly dropped: readonly SidebarGroupsDrop[];
+  readonly wholeValueDropped: boolean;
+}
+
+/**
+ * Scans every user's `settings.yaml` for a corrupt `sidebar_groups`
+ * value and reports what salvage lifted out (SHL-45). Read-only.
+ *
+ * Reads the raw YAML rather than the loaded settings: by the time
+ * `loadUserSettings` has run, the salvage has already happened and the
+ * dropped ids are gone. A user with a clean (or absent) setting produces
+ * no report. A settings file that will not parse as YAML, or is not an
+ * object, is skipped silently — doctor's own users/ scan owns that, and
+ * a non-object settings file is not specifically a `sidebar_groups` fault.
+ */
+export async function collectSidebarGroupsDrops(
+  locttDir: string,
+): Promise<SidebarGroupsDropReport[]> {
+  const dir = getUsersDir(locttDir);
+  if (!(await fileExists(dir))) return [];
+  const entries = await readdir(dir, { withFileTypes: true });
+  const reports: SidebarGroupsDropReport[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const path = getUserSettingsPath(locttDir, entry.name);
+    if (!(await fileExists(path))) continue;
+    let parsed: unknown;
+    try {
+      const raw = await readFile(path, "utf-8");
+      if (raw.trim() === "") continue;
+      parsed = parseYaml(raw);
+    } catch {
+      // Unparseable settings — not attributable to sidebar_groups.
+      continue;
+    }
+    if (!isPlainObject(parsed) || !("sidebar_groups" in parsed)) continue;
+    const salvaged = salvageSidebarGroups(parsed["sidebar_groups"]);
+    if (salvaged.dropped.length === 0 && !salvaged.wholeValueDropped) continue;
+    reports.push({
+      userId: entry.name,
+      path,
+      dropped: salvaged.dropped,
+      wholeValueDropped: salvaged.wholeValueDropped,
+    });
+  }
+  return reports;
 }

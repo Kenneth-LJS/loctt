@@ -200,6 +200,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "get_sidebar_groups",
+            },
+            {
+              "hasDescription": true,
               "name": "get_sprint_burndown",
             },
             {
@@ -317,6 +321,10 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "set_project_prefix",
+            },
+            {
+              "hasDescription": true,
+              "name": "set_sidebar_groups",
             },
             {
               "hasDescription": true,

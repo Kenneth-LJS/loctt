@@ -29,6 +29,20 @@ import type { FieldHealth } from "./task.js";
  * (K26). `health` is omitted (not `[]`) when the profile is clean, the
  * same convention as `Task.health` and `QueriesConfig.broken`.
  */
+/**
+ * The email format a write path must satisfy (B2, bug 1).
+ *
+ * `UserProfileSchema.email` is `z.email()`, but that only guards the
+ * *read* path — a hand-edited or API-supplied bad value degrades into
+ * `health` on load rather than being rejected. A write (`POST`/`PUT
+ * /api/users`) must reject a malformed email *before* it is persisted,
+ * or core saves `email: "bob"`, the reader degrades it into `health` on
+ * the next load, and the field silently reads back blank (data loss).
+ * Exported so the server validates against the exact same rule the
+ * profile schema stores.
+ */
+export const EmailSchema = z.email();
+
 export const UserProfileSchema = z.object({
   id: z.string().min(1),
   // Field-local (Phase-7B): a missing/blank/wrong-typed `name` degrades
@@ -152,6 +166,104 @@ export const SidebarPinsSchema = z
 export type SidebarPins = z.infer<typeof SidebarPinsSchema>;
 
 /**
+ * The built-in sidebar group ids, and the built-in filter ids the
+ * `sidebar_groups` setting can hide/reorder (SHL-45).
+ *
+ * These are the stable identities a `sidebar_groups` entry refers to.
+ * The group ids name the top-level sidebar sections; the filter ids
+ * name the built-in saved filters inside the "Saved filters" group (they
+ * mirror `apps/web/src/client/sidebar/builtinFilters.ts`). Both are
+ * kept here so core, CLI and MCP validate against the same catalog the
+ * web sidebar renders from.
+ *
+ * `views` (the List/Board/Timeline switcher) and `saved-filters` are
+ * deliberately hideable/reorderable too, per Ken's 2026-09-06 ruling
+ * (built-in groups AND filters are both).
+ */
+export const SIDEBAR_GROUP_IDS = [
+  "views",
+  "projects",
+  "saved-filters",
+  "milestones",
+  "sprints",
+  "labels",
+  "recents",
+] as const;
+export type SidebarGroupId = (typeof SIDEBAR_GROUP_IDS)[number];
+
+export const SIDEBAR_FILTER_IDS = [
+  "assigned-to-me",
+  "reported-by-me",
+  "mentions-me",
+  "due-this-week",
+  "overdue",
+  "high-priority",
+] as const;
+export type SidebarFilterId = (typeof SIDEBAR_FILTER_IDS)[number];
+
+/**
+ * Every id a `sidebar_groups` entry may reference: the built-in groups
+ * plus the built-in filters. This is the closed set the schema accepts;
+ * an unknown id is dropped on load (degrade), never stored (SHL-45).
+ */
+export const SIDEBAR_ITEM_IDS = [
+  ...SIDEBAR_GROUP_IDS,
+  ...SIDEBAR_FILTER_IDS,
+] as const;
+export type SidebarItemId = (typeof SIDEBAR_ITEM_IDS)[number];
+
+/**
+ * Sidebar-groups customization (SHL-45): which built-in sidebar
+ * groups/filters show, and in what order.
+ *
+ * ## Shape
+ *
+ * Two ordered id lists rather than one array of `{id, hidden}`:
+ *
+ *  - **`order`** — the ids the user has an opinion about, in the order
+ *    they should render. Any built-in NOT listed here renders after
+ *    these, in its natural default position, still visible. So a fresh
+ *    user with no setting gets every group in default order, and a user
+ *    who reordered only two groups need not enumerate all of them.
+ *  - **`hidden`** — the ids the user chose to hide. A hidden id is a
+ *    deliberate choice, distinct from "absent config" (SHL-45's fourth
+ *    bullet / the SHL-9 carve-out): a hidden group renders nothing, not
+ *    the "empty affordance" a group with no *entries* shows.
+ *
+ * A single ordered array cannot express "hidden but remembered in this
+ * position", which reorder-then-hide-then-show needs; two lists can.
+ *
+ * ## Degradation (per corruption-handling-guide)
+ *
+ * The schema is the *stored* contract; tolerance lives in the reader
+ * (`core/users/sidebarGroups.ts`), which drops unknown ids and
+ * de-dups rather than throwing — a hand-edited unknown/duplicate id
+ * must never make the sidebar unrenderable (P7). Here the schema still
+ * rejects duplicates so a clean save stays clean; the reader is what
+ * tolerates a dirty file.
+ *
+ * Ids, not labels: a group is referenced by its stable id, so this
+ * survives a re-label.
+ */
+export const SidebarGroupsSchema = z
+  .object({
+    order: z
+      .array(z.enum(SIDEBAR_ITEM_IDS))
+      .refine(ids => new Set(ids).size === ids.length, {
+        message: "sidebar_groups.order must not repeat an id",
+      })
+      .optional(),
+    hidden: z
+      .array(z.enum(SIDEBAR_ITEM_IDS))
+      .refine(ids => new Set(ids).size === ids.length, {
+        message: "sidebar_groups.hidden must not repeat an id",
+      })
+      .optional(),
+  })
+  .strict();
+export type SidebarGroups = z.infer<typeof SidebarGroupsSchema>;
+
+/**
  * `.passthrough()`, unlike its `.strict()` siblings above, and
  * deliberately so.
  *
@@ -173,5 +285,6 @@ export const UserSettingsSchema = z.object({
   editor_mode: EditorModeSchema.optional(),
   theme: ThemePreferenceSchema.optional(),
   sidebar_pins: SidebarPinsSchema.optional(),
+  sidebar_groups: SidebarGroupsSchema.optional(),
 }).passthrough();
 export type UserSettings = z.infer<typeof UserSettingsSchema>;
