@@ -1,10 +1,12 @@
 # Corruption-handling framework — proposal (Phase 7, step 2)
 
-> **Status: PROPOSAL, awaiting Ken.** Written 2026-09-05 from a review of
-> the Phase-7 spike. Nothing here is built. It answers
-> `corruption-framework-brief.md` § "What the proposal must define" and
-> its two open questions, against north-star principles 5–7. Step 4 (the
-> audit) measures against this document once approved.
+> **Status: APPROVED and BUILT (2026-09-06).** Ken ruled the two open
+> decisions — K26 (fatal set = `{id,key}`) and K27 (P7 value-preserved).
+> The framework was implemented (Phase 7, commit `c879b13`) and then
+> extended to every object and surface in the Phase-7B full sweep
+> (foundation `c495aa8`, object loaders `3509e6d`, surface wave
+> `1764688`). This document is the record of the design; § 13 carries the
+> post-review amendments that were applied. Nothing here is still pending.
 
 Every claim below cites the code that was read. Where the spike is
 called wrong, the line it is wrong at is named.
