@@ -741,17 +741,60 @@ assume familiarity with the repo conventions above.
 
 ## Open decisions to put to Ken (do not pre-decide)
 
+**B1 build note (2026-09-06).** The B1 foundation build resolved the
+small sub-decisions in place (one-line rationale each, all reversible)
+and left only the genuine fork (#5) for Ken. Status per item below.
+
 1. **Toggle switch vs checkbox** for the 3 view toggles (§1.9) — look
    only; default to checkbox unless he wants switches.
+   → **Decided (B1): both primitives built, migration undecided.** The
+   `Toggle` (switch) primitive is built and available; which of the 3
+   view toggles adopt the switch look is a B4 migration call, not a
+   primitive one. No pre-decision baked in.
 2. **`rounded-full` count badge** in the Sidebar (§1.4) — keep the round
    look or fold into `rounded-md`.
+   → **Decided (B1): kept as an option, default square.** `Chip` has a
+   `shape` prop (`square` default `rounded-md`, `pill` = `rounded-full`)
+   so B4 can keep the round Sidebar badge if wanted without a code
+   change. Not pre-folded.
 3. **`text-micro` (10px) name** (§2.1) — add a fourth type name or fold
    10px into `text-meta`.
+   → **Decided (B1): fold 10px into `text-meta`.** 11px vs 10px is
+   imperceptible at these weights; one fewer name is the win. Revert by
+   adding `--text-micro: 10px` to `index.css` @theme.
 4. **`status-discarded` / `priority-low` to AA** (§2.4) — raise, or
-   accept as intentional "muted" and record in `known-gaps.md`.
+   accept as intentional "muted".
+   → **Decided (B1): raised to AA.** Accessibility default wins over
+   "muted". New values clear 4.5:1 (status-discarded 4.96 light / 5.19
+   dark vs its -bg; priority-low 5.08 light / 5.74 dark vs canvas).
+   Revert by restoring the old `#7B8699`/`#6E6E75` hexes.
 5. **`border-subtle` divider vs decorative** (§2.4) — strengthen the
    token, or keep it decorative and move real dividers to
    `border-default`.
+   → **ESCALATED to Ken (B1) — genuine fork, unresolved.** B1 only made
+   the hairline visible (1.19→1.30 light, 1.16→1.29 dark, still below
+   `border-default`). It is NOT at 3:1: a decorative hairline cannot
+   reach 3:1 without becoming a full border. Ken picks: (a) strengthen
+   `--border-subtle` to ≥3:1 (every decorative use then reads as a
+   border), or (b) keep it decorative and migrate real dividers
+   (ListView/BulkBar/section separators) to `--border-default`. Recorded
+   in `known-gaps.md` § DS-BORDER-SUBTLE.
 6. **`className` escape hatch** on `Button` (§1.1) — omit for
-   discipline, or allow for the rare one-off. Recommend omit.
-7. **Scope A / B / C** above.
+   discipline, or allow for the rare one-off.
+   → **Decided (B1): ALLOWED, merged after variants via `cn`.** Banning
+   it pushes one-off layout needs (a single-site `w-full`/`mt-2`) back
+   into forking the element — worse drift than a merged utility. Scoped
+   in the doc-comment to "layout/spacing only, not colour/state"; the
+   CI guardrail (§2.5) and B4 keep it honest. Same escape hatch on
+   IconButton/ToolbarButton/Chip-less controls/Select/TextField/Callout.
+   Revert by removing `className` from the props and the trailing `cn`
+   arg.
+7. **Scope A / B / C** above — for Ken.
+
+**Also surfaced by B1 (new, not in the original list):**
+- **A11Y-40 checkbox/radio border < 3:1.** `--border-strong` (the token
+  §1.5 said to use) measures 2.16:1 light / 1.88:1 dark vs `bg-surface`,
+  below the 3:1 the case wants for the resting control boundary. Needs a
+  token change (dedicated `--border-control`, or deepen `--border-strong`
+  after auditing its other uses) — out of scope for additive B1.
+  Recorded in `known-gaps.md` § DS-A11Y40.

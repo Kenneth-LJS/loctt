@@ -50,6 +50,42 @@ no test asserts it. Fixing it needs `buildSetFieldHistory` to consult
 a small core change, but out of scope for the DEG doc/tag work, and it
 must land before a `@verifies DEG-4`-provenance test can be green.
 
+### DS-A11Y40 — the checkbox/radio resting border does not clear 3:1 vs bg-surface
+
+**Found 2026-09-06 building the B1 design-system primitives.** The
+design-system spec (§1.5) asserts `--border-strong` "is the correct
+token; verify 3:1 on build." It does not clear 3:1: measured with the
+WCAG formula, `--border-strong` vs `--bg-surface` is **2.16:1** (light
+`#A7B1C2` on `#FFFFFF`) and **1.88:1** (dark `#43434A` on `#141416`).
+A11Y-40 wants the control boundary at ≥3:1.
+
+`ui/Checkbox.tsx` and `ui/Radio.tsx` use `border-border-strong` as spec'd
+— it is the darkest border token the theme has, and going darker to reach
+3:1 (`--border-strong` is used app-wide for other boundaries too) would
+change every strong border, a semantics call, not a primitive fix. The
+checked/focus states are unambiguous; only the *resting, unchecked*
+boundary is below 3:1. Fix belongs in `styles/tokens.css` (a dedicated
+`--border-control` token at ≥3:1, or deepening `--border-strong` after
+checking its other uses), out of scope for the additive B1 build.
+
+### DS-BORDER-SUBTLE — subtle divider still below 3:1 (a semantics fork left for Ken)
+
+**Found 2026-09-06 building the B1 contrast-token fixes.** The
+responsive review's T5 says `--border-subtle` is invisible (1.19:1 light
+/ 1.16:1 dark vs `bg-surface`). B1 nudged it stronger (light `#DCE2EC`
+→ 1.30:1, dark `#2A2A30` → 1.29:1, both kept below `--border-default`'s
+1.39/1.36 so the subtle<default ordering holds), but **did not** take it
+to the 3:1 a real divider needs: no hairline that still reads as
+"decorative" reaches 3:1 without becoming as heavy as `--border-default`.
+
+Spec §2.4 open decision #5 frames this as a genuine fork, not a value
+tweak, and it is **escalated to Ken** (see spec, updated): either (a)
+strengthen `--border-subtle` to ≥3:1 and accept it reads as a full
+border everywhere it is used decoratively, or (b) keep it decorative and
+migrate the real-divider call sites (`ListView.tsx:778`, `BulkBar.tsx:110`,
+section separators) to `--border-default`. B1 chose neither; it only made
+the hairline visible.
+
 ### CMT-20 — the comments list has none of the four scale affordances (declined)
 
 **Found 2026-09-04 while covering the CMT batch.** CMT-20 (major, P9)
