@@ -83,6 +83,7 @@ export async function createView(
     };
     await saveQueriesConfig(locttDir, {
       queries: [...config.queries, created],
+      ...(config.broken ? { broken: config.broken } : {}),
     });
     return created;
   });
@@ -119,7 +120,7 @@ export async function editView(
       ...(existing.archived === true ? { archived: true } : {}),
     };
     const next = config.queries.map(q => (q.id === existing.id ? updated : q));
-    await saveQueriesConfig(locttDir, { queries: next });
+    await saveQueriesConfig(locttDir, { queries: next, ...(config.broken ? { broken: config.broken } : {}) });
     return updated;
   });
 }
@@ -132,7 +133,7 @@ export async function archiveView(locttDir: string, ref: string): Promise<void> 
     if (existing.archived === true) return;
     const updated: SavedQuery = { ...existing, archived: true };
     const next = config.queries.map(q => (q.id === existing.id ? updated : q));
-    await saveQueriesConfig(locttDir, { queries: next });
+    await saveQueriesConfig(locttDir, { queries: next, ...(config.broken ? { broken: config.broken } : {}) });
   });
 }
 
@@ -149,7 +150,7 @@ export async function unarchiveView(locttDir: string, ref: string): Promise<void
       ...(existing.sort !== undefined ? { sort: existing.sort } : {}),
     };
     const next = config.queries.map(q => (q.id === existing.id ? cleared : q));
-    await saveQueriesConfig(locttDir, { queries: next });
+    await saveQueriesConfig(locttDir, { queries: next, ...(config.broken ? { broken: config.broken } : {}) });
   });
 }
 
@@ -172,6 +173,7 @@ export async function deleteView(
     const target = findView(config, ref);
     await saveQueriesConfig(locttDir, {
       queries: config.queries.filter(q => q.id !== target.id),
+      ...(config.broken ? { broken: config.broken } : {}),
     });
   });
 }

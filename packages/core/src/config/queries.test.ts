@@ -149,7 +149,14 @@ queries:
       expect(config.broken?.[0]).toMatchObject({ name: "broken", index: 1 });
     });
 
-    it("is not written back to disk (serialize drops the broken marker)", () => {
+    it("PRESERVES a broken entry on write (K28 — dropping it is silent data loss)", () => {
+      // This test previously asserted serialize DROPS the broken marker —
+      // which was the P1 data-loss bug (a UI write over a file holding a
+      // broken view silently deleted that view). K28: a config write must
+      // preserve an untouched degraded sibling, byte-value-for-value. The
+      // broken entry round-trips: it re-serializes as an ordinary query
+      // whose `query` string still does not parse, so re-loading re-sorts
+      // it back into `broken` — never lost.
       const yaml = `
 queries:
   - id: 01HQ00000000000000000000OK
@@ -160,12 +167,14 @@ queries:
     query: "status = = done"
 `;
       const config = parseQueriesConfig(yaml);
-      const roundTripped = parseQueriesConfig(serializeQueriesConfig(config));
-      // Serialize only emits the good `queries`; `broken` is a load-time
-      // diagnostic and must never leak into the file.
+      const serialized = serializeQueriesConfig(config);
+      // The broken entry's query text survives verbatim (K27 value-preserved).
+      expect(serialized).toContain("status = = done");
+      const roundTripped = parseQueriesConfig(serialized);
       expect(roundTripped.queries).toHaveLength(1);
-      expect(roundTripped.broken).toBeUndefined();
-      expect(serializeQueriesConfig(config)).not.toContain("status = = done");
+      // The broken entry is still present after a round-trip, not dropped.
+      expect(roundTripped.broken).toHaveLength(1);
+      expect(roundTripped.broken?.[0]).toMatchObject({ id: "01HQ0000000000000000000BAD", name: "broken" });
     });
 
     it("still throws QueriesConfigError on a duplicate id even when a query is broken (object-fatal)", () => {

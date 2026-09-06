@@ -8248,3 +8248,35 @@ core signal is now on `ResolvedRelationship` for both to consume.
 **To revert.** Drop `targetCorrupt` from the three shapes and the server
 passthrough; edges collapse back to resolved/missing (corrupt-in-title
 reads untitled, unreadable reads deleted).
+
+### K28 · Config writers must preserve untouched degraded siblings; aggregates must not silently undercount
+
+**Date:** 2026-09-06 · **Ken's ruling — an agent may not revert this.**
+
+Authoring the corruption cases surfaced two live P1 bugs — both
+pre-existing known-gaps, both the sweep's own principle (never silently
+lose or miscount corrupt data, P5/P7) violated. Ken: **fix both now.**
+
+1. **Config preserve-others (data LOSS).** Every config loader now
+   degrades a corrupt entry to `broken` (A138), but the *writers*
+   re-serialize only the VALID entries — `serializeQueriesConfig` never
+   emits `broken`, and `list-view`'s prune is the same shape. So a
+   `broken` entry another process left is **silently dropped from disk**
+   on any unrelated UI write (the `saveQueriesConfig` P1 known-gap,
+   unfixed since 2026-09-04). This is the config analogue of the task
+   write guard (K25/A136 B1). Fix: every config writer
+   (queries/labels/milestones/sprints/projects/list-view) re-emits the
+   degraded siblings it did not touch, so a corrupt-but-preserved entry
+   survives an unrelated write, byte-for-byte.
+
+2. **Aggregate undercount (wrong number).** Counts / milestone progress /
+   burndown / export share `loadAllTasks`. A field-local-corrupt task
+   must be *included* (it is a task); an unreadable one must be
+   *reported*, not silently skipped (milestone progress "skips a
+   malformed task" is a known-gap: a silent wrong total). Fix: a degraded
+   task is counted; an unreadable one is surfaced, never dropped from a
+   total with no indication.
+
+Both are canonicalized as blocker DEG cases and gated by tests.
+
+**To revert.** Ken's, not an agent's.

@@ -1,4 +1,5 @@
 import type { BrokenEntry } from "@loctt/contracts";
+import { parse as parseYaml } from "yaml";
 import type { z } from "zod";
 
 import { renderRawText } from "../task/frontmatter.js";
@@ -56,6 +57,40 @@ function defaultIdOf(raw: unknown): string | undefined {
     if (typeof id === "string" && id.length > 0) return id;
   }
   return undefined;
+}
+
+/**
+ * K28 — config-level preserve-others. A config *writer* re-serializes
+ * only its VALID entries; without this, a `broken` (corrupt-but-preserved)
+ * entry another process left is silently dropped from disk on any
+ * unrelated write — the config analogue of the task write guard, and a
+ * P1 data-loss violation.
+ *
+ * `BrokenEntry.rawText` is the entry's own YAML (`renderRawText` =
+ * `stringifyYaml(raw)`), so parsing it back reconstructs the entry's
+ * values (K27 value-preserved, not byte-identity). This returns the
+ * broken entries as plain objects to splice back into the written array,
+ * so a save preserves them. Any entry whose `rawText` will not re-parse
+ * to an object is skipped rather than corrupting the write (it cannot be
+ * faithfully re-emitted; that is a separate, rarer failure).
+ */
+export function brokenEntriesToPlain(
+  broken: readonly BrokenEntry[] | undefined,
+): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  for (const b of broken ?? []) {
+    try {
+      const parsed: unknown = parseYaml(b.rawText);
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        out.push(parsed as Record<string, unknown>);
+      }
+    } catch {
+      // Unparseable rawText — cannot re-emit faithfully; skip rather than
+      // write a broken shape. Rare; the common case is a wrong-TYPED field
+      // whose YAML is well-formed.
+    }
+  }
+  return out;
 }
 
 export { renderRawText };
