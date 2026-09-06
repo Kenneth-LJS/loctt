@@ -1,6 +1,7 @@
 
 import type { BrokenEntry, ListViewConfig, ListViewFilters } from "@loctt/contracts";
 import { ListViewConfigSchema, RawListViewConfigSchema } from "@loctt/contracts";
+import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
 import { LocttError } from "../errors.js";
@@ -33,6 +34,16 @@ export class ListViewConfigError extends LocttError {
 
 /** One filter-chip key: a non-empty string. The per-ENTRY unit that degrades. */
 const ChipKeySchema = z.string().min(1);
+
+/**
+ * The `collectValidEntries` labels for the two chip arrays. A broken
+ * chip's `error` is prefixed with its label (`formatZodIssues`), which is
+ * the only signal recording *which* array it came from — `BrokenEntry`
+ * itself carries no array tag. K28 preservation (`buildPlainObject`) reads
+ * these prefixes back to splice a broken chip into the array it belongs to.
+ */
+const VISIBLE_CHIP_LABEL = "list-view visible chip";
+const HIDDEN_CHIP_LABEL = "list-view hidden chip";
 
 /**
  * Parses raw YAML content into a `ListViewConfig`. Throws
@@ -87,14 +98,14 @@ export function parseListViewConfig(yamlContent: string): ListViewConfig {
 
   if (outer.filters.visible !== undefined) {
     const { valid, broken: brk } = collectValidEntries<string>(
-      outer.filters.visible, ChipKeySchema, "list-view visible chip",
+      outer.filters.visible, ChipKeySchema, VISIBLE_CHIP_LABEL,
     );
     broken.push(...brk);
     filters.visible = valid;
   }
   if (outer.filters.hidden !== undefined) {
     const { valid, broken: brk } = collectValidEntries<string>(
-      outer.filters.hidden, ChipKeySchema, "list-view hidden chip",
+      outer.filters.hidden, ChipKeySchema, HIDDEN_CHIP_LABEL,
     );
     broken.push(...brk);
     filters.hidden = valid;
@@ -230,20 +241,71 @@ export function pruneListViewForRemovedCustomFields(
   if (prunedHidden !== undefined && prunedHidden.length > 0) {
     nextFilters.hidden = prunedHidden;
   }
+  // Carry any preserved broken chips through unchanged (K28): a corrupt
+  // chip another process left is not one of `removedCustomFieldKeys` (it
+  // has no valid key to match) and must survive this prune-and-save.
+  const preserveBroken = config.broken ? { broken: config.broken } : {};
   // Drop the whole `filters` block when it becomes empty so the
   // on-disk file doesn't carry a no-op section.
-  if (Object.keys(nextFilters).length === 0) return {};
-  return { filters: nextFilters };
+  if (Object.keys(nextFilters).length === 0) return { ...preserveBroken };
+  return { filters: nextFilters, ...preserveBroken };
 }
 
+/**
+ * Reconstruct a broken chip's stored scalar from its `rawText` (the
+ * entry's own YAML — a bare chip key, not an object). Returns `undefined`
+ * when the rawText will not re-parse to a scalar, so it is skipped rather
+ * than corrupting the write. The object analogue is `brokenEntriesToPlain`
+ * in `health.js`; a chip is a scalar, so it needs this narrower re-emit.
+ */
+function brokenChipToScalar(b: BrokenEntry): unknown {
+  try {
+    return parseYaml(b.rawText);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Split preserved broken chips back into the array each came from, keyed
+ * off the label prefix baked into `BrokenEntry.error` (the only record of
+ * membership). A chip whose prefix matches neither label, or whose rawText
+ * will not re-parse, is dropped rather than guessed into an array.
+ */
+function partitionBrokenChips(
+  broken: readonly BrokenEntry[] | undefined,
+): { visible: unknown[]; hidden: unknown[] } {
+  const out = { visible: [] as unknown[], hidden: [] as unknown[] };
+  for (const b of broken ?? []) {
+    const scalar = brokenChipToScalar(b);
+    if (scalar === undefined) continue;
+    if (b.error.startsWith(VISIBLE_CHIP_LABEL)) out.visible.push(scalar);
+    else if (b.error.startsWith(HIDDEN_CHIP_LABEL)) out.hidden.push(scalar);
+  }
+  return out;
+}
+
+/**
+ * The written shape. K28: a broken chip another process left must survive
+ * an unrelated write — re-emitting only the valid chips silently drops it
+ * (P1 data loss). Broken chips are spliced back into `visible`/`hidden`
+ * (they re-load into `broken`), so an array is emitted when it holds valid
+ * chips OR preserved broken ones, even if `config.filters` itself is
+ * empty.
+ */
 function buildPlainObject(config: ListViewConfig): Record<string, unknown> {
-  if (!config.filters) return {};
+  const brokenChips = partitionBrokenChips(config.broken);
   const filters: Record<string, unknown> = {};
-  if (config.filters.visible !== undefined) {
-    filters["visible"] = [...config.filters.visible];
+
+  const visibleValid = config.filters?.visible;
+  if (visibleValid !== undefined || brokenChips.visible.length > 0) {
+    filters["visible"] = [...(visibleValid ?? []), ...brokenChips.visible];
   }
-  if (config.filters.hidden !== undefined) {
-    filters["hidden"] = [...config.filters.hidden];
+  const hiddenValid = config.filters?.hidden;
+  if (hiddenValid !== undefined || brokenChips.hidden.length > 0) {
+    filters["hidden"] = [...(hiddenValid ?? []), ...brokenChips.hidden];
   }
+
+  if (Object.keys(filters).length === 0) return {};
   return { filters };
 }

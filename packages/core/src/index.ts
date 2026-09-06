@@ -371,7 +371,7 @@ export type {
   MoveTaskOptions,
   MoveTaskResult,
 } from "./task/index.js";
-export type { MilestoneProgressOptions, Progress } from "./task/index.js";
+export type { MilestoneProgressOptions, Progress, ProgressReport } from "./task/index.js";
 export type { BodyWriteOptions } from "./task/index.js";
 export {
   buildMentionResolver,
@@ -423,7 +423,13 @@ export { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./tas
 export { bulkMoveTasksToProject, MoveTaskError,moveTaskToProject } from "./task/index.js";
 export { linkTask, RelationshipError,unlinkTask } from "./task/index.js";
 export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./task/index.js";
-export { computeProgress, milestoneProgress, sprintProgress } from "./task/index.js";
+export {
+  computeProgress,
+  milestoneProgress,
+  milestoneProgressDetailed,
+  sprintProgress,
+  sprintProgressDetailed,
+} from "./task/index.js";
 export { bodyToken, StaleBodyWriteError } from "./task/io.js";
 export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserReferenceCounts, UserSettings } from "./users/index.js";
 export type { PinSweep } from "./users/index.js";

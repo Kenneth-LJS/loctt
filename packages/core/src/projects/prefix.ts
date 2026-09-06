@@ -168,6 +168,7 @@ export async function setProjectPrefix(
         p.id === projectId ? { ...p, prefix: newPrefix } : p,
       ),
       ...(config.default !== undefined ? { default: config.default } : {}),
+      ...(config.broken ? { broken: config.broken } : {}),
     });
 
     const renamed = await rewriteTaskKeys(locttDir, projectId, from, newPrefix);
@@ -252,6 +253,7 @@ export async function completeInterruptedPrefixRename(
           p.id === pending.project_id ? { ...p, prefix: pending.to } : p,
         ),
         ...(config.default !== undefined ? { default: config.default } : {}),
+        ...(config.broken ? { broken: config.broken } : {}),
       });
     }
 

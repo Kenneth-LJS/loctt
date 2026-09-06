@@ -141,6 +141,7 @@ describe("ListView", () => {
   });
 
   // @verifies K26 (untitled task title fallback)
+  // @verifies DEG-8
   it("renders a task with no title by its key, not a blank cell", async () => {
     TASKS_OVERRIDE = {
       items: [{
@@ -201,6 +202,7 @@ describe("ListView", () => {
   });
 
   // @verifies ERR-9 (an object-fatally unreadable task still surfaces)
+  // @verifies DEG-1
   it("still lists an unreadable task in the affordance and does not crash", async () => {
     TASKS_OVERRIDE = {
       items: [{

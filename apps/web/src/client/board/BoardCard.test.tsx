@@ -80,6 +80,7 @@ afterEach(cleanup);
 
 describe("BoardCard title fallback + marker (K26 / A137.1)", () => {
   // @verifies K26
+  // @verifies DEG-8
   it("falls back to the key for an untitled task, never a blank title", () => {
     const task: TaskFrontmatterPublic = { id: "01AAA", key: "WEB-7" };
     const { container } = renderCard(task);

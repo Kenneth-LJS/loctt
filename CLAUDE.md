@@ -18,7 +18,8 @@ User-facing documentation lives in `docs/`. Developer documentation lives in `do
 - `docs/dev/decisions.md` — locked design decisions, incl. things deliberately NOT built
 - `docs/dev/build-loop.md` — **how a web-UI ticket gets built and verified**; the gates that decide "done"
 - `docs/dev/known-gaps.md` — understood defects not yet fixed; check before reporting one as new
-- `docs/dev/ui-test-cases/` + `docs/dev/surface-test-cases/` — acceptance criteria (931 cases). Indexed in `docs/dev/case-index.json`; see `tools/README.md`
+- `docs/dev/corruption-handling-guide.md` — **how to make a new field/object/surface degrade instead of crash**: the field-local-vs-object-fatal decision, the building blocks, per-thing checklists, and what to add to `doctor`. Read before adding a field or config object
+- `docs/dev/ui-test-cases/` + `docs/dev/surface-test-cases/` — acceptance criteria (997 cases). Indexed in `docs/dev/case-index.json`; see `tools/README.md`
 - `docs/user/cli/reference.md` — CLI commands
 - `docs/user/mcp/reference.md` — MCP tools and agent guidelines
 

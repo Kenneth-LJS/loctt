@@ -160,6 +160,7 @@ describe("field_change (CMT-14)", () => {
 
 describe("orphaned config values (CMT-26)", () => {
   /** @verifies CMT-26 */
+  // @verifies DEG-16
   it("keeps the raw key and marks it, rather than blanking it", () => {
     const d = describeEntry(
       // `urgent` was a priority once; `workflow.yaml` no longer has it.

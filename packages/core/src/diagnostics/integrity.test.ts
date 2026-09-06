@@ -68,6 +68,7 @@ describe("a clean tracker reports nothing", () => {
 });
 
 describe("a malformed entry is reported but does not block", () => {
+  // @verifies DEG-18
   it("names the file and the entry position", async () => {
     await seed(["first", "third"]);
     await insertMalformed();
@@ -127,6 +128,7 @@ describe("history rows are reported too, not only comments", () => {
     expect(blockingFindings(await checkDataIntegrity(dir))).toEqual([]);
   });
 
+  // @verifies DEG-18
   it("reports an unreadable history file as blocking", async () => {
     await seed(["first"]);
     const historyPath = join(dir, "tasks", TASK_ID, "_history.yaml");
@@ -182,6 +184,7 @@ describe("task frontmatter field-health (Phase-7 § 10)", () => {
     await writeFile(taskPath(id), `---\n${fm}---\nBody.\n`, "utf-8");
   }
 
+  // @verifies DEG-26
   it("reports a field-local corruption as non-blocking malformed", async () => {
     const id = "01J000000000000000000FLD1";
     await seedTaskFile(id, "due_date: 42\n");
@@ -193,6 +196,7 @@ describe("task frontmatter field-health (Phase-7 § 10)", () => {
     expect(blockingFindings(findings)).toHaveLength(0);
   });
 
+  // @verifies DEG-26
   it("reports an object-fatal task.md as unreadable (blocks publish)", async () => {
     const id = "01J000000000000000000FLD2";
     // Unparseable YAML — object-fatal.
@@ -223,5 +227,41 @@ describe("the two severities stay distinguishable", () => {
     expect(blockingFindings(findings)).toHaveLength(1);
 
     await chmod(join(dir, "tasks", otherTask, "_comments.yaml"), 0o644);
+  });
+});
+
+describe("a degraded config entry is reported (A138 / K28)", () => {
+  // A per-entry broken config marker is the config analogue of a
+  // malformed comment: the entry is preserved and the rest of the file
+  // loads, so nothing else surfaces it — doctor is where it must show up.
+  // @verifies DEG-24
+  it("names a broken sprint entry, malformed and non-blocking", async () => {
+    const { initLoctt } = await import("../init/init.js");
+    const { resolveLocttDir } = await import("../paths/index.js");
+    const root = await mkdtemp(join(tmpdir(), "loctt-cfg-broken-"));
+    try {
+      await initLoctt(root, { docs: false });
+      const locttDir = resolveLocttDir(root);
+      // One valid sprint + one hand-broken (name is a number, not a
+      // string) — the loader degrades the bad one and keeps the good one.
+      await writeFile(
+        join(locttDir, "config/sprints.yaml"),
+        "sprints:\n"
+        + "  - id: s_ok\n    name: Sprint 1\n    start_date: 2026-01-01\n    end_date: 2026-01-14\n    state: active\n"
+        + "  - id: s_bad\n    name: 5\n    start_date: 2026-01-15\n    end_date: 2026-01-28\n    state: future\n",
+        "utf-8",
+      );
+
+      const findings = await checkDataIntegrity(locttDir);
+      const sprintFinding = findings.find(f => f.path.includes("sprints.yaml"));
+      expect(sprintFinding).toBeDefined();
+      expect(sprintFinding?.severity).toBe("malformed");
+      expect(sprintFinding?.message).toContain("s_bad");
+      expect(sprintFinding?.message).toMatch(/kept in place/i);
+      // Preserved, so it never stops a publish.
+      expect(blockingFindings(findings)).toHaveLength(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

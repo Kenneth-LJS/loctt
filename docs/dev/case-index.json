@@ -1,9 +1,9 @@
 {
   "generated_from": "docs/dev/ui-test-cases/, docs/dev/surface-test-cases/",
   "counts": {
-    "total": 961,
-    "ui": 869,
-    "surface": 92,
+    "total": 997,
+    "ui": 897,
+    "surface": 100,
     "resolved": 3
   },
   "cases": [
@@ -3706,6 +3706,602 @@
         "P10"
       ],
       "surfaces": [
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-1",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 40,
+      "title": "An object-fatal task is reported unreadable and attributed, and blocks nothing else.",
+      "milestone": "M4",
+      "severity": "blocker",
+      "principles": [
+        "P1",
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-2",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 48,
+      "title": "A wrong-typed known field degrades to a health finding; the task still loads.",
+      "milestone": "M4",
+      "severity": "blocker",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-3",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 54,
+      "title": "Editing one field preserves an untouched corrupt sibling byte-for-byte.",
+      "milestone": "M4",
+      "severity": "blocker",
+      "principles": [
+        "P7"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-4",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 60,
+      "title": "A valid write over a corrupt field repairs it; an unset removes it.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-5",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 67,
+      "title": "The write guard never introduces corruption and never silently drops it.",
+      "milestone": "M4",
+      "severity": "blocker",
+      "principles": [
+        "P1",
+        "P7"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-6",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 73,
+      "title": "The operation rule: a read-to-compute refuses over a corrupt field; a read-for-idempotency repairs.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P7"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-7",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 81,
+      "title": "An unrecognised frontmatter key is preserved and surfaced, not dropped.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-8",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 87,
+      "title": "An untitled task shows its key, never a blank.",
+      "milestone": "M1",
+      "severity": "major",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-9",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 95,
+      "title": "A corrupt config entry degrades to a broken marker; the rest of the file loads.",
+      "milestone": "M4",
+      "severity": "blocker",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-10",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 103,
+      "title": "A structurally-broken config file refuses, attributed, without taking down unrelated surfaces.",
+      "milestone": "M4",
+      "severity": "blocker",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-11",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 109,
+      "title": "\"Broken\" is distinct from \"empty\" and from \"failed to load\" on the surfaces.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-12",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 116,
+      "title": "state.yaml is object-fatal by necessity, with an attributed error.",
+      "milestone": "M4",
+      "severity": "blocker",
+      "principles": [
+        "P1",
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-13",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 121,
+      "title": "A user profile degrades every field but `id`.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-14",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 136,
+      "title": "A dangling reference degrades to a marked value — never blank, never a full ULID.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P4",
+        "P7"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-15",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 143,
+      "title": "A relationship edge distinguishes healthy / corrupt-but-present / corrupt-unreadable / genuinely-absent.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-16",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 150,
+      "title": "An invalid enum / workflow-drifted value keeps its raw key and is marked.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-17",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 159,
+      "title": "A corrupt-dated task is distinguished from an undated one on the timeline.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-18",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 165,
+      "title": "A malformed history/comment row is reported incomplete and kept in place; object-fatal blocks.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P5",
+        "P6"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-19",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 172,
+      "title": "Backup/restore preserves dropped fields and never overwrites an unreadable destination.",
+      "milestone": "M4",
+      "severity": "blocker",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-20",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 178,
+      "title": "The attachments section degrades independently of task health.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-21",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 184,
+      "title": "Reconcile marks a corrupt side of a conflict so it is not merged as empty.",
+      "milestone": "M4",
+      "severity": "blocker",
+      "principles": [
+        "P1",
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-22",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 191,
+      "title": "A saved view referencing a dropped field/entity stays listed and runnable.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-23",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 197,
+      "title": "Health travels on the wire only when present, and never leaks the raw object.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-24",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 205,
+      "title": "A config write never drops a sibling entry it did not touch, broken or not.",
+      "milestone": "M4",
+      "severity": "blocker",
+      "principles": [
+        "P1",
+        "P7"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-25",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 212,
+      "title": "Aggregates count a degraded task and name an unreadable one; a total is never silently short.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P1",
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-26",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 219,
+      "title": "Publish gates on object-fatal corruption but proceeds through field-local corruption, reporting both.",
+      "milestone": "M4",
+      "severity": "blocker",
+      "principles": [
+        "P1",
+        "P6"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-27",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 226,
+      "title": "Duplicate and merge over a corrupt task carry health correctly, not a raw corrupt value.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-28",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 127,
+      "title": "Settings drop a bad known key to default yet keep unknown passthrough keys; a load never overwrites an unreadable file.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-C1",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-degradation.md",
+      "line": 14,
+      "title": "Health travels through the CLI/MCP task shape only when present, and the raw object never leaks.",
+      "severity": "major",
+      "principles": [
+        "P5",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-C2",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-degradation.md",
+      "line": 21,
+      "title": "An untitled task shows its key on the CLI and MCP, never a blank.",
+      "severity": "major",
+      "principles": [
+        "P5",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-C3",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-degradation.md",
+      "line": 27,
+      "title": "A broken config entry is surfaced by `list`, never read as \"none\".",
+      "severity": "major",
+      "principles": [
+        "P5",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-C4",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-degradation.md",
+      "line": 34,
+      "title": "Repair and derived-op refusal reach the CLI/MCP as clear outcomes, not stack traces.",
+      "severity": "major",
+      "principles": [
+        "P5",
+        "P7",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-C5",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-degradation.md",
+      "line": 41,
+      "title": "The CLI/MCP relationship display mirrors the four target states.",
+      "severity": "major",
+      "principles": [
+        "P5",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-C6",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-degradation.md",
+      "line": 47,
+      "title": "A workflow-drifted value keeps its raw key and is marked on both surfaces.",
+      "severity": "major",
+      "principles": [
+        "P5",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-C7",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-degradation.md",
+      "line": 54,
+      "title": "A malformed history/comment is reported incomplete through the CLI/MCP, not silently shortened.",
+      "severity": "major",
+      "principles": [
+        "P5",
+        "P6",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-C8",
+      "tree": "surface",
+      "file": "docs/dev/surface-test-cases/flow-degradation.md",
+      "line": 60,
+      "title": "A bulk op over a corrupt member reports it as failed-because-unreadable, not as \"not found\".",
+      "severity": "major",
+      "principles": [
+        "P5",
+        "P9",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
         "MCP"
       ],
       "resolved": false

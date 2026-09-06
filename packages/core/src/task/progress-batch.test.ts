@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,7 +10,8 @@ import { initLoctt } from "../init/init.js";
 import { resolveLocttDir } from "../paths/index.js";
 import { loadState, saveState, withStateLock } from "../state/index.js";
 import { createTask } from "./create.js";
-import { milestoneProgress } from "./progress.js";
+import { getTaskFilePath } from "../paths/index.js";
+import { milestoneProgress, milestoneProgressDetailed } from "./progress.js";
 import { setFields } from "./update.js";
 
 describe("milestoneProgress", () => {
@@ -110,5 +111,30 @@ describe("milestoneProgress", () => {
     await mk("dropped", { milestone: m1, status: "wont_do" });
     const p = (await milestoneProgress(locttDir, [m1], wf))[m1];
     expect(p).toMatchObject({ done: 1, total: 1, discarded: 1, fraction: 1 });
+  });
+
+  it("reports an unreadable member rather than silently shortening the total (K28)", async () => {
+    // The aggregate half of K28: an object-fatal task never becomes a
+    // `Task`, so the plain `milestoneProgress` scan drops it and the
+    // milestone total is silently short — a wrong number with nothing
+    // to explain it (P-5). The detailed variant keeps the readable
+    // corpus honest AND names the file that could not be read.
+    // @verifies DEG-25
+    const wf = await loadWorkflowConfig(locttDir);
+    const m1 = await milestone("m1");
+    await mk("readable", { milestone: m1, status: "done" });
+    const broken = await mk("broken", { milestone: m1 });
+    // Corrupt the member's task.md so it is object-fatal (unreadable),
+    // not merely a degraded field.
+    await writeFile(getTaskFilePath(locttDir, broken), "---\n: : not: valid: yaml\n:::\n", "utf8");
+
+    const report = await milestoneProgressDetailed(locttDir, [m1], wf);
+    // The readable corpus is counted honestly: one done task, one total.
+    expect(report.progress[m1]).toMatchObject({ done: 1, total: 1 });
+    // The unreadable member is REPORTED, not skipped — the file is named.
+    expect(report.unreadable).toHaveLength(1);
+    expect(report.unreadable[0]?.id).toBe(broken);
+    expect(report.unreadable[0]?.path).toBe(getTaskFilePath(locttDir, broken));
+    expect(report.unreadable[0]?.reason).toBeTruthy();
   });
 });

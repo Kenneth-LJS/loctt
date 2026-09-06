@@ -95,6 +95,7 @@ describe("ActivityPanel — incomplete history (CMT-37 second bullet)", () => {
    * renders, so a test that only checked "something rendered" would not
    * catch a feed presenting a partial log as complete.
    */
+  // @verifies DEG-18
   it("says the list is incomplete when the server dropped malformed rows", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse({
@@ -127,6 +128,7 @@ describe("ActivityPanel — incomplete history (CMT-37 second bullet)", () => {
    * it MUST show the incomplete notice. Mutation: make the empty branch
    * ignore `unreadable` and this flips to the empty message → red.
    */
+  // @verifies DEG-18
   it("shows the incomplete notice, not the empty message, when all rows are malformed", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse({ entries: [], total: 0, unreadable: 3 }),
@@ -147,6 +149,7 @@ describe("ActivityPanel — incomplete history (CMT-37 second bullet)", () => {
    * this, an implementation that always rendered the notice would pass
    * the positive tests.
    */
+  // @verifies DEG-18
   it("shows no incomplete notice when nothing was dropped", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse({

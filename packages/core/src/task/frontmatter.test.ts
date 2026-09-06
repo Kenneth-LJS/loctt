@@ -140,6 +140,7 @@ archived_at: "2026-04-16T14:30:00Z"
   // the task loads — it no longer throws. (This assertion replaces the
   // pre-K26 "throws on missing required title" test, which encoded the
   // boundary K26 deliberately shrank to {id, key}.)
+  // @verifies DEG-2
   it("degrades a missing title into health rather than throwing (K26)", () => {
     const yaml = `id: abc\nkey: T-1\ncreated_at: "2026-01-01T00:00:00Z"\nupdated_at: "2026-01-01T00:00:00Z"`;
     const { frontmatter: fm, health } = parseFrontmatter(yaml);
@@ -151,6 +152,7 @@ archived_at: "2026-04-16T14:30:00Z"
     expect(entry?.repair).toBe("set");
   });
 
+  // @verifies DEG-2
   it("degrades a wrong-typed due_date into health, lifting it off frontmatter", () => {
     const yaml = `id: abc\nkey: T-1\ntitle: T\ncreated_at: "2026-01-01T00:00:00Z"\nupdated_at: "2026-01-01T00:00:00Z"\ndue_date: 42`;
     const { frontmatter: fm, health } = parseFrontmatter(yaml);
@@ -166,6 +168,7 @@ archived_at: "2026-04-16T14:30:00Z"
     expect(entry?.error).toMatch(/string|number|expected/i);
   });
 
+  // @verifies DEG-7
   it("moves an unrecognised top-level key into health (kind unrecognised)", () => {
     const yaml = `id: abc\nkey: T-1\ntitle: T\ncreated_at: "2026-01-01T00:00:00Z"\nupdated_at: "2026-01-01T00:00:00Z"\njira_id: ABC-1`;
     const { frontmatter: fm, health } = parseFrontmatter(yaml);

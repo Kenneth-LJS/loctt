@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -125,6 +125,74 @@ describe("workflow writes are validated before they land (CFG-C1)", () => {
       statuses: wf.statuses.map((s, i) => (i === 0 ? { ...s, label: "Renamed" } : s)),
     };
     await expect(applyWorkflowEdit(locttDir, renamed)).resolves.toBeDefined();
+  });
+});
+
+describe("preserves a hand-broken sub-entry across an unrelated write (K28-WF)", () => {
+  /**
+   * @verifies DEG-24
+   *
+   * The loader degrades a corrupt workflow entry to `broken` and keeps
+   * the good ones (A138). The writer used to re-serialize only the valid
+   * entries, so an unrelated edit — adding a priority through Settings —
+   * silently deleted the hand-broken status the user had yet to fix.
+   * Silent data loss (P1/P7), the config analogue of the task write
+   * guard.
+   *
+   * `saveWorkflowConfig` now re-reads the on-disk broken sub-entries and
+   * merges them back at write time (K28-WF, Ken's ruling: sticky,
+   * fix-the-file-to-clear). Preservation cannot depend on the caller
+   * carrying `broken`: the Settings PUT sends a whole document the client
+   * built without the broken entries it never rendered, so the re-read is
+   * the only mechanism that holds on the common path.
+   */
+  it("keeps a broken status on disk after an unrelated valid edit", async () => {
+    const brokenYaml = `
+key:
+  prefix: T-
+statuses:
+  - key: not_started
+    label: Not started
+    category: pending
+    default: true
+  - key: rotten
+    label: Rotten
+    category: not_a_category
+  - key: done
+    label: Done
+    category: completed
+priorities: []
+task_types: []
+relationships: []
+custom_fields: []
+`;
+    await writeFile(join(locttDir, "config/workflow.yaml"), brokenYaml, "utf-8");
+
+    // The loader degrades: two good statuses load, the corrupt one is set
+    // aside. This is the state a later edit must not destroy.
+    const before = await loadWorkflowConfig(locttDir);
+    expect(before.statuses.map(s => s.key)).toEqual(["not_started", "done"]);
+    expect(before.broken?.statuses?.[0]?.id).toBe("rotten");
+
+    // An UNRELATED valid edit: add a priority. `before` carries no
+    // knowledge the client would resubmit — this mirrors the Settings PUT
+    // handing over the loaded (broken-stripped) document.
+    await applyWorkflowEdit(locttDir, {
+      ...before,
+      priorities: [{ key: "p1", label: "High" }],
+    });
+
+    // The broken status is STILL there — re-read re-sorts it into broken,
+    // never lost, never silently promoted to valid.
+    const after = await loadWorkflowConfig(locttDir);
+    expect(after.priorities.map(p => p.key)).toEqual(["p1"]);
+    expect(after.statuses.map(s => s.key)).toEqual(["not_started", "done"]);
+    expect(after.broken?.statuses).toHaveLength(1);
+    expect(after.broken?.statuses?.[0]?.id).toBe("rotten");
+
+    // And its raw text survives on disk verbatim (K27 value-preserved).
+    const raw = await readFile(join(locttDir, "config/workflow.yaml"), "utf-8");
+    expect(raw).toContain("not_a_category");
   });
 });
 

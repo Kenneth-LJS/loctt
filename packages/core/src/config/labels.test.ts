@@ -64,6 +64,7 @@ describe("parseLabelsConfig", () => {
   });
 
   // @verifies MSL-22
+  // @verifies DEG-9
   it("keeps a label whose hex color is malformed, dropping only the color", () => {
     const yaml = `labels:
   - id: 01HX0000000000000000000001
@@ -93,6 +94,7 @@ describe("parseLabelsConfig", () => {
   });
 
   // @verifies MSL-22
+  // @verifies DEG-9
   it("drops an 8-digit hex color rather than rejecting the file (no alpha support)", () => {
     const yaml = `labels:
   - id: 01HX0000000000000000000001
@@ -205,5 +207,30 @@ describe("serializeLabelsConfig", () => {
     };
     const yaml = serializeLabelsConfig(cfg);
     expect(yaml).not.toContain("archived:");
+  });
+
+  // K28: a corrupt-but-degraded sibling another process left must survive
+  // a serialize that only touched the valid entries. Dropping the
+  // `brokenEntriesToPlain(config.broken)` append reddens this — the broken
+  // label vanishes from the re-parsed `.broken`.
+  it("preserves a broken sibling through serialize + reparse (K28)", () => {
+    const cfg = parseLabelsConfig(`labels:
+  - id: 01HX0000000000000000000001
+    name: Bug
+  - id: 01HX0000000000000000000002
+    name: Broken
+    color: not-a-color
+    bogus_key: 1
+`);
+    expect(cfg.labels).toHaveLength(1);
+    expect(cfg.broken).toHaveLength(1);
+
+    const reparsed = parseLabelsConfig(serializeLabelsConfig(cfg));
+    expect(reparsed.labels).toEqual(cfg.labels);
+    expect(reparsed.broken).toHaveLength(1);
+    // Value-preserved (K27): the broken entry round-trips its stored id
+    // and the field that failed validation.
+    expect(reparsed.broken?.[0]?.id).toBe("01HX0000000000000000000002");
+    expect(reparsed.broken?.[0]?.rawText).toContain("bogus_key");
   });
 });

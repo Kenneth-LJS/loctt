@@ -8279,4 +8279,42 @@ lose or miscount corrupt data, P5/P7) violated. Ken: **fix both now.**
 
 Both are canonicalized as blocker DEG cases and gated by tests.
 
+**Build status (2026-09-06).**
+- Part 1, queries: landed (commit 7a8bbb1) via the shared
+  `brokenEntriesToPlain` helper (`config/health.ts`); the remaining six
+  writers (labels/milestones/sprints/projects/calendar/list-view) follow
+  the same pattern. `workflow.yaml`'s `broken` is a keyed record, a
+  different shape — handled separately.
+- Part 2, aggregates: landed. `progress.ts` gains
+  `milestoneProgressDetailed`/`sprintProgressDetailed` returning a
+  `ProgressReport` `{ progress, unreadable }` — the readable corpus is
+  counted honestly and unreadable tasks are reported at the tracker level
+  (they cannot be attributed to a milestone, since the `milestone` field
+  is exactly what failed to read). Threaded to all three surfaces: web
+  `GET /api/{milestones,sprints}?progress=true` carries `unreadable`, CLI
+  `milestone list --progress` warns to stderr, MCP `list_milestones`
+  returns `unreadable`. Test: `progress-batch.test.ts` "reports an
+  unreadable member rather than silently shortening the total (K28)".
+- Part 3, workflow.yaml (K28-WF): landed. See below.
+
+**K28-WF · workflow.yaml preserve-on-write (Ken, 2026-09-06).**
+Fixing Part 1 surfaced a third slice: `workflow.yaml` has the same
+silent-drop bug but two things make it a design fork, not a mechanical
+repeat. (1) Its `broken` is a *keyed record* (per sub-list), not a flat
+array. (2) Its main writer is a whole-document PUT (`applyWorkflowEdit`
+← the Settings form), so "thread `config.broken` forward" — how the six
+flat writers preserve — does nothing: the client rebuilds the document
+without the broken entries it never rendered, so the incoming `broken`
+is empty on the common path.
+
+Ken's ruling, with the fork put to him: **fix it now, Option B —
+`saveWorkflowConfig` re-reads the on-disk broken sub-entries and merges
+them at write time**, so preservation does not depend on the caller
+carrying the data. And **broken entries are sticky: they survive every
+write until the user fixes the file itself** (fix-the-file-to-clear) —
+no discard gesture, matching how every other corrupt entry is treated.
+The re-read is lock-safe (every caller holds the state lock). Test:
+`workflow-write.test.ts` "keeps a broken status on disk after an
+unrelated valid edit", mutation-verified. Canonicalized under DEG-24.
+
 **To revert.** Ken's, not an agent's.

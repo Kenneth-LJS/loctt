@@ -76,6 +76,7 @@ describe("computeTaskConflicts", () => {
     expect(autoMerged.some(a => a.kind === "union" && a.fields.includes("Relationships"))).toBe(true);
   });
 
+  // @verifies DEG-21
   it("marks a conflict side as corrupt when that side's task has health on the field (Phase-7B)", () => {
     // The local side's `priority` is corrupt: it carries a health finding
     // (the wrong-typed value was lifted out of frontmatter). The conflict

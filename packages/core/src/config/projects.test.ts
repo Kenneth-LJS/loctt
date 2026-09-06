@@ -126,6 +126,7 @@ extra: nope
     expect(cfg.broken?.[0]?.error).toMatch(/unrecognized key/);
   });
 
+  // @verifies DEG-9
   it("degrades a project with an empty prefix to a broken entry", () => {
     const yaml = `
 projects:
@@ -186,6 +187,7 @@ default: 01HX0000NONEXISTENT00000000
     expect(cfg.default).toBe("01HX0000NONEXISTENT00000000");
   });
 
+  // @verifies DEG-10
   it("throws YamlSyntaxError on malformed YAML (tagged with file label)", () => {
     expect(() => parseProjectsConfig("{ projects: [")).toThrow(YamlSyntaxError);
     expect(() => parseProjectsConfig("{ projects: [")).toThrow(/projects\.yaml/);
@@ -226,6 +228,7 @@ projects:
       expect(cfg.broken?.[0]?.error).toMatch(/prefix/);
     });
 
+    // @verifies DEG-9
     it("omits `broken` entirely when every project is valid", () => {
       const yaml = `
 projects:
@@ -257,6 +260,7 @@ projects:
       expect(cfg.broken?.[0]?.index).toBe(1);
     });
 
+    // @verifies DEG-11
     it("degrades even when EVERY project entry is corrupt (a broken project is not 'no projects')", () => {
       // Coordinator correction to O1: a file whose only project is corrupt
       // is NOT "no projects" — it HAS a project, and it is broken. The
@@ -332,6 +336,30 @@ describe("serializeProjectsConfig", () => {
     };
     const yaml = serializeProjectsConfig(cfg);
     expect(yaml).not.toContain("default:");
+  });
+
+  // K28: a corrupt-but-degraded sibling another process left must survive
+  // a serialize that only touched the valid entries. Dropping the
+  // `brokenEntriesToPlain(config.broken)` append in buildPlainObject
+  // reddens this — the broken project vanishes from the re-parsed .broken.
+  it("preserves a broken sibling through serialize + reparse (K28)", () => {
+    const cfg = parseProjectsConfig(`projects:
+  - id: 01HX0000000000000000000001
+    name: Tasks
+    prefix: T-
+  - id: 01HX0000000000000000000002
+    name: Bugs
+    prefix: B-
+    bogus_key: 1
+`);
+    expect(cfg.projects).toHaveLength(1);
+    expect(cfg.broken).toHaveLength(1);
+
+    const reparsed = parseProjectsConfig(serializeProjectsConfig(cfg));
+    expect(reparsed.projects).toEqual(cfg.projects);
+    expect(reparsed.broken).toHaveLength(1);
+    expect(reparsed.broken?.[0]?.id).toBe("01HX0000000000000000000002");
+    expect(reparsed.broken?.[0]?.rawText).toContain("bogus_key");
   });
 });
 

@@ -57,6 +57,7 @@ describe("AttachmentsPanel — corruption survival (S7)", () => {
     // same props a healthy task's panel gets — it does not read health —
     // so it must render the grid, the tiles and the count with no crash
     // and no error affordance.
+    // @verifies DEG-20
     it("renders the grid, tiles and count from attachments alone", () => {
       render(
         <AttachmentsPanel
@@ -88,6 +89,7 @@ describe("AttachmentsPanel — corruption survival (S7)", () => {
   });
 
   describe("REL-49 — an unreadable attachments directory degrades the section", () => {
+    // @verifies DEG-20
     it("shows the error affordance instead of the 'no attachments' claim", () => {
       render(
         <AttachmentsPanel

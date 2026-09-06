@@ -107,6 +107,7 @@ queries:
   // marker; the throw is reserved for object-fatal problems (see the
   // "throws" tests above, which still stand).
   describe("per-entry degradation (VUE-22)", () => {
+    // @verifies DEG-22
     it("collects an unparseable query as a broken marker instead of throwing", () => {
       const yaml = `
 queries:
@@ -149,6 +150,7 @@ queries:
       expect(config.broken?.[0]).toMatchObject({ name: "broken", index: 1 });
     });
 
+    // @verifies DEG-24
     it("PRESERVES a broken entry on write (K28 — dropping it is silent data loss)", () => {
       // This test previously asserted serialize DROPS the broken marker —
       // which was the P1 data-loss bug (a UI write over a file holding a

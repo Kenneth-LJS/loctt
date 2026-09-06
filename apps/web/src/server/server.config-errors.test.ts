@@ -61,6 +61,7 @@ describe("a config file that fails its schema", () => {
    * "The UI reports which file failed to load, by path, and which
    * field failed, with what was expected."
    */
+  // @verifies DEG-10
   it("names the file and the failing field", async () => {
     // Also SHL-43's first bullet: the error names the specific file.
     const { root, base } = await harness();
@@ -93,6 +94,7 @@ describe("a config file that fails its schema", () => {
    * file." SHL-43 says the same of a `labels.yaml` that will not
    * parse: it must not take down the task list.
    */
+  // @verifies DEG-10
   it("does not take down endpoints that do not read it", async () => {
     const { root, base } = await harness();
     await writeFile(
@@ -260,6 +262,7 @@ describe("a config file that is not valid YAML", () => {
  * checking only `status >= 400` passed the whole time the bug existed.
  */
 describe("a malformed sprints.yaml", () => {
+  // @verifies DEG-11
   it("is distinguishable from a failed fetch and names the broken rule", async () => {
     const { root, base } = await harness();
     // SPR-31's stated fixture: end_date precedes start_date.

@@ -189,6 +189,7 @@ describe("buildRows carries the problem onto the row", () => {
   });
 
   // Phase-7B corruption sweep (S5).
+  // @verifies DEG-17
   it("routes a corrupt-dated task to the Unscheduled lane, marked corrupt and NOT dropped", () => {
     const corrupt = {
       ...task({ id: "c", key: "T-9" }),

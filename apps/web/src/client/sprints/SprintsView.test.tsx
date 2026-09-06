@@ -152,6 +152,7 @@ describe("SprintsView — corrupt sprint-config entry (A138)", () => {
     expect(notice.textContent).toContain("#3");
   });
 
+  // @verifies DEG-11
   it("does not read as empty when the only sprint is broken (tell broken from none)", async () => {
     SPRINTS = [];
     BROKEN_SPRINTS = [

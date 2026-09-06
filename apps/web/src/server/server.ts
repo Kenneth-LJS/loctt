@@ -126,6 +126,7 @@ import {
   listTasks,
   loadAllTasks,
   loadAllTasksDetailed,
+  type UnreadableTask,
   loadAllUsers,
   loadArchivedGuardConfigs,
   loadCalendarConfig,
@@ -146,7 +147,7 @@ import {
   MAX_AVATAR_BYTES,
   migrateToCurrent,
   MilestoneError,
-  milestoneProgress,
+  milestoneProgressDetailed,
   ParseError,
   parseQuery,
   PartialRemapError,
@@ -186,7 +187,7 @@ import {
   setFields,
   setProjectPrefix,
   SprintError,
-  sprintProgress,
+  sprintProgressDetailed,
   StaleBodyWriteError,
   switchCurrentUser,
   sync,
@@ -1896,17 +1897,28 @@ export function createWebApp(options: WebAppOptions) {
     url: URL,
     field: "milestone" | "sprint",
     items: readonly T[],
-  ): Promise<readonly (T | (T & { progress: Progress }))[]> {
-    if (url.searchParams.get("progress") !== "true") return items;
+  ): Promise<{
+    items: readonly (T | (T & { progress: Progress }))[];
+    unreadable: readonly UnreadableTask[];
+  }> {
+    if (url.searchParams.get("progress") !== "true") return { items, unreadable: [] };
     const workflow = await loadWorkflowConfig(locttDir);
     const ids = items.map(i => i.id);
-    const byId = field === "milestone"
-      ? await milestoneProgress(locttDir, ids, workflow)
-      : await sprintProgress(locttDir, ids, workflow);
-    return items.map(i => ({
-      ...i,
-      progress: byId[i.id] ?? { done: 0, total: 0, discarded: 0, fraction: 0 },
-    }));
+    const report = field === "milestone"
+      ? await milestoneProgressDetailed(locttDir, ids, workflow)
+      : await sprintProgressDetailed(locttDir, ids, workflow);
+    return {
+      items: items.map(i => ({
+        ...i,
+        progress: report.progress[i.id] ?? { done: 0, total: 0, discarded: 0, fraction: 0 },
+      })),
+      // K28 (aggregate half): an unreadable task cannot be attributed to
+      // a milestone/sprint (its ref field is what failed to parse), so it
+      // rides at the top level alongside `broken`. The per-item totals
+      // count only the readable corpus; a short total is explained, not
+      // silent (P-5).
+      unreadable: report.unreadable,
+    };
   }
 
   const handleListSprints: RouteHandler = async ({ res, url, locttDir }) => {
@@ -1914,12 +1926,14 @@ export function createWebApp(options: WebAppOptions) {
     if (!page) return;
     const cfg = await loadSprintsConfig(locttDir);
     const counted = await withCounts(locttDir, url, "sprint", cfg.sprints);
-    const items = await withProgress(locttDir, url, "sprint", counted);
+    const { items, unreadable } = await withProgress(locttDir, url, "sprint", counted);
     json(res, {
       ...paginated(items, page.offset, page.limit),
       // Phase-7B: a corrupt sprint entry degrades (the rest load); it
       // rides here so the surface can show it as broken, not vanished.
       ...(cfg.broken !== undefined && cfg.broken.length > 0 ? { broken: cfg.broken } : {}),
+      // K28: tasks that could not be read are named alongside the totals.
+      ...(unreadable.length > 0 ? { unreadable } : {}),
     });
   };
 
@@ -2006,11 +2020,13 @@ export function createWebApp(options: WebAppOptions) {
     if (!page) return;
     const cfg = await loadMilestonesConfig(locttDir);
     const counted = await withCounts(locttDir, url, "milestone", cfg.milestones);
-    const items = await withProgress(locttDir, url, "milestone", counted);
+    const { items, unreadable } = await withProgress(locttDir, url, "milestone", counted);
     json(res, {
       ...paginated(items, page.offset, page.limit),
       // Phase-7B: a corrupt milestone entry degrades; surfaced here.
       ...(cfg.broken !== undefined && cfg.broken.length > 0 ? { broken: cfg.broken } : {}),
+      // K28: tasks that could not be read are named alongside the totals.
+      ...(unreadable.length > 0 ? { unreadable } : {}),
     });
   };
 

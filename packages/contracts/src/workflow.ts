@@ -523,8 +523,15 @@ export const WorkflowConfigSchema = z.object({
   /**
    * Per-sub-list corruption found at load time, if any. Populated by the
    * tolerant loader (`parseWorkflowConfig`), omitted when everything
-   * parsed. Never serialized: writes go through the strict per-entry
-   * schemas, so a corrupt entry can never round-trip back to disk.
+   * parsed.
+   *
+   * Preserved on write, not discarded (K28-WF): `saveWorkflowConfig`
+   * re-reads the on-disk broken sub-entries and splices them back into
+   * their sub-lists, so an unrelated write never silently drops a
+   * hand-broken entry the user has yet to fix. A broken entry re-emits
+   * as an ordinary member whose values still do not validate, so the
+   * next read re-sorts it back here — it never round-trips to *valid*.
+   * Sticky until the user fixes the file itself.
    */
   broken: WorkflowBrokenSchema.optional(),
 }).strict().superRefine((config, ctx) => {

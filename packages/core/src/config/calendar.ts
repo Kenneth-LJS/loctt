@@ -10,7 +10,7 @@ import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
-import { collectValidEntries } from "./health.js";
+import { brokenEntriesToPlain, collectValidEntries } from "./health.js";
 import { coerceYaml, safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
@@ -121,13 +121,28 @@ export function parseCalendarConfig(yamlContent: string): CalendarConfig {
   };
 }
 
-export function serializeCalendarConfig(config: CalendarConfig): string {
-  return stringifyYaml({
+/**
+ * The written shape. The timezone / working-days scalars are object-fatal
+ * and pass through unchanged. Only `holidays` is a per-entry list: valid
+ * holidays AND any preserved broken ones (K28) go into the single
+ * `holidays` array, so a `broken` holiday another process left survives an
+ * unrelated write (re-emitting only the valid holidays would silently drop
+ * it — P1 data loss). A broken holiday re-loads back into `broken`.
+ */
+function buildCalendarPlainObject(config: CalendarConfig): Record<string, unknown> {
+  return {
     timezone: config.timezone,
     first_day_of_week: config.first_day_of_week,
     working_days: [...config.working_days],
-    holidays: config.holidays.map(h => ({ date: h.date, label: h.label })),
-  });
+    holidays: [
+      ...config.holidays.map(h => ({ date: h.date, label: h.label })),
+      ...brokenEntriesToPlain(config.broken),
+    ],
+  };
+}
+
+export function serializeCalendarConfig(config: CalendarConfig): string {
+  return stringifyYaml(buildCalendarPlainObject(config));
 }
 
 /**
@@ -168,12 +183,10 @@ export async function saveCalendarConfig(
   config: CalendarConfig,
 ): Promise<void> {
   const validated = parseCalendarConfig(serializeCalendarConfig(config));
-  await writeYamlAtomically(getCalendarConfigPath(locttDir), {
-    timezone: validated.timezone,
-    first_day_of_week: validated.first_day_of_week,
-    working_days: [...validated.working_days],
-    holidays: validated.holidays.map(h => ({ date: h.date, label: h.label })),
-  });
+  // Write valid + preserved broken holidays (K28) so a corrupt sibling
+  // survives. The timezone / working-days object-fatal behavior is
+  // unchanged — those still validate through the round-trip above.
+  await writeYamlAtomically(getCalendarConfigPath(locttDir), buildCalendarPlainObject(validated));
 }
 
 export async function calendarConfigExists(locttDir: string): Promise<boolean> {

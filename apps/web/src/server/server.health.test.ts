@@ -52,6 +52,7 @@ describe("GET /api/tasks/:ref carries field-level health", () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  // @verifies DEG-23
   it("opens the task (200) and reports the corruption in `health`", async () => {
     const res = await fetch(`${base}/api/tasks/${id}`);
     expect(res.status).toBe(200);
@@ -78,6 +79,7 @@ describe("GET /api/tasks/:ref carries field-level health", () => {
     expect(res.status).toBe(200);
   });
 
+  // @verifies DEG-23
   it("a healthy task carries no `health` field", async () => {
     const created = await fetch(`${base}/api/tasks`, {
       method: "POST", headers: csrf, body: JSON.stringify({ title: "Healthy" }),

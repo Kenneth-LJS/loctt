@@ -159,4 +159,30 @@ describe("serializeCalendarConfig", () => {
     const reparsed = parseCalendarConfig(yaml);
     expect(reparsed).toEqual(cfg);
   });
+
+  // K28: a corrupt-but-degraded HOLIDAY another process left must survive a
+  // serialize that only touched the valid holidays. Dropping the
+  // `brokenEntriesToPlain(config.broken)` append reddens this — the broken
+  // holiday vanishes from the re-parsed .broken. (The timezone /
+  // working-days object-fatal fields are unaffected and still round-trip.)
+  it("preserves a broken holiday through serialize + reparse (K28)", () => {
+    const cfg = parseCalendarConfig(`timezone: Europe/London
+first_day_of_week: 1
+working_days: [1, 2, 3, 4, 5]
+holidays:
+  - date: 2026-01-01
+    label: New Year
+  - date: "01-01-2026"
+    label: Bad Row
+`);
+    expect(cfg.holidays).toEqual([{ date: "2026-01-01", label: "New Year" }]);
+    expect(cfg.broken).toHaveLength(1);
+
+    const reparsed = parseCalendarConfig(serializeCalendarConfig(cfg));
+    expect(reparsed.timezone).toBe("Europe/London");
+    expect(reparsed.working_days).toEqual([1, 2, 3, 4, 5]);
+    expect(reparsed.holidays).toEqual(cfg.holidays);
+    expect(reparsed.broken).toHaveLength(1);
+    expect(reparsed.broken?.[0]?.rawText).toContain("01-01-2026");
+  });
 });

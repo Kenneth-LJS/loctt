@@ -131,7 +131,7 @@ export async function createLabel(
       ...(input.color !== undefined ? { color: input.color } : {}),
       ...(input.archived === true ? { archived: true } : {}),
     };
-    await saveLabelsConfig(locttDir, { labels: [...config.labels, def] });
+    await saveLabelsConfig(locttDir, { labels: [...config.labels, def], ...(config.broken ? { broken: config.broken } : {}) });
     return def;
   });
 }
@@ -163,7 +163,7 @@ export async function editLabel(
     };
     const next = [...config.labels];
     next[idx] = updated;
-    await saveLabelsConfig(locttDir, { labels: next });
+    await saveLabelsConfig(locttDir, { labels: next, ...(config.broken ? { broken: config.broken } : {}) });
   });
 }
 
@@ -178,7 +178,7 @@ export async function archiveLabel(locttDir: string, id: string): Promise<void> 
     if (existing.archived === true) return;
     const next = [...config.labels];
     next[idx] = { ...existing, archived: true };
-    await saveLabelsConfig(locttDir, { labels: next });
+    await saveLabelsConfig(locttDir, { labels: next, ...(config.broken ? { broken: config.broken } : {}) });
   });
 }
 
@@ -195,7 +195,7 @@ export async function unarchiveLabel(locttDir: string, id: string): Promise<void
     const cleared: LabelDef = { id: existing.id, name: existing.name };
     if (existing.color !== undefined) cleared.color = existing.color;
     next[idx] = cleared;
-    await saveLabelsConfig(locttDir, { labels: next });
+    await saveLabelsConfig(locttDir, { labels: next, ...(config.broken ? { broken: config.broken } : {}) });
   });
 }
 
@@ -281,6 +281,7 @@ async function applyLabelConfigDeletion(locttDir: string, id: string): Promise<v
   if (!config.labels.some(l => l.id === id)) return;
   await saveLabelsConfig(locttDir, {
     labels: config.labels.filter(l => l.id !== id),
+    ...(config.broken ? { broken: config.broken } : {}),
   });
 }
 

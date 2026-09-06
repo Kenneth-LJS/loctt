@@ -8,12 +8,14 @@ import type {
   Task,
   TaskTypeDef,
   TimelineConfig,
+  WorkflowBroken,
   WorkflowConfig,
 } from "@loctt/contracts";
 import { ulid } from "ulid";
 import { stringify as stringifyYaml } from "yaml";
 
 import { getWorkflowConfigPath } from "../paths/index.js";
+import { brokenEntriesToPlain } from "./health.js";
 import {
   appendJournalEntry,
   clearJournalEntry,
@@ -91,7 +93,67 @@ export async function saveWorkflowConfig(
   //
   // `cleaned` is the final config: `executeWorkflowRemap` calls this
   // once at the end of a remap, never with an intermediate state.
-  await writeYamlAtomically(getWorkflowConfigPath(locttDir), buildPlainObject(cleaned));
+  //
+  // K28-WF (Ken, 2026-09-06): preserve any degraded sub-entries the
+  // loader set aside, so an unrelated write (adding a priority, say)
+  // never silently drops a hand-broken status the user has yet to fix.
+  // The other six config writers thread `config.broken` forward from a
+  // load-mutate-save, but workflow.yaml's main writer is a whole-
+  // document PUT (`applyWorkflowEdit` ← the Settings form), and the
+  // client cannot resubmit broken entries it never rendered — so the
+  // incoming `config.broken` is empty on exactly the common path.
+  // Preservation must not depend on the caller having carried the data:
+  // re-read the on-disk broken entries here and merge them at write
+  // time. Every caller holds the state lock (`applyWorkflowEdit` /
+  // recovery replay), so the read is consistent with the write.
+  // Broken entries are sticky — they survive every write until the user
+  // fixes the file itself (Ken's ruling: fix-the-file-to-clear).
+  const broken = await readOnDiskBroken(locttDir);
+  await writeYamlAtomically(
+    getWorkflowConfigPath(locttDir),
+    mergeBrokenIntoPlain(buildPlainObject(cleaned), broken),
+  );
+}
+
+/**
+ * Re-reads the workflow file's degraded sub-entries, tolerating a
+ * missing or unreadable file by reporting "none". A save always
+ * targets an existing, lock-held file, so absence here is abnormal —
+ * but preservation logic must never be the thing that breaks an
+ * otherwise-legitimate write, so it degrades to an empty result rather
+ * than throwing.
+ */
+async function readOnDiskBroken(locttDir: string): Promise<WorkflowBroken> {
+  try {
+    return (await loadWorkflowConfig(locttDir)).broken ?? {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Splices the preserved broken sub-entries back into the plain write
+ * object, each into the sub-list it came from (K28-WF). A broken entry
+ * re-emits as an ordinary member whose values do not validate, so a
+ * later read re-sorts it back into `broken` — never lost, never
+ * silently promoted to valid. `brokenEntriesToPlain` skips any entry
+ * whose stored text will not re-parse to an object, so this can only
+ * add faithfully-reconstructable siblings.
+ */
+function mergeBrokenIntoPlain(
+  plain: Record<string, unknown>,
+  broken: WorkflowBroken,
+): Record<string, unknown> {
+  const subLists: readonly (keyof WorkflowBroken)[] = [
+    "statuses", "priorities", "task_types", "relationships", "custom_fields",
+  ];
+  for (const key of subLists) {
+    const extra = brokenEntriesToPlain(broken[key]);
+    if (extra.length === 0) continue;
+    const existing = Array.isArray(plain[key]) ? plain[key] as unknown[] : [];
+    plain[key] = [...existing, ...extra];
+  }
+  return plain;
 }
 
 /**

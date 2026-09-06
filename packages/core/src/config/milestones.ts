@@ -10,7 +10,7 @@ import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
-import { collectValidEntries } from "./health.js";
+import { brokenEntriesToPlain, collectValidEntries } from "./health.js";
 import { coerceYaml, safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
@@ -95,15 +95,34 @@ export function parseMilestonesConfig(yamlContent: string): MilestonesConfig {
   };
 }
 
+/** Build a plain serializable object for one valid milestone. */
+function serializeMilestone(m: MilestoneDef): Record<string, unknown> {
+  return {
+    id: m.id,
+    name: m.name,
+    ...(m.target_date !== undefined ? { target_date: m.target_date } : {}),
+    ...(m.archived === true ? { archived: true } : {}),
+  };
+}
+
+/**
+ * The written shape: valid milestones AND any preserved broken entries, in
+ * a single `milestones` array. K28: a `broken` milestone another process
+ * left must survive an unrelated write — re-emitting only the valid entries
+ * silently drops it (P1 data loss). A broken entry re-loads back into
+ * `broken`.
+ */
+function buildMilestonesPlainObject(config: MilestonesConfig): { milestones: Record<string, unknown>[] } {
+  return {
+    milestones: [
+      ...config.milestones.map(serializeMilestone),
+      ...brokenEntriesToPlain(config.broken),
+    ],
+  };
+}
+
 export function serializeMilestonesConfig(config: MilestonesConfig): string {
-  return stringifyYaml({
-    milestones: config.milestones.map(m => ({
-      id: m.id,
-      name: m.name,
-      ...(m.target_date !== undefined ? { target_date: m.target_date } : {}),
-      ...(m.archived === true ? { archived: true } : {}),
-    })),
-  });
+  return stringifyYaml(buildMilestonesPlainObject(config));
 }
 
 export async function loadMilestonesConfig(locttDir: string): Promise<MilestonesConfig> {
@@ -127,15 +146,11 @@ export async function saveMilestonesConfig(
   locttDir: string,
   config: MilestonesConfig,
 ): Promise<void> {
-  const validated = parseMilestonesConfig(serializeMilestonesConfig(config));
-  await writeYamlAtomically(getMilestonesConfigPath(locttDir), {
-    milestones: validated.milestones.map(m => ({
-      id: m.id,
-      name: m.name,
-      ...(m.target_date !== undefined ? { target_date: m.target_date } : {}),
-      ...(m.archived === true ? { archived: true } : {}),
-    })),
-  });
+  // Validate the VALID entries round-trip (the broken ones are carried
+  // verbatim, not re-validated).
+  parseMilestonesConfig(stringifyYaml({ milestones: config.milestones.map(serializeMilestone) }));
+  // Write valid + preserved broken (K28) so a corrupt sibling survives.
+  await writeYamlAtomically(getMilestonesConfigPath(locttDir), buildMilestonesPlainObject(config));
 }
 
 export async function milestonesConfigExists(locttDir: string): Promise<boolean> {

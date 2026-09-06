@@ -165,6 +165,7 @@ describe("task show model", () => {
     });
   });
 
+  // @verifies DEG-14
   it("marks relationship targets as missing when the task is gone", async () => {
     const sourceTask: Task = {
       frontmatter: {
@@ -197,6 +198,7 @@ describe("task show model", () => {
    * dropped the section silently too, so the fix is core rather than
    * the web client.
    */
+  // @verifies DEG-20
   it("reports an unreadable attachments directory rather than an empty one", async () => {
     const dir = getAttachmentsDir(locttDir, "abc123");
     await mkdir(dir, { recursive: true });
@@ -244,6 +246,7 @@ describe("task show model", () => {
    * task's own page still reports the parse error with its path and
    * position — that is where the user can act on it.
    */
+  // @verifies DEG-14
   it("marks a link to an unparseable task as missing rather than failing the page", async () => {
     const base: Task = {
       frontmatter: {
@@ -283,6 +286,7 @@ describe("task show model", () => {
    * task as a healthy one. The edge now carries `targetCorrupt: true`,
    * keeps its key, and stays `missing: false` so the row still links.
    */
+  // @verifies DEG-15
   it("marks a resolved-but-corrupt target as corrupt, not missing", async () => {
     const source: Task = {
       frontmatter: {
@@ -323,6 +327,7 @@ describe("task show model", () => {
    * *deleted* target. Before this it rendered identically to a link whose
    * target had been removed, telling the user a file that exists was gone.
    */
+  // @verifies DEG-15
   it("marks an unreadable (object-fatal) target as missing AND corrupt", async () => {
     const source: Task = {
       frontmatter: {
@@ -356,6 +361,7 @@ describe("task show model", () => {
    * unreadable test honest: if `targetCorrupt` were set unconditionally
    * on every missing edge, this would go red.
    */
+  // @verifies DEG-15
   it("leaves a genuinely-absent target missing but not corrupt", async () => {
     const source: Task = {
       frontmatter: {
@@ -420,6 +426,7 @@ describe("task show model", () => {
    * "The section degrades" is the assertion. "The reader throws" is
    * not, and was never enough.
    */
+  // @verifies DEG-20
   it("degrades only the attachments section when the directory is unreadable", async () => {
     const task: Task = {
       frontmatter: {
