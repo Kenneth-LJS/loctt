@@ -402,6 +402,7 @@ export async function createProject(
     const newConfig: ProjectsConfig = {
       projects: [...config.projects, def],
       ...(config.default !== undefined ? { default: config.default } : {}),
+      ...(config.broken ? { broken: config.broken } : {}),
     };
     await saveProjectsConfig(locttDir, newConfig);
 
@@ -441,6 +442,7 @@ export async function editProject(
     await saveProjectsConfig(locttDir, {
       projects: newProjects,
       ...(config.default !== undefined ? { default: config.default } : {}),
+      ...(config.broken ? { broken: config.broken } : {}),
     });
   });
 }
@@ -461,8 +463,8 @@ export async function setDefaultProject(
       resolved = resolveProjectIdFromInput(config, id);
     }
     const newConfig: ProjectsConfig = resolved === null
-      ? { projects: config.projects }
-      : { projects: config.projects, default: resolved };
+      ? { projects: config.projects, ...(config.broken ? { broken: config.broken } : {}) }
+      : { projects: config.projects, default: resolved, ...(config.broken ? { broken: config.broken } : {}) };
     await saveProjectsConfig(locttDir, newConfig);
   });
 }
@@ -483,6 +485,7 @@ export async function archiveProject(locttDir: string, id: string): Promise<void
       ...(config.default !== undefined && config.default !== id
         ? { default: config.default }
         : {}),
+      ...(config.broken ? { broken: config.broken } : {}),
     };
     await saveProjectsConfig(locttDir, newConfig);
   });
@@ -507,6 +510,7 @@ export async function unarchiveProject(locttDir: string, id: string): Promise<vo
     await saveProjectsConfig(locttDir, {
       projects: next,
       ...(config.default !== undefined ? { default: config.default } : {}),
+      ...(config.broken ? { broken: config.broken } : {}),
     });
   });
 }
@@ -644,6 +648,7 @@ async function applyProjectConfigDeletion(locttDir: string, id: string): Promise
     ...(config.default !== undefined && config.default !== id
       ? { default: config.default }
       : {}),
+    ...(config.broken ? { broken: config.broken } : {}),
   };
   await saveProjectsConfig(locttDir, newConfig);
 

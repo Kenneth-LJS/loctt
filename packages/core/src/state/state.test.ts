@@ -30,6 +30,7 @@ keys:
     expect(state.keys["epic"]).toEqual({ prefix: "E-", next_number: 3 });
   });
 
+  // @verifies DEG-12
   it("throws on missing keys object", () => {
     expect(() => parseState("foo: bar")).toThrow(StateError);
     expect(() => parseState("foo: bar")).toThrow("keys is required (expected record)");
@@ -61,6 +62,7 @@ keys:
     expect(() => parseState(yaml)).toThrow("state.yaml is not valid:");
   });
 
+  // @verifies DEG-12
   it("carries the config_invalid code, not the unknown/500 fallback", () => {
     // Before, StateError was a bare Error, so every surface reported a
     // hand-broken counter as an unattributed server failure. It is

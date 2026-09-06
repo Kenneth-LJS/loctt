@@ -72,6 +72,7 @@ describe("RelationshipRow corrupt vs missing vs healthy", () => {
     expect(screen.queryByTestId("relationship-broken")).toBeNull();
   });
 
+  // @verifies DEG-15
   it("marks a resolved-but-corrupt target with a corrupt affordance AND keeps the link", async () => {
     renderRow({
       ...base,
@@ -89,6 +90,7 @@ describe("RelationshipRow corrupt vs missing vs healthy", () => {
     expect(screen.queryByTestId("relationship-broken")).toBeNull();
   });
 
+  // @verifies DEG-15
   it("marks a missing-AND-corrupt (unreadable) target as corrupt, not deleted", async () => {
     renderRow({ ...base, missing: true, targetCorrupt: true });
     const corrupt = await screen.findByTestId("relationship-corrupt");

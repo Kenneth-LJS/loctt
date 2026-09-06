@@ -10,7 +10,7 @@ import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
-import { collectValidEntries } from "./health.js";
+import { brokenEntriesToPlain, collectValidEntries } from "./health.js";
 import { safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
@@ -128,16 +128,35 @@ export function parseLabelsConfig(yamlContent: string): LabelsConfig {
   };
 }
 
+/** Build a plain serializable object for one valid label. */
+function serializeLabel(l: LabelDef): Record<string, unknown> {
+  return {
+    id: l.id,
+    name: l.name,
+    ...(l.color !== undefined ? { color: l.color } : {}),
+    ...(l.archived === true ? { archived: true } : {}),
+  };
+}
+
+/**
+ * The written shape: valid labels AND any preserved broken entries, in a
+ * single `labels` array. K28: a `broken` label another process left must
+ * survive an unrelated write — re-emitting only the valid entries silently
+ * drops it (P1 data loss). A broken entry is a label whose fields do not
+ * validate; it belongs in the same list and re-loads back into `broken`.
+ */
+function buildLabelsPlainObject(config: LabelsConfig): { labels: Record<string, unknown>[] } {
+  return {
+    labels: [
+      ...config.labels.map(serializeLabel),
+      ...brokenEntriesToPlain(config.broken),
+    ],
+  };
+}
+
 /** Serializes a LabelsConfig to YAML with stable key order. */
 export function serializeLabelsConfig(config: LabelsConfig): string {
-  return stringifyYaml({
-    labels: config.labels.map(l => ({
-      id: l.id,
-      name: l.name,
-      ...(l.color !== undefined ? { color: l.color } : {}),
-      ...(l.archived === true ? { archived: true } : {}),
-    })),
-  });
+  return stringifyYaml(buildLabelsPlainObject(config));
 }
 
 export async function loadLabelsConfig(locttDir: string): Promise<LabelsConfig> {
@@ -161,16 +180,12 @@ export async function saveLabelsConfig(
   locttDir: string,
   config: LabelsConfig,
 ): Promise<void> {
-  // Round-trip through parse to enforce uniqueness/key validation.
-  const validated = parseLabelsConfig(serializeLabelsConfig(config));
-  await writeYamlAtomically(getLabelsConfigPath(locttDir), {
-    labels: validated.labels.map(l => ({
-      id: l.id,
-      name: l.name,
-      ...(l.color !== undefined ? { color: l.color } : {}),
-      ...(l.archived === true ? { archived: true } : {}),
-    })),
-  });
+  // Round-trip through parse to enforce uniqueness/key validation — over
+  // the VALID entries only (the broken ones are, by definition, not valid;
+  // they are carried verbatim, not re-validated).
+  parseLabelsConfig(stringifyYaml({ labels: config.labels.map(serializeLabel) }));
+  // Write valid + preserved broken (K28) so a corrupt sibling survives.
+  await writeYamlAtomically(getLabelsConfigPath(locttDir), buildLabelsPlainObject(config));
 }
 
 export async function labelsConfigExists(locttDir: string): Promise<boolean> {

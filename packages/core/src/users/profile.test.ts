@@ -58,6 +58,7 @@ timezone: UTC
   // profile out over one hand-corrupted field. K26 says only identity
   // (`id`) is object-fatal; a bad email/timezone/avatar/name degrades.
 
+  // @verifies DEG-13
   it("degrades an unknown timezone into health, keeping the user loadable", () => {
     const profile = parseUserProfile(`id: 01HXXXXXXXXXXXXXXXXXXXXXXX
 name: Ken
@@ -106,6 +107,7 @@ name: Ken
     expect(h?.kind).toBe("missing_required");
   });
 
+  // @verifies DEG-13
   it("degrades an unknown key into health (unrecognised), preserving its value", () => {
     const profile = parseUserProfile(`id: 01HXXXXXXXXXXXXXXXXXXXXXXX
 name: Ken

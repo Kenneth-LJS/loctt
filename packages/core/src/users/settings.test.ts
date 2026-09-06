@@ -40,6 +40,7 @@ describe("loadUserSettings corruption tolerance (Phase-7B)", () => {
   // The central guarantee: a wrong-typed KNOWN setting must NOT lock the
   // user out of their whole settings surface. Was asserting the bug —
   // the plain `.parse()` threw here, 500-ing every settings panel.
+  // @verifies DEG-28
   it("degrades a wrong-typed known key (theme: 42) to default, keeping the rest", async () => {
     await writeSettings(`theme: 42\ndefault_project: web\n`);
     const settings = await loadUserSettings(locttDir, USER_ID);
@@ -60,6 +61,7 @@ describe("loadUserSettings corruption tolerance (Phase-7B)", () => {
   // corruption — they must survive untouched even alongside a corrupt
   // known key. If this drops the unknown key, a settings save would
   // destroy data like sidebar pins a newer client wrote.
+  // @verifies DEG-28
   it("preserves unknown passthrough keys even when a known key is corrupt", async () => {
     await writeSettings(
       `theme: 42\nexperimental_pins: [a, b, c]\nsome_future_key: hello\n`,

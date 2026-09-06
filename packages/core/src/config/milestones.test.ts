@@ -141,4 +141,25 @@ describe("serializeMilestonesConfig", () => {
     const reparsed = parseMilestonesConfig(yaml);
     expect(reparsed.milestones).toEqual(cfg.milestones);
   });
+
+  // K28: a corrupt-but-degraded sibling another process left must survive
+  // a serialize that only touched the valid entries. Dropping the
+  // `brokenEntriesToPlain(config.broken)` append reddens this.
+  it("preserves a broken sibling through serialize + reparse (K28)", () => {
+    const cfg = parseMilestonesConfig(`milestones:
+  - id: 01HX0000000000000000000001
+    name: V1.0
+  - id: 01HX0000000000000000000002
+    name: V2.0
+    target_date: not-a-date
+`);
+    expect(cfg.milestones).toHaveLength(1);
+    expect(cfg.broken).toHaveLength(1);
+
+    const reparsed = parseMilestonesConfig(serializeMilestonesConfig(cfg));
+    expect(reparsed.milestones).toEqual(cfg.milestones);
+    expect(reparsed.broken).toHaveLength(1);
+    expect(reparsed.broken?.[0]?.id).toBe("01HX0000000000000000000002");
+    expect(reparsed.broken?.[0]?.rawText).toContain("not-a-date");
+  });
 });

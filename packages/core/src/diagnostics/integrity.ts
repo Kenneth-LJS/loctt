@@ -24,11 +24,20 @@
  *     the user to resolve, not a reason to refuse their publish.
  */
 
-import { getLabelsConfigPath } from "../config/labels.js";
+import type { BrokenEntry } from "@loctt/contracts";
+
+import { getLabelsConfigPath, loadLabelsConfig } from "../config/labels.js";
+import { loadListViewConfig } from "../config/list-view.js";
+import { getMilestonesConfigPath, loadMilestonesConfig } from "../config/milestones.js";
+import { getProjectsConfigPath, loadProjectsConfig } from "../config/projects.js";
+import { loadQueriesConfig } from "../config/queries.js";
+import { getSprintsConfigPath, loadSprintsConfig } from "../config/sprints.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
 import {
   getCommentsFilePath,
   getHistoryFilePath,
+  getListViewConfigPath,
+  getQueriesConfigPath,
   getTaskFilePath,
   getTasksDir,
   getWorkflowConfigPath,
@@ -224,6 +233,64 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
     // is reported wherever that surfaces. Nothing to add here.
   }
 
+  // Config per-entry degradation (A138 / K28). A corrupt entry in a
+  // list-shaped config loads as a `BrokenEntry` and the rest of the file
+  // still loads — the same keep-and-report contract as a task field or a
+  // malformed comment. Without this sweep the preserved entry is
+  // invisible: the config loads "fine" (minus one row) and nobody ever
+  // learns the row is broken. `malformed`, never blocking — the entry is
+  // preserved and the tracker works (a config *parse* error, which is
+  // object-fatal, is a different thing and is reported by doctor's
+  // per-file parse check).
+  await collectConfigBroken(
+    findings,
+    getProjectsConfigPath(locttDir),
+    () => loadProjectsConfig(locttDir).then(c => c.broken),
+    "project",
+  );
+  await collectConfigBroken(
+    findings,
+    getLabelsConfigPath(locttDir),
+    () => loadLabelsConfig(locttDir).then(c => c.broken),
+    "label",
+  );
+  await collectConfigBroken(
+    findings,
+    getMilestonesConfigPath(locttDir),
+    () => loadMilestonesConfig(locttDir).then(c => c.broken),
+    "milestone",
+  );
+  await collectConfigBroken(
+    findings,
+    getSprintsConfigPath(locttDir),
+    () => loadSprintsConfig(locttDir).then(c => c.broken),
+    "sprint",
+  );
+  await collectConfigBroken(
+    findings,
+    getQueriesConfigPath(locttDir),
+    () => loadQueriesConfig(locttDir).then(c => c.broken),
+    "saved view",
+  );
+  await collectConfigBroken(
+    findings,
+    getListViewConfigPath(locttDir),
+    () => loadListViewConfig(locttDir).then(c => c.broken),
+    "list-view chip",
+  );
+  // workflow.yaml's `broken` is a keyed record (one BrokenEntry[] per
+  // sub-list), so it is flattened across sub-lists here.
+  await collectConfigBroken(
+    findings,
+    getWorkflowConfigPath(locttDir),
+    async () => {
+      const wf = await loadWorkflowConfig(locttDir);
+      if (!wf.broken) return undefined;
+      return Object.values(wf.broken).flat().filter((e): e is BrokenEntry => e !== undefined);
+    },
+    "workflow entry",
+  );
+
   return findings;
 }
 
@@ -246,6 +313,52 @@ function invalidLabelColors(yamlContent: string): { name: string; color: string 
     out.push({ name, color: c[1] });
   }
   return out;
+}
+
+/**
+ * The subset of a degraded config entry this sweep needs. Both
+ * `BrokenEntry` (flat configs, workflow sub-lists) and `BrokenSavedQuery`
+ * (queries — a wider shape with no `rawText`) satisfy it, so one helper
+ * serves every config.
+ */
+interface BrokenLike {
+  readonly id?: string | undefined;
+  readonly index: number;
+  readonly error: string;
+}
+
+/**
+ * Loads one config's `broken` list and appends a `malformed` finding per
+ * degraded entry. Tolerates the file being absent or unreadable by
+ * staying silent: a parse error is already reported by doctor's own
+ * per-file check, and an absent optional config is normal. The label
+ * (`"sprint"`, `"label"`, …) names the entry kind in the message.
+ */
+async function collectConfigBroken(
+  findings: IntegrityFinding[],
+  path: string,
+  loadBroken: () => Promise<readonly BrokenLike[] | undefined>,
+  label: string,
+): Promise<void> {
+  let broken: readonly BrokenLike[] | undefined;
+  try {
+    broken = await loadBroken();
+  } catch {
+    // Object-fatal parse error / absent file — doctor's per-file check
+    // owns that; nothing to add here.
+    return;
+  }
+  for (const b of broken ?? []) {
+    const which = b.id !== undefined ? `"${b.id}"` : `at position ${String(b.index + 1)}`;
+    findings.push({
+      severity: "malformed",
+      path,
+      message:
+        `${label} ${which} could not be read (${b.error}). It has been kept `
+        + `in place and is preserved by every write; repair it by hand, or `
+        + `re-save it through the app, to have it load again.`,
+    });
+  }
 }
 
 function messageOf(err: unknown): string {

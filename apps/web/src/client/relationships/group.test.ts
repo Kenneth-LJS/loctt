@@ -177,6 +177,7 @@ describe("groupRelationships", () => {
 
   // @verifies REL-25
   // @verifies XS-25
+  // @verifies DEG-16
   it("surfaces an edge whose type workflow.yaml does not declare, under its raw key", () => {
     const groups = groupRelationships(
       [resolved("blocks", "a"), resolved("blockz", "b")],
@@ -198,6 +199,7 @@ describe("groupRelationships", () => {
   });
 
   // @verifies XS-25
+  // @verifies DEG-16
   it("does not offer a removed kind in the picker while its links still render", () => {
     // The kind `blocks` deleted from workflow.yaml, tasks still using it.
     const without: WorkflowConfig = {
@@ -222,6 +224,7 @@ describe("groupRelationships", () => {
   });
 
   // @verifies REL-26
+  // @verifies DEG-16
   it("lists a duplicated edge once and says how many copies the file holds", () => {
     const rels = [
       resolved("relates_to", "t2"),

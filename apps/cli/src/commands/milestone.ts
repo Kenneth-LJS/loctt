@@ -5,7 +5,7 @@ import {
   editMilestone,
   loadMilestonesConfig,
   loadWorkflowConfig,
-  milestoneProgress,
+  milestoneProgressDetailed,
   resolveLocttDir,
   resolveMilestoneIdFromInput,
   unarchiveMilestone,
@@ -49,7 +49,19 @@ export async function run(args: string[], root: string): Promise<void> {
       let progress: Record<string, { done: number; total: number; discarded: number }> = {};
       if (showProgress) {
         const workflow = await loadWorkflowConfig(locttDir);
-        progress = await milestoneProgress(locttDir, shown.map(m => m.id), workflow);
+        const report = await milestoneProgressDetailed(locttDir, shown.map(m => m.id), workflow);
+        progress = report.progress;
+        // K28 (aggregate half): an unreadable task cannot be attributed
+        // to a milestone (its milestone field is exactly what failed to
+        // parse), so the totals count only the readable corpus. Naming
+        // the files a total is short by — rather than silently dropping
+        // them — is P-5: a wrong number needs its explanation beside it.
+        if (report.unreadable.length > 0) {
+          console.error(
+            `Warning: ${report.unreadable.length} task(s) could not be read and are excluded from these totals:`,
+          );
+          for (const u of report.unreadable) console.error(`  ${u.path}: ${u.reason}`);
+        }
       }
 
       for (const m of shown) {

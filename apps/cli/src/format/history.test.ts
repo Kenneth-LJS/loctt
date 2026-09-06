@@ -96,6 +96,7 @@ describe("formatHistoryEntry", () => {
     expect(line).not.toMatch(/actor unknown/i);
   });
 
+  // @verifies DEG-C6
   it("marks a value whose key is no longer in the workflow config", () => {
     const line = formatHistoryEntry(
       entry({ field: "status", before: "not_started", after: "deleted_status" }),

@@ -372,6 +372,7 @@ describe("malformed input", () => {
   });
 
   // @verifies BAK-C3
+  // @verifies DEG-19
   it("never writes over a _comments.yaml it could not read (P-11)", async () => {
     const a = await seed(srcDir, "A");
     await postComment({ locttDir: srcDir, taskId: a, body: "one" });
@@ -419,6 +420,7 @@ describe("splitting", () => {
   });
 
   // @verifies BAK-C8
+  // @verifies DEG-19
   it("refuses a partial set, names the missing part, and writes nothing", async () => {
     const ids: string[] = [];
     for (let i = 0; i < 6; i += 1) ids.push(await seed(srcDir, `T${String(i)}`));

@@ -31,6 +31,25 @@ result. Fixing it needs a return-shape change (`duplicateTask` →
 for the framework build. The safety property (no corrupt value copied,
 refuse on corrupt project) holds today; only the *notice* is missing.
 
+### DEG-4-PROV — repair provenance (`meta.was_corrupt`) is decided but not built
+
+**Found 2026-09-06 while authoring the DEG degradation cases.** The
+decided behaviour (decisions.md § 9) is that repairing a corrupt field
+records a history entry whose `before` is the raw corrupt value and
+whose `meta.was_corrupt` marks it as a corruption repair. Neither exists:
+`grep -rn was_corrupt` over `packages/` and `apps/` returns zero hits,
+source included. `buildSetFieldHistory` (called from
+`packages/core/src/task/update.ts`) reads only the task's
+**frontmatter** — but a corrupt field has been lifted *off* the
+frontmatter into `health`, so at repair time the field is already absent
+and `before` is null. The provenance is silently dropped.
+
+DEG-4's third bullet is marked cannot-be-satisfied-yet for this reason;
+no test asserts it. Fixing it needs `buildSetFieldHistory` to consult
+`health` for the pre-repair raw value and to stamp `meta.was_corrupt` —
+a small core change, but out of scope for the DEG doc/tag work, and it
+must land before a `@verifies DEG-4`-provenance test can be green.
+
 ### CMT-20 — the comments list has none of the four scale affordances (declined)
 
 **Found 2026-09-04 while covering the CMT batch.** CMT-20 (major, P9)
@@ -4377,3 +4396,41 @@ file excluded — the other 769 client unit tests pass green
 (settings 68, list 140, create 33, sidebar 15, the 9 non-Sidebar shell
 files 67, plus the rest by subdir). The server suite (301) and every
 other suite are unaffected.
+
+## K28-WF · workflow.yaml does not preserve a broken sub-entry on write
+
+**Found:** 2026-09-06 (K28 config-preserve-others sweep) · **Status:**
+RESOLVED 2026-09-06 — fixed per Ken's ruling (decisions.md K28, Part 3).
+`saveWorkflowConfig` now re-reads the on-disk broken sub-entries and
+merges them at write time (`mergeBrokenIntoPlain`), sticky until the
+file is fixed. Test: `workflow-write.test.ts` "keeps a broken status on
+disk after an unrelated valid edit", mutation-verified. The description
+below is retained as the historical analysis.
+
+K28 made every list-shaped config writer re-emit the degraded siblings it
+did not touch (`brokenEntriesToPlain`, `config/health.ts`), so a
+`broken` entry another process left survives an unrelated write. Six
+writers (labels/milestones/sprints/projects/calendar/list-view) plus
+queries now do this and are gated by a preserve test each.
+
+`workflow.yaml` is the exception. Its `broken` is not a flat
+`BrokenEntry[]` but a **keyed record** — `WorkflowBroken`
+(`packages/contracts/src/workflow.ts`): `{ statuses?, priorities?,
+task_types?, relationships?, custom_fields? }`, each a `BrokenEntry[]`
+belonging to a distinct sub-list. Preserving it on write means routing
+each broken entry back into its correct sub-section through
+`saveWorkflowConfig`, not the single-array append the six writers use.
+
+**Consequence.** If a `workflow.yaml` is hand-edited to contain one
+corrupt status (say) alongside valid ones, the loader degrades it to
+`broken.statuses` and the rest load (A138) — but a subsequent write
+through `saveWorkflowConfig` (e.g. adding a priority via Settings)
+re-serializes only the valid statuses, silently dropping the corrupt
+one from disk. Same P1 data-loss shape K28 closed elsewhere.
+
+**To fix.** Give `saveWorkflowConfig` a per-sub-section merge: for each
+of the five keyed sub-lists, append `brokenEntriesToPlain(broken.<key>)`
+to that section's written array (statuses/priorities/task_types/
+relationships/custom_fields). One preserve test per sub-section,
+mutation-verified. Canonicalized under DEG-24 (config preserve-others);
+this is the workflow slice of that case.

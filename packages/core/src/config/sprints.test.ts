@@ -290,4 +290,30 @@ describe("serializeSprintsConfig", () => {
     const reparsed = parseSprintsConfig(yaml);
     expect(reparsed.sprints).toEqual(cfg.sprints);
   });
+
+  // K28: a corrupt-but-degraded sibling another process left must survive
+  // a serialize that only touched the valid entries. Dropping the
+  // `brokenEntriesToPlain(config.broken)` append reddens this.
+  it("preserves a broken sibling through serialize + reparse (K28)", () => {
+    const cfg = parseSprintsConfig(`sprints:
+  - id: 01HX0000000000000000000001
+    name: Sprint 1
+    start_date: 2026-01-01
+    end_date: 2026-01-14
+    state: active
+  - id: 01HX0000000000000000000002
+    name: Sprint 2
+    start_date: not-a-date
+    end_date: 2026-02-14
+    state: planned
+`);
+    expect(cfg.sprints).toHaveLength(1);
+    expect(cfg.broken).toHaveLength(1);
+
+    const reparsed = parseSprintsConfig(serializeSprintsConfig(cfg));
+    expect(reparsed.sprints).toEqual(cfg.sprints);
+    expect(reparsed.broken).toHaveLength(1);
+    expect(reparsed.broken?.[0]?.id).toBe("01HX0000000000000000000002");
+    expect(reparsed.broken?.[0]?.rawText).toContain("not-a-date");
+  });
 });

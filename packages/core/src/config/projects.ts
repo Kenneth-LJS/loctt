@@ -10,7 +10,7 @@ import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
-import { collectValidEntries } from "./health.js";
+import { brokenEntriesToPlain, collectValidEntries } from "./health.js";
 import { safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
@@ -153,15 +153,30 @@ export function parseProjectsConfig(yamlContent: string): ProjectsConfig {
  *
  * Follows `list-view.ts`'s `buildPlainObject`, which already did this.
  */
+function serializeProject(p: ProjectsConfig["projects"][number]): Record<string, unknown> {
+  return {
+    id: p.id,
+    name: p.name,
+    ...(p.slug !== undefined ? { slug: p.slug } : {}),
+    prefix: p.prefix,
+    ...(p.archived === true ? { archived: true } : {}),
+  };
+}
+
+/**
+ * The on-disk shape, in one place.
+ *
+ * K28: any preserved `broken` project (one another process left, corrupt
+ * but degraded) is re-emitted alongside the valid ones — re-serializing
+ * only the valid entries silently drops it from disk on an unrelated write
+ * (P1 data loss). A broken entry re-loads back into `broken`.
+ */
 function buildPlainObject(config: ProjectsConfig): Record<string, unknown> {
   const out: Record<string, unknown> = {
-    projects: config.projects.map(p => ({
-      id: p.id,
-      name: p.name,
-      ...(p.slug !== undefined ? { slug: p.slug } : {}),
-      prefix: p.prefix,
-      ...(p.archived === true ? { archived: true } : {}),
-    })),
+    projects: [
+      ...config.projects.map(serializeProject),
+      ...brokenEntriesToPlain(config.broken),
+    ],
   };
   if (config.default !== undefined) {
     out["default"] = config.default;

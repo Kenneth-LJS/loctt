@@ -131,11 +131,13 @@ describe("audit: reads open a field-local corrupt task (never unreadable)", () =
     });
   }
 
+  // @verifies DEG-1
   it("object-fatal (no id) stays UnreadableTaskError (blocks nothing else)", async () => {
     await seedCorruptTask("object_fatal:no_id");
     await expect(lookupById(locttDir, ID)).rejects.toBeInstanceOf(UnreadableTaskError);
   });
 
+  // @verifies DEG-1
   it("object-fatal (YAML syntax) stays UnreadableTaskError", async () => {
     await seedCorruptTask("object_fatal:yaml");
     await expect(lookupById(locttDir, ID)).rejects.toBeInstanceOf(UnreadableTaskError);
@@ -151,6 +153,7 @@ async function lookupById(dir: string, id: string) {
 
 describe("audit: setField on another field preserves the corrupt one", () => {
   for (const col of ["wrong_type:due_date", "unrecognised:jira_id", "wrong_type:labels"]) {
+    // @verifies DEG-3
     it(`HANDLED: set status, ${col} raw survives byte-for-byte`, async () => {
       await seedCorruptTask(col);
       await setField({ locttDir, taskId: ID, field: "status", value: "in_progress" });
@@ -172,6 +175,7 @@ describe("audit: setField on another field preserves the corrupt one", () => {
 });
 
 describe("audit: set-over repairs the corrupt field (override-on-direct-write)", () => {
+  // @verifies DEG-4
   it("HANDLED: setting a valid due_date clears the wrong_type finding", async () => {
     await seedCorruptTask("wrong_type:due_date");
     await setField({ locttDir, taskId: ID, field: "due_date", value: "2026-03-01" });
@@ -182,6 +186,7 @@ describe("audit: set-over repairs the corrupt field (override-on-direct-write)",
 });
 
 describe("audit: unset removes the corrupt/unrecognised field", () => {
+  // @verifies DEG-4
   it("HANDLED: unset an unrecognised top-level key removes it", async () => {
     await seedCorruptTask("unrecognised:jira_id");
     await unsetField(locttDir, ID, "jira_id");
@@ -190,6 +195,7 @@ describe("audit: unset removes the corrupt/unrecognised field", () => {
     expect(await onDisk()).not.toContain("jira_id");
   });
 
+  // @verifies DEG-4
   it("HANDLED: unset a wrong-typed known field removes it", async () => {
     await seedCorruptTask("wrong_type:due_date");
     await unsetField(locttDir, ID, "due_date");
@@ -202,6 +208,7 @@ describe("audit: unset removes the corrupt/unrecognised field", () => {
 // ---- The derived operation rule (§ 3.2) --------------------------------
 
 describe("audit: an op that must READ a structurally-broken field refuses", () => {
+  // @verifies DEG-6
   it("HANDLED: linkTask refuses over a wrong-typed relationships (source)", async () => {
     await seedCorruptTask("wrong_type:relationships");
     await seedCorruptTask("wrong_type:due_date", ID2); // a valid-enough target
@@ -211,6 +218,7 @@ describe("audit: an op that must READ a structurally-broken field refuses", () =
     ).rejects.toThrow(/relationships/);
   });
 
+  // @verifies DEG-6
   it("HANDLED: unlinkTask refuses over a wrong-typed relationships (source)", async () => {
     await seedCorruptTask("wrong_type:relationships");
     const { unlinkTask } = await import("./relationships.js");
@@ -221,6 +229,7 @@ describe("audit: an op that must READ a structurally-broken field refuses", () =
 });
 
 describe("audit: archive/unarchive over a wrong-typed archived (idempotency read)", () => {
+  // @verifies DEG-6
   it("HANDLED: archive proceeds and repairs a wrong-typed archived", async () => {
     await seedCorruptTask("wrong_type:archived");
     await archiveTask(locttDir, ID);
@@ -230,6 +239,7 @@ describe("audit: archive/unarchive over a wrong-typed archived (idempotency read
     expect((after.health ?? []).some(h => h.field === "archived")).toBe(false);
   });
 
+  // @verifies DEG-6
   it("HANDLED: unarchive over a wrong-typed archived is a correct no-op-or-repair", async () => {
     // A corrupt `archived` reads as "not archived", so unarchive either
     // no-ops (already unarchived from the user's view) or writes archived
@@ -267,6 +277,7 @@ describe("audit: bulk writes preserve untouched corrupt fields", () => {
 // ---- WRITE GUARD -------------------------------------------------------
 
 describe("audit: the write guard forbids introducing corruption", () => {
+  // @verifies DEG-5
   it("HANDLED (rule 1): a write that introduces a new finding is refused", async () => {
     await seedCorruptTask("wrong_type:due_date");
     const t = await readTask(locttDir, ID);
@@ -284,6 +295,7 @@ describe("audit: the write guard forbids introducing corruption", () => {
     expect(await onDisk()).not.toMatch(/start_date: 99\b/);
   });
 
+  // @verifies DEG-5
   it("HANDLED (rule 2): a write that DROPS an untouched corrupt field is refused", async () => {
     // This is the review's B1 defect: a merge-style writer that defaults a
     // corrupt structure away (`?? {}`) and discards its raw value while
@@ -305,6 +317,7 @@ describe("audit: the write guard forbids introducing corruption", () => {
     expect(await onDisk()).toMatch(/due_date: 42\b/);
   });
 
+  // @verifies DEG-5
   it("HANDLED (rule 2 exemption): a whole-record write (touched='*') may author freely", async () => {
     await seedCorruptTask("wrong_type:due_date");
     const t = await readTask(locttDir, ID);

@@ -81,6 +81,7 @@ describe("a saved view whose custom field no longer exists", () => {
   });
 
   // @verifies VUE-21
+  // @verifies DEG-22
   it("keeps the broken view listed and editable rather than dropping it", async () => {
     // "The sidebar entry is not silently removed; the view remains
     // editable so the user can fix it."

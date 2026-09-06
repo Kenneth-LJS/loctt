@@ -11,7 +11,7 @@ import {
   editMilestone,
   loadMilestonesConfig,
   loadWorkflowConfig,
-  milestoneProgress,
+  milestoneProgressDetailed,
   resolveMilestoneIdFromInput,
   unarchiveMilestone,
 } from "@loctt/core";
@@ -30,7 +30,10 @@ export const TOOLS: readonly ToolDef[] = [
       "include done/total per milestone — computed from status CATEGORY " +
       "(so a renamed or deleted `done` status does not break it), with " +
       "discarded tasks excluded from the denominator so abandoned work " +
-      "does not stall a milestone below 100% forever.",
+      "does not stall a milestone below 100% forever. When any task file " +
+      "cannot be read, the response carries an `unreadable` list naming " +
+      "them — the totals count only the readable corpus, so a short total " +
+      "is explained rather than silent.",
     inputSchema: {
       progress: z.boolean().optional()
         .describe("Include done/total per milestone. Scans every task, so opt in only when needed."),
@@ -41,11 +44,15 @@ export const TOOLS: readonly ToolDef[] = [
         return text(JSON.stringify(cfg, null, 2));
       }
       const workflow = await loadWorkflowConfig(locttDir);
-      const byId = await milestoneProgress(
+      const report = await milestoneProgressDetailed(
         locttDir, cfg.milestones.map(m => m.id), workflow,
       );
       return text(JSON.stringify({
-        milestones: cfg.milestones.map(m => ({ ...m, progress: byId[m.id] })),
+        milestones: cfg.milestones.map(m => ({ ...m, progress: report.progress[m.id] })),
+        // K28: unreadable tasks cannot be attributed to a milestone, so
+        // they are reported at the top level. Present only when non-empty
+        // so a caller reading only `milestones` is unaffected.
+        ...(report.unreadable.length > 0 ? { unreadable: report.unreadable } : {}),
       }, null, 2));
     },
   },

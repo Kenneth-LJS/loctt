@@ -185,6 +185,32 @@ describe("loadListViewConfig / saveListViewConfig", () => {
     const yaml = await readFile(getListViewConfigPath(locttDir), "utf-8");
     expect(yaml).not.toContain("filters:");
   });
+
+  // K28: a corrupt-but-degraded chip another process left must survive a
+  // save that only touched the valid chips. Dropping the broken chips from
+  // buildPlainObject (the partitionBrokenChips splice) reddens this — the
+  // broken chip vanishes from the re-loaded .broken. A broken chip is a
+  // scalar, spliced back into the array its error prefix names.
+  it("preserves a broken chip through save + reload (K28)", async () => {
+    // A number is not a valid chip key (z.string().min(1)), so it degrades
+    // to a broken entry while "status" loads.
+    const cfg = parseListViewConfig(`filters:
+  visible:
+    - status
+    - 42
+`);
+    expect(cfg.filters?.visible).toEqual(["status"]);
+    expect(cfg.broken).toHaveLength(1);
+
+    await saveListViewConfig(locttDir, cfg);
+    const reloaded = await loadListViewConfig(locttDir);
+    // Valid chip survives.
+    expect(reloaded.filters?.visible).toContain("status");
+    // Broken chip survives — re-loaded back into .broken, value verbatim.
+    expect(reloaded.broken).toHaveLength(1);
+    expect(reloaded.broken?.[0]?.rawText).toContain("42");
+    expect(reloaded.broken?.[0]?.error).toContain("visible");
+  });
 });
 
 describe("pruneListViewForRemovedCustomFields", () => {

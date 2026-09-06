@@ -140,7 +140,7 @@ export async function createSprint(
       ...(input.goal !== undefined ? { goal: input.goal } : {}),
       ...(input.archived === true ? { archived: true } : {}),
     };
-    await saveSprintsConfig(locttDir, { sprints: [...config.sprints, def] });
+    await saveSprintsConfig(locttDir, { sprints: [...config.sprints, def], ...(config.broken ? { broken: config.broken } : {}) });
     return def;
   });
 }
@@ -210,7 +210,7 @@ export async function editSprint(
     };
     const next = [...config.sprints];
     next[idx] = updated;
-    await saveSprintsConfig(locttDir, { sprints: next });
+    await saveSprintsConfig(locttDir, { sprints: next, ...(config.broken ? { broken: config.broken } : {}) });
   });
 }
 
@@ -224,7 +224,7 @@ export async function archiveSprint(locttDir: string, id: string): Promise<void>
     if (existing.archived === true) return;
     const next = [...config.sprints];
     next[idx] = { ...existing, archived: true };
-    await saveSprintsConfig(locttDir, { sprints: next });
+    await saveSprintsConfig(locttDir, { sprints: next, ...(config.broken ? { broken: config.broken } : {}) });
   });
 }
 
@@ -246,7 +246,7 @@ export async function unarchiveSprint(locttDir: string, id: string): Promise<voi
     };
     const next = [...config.sprints];
     next[idx] = cleared;
-    await saveSprintsConfig(locttDir, { sprints: next });
+    await saveSprintsConfig(locttDir, { sprints: next, ...(config.broken ? { broken: config.broken } : {}) });
   });
 }
 
@@ -314,6 +314,7 @@ async function applySprintConfigDeletion(locttDir: string, id: string): Promise<
   if (!config.sprints.some(s => s.id === id)) return;
   await saveSprintsConfig(locttDir, {
     sprints: config.sprints.filter(s => s.id !== id),
+    ...(config.broken ? { broken: config.broken } : {}),
   });
 }
 

@@ -99,6 +99,7 @@ export async function createMilestone(
     };
     await saveMilestonesConfig(locttDir, {
       milestones: [...config.milestones, def],
+      ...(config.broken ? { broken: config.broken } : {}),
     });
     return def;
   });
@@ -134,7 +135,7 @@ export async function editMilestone(
     };
     const next = [...config.milestones];
     next[idx] = updated;
-    await saveMilestonesConfig(locttDir, { milestones: next });
+    await saveMilestonesConfig(locttDir, { milestones: next, ...(config.broken ? { broken: config.broken } : {}) });
   });
 }
 
@@ -210,6 +211,7 @@ async function applyMilestoneConfigDeletion(locttDir: string, id: string): Promi
   if (!config.milestones.some(m => m.id === id)) return;
   await saveMilestonesConfig(locttDir, {
     milestones: config.milestones.filter(m => m.id !== id),
+    ...(config.broken ? { broken: config.broken } : {}),
   });
 }
 

@@ -88,8 +88,14 @@ export type {
   MoveTaskResult,
 } from "./move.js";
 export { bulkMoveTasksToProject, MoveTaskError,moveTaskToProject } from "./move.js";
-export type { MilestoneProgressOptions, Progress } from "./progress.js";
-export { computeProgress, milestoneProgress, sprintProgress } from "./progress.js";
+export type { MilestoneProgressOptions, Progress, ProgressReport } from "./progress.js";
+export {
+  computeProgress,
+  milestoneProgress,
+  milestoneProgressDetailed,
+  sprintProgress,
+  sprintProgressDetailed,
+} from "./progress.js";
 export type { LinkTaskOptions, UnlinkTaskOptions } from "./relationships.js";
 export { linkTask, RelationshipError,unlinkTask } from "./relationships.js";
 export type { AttachmentInfo, TaskShowModel } from "./show.js";

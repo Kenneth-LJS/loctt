@@ -10,7 +10,7 @@ import { getConfigDir } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
-import { collectValidEntries } from "./health.js";
+import { brokenEntriesToPlain, collectValidEntries } from "./health.js";
 import { coerceYaml, safeParseYaml } from "./yaml-coerce.js";
 import { formatZodIssues } from "./zod-error.js";
 
@@ -100,18 +100,36 @@ export function parseSprintsConfig(yamlContent: string): SprintsConfig {
   };
 }
 
+/** Build a plain serializable object for one valid sprint. */
+function serializeSprint(s: SprintDef): Record<string, unknown> {
+  return {
+    id: s.id,
+    name: s.name,
+    start_date: s.start_date,
+    end_date: s.end_date,
+    state: s.state,
+    ...(s.goal !== undefined ? { goal: s.goal } : {}),
+    ...(s.archived === true ? { archived: true } : {}),
+  };
+}
+
+/**
+ * The written shape: valid sprints AND any preserved broken entries, in a
+ * single `sprints` array. K28: a `broken` sprint another process left must
+ * survive an unrelated write — re-emitting only the valid entries silently
+ * drops it (P1 data loss). A broken entry re-loads back into `broken`.
+ */
+function buildSprintsPlainObject(config: SprintsConfig): { sprints: Record<string, unknown>[] } {
+  return {
+    sprints: [
+      ...config.sprints.map(serializeSprint),
+      ...brokenEntriesToPlain(config.broken),
+    ],
+  };
+}
+
 export function serializeSprintsConfig(config: SprintsConfig): string {
-  return stringifyYaml({
-    sprints: config.sprints.map(s => ({
-      id: s.id,
-      name: s.name,
-      start_date: s.start_date,
-      end_date: s.end_date,
-      state: s.state,
-      ...(s.goal !== undefined ? { goal: s.goal } : {}),
-      ...(s.archived === true ? { archived: true } : {}),
-    })),
-  });
+  return stringifyYaml(buildSprintsPlainObject(config));
 }
 
 export async function loadSprintsConfig(locttDir: string): Promise<SprintsConfig> {
@@ -135,18 +153,11 @@ export async function saveSprintsConfig(
   locttDir: string,
   config: SprintsConfig,
 ): Promise<void> {
-  const validated = parseSprintsConfig(serializeSprintsConfig(config));
-  await writeYamlAtomically(getSprintsConfigPath(locttDir), {
-    sprints: validated.sprints.map(s => ({
-      id: s.id,
-      name: s.name,
-      start_date: s.start_date,
-      end_date: s.end_date,
-      state: s.state,
-      ...(s.goal !== undefined ? { goal: s.goal } : {}),
-      ...(s.archived === true ? { archived: true } : {}),
-    })),
-  });
+  // Validate the VALID entries round-trip (the broken ones are carried
+  // verbatim, not re-validated).
+  parseSprintsConfig(stringifyYaml({ sprints: config.sprints.map(serializeSprint) }));
+  // Write valid + preserved broken (K28) so a corrupt sibling survives.
+  await writeYamlAtomically(getSprintsConfigPath(locttDir), buildSprintsPlainObject(config));
 }
 
 export async function sprintsConfigExists(locttDir: string): Promise<boolean> {

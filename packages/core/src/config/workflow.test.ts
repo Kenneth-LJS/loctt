@@ -349,6 +349,8 @@ estimation:
 });
 
 describe("parseWorkflowConfig — per-entry corruption tolerance (O6)", () => {
+  // @verifies DEG-9
+  // @verifies DEG-16
   it("degrades one corrupt status to broken and keeps the good statuses resolvable", () => {
     // The middle status has an invalid category. Before O6 this blanked
     // the WHOLE workflow (every task lost status resolution); now the good

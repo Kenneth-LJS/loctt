@@ -131,6 +131,7 @@ describe("MCP executeTool", () => {
       expect(result.isError).toBeUndefined();
     });
 
+    // @verifies DEG-C6
     it("create_task surfaces a 'Known: ...' hint for an unknown status", async () => {
       // Mirrors the CLI's enum pre-validation: instead of letting
       // createTask throw a generic 'invalid task' string, the MCP

@@ -37,6 +37,7 @@ afterEach(cleanup);
 
 describe("AssigneeCell", () => {
   // @verifies PRU-25
+  // @verifies DEG-14
   it("degrades a dangling user reference to truncated-ULID + (deleted user)", () => {
     render(<AssigneeCell user={undefined} raw={DANGLING_ULID} />);
     const short = DANGLING_ULID.slice(-6);
