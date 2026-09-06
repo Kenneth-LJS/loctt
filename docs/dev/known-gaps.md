@@ -4524,3 +4524,25 @@ Two quality notes the fix-review surfaced while checking the new parity surfaces
    unhelpful parser message. Fix: raise/limit the multipart cap for the
    restore route deliberately, with a clear over-limit message, or
    document the ceiling.
+
+## K32 · SET-33 fails: no `workflow-panel-error` on an invalid `workflow.yaml`
+
+**Found:** 2026-09-06 (during the BUG-2 copy fix build) · **Status:** open, pre-existing, unrelated to BUG-2.
+
+`tests/ui/flow-settings-workflow.spec.ts` SET-33 ("an invalid
+`workflow.yaml` names the file and offers a reload rather than an empty
+list") fails: the statuses panel never renders a `workflow-panel-error`
+element when the workflow config is unparseable, so the assertion
+`getByTestId("workflow-panel-error")` times out. Verified failing on a
+clean HEAD worktree (commit `f28ccf7`), so it is not a regression from
+the BUG-2 change (which only touches `RemapDeleteDialog` copy). The
+whole settings-workflow spec is otherwise green (28 passed, this one
+failing).
+
+**Reproduce:** `npx playwright test --config tests/ui/playwright.config.ts flow-settings-workflow -g "SET-33"`.
+
+**To fix.** The Statuses panel needs an error surface (`workflow-panel-error`)
+that renders when `GET /api/workflow` returns the broken/unparseable
+state, distinct from an empty list and from an unreachable server — the
+same shape the case describes. Server side, confirm the broken-workflow
+read path returns a distinguishable payload the panel can render from.

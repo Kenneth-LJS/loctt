@@ -152,9 +152,9 @@ This case previously asserted the panels were read-only. That was an early draft
 **Deleting a status still referenced by tasks.** `in_review` is the status of 9 tasks.
 
 - The panel shows the reference count before the delete is confirmed.
-- The confirm requires a remap target (another status) or an explicit choice to leave the references dangling — no silent orphaning.
+- The confirm requires either a remap target (another status) or the explicit choice to clear the status on those tasks — no silent orphaning.
 - Choosing remap moves all 9 tasks and reports the count moved.
-- Choosing to leave them dangling is allowed but the panel warns that those 9 tasks will render with a drift marker and appear in Diagnostics as a failing check — and after confirming, they do.
+- Choosing to clear is allowed; the dialog states plainly that the status field will be cleared on those 9 tasks (they become status-less), and after confirming, the field is cleared on disk — no dangling reference is created and no drift marker or Diagnostics warning results. (BUG-2, decided 2026-09-06: the old copy promised a dangling reference + drift marker + Diagnostics check, but the server clears the field, so the copy is corrected to match the real behaviour.)
 
 ### SET-18 · M4 · major · P3 P7
 **A task references a status that no longer exists in `workflow.yaml`.** Hand-deleted from the file while tasks still use it.
@@ -169,7 +169,7 @@ This case previously asserted the panels were read-only. That was an early draft
 
 - The value row shows its own reference count.
 - Deleting demands remap-or-clear the same way statuses do; the count is repeated in the confirm.
-- Tasks left holding the removed value render it as the raw key with a drift marker and are surfaced by Diagnostics.
+- Choosing clear removes the value from those 12 tasks' frontmatter (the field is emptied), stated plainly in the dialog; after confirming, the value is gone from disk with no dangling key and no drift marker. (BUG-2 sibling, decided 2026-09-06: the old copy said cleared tasks would render the raw key with a drift marker and be surfaced by Diagnostics, but the server clears the field, so the copy is corrected.)
 
 ### SET-20 · M4 · minor · P3 P9
 **A workflow with 25 statuses does not break the panels or the board.**
