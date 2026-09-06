@@ -25,7 +25,7 @@
  */
 
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type { LocttState, Task } from "@loctt/contracts";
 import { ulid } from "ulid";
@@ -41,6 +41,7 @@ import {
   mergeTask,
 } from "../git/merge.js";
 import {
+  assertSafeBasename,
   getAttachmentsDir,
   getCommentsFilePath,
   getConfigDir,
@@ -94,6 +95,81 @@ export interface RestoreReport {
 
 export class RestoreRefusedError extends Error {
   readonly name = "RestoreRefusedError" as const;
+}
+
+/**
+ * Phase Z security (SEC-1/SEC-2): a backup is an "import a file from
+ * elsewhere" operation and must not be trusted to stay inside the
+ * tracker. Every other path-builder routes names through
+ * `assertSafeBasename`; restore historically joined a record's `name`
+ * (attachment, avatar) and `path` (config) straight onto the tracker
+ * dir, so a crafted backup with a `../` name/path wrote an arbitrary
+ * file with attacker-controlled bytes — an arbitrary-overwrite → RCE
+ * vector (a git hook, a shell rc). This must run in `restore.ts` (not as
+ * a schema refinement — `read.ts` demotes schema failures to lenient
+ * `badLines` and continues) and BEFORE any write, so nothing lands.
+ *
+ * A malicious backup is not a partial-success situation: one traversing
+ * entry refuses the whole restore (`RestoreRefusedError`), because a
+ * backup carrying one is not a document to salvage.
+ */
+function assertContainedPath(locttDir: string, relPath: string, what: string): void {
+  if (typeof relPath !== "string" || relPath.length === 0) {
+    throw new RestoreRefusedError(`${what} path is empty — refusing the restore`);
+  }
+  if (relPath.includes("\0")) {
+    throw new RestoreRefusedError(`${what} path contains a null byte — refusing the restore`);
+  }
+  const resolved = resolve(locttDir, relPath);
+  const rel = relative(locttDir, resolved);
+  // `rel` starting with `..` (or being absolute) means the target
+  // escaped the tracker dir.
+  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    throw new RestoreRefusedError(
+      `${what} path "${relPath}" escapes the tracker directory — refusing the restore`,
+    );
+  }
+}
+
+/**
+ * SEC-1: a name that must be a single safe filename (attachment, avatar).
+ * Reuses the canonical `assertSafeBasename` every other path-builder
+ * uses, but re-throws its failure as a `RestoreRefusedError` so a crafted
+ * backup refuses the whole restore rather than surfacing a bare Error.
+ */
+function assertSafeBasenameOrRefuse(name: string, what: string): void {
+  try {
+    assertSafeBasename(name);
+  } catch (err) {
+    throw new RestoreRefusedError(
+      `${what} filename "${name}" is unsafe (${(err as Error).message}) — refusing the restore`,
+    );
+  }
+}
+
+/**
+ * SEC-1/SEC-2, up-front (Phase Z fix-review): validate EVERY
+ * attacker-controlled path/name in the loaded backup BEFORE any write and
+ * before the dry-run return, so a traversal entry refuses the whole
+ * restore with nothing on disk. The per-site guards ran too late — a
+ * malicious attachment name was checked only after `stagedSwap` had
+ * already written every task/config/state file (a half-applied restore),
+ * and the dry-run skipped the check entirely. One pass here closes both.
+ */
+function assertBackupContained(loaded: Loaded, locttDir: string): void {
+  for (const path of loaded.configs.keys()) {
+    assertContainedPath(locttDir, path, "config");
+  }
+  for (const rec of loaded.tasks.values()) {
+    for (const att of rec.attachments ?? []) {
+      assertSafeBasenameOrRefuse(att.name, "attachment");
+    }
+  }
+  for (const rec of loaded.users.values()) {
+    if (rec.avatar !== undefined) {
+      assertSafeBasenameOrRefuse(rec.avatar.name, "avatar");
+    }
+  }
 }
 
 /** Config entity files that carry `{id, name}` lists we merge by id. */
@@ -307,6 +383,11 @@ export async function restoreBackup(
 
   return withStateLock(locttDir, async () => {
     const loaded = await loadBackup(paths, onProgress);
+
+    // SEC-1/SEC-2: refuse a path-traversal backup up front — before any
+    // write and before the dry-run return — so nothing lands and a dry
+    // run also reports the refusal (Phase Z fix-review).
+    assertBackupContained(loaded, locttDir);
 
     const writes: StagedWrite[] = [];
     const report = {
@@ -558,6 +639,7 @@ export async function restoreBackup(
       configOut.set(path, content);
     }
     for (const [path, content] of configOut) {
+      // Containment already enforced up front by assertBackupContained.
       writes.push({ path: join(locttDir, path), content });
       report.configsRestored += 1;
     }
@@ -666,6 +748,7 @@ export async function restoreBackup(
     // Attachments are binary and land outside the staged text swap.
     for (const { id, record } of taskWrites) {
       for (const att of record.attachments ?? []) {
+        // Containment already enforced up front by assertBackupContained.
         const path = join(getAttachmentsDir(locttDir, id), att.name);
         await mkdir(dirname(path), { recursive: true });
         await writeFile(path, Buffer.from(att.bytes, "base64"));
@@ -673,6 +756,7 @@ export async function restoreBackup(
     }
     for (const [id, record] of loaded.users) {
       if (record.avatar === undefined) continue;
+      // Containment already enforced up front by assertBackupContained.
       const path = join(getUserDir(locttDir, id), record.avatar.name);
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, Buffer.from(record.avatar.bytes, "base64"));

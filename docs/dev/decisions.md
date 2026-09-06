@@ -8378,6 +8378,62 @@ key-collision filter in `mergeBrokenIntoPlain`. Q1: remove the
 operator check in `validate.ts`. Each has a regression test that reddens
 on revert.
 
+### A142 · Web backup/restore surface shape (F3 / K30)
+
+**Ticket:** BUILD F3 (Phase Z Batch 2) · **Date:** 2026-09-06 · **Commit:** (this one)
+
+**The situation.** K30 rules "build a web surface: a download endpoint
+for export and an upload-restore, with an explicit confirm on the
+destructive `overwrite` mode." It does not fix the endpoint shapes,
+the confirm mechanism, or how a split backup is handled on the web.
+Core `exportBackup` writes to a file path (it streams a task at a time)
+and `restoreBackup` takes an array of file paths; the multipart parser
+(`multipart.ts`) captures only file parts and drains non-file fields.
+
+**What had to be decided.** (1) How does the confirm signal ride on the
+restore request? (2) Does the web restore accept a split (multi-part)
+backup? (3) How is the export streamed given core writes to a file?
+
+**Options considered.**
+- Confirm: a `confirm` field in a JSON body (needs a second field
+  channel alongside the multipart file, which busboy drains) vs. a
+  `?confirm=true` query param (read before the body is parsed, same as
+  the attach endpoint's `?force=true`). The query param is free; the
+  body field needs the parser to surface non-file parts.
+- Split backup: accept multiple files (needs the client to send N file
+  parts and the parser to keep them all) vs. single file only, defer
+  split to the CLI. Multi-file upload is materially more client and
+  server work for the rare large-tracker case.
+- Export streaming: hold the whole backup in memory vs. write to an OS
+  temp file and stream it back, deleting the temp dir in `finally`.
+
+**Decided.** `?mode=`, `?confirm=true`, `?dry_run=true` on the query
+string (mirroring `?force=true` on attach upload); the backup uploaded
+as one multipart `file` part; **single file only** — a split backup is
+restored with `loctt restore <part...>` (noted in the web reference and
+the panel copy); export written to an OS temp file and streamed with
+`pipeline`, temp dir removed in `finally` (mirroring the attach/avatar
+temp-dir pattern). Export always passes `splitThresholdBytes:
+Number.MAX_SAFE_INTEGER` so a single streamed download is never split.
+
+**Why.** The query-param confirm reuses the exact shape hard delete /
+attach-force already use, so the CSRF guard (X-Loctt-Client on the
+POST) and the confirm gate compose without touching the multipart
+parser. Single-file keeps the surface small for the common case
+without dropping the split capability, which stays on the CLI where a
+part list is natural. Temp-file streaming matches how core is built
+(peak memory one task, not one tracker) and reuses the server's
+established upload cleanup.
+
+**To revert.** `apps/web/src/server/server.ts` — `handleExportBackup`,
+`handleRestoreBackup`, and the two routes
+(`GET /api/backup/export`, `POST /api/backup/restore`);
+`apps/web/src/client/settings/BackupPanel.tsx`; the `backup` section in
+`sections.ts` and its wiring in `SettingsShell.tsx`; tests
+`server.backup.test.ts` and `BackupPanel.test.tsx`. Docs: the web-UI
+"Backup and restore" section in `docs/user/ui/features.md` and the
+cross-surface notes added to the CLI and MCP backup sections.
+
 ### K28 · Config writers must preserve untouched degraded siblings; aggregates must not silently undercount
 
 **Date:** 2026-09-06 · **Ken's ruling — an agent may not revert this.**
@@ -8441,6 +8497,32 @@ Both are canonicalized as blocker DEG cases and gated by tests.
   returns `unreadable`. Test: `progress-batch.test.ts` "reports an
   unreadable member rather than silently shortening the total (K28)".
 - Part 3, workflow.yaml (K28-WF): landed. See below.
+- **Sprint-progress parity + milestones-client unreadable (Phase Z F1,
+  2026-09-06).** Part 2's "threaded to all three surfaces" sentence was
+  accurate for *milestones* but over-broad for *sprints*: sprint
+  progress reached only the web *server* (`sprintProgressDetailed`
+  called from `server.ts`; no CLI flag, no MCP arg, no web *client*
+  consumer). Its origin is `1f1bf22`, not K28 — Ken's ruling text is
+  left unedited; this note records the correction (per K30 F1). Now
+  landed: CLI `sprint list --progress` (mirrors `milestone list
+  --progress`, warns unreadable to stderr), MCP `list_sprints` gains a
+  `progress` arg returning per-sprint `progress` + top-level
+  `unreadable`, and the web client consumes `/api/sprints?progress=true`
+  via `useSprintsWithProgress`, rendered as a done/total readout (and an
+  unreadable notice) on `SprintDetail`. Separately, the milestones web
+  *client* was silently dropping the K28 `unreadable` the server already
+  put on `/api/milestones?progress=true`: `useMilestonesWithProgress`
+  narrowed the response to `.items`, so a milestone with an unreadable
+  member showed a short done/total with nothing explaining it (a P-5
+  violation). Fixed client-side only (data was already on the wire):
+  the hook threads top-level `unreadable`, and `MilestonesView` renders
+  the same count-naming notice `SprintsView` uses. Tests:
+  `tests/integration/cli/sprint-progress.test.ts`,
+  `tests/integration/mcp/list-sprints-progress.test.ts`,
+  `apps/web/src/client/milestones/MilestonesView.test.tsx`,
+  `apps/web/src/client/sprints/SprintDetail.test.tsx` — each
+  mutation-verified. Docs: CLI + MCP references updated for the sprint
+  `--progress`/`progress` additions.
 
 **K28-WF · workflow.yaml preserve-on-write (Ken, 2026-09-06).**
 Fixing Part 1 surfaced a third slice: `workflow.yaml` has the same
@@ -8461,5 +8543,56 @@ no discard gesture, matching how every other corrupt entry is treated.
 The re-read is lock-safe (every caller holds the state lock). Test:
 `workflow-write.test.ts` "keeps a broken status on disk after an
 unrelated valid edit", mutation-verified. Canonicalized under DEG-24.
+
+**To revert.** Ken's, not an agent's.
+
+### K30 · Phase Z parity: build the missing surfaces to full parity (F1–F4, PRU-44)
+
+**Date:** 2026-09-06 · **Ken's ruling — an agent may not revert this.**
+
+Phase Z's strict-parity + data-flow review found five capabilities that
+live on some surfaces but not all. Put the choice to Ken as "record the
+exclusions as intentional (fast) vs. build them (robust)"; Ken chose
+**robust + better UX — build all four**, plus fix PRU-44 which is the
+same shape.
+
+- **F1 · sprint progress** was web-API-only (`sprintProgressDetailed`
+  called only from the web server; CLI `sprint list` had no `--progress`,
+  MCP `list_sprints` no progress arg — and no web *client* even requested
+  it). This is a straight parity **bug** (its origin is `1f1bf22`, not
+  K28; K28's "all three surfaces" line was over-broad for sprints —
+  corrected by a build-status note, not by editing the ruling). Fix:
+  mirror milestone progress on CLI (`sprint list --progress`) and MCP
+  (`list_sprints` progress arg + `unreadable`), and wire the web client
+  to actually consume it.
+- **F2 · saved-view management** (create/edit/delete/archive/unarchive)
+  was web-only; CLI `views` was a read-only lister, MCP had only
+  `list_views`. **Build** the CLI subcommands and MCP tools. Especially
+  matters for MCP: an agent that can create tasks but not set up a saved
+  view is arbitrarily limited.
+- **F3 · backup/restore** was CLI+MCP-only, absent from web — the one
+  operation that protects against data loss missing from a whole
+  surface. **Build** a web surface: a download endpoint for export and an
+  upload-restore, with an explicit confirm on the destructive
+  `overwrite` mode. (Also fix `docs/user/cli/reference.md:1157`, which
+  falsely claims backup is "on every surface".)
+- **F4 · task CSV/JSON export** was web-only. The repo had *deliberately*
+  scoped this (TSK-C7 "reachable — or documented as absent", with an
+  integration test pinning the doc), so this ruling **overrides** that
+  earlier call: **build** CLI + MCP task export. Update TSK-C7's
+  doc/test accordingly.
+- **PRU-44 · editable project prefix in the web UI** — wired in
+  core/CLI/MCP/web-server, but `ProjectsPanel` renders the prefix
+  `readOnly disabled`; the feature was never built in the UI, its
+  `useSetProjectPrefix` hook is dead, and the panel's PRU-45 tag is
+  hollow (unsatisfiable without an editable field). **Build** the
+  editable-prefix control (with the rename confirmation PRU-44 specifies)
+  and un-hollow the tags.
+
+Each is built to the same bar as any ticket: fail-first tests on every
+surface, reference-doc updates (CLI + MCP), and a fix-review pass before
+commit. Recorded as decisions the user-docs cite, closing the
+root-cause the review named — surface exclusions must live in
+`decisions.md`, not only in user docs.
 
 **To revert.** Ken's, not an agent's.

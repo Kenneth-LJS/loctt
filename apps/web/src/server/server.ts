@@ -59,6 +59,7 @@ import {
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,
+  BackupFormatError,
   boardMove,
   bodyToken,
   buildListContext,
@@ -102,6 +103,7 @@ import {
   editSprint,
   editView,
   enableGit,
+  exportBackup,
   exportTasksToCSV,
   exportTasksToJSON,
   filterForExport,
@@ -173,6 +175,9 @@ import {
   resolveLocttDir,
   resolveProjectIdForUser,
   resolveUserRef,
+  restoreBackup,
+  type RestoreMode,
+  RestoreRefusedError,
   runDoctor,
   saveCalendarConfig,
   saveListViewConfig,
@@ -3616,6 +3621,193 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
+  /**
+   * `GET /api/backup/export` — the whole-tracker JSONL backup (K4, K17,
+   * F3 / K30). Web parity for `loctt backup` and MCP `backup`.
+   *
+   * The canonical backup, not the lossy CSV report: it carries task
+   * bodies, comments, attachments, history, config, users and
+   * state.yaml, so it can restore a bare machine (K4, "JSONL is the
+   * backup"). A web-only user previously had no way to take it.
+   *
+   * Core `exportBackup` writes to a file (streaming a task at a time so
+   * peak memory is one task, not one tracker), so this writes to an OS
+   * temp file and streams that back with an attachment disposition —
+   * the same download shape `handleExportTasks` uses. History is
+   * included by default (K17 ruling 1); `?no_history=true` opts out.
+   *
+   * A split backup is a CLI/large-tracker concern and is not offered
+   * here: this endpoint always returns a single file. If a tracker were
+   * ever large enough to want splitting, that is what `loctt backup
+   * --split-bytes` is for. (Deferred, noted in the web reference.)
+   */
+  const handleExportBackup: RouteHandler = async ({ res, url, locttDir }) => {
+    const includeHistory = url.searchParams.get("no_history") !== "true";
+    const tmpParent = await mkdtemp(pathJoin(tmpdir(), "loctt-backup-"));
+    const tmpFile = pathJoin(tmpParent, "backup.jsonl");
+    try {
+      const report = await exportBackup(locttDir, {
+        outputPath: tmpFile,
+        includeHistory,
+        // A single file: never split. `DEFAULT_SPLIT_THRESHOLD_BYTES`
+        // would otherwise turn a big tracker into `backup.jsonl.part2`
+        // etc., which a single streamed download cannot represent.
+        splitThresholdBytes: Number.MAX_SAFE_INTEGER,
+      });
+      // One file by construction (no split); the report lists it, but
+      // the temp path is what we stream.
+      const stat = await fsStat(tmpFile);
+      // A stable, dated filename so two exports do not collide in the
+      // user's downloads folder. The date is enough — the backup_id
+      // lives inside the file's header.
+      const stamp = new Date().toISOString().slice(0, 10);
+      res.writeHead(200, {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Content-Disposition": contentDispositionAttachment(`loctt-backup-${stamp}.jsonl`),
+        "Content-Length": String(stat.size),
+        // Same channel as the task export: what the file leaves behind,
+        // so a client can show "machine-local files excluded" without
+        // re-deriving the list. Header-safe: these are fixed path
+        // strings with no newline.
+        "X-Loctt-Backup-Excluded": report.excluded.join("|"),
+        "X-Loctt-Backup-Schema-Version": String(report.schemaVersion),
+      });
+      await pipeline(createReadStream(tmpFile), res);
+    } finally {
+      await rm(tmpParent, { recursive: true, force: true }).catch(() => undefined);
+    }
+  };
+
+  /**
+   * `POST /api/backup/restore` — restore a JSONL backup (K17 ruling 2,
+   * F3 / K30). Web parity for `loctt restore` and MCP `restore`.
+   *
+   * The backup file is uploaded as `multipart/form-data` (field `file`),
+   * matching how attachments and avatars upload. `mode` and `confirm`
+   * ride on the query string, because the multipart parser captures the
+   * file part and drains the rest — a regular form field would be
+   * dropped. A single uploaded file only: a split backup needs every
+   * part, and re-assembling a multi-part upload here is deferred to the
+   * CLI (`loctt restore <part...>`), noted in the web reference.
+   *
+   * CRITICAL — destructive-restore confirm (K30): `overwrite` replaces
+   * ids the backup carries, and `bare` into a non-empty tracker is
+   * refused by core anyway; both can lose work. So a destructive mode
+   * requires `?confirm=true`, the same shape hard delete uses — the
+   * endpoint never silently overwrites. `merge` never edits a present
+   * id, so it needs no confirm.
+   *
+   * Error mapping (K30): `RestoreRefusedError` — a non-empty tracker
+   * under `bare`, a half-finished operation, and the NEW path-traversal
+   * refusals from the SEC-1/SEC-2 fix (a crafted backup with a `../`
+   * name/path) — is the user's or the file's fault, not the server's, so
+   * it is a 409, never a 500. A malformed/older/newer backup
+   * (`BackupFormatError`, `SchemaTooNewError`) is a 400/409 attributed to
+   * the file.
+   */
+  const handleRestoreBackup: RouteHandler = async ({ req, res, url, locttDir }) => {
+    const contentType = req.headers["content-type"] ?? "";
+    if (!/^multipart\/form-data\s*;/i.test(contentType)) {
+      error(res, "The backup was not sent in a form the server can read.", 400, {
+        ...REJECTED_WRITE,
+        recovery: { kind: "reload" },
+        detail: `Content-Type must be multipart/form-data, got: ${contentType}`,
+      });
+      return;
+    }
+
+    const modeParam = (url.searchParams.get("mode") ?? "bare").toLowerCase();
+    if (modeParam !== "bare" && modeParam !== "merge" && modeParam !== "overwrite") {
+      error(res, "Restore mode must be bare, merge or overwrite.", 400, {
+        ...REJECTED_WRITE_NO_RETRY,
+        field: "mode",
+      });
+      return;
+    }
+    const mode = modeParam as RestoreMode;
+    const dryRun = url.searchParams.get("dry_run") === "true";
+    const confirmed = url.searchParams.get("confirm") === "true";
+
+    // The destructive confirm gate (K30). `overwrite` replaces ids the
+    // backup carries and can displace a body; require an explicit
+    // confirm before it runs — never a silent overwrite. A dry run
+    // writes nothing, so it is exempt: predicting counts is exactly how
+    // a user decides whether to confirm.
+    //
+    // `bare` is not gated here: core refuses it against a non-empty
+    // tracker (RestoreRefusedError), so it can only ever write into an
+    // empty tracker, where there is nothing to lose. `merge` never
+    // edits a present id.
+    if (mode === "overwrite" && !dryRun && !confirmed) {
+      error(res, "An overwrite restore replaces tasks this backup carries and can "
+        + "displace existing bodies. Re-send with confirm to proceed.", 409, {
+        code: "conflict",
+        data_state: "not_saved",
+        // Not a retry (the same request repeats the refusal) and not a
+        // reload (nothing is stale) — the client re-sends with the
+        // confirm flag, which the panel gates behind a typed
+        // confirmation.
+        recovery: { kind: "none" },
+        detail: "confirm=true is required for a destructive overwrite restore",
+      });
+      return;
+    }
+
+    const tmpParent = await mkdtemp(pathJoin(tmpdir(), "loctt-restore-"));
+    try {
+      let parsed: ParsedFilePart;
+      try {
+        parsed = await parseMultipartFile(req, contentType, tmpParent, "file");
+      } catch (parseErr) {
+        // Parsing failed before restoreBackup ran, so nothing was
+        // written into the tracker (ERR-24 shape).
+        error(res, (parseErr as Error).message, 400, { ...REJECTED_WRITE, field: "file" });
+        return;
+      }
+
+      try {
+        const report = await restoreBackup(locttDir, [parsed.tempPath], { mode, dryRun });
+        json(res, report);
+      } catch (err) {
+        // A refusal is the user's or the file's situation, not a server
+        // fault — a non-empty tracker under bare, a half-finished
+        // rename/migration, or the SEC-1/SEC-2 path-traversal guard
+        // firing on a crafted backup. Attributed 409, never a 500.
+        if (err instanceof RestoreRefusedError) {
+          error(res, err.message, 409, {
+            code: "conflict",
+            data_state: "not_saved",
+            recovery: { kind: "none" },
+          });
+          return;
+        }
+        // A backup this LocTT cannot read: malformed, or taken at an
+        // older schema. The file itself is the problem, so it is a 400
+        // attributed to the upload, and retrying the same file cannot
+        // help (ERR-15).
+        if (err instanceof BackupFormatError) {
+          error(res, err.message, 400, { ...REJECTED_WRITE_NO_RETRY, field: "file" });
+          return;
+        }
+        // A backup from a newer LocTT. No command here can restore it;
+        // the fix is a newer LocTT, so no retry (mirrors the schema
+        // guard's too-new branch).
+        if (err instanceof SchemaTooNewError) {
+          error(res, err.message, 409, {
+            code: "schema_mismatch",
+            data_state: "not_saved",
+            recovery: { kind: "none" },
+            field: "file",
+          });
+          return;
+        }
+        throw err;
+      }
+    } finally {
+      await rm(tmpParent, { recursive: true, force: true }).catch(() => undefined);
+    }
+  };
+
   const handleCreateTask: RouteHandler = async ({ req, res, locttDir }) => {
     const request = await parseJsonBody<CreateTaskRequest>(req, res);
     const wfConfig = await loadWorkflowConfig(locttDir);
@@ -4689,6 +4881,8 @@ export function createWebApp(options: WebAppOptions) {
     { method: "GET", pattern: "/api/search", handler: handleSearch },
     { method: "GET", pattern: "/api/tasks", handler: handleListTasks },
     { method: "GET", pattern: "/api/tasks/export", handler: handleExportTasks },
+    { method: "GET", pattern: "/api/backup/export", handler: handleExportBackup },
+    { method: "POST", pattern: "/api/backup/restore", handler: handleRestoreBackup },
     { method: "POST", pattern: "/api/tasks", handler: handleCreateTask },
     { method: "GET", pattern: TASK_ACTIVITY_RE, handler: handleTaskActivity },
     { method: "POST", pattern: TASK_SET_RE, handler: handleSetField },

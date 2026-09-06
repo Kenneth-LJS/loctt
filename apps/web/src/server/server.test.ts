@@ -778,10 +778,11 @@ describe("GET /api/info — workspace today", () => {
 /**
  * @verifies PRU-44, PRU-45, PRU-46
  *
- * The API half of the prefix-rename UI cases. The panel itself is not
- * built (settings routes are still stubs), so these cover the contract
- * the panel will consume: the separate endpoint, the field-targeted
- * collision error, and the pending-rename surfacing.
+ * The API half of the prefix-rename UI cases. The panel's editable
+ * prefix control (K30) consumes this contract; these cover the server
+ * side of it: the separate endpoint, the field-targeted collision
+ * error, and the pending-rename surfacing. The panel-side coverage
+ * lives in ProjectsPanel.test.tsx.
  */
 describe("project prefix API", () => {
   let root: string;

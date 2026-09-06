@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 
+import { BackupPanel } from "./BackupPanel.tsx";
 import { CalendarPanel } from "./CalendarPanel.tsx";
 import { CardLayoutPanel } from "./CardLayoutPanel.tsx";
 import { CustomFieldsPanel } from "./CustomFieldsPanel.tsx";
@@ -145,6 +146,7 @@ function Panel({ section }: { readonly section: SettingsSection }) {
   if (section.id === "sprints") return <SprintsPanel />;
   if (section.id === "saved-views") return <SavedViewsPanel />;
   if (section.id === "sync") return <GitSyncPanel />;
+  if (section.id === "backup") return <BackupPanel />;
   if (section.id === "diagnostics") return <DiagnosticsPanel />;
 
   // Personal (M4.4).

@@ -179,6 +179,35 @@ The one exception is a saved view referencing a since-deleted custom field: it s
 
 `today` in a query (`due_date < today`) resolves in the workspace timezone from `calendar.yaml`, not the server machine's zone.
 
+### `export_tasks`
+
+Export tasks as CSV or JSON — the same report the web list view
+produces, for the same rows. Filters resolve exactly as `list_tasks`
+does.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `format` | string | no | `csv` or `json`. Default `csv`. |
+| `query` | string | no | Ad hoc query string, as in `list_tasks` |
+| `view` | string | no | Named saved view |
+| `project` | string | no | Filter to a project (key/slug, name or id) |
+| `columns` | array | no | Explicit column list (built-in field names or `fields.<custom>`). Defaults to the standard export columns. |
+| `include_body` | boolean | no | Include the markdown body (JSON field / CSV column). Default false. |
+| `include_archived` | boolean | no | Include archived tasks (default false) |
+
+Returns the CSV or JSON text. `list_tasks` returns structured JSON,
+which is usually what an agent wants; `export_tasks` exists for the
+spreadsheet report — CSV cells that would be read as a formula (`=`,
+`+`, `-`, `@`) are neutralised.
+
+This is a **report**, not a backup: it drops the body (unless
+`include_body`), relationships, custom fields, `key_history`, archive
+state and ranks, and **cannot be restored** — there is no CSV import.
+Use the `backup` tool to protect against data loss.
+
+Tasks that cannot be parsed are **named** in a `Warning:` line before
+the export body, never silently dropped.
+
 ### `list_views`
 
 Lists saved views from `queries.yaml`. No parameters. Returns JSON
@@ -191,6 +220,63 @@ returned, carrying `broken: true` plus the parser's `error` and
 itself or the healthy views beside it. Do not create or overwrite views
 in response to a broken entry: the view exists, it just needs its query
 fixed.
+
+### `create_view`
+
+Create a saved view — a named query you can re-run by name or id.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | yes | Display label. Need not be unique, but a unique name works as a ref |
+| `query` | string | yes | LocTT query DSL, e.g. `status in (backlog, in_progress)` — the same language `list_tasks` accepts as `query` |
+| `sort` | array | no | Ordered sort keys, `[{field, direction}]` with `direction` one of `asc`/`desc` |
+
+The query is validated on write, so a malformed one is rejected here
+rather than silently poisoning the catalog. Returns the created view
+including its generated `id` — address the view by that id afterward,
+since names are not unique.
+
+### `edit_view`
+
+Edit a saved view. Any of `name`, `query`, `sort` may be supplied;
+omitted fields are left unchanged.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `view` | string | yes | View id or unique name (ambiguous name rejected) |
+| `name` | string | no | New display label |
+| `query` | string | no | New query DSL (validated on write) |
+| `sort` | array \| null | no | New sort keys, or `null` to clear the sort |
+
+`sort: null` clears an existing sort; omitting `sort` leaves it
+unchanged. Returns the updated view.
+
+### `delete_view`
+
+Permanently remove a saved view. Always requires `confirm: true`. Use
+`archive_view` for the reversible variant.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `view` | string | yes | View id or unique name |
+| `confirm` | boolean | yes | Must be `true` to proceed |
+
+### `archive_view`
+
+Mark a view as archived — hidden from default lists but still runnable
+by id. Reversible via `unarchive_view`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `view` | string | yes | View id or unique name |
+
+### `unarchive_view`
+
+Clear the archived flag on a view, restoring it to default lists.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `view` | string | yes | View id or unique name |
 
 ### `get_workflow_config`
 
@@ -678,6 +764,14 @@ Returns the full milestones config JSON. Each milestone is `{id, name, target_da
 |---|---|---|---|
 | `progress` | boolean | no | Include per-milestone progress counts |
 
+With `progress: true` the response is `{milestones: [...], unreadable?}`
+— each milestone gains a `progress` `{done, total, discarded, fraction}`
+computed from status **category** (not a status key), with discarded
+tasks excluded from the denominator. A top-level `unreadable` list
+(present only when non-empty) names any task files that could not be
+read; the totals count only the readable corpus, so a short total is
+explained rather than silent.
+
 ### `create_milestone`
 
 | Parameter | Type | Required | Description |
@@ -720,7 +814,20 @@ Returns JSON `{id, ...result}`.
 
 ### `list_sprints`
 
-No parameters. Returns the full sprints config JSON. Each sprint is `{id, name, start_date, end_date, state, goal?}`; `id` is a ULID.
+Returns the full sprints config JSON. Each sprint is `{id, name, start_date, end_date, state, goal?}`; `id` is a ULID.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `progress` | boolean | no | Include per-sprint progress counts |
+
+With `progress: true` the response is `{sprints: [...], unreadable?}`,
+mirroring `list_milestones`: each sprint gains a `progress` `{done,
+total, discarded, fraction}` computed from status **category** (not a
+status key), with discarded tasks excluded from the denominator. A
+top-level `unreadable` list (present only when non-empty) names any task
+files that could not be read; the totals count only the readable corpus,
+so a short total is explained rather than silent. It is opt-in because
+computing it scans every task.
 
 ### `create_sprint`
 
@@ -773,6 +880,11 @@ Returns JSON `{id, ...result}`.
 The whole-tracker backup, and the only export a restore can read. The
 CSV/JSON export is a report for a spreadsheet: it drops the body,
 relationships, custom fields, `key_history`, archive state and ranks.
+
+Backup and restore are on every surface: these MCP tools, the CLI
+`loctt backup` / `loctt restore` commands, and the web UI (Settings →
+Backup & restore). A backup taken through one restores through any of
+them.
 
 **Both tools write to the filesystem and can take time on a large
 tracker.** Say what you are about to do before calling either, and do
@@ -841,19 +953,15 @@ A restore refuses — writing nothing — when the destination is mid
 prefix-rename or mid schema-migration, when the backup is from a newer
 schema, or when a part of a split set is missing.
 
-## Not on this surface
+## What might look absent but isn't
 
-Deliberately absent from MCP, so an agent does not go looking:
+Capabilities an agent might assume are web-only are all reachable here,
+so there is no need to go looking:
 
-- **Export (CSV / JSON)** — web only. `list_tasks` returns structured
-  JSON, which is what an agent wants; export exists for the spreadsheet
-  round-trip. The **backup** is a different thing and is available here
-  — see `backup` above.
-- **Creating and editing saved views** — web only. `list_views` reads
-  them and `list_tasks` accepts a `view`, so a view saved in the UI is
-  usable here.
-
-Bulk edits *are* available — see `bulk_update_tasks`.
+Task export *is* available — see `export_tasks` above. Bulk edits *are*
+available — see `bulk_update_tasks`. Saved-view
+management is available too — see `create_view` / `edit_view` /
+`delete_view` / `archive_view` / `unarchive_view` above.
 
 ### Reordering
 

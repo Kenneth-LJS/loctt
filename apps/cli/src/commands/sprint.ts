@@ -5,9 +5,11 @@ import {
   deleteSprint,
   editSprint,
   loadSprintsConfig,
+  loadWorkflowConfig,
   readBurndownSeries,
   resolveLocttDir,
   resolveSprintIdFromInput,
+  sprintProgressDetailed,
   unarchiveSprint,
 } from "@loctt/core";
 
@@ -31,7 +33,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--end", "--force", "--format", "--goal", "--ids", "--name", "--remap-to", "--start", "--state", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--end", "--force", "--format", "--goal", "--ids", "--name", "--progress", "--remap-to", "--start", "--state", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -41,13 +43,42 @@ export async function run(args: string[], root: string): Promise<void> {
     case "list": {
       const includeArchived = hasFlag(args, "--all");
       const showIds = hasFlag(args, "--ids");
+      const showProgress = hasFlag(args, "--progress");
       const cfg = await loadSprintsConfig(locttDir);
-      for (const s of cfg.sprints) {
-        if (!includeArchived && s.archived === true) continue;
+      const shown = cfg.sprints.filter(s => includeArchived || s.archived !== true);
+
+      // Opt-in: progress scans every task, and `sprint list` is
+      // otherwise a config read. Mirrors `milestone list --progress`.
+      let progress: Record<string, { done: number; total: number; discarded: number }> = {};
+      if (showProgress) {
+        const workflow = await loadWorkflowConfig(locttDir);
+        const report = await sprintProgressDetailed(locttDir, shown.map(s => s.id), workflow);
+        progress = report.progress;
+        // K28 (aggregate half): an unreadable task cannot be attributed
+        // to a sprint (its sprint field is exactly what failed to
+        // parse), so the totals count only the readable corpus. Naming
+        // the files a total is short by — rather than silently dropping
+        // them — is P-5: a wrong number needs its explanation beside it.
+        if (report.unreadable.length > 0) {
+          console.error(
+            `Warning: ${report.unreadable.length} task(s) could not be read and are excluded from these totals:`,
+          );
+          for (const u of report.unreadable) console.error(`  ${u.path}: ${u.reason}`);
+        }
+      }
+
+      for (const s of shown) {
         const goal = s.goal ? `  "${s.goal}"` : "";
         const arch = s.archived === true ? "  (archived)" : "";
         const idCol = showIds ? `\t${s.id}` : "";
-        console.log(`${s.name}${idCol}\t[${s.state}]\t${s.start_date}..${s.end_date}${goal}${arch}`);
+        const p = progress[s.id];
+        // Name the excluded discarded tasks where the number is shown:
+        // silently shrinking a denominator is as confusing as leaving
+        // dead work in it.
+        const prog = p
+          ? `  ${p.done}/${p.total}${p.discarded > 0 ? ` (${p.discarded} discarded, excluded)` : ""}`
+          : "";
+        console.log(`${s.name}${idCol}\t[${s.state}]\t${s.start_date}..${s.end_date}${goal}${prog}${arch}`);
       }
       break;
     }

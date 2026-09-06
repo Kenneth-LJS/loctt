@@ -49,9 +49,6 @@ export const DEFAULT_COLUMNS: readonly ColumnDef[] = ALL_COLUMNS.filter(
   c => c.id !== "reporter",
 );
 
-/** Default visible column order when the user has no saved preference. */
-export const DEFAULT_COLUMN_ORDER: readonly string[] = DEFAULT_COLUMNS.map(c => c.id);
-
 /**
  * How the active project filter should affect the project column.
  *

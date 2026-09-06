@@ -112,17 +112,43 @@ surface drift (the "key index" check turns to `!`), then rerun with
 
 ### `loctt views`
 
-List saved views from `.loctt/config/queries.yaml`. Prints `<name>  <query>`,
-with a sort suffix when one is configured.
+Manage saved views in `.loctt/config/queries.yaml`. A saved view is a
+named query you re-run by name; the same views the web UI authors, and
+the same ones `list --view <name>` runs.
+
+```
+loctt views                                          # list (bare, or `views list`)
+loctt views create <name> --query "<dsl>" [--sort <field[:asc|:desc]>,...]
+loctt views edit <name|id> [--name <new>] [--query "<dsl>"] [--sort ...|-]
+loctt views archive <name|id>
+loctt views unarchive <name|id>
+loctt views delete <name|id> [--yes]
+```
+
+**list** (the bare command, or `views list`) prints `<name>  <query>`,
+with a `[sort: ...]` suffix when a sort is configured and an
+` (archived)` marker on hidden views.
 
 A view whose query no longer parses (usually a hand edit) is still listed,
 marked `[broken: <parser message>]`, rather than being dropped or taking
 down the rest of the list — one bad entry never hides the healthy views
-beside it.
+beside it. The write subcommands preserve such a broken sibling untouched.
 
-```
-loctt views
-```
+**create** adds a view. `--query` is required and is validated on write,
+so a malformed query is rejected here rather than poisoning the catalog.
+`--sort` is a comma-separated list of `field[:asc|:desc]` (a bare field
+defaults to `asc`), which is how a multi-key sort is expressed:
+`--sort priority:desc,created:asc`.
+
+**edit** changes any of name, query, or sort; omitted flags are left
+unchanged. `--sort -` clears an existing sort (distinct from omitting
+`--sort`, which leaves it as-is). A view is addressed by id or by a
+unique name — an ambiguous name is rejected, telling you to use the id.
+
+**archive** hides a view from default lists; it stays runnable by id and
+`unarchive` restores it. **delete** removes it permanently and is
+irreversible, so it confirms first (pass `--yes` to skip the prompt in
+scripts); `archive` is the reversible alternative.
 
 ### `loctt schema`
 
@@ -372,7 +398,7 @@ loctt milestone delete "Version 0.9" --remap-to "Version 1.0" --yes
 `loctt sprint <subcommand>` manages sprints.
 
 ```
-loctt sprint list [--all] [--ids]
+loctt sprint list [--all] [--ids] [--progress]
 loctt sprint create <name> --start <YYYY-MM-DD> --end <YYYY-MM-DD> [--state <active|completed|future>] [--goal <g>]
 loctt sprint edit <name|id> [--name <new>] [--start <d>] [--end <d>] [--state <s>] [--goal <g|->] [--force]
 loctt sprint archive <name|id>
@@ -386,6 +412,16 @@ when two share a name.
 
 `create --state` defaults to `future`. `edit --goal -` clears the sprint
 goal. `edit --name` renames; the positional argument selects which sprint.
+
+`--progress` adds a `done/total` readout per sprint, identical in
+computation to `milestone list --progress`: it is computed from status
+**category**, not from any status key, so renaming or deleting `done`
+does not break it. **Discarded tasks are excluded from the denominator**
+— a sprint whose remaining work has all been abandoned reads `4/4`
+rather than stalling below 100% forever — and the excluded count is
+named next to the number. It is opt-in because computing it scans every
+task. A task file that cannot be read is named on stderr and excluded
+from the totals, rather than silently shrinking them.
 
 `edit --force` is required to re-open a completed sprint (move it from
 `completed` back to `active` or `future`).
@@ -529,6 +565,48 @@ loctt list --archived
 
 MCP's `list_tasks` takes the same three as `sort`, `direction` and
 `offset`, so a saved ordering reads identically from either surface.
+
+### `loctt export`
+
+Export tasks as CSV or JSON — the same report the web list view's
+export menu produces, for the same rows. Filters resolve exactly as
+`list` does, so `loctt export --view x` exports what `loctt list
+--view x` shows.
+
+```
+loctt export [--format <csv|json>] [--query <q>] [--view <v>] [--project <key>]
+             [--columns <a,b,c>] [--body] [--archived] [--output <file>]
+```
+
+| Flag | Description |
+|---|---|
+| `--format <csv\|json>` | Output format. Default `csv`. |
+| `--query <q>` | Ad hoc query string, as in `list` |
+| `--view <v>` | Named saved view |
+| `--project <key>` | Filter to a project (key, name or id) |
+| `--columns <a,b,c>` | Explicit column list (built-in field names or `fields.<custom>`). Defaults to the standard export columns. |
+| `--body` | Include the markdown body (JSON field / CSV column). Off by default. |
+| `--archived` | Include archived tasks (hidden by default) |
+| `--output <file>` | Write to a file instead of stdout; a count is reported on stderr. |
+
+Without `--output` the export goes to stdout, so it pipes. CSV cells
+that would be read as a spreadsheet formula (`=`, `+`, `-`, `@`) are
+neutralised so opening the file cannot execute them.
+
+This is a **report**, not a backup: it drops the body (unless
+`--body`), relationships, custom fields, `key_history`, archive state
+and ranks, and **cannot be restored** — there is no CSV import. Use
+`loctt backup` to protect against data loss.
+
+Tasks that cannot be parsed are **named on stderr**, never silently
+dropped, so an export is never a spreadsheet short by a row that
+reconciles against nothing.
+
+```
+loctt export --format json > tasks.json
+loctt export --view in-progress --columns key,title,assignee
+loctt export --project web --body --output web-tasks.csv
+```
 
 ### `loctt show`
 
@@ -1067,6 +1145,10 @@ CSV/JSON export is a **report for a spreadsheet** and drops the body,
 relationships, custom fields, `key_history`, archive state and ranks —
 a restore from it would be a pile of disconnected, bodyless tasks.
 
+Backup and restore are on every surface: these CLI commands, the MCP
+`backup` / `restore` tools, and the web UI (Settings → Backup &
+restore). A backup taken on one restores through any of them.
+
 ### `loctt backup`
 
 Writes a JSONL backup: one JSON value per line, so it streams and a
@@ -1152,16 +1234,8 @@ is written.
 
 Deliberately absent from the CLI, so you are not left hunting for them:
 
-- **Export (CSV / JSON)** — web only, via the list view's export menu.
-  The CLI's `list --format json` covers scripting; export exists for the
-  spreadsheet round-trip, which is a UI workflow. The **backup** is a
-  different thing and is on every surface — see `loctt backup` above.
 - **Board and timeline ordering** — `rerank` moves a single task; the
   drag-driven reordering those views do is web only.
-- **Creating and editing saved views** — web only. `loctt views` lists
-  them and `list --view <name>` runs them, so a view saved in the UI is
-  usable here; authoring one means editing `queries.yaml` or using the
-  web editor.
 
 Bulk edits are *not* on this list: `set` and `unset` accept
 comma-separated refs and run as one bulk operation (see above).

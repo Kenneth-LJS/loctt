@@ -587,3 +587,84 @@ async function snapshotTree(dir: string): Promise<Record<string, string>> {
   await walk(dir, "");
   return out;
 }
+
+describe("restore refuses a path-traversal (zip-slip) backup (Phase Z SEC-1/SEC-2)", () => {
+  // A backup is an "import from elsewhere" operation; a crafted one must
+  // not write outside the tracker. Restore historically joined a record's
+  // attacker-controlled `name`/`path` straight onto the tracker dir, so a
+  // `../` entry wrote an arbitrary file (→ RCE via a git hook / shell rc).
+  // Each case injects one malicious record into an otherwise-valid backup
+  // and asserts restore REFUSES the whole thing and nothing escapes.
+  async function assertNoEscape(): Promise<void> {
+    // No file with our marker name should exist anywhere near the tracker.
+    const outside = join(dst, "..", "PWNED-phase-z.txt");
+    await expect(stat(outside)).rejects.toThrow();
+  }
+
+  // The refusal must land BEFORE any write (Phase Z fix-review): the
+  // per-site guards originally ran after stagedSwap, so a traversal
+  // attachment still let every task/config/state file land — a
+  // half-applied restore — before throwing. These assert the destination
+  // is untouched, not merely that it threw.
+  async function assertDestUntouched(): Promise<void> {
+    const taskDirs = await readdir(join(dstDir, "tasks")).catch(() => [] as string[]);
+    expect(taskDirs).toEqual([]); // emptyTasks() left it empty; nothing was written
+    await assertNoEscape();
+  }
+
+  it("refuses a config record whose path escapes the tracker, writing nothing (SEC-2)", async () => {
+    await seed(srcDir, "keep");
+    await exportBackup(srcDir, { outputPath: out });
+    const lines = (await readFile(out, "utf-8")).trimEnd().split("\n");
+    lines.push(JSON.stringify({
+      kind: "config",
+      path: "../../PWNED-phase-z.txt",
+      content: "owned: true\n",
+    }));
+    await writeFile(out, lines.join("\n") + "\n", "utf-8");
+
+    await emptyTasks(dstDir);
+    await expect(restoreBackup(dstDir, [out], { mode: "bare" }))
+      .rejects.toThrow(RestoreRefusedError);
+    // The legitimate task in the same backup must NOT have landed — the
+    // refusal is up front, before any write.
+    await assertDestUntouched();
+  });
+
+  it("refuses a task attachment whose name escapes, writing nothing (SEC-1)", async () => {
+    const id = await seed(srcDir, "keep");
+    await exportBackup(srcDir, { outputPath: out });
+    const lines = (await readFile(out, "utf-8")).trimEnd().split("\n");
+    const patched = lines.map(line => {
+      const rec = JSON.parse(line) as { kind?: string; id?: string; attachments?: unknown[] };
+      if (rec.kind === "task" && rec.id === id) {
+        rec.attachments = [{ name: "../../../PWNED-phase-z.txt", bytes: Buffer.from("owned").toString("base64") }];
+        return JSON.stringify(rec);
+      }
+      return line;
+    });
+    await writeFile(out, patched.join("\n") + "\n", "utf-8");
+
+    await emptyTasks(dstDir);
+    await expect(restoreBackup(dstDir, [out], { mode: "bare" }))
+      .rejects.toThrow(RestoreRefusedError);
+    await assertDestUntouched();
+  });
+
+  it("refuses a traversal backup on a DRY RUN too (the check is not write-time)", async () => {
+    await seed(srcDir, "keep");
+    await exportBackup(srcDir, { outputPath: out });
+    const lines = (await readFile(out, "utf-8")).trimEnd().split("\n");
+    lines.push(JSON.stringify({
+      kind: "config", path: "../../PWNED-phase-z.txt", content: "owned: true\n",
+    }));
+    await writeFile(out, lines.join("\n") + "\n", "utf-8");
+
+    await emptyTasks(dstDir);
+    // The dry run reported nothing before the fix, because the per-site
+    // guard sat past the dryRun return. It must refuse here too.
+    await expect(restoreBackup(dstDir, [out], { mode: "bare", dryRun: true }))
+      .rejects.toThrow(RestoreRefusedError);
+    await assertNoEscape();
+  });
+});

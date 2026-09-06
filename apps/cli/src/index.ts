@@ -25,6 +25,7 @@ import * as schemaCmd from "./commands/schema.js";
 import * as sprintCmd from "./commands/sprint.js";
 import * as taskArchiveCmd from "./commands/task-archive.js";
 import * as taskCrudCmd from "./commands/task-crud.js";
+import * as taskExportCmd from "./commands/task-export.js";
 import * as taskFilesCmd from "./commands/task-files.js";
 import * as taskLinksCmd from "./commands/task-links.js";
 import * as taskRankCmd from "./commands/task-rank.js";
@@ -101,6 +102,7 @@ export async function main(): Promise<void> {
 
       case "create":    await runCommand(() => taskCrudCmd.create(args, root));    break;
       case "list":      await runCommand(() => taskCrudCmd.list(args, root));      break;
+      case "export":    await runCommand(() => taskExportCmd.exportTasks(args, root)); break;
       case "show":      await runCommand(() => taskCrudCmd.show(args, root));      break;
       case "set":       await runCommand(() => taskCrudCmd.set(args, root));       break;
       case "unset":     await runCommand(() => taskCrudCmd.unset(args, root));     break;

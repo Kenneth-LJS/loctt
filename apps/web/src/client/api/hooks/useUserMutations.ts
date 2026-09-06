@@ -29,15 +29,6 @@ export function useCreateUser() {
   });
 }
 
-export function useUpdateUser() {
-  const qc = useQueryClient();
-  return useMutation<UserProfile, Error, { id: string } & CreateUserVars>({
-    mutationFn: ({ id, ...rest }) =>
-      apiClient.put<UserProfile>(`/api/users/${encodeURIComponent(id)}`, rest),
-    onSuccess: () => { invalidateUserConsumers(qc); },
-  });
-}
-
 export function useArchiveUser() {
   const qc = useQueryClient();
   return useMutation<UserProfile, Error, { id: string; archived: boolean }>({

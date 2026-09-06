@@ -60,6 +60,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "board-columns", label: "Board columns", group: "Tracker", built: false },
   { id: "timeline", label: "Timeline defaults", group: "Tracker", built: false },
   { id: "sync", label: "Sync", group: "Tracker", built: true },
+  { id: "backup", label: "Backup & restore", group: "Tracker", built: true },
   { id: "diagnostics", label: "Diagnostics", group: "Tracker", built: true },
 
   { id: "preferences", label: "My preferences", group: "Personal", built: true },
