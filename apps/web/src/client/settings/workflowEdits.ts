@@ -177,19 +177,6 @@ export function supportedTimezones(): string[] {
 }
 
 /**
- * SET-16: a custom field's `type` and `multi` are locked once the field
- * exists. `label` and `searchable` stay editable, so the lock reads as
- * targeted rather than as "this field is frozen".
- *
- * The server refuses an incompatible type change too
- * (`assertCustomFieldTypeChangesAreSafe`), which is what makes the
- * devtools bullet hold. This function is what the panel disables on.
- */
-export function lockedCustomFieldProps(existing: boolean): readonly (keyof CustomFieldDef)[] {
-  return existing ? ["type", "multi"] : [];
-}
-
-/**
  * SET-8: whether a custom enum's values carry weights, and therefore
  * which sort applies. The panel states the fallback rather than
  * leaving the user to infer it.
@@ -199,11 +186,6 @@ export type EnumSortBasis = "weight" | "declared";
 export function enumSortBasis(field: CustomFieldDef): EnumSortBasis {
   const values = field.values ?? [];
   return values.some(v => v.value !== undefined) ? "weight" : "declared";
-}
-
-/** SET-3: exactly one status is the default. */
-export function defaultStatusKey(statuses: readonly StatusDef[]): string | undefined {
-  return statuses.find(s => s.default === true)?.key;
 }
 
 /**

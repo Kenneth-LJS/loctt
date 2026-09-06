@@ -13,8 +13,10 @@ import {
   deleteSprint,
   editSprint,
   loadSprintsConfig,
+  loadWorkflowConfig,
   readBurndownSeries,
   resolveSprintIdFromInput,
+  sprintProgressDetailed,
   unarchiveSprint,
 } from "@loctt/core";
 import { z } from "zod";
@@ -26,11 +28,36 @@ import type { ToolDef } from "../types.js";
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "list_sprints",
-    description: "List sprints defined in sprints.yaml. Each sprint has an internal id (ULID), a display name, dates, state, and optional goal.",
-    inputSchema: {},
-    handler: async ({ locttDir }) => {
+    description:
+      "List sprints defined in sprints.yaml. Each sprint has an internal " +
+      "id (ULID), a display name, dates, state, and optional goal. Pass " +
+      "progress: true to include done/total per sprint — computed from " +
+      "status CATEGORY (so a renamed or deleted `done` status does not " +
+      "break it), with discarded tasks excluded from the denominator so " +
+      "abandoned work does not stall a sprint below 100% forever. When any " +
+      "task file cannot be read, the response carries an `unreadable` list " +
+      "naming them — the totals count only the readable corpus, so a short " +
+      "total is explained rather than silent.",
+    inputSchema: {
+      progress: z.boolean().optional()
+        .describe("Include done/total per sprint. Scans every task, so opt in only when needed."),
+    },
+    handler: async ({ locttDir }, args) => {
       const cfg = await loadSprintsConfig(locttDir);
-      return text(JSON.stringify(cfg, null, 2));
+      if (args["progress"] !== true) {
+        return text(JSON.stringify(cfg, null, 2));
+      }
+      const workflow = await loadWorkflowConfig(locttDir);
+      const report = await sprintProgressDetailed(
+        locttDir, cfg.sprints.map(s => s.id), workflow,
+      );
+      return text(JSON.stringify({
+        sprints: cfg.sprints.map(s => ({ ...s, progress: report.progress[s.id] })),
+        // K28: unreadable tasks cannot be attributed to a sprint, so
+        // they are reported at the top level. Present only when non-empty
+        // so a caller reading only `sprints` is unaffected.
+        ...(report.unreadable.length > 0 ? { unreadable: report.unreadable } : {}),
+      }, null, 2));
     },
   },
   {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 import {
   type ApplyReconcileResponse,
@@ -360,7 +360,10 @@ function TaskGroup({ group, decisions, collapsed, onToggle, onChoose }: {
   );
 }
 
-function ConflictRow({ conflict, decision, onChoose }: {
+// Exported for the a11y unit test (Batch-2): the pick-value control's
+// accessible name comes from the field-name element via
+// aria-labelledby, which is checkable only by rendering the row.
+export function ConflictRow({ conflict, decision, onChoose }: {
   readonly conflict: ReconcileConflict;
   readonly decision: { choice: Choice; value?: unknown } | undefined;
   readonly onChoose: (choice: Choice, value?: unknown) => void;
@@ -370,10 +373,15 @@ function ConflictRow({ conflict, decision, onChoose }: {
   );
   const chosen = decision?.choice;
   const isEnumLike = conflict.kind === "enum" || conflict.kind === "relationship_parent";
+  // a11y: the field name is the accessible label for the pick-value
+  // control. It is a plain heading `<div>`, not a `<label>`, so give it
+  // an id and point the control at it with aria-labelledby — otherwise
+  // the select/input announces as an unlabelled control (Batch-2 a11y).
+  const fieldLabelId = useId();
 
   return (
     <div data-testid="git-reconcile-row" data-field={conflict.field} className="px-3 py-2 text-[13px]">
-      <div className="mb-1 font-medium text-text-primary">{conflict.fieldLabel}</div>
+      <div id={fieldLabelId} className="mb-1 font-medium text-text-primary">{conflict.fieldLabel}</div>
       <div className="grid grid-cols-2 gap-2">
         <SideButton
           testId="git-reconcile-keep-local"
@@ -409,6 +417,7 @@ function ConflictRow({ conflict, decision, onChoose }: {
           ? (
               <select
                 data-testid="git-reconcile-pick-value"
+                aria-labelledby={fieldLabelId}
                 value={chosen === "value" ? pickValue : ""}
                 onChange={(e) => {
                   setPickValue(e.target.value);
@@ -426,6 +435,7 @@ function ConflictRow({ conflict, decision, onChoose }: {
               <input
                 type="text"
                 data-testid="git-reconcile-pick-value"
+                aria-labelledby={fieldLabelId}
                 placeholder="Type a third value…"
                 value={chosen === "value" ? pickValue : ""}
                 onChange={(e) => {

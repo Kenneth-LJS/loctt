@@ -112,6 +112,19 @@ To add or edit a custom field, edit `.loctt/config/workflow.yaml`. The UI picks 
 
 When a publish or sync detects conflicting concurrent edits, the UI opens a reconciliation panel: a list of conflicting fields with both sides shown and a "keep local / keep remote / pick value" choice per row. Click **Apply** to commit the reconciliation. See [git-sync.md](../common/git-sync.md) for the underlying model.
 
+## Backup and restore
+
+**Settings → Backup & restore** is the web surface for the whole-tracker JSONL backup — the same one `loctt backup` / `loctt restore` and the MCP `backup` / `restore` tools produce. This is the *real* backup: it carries task bodies, comments, attachments, history, config, users, and key state, so it can rebuild a tracker from nothing. The CSV/JSON task export (from a list view) is a report for a spreadsheet and **cannot** restore.
+
+- **Export** — a **Download backup** button streams the whole tracker as a single `.jsonl` file. History is included; machine-local files (user settings and recents) are deliberately excluded.
+- **Restore** — pick a backup file, choose a mode, and restore:
+  - **bare** — only writes into an empty tracker; refuses one that already has tasks.
+  - **merge** — adds only the ids missing here; never edits a task that is present.
+  - **overwrite** — replaces any task the backup carries. This can lose work, so it is gated behind a typed **OVERWRITE** confirmation; displaced bodies are kept beside the task and named in the result.
+  - **Preview (dry run)** predicts the counts and writes nothing, in any mode.
+
+A restore reports per-outcome counts and any key reallocations, renamed entities, or malformed lines skipped. It refuses a backup from a newer LocTT, a malformed file, or a tracker mid prefix-rename or migration — and nothing is written when it refuses. A **split** backup (taken with parts) must be restored with the `loctt restore` CLI, which takes every part at once.
+
 ## Diagnostics and migration
 
 **Settings → Diagnostics** runs the equivalent of `loctt doctor` and shows results inline. If a schema migration is needed (e.g. after upgrading LocTT), a banner appears at the top of the page with a **Preview migration** action that opens a diff of what would change.

@@ -9,6 +9,23 @@ interface Page<T> {
   readonly total: number;
   readonly offset: number;
   readonly limit: number;
+  /**
+   * Task files that exist but could not be read (K28 / P-5).
+   *
+   * The server puts this top-level on `/api/milestones?progress=true`
+   * (`server.ts` `handleListMilestones`), present only when non-empty:
+   * an unreadable task cannot be attributed to a milestone (its
+   * `milestone` field is exactly what failed to parse), so it is
+   * reported beside the totals rather than dropped from them. Without
+   * this field the view showed a short done/total with no explanation
+   * — the very silent-undercount K28 forbids. Same shape as
+   * `useTasks.ts`'s `unreadable`.
+   */
+  readonly unreadable?: readonly {
+    readonly id: string;
+    readonly path: string;
+    readonly reason: string;
+  }[];
 }
 
 /** Server `MAX_PAGE_LIMIT`; matches the other config-list hooks. */

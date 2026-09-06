@@ -4504,3 +4504,23 @@ collision test per writer, plus a test that a non-colliding broken
 sibling is preserved, mutation-verified. Confirm first whether the
 per-config validator sees `broken` (it likely does not, same blind spot
 as `validateWorkflowConfig`).
+
+## K31 · Web task export ignores `archived=true`; backup upload capped at 50 MB/attachment
+
+**Found:** 2026-09-06 (Phase Z Batch-2 fix-review) · **Status:** open, out of scope of the Batch-2 commit.
+
+Two quality notes the fix-review surfaced while checking the new parity surfaces — neither a regression from Phase Z, both recorded rather than fixed under K30's scope:
+
+1. **Web task export cannot include archived tasks.** The new CLI/MCP
+   `export`/`export_tasks` (K30 F4) pass `includeArchived` into
+   `listTasks`; the pre-existing web `handleExportTasks` does not, so
+   `GET /api/tasks/export?archived=true` still excludes archived tasks.
+   A pre-existing web defect that the new surfaces now make visible by
+   contrast. Fix: thread the archived filter into the web export handler
+   to match CLI/MCP.
+2. **Backup restore upload is capped at the multipart default (~50 MB
+   per attachment).** A legitimate large backup (a task with a big
+   attachment) is refused by the web restore endpoint (K30 F3) with an
+   unhelpful parser message. Fix: raise/limit the multipart cap for the
+   restore route deliberately, with a clear over-limit message, or
+   document the ceiling.

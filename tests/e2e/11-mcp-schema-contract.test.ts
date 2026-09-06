@@ -48,6 +48,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "archive_view",
+            },
+            {
+              "hasDescription": true,
               "name": "attach_file",
             },
             {
@@ -88,6 +92,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "create_view",
+            },
+            {
+              "hasDescription": true,
               "name": "delete_comment",
             },
             {
@@ -113,6 +121,10 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "delete_user",
+            },
+            {
+              "hasDescription": true,
+              "name": "delete_view",
             },
             {
               "hasDescription": true,
@@ -156,7 +168,15 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "edit_view",
+            },
+            {
+              "hasDescription": true,
               "name": "enable_git",
+            },
+            {
+              "hasDescription": true,
+              "name": "export_tasks",
             },
             {
               "hasDescription": true,
@@ -333,6 +353,10 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "unarchive_user",
+            },
+            {
+              "hasDescription": true,
+              "name": "unarchive_view",
             },
             {
               "hasDescription": true,

@@ -21,8 +21,12 @@ import {
   DEFAULT_LIST_LIMIT,
   deleteTask,
   duplicateTask,
+  exportTasksToCSV,
+  exportTasksToJSON,
+  filterForExport,
   listTasks,
   loadAllTasks,
+  loadAllTasksDetailed,
   loadArchivedGuardConfigs,
   loadOptionalConfigs,
   loadProjectsConfig,
@@ -209,6 +213,89 @@ export const TOOLS: readonly ToolDef[] = [
           ? `Warning: saved view "${view ?? ""}" — ${warnings.join("; ")}\nResults may be incomplete.\n\n${body}`
           : body,
       );
+    },
+  },
+  {
+    name: "export_tasks",
+    description:
+      "Export tasks as CSV or JSON, mirroring the list view's export. Filters "
+      + "(query, view, project) resolve the same rows as list_tasks; the CSV "
+      + "column set, formula-injection escaping and array handling come from "
+      + "core, so the output matches the web download for the same rows. This "
+      + "is a report for a spreadsheet, not a backup — it cannot restore (use "
+      + "the `backup` tool for that). Tasks that cannot be read are named in an "
+      + "`unreadable` field rather than silently dropped.",
+    inputSchema: {
+      format: z.enum(["csv", "json"]).optional().describe("Output format (default csv)."),
+      query: z.string().optional().describe("Ad hoc query string, as in list_tasks."),
+      view: z.string().optional().describe("Named saved view."),
+      project: z.string().optional().describe("Filter to a specific project (key/slug, name or id)."),
+      columns: z.array(z.string()).optional()
+        .describe("Explicit column list (built-in field names or `fields.<custom>`). Defaults to the standard export columns."),
+      include_body: z.boolean().optional().describe("Include the markdown body (JSON field / CSV column). Default false."),
+      include_archived: z.boolean().optional().describe("Include archived tasks (default false)."),
+    },
+    handler: async ({ locttDir }, args) => {
+      const format = (args["format"] as "csv" | "json" | undefined) ?? "csv";
+      const includeArchived = args["include_archived"] as boolean | undefined ?? false;
+      const includeBody = args["include_body"] as boolean | undefined ?? false;
+      const columns = args["columns"] as string[] | undefined;
+
+      // Detailed load so an unparseable task is named rather than
+      // silently omitted (BLK-44) — the same guarantee the web export
+      // and the CLI export give.
+      const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
+      const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
+      const baseQuery = args["query"] as string | undefined;
+      const view = args["view"] as string | undefined;
+
+      const projectArg = args["project"] as string | undefined;
+      const projectFilter = projectArg === undefined
+        ? undefined
+        : resolveProjectIdFromInput(await loadProjectsConfig(locttDir), projectArg, {
+            includeArchived,
+          });
+
+      const warnings: string[] = [];
+      const result = listTasks({
+        tasks,
+        options: {
+          ...(baseQuery !== undefined ? { query: baseQuery } : {}),
+          ...(view !== undefined ? { view } : {}),
+          ...(projectFilter !== undefined ? { project: projectFilter } : {}),
+          includeArchived,
+          ...(today !== undefined ? { today } : {}),
+          limit: Number.MAX_SAFE_INTEGER,
+        },
+        ...(queriesConfig !== undefined ? { queriesConfig } : {}),
+        ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+        ctx: buildListContext(tasks),
+        onWarning: err => warnings.push(err.message),
+      });
+      const filtered = filterForExport(result, includeArchived);
+      const opts = {
+        ...(columns ? { columns } : {}),
+        ...(includeBody ? { includeBody: true } : {}),
+      };
+      const data = format === "json"
+        ? exportTasksToJSON(filtered, opts)
+        : exportTasksToCSV(filtered, opts);
+
+      // The export body is returned as text. An agent cannot read a
+      // download header, so unreadable paths ride in the response
+      // prose — a short export that hid a bad row would read as a
+      // complete answer (BLK-44, P-4).
+      const notes: string[] = [];
+      if (warnings.length > 0) {
+        notes.push(`Warning: saved view "${view ?? ""}" — ${warnings.join("; ")}`);
+      }
+      if (unreadable.length > 0) {
+        notes.push(
+          `Warning: ${unreadable.length} task(s) could not be read and were ` +
+          `omitted:\n${unreadable.map(u => `  ${u.path}`).join("\n")}`,
+        );
+      }
+      return text(notes.length > 0 ? `${notes.join("\n")}\n\n${data}` : data);
     },
   },
   {

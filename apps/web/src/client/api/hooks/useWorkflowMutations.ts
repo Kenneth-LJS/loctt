@@ -59,14 +59,6 @@ export interface SaveWorkflowResult {
   readonly rewrittenTaskCount: number;
 }
 
-export function useSaveWorkflow() {
-  const qc = useQueryClient();
-  return useMutation<SaveWorkflowResult, Error, PutWorkflowRequest>({
-    mutationFn: body => apiClient.put<SaveWorkflowResult>("/api/workflow", body),
-    onSuccess: () => { invalidateWorkflowConsumers(qc); },
-  });
-}
-
 /**
  * SET-28: a panel must not save a stale copy over a file that changed
  * underneath it.
@@ -133,13 +125,4 @@ export function useSaveCalendar() {
       void qc.invalidateQueries({ queryKey: ["tasks"] });
     },
   });
-}
-
-/** Convenience: the workflow document with one collection replaced. */
-export function withCollection<K extends keyof WorkflowConfig>(
-  workflow: WorkflowConfig,
-  key: K,
-  value: WorkflowConfig[K],
-): WorkflowConfig {
-  return { ...workflow, [key]: value };
 }

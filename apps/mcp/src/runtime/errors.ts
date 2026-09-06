@@ -34,6 +34,7 @@ import {
   UnreadableFileError,
   UnreadableTaskError,
   UserError,
+  ViewError,
 } from "@loctt/core";
 
 import type { McpToolResult } from "../types.js";
@@ -88,6 +89,13 @@ export function isKnownDomainError(err: unknown): err is Error {
     // a server fault it cannot act on.
     || err instanceof StaleBodyWriteError
     || err instanceof UserError
+    // A bad saved-view query or an unknown/ambiguous view ref (create_view,
+    // edit_view, delete_view, archive_view, unarchive_view). Its message is
+    // core's own user-facing text — a parse error with the offending token,
+    // or "unknown view: X" — so an agent can act on it. Without this a
+    // create_view with a malformed query reached the agent as an opaque
+    // server fault instead of the sentence that names the fix (K30 F2).
+    || err instanceof ViewError
     || err instanceof SchemaVersionError
     || err instanceof SchemaTooNewError
     // A corrupt task.md is the user's file, and the message names the

@@ -1,8 +1,64 @@
 import type { SprintDef } from "@loctt/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import type { Progress } from "../../milestones/model.ts";
 import type { BurndownSeriesDto } from "../../sprints/burndownModel.ts";
 import { apiClient } from "../client.ts";
+
+/** Server `MAX_PAGE_LIMIT`; matches the other config-list hooks. */
+const SPRINTS_PROGRESS_PAGE_LIMIT = 1000;
+
+/** A sprint as the list endpoint returns it with `?progress=true`. */
+export interface SprintWithProgress extends SprintDef {
+  readonly progress?: Progress;
+}
+
+interface SprintsProgressPage {
+  readonly items: readonly SprintWithProgress[];
+  readonly total: number;
+  readonly offset: number;
+  readonly limit: number;
+  /**
+   * Task files that exist but could not be read (K28 / P-5).
+   *
+   * The server puts this top-level on `/api/sprints?progress=true`
+   * (`server.ts` `handleListSprints`), present only when non-empty:
+   * an unreadable task cannot be attributed to a sprint (its `sprint`
+   * field is exactly what failed to parse), so it is reported beside
+   * the totals rather than dropped from them. Same shape as
+   * `useTasks.ts`'s `unreadable`.
+   */
+  readonly unreadable?: readonly {
+    readonly id: string;
+    readonly path: string;
+    readonly reason: string;
+  }[];
+}
+
+/**
+ * The sprints list **with** progress — `?progress=true`.
+ *
+ * The exact mirror of `useMilestonesWithProgress` (F1 parity, K30):
+ * sprint progress lived only on the web *server* with no client
+ * consumer, so the "all three surfaces" claim was over-broad. This is
+ * that consumer. Kept a separate query key from `useSprints` (the
+ * sidebar read) because computing progress scans every task on disk,
+ * a cost the sidebar must not pay on every page load. The key carries
+ * `"workflow"` because progress is computed from status *categories*
+ * in `workflow.yaml`, so a settings edit must drop this cache entry —
+ * `invalidateWorkflowConsumers` invalidates by the `["workflow"]`
+ * prefix, matching the milestones hook.
+ */
+export function useSprintsWithProgress() {
+  return useQuery({
+    queryKey: ["workflow", "sprints-progress"],
+    queryFn: ({ signal }) =>
+      apiClient.get<SprintsProgressPage>(
+        `/api/sprints?progress=true&limit=${String(SPRINTS_PROGRESS_PAGE_LIMIT)}`,
+        { signal },
+      ),
+  });
+}
 
 /**
  * Reads and writes for the sprint detail route (M4.7).

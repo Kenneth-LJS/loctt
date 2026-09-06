@@ -55,6 +55,12 @@ Commands:
                                    --archived: include archived tasks
                                    (hidden by default; saved views are respected as authored)
   show <task>
+  export [--format <csv|json>] [--query <q>] [--view <v>] [--project <key>]
+    [--columns <a,b,c>] [--body] [--archived] [--output <file>]
+                                   Export tasks as CSV or JSON (default csv).
+                                   Filters mirror 'list'; writes to stdout unless
+                                   --output is given. CSV is a report, not a backup
+                                   (use 'backup' to protect against data loss).
   set <task> <field> <value>
   unset <task> <field>
   link <task> <relationship> <target>

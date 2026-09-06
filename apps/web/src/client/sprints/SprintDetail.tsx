@@ -4,11 +4,12 @@ import { useMemo } from "react";
 
 import { useSprints } from "../api/hooks/sidebarData.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
-import { useBurndown } from "../api/hooks/useSprintDetail.ts";
+import { useBurndown, useSprintsWithProgress } from "../api/hooks/useSprintDetail.ts";
 import { tasksParamsFromSearch,useTasks } from "../api/hooks/useTasks.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { Dash,PriorityCell, StatusBadge, TypeBadge } from "../list/cells.tsx";
 import { FilterBar } from "../list/FilterBar.tsx";
+import { progressState } from "../milestones/model.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { BurndownChart } from "./BurndownChart.tsx";
 import { SprintMetaHeader } from "./SprintMetaHeader.tsx";
@@ -52,6 +53,14 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
   );
   const tasks = useTasks(params);
   const burndown = useBurndown(sprint === undefined ? undefined : sprintId);
+
+  // F1 (K30): sprint progress from core, the same done/total core
+  // computes for the CLI and MCP — the web client's consumer of
+  // `/api/sprints?progress=true`, which had none. Category-based and
+  // discarded-excluded, so it is a different (complementary) number
+  // from the task-list total below, which counts tasks matching the
+  // current filter.
+  const sprintsProgress = useSprintsWithProgress();
 
   // The tracker's today, not the browser's — the elapsed/future split
   // must match what the CLI would report (SPR-21).
@@ -117,6 +126,16 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
   const total = tasks.data?.total ?? items.length;
   const estimationOn = workflow.data?.estimation?.enabled === true;
 
+  // The done/total for *this* sprint, out of the progress list. The
+  // readout math (zero-denominator suppression, complete-at-n/n) is
+  // shared with milestones by construction, not re-implemented.
+  const thisProgress = (sprintsProgress.data?.items ?? []).find(s => s.id === sprintId)?.progress;
+  const readout = progressState(thisProgress);
+  // K28 / P-5: task files core could not read cannot be attributed to
+  // a sprint, so the done/total above is short by this many. Surfaced,
+  // never a silently-shortened total.
+  const progressUnreadable = sprintsProgress.data?.unreadable ?? [];
+
   return (
     <div data-testid="sprint-detail" data-sprint-id={sprint.id} className="flex h-full flex-col gap-4 overflow-auto p-4">
       <div>
@@ -126,6 +145,52 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
       </div>
 
       <SprintMetaHeader sprint={sprint} />
+
+      {/* F1 (K30): the sprint's done/total, from core via
+          `?progress=true` — the same figure the CLI's `sprint list
+          --progress` and MCP's `list_sprints` progress arg return.
+          `none` (no counted tasks) shows an explicit label rather than
+          a fabricated 0% (mirrors MSL-15). */}
+      {readout.kind !== "unavailable" && (
+        <div
+          data-testid="sprint-progress"
+          data-sprint-progress-done={String(readout.done)}
+          data-sprint-progress-total={String(readout.total)}
+          className="flex items-baseline gap-2 text-[12px] text-text-secondary"
+        >
+          <span className="font-medium text-text-primary">Progress</span>
+          {readout.kind === "none" ? (
+            <span data-testid="sprint-progress-none" className="text-text-tertiary">
+              No tasks
+            </span>
+          ) : (
+            <span data-testid="sprint-progress-count" className="tabular-nums">
+              {readout.done}/{readout.total}
+              {readout.percent !== undefined && (
+                <span className="ml-1 text-text-tertiary">({readout.percent}%)</span>
+              )}
+              {readout.discarded > 0 && (
+                <span className="ml-1 text-text-tertiary">
+                  ({readout.discarded} discarded, excluded)
+                </span>
+              )}
+            </span>
+          )}
+        </div>
+      )}
+
+      {progressUnreadable.length > 0 && (
+        <div
+          role="alert"
+          data-testid="sprint-progress-unreadable"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+        >
+          {progressUnreadable.length} task
+          {" "}{progressUnreadable.length === 1 ? "file" : "files"} could not be
+          {" "}read, so the progress total is short by
+          {" "}{progressUnreadable.length === 1 ? "it" : "them"}. Check the file.
+        </div>
+      )}
 
       <BurndownChart
         series={burndown.data}

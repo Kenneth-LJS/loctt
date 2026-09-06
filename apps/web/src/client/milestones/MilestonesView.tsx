@@ -52,6 +52,14 @@ export function MilestonesView() {
     milestones.data === undefined ? undefined : all,
   );
 
+  // K28 / P-5: task files core could not read. They cannot be
+  // attributed to any milestone (their `milestone` field is what failed
+  // to parse), so the totals below count only the readable corpus and
+  // are short by this many. Surfacing the count — rather than showing a
+  // silently-shortened done/total — is exactly what K28 requires; the
+  // sibling Sprints view surfaces the same via /api/tasks.
+  const unreadable = milestones.data?.unreadable ?? [];
+
   const archivedCount = all.filter(m => m.archived === true).length;
 
   const visible = useMemo(
@@ -107,6 +115,23 @@ export function MilestonesView() {
           </label>
         )}
       </header>
+
+      {/* K28 / P-5: task files that could not be read are excluded
+          from every milestone's totals (they cannot be attributed to
+          one), so the numbers below are short by this many. Naming the
+          count keeps a shortened total from being silent — the failure
+          mode K28 rules out. */}
+      {unreadable.length > 0 && (
+        <div
+          role="alert"
+          data-testid="milestones-unreadable"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+        >
+          {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
+          {" "}could not be read, so the totals below are short by
+          {" "}{unreadable.length === 1 ? "it" : "them"}. Check the file.
+        </div>
+      )}
 
       {/* MSL-24: tasks pointing at an id `milestones.yaml` does not
           define. They are absent from every milestone's counts — core

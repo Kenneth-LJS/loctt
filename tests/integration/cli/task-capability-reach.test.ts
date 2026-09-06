@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { runCli } from "../adapters/cli-spawn.js";
 import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
 
+// withTmpLoctt is used by the reachability cases below.
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 /**
@@ -17,8 +18,11 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
  * capability deliberately left off a surface is absent from that
  * surface's user doc too".
  *
- * duplicate, move and bulk are reachable from the CLI. Export is web
- * only, and both reference docs now say so.
+ * duplicate, move and bulk are reachable from the CLI. Export was
+ * originally web-only and documented as absent here; K30 (F4)
+ * overrode that call and built it on the CLI and MCP, so this now
+ * asserts export is PRESENT on the CLI and named in both reference
+ * docs.
  */
 describe("task capabilities are reachable or documented as absent", () => {
   it("duplicates a task with a fresh key and no relationships", async () => {
@@ -69,18 +73,22 @@ describe("task capabilities are reachable or documented as absent", () => {
     });
   });
 
-  it("documents export as absent rather than leaving it unexplained", async () => {
-    // Export is built and wired to the web only. The case permits that,
-    // provided the surface's own doc says so — otherwise a reader
-    // concludes it was forgotten.
-    const cli = await runCli(["export"], { cwd: repoRoot });
-    expect(cli.exitCode).not.toBe(0);
+  it("exports tasks from the CLI and documents export on both surfaces", async () => {
+    // K30/F4 built task export on the CLI and MCP, overriding the
+    // earlier "web-only, documented as absent" call. Export must now
+    // run on the CLI and be documented on both surfaces.
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "exported"], { cwd: root });
+      const cli = await runCli(["export", "--format", "json"], { cwd: root });
+      expect(cli.exitCode).toBe(0);
+      const parsed = JSON.parse(cli.stdout) as { title?: string }[];
+      expect(parsed.some(r => r.title === "exported")).toBe(true);
+    });
 
     for (const doc of ["docs/user/cli/reference.md", "docs/user/mcp/reference.md"]) {
       const text = await readFile(path.join(repoRoot, doc), "utf-8");
-      expect(text, `${doc} does not say export is absent`)
-        .toMatch(/Not on this surface/);
-      expect(text).toMatch(/Export/);
+      expect(text, `${doc} does not document export`)
+        .toMatch(/[Ee]xport/);
     }
   });
 });
