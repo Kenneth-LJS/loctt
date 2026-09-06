@@ -11,6 +11,7 @@ import type {
   WorkflowBroken,
   WorkflowConfig,
 } from "@loctt/contracts";
+import { effectiveInverseKey, relationshipTypeKeys } from "@loctt/contracts";
 import { ulid } from "ulid";
 import { stringify as stringifyYaml } from "yaml";
 
@@ -271,6 +272,90 @@ function renumberPriorities(config: WorkflowConfig): WorkflowConfig {
 type SimpleCollection = "statuses" | "priorities" | "task_types";
 
 /**
+ * Every relationship-type token — forward key AND inverse key — that a
+ * config declares. This is the vocabulary the task validator and
+ * `linkTask` use (`relationshipTypeKeys`): a directional relationship
+ * contributes two tokens, a symmetric one contributes one. Stored edges
+ * carry whichever side `linkTask` wrote (`blocks` on the source,
+ * `is_blocked_by` on the target), so the remap pass must recognise both
+ * or it walks into an edge it has no rule for and throws. Building the
+ * vocab from `r.key` alone — the original bug — misses every inverse.
+ */
+function relationshipTypeVocabulary(config: WorkflowConfig): Set<string> {
+  return new Set(config.relationships.flatMap(relationshipTypeKeys));
+}
+
+/**
+ * Expands the user's key-level relationship remap into a type-level
+ * table that also covers the inverse tokens `linkTask` writes onto
+ * target tasks.
+ *
+ * The user edits definitions by `key` — "delete `blocks`", "rename
+ * `blocks` → `depends_on`" — which is the right unit: a definition owns
+ * both its forward and inverse names. But stored edges use either side,
+ * so applying only the forward remap drops the source edge and then
+ * throws on the target's inverse edge (the shipped BUG-1). We derive the
+ * inverse rows mechanically here so both sides move together:
+ *
+ *  - A `key → null` delete also maps `oldInverse → null`.
+ *  - A `key → target` remap also maps `oldInverse → newInverse`, where
+ *    `newInverse` is the effective inverse of the target definition in
+ *    `next` (which may itself be symmetric, contributing just its key).
+ *  - A definition whose `key` survives but whose `inverse` field changed
+ *    (inverse-only rename, no remap directive needed because key
+ *    identity carries the mapping) maps `oldInverse → newInverse`.
+ *
+ * The returned table is keyed by stored edge `type` and is what
+ * `applyRelationshipsRemap` consults. The user still may only name
+ * *keys* as remap sources (enforced in `validateRemapCoversDeletions`);
+ * this expansion is what makes that restriction safe.
+ */
+export function expandRelationshipsRemap(
+  prev: WorkflowConfig,
+  next: WorkflowConfig,
+  keyRemap: Readonly<Record<string, string | null>> | undefined,
+): Record<string, string | null> {
+  const prevByKey = new Map(prev.relationships.map(r => [r.key, r]));
+  const nextByKey = new Map(next.relationships.map(r => [r.key, r]));
+  const expanded: Record<string, string | null> = {};
+
+  // 1. User-supplied key-level directives, plus their inverse rows.
+  for (const [source, target] of Object.entries(keyRemap ?? {})) {
+    expanded[source] = target;
+    const prevDef = prevByKey.get(source);
+    if (!prevDef) continue; // source-key validity is checked elsewhere
+    const oldInverse = effectiveInverseKey(prevDef);
+    if (oldInverse === source) continue; // symmetric — one token only
+    if (target === null) {
+      expanded[oldInverse] = null;
+      continue;
+    }
+    const targetDef = nextByKey.get(target);
+    // If the target key isn't in `next`, the deletion validator rejects
+    // the edit before we apply anything; guard so this stays total.
+    expanded[oldInverse] = targetDef ? effectiveInverseKey(targetDef) : target;
+  }
+
+  // 2. Inverse-only renames: key survives, `inverse` name changed. No
+  //    remap directive is required for these — key identity carries the
+  //    mapping — so derive them here so stored inverse edges follow.
+  for (const prevDef of prev.relationships) {
+    const nextDef = nextByKey.get(prevDef.key);
+    if (!nextDef) continue; // key deleted — handled by directive rows above
+    const oldInverse = effectiveInverseKey(prevDef);
+    const newInverse = effectiveInverseKey(nextDef);
+    if (oldInverse === prevDef.key) continue; // was symmetric
+    if (oldInverse === newInverse) continue; // inverse unchanged
+    // Don't clobber a directive-derived row (a key remap wins).
+    if (!(oldInverse in expanded)) {
+      expanded[oldInverse] = newInverse;
+    }
+  }
+
+  return expanded;
+}
+
+/**
  * Validates that key-immutability is preserved between two
  * workflow configs: any key present in `prev` must still exist in
  * `next` *unless* the caller has supplied a remap directive in
@@ -329,7 +414,14 @@ export function validateRemapCoversDeletions(
   // string and `remap.relationships` lives at the same top level.
   // Inline the same logic here so the error messages share wording
   // with the scalar collections.
-  const nextRelKeys = new Set(next.relationships.map(r => r.key));
+  // Vocabulary is both sides of every definition (forward + inverse),
+  // matching what `linkTask` writes and the task validator accepts. An
+  // edge whose type survives — as a forward key OR an inverse token —
+  // needs no remap. Building this from `r.key` alone was the shipped
+  // BUG-1: it treated every stored inverse edge as an unrecognised type.
+  const nextRelTypes = relationshipTypeVocabulary(next);
+  // Remap *sources* remain keys only (a definition is the unit of
+  // editing), so the source check uses forward keys, not the vocabulary.
   const prevRelKeys = new Set(prev.relationships.map(r => r.key));
   const relRemap = remap.relationships ?? {};
   for (const source of Object.keys(relRemap)) {
@@ -339,8 +431,15 @@ export function validateRemapCoversDeletions(
       );
     }
   }
+  // In-use edge types that no longer resolve in `next`, once the
+  // user's key-level remap is expanded to cover inverse tokens too.
+  // A key survives only when its forward token is still in `next`; an
+  // in-use *inverse* token whose definition was deleted is covered by
+  // the forward key's directive (expanded above), never demanded of the
+  // user directly.
+  const expanded = expandRelationshipsRemap(prev, next, relRemap);
   for (const r of prev.relationships) {
-    if (nextRelKeys.has(r.key)) continue;
+    if (nextRelTypes.has(r.key)) continue;
     if (!inUse.relationships.has(r.key)) continue;
     if (!(r.key in relRemap)) {
       throw new WorkflowConfigError(
@@ -348,7 +447,28 @@ export function validateRemapCoversDeletions(
       );
     }
     const target = relRemap[r.key];
-    if (target !== null && target !== undefined && !nextRelKeys.has(target)) {
+    if (target !== null && target !== undefined && !nextRelTypes.has(target)) {
+      throw new WorkflowConfigError(
+        `relationships remap '${r.key}' → '${target}' targets a key not present in the new config`,
+      );
+    }
+  }
+  // Guard the inverse tokens too: an in-use inverse whose type no longer
+  // resolves in `next` and has no expanded remap row is a gap we must
+  // catch here (loudly, as a config error) rather than at apply time
+  // (which throws a bare `internal:` message naming an unrelated task).
+  for (const r of prev.relationships) {
+    const inv = effectiveInverseKey(r);
+    if (inv === r.key) continue; // symmetric — no separate inverse token
+    if (nextRelTypes.has(inv)) continue;
+    if (!inUse.relationships.has(inv)) continue;
+    const target = expanded[inv];
+    if (target === undefined) {
+      throw new WorkflowConfigError(
+        `relationships key '${r.key}' is in use; provide a remap target (or null to clear)`,
+      );
+    }
+    if (target !== null && !nextRelTypes.has(target)) {
       throw new WorkflowConfigError(
         `relationships remap '${r.key}' → '${target}' targets a key not present in the new config`,
       );
@@ -773,7 +893,12 @@ async function executeWorkflowRemap(
   const nextStatusKeys = new Set(next.statuses.map(s => s.key));
   const nextPriorityKeys = new Set(next.priorities.map(p => p.key));
   const nextTypeKeys = new Set(next.task_types.map(t => t.key));
-  const nextRelKeys = new Set(next.relationships.map(r => r.key));
+  // Both sides of every definition — the vocabulary stored edges use.
+  const nextRelKeys = relationshipTypeVocabulary(next);
+  // Expand the user's key-level remap to cover the inverse tokens
+  // `linkTask` writes onto target tasks, so both directions of a
+  // deleted/renamed relationship move together.
+  const relRemapExpanded = expandRelationshipsRemap(prev, next, remap.relationships);
   const nextFieldsByKey = new Map(next.custom_fields.map(f => [f.key, f]));
 
   let rewrittenTaskCount = 0;
@@ -788,7 +913,7 @@ async function executeWorkflowRemap(
     if (applyScalarRemap(fm, "status", taskKey, nextStatusKeys, remap.statuses)) changed = true;
     if (applyScalarRemap(fm, "priority", taskKey, nextPriorityKeys, remap.priorities)) changed = true;
     if (applyScalarRemap(fm, "task_type", taskKey, nextTypeKeys, remap.task_types)) changed = true;
-    if (applyRelationshipsRemap(fm, taskKey, nextRelKeys, remap.relationships)) changed = true;
+    if (applyRelationshipsRemap(fm, taskKey, nextRelKeys, relRemapExpanded)) changed = true;
     if (applyCustomFieldsRemap(fm, nextFieldsByKey, remap)) changed = true;
 
     if (changed) {

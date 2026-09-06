@@ -466,27 +466,33 @@ describe("applyWorkflowEdit", () => {
 });
 
 describe("applyWorkflowEdit — relationships", () => {
-  async function makeLinkedPair(relType: string): Promise<void> {
+  /**
+   * Links A → relType → B through the REAL `linkTask`, so B receives
+   * the INVERSE edge that `linkTask` writes (e.g. `is_blocked_by`) — the
+   * data every directional link produces on a real tracker. An earlier
+   * version of this fixture wrote a one-sided forward edge via
+   * `writeTask`, which meant no relationship test ever held an inverse
+   * edge and the remap pass was never exercised against the data that
+   * bricks a live tracker (BUG-1 / bug-journal-remap-inverse.md).
+   * Returns both task ids so callers can assert on either side.
+   */
+  async function makeLinkedPair(relType: string): Promise<{ aId: string; bId: string }> {
+    let aId = "";
+    let bId = "";
     await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);
-      await createTask({ locttDir, state, options: { project: taskProjectId, title: "A" } });
-      const target = await createTask({
+      const a = await createTask({ locttDir, state, options: { project: taskProjectId, title: "A" } });
+      const b = await createTask({
         locttDir, state, options: { project: taskProjectId, title: "B" },
       });
       await saveState(locttDir, state);
-      // Link A → relType → B directly via writeTask round-trip.
-      const tasks = await loadAllTasks(locttDir);
-      const a = tasks.find(t => t.frontmatter.key === "T-1");
-      if (!a) throw new Error("test setup: T-1 missing");
-      const { writeTask } = await import("../task/io.js");
-      await writeTask(locttDir, a.frontmatter.id, {
-        ...a,
-        frontmatter: {
-          ...a.frontmatter,
-          relationships: [{ type: relType, target: target.frontmatter.id }],
-        },
-      });
+      aId = a.frontmatter.id;
+      bId = b.frontmatter.id;
     });
+    const wf = await loadWorkflowConfig(locttDir);
+    const { linkTask } = await import("../task/relationships.js");
+    await linkTask({ locttDir, taskId: aId, type: relType, target: bId, workflowConfig: wf });
+    return { aId, bId };
   }
 
   it("rewrites task relationships when a relationship key is removed with remap target", async () => {
@@ -503,13 +509,18 @@ describe("applyWorkflowEdit — relationships", () => {
     const result = await applyWorkflowEdit(locttDir, next, {
       relationships: { blocks: "depends_on" },
     });
-    expect(result.rewrittenTaskCount).toBe(1);
+    // Two tasks rewritten: A's forward `blocks` and B's inverse
+    // `is_blocked_by` both move to the new definition.
+    expect(result.rewrittenTaskCount).toBe(2);
     const tasks = await loadAllTasks(locttDir);
     const a = tasks.find(t => t.frontmatter.key === "T-1");
+    const b = tasks.find(t => t.frontmatter.key === "T-2");
     expect(a?.frontmatter.relationships?.[0]?.type).toBe("depends_on");
+    // The inverse edge on B follows to the new definition's inverse.
+    expect(b?.frontmatter.relationships?.[0]?.type).toBe("required_by");
   });
 
-  it("drops task relationships when remap target is null", async () => {
+  it("drops both directions when remap target is null", async () => {
     await makeLinkedPair("blocks");
     const wf = await loadWorkflowConfig(locttDir);
     const next: WorkflowConfig = {
@@ -519,7 +530,11 @@ describe("applyWorkflowEdit — relationships", () => {
     await applyWorkflowEdit(locttDir, next, { relationships: { blocks: null } });
     const tasks = await loadAllTasks(locttDir);
     const a = tasks.find(t => t.frontmatter.key === "T-1");
+    const b = tasks.find(t => t.frontmatter.key === "T-2");
+    // Both the forward edge on A and the inverse `is_blocked_by` on B
+    // are removed — no orphaned inverse edge left behind.
     expect(a?.frontmatter.relationships ?? []).toEqual([]);
+    expect(b?.frontmatter.relationships ?? []).toEqual([]);
   });
 
   it("rejects deletion of an in-use relationship without remap", async () => {
@@ -624,6 +639,120 @@ describe("applyWorkflowEdit — relationships", () => {
     await applyWorkflowEdit(locttDir, next, { relationships: { blocks: null } });
     const reloaded = await loadWorkflowConfig(locttDir);
     expect(reloaded.relationships.some(r => r.key === "blocks")).toBe(false);
+  });
+
+  // --- BUG-1: inverse edges must not brick unrelated workflow saves ---
+  // On a tracker holding ANY directional link, `linkTask` writes an
+  // inverse edge (`is_blocked_by`, `child`, …) on the target. Before the
+  // fix, the remap pass built its vocabulary from `r.key` only, so any
+  // Settings → Workflow save threw `internal: missing relationships
+  // remap for "<inverse>"` mid-loop, AFTER journaling and BEFORE
+  // clearing — poisoning the journal and turning the tracker read-only
+  // on every surface. See docs/dev/bug-journal-remap-inverse.md.
+
+  it("a no-op save over a `blocks` link does not throw and leaves no journal entry", async () => {
+    await makeLinkedPair("blocks");
+    const wf = await loadWorkflowConfig(locttDir);
+    // Byte-for-byte the same config, no remap — what a Settings save
+    // with no real change sends. Must complete cleanly.
+    await expect(applyWorkflowEdit(locttDir, wf, {})).resolves.toBeDefined();
+
+    const { loadJournal } = await import("../state/index.js");
+    expect((await loadJournal(locttDir)).entries).toHaveLength(0);
+
+    // Both edges survive untouched — nothing was dropped or renamed.
+    const tasks = await loadAllTasks(locttDir);
+    const a = tasks.find(t => t.frontmatter.key === "T-1");
+    const b = tasks.find(t => t.frontmatter.key === "T-2");
+    expect(a?.frontmatter.relationships?.[0]?.type).toBe("blocks");
+    expect(b?.frontmatter.relationships?.[0]?.type).toBe("is_blocked_by");
+  });
+
+  it("a reorder save over a `parent`/`child` link completes and preserves both edges", async () => {
+    // `parent` is the most common directional link; its inverse is
+    // `child`. Reordering the relationships list (the demo's actual
+    // edit) must not walk into the inverse edge and throw.
+    await makeLinkedPair("parent");
+    const wf = await loadWorkflowConfig(locttDir);
+    const reordered: WorkflowConfig = {
+      ...wf,
+      relationships: [...wf.relationships].reverse(),
+    };
+    await expect(applyWorkflowEdit(locttDir, reordered, {})).resolves.toBeDefined();
+
+    const { loadJournal } = await import("../state/index.js");
+    expect((await loadJournal(locttDir)).entries).toHaveLength(0);
+
+    const tasks = await loadAllTasks(locttDir);
+    const a = tasks.find(t => t.frontmatter.key === "T-1");
+    const b = tasks.find(t => t.frontmatter.key === "T-2");
+    expect(a?.frontmatter.relationships?.[0]?.type).toBe("parent");
+    expect(b?.frontmatter.relationships?.[0]?.type).toBe("child");
+  });
+
+  it("after a no-op save, an unrelated setField-style write still works", async () => {
+    // The bricking symptom: once the journal was poisoned, EVERY later
+    // withStateLock op replayed the failing entry. Prove the tracker is
+    // still writable after the workflow save by making a plain task edit.
+    await makeLinkedPair("blocks");
+    const wf = await loadWorkflowConfig(locttDir);
+    await applyWorkflowEdit(locttDir, wf, {});
+
+    // An unrelated write that takes the state lock (recovery runs first).
+    await makeTaskWithStatus("in_progress");
+    const tasks = await loadAllTasks(locttDir);
+    expect(tasks.some(t => t.frontmatter.status === "in_progress")).toBe(true);
+  });
+
+  it("a real delete-with-null over a `blocks` link removes BOTH sides and clears the journal", async () => {
+    await makeLinkedPair("blocks");
+    const wf = await loadWorkflowConfig(locttDir);
+    const next: WorkflowConfig = {
+      ...wf,
+      relationships: wf.relationships.filter(r => r.key !== "blocks"),
+    };
+    const result = await applyWorkflowEdit(locttDir, next, { relationships: { blocks: null } });
+    // Two tasks rewritten: A loses `blocks`, B loses `is_blocked_by`.
+    expect(result.rewrittenTaskCount).toBe(2);
+
+    const { loadJournal } = await import("../state/index.js");
+    expect((await loadJournal(locttDir)).entries).toHaveLength(0);
+
+    const tasks = await loadAllTasks(locttDir);
+    const a = tasks.find(t => t.frontmatter.key === "T-1");
+    const b = tasks.find(t => t.frontmatter.key === "T-2");
+    expect(a?.frontmatter.relationships ?? []).toEqual([]);
+    expect(b?.frontmatter.relationships ?? []).toEqual([]);
+  });
+
+  it("an inverse-only rename (key survives) remaps stored inverse edges", async () => {
+    // Renaming ONLY a definition's `inverse` field — key unchanged —
+    // needs no remap directive: key identity carries the mapping. Stored
+    // inverse edges must follow the new inverse name automatically.
+    await makeLinkedPair("blocks");
+    const wf = await loadWorkflowConfig(locttDir);
+    const next: WorkflowConfig = {
+      ...wf,
+      relationships: wf.relationships.map(r =>
+        r.key === "blocks"
+          ? { ...r, inverse: "blocked_by", inverse_label: "Blocked by" }
+          : r,
+      ),
+    };
+    // No remap directive — the inverse rename is derived from key identity.
+    const result = await applyWorkflowEdit(locttDir, next, {});
+    // Only B (holding the inverse edge) needs a rewrite; A's forward
+    // `blocks` edge is unchanged.
+    expect(result.rewrittenTaskCount).toBe(1);
+
+    const { loadJournal } = await import("../state/index.js");
+    expect((await loadJournal(locttDir)).entries).toHaveLength(0);
+
+    const tasks = await loadAllTasks(locttDir);
+    const a = tasks.find(t => t.frontmatter.key === "T-1");
+    const b = tasks.find(t => t.frontmatter.key === "T-2");
+    expect(a?.frontmatter.relationships?.[0]?.type).toBe("blocks");
+    expect(b?.frontmatter.relationships?.[0]?.type).toBe("blocked_by");
   });
 });
 
