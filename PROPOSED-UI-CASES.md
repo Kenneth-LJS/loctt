@@ -360,7 +360,7 @@ Edit-gated value-edit behaviour lives in this new ID instead.)*
 > behind Edit. Recording decision #3 (reorder stays inline) is a one-line
 > `decisions.md §9` note, not a SET-6 rewrite.
 
-### SET-16 · M4 · blocker · P3 P7 — SUPERSEDES the current SET-16
+### ✅ APPLIED (B2 step 0, 2026-09-06) · SET-16 · M4 · blocker · P3 P7 — SUPERSEDES the current SET-16
 **A custom field's type is locked after creation, inside the Edit
 dialog.** Field `story_points` exists as `number` with values on 40 tasks.
 
@@ -420,7 +420,7 @@ it.** Custom enum value `sprint_1` is set on 12 tasks.
 > the raw key with a drift marker and are surfaced by Diagnostics").
 > Same BUG-2 correction as SET-17.
 
-### SET-28 · M4 · major · P1 P7 — SUPERSEDES the current SET-28
+### ✅ APPLIED (B2 step 0, 2026-09-06) · SET-28 · M4 · major · P1 P7 — SUPERSEDES the current SET-28
 **`workflow.yaml` is rewritten by hand while a settings panel is open,
 with edits gated behind a dialog.**
 
@@ -437,7 +437,7 @@ with edits gated behind a dialog.**
 > only). Broadened to the Edit-dialog save path, which is now the primary
 > value-edit surface.
 
-### SET-51 · M4 · major · P4 — NEW (additive; SET-34 stays intact)
+### ✅ APPLIED (B2 step 0, 2026-09-06) · SET-51 · M4 · major · P4 — NEW (additive; SET-34 stays intact)
 **A failed Edit-dialog Save stays open with an anchored error.** The
 Edit-dialog Save (the new primary value-edit surface) hits a write error.
 
@@ -457,7 +457,7 @@ dialog-Save-failure behaviour lives in this new ID.)*
 > (reorder stays inline per open decision #3); this ID covers the
 > Edit-dialog Save-failure path SET-34 never described.
 
-### SPR-8 · M4 · blocker · P1 — SUPERSEDES the current SPR-8
+### ✅ APPLIED (B2 step 0, 2026-09-06) · SPR-8 · M4 · blocker · P1 — SUPERSEDES the current SPR-8
 **Editing sprint metadata behind an Edit control persists to
 `sprints.yaml`.** Sprint detail header.
 
@@ -565,7 +565,7 @@ editable prefix via a confirm dialog; slug is the readOnly field.)
   and comment editors carry **distinct** test-ids so the DOM is
   unambiguous (both are `rich-editor` today).
 
-### `flow-saved-views.md` (K-8, u3) — new IDs
+### `flow-saved-views.md` (K-8, u3) — new IDs — ✅ APPLIED (B2 step 0, 2026-09-06): VUE-40/41
 
 *(VUE ends at VUE-39 in the flow doc; continue at 40)*
 
@@ -580,7 +580,7 @@ editable prefix via a confirm dialog; slug is the readOnly field.)
   (`PUT /api/views/:id` / core `editView`). Reloading shows the new
   name/query; `loctt views` agrees.
 
-### `flow-settings.md` — workflow create + custom-field CRUD (new IDs)
+### `flow-settings.md` — workflow create + custom-field CRUD (new IDs) — ✅ APPLIED (B2 step 0, 2026-09-06): SET-46/47/48/49
 
 - **SET-46 · M4 · major · P3 P4** — **A status can be created from the
   panel.** The Create dialog takes key + label + category + default; the
@@ -599,7 +599,7 @@ editable prefix via a confirm dialog; slug is the readOnly field.)
   lock after create (SET-16 shape); delete goes through remap-or-clear
   (SET-19 shape).
 
-### `flow-projects-users.md` (K-11, p1) — new IDs
+### `flow-projects-users.md` (K-11, p1) — new IDs — ✅ APPLIED (B2 step 0, 2026-09-06): PRU-47/48
 
 - **PRU-47 · M4 · major · P1 P8** — **An existing user's name, email and
   timezone can be edited from the UI**, via a per-row Edit → dialog
@@ -613,7 +613,7 @@ editable prefix via a confirm dialog; slug is the readOnly field.)
   endpoint. Setting default writes to config, the marker moves, and the
   new default is where new tasks land / the default filter opens.
 
-### `flow-sprints.md` (K-14, u2 create/delete/archive) — new IDs
+### `flow-sprints.md` (K-14, u2 create/delete/archive) — new IDs — ✅ APPLIED (B2 step 0, 2026-09-06): SPR-39/40
 
 *(Review-2 correction: SPR-27 and SPR-28 already exist in the index — SPR
 max is 38 — so the proposed IDs collided. Renumbered to the next free
@@ -630,7 +630,7 @@ SPR-39/40.)*
   `handleUpdateSprint` (server) + a "show archived" toggle; the CLI and
   MCP already have the concept, so this is web reaching parity (P10).
 
-### `flow-app-shell.md` (K-10 sidebar editor, UX-12 header search) — new IDs
+### `flow-app-shell.md` (K-10 sidebar editor, UX-12 header search) — new IDs — ✅ APPLIED (B2 step 0, 2026-09-06): SHL-45/46 (SHL-45 shape DECIDED 2026-09-06: per-user, hideable+reorderable, web+CLI+MCP)
 
 *(Review-2 correction: SHL-N1/SHL-N2 were unindexable — the case-index
 parser (`tools/case-index/parse.ts:67`) and the coverage scanner

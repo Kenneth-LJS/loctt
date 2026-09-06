@@ -284,3 +284,14 @@ it from a query that legitimately matches nothing (P4).
 - The result area states that the query could not be completed, what was attempted, and offers a retry.
 - Per P4's rare exception, if the cause is genuinely unknown the message still says what was attempted, that no data was changed, and what to try next.
 - The empty-state copy from VUE-28 is never reused for this case.
+
+### VUE-40 · M4 · major · P2 P10
+**A saved view can be created from the UI.**
+- The sidebar "+ New filter" (disabled today, `Sidebar.tsx:715`) opens a create-view flow (name + query, reusing the advanced query editor).
+- The created view is written to `queries.yaml`, appears in the sidebar, and is runnable via `loctt views` (P10 parity).
+- The write cannot poison the file (cf. VUE-37).
+
+### VUE-41 · M4 · major · P1 P2
+**A saved view can be renamed and its query edited from the UI**, via an Edit dialog on the Saved views panel (`PUT /api/views/:id` / core `editView`).
+- Reloading shows the new name/query.
+- `loctt views` agrees.

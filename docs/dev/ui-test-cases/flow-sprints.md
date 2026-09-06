@@ -70,11 +70,14 @@ comes from `workflow.yaml#estimation` and resolves to one of
 - The `state` control offers exactly `active`, `completed`, `future` — no invented fourth state.
 
 ### SPR-8 · M4 · blocker · P1
-**Editing sprint metadata in the detail header persists to `sprints.yaml`.**
-- Changing `name` and blurring writes the new name; reloading shows the new name.
+**Editing sprint metadata behind an Edit control persists to `sprints.yaml`.** Sprint detail header.
+- The detail header is **read-by-default**; an explicit Edit control opens the fields for editing (name/start/goal/state) — they no longer commit-on-blur/commit-on-change in place.
+- Changing `name` and saving writes the new name; reloading shows it.
 - The sprint's `id` is unchanged by any edit — tasks referencing it stay attached, and their cards still appear.
-- `loctt sprint list` (or the equivalent CLI read) shows the edited values.
-- Changing `state` from `active` to `completed` re-collapses that column on the overview per SPR-2's rules.
+- `loctt sprint list` shows the edited values.
+- Changing `state` to `completed` re-collapses that column on the overview per SPR-2.
+
+> Supersedes the earlier commit-on-blur / commit-on-change framing. Same persistence guarantees; the trigger moves behind Edit per "inline is for tasks" (config surfaces, including sprint config, are gated; sprint config is not a task field).
 
 ### SPR-9 · M4 · major · P3
 **The burndown renders with numeric estimation, summing estimates.** `estimation: { enabled: true, unit: points }`, tasks carry numeric `estimate` values.
@@ -250,3 +253,13 @@ comes from `workflow.yaml#estimation` and resolves to one of
 **An unparseable `/sprints/$key` (unknown key) shows a not-found state, not a blank shell.**
 - The route reports that no sprint matches the key and offers a link back to the sprints overview.
 - The response is distinguishable from a sprint that exists but has no tasks.
+
+### SPR-39 · M4 · major · P8
+**The sprints overview surfaces at-a-glance data per card.**
+- Each sprint card shows progress (done / total), the date range, days-remaining (or overdue), and a mini-burndown or equivalent.
+- The whole card is clickable → detail.
+
+### SPR-40 · M4 · major · P10
+**Sprint create / delete / archive / unarchive are reachable from the Settings panel**, reaching parity with the CLI (`sprint archive`, `--all`).
+- Archive needs `archived` on `handleUpdateSprint` (server) plus a "show archived" toggle.
+- The CLI and MCP already have the concept, so this is web reaching parity (P10).

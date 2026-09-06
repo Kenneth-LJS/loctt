@@ -357,3 +357,20 @@ a violation of P4.
 - A task-not-found state renders in the main pane with the shell intact.
 - It names the key that was requested and distinguishes "no such key" from "you don't have it loaded".
 - It offers a way back to the list. It does not redirect silently, which would hide the fact that a shared link is dead.
+
+### SHL-45 · M4 · major · P2 P8
+**The sidebar's top-level groups can be shown/hidden and reordered.**
+
+- A settings editor lets the user hide or reorder the built-in groups (Projects, Milestones, Sprints, Labels, Recently viewed) and built-in filters.
+- The choice is a **per-user setting** (mirrors `sidebar_pins`) and persists across reload.
+- Per the which-layer rule, it is exposed on CLI + MCP with both reference docs updated, and it degrades on an unknown/duplicate group id per the corruption-handling guide.
+- "Hidden by the user" is not "vanished": this needs a carve-out against SHL-9 bullet 4 / SHL-5 / SHL-10 ("a group whose config file has no entries renders an explicit empty affordance rather than vanishing") — a user-hidden group is a deliberate choice, not a missing config.
+
+> Shape DECIDED (Ken, 2026-09-06): **per-user** settings; built-in groups and filters are **hideable AND reorderable**; exposed on **web + CLI + MCP** (full parity — an agent may configure the UI). Persisted per-user `sidebar_groups`; doctor-tolerant.
+
+### SHL-46 · M1 · blocker · P2 P8
+**The global header search works.**
+
+- Typing in the header "Search tasks…" box and pressing Enter (or as-you-type) queries `/api/search` and shows results / navigates; a real network request fires.
+- The box is not a dead input (the input has no handler today).
+- Once wired, `/` focuses it (A11Y-2 becomes reachable).

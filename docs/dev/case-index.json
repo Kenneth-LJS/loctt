@@ -1,8 +1,8 @@
 {
   "generated_from": "docs/dev/ui-test-cases/, docs/dev/surface-test-cases/",
   "counts": {
-    "total": 997,
-    "ui": 897,
+    "total": 1010,
+    "ui": 910,
     "surface": 100,
     "resolved": 3
   },
@@ -9500,6 +9500,40 @@
       "resolved": false
     },
     {
+      "id": "PRU-47",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-projects-users.md",
+      "line": 384,
+      "title": "An existing user's name, email and timezone can be edited from the UI",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P1",
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "PRU-48",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-projects-users.md",
+      "line": 391,
+      "title": "A project can be set as the default from the Projects panel.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P1",
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
       "id": "PRU-C1",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-projects-users.md",
@@ -10941,7 +10975,7 @@
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
       "line": 143,
-      "title": "A custom field's type is locked after creation.",
+      "title": "A custom field's type is locked after creation, inside the Edit dialog.",
       "milestone": "M4",
       "severity": "blocker",
       "principles": [
@@ -10957,7 +10991,7 @@
       "id": "SET-17",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 151,
+      "line": 153,
       "title": "Deleting a status still referenced by tasks.",
       "milestone": "M4",
       "severity": "major",
@@ -10974,7 +11008,7 @@
       "id": "SET-18",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 159,
+      "line": 161,
       "title": "A task references a status that no longer exists in `workflow.yaml`.",
       "milestone": "M4",
       "severity": "major",
@@ -10991,7 +11025,7 @@
       "id": "SET-19",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 167,
+      "line": 169,
       "title": "Deleting an enum value that tasks still hold.",
       "milestone": "M4",
       "severity": "major",
@@ -11007,7 +11041,7 @@
       "id": "SET-20",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 174,
+      "line": 176,
       "title": "A workflow with 25 statuses does not break the panels or the board.",
       "milestone": "M4",
       "severity": "minor",
@@ -11024,7 +11058,7 @@
       "id": "SET-21",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 181,
+      "line": 183,
       "title": "Reordering priorities recomputes values without gaps causing a resort surprise.",
       "milestone": "M4",
       "severity": "minor",
@@ -11040,7 +11074,7 @@
       "id": "SET-22",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 190,
+      "line": 192,
       "title": "A calendar with every day marked non-working.",
       "milestone": "M4",
       "severity": "major",
@@ -11057,7 +11091,7 @@
       "id": "SET-23",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 198,
+      "line": 200,
       "title": "A holiday list of 500 entries.",
       "milestone": "M4",
       "severity": "minor",
@@ -11073,7 +11107,7 @@
       "id": "SET-24",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 205,
+      "line": 207,
       "title": "A timezone that no longer exists in the IANA database.",
       "milestone": "M4",
       "severity": "major",
@@ -11090,7 +11124,7 @@
       "id": "SET-25",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 213,
+      "line": 215,
       "title": "Changing the workspace timezone shifts nothing already stored.",
       "milestone": "M4",
       "severity": "minor",
@@ -11106,7 +11140,7 @@
       "id": "SET-26",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 222,
+      "line": 224,
       "title": "Hiding every field from the card layout.",
       "milestone": "M4",
       "severity": "minor",
@@ -11123,7 +11157,7 @@
       "id": "SET-27",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 229,
+      "line": 231,
       "title": "All pinned views are deleted from `queries.yaml` while the panel is open.",
       "milestone": "M4",
       "severity": "minor",
@@ -11140,8 +11174,8 @@
       "id": "SET-28",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 236,
-      "title": "`workflow.yaml` is rewritten by hand while a settings panel is open.",
+      "line": 238,
+      "title": "`workflow.yaml` is rewritten by hand while a settings panel is open, with edits gated behind a dialog.",
       "milestone": "M4",
       "severity": "major",
       "principles": [
@@ -11157,7 +11191,7 @@
       "id": "SET-29",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 243,
+      "line": 247,
       "title": "Diagnostics on a large or slow tracker.",
       "milestone": "M4",
       "severity": "major",
@@ -11173,7 +11207,7 @@
       "id": "SET-30",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 250,
+      "line": 254,
       "title": "Migrate is offered for `outdated` only.",
       "milestone": "M4",
       "severity": "major",
@@ -11190,7 +11224,7 @@
       "id": "SET-31",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 258,
+      "line": 262,
       "title": "The migration-in-progress sentinel is present at load.",
       "milestone": "M4",
       "severity": "blocker",
@@ -11207,7 +11241,7 @@
       "id": "SET-32",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 266,
+      "line": 270,
       "title": "An unknown settings section in the URL.",
       "milestone": "M4",
       "severity": "minor",
@@ -11223,7 +11257,7 @@
       "id": "SET-33",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 275,
+      "line": 279,
       "title": "`workflow.yaml` fails Zod validation.",
       "milestone": "M4",
       "severity": "major",
@@ -11240,7 +11274,7 @@
       "id": "SET-34",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 282,
+      "line": 286,
       "title": "A drag-reorder write fails.",
       "milestone": "M4",
       "severity": "major",
@@ -11256,7 +11290,7 @@
       "id": "SET-35",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 289,
+      "line": 293,
       "title": "Saving estimation as `custom_enum` without `preset_values`.",
       "milestone": "M4",
       "severity": "major",
@@ -11272,7 +11306,7 @@
       "id": "SET-36",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 296,
+      "line": 300,
       "title": "Saving a calendar with an end-of-list holiday in an unparseable date format.",
       "milestone": "M4",
       "severity": "major",
@@ -11288,7 +11322,7 @@
       "id": "SET-37",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 303,
+      "line": 307,
       "title": "`POST /api/migrate` fails partway.",
       "milestone": "M4",
       "severity": "blocker",
@@ -11305,7 +11339,7 @@
       "id": "SET-38",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 311,
+      "line": 315,
       "title": "Migrate is attempted while the migration lock is held by the CLI.",
       "milestone": "M4",
       "severity": "major",
@@ -11322,7 +11356,7 @@
       "id": "SET-39",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 319,
+      "line": 323,
       "title": "A settings write hits the state lock on a Dropbox-hosted tracker.",
       "milestone": "M4",
       "severity": "major",
@@ -11339,7 +11373,7 @@
       "id": "SET-40",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 326,
+      "line": 330,
       "title": "Diagnostics itself fails to run.",
       "milestone": "M4",
       "severity": "major",
@@ -11355,7 +11389,7 @@
       "id": "SET-41",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 333,
+      "line": 337,
       "title": "An avatar-sized settings payload is rejected as too large.",
       "milestone": "M4",
       "severity": "major",
@@ -11371,13 +11405,97 @@
       "id": "SET-42",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 340,
+      "line": 344,
       "title": "The settings shell loads while the API is unreachable.",
       "milestone": "M4",
       "severity": "minor",
       "principles": [
         "P4",
         "P6"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "SET-46",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-settings.md",
+      "line": 351,
+      "title": "A status can be created from the panel.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P3",
+        "P4"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "SET-47",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-settings.md",
+      "line": 358,
+      "title": "A priority / task-type can be created.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P3",
+        "P4"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "SET-48",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-settings.md",
+      "line": 365,
+      "title": "A relationship type can be created.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P3",
+        "P4"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "SET-49",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-settings.md",
+      "line": 372,
+      "title": "Custom fields have full CRUD in the UI.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P3",
+        "P4"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "SET-51",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-settings.md",
+      "line": 379,
+      "title": "A failed Edit-dialog Save stays open with an anchored error.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P4"
       ],
       "surfaces": [
         "UI"
@@ -12114,6 +12232,40 @@
       "resolved": false
     },
     {
+      "id": "SHL-45",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-app-shell.md",
+      "line": 361,
+      "title": "The sidebar's top-level groups can be shown/hidden and reordered.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P2",
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "SHL-46",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-app-shell.md",
+      "line": 371,
+      "title": "The global header search works.",
+      "milestone": "M1",
+      "severity": "blocker",
+      "principles": [
+        "P2",
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
       "id": "SPR-1",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
@@ -12235,7 +12387,7 @@
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
       "line": 72,
-      "title": "Editing sprint metadata in the detail header persists to `sprints.yaml`.",
+      "title": "Editing sprint metadata behind an Edit control persists to `sprints.yaml`.",
       "milestone": "M4",
       "severity": "blocker",
       "principles": [
@@ -12250,7 +12402,7 @@
       "id": "SPR-9",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 79,
+      "line": 82,
       "title": "The burndown renders with numeric estimation, summing estimates.",
       "milestone": "M4",
       "severity": "major",
@@ -12266,7 +12418,7 @@
       "id": "SPR-10",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 87,
+      "line": 90,
       "title": "The burndown renders with estimation disabled, counting tasks.",
       "milestone": "M4",
       "severity": "major",
@@ -12282,7 +12434,7 @@
       "id": "SPR-11",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 93,
+      "line": 96,
       "title": "The burndown handles `custom_enum` estimation, which cannot be summed.",
       "milestone": "M4",
       "severity": "major",
@@ -12299,7 +12451,7 @@
       "id": "SPR-12",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 100,
+      "line": 103,
       "title": "The burndown uses `weights` when `custom_enum` declares them.",
       "milestone": "M4",
       "severity": "major",
@@ -12315,7 +12467,7 @@
       "id": "SPR-13",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 106,
+      "line": 109,
       "title": "The sprint detail task list uses the shared filter bar, scoped to the sprint.",
       "milestone": "M4",
       "severity": "major",
@@ -12332,7 +12484,7 @@
       "id": "SPR-14",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 113,
+      "line": 116,
       "title": "Reassigning a task away from the sprint on the detail page removes it from that page's list.",
       "milestone": "M4",
       "severity": "minor",
@@ -12349,7 +12501,7 @@
       "id": "SPR-15",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 120,
+      "line": 123,
       "title": "A sprint with zero tasks renders a designed empty column.",
       "milestone": "M3",
       "severity": "major",
@@ -12365,7 +12517,7 @@
       "id": "SPR-16",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 126,
+      "line": 129,
       "title": "Burndown for a sprint with zero tasks does not render a broken chart.",
       "milestone": "M4",
       "severity": "major",
@@ -12381,7 +12533,7 @@
       "id": "SPR-17",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 131,
+      "line": 134,
       "title": "A sprint holding 400 tasks stays usable.",
       "milestone": "M3",
       "severity": "major",
@@ -12397,7 +12549,7 @@
       "id": "SPR-18",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 137,
+      "line": 140,
       "title": "A burndown over a 400-task sprint and a long window renders without axis mangling.",
       "milestone": "M4",
       "severity": "major",
@@ -12413,7 +12565,7 @@
       "id": "SPR-19",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 142,
+      "line": 145,
       "title": "Overlapping sprints both render, with no implied exclusivity.",
       "milestone": "M3",
       "severity": "major",
@@ -12430,7 +12582,7 @@
       "id": "SPR-20",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 148,
+      "line": 151,
       "title": "A sprint whose `end_date` has passed but whose `state` is still `active` renders as active.",
       "milestone": "M3",
       "severity": "major",
@@ -12447,7 +12599,7 @@
       "id": "SPR-21",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 154,
+      "line": 157,
       "title": "Burndown for a sprint whose window is entirely in the future.",
       "milestone": "M4",
       "severity": "major",
@@ -12463,7 +12615,7 @@
       "id": "SPR-22",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 159,
+      "line": 162,
       "title": "A single-day sprint (`start_date == end_date`) produces a valid chart.",
       "milestone": "M4",
       "severity": "minor",
@@ -12479,7 +12631,7 @@
       "id": "SPR-23",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 164,
+      "line": 167,
       "title": "Scope changes mid-sprint show as steps, not smoothed away.",
       "milestone": "M4",
       "severity": "major",
@@ -12495,7 +12647,7 @@
       "id": "SPR-24",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 170,
+      "line": 173,
       "title": "Two sprints sharing the same `name` are distinguishable.",
       "milestone": "M3",
       "severity": "minor",
@@ -12512,7 +12664,7 @@
       "id": "SPR-25",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 175,
+      "line": 178,
       "title": "A very long sprint name and a very long goal do not break the header layout.",
       "milestone": "M4",
       "severity": "minor",
@@ -12528,7 +12680,7 @@
       "id": "SPR-26",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 180,
+      "line": 183,
       "title": "A task assigned to an archived sprint still resolves on the task and in history.",
       "milestone": "M4",
       "severity": "major",
@@ -12544,7 +12696,7 @@
       "id": "SPR-27",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 186,
+      "line": 189,
       "title": "A task referencing a sprint id absent from `sprints.yaml` degrades visibly.",
       "milestone": "M3",
       "severity": "major",
@@ -12560,7 +12712,7 @@
       "id": "SPR-28",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 192,
+      "line": 195,
       "title": "A sprint edited in the CLI while its detail page is open does not get clobbered.",
       "milestone": "M4",
       "severity": "major",
@@ -12576,7 +12728,7 @@
       "id": "SPR-29",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 197,
+      "line": 200,
       "title": "Changing `estimation.unit` in `workflow.yaml` re-renders the burndown against the new unit on refresh.",
       "milestone": "M4",
       "severity": "minor",
@@ -12592,7 +12744,7 @@
       "id": "SPR-30",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 202,
+      "line": 205,
       "title": "A task completed and then reopened inside the sprint window shows both transitions.",
       "milestone": "M4",
       "severity": "minor",
@@ -12608,7 +12760,7 @@
       "id": "SPR-31",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 209,
+      "line": 212,
       "title": "A malformed `sprints.yaml` explains itself instead of blanking the view.",
       "milestone": "M3",
       "severity": "blocker",
@@ -12625,7 +12777,7 @@
       "id": "SPR-32",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 215,
+      "line": 218,
       "title": "An empty sprints view is distinguishable from a failed load.",
       "milestone": "M3",
       "severity": "blocker",
@@ -12642,7 +12794,7 @@
       "id": "SPR-33",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 220,
+      "line": 223,
       "title": "A rejected metadata edit reports the field and the reason inline.",
       "milestone": "M4",
       "severity": "blocker",
@@ -12658,7 +12810,7 @@
       "id": "SPR-34",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 227,
+      "line": 230,
       "title": "A burndown that fails to compute says so instead of drawing an empty chart.",
       "milestone": "M4",
       "severity": "major",
@@ -12674,7 +12826,7 @@
       "id": "SPR-35",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 233,
+      "line": 236,
       "title": "An invalid `weights` map is reported, not silently ignored.",
       "milestone": "M4",
       "severity": "major",
@@ -12691,7 +12843,7 @@
       "id": "SPR-36",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 238,
+      "line": 241,
       "title": "Dropping a card onto a column whose sprint was deleted underneath the session fails loudly.",
       "milestone": "M3",
       "severity": "major",
@@ -12708,7 +12860,7 @@
       "id": "SPR-37",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 244,
+      "line": 247,
       "title": "A metadata save that fails mid-flight states the resulting data state.",
       "milestone": "M4",
       "severity": "major",
@@ -12725,12 +12877,44 @@
       "id": "SPR-38",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-sprints.md",
-      "line": 249,
+      "line": 252,
       "title": "An unparseable `/sprints/$key` (unknown key) shows a not-found state, not a blank shell.",
       "milestone": "M4",
       "severity": "minor",
       "principles": [
         "P4"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "SPR-39",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-sprints.md",
+      "line": 257,
+      "title": "The sprints overview surfaces at-a-glance data per card.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "SPR-40",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-sprints.md",
+      "line": 262,
+      "title": "Sprint create / delete / archive / unarchive are reachable from the Settings panel",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P10"
       ],
       "surfaces": [
         "UI"
@@ -15296,6 +15480,40 @@
       "severity": "minor",
       "principles": [
         "P4"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "VUE-40",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-saved-views.md",
+      "line": 288,
+      "title": "A saved view can be created from the UI.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P2",
+        "P10"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "VUE-41",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-saved-views.md",
+      "line": 294,
+      "title": "A saved view can be renamed and its query edited from the UI",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P1",
+        "P2"
       ],
       "surfaces": [
         "UI"
