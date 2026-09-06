@@ -133,6 +133,19 @@ detail doc; the highest-severity items get pulled up here.
 
 ## Ken's decisions (for the implementation batches)
 
+- **Case reversals APPROVED (Ken, 2026-09-06):** SET-16, SET-17, SET-19,
+  SET-28, SPR-8, REL-12 rewrites in PROPOSED-UI-CASES.md are accepted —
+  they apply already-made rulings (BUG-2 copy, K-4 kebab, edit-model).
+  SET-51 additive (SET-34 untouched). PRU-44 preserved. These land in the
+  flow docs + cases:index as the FIRST step of their batches (gate step 0),
+  then code.
+- **K-10 sidebar-groups shape DECIDED (Ken, 2026-09-06):** **per-user**
+  (like existing pins) · built-in groups **hideable AND reorderable** ·
+  **full CLI/MCP parity** (Ken: an agent/MCP may want to configure the UI
+  too — parity principle applies). Load-bearing schema → a new per-user
+  `sidebar_groups` settings shape in contracts/core, exposed on web +
+  CLI + MCP, with doctor tolerance. This is the K-10 multi-layer lane.
+
 **Operating rule (Ken 2026-09-06): don't run low-level UI preferences by
 Ken.** If a call has a sensible recommended answer, the PM agent decides
 it and we proceed with the best recommendation. Escalate to Ken ONLY for:
