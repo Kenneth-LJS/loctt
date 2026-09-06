@@ -739,6 +739,59 @@ describe("journal recovery — remap_workflow", () => {
     expect((await loadJournal(locttDir)).entries).toHaveLength(0);
   });
 
+  it("replays a delete-with-inverse-edge remap that threw mid-loop, recovering both sides (BUG-1)", async () => {
+    // BUG-1: on a tracker with a real directional link, a
+    // delete-with-remap used to rewrite the source (dropping A's forward
+    // `blocks`), then throw on the target's inverse `is_blocked_by` edge
+    // — leaving A edgeless, B holding an orphaned inverse edge, the
+    // config unsaved, and the journal poisoned. With the vocab+expansion
+    // fix the interrupted op now COMPLETES on replay. Stage that exact
+    // partial state and drive recovery.
+    const { loadWorkflowConfig } = await import("../config/workflow.js");
+    await import("../config/workflow-write.js");
+    const { linkTask } = await import("../task/relationships.js");
+
+    const prevWf = await loadWorkflowConfig(locttDir);
+    const [aId, bId] = await seedTasks(TASK_PROJECT_ID, 2);
+    if (aId === undefined || bId === undefined) throw new Error("test setup");
+    // Real bilateral link: A gets `blocks`, B gets `is_blocked_by`.
+    await linkTask({ locttDir, taskId: aId, type: "blocks", target: bId, workflowConfig: prevWf });
+
+    // Simulate the pre-recovery partial state: A's forward edge already
+    // dropped by the crashed op, B's inverse edge still orphaned.
+    const a = await readTask(locttDir, aId);
+    await writeTask(locttDir, aId, {
+      ...a,
+      frontmatter: { ...a.frontmatter, relationships: [] },
+    });
+    const bBefore = await readTask(locttDir, bId);
+    expect(bBefore.frontmatter.relationships?.[0]?.type).toBe("is_blocked_by");
+
+    const next = {
+      ...prevWf,
+      relationships: prevWf.relationships.filter(r => r.key !== "blocks"),
+    };
+    const entry: JournalEntry = {
+      id: "01TEST_WF_RECOVERY_INVERSE",
+      kind: "remap_workflow",
+      started_at: "2026-09-06T10:00:00Z",
+      next,
+      remap: { relationships: { blocks: null } },
+    } as JournalEntry;
+    await writeJournalEntries([entry]);
+
+    // Trigger recovery via withStateLock. Before the fix this threw
+    // `internal: missing relationships remap for "is_blocked_by"`.
+    await withStateLock(locttDir, () => Promise.resolve());
+
+    // Orphaned inverse edge on B is gone; config saved; journal cleared.
+    const bAfter = await readTask(locttDir, bId);
+    expect(bAfter.frontmatter.relationships ?? []).toEqual([]);
+    const afterWf = await loadWorkflowConfig(locttDir);
+    expect(afterWf.relationships.some(r => r.key === "blocks")).toBe(false);
+    expect((await loadJournal(locttDir)).entries).toHaveLength(0);
+  });
+
   it("replays a remap_workflow entry idempotently when workflow.yaml is already updated", async () => {
     // Simulates the crash-after-save case: workflow.yaml is already
     // at `next`, but the journal entry wasn't cleared. Recovery
