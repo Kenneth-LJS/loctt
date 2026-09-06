@@ -139,6 +139,18 @@ async function readOnDiskBroken(locttDir: string): Promise<WorkflowBroken> {
  * silently promoted to valid. `brokenEntriesToPlain` skips any entry
  * whose stored text will not re-parse to an object, so this can only
  * add faithfully-reconstructable siblings.
+ *
+ * A broken sub-entry whose `key` collides with a valid entry already
+ * being written for that sub-list is dropped, not appended: the user
+ * has re-created that key as a valid entry (through the Settings form,
+ * which cannot render the hidden broken one), so the valid entry
+ * supersedes it. Appending anyway would write two members with one
+ * `key` — a duplicate that slips past `validateWorkflowConfig`, which
+ * only inspects the valid set, and past `doctor` (same blind spot), and
+ * then refuses *every* later workflow write the moment the user repairs
+ * the broken twin and both become valid. Broken siblings whose keys do
+ * NOT collide are preserved, keeping K28-WF's fix-the-file-to-clear
+ * stickiness intact.
  */
 function mergeBrokenIntoPlain(
   plain: Record<string, unknown>,
@@ -151,9 +163,37 @@ function mergeBrokenIntoPlain(
     const extra = brokenEntriesToPlain(broken[key]);
     if (extra.length === 0) continue;
     const existing = Array.isArray(plain[key]) ? plain[key] as unknown[] : [];
-    plain[key] = [...existing, ...extra];
+    const validKeys = new Set(
+      existing
+        .map(e => keyOfPlainEntry(e))
+        .filter((k): k is string => k !== undefined),
+    );
+    // Keep only broken siblings whose key the valid set has not claimed.
+    // A broken entry with no readable key (unusual — its YAML re-parsed
+    // to an object but without a string `key`) cannot collide, so it is
+    // preserved.
+    const nonColliding = extra.filter(e => {
+      const k = keyOfPlainEntry(e);
+      return k === undefined || !validKeys.has(k);
+    });
+    if (nonColliding.length === 0) continue;
+    plain[key] = [...existing, ...nonColliding];
   }
   return plain;
+}
+
+/**
+ * The `key` of a serialized workflow sub-entry, or `undefined` when the
+ * value is not an object or has no string `key`. All five workflow
+ * sub-lists (statuses, priorities, task_types, relationships,
+ * custom_fields) identify their members by `key`.
+ */
+function keyOfPlainEntry(entry: unknown): string | undefined {
+  if (entry !== null && typeof entry === "object" && "key" in entry) {
+    const k = (entry as { key: unknown }).key;
+    if (typeof k === "string") return k;
+  }
+  return undefined;
 }
 
 /**

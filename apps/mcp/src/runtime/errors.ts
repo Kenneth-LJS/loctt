@@ -17,6 +17,7 @@ import {
   AttachmentSourceError,
   BurndownError,
   FsAccessError,
+  GitSyncFirstError,
   LabelError,
   MilestoneError,
   PartialRemapError,
@@ -30,6 +31,7 @@ import {
   TaskLifecycleError,
   TaskNotFoundError,
   TaskUpdateError,
+  UnreadableFileError,
   UnreadableTaskError,
   UserError,
 } from "@loctt/core";
@@ -94,5 +96,20 @@ export function isKnownDomainError(err: unknown): err is Error {
     // server fault to rethrow, which would have shown the agent an
     // opaque stack instead of the one sentence that helps (TSK-54).
     || err instanceof UnreadableTaskError
+    // A config or state file that exists but could not be read
+    // (permission denied, a directory where a file was expected). Its
+    // message names the file and the fix (ERR-31), so it is actionable
+    // by the agent, not a server fault. It extends LocttError, so this
+    // also gives the web/CLI-parity the "capability in core is not done
+    // until CLI and MCP have it" rule requires — without it, an
+    // unreadable workflow.yaml/state.yaml reached the agent as an opaque
+    // stack rather than the one sentence that helps.
+    || err instanceof UnreadableFileError
+    // Phase Z G1: publish refused because the branch holds remote-only
+    // work a blind mirror would clobber. The message names the remedy
+    // ("run sync first"), so it is actionable by the agent — a domain
+    // error, not a server fault. The publish handler catches it
+    // explicitly too; this keeps parity for any other caller.
+    || err instanceof GitSyncFirstError
   );
 }

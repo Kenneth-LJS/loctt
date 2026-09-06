@@ -615,6 +615,7 @@ export type ErrorCode =
   | "git_failed"
   | "reconcile_needed"
   | "reconcile_in_progress"
+  | "sync_needed"
   | "io_failed"
   | "partial_failure"
   | "unknown";

@@ -216,8 +216,11 @@ describe("recovery after a crash rolls back", () => {
     const base = join(dir, "local", "swap", "01CRASHED2");
     const backupDir = join(base, "backup");
     await mkdir(backupDir, { recursive: true });
-    // A marker backup so recovery can tell the op got this far.
-    await writeFile(join(backupDir, "0"), "", "utf-8");
+    // The state a real interrupted swap leaves for a created file:
+    // NO backup exists (stagedSwap never writes one for
+    // had_original:false — line 136-138 skips it). The base dir is
+    // still present because the op did not reach step 5. The created
+    // destination is on disk. Recovery must roll it back.
     await writeFile(target("created"), "half-written", "utf-8");
 
     await recoverStagedSwap(dir, {
@@ -231,6 +234,64 @@ describe("recovery after a crash rolls back", () => {
     });
 
     expect(Object.keys(await contents()).sort()).toEqual(["a"]);
+  });
+
+  it("mixed set: rolls back both a restored original and a created file", async () => {
+    // The blast-radius shape from the finding: one destination had an
+    // original (restore from backup) and one was newly created (delete).
+    // A crash mid-swap must roll back BOTH, not leave the created one
+    // orphaned. The created file's backup is deliberately absent, as a
+    // real stagedSwap leaves it.
+    await seed({ a: "old-a" });
+    const base = join(dir, "local", "swap", "01MIXED");
+    const backupDir = join(base, "backup");
+    await mkdir(backupDir, { recursive: true });
+    await writeFile(join(backupDir, "0"), "old-a", "utf-8"); // backup for the pre-existing dest
+    // No backup/1 — the created file never gets one.
+    await writeFile(target("a"), "new-a", "utf-8");          // swapped-in new content
+    await writeFile(target("fresh"), "new-fresh", "utf-8");  // created, landed before crash
+
+    await recoverStagedSwap(dir, {
+      id: "01MIXED",
+      swap: {
+        base_dir: base,
+        files: [
+          { dest: target("a"), backup: join(backupDir, "0"), had_original: true },
+          { dest: target("fresh"), backup: join(backupDir, "1"), had_original: false },
+        ],
+      },
+    });
+
+    // a restored to its original; fresh gone. Not "a old, fresh orphaned".
+    expect(await contents()).toEqual({ a: "old-a" });
+  });
+
+  it("leaves a created file in place when the swap completed and only cleanup was interrupted", async () => {
+    // The case the naive "delete unconditionally" fix breaks: the swap
+    // finished, step 5 removed the base dir, but the process died before
+    // clearing the journal entry. Every destination is already correct.
+    // Recovery must NOT roll back — deleting the created file here would
+    // roll one file back while its swapped siblings stay forward, the
+    // split state V6 exists to prevent. The signal is the base dir being
+    // GONE (removed as one unit at step 5, before the journal clear).
+    await seed({ a: "new-a" });                    // already swapped to new content
+    await writeFile(target("fresh"), "new-fresh", "utf-8"); // created and correct
+    const base = join(dir, "local", "swap", "01DONE");
+    // base dir deliberately does NOT exist — the completed-op signal.
+
+    await recoverStagedSwap(dir, {
+      id: "01DONE",
+      swap: {
+        base_dir: base,
+        files: [
+          { dest: target("a"), backup: join(base, "backup", "0"), had_original: true },
+          { dest: target("fresh"), backup: join(base, "backup", "1"), had_original: false },
+        ],
+      },
+    });
+
+    // Both survive with their new content. The created file is NOT deleted.
+    expect(await contents()).toEqual({ a: "new-a", fresh: "new-fresh" });
   });
 
   it("cleans up after itself so recovery does not repeat forever", async () => {

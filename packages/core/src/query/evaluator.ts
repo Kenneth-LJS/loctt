@@ -174,7 +174,73 @@ function toComparableArray(value: unknown): string[] | undefined {
   return out;
 }
 
-function compareValues(left: unknown, op: string, right: string | number | boolean): boolean {
+/**
+ * Built-in fields the schema stores as a calendar date (`DateOrIsoString`),
+ * i.e. a bare `YYYY-MM-DD` or a full ISO-8601 timestamp for the same day.
+ * `created_at`/`updated_at`/`status_updated_at`/`archived_at` are excluded
+ * on purpose: those are event timestamps, not calendar dates, and comparing
+ * them keeps its existing instant-level semantics.
+ */
+const BUILTIN_DATE_FIELDS: readonly string[] = ["due_date", "start_date", "completed_date"];
+
+/** Matches a value that begins with a `YYYY-MM-DD` calendar date. */
+const DATE_PREFIX_RE = /^\d{4}-\d{2}-\d{2}/;
+
+/**
+ * Whether `field` is one the schema treats as a calendar date, so that a
+ * comparison against a date-typed operand should be judged by day rather
+ * than by the lexicographic ordering of the raw string. Covers the
+ * built-in date fields and any custom field declared `type: date`.
+ */
+function isDateField(field: string, ctx: EvalContext): boolean {
+  if (BUILTIN_DATE_FIELDS.includes(field)) return true;
+  if (field.startsWith("fields.")) {
+    const key = field.slice("fields.".length);
+    const def = ctx.workflow?.custom_fields.find(f => f.key === key);
+    return def?.type === "date";
+  }
+  return false;
+}
+
+/**
+ * Normalises a date-ish value to its `YYYY-MM-DD` calendar day. A stored
+ * `due_date` may be a bare date or a full ISO timestamp
+ * (`DateOrIsoString` / MCP `DateLikeString` both permit the latter); the
+ * day is the first ten characters in either case. Anything that isn't a
+ * date string is returned unchanged, so a mismatched left value falls back
+ * to ordinary comparison.
+ */
+function toDateOnly(value: string): string {
+  return DATE_PREFIX_RE.test(value) ? value.slice(0, 10) : value;
+}
+
+/**
+ * Compares two operands as calendar days. Both sides are normalised to
+ * `YYYY-MM-DD`, so a timestamped value stored on day D is treated as day D
+ * for `< <= = > >= != in`. Used only when the queried field is date-typed
+ * and the operand is a date/today literal — see the call sites — so
+ * date-only-vs-date-only comparisons are unaffected.
+ */
+function compareDates(leftStr: string, op: string, rightStr: string): boolean {
+  const l = toDateOnly(leftStr);
+  const r = toDateOnly(rightStr);
+  switch (op) {
+    case "=": return l === r;
+    case "!=": return l !== r;
+    case "<": return l < r;
+    case "<=": return l <= r;
+    case ">": return l > r;
+    case ">=": return l >= r;
+    default: return false;
+  }
+}
+
+function compareValues(
+  left: unknown,
+  op: string,
+  right: string | number | boolean,
+  dateAware = false,
+): boolean {
   // Handle undefined left — field not set
   if (left === undefined || left === null) {
     if (op === "!=") return true;
@@ -215,6 +281,16 @@ function compareValues(left: unknown, op: string, right: string | number | boole
     return op === "!=";
   }
   const rightStr = String(right);
+
+  // Date-typed field compared against a date/today literal: judge by
+  // calendar day, not by lexicographic string order, so a stored value
+  // that carries a time (`2026-06-01T09:00:00Z`) is treated as its day for
+  // the equal-day boundary (`<=`, `=`, `>`, `in`) — the string ordering
+  // otherwise sorts the longer timestamp after the bare date and gives the
+  // wrong answer there. Only reached when both sides look like dates.
+  if (dateAware && DATE_PREFIX_RE.test(leftStr) && DATE_PREFIX_RE.test(rightStr)) {
+    return compareDates(leftStr, op, rightStr);
+  }
 
   switch (op) {
     case "=":
@@ -448,31 +524,45 @@ export function evaluateQuery(
         ? getNestedFieldValue(fm, node.field.split("."), ctx)
         : getFieldValue(fm, node.field);
 
+      // A date-typed field compared against a date/today operand is judged
+      // by calendar day rather than raw-string order (see compareValues).
+      // Gate on the operand being a date/today value so that a date field
+      // compared against a plain string (or vice versa) is unaffected.
+      const dateAware = isDateField(node.field, ctx);
+
       if (node.op === "in" || node.op === "not in") {
         if (fieldVal === undefined || fieldVal === null) {
           return node.op === "not in";
         }
         const items = resolveList(node.value);
         if (!items) return false;
+        // Membership on a date field compares by calendar day, so a
+        // timestamped value matches `in (today)` / `in (2026-06-01)`.
+        const dateMembership = dateAware
+          && items.every(v => v.type === "date" || v.type === "today");
         const rhs = items
           .map(v => resolvePrimitive(v, ctx))
           .filter((p): p is string | number | boolean => p !== undefined)
-          .map(p => String(p));
+          .map(p => (dateMembership ? toDateOnly(String(p)) : String(p)));
         const fieldArr = toComparableArray(fieldVal);
         if (fieldArr !== undefined) {
           // `labels in (bug, ui)` → any element of labels appears in rhs
-          const matches = fieldArr.some(s => rhs.includes(s));
+          const matches = fieldArr.some(s => rhs.includes(dateMembership ? toDateOnly(s) : s));
           return node.op === "in" ? matches : !matches;
         }
         const fieldStr = toComparableString(fieldVal);
         if (fieldStr === undefined) return node.op === "not in";
-        const matches = rhs.includes(fieldStr);
+        const matches = rhs.includes(dateMembership ? toDateOnly(fieldStr) : fieldStr);
         return node.op === "in" ? matches : !matches;
       }
 
       const resolved = resolvePrimitive(node.value, ctx);
       if (resolved === undefined) return false;
-      return compareValues(fieldVal, node.op, resolved);
+      // Only compare by day when the operand is itself a date/today
+      // literal; a date field compared to a bare string keeps string
+      // comparison.
+      const operandIsDate = node.value.type === "date" || node.value.type === "today";
+      return compareValues(fieldVal, node.op, resolved, dateAware && operandIsDate);
     }
 
     case "has_link":

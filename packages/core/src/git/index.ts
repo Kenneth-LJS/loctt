@@ -9,6 +9,7 @@ export {
   GitReconcileInterruptedError,
   GitReconcileNeededError,
   GitSyncError,
+  GitSyncFirstError,
   publish,
   pullFromLocttBranch,
   pushLocttBranch,

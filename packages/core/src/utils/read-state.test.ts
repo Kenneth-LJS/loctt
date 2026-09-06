@@ -129,7 +129,10 @@ describe("contentOr", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(UnreadableFileError);
       expect((err as UnreadableFileError).path).toBe(path);
-      expect((err as UnreadableFileError).code).toBe("EACCES");
+      // The raw errno lives on `fileErrno`; `code` is the envelope
+      // ErrorCode now that this extends LocttError.
+      expect((err as UnreadableFileError).fileErrno).toBe("EACCES");
+      expect((err as UnreadableFileError).code).toBe("io_failed");
     }
   });
 });

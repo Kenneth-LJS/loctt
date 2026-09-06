@@ -200,6 +200,33 @@ loctt link T-1 child T-2`.
 forward link from the other end when the CLI will not take the inverse
 side, and says why in its docstring.
 
+### `initLoctt` accepts any non-empty prefix — no format validation
+
+**Noted 2026-09-06** during the Phase Z web-server error-mapping fix
+(see decisions.md A140). The verifier
+(`phase-z-verify-web-server.md`, Finding 2 aside) observed that
+`POST /api/init {"prefix":"bad prefix!!"}` — spaces and punctuation —
+was accepted end-to-end and created a tracker with that prefix (201).
+
+The only prefix check anywhere is `initLoctt`'s non-emptiness test
+(`packages/core/src/init/init.ts:182`); `InitRequestSchema`
+(`packages/contracts/src/service-schemas.ts`) declares
+`prefix: z.string().optional()` with no pattern. So a prefix with
+characters that later collide with key parsing or display can be
+committed at init time.
+
+**Reproduce:** `POST /api/init {"prefix":"bad prefix!!"}` against an
+empty `.loctt/`, or `initLoctt(root, { prefix: "bad prefix!!" })`.
+
+**Where the fix belongs / open question:** whether a prefix-format rule
+should live in core `initLoctt` (so every surface enforces it), in the
+web wizard, or in `InitRequestSchema` is unsettled — and what the rule
+is (letters + `-`? uppercase? a max length?) has no decision on record.
+Deliberately not added inside the A140 error-mapping fix to avoid
+scope-creeping a mapping change into a new validation requirement. Needs
+a decision, then a core-level test that a malformed prefix is refused
+before anything is staged.
+
 ## Tests
 
 ### The integration suite is flaky under parallel load
@@ -4434,3 +4461,46 @@ to that section's written array (statuses/priorities/task_types/
 relationships/custom_fields). One preserve test per sub-section,
 mutation-verified. Canonicalized under DEG-24 (config preserve-others);
 this is the workflow slice of that case.
+
+## K29 · flat config writers can still append a broken/valid ID collision
+
+**Found:** 2026-09-06 (Phase Z config/state fix, C3) · **Status:** OPEN
+
+C3 (broken/valid **key** collision writing a duplicate past the write
+gate) is fixed for `workflow.yaml`: `mergeBrokenIntoPlain`
+(`config/workflow-write.ts`) now drops a broken sub-entry whose `key`
+matches a valid entry already being written, so no duplicate key reaches
+disk. The six flat writers
+(projects/labels/sprints/milestones/calendar/list-view) share the same
+append shape — `[...valid.map(serialize), ...brokenEntriesToPlain(config.broken)]`
+in each `buildPlainObject` — with **no** collision guard. So a valid
+entry whose `id` equals a hidden broken entry's `id` produces two
+members with one `id` on disk.
+
+**Why not fixed here.** It is not trivially the same shape as the
+workflow fix: those configs key on `id` (not `key`), and they are
+load-mutate-save (the caller carries `config.broken` from the same load)
+rather than the workflow writer's re-read-and-merge, so the collision
+path is narrower — it needs a surface that adds a valid entry with an id
+equal to a hidden broken id. Scope was config/state correctness for the
+two confirmed workflow findings; widening to the flat writers is a
+separate change with its own per-writer preserve/collision tests.
+
+**Reachability / severity caveat.** The phase-z findings doc called this
+"doctor-flagged and lossless" for the id-keyed configs and deferred it on
+that basis. The verifier (`phase-z-verify-config-state.md`, Finding 3)
+showed the analogous claim for *workflow* was false — the duplicate is
+invisible to doctor until the broken twin is repaired, at which point
+every write is refused. Whether the id-keyed configs' duplicate-id check
+consults `config.broken` (and so whether doctor actually flags this)
+was **not** tested and should not be trusted without a test before
+fixing.
+
+**To fix.** In each flat `buildPlainObject`, filter
+`brokenEntriesToPlain(config.broken)` to drop any entry whose `id`
+already appears among the serialized valid entries (mirroring
+`keyOfPlainEntry`'s role in the workflow fix, but on `id`). One
+collision test per writer, plus a test that a non-colliding broken
+sibling is preserved, mutation-verified. Confirm first whether the
+per-config validator sees `broken` (it likely does not, same blind spot
+as `validateWorkflowConfig`).

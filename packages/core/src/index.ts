@@ -159,6 +159,7 @@ export {
   GitReconcileInterruptedError,
   GitReconcileNeededError,
   GitSyncError,
+  GitSyncFirstError,
   loadReconcileSession,
   preflight,
   PreflightError,
@@ -180,7 +181,7 @@ export {
   mergeTask,
 } from "./git/merge.js";
 export type { InitOptions, InitResult } from "./init/index.js";
-export { initLoctt, isEmptyTracker, missingCoreFiles } from "./init/index.js";
+export { initLoctt, InitRepairNeededError, isEmptyTracker, missingCoreFiles } from "./init/index.js";
 export type { CreateLabelInput, DeleteLabelOptions, LabelByNameResult } from "./labels/index.js";
 export {
   archiveLabel,

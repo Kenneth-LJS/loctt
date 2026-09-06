@@ -1,4 +1,5 @@
 import { describe, expect,it } from "vitest";
+import { parse as parseYaml } from "yaml";
 
 import { parseQueriesConfig, QueriesConfigError, serializeQueriesConfig } from "./queries.js";
 import { YamlSyntaxError } from "./yaml-coerce.js";
@@ -177,6 +178,53 @@ queries:
       // The broken entry is still present after a round-trip, not dropped.
       expect(roundTripped.broken).toHaveLength(1);
       expect(roundTripped.broken?.[0]).toMatchObject({ id: "01HQ0000000000000000000BAD", name: "broken" });
+    });
+
+    // @verifies DEG-24
+    // Phase Z finding C2: the K28 preserve-on-write closed the loss of the
+    // whole entry, but the broken carrier only re-emitted {id,name,query} —
+    // a broken view's `sort`/`display`/`archived` (all schema-valid; only
+    // the DSL failed) were silently dropped on any unrelated write. This
+    // asserts they survive a save byte-value-for-value and the entry stays
+    // in `broken` (its DSL still does not parse — never promoted to valid).
+    it("PRESERVES a broken entry's sort/display/archived on write (Phase Z C2)", () => {
+      const yaml = `
+queries:
+  - id: 01HQ00000000000000000000OK
+    name: ok
+    query: status = backlog
+  - id: 01HQ0000000000000000000BAD
+    name: broken
+    query: "status = = done"
+    archived: true
+    sort:
+      - field: created_at
+        direction: desc
+    display:
+      mode: board
+      group_by: priority
+`;
+      const config = parseQueriesConfig(yaml);
+      // The broken entry carries all its optional fields, unparsed DSL and all.
+      expect(config.broken).toHaveLength(1);
+
+      // An unrelated write (any create/edit/archive/delete rewrites the file).
+      const serialized = serializeQueriesConfig(config);
+      const roundTripped = parseQueriesConfig(serialized);
+
+      // Still broken — its DSL does not parse, so it never promotes to valid.
+      expect(roundTripped.queries).toHaveLength(1);
+      expect(roundTripped.broken).toHaveLength(1);
+      const revived = roundTripped.broken?.[0];
+      expect(revived).toMatchObject({ id: "01HQ0000000000000000000BAD", name: "broken", query: "status = = done" });
+
+      // The optional fields survive. They are not on BrokenSavedQuery, so
+      // re-parse the serialized YAML and inspect the raw `bad` entry.
+      const raw = parseYaml(serialized) as { queries: Record<string, unknown>[] };
+      const badRaw = raw.queries.find(q => q.id === "01HQ0000000000000000000BAD");
+      expect(badRaw?.archived).toBe(true);
+      expect(badRaw?.sort).toEqual([{ field: "created_at", direction: "desc" }]);
+      expect(badRaw?.display).toEqual({ mode: "board", group_by: "priority" });
     });
 
     it("still throws QueriesConfigError on a duplicate id even when a query is broken (object-fatal)", () => {

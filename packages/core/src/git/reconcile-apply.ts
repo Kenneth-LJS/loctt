@@ -222,6 +222,37 @@ export async function applyReconcile(
     }
   }
 
-  const complete = results.every(r => r.ok);
+  // G2 (Phase Z): completeness is measured against the PLAN's conflicts,
+  // not against what was attempted. `results.every(r => r.ok)` was
+  // vacuously true for an empty or under-covering decision set — an
+  // undecided conflict produces no `results` row, so "nothing I attempted
+  // failed" wrongly read as "done". In publish mode that cleared the
+  // sentinel and ran the divergence-bypassing `afterReconcile` publish,
+  // silently local-winning every conflict the user never resolved and
+  // pushing the loss to the remote.
+  //
+  // A reconcile is complete only when every conflict FIELD has landed —
+  // tracked at field granularity (`taskId\0field`), not by task, because
+  // a task with two conflicting fields can have one decided and one not,
+  // and `applyTask` writing the decided field must not mark the undecided
+  // one covered. A field is covered when its task was applied on a prior
+  // pass (`alreadyApplied`) or it received a decision whose task write
+  // succeeded this pass.
+  const okTaskIds = new Set(results.filter(r => r.ok).map(r => r.taskId));
+  const appliedSet = new Set(alreadyApplied);
+  const coveredFields = new Set<string>();
+  for (const c of conflicts) {
+    if (appliedSet.has(c.taskId)) coveredFields.add(`${c.taskId}\0${c.field}`);
+  }
+  for (const decision of decisions) {
+    if (okTaskIds.has(decision.taskId)) {
+      coveredFields.add(`${decision.taskId}\0${decision.field}`);
+    }
+  }
+  const allAttemptsOk = results.every(r => r.ok);
+  const everyConflictCovered = conflicts.every(
+    c => coveredFields.has(`${c.taskId}\0${c.field}`),
+  );
+  const complete = allAttemptsOk && everyConflictCovered;
   return { results, appliedTaskIds, complete };
 }

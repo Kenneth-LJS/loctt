@@ -272,6 +272,21 @@ function validateComparison(
     );
   }
 
+  // `text` is a substring-search alias, not a value: only `~` is
+  // meaningful. Every other operator was accepted end-to-end and then
+  // evaluated wrongly — `text = x` in particular returned the *complement*
+  // of what was asked (the evaluator's "found it" exits all test
+  // `op === "~"`). Reject the nonsensical operators here rather than let
+  // them silently produce a confidently wrong result.
+  if (field === "text" && node.op !== "~") {
+    throw new QueryValidationError(
+      `"text" is a substring search — use "text ~ <term>". `
+      + `The operator "${node.op}" is not supported on text.`,
+      pos,
+      [],
+    );
+  }
+
   validateEnumValue(node, pos, opts);
 }
 

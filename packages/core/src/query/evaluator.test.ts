@@ -478,3 +478,50 @@ describe("text ~ honours `searchable`", () => {
     expect(evaluateQuery(query('text ~ needle'), titled, { workflow: wf(false) })).toBe(true);
   });
 });
+
+describe("evaluateQuery — date fields compare by calendar day (Q1)", () => {
+  // A `due_date` may store a full ISO timestamp (`DateOrIsoString` and the
+  // MCP `DateLikeString` both permit it, and `setField` writes it
+  // verbatim). Comparing it lexicographically against a date-only operand
+  // sorts the longer timestamp after the bare date, so a task due *today*
+  // at 09:00 was judged strictly greater than `today` — never equal, never
+  // `<=`. The evaluator must treat such a value as its calendar day.
+  const dueAt9amToday = {
+    id: "a", key: "T-1", title: "timestamped due date",
+    created_at: "2026-06-01", updated_at: "2026-06-01",
+    due_date: "2026-06-01T09:00:00Z",
+  } as TaskFrontmatter;
+
+  const ctx: EvalContext = { today: "2026-06-01" };
+
+  it("treats a timestamped due_date as due today for the equal-day boundary", () => {
+    expect(evaluateQuery(query("due_date <= today"), dueAt9amToday, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date = today"), dueAt9amToday, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date >= today"), dueAt9amToday, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date in (today)"), dueAt9amToday, ctx)).toBe(true);
+  });
+
+  it("does not count a task due today as in the future", () => {
+    expect(evaluateQuery(query("due_date > today"), dueAt9amToday, ctx)).toBe(false);
+  });
+
+  it("keeps overdue (< today) correct for a timestamped value", () => {
+    // Was already correct lexicographically; must stay correct.
+    expect(evaluateQuery(query("due_date < today"), dueAt9amToday, ctx)).toBe(false);
+    const overdue = { ...dueAt9amToday, due_date: "2026-05-31T23:00:00Z" } as TaskFrontmatter;
+    expect(evaluateQuery(query("due_date < today"), overdue, ctx)).toBe(true);
+  });
+
+  it("compares against a plain date literal by day too", () => {
+    expect(evaluateQuery(query("due_date <= 2026-06-01"), dueAt9amToday, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date > 2026-06-01"), dueAt9amToday, ctx)).toBe(false);
+  });
+
+  it("leaves date-only-vs-date-only comparisons unchanged", () => {
+    const dateOnly = { ...dueAt9amToday, due_date: "2026-06-01" } as TaskFrontmatter;
+    expect(evaluateQuery(query("due_date = today"), dateOnly, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date <= today"), dateOnly, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date > today"), dateOnly, ctx)).toBe(false);
+    expect(evaluateQuery(query("due_date < 2026-06-02"), dateOnly, ctx)).toBe(true);
+  });
+});

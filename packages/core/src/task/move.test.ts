@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { loadProjectsConfig } from "../config/projects.js";
 import { initLoctt } from "../init/init.js";
-import { resolveLocttDir } from "../paths/index.js";
+import { getTaskFilePath, resolveLocttDir } from "../paths/index.js";
 import { archiveProject, createProject } from "../projects/manage.js";
 import { loadState, saveState, withStateLock } from "../state/index.js";
 import { createTask } from "./create.js";
@@ -167,6 +167,61 @@ describe("bulkMoveTasksToProject", () => {
     });
     expect(result.succeeded.map(r => r.taskId)).toEqual([a]);
     expect(result.failed).toHaveLength(1);
+  });
+});
+
+/**
+ * Appends a raw frontmatter line (e.g. an unrecognised top-level key)
+ * to a seeded task's task.md, the way a hand edit reaches a field-local
+ * corrupt state (K21). `readTask` then lifts it into `health`.
+ */
+async function injectFrontmatterLine(id: string, line: string): Promise<void> {
+  const path = getTaskFilePath(locttDir, id);
+  const content = await readFile(path, "utf-8");
+  // Insert the line just before the closing `---` of the frontmatter.
+  const parts = content.split(/\n---\n/);
+  // parts[0] === "---\n<frontmatter body>" ; re-join with the new line.
+  const patched = `${parts[0]}\n${line}\n---\n${parts.slice(1).join("\n---\n")}`;
+  await writeFile(path, patched, "utf-8");
+}
+
+describe("move preserves a health-only corrupt field (write guard not bypassed)", () => {
+  // @verifies phase-z finding #1: performMove used to rebuild the task as
+  // {frontmatter, body} — dropping source.health — and both writeTask
+  // calls passed the default ["*"] touched, so the write guard's rule 2
+  // was skipped and an untouched corrupt/unrecognised field vanished
+  // silently. The fix carries source.health and passes an explicit
+  // touched set. Preserve-others / P-11.
+  it("moveTaskToProject keeps an unrecognised top-level key on disk", async () => {
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT-" });
+    const id = await seed("A");
+    await injectFrontmatterLine(id, "jira_id: ABC-1");
+    // Sanity: the hand-edited value is lifted into health, not frontmatter.
+    const before = await lookupTask(locttDir, id);
+    expect((before.health ?? []).some(h => h.field === "jira_id")).toBe(true);
+
+    await moveTaskToProject({ locttDir, taskRef: id, targetProjectId: alt.id });
+
+    const disk = await readFile(getTaskFilePath(locttDir, id), "utf-8");
+    expect(disk).toContain("jira_id: ABC-1");
+    const after = await lookupTask(locttDir, id);
+    expect(after.frontmatter.project).toBe(alt.id);
+    expect((after.health ?? []).some(h => h.field === "jira_id")).toBe(true);
+  });
+
+  it("bulkMoveTasksToProject keeps an unrecognised top-level key on disk", async () => {
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT-" });
+    const id = await seed("A");
+    await injectFrontmatterLine(id, "jira_id: ABC-1");
+
+    const res = await bulkMoveTasksToProject({
+      locttDir, taskRefs: [id], targetProjectId: alt.id,
+    });
+    expect(res.failed).toEqual([]);
+    expect(res.succeeded).toHaveLength(1);
+
+    const disk = await readFile(getTaskFilePath(locttDir, id), "utf-8");
+    expect(disk).toContain("jira_id: ABC-1");
   });
 });
 

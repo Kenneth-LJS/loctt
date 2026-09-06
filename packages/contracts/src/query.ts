@@ -82,6 +82,14 @@ export type SavedQuery = z.infer<typeof SavedQuerySchema>;
  * is the entry's original position in the `queries:` array, so a message
  * can name `queries[N]` the way the fatal errors already do.
  *
+ * `rawText` is the entry's full YAML (`renderRawText` = `stringifyYaml(raw)`),
+ * carried so a write re-emits ALL of the entry's fields — `sort`, `display`,
+ * `archived` and any field added later — not just `{id,name,query}`. This is
+ * the same preservation mechanism the six object-shaped configs use via
+ * `BrokenEntry.rawText` + `brokenEntriesToPlain`; without it an unrelated
+ * `queries.yaml` write silently strips a broken sibling's optional fields
+ * (Phase Z finding C2, the residual loss inside K28).
+ *
  * This is only for per-ENTRY DSL failures. A whole-file YAML failure, a
  * missing `queries` array, a missing `id`/`name`/`query`, or a duplicate
  * id is object-fatal and still throws `QueriesConfigError`.
@@ -93,6 +101,7 @@ export const BrokenSavedQuerySchema = z.object({
   error: z.string().min(1),
   position: z.number().int().nonnegative().optional(),
   index: z.number().int().nonnegative(),
+  rawText: z.string().min(1),
 }).strict();
 export type BrokenSavedQuery = z.infer<typeof BrokenSavedQuerySchema>;
 

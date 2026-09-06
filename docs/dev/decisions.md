@@ -8249,6 +8249,135 @@ core signal is now on `ResolvedRelationship` for both to consume.
 passthrough; edges collapse back to resolved/missing (corrupt-in-title
 reads untitled, unreadable reads deleted).
 
+### A140 · `UnreadableFileError` is a `LocttError` (`io_failed`); web init attributes fs/repair errors off the prefix (Phase Z web-server)
+
+**Date:** 2026-09-06 · Agent · revertable. Phase Z correctness fix,
+web-server findings 1–3 (`phase-z-findings-correctness-web-server.md`,
+verifier-confirmed in `phase-z-verify-web-server.md`).
+
+**Gap.** (1, HIGH) `UnreadableFileError`
+(`core/utils/read-state.ts`) was a plain `Error`, so the web
+dispatcher's top-level catch (`server.ts` `handleRequest`) — which has
+a `LocttError` branch — missed it and flattened it to `500
+code:"unknown" recovery:"retry"`, white-screening `GET /api/tasks` and
+`/api/search` and blaming the server for a file only the user can fix
+(the ERR-31/SET-39 class). (2, MOD) `POST /api/init` mapped *every*
+`initLoctt` failure — a raw `EACCES`/`ENOSPC`, an
+`InitRepairNeededError` — to `400 validation_failed field:"prefix"`.
+(3, LOW) `GET /api/search` used the plain `loadAllTasks` and silently
+dropped unreadable tasks, unlike `/api/tasks` and export.
+
+**Call.**
+- **(1)** `UnreadableFileError extends LocttError` with
+  `code:"io_failed"`, `recovery:{kind:"none"}` (retrying an unreadable
+  file cannot help — the user must fix it), and the errno in `detail`.
+  Chosen over a web-only handler branch because *every* surface's
+  `LocttError` path then renders the actionable sentence: the CLI's
+  `KNOWN_DOMAIN_ERRORS` already lists `LocttError` (so it now exits 1
+  with the message instead of an opaque crash), and MCP's
+  `isKnownDomainError` gained an explicit `UnreadableFileError` arm.
+  This matches the existing `UnreadableTaskError`/`io_failed`+`none`
+  convention that `server.unreadable-task.test.ts` already pins.
+  - **Name collision resolved:** the raw errno moved from `.code` to
+    `.fileErrno`, because `LocttError.code` is the envelope `ErrorCode`
+    (`io_failed`), a different axis from the filesystem errno
+    (`EACCES`). `read-state.test.ts` was updated to assert both.
+- **(2)** The init catch now branches: an error whose `.code` matches
+  `/^E[A-Z]+$/` → `500 io_failed data_state:"not_saved"` naming the
+  real cause; `InitRepairNeededError` → `400 config_invalid` carrying
+  its own message and the `loctt init --repair` route, **no** `field`;
+  everything else (empty prefix, empty name, invalid timezone,
+  already-exists) keeps `400 validation_failed field:"prefix"`. Repair
+  kept at 400 (not 409) so the existing `server.init.test.ts`
+  status assertions hold; the fix narrows the *attribution*, which
+  those tests do not check. `InitRepairNeededError` is now exported
+  from core.
+- **(3)** `handleSearch` switched to `loadAllTasksDetailed` and emits
+  the `unreadable` set as a body field, identical in shape and channel
+  to `handleListTasks`.
+
+**Tests.** `apps/web/src/server/server.phase-z-error-mapping.test.ts`
+(10 cases, WS1/WS2/WS3), each mutation-proven: WS1 red when the class
+is reverted to a plain `Error`, WS2 red when the init branches are
+disabled, WS3 red when search reverts to `loadAllTasks`. `chmod 000`
+cases self-skip where the process can read regardless (root/CI).
+
+**Prefix format validation — NOT added (follow-up).** The verifier's
+aside stands: `initLoctt`'s only prefix check is non-emptiness, so
+`{"prefix":"bad prefix!!"}` is accepted end-to-end (201). Left as a
+follow-up rather than scope-crept into an error-mapping fix — where a
+prefix format rule should live (core `initLoctt`, the wizard, or
+`InitRequestSchema`) is an unsettled design question, not a mapping
+bug. Noted in `known-gaps.md`.
+
+**To revert.** Make `UnreadableFileError extends Error` again with
+`.code` = errno (and restore the `read-state.test.ts` assertion);
+collapse the init catch back to the single
+`400 validation_failed field:"prefix"`; switch search back to
+`loadAllTasks` and drop its `unreadable` field; drop the MCP arm and
+the `InitRepairNeededError` export.
+
+### A141 · Phase Z correctness-fix calls: git divergence, config collision, and query DSL semantics
+
+**Date:** 2026-09-06 · Agent · revertable. Four calls made while fixing
+Phase Z Batch-1 findings (`phase-z-findings-correctness-*.md`,
+verifier-confirmed; fix-review in `phase-z-fix-review.md`). Recorded
+because each chose one behaviour where another was defensible.
+
+**G1 — publish refuses on remote-only divergence (does NOT auto-merge).**
+When the branch has advanced with work local has not incorporated (a
+remote add, or a remote edit to a task local did not touch) and there is
+no per-field conflict, publish could either (a) auto-merge like `sync`
+then push, or (b) refuse and route the user through `sync`. **Chose (b)**
+— a new `GitSyncFirstError` (`sync_needed`, 409). Auto-merging inside
+publish would duplicate sync's merge/normalise/reconcile machinery on a
+path the user asked to *publish*, not reconcile, and silently change
+their working tree mid-publish; refusing is predictable (P-2) and reuses
+the one code path that already merges. The refusal names ONLY genuinely-
+remote paths: `branchDiffersFromBase` filters out a locally-deleted base
+file (which `planSync` also labels `copy`) so a plain local delete still
+publishes and is not resurrected by the sync it would otherwise be sent to
+(caught in fix-review).
+
+**C3 — a valid entry that reclaims a hidden broken key DROPS the broken
+sibling (does NOT refuse the write).** In `mergeBrokenIntoPlain`, when a
+now-valid workflow entry has the same key as a preserved broken one, the
+options were to drop the broken entry (the valid one supersedes it) or
+refuse the write. **Chose drop** — the user has effectively replaced the
+broken entry with a valid one of the same key; keeping both writes a
+duplicate key past the gate (the original bug) and keeping only the
+broken one would discard the user's valid edit. This is narrower than
+K28's preserve-others (which is about *untouched* siblings); a key
+collision means the sibling was touched. Non-colliding broken entries are
+still preserved (K28-WF stickiness holds).
+
+**Q1 — date fields compare by calendar day in the evaluator (does NOT
+tighten the contract to reject timestamps).** A date field may hold a
+full ISO timestamp (the schema permits it, MCP advertises it), which made
+equal-day boundary comparisons wrong under lexicographic compare. Could
+have (a) forbidden timestamps in date fields or (b) made the evaluator
+day-aware. **Chose (b)** — forbidding timestamps is a data-model change
+that would reject existing valid data and break the MCP contract;
+day-comparison fixes the query semantics without touching what may be
+stored. Scoped to date-typed fields against date/`today` operands, so
+event timestamps (`created_at` etc.) keep instant semantics.
+
+**Q2 — the `text` alias rejects non-`~` operators (does NOT redefine `=`
+as contains).** `text = x` evaluated inverted. Could have made `text =`
+mean exact-match, but `text` is a substring alias with no exact/ordering
+meaning; **chose to reject** `text` with any operator but `~` at
+validation time. No first-party surface emits a non-`~` `text` filter, so
+nothing breaks; a hand-written saved view with `text =` now errors at run
+with a clear message instead of returning the complement silently.
+
+**To revert.** G1: delete `GitSyncFirstError` + `sync_needed`, restore
+`detectPublishReconcile` to return `undefined` when there are no field
+conflicts (reinstating the data-loss bug — don't). C3: drop the
+key-collision filter in `mergeBrokenIntoPlain`. Q1: remove the
+`dateAware`/`compareDates` path in `evaluator.ts`. Q2: remove the `text`
+operator check in `validate.ts`. Each has a regression test that reddens
+on revert.
+
 ### K28 · Config writers must preserve untouched degraded siblings; aggregates must not silently undercount
 
 **Date:** 2026-09-06 · **Ken's ruling — an agent may not revert this.**
@@ -8285,6 +8414,22 @@ Both are canonicalized as blocker DEG cases and gated by tests.
   writers (labels/milestones/sprints/projects/calendar/list-view) follow
   the same pattern. `workflow.yaml`'s `broken` is a keyed record, a
   different shape — handled separately.
+  - **Residual loss (Phase Z finding C2, 2026-09-06 — fixed).** Unlike
+    the six object-shaped configs, queries preserved via a *typed struct*
+    (`BrokenSavedQuery`) whose `serializeBrokenQuery` re-emitted only
+    `{id,name,query}`. A broken saved view (schema-valid, DSL unparseable)
+    that also carried `sort`/`display`/`archived` therefore lost those
+    three optional fields on any unrelated `queries.yaml` write
+    (create/edit/archive/delete of another view). Fix: `BrokenSavedQuery`
+    now carries `rawText` (the entry's full YAML, `renderRawText(item)` at
+    parse time in `parseQueriesConfig`), and `serializeBrokenQuery`
+    re-emits from it — the same `rawText` + re-parse mechanism the six
+    object configs use, so every field (present and future) round-trips
+    byte-value-for-value and the entry re-loads into `broken` (never
+    promoted to valid). Files: `contracts/src/query.ts`
+    (`BrokenSavedQuerySchema` gains `rawText`), `core/src/config/queries.ts`.
+    Test: `queries.test.ts` "PRESERVES a broken entry's sort/display/archived
+    on write (Phase Z C2)", mutation-verified.
 - Part 2, aggregates: landed. `progress.ts` gains
   `milestoneProgressDetailed`/`sprintProgressDetailed` returning a
   `ProgressReport` `{ progress, unreadable }` — the readable corpus is
