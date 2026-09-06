@@ -44,13 +44,13 @@ import {
   getWorkflowConfigPath,
 } from "../paths/index.js";
 import { getUserProfilePath } from "../paths/index.js";
-import { loadAllUsersDetailed } from "../users/profile.js";
 import { isMalformedComment, listCommentEntries } from "../task/comments.js";
 import { TaskParseError } from "../task/frontmatter.js";
 import { isMalformedHistoryEntry, readHistoryRows } from "../task/history.js";
 import { readTask } from "../task/io.js";
 import { listTaskIds } from "../task/list-ids.js";
 import { validateRelationships } from "../task/traversal.js";
+import { loadAllUsersDetailed } from "../users/profile.js";
 import { isMissingFile, readFileState, UnreadableFileError } from "../utils/read-state.js";
 
 export type IntegritySeverity = "unreadable" | "malformed" | "inconsistent";

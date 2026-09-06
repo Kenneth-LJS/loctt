@@ -15,7 +15,6 @@ import { ulid } from "ulid";
 import { stringify as stringifyYaml } from "yaml";
 
 import { getWorkflowConfigPath } from "../paths/index.js";
-import { brokenEntriesToPlain } from "./health.js";
 import {
   appendJournalEntry,
   clearJournalEntry,
@@ -29,6 +28,7 @@ import { loadAllTasks } from "../task/load-all.js";
 import type { MutableFrontmatter } from "../task/mutable.js";
 import { toFrontmatter, toMutable } from "../task/mutable.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
+import { brokenEntriesToPlain } from "./health.js";
 import {
   loadListViewConfig,
   pruneListViewForRemovedCustomFields,
