@@ -295,14 +295,18 @@ test.describe("SET — delete with remap", () => {
 
     // No default is preselected — the confirm requires a choice.
     await expect(page.getByTestId("remap-confirm")).toBeDisabled();
-    await expect(page.getByTestId("remap-dangle")).not.toBeChecked();
+    await expect(page.getByTestId("remap-clear")).not.toBeChecked();
     await expect(page.getByTestId(`remap-to-${keep}`)).not.toBeChecked();
 
-    // The dangling option states the consequence before it is taken.
-    await expect(page.getByTestId("remap-dangle-warning"))
-      .toContainText(/drift marker/i);
-    await expect(page.getByTestId("remap-dangle-warning"))
-      .toContainText(/Diagnostics/i);
+    // BUG-2 (SET-17): the "clear" option states the real consequence —
+    // the field is cleared/emptied on those tasks, not left dangling with
+    // a drift marker or a Diagnostics warning.
+    await expect(page.getByTestId("remap-clear-warning"))
+      .toContainText(/emptied|cleared|no status/i);
+    await expect(page.getByTestId("remap-clear-warning"))
+      .not.toContainText(/drift marker/i);
+    await expect(page.getByTestId("remap-clear-warning"))
+      .not.toContainText(/Diagnostics/i);
 
     // Choosing remap moves all nine and reports the count.
     await page.getByTestId(`remap-to-${keep}`).check();
@@ -359,6 +363,16 @@ test.describe("SET — delete with remap", () => {
     // The count is repeated in the confirm, the same way statuses do.
     await expect(page.getByTestId("remap-refcount")).toContainText("2 tasks");
     await expect(page.getByTestId("remap-confirm")).toBeDisabled();
+
+    // BUG-2 (SET-19): the clear branch states the value is emptied from
+    // those tasks' frontmatter — not left as a raw key with a drift
+    // marker or surfaced by Diagnostics.
+    await expect(page.getByTestId("remap-clear-warning"))
+      .toContainText(/emptied|cleared|no value/i);
+    await expect(page.getByTestId("remap-clear-warning"))
+      .not.toContainText(/drift marker/i);
+    await expect(page.getByTestId("remap-clear-warning"))
+      .not.toContainText(/Diagnostics/i);
 
     await page.getByTestId("remap-to-sprint_2").check();
     await page.getByTestId("remap-confirm").click();

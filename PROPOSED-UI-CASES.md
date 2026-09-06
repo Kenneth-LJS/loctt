@@ -380,7 +380,7 @@ dialog.** Field `story_points` exists as `number` with values on 40 tasks.
 > allowed when no task data is incompatible still applies to the "where
 > safe" wording.
 
-### SET-17 · M4 · major · P5 P7 — SUPERSEDES the current SET-17 (BUG-2)
+### ✅ APPLIED (BUG-2, 2026-09-06) · SET-17 · M4 · major · P5 P7 — SUPERSEDES the current SET-17
 **Deleting a status still referenced by tasks; the "leave" option clears
 the field.** `in_review` is the status of 9 tasks.
 
@@ -405,7 +405,7 @@ the field.** `in_review` is the status of 9 tasks.
 > reaches the dangling state by hand-editing YAML), and the server clears
 > the field. Reworded to the real behaviour.
 
-### SET-19 · M4 · major · P3 — SUPERSEDES the current SET-19 (BUG-2 sibling)
+### ✅ APPLIED (BUG-2, 2026-09-06) · SET-19 · M4 · major · P3 — SUPERSEDES the current SET-19 (BUG-2 sibling)
 **Deleting an enum value that tasks still hold; the "clear" option clears
 it.** Custom enum value `sprint_1` is set on 12 tasks.
 
