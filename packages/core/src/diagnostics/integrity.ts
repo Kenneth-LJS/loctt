@@ -26,6 +26,7 @@
 
 import type { BrokenEntry } from "@loctt/contracts";
 
+import { getCalendarConfigPath, loadCalendarConfig } from "../config/calendar.js";
 import { getLabelsConfigPath, loadLabelsConfig } from "../config/labels.js";
 import { loadListViewConfig } from "../config/list-view.js";
 import { getMilestonesConfigPath, loadMilestonesConfig } from "../config/milestones.js";
@@ -42,6 +43,8 @@ import {
   getTasksDir,
   getWorkflowConfigPath,
 } from "../paths/index.js";
+import { getUserProfilePath } from "../paths/index.js";
+import { loadAllUsersDetailed } from "../users/profile.js";
 import { isMalformedComment, listCommentEntries } from "../task/comments.js";
 import { TaskParseError } from "../task/frontmatter.js";
 import { isMalformedHistoryEntry, readHistoryRows } from "../task/history.js";
@@ -278,6 +281,12 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
     () => loadListViewConfig(locttDir).then(c => c.broken),
     "list-view chip",
   );
+  await collectConfigBroken(
+    findings,
+    getCalendarConfigPath(locttDir),
+    () => loadCalendarConfig(locttDir).then(c => c.broken),
+    "holiday",
+  );
   // workflow.yaml's `broken` is a keyed record (one BrokenEntry[] per
   // sub-list), so it is flattened across sub-lists here.
   await collectConfigBroken(
@@ -290,6 +299,40 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
     },
     "workflow entry",
   );
+
+  // User profiles. A profile degrades per-FIELD like a task: a bad
+  // timezone / wrong-typed known key / unrecognised key lifts into
+  // `health` and only `id` is object-fatal (K13). `loadAllUsersDetailed`
+  // keeps the readable profiles (each carrying its `health`) and reports
+  // the ones it could not read — so both halves surface here: a degraded
+  // field is `malformed` (preserved), an unreadable profile is
+  // `unreadable` (blocks a publish, same as an unreadable task).
+  try {
+    const { profiles, unreadable } = await loadAllUsersDetailed(locttDir);
+    for (const u of unreadable) {
+      findings.push({
+        severity: "unreadable",
+        path: u.path,
+        message: `user profile could not be read: ${u.reason}`,
+      });
+    }
+    for (const p of profiles) {
+      for (const h of p.health ?? []) {
+        findings.push({
+          severity: "malformed",
+          path: getUserProfilePath(locttDir, p.id),
+          message:
+            `field "${h.field}" ${h.kind === "unrecognised" ? "is not recognised" : "is corrupt"} `
+            + `(${h.kind}: ${h.rawText || "malformed"} — ${h.error}). It has been kept `
+            + `in place and is preserved by every write; repair the profile to have it load again.`,
+        });
+      }
+    }
+  } catch {
+    // The users dir being absent is normal; anything else that throws
+    // here (a scan error) is not corruption-of-a-record and is left to
+    // doctor's own users/ load check.
+  }
 
   return findings;
 }

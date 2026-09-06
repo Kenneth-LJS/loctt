@@ -265,3 +265,63 @@ describe("a degraded config entry is reported (A138 / K28)", () => {
     }
   });
 });
+
+describe("calendar holidays and user profiles degrade and are reported too", () => {
+  // @verifies DEG-24
+  it("names a broken holiday, malformed and non-blocking", async () => {
+    const { initLoctt } = await import("../init/init.js");
+    const { resolveLocttDir } = await import("../paths/index.js");
+    const root = await mkdtemp(join(tmpdir(), "loctt-cal-broken-"));
+    try {
+      await initLoctt(root, { docs: false });
+      const locttDir = resolveLocttDir(root);
+      // Valid scalar fields + one good holiday + one broken (date is a
+      // number). The loader degrades the bad holiday and keeps the rest.
+      await writeFile(
+        join(locttDir, "config/calendar.yaml"),
+        "timezone: UTC\nfirst_day_of_week: 1\nworking_days: [1, 2, 3, 4, 5]\n"
+        + "holidays:\n  - date: 2026-01-01\n    label: New Year\n  - date: 5\n    label: Bad\n",
+        "utf-8",
+      );
+
+      const findings = await checkDataIntegrity(locttDir);
+      const cal = findings.find(f => f.path.includes("calendar.yaml"));
+      expect(cal).toBeDefined();
+      expect(cal?.severity).toBe("malformed");
+      expect(cal?.message).toMatch(/holiday/i);
+      expect(blockingFindings(findings)).toHaveLength(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // @verifies DEG-13
+  it("names a corrupt user-profile field, malformed and non-blocking", async () => {
+    const { initLoctt } = await import("../init/init.js");
+    const { resolveLocttDir } = await import("../paths/index.js");
+    const { mkdir: mkDir } = await import("node:fs/promises");
+    const root = await mkdtemp(join(tmpdir(), "loctt-user-broken-"));
+    try {
+      await initLoctt(root, { docs: false });
+      const locttDir = resolveLocttDir(root);
+      const userId = "01HXXXXXXXXXXXXXXXXXXXXXXX";
+      await mkDir(join(locttDir, "users", userId), { recursive: true });
+      // Valid id + name, but an unknown timezone — degrades to health,
+      // profile still loads (only id is object-fatal, K13).
+      await writeFile(
+        join(locttDir, "users", userId, "profile.yaml"),
+        `id: ${userId}\nname: Ken\ntimezone: Mars/Olympus_Mons\n`,
+        "utf-8",
+      );
+
+      const findings = await checkDataIntegrity(locttDir);
+      const user = findings.find(f => f.path.includes(userId));
+      expect(user).toBeDefined();
+      expect(user?.severity).toBe("malformed");
+      expect(user?.message).toMatch(/timezone/i);
+      expect(blockingFindings(findings)).toHaveLength(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
