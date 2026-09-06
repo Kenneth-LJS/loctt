@@ -261,5 +261,5 @@ comes from `workflow.yaml#estimation` and resolves to one of
 
 ### SPR-40 · M4 · major · P10
 **Sprint create / delete / archive / unarchive are reachable from the Settings panel**, reaching parity with the CLI (`sprint archive`, `--all`).
-- Archive needs `archived` on `handleUpdateSprint` (server) plus a "show archived" toggle.
+- Archive/unarchive are their own routes — `POST /api/sprints/:id/archive` and `/unarchive` (mirroring labels, since core's `editSprint` preserves `archived` untouched) — with a per-row Archive/Unarchive button and a "show archived" toggle.
 - The CLI and MCP already have the concept, so this is web reaching parity (P10).

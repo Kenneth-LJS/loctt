@@ -100,6 +100,66 @@ export function WorkflowPanelFrame({
     );
   }
 
+  // SET-33: the tolerant loader does not throw on a hand-broken entry —
+  // it returns a 200 with the bad entry omitted from its sub-list and
+  // recorded under `broken`. Without this branch the panel rendered an
+  // empty list, which reads as "you have no statuses configured" and
+  // hides the real problem (K32). A broken sub-list gets the same error
+  // surface an unparseable config would, distinct from an empty list and
+  // from an unreachable server, naming the file and each entry's error.
+  const broken = workflow.data.broken;
+  const brokenPath = usage.data?.path ?? ".loctt/config/workflow.yaml";
+  const brokenEntries: { sub: string; index: number; error: string; rawText: string }[] =
+    broken === undefined
+      ? []
+      : (["statuses", "priorities", "task_types", "relationships", "custom_fields"] as const)
+        .flatMap(sub =>
+          (broken[sub] ?? []).map(e => ({
+            sub, index: e.index, error: e.error, rawText: e.rawText,
+          })));
+  if (brokenEntries.length > 0) {
+    return (
+      <div className="p-8" data-testid="workflow-panel-error">
+        {header}
+        <div data-workflow-error="config-invalid">
+          <div className="rounded-md border border-danger-fg/40 bg-bg-muted p-3 text-[13px]">
+            <p className="font-medium text-danger-fg">
+              {brokenPath} has an entry that does not parse.
+            </p>
+            <p className="mt-1 text-text-secondary">
+              The rest of the file loaded, but these entries were skipped —
+              this is not an empty configuration. Fix them in the file, then
+              reload.
+            </p>
+            <ul className="mt-2 list-none space-y-1 p-0" data-testid="workflow-broken-list">
+              {brokenEntries.map(e => (
+                <li
+                  key={`${e.sub}-${String(e.index)}`}
+                  data-testid={`workflow-broken-${e.sub}-${String(e.index)}`}
+                  className="text-[12px] text-text-secondary"
+                >
+                  <code className="rounded bg-bg-surface px-1 py-0.5 font-mono">
+                    {e.sub}[{e.index}]
+                  </code>{" "}
+                  {e.error}
+                </li>
+              ))}
+            </ul>
+          </div>
+          {/* SET-33: a Reload re-parses from disk without a server restart. */}
+          <button
+            type="button"
+            data-testid="workflow-reload"
+            onClick={() => { void workflow.refetch(); }}
+            className="mt-3 h-8 rounded-md border border-border-default px-3 text-[13px]"
+          >
+            Reload from disk
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-8" data-testid="workflow-panel">
       {header}

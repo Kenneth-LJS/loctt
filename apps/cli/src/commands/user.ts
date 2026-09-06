@@ -1,3 +1,5 @@
+import type { SidebarGroups, SidebarItemId } from "@loctt/contracts";
+import { SIDEBAR_ITEM_IDS } from "@loctt/contracts";
 import {
   archiveUser,
   countUserReferences,
@@ -7,15 +9,19 @@ import {
   loadAllUsers,
   loadOptionalConfigs,
   loadUserSettings,
+  readSidebarGroups,
   readSidebarPins,
   resolveLocttDir,
+  resolveSidebarOrder,
   resolveUserRef,
   saveUserSettings,
+  SIDEBAR_VALID_IDS,
   sweepSidebarPins,
   switchCurrentUser,
   unarchiveUser,
   updateUser,
   UserError,
+  validateSidebarIds,
 } from "@loctt/core";
 
 import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
@@ -40,7 +46,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--avatar", "--email", "--name", "--remap-to", "--remove-avatar", "--sweep-pins", "--switch", "--timezone", "--unassign", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--avatar", "--email", "--hidden", "--name", "--order", "--remap-to", "--remove-avatar", "--reset", "--sweep-pins", "--switch", "--timezone", "--unassign", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -216,6 +222,82 @@ export async function run(args: string[], root: string): Promise<void> {
       });
       break;
     }
+    /**
+     * `loctt user sidebar-groups [--order <ids>] [--hidden <ids>] [--reset]`
+     * — read or set the per-user `sidebar_groups` setting (SHL-45).
+     *
+     * Ken's layer rule: the web sidebar-groups editor is a core
+     * capability (`readSidebarGroups` / `resolveSidebarOrder`), so it
+     * reaches CLI and MCP too — an agent may configure the UI.
+     *
+     * With no flags it prints the resolved order (one id per line) with
+     * a `hidden` marker, so a script sees exactly what the sidebar will
+     * render. `--order` / `--hidden` take comma-separated ids; `--reset`
+     * clears the setting back to the default (all groups, default order,
+     * all visible). Unknown/duplicate ids are dropped (degrade) rather
+     * than rejected, matching the reader.
+     */
+    case "sidebar-groups": {
+      await runCommand(async () => {
+        const current = await getCurrentUser(locttDir);
+        if (!current) {
+          throw new UserError("no users registered. Run 'loctt user create <name>'.");
+        }
+        const settings = await loadUserSettings(locttDir, current.id);
+        const orderArg = getArg(args, "--order");
+        const hiddenArg = getArg(args, "--hidden");
+        const reset = hasFlag(args, "--reset");
+
+        if (reset && (orderArg !== undefined || hiddenArg !== undefined)) {
+          throw new UsageError(
+            "--reset cannot be combined with --order/--hidden",
+            "loctt user sidebar-groups [--order <ids> | --hidden <ids> | --reset]",
+          );
+        }
+
+        // A mutation? Reset, or either list given.
+        if (reset || orderArg !== undefined || hiddenArg !== undefined) {
+          if (reset) {
+            // Drop the key entirely — absent means default.
+            const { sidebar_groups: _drop, ...rest } = settings;
+            await saveUserSettings(locttDir, current.id, rest);
+            console.log("Reset sidebar groups to the default order.");
+            return;
+          }
+          // Start from the stored (tolerant) value so setting only one
+          // list preserves the other.
+          const stored = readSidebarGroups(settings);
+          const next: SidebarGroups = { ...stored };
+          if (orderArg !== undefined) {
+            const order = parseIdList(orderArg, "--order");
+            if (order.length > 0) next.order = order;
+            else delete next.order;
+          }
+          if (hiddenArg !== undefined) {
+            const hidden = parseIdList(hiddenArg, "--hidden");
+            if (hidden.length > 0) next.hidden = hidden;
+            else delete next.hidden;
+          }
+          await saveUserSettings(locttDir, current.id, {
+            ...settings,
+            sidebar_groups: next,
+          });
+        }
+
+        // Always print the resolved state (after any write). Resolve
+        // against the FULL item catalog (groups + built-in filters), not
+        // just the groups — otherwise a hidden *filter* (`--hidden
+        // overdue`) is written but never shown on read-back, because a
+        // filter id is not in the group catalog. The read must round-trip
+        // exactly what `set` accepts (SHL-45, B2 bug 3).
+        const after = readSidebarGroups(await loadUserSettings(locttDir, current.id));
+        const resolved = resolveSidebarOrder(after, [...SIDEBAR_ITEM_IDS]);
+        for (const item of resolved) {
+          console.log(`${item.id}\t${item.hidden ? "hidden" : "visible"}`);
+        }
+      });
+      break;
+    }
     case "archive":
     case "unarchive": {
       await runCommand(async () => {
@@ -305,8 +387,29 @@ export async function run(args: string[], root: string): Promise<void> {
       break;
     }
     default:
-      console.error(`Usage: loctt user <list|current|switch|create|edit|archive|unarchive|references|delete> ...`);
+      console.error(`Usage: loctt user <list|current|switch|create|edit|settings|sidebar-groups|archive|unarchive|references|delete> ...`);
       process.exitCode = EXIT.USAGE;
       break;
   }
+}
+
+/**
+ * Parses a comma-separated id list for `--order` / `--hidden` on the
+ * WRITE path, **rejecting** an unknown id rather than silently dropping
+ * it (SHL-45, B2 bug 4). A typo used to write nothing and exit 0 — the
+ * user thought they hid a group and nothing happened. The error names
+ * the bad id(s) and lists the valid ones. Duplicates are folded silently
+ * (they carry no typo signal and the schema de-dups anyway).
+ */
+function parseIdList(raw: string, flag: string): SidebarItemId[] {
+  const parts = raw.split(",").map(s => s.trim()).filter(s => s !== "");
+  const { known, unknown } = validateSidebarIds(parts);
+  if (unknown.length > 0) {
+    throw new UsageError(
+      `unknown sidebar id${unknown.length > 1 ? "s" : ""} for ${flag}: `
+      + `${unknown.join(", ")}. Valid ids: ${SIDEBAR_VALID_IDS.join(", ")}`,
+      "loctt user sidebar-groups [--order <ids> | --hidden <ids> | --reset]",
+    );
+  }
+  return known;
 }

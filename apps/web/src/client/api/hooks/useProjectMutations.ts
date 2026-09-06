@@ -95,6 +95,32 @@ export function useDeleteProject() {
 }
 
 /**
+ * PRU-48: set a project as the workspace default. This rides the
+ * existing `PUT /api/projects/:id` — the handler already maps
+ * `default: true` onto core's `setDefaultProject` (it was added for the
+ * create/edit/delete flows and has been callable all along), so no new
+ * endpoint is needed. The settings panel edits the *workspace* default
+ * (`ProjectsPage.default`), which is where new tasks land and where the
+ * default filter opens; the per-user `effective_default` is a separate,
+ * read-only marker the sidebar owns.
+ *
+ * Invalidating `["projects"]` moves the marker without a reload; the
+ * `["tasks"]` drop in `invalidateProjectConsumers` also refreshes the
+ * "where a new task lands" affordances that read the default.
+ */
+export function useSetDefaultProject() {
+  const qc = useQueryClient();
+  return useMutation<ProjectDef, Error, { id: string }>({
+    mutationFn: ({ id }) =>
+      apiClient.put<ProjectDef>(
+        `/api/projects/${encodeURIComponent(id)}`,
+        { default: true },
+      ),
+    onSuccess: () => { invalidateProjectConsumers(qc); },
+  });
+}
+
+/**
  * PRU-44: a prefix change is its own endpoint because it rewrites every
  * task in the project. It is not part of the name edit, and it does not
  * save on blur.

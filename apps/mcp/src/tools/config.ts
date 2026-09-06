@@ -104,7 +104,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "get_workflow_key_usage",
-    description: "Counts how many tasks reference each workflow key — every status, priority, task type, relationship, and custom-field enum value. Returns JSON {statuses, priorities, task_types, relationships, custom_field_values}, each a map of key to task count; a key absent from a map is referenced by no task. Call this BEFORE proposing any deletion from workflow.yaml: removing a key that tasks still hold requires a remap, and this is what says how many tasks a remap would move.",
+    description: "Counts how many tasks reference each workflow key — every status, priority, task type, relationship, and custom-field enum value. Returns JSON {statuses, priorities, task_types, relationships, custom_field_values, custom_fields}, each a map of key to task count; a key absent from a map is referenced by no task. `custom_field_values` is field key → value key → count (enum values only); `custom_fields` is field key → count of tasks holding any value for the field, whatever its type — the blast radius of deleting a whole field, including number and boolean fields that have no enum values. Call this BEFORE proposing any deletion from workflow.yaml: removing a key that tasks still hold requires a remap, and this is what says how many tasks a remap would move.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       // Counts rather than presence — the same answer the web settings

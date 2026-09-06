@@ -937,6 +937,53 @@ test("MSL-14: editing a milestone's target date persists, re-sorts, and clears c
   expect(pageErrors, "the SPA threw while editing a milestone date").toEqual([]);
 });
 
+// @verifies MSL-11
+//
+// Retag (B2): this exercises the *management panel's* archive/unarchive
+// TOGGLE — the row stays visible and marked, and `archived: true`
+// reaches milestones.yaml. That is panel CRUD, MSL-11's surface. It is
+// NOT MSL-25, whose claim is that an archived milestone still *resolves
+// on tasks and by URL* (its detail route reachable, excluded from the
+// default /milestones view, revealed by a "show archived" affordance) —
+// a different surface owned by the milestones-view ticket. The mis-tag
+// made MSL-25 look verified here while its task/URL far-end was untested.
+test("the milestones panel archives and unarchives without hiding the row", async ({
+  page,
+  tracker,
+}) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", err => pageErrors.push(err.message));
+
+  await tracker.run(["milestone", "create", "Legacy"]);
+  const ms = await readMilestones(tracker.root);
+  const id = ms.find(m => m.name === "Legacy")?.id ?? "";
+  expect(id).not.toBe("");
+
+  await page.goto(`${tracker.baseURL}/settings/milestones`);
+  const row = page.getByTestId(`milestone-row-${id}`);
+  await expect(row).toHaveAttribute("data-milestone-archived", "false");
+
+  // Archive: one click, no typed confirmation (it is reversible).
+  await row.getByTestId("milestone-archive-toggle").click();
+  await expect(row).toHaveAttribute("data-milestone-archived", "true");
+  await expect(row.getByTestId("milestone-archived-marker")).toBeVisible();
+  await expect(row.getByTestId("milestone-archive-toggle")).toHaveText("Unarchive");
+  // Far end: the flag reached milestones.yaml.
+  await expect.poll(async () =>
+    readFile(path.join(tracker.root, ".loctt", "config", "milestones.yaml"), "utf8"),
+  ).toMatch(/archived:\s*true/);
+
+  // Unarchive reverses it, and the flag leaves disk.
+  await row.getByTestId("milestone-archive-toggle").click();
+  await expect(row).toHaveAttribute("data-milestone-archived", "false");
+  await expect(row.getByTestId("milestone-archive-toggle")).toHaveText("Archive");
+  await expect.poll(async () =>
+    readFile(path.join(tracker.root, ".loctt", "config", "milestones.yaml"), "utf8"),
+  ).not.toMatch(/archived:\s*true/);
+
+  expect(pageErrors, "the SPA threw while archiving a milestone").toEqual([]);
+});
+
 // @verifies MSL-27
 //
 // MSL-27: a label created in the CLI while the UI is open appears

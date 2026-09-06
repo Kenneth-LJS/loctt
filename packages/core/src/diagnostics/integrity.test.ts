@@ -324,4 +324,81 @@ describe("calendar holidays and user profiles degrade and are reported too", () 
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  // @verifies SHL-45 — a corrupt sidebar_groups is reported by doctor
+  it("names a dropped sidebar_groups id, malformed and non-blocking", async () => {
+    const { initLoctt } = await import("../init/init.js");
+    const { resolveLocttDir } = await import("../paths/index.js");
+    const { mkdir: mkDir } = await import("node:fs/promises");
+    const root = await mkdtemp(join(tmpdir(), "loctt-sbgroups-doctor-"));
+    try {
+      await initLoctt(root, { docs: false });
+      const locttDir = resolveLocttDir(root);
+      const userId = "01HXXXXXXXXXXXXXXXXXXXXXXX";
+      await mkDir(join(locttDir, "users", userId), { recursive: true });
+      // A clean profile — the corruption under test is the setting, not
+      // the profile (an absent profile.yaml would itself read unreadable).
+      await writeFile(
+        join(locttDir, "users", userId, "profile.yaml"),
+        `id: ${userId}\nname: Ken\n`,
+        "utf-8",
+      );
+      // A valid id kept, an unknown id dropped — salvaged on load, so the
+      // sidebar still renders, but doctor must still name the drop.
+      await writeFile(
+        join(locttDir, "users", userId, "settings.yaml"),
+        "theme: dark\nsidebar_groups:\n  order: [labels, bogus, projects]\n",
+        "utf-8",
+      );
+
+      const findings = await checkDataIntegrity(locttDir);
+      const sg = findings.find(
+        f => f.path.includes(userId) && /sidebar_groups/.test(f.message),
+      );
+      expect(sg).toBeDefined();
+      expect(sg?.severity).toBe("malformed");
+      expect(sg?.message).toMatch(/bogus/);
+      expect(blockingFindings(findings)).toHaveLength(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // @verifies SHL-45 — a MALFORMED-shaped sidebar_groups is reported too
+  // (fix-review finding 3: these used to salvage silently, doctor blind).
+  it("names a scalar-instead-of-list sidebar_groups value, not silently dropped", async () => {
+    const { initLoctt } = await import("../init/init.js");
+    const { resolveLocttDir } = await import("../paths/index.js");
+    const { mkdir: mkDir } = await import("node:fs/promises");
+    const root = await mkdtemp(join(tmpdir(), "loctt-sbgroups-malformed-"));
+    try {
+      await initLoctt(root, { docs: false });
+      const locttDir = resolveLocttDir(root);
+      const userId = "01HYYYYYYYYYYYYYYYYYYYYYYY";
+      await mkDir(join(locttDir, "users", userId), { recursive: true });
+      await writeFile(
+        join(locttDir, "users", userId, "profile.yaml"),
+        `id: ${userId}\nname: Ken\n`,
+        "utf-8",
+      );
+      // The realistic typo: a single id written as a scalar, not a list.
+      // The user thinks they hid Sprints; the value is unusable. Before the
+      // fix this dropped silently and doctor called the file clean.
+      await writeFile(
+        join(locttDir, "users", userId, "settings.yaml"),
+        "sidebar_groups:\n  order: [labels]\n  hidden: sprints\n",
+        "utf-8",
+      );
+
+      const findings = await checkDataIntegrity(locttDir);
+      const sg = findings.find(
+        f => f.path.includes(userId) && /sidebar_groups\.hidden/.test(f.message),
+      );
+      expect(sg).toBeDefined();
+      expect(sg?.severity).toBe("malformed");
+      expect(blockingFindings(findings)).toHaveLength(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

@@ -266,6 +266,7 @@ loctt user unarchive <id-or-name>
 loctt user references <id-or-name>
 loctt user delete <id-or-name> [--remap-to <id-or-name> | --unassign]
 loctt user settings [--sweep-pins]
+loctt user sidebar-groups [--order <ids> | --hidden <ids> | --reset]
 ```
 
 `list` hides archived users unless `--all` is passed. The current user is
@@ -273,6 +274,13 @@ marked with `*`.
 
 `create --switch` makes the new user the current user immediately after
 creating them.
+
+`--email <e>` on `create`/`edit` is validated: a malformed address
+(including an empty string) is rejected with an error and nothing is
+written — the same rule the web UI and MCP enforce, because validation
+lives in core. Omitting `--email` on `edit` leaves the existing email
+unchanged; the field is cleared only through the MCP tool's explicit
+`null` (the CLI has no clear flag).
 
 `--avatar <path>` on `create`/`edit` imports an image: it is validated,
 EXIF-oriented, resized to a 500px longest edge and re-encoded as JPEG,
@@ -289,6 +297,23 @@ writes them from Settings → Personal.
 exist in `queries.yaml` and **names each one it removed**, then rewrites
 the file. Pins whose views merely match zero tasks are kept — the sweep
 checks existence, not results.
+
+`sidebar-groups` reads or sets which built-in sidebar groups/filters show
+and in what order (SHL-45), a per-user setting the web sidebar-groups
+editor also writes. With no flags it prints the resolved order, one id
+per line, each marked `visible` or `hidden` — every group **and** every
+built-in filter, so a hidden filter reads back `hidden`. `--order <ids>`
+and `--hidden <ids>` take comma-separated ids and set those lists;
+setting one preserves the other. `--reset` clears the setting back to the
+default (every group, default order, all visible) and cannot be combined
+with `--order`/`--hidden`. An **unknown id is rejected** with an error
+naming it (a typo must not silently do nothing); a repeated valid id is
+de-duplicated. Group ids: `views`, `projects`, `saved-filters`,
+`milestones`, `sprints`, `labels`, `recents`. Built-in filter ids:
+`assigned-to-me`, `reported-by-me`, `mentions-me`, `due-this-week`,
+`overdue`, `high-priority`. (A hand-edited `settings.yaml` still degrades
+tolerantly on *read* — a stray id there is dropped so the sidebar renders
+— and `loctt doctor` names any id it had to drop.)
 
 `references` prints how many tasks reference the user, split by role —
 `<name>\tassignee <N>\treporter <M>`. It is read-only and does not

@@ -61,6 +61,34 @@ describe("edits that change nothing (spawned binary)", () => {
   });
 });
 
+describe("user email is validated on the CLI write path (spawned binary)", () => {
+  // Parity with the web UI and MCP: validation lives in core, so a
+  // malformed `--email` must fail here too rather than corrupting the
+  // field (which the read path degrades to blank). See decisions.md A152.
+  it("rejects a malformed email on create and writes nothing", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      const bad = await runCli(["user", "create", "Bob", "--email", "bob"], { cwd: root });
+      expect(bad.exitCode).not.toBe(0);
+      expect(`${bad.stdout}${bad.stderr}`).toMatch(/invalid email/i);
+      // The user must not have been created.
+      const listed = await runCli(["user", "list"], { cwd: root });
+      expect(listed.stdout).not.toMatch(/Bob/);
+    });
+  });
+
+  it("rejects a malformed email on edit without touching the stored value", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["user", "create", "Bob", "--email", "bob@example.com"], { cwd: root });
+      const bad = await runCli(["user", "edit", "Bob", "--email", "bob"], { cwd: root });
+      expect(bad.exitCode).not.toBe(0);
+      expect(`${bad.stdout}${bad.stderr}`).toMatch(/invalid email/i);
+      // The valid email is still there.
+      const listed = await runCli(["user", "list"], { cwd: root });
+      expect(listed.stdout).toContain("bob@example.com");
+    });
+  });
+});
+
 describe("loctt ui --port validation (spawned binary)", () => {
   it.each(["abc", "0", "70000", "-1"])("refuses --port %s", async (port) => {
     await withTmpLoctt(async ({ root }) => {

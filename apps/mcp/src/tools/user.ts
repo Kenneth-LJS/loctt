@@ -11,6 +11,8 @@
  * three surfaces) applies to the clear even where the set does not.
  */
 
+import type { SidebarGroups, SidebarItemId } from "@loctt/contracts";
+import { SIDEBAR_GROUP_IDS, SIDEBAR_ITEM_IDS } from "@loctt/contracts";
 import {
   archiveUser,
   countUserReferences,
@@ -20,13 +22,17 @@ import {
   loadAllUsers,
   loadOptionalConfigs,
   loadUserSettings,
+  readSidebarGroups,
   readSidebarPins,
+  resolveSidebarOrder,
   resolveUserRef,
   saveUserSettings,
+  SIDEBAR_VALID_IDS,
   sweepSidebarPins,
   switchCurrentUser,
   unarchiveUser,
   updateUser,
+  validateSidebarIds,
 } from "@loctt/core";
 import { z } from "zod";
 
@@ -99,6 +105,83 @@ export const TOOLS: readonly ToolDef[] = [
         null,
         2,
       ));
+    },
+  },
+  {
+    /**
+     * SHL-45, Ken's layer rule: the web sidebar-groups editor is a core
+     * capability, so an agent can read/configure it too.
+     */
+    name: "get_sidebar_groups",
+    description: "Returns the active user's sidebar-groups customization (SHL-45): which built-in sidebar groups/filters show and in what order. `resolved` is the full ordered list with a `hidden` flag per item (what the sidebar renders); `stored` is the raw per-user setting. Group ids: " + SIDEBAR_GROUP_IDS.join(", ") + ". Filter ids: " + SIDEBAR_ITEM_IDS.slice(SIDEBAR_GROUP_IDS.length).join(", ") + ".",
+    inputSchema: {},
+    handler: async ({ locttDir }) => {
+      const current = await getCurrentUser(locttDir);
+      if (!current) return errorResult("no users registered");
+      const settings = await loadUserSettings(locttDir, current.id);
+      const stored = readSidebarGroups(settings);
+      // Full item catalog (groups + filters) so a hidden filter appears
+      // in `resolved`, matching CLI read (B2 bug 3).
+      const resolved = resolveSidebarOrder(stored, [...SIDEBAR_ITEM_IDS]);
+      return text(JSON.stringify({ user: current.id, stored, resolved }, null, 2));
+    },
+  },
+  {
+    name: "set_sidebar_groups",
+    description: "Sets the active user's sidebar-groups customization (SHL-45). `order` is the ids in render order (any built-in not listed follows in default order); `hidden` is the ids to hide (a hidden group renders nothing — a deliberate choice, distinct from an empty group). Omit both and pass reset=true to clear back to the default. An unknown id is rejected with an error naming it (a typo must not silently no-op); duplicates are de-duplicated. Returns the resolved state.",
+    inputSchema: {
+      order: z.array(z.string()).optional().describe("Group/filter ids in render order"),
+      hidden: z.array(z.string()).optional().describe("Group/filter ids to hide"),
+      reset: z.boolean().optional().describe("Clear the setting back to the default order/visibility"),
+    },
+    handler: async ({ locttDir }, args) => {
+      const current = await getCurrentUser(locttDir);
+      if (!current) return errorResult("no users registered");
+      const reset = args["reset"] === true;
+      const orderArg = args["order"] as string[] | undefined;
+      const hiddenArg = args["hidden"] as string[] | undefined;
+      if (reset && (orderArg !== undefined || hiddenArg !== undefined)) {
+        return errorResult("reset cannot be combined with order/hidden");
+      }
+      const settings = await loadUserSettings(locttDir, current.id);
+      if (reset) {
+        const { sidebar_groups: _drop, ...rest } = settings;
+        await saveUserSettings(locttDir, current.id, rest);
+      } else if (orderArg !== undefined || hiddenArg !== undefined) {
+        // Reject an unknown id rather than silently dropping it — parity
+        // with the CLI (SHL-45, B2 bug 4). A typo used to succeed and
+        // change nothing, so the agent believed a group was hidden.
+        const bad: string[] = [];
+        const parse = (raw: string[]): SidebarItemId[] => {
+          const { known, unknown } = validateSidebarIds(raw);
+          bad.push(...unknown);
+          return known;
+        };
+        const stored = readSidebarGroups(settings);
+        const next: SidebarGroups = { ...stored };
+        const orderIds = orderArg !== undefined ? parse(orderArg) : undefined;
+        const hiddenIds = hiddenArg !== undefined ? parse(hiddenArg) : undefined;
+        if (bad.length > 0) {
+          return errorResult(
+            `unknown sidebar id${bad.length > 1 ? "s" : ""}: ${bad.join(", ")}. `
+            + `Valid ids: ${SIDEBAR_VALID_IDS.join(", ")}`,
+          );
+        }
+        if (orderIds !== undefined) {
+          if (orderIds.length > 0) next.order = orderIds;
+          else delete next.order;
+        }
+        if (hiddenIds !== undefined) {
+          if (hiddenIds.length > 0) next.hidden = hiddenIds;
+          else delete next.hidden;
+        }
+        await saveUserSettings(locttDir, current.id, { ...settings, sidebar_groups: next });
+      }
+      const after = readSidebarGroups(await loadUserSettings(locttDir, current.id));
+      // Resolve the FULL item catalog (groups + filters) so a hidden
+      // filter round-trips in `resolved`, matching CLI read (B2 bug 3).
+      const resolved = resolveSidebarOrder(after, [...SIDEBAR_ITEM_IDS]);
+      return text(JSON.stringify({ user: current.id, stored: after, resolved }, null, 2));
     },
   },
   {

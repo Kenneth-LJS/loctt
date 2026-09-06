@@ -9,19 +9,42 @@ import {
   useCreateUser,
   useDeleteUser,
   useRemoveAvatar,
+  useUpdateUser,
   useUploadAvatar,
 } from "../api/hooks/useUserMutations.ts";
+import { Button } from "../ui/Button.tsx";
+import { Callout } from "../ui/Callout.tsx";
+import { Dialog, DialogActions } from "../ui/Dialog.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Modal } from "../ui/Modal.tsx";
+import { Select } from "../ui/Select.tsx";
+import { TextField } from "../ui/TextField.tsx";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
 import { AvatarCropper } from "./AvatarCropper.tsx";
 import { AvatarRejected, type DecodedImage, decodeImageFile } from "./prepareAvatar.ts";
 import { UserDeleteDialog } from "./UserDeleteDialog.tsx";
+import { supportedTimezones } from "./workflowEdits.ts";
 
 /**
  * Settings → Users (PRU-11, PRU-12, PRU-13, PRU-23, PRU-26, PRU-27,
  * PRU-38, PRU-39, PRU-40, PRU-42).
  */
+
+/**
+ * B2 bug 1: a light client-side email gate. The server is the
+ * authority (it runs the contract's `z.email()` and returns a 400 with
+ * `field: "email"`), but a bad value must never even reach it silently
+ * — a blocked Save with a named reason is a better first line than a
+ * round-trip. Deliberately permissive: it only catches the obvious
+ * "no @ / no dot / has spaces" shapes so it never blocks an address the
+ * server would accept. An empty string is not invalid here — blank
+ * clears the email.
+ */
+export function looksLikeEmail(value: string): boolean {
+  const v = value.trim();
+  if (v.length === 0) return true;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+}
 
 /** PRU-23: qualify duplicate display names so picking is not a coin flip. */
 export function qualifier(
@@ -118,6 +141,10 @@ function AvatarUpload({ user }: { readonly user: UserProfile }) {
 
   return (
     <div className="grid gap-1">
+      {/* PRU-47: the avatar is set through a proper control — a Button
+          that triggers a visually-hidden file input — not a raw
+          `<input type="file">`. The input keeps its testid and the
+          upload/remove endpoints are unchanged. */}
       <input
         ref={inputRef}
         type="file"
@@ -127,23 +154,33 @@ function AvatarUpload({ user }: { readonly user: UserProfile }) {
           const file = e.target.files?.[0];
           if (file) void pick(file);
         }}
-        className="text-[12px]"
+        className="sr-only"
       />
-      {hasAvatar && (
-        <button
-          type="button"
-          data-testid={`user-avatar-remove-${user.id}`}
-          disabled={remove.isPending}
-          onClick={() => {
-            setProblem(undefined);
-            if (preview !== undefined) { URL.revokeObjectURL(preview); setPreview(undefined); }
-            remove.mutate({ id: user.id });
-          }}
-          className="h-7 justify-self-start rounded-md border border-border-default px-2 text-[12px] text-text-secondary disabled:opacity-50"
+      <div className="flex items-center gap-1">
+        <Button
+          size="sm"
+          variant="secondary"
+          testId={`user-avatar-change-${user.id}`}
+          onClick={() => { inputRef.current?.click(); }}
         >
-          {remove.isPending ? "Removing…" : "Remove"}
-        </button>
-      )}
+          {hasAvatar ? "Change avatar" : "Add avatar"}
+        </Button>
+        {hasAvatar && (
+          <Button
+            size="sm"
+            variant="ghost"
+            testId={`user-avatar-remove-${user.id}`}
+            disabled={remove.isPending}
+            onClick={() => {
+              setProblem(undefined);
+              if (preview !== undefined) { URL.revokeObjectURL(preview); setPreview(undefined); }
+              remove.mutate({ id: user.id });
+            }}
+          >
+            {remove.isPending ? "Removing…" : "Remove"}
+          </Button>
+        )}
+      </div>
       {preview !== undefined && (
         <img
           src={preview}
@@ -194,6 +231,146 @@ function AvatarUpload({ user }: { readonly user: UserProfile }) {
   );
 }
 
+/**
+ * PRU-47 / SET-51: edit an existing user's name, email and timezone in a
+ * modal dialog wired to `PUT /api/users/:id` (`useUpdateUser`). The row
+ * is read-only by default; all editing happens here. A failed Save keeps
+ * the dialog open with an anchored `Callout` error and the value
+ * un-committed; Cancel discards.
+ */
+function EditUserDialog({
+  user,
+  onClose,
+}: {
+  readonly user: UserProfile;
+  readonly onClose: () => void;
+}) {
+  const update = useUpdateUser();
+  const [name, setName] = useState(user.name ?? "");
+  const [email, setEmail] = useState(user.email ?? "");
+  const [timezone, setTimezone] = useState(user.timezone ?? "");
+
+  // The current value must be selectable even if it is not in the
+  // runtime's zone list (a hand-edited or renamed zone); offer it first.
+  const zones = supportedTimezones();
+  const zoneOptions = timezone.length > 0 && !zones.includes(timezone)
+    ? [timezone, ...zones]
+    : zones;
+
+  const emailOk = looksLikeEmail(email);
+  // B2 bug 2: timezone is effectively required. Core's write path
+  // (`updateUser`) has no "clear" signal — it does `timezone ??
+  // existing`, so an empty value keeps the old zone rather than clearing
+  // it. Offering a "(none)" option therefore lied: it reported success
+  // and kept the old zone. Rather than thread a clear through core (and
+  // its CLI/MCP twins), the option is removed; a user whose zone is
+  // somehow blank must pick a real one before Save (A-decision).
+  const tzOk = timezone.trim().length > 0;
+  const blocked = name.trim().length === 0 || !emailOk || !tzOk || update.isPending;
+
+  const serverMessage = update.error instanceof ApiError
+    ? update.error.envelope?.message ?? update.error.message
+    : update.error?.message;
+
+  const save = () => {
+    update.mutate(
+      {
+        id: user.id,
+        name: name.trim(),
+        // Empty clears the email (server accepts null); a value sets it.
+        email: email.trim().length > 0 ? email.trim() : null,
+        ...(timezone.trim().length > 0 ? { timezone: timezone.trim() } : {}),
+      },
+      { onSuccess: onClose },
+    );
+  };
+
+  return (
+    <Dialog
+      title="Edit user"
+      onClose={onClose}
+      testId={`user-edit-dialog-${user.id}`}
+      actions={
+        <DialogActions>
+          <Button variant="ghost" testId={`user-edit-cancel-${user.id}`} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            testId={`user-edit-save-${user.id}`}
+            disabled={blocked}
+            onClick={save}
+          >
+            {update.isPending ? "Saving…" : "Save"}
+          </Button>
+        </DialogActions>
+      }
+    >
+      <div className="grid gap-3">
+        <label className="grid gap-1 text-[13px]">
+          <span className="text-text-secondary">Display name</span>
+          <TextField
+            data-testid={`user-edit-name-${user.id}`}
+            value={name}
+            onChange={e => { setName(e.target.value); }}
+          />
+        </label>
+        <label className="grid gap-1 text-[13px]">
+          <span className="text-text-secondary">Email</span>
+          <TextField
+            data-testid={`user-edit-email-${user.id}`}
+            value={email}
+            invalid={!emailOk}
+            onChange={e => { setEmail(e.target.value); }}
+          />
+          {!emailOk && (
+            <p role="alert" data-testid={`user-edit-email-problem-${user.id}`} className="text-[11px] text-danger-fg">
+              Enter a valid email address, or leave it blank.
+            </p>
+          )}
+        </label>
+        <label className="grid gap-1 text-[13px]">
+          <span className="text-text-secondary">Timezone</span>
+          <Select
+            data-testid={`user-edit-timezone-${user.id}`}
+            value={timezone}
+            aria-invalid={!tzOk}
+            onChange={e => { setTimezone(e.target.value); }}
+          >
+            {/* B2 bug 2: no "(none)" option. It cannot clear the zone
+                (core keeps the old one), so offering it reported a save
+                that never happened. A blank-zone user sees a disabled
+                placeholder and must pick a real zone. */}
+            {!tzOk && (
+              <option value="" disabled>Select a timezone…</option>
+            )}
+            {zoneOptions.map(z => (
+              <option key={z} value={z}>{z}</option>
+            ))}
+          </Select>
+          {!tzOk && (
+            <p role="alert" data-testid={`user-edit-timezone-problem-${user.id}`} className="text-[11px] text-danger-fg">
+              Pick a timezone.
+            </p>
+          )}
+        </label>
+        {update.isError && (
+          <Callout
+            tone="danger"
+            role="alert"
+            testId={`user-edit-error-${user.id}`}
+          >
+            {/* SET-51: anchored, the dialog stays open, the value is
+                un-committed, and the next action is named. */}
+            The changes were not saved: {serverMessage}. Fix the values and
+            try again, or Cancel to discard.
+          </Callout>
+        )}
+      </div>
+    </Dialog>
+  );
+}
+
 function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -202,7 +379,8 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
   );
   const create = useCreateUser();
 
-  const blocked = name.trim().length === 0 || create.isPending;
+  const emailOk = looksLikeEmail(email);
+  const blocked = name.trim().length === 0 || !emailOk || create.isPending;
 
   return (
     <div className="grid gap-3">
@@ -224,6 +402,11 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
           onChange={e => { setEmail(e.target.value); }}
           className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[13px]"
         />
+        {!emailOk && (
+          <p role="alert" data-testid="user-create-email-problem" className="text-[11px] text-danger-fg">
+            Enter a valid email address, or leave it blank.
+          </p>
+        )}
       </label>
       <label className="grid gap-1 text-[13px]">
         <span className="text-text-secondary">Timezone</span>
@@ -275,6 +458,7 @@ export function UsersPanel() {
   const del = useDeleteUser();
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<UserProfile | null>(null);
+  const [editing, setEditing] = useState<UserProfile | null>(null);
 
   if (users.isError) {
     return (
@@ -342,6 +526,18 @@ export function UsersPanel() {
                 </td>
                 <td className="py-2 pr-3 text-[13px] text-text-secondary">{u.email ?? ""}</td>
                 <td className="py-2 text-right">
+                  {/* PRU-47: the row is read-only; identity fields are
+                      edited in a per-row Edit dialog. */}
+                  <button
+                    type="button"
+                    data-testid={`user-edit-${u.id}`}
+                    onClick={() => {
+                      setEditing(u);
+                    }}
+                    className="h-8 rounded-md px-2 text-[13px] text-text-secondary hover:bg-bg-muted"
+                  >
+                    Edit
+                  </button>
                   {/* PRU-26: archiving yourself is disabled, not
                       error-on-click, and the reason is on the control. */}
                   <button
@@ -408,6 +604,13 @@ export function UsersPanel() {
         <Modal title="New user" onClose={() => { setCreating(false); }}>
           <CreateUserForm onDone={() => { setCreating(false); }} />
         </Modal>
+      )}
+
+      {editing !== null && (
+        <EditUserDialog
+          user={editing}
+          onClose={() => { setEditing(null); }}
+        />
       )}
 
       {deleting !== null && (

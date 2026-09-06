@@ -21,6 +21,7 @@ import {
   SETTINGS_GROUPS,
   type SettingsSection,
 } from "./sections.ts";
+import { SidebarGroupsPanel } from "./SidebarGroupsPanel.tsx";
 import { SidebarPinsPanel } from "./SidebarPinsPanel.tsx";
 import { SprintsPanel } from "./SprintsPanel.tsx";
 import { UsersPanel } from "./UsersPanel.tsx";
@@ -153,6 +154,7 @@ function Panel({ section }: { readonly section: SettingsSection }) {
   if (section.id === "preferences") return <PreferencesPanel />;
   if (section.id === "card-layout") return <CardLayoutPanel />;
   if (section.id === "sidebar-pins") return <SidebarPinsPanel />;
+  if (section.id === "sidebar-groups") return <SidebarGroupsPanel />;
   if (section.id === "keyboard") return <KeyboardPanel />;
   return <NotBuiltYet section={section} />;
 }

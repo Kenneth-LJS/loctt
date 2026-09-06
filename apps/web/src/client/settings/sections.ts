@@ -66,6 +66,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "preferences", label: "My preferences", group: "Personal", built: true },
   { id: "card-layout", label: "Card layout", group: "Personal", built: true },
   { id: "sidebar-pins", label: "Sidebar pins", group: "Personal", built: true },
+  { id: "sidebar-groups", label: "Sidebar groups", group: "Personal", built: true },
   { id: "keyboard", label: "Keyboard", group: "Personal", built: true },
 ];
 

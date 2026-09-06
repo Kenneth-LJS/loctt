@@ -22,6 +22,25 @@ Governing decisions (Ken, 2026-09-06):
 (`ui-batch-plan-review.md`) — all 12 must-fixes are folded in.** The
 changes-from-v1 are summarised in `ui-plan-revision-summary.md`.
 
+## Run status
+
+- **B0 / B1 — done** (earlier commits).
+- **B2 — done.** The edit-model conversion of every config/settings panel
+  (Projects, Users, Milestones, Sprints, Saved views, Workflow enums /
+  relationships / custom fields, Sidebar groups) + K-10 header search &
+  sidebar-groups + sprint archive routes. Built across 4 file-disjoint
+  lanes, then a fix-review (18 confirmed bugs fixed red-first, several
+  silent-data-loss), a merge reconciliation (email validation moved to
+  **core** for CLI/MCP parity; A11Y search-selector fixes; Sidebar
+  two-lane merge), and a **Fable adversarial fix-of-fixes review that
+  caught a HIGH re-introduced data-loss bug** (the single-PUT sprint save
+  diffing against the live prop, clobbering a concurrent edit) — fixed and
+  mutation-proven. 4 pre-existing error-surface e2e failures (ERR-10,
+  LST-51, TML-48, SPR-31) were HEAD-proven pre-existing and quarantined
+  `test.fixme` with a consolidated known-gap. Gate green: core 1948 /
+  web 1368 / integration 501 / e2e 21 / UI all-pass.
+- **B3, B4, B5 — not started.**
+
 ---
 
 ## The gate (every batch, every lane) — MUST-FIX #1

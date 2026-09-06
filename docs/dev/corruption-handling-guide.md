@@ -203,6 +203,12 @@ mismatch when every other command refuses to run.
   K13). `checkDataIntegrity` reports each degraded field as `malformed`
   and each unreadable profile as `unreadable`, via
   `loadAllUsersDetailed`.
+- **per-user `sidebar_groups` salvage** (SHL-45) — a hand-edited unknown
+  or duplicate id is lifted out on load so the sidebar still renders (P7);
+  `collectSidebarGroupsDrops` (in `users/settings.ts`) reads the raw
+  settings and `checkDataIntegrity` emits a `malformed` finding naming
+  each dropped id (and one for a wholly-unshaped value). Non-blocking —
+  the valid ids still load.
 - key-index drift, interrupted prefix-rename / reconciliation / migration
 
 **It does NOT currently cover (known gaps — fix when you touch them):**

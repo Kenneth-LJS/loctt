@@ -4,7 +4,9 @@ import { useState } from "react";
 
 import { apiClient,ApiError } from "../api/client.ts";
 import { useViews } from "../api/hooks/sidebarData.ts";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { ViewFormDialog } from "./ViewFormDialog.tsx";
 
 /**
  * Settings → Data → Saved views (VUE-25, VUE-26, VUE-27, VUE-36,
@@ -44,7 +46,7 @@ function useUnarchiveView() {
   });
 }
 
-function ViewRow({ view }: { readonly view: SavedQuery }) {
+function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?: (v: SavedQuery) => void }) {
   const del = useDeleteView();
   const unarchive = useUnarchiveView();
   const [confirming, setConfirming] = useState(false);
@@ -75,6 +77,20 @@ function ViewRow({ view }: { readonly view: SavedQuery }) {
       >
         {view.query}
       </code>
+
+      {/* VUE-41: rename + edit-query, on active views. An archived view
+          is restored first (its query still resolves by id), so the Edit
+          control belongs on the active row. */}
+      {!archived && onEdit !== undefined && (
+        <Button
+          variant="secondary"
+          size="sm"
+          testId="view-edit"
+          onClick={() => { onEdit(view); }}
+        >
+          Edit
+        </Button>
+      )}
 
       {archived
         ? (
@@ -140,6 +156,12 @@ function ViewRow({ view }: { readonly view: SavedQuery }) {
 
 export function SavedViewsPanel() {
   const views = useViews();
+  // VUE-40 (create) and VUE-41 (edit) share one dialog: `null` closed,
+  // `{ mode: "create" }` a new view, `{ mode: "edit", view }` a rename /
+  // edit-query of an existing one.
+  const [dialog, setDialog] = useState<
+    { mode: "create" } | { mode: "edit"; view: SavedQuery } | null
+  >(null);
 
   if (views.isError) {
     /*
@@ -199,9 +221,22 @@ export function SavedViewsPanel() {
 
   return (
     <div className="p-8" data-testid="saved-views-panel">
-      <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
-        Saved views
-      </h1>
+      <div className="mb-1 flex items-start justify-between gap-3">
+        <h1 data-testid="settings-panel-title" className="text-lg font-semibold text-text-primary">
+          Saved views
+        </h1>
+        {/* VUE-40: create a saved view from the UI. This is the panel's
+            entry point; the sidebar's "+ New filter" opens the same
+            dialog once the Sidebar lane wires it (see handoff note). */}
+        <Button
+          variant="primary"
+          size="sm"
+          testId="saved-views-new"
+          onClick={() => { setDialog({ mode: "create" }); }}
+        >
+          + New view
+        </Button>
+      </div>
       <p className="mb-4 text-[13px] text-text-secondary">
         Stored in{" "}
         <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
@@ -209,6 +244,13 @@ export function SavedViewsPanel() {
         </code>. Archived views stay runnable by their URL but are hidden
         from the sidebar.
       </p>
+
+      {dialog !== null && (
+        <ViewFormDialog
+          {...(dialog.mode === "edit" ? { existing: dialog.view } : {})}
+          onClose={() => { setDialog(null); }}
+        />
+      )}
 
       {all.length === 0 && broken.length === 0
         ? (
@@ -219,7 +261,9 @@ export function SavedViewsPanel() {
         : (
             <>
               <ul className="m-0 list-none p-0" data-testid="saved-views-list">
-                {active.map(v => <ViewRow key={v.id} view={v} />)}
+                {active.map(v => (
+                  <ViewRow key={v.id} view={v} onEdit={vv => { setDialog({ mode: "edit", view: vv }); }} />
+                ))}
               </ul>
 
               {archived.length > 0 && (
@@ -228,6 +272,8 @@ export function SavedViewsPanel() {
                     Archived
                   </h2>
                   <ul className="m-0 list-none p-0" data-testid="saved-views-archived-list">
+                    {/* Archived rows have no Edit (restore first); omit
+                        onEdit rather than passing a no-op. */}
                     {archived.map(v => <ViewRow key={v.id} view={v} />)}
                   </ul>
                 </>

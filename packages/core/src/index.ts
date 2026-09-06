@@ -435,8 +435,10 @@ export { bodyToken, StaleBodyWriteError } from "./task/io.js";
 export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserReferenceCounts, UserSettings } from "./users/index.js";
 export type { PinSweep } from "./users/index.js";
 export type { RecentEntry } from "./users/index.js";
+export type { ResolvedSidebarItem, SalvagedSidebarGroups, SidebarGroupsDrop, SidebarGroupsDropReport } from "./users/index.js";
 export {
   archiveUser,
+  collectSidebarGroupsDrops,
   countUserReferences,
   createUser,
   CurrentUserError,
@@ -453,13 +455,17 @@ export {
   pushRecent,
   readCurrentUserId,
   readRecents,
+  readSidebarGroups,
   readSidebarPins,
   RECENTS_CAP,
   removeRecent,
+  resolveSidebarOrder,
   resolveUserRef,
+  salvageSidebarGroups,
   saveUserProfile,
   saveUserSettings,
   serializeUserProfile,
+  SIDEBAR_VALID_IDS,
   sweepSidebarPins,
   switchCurrentUser,
   unarchiveUser,
@@ -467,6 +473,7 @@ export {
   UserError,
   userExists,
   UserProfileError,
+  validateSidebarIds,
   writeCurrentUserId,
 } from "./users/index.js";
 export type { FsFailureKind } from "./utils/fs-errors.js";

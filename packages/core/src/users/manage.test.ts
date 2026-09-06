@@ -80,6 +80,17 @@ describe("createUser", () => {
   it("rejects an empty name", async () => {
     await expect(createUser(locttDir, { name: "   " })).rejects.toThrow(/non-empty/);
   });
+
+  // Parity with the web write path (A152): core is the authority the
+  // CLI/MCP share, so a bad email must fail here, not just in the server.
+  it("rejects a malformed email", async () => {
+    await expect(
+      createUser(locttDir, { name: "X", email: "bob" }),
+    ).rejects.toThrow(/invalid email/i);
+    // Nothing should have been written for the rejected user.
+    const users = await loadAllUsers(locttDir);
+    expect(users.every(u => u.name !== "X" || u.email !== "bob")).toBe(true);
+  });
 });
 
 describe("updateUser", () => {
@@ -93,6 +104,16 @@ describe("updateUser", () => {
     const u = await createUser(locttDir, { name: "X", email: "x@x.com" });
     const updated = await updateUser(locttDir, u.id, { email: null });
     expect(updated.email).toBeUndefined();
+  });
+
+  it("rejects a malformed email without touching the stored value", async () => {
+    const u = await createUser(locttDir, { name: "X", email: "x@x.com" });
+    await expect(
+      updateUser(locttDir, u.id, { email: "bob" }),
+    ).rejects.toThrow(/invalid email/i);
+    // The previous, valid email is still on disk (no silent corruption).
+    const [reloaded] = (await loadAllUsers(locttDir)).filter(p => p.id === u.id);
+    expect(reloaded?.email).toBe("x@x.com");
   });
 });
 

@@ -248,7 +248,7 @@ minority of these.
 - Label pills, whose colour is user-chosen and arbitrary, always render their text name.
 
 ### A11Y-31 · M4 · major · P4 P8
-**Unavailable controls are announced as unavailable, with a reason.** Inspect the M1 "Mentions me" filter and any control disabled by state (archive on an already-archived task, migrate on a `future` schema).
+**Unavailable controls are announced as unavailable, with a reason.** Inspect the M1 "Mentions me" filter and any control disabled by state (archive on an already-archived task, migrate on a `future` schema, the Delete button on a tracker's sole project in Settings → Projects).
 
 - Each exposes a disabled state to assistive tech rather than being merely greyed and unresponsive.
 - A reason is available to keyboard users — via accessible description or an adjacent explanation — not only in a pointer-hover tooltip.

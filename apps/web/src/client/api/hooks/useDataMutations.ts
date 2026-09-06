@@ -73,6 +73,25 @@ function invalidator(qc: ReturnType<typeof useQueryClient>, key: string) {
   };
 }
 
+/**
+ * The milestone invalidator, which additionally drops the
+ * milestones-progress cache.
+ *
+ * B2 bug 4: a milestone archive/rename/delete changed `["milestones"]`
+ * but not `["workflow", "milestones-progress"]`, the key
+ * `useMilestonesWithProgress` reads (the `/milestones` view). With a
+ * 30s `staleTime` on that view, an archived milestone lingered there for
+ * up to 30 seconds after the panel said it was gone. Invalidating the
+ * progress key — a `["workflow", "milestones-progress"]` prefix, which
+ * React Query matches — refetches the view immediately.
+ */
+function milestoneInvalidator(qc: ReturnType<typeof useQueryClient>) {
+  return () => {
+    invalidator(qc, "milestones")();
+    void qc.invalidateQueries({ queryKey: ["workflow", "milestones-progress"] });
+  };
+}
+
 export interface DeleteVars {
   readonly id: string;
   /** Remap references to this id; omit to drop them (MSL-12). */
@@ -136,7 +155,7 @@ export function useUpdateMilestone() {
   >({
     mutationFn: ({ id, ...body }) =>
       apiClient.put<MilestoneDef>(`/api/milestones/${encodeURIComponent(id)}`, body),
-    onSuccess: invalidator(qc, "milestones"),
+    onSuccess: milestoneInvalidator(qc),
   });
 }
 
@@ -144,7 +163,25 @@ export function useCreateMilestone() {
   const qc = useQueryClient();
   return useMutation<MilestoneDef, Error, { name: string; target_date?: string }>({
     mutationFn: vars => apiClient.post<MilestoneDef>("/api/milestones", vars),
-    onSuccess: invalidator(qc, "milestones"),
+    onSuccess: milestoneInvalidator(qc),
+  });
+}
+
+export function useArchiveMilestone() {
+  const qc = useQueryClient();
+  // MSL-25: archive/unarchive is a milestone field, not a separate route
+  // — unlike labels, `PUT /api/milestones/:id` already threads `archived`
+  // through to core's `editMilestone`. The panel's Save only ever sent
+  // {name, target_date}, so the archived flag had no caller; this is that
+  // caller. Kept distinct from `useUpdateMilestone` so the row's toggle
+  // does not have to carry the name/date fields to flip one boolean.
+  return useMutation<MilestoneDef, Error, { id: string; archived: boolean }>({
+    mutationFn: ({ id, archived }) =>
+      apiClient.put<MilestoneDef>(
+        `/api/milestones/${encodeURIComponent(id)}`,
+        { archived },
+      ),
+    onSuccess: milestoneInvalidator(qc),
   });
 }
 
@@ -152,6 +189,51 @@ export function useDeleteMilestone() {
   const qc = useQueryClient();
   return useMutation<DeleteResult, Error, DeleteVars>({
     mutationFn: vars => apiClient.delete<DeleteResult>(deleteUrl("/api/milestones", vars)),
-    onSuccess: invalidator(qc, "milestones"),
+    onSuccess: milestoneInvalidator(qc),
+  });
+}
+
+/**
+ * Sprint create / delete for the Settings → Data → Sprints panel
+ * (SPR-40). Both hit routes that already exist on the server
+ * (`handleCreateSprint` / `handleDeleteSprint`); this is the client
+ * wiring the panel had none of, since the panel was read-only.
+ *
+ * `state` is required by core's `createSprint`; the panel offers exactly
+ * the three SPR-7 states. `end_date` before `start_date` is rejected by
+ * core with the message the server attributes to `end_date`.
+ */
+export function useCreateSprint() {
+  const qc = useQueryClient();
+  return useMutation<
+    SprintDef,
+    Error,
+    { name: string; start_date: string; end_date: string; state: "active" | "completed" | "future"; goal?: string }
+  >({
+    mutationFn: body => apiClient.post<SprintDef>("/api/sprints", body),
+    onSuccess: invalidator(qc, "sprints"),
+  });
+}
+
+export function useDeleteSprint() {
+  const qc = useQueryClient();
+  return useMutation<DeleteResult, Error, DeleteVars>({
+    mutationFn: vars => apiClient.delete<DeleteResult>(deleteUrl("/api/sprints", vars)),
+    onSuccess: invalidator(qc, "sprints"),
+  });
+}
+
+export function useArchiveSprint() {
+  const qc = useQueryClient();
+  // SPR-40: like labels (and unlike milestones), archive/unarchive are
+  // their own routes rather than a field on PUT — core's `editSprint`
+  // preserves `archived` untouched, so a PUT could never have set it.
+  return useMutation<unknown, Error, { id: string; archived: boolean }>({
+    mutationFn: ({ id, archived }) =>
+      apiClient.post(
+        `/api/sprints/${encodeURIComponent(id)}/${archived ? "archive" : "unarchive"}`,
+        {},
+      ),
+    onSuccess: invalidator(qc, "sprints"),
   });
 }

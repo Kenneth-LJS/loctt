@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import {
+  useArchiveMilestone,
   useCountedMilestones,
   useCreateMilestone,
   useDeleteMilestone,
@@ -35,18 +36,21 @@ function MilestoneRow({ milestone, count, all }: {
   readonly all: readonly MilestoneDef[];
 }) {
   const update = useUpdateMilestone();
+  const archive = useArchiveMilestone();
   const del = useDeleteMilestone();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(milestone.name);
   const [date, setDate] = useState(milestone.target_date ?? "");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
+  const archived = milestone.archived === true;
   const dateOk = date === "" || ISO_DATE_RE.test(date);
   const nameOk = name.trim().length > 0;
 
   return (
     <li
       data-testid={`milestone-row-${milestone.id}`}
+      data-milestone-archived={archived ? "true" : "false"}
       className="flex items-center gap-3 border-b border-border-subtle py-2 last:border-0"
     >
       {editing
@@ -119,6 +123,19 @@ function MilestoneRow({ milestone, count, all }: {
             <>
               <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">
                 {milestone.name}
+                {/*
+                  MSL-11 (management surface): an archived milestone is
+                  still shown here and marked, not hidden, so the row
+                  stays reachable to unarchive it. (MSL-25's claim — that
+                  an archived milestone still resolves on tasks and by URL
+                  and is revealed in the /milestones view — lives on that
+                  view, not this panel.)
+                */}
+                {archived && (
+                  <span data-testid="milestone-archived-marker" className="ml-2 text-text-tertiary">
+                    (archived)
+                  </span>
+                )}
               </span>
               {/*
                 MSL-14 / MSL-16: an undated milestone says so explicitly.
@@ -141,10 +158,28 @@ function MilestoneRow({ milestone, count, all }: {
               <button
                 type="button"
                 data-testid="milestone-edit"
-                onClick={() => { setEditing(true); }}
+                onClick={() => {
+                  // B2 bug 5: re-seed name/date from the CURRENT props on
+                  // Edit-open. Seeded once at mount, a stale draft would
+                  // be written back on Save after an external rename,
+                  // silently reverting it.
+                  setName(milestone.name);
+                  setDate(milestone.target_date ?? "");
+                  update.reset();
+                  setEditing(true);
+                }}
                 className="rounded border border-border-subtle px-2 py-1 text-[12px]"
               >
                 Edit
+              </button>
+              <button
+                type="button"
+                data-testid="milestone-archive-toggle"
+                disabled={archive.isPending}
+                onClick={() => { archive.reset(); archive.mutate({ id: milestone.id, archived: !archived }); }}
+                className="rounded border border-border-subtle px-2 py-1 text-[12px] disabled:opacity-50"
+              >
+                {archived ? "Unarchive" : "Archive"}
               </button>
               <button
                 type="button"
@@ -154,6 +189,18 @@ function MilestoneRow({ milestone, count, all }: {
               >
                 Delete
               </button>
+              {/* B2 bug 3: an archive/unarchive that fails must say so —
+                  the toggle used to swallow the error and read as done
+                  while nothing changed on disk. */}
+              {archive.isError && (
+                <p
+                  role="alert"
+                  data-testid="milestone-archive-error"
+                  className="basis-full text-[12px] text-danger-fg"
+                >
+                  {archive.error instanceof ApiError ? archive.error.message : "Could not change the archived state."}
+                </p>
+              )}
             </>
           )}
 

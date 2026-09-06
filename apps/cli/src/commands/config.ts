@@ -118,14 +118,20 @@ export async function run(args: string[], root: string): Promise<void> {
         }
       }
       console.log("custom_fields");
-      const fields = Object.entries(counts.custom_field_values)
-        .filter(([, table]) => Object.keys(table).length > 0)
-        .sort(([a], [b]) => a.localeCompare(b));
-      if (fields.length === 0) {
+      // The whole-field total is the blast radius of a field delete, and
+      // it counts every type — a number or boolean field holds values but
+      // has no enum-value breakdown, so keying only off `custom_field_values`
+      // dropped those fields from the report entirely.
+      const fieldTotals = Object.entries(counts.custom_fields)
+        .filter(([, n]) => n > 0)
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      if (fieldTotals.length === 0) {
         console.log("  (none referenced)");
       }
-      for (const [field, table] of fields) {
-        console.log(`  ${field}`);
+      for (const [field, total] of fieldTotals) {
+        console.log(`  ${field} = ${String(total)}`);
+        // The per-value breakdown, for enum fields that have one.
+        const table = counts.custom_field_values[field] ?? {};
         for (const [key, n] of Object.entries(table).sort((a, b) => b[1] - a[1])) {
           console.log(`    ${key} = ${String(n)}`);
         }

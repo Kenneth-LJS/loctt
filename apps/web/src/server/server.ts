@@ -36,6 +36,7 @@ import {
   CreateViewRequestSchema,
   EditCommentRequestSchema,
   EditViewRequestSchema,
+  EmailSchema,
   InitRequestSchema,
   isSortableTaskField,
   ListViewConfigSchema,
@@ -52,6 +53,7 @@ import {
   ArchivedReferenceError,
   archiveLabel,
   archiveProject,
+  archiveSprint,
   archiveTask,
   archiveUser,
   assertSafeBasename,
@@ -205,6 +207,7 @@ import {
   TokenizeError,
   unarchiveLabel,
   unarchiveProject,
+  unarchiveSprint,
   unarchiveTask,
   unarchiveUser,
   unarchiveView,
@@ -1024,6 +1027,8 @@ const TASK_BODY_RE = /^\/api\/tasks\/([^/]+)\/body$/;
 const TASK_BODY_APPEND_RE = /^\/api\/tasks\/([^/]+)\/body\/append$/;
 const CONFIG_KEY_RE = /^\/api\/config\/([^/]+)$/;
 const SPRINT_BURNDOWN_RE = /^\/api\/sprints\/([^/]+)\/burndown$/;
+const SPRINT_ARCHIVE_RE = /^\/api\/sprints\/([^/]+)\/archive$/;
+const SPRINT_UNARCHIVE_RE = /^\/api\/sprints\/([^/]+)\/unarchive$/;
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -2039,6 +2044,42 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
+  /**
+   * SPR-40: archiving a sprint keeps existing task assignments and
+   * removes it from the active split in the picker/settings.
+   * `archiveSprint`/`unarchiveSprint` were exported from core and
+   * reached only by the CLI, so the UI could split archived from active
+   * for *reading* but had no way to archive — delete was the only write.
+   * Mirrors the label archive routes.
+   */
+  const handleArchiveSprint: RouteHandler = async ({ res, locttDir, captures }) => {
+    const id = captures[0] ?? "";
+    try {
+      await archiveSprint(locttDir, id);
+      json(res, { archived: id });
+    } catch (err) {
+      if (err instanceof SprintError) {
+        error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
+        return;
+      }
+      throw err;
+    }
+  };
+
+  const handleUnarchiveSprint: RouteHandler = async ({ res, locttDir, captures }) => {
+    const id = captures[0] ?? "";
+    try {
+      await unarchiveSprint(locttDir, id);
+      json(res, { unarchived: id });
+    } catch (err) {
+      if (err instanceof SprintError) {
+        error(res, err.message, 400, REJECTED_WRITE_NO_RETRY);
+        return;
+      }
+      throw err;
+    }
+  };
+
   const handleListMilestones: RouteHandler = async ({ res, url, locttDir }) => {
     const page = parsePagination(url, res);
     if (!page) return;
@@ -2340,6 +2381,18 @@ export function createWebApp(options: WebAppOptions) {
       error(res, "A name is required.", 400, { ...REJECTED_WRITE, field: "name" });
       return;
     }
+    // B2 bug 1: reject a malformed email on the WRITE path. Without this,
+    // core persists `email: "bob"`, the reader degrades it into `health`
+    // on the next load, and the field silently reads back blank — data
+    // loss reported as a 201. `field: "email"` lets the client anchor the
+    // error at the email input.
+    if (request.email !== undefined && !EmailSchema.safeParse(request.email).success) {
+      error(res, "Enter a valid email address, or leave it blank.", 400, {
+        ...REJECTED_WRITE,
+        field: "email",
+      });
+      return;
+    }
     try {
       const created = await createUser(locttDir, {
         name: request.name,
@@ -2364,6 +2417,21 @@ export function createWebApp(options: WebAppOptions) {
       email?: string | null;
       timezone?: string;
     }>(req, res);
+    // B2 bug 1: a non-null email must be a valid address before it is
+    // written. `null` clears the field (allowed); `undefined` leaves it
+    // unchanged. A malformed string is rejected here, not degraded into
+    // `health` on the next read (silent data loss).
+    if (
+      "email" in request
+      && request.email !== null
+      && !EmailSchema.safeParse(request.email).success
+    ) {
+      error(res, "Enter a valid email address, or leave it blank.", 400, {
+        ...REJECTED_WRITE,
+        field: "email",
+      });
+      return;
+    }
     try {
       const target = await resolveUserRef(locttDir, ref);
       const updated = await updateUser(locttDir, target.id, {
@@ -4859,6 +4927,8 @@ export function createWebApp(options: WebAppOptions) {
     { method: "POST", pattern: VIEW_UNARCHIVE_RE, handler: handleUnarchiveView },
     { method: "GET", pattern: "/api/sprints", handler: handleListSprints },
     { method: "POST", pattern: "/api/sprints", handler: handleCreateSprint },
+    { method: "POST", pattern: SPRINT_ARCHIVE_RE, handler: handleArchiveSprint },
+    { method: "POST", pattern: SPRINT_UNARCHIVE_RE, handler: handleUnarchiveSprint },
     { method: "PUT", pattern: SPRINT_KEY_RE, handler: handleUpdateSprint },
     { method: "DELETE", pattern: SPRINT_KEY_RE, handler: handleDeleteSprint },
     { method: "GET", pattern: "/api/users", handler: handleListUsers },

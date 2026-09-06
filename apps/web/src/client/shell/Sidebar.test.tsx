@@ -66,6 +66,9 @@ let CWD = "~/PDev/loctt";
 /** Makes /api/views fail, per-test (SHL-32). */
 let FAIL_VIEWS = false;
 
+/** Per-user settings returned by /api/user-settings, per-test (SHL-45). */
+let SETTINGS: Record<string, unknown> = {};
+
 /** Saved views returned by /api/views, per-test (SHL-32). */
 let VIEWS: { id: string; name: string; query: string }[] = [
   { id: "v_mine", name: "My open bugs", query: "x" },
@@ -125,6 +128,9 @@ function routeFetch(path: string): unknown {
   }
   if (path.startsWith("/api/recents")) {
     return { items: RECENTS, total: RECENTS.length, offset: 0, limit: 100 };
+  }
+  if (path.startsWith("/api/user-settings")) {
+    return { user: "u_ken", settings: SETTINGS };
   }
   if (path.startsWith("/api/workflow")) {
     if (PRIORITIES !== undefined) {
@@ -259,6 +265,7 @@ afterEach(() => {
   WORKFLOW_STATUSES = [];
   CWD = "~/PDev/loctt";
   VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+  SETTINGS = {};
   FAIL_VIEWS = false;
   window.localStorage.clear();
   TASK_TOTAL = 3;
@@ -841,5 +848,108 @@ describe("Sidebar with a saved view deleted from queries.yaml", () => {
     await renderSidebarAt("/list");
     await screen.findByText("Saved filters");
     expect(screen.queryByText(/was removed/)).toBeNull();
+  });
+});
+
+describe("Sidebar groups customization (SHL-45)", () => {
+  it("renders groups in the configured order", async () => {
+    // @verifies SHL-45
+    // Default order has Projects before Labels; a custom order flips them.
+    SETTINGS = { sidebar_groups: { order: ["labels", "projects"] } };
+    await renderSidebarAt("/list");
+    // The settings query settles after the first (default-order) render,
+    // so wait until the custom order takes effect.
+    await waitFor(() => {
+      const labelsHeader = screen.getByText("Labels");
+      const projectsHeader = screen.getByText("Projects");
+      expect(
+        labelsHeader.compareDocumentPosition(projectsHeader)
+          & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+  });
+
+  it("does not render a hidden group", async () => {
+    // @verifies SHL-45 — a user-hidden group is absent, not an empty affordance
+    SETTINGS = { sidebar_groups: { hidden: ["labels"] } };
+    await renderSidebarAt("/list");
+    // Wait for the settings-driven re-render to hide the group.
+    await waitFor(() => {
+      expect(screen.queryByText("Labels")).toBeNull();
+    });
+    // Other groups still render (getByText throws if absent).
+    screen.getByText("Projects");
+    // Not an "empty affordance" either — the group is gone, not empty.
+    expect(screen.queryByText(/No labels yet/)).toBeNull();
+  });
+
+  it("hides a built-in filter without removing the Saved filters group", async () => {
+    // @verifies SHL-45 — built-in filters are hideable too
+    SETTINGS = { sidebar_groups: { hidden: ["overdue"] } };
+    await renderSidebarAt("/list");
+    await waitFor(() => {
+      expect(screen.queryByText("Overdue")).toBeNull();
+    });
+    screen.getByText("Saved filters");
+    // A non-hidden filter still shows.
+    screen.getByText("Assigned to me");
+  });
+
+  it("falls back to the default (all groups) when the setting is corrupt", async () => {
+    // @verifies SHL-45 — degrade on a bad setting, never blank the sidebar
+    SETTINGS = { sidebar_groups: "banana" };
+    await renderSidebarAt("/list");
+    // getByText throws if any is missing — all three present == degrade held.
+    screen.getByText("Projects");
+    screen.getByText("Labels");
+    screen.getByText("Milestones");
+  });
+
+  it("opens the create-view dialog from the enabled + New filter entry", async () => {
+    // @verifies SHL-45 (+ New filter enablement owned by this lane)
+    await renderSidebarAt("/list");
+    const btn = screen.getByTestId("sidebar-new-filter");
+    // Enabled: no `disabled` attribute (the old stub hardcoded one).
+    expect(btn.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(btn);
+    // VUE-40: the sidebar entry opens the same create dialog the panel
+    // uses — the one with the advanced query editor, NOT the read-only
+    // "Save as view" dialog that hard-codes `archived != true`.
+    await screen.findByTestId("view-create-dialog");
+    screen.getByTestId("advanced-query-editor");
+  });
+
+  it("sidebar + New filter POSTs a TYPED query, not the fixed archived filter", async () => {
+    // @verifies VUE-40 — the sidebar bullet the case leads with. The old
+    // wiring opened SaveViewDialog with `search={}`, so every view saved
+    // from the sidebar was `archived != true` and the user could not type
+    // a query. This asserts the sidebar reaches the query editor and POSTs
+    // exactly what was typed.
+    await renderSidebarAt("/list");
+    const posts: { url: string; body: unknown }[] = [];
+    const realFetch = globalThis.fetch;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if ((init?.method ?? "GET") === "POST" && url.includes("/api/views")) {
+        const raw = init?.body;
+        posts.push({ url, body: typeof raw === "string" ? JSON.parse(raw) : undefined });
+        return Promise.resolve(new Response(JSON.stringify({ id: "vNew", name: "n", query: "q" }), {
+          status: 201, headers: { "Content-Type": "application/json" },
+        }));
+      }
+      return realFetch(input, init);
+    });
+
+    fireEvent.click(screen.getByTestId("sidebar-new-filter"));
+    await screen.findByTestId("advanced-query-editor");
+
+    fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "My typed view" } });
+    fireEvent.change(screen.getByTestId("dsl-input"), { target: { value: "status:open AND type:bug" } });
+    fireEvent.click(screen.getByTestId("view-form-save"));
+
+    await waitFor(() => { expect(posts.length).toBe(1); });
+    expect(posts[0]?.body).toEqual({ name: "My typed view", query: "status:open AND type:bug" });
+    // Never the SaveViewDialog default derived from an empty search.
+    expect(JSON.stringify(posts[0]?.body)).not.toContain("archived != true");
   });
 });

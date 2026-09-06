@@ -250,12 +250,12 @@ test.describe("PRU — the projects panel", () => {
     await page.goto(`${tracker.baseURL}/settings/projects`);
     const panel = page.getByTestId("settings-projects");
     await expect(panel).toBeVisible();
-    // The name is an editable input, so assert its value rather than
-    // the pane's text — `toContainText` does not see input values.
+    // Edit-model (B2): the name is read-by-default text, not an input, so
+    // assert its text content. Editing is behind a per-row Edit control.
     const names = page.locator('[data-testid^="project-name-"]');
     await expect(names).toHaveCount(2);
-    await expect(names.nth(0)).toHaveValue("Tasks");
-    await expect(names.nth(1)).toHaveValue("Web App");
+    await expect(names.nth(0)).toHaveText("Tasks");
+    await expect(names.nth(1)).toHaveText("Web App");
   });
 
   // @verifies PRU-5
@@ -270,10 +270,10 @@ test.describe("PRU — the projects panel", () => {
     await page.getByTestId("project-create-prefix").fill("DOCS-");
     await page.getByTestId("project-create-submit").click();
 
-    // Appears without a page reload. The name is an input value.
+    // Appears without a page reload. The name is read-by-default text.
     const names = page.locator('[data-testid^="project-name-"]');
     await expect(names).toHaveCount(2);
-    await expect(names.nth(1)).toHaveValue("Docs");
+    await expect(names.nth(1)).toHaveText("Docs");
 
     // The far end: the file on disk, and the CLI reading it.
     const yaml = await projectsYaml(tracker.root);
@@ -345,11 +345,13 @@ test.describe("PRU — the projects panel", () => {
     const id = /id: (\w+)\n\s+name: Backend/.exec(yamlBefore)?.[1] ?? "";
     expect(id).not.toBe("");
 
-    const nameInput = page.getByTestId(`project-name-${id}`);
-    await nameInput.fill("Backend Services");
-    await nameInput.blur();
-
+    // Edit-model (B2): open the row's edit form, change the name, Save.
+    // The name no longer saves on blur.
+    await page.getByTestId(`project-edit-${id}`).click();
+    await page.getByTestId(`project-name-input-${id}`).fill("Backend Services");
+    // The slug stays fixed and disabled inside the form.
     await expect(page.getByTestId(`project-slug-${id}`)).toHaveValue("backend");
+    await page.getByTestId(`project-name-save-${id}`).click();
 
     // The far end: the label moved on disk and the slug did not (A60).
     await expect.poll(async () => projectsYaml(tracker.root))
@@ -370,15 +372,19 @@ test.describe("PRU — the projects panel", () => {
     const yaml = await projectsYaml(tracker.root);
     const id = /id: (\w+)\n\s+name: Backend/.exec(yaml)?.[1] ?? "";
 
+    // Edit-model (B2): the immutable fields are shown in the edit form.
+    await page.getByTestId(`project-edit-${id}`).click();
+
     // Disabled, not merely unvalidated. `toHaveJSProperty` rather than
-    // `toBeDisabled`, which retargets inside a <label>.
+    // `toBeDisabled`, which retargets inside a <label>. The prefix input,
+    // unlike the slug, is enabled — it changes via its own confirm
+    // dialog (PRU-44), so PRU-20's immutability is only the slug plus the
+    // requirement that no plain PUT rewrites the prefix.
     await expect(page.getByTestId(`project-slug-${id}`))
       .toHaveJSProperty("disabled", true);
-    await expect(page.getByTestId(`project-prefix-${id}`))
-      .toHaveJSProperty("disabled", true);
-    // The label is editable in the same form, so the disabled state
-    // reads as intentional rather than as a broken form.
-    await expect(page.getByTestId(`project-name-${id}`))
+    // The name is editable in the same form, so the disabled slug reads
+    // as intentional rather than as a broken form.
+    await expect(page.getByTestId(`project-name-input-${id}`))
       .toHaveJSProperty("disabled", false);
   });
 
@@ -461,6 +467,117 @@ test.describe("PRU — the projects panel", () => {
     // The far end.
     await expect.poll(async () => projectsYaml(tracker.root))
       .toContain("archived: true");
+  });
+
+  // @verifies PRU-48
+  test("PRU-48: making a project the default writes it to config and moves the marker", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    await page.goto(`${tracker.baseURL}/settings/projects`);
+
+    const yaml = await projectsYaml(tracker.root);
+    const webId = /id: (\w+)\n\s+name: Web\b/.exec(yaml)?.[1] ?? "";
+    expect(webId).not.toBe("");
+
+    // Make Web the default from the panel.
+    await page.getByTestId(`project-set-default-${webId}`).click();
+
+    // The marker moves to Web without a reload, and its button goes inert.
+    await expect(page.getByTestId(`project-default-marker-${webId}`)).toBeVisible();
+    await expect(page.getByTestId(`project-set-default-${webId}`)).toBeDisabled();
+    await expect(page.getByTestId(`project-set-default-${webId}`)).toHaveText("Default");
+
+    // The far end: config records the default, and new tasks land there.
+    await expect.poll(async () => projectsYaml(tracker.root))
+      .toMatch(new RegExp(`default:\\s*${webId}`));
+    const created = await tracker.run(["create", "Lands in default"]);
+    expect(created).toContain("WEB-");
+  });
+
+  // @verifies PRU-47
+  //
+  // PRU-47's far end: "Reloading shows the edited values; `loctt user`
+  // agrees (P10)." The panel-level Vitest tests assert the PUT the dialog
+  // issues; only a real round-trip proves the edit reached profile.yaml
+  // and survives a reload — the exact gap the B2 fix-review flagged. This
+  // also exercises the B2 bug-1 write path end-to-end: a valid email is
+  // persisted (and read back non-blank), not degraded on read.
+  test("PRU-47: editing a user's name and email persists, survives a reload, and the CLI agrees", async ({
+    page,
+    tracker,
+  }) => {
+    // A non-self user so nothing about the acting-user guards is in play.
+    await tracker.run(["user", "create", "Robin", "--email", "robin@old.example"]);
+    const robinId = await userIdByName(tracker, "Robin");
+    expect(robinId).toBeTruthy();
+
+    await page.goto(`${tracker.baseURL}/settings/users`);
+    await page.getByTestId(`user-edit-${robinId}`).click();
+    await expect(page.getByTestId(`user-edit-dialog-${robinId}`)).toBeVisible();
+
+    await page.getByTestId(`user-edit-name-${robinId}`).fill("Robin Banks");
+    await page.getByTestId(`user-edit-email-${robinId}`).fill("robin@new.example");
+    await page.getByTestId(`user-edit-save-${robinId}`).click();
+
+    // On success the dialog closes and the row shows the new values.
+    await expect(page.getByTestId(`user-edit-dialog-${robinId}`)).toBeHidden();
+    await expect(page.getByTestId(`user-row-${robinId}`)).toContainText("Robin Banks");
+    await expect(page.getByTestId(`user-row-${robinId}`)).toContainText("robin@new.example");
+
+    // The far end #1: profile.yaml on disk carries both edits — the email
+    // is stored, not degraded to blank (B2 bug 1).
+    const profile = await readFile(
+      path.join(tracker.root, ".loctt", "users", robinId as string, "profile.yaml"),
+      "utf8",
+    );
+    expect(profile).toContain("Robin Banks");
+    expect(profile).toContain("robin@new.example");
+    expect(profile).not.toContain("robin@old.example");
+
+    // The far end #2: a full reload still shows the edited values — they
+    // came from disk, not from a stale in-memory cache.
+    await page.reload();
+    await expect(page.getByTestId(`user-row-${robinId}`)).toContainText("Robin Banks");
+    await expect(page.getByTestId(`user-row-${robinId}`)).toContainText("robin@new.example");
+
+    // The far end #3: `loctt user` agrees (P10).
+    const listed = await tracker.run(["user", "list", "--all"]);
+    expect(listed).toContain("Robin Banks");
+    expect(listed).toContain("robin@new.example");
+  });
+
+  // @verifies PRU-44
+  test("PRU-44: changing a prefix from the edit form renames every task and states the count", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    // Three tasks in Web so the blast radius is a real number.
+    for (const t of ["One", "Two", "Three"]) {
+      await tracker.run(["create", t, "--project", "web"]);
+    }
+    await page.goto(`${tracker.baseURL}/settings/projects`);
+
+    const yaml = await projectsYaml(tracker.root);
+    const webId = /id: (\w+)\n\s+name: Web\b/.exec(yaml)?.[1] ?? "";
+    expect(webId).not.toBe("");
+
+    // Edit-model (B2): the prefix control lives inside the edit form.
+    await page.getByTestId(`project-edit-${webId}`).click();
+    await page.getByTestId(`project-prefix-${webId}`).fill("SITE-");
+    await page.getByTestId(`project-prefix-save-${webId}`).click();
+
+    // The confirm states the blast radius before anything is written.
+    const confirm = page.getByTestId(`project-prefix-confirm-${webId}`);
+    await expect(confirm).toContainText("3 tasks");
+    await page.getByTestId(`project-prefix-confirm-btn-${webId}`).click();
+
+    // The far end: config and task keys on disk carry the new prefix.
+    await expect.poll(async () => projectsYaml(tracker.root)).toContain("SITE-");
+    await expect.poll(async () => tracker.run(["list", "--project", "web"]))
+      .toContain("SITE-");
   });
 });
 

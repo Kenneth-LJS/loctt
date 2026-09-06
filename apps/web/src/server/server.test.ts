@@ -734,6 +734,70 @@ describe("web server security", () => {
       expect(body.error).toMatch(/both visible and hidden/);
     });
   });
+
+  describe("user email validation (B2 bug 1)", () => {
+    const csrfHeaders = {
+      "Content-Type": "application/json",
+      "X-Loctt-Client": "test",
+    };
+
+    it("rejects a malformed email on PUT /api/users/:id with field:email, and leaves the on-disk value unchanged", async () => {
+      const current = await getCurrentUser(join(root, ".loctt"));
+      if (!current) throw new Error("expected default user");
+      // Seed a known-good email so we can prove the bad write did not
+      // clobber it.
+      const seed = await fetch(`${base}/api/users/${current.id}`, {
+        method: "PUT",
+        headers: csrfHeaders,
+        body: JSON.stringify({ email: "real@example.com" }),
+      });
+      expect(seed.status).toBe(200);
+      const profilePath = join(root, ".loctt", "users", current.id, "profile.yaml");
+      const before = await readFile(profilePath, "utf-8");
+      expect(before).toContain("real@example.com");
+
+      // The bug: "bob" was saved as a 200, the reader degraded it into
+      // `health`, and the field read back blank. The fix rejects it.
+      const res = await fetch(`${base}/api/users/${current.id}`, {
+        method: "PUT",
+        headers: csrfHeaders,
+        body: JSON.stringify({ email: "bob" }),
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { field?: string; message?: string };
+      expect(body.field).toBe("email");
+
+      // The on-disk email is untouched — no silent data loss.
+      const after = await readFile(profilePath, "utf-8");
+      expect(after).toContain("real@example.com");
+      expect(after).not.toContain("email: bob");
+    });
+
+    it("still allows clearing the email with null on PUT /api/users/:id", async () => {
+      const current = await getCurrentUser(join(root, ".loctt"));
+      if (!current) throw new Error("expected default user");
+      const res = await fetch(`${base}/api/users/${current.id}`, {
+        method: "PUT",
+        headers: csrfHeaders,
+        body: JSON.stringify({ email: null }),
+      });
+      expect(res.status).toBe(200);
+    });
+
+    it("rejects a malformed email on POST /api/users with field:email and creates nothing", async () => {
+      const listBefore = await (await fetch(`${base}/api/users`)).json() as { total: number };
+      const res = await fetch(`${base}/api/users`, {
+        method: "POST",
+        headers: csrfHeaders,
+        body: JSON.stringify({ name: "bad-email", email: "nope" }),
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json() as { field?: string };
+      expect(body.field).toBe("email");
+      const listAfter = await (await fetch(`${base}/api/users`)).json() as { total: number };
+      expect(listAfter.total).toBe(listBefore.total);
+    });
+  });
 });
 
 describe("GET /api/info — workspace today", () => {

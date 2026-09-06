@@ -102,9 +102,11 @@ test.describe("SET — the statuses panel", () => {
       await expect(row).toHaveAttribute("data-position", String(i + 1));
       // The key itself, shown.
       await expect(page.getByTestId(`statuses-key-${key}`)).toHaveText(key);
-      // And the category, from the four the schema allows.
+      // And the category, read out (the edit surface moved to the Edit
+      // dialog — open decision #3 — so the row shows it rather than
+      // exposing an inline <select>), from the four the schema allows.
       await expect(page.getByTestId(`statuses-category-${key}`))
-        .toHaveValue(/^(pending|active|completed|discarded)$/);
+        .toHaveText(/^(pending|active|completed|discarded)$/);
     }
 
     // Exactly one default, and the marker says what it decides.
@@ -137,8 +139,10 @@ test.describe("SET — the statuses panel", () => {
     );
 
     await page.reload();
+    // The label is a read-out span now (edits live in the Edit dialog),
+    // so the lens shows the hand edit as text, not as an input value.
     await expect(page.getByTestId(`statuses-label-${firstKey}`))
-      .toHaveValue("Renamed by hand");
+      .toHaveText("Renamed by hand");
   });
 });
 
@@ -413,12 +417,27 @@ test.describe("SET — relationships", () => {
 
     for (const key of declared) {
       await expect(page.getByTestId(`relationship-${key}`)).toBeVisible();
-      // `graph` is a named control over the three the schema allows —
-      // not an unlabelled icon, and not the removed `structural`.
+      // `graph` is read out on the row, labelled `graph:` and one of the
+      // three the schema allows — not an unlabelled icon, and not the
+      // removed `structural`. (Editing it moved into the Edit dialog —
+      // open decision #3 — asserted below.)
       await expect(page.getByTestId(`relationship-graph-${key}`))
-        .toHaveValue(/^(none|acyclic|tree)$/);
-      await expect(page.getByTestId(`relationship-ranked-${key}`)).toBeVisible();
+        .toHaveText(/graph:\s*(none|acyclic|tree)/);
     }
+
+    // The graph and ranked *controls* live behind the Edit dialog now.
+    // Open it on the first relationship and confirm both are real,
+    // labelled controls over the values the schema allows.
+    const first = declared[0] as string;
+    await page.getByTestId(`relationships-edit-${first}`).click();
+    const dialog = page.getByTestId("relationships-entry-dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByTestId("relationships-entry-graph"))
+      .toHaveValue(/^(none|acyclic|tree)$/);
+    const graphOptions = await dialog.getByTestId("relationships-entry-graph")
+      .locator("option").evaluateAll(els => els.map(e => (e as HTMLOptionElement).value));
+    expect(graphOptions).toEqual(["none", "acyclic", "tree"]);
+    await expect(dialog.getByTestId("relationships-entry-ranked")).toBeVisible();
   });
 
   // @verifies SET-5
@@ -447,18 +466,29 @@ test.describe("SET — relationships", () => {
     await page.goto(`${tracker.baseURL}/settings/relationships`);
 
     // A custom key with the user's own labels — nothing hardcodes
-    // blocks / depends_on.
+    // blocks / depends_on. The row reads out its kind and inverse.
     const row = page.getByTestId("relationship-supersedes");
     await expect(row).toContainText("Supersedes");
     await expect(row).toHaveAttribute("data-relationship-kind", "directional");
-    await expect(page.getByTestId("relationship-inverse-supersedes"))
-      .toHaveValue("superseded_by");
+    await expect(page.getByTestId("relationship-inverse-note-supersedes"))
+      .toContainText("superseded_by");
 
-    // Tick symmetric: the inverse fields go in the same interaction,
-    // replaced by an explicit "same as forward" rather than blanks.
-    await page.getByTestId("relationship-symmetric-supersedes").check();
+    // The symmetric toggle lives in the Edit dialog now (open decision
+    // #3). Open it, tick symmetric — the inverse fields disappear in the
+    // same interaction — and save.
+    await page.getByTestId("relationships-edit-supersedes").click();
+    const dialog = page.getByTestId("relationships-entry-dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByTestId("relationships-entry-inverse"))
+      .toHaveValue("superseded_by");
+    await dialog.getByTestId("relationships-entry-symmetric").check();
+    await expect(dialog.getByTestId("relationships-entry-inverse")).toHaveCount(0);
+    await dialog.getByTestId("relationships-entry-save").click();
+    await expect(dialog).toHaveCount(0);
+
+    // The row folds to symmetric with an explicit "same as forward"
+    // rather than blanks.
     await expect(row).toHaveAttribute("data-relationship-kind", "symmetric");
-    await expect(page.getByTestId("relationship-inverse-supersedes")).toHaveCount(0);
     await expect(page.getByTestId("relationship-inverse-note-supersedes"))
       .toContainText("same as forward");
 
@@ -474,12 +504,14 @@ test.describe("SET — relationships", () => {
       };
     }).toEqual({ kind: true, boolean: false, inverse: false });
 
-    // Unticking restores the previous inverse values, not blanks.
-    await page.getByTestId("relationship-symmetric-supersedes").uncheck();
-    await expect(page.getByTestId("relationship-inverse-supersedes"))
-      .toHaveValue("superseded_by");
-    await expect(page.getByTestId("relationship-inverse-label-supersedes"))
-      .toHaveValue("Superseded by");
+    // Re-open the dialog and untick: the inverse fields come back, and
+    // the user can type the pair again (the dialog does not carry the
+    // pre-fold values, but it must present the fields to re-enter them).
+    await page.getByTestId("relationships-edit-supersedes").click();
+    const dialog2 = page.getByTestId("relationships-entry-dialog");
+    await dialog2.getByTestId("relationships-entry-symmetric").uncheck();
+    await expect(dialog2.getByTestId("relationships-entry-inverse")).toBeVisible();
+    await expect(dialog2.getByTestId("relationships-entry-inverse-label")).toBeVisible();
   });
 });
 
@@ -540,9 +572,13 @@ test.describe("SET — custom fields", () => {
       await expect(row).toHaveAttribute("data-field-multi", "false");
       await expect(page.getByTestId(`custom-field-searchable-${key}`)).toBeVisible();
     }
-    // Only `notes` is searchable in the file above.
-    await expect(page.getByTestId("custom-field-searchable-notes")).toBeChecked();
-    await expect(page.getByTestId("custom-field-searchable-size")).not.toBeChecked();
+    // Only `notes` is searchable in the file above. The searchable flag
+    // is read out on the row (the edit control moved to the Edit dialog),
+    // so it is a `data-searchable` attribute, not a checkbox.
+    await expect(page.getByTestId("custom-field-searchable-notes"))
+      .toHaveAttribute("data-searchable", "true");
+    await expect(page.getByTestId("custom-field-searchable-size"))
+      .toHaveAttribute("data-searchable", "false");
 
     // The enum row expands to its declared values.
     await expect(page.getByTestId("custom-field-value-size-xs")).toContainText("XS");
@@ -579,27 +615,36 @@ test.describe("SET — custom fields", () => {
 
     await page.goto(`${tracker.baseURL}/settings/custom-fields`);
 
+    // The type/multi lock lives in the Edit dialog now (open decision
+    // #3): the row is a read-out, and the controls the case is about are
+    // behind Edit.
+    await page.getByTestId("custom-field-edit-story_points").click();
+    const dialog = page.getByTestId("custom-field-dialog");
+    await expect(dialog).toBeVisible();
+
     // Disabled, not merely validated on submit. `toHaveJSProperty`
     // rather than `toBeDisabled` — the control sits inside a <label>,
     // and Playwright's disabled check retargets to the labelled
     // control, which would make this assertion about the wrong node.
-    await expect(page.getByTestId("custom-field-type-story_points"))
+    await expect(dialog.getByTestId("custom-field-dialog-type"))
       .toHaveJSProperty("disabled", true);
-    await expect(page.getByTestId("custom-field-multi-story_points"))
+    await expect(dialog.getByTestId("custom-field-dialog-multi"))
       .toHaveJSProperty("disabled", true);
 
     // And it states the reason, naming the stored values.
-    await expect(page.getByTestId("custom-field-type-lock-story_points"))
+    await expect(dialog.getByTestId("custom-field-dialog-type-lock"))
       .toContainText(/stored under this type/i);
     // The honest alternative, rather than pretending the change works.
-    await expect(page.getByTestId("custom-field-type-lock-story_points"))
+    await expect(dialog.getByTestId("custom-field-dialog-type-lock"))
       .toContainText(/new field/i);
 
-    // The lock is targeted: label and searchable are still editable.
-    await expect(page.getByTestId("custom-field-searchable-story_points"))
+    // The lock is targeted: label and searchable stay editable.
+    await expect(dialog.getByTestId("custom-field-dialog-searchable"))
       .toHaveJSProperty("disabled", false);
-    await page.getByTestId("custom-field-label-story_points").fill("Points");
-    await page.getByTestId("custom-field-label-story_points").blur();
+    await dialog.getByTestId("custom-field-dialog-label").fill("Points");
+    await dialog.getByTestId("custom-field-save").click();
+    await expect(dialog).toHaveCount(0);
+
     await expect.poll(async () => (await workflowYaml(tracker.root)).includes("label: Points"))
       .toBe(true);
     // …and the type in the file did not move.
@@ -633,20 +678,28 @@ test.describe("SET — custom fields", () => {
 
     await page.goto(`${tracker.baseURL}/settings/custom-fields`);
 
-    // With no weights set, the panel says which fallback applies.
+    // With no weights set, the panel says which fallback applies — read
+    // out on the row.
     await expect(page.getByTestId("custom-field-values-size"))
       .toHaveAttribute("data-sort-basis", "declared");
     await expect(page.getByTestId("custom-field-sort-note-size"))
       .toContainText(/declared order/i);
 
-    // Set a weight; it reaches the file as the value's `value`.
-    await page.getByTestId("custom-field-weight-size-xs").fill("1");
-    await page.getByTestId("custom-field-weight-size-xs").blur();
+    // Weights are edited in the Edit dialog now (open decision #3). The
+    // value rows there are index-ordered, so `xs` is row 0. Set it, save,
+    // and it reaches the file as the value's `value`.
+    await page.getByTestId("custom-field-edit-size").click();
+    const dialog = page.getByTestId("custom-field-dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByTestId("custom-field-dialog-value-weight-0").fill("1");
+    await dialog.getByTestId("custom-field-save").click();
+    await expect(dialog).toHaveCount(0);
     await expect.poll(async () => {
       const after = await workflowYaml(tracker.root);
       return /- key: xs\n\s+label: XS\n\s+value: 1/.test(after);
     }).toBe(true);
 
+    // The row now reads out weight-based sorting.
     await expect(page.getByTestId("custom-field-values-size"))
       .toHaveAttribute("data-sort-basis", "weight");
     await expect(page.getByTestId("custom-field-sort-note-size"))
@@ -654,8 +707,11 @@ test.describe("SET — custom fields", () => {
 
     // Clearing it again returns the stated fallback — SET-8's last
     // bullet, which is about the panel *saying* which applies.
-    await page.getByTestId("custom-field-weight-size-xs").fill("");
-    await page.getByTestId("custom-field-weight-size-xs").blur();
+    await page.getByTestId("custom-field-edit-size").click();
+    const dialog2 = page.getByTestId("custom-field-dialog");
+    await dialog2.getByTestId("custom-field-dialog-value-weight-0").fill("");
+    await dialog2.getByTestId("custom-field-save").click();
+    await expect(dialog2).toHaveCount(0);
     await expect(page.getByTestId("custom-field-values-size"))
       .toHaveAttribute("data-sort-basis", "declared");
   });

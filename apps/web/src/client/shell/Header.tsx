@@ -1,7 +1,9 @@
 import type { UserProfile } from "@loctt/contracts";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { useUsers } from "../api/hooks/sidebarData.ts";
+import { useSearch } from "../api/hooks/useSearch.ts";
 import { useSwitchUser } from "../api/hooks/useSwitchUser.ts";
 import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { useTheme } from "../theme/useTheme.ts";
@@ -116,14 +118,7 @@ export function Header({
 
       <div className="flex-1" />
 
-      <input
-        type="search"
-        placeholder="Search tasks…"
-        aria-label="Search tasks"
-        disabled
-        title="Search arrives in a later milestone"
-        className="hidden h-8 w-full min-w-0 max-w-[280px] rounded-md border border-border-default bg-bg-surface px-3 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-2 focus:outline-accent disabled:cursor-not-allowed disabled:opacity-60 sm:block"
-      />
+      <HeaderSearch />
 
       <ThemeToggle />
 
@@ -147,6 +142,157 @@ export function Header({
 
       <UserMenu currentUser={currentUser} identityUnknown={identityUnknown} />
     </header>
+  );
+}
+
+/**
+ * The global header search (SHL-46).
+ *
+ * The box was a dead input (`disabled`, no handler). Now typing debounces
+ * a `GET /api/search?q=…` request (a real network call) and shows a
+ * dropdown of matching tasks; clicking one navigates to it, and pressing
+ * Enter navigates to the list view filtered by the query so the full
+ * result set is browsable there. `/` focuses the box from anywhere
+ * (A11Y-2), except while typing in another field.
+ *
+ * The request is debounced (250ms) so a fast typist fires one request
+ * per pause, not one per keystroke; `useSearch` additionally keeps the
+ * previous results on screen until the next land, so the dropdown does
+ * not flicker empty between requests.
+ */
+const SEARCH_DEBOUNCE_MS = 250;
+
+function HeaderSearch() {
+  const navigate = useNavigate();
+  const [value, setValue] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [open, setOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const listboxId = useId();
+
+  // Debounce the value the query actually runs on.
+  useEffect(() => {
+    const t = setTimeout(() => { setDebounced(value); }, SEARCH_DEBOUNCE_MS);
+    return () => { clearTimeout(t); };
+  }, [value]);
+
+  const search = useSearch(debounced);
+  const hits = search.data?.items ?? [];
+
+  // `/` focuses this box from anywhere (A11Y-2). That binding is owned
+  // by the shell's global shortcut registry (AppShell → useGlobalShort-
+  // cuts → the `focus-search` shortcut, which finds this input by its
+  // `type="search"`), NOT by a listener here. Header used to add a second
+  // document `keydown` for `/` as well, which double-bound the key and
+  // bypassed the registry's dialog guard (a `/` typed with a modal open
+  // still stole focus). One owner: the global registry. See A150-adjacent
+  // notes / the B2 fix-review (duplicate `/` binding).
+
+  // Close the dropdown on an outside click.
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent): void => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => { document.removeEventListener("mousedown", onClick); };
+  }, [open]);
+
+  const goToList = (): void => {
+    const raw = value.trim();
+    if (raw.length === 0) return;
+    setOpen(false);
+    // The list's `q` is a DSL expression, not free text — it is fed
+    // straight to `/api/tasks?query=…` (via `tasksParamsFromSearch`) and
+    // parsed by core's query DSL. Sending the raw words (`hello`, or
+    // `(bug)`) produced a ParseError and the list showed "Could not load
+    // tasks" — SHL-46's headline path was broken. Wrap the text in the
+    // same `text ~ "<q>"` clause `/api/search` builds (server.ts uses
+    // `JSON.stringify` for the quoting), so a plain-word search resolves
+    // to the identical substring match the dropdown just ran.
+    const q = `text ~ ${JSON.stringify(raw)}`;
+    void navigate({ to: "/list", search: prev => ({ ...prev, q }) });
+  };
+
+  const goToTask = (key: string): void => {
+    setOpen(false);
+    setValue("");
+    void navigate({ to: "/tasks/$key", params: { key } });
+  };
+
+  const showDropdown = open && value.trim().length > 0;
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative hidden w-full min-w-0 max-w-[280px] sm:block"
+    >
+      <input
+        ref={inputRef}
+        type="search"
+        value={value}
+        placeholder="Search tasks…"
+        aria-label="Search tasks"
+        role="combobox"
+        aria-expanded={showDropdown}
+        aria-controls={listboxId}
+        aria-autocomplete="list"
+        data-testid="header-search"
+        onChange={e => { setValue(e.target.value); setOpen(true); }}
+        onFocus={() => { setOpen(true); }}
+        onKeyDown={e => {
+          if (e.key === "Enter") { e.preventDefault(); goToList(); }
+          else if (e.key === "Escape") { setOpen(false); }
+        }}
+        className="h-8 w-full rounded-md border border-border-default bg-bg-surface px-3 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-2 focus:outline-accent"
+      />
+
+      {showDropdown ? (
+        <div
+          id={listboxId}
+          role="listbox"
+          aria-label="Search results"
+          data-testid="header-search-results"
+          className="absolute left-0 right-0 top-9 z-30 max-h-80 overflow-y-auto rounded-md border border-border-default bg-bg-surface py-1 shadow-raised"
+        >
+          {search.isError ? (
+            <div role="alert" className="px-3 py-2 text-[12px] text-danger-fg">
+              Search failed. Try again.
+            </div>
+          ) : hits.length === 0 && !search.isFetching ? (
+            <div className="px-3 py-2 text-[12px] text-text-tertiary">
+              No tasks match “{value.trim()}”
+            </div>
+          ) : (
+            <>
+              {hits.map(h => (
+                <button
+                  key={h.key}
+                  type="button"
+                  role="option"
+                  aria-selected={false}
+                  data-testid={`header-search-hit-${h.key}`}
+                  onClick={() => { goToTask(h.key); }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-text-secondary hover:bg-bg-muted hover:text-text-primary"
+                >
+                  <span className="shrink-0 font-mono text-[10px] text-text-tertiary">{h.key}</span>
+                  <span className="truncate">{h.title}</span>
+                </button>
+              ))}
+              <button
+                type="button"
+                data-testid="header-search-all"
+                onClick={goToList}
+                className="flex w-full items-center gap-2 border-t border-border-subtle px-3 py-1.5 text-left text-[12px] font-medium text-accent hover:bg-bg-muted"
+              >
+                See all results for “{value.trim()}”
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
