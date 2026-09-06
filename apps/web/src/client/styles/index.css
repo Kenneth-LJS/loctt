@@ -66,6 +66,28 @@
     -apple-system,
     "Segoe UI",
     sans-serif;
+
+  /* Named type scale (B1 — replaces the 9 ad-hoc `text-[Npx]` sizes the
+   * consistency review found). Tailwind v4 emits a font-size utility from
+   * each `--text-*` key, so these become `text-body`/`text-label`/
+   * `text-meta`/`text-heading`. 13/12/11 are 829 of 875 uses; 15 is the
+   * de-facto section-heading size. `text-[10px]` (the uppercase micro
+   * labels) folds into `text-meta` per spec §2.1 open decision #3 —
+   * decided here as fold, not a new name (11px vs 10px is imperceptible
+   * at these weights and one fewer name is the win). Values are px, not
+   * rem, matching the existing `text-[Npx]` idiom (A95 stands: the app
+   * already sizes text in px; naming the scale does not regress it).
+   *
+   * NOTE the spacing scale (--space-*) is intentionally NOT wired into
+   * @theme: Tailwind's `--spacing-*` namespace backs the numeric
+   * `p-2`/`gap-3`/… utilities already in use everywhere, so aliasing it
+   * would silently change every existing call site (7px→8px). B1 is
+   * additive; the --space-* px scale lives as raw vars in tokens.css and
+   * B4 migrates call sites onto it deliberately. */
+  --text-meta: 11px;
+  --text-label: 12px;
+  --text-body: 13px;
+  --text-heading: 15px;
 }
 
 /* Tailwind v4's `dark:` variant defaults to a media query. Override it

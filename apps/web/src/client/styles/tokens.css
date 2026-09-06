@@ -8,6 +8,39 @@
  * toggle — no re-render of utility classes required.
  */
 
+/* Spacing scale (B1 — the S-7 / --space-* scale the board & timeline
+ * reviews call the "root cause" of ragged spacing).
+ *
+ * These are **not** scoped per theme — spacing is theme-independent —
+ * so they live once, outside :root/.dark, and apply everywhere.
+ *
+ * Why explicit px, not Tailwind's rem steps: the app sets
+ * `html { font-size: 14px }`, so every rem-based Tailwind spacing step
+ * is `step × 0.875px` (`p-2` = 7px, `gap-3` = 10.5px). That is why
+ * nothing lands on a clean 4/8 grid (board review B3). An integer-px
+ * scale is immune to the 14px rem, so `var(--space-2)` is 8px on the
+ * board regardless of the root font-size. The scale is a clean 4px
+ * base. Tailwind v4 emits `p-1`/`gap-2`/… -style utilities from
+ * `--spacing-*` (wired in index.css) so call sites can use named
+ * spacing utilities that resolve to these px values.
+ *
+ * Additive only in B1 — no call site is migrated onto these yet
+ * (that is B4). They exist so the migration has a scale to target.
+ */
+:root {
+  --space-0: 0px;
+  --space-px: 1px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+}
+
 :root {
   color-scheme: light;
   --bg-canvas: #F6F8FC;
@@ -15,12 +48,23 @@
   --bg-surface-raised: #FFFFFF;
   --bg-muted: #EEF2F8;
   --bg-muted-hover: #E4EAF2;
-  --border-subtle: #E8ECF2;
+  /* --border-subtle: was #E8ECF2 (1.19:1 vs surface — invisible, T5).
+   * Nudged a step stronger so a hairline actually reads, but this is
+   * NOT the 3:1 divider fix: no hairline that still looks decorative
+   * reaches 3:1 without becoming border-default. The divider-vs-
+   * decorative split (moving real dividers to --border-default) is a
+   * semantics call left for Ken — see spec §2.4 open decision #5 and
+   * docs/dev/known-gaps.md. */
+  --border-subtle: #DCE2EC;
   --border-default: #D4DBE6;
   --border-strong: #A7B1C2;
   --text-primary: #0F172A;
   --text-secondary: #475569;
-  --text-tertiary: #7B8699;
+  /* --text-tertiary: was #7B8699 (3.46–3.68:1 — failed AA for normal
+   * text in both themes, T1). Darkened to clear 4.5:1 vs surface
+   * (5.81), canvas (5.47) AND muted (5.17). Also lifts the TextField
+   * placeholder for free (it uses this token). */
+  --text-tertiary: #5C6675;
   --text-disabled: #BAC2CF;
 
   --accent: #4F46E5;
@@ -34,7 +78,11 @@
   --status-active-bg: #E6F0FC;
   --status-completed-fg: #1F8A4C;
   --status-completed-bg: #E6F5EC;
-  --status-discarded-fg: #7B8699;
+  /* --status-discarded-fg: was #7B8699 (3.04:1 vs its -bg, failed AA,
+   * T2). Raised to AA (4.96:1 vs #E4EAF2). The review called "muted"
+   * a judgement call; the accessible default wins — decided, spec §2.4
+   * open decision #4. */
+  --status-discarded-fg: #5A6472;
   --status-discarded-bg: #E4EAF2;
 
   --feedback-danger-fg: #C2341A;
@@ -44,7 +92,9 @@
   --feedback-success-fg: #1F8A4C;
   --feedback-success-bg: #E6F5EC;
 
-  --priority-low: #7B8699;
+  /* --priority-low: was #7B8699 (3.46:1 vs canvas, failed AA, T2).
+   * Raised to AA (5.08:1 vs bg-canvas). */
+  --priority-low: #5F6B7E;
   --priority-medium: #1E6FCB;
   --priority-high: #D97706;
   --priority-critical: #C2341A;
@@ -64,12 +114,20 @@
   --bg-surface-raised: #1A1A1D;
   --bg-muted: #1F1F22;
   --bg-muted-hover: #25252A;
-  --border-subtle: #222226;
+  /* --border-subtle dark: was #222226 (1.16:1 — invisible, T5).
+   * Nudged stronger (1.29:1, still below --border-default's 1.36 so
+   * the subtle<default ordering holds); same decorative-vs-divider
+   * caveat as the light scope above — a hairline that stays decorative
+   * cannot reach 3:1. */
+  --border-subtle: #2A2A30;
   --border-default: #2E2E34;
   --border-strong: #43434A;
   --text-primary: #F4F4F3;
   --text-secondary: #A8A8AE;
-  --text-tertiary: #6E6E75;
+  /* --text-tertiary dark: was #6E6E75 (3.64–3.89:1 — failed AA, T1).
+   * Lightened to clear 4.5:1 vs surface (5.81), canvas (6.21) AND
+   * muted (5.19). */
+  --text-tertiary: #909098;
   --text-disabled: #4A4A50;
 
   --accent: #818CF8;
@@ -83,7 +141,9 @@
   --status-active-bg: #0F2236;
   --status-completed-fg: #6EE7A0;
   --status-completed-bg: #0E2B1A;
-  --status-discarded-fg: #6E6E75;
+  /* --status-discarded-fg dark: was #6E6E75 (3.25:1 vs -bg, failed AA,
+   * T2). Raised to AA (5.19:1 vs #1F1F22). */
+  --status-discarded-fg: #909098;
   --status-discarded-bg: #1F1F22;
 
   --feedback-danger-fg: #FF8A73;
@@ -93,7 +153,9 @@
   --feedback-success-fg: #6EE7A0;
   --feedback-success-bg: #0E2B1A;
 
-  --priority-low: #6E6E75;
+  /* --priority-low dark: was #6E6E75 (3.89:1 vs canvas, failed AA,
+   * T2). Raised to AA (5.74:1 vs bg-canvas). */
+  --priority-low: #8A8A92;
   --priority-medium: #7CB7FF;
   --priority-high: #F2B35C;
   --priority-critical: #FF8A73;
