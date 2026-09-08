@@ -623,3 +623,55 @@ Attempt a field edit while the migration lock is held.
 - The optimistic value is rolled back.
 - The user is told to wait for the migration to finish rather than
   being shown a generic error.
+
+### TSK-59 · M2 · major · P3 P8
+**The heading control offers every level, not just H2.** The
+description/comment toolbar exposes a level picker (Paragraph, H1…H6).
+
+- Selecting a level applies it (`setHeading({level})` / `setParagraph()`).
+- The control shows the current block's level.
+- Each level round-trips through save+reload (`#`×level serialised,
+  `#{1,6}` parsed).
+
+### TSK-60 · M2 · major · P8
+**Applying a block type to a whole-paragraph selection leaves the caret
+in the transformed block.** The control reflects the new state
+immediately.
+
+- Repeated toggles do not accumulate trailing empty blocks.
+
+### TSK-61 · M2 · major · P3
+**An ordered-list button exists and round-trips.** The toolbar can
+create an ordered list (`1.` items); `fromMarkdown`/`toMarkdown` already
+support it.
+
+### TSK-62 · M2 · minor · P8
+**The rich editor shows a placeholder when empty.** It matches the raw
+CodeMirror editor's "Describe this task…", so an empty rich editor does
+not read as broken/blank.
+
+### TSK-63 · M2 · major · P1 P8
+**Pasting markdown into the rich editor parses it, not inserts it as
+literal text.** Pasting `# Heading\n\n- item\n- item` yields a heading +
+list, not three literal paragraphs.
+
+### TSK-64 · M2 · minor · P8
+**The description toolbar is collapsed in view mode** and appears only
+when the field is focused/edited.
+
+- No format button renders in an active state while merely viewing.
+
+### TSK-65 · M2 · minor · P8
+**Strikethrough / superscript / subscript / math / mention have toolbar
+buttons in rich mode, or the flow doc scopes them out.** *(scope-call,
+ED-1)* These marks/nodes round-trip already; only the toolbar affordance
+is missing.
+
+### TSK-66 · M2 · minor · P7
+**A GFM pipe-table in the body is either parsed to a table or forces raw
+mode via lossy-content detection — never shown as literal paragraph
+text.** *(ED-2)*
+
+### TSK-67 · M2 · minor · P8
+**The description and comment editors carry distinct test-ids so the DOM
+is unambiguous.** *(ED-3, test-hygiene)* Both are `rich-editor` today.

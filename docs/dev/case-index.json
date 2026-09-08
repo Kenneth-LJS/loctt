@@ -1,8 +1,8 @@
 {
   "generated_from": "docs/dev/ui-test-cases/, docs/dev/surface-test-cases/",
   "counts": {
-    "total": 1010,
-    "ui": 910,
+    "total": 1024,
+    "ui": 924,
     "surface": 100,
     "resolved": 3
   },
@@ -3585,6 +3585,22 @@
       "resolved": false
     },
     {
+      "id": "CMT-39",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-comments-activity.md",
+      "line": 435,
+      "title": "A relationship activity entry reads with the relationship's human label and the correct article, never the raw config key.",
+      "milestone": "M2",
+      "severity": "minor",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
       "id": "CMT-C1",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-comments-activity.md",
@@ -4161,6 +4177,55 @@
       "severity": "major",
       "principles": [
         "P5"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-29",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 232,
+      "title": "A corrupt field renders with an inline warning on the task-detail page, not as an empty \"—\".",
+      "milestone": "M2",
+      "severity": "major",
+      "principles": [
+        "P7"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-30",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 244,
+      "title": "An unreadable label is shown and repairable in Settings → Labels, not omitted.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P7"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "DEG-31",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-degradation.md",
+      "line": 252,
+      "title": "A global data-integrity indicator points users to Diagnostics.",
+      "milestone": "M1",
+      "severity": "major",
+      "principles": [
+        "P7",
+        "P8"
       ],
       "surfaces": [
         "UI"
@@ -10007,7 +10072,7 @@
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
       "line": 133,
-      "title": "Removing a link is a one-step, low-friction action.",
+      "title": "Removing a link is a deliberate, aligned action: a kebab menu with a confirm.",
       "milestone": "M2",
       "severity": "major",
       "principles": [
@@ -10023,7 +10088,7 @@
       "id": "REL-13",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 144,
+      "line": 151,
       "title": "Drag-reorder within a ranked group persists a new rank.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10039,7 +10104,7 @@
       "id": "REL-14",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 157,
+      "line": 164,
       "title": "Reordering into first and last position works.",
       "milestone": "M2",
       "severity": "major",
@@ -10055,7 +10120,7 @@
       "id": "REL-15",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 165,
+      "line": 172,
       "title": "Drag-reorder is keyboard-reachable.",
       "milestone": "M2",
       "severity": "minor",
@@ -10071,7 +10136,7 @@
       "id": "REL-16",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 174,
+      "line": 181,
       "title": "The attachments grid renders MIME-aware tiles.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10087,7 +10152,7 @@
       "id": "REL-17",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 183,
+      "line": 190,
       "title": "Drag-drop upload attaches the file.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10103,7 +10168,7 @@
       "id": "REL-18",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 193,
+      "line": 200,
       "title": "Task attachments upload RAW — no recompression.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10120,7 +10185,7 @@
       "id": "REL-19",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 205,
+      "line": 212,
       "title": "Hover-X removes an attachment.",
       "milestone": "M2",
       "severity": "major",
@@ -10137,7 +10202,7 @@
       "id": "REL-20",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 214,
+      "line": 221,
       "title": "Clicking a tile downloads the file.",
       "milestone": "M2",
       "severity": "major",
@@ -10153,7 +10218,7 @@
       "id": "REL-21",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 227,
+      "line": 234,
       "title": "A hand-edited relationship cycle is detected, not hung on.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10170,7 +10235,7 @@
       "id": "REL-22",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 238,
+      "line": 245,
       "title": "Creating a cycle through the UI is refused before the write.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10187,7 +10252,7 @@
       "id": "REL-23",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 247,
+      "line": 254,
       "title": "A structural graph too large to verify refuses the link rather than guessing.",
       "milestone": "M2",
       "severity": "major",
@@ -10205,7 +10270,7 @@
       "id": "REL-24",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 257,
+      "line": 264,
       "title": "A dangling target renders as a broken edge, not as a blank row.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10222,7 +10287,7 @@
       "id": "REL-25",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 266,
+      "line": 273,
       "title": "An edge whose `type` is not in `workflow.yaml` is surfaced, not dropped.",
       "milestone": "M2",
       "severity": "major",
@@ -10239,7 +10304,7 @@
       "id": "REL-26",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 277,
+      "line": 284,
       "title": "An explicit forward+inverse duplicate on a symmetric kind collapses in display.",
       "milestone": "M2",
       "severity": "major",
@@ -10256,7 +10321,7 @@
       "id": "REL-27",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 285,
+      "line": 292,
       "title": "A one-sided legacy edge is tolerated and repaired, not doubled.",
       "milestone": "M2",
       "severity": "major",
@@ -10273,7 +10338,7 @@
       "id": "REL-28",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 294,
+      "line": 301,
       "title": "A task with 50 relationships across 6 kinds stays usable.",
       "milestone": "M2",
       "severity": "major",
@@ -10289,7 +10354,7 @@
       "id": "REL-29",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 304,
+      "line": 311,
       "title": "Self-links are refused.",
       "milestone": "M2",
       "severity": "minor",
@@ -10305,7 +10370,7 @@
       "id": "REL-30",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 311,
+      "line": 318,
       "title": "Linking to an archived task is refused with a route out.",
       "milestone": "M2",
       "severity": "major",
@@ -10321,7 +10386,7 @@
       "id": "REL-31",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 322,
+      "line": 329,
       "title": "Repeated reordering past the 24-char threshold rebalances the window.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10338,7 +10403,7 @@
       "id": "REL-32",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 336,
+      "line": 343,
       "title": "Two tabs reordering the same ranked group converge, and neither silently loses.",
       "milestone": "M2",
       "severity": "major",
@@ -10354,7 +10419,7 @@
       "id": "REL-33",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 347,
+      "line": 354,
       "title": "Reordering a group whose kind was just switched to `ranked: false` is refused cleanly.",
       "milestone": "M2",
       "severity": "minor",
@@ -10370,7 +10435,7 @@
       "id": "REL-34",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 355,
+      "line": 362,
       "title": "A ranked group where no edge has a rank still orders deterministically.",
       "milestone": "M2",
       "severity": "minor",
@@ -10386,7 +10451,7 @@
       "id": "REL-35",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 365,
+      "line": 372,
       "title": "A 200 MB file is rejected before any bytes are written.",
       "milestone": "M2",
       "severity": "major",
@@ -10403,7 +10468,7 @@
       "id": "REL-36",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 376,
+      "line": 383,
       "title": "A filename containing a path separator is refused or sanitized to a basename — never traversed.",
       "milestone": "M2",
       "severity": "major",
@@ -10419,7 +10484,7 @@
       "id": "REL-37",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 386,
+      "line": 393,
       "title": "A 255-character filename renders without breaking the grid.",
       "milestone": "M2",
       "severity": "minor",
@@ -10435,7 +10500,7 @@
       "id": "REL-38",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 395,
+      "line": 402,
       "title": "A file with no extension gets a generic icon and no MIME guess.",
       "milestone": "M2",
       "severity": "minor",
@@ -10451,7 +10516,7 @@
       "id": "REL-39",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 403,
+      "line": 410,
       "title": "Uploading a file whose name collides with an existing attachment asks first.",
       "milestone": "M2",
       "severity": "major",
@@ -10467,7 +10532,7 @@
       "id": "REL-40",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 412,
+      "line": 419,
       "title": "Dropping 20 files at once reports per-file outcome.",
       "milestone": "M2",
       "severity": "minor",
@@ -10483,7 +10548,7 @@
       "id": "REL-41",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 418,
+      "line": 425,
       "title": "A task with no attachments shows a designed empty state.",
       "milestone": "M2",
       "severity": "minor",
@@ -10499,7 +10564,7 @@
       "id": "REL-42",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 426,
+      "line": 433,
       "title": "A failed inverse write is reported, and the panel reflects the actual disk state.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10515,7 +10580,7 @@
       "id": "REL-43",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 437,
+      "line": 444,
       "title": "Linking to a nonexistent key names the key.",
       "milestone": "M2",
       "severity": "blocker",
@@ -10531,7 +10596,7 @@
       "id": "REL-44",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 445,
+      "line": 452,
       "title": "Removing an already-removed link is idempotent and honest.",
       "milestone": "M2",
       "severity": "major",
@@ -10547,7 +10612,7 @@
       "id": "REL-45",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 452,
+      "line": 459,
       "title": "A relationships write blocked by the state lock names the contention.",
       "milestone": "M2",
       "severity": "major",
@@ -10564,7 +10629,7 @@
       "id": "REL-46",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 460,
+      "line": 467,
       "title": "A failed reorder rolls the row back to its original position.",
       "milestone": "M2",
       "severity": "major",
@@ -10580,7 +10645,7 @@
       "id": "REL-47",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 467,
+      "line": 474,
       "title": "A failed upload leaves no partial file and says so.",
       "milestone": "M2",
       "severity": "major",
@@ -10596,7 +10661,7 @@
       "id": "REL-48",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 478,
+      "line": 485,
       "title": "A failed attachment delete does not remove the tile.",
       "milestone": "M2",
       "severity": "major",
@@ -10612,7 +10677,7 @@
       "id": "REL-49",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 486,
+      "line": 493,
       "title": "An unreadable attachments directory degrades the section only.",
       "milestone": "M2",
       "severity": "major",
@@ -10629,12 +10694,28 @@
       "id": "REL-50",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-relationships.md",
-      "line": 493,
+      "line": 500,
       "title": "A download of a since-deleted attachment fails with a named reason.",
       "milestone": "M2",
       "severity": "minor",
       "principles": [
         "P4"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "REL-51",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-relationships.md",
+      "line": 507,
+      "title": "Each relationship group header uses the side's own directional label — the label of the edges shown under it, not its inverse.",
+      "milestone": "M2",
+      "severity": "major",
+      "principles": [
+        "P8"
       ],
       "surfaces": [
         "UI"
@@ -14696,6 +14777,152 @@
       "severity": "minor",
       "principles": [
         "P4"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-59",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-tasks.md",
+      "line": 627,
+      "title": "The heading control offers every level, not just H2.",
+      "milestone": "M2",
+      "severity": "major",
+      "principles": [
+        "P3",
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-60",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-tasks.md",
+      "line": 636,
+      "title": "Applying a block type to a whole-paragraph selection leaves the caret in the transformed block.",
+      "milestone": "M2",
+      "severity": "major",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-61",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-tasks.md",
+      "line": 643,
+      "title": "An ordered-list button exists and round-trips.",
+      "milestone": "M2",
+      "severity": "major",
+      "principles": [
+        "P3"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-62",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-tasks.md",
+      "line": 648,
+      "title": "The rich editor shows a placeholder when empty.",
+      "milestone": "M2",
+      "severity": "minor",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-63",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-tasks.md",
+      "line": 653,
+      "title": "Pasting markdown into the rich editor parses it, not inserts it as literal text.",
+      "milestone": "M2",
+      "severity": "major",
+      "principles": [
+        "P1",
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-64",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-tasks.md",
+      "line": 658,
+      "title": "The description toolbar is collapsed in view mode",
+      "milestone": "M2",
+      "severity": "minor",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-65",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-tasks.md",
+      "line": 664,
+      "title": "Strikethrough / superscript / subscript / math / mention have toolbar buttons in rich mode, or the flow doc scopes them out.",
+      "milestone": "M2",
+      "severity": "minor",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-66",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-tasks.md",
+      "line": 670,
+      "title": "A GFM pipe-table in the body is either parsed to a table or forces raw mode via lossy-content detection — never shown as literal paragraph text.",
+      "milestone": "M2",
+      "severity": "minor",
+      "principles": [
+        "P7"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-67",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-tasks.md",
+      "line": 675,
+      "title": "The description and comment editors carry distinct test-ids so the DOM is unambiguous.",
+      "milestone": "M2",
+      "severity": "minor",
+      "principles": [
+        "P8"
       ],
       "surfaces": [
         "UI"

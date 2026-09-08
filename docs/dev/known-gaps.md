@@ -265,6 +265,25 @@ before anything is staged.
 
 ## Tests
 
+### DEG-7 reads "covered" from a core round-trip; no client renders the "Not recognised" group
+
+**Recorded 2026-09-07 (B3 step 0).** `cases:coverage` reports DEG-7
+**covered**, but its only `@verifies` tag is a *core* round-trip test
+(`packages/core/src/task/frontmatter.test.ts:171`). No **client** file
+renders any "Not recognised" unrecognised-field group — a grep of
+`apps/web/src/client` finds only `cells.tsx:107`'s sr-only
+"(unrecognised)". So DEG-7's green tag must **not** be mistaken for the
+surface existing: the "shown in a 'Not recognised' group, read-only, with
+a remove control" bullet is untested on any UI surface. This is a
+coverage-tool blind spot — a core `@verifies` can satisfy a UI case.
+
+**Where the fix belongs.** B3's Task-meta / UX-7 lane must tag DEG-7 from
+a *client* test that renders the group on the task-detail page. The
+requirement is folded into the new DEG-29 "Also:" bullet
+(`docs/dev/ui-test-cases/flow-degradation.md`) and recorded as
+`decisions.md` § 8 A157. Close this entry when a client test carries the
+DEG-7 tag.
+
 ### The integration suite is flaky under parallel load
 
 **Observed 2026-08-17.** A full `npm run test:integration` reported

@@ -229,6 +229,41 @@ data-integrity concern, not an eleventh principle.
 - Cannot be satisfied yet (duplicate): `duplicateTask` copies only healthy frontmatter and refuses when `project` itself is corrupt — but it does not report which fields it dropped ([known-gaps.md DUP-H1](../known-gaps.md)). Two bullets (healthy-only copy; refuse on corrupt project) are satisfiable today but uncased; the dropped-fields notice cannot be.
 - Cannot be satisfied yet (merge): what the merged file contains when a side carries health — a union of raws, with the winning side's healthy value overriding — is a write path with no test (cross-ref DEG-21).
 
+### DEG-29 · M2 · major · P7
+**A corrupt field renders with an inline warning on the task-detail
+page, not as an empty "—".** A task with `due_date: 42`.
+
+- It shows `Due ⚠ corrupt: 42` (with a tooltip and a clear/repair
+  action), distinguishable from a legitimately empty due date.
+- Saving an unrelated field does not silently drop the bad value.
+- **Also: an unrecognised preserved field (e.g. `jira_id: ABC-123`) is
+  visible on the task-detail page in DEG-7's "Not recognised" group,
+  rendered by a client component (closing the DEG-7 client blind spot),
+  so the person editing the task can see it exists.** (UX-7.)
+
+### DEG-30 · M4 · major · P7
+**An unreadable label is shown and repairable in Settings → Labels, not
+omitted.** A label with a non-string name (`l_broken`, `name: 999`).
+
+- It renders as a disabled/error row ("⚠ l_broken — couldn't be read
+  (name must be text)") with a Repair or Delete action, rather than
+  vanishing from the list with no notice. (UX-13.)
+
+### DEG-31 · M1 · major · P7 P8
+**A global data-integrity indicator points users to Diagnostics.** When
+doctor/Diagnostics would report warnings.
+
+- A lightweight badge (header or sidebar) shows the count and links to
+  Diagnostics, so corruption is discoverable without three clicks behind
+  a manual Run.
+- The corrupt task also carries a marker in the List view. (UX-11 — the
+  cross-cutting fix.)
+- **Sizing note:** a badge that polls `/api/doctor` runs a full
+  `runDoctor(root)` scan per page load (`server.ts:1288` `handleDoctor`);
+  this case needs a cheap data source (a cached/summary warning-count
+  endpoint or a count derived from what the list already returns) — that
+  is server work the lane must budget for.
+
 ---
 
 ## Known coverage gaps
