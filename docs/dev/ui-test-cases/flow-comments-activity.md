@@ -431,3 +431,15 @@ Hand-break the YAML.
   and duplicate entries.
 - If the total changed underneath (new entries appended), the feed says
   so rather than silently skipping the shifted entries.
+
+### CMT-39 · M2 · minor · P8
+**A relationship activity entry reads with the relationship's human
+label and the correct article, never the raw config key.**
+- Adding an `is_blocked_by` link records an entry that reads "added an Is
+  blocked by link" (label from `workflow.yaml`, article agreeing with the
+  label's first sound), not "added a is_blocked_by link" (raw key + wrong
+  article).
+- Removal reads symmetrically.
+- The label is resolved through the same workflow lookup the relationship
+  panel uses, so a renamed label updates the activity text too (UX-10, ux
+  §4.5).

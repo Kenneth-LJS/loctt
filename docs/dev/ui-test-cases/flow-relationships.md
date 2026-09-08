@@ -131,13 +131,20 @@ T-2, add `is_blocked_by` → T-1.
   a property of the data, not of which page you were on.
 
 ### REL-12 · M2 · major · P5 P8
-**Removing a link is a one-step, low-friction action.**
-- Each relationship row exposes a remove control on hover and on
+**Removing a link is a deliberate, aligned action: a kebab menu with a
+confirm.**
+- Each relationship row exposes a **persistent kebab (⋯) control in a
+  fixed slot** — not a hover-only affordance — so the row's label/status
+  pill align correctly and the control is reachable by mouse and by
   keyboard focus.
-- Removal does not require a typed confirmation — a link is trivially
-  re-addable.
-- Removal is undoable from the confirmation message, or the row can be
-  re-added in one action.
+- Opening the kebab offers **Remove** (with room for future per-link
+  actions).
+- Removal asks for a brief confirm ("Remove this link?" Remove /
+  Cancel) — a single deliberate step, not a typed confirmation. This
+  guards against the accidental one-click removal the old hover-`✕`
+  allowed.
+- The confirm/kebab is the only remove path; there is no stray
+  hover-`✕`.
 
 ### A.3 Ranked reorder
 
@@ -496,3 +503,21 @@ reason.** Delete the file from disk, then click the tile.
 - The user is told the file is no longer on disk, by name.
 - The browser does not silently download a zero-byte file.
 - Refreshing removes the stale tile.
+
+### REL-51 · M2 · major · P8
+**Each relationship group header uses the side's own directional label —
+the label of the edges shown under it, not its inverse.**
+- On an epic, the group of its children is headed by the **child-side**
+  label ("Child" / "Children"); on a child, the group holding its parent
+  is headed by the **parent-side** label ("Parent") — the header names
+  what the listed tasks ARE to the current task.
+- This holds for a structural pair (`parent`/`child`, distinct `label` /
+  `inverse_label` in `workflow.yaml`) exactly as it already does for a
+  non-structural directional pair like `blocks` ("Is blocked by" reads
+  correctly today).
+- The bug being fixed: the structural group picks the label from the
+  wrong side, so children show under "Parent" and the parent under
+  "Child" (UX-8, ux §4.2).
+- A connective form ("Blocked by…", "Parent of…") is permitted but not
+  required; the required property is that the side is correct and
+  consistent across all relationship types.

@@ -476,7 +476,7 @@ dialog-Save-failure behaviour lives in this new ID.)*
 > for tasks". (Config surfaces, including sprint config, are gated;
 > sprint config is not a task field.)
 
-### REL-12 · M2 · major · P5 P8 — SUPERSEDES the current REL-12 (K-4)
+### ✅ APPLIED (B3 step 0, 2026-09-07) · REL-12 · M2 · major · P5 P8 — SUPERSEDES the current REL-12 (K-4)
 **Removing a link is a deliberate, aligned action: a kebab menu with a
 confirm.**
 
@@ -526,7 +526,7 @@ editable prefix via a confirm dialog; slug is the readOnly field.)
 
 ## B. New cases for un-cased items
 
-### `flow-tasks.md` / editor (K-7, K-7b, ED-1/2/3) — new IDs
+### `flow-tasks.md` / editor (K-7, K-7b, ED-1/2/3) — new IDs — ✅ APPLIED (B3 step 0, 2026-09-07): TSK-59…67
 *(the body/editor cases live in `flow-tasks.md`, which ends at TSK-56)*
 
 - **TSK-59 · M2 · major · P3 P8** — **The heading control offers every
@@ -564,6 +564,39 @@ editable prefix via a confirm dialog; slug is the readOnly field.)
 - **TSK-67 · M2 · minor · P8** — *(ED-3, test-hygiene)* The description
   and comment editors carry **distinct** test-ids so the DOM is
   unambiguous (both are `rich-editor` today).
+
+### `flow-relationships.md` (UX-8) — new ID — ✅ APPLIED (B3 step 0, 2026-09-07): REL-51
+
+*(REL ends at REL-50 in the flow doc; continue at 51. This is the case
+the batch plan flagged as "UX-8 has no proposed case yet".)*
+
+- **REL-51 · M2 · major · P8** — **Each relationship group header uses the
+  side's own directional label — the label of the edges shown under it, not
+  its inverse.** On an epic, the group of its children is headed by the
+  **child-side** label ("Child" / "Children"), and on a child the group
+  holding its parent is headed by the **parent-side** label ("Parent") —
+  the header names what the listed tasks ARE to the current task. This must
+  hold for a structural pair (`parent`/`child`, distinct `label` /
+  `inverse_label` in `workflow.yaml`) exactly as it already does for a
+  non-structural directional pair like `blocks` ("Is blocked by" reads
+  correctly today). The bug being fixed: the structural group picks the
+  label from the wrong side, so children show under "Parent" and the parent
+  under "Child" (UX-8, ux §4.2). A connective form ("Blocked by…",
+  "Parent of…") is permitted but not required; the required property is that
+  the side is correct and consistent across all relationship types.
+
+### `flow-comments-activity.md` (UX-10) — new ID — ✅ APPLIED (B3 step 0, 2026-09-07): CMT-39
+
+*(CMT ends at CMT-38 in the flow-comments-activity doc; continue at 39.)*
+
+- **CMT-39 · M2 · minor · P8** — **A relationship activity entry reads with
+  the relationship's human label and the correct article, never the raw
+  config key.** Adding an `is_blocked_by` link records an entry that reads
+  "added an Is blocked by link" (label from `workflow.yaml`, article agreeing
+  with the label's first sound), not "added a is_blocked_by link" (raw key +
+  wrong article). Removal reads symmetrically. The label is resolved through
+  the same workflow lookup the relationship panel uses, so a renamed label
+  updates the activity text too (UX-10, ux §4.5).
 
 ### `flow-saved-views.md` (K-8, u3) — new IDs — ✅ APPLIED (B2 step 0, 2026-09-06): VUE-40/41
 
@@ -660,7 +693,7 @@ free SHL-45/46. SHL max is 44.)*
   has no handler today.) Once wired, `/` focuses it (A11Y-2 becomes
   reachable).
 
-### Degradation visible in working surfaces (UX-11, UX-7, UX-13) — new IDs
+### Degradation visible in working surfaces (UX-11, UX-7, UX-13) — new IDs — ✅ APPLIED (B3 step 0, 2026-09-07): DEG-29/30/31 (+ DEG-7 blind-spot recorded in decisions.md §8 A157 / known-gaps.md)
 
 These belong in `flow-degradation.md` (and cross-ref detail/list/labels).
 They are the signature-feature gap: corruption is loud in doctor/Timeline

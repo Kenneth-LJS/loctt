@@ -9272,3 +9272,44 @@ is the wrong signal for a broken file. The tolerant degrade is the correct
 
 **To revert.** Remove the `brokenEntries` branch from
 `apps/web/src/client/settings/WorkflowPanelFrame.tsx`.
+
+### A157 · DEG-7's green coverage is a *core* round-trip, not a client render — the "Not recognised" group is untested on any surface
+
+**Ticket:** B3 (step 0 — cases before code) · **Date:** 2026-09-07 · **Commit:** (staged)
+
+**The situation.** `cases:coverage` reports DEG-7 **covered**, but its only
+`@verifies` tag is a *core* round-trip test
+(`packages/core/src/task/frontmatter.test.ts:171`). No **client** file
+renders any "Not recognised" unrecognised-field group — a grep of
+`apps/web/src/client` finds only `cells.tsx:107`'s sr-only
+"(unrecognised)". So DEG-7's green tag does not mean the surface exists:
+the "shown in a 'Not recognised' group, read-only, with a remove control"
+bullet has no test on any UI surface. This is a coverage-tool blind spot —
+a core `@verifies` can satisfy a UI case.
+
+**What had to be decided.** Whether to treat DEG-7 as done (its tag is
+green) or to record that its client rendering is unbuilt and untested, and
+bind the fix to a specific lane.
+
+**Options considered.**
+- Trust the green tag and move on — costs a false "covered" that hides a
+  missing UI surface, exactly the failure mode `tools/README.md` warns
+  about.
+- Record the blind spot and require B3's Task-meta / UX-7 lane to tag DEG-7
+  from a *client* test that renders the group on the task-detail page —
+  costs one recorded gap now, closes it deliberately later.
+
+**Decided.** Record it (here + `known-gaps.md`) and fold the client-facing
+requirement into DEG-29's new bullet: an unrecognised preserved field is
+visible on the task-detail page in DEG-7's "Not recognised" group,
+rendered by a client component. B3's Task-meta lane must tag DEG-7 from a
+client test, not lean on the core round-trip.
+
+**Why.** A core `@verifies` satisfying a UI case is precisely the "case
+that stops at the boundary" pattern this repo has already been bitten by.
+Leaving the green tag unqualified would let the UI inherit the omission.
+
+**To revert.** If DEG-7 is judged adequately covered by the core test
+alone, drop the DEG-29 "Also:" bullet in
+`docs/dev/ui-test-cases/flow-degradation.md` and this note's requirement
+that the DEG-7 tag come from a client test.
