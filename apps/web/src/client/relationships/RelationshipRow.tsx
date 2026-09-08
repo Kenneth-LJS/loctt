@@ -1,7 +1,13 @@
 import type { StatusDef } from "@loctt/contracts";
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 
 import { StatusBadge } from "../list/cells.tsx";
+import { Button } from "../ui/Button.tsx";
+import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
+import { ICON } from "../ui/icons.ts";
+import { Menu, MenuItem } from "../ui/Menu.tsx";
 import type { RelationshipRow as Row } from "./group.ts";
 
 /**
@@ -32,14 +38,29 @@ import type { RelationshipRow as Row } from "./group.ts";
  *     knows there is a file to repair rather than a link to drop.
  *   - `missing:true`, `targetCorrupt:false` — the genuine dangling link.
  *
- * ## The remove control is present, not hover-only
+ * ## The remove control is a persistent kebab in a fixed slot (REL-12, K-4)
  *
- * REL-12's first bullet asks for it on hover *and* on keyboard focus.
- * It is in the DOM at all times and only its opacity changes, so the
- * tab order does not shift as the pointer moves and a screen reader
- * finds it either way. Hiding it with `display: none` until hover
- * would satisfy the sentence about hover and break the one about
- * keyboard.
+ * REL-12 (revised, Ken's ruling) replaces the old hover-only `✕` with a
+ * persistent kebab (`⋯`) that lives in a fixed-width slot at the row's
+ * trailing edge — always in the DOM, reachable by mouse and by keyboard
+ * focus (it is a real `<button>`, never `opacity-0`). Because the slot
+ * is always the same width whether or not the row is removable, the
+ * label and status pill align across every row (K-4: the old
+ * appear/disappear control made adjacent rows' pills jump).
+ *
+ * Opening the kebab offers **Remove** (with room for future per-link
+ * actions). Choosing Remove asks for a brief confirm ("Remove this
+ * link?" Remove / Cancel) — a single deliberate step, not a typed
+ * confirmation and not an undo-from-toast. This is the *only* remove
+ * path; there is no stray hover-`✕`.
+ *
+ * A row whose edge is not this task's to remove (`onRemove` undefined —
+ * a tree descendant, whose edge lives on *its* parent) shows no kebab
+ * at all, but still reserves the same fixed slot width so its label and
+ * pill line up with the removable rows beside it. A kebab that opened
+ * to an empty menu would imply an action exists here and is momentarily
+ * unavailable, which is the false claim the old disabled-control note
+ * warned against.
  *
  * ## Long titles truncate rather than push
  *
@@ -70,6 +91,8 @@ export function RelationshipRowView({
   /** Slot for a group-supplied leading control, e.g. a drag handle. */
   readonly children?: React.ReactNode;
 }): React.JSX.Element {
+  const [confirming, setConfirming] = useState(false);
+
   const label = row.missing
     ? row.targetCorrupt
       ? `Corrupt task ${row.target}`
@@ -163,21 +186,93 @@ export function RelationshipRowView({
         </span>
       )}
 
-      {onRemove !== undefined && (
-        <button
-          type="button"
-          data-testid="relationship-remove"
-          disabled={removing}
-          onClick={onRemove}
-          aria-label={`Remove link to ${label}`}
-          title={row.missing ? "Remove this link" : `Remove link to ${label}`}
-          className="shrink-0 rounded px-1.5 py-0.5 text-[12px] text-text-tertiary opacity-0 hover:bg-bg-muted hover:text-danger-fg focus-visible:opacity-100 group-hover/row:opacity-100"
-        >
-          {/* REL-24's third bullet asks for the broken row to offer
-              "Remove this link" in those words; an ordinary row says
-              "Remove" beside a key that already names what goes. */}
-          {row.missing ? "Remove this link" : "Remove"}
-        </button>
+      {onRemove === undefined ? (
+        /* Not this task's edge to remove (a tree descendant). No kebab,
+           but the same fixed-width slot so the removable rows' labels
+           and pills stay aligned with this one (K-4). */
+        <span aria-hidden="true" className="h-7 w-7 shrink-0" />
+      ) : (
+        <div className="shrink-0">
+          <Menu
+            align="end"
+            aria-label={`Actions for ${label}`}
+            trigger={t => (
+              <IconButton
+                size="sm"
+                testId="relationship-kebab"
+                aria-label={`Actions for ${label}`}
+                aria-haspopup={t["aria-haspopup"]}
+                aria-expanded={t["aria-expanded"]}
+                id={t.id}
+                disabled={removing}
+                onClick={t.toggle}
+              >
+                <span aria-hidden="true">{ICON.more}</span>
+              </IconButton>
+            )}
+          >
+            {({ close }) => (
+              <MenuItem
+                testId="relationship-remove"
+                className="text-danger-fg hover:text-danger-fg"
+                onSelect={() => {
+                  // Open the confirm, then close the menu — a single
+                  // deliberate step stands between the click and the
+                  // write (REL-12).
+                  setConfirming(true);
+                  close();
+                }}
+              >
+                {/* REL-24's third bullet asks the broken row to offer
+                    "Remove this link" in those words; an ordinary row
+                    says "Remove" beside a key that already names what
+                    goes. */}
+                {row.missing ? "Remove this link" : "Remove"}
+              </MenuItem>
+            )}
+          </Menu>
+
+          {confirming && (
+            <Dialog
+              testId="relationship-remove-confirm"
+              title="Remove this link?"
+              description={
+                row.missing
+                  ? "The dangling link will be removed from this task."
+                  : `The link to ${label} will be removed from both tasks.`
+              }
+              onClose={() => { setConfirming(false); }}
+              actions={
+                <DialogActions>
+                  <Button
+                    variant="secondary"
+                    testId="relationship-remove-cancel"
+                    onClick={() => { setConfirming(false); }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="danger"
+                    testId="relationship-remove-confirm-button"
+                    disabled={removing}
+                    onClick={() => {
+                      // The confirm closes here; the panel refetch is
+                      // what makes the row disappear. Leaving it open on
+                      // a rejected write would trap the user behind a
+                      // dialog over an error that renders on the group.
+                      setConfirming(false);
+                      onRemove();
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </DialogActions>
+              }
+            >
+              {null}
+            </Dialog>
+          )}
+        </div>
       )}
     </div>
   );

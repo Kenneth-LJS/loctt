@@ -11,7 +11,9 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { useActivity } from "../api/hooks/useActivity.ts";
+import { CommentsPanel } from "../comments/CommentsPanel.tsx";
 import { buildUserIndex } from "../comments/users.ts";
+import { cn } from "../ui/cn.ts";
 import { ActivityEntry } from "./ActivityEntry.tsx";
 import { BulkRow } from "./BulkRow.tsx";
 import { dayHeading, todayIn } from "./days.ts";
@@ -19,7 +21,212 @@ import type { DescribeContext } from "./describe.ts";
 import { groupActivity } from "./group.ts";
 
 /**
- * The task detail page's Activity section (M2.4b — CMT-13..38).
+ * The task detail page's Activity/Comments lane (M2.4 — CMT-13..39).
+ *
+ * ## Three tabs, one lane (K-5 / CMT-18)
+ *
+ * Comments and activity were two stacked sections. K-5 splits them into
+ * a tabbed control — **Comments**, **Activity**, **All** — so the reader
+ * chooses one axis without scrolling past the other. This component owns
+ * the whole lane: the Comments tab renders `<CommentsPanel>` (the
+ * existing comments endpoint, `useComments` — **no new route**, the
+ * decided data-path option (a)), and only the Activity/All tabs page the
+ * activity feed. The feed itself is `<ActivityFeed>` below, unchanged
+ * from the pre-tab section.
+ *
+ * The active tab is URL-controlled (CMT-18): `TaskDetail` reads it from
+ * `?tab=` and passes it in as `tab`, and every switch calls `onTabChange`
+ * so the URL records it and the tab is shareable/deep-linkable. When no
+ * tab is in the URL, the default is **Comments** (K-5): this panel is the
+ * single comments home now that `TaskDetail` no longer renders a
+ * standalone Comments `<Section>` (A163), and a task's conversation leads.
+ */
+export function ActivityPanel({
+  taskRef,
+  tab: tabProp,
+  onTabChange,
+  workflow,
+  users,
+  labels,
+  milestones,
+  sprints,
+  projects,
+  calendar,
+}: {
+  readonly taskRef: string;
+  /** The active tab from the URL (`?tab=`); undefined → default (Comments). */
+  readonly tab?: Tab;
+  /** Called on a tab switch so the caller can record it in the URL. */
+  readonly onTabChange?: (tab: Tab) => void;
+  readonly workflow: WorkflowConfig | undefined;
+  readonly users: readonly UserProfile[];
+  readonly labels: readonly LabelDef[];
+  readonly milestones: readonly MilestoneDef[];
+  readonly sprints: readonly SprintDef[];
+  readonly projects: readonly ProjectDef[];
+  readonly calendar: CalendarConfig | undefined;
+}): React.JSX.Element {
+  // The URL is the source of truth when a tab is present; absent → Comments.
+  const tab: Tab = tabProp ?? "comments";
+  const setTab = (next: Tab): void => onTabChange?.(next);
+
+  const feed = (
+    <ActivityFeed
+      taskRef={taskRef}
+      workflow={workflow}
+      users={users}
+      labels={labels}
+      milestones={milestones}
+      sprints={sprints}
+      projects={projects}
+      calendar={calendar}
+    />
+  );
+
+  return (
+    <div className="space-y-3">
+      <SectionTabs value={tab} onChange={setTab} />
+
+      {/*
+        Mount-on-activate: only the active tab's content is in the DOM, so
+        exactly one comment composer exists at a time (Comments and All
+        never mount their <CommentsPanel> simultaneously). A half-typed
+        draft does not survive a tab switch — acceptable, and it is what
+        keeps a second composer off the page. `data-testid` on the panel
+        wrapper stays present regardless so a test can assert the panel
+        exists and is `hidden`.
+      */}
+      <div
+        role="tabpanel"
+        id="activity-tabpanel-comments"
+        aria-labelledby="activity-tab-comments"
+        data-testid="activity-tabpanel-comments"
+        hidden={tab !== "comments"}
+      >
+        {tab === "comments" && <CommentsPanel taskRef={taskRef} users={users} />}
+      </div>
+      <div
+        role="tabpanel"
+        id="activity-tabpanel-activity"
+        aria-labelledby="activity-tab-activity"
+        data-testid="activity-tabpanel-activity"
+        hidden={tab !== "activity"}
+      >
+        {tab === "activity" && feed}
+      </div>
+      <div
+        role="tabpanel"
+        id="activity-tabpanel-all"
+        aria-labelledby="activity-tab-all"
+        data-testid="activity-tabpanel-all"
+        hidden={tab !== "all"}
+      >
+        {/*
+          "All" stacks the two lanes so a reader who wants both at once
+          has them — the shape the page had before the split. Its own
+          instances (not shared with the other tabs' nodes).
+        */}
+        {tab === "all" && (
+          <div className="space-y-6">
+            <section aria-label="Comments">
+              <CommentsPanel taskRef={taskRef} users={users} />
+            </section>
+            <section aria-label="Activity">
+              <ActivityFeed
+                taskRef={taskRef}
+                workflow={workflow}
+                users={users}
+                labels={labels}
+                milestones={milestones}
+                sprints={sprints}
+                projects={projects}
+                calendar={calendar}
+              />
+            </section>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * The tab control
+ * ------------------------------------------------------------------ */
+
+type Tab = "comments" | "activity" | "all";
+
+const TABS: readonly { readonly id: Tab; readonly label: string }[] = [
+  { id: "comments", label: "Comments" },
+  { id: "activity", label: "Activity" },
+  { id: "all", label: "All" },
+];
+
+/**
+ * A `role="tablist"` with three buttons. Left/Right arrows move between
+ * tabs (WAI-ARIA tabs pattern); each button carries a **declared**
+ * `data-testid` on its own `<button>` (spec §50-56 — declared, not
+ * spread) so integration/e2e/vitest can select it.
+ */
+function SectionTabs({
+  value,
+  onChange,
+}: {
+  readonly value: Tab;
+  readonly onChange: (t: Tab) => void;
+}): React.JSX.Element {
+  const move = (dir: 1 | -1) => {
+    const i = TABS.findIndex(t => t.id === value);
+    const next = TABS[(i + dir + TABS.length) % TABS.length];
+    if (next !== undefined) onChange(next.id);
+  };
+
+  return (
+    <div
+      role="tablist"
+      aria-label="Activity and comments"
+      data-testid="activity-tabs"
+      className="flex gap-1 border-b border-border-subtle"
+    >
+      {TABS.map(t => {
+        const selected = t.id === value;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`activity-tab-${t.id}`}
+            aria-selected={selected}
+            aria-controls={`activity-tabpanel-${t.id}`}
+            tabIndex={selected ? 0 : -1}
+            data-testid={`activity-tab-${t.id}`}
+            data-active={selected ? "true" : undefined}
+            onClick={() => { onChange(t.id); }}
+            onKeyDown={e => {
+              if (e.key === "ArrowRight") { e.preventDefault(); move(1); }
+              if (e.key === "ArrowLeft") { e.preventDefault(); move(-1); }
+            }}
+            className={cn(
+              "cursor-pointer -mb-px border-b-2 px-3 py-1.5 text-[13px] font-medium",
+              selected
+                ? "border-accent text-text-primary"
+                : "border-transparent text-text-tertiary hover:text-text-secondary",
+            )}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * The activity feed (unchanged behaviour; formerly the section body)
+ * ------------------------------------------------------------------ */
+
+/**
+ * The activity feed itself (M2.4b — CMT-13..38).
  *
  * ## Reverse-chronological, grouped by day, in the workspace timezone
  *
@@ -44,7 +251,7 @@ import { groupActivity } from "./group.ts";
  * cannot carry it: a file with one broken row and a file with one
  * fewer row are the same number.
  */
-export function ActivityPanel({
+function ActivityFeed({
   taskRef,
   workflow,
   users,

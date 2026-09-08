@@ -125,6 +125,45 @@ describe("groupRelationships", () => {
     expect(inverse).toHaveLength(1);
   });
 
+  // @verifies REL-51
+  // Each group header names what the *listed* tasks are to the task on
+  // screen — the label of the side shown under it, not its inverse.
+  //
+  // A task holding a `child` edge lists its children; that group must be
+  // headed with the child-side label ("Child"). A task holding a `parent`
+  // edge lists its parent; that group must be headed with the parent-side
+  // label ("Parent"). The structural (`graph: tree`) pair must read the
+  // same way `blocks` already does — a mapping that took the label from
+  // the wrong side (children under "Parent", the parent under "Child")
+  // is UX-8's reported symptom.
+  //
+  // Red-first: swapping the forward/inverse labels in `sidesOf` (the
+  // fix UX-8's premise imagined was needed) turns both structural
+  // expectations red while leaving the `blocks` control green — proving
+  // the assertion is about the structural side specifically, not the
+  // generic forward/inverse mapping REL-2 already covers.
+  it("heads each structural group with the side it shows, consistent with a directional pair (REL-51)", () => {
+    // The child-side edges (this task's children) → "Child".
+    const onEpic = groupRelationships([resolved("child", "kid")], undefined, WORKFLOW);
+    expect(onEpic.map(g => `${g.key}=${g.label}`)).toEqual(["child=Child"]);
+
+    // The parent-side edge (this task's parent) → "Parent".
+    const onChild = groupRelationships([resolved("parent", "epic")], undefined, WORKFLOW);
+    expect(onChild.map(g => `${g.key}=${g.label}`)).toEqual(["parent=Parent"]);
+
+    // No regression on the non-structural directional pair: `blocks`
+    // reads "Blocks" and its inverse "Is blocked by", exactly as before.
+    const blocking = groupRelationships(
+      [resolved("blocks", "x"), resolved("is_blocked_by", "y")],
+      undefined,
+      WORKFLOW,
+    );
+    expect(blocking.map(g => `${g.key}=${g.label}`)).toEqual([
+      "blocks=Blocks",
+      "is_blocked_by=Is blocked by",
+    ]);
+  });
+
   // @verifies REL-3
   it("folds a symmetric kind under one heading with the target listed once", () => {
     const groups = groupRelationships([resolved("relates_to", "t2")], undefined, WORKFLOW);

@@ -136,7 +136,7 @@ export function CommentComposer({
       return;
     }
     containerRef.current
-      ?.querySelector<HTMLElement>("[data-testid='rich-editor']")
+      ?.querySelector<HTMLElement>(`[data-testid='${testId}-rich-editor']`)
       ?.focus();
   }, [resetToken]);
 
@@ -234,6 +234,11 @@ export function CommentComposer({
           onBlur={() => {}}
           mentionCandidates={mentionCandidates}
           ariaLabel={ariaLabel}
+          // Distinct from the description body's `rich-editor` (TSK-67).
+          // The two editors coexist on the task-detail page, so a bare
+          // `rich-editor` matched both and made the DOM ambiguous.
+          testId={`${testId}-rich-editor`}
+          placeholder="Write a comment…"
         />
       ) : (
         <MarkdownEditor

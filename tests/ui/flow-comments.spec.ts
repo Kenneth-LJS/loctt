@@ -126,8 +126,10 @@ function onlyKey(keys: readonly string[]): string {
  * ------------------------------------------------------------------ */
 
 const composer = (page: Page): Locator => page.getByTestId("comment-composer");
+// The composer's rich surface carries a composer-scoped id (TSK-67) so
+// it is distinct from the description body's `rich-editor`.
 const composerSurface = (page: Page): Locator =>
-  composer(page).getByTestId("rich-editor");
+  composer(page).getByTestId("comment-composer-rich-editor");
 const submit = (page: Page): Locator => page.getByTestId("comment-composer-submit");
 
 /** Types into the composer and posts, waiting for the write to land. */
@@ -455,8 +457,9 @@ test.describe("CMT — comments", () => {
     // has not been taken off the edit path — it is just not the
     // default, because CMT-3 asks for the source first.
     await page.getByTestId("comment-edit-composer-mode-rich").click();
-    await expect(page.getByTestId("comment-edit-composer").getByTestId("rich-editor"))
-      .toBeVisible();
+    await expect(
+      page.getByTestId("comment-edit-composer").getByTestId("comment-edit-composer-rich-editor"),
+    ).toBeVisible();
   });
 
   // @verifies CMT-4
@@ -1306,7 +1309,15 @@ test.describe("CMT — failed writes keep what the user typed", () => {
 
 test.describe("CMT — cross-surface and section layout", () => {
   // @verifies CMT-18
-  test("CMT-18: Comments and Activity are both present on one page load, each with its own query", async ({
+  //
+  // EDITED for K-5 (edits a green test — see build-loop.md "editing a
+  // green test"). CMT-18 permits either shape ("stacked OR tabbed"); the
+  // K-5 split makes the activity lane a **tabbed** control (Comments /
+  // Activity / All), so this asserts the tabbed shape rather than the
+  // former stacked one. The case's substance is unchanged: both content
+  // axes are reachable on one page load, each driven by its own query,
+  // and reaching one does not refetch the whole task.
+  test("CMT-18: Comments and Activity are both reachable on one page load via the lane's tabs, each with its own query", async ({
     page, tracker,
   }) => {
     // A component that crashes on render looks identical to one that
@@ -1318,10 +1329,9 @@ test.describe("CMT — cross-surface and section layout", () => {
     await tracker.run(["comment", key, "a comment so the list is non-empty"]);
 
     // Count the task fetches: the case's third bullet is that reaching
-    // one section does not refetch the whole task. The two sections are
-    // stacked (not tabs, so nothing "switches"), and each drives its
-    // own query — so the task itself is fetched for the detail view and
-    // not again on behalf of either section.
+    // one section does not refetch the whole task. Switching a tab is a
+    // client-side toggle (the inactive panel is `hidden`, not
+    // unmounted), so no tab click may trigger a fresh `/api/tasks/:key`.
     const taskFetches: string[] = [];
     page.on("response", r => {
       const u = new URL(r.url());
@@ -1334,25 +1344,112 @@ test.describe("CMT — cross-surface and section layout", () => {
 
     await openTask(page, tracker, key);
 
-    // Both sections are reachable on the detail without a full page
-    // load — both rendered, no navigation between them.
-    await expect(page.getByRole("heading", { name: "Comments" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
-    // Each has its own content, driven by its own query.
-    await expect(page.getByTestId("comments-list")).toBeVisible();
-    await expect(page.getByTestId("activity-day").first()).toBeVisible();
+    // The lane is a tabbed control with exactly the three named tabs.
+    const tabs = page.getByTestId("activity-tabs");
+    await expect(tabs).toBeVisible();
+    await expect(page.getByTestId("activity-tab-comments")).toHaveText("Comments");
+    await expect(page.getByTestId("activity-tab-activity")).toHaveText("Activity");
+    await expect(page.getByTestId("activity-tab-all")).toHaveText("All");
+
+    // Default tab is Comments (K-5): a task's conversation leads, and this
+    // tabbed panel is now the single comments home (TaskDetail no longer
+    // renders a standalone Comments section). Its panel is shown and holds
+    // the thread; the Activity panel exists but is hidden.
+    const commentsPanel = page.getByTestId("activity-tabpanel-comments");
+    const activityPanel = page.getByTestId("activity-tabpanel-activity");
+    await expect(page.getByTestId("activity-tab-comments")).toHaveAttribute("aria-selected", "true");
+    await expect(commentsPanel.getByTestId("comments-list")).toBeVisible();
+    await expect(activityPanel).toBeHidden();
+
+    // Switching to Activity reveals the feed inside the lane and hides the
+    // comments thread — the switch is what "tabbed" means, and the stacked
+    // shape had nothing to switch.
+    await page.getByTestId("activity-tab-activity").click();
+    await expect(page.getByTestId("activity-tab-activity")).toHaveAttribute("aria-selected", "true");
+    await expect(activityPanel.getByTestId("activity-day").first()).toBeVisible();
+    await expect(commentsPanel).toBeHidden();
+
+    // CMT-18 bullet 2: the open tab records itself in the URL, so the
+    // switch to Activity put `?tab=activity` in the address.
+    await expect.poll(() => new URL(page.url()).searchParams.get("tab")).toBe("activity");
+
+    // The All tab shows both lanes at once.
+    await page.getByTestId("activity-tab-all").click();
+    const allPanel = page.getByTestId("activity-tabpanel-all");
+    await expect(allPanel.getByTestId("comments-list")).toBeVisible();
+    await expect(allPanel.getByTestId("activity-day").first()).toBeVisible();
+    await expect.poll(() => new URL(page.url()).searchParams.get("tab")).toBe("all");
 
     // The activity feed and the comments thread are distinct queries:
-    // their own endpoints were fetched, and the task read was not
-    // repeated on their behalf.
+    // their own endpoints were fetched (`/comments` for the default
+    // Comments tab on load, `/activity` once Activity/All was opened).
+    // Checked BEFORE the deep-link reload below, which resets the
+    // performance resource timings.
     const reqUrls = await page.evaluate(() =>
       performance.getEntriesByType("resource").map(e => (e as PerformanceResourceTiming).name),
     );
     expect(reqUrls.some(u => /\/comments$/.test(u))).toBe(true);
     expect(reqUrls.some(u => /\/activity(\?|$)/.test(u))).toBe(true);
-    // The whole-task read happened once (the initial load), not once
-    // per section.
+    // The whole-task read happened once (the initial load), not again on
+    // any tab switch.
     expect(taskFetches.length).toBeLessThanOrEqual(1);
+
+    // CMT-18 bullet 2, the deep-link direction: opening the URL with
+    // `?tab=activity` lands on the Activity tab, not the default Comments.
+    // (This reload is last: it resets the performance timings and the
+    // task-fetch count the assertions above rely on.)
+    await page.goto(`${page.url().split("?")[0]}?tab=activity`);
+    await expect(page.getByTestId("activity-tab-activity")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("activity-tabpanel-comments")).toBeHidden();
+
+    expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
+  });
+
+  // @verifies CMT-39
+  //
+  // A relationship activity entry reads with the relationship's human
+  // label from workflow.yaml and the correct article — never the raw
+  // config key with a hardcoded "a". The far end is `loctt link A blocks
+  // B`, which records `link_added{type: blocks}` on A and
+  // `link_added{type: is_blocked_by}` on B. B's entry is the trap: its
+  // `meta.type` is the INVERSE key `is_blocked_by`, which is not a
+  // top-level `relationships[].key`, so resolving on `.key` alone fell
+  // back to the raw key ("added a is_blocked_by link"). The default
+  // workflow's inverse label is "Is blocked by" — vowel-initial, so the
+  // article must be "an".
+  test("CMT-39: a relationship activity entry reads with the human label and correct article", async ({
+    page, tracker,
+  }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", err => pageErrors.push(err.message));
+
+    const keys = await tracker.seed([{ title: "Blocker" }, { title: "Blocked" }]);
+    const source = keys[0];
+    const target = keys[1];
+    if (source === undefined || target === undefined) throw new Error("seed returned too few keys");
+
+    // A `blocks` link on the source records `is_blocked_by` on the
+    // target — the inverse-key row this case is about.
+    await tracker.run(["link", source, "blocks", target]);
+
+    await openTask(page, tracker, target);
+
+    // The lane defaults to Comments; the link entry lives in the feed.
+    await page.getByTestId("activity-tab-activity").click();
+    const activityPanel = page.getByTestId("activity-tabpanel-activity");
+
+    // The link entry, by its kind — `data-kind` is on the entry `<li>`
+    // itself (ActivityEntry). Its summary is where the label + article
+    // render.
+    const linkEntry = activityPanel.locator("[data-testid='activity-entry'][data-kind='link_added']");
+    const summary = linkEntry.getByTestId("activity-summary");
+    await expect(summary).toBeVisible();
+
+    // Reads with the human label and "an" (vowel-initial "Is blocked
+    // by"), NOT the raw key or the wrong article.
+    await expect(summary).toHaveText(/added an Is blocked by link/i);
+    await expect(summary).not.toContainText("is_blocked_by");
+    await expect(summary).not.toHaveText(/added a is_blocked_by/i);
 
     expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
   });

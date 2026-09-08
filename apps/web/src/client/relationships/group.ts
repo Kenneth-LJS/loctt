@@ -158,8 +158,10 @@ interface Side {
 function sidesOf(def: RelationshipDef): readonly Side[] {
   const ranked = def.ranked === true;
   const tree = def.graph === "tree";
+
   const forward: Side = { key: def.key, label: def.label, ranked, tree };
   if (isSymmetricRelationship(def)) return [forward];
+
   return [
     forward,
     { key: effectiveInverseKey(def), label: effectiveInverseLabel(def), ranked, tree },

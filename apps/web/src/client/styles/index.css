@@ -175,3 +175,21 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Rich-editor (TipTap) empty-state placeholder (TSK-62).
+ *
+ * The `Placeholder` extension only emits a decoration — the class
+ * `is-editor-empty` and a `data-placeholder` attr on the first empty
+ * node. Rendering the text is the app's job; without this rule the
+ * placeholder is configured but invisible, so an empty rich editor reads
+ * as blank/broken (the exact thing TSK-62 forbids) while a test that
+ * only checks the attribute still passes. `::before` with
+ * `pointer-events:none` so it never intercepts a click into the editor. */
+.ProseMirror .is-editor-empty:first-child::before,
+.tiptap .is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--text-tertiary);
+  pointer-events: none;
+  height: 0;
+  float: left;
+}

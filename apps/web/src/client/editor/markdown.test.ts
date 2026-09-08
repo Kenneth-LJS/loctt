@@ -101,6 +101,23 @@ describe("fromMarkdown", () => {
     expect(para?.content?.some(n => n.marks?.some(m => m.type === "italic"))).toBe(true);
   });
 
+  // @verifies TSK-63
+  it("parses CRLF markdown without hanging (a heading/list line with \\r)", () => {
+    // Regression: a `\r`-suffixed heading/list line matched neither the
+    // block handler (regexes end in `(.*)$`; `.` skips `\r`) nor let the
+    // paragraph loop advance (its break-test has no `$`), so fromMarkdown
+    // spun forever and OOM'd — reachable from an ordinary Windows paste
+    // (text/plain is CRLF). The 2s cap fails via timeout on the old code
+    // instead of hanging the whole run.
+    const doc = fromMarkdown("# Heading\r\n\r\n- item one\r\n- item two\r\n");
+    const types = (doc.content ?? []).map(n => n.type);
+    expect(types).toContain("heading");
+    expect(types).toContain("bulletList");
+    // The `\r` did not survive into the parsed text.
+    const headingText = (doc.content?.[0]?.content ?? []).map(n => n.text ?? "").join("");
+    expect(headingText).toBe("Heading");
+  }, 2000);
+
   // @verifies TSK-25
   it("keeps a ZWJ family emoji as one text run, not split codepoints", () => {
     const family = "\u{1F468}‍\u{1F469}‍\u{1F467}";

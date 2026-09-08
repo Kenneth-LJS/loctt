@@ -311,6 +311,28 @@ async function settling(
 }
 
 /**
+ * Removes a link through the revised REL-12 affordance: open the row's
+ * persistent kebab (⋯), choose Remove, then confirm in the brief dialog.
+ *
+ * `scope` is a locator for the row (or a group's rows filtered to one),
+ * so a caller keeps addressing the same row it does today; the kebab,
+ * the menu item and the confirm button all carry declared test ids.
+ *
+ * Waits for the `/unlink` POST to be answered, exactly as the old direct
+ * click did through `settling`, so far-end assertions stay meaningful —
+ * and, like the old helper, it settles on a *refused* remove too, which
+ * REL-44 needs.
+ */
+async function removeLink(page: Page, scope: import("@playwright/test").Locator): Promise<void> {
+  await scope.getByTestId("relationship-kebab").click();
+  // The menu item opens the confirm; the confirm's Remove does the write.
+  await scope.getByTestId("relationship-remove").click();
+  await settling(page, "/unlink", async () => {
+    await page.getByTestId("relationship-remove-confirm-button").click();
+  });
+}
+
+/**
  * Seeds a link through the CLI, in whichever direction the CLI accepts.
  *
  * **`loctt link` only takes forward keys.** Measured: `loctt link T-1
@@ -442,10 +464,7 @@ test("REL-4: each group shows its own count, and counts move on add and remove w
   await expect(page.locator('[data-group="relates_to"] [data-testid="relationship-group-count"]')).toHaveText("· 1");
 
   // Remove, same page.
-  await settling(page, "/unlink", async () => {
-    await groupRows(page, "blocks").filter({ hasText: spare ?? "" })
-      .getByTestId("relationship-remove").click();
-  });
+  await removeLink(page, groupRows(page, "blocks").filter({ hasText: spare ?? "" }));
   await expect(page.locator('[data-group="blocks"] [data-testid="relationship-group-count"]')).toHaveText("· 2");
 });
 
@@ -642,9 +661,7 @@ test("REL-10: removing a link removes both edges, from either side", async ({ pa
 
   // Remove from the forward side.
   await openTask(page, tracker, t1 ?? "");
-  await settling(page, "/unlink", async () => {
-    await groupRows(page, "blocks").getByTestId("relationship-remove").click();
-  });
+  await removeLink(page, groupRows(page, "blocks"));
   await expect(groupRows(page, "blocks")).toHaveCount(0);
 
   expect(await edgesOf(tracker.root, t1 ?? "")).toEqual([]);
@@ -659,9 +676,7 @@ test("REL-10: removing a link removes both edges, from either side", async ({ pa
   expect(await edgesOf(tracker.root, t1 ?? "")).toHaveLength(1);
 
   await openTask(page, tracker, t2 ?? "");
-  await settling(page, "/unlink", async () => {
-    await groupRows(page, "is_blocked_by").getByTestId("relationship-remove").click();
-  });
+  await removeLink(page, groupRows(page, "is_blocked_by"));
   await expect(groupRows(page, "is_blocked_by")).toHaveCount(0);
   expect(await edgesOf(tracker.root, t2 ?? "")).toEqual([]);
   expect(await edgesOf(tracker.root, t1 ?? "")).toEqual([]);
@@ -701,21 +716,41 @@ test("REL-11: adding from the inverse side stores the same direction as adding f
 });
 
 // @verifies REL-12
-test("REL-12: removal is one step, needs no typed confirmation, and is undoable", async ({ page, tracker }) => {
+// REVISED (Ken's ruling): removal is now a persistent kebab (⋯) in a
+// fixed slot → Remove → a brief confirm, replacing the old hover-`✕`
+// that removed on one click. This test asserts the NEW shape; it edits
+// the previously-green REL-12 test per CLAUDE.md's "editing a green test"
+// rule (see the final report).
+test("REL-12: removal is a deliberate kebab → confirm, with no stray hover-✕, and is undoable", async ({ page, tracker }) => {
   const [t1, t2] = await tracker.seed([{ title: "Alpha" }, { title: "Beta" }]);
   await tracker.run(["link", t1 ?? "", "blocks", t2 ?? ""]);
   await openTask(page, tracker, t1 ?? "");
 
-  const remove = groupRows(page, "blocks").getByTestId("relationship-remove");
-  // Reachable from the keyboard, not hover-only: focusing it is enough
-  // to make it visible, which a `display: none` until :hover would not
-  // allow.
-  await remove.focus();
-  await expect(remove).toBeFocused();
+  const row = groupRows(page, "blocks");
+  // The kebab is a persistent control in a fixed slot — present without
+  // any hover, and reachable from the keyboard. Focusing it succeeds,
+  // which an `opacity-0`/hover-only control effectively could not be
+  // driven by keyboard the way the old one required a focus-visible race.
+  const kebab = row.getByTestId("relationship-kebab");
+  await expect(kebab).toBeVisible();
+  await kebab.focus();
+  await expect(kebab).toBeFocused();
+  // No stray one-click remove sits in the row before the menu opens.
+  await expect(row.getByTestId("relationship-remove")).toHaveCount(0);
 
-  await settling(page, "/unlink", async () => { await remove.click(); });
-  // One step: no dialog, no typed confirmation stood between the click
-  // and the write.
+  // Open the kebab → choose Remove → a real confirm dialog appears. The
+  // write has NOT happened yet: a deliberate step stands between the
+  // choice and the removal (this is the accidental-one-click guard).
+  await kebab.click();
+  await row.getByTestId("relationship-remove").click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByTestId("relationship-remove-confirm")).toBeVisible();
+  expect((await edgesOf(tracker.root, t1 ?? "")).map(e => e.type)).toEqual(["blocks"]);
+
+  // Confirm — one deliberate step, not a typed confirmation.
+  await settling(page, "/unlink", async () => {
+    await page.getByTestId("relationship-remove-confirm-button").click();
+  });
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(groupRows(page, "blocks")).toHaveCount(0);
   expect(await edgesOf(tracker.root, t1 ?? "")).toEqual([]);
@@ -729,6 +764,46 @@ test("REL-12: removal is one step, needs no typed confirmation, and is undoable"
   // would leave the file empty.
   expect((await edgesOf(tracker.root, t1 ?? "")).map(e => e.type)).toEqual(["blocks"]);
   expect((await edgesOf(tracker.root, t2 ?? "")).map(e => e.type)).toEqual(["is_blocked_by"]);
+});
+
+// @verifies REL-51
+// Each relationship group header names what the *listed* tasks are to
+// the task on screen — the side shown under it — and reads the same way
+// the (already-correct) `blocks` pair does. A structural (`graph: tree`)
+// pair is the one UX-8 reported reading backwards; this pins it on a
+// real page against real files.
+test("REL-51: structural group headers use the correct directional side, consistently with blocks", async ({ page, tracker }) => {
+  const [epic, kid, grandkid, blocker] = await tracker.seed([
+    { title: "The Epic" }, { title: "A Child" }, { title: "A Grandchild" }, { title: "A Blocker" },
+  ]);
+  // The epic's children (stored on the epic as `child` edges).
+  await seedLink(tracker, epic ?? "", "child", kid ?? "");
+  await seedLink(tracker, kid ?? "", "child", grandkid ?? "");
+  // A non-structural directional pair as the control.
+  await tracker.run(["link", blocker ?? "", "blocks", epic ?? ""]);
+
+  // On the epic: its children sit under the CHILD-side label, and the
+  // blocker it is blocked by under the correct directional label — never
+  // under "Parent".
+  await openTask(page, tracker, epic ?? "");
+  await expect(
+    page.locator('[data-group="child"] [data-testid="relationship-group-label"]'),
+  ).toHaveText("Child");
+  await expect(groupRows(page, "child")).toContainText([kid ?? ""]);
+  // The bug being ruled out: the children must NOT be headed "Parent".
+  await expect(page.locator('[data-group="parent"]')).toHaveCount(0);
+  // The non-structural control still reads correctly.
+  await expect(
+    page.locator('[data-group="is_blocked_by"] [data-testid="relationship-group-label"]'),
+  ).toHaveText("Is blocked by");
+
+  // On the child: its parent (the epic) sits under the PARENT-side label,
+  // not under "Child".
+  await openTask(page, tracker, kid ?? "");
+  await expect(
+    page.locator('[data-group="parent"] [data-testid="relationship-group-label"]'),
+  ).toHaveText("Parent");
+  await expect(groupRows(page, "parent")).toContainText([epic ?? ""]);
 });
 
 // @verifies REL-13
@@ -1003,11 +1078,14 @@ test("REL-24: a dangling target renders as a broken row offering removal, distur
   // And the rest of the panel, and the page.
   await expect(page.getByTestId("task-key-chip")).toHaveText(root ?? "");
 
-  // The row offers "Remove this link", and it works.
+  // The row offers "Remove this link" (REL-24's third bullet), reached
+  // through the kebab, and it works.
   const brokenRow = page.locator('[data-testid="relationship-row"][data-missing="true"]');
+  await brokenRow.getByTestId("relationship-kebab").click();
   await expect(brokenRow.getByTestId("relationship-remove")).toHaveText("Remove this link");
+  await brokenRow.getByTestId("relationship-remove").click();
   await settling(page, "/unlink", async () => {
-    await brokenRow.getByTestId("relationship-remove").click();
+    await page.getByTestId("relationship-remove-confirm-button").click();
   });
   await expect(page.getByTestId("relationship-broken")).toHaveCount(0);
   // Far end: the dangling edge is gone from the file, and the live one
@@ -1041,9 +1119,7 @@ test("REL-25: an edge whose type is not in workflow.yaml is surfaced, labelled u
   await expect(page.locator('[data-group="blockz"]')).toContainText("workflow.yaml");
 
   // Removing it from the UI still works.
-  await settling(page, "/unlink", async () => {
-    await groupRows(page, "blockz").getByTestId("relationship-remove").click();
-  });
+  await removeLink(page, groupRows(page, "blockz"));
   await expect(page.locator('[data-group="blockz"]')).toHaveCount(0);
   expect((await edgesOf(tracker.root, root ?? "")).map(e => e.type)).not.toContain("blockz");
 });
@@ -1144,12 +1220,13 @@ test("REL-28: fifty relationships across six kinds render with correct counts an
   await expect(page.getByTestId("relationship-group")).toHaveCount(6);
 
   // A long title truncates rather than pushing the remove control out
-  // of the panel: the control's right edge stays inside the row's.
+  // of the panel: the control's right edge stays inside the row's. The
+  // control is now the persistent kebab (in a fixed slot), no hover
+  // needed for it to be present.
   await firstToggle.click();
   const longRow = page.getByTestId("relationship-row").filter({ hasText: "Extremely" }).first();
-  await longRow.hover();
   const box = await longRow.boundingBox();
-  const ctrl = await longRow.getByTestId("relationship-remove").boundingBox();
+  const ctrl = await longRow.getByTestId("relationship-kebab").boundingBox();
   expect(box).not.toBeNull();
   expect(ctrl).not.toBeNull();
   expect((ctrl?.x ?? 0) + (ctrl?.width ?? 0)).toBeLessThanOrEqual((box?.x ?? 0) + (box?.width ?? 0) + 1);
@@ -1499,16 +1576,12 @@ test("REL-44: removing an already-removed link says it was already gone, and bot
   await expect(groupRows(tabA, "blocks")).toHaveCount(1);
   await expect(groupRows(tabB, "blocks")).toHaveCount(1);
 
-  await settling(tabA, "/unlink", async () => {
-    await groupRows(tabA, "blocks").getByTestId("relationship-remove").click();
-  });
+  await removeLink(tabA, groupRows(tabA, "blocks"));
   await expect(groupRows(tabA, "blocks")).toHaveCount(0);
   expect(await edgesOf(tracker.root, t1 ?? "")).toEqual([]);
 
   // Tab B removes the same edge, which is no longer there.
-  await settling(tabB, "/unlink", async () => {
-    await groupRows(tabB, "blocks").getByTestId("relationship-remove").click();
-  });
+  await removeLink(tabB, groupRows(tabB, "blocks"));
 
   // Reported as already gone, in words, rather than an opaque failure.
   const err = tabB.getByTestId("relationship-group-error");

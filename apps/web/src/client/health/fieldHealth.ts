@@ -52,17 +52,31 @@ export function isDegraded(v: FieldView): boolean {
  * Builds the view-model for one top-level field `f` by merging the
  * field's value with any matching entries in `health`.
  *
- * - `fieldHealth` = the entry whose `field` is exactly `f` (whole-field).
+ * - `fieldHealth` = the whole-field entry whose `field` is exactly `f`,
+ *   but ONLY for a kind that lifted the value OFF `frontmatter`
+ *   (`wrong_type`, `missing_required`, `unrecognised`). For those the row
+ *   would otherwise render a bare "—" hiding a real stored value, which is
+ *   what the corrupt notice exists to prevent.
+ *
+ *   An EXTRINSIC fault (`dangling` — a deleted user; `invalid_value` —
+ *   enum/custom-field-type drift) leaves the value ON `frontmatter`, so the
+ *   field's own picker still renders it (with its own missing/orphaned
+ *   indicator). Flagging those here too would put a "⚠ corrupt: ghost"
+ *   notice with a Clear ABOVE a picker that still holds `ghost` — a double,
+ *   mislabelled signal. So they are excluded (matching this function's
+ *   long-standing docstring, which the unfiltered `find` had drifted from).
  * - `elementHealth` = entries whose `field` is `f[...]` or `f.something`
  *   (a sub-position of `f`), e.g. `labels[2]`, `relationships[1].target`.
  */
+const VALUE_LIFTED_KINDS = new Set(["wrong_type", "missing_required", "unrecognised"]);
+
 export function fieldView<V = unknown>(
   field: string,
   value: V | undefined,
   health: readonly WireHealth[] | undefined,
 ): FieldView<V> {
   const list = health ?? [];
-  const fieldHealth = list.find(h => h.field === field);
+  const fieldHealth = list.find(h => h.field === field && VALUE_LIFTED_KINDS.has(h.kind));
   const elementHealth = list.filter(
     h => h.field !== field && isElementOf(h.field, field),
   );

@@ -9,13 +9,17 @@ import type {
   WorkflowConfig,
 } from "@loctt/contracts";
 
+import type { WireHealth } from "../health/fieldHealth.ts";
+import { fieldView, unrecognisedHealth } from "../health/fieldHealth.ts";
 import { relativeTime, shortDate } from "../list/format.ts";
 import type { ListLookups } from "../list/lookups.ts";
+import { Button } from "../ui/Button.tsx";
+import { Callout } from "../ui/Callout.tsx";
 import { customFieldRows } from "./editors/CustomFields.tsx";
 import { DateField } from "./editors/DateField.tsx";
 import { LabelsField } from "./editors/LabelsField.tsx";
 import type { PickerOption } from "./editors/OptionPicker.tsx";
-import { OptionPicker } from "./editors/OptionPicker.tsx";
+import { fieldSlug, OptionPicker } from "./editors/OptionPicker.tsx";
 import { TextField } from "./editors/TextField.tsx";
 import type { FieldFailure } from "./fieldFailure.ts";
 import { FieldFailureNotice } from "./FieldFailureNotice.tsx";
@@ -54,6 +58,7 @@ import { FieldFailureNotice } from "./FieldFailureNotice.tsx";
  */
 export function MetaPanel({
   frontmatter: fm,
+  health,
   lookups,
   workflow,
   users,
@@ -71,6 +76,24 @@ export function MetaPanel({
   onDismissFieldError,
 }: {
   readonly frontmatter: TaskFrontmatterPublic;
+  /**
+   * Field-level health findings for this task (DEG-29 / UX-7), straight
+   * from `GET /api/tasks/:ref`. Two kinds surface here:
+   *
+   *  - a **corrupt** field (`wrong_type` / `missing_required`) — its
+   *    value is *not* in `frontmatter` (the tolerant parse lifted it out),
+   *    so a row that only reads `fm` renders a bare "—" that reads as
+   *    "no value". Instead the row shows the stored value with a warning
+   *    (`Due ⚠ corrupt: 42`) and a Clear control, so the fault is visible
+   *    and fixable rather than silently empty.
+   *  - an **unrecognised** preserved key (`jira_id: ABC-123`, P7) — the
+   *    schema did not know it but the file kept it. The "Not recognised"
+   *    group lists these so the person editing the task can see they
+   *    exist (closes the DEG-7 client blind spot).
+   *
+   * Omitted when the task is clean.
+   */
+  readonly health?: readonly WireHealth[] | undefined;
   readonly lookups: ListLookups;
   readonly workflow: WorkflowConfig | undefined;
   readonly users: readonly UserProfile[];
@@ -135,6 +158,20 @@ export function MetaPanel({
     fieldError?.field === field ? fieldError : undefined;
 
   /**
+   * The whole-field corruption on `field`, or undefined (DEG-29 / UX-7).
+   *
+   * Only whole-field faults (`wrong_type` / `missing_required`) render as
+   * the corrupt-value notice: their value was lifted out of `frontmatter`,
+   * so the editor row would otherwise show an empty "—". An element fault
+   * (`labels[2]`) leaves the field's value in `frontmatter`, so its row
+   * still renders the value — element faults are not this row's business.
+   */
+  const corruptFor = (field: string): WireHealth | undefined =>
+    fieldView(field, undefined, health).fieldHealth;
+
+  const unrecognised = unrecognisedHealth(health);
+
+  /**
    * The props every row shares, spread at each call site.
    *
    * **Not a component defined here.** A `const Row = props => …` inside
@@ -163,7 +200,7 @@ export function MetaPanel({
       className="min-w-0 self-start rounded-lg border border-border-subtle bg-bg-surface p-4"
     >
       <dl className="space-y-3">
-        <Row {...rowShared} label="Status" error={errorFor("status")}>
+        <Row {...rowShared} label="Status" error={errorFor("status")} corrupt={corruptFor("status")} onClearCorrupt={() => { onUnset("status"); }}>
           <OptionPicker
             label="Status"
             value={fm.status}
@@ -172,7 +209,7 @@ export function MetaPanel({
           />
         </Row>
 
-        <Row {...rowShared} label="Type" error={errorFor("task_type")}>
+        <Row {...rowShared} label="Type" error={errorFor("task_type")} corrupt={corruptFor("task_type")} onClearCorrupt={() => { onUnset("task_type"); }}>
           <OptionPicker
             label="Type"
             value={fm.task_type}
@@ -182,7 +219,7 @@ export function MetaPanel({
           />
         </Row>
 
-        <Row {...rowShared} label="Priority" error={errorFor("priority")}>
+        <Row {...rowShared} label="Priority" error={errorFor("priority")} corrupt={corruptFor("priority")} onClearCorrupt={() => { onUnset("priority"); }}>
           <OptionPicker
             label="Priority"
             value={fm.priority}
@@ -202,7 +239,7 @@ export function MetaPanel({
           </span>
         </Row>
 
-        <Row {...rowShared} label="Assignee" error={errorFor("assignee")}>
+        <Row {...rowShared} label="Assignee" error={errorFor("assignee")} corrupt={corruptFor("assignee")} onClearCorrupt={() => { onUnset("assignee"); }}>
           <OptionPicker
             label="Assignee"
             value={fm.assignee}
@@ -213,7 +250,7 @@ export function MetaPanel({
           />
         </Row>
 
-        <Row {...rowShared} label="Reporter" error={errorFor("reporter")}>
+        <Row {...rowShared} label="Reporter" error={errorFor("reporter")} corrupt={corruptFor("reporter")} onClearCorrupt={() => { onUnset("reporter"); }}>
           <OptionPicker
             label="Reporter"
             value={fm.reporter}
@@ -224,7 +261,7 @@ export function MetaPanel({
           />
         </Row>
 
-        <Row {...rowShared} label="Labels" error={errorFor("labels")}>
+        <Row {...rowShared} label="Labels" error={errorFor("labels")} corrupt={corruptFor("labels")} onClearCorrupt={() => { onUnset("labels"); }}>
           <LabelsField
             attached={fm.labels ?? []}
             all={labels}
@@ -240,7 +277,7 @@ export function MetaPanel({
           />
         </Row>
 
-        <Row {...rowShared} label="Milestone" error={errorFor("milestone")}>
+        <Row {...rowShared} label="Milestone" error={errorFor("milestone")} corrupt={corruptFor("milestone")} onClearCorrupt={() => { onUnset("milestone"); }}>
           <OptionPicker
             label="Milestone"
             value={fm.milestone}
@@ -251,7 +288,7 @@ export function MetaPanel({
           />
         </Row>
 
-        <Row {...rowShared} label="Sprint" error={errorFor("sprint")}>
+        <Row {...rowShared} label="Sprint" error={errorFor("sprint")} corrupt={corruptFor("sprint")} onClearCorrupt={() => { onUnset("sprint"); }}>
           <OptionPicker
             label="Sprint"
             value={fm.sprint}
@@ -262,7 +299,7 @@ export function MetaPanel({
           />
         </Row>
 
-        <Row {...rowShared} label="Start" error={errorFor("start_date")}>
+        <Row {...rowShared} label="Start" error={errorFor("start_date")} corrupt={corruptFor("start_date")} onClearCorrupt={() => { onUnset("start_date"); }}>
           <DateField
             label="Start"
             value={fm.start_date}
@@ -275,7 +312,7 @@ export function MetaPanel({
           />
         </Row>
 
-        <Row {...rowShared} label="Due" error={errorFor("due_date")}>
+        <Row {...rowShared} label="Due" error={errorFor("due_date")} corrupt={corruptFor("due_date")} onClearCorrupt={() => { onUnset("due_date"); }}>
           <DateField
             label="Due"
             value={fm.due_date}
@@ -291,7 +328,7 @@ export function MetaPanel({
         {/* Absent entirely when estimation is disabled — TSK-9's third
             bullet says absent, not "shown empty". */}
         {estimate !== null && (
-          <Row {...rowShared} label="Estimate" error={errorFor("estimate")}>{estimate}</Row>
+          <Row {...rowShared} label="Estimate" error={errorFor("estimate")} corrupt={corruptFor("estimate")} onClearCorrupt={() => { onUnset("estimate"); }}>{estimate}</Row>
         )}
 
         {/* TSK-5: present only when set, and never with an edit
@@ -318,11 +355,37 @@ export function MetaPanel({
           onSet,
           onUnset,
         }).map(row => (
-          <Row {...rowShared} key={row.key} label={row.label} error={errorFor(row.key)}>
+          <Row
+            {...rowShared}
+            key={row.key}
+            label={row.label}
+            error={errorFor(row.key)}
+            // Health entries for a custom field are keyed `fields.<key>`
+            // (that is how core's validator attributes them), so the
+            // lookup uses the dotted form — but the UNSET call takes the
+            // BARE key, exactly as the healthy editor does
+            // (CustomFields.tsx `onUnset(def.key)`). Sending the dotted
+            // form 400s ("custom field \"fields.x\" is not set"), so a
+            // corrupt custom field could never be cleared.
+            corrupt={corruptFor(`fields.${row.key}`)}
+            onClearCorrupt={() => { onUnset(row.key); }}
+          >
             {row.node}
           </Row>
         ))}
       </dl>
+
+      {/* DEG-7 / DEG-29 (UX-7): preserved keys the schema does not know.
+          Rendered by a client component here (the DEG-7 client blind spot
+          — before this, only a core round-trip test and an sr-only span in
+          the list cell covered it) so the person editing the task can see
+          the key exists and remove it. */}
+      {unrecognised.length > 0 && (
+        <UnrecognisedGroup
+          fields={unrecognised}
+          onRemove={field => { onUnset(field); }}
+        />
+      )}
 
       <Footer frontmatter={fm} />
     </aside>
@@ -530,6 +593,8 @@ function Row({
   label,
   children,
   error,
+  corrupt,
+  onClearCorrupt,
   taskKey,
   onRetry,
   onDismiss,
@@ -537,6 +602,10 @@ function Row({
   readonly label: string;
   readonly children: React.ReactNode;
   readonly error?: FieldFailure | undefined;
+  /** A whole-field corruption on this row's field (DEG-29 / UX-7). */
+  readonly corrupt?: WireHealth | undefined;
+  /** Clears the corrupt value (removes the field). */
+  readonly onClearCorrupt?: (() => void) | undefined;
   readonly taskKey: string;
   readonly onRetry?: (() => void) | undefined;
   readonly onDismiss?: (() => void) | undefined;
@@ -545,6 +614,17 @@ function Row({
     <div className="grid grid-cols-[80px_minmax(0,1fr)] gap-2 text-[13px]">
       <dt className="pt-0.5 text-text-tertiary">{label}</dt>
       <dd className="min-w-0 break-words text-text-primary">
+        {corrupt !== undefined && (
+          // The stored bad value + a warning, *above* the still-usable
+          // editor below — so the value is visible (not a bare "—") and
+          // the editor is the repair affordance (set a valid value),
+          // beside an explicit Clear (remove the field). DEG-29 / UX-7.
+          <CorruptFieldNotice
+            label={label}
+            health={corrupt}
+            {...(onClearCorrupt !== undefined ? { onClear: onClearCorrupt } : {})}
+          />
+        )}
         {children}
         {error !== undefined && (
           // At the field, not in a toast (P4). The notice adds the two
@@ -561,5 +641,127 @@ function Row({
         )}
       </dd>
     </div>
+  );
+}
+
+/**
+ * A corrupt field's stored value, shown as a warning rather than the bare
+ * "—" the editor would otherwise render (DEG-29 / UX-7).
+ *
+ * The tolerant parse lifted the bad value out of `frontmatter` into
+ * `health`, so the editor below this notice has no value and would draw an
+ * empty control that reads as "no value set". This notice makes the fault
+ * *visible*: the label, a ⚠ glyph, the word "corrupt", and the raw stored
+ * value (`Due ⚠ corrupt: 42`), with the validator's message on hover and
+ * a screen-reader-only word so the signal is not colour- or glyph-only.
+ *
+ * Two repair paths: the editor immediately below sets a valid value; the
+ * **Clear** here removes the field (`unset`), which core also drops the
+ * health entry for so the raw value stops round-tripping.
+ */
+function CorruptFieldNotice({
+  label,
+  health,
+  onClear,
+}: {
+  readonly label: string;
+  readonly health: WireHealth;
+  readonly onClear?: (() => void) | undefined;
+}) {
+  const slug = fieldSlug(label);
+  return (
+    <Callout
+      tone="warn"
+      role="status"
+      testId={`meta-corrupt-${slug}`}
+      className="mb-1 flex-col items-stretch gap-1 px-2 py-1.5 text-[12px]"
+    >
+      <p title={health.error}>
+        <span className="font-medium">{label}</span>{" "}
+        <span aria-hidden="true">⚠</span>{" "}
+        corrupt:{" "}
+        <span data-testid={`meta-corrupt-raw-${slug}`} className="font-mono break-all">
+          {health.rawText}
+        </span>
+        <span className="sr-only"> (corrupt value — {health.error})</span>
+      </p>
+      {onClear !== undefined && (
+        <div>
+          <Button
+            variant="ghost"
+            size="sm"
+            testId={`meta-corrupt-clear-${slug}`}
+            onClick={onClear}
+            className="-mx-1 h-6 text-warn-fg underline"
+          >
+            Clear
+          </Button>
+        </div>
+      )}
+    </Callout>
+  );
+}
+
+/**
+ * The "Not recognised" group — preserved frontmatter keys the schema does
+ * not know (P7 passthrough), listed so a person editing the task can see
+ * they exist and remove them (DEG-7 / DEG-29 / UX-7).
+ *
+ * Read-only: an unrecognised key has no editor (LocTT does not know its
+ * shape), so each row shows the key, its stored value, and a Remove
+ * control — nothing else. Removing calls `unset`, which core clears from
+ * disk (dropping the passthrough value and its health entry).
+ *
+ * This is the client render DEG-7 required: before it, the round-trip was
+ * proven only by a core test, and the sole client trace was an sr-only
+ * "(unrecognised)" in one list cell — no surface showed the key to a user.
+ */
+function UnrecognisedGroup({
+  fields,
+  onRemove,
+}: {
+  readonly fields: readonly WireHealth[];
+  readonly onRemove: (field: string) => void;
+}) {
+  return (
+    <section
+      data-testid="meta-unrecognised-group"
+      aria-label="Not recognised"
+      className="mt-4 border-t border-border-subtle pt-3"
+    >
+      <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-text-tertiary">
+        Not recognised
+      </h3>
+      <p className="mb-2 text-[11px] text-text-tertiary">
+        These keys were kept from the file but LocTT does not use them.
+      </p>
+      <dl className="space-y-2">
+        {fields.map(h => {
+          const slug = fieldSlug(h.field);
+          return (
+            <div
+              key={h.field}
+              data-testid={`meta-unrecognised-${slug}`}
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 text-[13px]"
+            >
+              <div className="min-w-0">
+                <code className="font-mono text-text-secondary">{h.field}</code>
+                {": "}
+                <span className="font-mono break-all text-text-primary">{h.rawText}</span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                testId={`meta-unrecognised-remove-${slug}`}
+                onClick={() => { onRemove(h.field); }}
+                className="h-6 text-text-tertiary underline"
+              >
+                Remove
+              </Button>
+            </div>
+          );
+        })}
+      </dl>
+    </section>
   );
 }

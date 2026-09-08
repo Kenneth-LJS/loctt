@@ -2061,6 +2061,187 @@ option if tz is required").
 (`EditUserOptions` + `lifecycle.ts`) and its CLI/MCP callers, and have
 `save()` send `timezone: null` on `(none)`.
 
+### A161 · REL-51's group-header direction was already correct; the reported bug was demo-data, not code
+
+**Ticket:** B3 Relationships · **Date:** 2026-09-08 · **Commit:** (staged)
+
+**The situation.** REL-51 (UX-8) asks that each relationship group
+header name the side it shows — "children under the child-side label
+('Child'), the parent under the parent-side label ('Parent')" — and
+states the bug as "the structural group picks the label from the wrong
+side, so children show under 'Parent' and the parent under 'Child'". The
+report (ui-review-ux-interactions §4.2) is grounded in DEMO-10/DEMO-11:
+an epic whose 3 children appeared under a "PARENT · 3" header.
+
+I could not reproduce a bug in `group.ts`. Traced the whole chain: core
+`linkTask` (`packages/core/src/task/relationships.ts:245`) writes
+`link T-3 parent T-1` as a `parent` edge on T-3 (target = the parent)
+and a `child` edge on T-1 (target = the child); the evaluator's
+`parent` alias (`packages/core/src/query/evaluator.ts:410`) reads
+`parentRel.target` as the parent's id; the CLI/README/configuration docs
+all agree (`loctt link T-3 parent T-1` = "T-3's parent is T-1"). Under
+that convention `group.ts`'s mechanical `def.label`/`inverse_label`
+mapping is already right: a task holding `child` edges lists its children
+under "Child", a task holding a `parent` edge lists its parent under
+"Parent". Measured directly: `groupRelationships([child→kid])` →
+`child=Child`, `groupRelationships([parent→epic])` → `parent=Parent`.
+The DEMO-10 header "PARENT · 3" over children can only arise if the demo
+tracker stored the epic's children as `parent` edges — i.e. the seed data
+was written with the direction reversed, contradicting `linkTask`.
+
+**What had to be decided.** Satisfy REL-51 by *swapping* the tree def's
+labels (the fix its "bug being fixed" bullet imagines), or by *locking
+the already-correct behavior* and recording that the premise was a
+data artifact?
+
+**Options considered.**
+  1. Swap forward/inverse labels for `graph: tree` defs in `sidesOf`.
+     Cost: it *breaks* the code, which is already correct per every code
+     source — children would move to "Parent". It also reddens the
+     already-green REL-1 flow assertion (`["Blocks","Parent","Child"]`)
+     and group.test.ts REL-1, and diverges the header from the picker
+     (which still offers "Parent"→`parent`). This "fix" makes the app
+     wrong to match backwards demo data.
+  2. Keep `group.ts` as is; add a REL-51 test (unit + e2e) that locks
+     the correct behavior (children under "Child", parent under
+     "Parent", `blocks` control unchanged), proven red-first by
+     demonstrating the label-swap turns it red. Cost: the case's "bug
+     being fixed" bullet describes a code bug that does not exist; this
+     entry records that.
+
+**Decided.** Option 2 — REL-51's *required property* ("the side is
+correct and consistent across all relationship types") is already
+satisfied by the shipped code; I added tests that lock it and prove
+red-first via the swap mutation, and did not change `sidesOf`'s mapping.
+
+**Why.** The code convention is unambiguous and consistent across core,
+the evaluator, the CLI and three docs; the only source implying a code
+bug is a screenshot of demo data seeded against that convention. CLAUDE.md
+forbids rewriting the spec to match code, but it equally forbids breaking
+correct code to match a false premise — and REL-51's normative
+requirement is met. The demo-data direction error is a separate,
+data-side issue (any demo/seed that wrote children as `parent` edges
+should be regenerated through `loctt link`); logged in known-gaps.
+
+**To revert.** If Ken decides the *intended* convention is the reverse
+(a `parent` edge means "target is my child", making the demo data
+canonical and the CLI/evaluator the bug), the header fix is a swap in
+`apps/web/src/client/relationships/group.ts` `sidesOf`:
+`label: tree ? effectiveInverseLabel(def) : def.label` for the forward
+side and `tree ? def.label : effectiveInverseLabel(def)` for the inverse
+side — but that is a much larger change touching core `linkTask`, the
+`parent` alias, the CLI `link` direction and the picker in
+`group.ts` `linkKindOptions`, and must be decided as a convention, not a
+UI patch. The REL-51 tests in `group.test.ts` and
+`tests/ui/flow-relationships.spec.ts` and REL-1's expected labels would
+flip accordingly.
+
+### A162 · REL-12's remove affordance is a persistent kebab + confirm (implements Ken's ruling)
+
+**Ticket:** B3 Relationships · **Date:** 2026-09-08 · **Commit:** (staged)
+
+**The situation.** REL-12 was revised (Ken's ruling, batch spec "Batch 3
+→ Relationships") from a hover-only `✕` that removed on one click to a
+**persistent kebab (⋯) in a fixed slot → dropdown Remove → brief
+confirm**. The old shape lived in `RelationshipRow.tsx` as an
+`opacity-0 group-hover` button with `data-testid="relationship-remove"`,
+and the old REL-12 test asserted one-click removal with
+`getByRole("dialog")` count 0.
+
+**What had to be decided.** How to signal "not this task's edge to
+remove" (`onRemove === undefined`, a tree descendant) while keeping the
+K-4 alignment the fixed slot buys.
+
+**Options considered.** (a) Render the kebab always, but with an empty
+menu for non-removable rows — implies an action exists here and is
+unavailable, the false claim the old disabled-control note warned
+against. (b) Render no kebab for non-removable rows, but reserve the same
+fixed-width slot (`h-7 w-7`) so labels/pills still align.
+
+**Decided.** (b): no kebab when `onRemove` is undefined, but a
+same-width reserved span, so alignment holds and no phantom action is
+implied.
+
+**Why.** K-4 is satisfied by the *slot* being fixed, not by the control
+always existing; a menu that opens to nothing is worse than no menu.
+
+**To revert.** In `apps/web/src/client/relationships/RelationshipRow.tsx`,
+restore the single `opacity-0 group-hover` `<button
+data-testid="relationship-remove">` calling `onRemove` directly, and drop
+the `Menu`/`IconButton`/`Dialog` imports and the `confirming` state. The
+REL-12 test in `RelationshipRow.test.tsx` and `flow-relationships.spec.ts`
+(and the `removeLink` helper + call sites) would revert with it.
+
+### A163 · The activity lane's Comments/Activity/All tabs default to Activity and mount comments on activation (transitional)
+
+**Ticket:** B3 · Activity/comments lane (K-5) · **Date:** 2026-09-08 · **Commit:** (this one)
+
+**The situation.** K-5 splits the stacked Comments + Activity sections
+into a tabbed control (Comments / Activity / All) inside the
+self-contained activity component (`activity/ActivityPanel.tsx`). But the
+Activity lane owns ONLY `activity/*`; `task/TaskDetail.tsx` is owned by
+the Relationships lane, which per `ui-implementation-batches.md` (B3)
+holds "K-5's tab state + URL param". At this commit `TaskDetail` still
+renders a SEPARATE standalone Comments `<Section>` (`<CommentsPanel>`)
+beside the tabbed lane. If the lane also mounts a `<CommentsPanel>` on
+load, the page has two comment composers/lists sharing the same
+`data-testid`s — breaking 16 existing comment e2e tests (`comment`,
+`comment-composer`, `comments-list` resolve to 2×).
+
+**What had to be decided.** How does the self-contained tabbed lane
+render a Comments tab without introducing a second, ambiguous comments
+home while `TaskDetail` still owns the standalone Comments section — and
+which tab is the default?
+
+**Options considered.**
+
+1. **Default to Comments; always-render all panels (hidden).** Matches
+   the "Comments first" UX. Costs: mounts a second `<CommentsPanel>` on
+   load → 16 comment specs go red until the Relationships lane removes
+   `TaskDetail`'s section. Ships a real double-mount bug in the meantime.
+2. **Scope the 16 comment specs to the standalone section.** Costs:
+   couples them to `TaskDetail`'s transient structure and asserts the
+   duplicate-comments state as acceptable — the "test asserting the bug"
+   anti-pattern CLAUDE.md warns against.
+3. **Default to Activity; mount each tab's content on activation.** The
+   lane shows the feed on load and mounts `<CommentsPanel>` only when the
+   Comments/All tab is opened, so load-time has exactly one comments home
+   (the standalone section). CMT-18/CMT-39 scope to the lane's own tab
+   panels. Costs: default is Activity, not Comments, until the standalone
+   section is removed. CMT-18 permits "whichever is a tab" as the default,
+   so no case is violated.
+
+**Decided.** Option 3 — default tab is Activity, tab content is
+mount-on-activate.
+
+**Why.** It is the only option that keeps a genuine double-mount off the
+page AND leaves every existing comment spec green, without asserting the
+transitional duplication as correct. It is forward-compatible: when the
+Relationships lane removes `TaskDetail`'s standalone Comments `<Section>`
+(and wires the URL param), the default can move to Comments with a
+one-line change here and nothing else. See the companion `known-gaps.md`
+entry for the pending integration.
+
+**To revert / advance.** In `activity/ActivityPanel.tsx`: change
+`useState<Tab>("activity")` to `"comments"` and, if desired, restore
+always-render (drop the `tab === "…" &&` guards) once `TaskDetail` mounts
+only the tabbed lane. The default-tab assertions in
+`activity/ActivityPanel.test.tsx` ("renders three tabs…") and
+`tests/ui/flow-comments.spec.ts` CMT-18 move with it.
+
+**ADVANCED at the B3 merge (2026-09-07).** The transitional state above is
+resolved: the merge coordinator removed `TaskDetail`'s standalone Comments
+`<Section>` (the Relationships lane's TaskDetail edits had landed, so the
+integration was now safe to complete rather than defer) and flipped the
+default tab to **Comments**. The tabbed `ActivityPanel` is the single
+comments home; mount-on-activation stays (only the active tab's
+`<CommentsPanel>` is in the DOM, so exactly one composer exists at a time,
+which is what keeps the 16 comment e2e tests unambiguous — all 19
+flow-comments tests pass with the new default). The `CommentsPanel` import
+was dropped from `TaskDetail.tsx`. CMT-18 (both the unit test and the e2e)
+now assert default-Comments. This makes K-5 complete rather than shipped
+behind a workaround default.
+
 ## 9. Ken's rulings, 2026-08-29
 
 **These are Ken's, not an agent's.** Unlike § 8, they carry the
@@ -9313,3 +9494,200 @@ Leaving the green tag unqualified would let the UI inherit the omission.
 alone, drop the DEG-29 "Also:" bullet in
 `docs/dev/ui-test-cases/flow-degradation.md` and this note's requirement
 that the DEG-7 tag come from a client test.
+
+### A158 · MetaPanel renders corrupt/unrecognised fields from the existing `TaskResponse.health` payload — no server/core change (DEG-29 / DEG-7)
+
+**Ticket:** B3 (Task-meta / degradation) · **Date:** 2026-09-08 · **Commit:** (staged)
+
+**The situation.** `MetaPanel.tsx` rendered a corrupt field (its value
+lifted into `health` by the tolerant parse) as a bare "—", and rendered
+no unrecognised-field group at all. DEG-29/UX-7 want the corrupt value
+shown with a warning + clear/repair, and DEG-7's "Not recognised" group
+rendered by a client.
+
+**What had to be decided.** Where the field-health + unrecognised data
+comes from, and whether the server/core needed a change.
+
+**Decided.** Render entirely from the payload the API *already* delivers.
+`GET /api/tasks/:ref` (`handleGetTask`) has carried `health` — including
+`kind: "unrecognised"` entries — since Phase-7B; the client view-model
+helpers (`fieldView`, `unrecognisedHealth`, `WireHealth` in
+`apps/web/src/client/health/fieldHealth.ts`) already existed. So this lane
+needed **no server or core change**: `TaskDetail` passes `task.data.health`
+into `MetaPanel` (one additive line at the existing call site), and the
+panel computes `corruptFor(field)` per row and lists `unrecognisedHealth`
+in a new "Not recognised" group.
+
+Two smaller calls inside that:
+- **The corrupt notice sits *above* the still-usable editor**, not
+  instead of it. The editor is the "repair" affordance (set a valid
+  value); an explicit **Clear** beside it removes the field. Both write
+  through the existing `onUnset`/`onSet` — core's `unsetField` already
+  has a health-only branch that drops the raw value + its health entry,
+  so Clear/Remove round-trips correctly with no new endpoint.
+- **The "Not recognised" group render stays inside `MetaPanel`**, not a
+  shared helper in `list/cells.tsx`. `cells.tsx` is owned by B4's
+  Toolbar/List lane; the reusable primitives already live in the shared
+  `health/fieldHealth.ts`, so no cross-lane file was touched.
+
+**Why.** "A capability in core is not done until CLI and MCP have it" —
+but here core/CLI/MCP already surface `health` (the CLI `show`/JSON and
+MCP `get_task` carry it); the gap was purely that the web *client* did
+not render it. Adding a server field would have been drift; rendering
+from the existing payload is the honest fix.
+
+**To revert.** Remove `UnrecognisedGroup` + `CorruptFieldNotice` and the
+`health`/`corrupt`/`onClearCorrupt` props from `MetaPanel.tsx`, and drop
+the one `health` passthrough line in `TaskDetail.tsx`. The API keeps
+serving `health` regardless.
+
+### A159 · Editor toolbar adds strikethrough/superscript/subscript buttons; math + mention buttons scoped out (TSK-65)
+
+**Ticket:** B3 (Rich-text editor) · **Date:** 2026-09-08 · **Commit:** (staged)
+
+**The situation.** TSK-65 (ED-1): "Strikethrough / superscript /
+subscript / math / mention have toolbar buttons in rich mode, **or the
+flow doc scopes them out.** These marks/nodes round-trip already; only
+the toolbar affordance is missing." All five already survive save+reload
+through `markdown.ts` and `extensions.ts`; the case is purely about the
+toolbar affordance and explicitly permits a scope-out.
+
+**What had to be decided.** Which of the five get a toolbar button now,
+and which are scoped out.
+
+**Options considered.**
+- *All five.* Strike/sup/sub are one-line `toggle*` commands. But math
+  and mention are atomic nodes that need a *value* to insert — a math
+  button needs an expression-entry surface (a prompt or inline field);
+  a mention button needs a user-picker. Mention already has a working
+  `@`-trigger picker (`MentionMenu`), so a toolbar button would be a
+  second, redundant entry path; math has no entry UI at all, and
+  building one is a mark-vs-node insertion surface, not a toggle.
+- *The three cheap marks now, math + mention scoped out.* Strike, sup
+  and sub are pure toggles reachable via `toggleStrike` /
+  `toggleMark("superscript"|"subscript")`, so they cost a button each
+  and nothing more.
+
+**Decided.** Add strikethrough, superscript and subscript toolbar
+buttons; scope out the math and mention buttons.
+
+**Why.** The three added are genuinely free (a toggle command already in
+the schema). Math needs an expression-entry affordance and mention
+already has its `@`-picker, so a mention *button* would duplicate an
+existing path and a math button would front a UI that does not exist —
+both are new affordances, not "the missing button", which is more than
+TSK-65 asks for and would be scope creep. The case sanctions the
+scope-out in its own text.
+
+**To revert.** In `apps/web/src/client/editor/Toolbar.tsx`, add a
+`math` button (needs an expression-entry surface — a `window.prompt`
+inserting an `inlineMath`/`blockMath` node, or an inline field) and a
+`mention` button (insert a `mention` node, or open `MentionMenu`
+programmatically). The marks/nodes already round-trip, so no
+`markdown.ts` or `extensions.ts` change is required.
+
+### A160 · GFM pipe-table left as-is for now; TSK-66 scoped out (fix belongs in core `lossy.ts`, another lane's file)
+
+**Ticket:** B3 (Rich-text editor) · **Date:** 2026-09-08 · **Commit:** (staged)
+
+**The situation.** TSK-66 (ED-2): "A GFM pipe-table in the body is
+either parsed to a table or forces raw mode via lossy-content detection
+— never shown as literal paragraph text." Today `fromMarkdown`
+(`apps/web/src/client/editor/markdown.ts`) has no table branch, so a
+pipe table becomes literal paragraph text in the rich editor; and
+`findLossyConstructs` (`packages/core/src/markdown/lossy.ts`) does not
+list tables, so raw mode is not forced either. `@tiptap/extension-table`
+is installed but **not** registered in `LOCTT_EXTENSIONS`.
+
+**What had to be decided.** Which of the two sanctioned outcomes to
+build — parse-to-table, or force-raw-via-detection — within the B3
+editor lane's file ownership (`editor/*.tsx` + `markdown.ts`), and
+whether either is cheap enough to land now.
+
+**Options considered.**
+- *Force raw mode via lossy detection.* The smaller, safer fix, but it
+  edits `packages/core/src/markdown/lossy.ts` — a **core** file owned by
+  a different lane (the K-10 / degradation / core tracks), not the B3
+  editor lane. Reaching into it here is cross-lane drift, and the case
+  also wants the CLI/MCP to agree (lossy detection is shared), so it is
+  genuinely a core change with its own surface-doc obligations.
+- *Parse to a table.* Stays in `markdown.ts`, but is substantial:
+  register `Table`/`TableRow`/`TableHeader`/`TableCell`, add a table
+  branch to `fromMarkdown` **and** a byte-faithful `toMarkdown`
+  serializer, all without regressing TSK-17's round-trip invariant
+  (pipe-table alignment rows, escaped pipes, and column padding are all
+  many-to-one spellings — the exact hazard `markdown.ts`'s header
+  comment warns about). High risk for a P7 minor.
+
+**Decided.** Scope TSK-66 out of B3; do not tag it. Leave the pipe-table
+behaviour unchanged for now and record the fix as belonging to the core
+lossy-detection track.
+
+**Why.** The cheap, correct fix (force raw mode) lives in a core file
+this lane does not own and carries CLI/MCP parity obligations, so it is
+not a contained editor-lane change. The in-lane alternative (full table
+parse+serialize) is a real risk to the TSK-17 byte-identical invariant
+for a minor case. Neither is the "contained, cheap, reversible" shape
+that §8 sanctions doing silently, and the case explicitly allows a
+documented scope-out. The current behaviour is not data-loss: a pasted
+or typed pipe table is shown as its literal source text (visible, not
+dropped), and a user can edit it in raw mode.
+
+**To revert (i.e. to implement TSK-66).** Preferred: add a `gfm_table`
+kind to `LossyConstruct` and a pipe-table branch to `findLossyConstructs`
+in `packages/core/src/markdown/lossy.ts` (a header row followed by a
+`| --- | --- |` delimiter row), so `BodyEditor`'s existing `forcedRaw`
+path fires; update `docs/user/cli/reference.md` + `docs/user/mcp/reference.md`
+per the "core capability" rule, and add a `doctor`/schema note if
+warranted. Alternative (in-lane): register the four table extensions in
+`apps/web/src/client/editor/extensions.ts`, add table branches to
+`fromMarkdown`/`toMarkdown` in `markdown.ts`, and extend
+`markdown.test.ts` with a round-trip that proves TSK-17 still holds for
+tables.
+
+### A164 · The MetaPanel corrupt-field notice fires only for value-lifted health kinds
+
+**Ticket:** B3 fix-review (Task-meta / degradation) · **Date:** 2026-09-07 · **Commit:** (staged)
+
+**The situation.** The B3 fix-review found `fieldView`'s `fieldHealth`
+(`apps/web/src/client/health/fieldHealth.ts`) was
+`list.find(h => h.field === field)` with **no kind filter** — despite its
+own docstring saying it returns only the whole-field-lifted faults. So an
+*extrinsic* fault whose value is still on `frontmatter` — a `dangling`
+assignee (deleted user) or an `invalid_value` (enum/custom-field-type
+drift) — rendered a `⚠ corrupt: ghost` notice with a **Clear** control
+directly ABOVE the field's own picker, which still held `ghost`. A double,
+mislabelled signal for a value that is not actually lost.
+
+**What had to be decided.** Which health kinds get the "⚠ corrupt +
+Clear/repair" inline notice in the meta panel?
+
+**Options considered.**
+
+1. **Only value-lifted kinds** (`wrong_type`, `missing_required`,
+   `unrecognised`). These are the faults where the tolerant parse lifted
+   the value OFF `frontmatter`, so the row would otherwise show a bare "—"
+   hiding a real stored value — which is the whole reason DEG-29's notice
+   exists. Extrinsic faults keep the value on `frontmatter`, so the
+   field's own picker renders it (with its own orphaned/missing marker).
+   Matches the function's long-standing docstring.
+2. **Every whole-field kind, including extrinsic.** A dangling user or an
+   out-of-vocabulary enum also gets the corrupt notice + Clear. Costs the
+   double signal above, and a "corrupt" label for a value that is a valid
+   scalar the workflow simply no longer recognises.
+
+**Decided.** Option 1 — filter `fieldHealth` to
+`{wrong_type, missing_required, unrecognised}` (a `VALUE_LIFTED_KINDS`
+set). This is a UX judgment about degradation surfacing, made at the
+agent level to match the documented intent and remove the mislabel;
+flagged for Ken as the one B3 fix-review item that is a taste call rather
+than a defect. If Ken wants extrinsic faults (a dangling assignee, enum
+drift) ALSO surfaced with the corrupt notice + a one-click Clear — instead
+of only their picker's own orphaned indicator — this is where to change
+it.
+
+**To revert.** Drop `VALUE_LIFTED_KINDS` and restore
+`const fieldHealth = list.find(h => h.field === field)` in
+`fieldView` (`apps/web/src/client/health/fieldHealth.ts`), and adjust the
+MetaPanel custom-field corrupt test back to an extrinsic `invalid_value`
+kind.
