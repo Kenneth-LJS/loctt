@@ -10,6 +10,28 @@ things that merely might be wrong. Delete an entry when it is fixed.
 
 ## Code
 
+### K-5 — task-detail Comments/Activity tabs — CLOSED (B3 merge, 2026-09-07)
+
+**Recorded and CLOSED 2026-09-07 (B3 merge).** K-5's tabbed lane
+(Comments / Activity / All) was built self-contained in `ActivityPanel.tsx`
+with a transitional Activity default while `TaskDetail` still rendered a
+separate standalone Comments `<Section>` (the double-mount risk, A163).
+
+**Resolved at the B3 merge** — the Relationships lane's `TaskDetail.tsx`
+edits had landed, so the coordinator completed the integration rather than
+leave it deferred:
+- Removed the standalone `<Section title="Comments"><CommentsPanel/></Section>`
+  from `TaskDetail.tsx` (and dropped the now-unused import). The tabbed
+  `ActivityPanel` is the sole comments+activity home.
+- Flipped the default tab to **Comments** (A163's "advance" path).
+- Added the CMT-18 bullet-2 **URL param**: a new `taskDetailSearchSchema`
+  (`router/taskDetailSearch.ts`) gives `/tasks/$key` a `?tab=` param; the
+  tab is URL-controlled (ActivityPanel takes `tab` + `onTabChange`,
+  TaskDetail navigates on switch), so a tab records itself in the URL and
+  a deep link (`?tab=activity`) opens on that tab. CMT-18's e2e now asserts
+  both directions; all 19 flow-comments tests pass. Mount-on-activation
+  stays (one composer at a time). See `decisions.md` A163 (advanced note).
+
 ### DUP-H1 — `duplicateTask` does not report the corrupt source fields it dropped
 
 **Found 2026-09-05 during the Phase-7 corruption audit.**
@@ -266,6 +288,14 @@ before anything is staged.
 ## Tests
 
 ### DEG-7 reads "covered" from a core round-trip; no client renders the "Not recognised" group
+
+**CLOSED 2026-09-08 (B3 Task-meta lane).** A client render now exists and
+carries the DEG-7 tag: `MetaPanel.tsx`'s `UnrecognisedGroup` renders the
+"Not recognised" group on the task-detail page, tagged `@verifies DEG-7`
+from `apps/web/src/client/task/MetaPanel.test.tsx` (unit) and
+`tests/ui/flow-degradation.spec.ts` (e2e). The core round-trip test still
+stands alongside them; the blind spot — a UI case satisfied only by a core
+tag — is gone. Left below for history.
 
 **Recorded 2026-09-07 (B3 step 0).** `cases:coverage` reports DEG-7
 **covered**, but its only `@verifies` tag is a *core* round-trip test
@@ -4750,3 +4780,36 @@ they are kept here only so the record is not silently deleted:
    compiling file; both are staged; the merged build/typecheck/tests are
    green. The entry point opens `ViewFormDialog` (advanced query editor),
    not the old `SaveViewDialog`.
+
+## Demo/seed data can store parent/child edges in the reverse direction (UX-8 root cause)
+
+**Found:** 2026-09-08 (B3 Relationships) · **Status:** OPEN (data-side, not a code bug)
+
+UX-8 (ui-review-ux-interactions §4.2) reported the relationship group
+headers reading backwards: on epic DEMO-10 its 3 children showed under a
+**"PARENT · 3"** header, and on child DEMO-11 its parent under
+**"CHILD · 1"**. Investigating it for REL-51 showed the *code* is correct:
+core `linkTask` stores `link T-3 parent T-1` as a `parent` edge on T-3
+whose target is the parent (matching the evaluator's `parent` alias, the
+CLI docs, README and configuration.md), and `group.ts` labels a `parent`
+group "Parent" and a `child` group "Child" accordingly. Measured:
+`groupRelationships([{type:"child",…}])` → header "Child";
+`groupRelationships([{type:"parent",…}])` → header "Parent".
+
+The only way DEMO-10 could head its children with "Parent" is if the demo
+tracker stored the epic's children as `parent` edges (target = child) —
+i.e. the seed data was written against the reverse convention. So the
+symptom is real but its cause is **demo/seed data**, not the client.
+
+**Reproduce:** hand-write (or seed) an epic task with
+`relationships: [{ type: parent, target: <child-id> }]` and open it — the
+children render under "Parent". A tracker built through `loctt link`
+(which all the flow-relationships specs use via `seedLink`) never
+reproduces it.
+
+**Fix (not done here):** regenerate any demo/seed tracker's parent/child
+edges through `loctt link` so the direction matches core, or add a
+`doctor`/migration that flips reversed structural edges. Out of B3's
+scope (it is data, and REL-51's required property is met by correct code).
+See `decisions.md` A161 for the full reasoning and the revert path if the
+intended convention is ever the reverse.

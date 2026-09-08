@@ -9,6 +9,11 @@ import type {
   UserProfile,
   WorkflowConfig,
 } from "@loctt/contracts";
+import {
+  effectiveInverseKey,
+  effectiveInverseLabel,
+  isSymmetricRelationship,
+} from "@loctt/contracts";
 
 import { shortDate } from "../list/format.ts";
 
@@ -429,11 +434,15 @@ export function describeEntry(
     case "attachment_removed":
       return { kindLabel, summary: `removed ${metaString(entry, "name") ?? "a file"}` };
 
-    case "link_added":
-      return { kindLabel, summary: `added a ${relationshipLabel(ctx, entry)} link` };
+    case "link_added": {
+      const label = relationshipLabel(ctx, entry);
+      return { kindLabel, summary: `added ${indefiniteArticle(label)} ${label} link` };
+    }
 
-    case "link_removed":
-      return { kindLabel, summary: `removed a ${relationshipLabel(ctx, entry)} link` };
+    case "link_removed": {
+      const label = relationshipLabel(ctx, entry);
+      return { kindLabel, summary: `removed ${indefiniteArticle(label)} ${label} link` };
+    }
 
     case "comment_added":
     case "comment_edited":
@@ -494,11 +503,45 @@ function labelText(ctx: DescribeContext, value: unknown): string {
   return v.drifted ? `${v.text} ${DRIFT_SUFFIX}` : v.text;
 }
 
+/**
+ * The human label for a relationship activity entry (UX-10 / CMT-39).
+ *
+ * The inverse side of a directional link records its `meta.type` as the
+ * INVERSE key — `blocks` on the source records `is_blocked_by` on the
+ * target — and an inverse key is not a top-level `relationships[].key`.
+ * So matching on `.key` alone missed it and fell back to the raw key,
+ * the "added a is_blocked_by link" defect. This resolves forward AND
+ * inverse keys through the same `effectiveInverse*` pair the
+ * relationships panel uses (`relationships/group.ts`), so a renamed
+ * label updates the activity text too, and an inverse key renders its
+ * inverse label.
+ */
 function relationshipLabel(ctx: DescribeContext, entry: HistoryEntry): string {
   const type = metaString(entry, "type");
   if (type === undefined) return "relationship";
-  const def = ctx.workflow?.relationships.find(r => r.key === type);
-  return def?.label ?? type;
+  for (const rel of ctx.workflow?.relationships ?? []) {
+    if (rel.key === type) return rel.label;
+    if (!isSymmetricRelationship(rel) && effectiveInverseKey(rel) === type) {
+      return effectiveInverseLabel(rel);
+    }
+  }
+  // History is a record of what happened: a type config no longer
+  // declares keeps its raw key rather than vanishing.
+  return type;
+}
+
+/**
+ * "a" or "an", agreeing with the label's first sound (UX-10 / CMT-39).
+ *
+ * A simple vowel-initial heuristic: a/e/i/o/u (case-insensitive) → "an",
+ * else "a". This is deliberately not a full pronunciation model — it
+ * gets "an Is blocked by" and "a Blocks" right, and the rare English
+ * exceptions ("an hour", "a university") are not worth a dictionary for
+ * user-authored relationship labels.
+ */
+function indefiniteArticle(label: string): string {
+  const first = label.trim().charAt(0).toLowerCase();
+  return "aeiou".includes(first) ? "an" : "a";
 }
 
 function metaString(entry: HistoryEntry, key: string): string | undefined {

@@ -39,7 +39,26 @@ changes-from-v1 are summarised in `ui-plan-revision-summary.md`.
   LST-51, TML-48, SPR-31) were HEAD-proven pre-existing and quarantined
   `test.fixme` with a consolidated known-gap. Gate green: core 1948 /
   web 1368 / integration 501 / e2e 21 / UI all-pass.
-- **B3, B4, B5 — not started.**
+- **B3 — done.** Task-detail surfaces across 4 file-disjoint lanes:
+  Relationships (REL-12 kebab+confirm replacing the hover-✕; REL-51/UX-8
+  header direction — found already-correct, demo-data at fault, A161),
+  Editor (H1–H6 picker, caret fix, ordered list, placeholder,
+  markdown-paste, view-mode collapse, distinct testids — TSK-59..67),
+  Activity (Comments/Activity/All tab split, CMT-39 label+article), and
+  Task-meta/degradation (DEG-29 corrupt-field inline warning + "Not
+  recognised" group, DEG-7 now tagged from a client test). The coordinator
+  completed K-5's page integration (removed TaskDetail's standalone
+  Comments section, added the `?tab=` URL param so CMT-18 bullet 2 is met,
+  default tab → Comments). A **Fable adversarial fix-review found 2 HIGH
+  bugs the Editor lane introduced** — a CRLF-paste infinite loop (tab
+  hang/OOM) and a corrupt-custom-field Clear that always 400'd — both fixed
+  and mutation-proven; plus 3 med/low (invisible placeholder CSS,
+  code-block paste ejection, extrinsic-fault mislabel A164). Gate green:
+  core 1948 / web 1400 / integration 501 / e2e 21 / UI all-pass.
+  **One taste call flagged for Ken: A164** (whether extrinsic faults —
+  dangling user, enum drift — get the corrupt notice, or only their
+  picker's own indicator; shipped as the latter).
+- **B4, B5 — not started.**
 
 ---
 

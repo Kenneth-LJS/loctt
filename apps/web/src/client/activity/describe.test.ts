@@ -350,6 +350,94 @@ describe("kinds (CMT-15)", () => {
   });
 
   /**
+   * @verifies CMT-39
+   *
+   * The inverse side of a directional link records `meta.type` as the
+   * INVERSE key (`is_blocked_by`), which is not a top-level
+   * `relationships[].key`. Resolving only against `.key` misses it and
+   * falls back to the raw key — the "added a is_blocked_by link" defect.
+   * The lookup must match forward AND inverse keys (the same resolution
+   * the relationship panel uses via `effectiveInverse*`), so it renders
+   * the inverse label "Held up by".
+   *
+   * Mutation that proves this load-bearing: revert `relationshipLabel`
+   * to `find(r => r.key === type)` and this goes red — the summary
+   * shows the raw `is_blocked_by`.
+   */
+  it("resolves a link recorded under an inverse key to the inverse label", () => {
+    const d = describeEntry(
+      entry({ kind: "link_added", meta: { type: "is_blocked_by", target: "01T" } }),
+      ctx,
+      resolve,
+    );
+    expect(d.summary).toContain("Held up by");
+    expect(d.summary).not.toContain("is_blocked_by");
+  });
+
+  /**
+   * @verifies CMT-39
+   *
+   * The article agrees with the label's first sound: a vowel-initial
+   * label takes "an", a consonant-initial label takes "a". Removal reads
+   * symmetrically. The fixture inverse label "Held up by" is
+   * consonant-initial; a vowel-initial label is added below to prove the
+   * "an" branch.
+   *
+   * Mutation: hardcode the article back to "a" and the vowel assertion
+   * goes red.
+   */
+  it("uses the correct article for the relationship label (a / an), on add and remove", () => {
+    // Consonant-initial forward label "Holds up" → "a".
+    const add = describeEntry(
+      entry({ kind: "link_added", meta: { type: "blocks", target: "01T" } }),
+      ctx,
+      resolve,
+    );
+    expect(add.summary).toBe("added a Holds up link");
+
+    const remove = describeEntry(
+      entry({ kind: "link_removed", meta: { type: "blocks", target: "01T" } }),
+      ctx,
+      resolve,
+    );
+    expect(remove.summary).toBe("removed a Holds up link");
+
+    // Vowel-initial label → "an". A workflow whose relationship label
+    // begins with a vowel sound.
+    const vowelCtx: DescribeContext = {
+      ...ctx,
+      workflow: {
+        ...workflow,
+        relationships: [
+          { key: "affects", label: "Affects", inverse: "is_affected_by", inverse_label: "Affected by" },
+        ],
+      } as unknown as WorkflowConfig,
+    };
+    const vowel = describeEntry(
+      entry({ kind: "link_added", meta: { type: "affects", target: "01T" } }),
+      vowelCtx,
+      resolve,
+    );
+    expect(vowel.summary).toBe("added an Affects link");
+  });
+
+  /**
+   * @verifies CMT-39
+   *
+   * When the type is unknown to config, the raw key survives (history is
+   * a record of what happened) but still gets a sensible article. The
+   * fallback string "relationship" (no `meta.type`) keeps "a".
+   */
+  it("falls back to a generic article-safe phrase when the type is missing", () => {
+    const d = describeEntry(
+      entry({ kind: "link_added", meta: { target: "01T" } }),
+      ctx,
+      resolve,
+    );
+    expect(d.summary).toBe("added a relationship link");
+  });
+
+  /**
    * The case's last bullet, and the one with a stated wrong answer:
    * "Ken edited Ana's comment", **not** a bare "comment edited".
    */

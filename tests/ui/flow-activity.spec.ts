@@ -1195,7 +1195,7 @@ test.describe("CMT — activity", () => {
 
     // A write from the UI, as Ken: a comment, which writes both a
     // comment and a `comment_added` history entry.
-    await page.getByTestId("comment-composer").getByTestId("rich-editor").click();
+    await page.getByTestId("comment-composer").getByTestId("comment-composer-rich-editor").click();
     await page.keyboard.type("from the browser");
     const posted = page.waitForResponse(
       r => /\/comments$/.test(r.url()) && r.request().method() === "POST",

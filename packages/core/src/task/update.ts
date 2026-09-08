@@ -31,19 +31,39 @@ function touchedFor(field: string): ReadonlySet<string> {
 }
 
 /**
+/**
+ * Does a health entry belong to `field`?
+ *
+ * A health entry's `field` is a plain name (`due_date`), an array element
+ * (`labels[2]`), a custom field (`fields.points`), or a custom-field
+ * element (`fields.tags[0]`). A write names a custom field by its bare key
+ * (`points`), so an entry matches when its name — after stripping any
+ * `[..]`/`.` suffix — equals `field`, OR it is the `fields.<field>` form.
+ * The `fields.` case is why this is not a bare regex strip: stripping
+ * `fields.points` yields `fields`, which matches no bare key, so a corrupt
+ * custom field's health would otherwise never be found or cleared.
+ */
+function healthEntryMatches(entryField: string, field: string): boolean {
+  const base = entryField.replace(/[[.].*$/, "");
+  if (base === field) return true;
+  return base === "fields" && entryField.replace(/\[.*$/, "") === `fields.${field}`;
+}
+
+/**
  * Carries a task's health forward across a write to `writtenField`.
  *
  * Every entry except those on `writtenField` survives so its raw value is
  * re-emitted (preserve-others). The written field's entries drop — the
  * validated write repairs it (override-on-direct-write). An indexed entry
- * whose base field is the written field also drops.
+ * whose base field is the written field also drops, as does a custom
+ * field's `fields.<key>` entry when the bare key is written.
  */
 function carryHealth(
   health: readonly FieldHealth[] | undefined,
   writtenField: string,
 ): FieldHealth[] {
   if (health === undefined) return [];
-  return health.filter(h => h.field.replace(/[[.].*$/, "") !== writtenField);
+  return health.filter(h => !healthEntryMatches(h.field, writtenField));
 }
 
 export class TaskUpdateError extends LocttError {
@@ -620,9 +640,17 @@ async function unsetFieldLocked(
   // `frontmatter`)? A wrong-typed known field, an unrecognised top-level
   // key, or an extrinsic dangling/invalid value. Removing it drops its
   // health entry so the serializer stops re-emitting the raw value.
-  const healthForField = (task.health ?? []).filter(
-    h => h.field.replace(/[[.].*$/, "") === field,
-  );
+  //
+  // A health entry's `field` is either the plain name (`due_date`), an
+  // array element (`labels[2]`), or a CUSTOM field under `fields.` —
+  // `fields.points`, or an element `fields.tags[0]`. The unset call names
+  // a custom field by its bare key (`points`, as the healthy editor does),
+  // so match a health entry whose name, after stripping any `[..]`/`.`
+  // suffix, equals either `field` or `fields.field`. Without the second
+  // form a corrupt custom field's health entry (`fields.points` → stripped
+  // to `fields`) matched nothing, so it fell through to the "custom field
+  // is not set" throw and could never be cleared.
+  const healthForField = (task.health ?? []).filter(h => healthEntryMatches(h.field, field));
 
   let updated: TaskFrontmatter;
 

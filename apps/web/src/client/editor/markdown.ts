@@ -118,7 +118,13 @@ export class RichBuffer {
  * back up server-side.
  */
 export function fromMarkdown(md: string): JSONContent {
-  const lines = md.split("\n");
+  // Normalise CRLF/CR line endings first. Without this a `\r` rides on the
+  // end of every line, and the block regexes (which end in `(.*)$` — `.`
+  // does not match `\r`) fail to recognise a heading/list on a `\r`-suffixed
+  // line, while the paragraph loop's break-test (`/^(#{1,6})\s/`, no `$`)
+  // still fires — so the loop breaks without advancing `i` and spins
+  // forever. A pasted Windows heading/list (text/plain is CRLF) hit this.
+  const lines = md.replace(/\r\n?/g, "\n").split("\n");
   const content: JSONContent[] = [];
   let i = 0;
 
@@ -229,6 +235,15 @@ export function fromMarkdown(md: string): JSONContent {
       if (/^(\s*)(`{3,}|~{3,})/.test(l)) break;
       para.push(l);
       i++;
+    }
+    if (para.length === 0) {
+      // Defence in depth: if the current line tripped a break-test but no
+      // block handler above consumed it, the loop would spin without
+      // advancing. Consume the line as a literal paragraph rather than
+      // hang. (With CRLF now normalised this should be unreachable.)
+      content.push({ type: "paragraph", content: inlineNodes(lines[i] ?? "") });
+      i++;
+      continue;
     }
     content.push({ type: "paragraph", content: inlineNodes(para.join("\n")) });
   }

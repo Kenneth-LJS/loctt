@@ -24,7 +24,6 @@ import {
 } from "../api/hooks/useTaskMutations.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { AttachmentsPanel } from "../attachments/AttachmentsPanel.tsx";
-import { CommentsPanel } from "../comments/CommentsPanel.tsx";
 import { BodyEditor } from "../editor/BodyEditor.tsx";
 import { buildLookups } from "../list/lookups.ts";
 import { RelationshipsPanel } from "../relationships/RelationshipsPanel.tsx";
@@ -60,7 +59,14 @@ import { TaskNotFound } from "./TaskNotFound.tsx";
  * A read is safe to repeat, so all three offer a control rather than
  * a dead end.
  */
-export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
+export function TaskDetail({
+  taskRef,
+  activityTab,
+}: {
+  readonly taskRef: string;
+  /** The activity tab from `?tab=` (CMT-18); undefined → the default. */
+  readonly activityTab?: "comments" | "activity" | "all";
+}) {
   const task = useTask(taskRef);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -567,41 +573,43 @@ export function TaskDetail({ taskRef }: { readonly taskRef: string }) {
               />
             </Section>
 
-            <Section title="Activity">
-              {/* M2.4b. Keyed by the task for the same reason the
-                  other two panels are: the expanded/collapsed state of
-                  a bulk row and the loaded page count are component
-                  state, and carrying A's loaded pages onto B would
-                  show B a feed it never fetched. */}
-              <ActivityPanel
-                key={task.data.frontmatter.id}
-                taskRef={taskRef}
-                workflow={workflow.data}
-                users={users.data?.items ?? []}
-                labels={labels.data?.items ?? []}
-                milestones={milestones.data?.items ?? []}
-                sprints={sprints.data?.items ?? []}
-                projects={projects.data?.items ?? []}
-                calendar={calendar.data}
-              />
-            </Section>
-
-            <Section title="Comments">
-              {/* M2.4a. Keyed by the task for the same reason
-                  `BodyEditor` is: the composer's buffer and the
-                  in-progress edit live in refs, which survive a
-                  re-render, so navigating A → B without a remount
-                  would carry A's half-typed comment onto B. */}
-              <CommentsPanel
-                key={task.data.frontmatter.id}
-                taskRef={taskRef}
-                users={users.data?.items ?? []}
-              />
-            </Section>
+            {/* K-5: Comments / Activity / All are ONE tabbed panel now.
+                ActivityPanel owns all three tabs (the Comments tab renders
+                <CommentsPanel> internally), so there is no separate
+                Comments section — a standalone one would double-mount the
+                composer/list (A163). Keyed by the task for the same reason
+                as before: the composer buffer, in-progress edit, and the
+                feed's loaded page count are component state that must not
+                carry from task A onto task B. */}
+            <ActivityPanel
+              key={task.data.frontmatter.id}
+              taskRef={taskRef}
+              {...(activityTab !== undefined ? { tab: activityTab } : {})}
+              onTabChange={t => {
+                // CMT-18: record the open tab in the URL so it is
+                // shareable/deep-linkable. `replace` keeps tab switches out
+                // of the back-stack (a tab is a view of one task, not a
+                // navigation step).
+                void navigate({
+                  to: "/tasks/$key",
+                  params: { key: taskRef },
+                  search: { tab: t },
+                  replace: true,
+                });
+              }}
+              workflow={workflow.data}
+              users={users.data?.items ?? []}
+              labels={labels.data?.items ?? []}
+              milestones={milestones.data?.items ?? []}
+              sprints={sprints.data?.items ?? []}
+              projects={projects.data?.items ?? []}
+              calendar={calendar.data}
+            />
           </div>
 
           <MetaPanel
             frontmatter={fm}
+            {...(task.data.health !== undefined ? { health: task.data.health } : {})}
             lookups={lookups}
             workflow={workflow.data}
             users={users.data?.items ?? []}

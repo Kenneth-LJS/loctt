@@ -19,6 +19,7 @@ import { SprintsView } from "../sprints/SprintsView.tsx";
 import { TaskDetail } from "../task/TaskDetail.tsx";
 import { TimelineView } from "../timeline/TimelineView.tsx";
 import { listSearchSchema } from "./listSearch.ts";
+import { taskDetailSearchSchema } from "./taskDetailSearch.ts";
 import { timelineSearchSchema } from "./timelineSearch.ts";
 
 // The root renders the app shell (header + sidebar + chrome) via
@@ -133,13 +134,18 @@ const taskDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   errorComponent: RouteError,
   path: "/tasks/$key",
+  // CMT-18: the open activity tab (Comments/Activity/All) records itself
+  // in `?tab=`, so a link opens on that tab. Garbage → undefined → the
+  // default tab, without throwing the route down.
+  validateSearch: taskDetailSearchSchema,
   component: function TaskDetailRoute() {
     const { key } = taskDetailRoute.useParams();
+    const { tab } = taskDetailRoute.useSearch();
     // Keyed on the ref so navigating between tasks remounts rather
     // than reusing the previous task's component state — a stale
     // "Copied" toast or a half-open dialog carrying over to a
     // different task is state the URL does not describe.
-    return <TaskDetail key={key} taskRef={key} />;
+    return <TaskDetail key={key} taskRef={key} {...(tab !== undefined ? { activityTab: tab } : {})} />;
   },
 });
 

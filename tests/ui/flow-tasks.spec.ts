@@ -1119,3 +1119,198 @@ test.describe("TSK — task detail read shell", () => {
     await expect(recents.getByRole("link", { name: /Seen by one user only/ })).toHaveCount(1);
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * The rich-text editor (B3 / K-7, K-7b) — TSK-59..67
+ *
+ * Editor-behaviour cases: a real browser is what exercises them, since
+ * paste, focus-gated toolbar, and a native `<select>` picker are all
+ * browser things a jsdom render cannot fully reproduce. The far end is
+ * the file on disk wherever the case pins a round trip.
+ * ------------------------------------------------------------------ */
+
+/** The markdown body of the task with the given key, straight off disk. */
+async function bodyOf(root: string, key: string): Promise<string> {
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  for (const id of await readdir(tasksDir)) {
+    let text: string;
+    try {
+      text = await readFile(path.join(tasksDir, id, "task.md"), "utf8");
+    } catch {
+      continue;
+    }
+    if (!new RegExp(`^key:\\s*${key}\\s*$`, "m").test(text)) continue;
+    const close = text.indexOf("\n---", 3);
+    return text.slice(text.indexOf("\n", close + 1) + 1);
+  }
+  throw new Error(`no task on disk with key ${key}`);
+}
+
+/** The description body's rich surface, scoped to the body editor. */
+function bodyRich(page: import("@playwright/test").Page) {
+  return page.getByTestId("body-editor").getByTestId("rich-editor");
+}
+
+test.describe("TSK — rich-text editor (B3)", () => {
+  // @verifies TSK-59
+  test("TSK-59: the level picker applies every heading level and each round-trips through save+reload", async ({
+    page, tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Levels" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("body-editor")).toBeVisible();
+
+    // Type a line, keeping the caret in it. The picker only exists once
+    // the surface is focused (TSK-64), which the click provides.
+    await bodyRich(page).click();
+    await page.keyboard.type("A heading line");
+
+    // The picker offers every level. Apply each one and confirm the
+    // rendered block becomes a heading of that level — the caret stays
+    // in the line across picks (TSK-60), so each transform targets it.
+    for (const level of [1, 2, 3, 4, 5, 6]) {
+      await page.getByTestId("fmt-block-type").selectOption(String(level));
+      await expect(bodyRich(page).getByRole("heading", { level })).toContainText("A heading line");
+      // The control reflects the block it just produced.
+      await expect(page.getByTestId("fmt-block-type")).toHaveValue(String(level));
+    }
+
+    // Save the last level (6) via the blur+flush path, and confirm it
+    // lands on disk as `#`×6 — the serialisation half of the round trip.
+    await page.getByTestId("meta-panel").click();
+    await expect.poll(() => bodyOf(tracker.root, key)).toContain("###### A heading line");
+
+    // Reload: the stored `#{1,6}` parses back to a heading whose level
+    // the picker reflects — the parse half of the round trip.
+    await page.reload();
+    await expect(page.getByTestId("body-editor")).toBeVisible();
+    await bodyRich(page).click();
+    await expect(page.getByTestId("fmt-block-type")).toHaveValue("6");
+    await expect(bodyRich(page).getByRole("heading", { level: 6 })).toContainText("A heading line");
+  });
+
+  // @verifies TSK-61
+  test("TSK-61: the ordered-list button creates a list that round-trips as `1.`", async ({
+    page, tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Ordered" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("body-editor")).toBeVisible();
+
+    await bodyRich(page).click();
+    await page.keyboard.type("first item");
+    await page.getByTestId("fmt-orderedList").click();
+    await expect(page.getByTestId("fmt-orderedList")).toHaveAttribute("aria-pressed", "true");
+
+    await page.getByTestId("meta-panel").click();
+    await expect
+      .poll(() => bodyOf(tracker.root, key))
+      .toContain("1. first item");
+  });
+
+  // @verifies TSK-62
+  test("TSK-62: the empty rich editor shows the same placeholder as the raw editor", async ({
+    page, tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Empty body" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("body-editor")).toBeVisible();
+
+    // The rich surface (default mode) shows the placeholder attribute…
+    const placeholderEl = bodyRich(page).locator("[data-placeholder]");
+    await expect(placeholderEl).toHaveAttribute("data-placeholder", "Describe this task…");
+    // …AND it is actually RENDERED. The attribute alone is invisible
+    // without the `::before { content: attr(data-placeholder) }` rule — a
+    // test that stopped at the attribute passed against a blank editor.
+    const beforeContent = await placeholderEl.evaluate(el =>
+      getComputedStyle(el, "::before").content,
+    );
+    expect(beforeContent).toContain("Describe this task");
+
+    // The raw editor uses the identical copy — the case's "matches".
+    await page.getByTestId("mode-raw").click();
+    await expect(page.getByTestId("body-editor").getByTestId("markdown-editor"))
+      .toContainText("Describe this task…");
+  });
+
+  // @verifies TSK-63
+  test("TSK-63: pasting markdown parses it into a heading and a list, not literal text", async ({
+    page, tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Paste" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("body-editor")).toBeVisible();
+
+    await bodyRich(page).click();
+    // Put markdown on the clipboard and fire a real paste into the
+    // focused editor.
+    const md = "# Heading\n\n- item\n- item";
+    await page.evaluate(text => navigator.clipboard.writeText(text), md).catch(() => {});
+    // Fall back to a synthetic paste event carrying the text, which is
+    // what the handler reads — robust across headless clipboard policy.
+    await bodyRich(page).evaluate((el, text) => {
+      const dt = new DataTransfer();
+      dt.setData("text/plain", text);
+      el.dispatchEvent(new ClipboardEvent("paste", {
+        clipboardData: dt, bubbles: true, cancelable: true,
+      }));
+    }, md);
+
+    // A heading and a list in the DOM — not three literal paragraphs.
+    await expect(bodyRich(page).getByRole("heading", { name: "Heading" })).toBeVisible();
+    await expect(bodyRich(page).locator("ul li")).toHaveCount(2);
+    // The literal "#" must not survive as visible text.
+    await expect(bodyRich(page)).not.toContainText("# Heading");
+
+    // And it lands on disk as markdown, not escaped characters.
+    await page.getByTestId("meta-panel").click();
+    await expect.poll(() => bodyOf(tracker.root, key)).toContain("# Heading");
+    await expect.poll(() => bodyOf(tracker.root, key)).toContain("- item");
+  });
+
+  // @verifies TSK-64
+  test("TSK-64: the format toolbar is collapsed while viewing and appears on focus", async ({
+    page, tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Collapse" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    await tracker.run(["body", key, "--set", "Just some text.\n"]);
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("body-editor")).toBeVisible();
+
+    // Merely viewing: no formatting toolbar, and so no format button in
+    // an active (or any) state.
+    await expect(page.getByRole("toolbar", { name: "Formatting" })).toHaveCount(0);
+    await expect(page.getByTestId("fmt-bold")).toHaveCount(0);
+    await expect(page.getByTestId("fmt-block-type")).toHaveCount(0);
+
+    // Focusing the field reveals it.
+    await bodyRich(page).click();
+    await expect(page.getByRole("toolbar", { name: "Formatting" })).toBeVisible();
+    await expect(page.getByTestId("fmt-block-type")).toBeVisible();
+  });
+
+  // @verifies TSK-67
+  test("TSK-67: the description and comment editors carry distinct test-ids", async ({
+    page, tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Distinct ids" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("body-editor")).toBeVisible();
+
+    // The description body keeps `rich-editor`; the comment composer
+    // carries a composer-scoped id. Both are on the page at once, so a
+    // bare `rich-editor` must resolve to exactly one element — the body.
+    await expect(page.getByTestId("rich-editor")).toHaveCount(1);
+    await expect(page.getByTestId("comment-composer-rich-editor")).toHaveCount(1);
+    // The composer's editor is NOT also matched by the body's id.
+    await expect(
+      page.getByTestId("comment-composer").getByTestId("rich-editor"),
+    ).toHaveCount(0);
+  });
+});
