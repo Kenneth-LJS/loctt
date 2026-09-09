@@ -13,8 +13,8 @@ describe("monorepo scaffold", () => {
       { dir: "packages/contracts", entry: "src/index.ts" },
       { dir: "apps/cli", entry: "src/index.ts" },
       { dir: "apps/mcp", entry: "src/index.ts" },
-      // apps/web is split into server + client (see TEMP-WEB-TICKETS.md
-      // T0.1): the server's entry is src/server/index.ts.
+      // apps/web is split into server + client: the server's entry is
+      // src/server/index.ts.
       { dir: "apps/web", entry: "src/server/index.ts" },
     ];
     for (const { dir, entry } of expected) {
