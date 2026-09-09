@@ -103,10 +103,7 @@ describe("BodyRenderedView — K33 read state", () => {
   });
 
   // @verifies TSK-70
-  it("TSK-70: clicking a LOCAL image opens a lightbox and does not enter edit", () => {
-    // A local/relative src (a LocTT attachment) — this is what becomes a
-    // real, clickable <img>. External image URLs are NOT auto-loaded (see
-    // the external-image test below and A180).
+  it("TSK-70: clicking an image opens a lightbox and does not enter edit", () => {
     const onEnterEdit = vi.fn();
     renderView("Look: ![a picture](/attachments/pic.png)", onEnterEdit);
 
@@ -120,25 +117,28 @@ describe("BodyRenderedView — K33 read state", () => {
   });
 
   // @verifies TSK-70
-  it("TSK-70: an EXTERNAL image is a click-to-open link, not an auto-loaded <img> (A180)", () => {
-    // Privacy: rendering an <img src="https://other-host/…"> would fetch a
-    // remote resource the instant the task is viewed (IP/referrer leak,
-    // tracking pixel). An external image renders as a safe link instead.
+  it("TSK-70: an EXTERNAL image loads inline as an <img>, with the referrer withheld", () => {
+    // Ken's ruling (reversing A180): external images load inline like
+    // GitHub/Jira. `referrerPolicy=no-referrer` withholds the referrer
+    // (it does not stop the fetch — the accepted privacy tradeoff).
     const onEnterEdit = vi.fn();
     renderView("Look: ![a picture](https://example.com/pic.png)", onEnterEdit);
-    // No auto-loading <img> for the external src…
-    expect(screen.queryByTestId("body-image")).toBeNull();
-    // …a click-to-open link instead, and clicking it does not enter edit.
-    const link = screen.getByTestId("body-image-link");
-    expect(link.getAttribute("href")).toBe("https://example.com/pic.png");
-    expect(link.getAttribute("target")).toBe("_blank");
-    fireEvent.click(link);
+    const img = screen.getByTestId("body-image");
+    expect(img.getAttribute("src")).toBe("https://example.com/pic.png");
+    expect(img.getAttribute("referrerpolicy")).toBe("no-referrer");
+    fireEvent.click(img);
     expect(onEnterEdit).not.toHaveBeenCalled();
-    // Protocol-relative is also treated as external (no auto-load).
-    cleanup();
-    renderView("![x](//evil.example/p.png)");
+    expect(screen.getByTestId("body-image-lightbox")).toBeTruthy();
+  });
+
+  // @verifies TSK-70
+  it("TSK-70: an unsafe image scheme (javascript:/data:) is NOT rendered as an <img>", () => {
+    // The XSS guard stays even though external http(s) now loads inline.
+    renderView("![x](javascript:alert(1))");
     expect(screen.queryByTestId("body-image")).toBeNull();
-    expect(screen.getByTestId("body-image-link")).toBeTruthy();
+    cleanup();
+    renderView("![x](data:text/html,<script>alert(1)</script>)");
+    expect(screen.queryByTestId("body-image")).toBeNull();
   });
 
   // @verifies TSK-70

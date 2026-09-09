@@ -9835,6 +9835,14 @@ drift) ALSO surfaced with the corrupt notice + a one-click Clear — instead
 of only their picker's own orphaned indicator — this is where to change
 it.
 
+**Ken delegated this PM call to the agent, 2026-09-09 — KEPT as shipped.**
+A dangling assignee or a dropped enum value is a valid value whose
+referent changed, not corruption: the field's own picker already signals
+"unknown" there, and a second red "⚠ corrupt + Clear" banner would
+mislabel a recoverable state and push "Clear" (wipe the field) over the
+real fix (reassign / pick a valid value). The notice earns its place only
+where the value is otherwise invisible — the value-lifted faults.
+
 **To revert.** Drop `VALUE_LIFTED_KINDS` and restore
 `const fieldHealth = list.find(h => h.field === field)` in
 `fieldView` (`apps/web/src/client/health/fieldHealth.ts`), and adjust the
@@ -10402,6 +10410,9 @@ bullet, reconciled to an already-ruled major requirement), not a new
 product decision — flagged for Ken but not blocking, since the direction
 (surface degraded/unknown fields) was already his ruling.
 
+**Ratified by Ken, 2026-09-09: "go with your call."** DEG-7 wins, unknown
+keys are shown. No longer just an agent call.
+
 **To revert.** Restore TSK-32's original first bullet ("the panel ignores
 the key and does not invent a row for it"), revert the flow-task-meta
 TSK-32 test to `not.toContainText("x_experiment")`, and remove DEG-7's
@@ -10443,6 +10454,23 @@ exposure, ideally behind a proxy or a per-tracker opt-in).
 `BodyRenderedView.tsx` `attachmentEmbed`, drop the `isLocal` gate and
 render any `isSafeHref(src)` as the `<img>` (as it briefly did), removing
 the `body-image-link` branch and its test.
+
+**REVERSED by Ken, 2026-09-09.** Ken's ruling: load external images
+inline, like GitHub/Jira — users expect it. So the `isLocal` gate is
+dropped: ANY safe-scheme image (`http(s)`/relative, local OR external)
+now renders as an inline, clickable `<img>` → lightbox; the
+`body-image-link` branch is gone. The `javascript:`/`data:` refusal
+STAYS (that is an XSS guard, not the privacy gate). `referrerPolicy=
+"no-referrer"` is set on the `<img>` to withhold the referrer from the
+remote host — but this does NOT stop the fetch, so the accepted tradeoff
+stands: an external `src` is loaded the instant a task is viewed, so a
+description can carry a tracking pixel / leak the viewer's IP to an
+arbitrary host. **Accepted knowingly.** Future hardening if wanted: proxy
+or cache external images through the LocTT server so the viewer never
+contacts the third party directly. Tests updated: external image asserts
+an inline `<img>` with `referrerPolicy=no-referrer` + lightbox; a
+separate test pins that `javascript:`/`data:` still do NOT render an
+`<img>`.
 
 ### A181 · `--root` + `--cwd` given together with different values is a usage error, not a silent winner (B5)
 

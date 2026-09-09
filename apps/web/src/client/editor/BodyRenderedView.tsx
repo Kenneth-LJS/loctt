@@ -182,54 +182,38 @@ function renderNode(
        * renders as an element — see the file header. TSK-70 wants a
        * clickable image → lightbox.
        *
-       * But we only AUTO-LOAD a **local** src (relative / same-origin —
-       * LocTT's own attachments). An arbitrary EXTERNAL image URL
-       * (`http(s)://other-host/…`, or protocol-relative `//host/…`) is
-       * NOT turned into an `<img src>`: that would fetch a remote resource
-       * the instant the task is viewed, leaking the viewer's IP/referrer
-       * to an arbitrary host and serving as a tracking pixel — with no
-       * interaction. The comment renderer deliberately shows images as
-       * references for the same reason. So an external image renders as a
-       * safe click-to-open LINK (opens in a new tab), not an auto-loading
-       * `<img>`. An unsafe scheme (`javascript:`/`data:`) falls back to
-       * plain reference text. (Agent decision A180 — flagged for Ken as a
-       * privacy-vs-inline-render taste call; revert path recorded.)
+       * Any image with a safe `http(s)`/relative `src` — LOCAL or EXTERNAL
+       * — becomes a real, clickable `<img>` that loads inline and opens
+       * the lightbox on click (Ken's 2026-09-09 ruling, reversing A180;
+       * GitHub/Jira load external images inline and users expect it). An
+       * unsafe scheme (`javascript:`/`data:`) still falls back to plain
+       * reference text rather than becoming an `<img src="javascript:…">`.
+       *
+       * NOTE the privacy tradeoff Ken accepted: an external `src` is
+       * fetched the instant a task is viewed, so a description can carry a
+       * tracking pixel / leak the viewer's IP+referrer to an arbitrary
+       * host. `referrerPolicy="no-referrer"` is set to withhold the
+       * referrer (it does not stop the fetch itself). A future hardening
+       * would proxy/cache external images server-side; see the (reopened)
+       * A180 note.
        */
       const src = String(node.attrs?.["src"] ?? "");
       const alt = String(node.attrs?.["alt"] ?? "");
-      // Local = a same-origin path (`/…` but NOT protocol-relative `//…`)
-      // or a bare relative path with no scheme. `//host/…` is external.
-      const isLocal =
-        src !== ""
-        && !src.startsWith("//")
-        && (src.startsWith("/") || (src.indexOf(":") === -1 && isSafeHref(src)));
-      if (isLocal) {
+      if (src !== "" && isSafeHref(src)) {
         return (
           <img
             data-testid="body-image"
             src={src}
             alt={alt}
+            // Withhold the referrer from external hosts. (Does not prevent
+            // the load — see the note above.)
+            referrerPolicy="no-referrer"
             // The click opens the lightbox and never enters edit
             // (TSK-70). `stopPropagation` keeps it from bubbling to the
             // container's edit handler.
             onClick={e => { e.stopPropagation(); openLightbox(src); }}
             className="my-1.5 max-h-64 cursor-zoom-in rounded border border-border-subtle"
           />
-        );
-      }
-      if (src !== "" && isSafeHref(src)) {
-        // External but safe-scheme: a click-to-open link, not auto-loaded.
-        return (
-          <a
-            data-testid="body-image-link"
-            href={src}
-            target="_blank"
-            rel="noreferrer noopener"
-            onClick={e => { e.stopPropagation(); }}
-            className="text-accent underline"
-          >
-            {alt || src} (external image)
-          </a>
         );
       }
       return (
