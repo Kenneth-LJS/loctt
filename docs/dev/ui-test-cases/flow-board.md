@@ -376,3 +376,16 @@ header opens the modal specified in
 - The column order after the failure is still a valid total order — no two cards claiming the same position, no card jumping several slots.
 - The error states that the reorder could not be completed, names the column, and says whether the user's move was saved.
 - A subsequent successful drag in the same column works without first requiring a manual file fix.
+
+### BRD-50 · M3 · major · P3 P8
+**Board cards surface "blocked" and "epic".**
+
+- A blocked card shows a blocked marker/pill.
+- An epic card shows a child-count badge (e.g. "◇ 3").
+- A subtask shows a "belongs to epic" hint. (UX-5.)
+
+### BRD-51 · M3 · minor · P8
+**The board header status pills read as visibility toggles.**
+
+- Each pill has a tooltip/label ("Hide/show column") or an explicit eye/checkbox affordance, so a dimmed pill next to a missing column is not misread as "no tasks".
+- Extends BRD-3 (which pins that the pills *are* toggles); this adds the discoverability affordance. (UX-6.)

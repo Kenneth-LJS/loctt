@@ -321,3 +321,10 @@ editor (as opposed to the compact one here) is
 
 - The modal either does not open, or opens with the create action disabled and an explanation pointing at the migration (per the schema banner in [flow-app-shell.md](flow-app-shell.md)).
 - No half-written task lands on disk under an old schema.
+
+### NEW-42 · M3 · major · P4 P3
+**The New-task modal shows the empty-title block as a visible cue and pre-fills configured defaults.**
+
+- This case does NOT re-assert the disable — Create is already disabled on an empty title (`CreateTaskModal.tsx:181,265,665`) and NEW-2 (tagged, passing) already pins submit-enabled-only-when-title-non-empty; re-asserting it would fail step 1 as a duplicate of NEW-2.
+- The residual, narrowed: the disabled Create is a **visible** cue (`disabled:opacity-60`, not a live-looking button).
+- Status and Type **pre-fill** from the `workflow.yaml` defaults (`backlog` etc.) rather than showing "—". (UX-14.)

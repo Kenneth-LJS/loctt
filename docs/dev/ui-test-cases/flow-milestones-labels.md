@@ -276,3 +276,19 @@ is testing the wrong thing.
 **An unknown milestone key in the detail URL shows a not-found state.**
 - The route says no milestone matches, and links back to the Milestones view.
 - It is visually distinct from a milestone that exists but has zero tasks (MSL-15).
+
+### MSL-39 · M4 · major · P8
+**A milestone card is fully clickable → detail.**
+- The whole card (not only a sub-target) opens the milestone. (K-9(a).)
+
+### MSL-40 · M4 · minor · P8
+**Each milestone card shows target date + countdown/overdue.**
+- A dated milestone shows days-remaining or an overdue marker; an undated one degrades cleanly. (K-9(b).)
+
+### MSL-41 · M4 · minor · P8
+**Each milestone card shows a task-count breakdown by status.**
+- Plus the K28 `unreadable` notice where present, so the overview reads at a glance rather than "very plain". (K-9(b).)
+
+### MSL-42 · M4 · minor · P4
+**Settings → Milestones copy points where milestone progress actually renders.**
+- The copy names the reachable Milestones view (which the sidebar already links), or a progress display is added to the filtered-list header — not a "view" the user cannot find. (UX-15, narrowed to copy after the nav-link premise was corrected.)
