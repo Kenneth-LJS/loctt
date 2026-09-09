@@ -4,9 +4,8 @@ Defects and documentation holes that are real, understood, and not yet
 fixed. Each says what is wrong and where the fix belongs, so it can be
 picked up without rediscovering it.
 
-This file is not a backlog for features — that is
-[`TEMP-WEB-TICKETS.md`](../../TEMP-WEB-TICKETS.md) — and not a place for
-things that merely might be wrong. Delete an entry when it is fixed.
+This file is not a feature backlog, and not a place for things that
+merely might be wrong. Delete an entry when it is fixed.
 
 ## Code
 
@@ -234,7 +233,7 @@ A69 declines that fell in this batch rather than trusting them:
   model (`ReconcileState` is a 4-field crash sentinel; A69).
 - **GIT-22** — advisory-lock warning by filesystem class. No fstype
   detection exists anywhere in `packages`/`apps` (grep with positive
-  control, A69 / TEMP-RUN-WORKFLOW).
+  control, decisions.md A69).
 - **GIT-23** — 500-task sync with progress + honest counts. `SyncOutcome`
   is one file-count bucket, and there is no progress channel (no SSE /
   generator / callback in the sync path).
@@ -250,8 +249,7 @@ A69 declines that fell in this batch rather than trusting them:
   model does not carry.
 
 Each is a real product requirement whose engine does not exist; full
-reasoning in decisions.md A69 and TEMP-RUN-WORKFLOW.md § "Cases that
-cannot be satisfied yet". **To close:** build the missing engine (a
+reasoning in decisions.md A69. **To close:** build the missing engine (a
 ticket, not a wire-up), then tag the case.
 
 ### ERR-11 / ERR-12 have a client half that is not built
@@ -521,8 +519,8 @@ return mapWithLimit(ids, READ_CONCURRENCY, id => readTask(locttDir, id));
 
 but the return type is what every consumer reads, so making it
 partial-tolerant is a data-shape change to the layer all three surfaces
-depend on — the "escalate by rule" case in `TEMP-BUILD-PLAN.md`, not
-something a UI ticket decides.
+depend on — an escalate-by-rule change (see `lessons.md` § Process),
+not something a UI ticket decides.
 
 **BLK-44 is not tagged**, and its last bullet points at a broken-task
 indicator "see flow-list.md" that **does not exist there** — no case in
@@ -985,9 +983,9 @@ $ loctt show T-1
 Error: task not found: "T-1"
 ```
 
-So the CLI says it too, and MCP shares the same lookup. Under
-`TEMP-RUN-WORKFLOW.md` § "Which layer", the fix owes all three
-surfaces.
+So the CLI says it too, and MCP shares the same lookup. By the
+which-layer rule (`lessons.md` § Core / surface parity), the fix owes
+all three surfaces.
 
 **The capability already exists one route away.** `GET /api/tasks`
 returns `unreadable[{id, path, reason}]` for the identical file, with
@@ -1110,8 +1108,8 @@ POST /api/tasks/T-1/set  {"field":"priority","value":"high"}
 ```
 
 `loctt set T-1 priority high` fails identically, so this is **core**,
-and MCP inherits it. Under `TEMP-RUN-WORKFLOW.md` § "Which layer" the
-fix owes all three surfaces.
+and MCP inherits it. By the which-layer rule (`lessons.md` § Core /
+surface parity) the fix owes all three surfaces.
 
 **It contradicts TSK-29's final bullet** (blocker, P7 P3): "Editing an
 unrelated field (e.g. priority) does not clobber the unknown status as
@@ -1704,11 +1702,10 @@ its budget — so its full-suite failure is the two-tab race *resolving
 differently* under load, not a timeout. The assertion picks a winner
 between two concurrent writes; under contention the loser can win.
 
-`TEMP-BUILD-PLAN.md`'s M2.5a row already records that REL-32 was
-timing-fragile when written: "REL-32's first two mutations were
-rejected, not scored — both turned it red on a `waitForResponse`
-timeout rather than on the convergence assertion, which is a red for the
-wrong reason."
+REL-32 was already noted as timing-fragile when written: its first two
+mutations were rejected, not scored — both turned it red on a
+`waitForResponse` timeout rather than on the convergence assertion,
+which is a red for the wrong reason.
 
 **Why this is logged rather than fixed here:** a race test that asserts
 *which* writer wins is asserting something the system does not
@@ -1991,8 +1988,8 @@ test's comment claimed it already was.
 **Found by the M2 gate round 7, 2026-09-01. No blockers among them:
 11 majors, 5 minors** (severities read from the flow docs, not assumed).
 
-Uncovered and, until this entry, absent from known-gaps, `decisions.md`
-and `TEMP-RUN-WORKFLOW.md`'s "cannot be satisfied yet" section:
+Uncovered and, until this entry, absent from known-gaps and
+`decisions.md`:
 
 CMT-18, CMT-20, CMT-23, CMT-24, CMT-25, ERR-23, REL-14, REL-47,
 TSK-27, TSK-39, TSK-43, TSK-55, TSK-56, XS-10, XS-65.
@@ -2060,9 +2057,9 @@ NEW-3's first bullet needs "+ Add task" **on a board column** to
 pre-select that column's status. Only a **board-level** button exists
 (BRD-40's, which is a different control on a different case).
 
-**M3.1 built per-column controls and removed them**, recorded in
-`TEMP-BUILD-PLAN.md`: a column still rendering for a status deleted
-from `workflow.yaml` since page load then carried a create control,
+**M3.1 built per-column controls and removed them**: a column still
+rendering for a status deleted from `workflow.yaml` since page load
+then carried a create control,
 and that is what broke BRD-42. The call is sound. **Its consequence
 for NEW-3 was never recorded**, and NEW-3 stayed counted among M3.4's
 satisfied cases.
@@ -2281,8 +2278,8 @@ and toggle the OS appearance.
 
 **Confirmed in M4.4, 2026-09-01.**
 
-`TEMP-RUN-WORKFLOW.md`'s wire-up list pairs VUE-38 with
-"`unarchiveView` exists with no caller". VUE-38's text does not mention
+The v1 wire-up list paired VUE-38 with "`unarchiveView` exists with no
+caller". VUE-38's text does not mention
 unarchiving: its three bullets are the confirmation naming the view,
 stale pins being swept, and the entry being removed from
 `queries.yaml` so `loctt list --view <name>` reports an unknown view.
@@ -2529,7 +2526,7 @@ box with `disabled` and `title="Search arrives in a later milestone"`.
 The `/` shortcut was built and registered (`shell/shortcuts.ts`) and the
 shell's handler focused `input[type="search"]` — but a disabled input
 cannot take focus, so nothing happened. Implementing search was a
-feature no ticket in `TEMP-WEB-TICKETS.md` owned, so at M4.8 A11Y-2 was
+feature no M4 ticket owned, so at M4.8 A11Y-2 was
 left uncovered rather than tagged (see `decisions.md` § 8 A84), with a
 deliberately untagged test asserting the box was disabled — the signal
 to restore the real assertions the day search was built. That day was
@@ -3622,12 +3619,8 @@ Project scoping today is the sidebar's `ProjectsGroup`
 (`Sidebar.tsx:377-439`, single-select, writes `?project=<id>`) and the
 list `FilterBar`'s multi-select Project dropdown.
 
-`TEMP-WEB-TICKETS.md` M4.1 already records half of this: PRU-3 was
-moved there by Ken on 2026-08-25 because it "needs an 'All projects'
-mode and a project switcher, and no ticket built either". The note
-under-states the scope — PRU-1 and PRU-2 (both **blockers**, in M1.2)
-are the switcher itself, so the four cases below are blocked on a
-feature two blockers own.
+PRU-1 and PRU-2 (both **blockers**, in M1.2) are the switcher itself,
+so the four cases below were blocked on a feature two blockers own.
 
 **What each of the four still needs:**
 
