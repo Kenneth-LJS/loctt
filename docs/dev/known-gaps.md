@@ -314,8 +314,7 @@ side, and says why in its docstring.
 ### `initLoctt` accepts any non-empty prefix — no format validation
 
 **Noted 2026-09-06** during the Phase Z web-server error-mapping fix
-(see decisions.md A140). The verifier
-(`phase-z-verify-web-server.md`, Finding 2 aside) observed that
+(see decisions.md A140). The adversarial verifier observed that
 `POST /api/init {"prefix":"bad prefix!!"}` — spaces and punctuation —
 was accepted end-to-end and created a tracker with that prefix (201).
 
@@ -4651,10 +4650,10 @@ equal to a hidden broken id. Scope was config/state correctness for the
 two confirmed workflow findings; widening to the flat writers is a
 separate change with its own per-writer preserve/collision tests.
 
-**Reachability / severity caveat.** The phase-z findings doc called this
+**Reachability / severity caveat.** The Phase Z findings called this
 "doctor-flagged and lossless" for the id-keyed configs and deferred it on
-that basis. The verifier (`phase-z-verify-config-state.md`, Finding 3)
-showed the analogous claim for *workflow* was false — the duplicate is
+that basis. The adversarial verifier showed the analogous claim for
+*workflow* was false — the duplicate is
 invisible to doctor until the broken twin is repaired, at which point
 every write is refused. Whether the id-keyed configs' duplicate-id check
 consults `config.broken` (and so whether doctor actually flags this)
@@ -4887,7 +4886,7 @@ they are kept here only so the record is not silently deleted:
 
 **Found:** 2026-09-08 (B3 Relationships) · **Status:** OPEN (data-side, not a code bug)
 
-UX-8 (ui-review-ux-interactions §4.2) reported the relationship group
+UX-8 (from the B3 UX review) reported the relationship group
 headers reading backwards: on epic DEMO-10 its 3 children showed under a
 **"PARENT · 3"** header, and on child DEMO-11 its parent under
 **"CHILD · 1"**. Investigating it for REL-51 showed the *code* is correct:
