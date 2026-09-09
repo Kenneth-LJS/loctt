@@ -10,6 +10,61 @@ things that merely might be wrong. Delete an entry when it is fixed.
 
 ## Code
 
+### K33-1 — `tests/ui/flow-task-body.spec.ts` needs the K33 enter-edit gesture — RESOLVED
+
+**Found:** 2026-09-09 (B4 Description read-then-edit lane, K33) · **Status:** RESOLVED 2026-09-09 (B4 merge coordinator).
+
+**Resolved at the B4 merge.** Added an `enterEdit(page)` helper (waits for
+`body-rendered` and clicks it; a no-op when the editor is already open, e.g.
+a forced-raw body), folded it into `typeInBody`, and inserted it before the
+first editor touch in the tests that reach the editor directly (the mode
+toggles, the byte-identical round-trip, the two-task navigation, the large
+body). TSK-15's "blur saves immediately" test was re-expressed for K33's
+new blur behaviour (blur now flushes the save AND returns to the rendered
+view, so its save-indicator unmounts): it now asserts the fast on-disk
+write within a sub-idle-window poll + the return to the rendered view,
+instead of the now-unmounted indicator state. This is an "editing green
+tests because the behaviour legitimately changed" case (CLAUDE.md) — named
+in the B4 commit. All 13 flow-task-body tests pass.
+
+K33 reshaped the task description into read-then-edit: `BodyEditor`
+renders read-only by default and mounts the editor (its `rich-editor` /
+`markdown-editor` surface, the mode toggle, the toolbar) only after a
+click on the rendered body (`data-testid="body-rendered"`). The K33
+lane owned `tests/ui/flow-tasks.spec.ts` and migrated its editor tests
+(the `enterEdit` helper there).
+
+`tests/ui/flow-task-body.spec.ts` — a DIFFERENT lane's file — was NOT
+touched, and it now fails wholesale: its `typeInBody` helper (line ~94)
+and ~15 tests click `body-editor › rich-editor` (or the mode toggles /
+`markdown-editor`) immediately after `page.goto(...)`, before entering
+edit. That surface no longer exists on load, so the first click/expect
+times out. Confirmed by running `TSK-15: one save` — it fails at the
+`rich-editor().click()`.
+
+**Reproduce:** `npx playwright test --config tests/ui/playwright.config.ts
+flow-task-body.spec.ts --grep "TSK-15: one save" --workers=1` → times
+out waiting for `body-editor › rich-editor`.
+
+**Fix (mechanical, owed by the editor lane):** add an `enterEdit(page)`
+helper mirroring the one in `flow-tasks.spec.ts` —
+
+```ts
+async function enterEdit(page: Page): Promise<void> {
+  await expect(page.getByTestId("body-editor")).toBeVisible();
+  await page.getByTestId("body-rendered").click();
+  await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).toBeVisible();
+}
+```
+
+— and call it after each `goto` (or fold it into the `typeInBody`
+helper: enter edit if `body-rendered` is showing, then type). The
+behaviour each test asserts is unchanged *inside* edit mode; only the
+entry gesture is new. It was left to that lane because editing ~15 of
+its tests while it has uncommitted work in the same tree is the
+cross-lane clobber risk the ownership boundary prevents. See
+`decisions.md` A171/A172.
+
 ### K-5 — task-detail Comments/Activity tabs — CLOSED (B3 merge, 2026-09-07)
 
 **Recorded and CLOSED 2026-09-07 (B3 merge).** K-5's tabbed lane
@@ -313,6 +368,35 @@ requirement is folded into the new DEG-29 "Also:" bullet
 (`docs/dev/ui-test-cases/flow-degradation.md`) and recorded as
 `decisions.md` § 8 A157. Close this entry when a client test carries the
 DEG-7 tag.
+
+### TSK-32 contradicts the DEG-29 "Not recognised" group (MetaPanel)
+
+**Observed 2026-09-09 (B4 primitive-migration lane, found while running
+the surface specs — NOT introduced by that lane).** `flow-task-meta.spec.ts`
+TSK-32 ("an unknown top-level frontmatter key survives an edit from the
+UI") asserts `getByTestId("meta-panel")` does **not** contain
+`x_experiment` / `cohort-b`. But B3's DEG-29 work made `MetaPanel.tsx`'s
+`UnrecognisedGroup` render exactly those keys in the "Not recognised"
+group. So TSK-32 now fails: the panel *does* show `x_experiment: cohort-b`.
+
+**Proven pre-existing.** The test fails on a clean `HEAD` checkout
+(before any B4 staged work and before this lane's changes) — it is a
+consequence of B3's already-shipped DEG-29 "Not recognised" surface, not
+of the B4 primitive migration. The migration touched neither
+`MetaPanel.tsx` (B3-owned) nor the spec.
+
+**Reproduce.** `npx playwright test --config tests/ui/playwright.config.ts
+flow-task-meta.spec.ts -g "TSK-32"`.
+
+**Where the fix belongs.** This is a case contradiction between the old
+TSK-32 (unrecognised key is *ignored*, no row) and DEG-29 (unrecognised
+key is *surfaced* in a read-only "Not recognised" group). Per
+`build-loop.md` § "What blocks the loop", a two-case contradiction is
+escalated, not adjudicated by an agent: TSK-32's "does not invent a row
+for it" assertion needs revising to permit the DEG-29 group, or DEG-29's
+scope needs narrowing. Owner: B3 Task-meta / MetaPanel. The task's
+frontmatter round-trip (the load-bearing half of TSK-32 — `x_experiment`
+survives the status edit) is unaffected either way.
 
 ### The integration suite is flaky under parallel load
 
@@ -4670,6 +4754,24 @@ and deleted but not unarchived.
 
 ## flow-sprints.spec.ts — SPR-6 and SPR-31 fail (not the metadata lane)
 
+**Found:** 2026-09-06 (B2 sprints/views fix-review lane) · **Status:**
+SPR-31 **RESOLVED** 2026-09-09 (B4 Sprints overview lane); SPR-6 still an
+open parallelism flake (passes in isolation and under `--workers=2`).
+
+**SPR-31 resolution (B4, A167).** The diagnosis below was wrong on the
+mechanism: the tolerant loader does **not** degrade silently. A single
+sprint with `end_date < start_date` is caught by `SprintDefSchema`'s
+per-entry `superRefine`, so core reports it as one `BrokenEntry` on
+`GET /api/sprints`'s `broken[]` — not a whole-file `SprintsConfigError`.
+`SprintsView` already surfaces that as the `sprints-broken-config` alert
+(A138). The fixme asserted the wrong testid (`sprints-config-error`, the
+whole-file branch). Fixed by rewriting the SPR-31 spec to assert
+`sprints-broken-config` (names the file, the offending sprint by id, the
+`must not be before start_date` rule; not the empty state), plus a
+one-line copy addition to that alert ("reload" / "will not repair") so
+bullet 2 reads on the surface. Un-fixme'd and passing. See decisions.md
+§8 A167.
+
 **Found:** 2026-09-06 (B2 sprints/views fix-review lane) · **Status:** open, out of this lane.
 
 Running the whole `flow-sprints.spec.ts` file, two tests failed, both in
@@ -4717,9 +4819,13 @@ never showing the notice the case asserts:
   becomes a `broken` entry, no `config_invalid`, no alert.
 - `TML-48` (flow-timeline): a task with an invalid `start_date` → expect a
   `timeline-unreadable` notice. The timeline view does not render it.
-- `SPR-31` (flow-sprints, entry above): malformed `sprints.yaml` → expect
-  `sprints-config-error`. The testid exists in `SprintsView.tsx` but the
-  tolerant sprints loader degrades silently.
+- `SPR-31` (flow-sprints, entry above): **RESOLVED** (B4, A167). Not a
+  silent degrade — a per-entry `superRefine` fault is reported as a
+  `BrokenEntry` and `SprintsView` surfaces it as `sprints-broken-config`;
+  the fixme asserted the wrong (`sprints-config-error`) testid. The
+  ERR-10/LST-51/TML-48 members below remain open — those are genuinely
+  the tolerant-loader-degrades-silently shape, distinct from SPR-31's
+  wrong-testid diagnosis.
 
 **Proven pre-existing, not a B2 change.** Each fails identically on a
 clean `HEAD` worktree (verified during the B2 merge gate). No B2-staged

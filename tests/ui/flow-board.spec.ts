@@ -2234,4 +2234,82 @@ test.describe("BRD — board view", () => {
       page.getByTestId(`board-column-${status}`).getByTestId(`board-card-${contested}`),
     ).toBeVisible();
   });
+
+  // @verifies BRD-50
+  test("BRD-50: cards surface blocked, epic child-count, and subtask", async ({
+    page,
+    tracker,
+  }) => {
+    // Four tasks: a blocker, its blocked task, an epic and its two
+    // children. The default `blocks` / `parent` relationships write both
+    // sides, so each card carries the edge that drives its own marker.
+    const keys = await tracker.seed([
+      { title: "The blocker" },
+      { title: "Blocked task" },
+      { title: "The epic" },
+      { title: "Child one" },
+      { title: "Child two" },
+    ]);
+    const [blocker, blocked, epic, child1, child2] = keys as [
+      string, string, string, string, string,
+    ];
+
+    // `link A blocks B` → A gets `blocks`, B gets `is_blocked_by`.
+    await tracker.run(["link", blocker, "blocks", blocked]);
+    // `link child parent epic` → child gets `parent`, epic gets `child`.
+    await tracker.run(["link", child1, "parent", epic]);
+    await tracker.run(["link", child2, "parent", epic]);
+
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId(`board-card-${blocked}`)).toBeVisible();
+
+    // The blocked task shows a blocked marker naming its blocker count.
+    const blockedMarker = page.getByTestId(`board-card-blocked-${blocked}`);
+    await expect(blockedMarker).toBeVisible();
+    await expect(blockedMarker).toContainText("Blocked");
+    await expect(blockedMarker).toHaveAttribute("title", "Blocked by 1 task");
+
+    // The task that only *blocks* others is not itself marked blocked.
+    await expect(page.getByTestId(`board-card-blocked-${blocker}`)).toHaveCount(0);
+
+    // The epic shows a child-count badge of 2.
+    const epicBadge = page.getByTestId(`board-card-epic-${epic}`);
+    await expect(epicBadge).toBeVisible();
+    await expect(epicBadge).toContainText("2");
+    await expect(epicBadge).toHaveAttribute("title", "Epic with 2 children");
+
+    // Each child shows the "belongs to an epic" subtask hint.
+    await expect(page.getByTestId(`board-card-subtask-${child1}`)).toBeVisible();
+    await expect(page.getByTestId(`board-card-subtask-${child2}`)).toBeVisible();
+    // …and is not itself an epic.
+    await expect(page.getByTestId(`board-card-epic-${child1}`)).toHaveCount(0);
+  });
+
+  // @verifies BRD-51
+  test("BRD-51: column-visibility pills read as show/hide toggles", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "One" },
+      { title: "Shipped", fields: { status: "done" } },
+    ]);
+
+    await page.goto(`${tracker.baseURL}/board`);
+
+    // A shown column's pill names the *action* (Hide) and the column,
+    // so its meaning as a toggle is discoverable — not a bare label that
+    // a dimmed sibling could be misread as "no tasks".
+    const backlog = page.getByTestId("board-chip-backlog");
+    await expect(backlog).toHaveAttribute("title", /hide column/i);
+    await expect(backlog).toHaveAttribute("aria-label", /hide column/i);
+
+    // Toggling it off flips the affordance to "Show", and it stays a
+    // pressable toggle (BRD-3's guarantee, made legible here).
+    await backlog.click();
+    await expect(backlog).toHaveAttribute("aria-pressed", "false");
+    await expect(backlog).toHaveAttribute("title", /show column/i);
+    await expect(backlog).toHaveAttribute("aria-label", /show column/i);
+    await expect(page.getByTestId("board-column-backlog")).toHaveCount(0);
+  });
 });

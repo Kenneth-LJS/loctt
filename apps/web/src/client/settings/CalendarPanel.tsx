@@ -4,7 +4,11 @@ import { useState } from "react";
 import { ApiError } from "../api/client.ts";
 import { useCalendar } from "../api/hooks/useCalendar.ts";
 import { useSaveCalendar } from "../api/hooks/useWorkflowMutations.ts";
+import { Button } from "../ui/Button.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { Select } from "../ui/Select.tsx";
+import { TextField } from "../ui/TextField.tsx";
 import {
   blankHoliday,
   duplicateHolidayIndices,
@@ -122,15 +126,15 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
       <div className="grid max-w-2xl gap-4 text-[13px]">
         <label className="grid gap-1">
           <span className="text-text-secondary">Timezone</span>
-          <select
+          <Select
             data-testid="calendar-timezone"
             value={tzOk ? draft.timezone : ""}
             onChange={e => { setDraft(prev => ({ ...prev, timezone: e.target.value })); }}
-            className="h-8 w-64 rounded-md border border-border-default bg-bg-surface px-2 text-[13px]"
+            className="w-64"
           >
             {!tzOk && <option value="">Pick a valid timezone…</option>}
             {options.map(z => <option key={z} value={z}>{z}</option>)}
-          </select>
+          </Select>
           {!tzOk && (
             <div
               role="alert"
@@ -153,17 +157,17 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
 
         <fieldset className="border-0 p-0">
           <legend className="mb-1 text-text-secondary">First day of week</legend>
-          <select
+          <Select
             data-testid="calendar-first-day"
             value={String(draft.first_day_of_week)}
             onChange={e => {
               setDraft(prev => ({ ...prev, first_day_of_week: Number(e.target.value) }));
             }}
             aria-label="First day of week"
-            className="h-8 w-40 rounded-md border border-border-default bg-bg-surface px-2 text-[13px]"
+            className="w-40"
           >
             {DAY_NAMES.map((n, i) => <option key={n} value={String(i)}>{n}</option>)}
-          </select>
+          </Select>
         </fieldset>
 
         <fieldset className="border-0 p-0" data-testid="calendar-working-days">
@@ -171,8 +175,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
           <div className="flex flex-wrap gap-3">
             {DAY_NAMES.map((n, i) => (
               <label key={n} className="flex items-center gap-1 text-[12px]">
-                <input
-                  type="checkbox"
+                <Checkbox
                   data-testid={`calendar-working-day-${String(i)}`}
                   checked={draft.working_days.includes(i)}
                   onChange={e => {
@@ -229,25 +232,24 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
                       data-holiday-duplicate={isDuplicate ? "true" : undefined}
                     >
                       <td className="p-1">
-                        <input
+                        <TextField
+                          size="sm"
                           data-testid={`calendar-holiday-date-${String(i)}`}
                           value={h.date}
-                          aria-invalid={isInvalid}
+                          invalid={isInvalid}
                           aria-label={`Holiday date, row ${String(i + 1)}`}
                           onChange={e => { setHoliday(i, { ...h, date: e.target.value }); }}
-                          className={
-                            "h-7 w-32 rounded border bg-bg-surface px-1 font-mono text-[12px] "
-                            + (isInvalid ? "border-danger-fg" : "border-border-default")
-                          }
+                          className="w-32 font-mono"
                         />
                       </td>
                       <td className="p-1">
-                        <input
+                        <TextField
+                          size="sm"
                           data-testid={`calendar-holiday-label-${String(i)}`}
                           value={h.label}
                           aria-label={`Holiday label, row ${String(i + 1)}`}
                           onChange={e => { setHoliday(i, { ...h, label: e.target.value }); }}
-                          className="h-7 w-48 rounded border border-border-default bg-bg-surface px-1 text-[12px]"
+                          className="w-48"
                         />
                       </td>
                       <td className="p-1">
@@ -271,19 +273,20 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
                         )}
                       </td>
                       <td className="p-1 text-right">
-                        <button
+                        <Button
                           type="button"
-                          data-testid={`calendar-holiday-remove-${String(i)}`}
+                          variant="secondary"
+                          size="sm"
+                          testId={`calendar-holiday-remove-${String(i)}`}
                           onClick={() => {
                             setDraft(prev => ({
                               ...prev,
                               holidays: prev.holidays.filter((_, j) => j !== i),
                             }));
                           }}
-                          className="h-6 rounded border border-border-default px-1.5 text-[11px]"
                         >
                           Remove
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   );
@@ -291,16 +294,18 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
               </tbody>
             </table>
           </div>
-          <button
+          <Button
             type="button"
-            data-testid="calendar-holiday-add"
+            variant="secondary"
+            size="sm"
+            testId="calendar-holiday-add"
+            className="mt-2"
             onClick={() => {
               setDraft(prev => ({ ...prev, holidays: [...prev.holidays, blankHoliday()] }));
             }}
-            className="mt-2 h-7 rounded-md border border-border-default px-2 text-[12px]"
           >
             Add holiday
-          </button>
+          </Button>
         </div>
 
         {/* SET-25: the panel states which fields move with the zone. */}
@@ -337,18 +342,18 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
         )}
 
         <div>
-          <button
+          <Button
             type="button"
-            data-testid="calendar-save"
+            variant="primary"
+            testId="calendar-save"
             disabled={blocked}
             onClick={() => {
               if (blocked) return;
               save.mutate(draft);
             }}
-            className="h-8 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast disabled:opacity-50"
           >
             {save.isPending ? "Saving…" : "Save"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

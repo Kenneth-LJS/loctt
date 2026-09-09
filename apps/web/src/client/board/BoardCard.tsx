@@ -12,6 +12,8 @@ import {
 } from "../list/cells.tsx";
 import { isOverdue, shortDate } from "../list/format.ts";
 import type { buildLookups } from "../list/lookups.ts";
+import { Chip } from "../ui/Chip.tsx";
+import type { BoardCardBadges } from "./relationshipBadges.ts";
 
 /**
  * One card on the board.
@@ -31,6 +33,7 @@ import type { buildLookups } from "../list/lookups.ts";
  */
 export function BoardCard({
   task,
+  badges,
   health,
   layout,
   lookups,
@@ -44,6 +47,14 @@ export function BoardCard({
   placeholder = false,
 }: {
   readonly task: TaskFrontmatterPublic;
+  /**
+   * BRD-50 (UX-5): the relationship-derived signals for this card —
+   * blocked, epic child-count, subtask. Computed once in `BoardView`
+   * from the workflow config (see `boardCardBadges`) and threaded in so
+   * the card stays presentational and does not re-read config per card.
+   * Absent renders no markers (a clean card is unchanged).
+   */
+  readonly badges?: BoardCardBadges | undefined;
   /**
    * The task's field-level health findings (A137 / A137.1), threaded
    * from the list feed the board reads (`TaskListRow.health`). Absent
@@ -147,6 +158,48 @@ export function BoardCard({
             <span aria-hidden="true" title={titleHealth.error} className="shrink-0 text-danger-fg">⚠</span>
           )}
         </span>
+
+        {/* BRD-50 (UX-5): the relationship-derived markers. A blocked
+            card, an epic (with its child count), and a subtask ("belongs
+            to epic") each get a discoverable pill so the signal is
+            visible on the card, not only in detail. Rendered inside the
+            open button — a click still opens the task — and only when the
+            badge applies, so a clean card is unchanged. */}
+        {badges !== undefined && (badges.blocked || badges.childCount > 0 || badges.isSubtask) && (
+          <span className="mt-1.5 flex flex-wrap items-center gap-1">
+            {badges.blocked && (
+              <span
+                data-testid={`board-card-blocked-${task.key}`}
+                title={
+                  badges.blockerCount === 1
+                    ? "Blocked by 1 task"
+                    : `Blocked by ${String(badges.blockerCount)} tasks`
+                }
+              >
+                <Chip variant="neutral">
+                  <span className="text-danger-fg">⛔ Blocked</span>
+                </Chip>
+              </span>
+            )}
+            {badges.childCount > 0 && (
+              <span
+                data-testid={`board-card-epic-${task.key}`}
+                title={
+                  badges.childCount === 1
+                    ? "Epic with 1 child"
+                    : `Epic with ${String(badges.childCount)} children`
+                }
+              >
+                <Chip variant="accent">◇ {badges.childCount}</Chip>
+              </span>
+            )}
+            {badges.isSubtask && (
+              <span data-testid={`board-card-subtask-${task.key}`} title="Belongs to an epic">
+                <Chip variant="neutral">↳ Subtask</Chip>
+              </span>
+            )}
+          </span>
+        )}
       </button>
 
       <div className="space-y-1.5 px-2 pb-2">

@@ -2381,16 +2381,24 @@ test.describe("SHL — narrow viewports", () => {
     expect(await wrapper.evaluate(el => getComputedStyle(el).overflowX))
       .toBe("auto");
 
-    // The toggle is disabled rather than silently inert: the click used
-    // to be stored and surface later at a wide width, which reads as
-    // the app changing state on its own.
-    await expect(page.getByRole("button", { name: /Toggle sidebar/i })).toBeDisabled();
+    // The toggle is ENABLED at narrow width (R2 / A173): it opens the
+    // sidebar as a transient off-canvas overlay so a phone user can read
+    // and dismiss it. The original "disabled toggle" guarded against a
+    // narrow-width click being *stored* and resurfacing at a wide width;
+    // A173 solves that differently — the mobile-open state is transient
+    // and never written to the stored preference — so the concern holds
+    // without disabling the control. (This replaces the superseded
+    // disabled-toggle assertion; see decisions.md A173.)
+    const toggle = page.getByRole("button", { name: /Toggle sidebar/i });
+    await expect(toggle).toBeEnabled();
 
-    // And it comes back, because the stored preference was never
-    // overwritten — a rotation must not silently discard a choice.
+    // Open the overlay at narrow width, then widen. The stored preference
+    // must be untouched — a rotation must not silently discard a choice,
+    // and the transient mobile-open must not have been persisted.
+    await toggle.click();
     await page.setViewportSize({ width: 1280, height: 800 });
     await expect(aside).toHaveAttribute("data-collapsed", "false");
-    await expect(page.getByRole("button", { name: /Toggle sidebar/i })).toBeEnabled();
+    await expect(toggle).toBeEnabled();
   });
 });
 
@@ -5605,5 +5613,101 @@ test.describe("SHL — the sidebar groups (M1.1)", () => {
     await aside.getByRole("link", { name: /v1/ }).click();
     await expect(page).toHaveURL(/milestone=/);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+  });
+});
+
+test.describe("LST — toolbar / list UX polish (B4)", () => {
+  // @verifies LST-53
+  test("LST-53: a q= query shows a removable chip and a Clear-all", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Match", fields: { status: "in_progress" } },
+      { title: "Miss", fields: { status: "done" } },
+    ]);
+    const q = "status = in_progress";
+
+    // Landing on a q= URL is exactly what every sidebar saved filter
+    // does. UX-1: the short list must be explained and reversible
+    // in-page, matching how the facet chips already work.
+    await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent(q)}`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    // A removable chip for the query, and a Clear-all affordance.
+    const chip = page.getByTestId("query-chip");
+    await expect(chip).toBeVisible();
+    await expect(chip).toContainText("Query:");
+    await expect(page.getByRole("button", { name: "Clear all" })).toBeVisible();
+
+    // Clearing it resets the list (the q param goes, all rows return).
+    await page.getByRole("button", { name: "Clear all" }).click();
+    await expect(page).not.toHaveURL(/q=/);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+  });
+
+  // @verifies LST-54
+  test("LST-54: the first click on the Priority header sorts Critical-first", async ({
+    page,
+    tracker,
+  }) => {
+    // Seeded in an order that is neither the value order nor its reverse,
+    // so "Critical-first" cannot coincide with "as inserted".
+    await tracker.seed([
+      { title: "Med row", fields: { priority: "medium" } },
+      { title: "Crit row", fields: { priority: "critical" } },
+      { title: "Low row", fields: { priority: "low" } },
+      { title: "High row", fields: { priority: "high" } },
+    ]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–4 of 4")).toBeVisible();
+
+    // The Priority column header's sort button — scoped so the "Filter
+    // Priority" facet dropdown does not match.
+    const prioHeader = page.getByRole("columnheader", { name: /Priority/ });
+    await prioHeader.getByRole("button").click();
+
+    // UX-2: the first click sorts by the workflow's documented order,
+    // Critical-first — so `dir=desc` (value critical=4 … low=1), not the
+    // generic ascending that would surface Low first.
+    await expect(page).toHaveURL(/sort=priority/);
+    await expect(page).toHaveURL(/dir=desc/);
+    await expect(prioHeader).toHaveAttribute("aria-sort", "descending");
+
+    // And the rows actually land Critical-first, not Low-first.
+    const rank = (await page.locator("tbody tr").allInnerTexts()).map(row => {
+      const m = /critical|high|low|medium/i.exec(row);
+      return m === null ? "" : m[0].toLowerCase();
+    });
+    expect(rank).toEqual(["critical", "high", "medium", "low"]);
+  });
+
+  // @verifies LST-56
+  test("LST-56: facet dropdown items show an empty-checkbox affordance before the first click", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One", fields: { status: "in_progress" } }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    await page.getByRole("button", { name: "Filter Status" }).click();
+
+    // UX-4: each option carries a real checkbox that is *unchecked*
+    // before any click — an empty box reads as clickable, so multi-select
+    // is discoverable, where the old empty span was simply blank.
+    const option = page.getByRole("menuitemcheckbox", { name: "In progress" });
+    await expect(option).toHaveAttribute("aria-checked", "false");
+    const box = option.locator('input[type="checkbox"]');
+    await expect(box).toHaveCount(1);
+    await expect(box).not.toBeChecked();
+
+    // Clicking it checks the box and applies the filter.
+    await option.click();
+    await expect(
+      page.getByRole("menuitemcheckbox", { name: "In progress" }),
+    ).toHaveAttribute("aria-checked", "true");
+    await expect(page).toHaveURL(/status=in_progress/);
   });
 });

@@ -3,6 +3,10 @@ import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { useSaveWorkflowCollection } from "../api/hooks/useWorkflowMutations.ts";
+import { Button } from "../ui/Button.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
+import { Select } from "../ui/Select.tsx";
+import { TextField } from "../ui/TextField.tsx";
 import { validateEstimation } from "./workflowEdits.ts";
 import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
 
@@ -58,8 +62,7 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
   return (
     <div className="grid max-w-lg gap-3 text-[13px]" data-testid="estimation-panel">
       <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
+        <Checkbox
           data-testid="estimation-enabled"
           checked={draft.enabled}
           onChange={e => { patch({ enabled: e.target.checked }); }}
@@ -75,14 +78,14 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
 
       <label className="grid gap-1">
         <span className="text-text-secondary">Unit</span>
-        <select
+        <Select
           data-testid="estimation-unit"
           value={draft.unit}
           onChange={e => { patch({ unit: e.target.value as EstimationConfig["unit"] }); }}
-          className="h-8 w-56 rounded-md border border-border-default bg-bg-surface px-2 text-[13px]"
+          className="w-56"
         >
           {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-        </select>
+        </Select>
       </label>
 
       <label className="grid gap-1">
@@ -92,10 +95,10 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
             <span className="ml-1 text-danger-fg">required</span>
           )}
         </span>
-        <input
+        <TextField
           data-testid="estimation-unit-label"
           value={draft.unit_label ?? ""}
-          aria-invalid={problems.unit_label !== undefined}
+          invalid={problems.unit_label !== undefined}
           aria-describedby={problems.unit_label !== undefined ? "estimation-unit-label-problem" : undefined}
           onChange={e => {
             const v = e.target.value;
@@ -107,7 +110,7 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
               return { ...prev, unit_label: v };
             });
           }}
-          className="h-8 w-56 rounded-md border border-border-default bg-bg-surface px-2 text-[13px]"
+          className="w-56"
         />
         {problems.unit_label !== undefined && (
           <p
@@ -126,10 +129,10 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
           <span className="text-text-secondary">
             Preset values <span className="text-text-tertiary">— comma separated</span>
           </span>
-          <input
+          <TextField
             data-testid="estimation-preset-values"
             defaultValue={presetText}
-            aria-invalid={problems.preset_values !== undefined}
+            invalid={problems.preset_values !== undefined}
             aria-describedby={
               problems.preset_values !== undefined ? "estimation-preset-values-problem" : undefined
             }
@@ -146,7 +149,6 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
                 return { ...prev, preset_values: parts };
               });
             }}
-            className="h-8 w-full rounded-md border border-border-default bg-bg-surface px-2 text-[13px]"
           />
           {problems.preset_values !== undefined && (
             <p
@@ -179,9 +181,10 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
       )}
 
       <div>
-        <button
+        <Button
           type="button"
-          data-testid="estimation-save"
+          variant="primary"
+          testId="estimation-save"
           disabled={blocked || save.isPending}
           onClick={() => {
             if (blocked) return;
@@ -189,10 +192,9 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
             // document is adopted wholesale and only this block replaced.
             save.mutate({ collection: "estimation", apply: () => draft });
           }}
-          className="h-8 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast disabled:opacity-50"
         >
           {save.isPending ? "Saving…" : "Save"}
-        </button>
+        </Button>
       </div>
     </div>
   );

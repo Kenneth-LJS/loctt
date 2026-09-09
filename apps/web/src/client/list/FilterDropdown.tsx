@@ -1,6 +1,8 @@
 import { useState } from "react";
 
+import { Checkbox } from "../ui/Checkbox.tsx";
 import { Menu } from "../ui/Menu.tsx";
+import { TextField } from "../ui/TextField.tsx";
 
 /**
  * Option count at which the dropdown grows a search box.
@@ -92,13 +94,17 @@ export function FilterDropdown({
         <>
         {searchable && (
           <div className="border-b border-border-subtle p-1.5">
-            <input
+            {/* B1 migration: the hand-rolled search input becomes the
+                shared TextField (sm) so it focuses like every other input
+                (the global :focus-visible ring) and its placeholder clears
+                AA via the §2.4 token fix. */}
+            <TextField
               type="search"
+              size="sm"
               aria-label={`Search ${label}`}
               placeholder={`Search ${label.toLowerCase()}…`}
               value={filter}
               onChange={e => { setFilter(e.target.value); }}
-              className="h-7 w-full rounded border border-border-subtle bg-bg-canvas px-2 text-[12px] text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none"
             />
           </div>
         )}
@@ -119,11 +125,26 @@ export function FilterDropdown({
                   role="menuitemcheckbox"
                   aria-checked={isSelected}
                   onClick={() => toggle(opt.value)}
-                  className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[13px] text-text-secondary hover:bg-bg-muted hover:text-text-primary"
+                  className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-left text-[13px] text-text-secondary hover:bg-bg-muted hover:text-text-primary"
                 >
-                  <span className="grid h-4 w-4 place-items-center text-accent">
-                    {isSelected ? "✓" : ""}
-                  </span>
+                  {/* LST-56 (UX-4): the multi-select affordance is a real
+                      B1 Checkbox, shown *unchecked* before the first
+                      click — an empty box reads as clickable, where the
+                      old empty `<span>` was simply blank and gave no cue
+                      the list was multi-select. The `<button>` owns the
+                      toggle and the `aria-checked` state, so the checkbox
+                      is a non-interactive visual mirror: `tabIndex={-1}`
+                      and `aria-hidden` keep it out of the tab order and
+                      off the a11y tree (the menuitemcheckbox already
+                      announces checked-ness), and `pointer-events-none`
+                      lets the click fall through to the button. */}
+                  <Checkbox
+                    checked={isSelected}
+                    readOnly
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    className="pointer-events-none"
+                  />
                   <span className="truncate">{opt.label}</span>
                 </button>
               );

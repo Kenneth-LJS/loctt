@@ -1,5 +1,8 @@
 import { useState } from "react";
 
+import { Button } from "../ui/Button.tsx";
+import { ICON } from "../ui/icons.ts";
+
 /**
  * Export menu (BLK-14, 15, 16).
  *
@@ -109,8 +112,14 @@ export function ExportMenu({
 
   return (
     <div className="relative">
-      <button
-        type="button"
+      {/* B1 migration (K-3/S-3/S-4): the trigger is the shared Button
+          (secondary, md) so Export lines up at the same pill height as
+          Refresh and the facets, with the baked-in cursor/hover/focus
+          states. The aria-label/expanded/haspopup and the `disabled` gate
+          are carried across unchanged so the BLK export locators match. */}
+      <Button
+        variant="secondary"
+        size="md"
         aria-label="Export"
         aria-expanded={open}
         aria-haspopup="menu"
@@ -119,10 +128,9 @@ export function ExportMenu({
         // the misleading success BLK-35 rules out.
         disabled={total === 0}
         onClick={() => { setOpen(o => !o); }}
-        className="rounded-md border border-border-subtle px-2.5 py-1 text-[12px] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
       >
-        {pending ? "Preparing…" : "Export ▾"}
-      </button>
+        {pending ? "Preparing…" : <>Export <span aria-hidden="true">{ICON.caretDown}</span></>}
+      </Button>
 
       {open && (
         <div
@@ -172,13 +180,14 @@ export function ExportMenu({
         <span role="status" className="ml-2 text-[12px] text-danger-fg">
           The {failure.format.toUpperCase()} export could not be created:
           {" "}{failure.reason}
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
+            className="ml-2"
             onClick={() => { void run(failure.format); }}
-            className="ml-2 rounded-md border border-border-subtle px-2 py-0.5 text-[12px] font-medium text-text-secondary hover:bg-bg-muted"
           >
             Retry
-          </button>
+          </Button>
         </span>
       )}
 

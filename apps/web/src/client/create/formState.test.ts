@@ -1,12 +1,58 @@
+import type { WorkflowConfig } from "@loctt/contracts";
 import { describe, expect, it } from "vitest";
 
 import {
   afterCreateAnother,
   dateRangeProblem,
+  defaultsFromWorkflow,
   emptyForm,
   hasUserContent,
   toCreateRequest,
 } from "./formState.ts";
+
+/**
+ * NEW-42 (UX-14): the modal opens showing the configured `workflow.yaml`
+ * defaults for Status and Type, not a placeholder "—". The status default
+ * is the entry flagged `default: true` (resolved through contracts'
+ * `defaultStatus`, never a hardcoded "first status"); the type default is
+ * the first configured task type. Isolated as a pure function so the
+ * resolution — the part NEW-42 pins — is asserted without a DOM.
+ */
+describe("defaultsFromWorkflow", () => {
+  const wf = {
+    statuses: [
+      { key: "backlog", label: "Backlog", category: "backlog" },
+      { key: "in_progress", label: "In progress", category: "active", default: true },
+      { key: "done", label: "Done", category: "done" },
+    ],
+    priorities: [{ key: "high", label: "High" }],
+    task_types: [
+      { key: "feature", label: "Feature" },
+      { key: "bug", label: "Bug" },
+    ],
+    relationships: [],
+    custom_fields: [],
+  } as unknown as WorkflowConfig;
+
+  it("resolves status from the `default: true` entry, not the first", () => {
+    // A first-status default would give `backlog`; the marked default is
+    // `in_progress`, and NEW-42 pins the marked one via `defaultStatus`.
+    expect(defaultsFromWorkflow(wf).status).toBe("in_progress");
+  });
+
+  it("resolves type to the first configured task type", () => {
+    expect(defaultsFromWorkflow(wf).task_type).toBe("feature");
+  });
+
+  it("is empty when the workflow has not loaded", () => {
+    expect(defaultsFromWorkflow(undefined)).toEqual({});
+  });
+
+  it("omits type when no task types are configured", () => {
+    const noTypes = { ...wf, task_types: [] } as unknown as WorkflowConfig;
+    expect(defaultsFromWorkflow(noTypes)).toEqual({ status: "in_progress" });
+  });
+});
 
 /**
  * NEW-11, NEW-23, NEW-26 and NEW-27's proportionality rule, tested as

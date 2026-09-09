@@ -24,6 +24,7 @@ import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { fieldView } from "../health/fieldHealth.ts";
 import { useAnnouncer } from "../ui/Announcer.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { ICON } from "../ui/icons.ts";
 import { BulkBar, BulkResult } from "./BulkBar.tsx";
 import {
   AssigneeCell,
@@ -43,6 +44,22 @@ import { buildLookups } from "./lookups.ts";
 import { Pagination } from "./Pagination.tsx";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { useSelection } from "./useSelection.ts";
+
+/**
+ * Per-column default sort direction for a *first* click (LST-54 / UX-2).
+ *
+ * A column absent here defaults to ascending — the most-useful first
+ * read for dates (earliest due), text (A→Z) and timestamps (oldest
+ * first). Priority is the exception: the server sorts it by the
+ * workflow's numeric `value` (critical=4 … low=1), so ascending would
+ * surface Low first and bury Critical — the opposite of what "sort by
+ * priority" means. It defaults to descending so the first click lands
+ * Critical-first, following the workflow's documented order rather than
+ * an alphabetical accident.
+ */
+const DEFAULT_SORT_DIR: Record<string, "asc" | "desc"> = {
+  priority: "desc",
+};
 
 /**
  * The list view's table (M1.2). Reads URL search state for sort +
@@ -120,8 +137,22 @@ export function ListView() {
   }, [sortField, navigate]);
 
   const onSort = (colId: string): void => {
-    // Same column → toggle direction; new column → ascending.
-    const nextDir = sortField === colId && sortDir === "asc" ? "desc" : "asc";
+    // Same column → toggle direction; a *first* click on a new column
+    // sorts in that column's most-useful default direction (LST-54 /
+    // UX-2). For priority, ascending-by-`value` puts Low first and
+    // Critical last — the opposite of what a user reaching for "sort by
+    // priority" wants — so priority defaults to descending (Critical
+    // first), following the workflow's documented value order
+    // (critical=4 > … > low). Every other column keeps ascending
+    // (earliest due date, A→Z title, oldest update), which is the
+    // most-useful first read there.
+    const defaultDir = DEFAULT_SORT_DIR[colId] ?? "asc";
+    const nextDir =
+      sortField === colId
+        ? sortDir === "asc"
+          ? "desc"
+          : "asc"
+        : defaultDir;
     void navigate({
       search: prev => ({ ...prev, sort: colId, dir: nextDir, page: undefined }),
     });
@@ -622,8 +653,26 @@ export function ListView() {
                         className="inline-flex select-none items-center gap-1 text-[12px] font-semibold text-text-secondary hover:text-text-primary"
                       >
                         {col.label}
-                        <span className="text-[10px] text-text-tertiary">
-                          {isSorted ? (sortDir === "asc" ? "▲" : "▼") : "▾"}
+                        {/* LST-54: the direction must be legible. When
+                            this column is the active sort, the arrow is
+                            in the stronger secondary text colour and
+                            points up (asc) / down (desc); an unsorted
+                            column shows a faint neutral caret hint. All
+                            three use the canonical icon glyphs (ICON) so
+                            the list stops mixing `▼` with the app-wide
+                            `▾` (icons.ts §sort). */}
+                        <span
+                          className={
+                            isSorted
+                              ? "text-[10px] text-text-secondary"
+                              : "text-[10px] text-text-tertiary"
+                          }
+                        >
+                          {isSorted
+                            ? sortDir === "asc"
+                              ? ICON.caretUp
+                              : ICON.caretDown
+                            : ICON.caretDown}
                         </span>
                       </button>
                     ) : (
@@ -716,8 +765,18 @@ export function ListView() {
                   onClick={() => void navigate({ to: "/tasks/$key", params: { key: task.key } })}
                   aria-selected={selection.isSelected(task.id)}
                   className={[
+                    // The key column is a `<th scope="row">`, not a `<td>`,
+                    // so a `[&>td]` hover selector never reached it — the
+                    // ID/Project cells stayed un-highlighted on hover
+                    // (K-15, Ken's report). Hover every direct cell child
+                    // (`>*`, covering the row-header th and the tds) with a
+                    // dedicated SUBTLE row-hover token (`bg-bg-row-hover`)
+                    // that is distinct from the `bg-bg-muted` the chips
+                    // paint themselves — so on hover the whole row lifts,
+                    // the ID/label cells included, and each chip stays
+                    // legible instead of dissolving into the hover.
                     "cursor-pointer [&>td]:border-b [&>td]:border-border-subtle [&>td]:px-3 [&>td]:py-2.5",
-                    "hover:[&>td]:bg-bg-muted last:[&>td]:border-b-0",
+                    "hover:[&>*]:bg-bg-row-hover last:[&>td]:border-b-0",
                     task.archived ? "opacity-50" : "",
                     // Background *and* a left border, not colour alone
                     // (BLK-1) — the checked box is the third signal.

@@ -1,11 +1,13 @@
 import type { BrokenEntry, CardLayoutField, SprintDef, TaskFrontmatterPublic } from "@loctt/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
+import type { MouseEvent } from "react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { useLabels, useMilestones, useProjects, useSprints, useUsers } from "../api/hooks/sidebarData.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
 import { useSetField } from "../api/hooks/useSetField.ts";
+import { useSprintsWithProgress } from "../api/hooks/useSprintDetail.ts";
 import { useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { BoardCard } from "../board/BoardCard.tsx";
@@ -16,6 +18,9 @@ import { neighboursAt } from "../board/dragModel.ts";
 import type { DragState, DropRequest } from "../board/useBoardDrag.ts";
 import { useBoardDrag } from "../board/useBoardDrag.ts";
 import { buildLookups } from "../list/lookups.ts";
+import type { Progress, Readout } from "../milestones/model.ts";
+import { progressState } from "../milestones/model.ts";
+import { Chip } from "../ui/Chip.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import type { CollapseOverrides } from "./collapse.ts";
 import { isExpanded, readOverrides, toggle, writeOverrides } from "./collapse.ts";
@@ -24,6 +29,7 @@ import {
   bucketBySprint,
   deriveSprintColumns,
   isActive,
+  sprintCountdown,
   windowDisagrees,
 } from "./columns.ts";
 import { VirtualCards } from "./VirtualCards.tsx";
@@ -57,6 +63,14 @@ export function SprintsView() {
   const workflow = useWorkflow();
   const info = useInfo();
   const userSettings = useUserSettings();
+
+  // SPR-39 (F1/K30): the done/total per sprint, from core via
+  // `?progress=true` — the exact number the detail page and the CLI
+  // report. Surfaced on each overview card as a mini-bar (A165) so the
+  // overview and the detail cannot disagree. Its own query key, so a
+  // failure here degrades the at-a-glance readout without blanking the
+  // columns or the drag surface.
+  const sprintsProgress = useSprintsWithProgress();
 
   const projects = useProjects();
   const users = useUsers();
@@ -107,9 +121,27 @@ export function SprintsView() {
   // another agent owns. See the REPORT note in the handoff.
   const brokenSprints: readonly BrokenEntry[] = brokenOf(sprints.data);
 
+  // SPR-1 / SPR-40: archived sprints are hidden by default and revealed
+  // by an explicit affordance — the overview's half of archive/unarchive
+  // parity (A166). A local view toggle only: it never writes, and
+  // `deriveSprintColumns` already took the option nothing was passing.
+  const [showArchived, setShowArchived] = useState(false);
+  const archivedCount = sprintDefs.filter(s => s.archived === true).length;
+
+  // SPR-39: `progress` off the `?progress=true` list, keyed by id, so the
+  // header can look up its own done/total. A missing entry (an older
+  // server, or the progress query still in flight) yields `undefined`,
+  // which `progressState` renders as "unavailable" rather than a
+  // fabricated 0/0.
+  const progressById = useMemo(() => {
+    const m = new Map<string, Progress | undefined>();
+    for (const s of sprintsProgress.data?.items ?? []) m.set(s.id, s.progress);
+    return m;
+  }, [sprintsProgress.data]);
+
   const columns = useMemo(
-    () => deriveSprintColumns(sprintDefs, items),
-    [sprintDefs, items],
+    () => deriveSprintColumns(sprintDefs, items, { showArchived }),
+    [sprintDefs, items, showArchived],
   );
   const buckets = useMemo(() => bucketBySprint(columns, items), [columns, items]);
 
@@ -276,6 +308,36 @@ export function SprintsView() {
 
   return (
     <div className="flex h-full flex-col gap-3 p-4" data-testid="sprints">
+      {/* SPR-40: the overview's lifecycle affordances (A166). Create,
+          delete and archive *act* in Settings → Sprints (the shared
+          RemapDeleteDialog, so the two surfaces cannot drift); the
+          overview links there in one click, and reveals archived
+          sprints in place with a local view toggle that never writes. */}
+      <header className="flex items-center justify-between gap-3">
+        <Link
+          to="/settings/$section"
+          params={{ section: "sprints" }}
+          data-testid="sprints-manage-link"
+          className="text-[12px] text-accent no-underline hover:underline"
+        >
+          Manage sprints in Settings →
+        </Link>
+        {archivedCount > 0 && (
+          // SPR-1: archived sprints appear only behind this affordance.
+          // A checkbox so the state is announced; nothing here writes to
+          // sprints.yaml (unarchiving is a Settings action).
+          <label className="flex items-center gap-1.5 text-[12px] text-text-secondary">
+            <input
+              type="checkbox"
+              data-testid="sprints-show-archived"
+              checked={showArchived}
+              onChange={e => { setShowArchived(e.target.checked); }}
+            />
+            Show archived ({archivedCount})
+          </label>
+        )}
+      </header>
+
       {pending !== null && (
         <SprintWriter
           write={pending}
@@ -350,8 +412,9 @@ export function SprintsView() {
               ? "1 sprint could not be read from sprints.yaml"
               : `${String(brokenSprints.length)} sprints could not be read from sprints.yaml`}
             {" "}— fix{" "}
-            <code className="font-mono">.loctt/config/sprints.yaml</code> to
-            restore {brokenSprints.length === 1 ? "it" : "them"}.
+            <code className="font-mono">.loctt/config/sprints.yaml</code> and
+            reload to restore {brokenSprints.length === 1 ? "it" : "them"}.
+            LocTT will not repair the file for you.
           </p>
           <ul className="mt-1.5 space-y-1">
             {brokenSprints.map(b => (
@@ -433,7 +496,9 @@ export function SprintsView() {
               sprints={sprintDefs}
               loading={loading}
               today={today}
+              progress={column.kind === "sprint" ? progressById.get(column.id) : undefined}
               onOpen={key => void navigate({ to: "/tasks/$key", params: { key } })}
+              onOpenSprint={key => void navigate({ to: "/sprints/$key", params: { key } })}
               drag={drag}
               onCardPointerDown={onPointerDown}
             />
@@ -543,6 +608,15 @@ function configInvalidOf(error: unknown): ApiError | null {
     : null;
 }
 
+/**
+ * The controls that own their own click inside the at-a-glance card
+ * (SPR-39). A click that `closest`-matches one of these is handled by
+ * that control, not by the card's navigate — so the "Open sprint" link
+ * and the collapse toggle never double-fire the card. Kept as a string
+ * so it degrades gracefully as controls are added.
+ */
+const INTERACTIVE_WITHIN_CARD = "a, button, input, select, textarea, label, [role='button']";
+
 function Column({
   column,
   tasks,
@@ -554,7 +628,9 @@ function Column({
   sprints,
   loading,
   today,
+  progress,
   onOpen,
+  onOpenSprint,
   drag,
   onCardPointerDown,
 }: {
@@ -568,7 +644,11 @@ function Column({
   readonly sprints: readonly { id: string; name: string }[];
   readonly loading: boolean;
   readonly today: string;
+  /** SPR-39: this sprint's core progress, for the at-a-glance mini-bar. */
+  readonly progress: Progress | undefined;
   readonly onOpen: (key: string) => void;
+  /** SPR-39 / K-14: open the sprint's detail from the at-a-glance card. */
+  readonly onOpenSprint: (key: string) => void;
   readonly drag: DragState | null;
   readonly onCardPointerDown: (
     e: React.PointerEvent,
@@ -584,6 +664,16 @@ function Column({
   const draggingKey = drag?.key;
   const dropIndex = isDropTarget ? drag.over?.index : undefined;
 
+  // SPR-39: the at-a-glance readout, from the same core `Progress` the
+  // detail page shows. `progressState` turns a missing/zero-denominator
+  // entry into an explicit "No tasks"/"unavailable" rather than a
+  // fabricated 0/0.
+  const readout: Readout = progressState(progress);
+  const countdown = column.kind === "sprint"
+    ? sprintCountdown((column.sprint as SprintDef).end_date, today)
+    : undefined;
+  const overdue = countdown !== undefined && countdown.endsWith("overdue");
+
   return (
     <section
       data-testid={`sprint-column-${column.id}`}
@@ -594,7 +684,11 @@ function Column({
       data-drop-active={isDropTarget ? "true" : undefined}
       aria-label={column.label}
       className={[
-        "flex w-[280px] shrink-0 flex-col rounded-md border bg-bg-surface transition-colors",
+        // S-11: the fixed `w-[280px]` overflowed the body on a phone.
+        // Cap to most of the viewport on narrow screens (the row still
+        // h-scrolls inside its own container), settling to 280px from
+        // the `sm` breakpoint up.
+        "flex w-[85vw] max-w-[280px] shrink-0 flex-col rounded-md border bg-bg-surface transition-colors sm:w-[280px]",
         expanded ? "h-full" : "h-auto",
         isDropTarget
           ? "border-accent ring-1 ring-accent/40"
@@ -642,39 +736,99 @@ function Column({
           </span>
           <span className="flex shrink-0 items-center gap-1.5">
             {active && (
-              <span className="rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-accent">
-                Active
-              </span>
+              // K-6/S-11: the B1 Chip, not a hand-rolled pill. SPR-2's
+              // "distinguishable without relying on hue" holds — it is a
+              // labelled chip AND the heavier column border.
+              <Chip variant="accent" shape="pill">
+                <span className="text-[10px] font-semibold uppercase">Active</span>
+              </Chip>
             )}
             {/* SPR-1 / SPR-15 / SPR-17: the true total, and an explicit
                 `0` on an empty column. Not the number of rendered
-                cards — SPR-17's column virtualizes. */}
-            <span
-              data-testid={`sprint-count-${column.id}`}
-              className="rounded px-1.5 py-0.5 text-[11px] tabular-nums text-text-tertiary"
-            >
+                cards — SPR-17's column virtualizes. `data-testid` is on
+                the Chip's own element via `testId` (declared, not
+                spread), so the count locator resolves unchanged. */}
+            <Chip variant="count" testId={`sprint-count-${column.id}`}>
               {loading ? "–" : tasks.length}
-            </span>
+            </Chip>
           </span>
         </button>
 
-        {/* SPR-7: navigating from the column header opens the detail
-            route. A sibling of the toggle rather than a child of it —
-            the header button owns the collapse gesture, and nesting an
-            anchor inside a button is invalid and swallows the click.
-            Only real sprints have a detail page: the "No sprint"
-            bucket and a dangling-id column are not rows in
-            `sprints.yaml` and have nothing to open. */}
+        {/* SPR-39 / K-14: the at-a-glance card. The whole block opens the
+            sprint's detail (progress, dates, days-remaining, and a
+            mini-bar that is the "burndown equivalent" — the real chart is
+            one Open-away, A165). It is a sibling of the toggle, not a
+            child: the header button owns the collapse gesture (SPR-2),
+            and nesting a navigable region in a button is invalid.
+
+            The at-a-glance *data* (mini-bar + countdown) shows only when
+            the column is expanded — SPR-2 keeps a collapsed column to
+            "header plus task count only", and expanding is one click of
+            the toggle above. The Open-sprint link stays visible either
+            way, so SPR-7's navigate affordance is never hidden.
+
+            Only real sprints have a detail page — the "No sprint" bucket
+            and a dangling-id column are not rows in `sprints.yaml`.
+
+            A click that landed on an inner control (the explicit "Open
+            sprint" link) is that control's, not the card's — `closest`
+            walks up from the actual target, so the two never
+            double-navigate. Keyboard-operable and announced as a link,
+            so the affordance is not mouse-only. */}
         {column.kind === "sprint" && (
-          <div className="px-3 pb-2">
-            <Link
-              to="/sprints/$key"
-              params={{ key: column.id }}
-              data-testid={`sprint-open-${column.id}`}
-              className="text-[11px] text-accent no-underline hover:underline"
-            >
-              Open sprint →
-            </Link>
+          <div
+            data-testid={`sprint-card-${column.id}`}
+            data-overdue={overdue ? "true" : "false"}
+            role="link"
+            tabIndex={0}
+            aria-label={`Open ${column.label}`}
+            onClick={(e: MouseEvent<HTMLElement>) => {
+              if ((e.target as Element).closest(INTERACTIVE_WITHIN_CARD) !== null) return;
+              onOpenSprint(column.id);
+            }}
+            onKeyDown={e => {
+              if (e.key === "Enter" || e.key === " ") {
+                if ((e.target as Element).closest(INTERACTIVE_WITHIN_CARD) !== null) return;
+                e.preventDefault();
+                onOpenSprint(column.id);
+              }
+            }}
+            className="cursor-pointer px-3 pb-2 transition-colors hover:bg-bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--text-primary)]"
+          >
+            {/* SPR-39: progress done/total from core, as a compact
+                mini-bar. Same numbers as the detail page. Expanded only
+                (SPR-2). */}
+            {expanded && <SprintMiniProgress readout={readout} columnId={column.id} />}
+
+            <div className="mt-1 flex items-center justify-between gap-2">
+              {/* SPR-39: days-remaining, or overdue once the window has
+                  passed (the SPR-20 disagreement, read as a countdown).
+                  Expanded only, so a collapsed column stays minimal. */}
+              {expanded && countdown !== undefined && (
+                <span
+                  data-testid={`sprint-countdown-${column.id}`}
+                  className={[
+                    "text-[11px] tabular-nums",
+                    overdue ? "font-medium text-danger-fg" : "text-text-tertiary",
+                  ].join(" ")}
+                >
+                  {countdown}
+                </span>
+              )}
+              {/* SPR-7: the explicit navigate affordance is kept — a real
+                  anchor, so middle-click / open-in-new-tab work, and it
+                  stays visible whether the column is expanded or not. The
+                  surrounding card is also clickable (SPR-39); the card
+                  handler ignores clicks that originate here. */}
+              <Link
+                to="/sprints/$key"
+                params={{ key: column.id }}
+                data-testid={`sprint-open-${column.id}`}
+                className="ml-auto text-[11px] text-accent no-underline hover:underline"
+              >
+                Open sprint →
+              </Link>
+            </div>
           </div>
         )}
       </header>
@@ -762,6 +916,66 @@ function Column({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * The at-a-glance progress mini-bar (SPR-39).
+ *
+ * The "mini-burndown or equivalent" the case asks for (A165): a compact
+ * bar + `done / total` from the same core `Progress` the detail page
+ * renders — reusing `progressState`, so the overview and the detail can
+ * never show two different numbers for the same sprint. The literal
+ * burndown chart stays on the detail page (`Open sprint →`).
+ *
+ * `unavailable` (progress query in flight or failed) shows nothing
+ * rather than a fabricated 0/0; `none` (no counted tasks) shows an
+ * explicit "No tasks", never `0/0` or `NaN%` (mirrors MSL-15).
+ */
+function SprintMiniProgress({
+  readout,
+  columnId,
+}: {
+  readonly readout: Readout;
+  readonly columnId: string;
+}) {
+  if (readout.kind === "unavailable") return null;
+
+  return (
+    <div
+      data-testid={`sprint-progress-${columnId}`}
+      className="flex items-center gap-2"
+    >
+      <div
+        data-testid={`sprint-progress-bar-${columnId}`}
+        role="meter"
+        aria-valuemin={0}
+        aria-valuemax={readout.total}
+        aria-valuenow={readout.done}
+        aria-label="Sprint progress"
+        data-fill={readout.fill.toFixed(4)}
+        className="h-1.5 min-w-[60px] flex-1 overflow-hidden rounded-full bg-bg-muted"
+      >
+        <div
+          data-testid={`sprint-progress-bar-fill-${columnId}`}
+          className={[
+            "h-full rounded-full transition-[width]",
+            readout.complete ? "bg-success-fg" : "bg-accent",
+          ].join(" ")}
+          style={{ width: `${String(readout.fill * 100)}%` }}
+        />
+      </div>
+      {readout.kind === "none" ? (
+        <span className="shrink-0 text-[11px] text-text-tertiary">No tasks</span>
+      ) : (
+        <span className="shrink-0 text-[11px] tabular-nums text-text-secondary">
+          {readout.done}/{readout.total}
+          {readout.percent !== undefined && (
+            <span className="ml-1 text-text-tertiary">({readout.percent}%)</span>
+          )}
+        </span>
+      )}
+    </div>
   );
 }
 

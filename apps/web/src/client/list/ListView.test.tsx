@@ -140,6 +140,38 @@ describe("ListView", () => {
     expect(cells.getByText("frontend")).toBeTruthy(); // label name
   });
 
+  // K-15 (a UI-review item, not a numbered case — no @verifies tag): the
+  // list row-hover fix. Guards against the regression Ken reported (the
+  // ID/Project cells not highlighting on hover, and chip backgrounds
+  // dissolving into the hover) so a future change to the hover selector
+  // or token is caught here rather than by eye.
+  it("row hover uses a subtle row-hover token, distinct from the chip background, and covers the whole row", async () => {
+    await mountList();
+    const row = (await screen.findByText("First task")).closest("tr") as HTMLElement;
+    const cls = row.className;
+
+    // The hover targets EVERY direct cell child (`[&>*]`), not only
+    // `[&>td]` — the key column is a `<th scope="row">`, so a `td`-only
+    // selector left the ID/Project cells un-highlighted on hover (K-15,
+    // Ken's report). And it uses the dedicated `bg-bg-row-hover` token,
+    // NOT `bg-bg-muted`: the chips inside the row paint themselves with
+    // `bg-bg-muted`, so a row-hover reusing that token made them vanish
+    // into the hover. Distinct tokens keep the chip legible.
+    expect(cls).toContain("hover:[&>*]:bg-bg-row-hover");
+    expect(cls).not.toContain("hover:[&>td]:bg-bg-muted");
+    expect(cls).not.toContain("hover:[&>*]:bg-bg-muted ");
+
+    // The row header (the key cell) is a real `<th scope="row">` inside
+    // that hover-targeted row, so it is now included in the highlight.
+    const keyHeader = within(row).getByText("WEB-1").closest("th") as HTMLElement;
+    expect(keyHeader.getAttribute("scope")).toBe("row");
+
+    // The project chip keeps its own `bg-bg-muted` background — a
+    // different token from the row hover — so it does not dissolve.
+    const chip = within(row).getByTestId("project-chip");
+    expect(chip.className).toContain("bg-bg-muted");
+  });
+
   // @verifies K26 (untitled task title fallback)
   // @verifies DEG-8
   it("renders a task with no title by its key, not a blank cell", async () => {
@@ -271,6 +303,41 @@ describe("ListView", () => {
     await vi.waitFor(() => {
       const s = router.state.location.search as { sort?: string; dir?: string };
       expect(s.sort).toBe("title");
+      expect(s.dir).toBe("asc");
+    });
+  });
+
+  // @verifies LST-54
+  it("first click on Priority sorts descending — Critical-first, not Low-first", async () => {
+    const router = await mountList();
+
+    // The server orders priority by the workflow's numeric `value`
+    // (critical=4 … low=1), so ascending buries Critical. UX-2: the
+    // first click on Priority must land the most-useful direction —
+    // Critical-first — which is `dir=desc`, not the generic `asc`.
+    // Scope to the Priority *column header's* sort button — a "Filter
+    // Priority" facet dropdown button also matches /Priority/.
+    const prioHeader = (): HTMLElement =>
+      within(screen.getByRole("columnheader", { name: /Priority/ })).getByRole("button");
+    fireEvent.click(prioHeader());
+    await vi.waitFor(() => {
+      const s = router.state.location.search as { sort?: string; dir?: string };
+      expect(s.sort).toBe("priority");
+      expect(s.dir).toBe("desc");
+    });
+
+    // The direction is legible on the header: aria-sort reads
+    // "descending" for the Critical-first order.
+    await vi.waitFor(() =>
+      expect(
+        screen.getByRole("columnheader", { name: /Priority/ }).getAttribute("aria-sort"),
+      ).toBe("descending"),
+    );
+
+    // A second click still toggles — back to ascending (Low-first).
+    fireEvent.click(prioHeader());
+    await vi.waitFor(() => {
+      const s = router.state.location.search as { dir?: string };
       expect(s.dir).toBe("asc");
     });
   });

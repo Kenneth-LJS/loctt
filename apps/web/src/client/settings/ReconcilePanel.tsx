@@ -11,7 +11,11 @@ import {
   useReconcileSession,
   useSaveReconcileDecisions,
 } from "../api/hooks/useGit.ts";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { ICON } from "../ui/icons.ts";
+import { Select } from "../ui/Select.tsx";
+import { TextField } from "../ui/TextField.tsx";
 
 /**
  * The per-field reconciliation UI (GIT-6, GIT-7, GIT-11..14, GIT-18,
@@ -206,22 +210,24 @@ function ReconcileEditor({ plan, sentinel, apply, applyResult, setApplyResult }:
       {plan.conflicts.length > 0 && applyResult?.reconciled !== true && (
         <>
           <div className="mb-3 flex items-center gap-2 text-[13px]">
-            <button
+            <Button
               type="button"
-              data-testid="git-reconcile-keep-all-local"
+              variant="secondary"
+              size="sm"
+              testId="git-reconcile-keep-all-local"
               onClick={() => { bulk("local"); }}
-              className="rounded border border-border-subtle px-2 py-1"
             >
               Keep all local
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              data-testid="git-reconcile-keep-all-remote"
+              variant="secondary"
+              size="sm"
+              testId="git-reconcile-keep-all-remote"
               onClick={() => { bulk("remote"); }}
-              className="rounded border border-border-subtle px-2 py-1"
             >
               Keep all remote
-            </button>
+            </Button>
             <span data-testid="git-reconcile-undecided" data-undecided={String(undecided)} className="ml-auto text-text-secondary">
               {undecided === 0 ? "All rows decided" : `${String(undecided)} undecided`}
             </span>
@@ -252,46 +258,48 @@ function ReconcileEditor({ plan, sentinel, apply, applyResult, setApplyResult }:
           )}
 
           <div className="mt-4 flex items-center gap-2">
-            <button
+            <Button
               type="button"
-              data-testid="git-reconcile-apply"
+              variant="primary"
+              testId="git-reconcile-apply"
               disabled={undecided > 0 || apply.isPending}
               onClick={onApply}
-              className="rounded-md bg-accent px-3 py-1.5 text-[13px] text-white disabled:opacity-50"
             >
               {apply.isPending ? "Applying…" : "Apply"}
-            </button>
+            </Button>
             {confirmingAbandon
               ? (
                   <span data-testid="git-reconcile-abandon-confirm" className="flex items-center gap-2 text-[13px]">
                     Abandon this reconciliation? Local files are left exactly as they are — this is
                     not a revert.
-                    <button
+                    <Button
                       type="button"
-                      data-testid="git-reconcile-abandon-confirm-button"
+                      variant="danger"
+                      size="sm"
+                      testId="git-reconcile-abandon-confirm-button"
                       onClick={() => { abandon.mutate(); }}
-                      className="rounded border border-danger-fg px-2 py-1 text-danger-fg"
                     >
                       Abandon
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
+                      variant="secondary"
+                      size="sm"
                       onClick={() => { setConfirmingAbandon(false); }}
-                      className="rounded border border-border-subtle px-2 py-1"
                     >
                       Cancel
-                    </button>
+                    </Button>
                   </span>
                 )
               : (
-                  <button
+                  <Button
                     type="button"
-                    data-testid="git-reconcile-abandon"
+                    variant="secondary"
+                    testId="git-reconcile-abandon"
                     onClick={() => { setConfirmingAbandon(true); }}
-                    className="rounded-md border border-border-subtle px-3 py-1.5 text-[13px]"
                   >
                     Abandon
-                  </button>
+                  </Button>
                 )}
           </div>
         </>
@@ -336,7 +344,7 @@ function TaskGroup({ group, decisions, collapsed, onToggle, onChoose }: {
         onClick={onToggle}
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-text-primary"
       >
-        <span>{collapsed ? "▸" : "▾"}</span>
+        <span aria-hidden="true">{collapsed ? ICON.caretRight : ICON.caretDown}</span>
         <code className="font-mono text-[12px]">{group.taskKey}</code>
         <span className="truncate text-text-secondary">{group.taskTitle}</span>
         <span className="ml-auto text-[12px] text-text-tertiary">
@@ -415,7 +423,8 @@ export function ConflictRow({ conflict, decision, onChoose }: {
       <div className="mt-2 flex items-center gap-2">
         {isEnumLike
           ? (
-              <select
+              <Select
+                size="sm"
                 data-testid="git-reconcile-pick-value"
                 aria-labelledby={fieldLabelId}
                 value={chosen === "value" ? pickValue : ""}
@@ -423,17 +432,17 @@ export function ConflictRow({ conflict, decision, onChoose }: {
                   setPickValue(e.target.value);
                   onChoose("value", e.target.value);
                 }}
-                className="rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[13px]"
               >
                 <option value="">Pick a value…</option>
                 {conflict.options?.map(o => (
                   <option key={o.key} value={o.key}>{o.label}</option>
                 ))}
-              </select>
+              </Select>
             )
           : (
-              <input
+              <TextField
                 type="text"
+                size="sm"
                 data-testid="git-reconcile-pick-value"
                 aria-labelledby={fieldLabelId}
                 placeholder="Type a third value…"
@@ -442,7 +451,6 @@ export function ConflictRow({ conflict, decision, onChoose }: {
                   setPickValue(e.target.value);
                   onChoose("value", e.target.value);
                 }}
-                className="rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[13px]"
               />
             )}
         {chosen !== undefined && (
@@ -482,12 +490,12 @@ function SideButton({ testId, label, value, drift, corrupt, selected, onClick }:
         {corrupt !== undefined ? corrupt.rawText : value}
         {corrupt !== undefined && (
           <span data-testid="git-reconcile-corrupt-marker" className="ml-1 text-danger-fg" title={corrupt.error}>
-            ⚠ corrupt
+            {ICON.warning} corrupt
           </span>
         )}
         {drift !== undefined && (
           <span data-testid="git-reconcile-drift-marker" className="ml-1 text-warn-fg" title={drift}>
-            ⚠ drift
+            {ICON.warning} drift
           </span>
         )}
       </div>

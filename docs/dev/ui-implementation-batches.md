@@ -58,7 +58,28 @@ changes-from-v1 are summarised in `ui-plan-revision-summary.md`.
   **One taste call flagged for Ken: A164** (whether extrinsic faults —
   dangling user, enum drift — get the corrupt notice, or only their
   picker's own indicator; shipped as the latter).
-- **B4, B5 — not started.**
+- **B4 — done.** List/board/overview surfacing + sidebar editor + header
+  (verify-only, B2 already shipped it) + new-task + primitive migration +
+  responsive, across 9 file-disjoint lanes, plus the K33 description
+  read-then-edit model (Ken's 2026-09-09 ruling). Highlights: the K-15
+  row-hover fix (`--bg-row-hover` token), LST-53/54/56, BRD-50/51,
+  MSL-39..42, SPR-39/40 overview, SHL-45 sidebar-groups + LST-55, NEW-42
+  pre-fill, the 21-file B1 primitive migration, and K33 (TSK-68..71).
+  Decisions K31/K32/K33 (Ken) + A164..A180 (agent). A **Fable adversarial
+  fix-review found 2 HIGH silent-data-loss bugs in the K33 editor** — a
+  blur-race that dropped the editor before a failing save (TSK-48) and an
+  Escape that *wrote* instead of cancelling — both fixed and red-first
+  proven (the blur race via a deferred-fetch real-hook test). Also fixed:
+  a keyboard-link trap, a privacy fix so external images don't auto-load
+  (A180), the BRD-50 `dependency_relationship: null` opt-out, and a
+  case-vs-case contradiction (TSK-32 reconciled to DEG-7, A179). The A163
+  default-tab flip's test blast radius (3 feed specs) was fully
+  reconciled. Gate green: web 1477 / core 1948 / integration 501 / e2e 21;
+  UI all-pass single-worker (SPR-6 / git-reconcile are documented
+  concurrency flakes, pass isolated). **Taste calls flagged for Ken:
+  A164** (extrinsic-fault corrupt notice), **A179** (TSK-32↔DEG-7),
+  **A180** (external-image link vs inline).
+- **B5 — not started.**
 
 ---
 

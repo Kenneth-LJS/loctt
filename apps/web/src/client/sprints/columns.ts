@@ -93,6 +93,44 @@ export function windowDisagrees(sprint: SprintDef, today: string): boolean {
 }
 
 /**
+ * The human countdown to (or past) a sprint's `end_date` (SPR-39).
+ *
+ * SPR-39 asks each overview card for "days-remaining (or overdue)". Both
+ * operands are `YYYY-MM-DD` calendar days in the workspace's frame —
+ * `today` is the tracker's day from `/api/info`, not the browser's — so
+ * the diff is a whole-day count from the date parts alone. Parsing at UTC
+ * noon dodges the midnight-rolls-back-a-day trap; since both operands get
+ * the same treatment the offset cancels and the day delta is exact.
+ *
+ * Keyed on `end_date` (the deadline), not `state`: a sprint the user
+ * still marks `active` past its window is exactly the case SPR-20
+ * surfaces as a hint, and "overdue" here is the same fact read as a
+ * countdown. Returns `undefined` for an unparseable date — the header
+ * still shows the date window, there is just no countdown to compute.
+ *
+ * The wording mirrors the milestone countdown ("in 5 days" / "3 days
+ * overdue"), so the two surfaces read alike; it is re-implemented here
+ * rather than imported because that lives in the milestones lane's view
+ * file, and a countdown is four lines, not a dependency worth crossing a
+ * lane boundary for.
+ */
+export function sprintCountdown(
+  endDate: string,
+  today: string,
+): string | undefined {
+  const t = Date.parse(`${endDate.slice(0, 10)}T12:00:00Z`);
+  const n = Date.parse(`${today.slice(0, 10)}T12:00:00Z`);
+  if (Number.isNaN(t) || Number.isNaN(n)) return undefined;
+
+  const days = Math.round((t - n) / 86_400_000);
+  if (days === 0) return "Ends today";
+  if (days === 1) return "1 day left";
+  if (days === -1) return "1 day overdue";
+  if (days > 1) return `${String(days)} days left`;
+  return `${String(-days)} days overdue`;
+}
+
+/**
  * Whether a column starts expanded (SPR-2), before any persisted
  * per-user override is applied (SPR-3).
  *

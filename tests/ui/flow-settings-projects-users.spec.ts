@@ -650,6 +650,10 @@ test.describe("PRU — identity and the user menu", () => {
     await tracker.run(["set", key ?? "", "priority", "high"]);
 
     await page.goto(`${tracker.baseURL}/tasks/${key ?? ""}`);
+    // The activity feed lives behind the Activity tab now that the task
+    // detail's Comments/Activity/All panel defaults to Comments (A163 /
+    // K-5). Open it before reading the actor attributions.
+    await page.getByTestId("activity-tab-activity").click();
 
     const actors = page.getByTestId("activity-actor");
     // Both names appear — the second write did not rewrite the first.

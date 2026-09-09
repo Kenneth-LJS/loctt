@@ -1,5 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
+import { ICON } from "./icons.ts";
+
 /**
  * Transient success notices, stacked bottom-right.
  *
@@ -150,7 +152,7 @@ function ToastItem({
         onClick={() => { onDismiss(id); }}
         className="shrink-0 text-text-tertiary hover:text-text-primary"
       >
-        {"×"}
+        {ICON.close}
       </button>
     </div>
   );

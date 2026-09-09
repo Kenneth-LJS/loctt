@@ -21,6 +21,8 @@ import { bucketTasks, deriveColumns } from "./columns.ts";
 import { ConfigErrorState } from "./ConfigErrorState.tsx";
 import type { DropNeighbours } from "./dragModel.ts";
 import { neighboursAt, statusForColumn } from "./dragModel.ts";
+import type { BoardCardBadges } from "./relationshipBadges.ts";
+import { boardCardBadges } from "./relationshipBadges.ts";
 import type { DragState, DropRequest } from "./useBoardDrag.ts";
 import { useBoardDrag } from "./useBoardDrag.ts";
 
@@ -116,6 +118,15 @@ export function BoardView() {
     () => hiddenColumnsOf(userSettings.data?.settings),
     [userSettings.data?.settings],
   );
+
+  // BRD-50 (UX-5): blocked / epic-child-count / subtask markers, derived
+  // from each card's own relationships against the workflow config. The
+  // config is read once here (not per card), so the badge-key resolution
+  // does not run for every card on every render.
+  const badgesFor = useMemo(() => {
+    const wf = workflow.data;
+    return (task: TaskListRow): BoardCardBadges => boardCardBadges(task, wf);
+  }, [workflow.data]);
 
   // Computed before the drag hook because hooks cannot run behind an
   // early return, and the drag needs to know which columns are
@@ -429,6 +440,7 @@ export function BoardView() {
               tasks={buckets.get(column.id) ?? []}
               layout={cardLayout}
               lookups={lookups}
+              badgesFor={badgesFor}
               milestones={milestones.data?.items ?? []}
               sprints={sprints.data?.items ?? []}
               loading={loading}
@@ -478,6 +490,7 @@ export function BoardView() {
         >
           <BoardCard
             task={draggedTask}
+            badges={badgesFor(draggedTask)}
             health={draggedTask.health}
             layout={cardLayout}
             lookups={lookups}
@@ -551,6 +564,19 @@ function ChipsBar({
       {columns.map(column => {
         const off = hidden.includes(column.id);
         const count = counts.get(column.id)?.length ?? 0;
+        // BRD-51 (UX-6): the pill must READ as a visibility toggle, so a
+        // dimmed pill beside a missing column is not misread as "no
+        // tasks". An eye affordance carries the state visually (open eye
+        // = shown, slashed eye = hidden), the `title`/`aria-label` name
+        // the action in words ("Hide column" / "Show column"), and the
+        // disambiguator (BRD-19) is folded into the same label rather
+        // than replaced by it.
+        const action = off ? "Show" : "Hide";
+        const name =
+          column.disambiguator === undefined
+            ? column.label
+            : `${column.label} (${column.disambiguator})`;
+        const label = `${action} column ${name}`;
         return (
           <button
             key={column.id}
@@ -559,11 +585,12 @@ function ChipsBar({
             // state — a screen reader should hear "pressed", not infer
             // it from a colour (flow-accessibility).
             aria-pressed={!off}
+            aria-label={label}
             data-testid={`board-chip-${column.id}`}
             onClick={() => { onToggle(column.id); }}
-            title={column.disambiguator === undefined ? column.label : `${column.label} (${column.disambiguator})`}
+            title={label}
             className={[
-              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px]",
+              "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px]",
               off
                 // BRD-3: an off chip stays in the bar, dimmed, so the
                 // column can be turned back on.
@@ -571,6 +598,13 @@ function ChipsBar({
                 : "border-border-subtle bg-bg-muted text-text-primary",
             ].join(" ")}
           >
+            {/* BRD-51: the eye is the discoverability affordance — it
+                makes "this is a show/hide toggle" legible at a glance,
+                not only in the tooltip. Decorative (the action is in the
+                accessible name), so hidden from assistive tech. */}
+            <span aria-hidden="true" className="shrink-0 text-text-tertiary">
+              {off ? "🚫" : "👁"}
+            </span>
             <span className="max-w-[18ch] truncate">{column.label}</span>
             <span className="text-text-tertiary">{loading ? "–" : count}</span>
           </button>
@@ -585,6 +619,7 @@ function Column({
   tasks,
   layout,
   lookups,
+  badgesFor,
   milestones,
   sprints,
   loading,
@@ -599,6 +634,7 @@ function Column({
   readonly tasks: readonly TaskListRow[];
   readonly layout: readonly CardLayoutField[];
   readonly lookups: ReturnType<typeof buildLookups>;
+  readonly badgesFor: (task: TaskListRow) => BoardCardBadges;
   readonly milestones: readonly { id: string; name: string }[];
   readonly sprints: readonly { id: string; name: string }[];
   readonly loading: boolean;
@@ -665,10 +701,19 @@ function Column({
       // the label length, and keeps twenty of them readable rather
       // than squashed. `shrink-0` is what makes the region scroll.
       //
+      // S-11 (UX-16 / 6.6): the width is `w-[280px]` on tablet and up,
+      // but on a phone-width viewport a fixed 280px column can be wider
+      // than the pane, crushing the layout and hiding that the board
+      // scrolls. It degrades to `min(85vw, 280px)`: a column never
+      // exceeds 280px, but on a narrow screen it caps at 85vw so the
+      // next column peeks in at the edge — the affordance that tells the
+      // user the board scrolls horizontally. `shrink-0` keeps every
+      // column its own size so the region (not the columns) scrolls.
+      //
       // BRD-11: the hovered column is visually distinguished from the
       // others while a card is held over it.
       className={[
-        "flex h-full w-[280px] shrink-0 flex-col rounded-md border bg-bg-surface transition-colors",
+        "flex h-full w-[min(85vw,280px)] shrink-0 flex-col rounded-md border bg-bg-surface transition-colors sm:w-[280px]",
         isDropTarget
           ? "border-accent ring-1 ring-accent/40"
           : "border-border-subtle",
@@ -782,6 +827,7 @@ function Column({
                 <DropIndicator active={dropIndex === i} />
                 <BoardCard
                   task={task}
+                  badges={badgesFor(task)}
                   health={task.health}
                   layout={columnLayout}
                   lookups={lookups}

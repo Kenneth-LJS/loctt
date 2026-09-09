@@ -1,5 +1,7 @@
 import type { CustomFieldDef } from "@loctt/contracts";
 
+import { Checkbox } from "../../ui/Checkbox.tsx";
+import { ICON } from "../../ui/icons.ts";
 import { DateField } from "./DateField.tsx";
 import type { PickerOption } from "./OptionPicker.tsx";
 import { OptionPicker } from "./OptionPicker.tsx";
@@ -135,8 +137,7 @@ function renderControl(
     const checked = raw === true;
     return (
       <label className="inline-flex cursor-pointer items-center gap-1.5 text-[13px] text-text-primary">
-        <input
-          type="checkbox"
+        <Checkbox
           data-testid={`meta-input-${def.key}`}
           aria-label={def.label}
           checked={checked}
@@ -235,7 +236,7 @@ function MultiEnum({
                 onClick={() => { onChange(selected.filter(k => k !== key)); }}
                 className="opacity-60 hover:opacity-100"
               >
-                ×
+                {ICON.close}
               </button>
             </span>
           );

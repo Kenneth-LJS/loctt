@@ -11,6 +11,10 @@ import {
 } from "../api/hooks/sidebarData.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import type { ListSearch } from "../router/listSearch.ts";
+import { Button } from "../ui/Button.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
+import { ICON } from "../ui/icons.ts";
+import { ToolbarButton } from "../ui/ToolbarButton.tsx";
 import { AdvancedQueryEditor } from "./AdvancedQueryEditor.tsx";
 import { FilterDropdown, type FilterOption } from "./FilterDropdown.tsx";
 import { SaveViewDialog } from "./SaveViewDialog.tsx";
@@ -159,7 +163,26 @@ export function FilterBar({
 
   const clearAll = (): void => { void navigate({ search: clearedSearch }); };
 
-  const hasActive = activeChips.length > 0;
+  // LST-53 (UX-1): a free-text `q=` query is a filter too — every sidebar
+  // saved filter lands the user on a `q=` URL — but it produced no chip,
+  // so a short list had no visible reason and no in-page way back. It now
+  // renders its own removable chip alongside the facet chips, and its
+  // presence lights up the same "Clear all" affordance, matching how the
+  // facet chips already explain and reverse a filtered view.
+  const hasQuery = query.trim().length > 0;
+
+  const clearQuery = (): void => {
+    void navigate({
+      search: prev => ({ ...prev, q: undefined, view: undefined, page: undefined }),
+    });
+  };
+
+  // A truncated preview keeps the chip informative (which query is
+  // running) without letting a long DSL expression blow out the row; the
+  // full text is on the chip's title and in the Advanced editor.
+  const queryPreview = query.length > 32 ? `${query.slice(0, 31)}…` : query;
+
+  const hasActive = activeChips.length > 0 || hasQuery;
 
   if (advanced) {
     return (
@@ -186,15 +209,26 @@ export function FilterBar({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          data-testid="advanced-query-toggle"
+      {/* Toolbar, regrouped into three bands (K-2/K-3/S-3/S-4): the
+          facets, the Advanced mode-toggle, then the actions. `flex-wrap`
+          + `min-w-0` lets the bands reflow and condense on a narrow
+          viewport rather than overflowing (S-11 mobile / UX-16 collapse):
+          the facet band wraps first, and the action band stays pinned
+          right until there is no room, then drops below. */}
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        {/* Band 1 — Advanced mode-toggle. A ToolbarButton (B1) so it
+            shares the one pill height/style with the facets and shows the
+            active look while the advanced editor is the mode in use. */}
+        <ToolbarButton
+          testId="advanced-query-toggle"
+          size="sm"
+          active={hasQuery}
           onClick={() => { setDraft(query); setAdvanced(true); }}
-          className="rounded border border-border-subtle px-2 py-1 text-[12px] text-text-secondary hover:bg-bg-muted"
         >
           Advanced
-        </button>
+        </ToolbarButton>
+
+        {/* Band 2 — facets. */}
         {FACET_KEYS.filter(key => !hiddenFacets.includes(key)).map(key => (
           <FilterDropdown
             key={key}
@@ -220,9 +254,9 @@ export function FilterBar({
 
         <div className="flex-1" />
 
+        {/* Band 3 — actions. */}
         <label className="inline-flex cursor-pointer items-center gap-1.5 text-[13px] text-text-secondary">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={search.archived === true}
             onChange={e =>
               void navigate({
@@ -234,18 +268,36 @@ export function FilterBar({
         </label>
 
         {showSaveView && (
-          <button
-            type="button"
-            onClick={() => setSaveOpen(true)}
-            className="inline-flex h-8 items-center gap-1 rounded-md border border-border-default bg-bg-surface px-2.5 text-[13px] text-text-secondary hover:bg-bg-muted"
-          >
-            ⭑ Save as view
-          </button>
+          <Button size="md" onClick={() => setSaveOpen(true)}>
+            <span aria-hidden="true">{ICON.star}</span>
+            Save as view
+          </Button>
         )}
       </div>
 
       {hasActive ? (
         <div className="flex flex-wrap items-center gap-1.5">
+          {hasQuery ? (
+            // LST-53: the active free-text query as a removable chip. Its
+            // ✕ clears just `q` (and the saved-view id it may have come
+            // from); "Clear all" below wipes everything.
+            <span
+              data-testid="query-chip"
+              title={query}
+              className="inline-flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-[12px] text-accent"
+            >
+              <span className="text-accent/70">Query:</span>
+              <span className="max-w-[24ch] truncate font-mono">{queryPreview}</span>
+              <button
+                type="button"
+                aria-label="Remove query filter"
+                onClick={clearQuery}
+                className="ml-0.5 cursor-pointer text-accent/70 hover:text-accent"
+              >
+                {ICON.close}
+              </button>
+            </span>
+          ) : null}
           {activeChips.map(chip => (
             <span
               key={`${chip.key}:${chip.value}`}
@@ -267,16 +319,16 @@ export function FilterBar({
                     }),
                   });
                 }}
-                className="ml-0.5 text-accent/70 hover:text-accent"
+                className="ml-0.5 cursor-pointer text-accent/70 hover:text-accent"
               >
-                ✕
+                {ICON.close}
               </button>
             </span>
           ))}
           <button
             type="button"
             onClick={clearAll}
-            className="rounded px-1.5 py-0.5 text-[12px] text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
+            className="cursor-pointer rounded px-1.5 py-0.5 text-[12px] text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
           >
             Clear all
           </button>

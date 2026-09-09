@@ -2242,6 +2242,76 @@ was dropped from `TaskDetail.tsx`. CMT-18 (both the unit test and the e2e)
 now assert default-Comments. This makes K-5 complete rather than shipped
 behind a workaround default.
 
+**Test blast radius of the default flip (reconciled at the B4 merge).**
+Defaulting to Comments put the activity FEED behind the Activity tab
+(mount-on-activation), so every spec that read feed elements
+(`activity-entry`/`activity-actor`/`activity-day`/…) on load had to open
+the Activity tab first. Exactly three spec files reference those elements:
+`flow-comments.spec.ts` (adapted in B3, green), `flow-activity.spec.ts`
+(~16 tests, adapted at the B4 merge — a `showActivity`/`showAll` helper,
+per-test tab choice since some assert the composer AND the feed), and
+`flow-settings-projects-users.spec.ts` (PRU-10, one Activity-tab click
+added). A repo-wide grep confirmed no other spec reads the feed on load,
+so the blast radius is fully bounded to those three. These are
+"editing a green test because the behaviour legitimately changed" edits
+(the feed still works; it is tab-gated now), named in the B4 commit.
+
+### A168 · The Milestones-view residual (MSL-39/40/41/42): shapes chosen without a doc
+
+**Ticket:** B4 · Milestones overview lane · **Date:** 2026-09-09 · **Commit:** (staged)
+
+**The situation.** B4's milestones lane owed four cases whose prose
+leaves the *shape* to the builder. MSL-39 wants "the whole card
+clickable"; MSL-40 wants "target date + countdown/overdue"; MSL-41 wants
+"a task-count breakdown by status/category"; MSL-42 (UX-15, narrowed)
+wants discoverability copy. The flow doc gives examples ("in 5 days",
+"3 days overdue") but no data contract, and core's `Progress` publishes
+only `done`/`total`/`discarded`/`fraction` — no per-status-key split.
+
+**What had to be decided.** (a) How does the whole card open the
+milestone without swallowing clicks on the name link / Retry button?
+(b) What breakdown does MSL-41 show, given core exposes only category
+totals? (c) Where does MSL-42's copy live, given this lane owns only
+`MilestonesView.tsx`, not the settings panel?
+
+**Options considered.**
+- (a) *Wrap the card in a `<Link>`* — inner controls need
+  `stopPropagation` and nested `<a>` is invalid HTML. *vs.* *`role="link"`
+  on the `<li>` with a click/keydown handler that ignores clicks whose
+  target `.closest("a,button,input,…")` is an interactive descendant* —
+  keeps the name a real link (middle-click / open-in-new-tab survive),
+  no nested-anchor, and the guard is control-agnostic.
+- (b) *Add a per-status breakdown to core* — correct long-term but is a
+  core change owing CLI+MCP+doctor parity, out of this lane's scope and
+  a second progress path MSL-3 forbids. *vs.* *derive three category
+  buckets from the existing payload*: `done`, `remaining = total - done`,
+  `discarded` — no new core field, no second scan.
+- (c) *Edit the settings panel's copy* — not this lane's file. *vs.* *a
+  subhead + empty-state copy on the Milestones view itself* naming and
+  linking Settings → Milestones.
+
+**Decided.** (a) `role="link"` + `closest`-guarded handler; (b) the
+three category buckets (done / remaining / discarded), discarded chip
+suppressed at zero; (c) a `milestones-subhead` on the view plus reworded
+empty state.
+
+**Why.** Each avoids a scope breach (core change, settings-panel edit)
+and each reuses the numbers core already computes, so MSL-3's
+one-implementation guarantee holds. The `closest` guard is the standard
+way to make a container clickable without stealing its children's clicks.
+A category breakdown is what MSL-41 literally asks for ("status/category")
+and is honest about what the data supports — a per-status-key split would
+be a fabricated precision.
+
+**To revert.** All in `apps/web/src/client/milestones/MilestonesView.tsx`:
+remove `milestoneCountdown`, `breakdown`, the `role="link"`/`onClick`/
+`onKeyDown` block and `INTERACTIVE_WITHIN_CARD` on the `<li>`, the
+`milestones-subhead`, and the breakdown/countdown JSX. Tests to drop:
+the MSL-39/40/41 blocks in `MilestonesView.test.tsx` and the MSL-39/40/41/42
+tests in `tests/ui/flow-milestones.spec.ts`. A per-status breakdown, if
+wanted later, is a core `Progress` extension (with CLI/MCP parity), not a
+view change.
+
 ## 9. Ken's rulings, 2026-08-29
 
 **These are Ken's, not an agent's.** Unlike § 8, they carry the
@@ -9770,3 +9840,606 @@ it.
 `fieldView` (`apps/web/src/client/health/fieldHealth.ts`), and adjust the
 MetaPanel custom-field corrupt test back to an extrinsic `invalid_value`
 kind.
+
+### A165 · SPR-39's "mini-burndown or equivalent" on the overview is a progress mini-bar, not a per-sprint burndown fetch
+
+**Batch:** B4 · Sprints overview lane · **Type:** agent decision (UX + cost).
+
+SPR-39 asks each sprint card on the `/sprints` overview to surface
+progress (done/total), the date range, days-remaining/overdue, and **"a
+mini-burndown or equivalent"**. The overview is a *board of columns*; the
+"card" is each column's header.
+
+**What had to be decided.** What renders as the "mini-burndown or
+equivalent" on a column header.
+
+**Options considered.**
+
+1. **A real per-sprint burndown sparkline.** Reuse `useBurndown` +
+   `buildGeometry` per column. Faithful to the word "burndown", but it is
+   one `GET /api/sprints/:id/burndown` per visible sprint on every
+   overview load — and core's `computeBurndown` replays every task's
+   history. The detail page pays this once, for one sprint, deliberately
+   as its own query (see `useSprintDetail.ts`). Paying it N-up on the
+   overview is the cost the board-pages-to-exhaustion note already frets
+   about, multiplied.
+2. **A progress mini-bar** derived from the same core `Progress`
+   (`?progress=true`, `progressState`) already surfaced on the detail
+   page (F1/K30). One list fetch the view already makes, the same
+   done/total math, rendered as a compact fill bar in the header. This is
+   the case's explicit "or equivalent".
+
+**Decided.** Option 2. The mini-bar reuses `useSprintsWithProgress` +
+`progressState` (the milestones-shared readout), so the number on the
+overview equals the number on the detail page by construction, at no new
+per-sprint request. The literal burndown chart stays on the detail page,
+one Open-away.
+
+**To revert.** Swap the header's `SprintMiniProgress` for a per-column
+`useBurndown` sparkline (accept the N-fetch cost) in `SprintsView.tsx`.
+
+### A166 · SPR-40's overview affordances = a "show archived" toggle + a Manage-in-Settings link; lifecycle CRUD stays in the Settings panel
+
+**Batch:** B4 · Sprints overview lane · **Type:** agent decision (scope).
+
+SPR-40's case text pins create/delete/archive/unarchive **to the Settings
+panel**, and B2 built exactly that (`SprintsPanel`, `useCreateSprint` /
+`useDeleteSprint` / `useArchiveSprint`; `@verifies SPR-40` on
+`SprintsPanel.test.tsx` and `server.data-delete.test.ts`;
+`cases:coverage --require SPR-40` already passes). The B4 lane brief asks
+for archive/unarchive **parity from the overview** too.
+
+**What had to be decided.** How much lifecycle UI the *overview* grows,
+without duplicating the Settings panel or inventing scope past the case.
+
+**Decided.** The overview gains the two affordances SPR-1 and SPR-40
+imply but that were missing from `SprintsView`:
+
+- a **"Show archived (N)"** toggle — SPR-1's own last bullet ("Archived
+  sprints do not appear unless an explicit 'show archived' affordance is
+  enabled") had no implementation on the overview; `deriveSprintColumns`
+  already took a `showArchived` option that nothing passed. This is the
+  overview's half of archive/unarchive parity: seeing archived sprints
+  where the work is.
+- a **"Manage sprints in Settings →"** link, so create/delete/archive
+  are reachable *from* the overview (one click) rather than only by
+  navigating the settings tree — mirroring `MilestonesView`'s
+  Settings link.
+
+The lifecycle *writes* (create/delete/archive) are NOT duplicated onto
+the overview: two archive buttons on two surfaces is the drift SPR-40's
+"same shared dialog … cannot drift" note guards against, and the case
+locates them in Settings. The overview surfaces + links; Settings acts.
+
+**To revert.** Remove the `showArchived` state + toggle and the
+Settings link from `SprintsView.tsx`; the columns revert to
+non-archived-only.
+
+### A167 · SPR-31 un-fixme'd: the correct surface is the per-entry `sprints-broken-config` alert, not the whole-file `sprints-config-error`
+
+**Batch:** B4 · Sprints overview lane · **Type:** agent decision (test fix).
+
+The quarantined `SPR-31` fixme (and the known-gap "read-only views do not
+surface degraded entries") asserted a `sprints-config-error` alert for a
+single sprint whose `end_date` precedes `start_date`. It never rendered —
+but not because the loader degrades silently. Core's `parseSprintsConfig`
+runs `SprintDefSchema` per entry through `collectValidEntries`, and the
+window rule is a **per-entry `superRefine`**, so a single bad sprint
+becomes a `BrokenEntry` on the response's `broken[]`, not a whole-file
+`SprintsConfigError`. `SprintsView` already surfaces that list as the
+`sprints-broken-config` alert (built for A138, covered by
+`SprintsView.test.tsx`). The fixme asserted the *wrong testid*: a
+whole-file parse failure, for what core reports as one degraded entry.
+
+**Decided.** Rewrite the SPR-31 spec to assert `sprints-broken-config`
+(names the file, the offending sprint by id, and the validator's
+`must not be before start_date` message; not the `sprints-empty` state),
+which satisfies SPR-31's bullets against behaviour that already exists,
+and un-fixme it. The overview's broken-config copy gained an explicit
+"reload" + "will not repair" line so bullet 2 ("fix the file and reload —
+no silent repair") reads on the surface, not only in the test.
+
+Only the `sprints-config-error` whole-file branch remains for the
+genuinely object-fatal cases (non-list `sprints:`, duplicate ids), which
+`SprintsConfigError` still throws.
+
+**To revert.** Restore the `test.fixme` on SPR-31 and its
+`sprints-config-error` assertions; drop the "reload"/"will not repair"
+line from the `sprints-broken-config` block in `SprintsView.tsx`.
+
+### A169 · Priority's first-click sort defaults to descending (Critical-first)
+
+**Ticket:** B4 Toolbar/List lane · **Date:** 2026-09-09 · **Commit:** (staged, uncommitted)
+
+**The situation.** LST-54 (UX-2): "Clicking Priority sorts Critical-first
+on the first click (not Low-first) … decide deliberately per the
+workflow's documented priority order." The server (`packages/core/src/
+query/list.ts:397`) orders priority by the workflow's numeric `value`
+(critical=4 … low=1), and `ListView.onSort` used a single rule — first
+click on any new column → ascending — which for priority surfaces Low
+first and buries Critical. The case names Priority explicitly but frames
+it as "priority (and due)" without stating due's direction.
+
+**What had to be decided.** Which columns get a non-ascending first-click
+default, and does due_date change?
+
+**Options considered.**
+1. **Per-column default map, priority→desc only** (chosen). Priority's
+   first click lands Critical-first; every other column (due, title,
+   updated, key, project, type, assignee) keeps ascending. Cost: one more
+   column would need a decision to join the map.
+2. **Also flip due_date** to some non-default. Cost: due ascending is
+   already the most-useful first read (soonest-due first), so flipping it
+   would be worse, and the case does not ask for it — it only names
+   Priority's concrete outcome.
+
+**Decided.** Option 1 — a `DEFAULT_SORT_DIR` map in `ListView.tsx` with
+`priority: "desc"`; all other columns fall through to `asc`. The
+toggle-on-repeat-click behaviour is unchanged.
+
+**Why.** The case's only concrete assertion is Priority→Critical-first,
+and the workflow's documented value order (critical highest) makes `desc`
+the faithful reading. Ascending stays the most-useful first read for
+dates/text/timestamps, so a blanket change would regress those. Contained
+(one column, one map, trivially reversible).
+
+**To revert.** Delete the `DEFAULT_SORT_DIR` map in
+`apps/web/src/client/list/ListView.tsx` and restore
+`const nextDir = sortField === colId && sortDir === "asc" ? "desc" : "asc"`
+in `onSort`; drop the LST-54 unit test in `ListView.test.tsx` and the
+LST-54 Playwright test in `tests/ui/flow-list.spec.ts`.
+
+### A170 · A dedicated `--bg-row-hover` token, distinct from `--bg-muted`, for the list row hover
+
+**Ticket:** B4 Toolbar/List lane · **Date:** 2026-09-09 · **Commit:** (staged, uncommitted)
+
+**The situation.** K-15 (Ken's report): "project ID column bg doesn't
+highlight, label colour disappears into hover; don't make the hover
+colour so bright." The list row used `hover:[&>td]:bg-bg-muted`, but (a)
+the key column is a `<th scope="row">`, so a `td`-only selector never
+reached the ID/Project cells, and (b) the chips inside a row (`ProjectChip`
+and a pending `StatusBadge`) paint themselves with `--bg-muted`, so a
+row-hover reusing that exact token made every chip's own background vanish
+into the hover. There was no separate row-hover token — only `--bg-muted`
+(where the chips sit) and the *stronger* `--bg-muted-hover` (the button
+active press).
+
+**What had to be decided.** What colour is the list row hover, given it
+must (a) differ from the chip background so chips stay legible, and (b)
+stay subtle per Ken ("not so bright")?
+
+**Options considered.**
+1. **Reuse `--bg-muted-hover`** for the row. Cost: it is the button-press
+   colour, deliberately a full step stronger — "so bright" is exactly
+   what Ken rejected, and it still collides with a chip that later moves
+   to `--bg-muted-hover`.
+2. **New `--bg-row-hover` token** (chosen), a faint accent-tinted wash a
+   step off the surface, defined once per theme, distinct from both
+   `--bg-muted` and `--bg-muted-hover`; hover the whole row via `[&>*]`
+   (covering the row-header th and the tds). Cost: one more token to keep
+   in the scale.
+
+**Decided.** Option 2 — add `--bg-row-hover` (`#F0F3FA` light / `#191A1D`
+dark) to `tokens.css`, wire `--color-bg-row-hover` in `index.css`, and
+change the row to `hover:[&>*]:bg-bg-row-hover`.
+
+**Why.** A row hover and a chip background are two different surfaces and
+need two tokens; sharing one is the root cause of the vanish. The exact
+hex is a UI-taste call (subtle, per Ken) made at the agent level. `[&>*]`
+rather than `[&>td]` is required so the `<th scope="row">` key cell is
+included in the highlight (A11Y-26 made it a th).
+
+**To revert.** Remove `--bg-row-hover` from both scopes in
+`apps/web/src/client/styles/tokens.css` and `--color-bg-row-hover` from
+`index.css`; restore `hover:[&>td]:bg-bg-muted last:[&>td]:border-b-0` on
+the row in `apps/web/src/client/list/ListView.tsx`; drop the K-15
+regression test in `ListView.test.tsx`.
+
+### A171 · K33 read-then-edit: BodyEditor splits into a rendered view + an edit surface; the image lightbox needs a task-body renderer, not `renderCommentBody` verbatim
+
+**Ticket:** B4 Description read-then-edit lane (K33) · **Date:** 2026-09-09 · **Commit:** (staged, uncommitted)
+
+**The situation.** K33 (Ken, §9) makes the task description
+read-then-edit. `BodyEditor.tsx` was an always-live editor. It is
+reshaped into two states: a default RENDERED read view
+(`editor/BodyRenderedView.tsx`, new) and the pre-K33 edit surface
+(mode toggle + `RichEditor`/`MarkdownEditor` + `SaveIndicator` +
+autosave + `BodyConflictDialog`), now mounted only while editing. A
+click on the rendered text enters edit; blur flushes+returns, Escape
+cancels, a failed save keeps the editor open (TSK-48). The
+`data-testid="body-editor"` wrapper is present in BOTH states (one at a
+time). The `BodyEditor` prop contract to `TaskDetail` is UNCHANGED — no
+`TaskDetail.tsx` edit was needed.
+
+**What had to be decided.** Three agent-level calls under Ken's model:
+
+1. **How to reuse `comments/renderMarkdown.tsx` for the read view.**
+   K33 says reuse the read-only renderer comments use. But
+   `renderCommentBody` renders an image embed (`![alt](url)`, which
+   `fromMarkdown` turns into an `attachmentEmbed` node) as a *text
+   reference*, not an `<img>` — deliberately, because a comment
+   attachment is an M2.5 reference with no URL to trust. TSK-70 needs a
+   real `<img>` to click for the lightbox.
+
+2. **How the lightbox dismisses**, and whether to reuse `ui/Modal`.
+
+3. **The save/exit gesture** — settled by K33 itself (blur autosaves,
+   Escape cancels), not re-decided here.
+
+**Options considered.**
+- *Call `renderCommentBody` verbatim.* Cost: no real `<img>`, so
+  TSK-70's image→lightbox bullet is untestable — the image is a text
+  span. Rejected.
+- *A markdown→HTML pass with `dangerouslySetInnerHTML`.* Cost: exactly
+  the injection surface `renderCommentBody` was built to not have.
+  Rejected.
+- *A small task-body renderer (chosen)* in `BodyRenderedView` that
+  parses with the SAME shared `fromMarkdown` and reuses the SAME
+  exported `isSafeHref` for the link/image scheme allowlist, rendering
+  every node the way the comment reader does EXCEPT an image embed with
+  a safe `http(s)`/relative `src`, which becomes a real clickable
+  `<img>`. An unsafe scheme falls back to reference-text.
+- *Reuse `ui/Modal` for the lightbox.* Cost: `Modal` forces a titled,
+  `max-w-md` panel — the wrong shape for "show this image bigger". A
+  minimal `<div role=dialog aria-modal>` overlay is used instead.
+
+**Decided.** (1) `BodyRenderedView` is a small renderer that reuses
+`fromMarkdown` + `isSafeHref` and adds the one node the comment reader
+omits (image → `<img>`); links come through identically
+(`target=_blank rel=noreferrer noopener`, unsafe schemes refused).
+(2) The lightbox is a bespoke full-viewport overlay that dismisses on a
+click anywhere and on Escape. (3) A blur that leaves the editor sets a
+`wantsLeave` flag and flushes; an effect watching the save state
+performs the actual return to rendered once the write settles to a
+clean state, and holds the editor open if it settled `failed` or in
+conflict (TSK-48) — this avoids reading a stale post-`await flush()`
+closure.
+
+**Why.** The image adaptation is the minimum that keeps K33's "same
+renderer" intent (one parser, the same link/security handling, no
+`dangerouslySetInnerHTML`) while satisfying TSK-70. The duplication is
+one node (`attachmentEmbed`), documented in the file header. The
+lightbox shape and dismiss gestures are UI-taste calls at the agent
+level. The `wantsLeave` effect is load-bearing for TSK-48/71 being
+correct rather than racy.
+
+**To revert.** Restore `BodyEditor.tsx` to the single always-live
+editor (git history), delete `editor/BodyRenderedView.tsx` and its
+test, and drop the `BodyEditor.test.tsx` orchestration test. In
+`tests/ui/flow-tasks.spec.ts`, delete the "TSK — K33 read-then-edit
+description" describe block, the `enterEdit` helper, and revert the
+B3-test migrations (TSK-59/61/62/63/64/67) to click `rich-editor`
+directly on load. TSK-64's test was migrated (see A172).
+
+### A172 · TSK-64's e2e test was migrated (not deleted) into TSK-68's stronger assertion; `flow-task-body.spec.ts` is left for the editor lane to migrate
+
+**Ticket:** B4 Description read-then-edit lane (K33) · **Date:** 2026-09-09 · **Commit:** (staged, uncommitted)
+
+**The situation.** K33 makes the whole description surface read-only
+until entered, which SUPERSEDES TSK-64 (toolbar-collapses-until-focus).
+Two consequences for the existing green Playwright specs:
+
+1. **TSK-64's own test** asserted the collapse-on-focus behaviour — a
+   now-superseded model. Per CLAUDE.md ("a fix requiring an edit to a
+   green test means that test was asserting the old behaviour"), it was
+   MIGRATED, not deleted: renamed `TSK-64/TSK-68` and rewritten to
+   assert the stronger TSK-68 fact (no editor and no toolbar at all
+   while viewing; both appear only after entering edit). Also in the
+   owned file, the B3 editor tests (TSK-59/61/62/63/67) gained an
+   `enterEdit(page)` gesture because they reach for `rich-editor`, which
+   no longer exists on load.
+
+2. **`tests/ui/flow-task-body.spec.ts`** (NOT this lane's file — the
+   editor lane owns it) breaks wholesale: its `typeInBody` helper and
+   ~15 tests click `body-editor › rich-editor` immediately after
+   `goto`, and that surface is now absent until the rendered view is
+   clicked.
+
+**What had to be decided.** Migrate `flow-task-body.spec.ts` here too,
+or leave it for the editor lane?
+
+**Options considered.**
+- *Migrate it here.* Cost: ~15 tests in another lane's file, edited
+  while that lane has uncommitted work in the same tree (SprintsView is
+  dirty; parallel work is live). The enter-edit helper shape is a
+  decision that belongs to the file's owner, and a heavy cross-lane
+  edit risks a merge clobber — exactly the stacking the ownership
+  boundary prevents.
+- *Leave it, record the breakage and the mechanical fix (chosen).*
+
+**Decided.** Left `flow-task-body.spec.ts` untouched; recorded the
+breakage in `known-gaps.md` with the exact mechanical fix (add an
+`enterEdit` gesture / thread it through the `typeInBody` helper). The
+owned split-gate (`flow-tasks.spec.ts` editor+K33 tests) is green.
+
+**Why.** The K33 change is correct and its consequence for that file is
+real, but *how* those ~15 tests enter edit is the editor lane's call,
+and editing their file mid-flight is the load-bearing cross-lane risk
+condition-4 warns against. The fix is mechanical and fully specified in
+known-gaps, so the handoff loses nothing.
+
+**To revert.** Not applicable — no code was written for this decision;
+it records what was deliberately NOT edited. The migration itself, when
+the editor lane does it, mirrors the `enterEdit` helper in
+`flow-tasks.spec.ts`.
+
+### A173 · R2 mobile sidebar: overlay driven by a window-event collapse signal, not a new AppShell prop
+
+**Ticket:** B4 Sidebar lane (R2) · **Date:** 2026-09-09 · **Commit:** (staged, uncommitted)
+
+**The situation.** R2 (responsive review) is that below 900px the sidebar
+force-collapsed to an unlabelled 56px icon rail with the header toggle
+*disabled* (`canToggle = !narrow`), so a phone showed icons with no way
+to read or dismiss them. The R2 fix direction: make it a dismissible
+overlay (toggle enabled on mobile, opening an off-canvas drawer) — "at
+minimum, re-enable `canToggle`". This lane owns only `Sidebar.tsx` and
+`useSidebarCollapse.ts`; the full off-canvas drawer as described touches
+`AppShell.tsx`'s grid and `Header.tsx`, which this lane does NOT own.
+
+**What had to be decided.** How to make the mobile rail dismissible
+(tap-away / navigate-to-close) without editing `AppShell` or `Header`.
+
+**Options considered.**
+- *Thread a `requestCollapse` callback from the hook, through `AppShell`,
+  down to `Sidebar`.* The natural shape, but `AppShell.tsx` and
+  `Header.tsx` are out of this lane's ownership, and the dismiss triggers
+  (a route change, a backdrop tap) are observed *inside* the router in
+  `Sidebar`, below where the hook lives. Rejected on ownership.
+- *A second `useSidebarCollapse` instance inside `Sidebar`.* Rejected —
+  two instances do not share state, so the overlay a `Sidebar`-local hook
+  opened would not be the one the Header toggle controls.
+- *A window-event collapse signal (chosen).* `useSidebarCollapse` now:
+  (a) returns `canToggle: true` always (R2 minimum) and a new `narrow`
+  flag; (b) models the mobile overlay as transient session state
+  (`mobileOpen`), never persisted, so opening the rail on a phone does
+  not overwrite the desktop preference in `localStorage`; (c) listens for
+  a `loctt:sidebar-collapse` window event. `Sidebar` reads the viewport
+  itself (`useIsNarrow`, mirroring the 900px breakpoint), renders the
+  expanded-at-narrow state as a `fixed` overlay + a tap-away backdrop, and
+  fires `requestSidebarCollapse()` on a backdrop tap and on a route
+  change. A window event is the app's existing cross-tree signal (the
+  theme repaint and the shortcut registry use the same shape), so no new
+  prop, context, or `AppShell` edit was needed.
+
+**Why this is safe.** On a wide viewport `narrow` is false, `mobileOpen`
+is unused, and `collapsed` is still the persisted preference — desktop
+behaviour, incl. the `[` shortcut and SHL-12 persistence, is unchanged
+(A11Y-6 and the SHL narrow-viewport e2e both stay green). The default
+narrow render is still the collapsed rail; the overlay appears only once
+the user opens it.
+
+**Scope note.** This is the R2 *minimum-plus*: toggle re-enabled +
+tap-away/navigate dismiss + a floating overlay. It is NOT the full drawer
+animation/slide-in from the header, which would require the `AppShell`
+grid change this lane cannot make. R2 has no ingested acceptance case
+(it is a responsive-review item), so the new tests reference it in prose
+("Covers R2"), not with a `@verifies` tag (the coverage tool rejects a
+non-case id). Same for the S-8/S-11 tests.
+
+**To revert.** Restore `canToggle: !narrow` and drop the `narrow` field,
+the `mobileOpen` state, the `COLLAPSE_EVENT` listener and
+`requestSidebarCollapse` export from `useSidebarCollapse.ts`; remove
+`useIsNarrow`, the overlay branch, the backdrop and the route-change
+effect from `Sidebar.tsx`. The sidebar returns to the permanent mobile
+rail.
+
+### A174 · The sidebar count Badge is NOT migrated to the B1 Chip; the TextField and sprint-state pill are
+
+**Ticket:** B4 Sidebar lane (Chip/TextField migration) · **Date:** 2026-09-09 · **Commit:** (staged, uncommitted)
+
+**The situation.** B4 asks the Sidebar to adopt the B1 primitives. The
+`Chip` doc names "Sidebar counts" as a migration target. But the sidebar
+count `Badge` models three states (a numeric value, a `pending` "···"
+affordance, and an `unavailable` "—") and reserves a fixed min-width slot
+(ONB-14/SHL-23) so a click aimed mid-load does not shift. Its
+`data-pending` / `data-unavailable` attributes are asserted by the SHL-23
+tests (`link.querySelector("[data-pending]")`).
+
+**What had to be decided.** Whether to route the count `Badge` through
+`Chip`.
+
+**Options considered.**
+- *Render the `Badge` as a `Chip`.* `Chip` forwards only `title` and
+  `testId` — it cannot carry `data-pending`/`data-unavailable`, so the
+  migration would either drop the SHL-23 state hooks or force widening the
+  B1 `Chip` API, which is a B1 file this lane does not own. Rejected.
+- *Keep `Badge` bespoke (chosen).* The count badge stays a specialised
+  component; the genuine B1 adoptions in this file are: the project-search
+  `<input type="search">` → `TextField` (a clean win — `TextField`
+  supports `type`, `size`, `leadingIcon`, `data-testid`), and the plain
+  sprint-state text → `Chip variant="neutral"`. S-11 ColorDots move to
+  CSS-variable tokens (`--text-tertiary`, `--status-active-fg`,
+  `--feedback-success-fg`) and both `★` stars become `ICON.star` (S-8).
+
+**To revert.** Restore the raw `<input>` for project search, the plain
+`<span>{s.state}` for the sprint state, the hex ColorDot colours
+(`#8A94A6`, `#1E6FCB`, `#1F8A4C`) and the `★` glyphs. The `Badge`
+component is unchanged either way.
+
+### A175 · New-task modal Status/Type default pre-fill applied by a field-scoped effect, not by re-seeding the form (NEW-42 / UX-14)
+
+**Lane:** B4 New-task modal. **Files:** `apps/web/src/client/create/CreateTaskModal.tsx`, `create/formState.ts` (+ tests), the create-task portions of `tests/ui/flow-task-create.spec.ts`.
+
+NEW-42's residual (narrowed) has two parts: make the disabled Create a *visible* cue, and pre-fill Status/Type with the `workflow.yaml` defaults instead of "—".
+
+Calls made:
+
+- **Defaults resolved through contracts' `defaultStatus`, never a hardcoded "first status".** New pure helper `defaultsFromWorkflow(wf)` in `formState.ts` returns `{ status: defaultStatus(wf)?.key, task_type: wf.task_types[0]?.key }`. Status honours the `default: true` mark (may be any position) so the form shows what the CLI/MCP/core create path would actually write; type has no per-entry default flag, so its default is the first configured task type (configured order). Returns only the keys it can resolve, so an unloaded/typeless workflow pins no guess.
+- **Pre-fill is applied by a separate, field-scoped effect — the form is NOT re-seeded on workflow arrival.** The first attempt gated the main seed effect on `workflow.isSuccess` so the seeded form carried the defaults. That regressed **NEW-4**: the seed's `setForm(initial)` then fired *after* the title focused and the user's first keystroke landed, clobbering it (measured: "typed" → "yped"). Instead the main seed stays gated only on projects/user (title focuses and takes typing immediately), and a second effect folds the two defaults in when the workflow lands — only into `status`/`task_type`, and only while each is still unset, so a board-column NEW-3 status or a user's own pick is never overwritten. `initial` still includes `defaultsFromWorkflow(wf)` (via its `wf` dep) so `hasUserContent`/`dirty` converges once workflow loads and NEW-27's "untouched modal closes immediately" holds.
+- **The disabled cue is delivered by migrating Create/Cancel/Discard to the B1 `Button`.** The B1 Button base carries `disabled:opacity-50 disabled:cursor-not-allowed`, so an empty-title Create reads as unavailable rather than a live-looking dead button. This also removed the `text-white` on the Discard button (B1 CI-guard win). The close `×` icon button was left as-is (no `text-white`, out of NEW-42's narrow scope).
+- **Edited the green, tagged NEW-11 test's picker locator (per CLAUDE.md's "editing a green test" rule).** Pre-filling Type means its OptionPicker now leads with a "None"/clear option, so NEW-11's `getByRole("option").first()` selected Clear and produced a task with no `task_type` — a stale-locator failure, not a behaviour regression. Changed NEW-11 to pick a concrete, *different* type by name ("Bug") and priority "High", which makes "type carried over" a stronger assertion (the chosen value survived, not the default merely reappearing). NEW-11's on-disk assertions are unchanged.
+
+**To revert.** Delete `defaultsFromWorkflow` (and its tests), the pre-fill effect and its `defaultsApplied` state, and the `...defaultsFromWorkflow(wf)` spread in `initial`; restore Status/Type to opening unset ("—"). Revert the Create/Cancel/Discard buttons to their raw `<button>` spellings (Discard back to `text-white`). Restore NEW-11's `getByRole("option").first()` type/priority picks and drop the NEW-42 spec test + `defaultsFromWorkflow` unit tests.
+
+### A176 · Board card blocked/epic/subtask markers derived from the card's own relationships + workflow config (BRD-50 / UX-5); pill toggle affordance (BRD-51 / UX-6)
+
+**Lane:** B4 Board. **Files:** `apps/web/src/client/board/relationshipBadges.ts` (+ tests), `board/BoardCard.tsx` (+ tests), `board/BoardView.tsx`, `tests/ui/flow-board.spec.ts`.
+
+Calls made (none change scope, invent a requirement, or touch a P-principle — recorded here per the run workflow's "decide and record" rule):
+
+- **BRD-50 signals are computed from `task.relationships` alone — no second API read, no traversal.** A board card already receives the task's frontmatter (via the list feed's `TaskListRow extends TaskFrontmatterPublic`), which carries `relationships`. LocTT writes both sides of every edge (P-12), so the *blocked* task itself holds the `is_blocked_by` edge and the *epic* itself holds the `child` edges. `boardCardBadges(task, workflow)` reads them directly. No new endpoint, no board-specific relationship fetch.
+- **The relationship type keys are resolved from config, not hardcoded.** `resolveBadgeKeys(workflow)`: the blocked axis is the inverse of `timeline.dependency_relationship` (defaulting to `blocks` → `is_blocked_by`); the hierarchy axis is the first `graph: "tree"` relationship — its own `key` (e.g. `parent`, held by a subtask) and its inverse (e.g. `child`, held by an epic). Falls back to the shipped defaults when the config is absent so a stock board still marks blocked/epic cards.
+- **"Unresolved blocker" is taken as "has a blocker".** BRD-50's UX-5 text says "is_blocked_by with an unresolved blocker". The board feed does not cheaply carry each blocker's status, and resolving it per card would be a second read per edge. The card marks blocked when it holds ≥1 `is_blocked_by` edge and names the blocker *count* in the marker's title; whether a given blocker is itself done is surfaced in task detail, not on the card. **To revert this narrowing:** thread each blocker's status into the feed and gate `blocked` on an unresolved one.
+- **Badges are computed once in `BoardView` (memoized `badgesFor`) and threaded into `BoardCard` as a `badges` prop**, keeping the card presentational and not re-reading config per card. The drag preview gets the same badges.
+- **BRD-51: the visibility pills stay `<button aria-pressed>` toggles (BRD-3's shape) and gain the discoverability affordance** — an eye/blocked glyph, plus a `title`/`aria-label` that names the action ("Hide column X" / "Show column X") rather than the bare label. The BRD-19 disambiguator is folded into that name, not replaced.
+- **S-11 (design-spec, no case id): board column width degrades `w-[280px]` → `w-[min(85vw,280px)] sm:w-[280px]`.** On tablet/desktop the width is the pinned 280px; on a phone-width viewport a column caps at 85vw so the next column peeks in at the edge — the horizontal-scroll affordance — instead of a fixed 280px column crushing the pane. The board region's existing `overflow-x-auto` (BRD-15) is unchanged.
+- **Chip migration (item 4): the new card markers are built on the B1 `Chip` primitive** (blocked/subtask `neutral`, epic `accent`). The WIP **count** span is deliberately NOT migrated — it carries at-cap/over-cap colour + `data-wip-state` state logic, which `Chip` (a plain def-less pill) does not model; per `Chip.tsx`'s own docstring it is not a Chip target. `list/cells.tsx` was **consumed as-is and not edited** (owned by the Toolbar/List lane).
+
+**To revert.** Delete `relationshipBadges.ts` (+ its unit tests) and the BRD-50 marker block in `BoardCard.tsx` (+ its render tests); drop the `badges` prop and `badgesFor` memo and the drag-preview `badges`. Restore the ChipsBar pill's `title` to the disambiguator-only form and remove `aria-label`/the eye glyph. Restore the column width to `w-[280px]`. Drop the BRD-50/BRD-51 spec tests.
+
+### A177 · SettingsShell stacks to a full-width section bar below `md`; two-pane rail restored at `md`+ (R1, responsive-remainder lane)
+
+**Lane:** B4 responsive remainder. **Files:** `apps/web/src/client/settings/SettingsShell.tsx` (+ new `SettingsShell.test.tsx`). R1 is a design-spec item with **no case id** — no `@verifies` tag was added.
+
+R1's premise held: the Settings two-pane layout was an unconditional horizontal `flex` with a `w-56 shrink-0` (224px) nav rail at *every* width. On a 375px phone that rail swallowed 60% of the width and crushed the panel pane, and nothing capped the shell's overflow. Calls made (none change scope or touch a P-principle — recorded per the run workflow's "decide and record" rule):
+
+- **Breakpoint is Tailwind's default `md` (768px)**, matching the app's existing responsive convention (`Header.tsx` uses `sm:`; the sidebar's own R2 keys off its `narrow` media state). Below `md` the shell is `flex-col` (section bar stacked above the pane); at `md`+ it is `flex-row` (the side-by-side rail it was). No custom breakpoint added — Tailwind v4 default screens.
+- **The nav becomes a full-width bar on mobile, the fixed rail at `md`+.** `w-full … md:w-56 md:shrink-0`. `shrink-0` is now gated behind `md` so the mobile bar can be full width; the border flips from bottom (bar) to right (rail): `border-b … md:border-r md:border-b-0`.
+- **The mobile bar is height-capped and scrolls** (`max-h-[40vh] overflow-y-auto … md:max-h-none`) so the ~20-section list cannot push the pane off-screen; the rail keeps its natural height at `md`+. The pane keeps its own `overflow-auto` (unchanged).
+- **The shell clips its own overflow** (`overflow-hidden`) so a wide panel cannot force horizontal *body* scroll — overflow lives inside the panes, not the page. This is the "nothing forces horizontal body scroll" half of R1.
+- **Verified by unit test, not e2e.** `flow-app-shell.spec.ts` (the settings/app-shell Playwright spec) is owned by the Sidebar lane (its R2 additions were already staged in the shared tree), so per the ticket this lane kept to a unit test. jsdom has no layout engine, so the test pins the responsive *class contract* (`flex-col`/`md:flex-row` on the shell, `w-full`/`md:w-56`/`md:shrink-0` on the nav, `overflow-hidden` on the shell) rather than measuring pixels. Red-first proven: reverting to the pre-R1 classes turns all three assertions red.
+
+**To revert.** In `SettingsShell.tsx`, restore the nav `className` to `"w-56 shrink-0 border-r border-border-subtle bg-bg-surface p-3"`, the outer shell `className` to `"flex h-full bg-bg-canvas font-sans text-text-primary"`, and the group `div` to `"mb-4"` (drop `last:mb-0 md:last:mb-0`). Delete `SettingsShell.test.tsx`.
+
+### A178 · B4 primitive-migration remainder lane — controls deliberately left bespoke
+
+**Lane:** B4 primitive-migration remainder. This lane swapped hand-rolled
+`<button>`/`<input>`/`<select>`/radio/checkbox controls for the B1
+primitives (`Button`, `Checkbox`, `Radio`, `Select`, `TextField`,
+`ToolbarButton`) across the files no other lane owns, and unified the
+S-8 icon glyphs (`×`→`ICON.close`, `▾`/`▸`→`ICON.caretDown`/`caretRight`,
+`⚠`→`ICON.warning`) in those files. It is a behaviour-preserving
+migration — every `data-testid`, `aria-label`, and behaviour was carried
+verbatim, verified by the existing behaviour tests of every touched file
+staying green. No new `@verifies` tag was added (a migration is not a
+new case). The following controls were **deliberately NOT migrated**,
+each because a B1 primitive would change its look or cannot model its
+shape (the SHL-23 "leave-it-bespoke" pattern):
+
+- **Custom listboxes / menus** — `task/editors/OptionPicker.tsx` (the
+  `Select.tsx` docstring explicitly says to skip it: a deliberate
+  listbox, not a `<select>`), the `BulkBar.tsx` `BulkPicker` dropdown
+  (`role="menu"` trigger + `role="menuitem"` items — a menu, not a
+  Button), and `task/editors/LabelsField.tsx`'s find/create listbox
+  input + `role="option"` rows. Only their glyphs were unified.
+- **Colour-tinted / degradation pills** — `LabelsField.tsx` label pills
+  (arbitrary user-hex `color-mix` tint via inline `style`, which `Chip`
+  cannot express) and `CustomFields.tsx` MultiEnum chips (conditional
+  `text-warn-fg` on an unknown value). Left bespoke; `×`→`ICON.close`.
+- **Inline task-field editors** — `task/editors/TextField.tsx` and
+  `DateField.tsx` (view-trigger → inline `<input>`/`<input type=date>`
+  with tuned commit-on-blur, `aria-describedby`, and
+  `requestAnimationFrame` focus-return). These are bespoke inline editors
+  at `text-[13px] px-1.5 py-0.5`, not standard form fields; the risk of
+  perturbing their focus/blur behaviour outweighs the primitive gain.
+  No glyphs.
+- **Link-styled text actions** — `CommentItem.tsx` Edit/Delete (compact
+  `text-[12px]` inline actions with a delete-specific `hover:text-danger-fg`
+  that is not a Button variant), `SidebarPinsPanel.tsx` Unpin/Pin/Delete-view
+  and `CardLayoutPanel.tsx` "Reset to the default layout" (`text-accent
+  hover:underline` links), and `LabelsField.tsx`/`CustomFields.tsx`
+  inline "Clear"/"Dismiss" links. A boxed `Button` would look wrong
+  inline; none carries `text-white` or an ad-hoc glyph.
+- **Pressed-toggle pills that are not facet-sized** —
+  `CardLayoutPanel.tsx` `card-field-toggle-*` (`aria-pressed`
+  `text-[12px] px-2 py-0.5` accent/muted pill; `ToolbarButton`'s `h-8`
+  border box would misfit the tiny inline pill). (The `PreferencesPanel`
+  theme picker and `TimelineView` zoom pills, which ARE facet-sized, WERE
+  migrated to `ToolbarButton active`.)
+- **Native file input** — `BackupPanel.tsx` `<input type="file">` (no B1
+  primitive models a file input).
+- **Chart-positioned controls** — `TimelineChart.tsx` band-header /
+  bar / anomaly buttons (`absolute`-positioned custom chart elements).
+  Only their glyphs were unified.
+- **Anchor styled as a button** — `BackupPanel.tsx`
+  `backup-export-link` (`<a download>`, a native download, not a
+  `<button>`).
+- **Timeline drag-error banner buttons** — `TimelineView.tsx`
+  `timeline-drag-retry`/`timeline-drag-dismiss` (outlined-danger inline
+  actions inside a danger banner; a filled `Button variant="danger"`
+  reads too heavy for a Dismiss and the secondary variant would drop the
+  danger tint that ties them to the banner). Left bespoke.
+
+`ui/Modal.tsx` had no raw controls or ad-hoc glyphs to migrate (its
+inertness/focus-trap logic is untouched). Where an outlined-danger
+*primary* action was a clean primitive target — `BulkBar` Delete,
+`RemapDeleteDialog`/`DeleteViewDialog`/`DeleteConfirmDialog`/`DeleteTaskDialog`/
+`DeleteCommentDialog` confirm buttons, `ReconcilePanel` Apply/Abandon —
+it WAS migrated to `Button variant="danger"`/`"primary"`, which also
+removed the seven `text-white` defect sites in these files.
+
+**To revert.** Revert each migrated file to its hand-rolled control
+markup; the swaps are mechanical and 1:1. The glyph unifications
+(`ICON.*` imports) revert to the literal glyphs.
+
+### A179 · TSK-32's "panel ignores the unknown key" bullet is superseded by DEG-7 (surface it, don't hide it)
+
+**Ticket:** B4 merge (found by the primitive-migration lane running flow-task-meta) · **Date:** 2026-09-09 · **Commit:** (this one)
+
+**The situation.** `flow-task-meta.spec.ts` TSK-32 failed after B3: it
+asserted `meta-panel` does NOT contain an unknown key (`x_experiment`),
+but B3's DEG-7/DEG-29 work renders unrecognised preserved keys in a
+read-only "Not recognised" group. A genuine case-vs-case contradiction.
+
+**What had to be decided.** Which case wins — TSK-32's "the panel ignores
+the key and does not invent a row for it" (minor, P1, pre-degradation-
+framework) or DEG-7's "preserved AND **surfaced** in a 'Not recognised'
+group, read-only, with a remove control" (major, P5)?
+
+**Decided.** DEG-7 wins; TSK-32's first bullet is revised to match.
+
+**Why.** DEG-7 is major, newer, and the direct expression of Ken's
+degradation direction (P7 "value-preserved", K26/K27) — a
+preserved-but-unknown field must be *visible*, never silently hidden, so
+the user can see and remove it. TSK-32's "ignores / does not invent a
+row" predates that framework and encoded the older silently-hide model.
+TSK-32's SECOND bullet — the key survives an edit byte-for-byte — is the
+actual P1/P7 data-loss guard this case exists for, and is unchanged.
+TSK-32 now reads: the unknown key gets no *editable field row* (no
+`meta-edit-<key>` trigger) but IS shown in DEG-7's Not-recognised group,
+and still survives an edit. This is a case reversal (a minor case's stale
+bullet, reconciled to an already-ruled major requirement), not a new
+product decision — flagged for Ken but not blocking, since the direction
+(surface degraded/unknown fields) was already his ruling.
+
+**To revert.** Restore TSK-32's original first bullet ("the panel ignores
+the key and does not invent a row for it"), revert the flow-task-meta
+TSK-32 test to `not.toContainText("x_experiment")`, and remove DEG-7's
+"Not recognised" client group (which would also revert DEG-7 itself and
+its A157 client-render tag) — i.e. this revert is only coherent if DEG-7
+is also reverted, which contradicts the degradation framework.
+
+### A180 · An external image in the task description is a click-to-open link, not an auto-loaded `<img>` (privacy)
+
+**Ticket:** B4 fix-review (K33 BodyRenderedView) · **Date:** 2026-09-09 · **Commit:** (this one)
+
+**The situation.** B4's K33 read-then-edit added a real `<img>` to the
+task description's rendered view (the comment renderer deliberately shows
+images as text references; TSK-70 wants a clickable image → lightbox, so a
+real `<img>` was needed). The fix-review flagged that `isSafeHref` allows
+`http(s)` and protocol-relative `//host/…`, so `![](//evil.example/p.png)`
+became an auto-loading `<img src>` — fetching a remote resource the instant
+a task is *viewed*, leaking the viewer's IP/referrer to an arbitrary host
+and acting as a tracking pixel, with no interaction.
+
+**What had to be decided.** Should the description auto-load external
+image URLs inline (like GitHub/Jira markdown) or not?
+
+**Decided (agent level, flagged for Ken).** Only a **local** src
+(same-origin `/…`, or a bare relative path — LocTT's own attachments)
+becomes an auto-loading, clickable `<img>` → lightbox. An **external**
+image URL (`http(s)://other-host/…`, or protocol-relative `//host/…`)
+renders as a **click-to-open link** (`target=_blank rel=noreferrer
+noopener`), NOT an `<img>` — so nothing off-origin is fetched just by
+opening a task. An unsafe scheme (`javascript:`/`data:`) stays plain text.
+This matches the comment renderer's long-standing stance (images as
+references, never auto-loaded) and TSK-70's letter (the image "opens" —
+here via the link). **Flagged for Ken** as a privacy-vs-inline-render
+taste call: GitHub/Jira do auto-load external images; if Ken wants inline
+external images, this is where to change it (accepting the tracking-pixel
+exposure, ideally behind a proxy or a per-tracker opt-in).
+
+**To revert (auto-load external images inline).** In
+`BodyRenderedView.tsx` `attachmentEmbed`, drop the `isLocal` gate and
+render any `isSafeHref(src)` as the `<img>` (as it briefly did), removing
+the `body-image-link` branch and its test.

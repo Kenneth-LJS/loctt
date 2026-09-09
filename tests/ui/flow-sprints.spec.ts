@@ -632,12 +632,15 @@ test.describe("SPR — sprints overview", () => {
   });
 
   // @verifies SPR-31
-  // QUARANTINED (pre-existing, not a B2 regression — fails identically on a
-  // clean HEAD worktree). The `sprints-config-error` testid exists in
-  // SprintsView.tsx but the tolerant sprints loader degrades a malformed
-  // entry silently, so the alert never renders. Overview lane to fix.
-  // See known-gaps.md "flow-sprints.spec.ts — SPR-6 and SPR-31".
-  test.fixme("SPR-31: a malformed sprints.yaml explains itself instead of blanking the view", async ({
+  // Un-fixme'd by the B4 overview lane (A167). The earlier quarantine
+  // asserted `sprints-config-error` (a WHOLE-FILE parse failure), but a
+  // single sprint whose `end_date` precedes `start_date` is caught by
+  // `SprintDefSchema`'s per-entry superRefine, so core reports it as one
+  // `BrokenEntry` on the response's `broken[]` — not a file-level error.
+  // `SprintsView` surfaces that as the `sprints-broken-config` alert
+  // (A138). The fixme asserted the wrong testid; the behaviour SPR-31
+  // describes exists on that surface. See decisions.md §8 A167.
+  test("SPR-31: a malformed sprints.yaml explains itself instead of blanking the view", async ({
     tracker,
     page,
   }) => {
@@ -655,19 +658,58 @@ test.describe("SPR — sprints overview", () => {
 
     await page.goto(`${tracker.baseURL}/sprints`);
 
-    const err = page.getByTestId("sprints-config-error");
+    // The degraded entry is surfaced, not dropped: named, marked, and
+    // carrying the validator's message.
+    const err = page.getByTestId("sprints-broken-config");
     await expect(err).toBeVisible();
-    // Names the file, the offending sprint, and the specific rule.
+    // Names the file, the offending sprint (by its id), and the rule.
     await expect(err).toContainText("sprints.yaml");
-    await expect(err).toContainText("sprints[0]");
+    await expect(err).toContainText("01M1AQ6K96WRM6WNESPCN4WQEP");
     await expect(err).toContainText("must not be before start_date");
     // Tells the user to fix the file and reload; offers no repair.
     await expect(err).toContainText("reload");
     await expect(err).toContainText("will not repair");
 
-    // A48: the parse is all-or-nothing, so this must say the FILE
-    // failed — never the empty state, which would read as "no sprints".
+    // A138 "tell broken from none": a tracker whose only sprint is
+    // corrupt must NOT read as an empty one — the empty state would say
+    // "no sprints", contradicting the notice above.
     await expect(page.getByTestId("sprints-empty")).toHaveCount(0);
+  });
+
+  // @verifies SPR-31
+  test("SPR-31: a broken entry does not blank the healthy sprints beside it", async ({
+    tracker,
+    page,
+  }) => {
+    // A valid sprint first, then a backwards-window one. Core partially
+    // recovers: the good sprint still loads its column, the bad one is
+    // surfaced as broken.
+    await tracker.run(["sprint", "create", "Healthy", "--start", "2026-03-01", "--end", "2026-03-14", "--state", "active"]);
+    const healthyId = String((await readSprints(tracker.root))[0]?.id);
+    const existing = await readFile(
+      path.join(tracker.root, ".loctt", "config", "sprints.yaml"), "utf8",
+    );
+    await writeSprintsYaml(
+      tracker.root,
+      existing
+        + [
+          "  - id: 01M1AQ6K96WRM6WNESPCN4WQEP",
+          "    name: Backwards",
+          "    start_date: 2026-02-01",
+          "    end_date: 2026-01-01",
+          "    state: active",
+        ].join("\n") + "\n",
+    );
+
+    await page.goto(`${tracker.baseURL}/sprints`);
+
+    // The healthy sprint still renders its column…
+    await expect(page.getByTestId(`sprint-column-${healthyId}`)).toBeVisible();
+    // …and the broken one is surfaced beside it, not swallowed. It is
+    // named by its id (the loader could read one) and marked broken.
+    await expect(page.getByTestId("sprints-broken-config")).toBeVisible();
+    await expect(page.getByTestId("sprints-broken-config")).toContainText("01M1AQ6K96WRM6WNESPCN4WQEP");
+    await expect(page.getByTestId("sprints-broken-config")).toContainText("(broken)");
   });
 
   // @verifies SPR-32
@@ -726,6 +768,111 @@ test.describe("SPR — sprints overview", () => {
     // The stale column is gone on refresh, not a phantom drop target.
     await page.reload();
     await expect(page.getByTestId(`sprint-column-${staleId}`)).toHaveCount(0);
+  });
+
+  // @verifies SPR-39
+  test("SPR-39: the overview card surfaces progress, dates, days-remaining, and a mini-bar", async ({
+    tracker,
+    page,
+  }) => {
+    // An end well in the future so the countdown reads "days left", not
+    // overdue, whatever the tracker's clock is.
+    await tracker.run(["sprint", "create", "Cadence", "--start", "2020-01-01", "--end", "2099-12-31", "--state", "active"]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+
+    // Four tasks: 2 done, 1 open, 1 discarded → done/total is 2/3 (the
+    // discarded one is excluded from the total, per core's Progress).
+    const seeded = await tracker.seed([
+      { title: "a" }, { title: "b" }, { title: "c" }, { title: "d" },
+    ]);
+    await assignById(tracker, seeded.map(k => [String(k), id] as const));
+    // Move two to a completed-category status and one to discarded
+    // (`wont_do` in the default workflow). The discarded task is
+    // excluded from the total, so done/total is 2/3, not 2/4.
+    await tracker.run(["set", String(seeded[0]), "status", "done"]);
+    await tracker.run(["set", String(seeded[1]), "status", "done"]);
+    await tracker.run(["set", String(seeded[3]), "status", "wont_do"]);
+
+    await page.goto(`${tracker.baseURL}/sprints`);
+
+    // Progress done/total, from core — the discarded task is excluded.
+    const progress = page.getByTestId(`sprint-progress-${id}`);
+    await expect(progress).toBeVisible();
+    await expect(progress).toContainText("2/3");
+
+    // The mini-bar (burndown equivalent) reflects the same fraction.
+    const bar = page.getByTestId(`sprint-progress-bar-${id}`);
+    await expect(bar).toHaveAttribute("data-fill", (2 / 3).toFixed(4));
+
+    // The date range and the days-remaining countdown are both shown.
+    await expect(page.getByTestId(`sprint-window-${id}`)).toBeVisible();
+    await expect(page.getByTestId(`sprint-countdown-${id}`)).toContainText(/days left/);
+
+    // K-14: the whole at-a-glance card opens the detail route.
+    await page.getByTestId(`sprint-card-${id}`).click();
+    await expect(page.getByTestId("sprint-detail")).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe(`/sprints/${id}`);
+  });
+
+  // @verifies SPR-39
+  test("SPR-39: clicking the Open-sprint link inside the card does not double-fire the card", async ({
+    tracker,
+    page,
+  }) => {
+    // The inner link is a nested control: its click is the link's, not
+    // the card's, so the two never race to navigate.
+    await tracker.run(["sprint", "create", "Cadence", "--start", "2026-01-01", "--end", "2099-12-31", "--state", "active"]);
+    const id = String((await readSprints(tracker.root))[0]?.id);
+
+    await page.goto(`${tracker.baseURL}/sprints`);
+    await page.getByTestId(`sprint-open-${id}`).click();
+    await expect(page.getByTestId("sprint-detail")).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe(`/sprints/${id}`);
+  });
+
+  // @verifies SPR-40
+  test("SPR-40: the overview hides archived sprints until the show-archived toggle is on", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run(["sprint", "create", "Live", "--start", "2026-06-01", "--end", "2026-06-14", "--state", "active"]);
+    await tracker.run(["sprint", "create", "Retired", "--start", "2025-01-01", "--end", "2025-01-14", "--state", "completed"]);
+    await tracker.run(["sprint", "archive", "Retired"]);
+    const byName = new Map((await readSprints(tracker.root)).map(s => [s.name, s.id]));
+    const liveId = String(byName.get("Live"));
+    const retiredId = String(byName.get("Retired"));
+
+    await page.goto(`${tracker.baseURL}/sprints`);
+
+    // Archived is hidden by default; the live one shows.
+    await expect(page.getByTestId(`sprint-column-${liveId}`)).toBeVisible();
+    await expect(page.getByTestId(`sprint-column-${retiredId}`)).toHaveCount(0);
+
+    // The toggle reveals it in place — a local view state, no write.
+    const yamlBefore = await readFile(
+      path.join(tracker.root, ".loctt", "config", "sprints.yaml"), "utf8",
+    );
+    await page.getByTestId("sprints-show-archived").check();
+    await expect(page.getByTestId(`sprint-column-${retiredId}`)).toBeVisible();
+    const yamlAfter = await readFile(
+      path.join(tracker.root, ".loctt", "config", "sprints.yaml"), "utf8",
+    );
+    expect(yamlAfter).toBe(yamlBefore);
+  });
+
+  // @verifies SPR-40
+  test("SPR-40: the overview links to Settings → Sprints for the lifecycle actions", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run(["sprint", "create", "Live", "--start", "2026-06-01", "--end", "2026-06-14", "--state", "active"]);
+
+    await page.goto(`${tracker.baseURL}/sprints`);
+    await page.getByTestId("sprints-manage-link").click();
+
+    // Lands on the Settings Sprints panel, where create/delete/archive live.
+    await expect(page.getByTestId("sprints-panel")).toBeVisible();
+    await expect(page.getByTestId("sprint-create-form")).toBeVisible();
   });
 });
 

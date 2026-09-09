@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "../api/client.ts";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 
 /**
@@ -103,15 +104,16 @@ export function DiagnosticsPanel() {
         runs, against this tracker.
       </p>
 
-      <button
+      <Button
         type="button"
-        data-testid="diagnostics-run"
+        variant="secondary"
+        testId="diagnostics-run"
+        className="mb-4"
         disabled={doctor.isFetching}
         onClick={() => { void doctor.refetch(); }}
-        className="mb-4 rounded-md border border-border-subtle bg-bg-surface px-3 py-1.5 text-[13px] disabled:opacity-50"
       >
         {doctor.isFetching ? "Running…" : "Run diagnostics"}
-      </button>
+      </Button>
 
       {/*
         SET-40: a failed run is not "all checks passed". The panel says

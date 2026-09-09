@@ -504,6 +504,123 @@ test.describe("MSL — the milestones view", () => {
     await expect(page.getByTestId(`milestone-${alpha}-readout`)).toContainText("8 / 8");
   });
 
+  // @verifies MSL-39
+  test("MSL-39: the whole card opens the milestone, and an inner control is not swallowed", async ({
+    page,
+    tracker,
+  }) => {
+    const { alpha } = await seedWorkedExample(tracker);
+
+    await page.goto(`${tracker.baseURL}/milestones`);
+    const row = page.locator(`[data-milestone-id="${alpha}"]`);
+    await expect(row).toBeVisible();
+    // The card advertises itself as a link to assistive tech — the
+    // affordance is the whole card, not only the name sub-target.
+    await expect(row).toHaveAttribute("role", "link");
+
+    // Click the card body away from the name link — the progress bar
+    // region, which is inert. It must still navigate to the detail.
+    await page.getByTestId(`milestone-${alpha}-bar`).click();
+    await expect(page.getByTestId("milestone-detail")).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/milestones/${alpha}$`));
+
+    // The name link inside the card also opens it (a real link — keyboard
+    // and open-in-new-tab keep working) rather than being swallowed.
+    await page.goBack();
+    await expect(page.getByTestId("milestones")).toBeVisible();
+    await row.getByTestId("milestone-open").click();
+    await expect(page.getByTestId("milestone-detail")).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/milestones/${alpha}$`));
+  });
+
+  // @verifies MSL-40
+  test("MSL-40: a dated card shows a countdown, a past one shows overdue, undated degrades", async ({
+    page,
+    tracker,
+  }) => {
+    // The tracker's today, read from the server, is the frame the
+    // countdown is measured in — computed here so the fixture dates are
+    // relative to it and the test does not drift with the wall clock.
+    const info = await (await page.request.get(`${tracker.baseURL}/api/info`)).json() as {
+      today: string;
+    };
+    const today = new Date(`${info.today}T12:00:00Z`);
+    const plus = (n: number): string =>
+      new Date(today.getTime() + n * 86_400_000).toISOString().slice(0, 10);
+
+    await tracker.run(["milestone", "create", "Soon", "--target-date", plus(5)]);
+    await tracker.run(["milestone", "create", "Late", "--target-date", plus(-3)]);
+    await tracker.run(["milestone", "create", "Someday"]);
+    const ms = await readMilestones(tracker.root);
+    const soon = ms.find(m => m.name === "Soon")?.id ?? "";
+    const late = ms.find(m => m.name === "Late")?.id ?? "";
+    const someday = ms.find(m => m.name === "Someday")?.id ?? "";
+
+    // "Late" needs an incomplete task so it reads overdue rather than
+    // just past — MSL-40's marker rides the same overdue rule (MSL-17).
+    const out = await tracker.run(["create", "L task"]);
+    const key = (/Created (\S+):/.exec(out)?.[1] ?? "").replace(/:$/, "");
+    await tracker.run(["set", key, "milestone", late]);
+
+    await page.goto(`${tracker.baseURL}/milestones`);
+
+    // A future date: days-remaining.
+    await expect(page.getByTestId(`milestone-${soon}-countdown`)).toContainText("in 5 days");
+    // A past date with work left: an overdue duration.
+    await expect(page.getByTestId(`milestone-${late}-countdown`)).toContainText("3 days overdue");
+    // Undated: no countdown at all, and the date slot still says so.
+    await expect(page.getByTestId(`milestone-${someday}-countdown`)).toHaveCount(0);
+    await expect(
+      page.locator(`[data-milestone-id="${someday}"]`).getByTestId("milestone-date"),
+    ).toHaveText("No target date");
+  });
+
+  // @verifies MSL-41
+  test("MSL-41: each card shows a done/remaining/discarded breakdown at a glance", async ({
+    page,
+    tracker,
+  }) => {
+    // The worked example: 10 tasks — 4 done, 2 discarded, 4 active.
+    // done = 4, remaining = total(8) - done(4) = 4, discarded = 2.
+    const { alpha, empty } = await seedWorkedExample(tracker);
+
+    await page.goto(`${tracker.baseURL}/milestones`);
+
+    const bd = page.getByTestId(`milestone-${alpha}-breakdown`);
+    await expect(bd).toBeVisible();
+    await expect(page.getByTestId(`milestone-${alpha}-breakdown-done`)).toContainText("4");
+    await expect(page.getByTestId(`milestone-${alpha}-breakdown-remaining`)).toContainText("4");
+    await expect(page.getByTestId(`milestone-${alpha}-breakdown-discarded`)).toContainText("2");
+    // The three buckets are labelled, not bare numbers — "at a glance".
+    await expect(bd).toContainText("done");
+    await expect(bd).toContainText("remaining");
+    await expect(bd).toContainText("discarded");
+
+    // The zero-task milestone shows no breakdown — it already reads
+    // "No tasks", and a 0/0/0 breakdown would be noise.
+    await expect(page.getByTestId(`milestone-${empty}-breakdown`)).toHaveCount(0);
+  });
+
+  // @verifies MSL-42
+  test("MSL-42: the view's copy points to where milestones are managed", async ({
+    page,
+    tracker,
+  }) => {
+    await seedWorkedExample(tracker);
+
+    await page.goto(`${tracker.baseURL}/milestones`);
+
+    // The discoverability copy names the reachable management location
+    // and links to it — closing UX-15's "a view you cannot find" gap.
+    const subhead = page.getByTestId("milestones-subhead");
+    await expect(subhead).toBeVisible();
+    await expect(subhead).toContainText("Settings");
+    const link = subhead.getByRole("link", { name: /Settings . Milestones/i });
+    await expect(link).toBeVisible();
+    await link.click();
+    await expect(page).toHaveURL(/\/settings\/milestones$/);
+  });
+
   // @verifies MSL-38
   test("MSL-38: an unknown id in the detail URL is a not-found, distinct from zero tasks", async ({
     page,

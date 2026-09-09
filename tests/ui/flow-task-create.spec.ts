@@ -235,6 +235,48 @@ test.describe("NEW — create task modal", () => {
     expect(text).not.toContain("status: Carving");
   });
 
+  // @verifies NEW-42
+  test("NEW-42: the empty-title block is a visible cue and defaults pre-fill", async ({
+    page,
+    tracker,
+  }) => {
+    await page.goto(`${tracker.baseURL}/list`);
+    await openModal(page);
+
+    // UX-14 part 1 — the disabled Create is a *visible* cue, not a
+    // live-looking button. NEW-2 already pins that it is disabled on an
+    // empty title; this asserts the disable is legible: the B1 Button's
+    // base carries `disabled:opacity-50`, so the control reads as
+    // unavailable rather than inviting a dead click.
+    const submit = page.getByTestId("create-submit");
+    await expect(submit).toBeDisabled();
+    await expect(submit).toHaveClass(/disabled:opacity-50/);
+    // The disabled cursor is the other half of "you can't submit yet".
+    await expect(submit).toHaveClass(/disabled:cursor-not-allowed/);
+
+    // UX-14 part 2 — Status and Type open pre-filled with the configured
+    // `workflow.yaml` defaults, not the "—" placeholder. The default
+    // status is the `default: true` entry (Backlog), resolved through
+    // core's `defaultStatus`; the default type is the first configured
+    // task type (Story).
+    await expect(page.getByTestId("create-status")).toHaveText("Backlog");
+    await expect(page.getByTestId("create-status")).not.toHaveText("—");
+    await expect(page.getByTestId("create-type")).toHaveText("Story");
+    await expect(page.getByTestId("create-type")).not.toHaveText("—");
+
+    // The pre-fill is real, not cosmetic: submitting with only a title
+    // writes those defaults to disk (the status matches NEW-2's `backlog`
+    // and the type is `story`, the config KEYS behind the shown labels).
+    await page.getByTestId("create-title").fill("Pre-filled defaults");
+    await expect(submit).toBeEnabled();
+    await submit.click();
+    await expect(page.getByTestId("create-task-modal")).toBeHidden();
+
+    const text = await fileByTitle(tracker.root, "Pre-filled defaults");
+    expect(fmValue(text, "status")).toBe("backlog");
+    expect(fmValue(text, "task_type")).toBe("story");
+  });
+
   // @verifies NEW-11
   test("NEW-11: create-another keeps project and type, clears the rest", async ({
     page,
@@ -243,13 +285,17 @@ test.describe("NEW — create task modal", () => {
     await page.goto(`${tracker.baseURL}/list`);
     await openModal(page);
 
-    // Fill type, priority and a title.
+    // Fill type, priority and a title. Type now opens pre-filled with
+    // the workflow default (Story, per NEW-42), so its picker leads with
+    // a "None" clear option — `.first()` would clear it. Pick a concrete,
+    // *different* type by name ("Bug") so "type carried over" proves the
+    // chosen value survived rather than the default merely reappearing.
     await page.getByTestId("create-type").getByRole("button").first().click();
-    await page.getByRole("option").first().click();
+    await page.getByRole("option", { name: "Bug" }).click();
     const chosenType = await page.getByTestId("create-type").innerText();
 
     await page.getByTestId("create-priority").getByRole("button").first().click();
-    await page.getByRole("option").first().click();
+    await page.getByRole("option", { name: "High" }).click();
 
     await page.getByTestId("create-title").fill("First of two");
     await page.getByTestId("create-another").check();

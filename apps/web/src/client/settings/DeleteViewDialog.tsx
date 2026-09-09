@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 
+import { Button } from "../ui/Button.tsx";
+
 /**
  * Confirmation for deleting a saved view (VUE-38).
  *
@@ -44,9 +46,9 @@ export function DeleteViewDialog({
       aria-modal="true"
       aria-label={`Delete saved view ${name}`}
       data-testid="delete-view-dialog"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
     >
-      <div className="w-[26rem] rounded-lg border border-border-subtle bg-bg-surface p-5">
+      <div className="w-full max-w-md rounded-lg border border-border-subtle bg-bg-surface p-5">
         <h2 className="mb-2 text-[15px] font-semibold text-text-primary">
           Delete &ldquo;{name}&rdquo;?
         </h2>
@@ -64,21 +66,17 @@ export function DeleteViewDialog({
           </p>
         ) : null}
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-md border border-border-subtle px-3 py-1 text-[13px] text-text-secondary hover:bg-bg-muted"
-          >
+          <Button type="button" variant="secondary" onClick={onCancel}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            data-testid="delete-view-confirm"
+            variant="danger"
+            testId="delete-view-confirm"
             onClick={onConfirm}
-            className="rounded-md bg-danger-fg px-3 py-1 text-[13px] text-white"
           >
             Delete view
-          </button>
+          </Button>
         </div>
       </div>
     </div>

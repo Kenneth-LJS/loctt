@@ -1,6 +1,9 @@
 import { useState } from "react";
 
 import { apiClient,ApiError } from "../api/client.ts";
+import { Button } from "../ui/Button.tsx";
+import { Radio } from "../ui/Radio.tsx";
+import { TextField } from "../ui/TextField.tsx";
 
 /**
  * Settings → Tracker → Backup & restore (F3 / K30).
@@ -151,8 +154,7 @@ export function BackupPanel() {
           <legend className="mb-1 text-[13px] font-medium text-text-primary">Mode</legend>
           {(["bare", "merge", "overwrite"] as const).map(m => (
             <label key={m} className="mb-1 flex items-start gap-2 text-[13px] text-text-secondary">
-              <input
-                type="radio"
+              <Radio
                 name="restore-mode"
                 data-testid={`backup-mode-${m}`}
                 checked={mode === m}
@@ -183,36 +185,36 @@ export function BackupPanel() {
               <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">OVERWRITE</code>{" "}
               to enable it.
             </p>
-            <input
+            <TextField
               data-testid="backup-overwrite-input"
               type="text"
               value={confirmText}
               onChange={(e) => { setConfirmText(e.target.value); }}
               aria-label="Type OVERWRITE to confirm"
-              className="h-8 w-40 rounded-md border border-border-default px-2 font-mono text-[13px]"
+              className="w-40 font-mono"
             />
           </div>
         )}
 
         <div className="flex gap-2">
-          <button
+          <Button
             type="button"
-            data-testid="backup-restore-dryrun"
+            variant="secondary"
+            testId="backup-restore-dryrun"
             disabled={file === null || busy}
             onClick={() => { void runRestore(true); }}
-            className="h-8 rounded-md border border-border-default px-3 text-[13px] disabled:opacity-50"
           >
             Preview (dry run)
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            data-testid="backup-restore-submit"
+            variant="primary"
+            testId="backup-restore-submit"
             disabled={!canSubmit}
             onClick={() => { void runRestore(false); }}
-            className="h-8 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast disabled:opacity-50"
           >
             {busy ? "Restoring…" : "Restore"}
-          </button>
+          </Button>
         </div>
 
         {errorMsg !== null && (

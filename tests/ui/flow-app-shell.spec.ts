@@ -920,6 +920,45 @@ test.describe("LST — an unrecognised sort key", () => {
   }
 });
 
+test.describe("LST-55 — the sidebar does not carry the ambient sort", () => {
+  /**
+   * @verifies LST-55
+   *
+   * UX-3: a sidebar link is a jump to a destination, not a re-sort of the
+   * current table. With the list sorted ascending, clicking a saved
+   * filter used to open it Low-first — the destination inherited a sort
+   * it never asked for. The strip happens in the sidebar's own href
+   * computation, so following any sidebar filter/nav link lands the URL
+   * without `sort`/`dir` while the filter itself still applies.
+   */
+  test("LST-55: clicking a built-in filter drops sort and dir from the URL", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha task" }, { title: "Beta task" }]);
+
+    // Start on a validly-sorted list (LST-29 keeps this sort in the URL,
+    // so any drop below is the sidebar's doing, not the list's).
+    await page.goto(`${tracker.baseURL}/list?sort=title&dir=asc`);
+    await expect(page.locator("tbody tr")).toHaveCount(2);
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("sort"))
+      .toBe("title");
+
+    // Follow a resolvable built-in filter from the sidebar. The link's
+    // accessible name includes its count badge, so match by substring.
+    await page.locator("aside").getByRole("link", { name: /Overdue/ }).click();
+
+    // The ambient sort is gone; the destination renders in its natural
+    // order. The filter itself still took effect (we left the sorted
+    // list behind).
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("sort"), { timeout: 5_000 })
+      .toBeNull();
+    expect(new URL(page.url()).searchParams.get("dir")).toBeNull();
+  });
+});
+
 test.describe("SHL — the shell under a failing recovery attempt", () => {
   /**
    * @verifies SHL-41, ERR-1

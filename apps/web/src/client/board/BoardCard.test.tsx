@@ -59,11 +59,13 @@ function renderCard(
   opts: {
     health?: readonly WireHealth[];
     layout?: readonly CardLayoutField[];
+    badges?: import("./relationshipBadges.ts").BoardCardBadges;
   } = {},
 ) {
   return render(
     <BoardCard
       task={task}
+      badges={opts.badges}
       health={opts.health}
       layout={opts.layout ?? []}
       lookups={LOOKUPS}
@@ -146,5 +148,54 @@ describe("BoardCard field health via shared list cells (A137.1)", () => {
     // No status, no health → the board omits the field (not a dash).
     expect(container.querySelector('[data-testid="field-health-status"]')).toBeNull();
     expect(container.textContent).not.toContain("⚠");
+  });
+});
+
+describe("BoardCard relationship markers (BRD-50 / UX-5)", () => {
+  const clean: TaskFrontmatterPublic = { id: "01F", key: "WEB-20", title: "T" };
+
+  // @verifies BRD-50
+  it("shows a blocked marker when the task is blocked", () => {
+    renderCard(clean, {
+      badges: { blocked: true, blockerCount: 2, childCount: 0, isSubtask: false },
+    });
+    const marker = screen.getByTestId("board-card-blocked-WEB-20");
+    expect(marker).toBeTruthy();
+    expect(marker.textContent).toContain("Blocked");
+    // The count is discoverable via the title.
+    expect(marker.getAttribute("title")).toBe("Blocked by 2 tasks");
+  });
+
+  // @verifies BRD-50
+  it("shows a child-count badge on an epic/parent card", () => {
+    renderCard(clean, {
+      badges: { blocked: false, blockerCount: 0, childCount: 3, isSubtask: false },
+    });
+    const badge = screen.getByTestId("board-card-epic-WEB-20");
+    expect(badge.textContent).toContain("3");
+    expect(badge.getAttribute("title")).toBe("Epic with 3 children");
+  });
+
+  // @verifies BRD-50
+  it("shows a 'belongs to epic' hint on a subtask", () => {
+    renderCard(clean, {
+      badges: { blocked: false, blockerCount: 0, childCount: 0, isSubtask: true },
+    });
+    expect(screen.getByTestId("board-card-subtask-WEB-20")).toBeTruthy();
+  });
+
+  it("renders no markers on a clean card (no badges / all false)", () => {
+    const { container } = renderCard(clean, {
+      badges: { blocked: false, blockerCount: 0, childCount: 0, isSubtask: false },
+    });
+    expect(container.querySelector('[data-testid="board-card-blocked-WEB-20"]')).toBeNull();
+    expect(container.querySelector('[data-testid="board-card-epic-WEB-20"]')).toBeNull();
+    expect(container.querySelector('[data-testid="board-card-subtask-WEB-20"]')).toBeNull();
+  });
+
+  it("renders no markers when badges is absent (a clean card is unchanged)", () => {
+    const { container } = renderCard(clean);
+    expect(container.querySelector('[data-testid^="board-card-blocked"]')).toBeNull();
+    expect(container.querySelector('[data-testid^="board-card-epic"]')).toBeNull();
   });
 });

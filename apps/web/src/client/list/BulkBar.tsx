@@ -8,6 +8,9 @@ import type {
 import { MAX_BULK_REFS } from "@loctt/contracts";
 import { useState } from "react";
 
+import { Button } from "../ui/Button.tsx";
+import { ICON } from "../ui/icons.ts";
+
 /**
  * The bulk action bar, shown once at least one row is selected.
  *
@@ -185,36 +188,40 @@ export function BulkBar({
         onPick={v => { if (v !== null) onMove(v); }}
       />
 
-      <button
+      <Button
         type="button"
+        variant="secondary"
+        size="sm"
         onClick={onArchive}
         disabled={busy || overCap}
-        className="rounded-md border border-border-subtle px-2.5 py-1 text-[12px] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
       >
         Archive
-      </button>
+      </Button>
 
-      <button
+      <Button
         type="button"
+        variant="danger"
+        size="sm"
         onClick={onDeleteRequested}
         disabled={busy || overCap}
-        className="rounded-md border border-danger-fg/40 px-2.5 py-1 text-[12px] font-medium text-danger-fg hover:bg-danger-fg/10 disabled:opacity-50"
       >
         Delete
-      </button>
+      </Button>
 
       {result !== undefined && (
         <BulkResult result={result} action={resultAction} />
       )}
 
-      <button
+      <Button
         type="button"
+        variant="secondary"
+        size="sm"
         onClick={onClear}
         aria-label="Clear selection"
-        className="ml-auto rounded-md border border-border-subtle px-2.5 py-1 text-[12px] font-medium text-text-secondary hover:bg-bg-muted"
+        className="ml-auto"
       >
-        Clear ×
-      </button>
+        Clear {ICON.close}
+      </Button>
     </div>
   );
 }
@@ -325,7 +332,7 @@ function BulkPicker({
         onClick={() => { setOpen(o => !o); }}
         className="rounded-md border border-border-subtle px-2.5 py-1 text-[12px] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
       >
-        {label} ▾
+        {label} {ICON.caretDown}
       </button>
 
       {open && (

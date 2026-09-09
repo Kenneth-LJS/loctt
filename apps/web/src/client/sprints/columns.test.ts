@@ -8,6 +8,7 @@ import {
   deriveSprintColumns,
   isActive,
   NO_SPRINT_COLUMN_ID,
+  sprintCountdown,
   unknownColumnId,
   windowDisagrees,
 } from "./columns.ts";
@@ -246,5 +247,27 @@ describe("isActive / windowDisagrees / defaultExpanded", () => {
     expect(defaultExpanded({
       id: unknownColumnId("gone"), kind: "unknown", label: "Unknown sprint", missingId: "gone",
     })).toBe(true);
+  });
+});
+
+describe("sprintCountdown (SPR-39)", () => {
+  // @verifies SPR-39
+  it("counts whole days remaining to the end_date", () => {
+    expect(sprintCountdown("2026-06-14", "2026-06-08")).toBe("6 days left");
+    expect(sprintCountdown("2026-06-09", "2026-06-08")).toBe("1 day left");
+    expect(sprintCountdown("2026-06-08", "2026-06-08")).toBe("Ends today");
+  });
+
+  // @verifies SPR-39
+  it("reads a passed end_date as overdue, in whole days", () => {
+    expect(sprintCountdown("2026-06-07", "2026-06-08")).toBe("1 day overdue");
+    expect(sprintCountdown("2026-05-14", "2026-06-08")).toBe("25 days overdue");
+  });
+
+  // @verifies SPR-39
+  it("returns undefined for an unparseable date rather than NaN", () => {
+    expect(sprintCountdown("not-a-date", "2026-06-08")).toBeUndefined();
+    // The offset cancels: a DST-crossing month is still an exact day count.
+    expect(sprintCountdown("2026-03-30", "2026-03-27")).toBe("3 days left");
   });
 });

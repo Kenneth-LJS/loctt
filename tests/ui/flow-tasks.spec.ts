@@ -1151,6 +1151,20 @@ function bodyRich(page: import("@playwright/test").Page) {
   return page.getByTestId("body-editor").getByTestId("rich-editor");
 }
 
+/**
+ * Enter edit mode from the K33 rendered read state (TSK-68/69).
+ *
+ * The description now renders read-only by default; the editor (and its
+ * `rich-editor` surface + toolbar) only exist after a click on the
+ * rendered body. Every B3 editor test that reaches for `rich-editor`
+ * first has to make that click — this is the one gesture that does it.
+ */
+async function enterEdit(page: import("@playwright/test").Page): Promise<void> {
+  await expect(page.getByTestId("body-editor")).toBeVisible();
+  await page.getByTestId("body-rendered").click();
+  await expect(bodyRich(page)).toBeVisible();
+}
+
 test.describe("TSK — rich-text editor (B3)", () => {
   // @verifies TSK-59
   test("TSK-59: the level picker applies every heading level and each round-trips through save+reload", async ({
@@ -1159,10 +1173,11 @@ test.describe("TSK — rich-text editor (B3)", () => {
     const [key] = await tracker.seed([{ title: "Levels" }]);
     if (key === undefined) throw new Error("seed returned no key");
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
-    await expect(page.getByTestId("body-editor")).toBeVisible();
+    // K33: the description is read-only until entered — click into it.
+    await enterEdit(page);
 
-    // Type a line, keeping the caret in it. The picker only exists once
-    // the surface is focused (TSK-64), which the click provides.
+    // Type a line, keeping the caret in it. The picker exists once the
+    // surface is focused, which entering edit provides.
     await bodyRich(page).click();
     await page.keyboard.type("A heading line");
 
@@ -1184,8 +1199,13 @@ test.describe("TSK — rich-text editor (B3)", () => {
     // Reload: the stored `#{1,6}` parses back to a heading whose level
     // the picker reflects — the parse half of the round trip.
     await page.reload();
+    // Enter edit by clicking the heading itself, so the caret lands in
+    // the heading block (a click on the container's empty lower area
+    // would place the caret in a trailing paragraph).
     await expect(page.getByTestId("body-editor")).toBeVisible();
-    await bodyRich(page).click();
+    await page.getByTestId("body-rendered").getByRole("heading", { name: "A heading line" }).click();
+    await expect(bodyRich(page)).toBeVisible();
+    await bodyRich(page).getByRole("heading", { name: "A heading line" }).click();
     await expect(page.getByTestId("fmt-block-type")).toHaveValue("6");
     await expect(bodyRich(page).getByRole("heading", { level: 6 })).toContainText("A heading line");
   });
@@ -1197,7 +1217,7 @@ test.describe("TSK — rich-text editor (B3)", () => {
     const [key] = await tracker.seed([{ title: "Ordered" }]);
     if (key === undefined) throw new Error("seed returned no key");
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
-    await expect(page.getByTestId("body-editor")).toBeVisible();
+    await enterEdit(page);
 
     await bodyRich(page).click();
     await page.keyboard.type("first item");
@@ -1217,7 +1237,11 @@ test.describe("TSK — rich-text editor (B3)", () => {
     const [key] = await tracker.seed([{ title: "Empty body" }]);
     if (key === undefined) throw new Error("seed returned no key");
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
-    await expect(page.getByTestId("body-editor")).toBeVisible();
+    // K33: the empty body first shows the placeholder in the rendered
+    // read view (TSK-68). This case is about the *editor* placeholders
+    // matching, so enter edit and compare the rich and raw surfaces.
+    await expect(page.getByTestId("body-rendered-placeholder")).toContainText("Describe this task…");
+    await enterEdit(page);
 
     // The rich surface (default mode) shows the placeholder attribute…
     const placeholderEl = bodyRich(page).locator("[data-placeholder]");
@@ -1243,7 +1267,7 @@ test.describe("TSK — rich-text editor (B3)", () => {
     const [key] = await tracker.seed([{ title: "Paste" }]);
     if (key === undefined) throw new Error("seed returned no key");
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
-    await expect(page.getByTestId("body-editor")).toBeVisible();
+    await enterEdit(page);
 
     await bodyRich(page).click();
     // Put markdown on the clipboard and fire a real paste into the
@@ -1272,8 +1296,17 @@ test.describe("TSK — rich-text editor (B3)", () => {
     await expect.poll(() => bodyOf(tracker.root, key)).toContain("- item");
   });
 
-  // @verifies TSK-64
-  test("TSK-64: the format toolbar is collapsed while viewing and appears on focus", async ({
+  // @verifies TSK-64 TSK-68
+  //
+  // MIGRATED for K33 (Ken 2026-09-09). TSK-64 ("the toolbar is collapsed
+  // while viewing and appears on focus") is SUPERSEDED by TSK-68: the
+  // whole description surface is now read-only until entered, so the
+  // toolbar is not merely collapsed while viewing — there is no editor
+  // and no toolbar at all until the read view is clicked. The old test
+  // asserted the collapse-on-focus behaviour, which was green and now
+  // encodes a superseded model; per CLAUDE.md this note records that
+  // the migration folds TSK-64's assertion into TSK-68's stronger one.
+  test("TSK-64/TSK-68: no toolbar while viewing; it appears only after entering edit", async ({
     page, tracker,
   }) => {
     const [key] = await tracker.seed([{ title: "Collapse" }]);
@@ -1282,13 +1315,17 @@ test.describe("TSK — rich-text editor (B3)", () => {
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
     await expect(page.getByTestId("body-editor")).toBeVisible();
 
-    // Merely viewing: no formatting toolbar, and so no format button in
-    // an active (or any) state.
+    // Merely viewing (K33 rendered read state): no editor, no toolbar,
+    // no format button in any state — the whole surface is read-only.
+    await expect(page.getByTestId("body-rendered")).toBeVisible();
+    await expect(bodyRich(page)).toHaveCount(0);
     await expect(page.getByRole("toolbar", { name: "Formatting" })).toHaveCount(0);
     await expect(page.getByTestId("fmt-bold")).toHaveCount(0);
     await expect(page.getByTestId("fmt-block-type")).toHaveCount(0);
 
-    // Focusing the field reveals it.
+    // Entering edit (a click on the rendered body) reveals the editor
+    // and, once focused, its toolbar.
+    await enterEdit(page);
     await bodyRich(page).click();
     await expect(page.getByRole("toolbar", { name: "Formatting" })).toBeVisible();
     await expect(page.getByTestId("fmt-block-type")).toBeVisible();
@@ -1301,7 +1338,9 @@ test.describe("TSK — rich-text editor (B3)", () => {
     const [key] = await tracker.seed([{ title: "Distinct ids" }]);
     if (key === undefined) throw new Error("seed returned no key");
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
-    await expect(page.getByTestId("body-editor")).toBeVisible();
+    // K33: the body's `rich-editor` only exists in edit mode — enter it
+    // so both editors are on the page at once for the id-collision check.
+    await enterEdit(page);
 
     // The description body keeps `rich-editor`; the comment composer
     // carries a composer-scoped id. Both are on the page at once, so a
@@ -1312,5 +1351,199 @@ test.describe("TSK — rich-text editor (B3)", () => {
     await expect(
       page.getByTestId("comment-composer").getByTestId("rich-editor"),
     ).toHaveCount(0);
+  });
+});
+
+/**
+ * K33 (Ken, 2026-09-09): the task description is read-then-edit,
+ * Jira-style. Rendered read-only by default; a click enters edit; a
+ * click on a link opens it and a click on an image opens a lightbox,
+ * neither entering edit; blur saves and returns to rendered, Escape
+ * cancels, and a failed save keeps the editor open. TSK-68..71.
+ */
+test.describe("TSK — K33 read-then-edit description", () => {
+  // @verifies TSK-68
+  test("TSK-68: the description renders read-only by default with no toolbar or editable field", async ({
+    page, tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Read state" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    await tracker.run(["body", key, "--set", "# Heading\n\nSome **bold** prose.\n"]);
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("body-editor")).toBeVisible();
+
+    // Formatted output is shown (heading rendered, not literal `#`)…
+    await expect(page.getByTestId("body-rendered")).toBeVisible();
+    await expect(page.getByTestId("body-rendered").getByRole("heading", { name: "Heading" }))
+      .toBeVisible();
+    await expect(page.getByTestId("body-rendered")).not.toContainText("# Heading");
+
+    // …with no editor, no toolbar, no mode toggle in the read state.
+    await expect(bodyRich(page)).toHaveCount(0);
+    await expect(page.getByTestId("markdown-editor")).toHaveCount(0);
+    await expect(page.getByRole("toolbar", { name: "Formatting" })).toHaveCount(0);
+    await expect(page.getByTestId("mode-rich")).toHaveCount(0);
+    await expect(page.getByTestId("mode-raw")).toHaveCount(0);
+  });
+
+  // @verifies TSK-68
+  test("TSK-68: an empty body shows the placeholder in the read state", async ({
+    page, tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Empty read" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("body-rendered-placeholder")).toContainText("Describe this task…");
+    // Still read-only: no editor mounted for an empty body either.
+    await expect(bodyRich(page)).toHaveCount(0);
+  });
+
+  // @verifies TSK-69
+  test("TSK-69: clicking the rendered description text enters edit, ready to type", async ({
+    page, tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Enter edit" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    await tracker.run(["body", key, "--set", "Click me to edit.\n"]);
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("body-rendered")).toBeVisible();
+
+    await page.getByText("Click me to edit.").click();
+
+    // The editor and the raw/rich toggle appear (and only now).
+    await expect(bodyRich(page)).toBeVisible();
+    await expect(page.getByTestId("mode-rich")).toBeVisible();
+    await expect(page.getByTestId("mode-raw")).toBeVisible();
+    // The read view is gone.
+    await expect(page.getByTestId("body-rendered")).toHaveCount(0);
+
+    // Focused and ready: typing appends to the body.
+    await page.keyboard.type(" Extra words.");
+    await expect(bodyRich(page)).toContainText("Extra words.");
+  });
+
+  // @verifies TSK-70
+  test("TSK-70: a rendered link opens in a new tab and does not enter edit", async ({
+    page, tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Link click" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    await tracker.run(["body", key, "--set", "See [the docs](https://example.com/docs) for more.\n"]);
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("body-rendered")).toBeVisible();
+
+    const link = page.getByTestId("body-rendered").getByRole("link", { name: "the docs" });
+    // The anchor opens in a new tab with the safe rel.
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute("rel", "noreferrer noopener");
+    await expect(link).toHaveAttribute("href", "https://example.com/docs");
+
+    // Clicking the link does NOT enter edit — the read view stays.
+    await link.click();
+    await expect(page.getByTestId("body-rendered")).toBeVisible();
+    await expect(bodyRich(page)).toHaveCount(0);
+  });
+
+  // @verifies TSK-70
+  test("TSK-70: clicking a rendered image opens a lightbox and does not enter edit", async ({
+    page, tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Image click" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    await tracker.run([
+      "body", key, "--set", "Here: ![a diagram](https://example.com/diagram.png)\n",
+    ]);
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("body-rendered")).toBeVisible();
+
+    const img = page.getByTestId("body-image");
+    await expect(img).toBeVisible();
+    await expect(page.getByTestId("body-image-lightbox")).toHaveCount(0);
+
+    await img.click();
+    // The lightbox opens; edit mode did not.
+    await expect(page.getByTestId("body-image-lightbox")).toBeVisible();
+    await expect(bodyRich(page)).toHaveCount(0);
+    await expect(page.getByTestId("body-rendered")).toBeVisible();
+
+    // Escape dismisses the lightbox back to the read view.
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("body-image-lightbox")).toHaveCount(0);
+    await expect(page.getByTestId("body-rendered")).toBeVisible();
+  });
+
+  // @verifies TSK-71
+  test("TSK-71: blurring out saves and returns to the rendered view", async ({
+    page, tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Blur saves" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    await tracker.run(["body", key, "--set", "Original.\n"]);
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+
+    await enterEdit(page);
+    await bodyRich(page).click();
+    await page.keyboard.type(" Appended.");
+
+    // Blur by clicking the meta panel (outside the editor). The idle
+    // autosave flushes, and the surface returns to the rendered view.
+    await page.getByTestId("meta-panel").click();
+    await expect(page.getByTestId("body-rendered")).toBeVisible();
+    await expect(bodyRich(page)).toHaveCount(0);
+    // The rendered view shows the saved content, and it reached disk.
+    await expect(page.getByTestId("body-rendered")).toContainText("Appended.");
+    await expect.poll(() => bodyOf(tracker.root, key)).toContain("Appended.");
+  });
+
+  // @verifies TSK-71
+  test("TSK-71: Escape cancels the edit and returns to the rendered view", async ({
+    page, tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Escape cancels" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    await tracker.run(["body", key, "--set", "Last saved content.\n"]);
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+
+    await enterEdit(page);
+    await expect(bodyRich(page)).toBeVisible();
+
+    await page.keyboard.press("Escape");
+
+    // Back to the rendered read view showing the last-saved content.
+    await expect(page.getByTestId("body-rendered")).toBeVisible();
+    await expect(bodyRich(page)).toHaveCount(0);
+    await expect(page.getByTestId("body-rendered")).toContainText("Last saved content.");
+  });
+
+  // @verifies TSK-48 TSK-71
+  test("TSK-48/TSK-71: a failed save keeps the editor open on the unsaved text", async ({
+    page, tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Failed save" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    await tracker.run(["body", key, "--set", "Before.\n"]);
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+
+    await enterEdit(page);
+    await bodyRich(page).click();
+    await page.keyboard.type(" Words the user must not lose.");
+
+    // Make the body write fail from here on.
+    await page.route(`**/api/tasks/${key}/body`, route =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "io_failed", message: "Disk is full." }),
+      }));
+
+    // Blur to trigger the flush. The save fails, so the editor STAYS
+    // open on the typed text rather than dropping back to a stale
+    // render (TSK-48).
+    await page.getByTestId("meta-panel").click();
+    await expect(page.getByTestId("body-editor")).toBeVisible();
+    await expect(bodyRich(page)).toBeVisible();
+    await expect(bodyRich(page)).toContainText("Words the user must not lose.");
+    // Not returned to the rendered read state.
+    await expect(page.getByTestId("body-rendered")).toHaveCount(0);
   });
 });
