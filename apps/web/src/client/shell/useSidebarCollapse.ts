@@ -3,6 +3,28 @@ import { useCallback, useEffect, useState } from "react";
 import { readLocal, writeLocal } from "./storage.ts";
 
 /**
+ * Broadcast a request to dismiss the sidebar (R2).
+ *
+ * The hook lives above the router in `AppShell`, but the two dismiss
+ * triggers — a route change and a tap on the overlay backdrop — are
+ * observed inside the router, in `Sidebar`. Rather than thread a
+ * collapse callback back up through `AppShell` (a file this lane does
+ * not own), `Sidebar` calls this and the single hook instance listens.
+ * A window event is the app's existing cross-tree signal (see the
+ * theme repaint and the shortcut registry); no new prop, no new
+ * context.
+ *
+ * It is a no-op on a wide viewport — there is no overlay to dismiss —
+ * so a route change on desktop never touches the persisted preference.
+ */
+const COLLAPSE_EVENT = "loctt:sidebar-collapse";
+
+export function requestSidebarCollapse(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(COLLAPSE_EVENT));
+}
+
+/**
  * Collapsed/expanded state for the app sidebar, persisted to
  * localStorage under `tt-sidebar-collapsed` ("1" / "0") to match the
  * mockup's key so the preference carries over from the static mockups.
@@ -12,12 +34,18 @@ import { readLocal, writeLocal } from "./storage.ts";
  * or textarea is focused, so typing `[` in the search box or a future
  * editor doesn't fold the sidebar.
  *
- * **Below `NARROW_PX` the sidebar collapses regardless of the stored
- * preference.** At 532px the expanded sidebar took 240px and left the
- * table 165px of a 760px layout — the content the user came for was
- * the smallest thing on screen. The preference is not overwritten: it
- * is what the sidebar returns to when there is room again, so a
- * rotation or a window resize does not silently discard a choice.
+ * **Below `NARROW_PX` the sidebar defaults to collapsed but can be
+ * opened as an overlay (R2).** At 532px the expanded sidebar took 240px
+ * and left the table 165px of a 760px layout — the content the user
+ * came for was the smallest thing on screen, so mobile starts collapsed
+ * to a rail. But the rail used to be *permanent*: `canToggle` was
+ * `false` below the breakpoint, so a 380px phone showed unlabelled
+ * icons with no way to read them or reclaim the space. R2 re-enables the
+ * toggle on mobile; the expanded state at a narrow width is a temporary
+ * overlay `Sidebar` dismisses on a tap-away or a navigation
+ * (`requestSidebarCollapse`), rather than a persisted preference. The
+ * wide-viewport preference is kept untouched, so returning to a wide
+ * window restores whatever the user last chose there.
  *
  * No acceptance case specifies a breakpoint. 900px is chosen as the
  * width below which a 240px sidebar costs more than it gives, and is
@@ -44,20 +72,37 @@ export function useSidebarCollapse(): {
   collapsed: boolean;
   toggle: () => void;
   /**
-   * False below the breakpoint, where the sidebar cannot expand. The
-   * toggle stays mounted so the layout does not shift, but a control
-   * that silently does nothing is worse than a disabled one — and the
-   * click was previously stored and surfaced later at a wide width,
-   * which reads as the app changing state on its own.
+   * Whether the sidebar can be toggled. Now always `true`: R2 re-enables
+   * the toggle on mobile so the rail can be opened (into an overlay) and
+   * dismissed, rather than being a permanent unlabelled icon strip. Kept
+   * in the return so the Header's toggle keeps its existing prop shape.
    */
   canToggle: boolean;
+  /**
+   * True below the breakpoint. `Sidebar` renders the expanded state as a
+   * dismissible overlay here (backdrop + tap-away + navigate-to-close),
+   * instead of the in-grid column it is on a wide viewport.
+   */
+  narrow: boolean;
 } {
-  const [stored, setCollapsed] = useState<boolean>(readStored);
+  // The wide-viewport preference, persisted (SHL-12).
+  const [stored, setStored] = useState<boolean>(readStored);
+  // The mobile overlay's open state — session-only, never persisted, so
+  // opening the rail on a phone does not overwrite the desktop choice.
+  const [mobileOpen, setMobileOpen] = useState<boolean>(false);
   const [narrow, setNarrow] = useState<boolean>(isNarrow);
-  const collapsed = stored || narrow;
+  // On a narrow viewport the sidebar is collapsed unless the user opened
+  // the overlay; on a wide one the persisted preference governs.
+  const collapsed = narrow ? !mobileOpen : stored;
 
   const toggle = useCallback(() => {
-    setCollapsed(prev => {
+    if (isNarrow()) {
+      // Mobile: flip the transient overlay, leave the stored preference
+      // alone so a later wide window restores the user's real choice.
+      setMobileOpen(prev => !prev);
+      return;
+    }
+    setStored(prev => {
       const next = !prev;
       writeLocal(STORAGE_KEY, next ? "1" : "0");
       return next;
@@ -65,9 +110,24 @@ export function useSidebarCollapse(): {
   }, []);
 
   useEffect(() => {
-    const onResize = (): void => { setNarrow(isNarrow()); };
+    const onResize = (): void => {
+      const nowNarrow = isNarrow();
+      setNarrow(nowNarrow);
+      // Growing back to a wide window closes the transient overlay so it
+      // cannot linger as a floating panel over a desktop layout.
+      if (!nowNarrow) setMobileOpen(false);
+    };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // R2 dismiss: a tap-away on the overlay backdrop or a navigation (both
+  // observed in `Sidebar`, below the router) closes the mobile overlay.
+  // Only the transient state is touched — never the persisted preference.
+  useEffect(() => {
+    const onCollapse = (): void => { setMobileOpen(false); };
+    window.addEventListener(COLLAPSE_EVENT, onCollapse);
+    return () => window.removeEventListener(COLLAPSE_EVENT, onCollapse);
   }, []);
 
   // `[` is bound by the global shortcut registry (`shortcuts.ts`),
@@ -77,5 +137,5 @@ export function useSidebarCollapse(): {
   // registry applies the typing guard, the dialog guard and the
   // modifier guard uniformly, and is the same table the `?` reference
   // renders from (A11Y-4).
-  return { collapsed, toggle, canToggle: !narrow };
+  return { collapsed, toggle, canToggle: true, narrow };
 }

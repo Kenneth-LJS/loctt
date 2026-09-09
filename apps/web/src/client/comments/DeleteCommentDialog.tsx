@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 
+import { Button } from "../ui/Button.tsx";
+
 /**
  * Confirmation for deleting one comment (CMT-6).
  *
@@ -81,27 +83,24 @@ export function DeleteCommentDialog({
         )}
 
         <div className="flex justify-end gap-2">
-          <button
+          <Button
             ref={cancelRef}
             type="button"
-            data-testid="delete-comment-cancel"
+            variant="secondary"
+            testId="delete-comment-cancel"
             onClick={onCancel}
-            className="rounded-md border border-border-subtle px-3 py-1.5 text-[13px] text-text-secondary hover:bg-bg-muted"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            data-testid="delete-comment-confirm"
+            variant="danger"
+            testId="delete-comment-confirm"
             disabled={pending}
             onClick={onConfirm}
-            className={
-              "rounded-md px-3 py-1.5 text-[13px] font-medium text-white "
-              + (pending ? "cursor-not-allowed bg-danger-fg/50" : "bg-danger-fg hover:opacity-90")
-            }
           >
             {pending ? "Deleting…" : "Delete"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

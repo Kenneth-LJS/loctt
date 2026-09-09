@@ -1,6 +1,8 @@
 import type { LabelDef } from "@loctt/contracts";
 import { useEffect, useRef, useState } from "react";
 
+import { ICON } from "../../ui/icons.ts";
+
 /**
  * The multi-tag label editor, with inline creation (TSK-11).
  *
@@ -151,7 +153,7 @@ export function LabelsField({
                 onClick={() => { onChange(attached.filter(x => x !== id)); }}
                 className="shrink-0 opacity-60 hover:opacity-100"
               >
-                ×
+                {ICON.close}
               </button>
             </span>
           );

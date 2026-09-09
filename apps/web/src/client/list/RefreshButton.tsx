@@ -1,4 +1,5 @@
 import { STALENESS_WINDOW_MS } from "../api/queryClient.ts";
+import { Button } from "../ui/Button.tsx";
 
 /**
  * Manual refresh for the current view (XS-3).
@@ -26,19 +27,24 @@ export function RefreshButton({
 }) {
   const seconds = Math.round(STALENESS_WINDOW_MS / 1000);
   return (
-    <button
-      type="button"
+    // B1 migration: the hand-rolled toolbar button becomes the shared
+    // Button (secondary, md — the same h-8 pill the toolbar uses). It
+    // bakes in the cursor-pointer (K-16) and the hover/active/focus
+    // states; `aria-busy`/`aria-label`/`title` and the spinner glyph are
+    // carried across unchanged so the XS-3 locator still matches.
+    <Button
+      variant="secondary"
+      size="md"
       onClick={onRefresh}
       disabled={busy}
       aria-busy={busy}
       aria-label="Refresh"
       title={`Refresh now. This view also refreshes on its own at least every ${seconds} seconds, and whenever you return to the tab.`}
-      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-default bg-bg-surface px-2.5 text-[13px] text-text-secondary hover:bg-bg-muted disabled:cursor-not-allowed disabled:opacity-60"
     >
       <span aria-hidden="true" className={busy ? "inline-block animate-spin" : undefined}>
         ⟳
       </span>
       {busy ? "Refreshing…" : "Refresh"}
-    </button>
+    </Button>
   );
 }

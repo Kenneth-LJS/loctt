@@ -2,16 +2,23 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { useSidebarCollapse } from "./useSidebarCollapse.ts";
+import { requestSidebarCollapse, useSidebarCollapse } from "./useSidebarCollapse.ts";
 
 const KEY = "tt-sidebar-collapsed";
 
+/** Set the viewport width and let a resize listener react. */
+function setWidth(px: number): void {
+  Object.defineProperty(window, "innerWidth", { value: px, configurable: true, writable: true });
+}
+
 beforeEach(() => {
   window.localStorage.clear();
+  setWidth(1200); // wide by default
 });
 
 afterEach(() => {
   window.localStorage.clear();
+  setWidth(1200);
 });
 
 /**
@@ -56,4 +63,63 @@ describe("useSidebarCollapse", () => {
   //
   // What stays here is what this hook still owns: the persisted state
   // (SHL-12), which is the half the shortcut path calls into.
+});
+
+/**
+ * R2: on a narrow (mobile) viewport the sidebar used to force-collapse
+ * to an unlabelled icon rail that could not be dismissed or expanded
+ * (`canToggle` was false below the breakpoint). It is now a dismissible
+ * overlay: the toggle works, opening a transient overlay that does not
+ * touch the persisted wide-viewport preference.
+ */
+describe("useSidebarCollapse — mobile overlay (R2)", () => {
+  it("starts collapsed on a narrow viewport but can be toggled", () => {
+    // Covers R2 (review item; no case ID)
+    setWidth(380);
+    const { result } = renderHook(() => useSidebarCollapse());
+    expect(result.current.narrow).toBe(true);
+    expect(result.current.collapsed).toBe(true);
+    // R2: the toggle is enabled on mobile (was disabled before).
+    expect(result.current.canToggle).toBe(true);
+    act(() => result.current.toggle());
+    expect(result.current.collapsed).toBe(false); // overlay opened
+  });
+
+  it("does not persist the mobile overlay state to localStorage", () => {
+    // Covers R2 (review item; no case ID) — opening the overlay on a phone must not overwrite
+    // the desktop preference.
+    setWidth(380);
+    const { result } = renderHook(() => useSidebarCollapse());
+    act(() => result.current.toggle());
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it("closes the overlay when requestSidebarCollapse fires (tap-away / nav)", () => {
+    // Covers R2 (review item; no case ID)
+    setWidth(380);
+    const { result } = renderHook(() => useSidebarCollapse());
+    act(() => result.current.toggle()); // open
+    expect(result.current.collapsed).toBe(false);
+    act(() => { requestSidebarCollapse(); });
+    expect(result.current.collapsed).toBe(true); // dismissed
+  });
+
+  it("keeps the wide-viewport preference independent of the overlay", () => {
+    // Covers R2 (review item; no case ID) — a user who collapsed the sidebar on desktop still
+    // finds it collapsed when the window grows back, regardless of any
+    // mobile overlay toggling.
+    window.localStorage.setItem(KEY, "1"); // collapsed on desktop
+    setWidth(380);
+    const { result } = renderHook(() => useSidebarCollapse());
+    act(() => result.current.toggle()); // open the mobile overlay
+    expect(result.current.collapsed).toBe(false);
+    // Grow back to a wide window: the overlay closes and the stored
+    // desktop preference (collapsed) governs again.
+    act(() => {
+      setWidth(1200);
+      window.dispatchEvent(new Event("resize"));
+    });
+    expect(result.current.narrow).toBe(false);
+    expect(result.current.collapsed).toBe(true);
+  });
 });

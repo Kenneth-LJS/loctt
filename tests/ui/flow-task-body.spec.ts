@@ -77,20 +77,43 @@ async function rawTaskFile(root: string, key: string): Promise<string> {
   return readFile(path.join(await taskDirOf(root, key), "task.md"), "utf8");
 }
 
-/** Types into whichever surface is showing. */
+/**
+ * Enters edit mode on the description (K33 / TSK-68..71).
+ *
+ * The description now renders read-only by default and only becomes an
+ * editor when its rendered view is clicked. These specs all assert
+ * *editing* behaviour (autosave, the mode toggle, conflict handling), so
+ * each must enter edit first. The `body-editor` wrapper is present in both
+ * states, so its visibility check still holds on load; the editor surfaces
+ * (`rich-editor`/`markdown-editor`) exist only after this click.
+ *
+ * Idempotent: if the editor is already showing (a prior enterEdit, or a
+ * forced-raw body that opens straight into edit), `body-rendered` is
+ * absent and this is a no-op.
+ */
+async function enterEdit(page: Page): Promise<void> {
+  // If the editor is already open (a prior enterEdit, or a forced-raw body
+  // that opens straight into edit), the rich/markdown surface is present
+  // and the rendered view is absent — nothing to do.
+  const editing = page.getByTestId("body-editor").getByTestId("rich-editor");
+  const rawEditing = page.getByTestId("body-editor").getByTestId("markdown-editor");
+  if (await editing.count() > 0 || await rawEditing.count() > 0) return;
+  // Otherwise wait for the rendered view to mount on this (possibly cold)
+  // load before clicking it — a bare count() check races the navigation.
+  const rendered = page.getByTestId("body-rendered");
+  await rendered.waitFor({ state: "visible" });
+  await rendered.click();
+}
+
+/** Types into whichever surface is showing (entering edit first). */
 async function typeInBody(page: Page, text: string): Promise<void> {
   /**
-   * Scoped to `body-editor`.
-   *
-   * A bare `getByTestId("rich-editor")` was unambiguous while the body
-   * editor was the only rich surface on the task page. M2.4a's comment
-   * composer is a second one, so the bare locator now resolves to two
-   * elements and every click through it fails in strict mode.
-   *
-   * This is a locator that stopped being unique when the page grew —
-   * not a test that was asserting a bug. The behaviour these specs
-   * cover is unchanged, and each one still means the body editor.
+   * Scoped to `body-editor`. A bare `getByTestId("rich-editor")` was
+   * unambiguous while the body editor was the only rich surface; the
+   * comment composer is a second one, so the bare locator resolves to two
+   * and fails strict mode. The behaviour these specs cover is unchanged.
    */
+  await enterEdit(page);
   const rich = page.getByTestId("body-editor").getByTestId("rich-editor");
   await rich.click();
   await page.keyboard.type(text);
@@ -130,6 +153,7 @@ test.describe("TSK — the body editor", () => {
      * re-arms fires **once, at the end**, while a fixed interval fires
      * twice or more. That difference is the case's first bullet.
      */
+    await enterEdit(page);
     await page.getByTestId("body-editor").getByTestId("rich-editor").click();
     for (const word of ["A ", "paragraph ", "typed ", "at ", "human ", "pace."]) {
       await page.keyboard.type(word);
@@ -165,13 +189,26 @@ test.describe("TSK — the body editor", () => {
     await expect(indicator(page)).toHaveAttribute("data-state", "unsaved");
 
     // Click something outside the editor, well inside the idle window.
+    // Under K33 this blur both flushes the save AND returns to the
+    // rendered view (the edit surface, and its save indicator, unmount),
+    // so the proof that blur saved *immediately* is the disk write landing
+    // inside a window shorter than the 1500ms idle timer — not the
+    // indicator state, which no longer exists once we leave edit mode.
     await page.getByRole("heading", { level: 1 }).first().click();
 
-    // 1200ms is deliberately *under* the 1500ms idle window: if the
-    // blur did nothing and this only passed once the timer fired, the
-    // assertion would not be about blur at all.
-    await expect(indicator(page)).toHaveAttribute("data-state", "saved", { timeout: 1200 });
-    expect(await bodyOnDisk(tracker.root, key)).toContain("Saved on blur.");
+    // The disk bound comes FIRST — before any default-timeout wait — or it
+    // is vacuous. The write must land well under the 1500ms idle window:
+    // had blur done nothing and only the idle timer saved (~1.5s), this
+    // 1200ms poll would NOT converge. (This is the case's point — blur
+    // saves immediately, not on the idle timer.) Polling the rendered view
+    // first, with its 5s default timeout, would absorb that 1.5s delay and
+    // make the bound meaningless.
+    await expect
+      .poll(async () => bodyOnDisk(tracker.root, key), { timeout: 1200, intervals: [50, 100, 200] })
+      .toContain("Saved on blur.");
+
+    // And the editor left edit: the rendered view shows the saved text.
+    await expect(page.getByTestId("body-rendered")).toContainText("Saved on blur.");
   });
 
   // @verifies TSK-17
@@ -186,6 +223,7 @@ test.describe("TSK — the body editor", () => {
     await expect(page.getByTestId("body-editor")).toBeVisible();
 
     // Rich mode renders it as a heading and a bold run, not as source.
+    await enterEdit(page);
     await expect(page.getByTestId("body-editor").getByTestId("rich-editor").getByRole("heading")).toContainText("Heading");
     await expect(page.getByTestId("body-editor").getByTestId("rich-editor").locator("strong")).toContainText("bold");
 
@@ -230,6 +268,7 @@ test.describe("TSK — the body editor", () => {
     await expect(page.getByTestId("body-editor")).toBeVisible();
 
     // Toggle back and forth several times, touching nothing.
+    await enterEdit(page);
     for (let i = 0; i < 3; i++) {
       await page.getByTestId("mode-raw").click();
       await expect(page.getByTestId("body-editor").getByTestId("markdown-editor")).toBeVisible();
@@ -311,7 +350,8 @@ test.describe("TSK — the body editor", () => {
     await expect(page.getByTestId("body-editor")).toBeVisible();
 
     // One word typed at the end, in rich mode.
-    await page.getByText("Last paragraph.").click();
+    await enterEdit(page);
+    await page.getByTestId("body-editor").getByTestId("rich-editor").getByText("Last paragraph.").click();
     await page.keyboard.press("End");
     await page.keyboard.type(" Appended.");
 
@@ -593,6 +633,78 @@ test.describe("TSK — the body editor", () => {
     expect(await bodyOnDisk(tracker.root, key)).not.toContain("must not lose");
   });
 
+  // @verifies TSK-48
+  test("TSK-48: BLUR with a failing save keeps the editor open, does not drop to a stale render", async ({
+    page, tracker,
+  }) => {
+    // Fix-review HIGH #1: on blur, the editor flushed in a microtask but
+    // the leave-effect saw the pre-flush "unsaved" state and unmounted the
+    // edit surface BEFORE the POST started — so a failing save landed on an
+    // unmounted component and the user's text was lost with no error shown.
+    // The editor must STAY in edit (TSK-48) when the blur-triggered save
+    // fails, keeping the typed text and showing the failure.
+    const key = onlyKey(await tracker.seed([{ title: "Blur fail" }]));
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("body-editor")).toBeVisible();
+    // A DELAYED failure. The delay is what exercises the ordering bug: the
+    // blur flushes, but the POST is still in flight when the leave-effect
+    // runs — the old code saw the pre-`saving` `unsaved` state and left
+    // (unmounting the editor) before the failure could come back, losing
+    // the text. With the fix the editor stays until the save settles, so
+    // the failure lands in a mounted editor.
+    await page.route(`**/api/tasks/*/body`, async route => {
+      await new Promise(r => setTimeout(r, 400));
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "io_failed", message: "Disk is full.", data_state: "not_saved" }),
+      });
+    });
+
+    await typeInBody(page, "Blur must not lose this.");
+    // Blur immediately (before the idle timer) by clicking outside.
+    await page.getByRole("heading", { level: 1 }).first().click();
+
+    // Still in edit — NOT dropped to the rendered view — with the text and
+    // an explicit failure. (Before the fix: body-rendered showed the stale
+    // body, no indicator, text gone.)
+    await expect(indicator(page)).toHaveAttribute("data-state", "failed", { timeout: 8000 });
+    await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).toContainText("Blur must not lose this.");
+    await expect(page.getByTestId("body-rendered")).toHaveCount(0);
+    expect(await bodyOnDisk(tracker.root, key)).not.toContain("must not lose");
+  });
+
+  // @verifies TSK-71
+  test("TSK-71: Escape cancels — discards the edit and does NOT write it", async ({
+    page, tracker,
+  }) => {
+    // Fix-review HIGH #2: Escape called onLeave() unconditionally, and the
+    // editor's unmount-flush then WROTE the pending edit — so Escape
+    // "saved" instead of cancelling. Escape must discard the in-editor edit
+    // (revert to last-saved) and write nothing.
+    const key = onlyKey(await tracker.seed([{ title: "Escape cancels" }]));
+    await tracker.run(["body", key, "--set", "Original body.\n"]);
+    const writes: string[] = [];
+    await page.route(`**/api/tasks/*/body`, async route => {
+      writes.push(route.request().postData() ?? "");
+      await route.continue();
+    });
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await expect(page.getByTestId("body-editor")).toBeVisible();
+
+    await typeInBody(page, " Escaped edit.");
+    await page.keyboard.press("Escape");
+
+    // Back to the rendered view showing the LAST-SAVED body, not the edit.
+    await expect(page.getByTestId("body-rendered")).toContainText("Original body.");
+    await expect(page.getByTestId("body-rendered")).not.toContainText("Escaped edit.");
+    // Give any stray write a moment; there must be none, and disk is clean.
+    await page.waitForTimeout(300);
+    expect(writes).toEqual([]);
+    expect(await bodyOnDisk(tracker.root, key)).not.toContain("Escaped edit.");
+    expect(await bodyOnDisk(tracker.root, key)).toContain("Original body.");
+  });
+
   // @verifies TSK-40
   test("TSK-40: navigating to another task shows that task's body, never the first one's", async ({
     page, tracker,
@@ -605,6 +717,7 @@ test.describe("TSK — the body editor", () => {
     await tracker.run(["body", b, "--set", "Body of B.\n"]);
 
     await page.goto(`${tracker.baseURL}/tasks/${a}`);
+    await enterEdit(page);
     await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).toContainText("Body of A.");
     await typeInBody(page, " Edited in A.");
 
@@ -626,6 +739,7 @@ test.describe("TSK — the body editor", () => {
     await page.getByRole("row").filter({ hasText: "Task B" }).first().click();
     await expect(page.getByTestId("body-editor")).toBeVisible();
 
+    await enterEdit(page);
     await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).toContainText("Body of B.");
     await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).not.toContainText("Edited in A.");
     await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).not.toContainText("Body of A.");
@@ -679,6 +793,7 @@ test.describe("TSK — a very large body", () => {
     // surface for a several-thousand-line document, and what the case
     // is about (a plain textarea or a fully-realised rich tree is
     // where the freeze would be).
+    await enterEdit(page);
     await page.getByTestId("mode-raw").click();
     const editor = page.getByTestId("body-editor").getByTestId("markdown-editor");
     await expect(editor).toBeVisible();

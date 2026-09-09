@@ -31,7 +31,15 @@ import { SprintsView } from "./SprintsView.tsx";
 let BROKEN_SPRINTS: { id?: string; index: number; rawText: string; error: string }[] = [];
 
 /** Per-test valid sprints. */
-let SPRINTS: { id: string; name: string; start_date: string; end_date: string; state: string }[] = [
+let SPRINTS: {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  state: string;
+  archived?: boolean;
+  progress?: { done: number; total: number; discarded: number; fraction: number };
+}[] = [
   { id: "sp_12", name: "Sprint 12", start_date: "2026-06-01", end_date: "2026-06-14", state: "active" },
 ];
 
@@ -174,6 +182,123 @@ describe("SprintsView — corrupt sprint-config entry (A138)", () => {
     await renderView();
     expect(await screen.findByTestId("sprint-column-sp_12")).toBeTruthy();
     expect(screen.queryByTestId("sprints-broken-config")).toBeNull();
+  });
+});
+
+describe("SprintsView — SPR-39 at-a-glance data on the overview card", () => {
+  // @verifies SPR-39
+  it("shows progress done/total on the sprint column header from core's ?progress=true", async () => {
+    SPRINTS = [
+      {
+        id: "sp_12",
+        name: "Sprint 12",
+        start_date: "2026-06-01",
+        end_date: "2026-06-14",
+        state: "active",
+        progress: { done: 3, total: 8, discarded: 1, fraction: 3 / 8 },
+      },
+    ];
+    await renderView();
+
+    const readout = await screen.findByTestId("sprint-progress-sp_12");
+    expect(readout.textContent).toContain("3");
+    expect(readout.textContent).toContain("8");
+    // The mini-bar (burndown equivalent, A165) reflects the same numbers.
+    const bar = await screen.findByTestId("sprint-progress-bar-sp_12");
+    expect(bar.getAttribute("data-fill")).toBe((3 / 8).toFixed(4));
+  });
+
+  // @verifies SPR-39
+  it("shows a No-tasks readout, not 0/0, when a sprint has no counted tasks", async () => {
+    SPRINTS = [
+      {
+        id: "sp_12",
+        name: "Sprint 12",
+        start_date: "2026-06-01",
+        end_date: "2026-06-14",
+        state: "active",
+        progress: { done: 0, total: 0, discarded: 0, fraction: 0 },
+      },
+    ];
+    await renderView();
+
+    const readout = await screen.findByTestId("sprint-progress-sp_12");
+    expect(readout.textContent).toContain("No tasks");
+    expect(readout.textContent).not.toContain("0/0");
+    expect(readout.textContent).not.toContain("NaN");
+  });
+
+  // @verifies SPR-39
+  it("shows days-remaining while the window is open and overdue once its end has passed", async () => {
+    // info.today is stubbed to 2026-06-08 in routeFetch.
+    SPRINTS = [
+      { id: "sp_open", name: "Open", start_date: "2026-06-01", end_date: "2026-06-14", state: "active" },
+      { id: "sp_past", name: "Past", start_date: "2026-05-01", end_date: "2026-05-14", state: "active" },
+    ];
+    await renderView();
+
+    // 2026-06-08 → 2026-06-14 is 6 days out.
+    const open = await screen.findByTestId("sprint-countdown-sp_open");
+    expect(open.textContent).toMatch(/6 days/);
+    // 2026-05-14 is in the past → overdue wording.
+    const past = await screen.findByTestId("sprint-countdown-sp_past");
+    expect(past.textContent).toMatch(/overdue/i);
+  });
+
+  // @verifies SPR-39
+  it("opens the sprint when the whole header card is clicked", async () => {
+    SPRINTS = [
+      { id: "sp_12", name: "Sprint 12", start_date: "2026-06-01", end_date: "2026-06-14", state: "active" },
+    ];
+    await renderView();
+
+    const card = await screen.findByTestId("sprint-card-sp_12");
+    expect(card.getAttribute("role")).toBe("link");
+    // Its label names the sprint so the affordance is not mouse-only.
+    expect(card.getAttribute("aria-label")).toContain("Sprint 12");
+  });
+});
+
+describe("SprintsView — SPR-40 overview affordances (show archived + manage link)", () => {
+  // @verifies SPR-40
+  it("hides archived sprints by default and reveals them behind a show-archived toggle", async () => {
+    SPRINTS = [
+      { id: "sp_live", name: "Live", start_date: "2026-06-01", end_date: "2026-06-14", state: "active" },
+      { id: "sp_old", name: "Old", start_date: "2025-01-01", end_date: "2025-01-14", state: "completed", archived: true },
+    ];
+    await renderView();
+
+    // The archived one is absent until the toggle is enabled.
+    expect(await screen.findByTestId("sprint-column-sp_live")).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.queryByTestId("sprint-column-sp_old")).toBeNull();
+    });
+
+    const toggle = await screen.findByTestId("sprints-show-archived");
+    // The label names the affordance and its count.
+    expect(toggle.closest("label")?.textContent).toContain("Show archived");
+    (toggle as HTMLInputElement).click();
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("sprint-column-sp_old")).not.toBeNull();
+    });
+  });
+
+  // @verifies SPR-40
+  it("offers a manage-in-settings link for create/delete/archive lifecycle", async () => {
+    await renderView();
+    const link = await screen.findByTestId("sprints-manage-link");
+    expect(link).toBeTruthy();
+  });
+
+  // @verifies SPR-40
+  it("shows no show-archived toggle when nothing is archived", async () => {
+    SPRINTS = [
+      { id: "sp_live", name: "Live", start_date: "2026-06-01", end_date: "2026-06-14", state: "active" },
+    ];
+    await renderView();
+    await screen.findByTestId("sprint-column-sp_live");
+    expect(screen.queryByTestId("sprints-show-archived")).toBeNull();
   });
 });
 

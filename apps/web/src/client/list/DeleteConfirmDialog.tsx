@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
+import { Button } from "../ui/Button.tsx";
+import { TextField } from "../ui/TextField.tsx";
+
 /**
  * Typed confirmation for permanent deletion (BLK-11).
  *
@@ -97,32 +100,28 @@ export function DeleteConfirmDialog({
               — the count, because this is a large batch
             </span>
           ) : null}
-          <input
+          <TextField
             ref={inputRef}
             type="text"
             value={typed}
             onChange={e => setTyped(e.target.value)}
             aria-label={`Type ${required} to confirm`}
-            className="mt-1 w-full rounded-md border border-border-subtle bg-bg-canvas px-2.5 py-1.5 font-mono text-[13px] text-text-primary"
+            className="mt-1 font-mono"
           />
         </label>
 
         <div className="mt-5 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-md border border-border-subtle px-3 py-1.5 text-[13px] font-medium text-text-secondary hover:bg-bg-muted"
-          >
+          <Button type="button" variant="secondary" onClick={onCancel}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="danger"
             onClick={onConfirm}
             disabled={!matches}
-            className="rounded-md bg-danger-fg px-3 py-1.5 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
             Delete {count} {count === 1 ? "task" : "tasks"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

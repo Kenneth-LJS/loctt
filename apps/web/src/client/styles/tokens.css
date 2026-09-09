@@ -48,6 +48,18 @@
   --bg-surface-raised: #FFFFFF;
   --bg-muted: #EEF2F8;
   --bg-muted-hover: #E4EAF2;
+  /* --bg-row-hover (K-15): the list/table row-hover wash. It must be a
+   * SEPARATE token from --bg-muted, because the chips inside a row
+   * (ProjectChip, a pending StatusBadge, the LabelPill fallback) paint
+   * themselves with --bg-muted — so a row-hover that reused --bg-muted
+   * made every chip's own background vanish into the hover (Ken: "project
+   * ID column bg doesn't highlight, label colour disappears into the
+   * hover"). It is deliberately SUBTLE (Ken: "don't make the hover colour
+   * so bright") — a faint accent-tinted wash a step off the surface, not
+   * the stronger --bg-muted-hover the buttons use for their active press.
+   * Distinct from both --bg-muted (2.5% off surface, where the chips sit)
+   * and --bg-muted-hover, so a chip on a hovered row still reads. */
+  --bg-row-hover: #F0F3FA;
   /* --border-subtle: was #E8ECF2 (1.19:1 vs surface — invisible, T5).
    * Nudged a step stronger so a hairline actually reads, but this is
    * NOT the 3:1 divider fix: no hairline that still looks decorative
@@ -114,6 +126,11 @@
   --bg-surface-raised: #1A1A1D;
   --bg-muted: #1F1F22;
   --bg-muted-hover: #25252A;
+  /* --bg-row-hover dark (K-15): see the light scope. A faint lift off
+   * the surface (#141416) that stays distinct from --bg-muted (#1F1F22,
+   * where the chips sit) so a chip on a hovered row still reads, and
+   * subtle enough not to glare. */
+  --bg-row-hover: #191A1D;
   /* --border-subtle dark: was #222226 (1.16:1 — invisible, T5).
    * Nudged stronger (1.29:1, still below --border-default's 1.36 so
    * the subtle<default ordering holds); same decorative-vs-divider

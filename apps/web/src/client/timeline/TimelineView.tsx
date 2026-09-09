@@ -10,7 +10,11 @@ import { useTaskDates } from "../api/hooks/useTaskDates.ts";
 import { tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { ConfigErrorState } from "../board/ConfigErrorState.tsx";
+import { Button } from "../ui/Button.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { Select } from "../ui/Select.tsx";
+import { ToolbarButton } from "../ui/ToolbarButton.tsx";
 import { dependencyGraph } from "./arrows.ts";
 import {
   computeRange,
@@ -678,43 +682,40 @@ function Toolbar(props: {
     <div className="flex flex-wrap items-center gap-4" data-testid="timeline-toolbar">
       <div className="flex items-center gap-1" role="group" aria-label="Zoom">
         {zooms.map(z => (
-          <button
+          <ToolbarButton
             key={z}
             type="button"
-            data-testid={`timeline-zoom-${z}`}
+            testId={`timeline-zoom-${z}`}
             aria-pressed={props.zoom === z}
+            active={props.zoom === z}
+            className="capitalize"
             onClick={() => { props.onZoom(z); }}
-            className={`rounded border px-2 py-0.5 text-[12px] capitalize ${
-              props.zoom === z
-                ? "border-accent bg-accent/10 text-accent"
-                : "border-border-default text-text-secondary hover:bg-bg-muted"
-            }`}
           >
             {z}
-          </button>
+          </ToolbarButton>
         ))}
       </div>
 
       <label className="flex items-center gap-1 text-[12px] text-text-secondary">
         Group by
-        <select
+        <Select
+          size="sm"
           data-testid="timeline-grouping"
           value={props.grouping}
           onChange={e => { props.onGrouping(e.target.value as TimelineGrouping); }}
-          className="rounded border border-border-default bg-bg-canvas px-1 py-0.5 text-[12px] capitalize"
+          className="capitalize"
         >
           {groupings.map(g => (
             <option key={g} value={g}>{g}</option>
           ))}
-        </select>
+        </Select>
       </label>
 
       {/* TML-15: the toggle reflects the state even when no
           relationship is configured — "the arrows toggle reflects that
           state" — so it is disabled rather than hidden. */}
       <label className="flex items-center gap-1 text-[12px] text-text-secondary">
-        <input
-          type="checkbox"
+        <Checkbox
           data-testid="timeline-arrows"
           checked={props.arrowsOn && props.arrowsAvailable}
           disabled={!props.arrowsAvailable}
@@ -723,14 +724,15 @@ function Toolbar(props: {
         Dependencies
       </label>
 
-      <button
+      <Button
         type="button"
-        data-testid="timeline-today"
+        variant="secondary"
+        size="sm"
+        testId="timeline-today"
         onClick={() => { props.onToday(); }}
-        className="rounded border border-border-default px-2 py-0.5 text-[12px] text-text-secondary hover:bg-bg-muted"
       >
         Today
-      </button>
+      </Button>
     </div>
   );
 }

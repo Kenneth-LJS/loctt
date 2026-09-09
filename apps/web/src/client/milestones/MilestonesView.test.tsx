@@ -7,7 +7,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MilestonesView } from "./MilestonesView.tsx";
@@ -33,13 +33,14 @@ interface UnreadableEntry {
   readonly reason: string;
 }
 
-let MILESTONES: { id: string; name: string; progress?: { done: number; total: number; discarded: number; fraction: number } }[] = [];
+let MILESTONES: { id: string; name: string; target_date?: string; archived?: boolean; progress?: { done: number; total: number; discarded: number; fraction: number } }[] = [];
 let UNREADABLE: UnreadableEntry[] = [];
 let TASKS: Record<string, unknown>[] = [];
+let TODAY = "2026-06-08";
 
 function routeFetch(path: string): unknown {
   if (path.startsWith("/api/info")) {
-    return { exists: true, initState: "ready", taskCount: 0, cwd: "~/x", today: "2026-06-08", timezone: "UTC" };
+    return { exists: true, initState: "ready", taskCount: 0, cwd: "~/x", today: TODAY, timezone: "UTC" };
   }
   if (path.startsWith("/api/milestones")) {
     return {
@@ -91,8 +92,17 @@ async function renderView() {
     path: "/milestones",
     component: () => <MilestonesView />,
   });
+  // A stub detail route so a full-card click has somewhere to land and
+  // the navigation is observable (MSL-39).
+  const detailRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/milestones/$id",
+    component: function DetailStub() {
+      return <div data-testid="detail-stub">detail</div>;
+    },
+  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([milestonesRoute]),
+    routeTree: rootRoute.addChildren([milestonesRoute, detailRoute]),
     history: createMemoryHistory({ initialEntries: ["/milestones"] }),
   });
 
@@ -108,6 +118,7 @@ afterEach(() => {
   MILESTONES = [];
   UNREADABLE = [];
   TASKS = [];
+  TODAY = "2026-06-08";
 });
 
 describe("MilestonesView — unreadable task notice (K28 / P-5)", () => {
@@ -139,6 +150,149 @@ describe("MilestonesView — unreadable task notice (K28 / P-5)", () => {
     await screen.findByTestId("milestone-row");
     await waitFor(() => {
       expect(screen.queryByTestId("milestones-unreadable")).toBeNull();
+    });
+  });
+});
+
+describe("MilestonesView — full-card click (MSL-39)", () => {
+  // @verifies MSL-39
+  it("clicking anywhere on the card opens the milestone", async () => {
+    MILESTONES = [
+      { id: "ms_1", name: "v1", progress: { done: 1, total: 2, discarded: 0, fraction: 0.5 } },
+    ];
+    await renderView();
+
+    const card = await screen.findByTestId("milestone-row");
+    // A click on the card body — not on the name link itself — must
+    // still navigate. Target the progress bar region, which is a
+    // non-interactive descendant well away from the name link.
+    const bar = await screen.findByTestId("milestone-ms_1-bar");
+    fireEvent.click(bar);
+
+    expect(await screen.findByTestId("detail-stub")).toBeTruthy();
+    // The card advertises itself as clickable to assistive tech.
+    expect(card.getAttribute("role")).toBe("link");
+  });
+
+  // @verifies MSL-39
+  it("a click on a nested interactive control is not swallowed by the card", async () => {
+    // A milestone whose progress failed renders a Retry button inside
+    // the card (MSL-35). Clicking it must fire the button, not navigate.
+    MILESTONES = [{ id: "ms_1", name: "v1" }]; // no progress ⇒ unavailable
+    await renderView();
+
+    await screen.findByTestId("milestone-row");
+    const retry = await screen.findByTestId("milestone-ms_1-progress-retry");
+    fireEvent.click(retry);
+
+    // The retry re-runs the query; it does NOT navigate to the detail.
+    await waitFor(() => {
+      expect(screen.queryByTestId("detail-stub")).toBeNull();
+    });
+    // Still on the milestones view.
+    expect(screen.getByTestId("milestones")).toBeTruthy();
+  });
+});
+
+describe("MilestonesView — countdown / overdue indicator (MSL-40)", () => {
+  // @verifies MSL-40
+  it("shows days-remaining for a future dated milestone", async () => {
+    TODAY = "2026-06-08";
+    MILESTONES = [
+      {
+        id: "ms_1",
+        name: "v1",
+        target_date: "2026-06-13", // 5 days out
+        progress: { done: 1, total: 2, discarded: 0, fraction: 0.5 },
+      },
+    ];
+    await renderView();
+
+    const cd = await screen.findByTestId("milestone-ms_1-countdown");
+    expect(cd.textContent).toContain("in 5 days");
+  });
+
+  // @verifies MSL-40
+  it("shows an overdue countdown for a past dated milestone with work left", async () => {
+    TODAY = "2026-06-08";
+    MILESTONES = [
+      {
+        id: "ms_1",
+        name: "v1",
+        target_date: "2026-06-05", // 3 days ago
+        progress: { done: 1, total: 4, discarded: 0, fraction: 0.25 },
+      },
+    ];
+    await renderView();
+
+    const cd = await screen.findByTestId("milestone-ms_1-countdown");
+    expect(cd.textContent).toContain("3 days overdue");
+  });
+
+  // @verifies MSL-40
+  it("degrades cleanly for an undated milestone — no countdown, no crash", async () => {
+    MILESTONES = [
+      { id: "ms_1", name: "v1", progress: { done: 1, total: 2, discarded: 0, fraction: 0.5 } },
+    ];
+    await renderView();
+
+    await screen.findByTestId("milestone-row");
+    await waitFor(() => {
+      expect(screen.queryByTestId("milestone-ms_1-countdown")).toBeNull();
+    });
+    // The date slot still reads "No target date", never blank.
+    expect(screen.getByTestId("milestone-date").textContent).toContain(
+      "No target date",
+    );
+  });
+});
+
+describe("MilestonesView — status breakdown (MSL-41)", () => {
+  // @verifies MSL-41
+  it("breaks the counts down by category at a glance", async () => {
+    // 8 counted (total), 3 done ⇒ 5 remaining; 2 discarded excluded.
+    MILESTONES = [
+      {
+        id: "ms_1",
+        name: "v1",
+        progress: { done: 3, total: 8, discarded: 2, fraction: 3 / 8 },
+      },
+    ];
+    await renderView();
+
+    const bd = await screen.findByTestId("milestone-ms_1-breakdown");
+    const text = bd.textContent ?? "";
+    expect(screen.getByTestId("milestone-ms_1-breakdown-done").textContent).toContain("3");
+    expect(screen.getByTestId("milestone-ms_1-breakdown-remaining").textContent).toContain("5");
+    expect(screen.getByTestId("milestone-ms_1-breakdown-discarded").textContent).toContain("2");
+    expect(text.toLowerCase()).toContain("done");
+    expect(text.toLowerCase()).toContain("remaining");
+    expect(text.toLowerCase()).toContain("discarded");
+  });
+
+  // @verifies MSL-41
+  it("omits the discarded chip when there are none", async () => {
+    MILESTONES = [
+      { id: "ms_1", name: "v1", progress: { done: 2, total: 5, discarded: 0, fraction: 0.4 } },
+    ];
+    await renderView();
+
+    await screen.findByTestId("milestone-ms_1-breakdown");
+    expect(screen.getByTestId("milestone-ms_1-breakdown-done").textContent).toContain("2");
+    expect(screen.getByTestId("milestone-ms_1-breakdown-remaining").textContent).toContain("3");
+    expect(screen.queryByTestId("milestone-ms_1-breakdown-discarded")).toBeNull();
+  });
+
+  // @verifies MSL-41
+  it("shows no breakdown for a zero-task milestone", async () => {
+    MILESTONES = [
+      { id: "ms_1", name: "v1", progress: { done: 0, total: 0, discarded: 0, fraction: 0 } },
+    ];
+    await renderView();
+
+    await screen.findByTestId("milestone-row");
+    await waitFor(() => {
+      expect(screen.queryByTestId("milestone-ms_1-breakdown")).toBeNull();
     });
   });
 });

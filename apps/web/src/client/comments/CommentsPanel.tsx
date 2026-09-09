@@ -9,6 +9,7 @@ import {
   useEditComment,
   usePostComment,
 } from "../api/hooks/useComments.ts";
+import { Button } from "../ui/Button.tsx";
 import { CommentComposer } from "./CommentComposer.tsx";
 import { CommentItem } from "./CommentItem.tsx";
 import { DeleteCommentDialog } from "./DeleteCommentDialog.tsx";
@@ -108,13 +109,13 @@ export function CommentsPanel({
           You cannot add a comment until this file is readable — posting
           now would overwrite it and lose the comments already there.
         </p>
-        <button
+        <Button
           type="button"
+          variant="secondary"
           onClick={() => { void comments.refetch(); }}
-          className="rounded-md border border-border-subtle px-2.5 py-1.5 text-[13px] text-text-secondary hover:bg-bg-muted"
         >
           Try again
-        </button>
+        </Button>
       </div>
     );
   }

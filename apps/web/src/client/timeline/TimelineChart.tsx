@@ -1,6 +1,7 @@
 import type { TimelineZoom } from "@loctt/contracts";
 import { forwardRef, useMemo, useState } from "react";
 
+import { ICON } from "../ui/icons.ts";
 import type { DependencyEdge } from "./arrows.ts";
 import { arrowPath } from "./arrows.ts";
 import type { DateRange, HeaderCell } from "./geometry.ts";
@@ -236,7 +237,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                   className="absolute left-0 z-10 flex items-center gap-2 border-b border-border-subtle bg-bg-muted/90 px-2 text-left text-[11px] font-semibold"
                   style={{ top: band.y, height: BAND_HEADER_H, width: props.width }}
                 >
-                  <span aria-hidden="true">{collapsed.has(band.id) ? "▸" : "▾"}</span>
+                  <span aria-hidden="true">{collapsed.has(band.id) ? ICON.caretRight : ICON.caretDown}</span>
                   <span>{band.label}</span>
                   <span
                     className="font-normal text-text-secondary"
@@ -278,7 +279,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                           height: ROW_H - 6,
                         }}
                       >
-                        <span aria-hidden="true">⚠</span>
+                        <span aria-hidden="true">{ICON.warning}</span>
                         {/* K26: fall back to the key when title is the corrupt field. */}
                         <span className="block truncate">{row.task.title ?? row.task.key}</span>
                       </button>

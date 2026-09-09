@@ -14,6 +14,7 @@
   --color-bg-surface-raised: var(--bg-surface-raised);
   --color-bg-muted: var(--bg-muted);
   --color-bg-muted-hover: var(--bg-muted-hover);
+  --color-bg-row-hover: var(--bg-row-hover);
 
   --color-border-subtle: var(--border-subtle);
   --color-border-default: var(--border-default);

@@ -1,4 +1,4 @@
-import type { CreateTaskRequest } from "@loctt/contracts";
+import { type CreateTaskRequest, defaultStatus, type WorkflowConfig } from "@loctt/contracts";
 
 /**
  * The create form's values, and the two operations NEW-11 turns on.
@@ -24,6 +24,39 @@ export interface CreateFormState {
   readonly due_date: string | undefined;
   readonly body: string;
   readonly fields: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * The Status/Type the modal pre-fills from `workflow.yaml` (NEW-42 /
+ * UX-14).
+ *
+ * The modal used to open with Status and Type showing "—", which is a
+ * placeholder for "unset" — but a created task never has an unset status
+ * (core resolves one server-side) or an unset type, so the placeholder
+ * lied about what would be written. This resolves the same defaults the
+ * server would apply, so the form shows the truth on open.
+ *
+ * Status goes through contracts' `defaultStatus` rather than "the first
+ * status": `workflow.yaml` marks its default with `default: true`, which
+ * may be any position, and the CLI/MCP/core create path already honours
+ * that mark — pre-filling the first status would disagree with what the
+ * task actually gets. Type has no per-entry default flag, so its default
+ * is the first configured task type, matching configured order.
+ *
+ * Returns only the keys it can resolve, so an unloaded workflow
+ * (`undefined`) or one with no task types leaves those fields for the
+ * server to default rather than pinning a guess.
+ */
+export function defaultsFromWorkflow(
+  wf: WorkflowConfig | undefined,
+): Partial<Pick<CreateFormState, "status" | "task_type">> {
+  if (wf === undefined) return {};
+  const status = defaultStatus(wf)?.key;
+  const task_type = wf.task_types[0]?.key;
+  return {
+    ...(status !== undefined ? { status } : {}),
+    ...(task_type !== undefined ? { task_type } : {}),
+  };
 }
 
 export function emptyForm(overrides: Partial<CreateFormState> = {}): CreateFormState {

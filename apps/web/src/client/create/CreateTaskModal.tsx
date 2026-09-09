@@ -20,12 +20,14 @@ import { RichEditor } from "../editor/RichEditor.tsx";
 import { nonWorkingNote } from "../task/editors/DateField.tsx";
 import { LabelsField } from "../task/editors/LabelsField.tsx";
 import { OptionPicker } from "../task/editors/OptionPicker.tsx";
+import { Button } from "../ui/Button.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
 import { useToasts } from "../ui/Toast.tsx";
 import {
   afterCreateAnother,
   type CreateFormState,
   dateRangeProblem,
+  defaultsFromWorkflow,
   emptyForm,
   hasUserContent,
   toCreateRequest,
@@ -123,12 +125,19 @@ export function CreateTaskModal({
     () =>
       emptyForm({
         ...(choice.kind === "ask" ? {} : { project: choice.id }),
+        // NEW-42 (UX-14): Status and Type open pre-filled with the
+        // configured `workflow.yaml` defaults rather than "—". Status
+        // goes through `defaultStatus` (the `default: true` mark), which
+        // is what the server would apply, so the form shows what will be
+        // written. A board column's "+ Add task" (NEW-3) still wins,
+        // because `initialStatus` is spread after this.
+        ...defaultsFromWorkflow(wf),
         ...(initialStatus !== undefined ? { status: initialStatus } : {}),
         // NEW-6: reporter defaults to the current user; assignee stays
         // empty on purpose, so the form does not silently assign work.
         ...(currentUser.data?.id !== undefined ? { reporter: currentUser.data.id } : {}),
       }),
-    [choice, initialStatus, currentUser.data],
+    [choice, initialStatus, currentUser.data, wf],
   );
 
   const [form, setForm] = useState<CreateFormState>(initial);
@@ -163,6 +172,32 @@ export function CreateTaskModal({
       setSeeded(true);
     }
   }, [seeded, projects.isSuccess, currentUser.isSuccess, currentUser.isError, initial]);
+
+  // NEW-42 (UX-14): fold the workflow Status/Type defaults in when the
+  // workflow arrives, WITHOUT re-seeding the whole form.
+  //
+  // The main seed above deliberately does not wait on the workflow: it
+  // fires as soon as projects/user settle so the title focuses and takes
+  // typing immediately, and a later `setForm(initial)` would clobber a
+  // keystroke that beat the workflow fetch. So the pre-fill is applied
+  // here instead, and only to the two fields it owns, and only while
+  // they are still unset — a status already chosen (a board column's
+  // NEW-3 pre-fill, or the user's own pick) is never overwritten.
+  const [defaultsApplied, setDefaultsApplied] = useState(false);
+  useEffect(() => {
+    if (defaultsApplied || wf === undefined) return;
+    const defaults = defaultsFromWorkflow(wf);
+    setForm(f => ({
+      ...f,
+      ...(f.status === undefined && defaults.status !== undefined
+        ? { status: defaults.status }
+        : {}),
+      ...(f.task_type === undefined && defaults.task_type !== undefined
+        ? { task_type: defaults.task_type }
+        : {}),
+    }));
+    setDefaultsApplied(true);
+  }, [defaultsApplied, wf]);
 
   // NEW-4: the title has focus immediately, so typing goes into the
   // field rather than the page behind.
@@ -648,26 +683,30 @@ export function CreateTaskModal({
             Create another
           </label>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               onClick={requestClose}
-              data-testid="create-cancel"
-              className="rounded border border-border-default px-3 py-1.5 text-[13px] text-text-secondary hover:bg-bg-muted"
+              testId="create-cancel"
             >
               Cancel
-            </button>
-            <button
-              type="button"
-              data-testid="create-submit"
+            </Button>
+            <Button
+              variant="primary"
+              testId="create-submit"
               // NEW-2: enabled as soon as the title is non-empty.
               // NEW-29: disabled while in flight, and the flag above
               // catches the click that beats the re-render.
+              //
+              // NEW-42 (UX-14): the disable is a *visible* cue rather
+              // than a live-looking button that does nothing. The B1
+              // Button's base carries `disabled:opacity-50` +
+              // `disabled:cursor-not-allowed`, so an empty-title Create
+              // reads as unavailable instead of inviting a dead click.
               disabled={!titleFilled || submitting || dateProblem !== undefined}
               onClick={() => { void submit(); }}
-              className="rounded bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-contrast hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "Creating…" : "Create task"}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -1254,23 +1293,21 @@ function DiscardDialog({
           What you have typed will be lost.
         </p>
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
             autoFocus
-            data-testid="create-discard-keep"
+            testId="create-discard-keep"
             onClick={onKeep}
-            className="rounded border border-border-default px-3 py-1.5 text-[13px] text-text-secondary hover:bg-bg-muted"
           >
             Keep editing
-          </button>
-          <button
-            type="button"
-            data-testid="create-discard-confirm-btn"
+          </Button>
+          <Button
+            variant="danger"
+            testId="create-discard-confirm-btn"
             onClick={onDiscard}
-            className="rounded bg-danger-fg px-3 py-1.5 text-[13px] font-medium text-white"
           >
             Discard
-          </button>
+          </Button>
         </div>
       </div>
     </div>

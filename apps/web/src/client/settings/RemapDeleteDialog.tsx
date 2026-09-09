@@ -1,6 +1,8 @@
 import { useState } from "react";
 
+import { Button } from "../ui/Button.tsx";
 import { Modal } from "../ui/Modal.tsx";
+import { Radio } from "../ui/Radio.tsx";
 
 /**
  * Deleting a workflow key that tasks still reference (SET-17, SET-19).
@@ -88,8 +90,7 @@ export function RemapDeleteDialog({
           </legend>
           {alternatives.map(alt => (
             <label key={alt.key} className="flex items-center gap-2 py-0.5 text-[13px]">
-              <input
-                type="radio"
+              <Radio
                 name="remap-target"
                 data-testid={`remap-to-${alt.key}`}
                 checked={choice?.kind === "remap" && choice.to === alt.key}
@@ -103,8 +104,7 @@ export function RemapDeleteDialog({
             </label>
           ))}
           <label className="mt-1 flex items-start gap-2 py-0.5 text-[13px]">
-            <input
-              type="radio"
+            <Radio
               name="remap-target"
               data-testid="remap-clear"
               checked={choice?.kind === "clear"}
@@ -130,25 +130,21 @@ export function RemapDeleteDialog({
       )}
 
       <div className="mt-4 flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onClose}
-          className="h-8 rounded-md border border-border-default px-3 text-[13px]"
-        >
+        <Button type="button" variant="secondary" onClick={onClose}>
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          data-testid="remap-confirm"
+          variant="danger"
+          testId="remap-confirm"
           disabled={blocked}
           onClick={() => {
             if (blocked) return;
             onConfirm(choice ?? { kind: "clear" });
           }}
-          className="h-8 rounded-md bg-danger-fg px-3 text-[13px] font-medium text-accent-contrast disabled:opacity-50"
         >
           {pending ? "Deleting…" : `Delete ${noun}`}
-        </button>
+        </Button>
       </div>
     </Modal>
   );

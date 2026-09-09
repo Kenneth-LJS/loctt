@@ -155,6 +155,30 @@ async function openTask(page: Page, tracker: TrackerFixture, key: string): Promi
   await expect(page.getByTestId("task-key-chip")).toHaveText(key);
 }
 
+/**
+ * The lane now defaults to the **Comments** tab (K-5 / A163 — the tabbed
+ * panel is the single comments home), and the activity feed is
+ * mount-on-activation behind the **Activity** tab: `activity-entry` and
+ * friends are not in the DOM until the tab is clicked. Tests that assert
+ * the feed call this after `openTask`. Matches the pattern
+ * `flow-comments.spec.ts` established for the same split.
+ */
+async function showActivity(page: Page): Promise<void> {
+  await page.getByTestId("activity-tab-activity").click();
+  await expect(page.getByTestId("activity-tabpanel-activity")).toBeVisible();
+}
+
+/**
+ * The **All** tab stacks both lanes, so the comment composer AND the
+ * activity feed are mounted at once — used by tests that assert on both
+ * (a composer/composer-disabled-reason/comments-* element and a feed
+ * element in the same test).
+ */
+async function showAll(page: Page): Promise<void> {
+  await page.getByTestId("activity-tab-all").click();
+  await expect(page.getByTestId("activity-tabpanel-all")).toBeVisible();
+}
+
 /** The rendered rows of the feed, top to bottom, flattened to one line each. */
 async function rows(page: Page): Promise<string[]> {
   return (await page
@@ -219,6 +243,9 @@ test.describe("CMT — activity", () => {
     ].join("\n"));
 
     await openTask(page, tracker, key);
+    // Both lanes at once: the case's first bullet is a *contrast* between
+    // the feed's order and the comments' order, so both must be mounted.
+    await showAll(page);
     await expect(page.getByTestId("activity-entry").first()).toBeVisible();
 
     /**
@@ -282,6 +309,7 @@ test.describe("CMT — activity", () => {
     await tracker.run(["unset", key, "assignee"]);
 
     await openTask(page, tracker, key);
+    await showActivity(page);
     await expect(page.getByTestId("activity-entry").first()).toBeVisible();
 
     // The file holds keys and ULIDs…
@@ -386,6 +414,7 @@ test.describe("CMT — activity", () => {
     ].join("\n"));
 
     await openTask(page, tracker, key);
+    await showActivity(page);
     await expect(page.getByTestId("activity-bulk-row")).toHaveCount(1);
 
     const day = page.locator('[data-day="2026-08-20"]');
@@ -486,6 +515,7 @@ test.describe("CMT — activity", () => {
     await appendHistory(tracker.root, key, `${lines.join("\n")}\n`);
 
     await openTask(page, tracker, key);
+    await showActivity(page);
     await expect(page.getByTestId("activity-scope")).toBeVisible();
 
     // The total includes the `created` entry the CLI wrote: 121.
@@ -559,6 +589,9 @@ test.describe("CMT — activity", () => {
     await writeFile(await historyFile(tracker.root, key), "[]\n", "utf8");
 
     await openTask(page, tracker, key);
+    // Asserts the feed's empty state AND the comments empty state +
+    // composer — both lanes, so the All tab mounts both.
+    await showAll(page);
 
     const empty = page.getByTestId("activity-empty");
     await expect(empty).toBeVisible();
@@ -605,6 +638,7 @@ test.describe("CMT — activity", () => {
     expect(wf).toContain("key: high");
 
     await openTask(page, tracker, key);
+    await showActivity(page);
 
     const change = page.locator('[data-testid="activity-change"]', { hasText: "Priority:" });
     const before = change.getByTestId("activity-before");
@@ -662,6 +696,7 @@ test.describe("CMT — activity", () => {
       .not.toContain("actor:");
 
     await openTask(page, tracker, key);
+    await showActivity(page);
 
     const bulk = page.getByTestId("activity-bulk-row");
     // Grouped and collapsed despite having no actor.
@@ -726,6 +761,7 @@ test.describe("CMT — activity", () => {
         .filter(t => t.startsWith("same-"));
 
     await openTask(page, tracker, key);
+    await showActivity(page);
     await expect(page.getByTestId("activity-entry")).toHaveCount(50);
 
     const first = await markers();
@@ -822,6 +858,7 @@ test.describe("CMT — activity", () => {
       ].join("\n"));
 
       await openTask(page, tracker, key);
+      await showActivity(page);
       await expect(page.getByTestId("activity-entry").first()).toBeVisible();
 
       /**
@@ -883,6 +920,7 @@ test.describe("CMT — activity", () => {
 
     await page.goto(`${tracker.baseURL}/tasks/${String(newKey)}`);
     await expect(page.getByTestId("task-key-chip")).toHaveText(String(newKey));
+    await showActivity(page);
 
     /**
      * The first bullet: the entry written under `T-1` is still on this
@@ -938,6 +976,9 @@ test.describe("CMT — activity", () => {
     await writeFile(file, `${original}\n  broken: {\n`, "utf8");
 
     await openTask(page, tracker, key);
+    // Asserts the degraded comments section AND that the feed still
+    // renders — both lanes, so the All tab mounts both.
+    await showAll(page);
 
     // The section names the file and the parse problem.
     const err = page.getByTestId("comments-error");
@@ -986,6 +1027,9 @@ test.describe("CMT — activity", () => {
     await appendFile(file, "  - this: {\n", "utf8");
 
     await openTask(page, tracker, key);
+    // Asserts the feed's scoped error AND that comments render normally
+    // — both lanes, so the All tab mounts both.
+    await showAll(page);
 
     // The feed shows an error naming the file — not a generic 500.
     const err = page.getByTestId("activity-error");
@@ -1040,6 +1084,9 @@ test.describe("CMT — activity", () => {
     ].join("\n"));
 
     await openTask(page, tracker, key);
+    // Asserts the partial feed + incomplete notice AND that comments
+    // render — both lanes, so the All tab mounts both.
+    await showAll(page);
 
     // What parsed renders: the `created` entry and the status change.
     await expect(page.getByTestId("activity-entry")).toHaveCount(2);
@@ -1098,6 +1145,7 @@ test.describe("CMT — activity", () => {
         .filter(t => t.startsWith("p-"));
 
     await openTask(page, tracker, key);
+    await showActivity(page);
     await expect(page.getByTestId("activity-entry")).toHaveCount(50);
     const loaded = await markers();
     expect(loaded).toHaveLength(50);
@@ -1191,6 +1239,9 @@ test.describe("CMT — activity", () => {
     const ana = await makeUser(tracker, "Ana Lopez");
 
     await openTask(page, tracker, key);
+    // Posts through the comment composer AND reads the feed's
+    // attribution — both lanes, so the All tab mounts both.
+    await showAll(page);
     await expect(page.getByTestId("activity-entry").first()).toBeVisible();
 
     // A write from the UI, as Ken: a comment, which writes both a
@@ -1334,6 +1385,7 @@ test.describe("CMT — activity pagination under bulk collapse", () => {
     await appendHistory(tracker.root, key, `${chunks.flat().join("\n")}\n`);
 
     await openTask(page, tracker, key);
+    await showActivity(page);
     await expect(page.getByTestId("activity-scope")).toBeVisible();
 
     // First bullet: the count is in *entries*, and it counts the

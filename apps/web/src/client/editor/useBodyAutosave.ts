@@ -74,6 +74,14 @@ export interface BodyAutosave {
   readonly resolve: (text: string) => Promise<void>;
   /** Dismiss the conflict surface *without* writing (XS-12). */
   readonly dismissConflict: () => void;
+  /**
+   * Cancel (Escape, K33): discard the in-editor text, drop any pending
+   * idle timer, and return to the last-saved baseline WITHOUT writing.
+   * This is what makes Escape a true cancel — without it, unmounting the
+   * editor with a pending timer runs the unmount-flush and silently
+   * *writes* the edit the user was cancelling.
+   */
+  readonly cancel: () => void;
   /** True while there is anything the user would lose by leaving. */
   readonly hasUnsavedWork: boolean;
 }
@@ -286,6 +294,21 @@ export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
   }, []);
 
   /**
+   * Escape / cancel (K33): discard the in-editor text and drop any
+   * pending idle timer, reverting to the last-saved baseline WITHOUT
+   * writing. Setting `bufferRef` back to `savedRef` is what makes the
+   * editor's unmount-flush a no-op (it only writes when buffer ≠ saved),
+   * so cancelling then leaving cannot silently persist the cancelled
+   * edit. A conflict is dismissed too — cancel means "forget this edit".
+   */
+  const cancel = useCallback(() => {
+    clearTimer();
+    bufferRef.current = savedRef.current;
+    setConflict(null);
+    setState({ kind: "saved" });
+  }, [clearTimer]);
+
+  /**
    * Write `text` over whatever is on disk, using the token from the
    * conflicting read (XS-12's "keep mine" / "keep both").
    *
@@ -343,7 +366,7 @@ export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
   }, [hasUnsavedWork]);
 
   return {
-    state, conflict, edit, flush, retry, resolve, dismissConflict, hasUnsavedWork,
+    state, conflict, edit, flush, retry, resolve, dismissConflict, cancel, hasUnsavedWork,
   };
 }
 

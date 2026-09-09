@@ -1046,11 +1046,20 @@ test.describe("TSK — meta panel pickers", () => {
 
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
 
-    // The panel ignores the key and does not invent a row for it.
+    // The panel does not give the unknown key a normal editable field row,
+    // but (DEG-7, superseding TSK-32's old "ignores the key" bullet — see
+    // decisions.md A179) it IS surfaced in the read-only "Not recognised"
+    // group so a preserved-but-unknown key is never silently hidden.
     // Positive first: the panel is rendering real rows.
     await expect(trigger(page, "status")).toBeVisible();
-    await expect(page.getByTestId("meta-panel")).not.toContainText("x_experiment");
-    await expect(page.getByTestId("meta-panel")).not.toContainText("cohort-b");
+    const unrecognised = page.getByTestId("meta-panel").getByText("Not recognised");
+    await expect(unrecognised).toBeVisible();
+    await expect(page.getByTestId("meta-panel")).toContainText("x_experiment");
+    await expect(page.getByTestId("meta-panel")).toContainText("cohort-b");
+    // It is NOT a known editable field row — no edit trigger for it (a
+    // known field would have `meta-edit-x_experiment`); it lives only in
+    // the read-only Not-recognised group.
+    await expect(page.getByTestId("meta-edit-x_experiment")).toHaveCount(0);
 
     await trigger(page, "status").click();
     await options(page, "status").getByRole("option", { name: "In progress" }).click();

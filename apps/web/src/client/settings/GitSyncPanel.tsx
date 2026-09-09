@@ -10,6 +10,7 @@ import {
   useGitSync,
   useReconcileSession,
 } from "../api/hooks/useGit.ts";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { ReconcilePanel } from "./ReconcilePanel.tsx";
 
@@ -89,14 +90,15 @@ function DisabledState({ status }: { readonly status: GitStatus }) {
           in the tracker&apos;s directory, or move the tracker into a repository
           that already exists. Nothing has been created by this check.
         </p>
-        <button
+        <Button
           type="button"
-          data-testid="git-enable"
+          variant="secondary"
+          testId="git-enable"
           disabled
-          className="mt-3 rounded-md border border-border-subtle px-3 py-1.5 text-[13px] opacity-50"
+          className="mt-3"
         >
           Enable git sync
-        </button>
+        </Button>
       </div>
     );
   }
@@ -163,33 +165,34 @@ function DisabledState({ status }: { readonly status: GitStatus }) {
                   <ErrorState error={enable.error} context="enabling git sync" />
                 </div>
               )}
-              <button
+              <Button
                 type="button"
-                data-testid="git-enable-confirm-button"
+                variant="primary"
+                testId="git-enable-confirm-button"
                 disabled={enable.isPending}
                 onClick={() => { enable.mutate(); }}
-                className="rounded-md bg-accent px-3 py-1.5 text-[13px] text-white disabled:opacity-50"
               >
                 {enable.isPending ? "Enabling…" : "Enable git sync"}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="secondary"
+                className="ml-2"
                 onClick={() => { setConfirming(false); }}
-                className="ml-2 rounded-md border border-border-subtle px-3 py-1.5 text-[13px]"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           )
         : (
-            <button
+            <Button
               type="button"
-              data-testid="git-enable"
+              variant="secondary"
+              testId="git-enable"
               onClick={() => { setConfirming(true); }}
-              className="rounded-md border border-border-subtle bg-bg-surface px-3 py-1.5 text-[13px]"
             >
               Enable git sync
-            </button>
+            </Button>
           )}
     </div>
   );
@@ -297,14 +300,15 @@ function EnabledState({ status, checkedAt, onRefresh }: {
               ? "not checked yet"
               : `Last checked ${new Date(checkedAt).toLocaleTimeString()}`}
           </span>
-          <button
+          <Button
             type="button"
-            data-testid="git-refresh"
+            variant="secondary"
+            size="sm"
+            testId="git-refresh"
             onClick={onRefresh}
-            className="rounded border border-border-subtle px-2 py-0.5"
           >
             Refresh
-          </button>
+          </Button>
         </div>
       </section>
 
@@ -327,24 +331,24 @@ function EnabledState({ status, checkedAt, onRefresh }: {
       <ReconcilePanel />
 
       <section className="mb-5 flex gap-2">
-        <button
+        <Button
           type="button"
-          data-testid="git-publish"
+          variant="secondary"
+          testId="git-publish"
           disabled={busy || reconcileInProgress}
           onClick={() => { publish.mutate(); }}
-          className="rounded-md border border-border-subtle bg-bg-surface px-3 py-1.5 text-[13px] disabled:opacity-50"
         >
           {publish.isPending ? "Publishing…" : "Publish"}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          data-testid="git-sync"
+          variant="secondary"
+          testId="git-sync"
           disabled={busy || reconcileInProgress}
           onClick={() => { sync.mutate(); }}
-          className="rounded-md border border-border-subtle bg-bg-surface px-3 py-1.5 text-[13px] disabled:opacity-50"
         >
           {sync.isPending ? "Syncing…" : "Sync"}
-        </button>
+        </Button>
       </section>
 
       {/*
@@ -444,33 +448,34 @@ function EnabledState({ status, checkedAt, onRefresh }: {
                   nothing is deleted, and no task file is modified. Re-enabling
                   later picks up from the commit already recorded.
                 </p>
-                <button
+                <Button
                   type="button"
-                  data-testid="git-disable-confirm-button"
+                  variant="secondary"
+                  testId="git-disable-confirm-button"
                   disabled={disable.isPending}
                   onClick={() => { disable.mutate(); }}
-                  className="rounded-md border border-border-subtle px-3 py-1.5 text-[13px] disabled:opacity-50"
                 >
                   {disable.isPending ? "Disabling…" : "Disable git sync"}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="secondary"
+                  className="ml-2"
                   onClick={() => { setConfirmingDisable(false); }}
-                  className="ml-2 rounded-md border border-border-subtle px-3 py-1.5 text-[13px]"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             )
           : (
-              <button
+              <Button
                 type="button"
-                data-testid="git-disable"
+                variant="secondary"
+                testId="git-disable"
                 onClick={() => { setConfirmingDisable(true); }}
-                className="rounded-md border border-border-subtle px-3 py-1.5 text-[13px]"
               >
                 Disable git sync
-              </button>
+              </Button>
             )}
       </section>
     </div>

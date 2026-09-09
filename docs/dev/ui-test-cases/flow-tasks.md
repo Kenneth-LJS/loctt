@@ -368,9 +368,17 @@ earlier `string` declaration.
 **Unknown top-level frontmatter keys survive an edit.** Task carrying
 an experimental key.
 
-- The panel ignores the key and does not invent a row for it.
+- The key does not get a normal editable field row (it is not treated as
+  a known task field); it is surfaced instead in DEG-7's read-only "Not
+  recognised" group, with a remove control. *(Revised: the original bullet
+  "the panel ignores the key and does not invent a row for it" predates
+  the degradation framework and contradicts DEG-7, which — major, and
+  reflecting Ken's P7/K26/K27 "surface preserved-but-unknown fields, never
+  silently hide them" direction — requires the key be shown. DEG-7
+  supersedes it; see decisions.md A179.)*
 - After editing status from the UI, re-reading `task.md` shows the
-  experimental key still present with its original value.
+  experimental key still present with its original value (the P1/P7
+  data-loss guard — unchanged and the point of this case).
 
 ### TSK-33 · M2 · major · P7
 **A reference to an archived entity is preserved on unrelated edits.**

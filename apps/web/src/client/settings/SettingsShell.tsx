@@ -41,10 +41,16 @@ function SectionNav({ active }: { readonly active: string }) {
     <nav
       aria-label="Settings sections"
       data-testid="settings-nav"
-      className="w-56 shrink-0 border-r border-border-subtle bg-bg-surface p-3"
+      // R1 (responsive remainder): below `md` this is a full-width bar
+      // stacked above the pane (see the shell's `flex-col md:flex-row`),
+      // scrolling horizontally rather than stealing half a phone's width
+      // as a fixed rail. At `md`+ it is the fixed side rail it was, and it
+      // scrolls vertically so a long section list cannot overflow a short
+      // viewport. `shrink-0` only applies once it is a side rail.
+      className="w-full max-h-[40vh] overflow-y-auto border-b border-border-subtle bg-bg-surface p-3 md:w-56 md:max-h-none md:shrink-0 md:overflow-x-visible md:border-r md:border-b-0"
     >
       {SETTINGS_GROUPS.map(group => (
-        <div key={group} className="mb-4">
+        <div key={group} className="mb-4 last:mb-0 md:last:mb-0">
           {/* Non-interactive heading (SET-2): it neither navigates nor
               collapses, so it cannot navigate away by accident. */}
           <h2 className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
@@ -163,7 +169,11 @@ export function SettingsShell({ section }: { readonly section: string }) {
   const resolved = findSection(section);
   return (
     // A `div`, not a `main` — the shell above already owns `<main>`.
-    <div className="flex h-full bg-bg-canvas font-sans text-text-primary">
+    // R1: `flex-col` below `md` stacks the section bar above the pane so
+    // neither is crushed on a narrow viewport; `md:flex-row` restores the
+    // two-pane side-rail layout. `overflow-hidden` keeps the shell from
+    // forcing horizontal body scroll — overflow lives in the panes.
+    <div className="flex h-full flex-col overflow-hidden bg-bg-canvas font-sans text-text-primary md:flex-row">
       <SectionNav active={section} />
       <div data-testid="settings-pane" className="min-w-0 flex-1 overflow-auto">
         {resolved

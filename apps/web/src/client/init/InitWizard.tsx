@@ -4,7 +4,10 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { apiClient, ApiError } from "../api/client.ts";
+import { Button } from "../ui/Button.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { TextField } from "../ui/TextField.tsx";
 import { firstKeyPreview, PREFIX_RULE, prefixProblem } from "./prefix.ts";
 
 /**
@@ -160,20 +163,20 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
             <label htmlFor={nameId} className="block text-[13px] font-medium text-text-primary">
               Project name
             </label>
-            <input
+            <TextField
               id={nameId}
               ref={nameRef}
               value={name}
               disabled={submitting}
               onChange={(e) => { setName(e.target.value); }}
               onBlur={() => { setShowProblems(true); }}
-              aria-invalid={showProblems && nameProblem !== null}
+              invalid={showProblems && nameProblem !== null}
               aria-describedby={showProblems && nameProblem !== null ? `${nameId}-err` : undefined}
               // ONB-22: a 200-character name wraps inside the field
               // rather than widening the form. `w-full` plus the
               // capped container is what keeps the page from
               // scrolling sideways.
-              className="mt-1 w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 text-[13px] text-text-primary"
+              className="mt-1"
             />
             {showProblems && nameProblem !== null && (
               <p id={`${nameId}-err`} className="mt-1 text-[12px] text-danger-fg" role="alert">
@@ -186,14 +189,14 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
             <label htmlFor={prefixId} className="block text-[13px] font-medium text-text-primary">
               Key prefix
             </label>
-            <input
+            <TextField
               id={prefixId}
               ref={prefixRef}
               value={prefix}
               disabled={submitting}
               onChange={(e) => { setPrefix(e.target.value); setPrefixTouched(true); }}
               onBlur={() => { setShowProblems(true); }}
-              aria-invalid={showProblems && prefixIssue !== null}
+              invalid={showProblems && prefixIssue !== null}
               // A11Y-23: when the prefix is rejected the description
               // must reach the *error*, not only the help line. It
               // used to point at `-help` unconditionally, so a
@@ -207,7 +210,7 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
                   ? `${prefixId}-err ${prefixId}-help`
                   : `${prefixId}-help`
               }
-              className="mt-1 w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 font-mono text-[13px] text-text-primary"
+              className="mt-1 font-mono"
             />
             <p id={`${prefixId}-help`} className="mt-1 text-[12px] text-text-secondary">
               {/*
@@ -231,9 +234,8 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
           </div>
 
           <div className="flex items-start gap-2">
-            <input
+            <Checkbox
               id={docsId}
-              type="checkbox"
               checked={skipDocs}
               disabled={submitting}
               onChange={(e) => { setSkipDocs(e.target.checked); }}
@@ -271,13 +273,13 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
           </p>
 
           <div className="flex items-center gap-3">
-            <button
+            <Button
               type="submit"
+              variant="primary"
               disabled={submitting}
-              className="rounded bg-accent hover:bg-accent-hover px-3 py-1.5 text-[13px] font-medium text-accent-contrast disabled:opacity-60"
             >
               {submitting ? "Setting up…" : "Set up tracker"}
-            </button>
+            </Button>
             {/*
               ONB-28: a slow init says what it is doing rather than
               sitting on an unexplained spinner. `aria-live` so the

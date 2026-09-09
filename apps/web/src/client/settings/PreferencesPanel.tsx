@@ -6,6 +6,8 @@ import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
 import { adoptStoredTheme, useTheme } from "../theme/useTheme.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { Select } from "../ui/Select.tsx";
+import { ToolbarButton } from "../ui/ToolbarButton.tsx";
 
 /**
  * Settings → Personal → My preferences (SET-11, PRU-14).
@@ -114,22 +116,17 @@ export function PreferencesPanel() {
         </p>
         <div role="radiogroup" aria-label="Theme" className="flex gap-2">
           {THEMES.map(t => (
-            <button
+            <ToolbarButton
               key={t.id}
               type="button"
               role="radio"
               aria-checked={preference === t.id}
-              data-testid={`theme-${t.id}`}
+              active={preference === t.id}
+              testId={`theme-${t.id}`}
               onClick={() => { onPickTheme(t.id); }}
-              className={
-                "rounded-md border px-3 py-1 text-[13px] "
-                + (preference === t.id
-                  ? "border-accent bg-accent-muted text-accent"
-                  : "border-border-subtle text-text-secondary hover:bg-bg-muted")
-              }
             >
               {t.label}
-            </button>
+            </ToolbarButton>
           ))}
         </div>
       </section>
@@ -159,7 +156,7 @@ export function PreferencesPanel() {
           </p>
         ) : null}
 
-        <select
+        <Select
           data-testid="default-project-select"
           aria-label="Default project"
           value={defaultIsDead ? "" : (personalDefault ?? "")}
@@ -175,13 +172,12 @@ export function PreferencesPanel() {
               patch({ default_project: v });
             }
           }}
-          className="rounded-md border border-border-subtle bg-bg-surface px-2 py-1 text-[13px] text-text-primary"
         >
           <option value="">No personal default (use the workspace default)</option>
           {items.filter(p => p.archived !== true).map(p => (
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
-        </select>
+        </Select>
       </section>
 
       {save.isError ? (

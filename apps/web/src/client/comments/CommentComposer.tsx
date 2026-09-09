@@ -28,6 +28,7 @@ import { RichBuffer } from "../editor/markdown.ts";
 import { MarkdownEditor } from "../editor/MarkdownEditor.tsx";
 import type { MentionCandidate } from "../editor/MentionMenu.tsx";
 import { RichEditor } from "../editor/RichEditor.tsx";
+import { Button } from "../ui/Button.tsx";
 
 export interface CommentComposerProps {
   /** Markdown to open with. `""` for a fresh composer. */
@@ -257,9 +258,10 @@ export function CommentComposer({
       )}
 
       <div className="flex items-center gap-2">
-        <button
+        <Button
           type="button"
-          data-testid={`${testId}-submit`}
+          variant="primary"
+          testId={`${testId}-submit`}
           disabled={disabled}
           {...(reason !== undefined ? { title: reason, "aria-describedby": reasonId } : {})}
           /**
@@ -270,24 +272,18 @@ export function CommentComposer({
            * blank line at the end.
            */
           onClick={() => { onSubmit(text.trim()); }}
-          className={
-            "rounded-md px-3 py-1.5 text-[13px] font-medium "
-            + (disabled
-              ? "cursor-not-allowed bg-bg-muted text-text-tertiary"
-              : "bg-accent text-white hover:opacity-90")
-          }
         >
           {pending ? "Saving…" : submitLabel}
-        </button>
+        </Button>
         {onCancel !== undefined && (
-          <button
+          <Button
             type="button"
-            data-testid={`${testId}-cancel`}
+            variant="secondary"
+            testId={`${testId}-cancel`}
             onClick={onCancel}
-            className="rounded-md border border-border-subtle px-3 py-1.5 text-[13px] text-text-secondary hover:bg-bg-muted"
           >
             Cancel
-          </button>
+          </Button>
         )}
         {reason !== undefined && (
           <span id={reasonId} data-testid={`${testId}-reason`} className="text-[12px] text-text-tertiary">

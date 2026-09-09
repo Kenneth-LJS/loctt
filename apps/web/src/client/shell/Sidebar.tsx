@@ -1,7 +1,7 @@
 import type { SidebarGroupId, TrackerInfoResponse } from "@loctt/contracts";
 import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS } from "@loctt/contracts";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import {
@@ -19,6 +19,10 @@ import { readSidebarGroups, resolveSidebarOrder } from "../settings/sidebarGroup
 import { readSidebarPins } from "../settings/sidebarPins.ts";
 import { ViewFormDialog } from "../settings/ViewFormDialog.tsx";
 import { BUILTIN_FILTERS } from "../sidebar/builtinFilters.ts";
+import { Chip } from "../ui/Chip.tsx";
+import { ICON } from "../ui/icons.ts";
+import { TextField } from "../ui/TextField.tsx";
+import { requestSidebarCollapse } from "./useSidebarCollapse.ts";
 import { useVanishedViews } from "./useVanishedViews.ts";
 
 /**
@@ -33,6 +37,34 @@ import { useVanishedViews } from "./useVanishedViews.ts";
  * search params). When collapsed, labels and group headers hide and
  * items shrink to icon width; the parent grid animates the column.
  */
+/** Below this the sidebar behaves as a mobile overlay (mirrors `NARROW_PX`). */
+const NARROW_PX = 900;
+
+/**
+ * Tracks whether the viewport is narrow enough for the sidebar to act as
+ * a dismissible overlay (R2).
+ *
+ * `useSidebarCollapse` owns the same breakpoint, but it lives above the
+ * router and only hands `Sidebar` the resolved `collapsed` flag. Rather
+ * than widen that prop contract through `AppShell` (a file this lane does
+ * not own), `Sidebar` reads the viewport itself — it only needs to know
+ * *how* to render the expanded state (in-grid column vs. floating
+ * overlay), and the hook already decides *whether* it is expanded.
+ */
+function useIsNarrow(): boolean {
+  const [narrow, setNarrow] = useState<boolean>(
+    () => typeof window !== "undefined" && window.innerWidth < NARROW_PX,
+  );
+  useEffect(() => {
+    const onResize = (): void => {
+      setNarrow(window.innerWidth < NARROW_PX);
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return narrow;
+}
+
 export function Sidebar({
   collapsed,
   info,
@@ -44,15 +76,58 @@ export function Sidebar({
   readonly currentUserId: string | null;
   readonly today: string;
 }) {
+  const narrow = useIsNarrow();
+  // R2: on a narrow viewport an *expanded* sidebar is a temporary
+  // overlay, not the in-grid column. It floats over the main pane so it
+  // does not steal layout width, and a backdrop behind it makes the rest
+  // of the screen a tap-away dismiss target.
+  const overlay = narrow && !collapsed;
+  // A navigation dismisses the mobile overlay (following a link should
+  // reveal the destination, not leave the drawer covering it). Watched
+  // here because `Sidebar` is inside the router; the collapse itself is
+  // performed by the hook, which listens for `requestSidebarCollapse`.
+  const pathname = useRouterState({ select: s => s.location.pathname });
+  const firstRoute = useRef(true);
+  useEffect(() => {
+    // Skip the initial mount — only an actual route *change* dismisses,
+    // so opening the drawer (which does not change the path) never
+    // closes itself, and the first render does not fire a spurious
+    // collapse. `overlay` is read, not depended on, deliberately: the
+    // trigger is the navigation, and re-running when the overlay toggles
+    // would close it the instant it opened.
+    if (firstRoute.current) {
+      firstRoute.current = false;
+      return;
+    }
+    requestSidebarCollapse();
+  }, [pathname]);
+
   return (
-    <aside
-      className={[
-        "row-start-2 flex min-h-0 flex-col border-r border-border-subtle bg-bg-surface py-3",
-        "transition-[width] duration-150 ease-out",
-        collapsed ? "w-14 px-2" : "w-60 px-2",
-      ].join(" ")}
-      data-collapsed={collapsed}
-    >
+    <>
+      {/* R2 backdrop: only while the overlay is open. A tap anywhere off
+          the panel dismisses it (tap-away), and it dims the content
+          behind so the drawer reads as a temporary layer. */}
+      {overlay ? (
+        <div
+          data-testid="sidebar-overlay-backdrop"
+          aria-hidden="true"
+          onClick={() => { requestSidebarCollapse(); }}
+          className="fixed inset-0 z-30 bg-black/40"
+        />
+      ) : null}
+      <aside
+        className={[
+          "row-start-2 flex min-h-0 flex-col border-r border-border-subtle bg-bg-surface py-3",
+          "transition-[width] duration-150 ease-out",
+          collapsed ? "w-14 px-2" : "w-60 px-2",
+          // While overlaying, float the expanded panel above the main
+          // pane (fixed, full-height, z above the backdrop) instead of
+          // widening the grid column.
+          overlay ? "fixed bottom-0 left-0 top-0 z-40 shadow-lg" : "",
+        ].join(" ")}
+        data-collapsed={collapsed}
+        data-overlay={overlay ? "true" : undefined}
+      >
       {/* The groups scroll; the footer does not.
           SHL-11 requires the workspace label and Settings to stay
           pinned "and not scroll away with the groups", and SHL-20/21
@@ -77,7 +152,8 @@ export function Sidebar({
         />
       </div>
       <Footer collapsed={collapsed} info={info} />
-    </aside>
+      </aside>
+    </>
   );
 }
 
@@ -531,30 +607,32 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
           to="/list"
           data-testid="project-all"
           // Clears the project facet (and only it — the other filters
-          // are left alone, matching a project click).
+          // are left alone, matching a project click). The ambient sort
+          // is dropped too (LST-55).
           search={prev => {
             const { project: _drop, ...rest } = prev as { project?: unknown };
-            return rest;
+            return clearSort(rest);
           }}
           title="All projects"
           className="no-underline"
         >
           <ItemShell active={allActive} collapsed={collapsed} title="All projects">
-            <ColorDot color="#8A94A6" />
+            <ColorDot color="var(--text-tertiary)" />
             {!collapsed ? <span className="truncate">All projects</span> : null}
           </ItemShell>
         </Link>
       ) : null}
 
       {searchable ? (
-        <input
+        <TextField
           type="search"
+          size="sm"
           value={query}
           onChange={e => { setQuery(e.target.value); }}
           placeholder="Filter projects…"
           aria-label="Filter projects"
           data-testid="project-search"
-          className="mx-2.5 mb-0.5 h-7 rounded-md border border-border-default bg-bg-surface px-2 text-[12px] text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-2 focus:outline-accent"
+          className="mx-2.5 mb-0.5"
         />
       ) : null}
 
@@ -579,21 +657,23 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
             // M1.3 filter bar, not the sidebar.
             search={prev =>
               active
-                ? clearFilters(prev)
-                : { ...clearFilters(prev), project: [p.id] }
+                ? clearSort(clearFilters(prev))
+                : { ...clearSort(clearFilters(prev)), project: [p.id] }
             }
             title={p.name}
             className="no-underline"
           >
             <ItemShell active={active} collapsed={collapsed} title={p.name}>
               {/* ProjectDef has no per-project color yet; the mockup
-                  uses one shared blue dot for every project. */}
-              <ColorDot color="#1E6FCB" />
+                  uses one shared blue dot for every project. Uses the
+                  status-active token (the app's blue) so it tracks the
+                  theme instead of a hardcoded hex (S-11). */}
+              <ColorDot color="var(--status-active-fg)" />
               {!collapsed ? (
                 <>
                   <span className="truncate">{p.name}</span>
                   {p.id === defaultProjectId ? (
-                    <span className="text-text-tertiary" title="Default project">★</span>
+                    <span className="text-text-tertiary" title="Default project">{ICON.star}</span>
                   ) : null}
                 </>
               ) : null}
@@ -714,7 +794,7 @@ function SavedFiltersGroup({
           <Link
             key={f.id}
             to="/list"
-            search={prev => ({ ...clearFilters(prev), ...search })}
+            search={prev => ({ ...clearSort(clearFilters(prev)), ...search })}
             title={f.label}
             className="no-underline"
           >
@@ -739,12 +819,12 @@ function SavedFiltersGroup({
         <Link
           key={v.id}
           to="/list"
-          search={prev => ({ ...prev, view: v.id })}
+          search={prev => ({ ...clearSort(prev), view: v.id })}
           title={v.name}
           className="no-underline"
         >
           <ItemShell collapsed={collapsed} title={v.name}>
-            <span className="w-4 shrink-0 text-center text-text-tertiary">★</span>
+            <span className="w-4 shrink-0 text-center text-text-tertiary">{ICON.star}</span>
             {!collapsed ? <span className="truncate">{v.name}</span> : null}
           </ItemShell>
         </Link>
@@ -758,7 +838,7 @@ function SavedFiltersGroup({
         <Link
           key={v.id}
           to="/list"
-          search={prev => ({ ...prev, view: v.id })}
+          search={prev => ({ ...clearSort(prev), view: v.id })}
           title={`${v.name} — broken: ${v.error}`}
           className="no-underline"
           data-broken-view={v.id}
@@ -876,7 +956,7 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
         <Link
           key={m.id}
           to="/list"
-          search={prev => ({ ...prev, milestone: [m.id] })}
+          search={prev => ({ ...clearSort(prev), milestone: [m.id] })}
           title={m.name}
           className="no-underline"
         >
@@ -910,16 +990,21 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
         <Link
           key={s.id}
           to="/list"
-          search={prev => ({ ...prev, sprint: [s.id] })}
+          search={prev => ({ ...clearSort(prev), sprint: [s.id] })}
           title={`${s.name} (${s.state})`}
           className="no-underline"
         >
           <ItemShell collapsed={collapsed} title={`${s.name} (${s.state})`}>
-            <ColorDot color={s.state === "active" ? "#1F8A4C" : "var(--text-tertiary)"} />
+            <ColorDot color={s.state === "active" ? "var(--feedback-success-fg)" : "var(--text-tertiary)"} />
             {!collapsed ? (
               <>
                 <span className="truncate">{s.name}</span>
-                <span className="ml-auto text-[11px] text-text-tertiary">{s.state}</span>
+                {/* The sprint's lifecycle state as a plain meta pill —
+                    migrated to the B1 Chip so it shares the app's one
+                    pill shape/height (K-6). */}
+                <span className="ml-auto">
+                  <Chip variant="neutral">{s.state}</Chip>
+                </span>
               </>
             ) : null}
           </ItemShell>
@@ -946,7 +1031,7 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
         <Link
           key={l.id}
           to="/list"
-          search={prev => ({ ...prev, labels: [l.id] })}
+          search={prev => ({ ...clearSort(prev), labels: [l.id] })}
           title={l.name}
           className="no-underline"
         >
@@ -1055,18 +1140,45 @@ function inertReason(id: string, label: string): string {
 /**
  * The filter-bearing search keys. Applying a built-in clears all of
  * these before layering its own state on top, so clicking "Overdue"
- * doesn't inherit a previously-applied "High priority" query. Sort /
- * pagination / other params are preserved.
+ * doesn't inherit a previously-applied "High priority" query.
+ * Pagination / other params are preserved; the ambient sort is dropped
+ * separately by `clearSort` (LST-55).
  */
 const FILTER_KEYS = [
   "q", "project", "status", "priority", "type", "assignee",
   "reporter", "labels", "milestone", "sprint", "view",
 ] as const;
 
+/**
+ * The sort keys carried in the URL. Stripped from every sidebar
+ * navigation target (LST-55 / UX-3).
+ */
+const SORT_KEYS = ["sort", "dir"] as const;
+
 function clearFilters(prev: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(prev)) {
     if (!(FILTER_KEYS as readonly string[]).includes(k)) out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Drop the ambient sort from a navigation target (LST-55 / UX-3).
+ *
+ * A sidebar link is a jump to a *destination* — a project, a saved
+ * filter, a milestone — not a re-sort of the current table. Carrying the
+ * URL's `sort`/`dir` into it meant a saved "Blocked" filter opened
+ * Low-first only because the user happened to be sorting ascending when
+ * they clicked, and a saved view's own configured order was overridden
+ * by whatever the last table was sorted by. The destination is left to
+ * render in its natural / configured order; the user re-sorts there if
+ * they want to.
+ */
+function clearSort(prev: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(prev)) {
+    if (!(SORT_KEYS as readonly string[]).includes(k)) out[k] = v;
   }
   return out;
 }

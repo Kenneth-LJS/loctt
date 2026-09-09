@@ -953,3 +953,146 @@ describe("Sidebar groups customization (SHL-45)", () => {
     expect(JSON.stringify(posts[0]?.body)).not.toContain("archived != true");
   });
 });
+
+/**
+ * LST-55 (UX-3): a sidebar navigation is a jump to a destination, not a
+ * re-sort of the current table. The ambient `sort`/`dir` in the URL must
+ * not ride along into the destination filter/view, or a saved "Blocked"
+ * filter would open in whatever order the last table happened to use.
+ *
+ * The `<Link>`s compute their href from the *current* search, so
+ * rendering at `/list?sort=priority&dir=asc` and reading each link's href
+ * proves the strip without needing to click through the router.
+ */
+describe("Sidebar strips the ambient sort from nav hrefs (LST-55)", () => {
+  const AMBIENT = { sort: "priority", dir: "asc" };
+  const hrefOf = (el: HTMLElement): string =>
+    el.closest("a")?.getAttribute("href") ?? "";
+
+  it("a built-in filter link drops sort and dir", async () => {
+    // @verifies LST-55
+    await renderSidebarAt("/list", AMBIENT);
+    const href = hrefOf(await screen.findByText("Assigned to me"));
+    expect(href).not.toContain("sort=");
+    expect(href).not.toContain("dir=");
+  });
+
+  it("a project link drops sort and dir", async () => {
+    // @verifies LST-55
+    await renderSidebarAt("/list", AMBIENT);
+    const href = hrefOf(await screen.findByText("Web"));
+    expect(href).not.toContain("sort=");
+    expect(href).not.toContain("dir=");
+  });
+
+  it("the All-projects link drops sort and dir", async () => {
+    // @verifies LST-55
+    await renderSidebarAt("/list", AMBIENT);
+    const href = hrefOf(await screen.findByText("All projects"));
+    expect(href).not.toContain("sort=");
+    expect(href).not.toContain("dir=");
+  });
+
+  it("a saved-view link drops sort and dir", async () => {
+    // @verifies LST-55 — a saved view carries its own configured order;
+    // the ambient sort must not override it.
+    await renderSidebarAt("/list", AMBIENT);
+    const href = hrefOf(await screen.findByText("My open bugs"));
+    expect(href).not.toContain("sort=");
+    expect(href).not.toContain("dir=");
+    // The view itself is still applied — only the sort is stripped.
+    expect(href).toContain("view=v_mine");
+  });
+
+  it("milestone / sprint / label links drop sort and dir", async () => {
+    // @verifies LST-55
+    await renderSidebarAt("/list", AMBIENT);
+    for (const label of ["v1.0", "Sprint 12", "frontend"]) {
+      const href = hrefOf(await screen.findByText(label));
+      expect(href, `${label} href`).not.toContain("sort=");
+      expect(href, `${label} href`).not.toContain("dir=");
+    }
+  });
+
+  it("preserves a non-sort param while dropping the sort", async () => {
+    // @verifies LST-55 — the strip is surgical: pagination and other
+    // params survive, only sort/dir go.
+    await renderSidebarAt("/list", { ...AMBIENT, offset: "50" });
+    const href = hrefOf(await screen.findByText("Assigned to me"));
+    expect(href).toContain("offset=50");
+    expect(href).not.toContain("sort=");
+  });
+});
+
+/**
+ * S-11 / S-8: the sidebar's decorative glyphs come from tokens and the
+ * unified icon set, not hardcoded hex or an ad-hoc star.
+ */
+describe("Sidebar tokens and icon glyphs (S-11, S-8)", () => {
+  it("project + all-projects dots use CSS-variable colours, not hardcoded hex", async () => {
+    // Covers S-11 (review item; no case ID)
+    await renderSidebarAt("/list");
+    const web = (await screen.findByText("Web")).closest("a") as HTMLElement;
+    const dot = web.querySelector("span[style]") as HTMLElement;
+    // A token reference, never a raw #RRGGBB.
+    expect(dot.getAttribute("style") ?? "").toMatch(/var\(--/);
+    expect(dot.getAttribute("style") ?? "").not.toMatch(/#[0-9a-fA-F]{6}/);
+  });
+
+  it("the default-project star uses the unified icon glyph", async () => {
+    // Covers S-8 (review item; no case ID) — the canonical star (ICON.star = ⭑), not the old ★.
+    await renderSidebarAt("/list");
+    const marker = await screen.findByTitle("Default project");
+    expect(marker.textContent).toBe("⭑"); // ⭑ BLACK SMALL STAR
+    expect(marker.textContent).not.toBe("★"); // not ★
+  });
+});
+
+/**
+ * R2: on a narrow viewport an *expanded* sidebar (`collapsed={false}`) is
+ * a floating overlay with a tap-away backdrop, not the in-grid column.
+ * `renderSidebarAt` mounts with `collapsed={false}`, so a narrow width is
+ * enough to exercise the overlay branch.
+ */
+describe("Sidebar mobile overlay (R2)", () => {
+  function setWidth(px: number): void {
+    Object.defineProperty(window, "innerWidth", { value: px, configurable: true, writable: true });
+  }
+  afterEach(() => { setWidth(1200); });
+
+  it("renders a dismiss backdrop and floats the panel when narrow + expanded", async () => {
+    // Covers R2 (review item; no case ID)
+    setWidth(380);
+    await renderSidebarAt("/list");
+    const aside = document.querySelector("aside") as HTMLElement;
+    expect(aside.getAttribute("data-overlay")).toBe("true");
+    // The panel floats over the main pane rather than widening the grid.
+    expect(aside.className).toContain("fixed");
+    expect(screen.getByTestId("sidebar-overlay-backdrop")).toBeTruthy();
+  });
+
+  it("is the ordinary in-grid column on a wide viewport", async () => {
+    // Covers R2 (review item; no case ID) — desktop is unchanged: no overlay, no backdrop.
+    setWidth(1200);
+    await renderSidebarAt("/list");
+    const aside = document.querySelector("aside") as HTMLElement;
+    expect(aside.getAttribute("data-overlay")).toBeNull();
+    expect(screen.queryByTestId("sidebar-overlay-backdrop")).toBeNull();
+  });
+
+  it("a tap on the backdrop requests a dismiss (tap-away)", async () => {
+    // Covers R2 (review item; no case ID) — the backdrop click fires the collapse signal the
+    // hook listens for. We listen for that same window event here.
+    setWidth(380);
+    await renderSidebarAt("/list");
+    let dismissed = false;
+    const onCollapse = (): void => { dismissed = true; };
+    window.addEventListener("loctt:sidebar-collapse", onCollapse);
+    try {
+      fireEvent.click(screen.getByTestId("sidebar-overlay-backdrop"));
+      expect(dismissed).toBe(true);
+    } finally {
+      window.removeEventListener("loctt:sidebar-collapse", onCollapse);
+    }
+  });
+});

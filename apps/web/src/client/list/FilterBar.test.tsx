@@ -206,4 +206,55 @@ describe("FilterBar", () => {
     await mountFilterBar();
     expect(screen.getByRole("button", { name: /Save as view/ })).toBeTruthy();
   });
+
+  // @verifies LST-53
+  it("a free-text q= query renders a removable chip and lights up Clear all", async () => {
+    const router = await mountFilterBar(`?q=${encodeURIComponent("status = in_progress")}`);
+
+    // UX-1: landing on a q= URL (as every sidebar saved filter does) now
+    // shows a chip so the filtered short list is explained, and a
+    // "Clear all" affordance so it is reversible in-page — matching how
+    // facet chips already work.
+    const chip = await screen.findByTestId("query-chip");
+    expect(chip.textContent).toContain("Query:");
+    expect(screen.getByRole("button", { name: "Clear all" })).toBeTruthy();
+
+    // Its ✕ clears just the query from the URL.
+    fireEvent.click(screen.getByRole("button", { name: "Remove query filter" }));
+    await vi.waitFor(() => expect(search(router).q).toBeUndefined());
+  });
+
+  // @verifies LST-53
+  it("Clear all removes an active q= query too", async () => {
+    const router = await mountFilterBar(
+      `?q=${encodeURIComponent("priority = high")}&status=in_progress`,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Clear all" }));
+    await vi.waitFor(() => {
+      const s = search(router);
+      expect(s.q).toBeUndefined();
+      expect(s.status).toBeUndefined();
+    });
+  });
+
+  // @verifies LST-56
+  it("facet options show an empty checkbox affordance before the first click", async () => {
+    await mountFilterBar();
+    fireEvent.click(screen.getByRole("button", { name: "Filter Status" }));
+
+    // UX-4: each option carries a real (B1) checkbox input so multi-select
+    // is discoverable — an *unchecked* box reads as clickable, where the
+    // old empty span was simply blank. The option is unchecked before the
+    // first click, and the box is present in the option row.
+    const option = await screen.findByRole("menuitemcheckbox", { name: "In progress" });
+    expect(option.getAttribute("aria-checked")).toBe("false");
+    const box = option.querySelector('input[type="checkbox"]');
+    expect(box).not.toBeNull();
+    expect((box as HTMLInputElement).checked).toBe(false);
+
+    // Clicking checks it (the box mirrors the selected state).
+    fireEvent.click(option);
+    const checked = await screen.findByRole("menuitemcheckbox", { name: "In progress" });
+    await vi.waitFor(() => expect(checked.getAttribute("aria-checked")).toBe("true"));
+  });
 });
