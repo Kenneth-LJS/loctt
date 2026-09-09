@@ -273,6 +273,18 @@ re-run typecheck and read the diff after any autofix.** *It sorted
 `ParseError`/`TokenizeError` into an import where they don't exist, so
 `instanceof` threw at runtime.*
 
+**A "hang" in a component test is often a render loop or a stray timer,
+not slowness — no `testTimeout` fixes either.** Distinct from load
+contention (which shows as timeouts under parallelism): a `useEffect`
+whose dependency is a per-render new array/object loops forever, and a
+library focus/selection path (ProseMirror `focus("end")`, a React Query
+settle) can schedule a `setTimeout` that outlives jsdom teardown and
+fires as `document is not defined`. The fix is to drive the state model
+directly — `editor.state.selection` / `setTextSelection`, a stable dep —
+not the DOM/focus path. *`Sidebar.test.tsx` wedged on a render loop no
+timeout could break (a real bug, A134); `mentionCode.test.ts` threw past
+teardown on a ProseMirror focus timer.*
+
 ---
 
 ## Scope, change safety & reuse
