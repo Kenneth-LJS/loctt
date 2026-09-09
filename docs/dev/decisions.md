@@ -8890,6 +8890,85 @@ root-cause the review named — surface exclusions must live in
 
 **To revert.** Ken's, not an agent's.
 
+### K31 · Config-panel drag-reorder stays inline (an explicit exception to "inline is for tasks")
+
+**Ken's ruling, 2026-09-09.** In the Workflow settings panels (Statuses,
+Priorities, Task types), **dragging a row's handle to reorder stays a
+direct inline gesture** — it is NOT moved behind the Edit dialog.
+
+This is a deliberate exception to K1 / "inline is for tasks" (which
+gated *value* edits — a row's label/category/default — behind an Edit
+dialog on config panels). Reorder is carved out because:
+- It cannot corrupt config data. The only thing a drag changes is order,
+  which is visible and re-draggable in one gesture — not the accidental
+  value-change the edit-model guard exists to prevent.
+- Dragging IS the natural gesture, especially for priorities where order
+  *is* the sort weight (`value` is recomputed from position,
+  `(index+1)×10`), so drag is how you express "this matters more." For
+  statuses/task types order is display-only, and equally safe inline.
+- Drag-and-drop inside a modal you must first open is worse UX for no
+  safety gain.
+
+Keeps SET-6 / SET-21 / SET-28 / SET-34 as pinned (no case reversal). The
+value-edit gating (Edit → dialog) is unchanged; only reorder is inline.
+
+**To revert.** Ken's, not an agent's.
+
+### K32 · No undo on board/timeline drop or bulk Set-field (only bulk-archive keeps its undo)
+
+**Ken's ruling, 2026-09-09.** The optional "undo lane" (tracker
+open-decision #2) is **not built.** Undo-after-bulk-archive (BLK-10)
+stays; no undo is added to a board/timeline drag-drop or a bulk
+Set-field.
+
+**Why.** Bulk-archive undo exists as a safety net for a bulk
+*destructive* action. A board drag or a bulk status change is not
+destructive — it is a visible, single-gesture, trivially reversible edit
+(drag it back; set it again). Jira offers no undo there and it is not
+missed. Adding it would be ceremony around already-safe actions. This is
+NOT a gap — it is a deliberate non-build.
+
+**To revert (to build it).** Add undo affordances mirroring BLK-10's
+(`ListView.tsx:371-405` — the undo control in the result banner, capturing
+the touched refs and their prior state) to the board/timeline drop path
+and the bulk Set-field path, restoring prior status+rank (board) / dates
+(timeline) / field values (bulk) on undo.
+
+**To revert.** Ken's, not an agent's.
+
+### K33 · The task description is read-then-edit (Jira-style), not an always-live editor
+
+**Ken's ruling, 2026-09-09.** The task **description** renders as
+**read-only formatted output by default**, not as a live editor.
+
+- **Default = rendered, read-only.** Formatted markdown (headings, lists,
+  links, images), no toolbar. Reuses the read-only renderer that comments
+  already use (`comments/renderMarkdown.tsx`).
+- **Click anywhere on the rendered text → the whole description becomes
+  editable** (the rich editor + toolbar appear; the existing
+  `RichEditor`/`MarkdownEditor` in `BodyEditor.tsx`). This SUPERSEDES
+  B3's TSK-64 (toolbar-collapses-until-focus) — it is the fuller form of
+  the same idea, so TSK-64's behaviour folds into this.
+- **In the RENDERED view only**, clicks on rich content OPEN rather than
+  edit: a **link** opens in a new tab, an **image** opens in a lightbox.
+  (In edit mode, links/images are ordinary editable content.)
+- **The raw-markdown toggle stays**, but lives INSIDE edit mode (the
+  rendered view has no toggle). LocTT's markdown-is-source / byte-identical
+  design (TSK-17, K2) is unchanged.
+- **Save:** click-away (blur) flushes the existing idle autosave (K2 /
+  TSK-15 — already 1500ms idle); Escape cancels the edit and returns to
+  the rendered view. *(This save/exit gesture is the agent-level detail
+  under Ken's model; revertible.)*
+- **Scope:** the **task description only.** Comments were NOT extended to
+  this model in Ken's instruction; if a matching click-to-edit on posted
+  comments is wanted, that is a separate decision, not assumed here.
+
+This is a net-new interaction model (a scope addition, not a fix), so it
+gets its own case(s) in B4 step 0 before any code, and lands in B4
+(extending B3's editor work).
+
+**To revert.** Ken's, not an agent's.
+
 ### A143 · The Projects panel adopts the Edit-gated inline-form model, matching Milestones/Labels
 
 **Ticket:** B2 · **Date:** 2026-09-06 · **Commit:** (staged)
