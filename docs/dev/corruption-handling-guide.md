@@ -2,9 +2,8 @@
 
 **Durable reference.** When you add a new field, a new config object, or
 a new surface, this is the checklist for making it degrade correctly
-instead of crashing — and the principles behind why. Unlike the sweep
-working docs (`corruption-audit.md`, `-coverage-map.md`,
-`-sweep-plan.md`, the framework proposal/review), this outlives the
+instead of crashing — and the principles behind why. Unlike the
+one-off sweep working docs that produced it, this guide outlives the
 sweep and is meant to be read before you write the code.
 
 Companions:

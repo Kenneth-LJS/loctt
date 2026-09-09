@@ -2070,8 +2070,8 @@ header name the side it shows — "children under the child-side label
 ('Child'), the parent under the parent-side label ('Parent')" — and
 states the bug as "the structural group picks the label from the wrong
 side, so children show under 'Parent' and the parent under 'Child'". The
-report (ui-review-ux-interactions §4.2) is grounded in DEMO-10/DEMO-11:
-an epic whose 3 children appeared under a "PARENT · 3" header.
+UX review (UX-8) was grounded in DEMO-10/DEMO-11: an epic whose 3
+children appeared under a "PARENT · 3" header.
 
 I could not reproduce a bug in `group.ts`. Traced the whole chain: core
 `linkTask` (`packages/core/src/task/relationships.ts:245`) writes
@@ -2180,8 +2180,8 @@ REL-12 test in `RelationshipRow.test.tsx` and `flow-relationships.spec.ts`
 into a tabbed control (Comments / Activity / All) inside the
 self-contained activity component (`activity/ActivityPanel.tsx`). But the
 Activity lane owns ONLY `activity/*`; `task/TaskDetail.tsx` is owned by
-the Relationships lane, which per `ui-implementation-batches.md` (B3)
-holds "K-5's tab state + URL param". At this commit `TaskDetail` still
+the Relationships lane, which (per the B3 batch plan) holds "K-5's tab
+state + URL param". At this commit `TaskDetail` still
 renders a SEPARATE standalone Comments `<Section>` (`<CommentsPanel>`)
 beside the tabbed lane. If the lane also mounts a `<CommentsPanel>` on
 load, the page has two comment composers/lists sharing the same
@@ -8294,8 +8294,7 @@ that reintroduces the loop.)
 
 **Date:** 2026-09-05 · Agent · revertable. Settled by the approved
 corruption brief, north star, and existing decisions — recorded so they
-are not re-opened. See `docs/dev/corruption-framework-proposal.md` § 13
-and `corruption-framework-review.md`.
+are not re-opened.
 
 1. **Unrecognised frontmatter keys are surfaced to the UI as read-only
    strings with an X-to-remove.** Not a Ken decision — the approved brief
@@ -8336,8 +8335,7 @@ before step-4 implementation of the parts they gate.
 ### A136 · Corruption framework — build-time calls (Phase 7, step 3/4)
 
 **Date:** 2026-09-05 · Agent · revertable. Calls the proposal/§13 did not
-spell out at the code level, settled while building. See
-`docs/dev/corruption-audit.md`.
+spell out at the code level, settled while building.
 
 1. **The write guard's "no new finding" (rule 1) is not exempt for
    whole-record writers; it compares reparse-health against what the Task
@@ -8444,8 +8442,7 @@ so the UI reads one uniform shape whether the field is valid or corrupt?
   (and in each config's valid entries); corrupt ones stay in the
   separate `health` / `broken` list. This is the framework's proven
   spine: putting the corrupt value back under its typed key gives every
-  downstream consumer a typed lie (the review's #1 spike dead-end,
-  `corruption-framework-review.md`), and a `{value,status}` envelope on
+  downstream consumer a typed lie, and a `{value,status}` envelope on
   *every* field would spread that lie to the ~50 readers of every field
   and tax the all-healthy path (99.99% of fields) forever. `FieldHealth`
   also models a richer status than valid/corrupt (wrong_type /
@@ -8571,7 +8568,7 @@ Safe, but could be clearer.
 ### A139 · A relationship edge reads corrupt vs missing vs healthy (S4)
 
 **Date:** 2026-09-06 · Agent · revertable. Surface agent S4 of the
-corruption sweep (`corruption-sweep-plan.md`).
+corruption sweep.
 
 **Gap.** `resolveRelationships` (`core/task/show.ts`) collapsed three
 target states into two signals. A target corrupt in a *field* (e.g. a
@@ -8620,8 +8617,7 @@ reads untitled, unreadable reads deleted).
 ### A140 · `UnreadableFileError` is a `LocttError` (`io_failed`); web init attributes fs/repair errors off the prefix (Phase Z web-server)
 
 **Date:** 2026-09-06 · Agent · revertable. Phase Z correctness fix,
-web-server findings 1–3 (`phase-z-findings-correctness-web-server.md`,
-verifier-confirmed in `phase-z-verify-web-server.md`).
+web-server findings 1–3 (adversarially verifier-confirmed).
 
 **Gap.** (1, HIGH) `UnreadableFileError`
 (`core/utils/read-state.ts`) was a plain `Error`, so the web
@@ -8688,9 +8684,9 @@ the `InitRepairNeededError` export.
 ### A141 · Phase Z correctness-fix calls: git divergence, config collision, and query DSL semantics
 
 **Date:** 2026-09-06 · Agent · revertable. Four calls made while fixing
-Phase Z Batch-1 findings (`phase-z-findings-correctness-*.md`,
-verifier-confirmed; fix-review in `phase-z-fix-review.md`). Recorded
-because each chose one behaviour where another was defensible.
+Phase Z Batch-1 findings (adversarially verifier-confirmed, then
+fix-reviewed). Recorded because each chose one behaviour where another
+was defensible.
 
 **G1 — publish refuses on remote-only divergence (does NOT auto-merge).**
 When the branch has advanced with work local has not incorporated (a
