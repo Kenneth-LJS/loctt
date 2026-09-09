@@ -657,9 +657,15 @@ list, not three literal paragraphs.
 
 ### TSK-64 · M2 · minor · P8
 **The description toolbar is collapsed in view mode** and appears only
-when the field is focused/edited.
+when the field is focused/edited. **(Superseded by TSK-68 (K33).)**
 
 - No format button renders in an active state while merely viewing.
+
+> **Superseded by TSK-68 (K33, Ken 2026-09-09.)** K33's read-then-edit
+> model makes the whole description surface read-only until entered, so
+> the toolbar no longer merely collapses — it is absent in the rendered
+> view entirely. Kept here for the case history; TSK-68 is the governing
+> case.
 
 ### TSK-65 · M2 · minor · P8
 **Strikethrough / superscript / subscript / math / mention have toolbar
@@ -675,3 +681,49 @@ text.** *(ED-2)*
 ### TSK-67 · M2 · minor · P8
 **The description and comment editors carry distinct test-ids so the DOM
 is unambiguous.** *(ED-3, test-hygiene)* Both are `rich-editor` today.
+
+### C.1 — K33 description read-then-edit (Ken, 2026-09-09)
+
+K33 is the Jira-style read-then-edit model for the task description — a
+scope addition, not a fix. TSK-68 supersedes TSK-64's toolbar-collapse.
+
+### TSK-68 · M2 · major · P1 P8
+**The description renders read-only by default, not as a live editor.**
+On opening a task with a body.
+
+- The description shows as formatted output (headings/lists/links/images
+  rendered) with **no toolbar and no editable field** — the same
+  read-only renderer comments use.
+- An empty body shows the placeholder in the same read state.
+- Supersedes TSK-64 (toolbar no longer merely collapses — the whole
+  surface is read-only until entered).
+
+### TSK-69 · M2 · major · P1 P8
+**Clicking anywhere on the rendered description text enters edit mode.**
+
+- A click on the body text (not on a link or image — see TSK-70) swaps
+  the rendered view for the editor (rich editor + toolbar, the existing
+  `BodyEditor`), ready to type.
+- The raw/rich toggle is available here, inside edit mode, and only here.
+
+### TSK-70 · M2 · major · P4 P8
+**In the rendered view, a link opens and an image opens — neither enters
+edit mode.**
+
+- Clicking a link in the rendered description opens its URL in a new tab
+  (`target=_blank rel=noreferrer noopener`, unsafe schemes refused as in
+  comments).
+- Clicking an image opens it in a lightbox.
+- Neither switches to edit mode. (In edit mode these are ordinary
+  editable content.)
+
+### TSK-71 · M2 · minor · P8
+**Leaving edit mode returns to the rendered view; the body is saved, not
+lost.**
+
+- Clicking away (blur) flushes the existing idle autosave (TSK-15/K2) and
+  returns to the rendered view showing the saved content.
+- Pressing Escape cancels the edit and returns to the rendered view
+  showing the last-saved content.
+- Nothing is silently lost, and a failed save keeps the editor open in
+  its unsaved state (TSK-48), not dropped back to a stale render.

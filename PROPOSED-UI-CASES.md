@@ -746,7 +746,7 @@ DEG-7 blind-spot note below.)*
   (a cached/summary warning-count endpoint or a count derived from what the
   list already returns) — that is server work the lane must budget for.
 
-### Board / list / create polish (UX-5, UX-6, UX-14) — new IDs
+### Board / list / create polish (UX-5, UX-6, UX-14) — new IDs — ✅ APPLIED (B4 step 0, 2026-09-09): BRD-50/51, NEW-42
 
 *(Review-2 corrections: the `-N#` IDs were unindexable — renumbered to the
 next free BRD-50/51 (BRD max is 49) and NEW-42 (NEW max is 41). NEW-42 is
@@ -774,7 +774,7 @@ narrowed — see its note.)*
   `workflow.yaml` defaults (`backlog` etc.) rather than showing "—".
   (UX-14.)
 
-### List / sidebar polish (UX-1, UX-2, UX-3, UX-4) — new IDs
+### List / sidebar polish (UX-1, UX-2, UX-3, UX-4) — new IDs — ✅ APPLIED (B4 step 0, 2026-09-09): LST-53/54/55/56
 *(LST ends at LST-52 in the flow doc; continue at 53)*
 
 - **LST-53 · M1 · major · P2 P4** — **A free-query (`q=`) filter shows a
@@ -822,7 +822,7 @@ and passing**, so K-5 and K-9 are re-scoped to what is actually missing.)*
 - **A11Y-2** (`/` focuses the search input) becomes reachable once SHL-46
   wires the header search — tag it when UX-12 lands.
 
-### K-9 milestones-overview residual — new IDs
+### K-9 milestones-overview residual — new IDs — ✅ APPLIED (B4 step 0, 2026-09-09): MSL-39/40/41
 *(MSL max is 38; continue at 39. The progress bar is MSL-1, already green;
 these are the residual K-9 items.)*
 
@@ -836,7 +836,7 @@ these are the residual K-9 items.)*
   breakdown by status**, plus the K28 `unreadable` notice where present, so
   the overview reads at a glance rather than "very plain". (K-9(b).)
 
-### UX-15 milestones-copy residual — new ID
+### UX-15 milestones-copy residual — new ID — ✅ APPLIED (B4 step 0, 2026-09-09): MSL-42
 *(Review-2 correction: UX-15's premise is **false at HEAD** — the sidebar
 **does** link the Milestones view (`Sidebar.tsx:749-751`
 `sidebar-milestones-link`; routed at `router/index.tsx:183`). So the
@@ -857,18 +857,51 @@ These are carried in `ui-review-tracker.md` § "Still-open decisions" and
 `ui-plan-revision-summary.md`. They gate parts of the build and are not an
 agent's to make:
 
-1. Are all newly-ingested UX/editor findings in *this* release? (default:
-   yes.)
-2. Undo on successful board/timeline drop + bulk Set-field — in or out?
-3. Config-row **reorder** — stays inline (SET-6 kept intact; SET-50 gates
-   value edits only) or moves into the Edit dialog (would then revise
-   SET-6/21/28/34).
-4. Does "Edit → dialog" require a **modal**, or does an already-Edit-gated
-   inline form (Labels/Milestones) satisfy it? (Affects whether those two
-   lanes churn and whether `dataPanels.test.tsx` stays green.)
-5. **K-10 sidebar-groups shape** (SHL-45) — per-user vs tracker-wide;
-   hideable built-ins; CLI/MCP exposure. Load-bearing data shape. (PM
-   proposes; escalate only if forked.)
-6. Design-system open decisions 1–6 (`ui-design-system-spec.md`).
-7. Doctor/journal **P-11** — may recovery ever give up on a
-   deterministic replay failure?
+These are carried in `ui-review-tracker.md`. Status as of 2026-09-09:
+
+1. All newly-ingested UX/editor findings in this release? — **RESOLVED
+   yes** ("ingest them all").
+2. Undo on board/timeline drop + bulk Set-field — **RESOLVED: OUT** (K32).
+   Not built; bulk-archive undo stays.
+3. Config-row **reorder** — **RESOLVED: stays inline** (K31). SET-6/21/28/34
+   kept intact.
+4. "Edit → dialog" modal vs Edit-gated inline form — **RESOLVED** (A143):
+   an Edit-gated inline form satisfies it.
+5. **K-10 sidebar-groups shape** — **RESOLVED/locked** (per-user, hideable
+   built-ins, CLI/MCP parity); built in B2.
+6. Design-system open decisions 1–6 — folded into B1 (done).
+7. Doctor/journal **P-11** — out of the UI-batch scope; unchanged.
+
+---
+
+## C. New cases for K33 — description read-then-edit (Ken, 2026-09-09) — ✅ APPLIED (B4 step 0, 2026-09-09): TSK-68/69/70/71
+
+*(`flow-tasks.md` ends at TSK-67; continue at 68. K33 is the Jira-style
+read-then-edit model for the task description — a scope addition, not a
+fix. It supersedes TSK-64's toolbar-collapse.)*
+
+- **TSK-68 · M2 · major · P1 P8** — **The description renders read-only by
+  default, not as a live editor.** On opening a task with a body, the
+  description shows as formatted output (headings/lists/links/images
+  rendered) with **no toolbar and no editable field** — the same read-only
+  renderer comments use. An empty body shows the placeholder in the same
+  read state. Supersedes TSK-64 (toolbar no longer merely collapses — the
+  whole surface is read-only until entered).
+- **TSK-69 · M2 · major · P1 P8** — **Clicking anywhere on the rendered
+  description text enters edit mode.** A click on the body text (not on a
+  link or image — see TSK-70) swaps the rendered view for the editor
+  (rich editor + toolbar, the existing `BodyEditor`), ready to type. The
+  raw/rich toggle is available here, inside edit mode, and only here.
+- **TSK-70 · M2 · major · P4 P8** — **In the rendered view, a link opens
+  and an image opens — neither enters edit mode.** Clicking a link in the
+  rendered description opens its URL in a new tab
+  (`target=_blank rel=noreferrer noopener`, unsafe schemes refused as in
+  comments); clicking an image opens it in a lightbox. Neither switches to
+  edit mode. (In edit mode these are ordinary editable content.)
+- **TSK-71 · M2 · minor · P8** — **Leaving edit mode returns to the
+  rendered view; the body is saved, not lost.** Clicking away (blur)
+  flushes the existing idle autosave (TSK-15/K2) and returns to the
+  rendered view showing the saved content; pressing Escape cancels the
+  edit and returns to the rendered view showing the last-saved content.
+  Nothing is silently lost, and a failed save keeps the editor open in its
+  unsaved state (TSK-48), not dropped back to a stale render.

@@ -1,8 +1,8 @@
 {
   "generated_from": "docs/dev/ui-test-cases/, docs/dev/surface-test-cases/",
   "counts": {
-    "total": 1024,
-    "ui": 924,
+    "total": 1039,
+    "ui": 939,
     "surface": 100,
     "resolved": 3
   },
@@ -2881,6 +2881,39 @@
       "severity": "major",
       "principles": [
         "P4"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BRD-50",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-board.md",
+      "line": 380,
+      "title": "Board cards surface \"blocked\" and \"epic\".",
+      "milestone": "M3",
+      "severity": "major",
+      "principles": [
+        "P3",
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "BRD-51",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-board.md",
+      "line": 387,
+      "title": "The board header status pills read as visibility toggles.",
+      "milestone": "M3",
+      "severity": "minor",
+      "principles": [
+        "P8"
       ],
       "surfaces": [
         "UI"
@@ -6762,6 +6795,71 @@
       "resolved": false
     },
     {
+      "id": "LST-53",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-list.md",
+      "line": 658,
+      "title": "A free-query (`q=`) filter shows a chip and a Clear-all.",
+      "milestone": "M1",
+      "severity": "major",
+      "principles": [
+        "P2",
+        "P4"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "LST-54",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-list.md",
+      "line": 667,
+      "title": "The first click on a priority (and due) sort header sorts the most-useful direction.",
+      "milestone": "M1",
+      "severity": "minor",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "LST-55",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-list.md",
+      "line": 676,
+      "title": "Sidebar links do not silently carry the ambient sort",
+      "milestone": "M1",
+      "severity": "minor",
+      "principles": [
+        "P2"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "LST-56",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-list.md",
+      "line": 683,
+      "title": "Facet dropdown items show a multi-select affordance before the first click.",
+      "milestone": "M1",
+      "severity": "minor",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
       "id": "MSL-1",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-milestones-labels.md",
@@ -7377,6 +7475,70 @@
       "file": "docs/dev/ui-test-cases/flow-milestones-labels.md",
       "line": 275,
       "title": "An unknown milestone key in the detail URL shows a not-found state.",
+      "milestone": "M4",
+      "severity": "minor",
+      "principles": [
+        "P4"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "MSL-39",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-milestones-labels.md",
+      "line": 280,
+      "title": "A milestone card is fully clickable → detail.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "MSL-40",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-milestones-labels.md",
+      "line": 284,
+      "title": "Each milestone card shows target date + countdown/overdue.",
+      "milestone": "M4",
+      "severity": "minor",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "MSL-41",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-milestones-labels.md",
+      "line": 288,
+      "title": "Each milestone card shows a task-count breakdown by status.",
+      "milestone": "M4",
+      "severity": "minor",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "MSL-42",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-milestones-labels.md",
+      "line": 292,
+      "title": "Settings → Milestones copy points where milestone progress actually renders.",
       "milestone": "M4",
       "severity": "minor",
       "principles": [
@@ -8100,6 +8262,23 @@
       "principles": [
         "P4",
         "P6"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "NEW-42",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-task-create.md",
+      "line": 325,
+      "title": "The New-task modal shows the empty-title block as a visible cue and pre-fills configured defaults.",
+      "milestone": "M3",
+      "severity": "major",
+      "principles": [
+        "P4",
+        "P3"
       ],
       "surfaces": [
         "UI"
@@ -14885,7 +15064,7 @@
       "id": "TSK-65",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-tasks.md",
-      "line": 664,
+      "line": 670,
       "title": "Strikethrough / superscript / subscript / math / mention have toolbar buttons in rich mode, or the flow doc scopes them out.",
       "milestone": "M2",
       "severity": "minor",
@@ -14901,7 +15080,7 @@
       "id": "TSK-66",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-tasks.md",
-      "line": 670,
+      "line": 676,
       "title": "A GFM pipe-table in the body is either parsed to a table or forces raw mode via lossy-content detection — never shown as literal paragraph text.",
       "milestone": "M2",
       "severity": "minor",
@@ -14917,8 +15096,75 @@
       "id": "TSK-67",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-tasks.md",
-      "line": 675,
+      "line": 681,
       "title": "The description and comment editors carry distinct test-ids so the DOM is unambiguous.",
+      "milestone": "M2",
+      "severity": "minor",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-68",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-tasks.md",
+      "line": 690,
+      "title": "The description renders read-only by default, not as a live editor.",
+      "milestone": "M2",
+      "severity": "major",
+      "principles": [
+        "P1",
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-69",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-tasks.md",
+      "line": 701,
+      "title": "Clicking anywhere on the rendered description text enters edit mode.",
+      "milestone": "M2",
+      "severity": "major",
+      "principles": [
+        "P1",
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-70",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-tasks.md",
+      "line": 709,
+      "title": "In the rendered view, a link opens and an image opens — neither enters edit mode.",
+      "milestone": "M2",
+      "severity": "major",
+      "principles": [
+        "P4",
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TSK-71",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-tasks.md",
+      "line": 720,
+      "title": "Leaving edit mode returns to the rendered view; the body is saved, not lost.",
       "milestone": "M2",
       "severity": "minor",
       "principles": [

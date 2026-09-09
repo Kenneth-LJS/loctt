@@ -654,3 +654,35 @@ Hold the tasks response open past the client timeout.
   state.
 - On retry succeeding, the normal table replaces the error without a
   reload.
+
+### LST-53 · M1 · major · P2 P4
+**A free-query (`q=`) filter shows a chip and a Clear-all.** Landing on a
+`q=` URL (as every sidebar saved filter does).
+
+- Renders a removable chip (the saved-filter name or "Filtered query ✕")
+  and/or highlights Advanced, and exposes Clear all.
+- So a short list is explained and reversible in-page, matching how facet
+  chips already work. (UX-1.)
+
+### LST-54 · M1 · minor · P8
+**The first click on a priority (and due) sort header sorts the
+most-useful direction.**
+
+- Clicking Priority sorts Critical-first on the first click (not
+  Low-first); the sort-arrow direction is legible.
+- (UX-2 — decide deliberately per the workflow's documented priority
+  order.)
+
+### LST-55 · M1 · minor · P2
+**Sidebar links do not silently carry the ambient sort** (or, if they
+deliberately do, that is documented and consistent).
+
+- A saved "blocked" filter does not open Low-first because the user
+  happened to be sorting ascending. (UX-3.)
+
+### LST-56 · M1 · minor · P8
+**Facet dropdown items show a multi-select affordance before the first
+click.**
+
+- Empty checkboxes (using the B1 Checkbox) or a hover state — so
+  multi-select is discoverable. (UX-4.)
