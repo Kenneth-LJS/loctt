@@ -4922,3 +4922,112 @@ edges through `loctt link` so the direction matches core, or add a
 scope (it is data, and REL-51's required property is met by correct code).
 See `decisions.md` A161 for the full reasoning and the revert path if the
 intended convention is ever the reverse.
+
+## REL-33 · A stale-page rerank is not refused — `reorderRelationship` never checks whether the kind is still ranked
+
+**Found:** v1 run (M2.5a) · **Status:** OPEN (core, deliberate decline)
+
+REL-33's second bullet — "a drag attempt against a stale page is refused
+with a message that the kind is no longer ranked" — needs a check that
+exists at no layer. `reorderRelationship`
+(`packages/core/src/rank/reorder.ts`) never loads the workflow config and
+never reads `ranked`. Measured: switch `blocks` to `ranked: false`, then
+`POST /api/tasks/T-1/relationships/blocks/T-3/rerank {"before":"T-2"}`
+answers **200 `{"rank":"f","rebalanced":false}`** and writes the rank.
+
+The other two bullets are built and tested (drag handles come from
+`group.ranked` read from live config, so they disappear on refresh;
+existing `rank` values are untouched — both asserted in
+`flow-relationships.spec.ts`, handles-present asserted first so absence is
+a change).
+
+**Why not built.** Adding the guard means `reorder.ts` starts loading and
+enforcing workflow config — a *new refusal* on a shared core path the
+CLI's `loctt rerank` and any future MCP tool inherit (scope change,
+stopped rather than invented).
+
+**Where the fix belongs.** `reorderRelationship` should take the
+`workflowConfig` its sibling `linkTask` already takes and throw a
+`ReorderError` naming the kind when the definition is absent or `ranked`
+is not true. The web route already maps `ReorderError` to a 400 with
+`field: "relationships"`, so only core and the route's
+`loadWorkflowConfig` call are missing. The spec is `test.fixme` — it runs,
+is expected to fail, and starts passing loudly when core is fixed.
+
+## CMT-10 · No way to query on comment mentions — the "Mentions me" filter cannot match
+
+**Found:** v1 run (M2.4a) · **Status:** OPEN (feature, exists nowhere)
+
+CMT-10 bullet 4 — "the 'Mentions me' saved filter still matches the
+comment for that user after the rename" — has no mechanism behind it.
+The query DSL has no `mentions` field (nothing in
+`packages/core/src/query/` references one), and there is no comment-scan
+endpoint on the web server. The "Mentions me" built-in in
+`builtinFilters.ts` already resolves to `null` for this reason, with a
+comment that it "needs a comment-scan endpoint that lands with the
+comments feature".
+
+**Why not built.** Matching tasks by comment mentions means indexing every
+`_comments.yaml` at query time — a core capability with CLI/MCP
+consequences (a feature existing nowhere; scope change, stopped).
+
+The other three bullets are satisfied and tested (the stored `mentions`
+array is unchanged by a rename, the chip reads the current name on the
+next render, and the stored body still holds the old token) — the
+mechanism the fourth would build on, so nothing has to be undone when it
+lands.
+
+## TSK-12 · Custom fields have no task-type scope
+
+**Found:** v1 run (M2.2a) · **Status:** OPEN (feature, contract change)
+
+TSK-12 bullet 4 — "fields scoped to a task type appear only for tasks of
+that type, and changing the type updates the visible field set without a
+reload" — needs a scope field on `CustomFieldDef` that does not exist.
+`CustomFieldDefSchema` (`packages/contracts/src/workflow.ts`) is
+`.strict()` with `key`, `label`, `type`, `multi`, `searchable`, `values`
+and nothing else, so every declared field applies to every task type.
+
+**Why not built.** Adding task-type scope is a contract change with
+CLI/MCP/settings-UI consequences (a feature existing nowhere; scope
+change, stopped). The seam is marked `scopedCustomFields()` in
+`MetaPanel.tsx`.
+
+The other half of the bullet — the visible set updates without a reload —
+is already satisfied, since the set is derived from `fm.task_type` on
+every render.
+
+*(Related core defect, tracked separately above: a stale custom-field
+value makes `setField` reject every subsequent write to that task from
+every surface, because `setField` validates the whole task.)*
+
+## The 44 uncovered v1 cases that had only a group reason
+
+**Recorded 2026-09-02, after a full per-ticket gate sweep** (migrated here
+from the since-deleted run-workflow doc).
+
+Running every v1 ticket's `--require` roster individually showed 15 of 25
+tickets failing, on 110 cases — every one already inside the known
+uncovered set, **zero new gaps**. But 44 of them had no reason findable
+outside their ticket's own `Cases:` line. A group reason is fine — but the
+group must name its members, or a decline and an omission look identical
+(exactly how four A11Y cases were once lost inside a "25 itemised" summary
+that itemised 21). So they are named here.
+
+**M4.3 (22) — the git-sync surface:** `GIT-10 GIT-2 GIT-20 GIT-24 GIT-27
+GIT-28 GIT-3 GIT-30 MSL-14 MSL-28 MSL-33 MSL-9 SET-31 SET-37 SET-38 VUE-26
+VUE-27 XS-38 XS-43 XS-44 XS-45 XS-48`. Cause: core has no `reconcile`,
+`GitConflictError` carries a flat array of file paths, and the CLI has no
+reconcile command by explicit design. (38 GIT cases are uncovered in
+total; these 22 are the ones with no individual note — the rest are
+detailed in the git-reconcile entries above.)
+
+**M4.1 (22) — the projects-and-users surface:** `PRU-10 PRU-12 PRU-13
+PRU-15 PRU-16 PRU-21 PRU-22 PRU-24 PRU-25 PRU-27 PRU-28 PRU-29 PRU-31
+PRU-37 PRU-39 PRU-40 PRU-41 PRU-42 PRU-43 PRU-8 PRU-9 XS-55`. M4.1 shipped
+20 of 46.
+
+**What would close them:** a ticket that builds `reconcile` in core (the
+M4.3 set) and the remaining project/user management surface (the M4.1
+set). Neither was in v1's 23-ticket scope, so neither is a defect in that
+run.
