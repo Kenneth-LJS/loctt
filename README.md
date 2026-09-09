@@ -129,8 +129,9 @@ header semantics, and asynchronous outcomes (saves, sort changes,
 filter result counts, route changes) are announced through a live
 region. A skip link is the first tab stop on every page.
 
-One known gap: the header search box is not yet implemented, so
-<kbd>/</kbd> currently has no field to focus. See `docs/dev/known-gaps.md`.
+Press <kbd>/</kbd> from anywhere to focus the header search box: it runs
+a type-ahead over your tasks, and picking a result jumps to that task
+while pressing Enter opens the full filtered list.
 
 ## MCP / AI Agent Integration
 
