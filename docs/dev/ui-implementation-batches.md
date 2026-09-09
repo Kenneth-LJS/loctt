@@ -24,6 +24,28 @@ changes-from-v1 are summarised in `ui-plan-revision-summary.md`.
 
 ## Run status
 
+**✅ COMPLETE — B0 through B5 all committed (2026-09-09).** Commits:
+B2 `52b2e69`, B3 `f5c0666`, B4 `6409e65`, B5 `772df6d` (plus step-0 and
+decisions commits). Every batch went through the full build-loop gate
+(cases-before-code → build/typecheck/lint → unit → cases:coverage →
+integration → e2e → UI Playwright) and a Fable adversarial fix-review
+before commit; the fix-reviews caught real bugs each time (B2 silent
+email data-loss; B3 CRLF-paste hang + corrupt-custom-field-clear 400; B4
+two HIGH K33 editor data-loss bugs), all fixed and mutation-proven.
+
+**Three taste calls are flagged for Ken's review** (all shipped with a
+revert path, none blocking): **A164** (whether an extrinsic fault — a
+dangling user / enum drift — gets the corrupt-field inline notice, or
+only its picker's own indicator), **A179** (TSK-32 reconciled to DEG-7:
+unrecognised keys are now shown in a "Not recognised" group), **A180**
+(external images in the description render as a click-to-open link, not an
+auto-loaded `<img>`, for privacy).
+
+**TEMP working-state files** (`TEMP-BUILD-PLAN.md`, `TEMP-RUN-WORKFLOW.md`,
+`TEMP-WEB-TICKETS.md`, `PROPOSED-UI-CASES.md`) are left in place — CLAUDE.md
+says they are deleted "when the build lands", but that is the user's call
+to make (and they are useful context for the three flagged reviews).
+
 - **B0 / B1 — done** (earlier commits).
 - **B2 — done.** The edit-model conversion of every config/settings panel
   (Projects, Users, Milestones, Sprints, Saved views, Workflow enums /
