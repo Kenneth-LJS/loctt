@@ -2508,29 +2508,32 @@ moving one argument.
 **Workaround used by the M4.7 UI specs.** They assign sprints by ULID,
 which is what the web client itself sends.
 
-## The header search box is disabled, so `/` has nothing to focus
+## ~~The header search box is disabled, so `/` has nothing to focus~~ — RESOLVED
 
-**Found:** M4.8 · 2026-09-01 · **Blocks:** A11Y-2
+**Found:** M4.8 · 2026-09-01 · **Blocked:** A11Y-2 · **Resolved:** B2 ·
+2026-09 (`52b2e69`)
 
-`apps/web/src/client/shell/Header.tsx:102-107` renders the only global
-search box with `disabled` and `title="Search arrives in a later
-milestone"`. The `/` shortcut is built and registered
-(`shell/shortcuts.ts`), and the shell's handler focuses
-`input[type="search"]` — but a disabled input cannot take focus, so
-nothing happens.
+**Resolved by SHL-46 / K-10 (B2).** `Header.tsx` now renders a real
+`HeaderSearch` combobox: a debounced type-ahead against
+`GET /api/search`, a results dropdown that navigates to the picked
+task, and Enter that opens the filtered list. The `/` shortcut focuses
+it (`input[type="search"]`), so A11Y-2 is now claimed and its test in
+`tests/ui/flow-accessibility.spec.ts` is tagged rather than asserting
+the disabled stub. Kept here for provenance.
 
-**To reproduce.** Load `/list`, press `/`, observe focus stays where it
-was. `document.activeElement` is unchanged.
+---
 
-**Why it was not fixed here.** Implementing search is a feature no
-ticket in `TEMP-WEB-TICKETS.md` owns — grepping the file for "search"
-turns up nothing that builds it. Doing it inside the a11y polish
-ticket would be inventing scope.
-
-A11Y-2 is therefore left uncovered rather than tagged; see
-`decisions.md` § 8 A84. `tests/ui/flow-accessibility.spec.ts` carries a
-deliberately untagged test asserting the box is disabled, which fails
-the day search is built — the signal to restore the real assertions.
+*Original entry (for reference):*
+`apps/web/src/client/shell/Header.tsx` rendered the only global search
+box with `disabled` and `title="Search arrives in a later milestone"`.
+The `/` shortcut was built and registered (`shell/shortcuts.ts`) and the
+shell's handler focused `input[type="search"]` — but a disabled input
+cannot take focus, so nothing happened. Implementing search was a
+feature no ticket in `TEMP-WEB-TICKETS.md` owned, so at M4.8 A11Y-2 was
+left uncovered rather than tagged (see `decisions.md` § 8 A84), with a
+deliberately untagged test asserting the box was disabled — the signal
+to restore the real assertions the day search was built. That day was
+B2.
 
 ## `PUT /api/user-settings` takes no state lock
 
