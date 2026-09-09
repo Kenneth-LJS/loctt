@@ -601,9 +601,9 @@ person on a second machine gets the defaults back. SPR-3 is a `major`
 case, not a blocker, and the state it holds is a column being open —
 losing it costs one click.
 
-**Consequence.** M3.5 needs no server work of any kind. The earlier
-claim in `TEMP-BUILD-PLAN.md` that M3.5 and M4.9 "carry server work"
-is wrong on both counts — see the note there.
+**Consequence.** M3.5 needs no server work of any kind. An earlier
+build-plan claim that M3.5 and M4.9 "carry server work" was wrong on
+both counts.
 
 ---
 
@@ -699,7 +699,7 @@ field with a 400, for consistency with its other parameters?
 **Why.** No case requires the API to reject an unknown sort, and
 LST-29 explicitly requires the UI not to error on one. Choosing
 option 1 or 3 would be **authoring a requirement**, which is stop
-condition 2 in `TEMP-RUN-WORKFLOW.md`. The gate identified a genuine
+condition 2 (see `lessons.md` § Process). The gate identified a genuine
 asymmetry but did not identify a case it violates, and its supporting
 measurement ("different ordering") is wrong.
 
@@ -1364,8 +1364,8 @@ been finding all along.
 **Not satisfied by this.** GIT-5, GIT-6, GIT-7, GIT-8, GIT-9, GIT-11,
 GIT-12, GIT-13, GIT-14, GIT-15, GIT-16, GIT-17, GIT-19, GIT-21,
 GIT-22, GIT-23, GIT-25, GIT-26, GIT-29, GIT-31, GIT-32, GIT-33,
-GIT-34, GIT-35, GIT-36, GIT-37. Listed in `TEMP-RUN-WORKFLOW.md`
-under "Cases that cannot be satisfied yet".
+GIT-34, GIT-35, GIT-36, GIT-37. Listed in `known-gaps.md`
+under the git-reconcile entries.
 
 **To revert.** Delete `apps/web/src/client/settings/GitSyncPanel.tsx`
 and `apps/web/src/client/api/hooks/useGit.ts`, and set `sync` back to
@@ -2407,8 +2407,9 @@ this entry.
 Ken, on the ~25 cases that fail as written: *"make sure this stays
 robust (this is a general rule, should this go into our workflow)"*.
 
-Written into `TEMP-RUN-WORKFLOW.md` § "Cases that cannot be satisfied
-yet".
+Recorded in `known-gaps.md` (the unsatisfiable-case entries), and
+distilled as a rule in `lessons.md` § Process ("never reword a case to
+fit the code").
 
 ### K6 · BLK-30's threshold is 10, two tiers, not configurable
 
@@ -3151,8 +3152,8 @@ deleted task was the one operation a deleted task made impossible.
 2. **Fix it in the web route only**, catching the lookup failure and
    passing the raw ref through. Costs: the CLI and MCP keep the defect,
    so `loctt unlink` still cannot clean up what the UI can. That is
-   drift with a good address, which `TEMP-RUN-WORKFLOW.md` § "Which
-   layer" rules out.
+   drift with a good address, which the "which layer" rule rules out
+   (see `lessons.md` § Core / surface parity).
 3. **Fix it in core, and stop the route resolving the target first.**
    Costs: it changes shared behaviour, so every surface's `unlink`
    becomes more tolerant than it was.
@@ -3460,9 +3461,9 @@ declared cases?
 **Why.** Ken's call. It keeps the gate's verdict meaning what it says:
 a milestone does not pass with a declared blocker unbuilt.
 
-**To revert.** Delete the M2.6 ticket from `TEMP-WEB-TICKETS.md` and
-choose one of options 2–4. Nothing is built on this decision beyond
-the ticket's own existence.
+**To revert.** M2.6 (task Duplicate, TSK-20) has since shipped, so this
+decision is spent: to change it now, remove the Duplicate feature and
+choose one of options 2–4.
 
 ### A25 · The attachments read failure renders in the panel, not the page
 
@@ -4468,7 +4469,7 @@ as the answer.
 surfaced somewhere actionable" — is satisfied, and strictly better than
 the modal quietly degrading: the user is told the file is wrong and
 which key is at fault. The first two bullets are recorded as
-unsatisfiable in `TEMP-RUN-WORKFLOW.md` rather than faked with a test
+unsatisfiable in `known-gaps.md` rather than faked with a test
 that asserts something else.
 
 **A real defect found while measuring this**, logged separately in
@@ -4966,10 +4967,9 @@ not in its tree is how invented content enters a record.
 **The situation.** SPR-31's third bullet: "Other, valid sprints still
 render **if the loader can partially recover**; if it cannot, the page
 says the whole file failed to parse rather than showing an empty state
-that reads as 'no sprints'." `TEMP-WEB-TICKETS.md` line 605 requires this
-be decided explicitly: "either add a lenient parse, or state that it
-cannot recover and always show the whole-file error. **Do not leave it
-implied.**"
+that reads as 'no sprints'." The ticket required this be decided
+explicitly: either add a lenient parse, or state that it cannot recover
+and always show the whole-file error — **not left implied.**
 
 **What had to be decided.** Whether `parseSprintsConfig` gains a lenient
 mode.
@@ -5007,9 +5007,9 @@ SPR-31 and SPR-32 receive byte-identical 500s.
 
 **Ticket:** M3.5 · **Date:** 2026-08-31 · **Commit:** (this one)
 
-**The situation.** TEMP-WEB-TICKETS.md line ~609 states SPR-36 "needs
-an existence check on the drop write", reasoning that the archived-
-reference guard covers archived entities and not deleted ones, so a
+**The situation.** The SPR-36 ticket stated it "needs an existence
+check on the drop write", reasoning that the archived-reference guard
+covers archived entities and not deleted ones, so a
 write naming a deleted sprint id "likely succeeds silently today". It
 asked that this be verified before building. It was a guess, flagged
 as one.
@@ -5047,9 +5047,9 @@ trusting this note.
 
 **Ticket:** M3.5 · **Date:** 2026-08-31 · **Commit:** (this one)
 
-**The situation.** TEMP-WEB-TICKETS.md (~line 598, "Server work — this
-ticket is NOT frontend-only") states that `handleListSprints` does not
-catch `SprintsConfigError`, so a malformed `sprints.yaml` "currently
+**The situation.** The M3.5 ticket (flagged as server work, not
+frontend-only) stated that `handleListSprints` does not catch
+`SprintsConfigError`, so a malformed `sprints.yaml` "currently
 returns a generic 500 with `code: io_failed` + retry — the exact shape
 SPR-32 reserves for a *failed fetch*, making the two
 indistinguishable". The run coordinator independently confirmed the
@@ -5768,10 +5768,12 @@ there are no warnings, so its presence is meaningful.
 MCP, so the reference docs are unchanged: the behaviour they describe
 already existed on both surfaces they cover.
 
-**Still open.** VUE-21's sibling VUE-22 (a view that no longer
-*parses*) is not fixed — it needs `parseQueriesConfig` to tolerate a
-bad entry on load, which is a core contract change. See
-`TEMP-RUN-WORKFLOW.md` § Cases that cannot be satisfied yet.
+**Sibling, since resolved.** VUE-21's sibling VUE-22 (a view that no
+longer *parses*) needed `parseQueriesConfig` to tolerate a bad entry on
+load — a core contract change that was out of this ticket's scope when
+this was written. It was subsequently resolved under **A118**
+(2026-09-04): a broken view is now collected into a `broken` sibling
+collection and surfaced on every surface.
 
 **To revert.** Drop the `onWarning` callback and the `warnings` spread
 in `handleListTasks`; VUE-21 regresses to a silent empty result.
@@ -6067,12 +6069,15 @@ filter/search input" and to not insert the character. The `/` binding
 is built and registered in `shell/shortcuts.ts`, and the shell's
 handler focuses `input[type="search"]`.
 
-But the app's only global search box — the header's — is rendered
-`disabled`, with `title="Search arrives in a later milestone"`
-(`shell/Header.tsx:102-107`). A disabled input cannot receive focus, so
-the case's first bullet cannot be satisfied. Grepping
-`TEMP-WEB-TICKETS.md` for "search" finds no ticket in this run that
-builds it.
+But at M4.8 the app's only global search box — the header's — was
+rendered `disabled`, with `title="Search arrives in a later milestone"`.
+A disabled input cannot receive focus, so the case's first bullet could
+not be satisfied, and no M4 ticket built search.
+
+> **Superseded (B2, `52b2e69`).** Search shipped: `Header.tsx` now
+> renders a real `HeaderSearch` combobox and `/` focuses it, so A11Y-2 is
+> claimed. The reasoning below is kept as the record of why it was
+> deferred at M4.8.
 
 **What had to be decided.** Whether to build a global search box so
 A11Y-2 could be claimed.
@@ -7620,8 +7625,8 @@ on disk. This is the reachable, version-independent half of SET-38.
 is a UI case, but the Migrate control renders only for schema status
 `outdated` (SET-30), and `outdated` is unreachable while
 `CURRENT_SCHEMA_VERSION === 1` (a `.schema-version` below 1 is rejected
-as `unknown`, not `outdated` — see TEMP-RUN-WORKFLOW's cannot-satisfy
-notes and NEW-20/NEW-41). So the fail-fast is verified where it is
+as `unknown`, not `outdated` — see the NEW-20/NEW-41 notes in
+`known-gaps.md`). So the fail-fast is verified where it is
 reachable — the **API**, in
 `apps/web/src/server/server.migrate.test.ts` (`@verifies SET-38`),
 which holds the real lock via `withMigrationLock` and asserts the 409,
