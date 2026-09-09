@@ -25,7 +25,10 @@ function getArg(name: string): string | undefined {
   return next;
 }
 
-const root = getArg("--root") ?? process.env.LOCTT_ROOT ?? process.cwd();
+// `--root` is the canonical tracker-root flag (matching the CLI and the
+// `LOCTT_ROOT` env var); `--cwd` is accepted as a back-compat alias so the
+// vocabulary is the same across CLI/ui/mcp/web. Explicit flag > env > cwd.
+const root = getArg("--root") ?? getArg("--cwd") ?? process.env.LOCTT_ROOT ?? process.cwd();
 const port = Number(getArg("--port") ?? process.env.LOCTT_API_PORT ?? "7700");
 const clientDirArg = getArg("--client-dir") ?? process.env.LOCTT_CLIENT_DIR;
 const clientDir = clientDirArg ? resolve(clientDirArg) : undefined;

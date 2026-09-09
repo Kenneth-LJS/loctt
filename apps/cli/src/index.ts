@@ -32,24 +32,79 @@ import * as taskRankCmd from "./commands/task-rank.js";
 import * as uiCmd from "./commands/ui.js";
 import * as userCmd from "./commands/user.js";
 import * as viewsCmd from "./commands/views.js";
-import { getArg, stripCwdArg } from "./runtime/args.js";
-import { EXIT, runCommand } from "./runtime/errors.js";
+import { getArg, stripRootArgs } from "./runtime/args.js";
+import { EXIT, runCommand, UsageError } from "./runtime/errors.js";
 import { dirExists, SCHEMA_GUARD_EXEMPT_COMMANDS } from "./runtime/schema-guard.js";
 import { usage } from "./usage.js";
+
+/**
+ * Resolves the tracker root from the two global flags and the env var.
+ *
+ * - `--root` is canonical; `--cwd` is its back-compat alias.
+ * - If both flags are given they must resolve to the same directory;
+ *   a genuine conflict throws a {@link UsageError} (exit 2) rather than
+ *   silently picking one — operating on the wrong tracker is a data
+ *   hazard, so an ambiguous target must fail loudly.
+ * - Precedence when no conflict: an explicit flag > `LOCTT_ROOT` >
+ *   `process.cwd()`.
+ *
+ * Relative paths are resolved against `process.cwd()` so `--root ../other`
+ * behaves the way a shell user expects.
+ */
+export function resolveRoot(
+  rootFlag: string | undefined,
+  cwdFlag: string | undefined,
+  envRoot: string | undefined,
+): string {
+  const resolveAgainstCwd = (p: string): string => resolvePath(process.cwd(), p);
+
+  if (rootFlag !== undefined && cwdFlag !== undefined) {
+    const r = resolveAgainstCwd(rootFlag);
+    const c = resolveAgainstCwd(cwdFlag);
+    if (r !== c) {
+      throw new UsageError(
+        `--root and --cwd were both given but point at different directories ` +
+        `(${r} vs ${c}). They are aliases for the same thing — pass only one, ` +
+        `or make them agree. --root is the canonical name.`,
+      );
+    }
+    return r;
+  }
+  if (rootFlag !== undefined) return resolveAgainstCwd(rootFlag);
+  if (cwdFlag !== undefined) return resolveAgainstCwd(cwdFlag);
+  if (envRoot !== undefined && envRoot !== "") return resolveAgainstCwd(envRoot);
+  return process.cwd();
+}
 
 export async function main(): Promise<void> {
   const rawArgs = process.argv.slice(2);
 
-  // Global `--cwd <dir>` lets callers operate on a tracker without
-  // shelling out to a subdirectory. Default is process.cwd().
-  // Strip `--cwd <dir>` (and `--cwd=<dir>`) from `args` so the
-  // first positional becomes the subcommand, regardless of where
-  // --cwd appeared on the command line.
+  // Global tracker-root flag. `--root <dir>` is the canonical name
+  // (matching the web server and `LOCTT_ROOT`); `--cwd <dir>` is kept
+  // as a back-compat alias so existing scripts keep working. Both point
+  // a surface at a tracker without shelling into its directory.
+  //
+  // Precedence: an explicit flag > the LOCTT_ROOT env var > process.cwd().
+  // If both flags are given they must agree; a genuine conflict is a
+  // usage error rather than a silent pick-one.
+  //
+  // Strip both flags from `args` so the first positional becomes the
+  // subcommand and `loctt ui`/`loctt mcp` accept the flag directly
+  // instead of rejecting it as an unknown option.
+  const rootOverride = getArg(rawArgs, "--root");
   const cwdOverride = getArg(rawArgs, "--cwd");
-  const root = cwdOverride !== undefined
-    ? resolvePath(process.cwd(), cwdOverride)
-    : process.cwd();
-  const args = stripCwdArg(rawArgs);
+  let root: string;
+  try {
+    root = resolveRoot(rootOverride, cwdOverride, process.env["LOCTT_ROOT"]);
+  } catch (err) {
+    if (err instanceof UsageError) {
+      console.error(`Error: ${err.message}`);
+      process.exitCode = EXIT.USAGE;
+      return;
+    }
+    throw err;
+  }
+  const args = stripRootArgs(rawArgs);
   const command = args[0];
 
   try {

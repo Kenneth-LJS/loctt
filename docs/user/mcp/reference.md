@@ -10,6 +10,7 @@ LocTT's MCP server provides structured tools for AI agents to manage tasks via t
 - **Schema-version guard.** Every tool except `init` first calls `requireSupportedSchema`. If the tracker's `.schema-version` is missing or doesn't match this server, every route refuses with a clear error pointing at `loctt migrate`. The one exception is `migrate_schema`, which runs the migration over MCP; `loctt migrate` does the same from the CLI.
 - **Archived semantics.** Archived entities (projects, labels, milestones, sprints, users, tasks) are hidden from default listings but remain valid references on existing tasks. Pass `include_archived: true` (or the equivalent flag) to surface them.
 - **Validation failures are real.** If a structured operation rejects a value, do not bypass it by editing files; surface the error and ask the user.
+- **Which tracker the server operates on.** The server is launched by `loctt mcp` and inherits that process's tracker root. Point it at a specific tracker in the client's launch config with `loctt mcp --root <dir>` (alias `--cwd`), or set the `LOCTT_ROOT` env var; an explicit flag wins over the env var, which wins over the launcher's working directory. This is the same vocabulary as the CLI global flag and the web server — see the [CLI reference's Global options](../cli/reference.md#global-options). There is no per-tool root parameter; every tool operates on this one resolved tracker.
 
 ## Tracker Setup
 

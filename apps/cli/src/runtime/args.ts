@@ -55,17 +55,17 @@ export function getArg(args: string[], flag: string): string | undefined {
 }
 
 /**
- * Removes `--cwd <value>` and `--cwd=<value>` occurrences from an
- * argv slice. Used by `main()` after extracting the cwd value so
- * handlers never see the global flag and so the first positional
- * after `loctt` is always the subcommand. Repeated occurrences are
- * all stripped (last one wins for the value, consistent with
- * {@link getArg}).
+ * Removes `--<flag> <value>` and `--<flag>=<value>` occurrences from an
+ * argv slice. Used by `main()` after extracting the value so handlers
+ * never see the global flag and so the first positional after `loctt`
+ * is always the subcommand. Repeated occurrences are all stripped (last
+ * one wins for the value, consistent with {@link getArg}).
  *
  * Mirrors `getArg`'s rules so the two helpers can't disagree about
- * what counts as the value of `--cwd`.
+ * what counts as the value of the flag.
  */
-export function stripCwdArg(args: string[]): string[] {
+export function stripGlobalFlag(args: string[], flag: string): string[] {
+  const name = flag.replace(/^--?/, "");
   const out: string[] = [];
   let i = 0;
   while (i < args.length) {
@@ -75,7 +75,7 @@ export function stripCwdArg(args: string[]): string[] {
       out.push(...args.slice(i));
       return out;
     }
-    if (a === "--cwd") {
+    if (a === `--${name}`) {
       const next = args[i + 1];
       // Same rule as getArg: only treat the next token as the value
       // if it doesn't itself look like a flag (so `--cwd --help`
@@ -87,7 +87,7 @@ export function stripCwdArg(args: string[]): string[] {
       }
       continue;
     }
-    if (a.startsWith("--cwd=")) {
+    if (a.startsWith(`--${name}=`)) {
       i += 1;
       continue;
     }
@@ -95,6 +95,16 @@ export function stripCwdArg(args: string[]): string[] {
     i += 1;
   }
   return out;
+}
+
+/**
+ * Strips BOTH global tracker-root flags — the canonical `--root` and
+ * its back-compat alias `--cwd` — so the first positional after `loctt`
+ * is always the subcommand and `loctt ui`/`loctt mcp` never see them as
+ * "unknown option" (CLI-1).
+ */
+export function stripRootArgs(args: string[]): string[] {
+  return stripGlobalFlag(stripGlobalFlag(args, "--root"), "--cwd");
 }
 
 /**
@@ -151,7 +161,10 @@ export function positional(args: string[], index: number, usage: string): string
 
 export function rejectUnknownFlags(args: string[], allowed: readonly string[]): void {
   const known = new Set(allowed.map(f => f.replace(/^--?/, "")));
+  // The global tracker-root flags are stripped before any command sees
+  // argv, but keep both in the known set so the guard never flags them.
   known.add("cwd");
+  known.add("root");
   for (const a of args) {
     if (a === "--") break;
     if (a === undefined || !a.startsWith("--")) continue;

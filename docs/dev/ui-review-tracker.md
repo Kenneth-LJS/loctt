@@ -385,3 +385,15 @@ encode both.
   + `LOCTT_ROOT` in the CLI reference; (e) record as a `decisions.md`
   entry (Ken's ruling). Update the earlier "use `--cwd`" note in this doc
   once shipped.
+  **RESOLVED (B5, 2026-09-09).** Built: global `--root` on the CLI
+  (`apps/cli/src/index.ts`, `resolveRoot` + `stripRootArgs`) aliasing the
+  kept `--cwd`, with `LOCTT_ROOT` as a fallback and explicit flag > env >
+  cwd precedence; `loctt ui` / `loctt mcp` accept `--root`/`--cwd`
+  directly (stripped before the subcommand sees argv); MCP inherits the
+  root via `loctt mcp` (no standalone entrypoint); web `main.ts` gained
+  the `--cwd` alias. Both flags given with different values is a usage
+  error (exit 2 — data-hazard guard, agent decision A181); consistent
+  duplicates are accepted. Documented in `docs/user/cli/reference.md`
+  (new "Global options" section + the `loctt mcp` entry) and
+  `docs/user/mcp/reference.md` (Agent Guidelines), and recorded in
+  `decisions.md` § 9 K34 (Ken) + § 8 A181 (the conflict-is-an-error call).
