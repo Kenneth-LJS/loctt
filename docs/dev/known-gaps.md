@@ -9,83 +9,6 @@ merely might be wrong. Delete an entry when it is fixed.
 
 ## Code
 
-### K33-1 — `tests/ui/flow-task-body.spec.ts` needs the K33 enter-edit gesture — RESOLVED
-
-**Found:** 2026-09-09 (B4 Description read-then-edit lane, K33) · **Status:** RESOLVED 2026-09-09 (B4 merge coordinator).
-
-**Resolved at the B4 merge.** Added an `enterEdit(page)` helper (waits for
-`body-rendered` and clicks it; a no-op when the editor is already open, e.g.
-a forced-raw body), folded it into `typeInBody`, and inserted it before the
-first editor touch in the tests that reach the editor directly (the mode
-toggles, the byte-identical round-trip, the two-task navigation, the large
-body). TSK-15's "blur saves immediately" test was re-expressed for K33's
-new blur behaviour (blur now flushes the save AND returns to the rendered
-view, so its save-indicator unmounts): it now asserts the fast on-disk
-write within a sub-idle-window poll + the return to the rendered view,
-instead of the now-unmounted indicator state. This is an "editing green
-tests because the behaviour legitimately changed" case (CLAUDE.md) — named
-in the B4 commit. All 13 flow-task-body tests pass.
-
-K33 reshaped the task description into read-then-edit: `BodyEditor`
-renders read-only by default and mounts the editor (its `rich-editor` /
-`markdown-editor` surface, the mode toggle, the toolbar) only after a
-click on the rendered body (`data-testid="body-rendered"`). The K33
-lane owned `tests/ui/flow-tasks.spec.ts` and migrated its editor tests
-(the `enterEdit` helper there).
-
-`tests/ui/flow-task-body.spec.ts` — a DIFFERENT lane's file — was NOT
-touched, and it now fails wholesale: its `typeInBody` helper (line ~94)
-and ~15 tests click `body-editor › rich-editor` (or the mode toggles /
-`markdown-editor`) immediately after `page.goto(...)`, before entering
-edit. That surface no longer exists on load, so the first click/expect
-times out. Confirmed by running `TSK-15: one save` — it fails at the
-`rich-editor().click()`.
-
-**Reproduce:** `npx playwright test --config tests/ui/playwright.config.ts
-flow-task-body.spec.ts --grep "TSK-15: one save" --workers=1` → times
-out waiting for `body-editor › rich-editor`.
-
-**Fix (mechanical, owed by the editor lane):** add an `enterEdit(page)`
-helper mirroring the one in `flow-tasks.spec.ts` —
-
-```ts
-async function enterEdit(page: Page): Promise<void> {
-  await expect(page.getByTestId("body-editor")).toBeVisible();
-  await page.getByTestId("body-rendered").click();
-  await expect(page.getByTestId("body-editor").getByTestId("rich-editor")).toBeVisible();
-}
-```
-
-— and call it after each `goto` (or fold it into the `typeInBody`
-helper: enter edit if `body-rendered` is showing, then type). The
-behaviour each test asserts is unchanged *inside* edit mode; only the
-entry gesture is new. It was left to that lane because editing ~15 of
-its tests while it has uncommitted work in the same tree is the
-cross-lane clobber risk the ownership boundary prevents. See
-`decisions.md` A171/A172.
-
-### K-5 — task-detail Comments/Activity tabs — CLOSED (B3 merge, 2026-09-07)
-
-**Recorded and CLOSED 2026-09-07 (B3 merge).** K-5's tabbed lane
-(Comments / Activity / All) was built self-contained in `ActivityPanel.tsx`
-with a transitional Activity default while `TaskDetail` still rendered a
-separate standalone Comments `<Section>` (the double-mount risk, A163).
-
-**Resolved at the B3 merge** — the Relationships lane's `TaskDetail.tsx`
-edits had landed, so the coordinator completed the integration rather than
-leave it deferred:
-- Removed the standalone `<Section title="Comments"><CommentsPanel/></Section>`
-  from `TaskDetail.tsx` (and dropped the now-unused import). The tabbed
-  `ActivityPanel` is the sole comments+activity home.
-- Flipped the default tab to **Comments** (A163's "advance" path).
-- Added the CMT-18 bullet-2 **URL param**: a new `taskDetailSearchSchema`
-  (`router/taskDetailSearch.ts`) gives `/tasks/$key` a `?tab=` param; the
-  tab is URL-controlled (ActivityPanel takes `tab` + `onTabChange`,
-  TaskDetail navigates on switch), so a tab records itself in the URL and
-  a deep link (`?tab=activity`) opens on that tab. CMT-18's e2e now asserts
-  both directions; all 19 flow-comments tests pass. Mount-on-activation
-  stays (one composer at a time). See `decisions.md` A163 (advanced note).
-
 ### DUP-H1 — `duplicateTask` does not report the corrupt source fields it dropped
 
 **Found 2026-09-05 during the Phase-7 corruption audit.**
@@ -339,33 +262,6 @@ before anything is staged.
 
 ## Tests
 
-### DEG-7 reads "covered" from a core round-trip; no client renders the "Not recognised" group
-
-**CLOSED 2026-09-08 (B3 Task-meta lane).** A client render now exists and
-carries the DEG-7 tag: `MetaPanel.tsx`'s `UnrecognisedGroup` renders the
-"Not recognised" group on the task-detail page, tagged `@verifies DEG-7`
-from `apps/web/src/client/task/MetaPanel.test.tsx` (unit) and
-`tests/ui/flow-degradation.spec.ts` (e2e). The core round-trip test still
-stands alongside them; the blind spot — a UI case satisfied only by a core
-tag — is gone. Left below for history.
-
-**Recorded 2026-09-07 (B3 step 0).** `cases:coverage` reports DEG-7
-**covered**, but its only `@verifies` tag is a *core* round-trip test
-(`packages/core/src/task/frontmatter.test.ts:171`). No **client** file
-renders any "Not recognised" unrecognised-field group — a grep of
-`apps/web/src/client` finds only `cells.tsx:107`'s sr-only
-"(unrecognised)". So DEG-7's green tag must **not** be mistaken for the
-surface existing: the "shown in a 'Not recognised' group, read-only, with
-a remove control" bullet is untested on any UI surface. This is a
-coverage-tool blind spot — a core `@verifies` can satisfy a UI case.
-
-**Where the fix belongs.** B3's Task-meta / UX-7 lane must tag DEG-7 from
-a *client* test that renders the group on the task-detail page. The
-requirement is folded into the new DEG-29 "Also:" bullet
-(`docs/dev/ui-test-cases/flow-degradation.md`) and recorded as
-`decisions.md` § 8 A157. Close this entry when a client test carries the
-DEG-7 tag.
-
 ### TSK-32 contradicts the DEG-29 "Not recognised" group (MetaPanel)
 
 **Observed 2026-09-09 (B4 primitive-migration lane, found while running
@@ -471,21 +367,6 @@ would always resolve it, but that contradicts GIT-C2's stated rule
 ("the task with the earlier `created_at` keeps the key"), and the input
 only arises from a hand-edited branch, which P-12 already classes as
 unsupported. Not worth a spec change on that evidence.
-
-## ~~One malformed `task.md` breaks the whole list~~ — FIXED 2026-08-25
-
-**Closed while verifying M1.2.** ERR-9 is the same defect as BLK-44 and
-is a blocker, so it came due with that ticket rather than waiting for a
-cleanup phase. `loadAllTasksDetailed` keeps the tasks that parse and
-returns the ones that do not; `loadAllTasks` keeps its `Task[]` shape
-for all 48 callers. `/api/tasks` reports the failures and the list
-names each path with its YAML error.
-
-BLK-44's own bullet about a broken-task indicator "see flow-list.md"
-still points at a case that was never written there — that half remains
-unaddressed, and BLK-44 stays untagged.
-
-The original entry follows, for the record.
 
 ## One malformed `task.md` breaks the whole list (BLK-44 deferred)
 
@@ -996,82 +877,6 @@ file could not be parsed, name the path under `.loctt/tasks/<id>/`,
 and give the line or field. Recorded as *failing*, not uncovered — a
 "not covered" note would hand the next ticket a false baseline.
 
-## ~~A8's two guards in `useTask` exist but are unasserted~~ — CLOSED 2026-08-29
-
-**Established 2026-08-29**, fixing the M2.1 review's MAJOR 3.
-
-`useTask` (`apps/web/src/client/api/hooks/useTask.ts`) invalidates
-`["recents"]` when a task fetch lands, so the sidebar's Recently
-viewed group gains the task without a reload (TSK-3). Decision A8
-argues for two properties of that effect:
-
-```ts
-useEffect(() => {
-  if (!isSuccess) return;                       // (1) success path only
-  void qc.invalidateQueries({ queryKey: ["recents"] });
-}, [isSuccess, dataUpdatedAt, qc]);             // (2) once per fetch
-```
-
-The effect's **existence** is covered — delete it and TSK-3 and XS-58
-both go red. Neither guard is.
-
-**Measured, not assumed.** A probe counting `/api/recents` requests
-over a 404 deep link and over a normal open, with a settle window:
-
-| Build | 404 path | success path |
-|---|---|---|
-| both guards present | 1 | 2 |
-| `isSuccess` removed | 1 | 2 |
-| dependency array removed | 1 | 2 |
-| both removed | 2 | 2 |
-
-Each figure stable across repeated runs.
-
-So neither guard has an observable network signature on its own.
-React Query will not refetch a query that is fresh and already
-observed, however many times it is invalidated, which makes "once per
-fetch" and "on every render" network-identical. The single moved
-number — 2 on the 404 path — appears only when **both** guards are
-removed together, so it cannot attribute a failure to either one, and
-a test keyed on it would go green again the moment one guard was
-restored.
-
-**A test was written for guard (1) and then deleted.** It asserted
-`recentsRequests === 1` on a 404 and passed with the guard removed —
-the first reading of 2 had come from the combined mutation, not from
-the guard alone. It is recorded here rather than left in the suite
-because a green that implies a guard it cannot see is the exact
-failure mode the M1 vacuity sweep exists to catch.
-
-**Closed by taking that advice.** The assertion has to observe the
-invalidation itself, not its network consequence — the request count
-is the wrong instrument. `apps/web/src/client/api/hooks/useTask.test.tsx`
-renders the hook with a `QueryClient` whose `invalidateQueries` is
-spied, and counts the calls keyed on `["recents"]` directly.
-
-Mutated **separately**, which is what the Playwright attempt could not
-do:
-
-| Mutation | Result |
-|---|---|
-| `isSuccess` guard removed | 3 of 3 fail |
-| dependency array removed | exactly the re-render test fails |
-
-So each guard now has a test that fails when *it alone* is broken —
-the distinction the network layer could not make, because React Query
-will not refetch a fresh observed query however often it is
-invalidated.
-
-The absence assertion ("does not invalidate on a 404") is paired with
-a positive one ("invalidates once on success") on purpose: an absence
-alone is satisfied by a hook that never invalidates at all, which is
-vacuity shape 3 from the M1 sweep.
-
-**The lesson worth keeping:** the deleted Playwright test was not
-badly written, it was written at the wrong layer. A number that moves
-only under a *double* mutation proves nothing about either half —
-and that is what made it look like a signal.
-
 ## TSK-3's "once per mount" bullet is unfalsifiable at the UI layer
 
 **Established 2026-08-29** (M2.1 review, MINOR 5).
@@ -1089,48 +894,6 @@ untestable from the browser. The re-ordering half of the same test
 build that appended rather than moved-to-front would fail. This is
 stated in a comment in the test itself so a reader does not take the
 count assertions for more than they are.
-
-## ~~An orphaned enum value freezes every other field on the task~~ — FIXED `46507e8`
-
-**Found 2026-08-29 probing M2.2b, before building it.**
-
-Set a task's `status` to `in_progress`, then delete `in_progress` from
-`workflow.yaml`. The task still loads — the server preserves the
-stored value, which is what P1 requires. But **every subsequent write
-to that task is refused**, including to unrelated fields:
-
-```
-POST /api/tasks/T-1/set  {"field":"priority","value":"high"}
-→ 400 validation_failed
-  "invalid value: status: unknown status \"in_progress\";
-   valid: backlog, done, wont_do"
-```
-
-`loctt set T-1 priority high` fails identically, so this is **core**,
-and MCP inherits it. By the which-layer rule (`lessons.md` § Core /
-surface parity) the fix owes all three surfaces.
-
-**It contradicts TSK-29's final bullet** (blocker, P7 P3): "Editing an
-unrelated field (e.g. priority) does not clobber the unknown status as
-a side effect." It cannot clobber it — nothing can be written at all,
-so the task is frozen until the status is repaired by hand.
-
-The mechanism is whole-frontmatter validation on write: setting one
-field re-validates every field, and a value that was legal when it was
-written is now illegal. A stored value config no longer recognises is
-a **display** problem (TSK-29's first three bullets are all about
-rendering it as unknown); it is not a reason to refuse unrelated
-writes.
-
-**A second defect in the same response:** the envelope carries
-`"field": "priority"` while the message is about **status**. A UI
-highlighting `envelope.field` marks the field the user just edited
-rather than the one that is wrong — and it makes this look like a bug
-in the priority picker.
-
-Worth noting what still works, so a fix does not overreach: `GET`
-returns the orphaned value unchanged, and the CLI shows it. Only the
-write path is broken.
 
 ## Parallel build agents make the integration suite fail at random
 
@@ -1219,120 +982,6 @@ So an orphaned value no longer freezes the task, the user's data is
 left alone, and writing *to* the undeclared field is still an error —
 which it should be, since config no longer knows what it means.
 
-
-## ~~`bulk_op_id` is reported in the response but never written to history~~ — **WRONG, retracted 2026-08-29**
-
-**Found 2026-08-29 probing M2.4, before building it.**
-
-A bulk write answers `{bulk_op_id, succeeded, failed}` and the id is
-real in that response. It is **not** recorded on the entries the write
-creates:
-
-```
-POST /api/tasks/bulk/set {"refs":["T-1","T-2"],
-                          "changes":[{"field":"status",...}]}
-→ 200, bulk_op_id present
-
-.loctt/tasks/<id>/_history.yaml:
-  kind: field_change
-  field: status
-  before: backlog
-  after: in_progress          ← no bulk_op_id
-```
-
-Everything else is in place, which is what makes this a gap rather
-than a feature:
-
-- `HistoryEntry.bulk_op_id` is in the contract
-  (`packages/contracts/src/history.ts:53`)
-- core's coalescing already special-cases it — *"bulk-op entries never
-  coalesce — each stays its own row"* (`task/history.ts:339`)
-- `move.ts` **does** stamp it (`:110`, `:118`)
-
-So one bulk operation records the id and the others do not.
-`handleBulkSet` never passes one down.
-
-**This blocks CW-11**, which M2.4 owes: "consecutive `bulk_op_id`
-entries collapse to one expandable row". There is nothing to group on,
-so a bulk edit of forty tasks renders forty separate rows in each
-task's feed — the noise the case exists to prevent.
-
-## The retraction
-
-**All of the above is wrong.** `bulk_op_id` is written, and it always
-was. Re-measured:
-
-```
-POST /api/tasks/bulk/set {"refs":["T-1","T-2"],
-                          "changes":[{"field":"status",...}]}
-
-.loctt/tasks/<id>/_history.yaml:
-  kind: field_change
-  field: status
-  before: backlog
-  after: in_progress
-  bulk_op_id: 01M1637HMD7Y3Q5QPZ9M86FN1Y   ← present
-```
-
-The chain is complete and was all along: `bulk.ts:72` mints the id,
-`:114` passes it to `setFieldsLocked`, and `update.ts:838` stamps it
-onto every entry. The API exposes it as a **top-level** field on the
-activity entry.
-
-**Two mistakes produced the false finding, and both are worth naming:**
-
-1. **I inspected the result of a request that failed.** The first
-   probe sent `{field, value}` when `bulk/set` takes
-   `changes: [{field, value}]`. It returned 400. I then read
-   `_history.yaml`, saw no bulk entry — because no bulk write had
-   happened — and concluded the id was never written.
-2. **I looked in the wrong place.** The second probe printed
-   `meta keys: []` and I read that as absence. `bulk_op_id` is a
-   top-level field on the entry, not inside `meta`.
-
-So **CW-11 is not blocked**, and M2.4 can build the collapse against
-data that is already there.
-
-The general lesson is the one this repo keeps relearning in new
-disguises: *check the write succeeded before drawing conclusions from
-what it left behind.* A 400 followed by an empty read looks exactly
-like a feature that does not exist.
-
-## ~~The body precondition is web-only; CLI and MCP still last-write-wins~~ — CLOSED
-
-**Found:** M2.3, 2026-08-29. **Closed:** K10, 2026-08-31.
-
-Core had `bodyToken()`, `BodyWriteOptions.expectedToken` and
-`StaleBodyWriteError` with no caller outside the web app, so the guard
-K2 required protected the web editor from the two surfaces it was
-written about, while those surfaces wrote unguarded.
-
-The open question this entry named — *what would a CLI or MCP caller
-pass?* — was Ken's to answer, and K10 (`decisions.md` § 9) answers it,
-splitting the surfaces rather than picking one default:
-
-| Surface | State after K10 |
-|---|---|
-| web | unchanged: always sends a token, `StaleBodyWriteError` → 409 |
-| `apps/cli` | **last-write-wins by default** (Ken's ruling). `loctt body --token` prints a token; `--expect <token>` opts in per command; `cli.require_body_token` in `workflow.yaml` opts in a whole tracker |
-| `apps/mcp` | `get_task` returns `body_token`; `replace_task_body` and `append_task_body` take `expected_token` and enforce it when supplied |
-
-Also closed in passing: `appendTaskBody` accepted no options at all, so
-the token was enforced on replace and silently ignored on append — the
-more dangerous half, since an append reads the existing text in order
-to add to it.
-
-**The residual risk, stated because Ken accepted it explicitly and it
-is not a defect.** With last-write-wins as the CLI default, a
-`loctt body --set` that races a browser autosave still destroys the
-browser's edit silently. K10 records this as the accepted cost:
-protection is on for the surface most likely to race a human (MCP
-agents) and off for the surface least likely to (a person at their own
-terminal), and a tracker that disagrees can set
-`cli.require_body_token: true`.
-
-See decisions A56 (how MCP obtains a token), A57 (how the CLI does),
-A58 (where the config lives).
 
 ## A UI spec asserting a timezone must pin the browser's
 
@@ -1465,26 +1114,6 @@ differs by filesystem, which is the actual problem.
 fixed: the honest fix is core normalising or refusing names that
 collide case-insensitively with an existing attachment, which changes
 what the CLI and MCP accept too.
-
-## ~~BRD-12 cannot be satisfied~~ — FIXED by K8 (2026-08-30)
-
-**Resolved.** Ken's K8 ruling made a board column a *group of tickets*
-rather than a status, and the fix landed with it.
-
-`deriveColumns` moved from `apps/web/src/client/board/columns.ts` into
-`packages/core/src/board/columns.ts`, and `reorderBoardRank` now scopes
-its peer set and its anchor check by **column** (via
-`rank/column-scope.ts`) instead of by `moved.frontmatter.status`. A
-`blocked` card can be dragged above an `in_progress` card in the same
-configured column; the rank lands and the status is untouched.
-
-The two SPR-C2 tests still pass — their fixture has no `boards` block,
-so the 1:1 fallback keeps `backlog` and `in_progress` in separate
-columns and the refusal is still correct there. Only the error
-*message* changed (it now names columns rather than prescribing "move
-the task to that status first").
-
-`tests/ui/flow-board.spec.ts`'s BRD-12 test is no longer `test.fixme`.
 
 ## `workflow.boards` is undocumented in schema-reference.md
 
@@ -1923,35 +1552,6 @@ test now moves a *third* task and types a key never searched before.
 **Not fixed.** Lowering `staleTime` for this one query would trade a
 30s window for a request per keystroke; the case does not ask for it.
 
-## ~~A resolved body conflict can re-open its own dialog~~ — CLOSED 2026-09-01
-
-**Measured 2026-09-01 while adding XS-11's bullet-3 assertion.
-Reproduces in roughly 1–2 of 10 runs.**
-
-Clicking a choice in the conflict dialog **blurs the editor**, and both
-editor modes flush on blur (`BodyEditor.tsx:158` and `:162`). That
-fires a second write carrying the *stale* token, which the server
-correctly refuses with a 409 — visible in every single run.
-
-If that 409's response lands **after** Apply, `write()`'s catch calls
-`setConflict(...)` and re-opens the dialog over a conflict the user has
-already resolved. The merge write itself still succeeds (200 observed
-in the same run), so **no data is lost** — but the user is left facing
-a stale conflict dialog that nothing will close.
-
-Measured in one failing run: 409 at `…308336`, resolve 200 at
-`…308358`, dialog still present.
-
-**CLOSED 2026-09-01 by A59** (`decisions.md` § 8): `flush()` now
-returns without writing while the conflict dialog is open — XS-12's
-"The UI does not write" bullet, enforced in the hook — so the doomed
-blur-flush never leaves and nothing can re-open a resolved dialog.
-`resolve()` clears the guard synchronously before its own write, which
-still carries the conflicting version's token. Covered by the "A59"
-describe block in `useBodyAutosave.test.ts` (deterministic, scripted
-response ordering) and XS-11's spec, which now asserts the dialog
-stays closed (pre-fix: 4 failures in 10 repeats; post-fix: 0).
-
 ## REL-16's PNG thumbnail is not built, and the reason was never written down
 
 **Found by the M2 gate's tag-to-case audit, 2026-09-01.**
@@ -2316,54 +1916,6 @@ delete the `built` flag if it has no remaining false values.
 
 **To reproduce.** `grep 'built: false' apps/web/src/client/settings/sections.ts`.
 
-## One unparseable saved view makes `GET /api/tasks` fail for *every* view
-
-**RESOLVED 2026-09-04 (VUE-22, decision A118).** `parseQueriesConfig`
-now collects per-entry DSL failures into `QueriesConfig.broken` instead
-of throwing on the first one; only object-fatal problems (whole-file
-YAML, missing array/id/name/query, duplicate id) still throw. `GET
-/api/tasks` returns the healthy rows plus a non-fatal `broken_view`
-field, and `loctt views` / the MCP `list_views` tool list broken views
-marked broken. See `packages/core/src/config/queries.ts` and the
-`per-entry degradation (VUE-22)` tests. The historical description is
-kept below for context.
-
-**Found in M4.5, 2026-09-01. Blocks VUE-22, and VUE-21's last bullet.**
-
-`handleListTasks` calls `loadOptionalConfigs`, which calls
-`loadQueriesConfig`, which parses **every** entry in `queries.yaml` and
-throws `QueriesConfigError` on the first bad one. Nothing catches it —
-`isQueryError` does not list `QueriesConfigError` — so the request
-becomes the generic 500 "The server failed while handling GET
-/api/tasks."
-
-The damage is not limited to the broken view. A hand-edited
-`queries.yaml` with one malformed entry takes down the list for a
-healthy view sitting next to it, and for no view at all. VUE-22 wants
-the opposite: "the sidebar still lists the view, marked as broken",
-"clicking it shows the parse error with the offending position", and
-"other views and the rest of the sidebar render normally".
-
-`GET /api/views` already handles this correctly — it returns 400
-`config_invalid` carrying the loader's own message, which
-`SavedViewsPanel` renders as a load failure naming the file. The task
-route needs the same treatment, plus a way to skip a bad entry rather
-than reject the document, before VUE-22 can pass.
-
-**To reproduce.** In a fresh tracker, write
-
-```yaml
-queries:
-  - id: 01J0000000000000000000001
-    name: ok
-    query: status = backlog
-  - id: 01J0000000000000000000002
-    name: broken
-    query: "status = = done"
-```
-
-then `GET /api/tasks?view=ok` → 500, though `ok` parses fine.
-
 ## A saved view on a deleted custom field returns zero rows with no warning
 
 **Found in M4.5, 2026-09-01. Blocks VUE-21.**
@@ -2503,33 +2055,6 @@ moving one argument.
 
 **Workaround used by the M4.7 UI specs.** They assign sprints by ULID,
 which is what the web client itself sends.
-
-## ~~The header search box is disabled, so `/` has nothing to focus~~ — RESOLVED
-
-**Found:** M4.8 · 2026-09-01 · **Blocked:** A11Y-2 · **Resolved:** B2 ·
-2026-09 (`52b2e69`)
-
-**Resolved by SHL-46 / K-10 (B2).** `Header.tsx` now renders a real
-`HeaderSearch` combobox: a debounced type-ahead against
-`GET /api/search`, a results dropdown that navigates to the picked
-task, and Enter that opens the filtered list. The `/` shortcut focuses
-it (`input[type="search"]`), so A11Y-2 is now claimed and its test in
-`tests/ui/flow-accessibility.spec.ts` is tagged rather than asserting
-the disabled stub. Kept here for provenance.
-
----
-
-*Original entry (for reference):*
-`apps/web/src/client/shell/Header.tsx` rendered the only global search
-box with `disabled` and `title="Search arrives in a later milestone"`.
-The `/` shortcut was built and registered (`shell/shortcuts.ts`) and the
-shell's handler focused `input[type="search"]` — but a disabled input
-cannot take focus, so nothing happened. Implementing search was a
-feature no M4 ticket owned, so at M4.8 A11Y-2 was
-left uncovered rather than tagged (see `decisions.md` § 8 A84), with a
-deliberately untagged test asserting the box was disabled — the signal
-to restore the real assertions the day search was built. That day was
-B2.
 
 ## `PUT /api/user-settings` takes no state lock
 
@@ -3601,268 +3126,18 @@ caller — verified by mutation here: disabling `setField.mutate` still
 reddens SPR-6, so the wait cannot swallow a drop that genuinely failed
 to land.
 
-## The top-bar project switcher does not exist (PRU-3, 4, 21, 22) — RESOLVED (built since)
+## PRU-42's user-delete spec flakes under `--workers=5` (helper, open)
 
-**RESOLVED 2026-09-05 (stale entry).** PRU-3, 4, 21, 22 are all built and
-covered by committed tests (`tests/ui/flow-projects-users-switcher.spec.ts`
-and the list column/scope tests). This writeup predates that work; kept
-below for history.
-
-**Found 2026-09-03 while covering the PRU non-avatar cases.** The
-flow doc's opening line says it "covers the project switcher in the
-top bar", and fourteen PRU cases refer to it. `Header.tsx` renders a
-sidebar toggle, brand, a disabled search stub, the theme toggle, the
-New-task button and the user menu — and nothing else.
-
-Project scoping today is the sidebar's `ProjectsGroup`
-(`Sidebar.tsx:377-439`, single-select, writes `?project=<id>`) and the
-list `FilterBar`'s multi-select Project dropdown.
-
-PRU-1 and PRU-2 (both **blockers**, in M1.2) are the switcher itself,
-so the four cases below were blocked on a feature two blockers own.
-
-**What each of the four still needs:**
-
-| Case | Blocked on |
-|---|---|
-| PRU-3 | An explicit "All projects" mode, plus auto show/hide of the project column keyed to it. `resolveColumns` (`list/columns.ts:42`) takes no scope argument at all. |
-| PRU-4 | The create modal reading the active scope. `CreateTaskModal` never reads `?project=` (no `useSearch` anywhere in `create/`); it defaults to the server's `effective_default`. Its key-preview bullet also has no implementation. |
-| PRU-21 | A searchable switcher and a pinned "All projects". The sidebar renders every project unbounded (`Sidebar.tsx:405-438`) with no "+N more". `FilterDropdown` does have type-to-filter above 12 options but filters on label only, not key. |
-| PRU-22 | The switcher's truncation + hover. The sidebar item *does* truncate with `title={p.name}` (`Sidebar.tsx:419,429`), but that is not the surface the case names. The list's project column renders the **prefix**, not the label (`cells.tsx:136`), so a 120-character label never reaches that cell — the column is fine, for a different reason than the case gives. |
-
-**Deliberately not tagged.** Tagging any of the four against the
-sidebar would assert a weaker claim than the case makes, which
-`build-loop.md` names as the thing to escalate rather than work
-around.
-
-## PRU-25 cannot be honestly tagged — its premise is unreachable and its surfaces do not exist — RESOLVED (K21/K22)
-
-**RESOLVED 2026-09-05 (stale entry).** Under K21 the dangling-reference
-premise is reachable (a hand-edit can orphan a user), and K22 defined the
-degraded reporter cell. PRU-25 is built and covered
-(`flow-settings-projects-users.spec.ts`). Kept below for history.
-
-**RESOLVED 2026-09-05 by K21 + K22 (built).** The escalation below was
-answered: K21 rules the dangling state is reached out-of-band (a
-hand-edited/restored tracker), not by `user delete` — so the test
-*seeds* it by removing the user's profile folder while tasks keep the
-ULID. K22 amends P-4 so the degraded cell may show the truncated ULID.
-Built: a reporter column (`list/columns.ts` + `ListView` dispatch,
-reusing `AssigneeCell`), the reporter filter facet (`FilterBar.tsx`,
-options from the users list so a dangling ULID is never offered), and
-the degraded cell now shows `<last-6-of-ULID> (deleted user)`
-(`list/cells.tsx`). Setting a new reporter clears the ref via the
-existing `MetaPanel` picker. Covered by `list/cells.test.tsx`,
-`columns.test.ts`, `FilterBar.test.tsx`, and the PRU-25 spec in
-`tests/ui/flow-settings-projects-users.spec.ts`. The record below is
-kept for the reasoning.
-
-**Found 2026-09-03; re-measured and declined 2026-09-04. A
-case/implementation conflict — escalated, not adjudicated.**
-
-PRU-25's scenario: "Dave was deleted with `loctt user delete`; five
-tasks still carry his ULID as `reporter`", and those tasks must render
-a degraded "truncated ULID + (deleted user)" reporter cell, the
-reporter filter must offer only live users, and setting a new reporter
-must clear the dangling value.
-
-Three things block an honest tag, in order of how decisive they are:
-
-1. **The dangling state is unreachable through `loctt user delete`.**
-   `deleteUser` (`users/lifecycle.ts:178-262`) refuses to hard-delete a
-   referenced user unless `--remap-to` or `--unassign` is given, and
-   all three surfaces enforce that (`server.ts:2306-2325` requires
-   `?confirm=true` and passes remap/unassign through). After a
-   successful delete, **no task carries the deleted ULID** — it was
-   remapped or unassigned. So PRU-25's opening ("deleted with `loctt
-   user delete` … still carry his ULID") describes a state the
-   supported delete path is specifically designed *not* to produce. It
-   arises only from hand-editing a file or a bug. This is the same
-   invariant PRU-42's final bullet leans on, and it is why PRU-42 is
-   declined too.
-
-2. **There is no reporter column.** `ALL_COLUMNS` (`list/columns.ts`)
-   is key/project/title/status/priority/task_type/assignee/labels/
-   due_date/updated_at, and `ListView` renders no `reporter` case. So
-   "the reporter cell … the other four columns are unaffected" has no
-   cell in the list to assert against — reporter lives only in the task
-   detail `MetaPanel`.
-
-3. **There is no reporter filter facet.** `FACET_KEYS`
-   (`FilterBar.tsx`) has no `reporter`, so bullet 3's "filtering by
-   reporter offers only existing users" has nothing to assert against.
-
-The P-4 angle the earlier version of this note led with is **not** the
-blocker: the app already shows a truncated ULID (`id.slice(-6)`) as a
-disambiguation hint for live users whose names collide — `MetaPanel`
-and `comments/users.ts`, the mechanism PRU-23 (covered) turns on. A
-degraded reporter cell showing the same six-char tail plus "(deleted
-user)" would be the same kind of carve-out P-4 already tolerates, not a
-new violation. The dangling `unknown user` rendering built at
-`cells.tsx` for assignee is a considered choice, but it is not what
-makes PRU-25 untaggable.
-
-Bullet 4 (setting a new reporter clears the dangling value) does work
-in isolation, via `MetaPanel.tsx`.
-
-**Needs Ken:** PRU-25 as worded asserts against a delete path that
-cannot produce its precondition and two list surfaces that do not
-exist. Either the case is rewritten (degraded-reference rendering in
-the task detail, produced by a hand-edited or migrated file rather than
-by `user delete`), or a reporter column + reporter facet are added and
-the delete semantics reconsidered — a scope call, not an agent's.
-
-## PRU-42's user-delete dialog was never built — RESOLVED (built since)
-
-**RESOLVED 2026-09-05 (stale entry).** The `UserDeleteDialog` exists
-(reference count split by role, archive-instead, typed confirmation) and
-PRU-42 is covered. The archive-instead path's idempotency was further
-hardened under K25. Kept below for history.
-
-**RESOLVED 2026-09-05 by K21 (built).** The fourth-bullet objection
-below is answered by K21: the "(deleted user)" render is reached
-out-of-band, not by `user delete` (which still refuses to leave a
-dangling ref), so the degraded render is proven by a hand-seeded
-dangling ref and the *delete* path is proven to leave nothing dangling.
-Built: `UserDeleteDialog.tsx` — reference count split by role (from a
-new read-only `GET /api/users/:ref/usage` backed by core
-`countUserReferences`), permanent-vs-archive copy with archive offered
-in the same dialog, and the typed-`DELETE` confirmation reused from
-`DeleteConfirmDialog`. `useDeleteUser` was fixed to pass
-`remap_to`/`unassign` (it was dead code hardcoding neither). Wired into
-`UsersPanel` with a per-row Delete (disabled for the active user).
-Covered by the PRU-42 specs in
-`tests/ui/flow-settings-projects-users.spec.ts` and the
-`countUserReferences` unit tests in `users/manage.test.ts`. Record kept
-below.
-
-**Flaky (pre-existing, found 2026-09-05).** The PRU-42 spec
-"choosing archive from the delete dialog … leaves references intact"
-(`flow-settings-projects-users.spec.ts:~1276`) intermittently fails at
-`expect(await userIdByName(tracker, "Dave")).toBe(daveId)` with
-`Received: undefined`. `userIdByName` parses `loctt user list --all`
-stdout with a tab-anchored regex; under parallel Playwright load the
-lookup sometimes returns undefined (a list-parse/timing issue in the
-spec helper, not the avatar work). Confirmed present on the clean
-baseline with the avatar changes stashed, so it is unrelated to the
-avatar cropper/removal build. Not fixed here (out of the avatar
-scope). To reproduce: run the spec file under `--workers=5`; it passes
-in isolation.
-
-**Found 2026-09-03.** `UsersPanel.tsx`'s row actions (`:283-309`) offer
-Archive/Unarchive only. There is no Delete control, no reference count
-split by role, no permanent-vs-reversible copy and no deliberate
-confirmation.
-
-The layers beneath it are complete:
-
-- `deleteUser` (`users/lifecycle.ts:174-262`) counts assignee and
-  reporter references separately, refuses when references exist
-  without a remap or unassign, journals the remap, and returns
-  `{remappedAssigneeCount, remappedReporterCount}`.
-- `DELETE /api/users/:ref` (`server.ts:2289-2325`) requires
-  `?confirm=true`.
-- `useDeleteUser` (`api/hooks/useUserMutations.ts:53-60`) exists but is
-  **dead code** — nothing imports it — and hardcodes `?confirm=true`
-  while passing neither `remap_to` nor `unassign`, so it could not
-  drive the dialog as specified anyway.
-
-`UsersPanel.tsx`'s docblock (`:17-20`) claims PRU-42 coverage. That
-claim is stale and was not removed here, only recorded.
-
-**Declined 2026-09-04, and the dialog deliberately not built.** The
-first three bullets (reference count split by role, permanent-vs-archive
-copy, deliberate confirmation) are buildable. The **fourth is not**:
-"the 34 affected tasks render the degraded '(deleted user)' form from
-PRU-25 rather than breaking." As above, `deleteUser` requires remap or
-unassign for a referenced user, so after a delete the 34 tasks show the
-remap target or a cleared assignee — **never** the "(deleted user)"
-form. The bullet describes a state the delete path cannot reach.
-
-The coverage gate is per-case and binary; a tag on PRU-42 would assert
-a weaker claim than the prose (it would quietly drop the fourth bullet),
-which the build loop forbids. Building the dialog without being able to
-tag the case moves the gate nowhere and adds a feature outside these
-eight cases' scope, so it was left unbuilt pending Ken's call on the
-same delete-semantics question PRU-25 raises. `useDeleteUser` remains
-dead code.
-
-## PRU-24 and PRU-41 — built 2026-09-04
-
-**Found 2026-09-03; both closed 2026-09-04.** Kept as a record of the
-one PRU-41 claim below that turned out to be about a *different* case.
-
-**PRU-24** (current user archived from the CLI mid-session): now built.
-`Header.tsx`'s `UserMenu` computes `currentArchived` from
-`currentUser.archived` and renders an "(archived)" marker on the
-current-user chip, a warning ring on the header avatar, and a
-`role="alert"` prompt to switch to an active user; switching clears it
-via the existing `useSwitchUser` invalidation without a reload. The
-reachable setup (core refuses to archive the *active* user) is: switch
-away, archive, switch back — after which `state.yaml`'s current user
-points at an archived profile and `getCurrentUser` returns it
-unchanged. Covered by `tests/ui/flow-projects-users-switcher.spec.ts`.
-
-**PRU-41** (assigning an archived user through a stale picker): now
-built. The remaining gap was only the message's second next-action.
-The guard message now reads `…; unarchive it first, or choose a
-different <field>` (`config/archived-guard.ts`), matching the
-remap-target messages the other four managers already emit, so it
-offers *both* actions PRU-41 requires. `recovery` stays `{kind:
-"none"}` — retrying the same archived value fails identically, so no
-retry control is offered (ERR-15); the second action lives in the
-message, not a control.
-
-The earlier "the three surfaces show different text (bulk leaks the
-ULID)" note was **misattributed to PRU-41**. Core resolves the
-assignee *name* via `displayNameFor(aux.users, …)`, and an *archived*
-user is still in `aux.users` — so all three surfaces surface core's
-identically-constructed, name-bearing message. The ULID would only
-appear for a *deleted* user (absent from `aux.users`), which is
-PRU-25's scenario, not PRU-41's. Verified against the built app in the
-PRU-41 spec (`meta-field-error-message` asserts the name, the two
-actions, and no 26-char ULID).
-
-## `mentionCode.test.ts` fails the web suite intermittently — FIXED 2026-09-05
-
-**FIXED 2026-09-05.** The test's `caretAtEnd` helper called
-`editor.commands.focus("end")`. ProseMirror's focus path schedules a
-50ms `setTimeout` (a selection-reset in prosemirror-view,
-`selectionToDOM`) that, under the full parallel suite, fired *after*
-vitest tore down this file's jsdom environment — the uncaught
-`document is not defined` from `DOMObserver`/`selectionToDOM`.
-`inCodeContext` reads `editor.state.selection`, not DOM focus, so the
-helper now uses `setTextSelection(doc.content.size)` — identical caret,
-no DOM focus, no stray timer to outlive teardown. Verified: three
-consecutive full-editor-dir runs, no `Errors` line, no
-`document is not defined`.
-
-**Found 2026-09-03. Pre-existing at 48fdc5f — not introduced by the
-PRU work.**
-
-`npm run test` intermittently exits non-zero with every test passing:
-
-```
-Test Files  120 passed (120)
-     Tests  1091 passed (1091)
-    Errors  1 error
-```
-
-The error is an uncaught `ReferenceError: document is not defined`
-thrown from `prosemirror-view`'s `DOMObserver.flush` on a `setTimeout`
-that outlives the jsdom environment teardown, attributed to
-`apps/web/src/client/editor/mentionCode.test.ts`.
-
-**Reproduced at clean HEAD** in a separate worktree (so the tree held
-none of this session's changes): three consecutive `vitest run` in
-`apps/web` gave exit 0, **exit 1**, exit 0 — the failing run carrying
-the identical stack. The file passes on its own every time; it only
-appears under the full parallel suite, which points at teardown
-timing rather than the test.
-
-**Likely fix:** have the editor test destroy its `EditorView` in an
-`afterEach` so the observer's pending timeout is cancelled before the
-environment goes away. Not attempted here.
+**Feature RESOLVED 2026-09-05 (K21)** — the `UserDeleteDialog` is built,
+covered, and out of known-gaps. What remains open is a **test-helper
+flake**: the PRU-42 spec "choosing archive from the delete dialog …
+leaves references intact" (`flow-settings-projects-users.spec.ts:~1276`)
+intermittently fails at `userIdByName(tracker, "Dave")` returning
+`undefined`. `userIdByName` parses `loctt user list --all` stdout with a
+tab-anchored regex; under parallel Playwright load the lookup sometimes
+returns undefined — a list-parse/timing issue in the spec helper, not the
+feature. Passes in isolation; reproduce under `--workers=5`. Also tracked
+in TEMP-TODO under tooling flakes.
 
 ## A PRU-34 fix silently regressed four sibling deletes (found and fixed 2026-09-04)
 
@@ -3907,36 +3182,6 @@ verified subset alone. A change can be correct for the case it targets
 and a regression for four cases it never mentions. The tell was a
 changed function signature with more callers than the agent touched.
 
-## `text-warning-fg` is an undefined utility — 13 call sites render colourless — RESOLVED (migrated to warn-fg)
-
-**RESOLVED 2026-09-05 (stale entry).** Zero occurrences of `warning-fg`
-remain in `apps/web/src`; the call sites were migrated to the defined
-`warn-fg` / `warn-bg` tokens. Kept below for history.
-
-**Found 2026-09-04 while building PRU-24.**
-
-The feedback-warning token is exposed to Tailwind v4 as `--color-warn-fg`
-(`styles/index.css:43`), so the working utilities are `text-warn-fg` /
-`border-warn-fg` / `bg-warn-fg`. But **13 call sites across 10 files**
-use `text-warning-fg` / `border-warning-fg` / `bg-warning-fg` — a name
-with no matching `--color-warning-*` token. Tailwind v4 emits **no
-rule** for an unknown token utility (confirmed: `text-warning-fg` does
-not appear in the built CSS, `text-warn-fg` does), so every one of those
-elements renders with the **inherited** colour, not amber.
-
-Affected files include `board/BoardView.tsx`, `activity/ActivityEntry.tsx`,
-`activity/ActivityPanel.tsx`, `task/TaskDetail.tsx`,
-`task/editors/CustomFields.tsx`, `task/editors/OptionPicker.tsx`,
-`attachments/AttachmentsPanel.tsx`, and the three relationships panels.
-
-**Fix:** rename `warning-fg`/`warning-bg` → `warn-fg`/`warn-bg` at those
-call sites (or add `--color-warning-*` aliases in `index.css`). PRU-24's
-new Header code already uses the correct `warn-fg`, so it is not in the
-affected set.
-
-**Not fixed here:** outside the eight PRU cases this session covered, and
-it touches ten unrelated components; recorded rather than swept in.
-
 ## SHL-9 flaked when the temp path contained "v1" (fixed 2026-09-04)
 
 **A pre-existing test-locator defect, not a regression — fixed
@@ -3966,102 +3211,6 @@ can *never* be load- or timing-dependent — so a file-level pass in
 isolation is not evidence it is fixed. The tell was the error naming
 the second element (the path div), which pointed straight at the cause.
 
-## ~~Eighteen more colorless color utilities beyond warning-fg~~ — FIXED 2026-09-04
-
-**FIXED 2026-09-04 (design-token audit pass).** All 18 phantom tokens
-were remapped to real `--color-*` tokens, and the guard test now ships
-green: `apps/web/src/client/styles/colorTokens.test.ts`. It walks every
-client `.ts`/`.tsx`, pulls each `(text|bg|border)-<token>` out of the
-`className` strings, and asserts the utility appears in the built CSS
-(the authoritative oracle — Tailwind emits a rule only for a token it
-recognised). It was shown to fail on a reintroduced `text-status-danger`
-before being restored. Six representative sites were verified with a
-real `getComputedStyle` (danger red, warn amber, accent indigo, canvas
-bg) across GitSyncPanel, the comment renderers, BoardCard and
-TimelineChart.
-
-Final mapping (every site decided; none left open):
-
-| Phantom | → Real token | Why |
-|---|---|---|
-| `text/border-status-danger` | `danger-fg` | error/alert text + its border |
-| `bg-status-danger` | `danger-bg` | (no site used it; bg pairs with the fg above) |
-| `text-status-warn` | `warn-fg` | warning text |
-| `text-status-done` | `success-fg` | Diagnostics "Pass" row |
-| `accent-fg` (text/bg/border/ring/fill/stroke) | `accent` | every site wants the accent hue: links, drop-target rings, the "Active" pill, the filled submit button (its `text-white` supplies contrast), the timeline "today" line |
-| `text/border-attention-fg` | `warn-fg` | config-error alert boxes + the offscreen-dependency marker read as warnings |
-| `bg-attention-fg` | `warn-bg` | same alert boxes' tint |
-| `text-fg-default` | `text-primary` | body text inside the alert boxes |
-| `bg-fg-default` | `text-primary` (as `bg-text-primary`) | a faint neutral shade (4.5% alpha) over non-working days |
-| `fg-muted` (text/fill/stroke) | `text-secondary` | muted axis labels / counts |
-| `text-text-inverse` | `accent-contrast` | text on an accent fill |
-| `bg-bg-base` | `bg-canvas` (as `bg-bg-canvas`) | base surface |
-| `bg-canvas-default` | `bg-canvas` (as `bg-bg-canvas`) | base surface |
-| `bg-canvas-subtle` | `bg-muted` (as `bg-bg-muted`) | subtle raised canvas |
-| `border-border-muted` | `border-subtle` (as `border-border-subtle`) | muted border |
-
-Two notes for a spot-check. (1) The tokens live under compound names,
-so the *utility* is `bg-bg-canvas` / `bg-bg-muted` /
-`border-border-subtle` (prefix + full token) — my first pass wrote the
-bare `bg-canvas` etc., which is itself a phantom (`canvas` is not a
-token); the guard caught it and it was corrected. (2) The only site I'd
-call genuinely ambiguous was `bg-fg-default/[0.045]` (the non-working-day
-shade): decided `text-primary` because it is a neutral foreground tint
-and `text-primary` is the near-black/near-white that reads in both
-themes — but a dedicated neutral could be argued.
-
-Original report retained below.
-
----
-
-**Found 2026-09-04 while fixing `warning-fg`, by writing a guard that
-checks every color utility against the built CSS.** The `warning-fg`
-fix (→ `warn-fg`, 13 sites, committed) was the tip of it.
-
-Tailwind v4 silently drops an unknown utility, so a color class naming
-a token that does not exist renders **colorless** with no error —
-build, lint and typecheck all pass. A scan of every
-`text-/bg-/border-<token>` in the client against the actually-built CSS
-found **18 more** broken utilities the `warning-fg` rename did not
-touch:
-
-```
-bg-accent-fg      border-accent-fg     text-accent-fg
-bg-attention-fg   border-attention-fg  text-attention-fg
-bg-bg-base        border-border-muted  text-fg-default
-bg-canvas-default border-status-danger text-fg-muted
-bg-canvas-subtle                       text-status-danger
-bg-fg-default                          text-status-done
-                                       text-status-warn
-                                       text-text-inverse
-```
-
-These are **not** a blind rename: each names a token that does not
-exist, and the correct target is a per-site judgment. `status-danger`
-is probably `danger-fg`; `status-warn` probably `warn-fg`;
-`status-done` probably `success-fg`; `accent-fg` probably
-`accent-contrast`; `fg-default`/`fg-muted` probably
-`text-primary`/`text-secondary`; `text-inverse` probably
-`accent-contrast`. But "probably" is why this is its own focused pass,
-not folded into a feature batch — a wrong mapping is a new colour bug.
-
-Affected components include GitSyncPanel, LabelsPanel, MilestonesPanel,
-DiagnosticsPanel, BoardView/BoardCard, the comment renderers,
-AttachmentsPanel, and the editor dialogs — so warning/status/accent
-text and borders are invisible across settings, the board, and comments.
-
-**The tool to fix it is written and worth keeping**: a unit test that
-walks the client's TSX, extracts every `(text|bg|border)-<token>`
-utility, and asserts each appears in the built CSS (the authoritative
-check — a token grep gives false positives on compound names like
-`bg-muted-hover`). It failed on exactly these 18 + `warning-fg`. Add it
-green once the 18 are mapped, and it prevents the whole class
-permanently. It was removed from the `warning-fg` commit because it
-cannot be green while the other 18 stand.
-
-**Reproduce:** for each utility U used in `apps/web/src/client/**.tsx`,
-`grep -qF "$U" apps/web/dist/client/assets/*.css` — absence means it
-renders colorless.
 ## MCP swallowed a partial-remap report on label AND project delete (found and fixed 2026-09-04)
 
 **Found while building MSL-33, which needed the label delete to report
@@ -4215,52 +3364,6 @@ data-shape change, not a UI test.
 **Reproduce:** seed 5,000 tasks, open Settings → Diagnostics, click Run
 — one spinner, then all checks appear together; the Network panel shows
 a single `/api/doctor` request, not a stream.
-
-## Six duplicate decision numbers in decisions.md § 8 (record hygiene) — FIXED 2026-09-05
-
-**FIXED 2026-09-05.** The second occurrence of each duplicated number was
-renumbered to **A128–A133** (not A118–A123 as first planned — A118–A127
-had since been minted): A68b→A128 (theme/sidebar_pins typed),
-A69b→A129 (pin sweep in core), A100b→A130 (retired counter reclaimed by
-prefix), A101b→A131 (partial remap reports the split), A102b→A132
-(PRU-16 point-at-Settings), A103b→A133 (PRU-43 filesystem caveat). Every
-content cross-reference was read in context: all A68/A69 refs cited the
-*first* decision (deletes-hard, reconcile-model) and were left; the one
-A101 content reference (decisions.md "PRU-34/A101 gave the project
-delete") cited the *partial-remap* decision and was retargeted to A131.
-The rest were the known-gaps table rows below, kept for the record.
-Verified: no duplicate `### A<n>` headings remain.
-
-**Found 2026-09-04 during a coverage batch merge. Pre-existing — not
-introduced by the batch that surfaced it.**
-
-Six A-numbers each name two DIFFERENT decisions, from earlier parallel
-batches that both minted the next number off the same base:
-
-| Number | Decision A | Decision B |
-|---|---|---|
-| A68 | web deletes hard-by-default | `theme`/`sidebar_pins` typed on UserSettings |
-| A69 | Git panel ships without reconcile UI | pin sweep lives in core |
-| A100 | modal defers Escape to inner layer | retired key counter reclaimed by prefix |
-| A101 | global `:focus-visible` ring | partial remap reports the split |
-| A102 | active route `aria-current` | PRU-16 "point at Settings" |
-| A103 | over-cap column warning glyph | PRU-43 filesystem caveat |
-
-**Why it was not fixed on the spot.** A68 and A69 each have four
-cross-references elsewhere in the docs, and A101 one — and because the
-number is ambiguous, a grep cannot tell which of the two decisions a
-given reference points at. Blind renumbering would silently
-re-target those references. This needs a careful pass that reads each
-reference in context, not a sed.
-
-**The fix.** Renumber the second occurrence of each to A118-A123 (the
-next free slots; 1-117 are contiguous), then resolve each
-cross-reference by reading what it actually cites. A focused
-record-hygiene task, not something to fold into a feature batch.
-
-**Why it matters.** decisions.md is the durable memory this whole run
-relies on — "recorded in A101" is worthless when A101 is two things.
-The revert-path discipline depends on each decision being addressable.
 
 ## A UI view write drops a concurrently-present *broken* view from queries.yaml
 
@@ -4524,70 +3627,6 @@ test them" — that was verified case by case, which is the check the
 aggregate notes kept failing.
 
 
-## Test infra: `Sidebar.test.tsx` hangs under vitest — FIXED 2026-09-05 (was a real render-loop bug)
-
-**FIXED 2026-09-05, and it was not environmental after all — it was a
-product bug.** Verbose per-test reporting showed the file passed 25 tests
-and hung at the SHL-32 "stays dismissed once dismissed" test, right after
-a dismiss click. Root cause: `useVanishedViews` (`shell/useVanishedViews.ts`)
-had a `useEffect` depending on its `current` argument, which `Sidebar.tsx`
-rebuilds as a **new array every render** (`[...queries, ...broken]`). The
-effect ran every render and called `setVanished` with a new array →
-another render → rebuilt array → effect again: an infinite render loop.
-In production, wasted renders; in the test, a dismiss click sustained the
-loop and `cleanup()` could never unmount, hanging the whole file past any
-`testTimeout` (a synchronous re-render loop is not an awaitable a timeout
-can break — which is why it looked like a collection-time wedge).
-
-Fixed by depending on a stable content signature instead of the array
-reference (decision **A134**). Mutation-proven: reverting re-wedges the
-test. The entire web client suite now runs green under parallelism (84
-files, 823 tests) with no file excluded — **the gate workaround below is
-obsolete.**
-
-The original writeup is kept below for the record.
-
-### (obsolete) original writeup — treated as environmental
-
-**Found:** 2026-09-05, while gating the NEW-20 / K23 change.
-
-`apps/web/src/client/shell/Sidebar.test.tsx` wedges — the worker sits at
-0% CPU (blocked, not spinning) and the run never prints a result line.
-Every other file in `shell/` passes in isolation; the whole client
-suite only stalls because this one file never returns, which is what
-made `vitest run --dir apps/web/src/client` look like a fork-contention
-wedge. It is not contention: the file hangs even alone and even with
-`--no-file-parallelism`.
-
-**Proven pre-existing.** Restoring `sidebarData.ts` to its committed
-HEAD version (dropping the NEW-20 `default_drift` field) and running
-the file still hangs — so the NEW-20 change did not cause it. It
-reproduces on the clean baseline.
-
-**Effect on gating.** The rest of the web client suite is green when
-this file is excluded (settings 68, create 33, list 139, sidebar 15,
-and the other nine shell files all pass). To gate a change that does
-not touch Sidebar, run the client suite excluding this file, or run the
-touched subdirs directly.
-
-**Not yet root-caused — narrowed 2026-09-05.** The wedge is NOT in a
-test body: it survives `--testTimeout`, `--teardownTimeout` and
-`--hookTimeout` all at 8s, and **zero** test lines print before it hangs
-— so it stalls during module *collection/import*, before the first test
-runs. The individual suspect tests (`SLOW_COUNTS` never-resolving fetch,
-`FAILED_COUNTS`, `FAIL_VIEWS`) each pass and complete cleanly in
-isolation (`-t`), and the flags are all reset in `afterEach`, so it is
-not a per-test hang or a flag leak. It points at an import-time side
-effect in something Sidebar.test.tsx pulls in transitively that
-deadlocks under jsdom in the full-suite context. Chasing it is a
-bounded-but-deep task; deferred to Phase Z's test-infra pass.
-
-**Gate workaround (reliable):** run the web client suite with this one
-file excluded — the other 769 client unit tests pass green
-(settings 68, list 140, create 33, sidebar 15, the 9 non-Sidebar shell
-files 67, plus the rest by subdir). The server suite (301) and every
-other suite are unaffected.
-
 ## K28-WF · workflow.yaml does not preserve a broken sub-entry on write
 
 **Found:** 2026-09-06 (K28 config-preserve-others sweep) · **Status:**
@@ -4689,115 +3728,24 @@ Two quality notes the fix-review surfaced while checking the new parity surfaces
    restore route deliberately, with a clear over-limit message, or
    document the ceiling.
 
-## K32 · SET-33 fails: no `workflow-panel-error` on an invalid `workflow.yaml`
+## SPR-6 flakes under full-file parallel load (passes isolated / --workers=2)
 
-**Found:** 2026-09-06 (during the BUG-2 copy fix build) · **Status:** FIXED 2026-09-06 (B2 Workflow-lane fix wave). `WorkflowPanelFrame` now renders a `workflow-panel-error` surface (`data-workflow-error="config-invalid"`, a `workflow-broken-list`, and a `workflow-reload` button) when `GET /api/workflow` returns a config whose tolerant `broken` sub-lists are non-empty — distinct from an empty list and from an unreachable server, naming the file and each broken entry's validator error. SET-33 passes; red-first proven by gating the branch off and watching the spec time out on `workflow-panel-error`.
+**Found:** 2026-09-06 · **Status:** OPEN (test flake, not a product bug).
 
-**Original report (kept for history):** open, pre-existing, unrelated to BUG-2.
+Running the whole `flow-sprints.spec.ts` file, `SPR-6: dropping on No
+sprint removes the field rather than writing an empty value` (line ~414,
+board drag/drop) intermittently fails — but **passes in isolation and
+under `--workers=2`**, so it is a parallelism/ordering flake under the
+full-file run, not a real failure. The rest of the file (including every
+SPR-33/SPR-37 metadata and detail-header case) passes. Left as-is; a
+candidate for `test.slow()` or moving its seeding to a direct write. Also
+tracked in TEMP-TODO under tooling flakes.
 
-`tests/ui/flow-settings-workflow.spec.ts` SET-33 ("an invalid
-`workflow.yaml` names the file and offers a reload rather than an empty
-list") fails: the statuses panel never renders a `workflow-panel-error`
-element when the workflow config is unparseable, so the assertion
-`getByTestId("workflow-panel-error")` times out. Verified failing on a
-clean HEAD worktree (commit `f28ccf7`), so it is not a regression from
-the BUG-2 change (which only touches `RemapDeleteDialog` copy). The
-whole settings-workflow spec is otherwise green (28 passed, this one
-failing).
+*(SPR-31, formerly failing beside SPR-6 here, was resolved 2026-09-09 —
+B4, decisions.md §8 A167 — by rewriting its spec to assert the
+`sprints-broken-config` alert. It is no longer a gap.)*
 
-**Reproduce:** `npx playwright test --config tests/ui/playwright.config.ts flow-settings-workflow -g "SET-33"`.
-
-**To fix.** The Statuses panel needs an error surface (`workflow-panel-error`)
-that renders when `GET /api/workflow` returns the broken/unparseable
-state, distinct from an empty list and from an unreachable server — the
-same shape the case describes. Server side, confirm the broken-workflow
-read path returns a distinguishable payload the panel can render from.
-
-## SPR-40 — sprint archive/unarchive has no web route
-
-**Found:** 2026-09-06 (B2 lane, SPR-40 build) · **Status:** FIXED 2026-09-06 (B2 follow-up). `POST /api/sprints/:id/archive` and `/unarchive` added (mirroring labels), `useArchiveSprint` hook + per-row Archive/Unarchive button in `SprintsPanel`. Server round-trip test + client button tests, both shown red-first. SPR-40's archive clause is now met.
-
-**Original report (kept for history):**
-
-SPR-40 wants create / delete / archive / unarchive of sprints from the
-Settings panel. Create (`POST /api/sprints`), delete
-(`DELETE /api/sprints/:id`) and metadata edit (`PUT /api/sprints/:id`)
-are wired and tested. **Archive/unarchive is not built** because there
-is no server route for it: no `/api/sprints/:id/archive` (or
-`/unarchive`), and `handleUpdateSprint` does not accept an `archived`
-field (core `editSprint` preserves `archived` but never sets it). Core
-exports `archiveSprint`/`unarchiveSprint`, called by nothing in the web
-layer. Every other config object (labels, milestones, users, tasks) has
-`/archive` + `/unarchive` routes; sprints are the exception.
-
-The `SprintsPanel` already renders a "show archived" toggle and splits
-the list (archived sprints do come back from
-`GET /api/sprints?counts=true`), so the read side is done — only the
-write is missing.
-
-**To fix.** Add `POST /api/sprints/:id/archive` and `/unarchive` in
-`apps/web/src/server/server.ts` (mirror `handleArchiveLabel`/
-`handleUnarchiveLabel`, calling core `archiveSprint`/`unarchiveSprint`),
-register them next to the other sprint routes, then add a
-`useArchiveSprint` hook in `useDataMutations.ts` and an
-Archive/Unarchive button per row in `SprintsPanel.tsx`. See
-`decisions.md` A149.
-
-**Reproduce:** Settings → Data → Sprints: there is no way to archive an
-active sprint from the UI, and an archived one can be viewed (toggle)
-and deleted but not unarchived.
-
-## flow-sprints.spec.ts — SPR-6 and SPR-31 fail (not the metadata lane)
-
-**Found:** 2026-09-06 (B2 sprints/views fix-review lane) · **Status:**
-SPR-31 **RESOLVED** 2026-09-09 (B4 Sprints overview lane); SPR-6 still an
-open parallelism flake (passes in isolation and under `--workers=2`).
-
-**SPR-31 resolution (B4, A167).** The diagnosis below was wrong on the
-mechanism: the tolerant loader does **not** degrade silently. A single
-sprint with `end_date < start_date` is caught by `SprintDefSchema`'s
-per-entry `superRefine`, so core reports it as one `BrokenEntry` on
-`GET /api/sprints`'s `broken[]` — not a whole-file `SprintsConfigError`.
-`SprintsView` already surfaces that as the `sprints-broken-config` alert
-(A138). The fixme asserted the wrong testid (`sprints-config-error`, the
-whole-file branch). Fixed by rewriting the SPR-31 spec to assert
-`sprints-broken-config` (names the file, the offending sprint by id, the
-`must not be before start_date` rule; not the empty state), plus a
-one-line copy addition to that alert ("reload" / "will not repair") so
-bullet 2 reads on the surface. Un-fixme'd and passing. See decisions.md
-§8 A167.
-
-**Found:** 2026-09-06 (B2 sprints/views fix-review lane) · **Status:** open, out of this lane.
-
-Running the whole `flow-sprints.spec.ts` file, two tests failed, both in
-the sprints **overview** (`SprintsView.tsx` / board drag) — files this
-lane did not touch:
-
-- `SPR-6: dropping on No sprint removes the field rather than writing an
-  empty value` (line ~414, board drag/drop) — **passes in isolation**, so
-  a parallelism/ordering flake under the full-file run, not a real fail.
-- `SPR-31: a malformed sprints.yaml explains itself instead of blanking
-  the view` (line ~635) — **fails in isolation too**. Expects
-  `sprints-config-error` (which exists in `SprintsView.tsx`) to render;
-  it did not.
-
-All 43 other tests pass, including every SPR-33/SPR-37 (metadata) and
-detail-header case this lane owns. `SprintsView.tsx` and `board/` are
-unmodified in the working tree and are not on any path the single-PUT /
-attribution / archive work touches, so SPR-31 is a pre-existing failure
-for the overview lane to triage, not a regression from this lane.
-
-**Proven pre-existing (B2 merge gate).** SPR-31 was run against a clean
-`HEAD` worktree (before any B2 change) and fails there identically — it
-is not a B2 regression. It is **quarantined `test.fixme`** so the B2 gate
-is honestly green rather than shipping a known-red test; the fixme reason
-cites this entry. Un-fixme it when the overview lane builds the
-`sprints-config-error` surfacing (the testid exists in `SprintsView.tsx`
-but the tolerant sprints loader degrades a malformed entry silently
-instead of surfacing it, so the alert never renders). SPR-6 was left
-as-is (passes in isolation; a full-file parallelism flake, not red).
-
-## read-only views do not surface degraded entries (ERR-10, LST-51, TML-48; SPR-31 above)
+## read-only views do not surface degraded entries (ERR-10, LST-51, TML-48)
 
 **Found:** 2026-09-06 (B2 merge gate) · **Status:** open, pre-existing, quarantined.
 
@@ -4839,48 +3787,6 @@ in settings? The case texts assume the former; the tolerant loaders imply
 the latter. That contradiction is the overview lane's to resolve — it may
 mean building the surfacing OR revising these four cases, not automatically
 the former.
-
-## Email is validated on the web write path only, not in core/CLI/MCP — FIXED
-
-**Found:** 2026-09-06 (B2 Users/Projects/Milestones fix-review) · **Status:** FIXED 2026-09-06 (B2 merge reconciliation).
-
-B2 bug 1 (silent email data loss) was first fixed on the **web** write
-path only (`handleCreateUser` / `handleUpdateUser` in `server.ts`, a 400
-`field: "email"` via the new `EmailSchema`). That left the same
-corruption reachable through **core directly** and via the **CLI**
-(`loctt user create/edit --email bob`) and **MCP**, because
-`createUser`/`updateUser` did not validate — the web server is not the
-authority the CLI/MCP share; **core** is. This was the parity rule
-("a capability in core is not done until CLI and MCP have it").
-
-**Fix (merge reconciliation):** `assertValidEmail` in
-`packages/core/src/users/lifecycle.ts` now rejects a malformed non-null
-email in both `createUser` and `updateUser` (reusing `EmailSchema`);
-`null`/absent still clears. This covers web, CLI, and MCP in one place.
-The web server's pre-check and the client courtesy gate stay (they give
-the field-attributed 400 shape before core is reached). Covered by two
-red-first tests in `packages/core/src/users/manage.test.ts`
-("rejects a malformed email", "rejects a malformed email without
-touching the stored value"). A152 corrected accordingly.
-
-## (RESOLVED at merge) MCP `sanitizeIdList` TS6133 + Sidebar staging split
-
-**Found:** 2026-09-06 (mid-B2, while lanes were in flight) · **Status:** RESOLVED at the B2 merge — both were transient mid-wave states, not real gaps.
-
-Two items recorded by in-flight lanes described the *unfinished* working
-tree, not the merged result. The B2 merge gate confirmed both are gone —
-they are kept here only so the record is not silently deleted:
-
-1. **`apps/mcp/src/tools/user.ts` "sanitizeIdList unused (TS6133)".** This
-   was a mid-work state in the K-10 lane; its final commit uses/removes the
-   symbol. The merged `npm run build` is green (verified at the B2 gate).
-2. **Sidebar.tsx "+ New filter" swap staged-pending.** The sprints/views
-   lane deferred staging `Sidebar.tsx`/`Sidebar.test.tsx` so the K-10 lane
-   could stage them as one unit (the new-filter dialog swap interleaved with
-   K-10's sidebar-groups hunks). At merge both lanes' changes coexist in one
-   compiling file; both are staged; the merged build/typecheck/tests are
-   green. The entry point opens `ViewFormDialog` (advanced query editor),
-   not the old `SaveViewDialog`.
 
 ## Demo/seed data can store parent/child edges in the reverse direction (UX-8 root cause)
 
