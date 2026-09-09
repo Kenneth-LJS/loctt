@@ -1,7 +1,7 @@
 # The build loop
 
-How a ticket in [`TEMP-WEB-TICKETS.md`](../../TEMP-WEB-TICKETS.md) gets
-built, verified and closed — by an agent, without a human in the middle.
+How a build ticket gets built, verified and closed — by an agent,
+without a human in the middle.
 
 The design constraint is that **the agent never decides whether it is
 done.** Every gate below is a command that exits non-zero. An agent can
@@ -160,7 +160,7 @@ The agent stops and escalates, rather than proceeding, when:
 
 ## Milestone gates stay human
 
-The 🚦 marks in `TEMP-WEB-TICKETS.md` are review gates for the user, not
+The 🚦 marks in the ticket roster are review gates for the user, not
 for the loop. Everything between them is automatable; the gates
 themselves are where the accumulated judgement calls get checked by
 someone who can overrule them.

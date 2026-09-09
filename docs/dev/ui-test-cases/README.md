@@ -20,7 +20,7 @@ open, config rewritten underneath a live session, and so on.
 - Every case is tagged with the **principles** it defends (`P1`–`P10`).
   A case that defends no principle probably isn't worth writing.
 - Every case is tagged with the **milestone** it becomes verifiable in
-  (`M1`–`M4`, per [TEMP-WEB-TICKETS.md](../../../TEMP-WEB-TICKETS.md)).
+  (`M1`–`M4`, from the v1 build ticket roster).
   Cases for later milestones are listed anyway so earlier work doesn't
   paint itself into a corner.
 - Case IDs are stable and prefixed per flow (`TSK-1`, `SPR-4`, …). Don't

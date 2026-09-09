@@ -17,58 +17,50 @@ User-facing documentation lives in `docs/`. Developer documentation lives in `do
 - `docs/dev/invariants.md` — **rules a change must not break** (project identity, key allocation, sprint state). Check against this before touching those areas
 - `docs/dev/decisions.md` — locked design decisions, incl. things deliberately NOT built
 - `docs/dev/build-loop.md` — **how a web-UI ticket gets built and verified**; the gates that decide "done"
-- `docs/dev/known-gaps.md` — understood defects not yet fixed; check before reporting one as new
+- `docs/dev/lessons.md` — **build discipline distilled from the v1 run**: testing/verification traps, core-surface parity, the stop conditions, the which-layer rule. Read before more UI work
+- `docs/dev/known-gaps.md` — understood defects not yet fixed (and the roster of cases that cannot be satisfied yet); check before reporting one as new
 - `docs/dev/corruption-handling-guide.md` — **how to make a new field/object/surface degrade instead of crash**: the field-local-vs-object-fatal decision, the building blocks, per-thing checklists, and what to add to `doctor`. Read before adding a field or config object
 - `docs/dev/ui-test-cases/` + `docs/dev/surface-test-cases/` — acceptance criteria (997 cases). Indexed in `docs/dev/case-index.json`; see `tools/README.md`
 - `docs/user/cli/reference.md` — CLI commands
 - `docs/user/mcp/reference.md` — MCP tools and agent guidelines
 
-**Working state, not documentation.** These are temporary and are
-deleted when the build lands:
+**Still-open working state.** `PROPOSED-UI-CASES.md` (repo root) holds
+flow-doc contradictions and proposed cases awaiting a decision from Ken;
+nothing in it has been applied. (The v1 build's run-scaffolding files —
+the build plan, run workflow, and ticket roster — were deleted once the
+build landed; their durable lessons are in `docs/dev/lessons.md` and the
+unsatisfiable-case roster is in `docs/dev/known-gaps.md`.)
 
-- `TEMP-BUILD-PLAN.md` — the phased plan: four phases of fixes, then
-  Phase 5, the UI build. **Read this first** to know where the work is.
-  Its Status table is the run log, updated after every commit.
-- `TEMP-RUN-WORKFLOW.md` — **how the Phase 5 run executes**: sections and
-  subsections, which agents are fresh, the section gate, and the four
-  things that stop the run. Read second.
-  It governs `build-loop.md`, which governs one ticket.
-- `TEMP-WEB-TICKETS.md` — the 25 build tickets and the cases each owes
-- `PROPOSED-UI-CASES.md` — flow-doc contradictions awaiting a decision
-  from Ken; nothing here has been applied
-
-**Keeping these current is part of the work, not paperwork.** A
-decision that lives only in a session's context is lost at the next
-compaction, and the agent after that will re-derive it differently.
-Before starting a ticket, read `decisions.md` (§ 8 agent-made, § 9
-Ken's) and `known-gaps.md`; while working, write back:
+**Recording decisions is part of the work, not paperwork.** A decision
+that lives only in a session's context is lost at the next compaction,
+and the agent after that will re-derive it differently. Before starting
+work, read `decisions.md` (§ 8 agent-made, § 9 Ken's) and
+`known-gaps.md`; while working, write back:
 
 | When | Where |
 |---|---|
 | A call the docs did not settle | `decisions.md` § 8, six fields incl. **To revert** |
 | Ken ruled on something | `decisions.md` § 9 — his, not revertible by an agent |
 | A defect found but not fixed | `known-gaps.md`, with how to reproduce |
-| A case that cannot be satisfied yet | `TEMP-RUN-WORKFLOW.md` § Cases that cannot be satisfied yet |
+| A case that cannot be satisfied yet | `known-gaps.md` (the unsatisfiable-case entries) |
 | Any core change | the CLI **and** MCP reference docs — see below |
-| A subsection commit | `TEMP-BUILD-PLAN.md`'s Status table |
 
 **A capability in core is not done until CLI and MCP have it.** Core
 exists so two surfaces answer the same question the same way; adding
 to it for one surface is drift with a good address. `unarchiveView` is
-exported from core and called by nothing at all. See
-`TEMP-RUN-WORKFLOW.md` § "Which layer".
+exported from core and called by nothing at all. See `lessons.md`
+§ Core / surface parity.
 
 **Check before claiming something does not exist.** An audit claimed
 milestone progress "does not exist anywhere"; it is
 `computeProgress` in core, with a CLI flag and an MCP tool. That was
 repeated twice before anyone looked.
 
-**The run does not stop for things the agent can decide.** It stops
-only when a call changes scope, invents a requirement, violates a
-P-principle or a recorded decision, or is load-bearing — see
-`TEMP-RUN-WORKFLOW.md` § What stops the run. Everything else is
-decided, recorded in `docs/dev/decisions.md` § 8 with a revert path,
-and the run continues.
+**Do not stop for things you can decide.** Stop only when a call changes
+scope, invents a requirement, violates a P-principle or a recorded
+decision, or is load-bearing — see `lessons.md` § Process. Everything
+else is decided, recorded in `docs/dev/decisions.md` § 8 with a revert
+path, and you continue.
 
 Key points:
 - Tasks use `id` (internal, ULID) and `key` (user-facing, e.g. `T-123`)
