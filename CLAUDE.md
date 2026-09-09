@@ -24,12 +24,15 @@ User-facing documentation lives in `docs/`. Developer documentation lives in `do
 - `docs/user/cli/reference.md` — CLI commands
 - `docs/user/mcp/reference.md` — MCP tools and agent guidelines
 
-**Still-open working state.** `PROPOSED-UI-CASES.md` (repo root) holds
-flow-doc contradictions and proposed cases awaiting a decision from Ken;
-nothing in it has been applied. (The v1 build's run-scaffolding files —
-the build plan, run workflow, and ticket roster — were deleted once the
-build landed; their durable lessons are in `docs/dev/lessons.md` and the
-unsatisfiable-case roster is in `docs/dev/known-gaps.md`.)
+**Still-open working state.** `docs/dev/open-items.md` is the to-do list
+of things not yet ruled on — including `PROPOSED-UI-CASES.md` (repo root,
+flow-doc contradictions and proposed cases awaiting Ken's rulings) and a
+few root files left to triage. Each item closes only once its resolution
+is codified as a case + test, not on a decision alone. (The v1 build's
+run-scaffolding files — the build plan, run workflow, and ticket roster —
+were deleted once the build landed; their durable lessons are in
+`docs/dev/lessons.md` and the unsatisfiable-case roster is in
+`docs/dev/known-gaps.md`.)
 
 **Recording decisions is part of the work, not paperwork.** A decision
 that lives only in a session's context is lost at the next compaction,
