@@ -3,6 +3,9 @@ dist/
 *.tsbuildinfo
 .loctt/local/
 
+# macOS Finder metadata
+.DS_Store
+
 # Playwright run artifacts (traces, screenshots, HTML report)
 test-results/
 playwright-report/
