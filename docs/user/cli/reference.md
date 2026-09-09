@@ -18,6 +18,31 @@ tracker exists.
 
 A `<task>` argument may be either a key (e.g. `T-12`) or an internal ID (ULID).
 
+## Global options
+
+Every command targets a single tracker directory. By default that is the
+current working directory; these point it elsewhere without `cd`-ing:
+
+```
+loctt --root <dir> <command> [options]
+loctt --cwd  <dir> <command> [options]     # back-compat alias of --root
+LOCTT_ROOT=<dir> loctt <command> [options] # env-var fallback
+```
+
+- **`--root <dir>`** is the canonical flag. It is accepted on every
+  command, including `loctt ui` and `loctt mcp` (so an MCP client launched
+  as `loctt mcp --root <dir>` serves that tracker), and matches the web
+  server's `--root` / `LOCTT_ROOT`.
+- **`--cwd <dir>`** is a back-compat alias — identical behaviour. Existing
+  scripts that pass `--cwd` keep working.
+- **`LOCTT_ROOT`** env var is used when no flag is given.
+
+**Precedence:** an explicit flag wins over `LOCTT_ROOT`, which wins over the
+process working directory. If both `--root` and `--cwd` are given they must
+resolve to the **same** directory; a conflict is a usage error (exit `2`)
+rather than a silent pick-one, because operating on the wrong tracker is a
+data hazard. Relative paths resolve against the current working directory.
+
 ## Initialization and Info
 
 ### `loctt init`
@@ -1016,7 +1041,13 @@ by an MCP client; runs until the client disconnects. See [mcp-reference.md](../m
 
 ```
 loctt mcp
+loctt mcp --root <dir>       # serve a tracker other than the cwd
 ```
+
+The server operates on the tracker resolved from the global `--root`
+(alias `--cwd`) / `LOCTT_ROOT` — see [Global options](#global-options). An
+MCP client's launch config should pass `--root <dir>` so the server isn't
+tied to whatever directory the client happens to spawn it in.
 
 ### `loctt ui`
 

@@ -196,6 +196,100 @@ describe("CLI commands", () => {
     }
   });
 
+  it("--root <dir> targets a tracker outside the process cwd (canonical alias of --cwd)", async () => {
+    // CLI-1: --root is the canonical name; it must target another tracker
+    // exactly as --cwd does. Mirrors the --cwd test above.
+    const otherRoot = await mkdtemp(join(tmpdir(), "loctt-cli-root-"));
+    try {
+      await initLoctt(otherRoot);
+      process.argv = ["node", "loctt", "--root", otherRoot, "create", "rooted"];
+      await main();
+      expect(process.exitCode).toBeUndefined();
+
+      process.exitCode = undefined;
+      consoleSpy.mockClear();
+      process.argv = ["node", "loctt", "--root", otherRoot, "list"];
+      await main();
+      const otherLog = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(otherLog).toContain("rooted");
+
+      // The process-cwd tracker must NOT contain it — proves --root was
+      // honoured and not silently ignored.
+      process.exitCode = undefined;
+      consoleSpy.mockClear();
+      process.argv = ["node", "loctt", "list"];
+      await main();
+      const cwdLog = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(cwdLog).not.toContain("rooted");
+    } finally {
+      await rm(otherRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("LOCTT_ROOT env targets a tracker when no flag is given", async () => {
+    // CLI-1: LOCTT_ROOT is accepted as a fallback below an explicit flag.
+    const otherRoot = await mkdtemp(join(tmpdir(), "loctt-cli-env-"));
+    const prevEnv = process.env["LOCTT_ROOT"];
+    try {
+      await initLoctt(otherRoot);
+      process.env["LOCTT_ROOT"] = otherRoot;
+
+      process.argv = ["node", "loctt", "create", "fromenv"];
+      await main();
+      expect(process.exitCode).toBeUndefined();
+
+      process.exitCode = undefined;
+      consoleSpy.mockClear();
+      process.argv = ["node", "loctt", "list"];
+      await main();
+      const envLog = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(envLog).toContain("fromenv");
+
+      // An explicit flag overrides the env var (flag > env precedence).
+      process.exitCode = undefined;
+      consoleSpy.mockClear();
+      process.argv = ["node", "loctt", "--root", root, "list"];
+      await main();
+      const flagLog = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(flagLog).not.toContain("fromenv");
+    } finally {
+      if (prevEnv === undefined) delete process.env["LOCTT_ROOT"];
+      else process.env["LOCTT_ROOT"] = prevEnv;
+      await rm(otherRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("--root and --cwd given together with different values errors clearly", async () => {
+    const otherRoot = await mkdtemp(join(tmpdir(), "loctt-cli-both-"));
+    const errSpy = vi.mocked(console.error);
+    try {
+      await initLoctt(otherRoot);
+      errSpy.mockClear();
+      process.argv = ["node", "loctt", "--root", root, "--cwd", otherRoot, "list"];
+      await main();
+      expect(process.exitCode).toBe(2);
+      const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(stderr).toMatch(/--root.*--cwd|--cwd.*--root/);
+    } finally {
+      await rm(otherRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("--root and --cwd given together with the SAME value is accepted", async () => {
+    // Consistent duplicates are not an error — only a conflict is.
+    const otherRoot = await mkdtemp(join(tmpdir(), "loctt-cli-same-"));
+    try {
+      await initLoctt(otherRoot);
+      process.exitCode = undefined;
+      consoleSpy.mockClear();
+      process.argv = ["node", "loctt", "--root", otherRoot, "--cwd", otherRoot, "list"];
+      await main();
+      expect(process.exitCode).toBeUndefined();
+    } finally {
+      await rm(otherRoot, { recursive: true, force: true });
+    }
+  });
+
   it("usage error from a converted command exits 2 and prints the Usage hint", async () => {
     // `project create` without --prefix is a usage error. Confirms
     // runCommand → UsageError pipeline maps to EXIT.USAGE AND that

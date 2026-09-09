@@ -10443,3 +10443,79 @@ exposure, ideally behind a proxy or a per-tracker opt-in).
 `BodyRenderedView.tsx` `attachmentEmbed`, drop the `isLocal` gate and
 render any `isSafeHref(src)` as the `<img>` (as it briefly did), removing
 the `body-image-link` branch and its test.
+
+### A181 · `--root` + `--cwd` given together with different values is a usage error, not a silent winner (B5)
+
+**Ticket:** B5 (CLI-1) · **Date:** 2026-09-09 · **Commit:** (this one)
+
+**The situation.** K34 (Ken, § 9) makes `--root` canonical and keeps
+`--cwd` as an alias. Ken's ruling did not spell out what happens if a
+caller passes *both* with different directories.
+
+**Decided (agent level).** A conflict is a **usage error (exit 2)**, not a
+defined-winner silent pick. Rationale: the two flags are aliases for one
+thing, so passing them with different values is almost certainly a mistake,
+and picking one silently would run a mutating command against the wrong
+tracker — a data hazard (the same reasoning as P1). Consistent duplicates
+(`--root X --cwd X`) are accepted, since there is no ambiguity. Precedence
+otherwise: explicit flag > `LOCTT_ROOT` > `process.cwd()`.
+
+**Why not "--root wins".** Letting the canonical name win reads clean but
+is a silent pick when the values disagree — exactly the case where the user
+does not know which tracker they hit. Erroring costs one retry; a silent
+wrong-tracker write costs data.
+
+**To revert (make `--root` win over `--cwd`).** In `resolveRoot`
+(`apps/cli/src/index.ts`), remove the `r !== c` throw and return `r`
+whenever `rootFlag !== undefined`; delete the "given together with
+different values errors" test in `cli.test.ts`.
+
+### K34 · `--root` is the canonical tracker-root flag; `--cwd` is a kept alias; `LOCTT_ROOT` is accepted (CLI-1)
+
+**The situation.** The same "which tracker" concept had two different
+names across surfaces and was undocumented: the CLI global was `--cwd`
+(no `--root`, no `LOCTT_ROOT`), while the web server used `--root` /
+`LOCTT_ROOT` — a different name for the same thing. `loctt ui --root`
+and `loctt mcp --root` failed with "unknown option", and neither flag
+was documented in `docs/user/`.
+
+**Ruling (Ken, this session — "--root sounds better").** `--root` is the
+canonical flag name for pointing a surface at a tracker directory.
+`--cwd` is **kept as a working alias — not removed** — so existing
+scripts do not break. The `LOCTT_ROOT` env var is accepted as a
+fallback. One vocabulary across CLI, `loctt ui`, `loctt mcp`, and the web
+server.
+
+**This is Ken's, not an agent's — not revertible by an agent.** (The
+batches doc said B0 was to record it; it was not recorded until now, so
+this entry lands in B5 with the build.)
+
+**Built (B5):**
+- CLI global (`apps/cli/src/index.ts`): `--root <dir>` canonical plus the
+  `--cwd` alias, both stripped from argv before the subcommand (via
+  `stripRootArgs` in `runtime/args.ts`) so `loctt ui` / `loctt mcp` accept
+  them directly instead of rejecting them. `LOCTT_ROOT` is read as a
+  fallback. MCP inherits this root through `loctt mcp` (it has no
+  standalone entrypoint), so `loctt mcp --root <dir>` now targets that
+  tracker.
+- Web server (`apps/web/src/server/main.ts`): `--cwd` added as an alias of
+  the existing `--root` / `LOCTT_ROOT` so the names match across surfaces.
+- **Precedence:** an explicit flag > `LOCTT_ROOT` > `process.cwd()`.
+  Relative paths resolve against the cwd.
+- **Both flags given:** they must resolve to the **same** directory; a
+  genuine conflict is a **usage error (exit 2)**, not a silent pick-one —
+  operating on the wrong tracker is a data hazard, so an ambiguous target
+  fails loudly. Consistent duplicates (`--root X --cwd X`) are accepted.
+
+**Minor call (agent, revertible — recorded in § 8 intent):** the
+both-given-conflict → *error* rather than defining a winner. An
+alternative (let `--root` win over `--cwd`) would be a silent pick; given
+the data hazard, erroring is the safer default. **To revert to "--root
+wins":** in `resolveRoot` (`apps/cli/src/index.ts`), drop the
+`r !== c` throw and return `r` whenever `rootFlag` is present. (See § 8
+companion note.)
+
+**Docs:** `docs/user/cli/reference.md` gains a "Global options" section and
+the `loctt mcp` entry documents `--root`; `docs/user/mcp/reference.md`
+Agent Guidelines explain how the server resolves its root; `usage.ts`
+help now shows `--root` canonical with `--cwd` as alias.

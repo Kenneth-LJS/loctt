@@ -8,12 +8,18 @@
  */
 
 export function usage(): void {
-  console.log(`Usage: loctt [--cwd <dir>] <command> [options]
+  console.log(`Usage: loctt [--root <dir>] <command> [options]
 
 Global options:
-  --cwd <dir>                      Operate against the tracker rooted
+  --root <dir>                     Operate against the tracker rooted
                                    at <dir> instead of the current
-                                   working directory.
+                                   working directory. Canonical name;
+                                   also accepted on 'ui' and 'mcp'.
+  --cwd <dir>                      Back-compat alias of --root. If both
+                                   are given they must point at the same
+                                   directory.
+                                   (env LOCTT_ROOT is used when no flag
+                                   is given; an explicit flag wins.)
 
 Commands:
   init [--repair] [--prefix <prefix>] [--project-label <label>] [--no-docs]
