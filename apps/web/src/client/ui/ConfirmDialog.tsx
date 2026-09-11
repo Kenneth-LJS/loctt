@@ -63,7 +63,7 @@ export function ConfirmDialog({
     <Dialog
       title={title}
       onClose={onCancel}
-      testId={testId}
+      {...(testId !== undefined ? { testId } : {})}
       actions={
         <DialogActions>
           <Button
@@ -163,8 +163,8 @@ export function TypedConfirmDialog({
       confirmDisabled={!matches}
       onConfirm={onConfirm}
       onCancel={onCancel}
-      testId={testId}
-      confirmTestId={confirmTestId}
+      {...(testId !== undefined ? { testId } : {})}
+      {...(confirmTestId !== undefined ? { confirmTestId } : {})}
     />
   );
 }
