@@ -11111,3 +11111,17 @@ real bug:** the first migration pass failed to add the import to any file
 (a buggy already-imported check) — 89 tests went red with "LoadingState
 is not defined", fixed before commit. **To revert:** the panels' prior
 inline spellings are in git. Web-only.
+
+### A-FOCUSRING · Remove ad-hoc accent focus-ring overrides (§A4)
+
+**Built (agent-level).** Four inputs overrode the global token focus ring
+(`:focus-visible { outline: 2px solid var(--text-primary) }`) with an
+accent-colored one (`focus:outline-accent`) — the low-contrast accent-on-
+accent risk the CSS comment warns about (§A4). Removed the accent outline
+from Header search, SaveViewDialog, AdvancedQueryEditor (they now inherit
+the global token ring); SkipLink keeps its own positioned focus styles but
+its ring color is now the token, not accent. `focus:border-accent` (a
+border-color cue on the input, distinct from the ring) is kept.
+
+Verified: A11Y-16 focus-ring visibility e2e (both themes) green; colorless-
+utility guard green. **To revert:** re-add `focus:outline-accent`. Web-only.

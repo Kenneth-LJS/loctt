@@ -245,7 +245,7 @@ function HeaderSearch() {
           if (e.key === "Enter") { e.preventDefault(); goToList(); }
           else if (e.key === "Escape") { setOpen(false); }
         }}
-        className="h-8 w-full rounded-md border border-border-default bg-bg-surface px-3 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-2 focus:outline-accent"
+        className="h-8 w-full rounded-md border border-border-default bg-bg-surface px-3 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-accent"
       />
 
       {showDropdown ? (
