@@ -68,13 +68,6 @@ interface BrokenPage<T> extends Page<T> {
   readonly broken?: readonly BrokenEntry[];
 }
 
-export interface PrefixRenameSentinel {
-  readonly project_id: string;
-  readonly from: string;
-  readonly to: string;
-  readonly started_at: string;
-}
-
 export interface ProjectsPage extends Page<ProjectDef> {
   /** Workspace default project id, or null when none is set. */
   readonly default: string | null;
@@ -93,12 +86,6 @@ export interface ProjectsPage extends Page<ProjectDef> {
    * opened, and comes from the same source as the delete guard.
    */
   readonly task_counts?: Readonly<Record<string, number>>;
-  /**
-   * Present only when a prefix rename was interrupted server-side
-   * (PRU-46). The panel must report the tracker as mid-rename rather
-   * than healthy.
-   */
-  readonly pending_prefix_rename?: PrefixRenameSentinel;
   /**
    * Present only when the workspace `default:` names a project that no
    * longer exists (NEW-20 / K23). A stale pointer is tolerated drift,

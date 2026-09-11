@@ -10865,6 +10865,19 @@ recovery is ever moved out of the pre-handler path, the banner's state
 becomes reachable and must come back. Case + test that the mid-rename
 state is unreachable.
 
+**Completed.** The client banner was already gone; this pass removed the
+rest of the dead feature: `handleListProjects` no longer reads
+`readPrefixRenameState` or emits `pending_prefix_rename` (the recovery
+middleware finishes or 500s before the handler runs, so the read could
+never be non-undefined), and the now-orphan `PrefixRenameState` import,
+`PrefixRenameSentinel` client type, and `pending_prefix_rename` response
+field are deleted. The unreachability test already existed
+(`server.test.ts` "interrupted prefix rename API": plant a sentinel, one
+`GET /api/projects` heals it and returns no pending field, rename lands);
+its title/comment were updated to say the field is gone, not merely
+unpopulated. PRU-46's case was already reworded (K16) and needed no
+change. All 61 server tests + ProjectsPanel/api-hook tests green.
+
 ### A-PRESCAN-2 · Read-only degraded entries (ERR-10/LST-51/TML-48) — alert in place, where the user is
 
 **Decision (agent-level).** A degraded-but-loadable config entry on a
