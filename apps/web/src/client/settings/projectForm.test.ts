@@ -4,10 +4,10 @@ import { describe, expect, it } from "vitest";
 import { slugify, validateNewProject } from "./projectForm.ts";
 
 const web: ProjectDef = {
-  id: "01WEB", name: "Web", prefix: "WEB-", slug: "web",
+  id: "01WEB", name: "Web", prefix: "WEB", slug: "web",
 };
 const backend: ProjectDef = {
-  id: "01BE", name: "Backend", prefix: "BACKEND-", slug: "backend",
+  id: "01BE", name: "Backend", prefix: "BACKEND", slug: "backend",
 };
 const existing = [web, backend];
 
@@ -28,11 +28,11 @@ describe("slugify", () => {
 describe("validateNewProject", () => {
   it("rejects a prefix already held, naming the project that holds it (PRU-19)", () => {
     const problems = validateNewProject(
-      { name: "New", prefix: "WEB-", slug: "new" },
+      { name: "New", prefix: "WEB", slug: "new" },
       existing,
     );
     expect(problems.prefix).toContain("Web");
-    expect(problems.prefix).toContain("WEB-");
+    expect(problems.prefix).toContain("WEB");
     // Discriminate the exact-collision branch from the case-variant
     // one: a case-insensitive match also fires on an identical string,
     // so asserting only the project name passes either way.
@@ -42,7 +42,7 @@ describe("validateNewProject", () => {
 
   it("clears the prefix problem once the value is free (PRU-19)", () => {
     const problems = validateNewProject(
-      { name: "New", prefix: "WEBAPP-", slug: "new" },
+      { name: "New", prefix: "WEBAPP", slug: "new" },
       existing,
     );
     expect(problems.prefix).toBeUndefined();
@@ -50,7 +50,7 @@ describe("validateNewProject", () => {
 
   it("flags a prefix differing only in case (PRU-19)", () => {
     const problems = validateNewProject(
-      { name: "New", prefix: "web-", slug: "new" },
+      { name: "New", prefix: "web", slug: "new" },
       existing,
     );
     expect(problems.prefix).toContain("case");
@@ -69,7 +69,7 @@ describe("validateNewProject", () => {
   // @verifies PRU-35
   it("PRU-35: blames the slug, not the prefix, and names the project holding it", () => {
     const problems = validateNewProject(
-      { name: "Another", prefix: "FRESH-", slug: "web" },
+      { name: "Another", prefix: "FRESH", slug: "web" },
       existing,
     );
     // The key that conflicts...
@@ -83,26 +83,30 @@ describe("validateNewProject", () => {
 
   it("states the slug rule and suggests a fix for a malformed slug (PRU-36)", () => {
     const problems = validateNewProject(
-      { name: "My Project", prefix: "MP-", slug: "My Project!" },
+      { name: "My Project", prefix: "MP", slug: "My Project!" },
       existing,
     );
     expect(problems.slug).toContain("lowercase");
     expect(problems.slug).toContain("my-project");
   });
 
-  it("explains a separator-less prefix using an existing prefix as the example (PRU-36)", () => {
+  it("rejects a lowercase prefix and states the uppercase-letters rule (PRU-36 / K88)", () => {
     const problems = validateNewProject(
-      { name: "Site", prefix: "web", slug: "site" },
+      // "site" is lowercase but not a case-variant of any existing prefix,
+      // so it reaches the format check rather than the case-clash branch.
+      { name: "Site", prefix: "site", slug: "site" },
       existing,
     );
-    // "web" has no trailing separator.
-    expect(problems.prefix).toContain("WEB-");
-    expect(problems.prefix).toContain("web-");
+    // K88: a prefix is 1–10 UPPERCASE letters; "site" is rejected, and the
+    // message states the rule (and shows the auto-dash example) rather
+    // than suggesting the user type a trailing separator.
+    expect(problems.prefix).toContain("uppercase letters");
+    expect(problems.prefix).toContain("WEB-1");
   });
 
   it("accepts a fully valid draft with no problems", () => {
     const problems = validateNewProject(
-      { name: "Docs", prefix: "DOCS-", slug: "docs" },
+      { name: "Docs", prefix: "DOCS", slug: "docs" },
       existing,
     );
     expect(problems).toEqual({});

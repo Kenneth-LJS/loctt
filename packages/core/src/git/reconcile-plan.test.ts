@@ -26,7 +26,7 @@ function task(id: string, key: string, fm: Partial<Task["frontmatter"]>): Task {
 }
 
 const config: WorkflowConfig = {
-  key: { prefix: "WEB-" },
+  key: { prefix: "WEB" },
   statuses: [
     { key: "todo", label: "To Do", category: "pending", default: true },
     { key: "in_progress", label: "In Progress", category: "active" },

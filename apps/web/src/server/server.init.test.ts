@@ -68,7 +68,7 @@ describe("init and tracker state over HTTP", () => {
   // @verifies ONB-16
   it("initializes into an empty .loctt with the caller's own prefix and name", async () => {
     const { root, base } = await serve(async r => { await mkdir(join(r, ".loctt")); });
-    const res = await post(base, { prefix: "WEB-", projectLabel: "Website", docs: false });
+    const res = await post(base, { prefix: "WEB", projectLabel: "Website", docs: false });
     expect(res.status).toBe(201);
 
     // The far end. Core refuses an existing `.loctt/` unless repairing,
@@ -78,9 +78,9 @@ describe("init and tracker state over HTTP", () => {
     await expect(stat(join(locttDir, "state.yaml"))).resolves.toBeTruthy();
     await expect(stat(join(locttDir, ".schema-version"))).resolves.toBeTruthy();
     const projects = await readFile(join(locttDir, "config", "projects.yaml"), "utf8");
-    expect(projects).toContain("WEB-");
+    expect(projects).toContain("WEB");
     expect(projects).toContain("Website");
-    expect(await readFile(join(locttDir, "state.yaml"), "utf8")).toContain("WEB-");
+    expect(await readFile(join(locttDir, "state.yaml"), "utf8")).toContain("WEB");
   });
 
   /**
@@ -102,7 +102,7 @@ describe("init and tracker state over HTTP", () => {
 
     // And init refuses rather than repairing over surviving data.
     const before = await readFile(join(root, ".loctt", "state.yaml"), "utf8");
-    const res = await post(base, { prefix: "NEW-", projectLabel: "Clobber" });
+    const res = await post(base, { prefix: "NEW", projectLabel: "Clobber" });
     expect(res.status).toBe(400);
     const after = await readFile(join(root, ".loctt", "state.yaml"), "utf8");
     expect(after, "init rewrote state.yaml on a damaged tracker").toBe(before);
@@ -133,7 +133,7 @@ describe("init and tracker state over HTTP", () => {
     expect(info.status).toBe(409);
 
     // And init does not run over it.
-    const res = await post(base, { prefix: "NEW-", projectLabel: "Clobber" });
+    const res = await post(base, { prefix: "NEW", projectLabel: "Clobber" });
     expect(res.status).toBe(400);
     // The survivor is untouched, and no state.yaml was minted beside it.
     const survivor = await readFile(
@@ -145,14 +145,14 @@ describe("init and tracker state over HTTP", () => {
 
   // @verifies ONB-17
   it("refuses a second init against a healthy tracker without duplicating the project", async () => {
-    const { root, base } = await serve(async r => { await initLoctt(r, { prefix: "WEB-" }); });
-    const res = await post(base, { prefix: "OTHER-", projectLabel: "Second" });
+    const { root, base } = await serve(async r => { await initLoctt(r, { prefix: "WEB" }); });
+    const res = await post(base, { prefix: "OTHER", projectLabel: "Second" });
     expect(res.status).toBe(400);
     const projects = await readFile(join(root, ".loctt", "config", "projects.yaml"), "utf8");
     // One project, one counter — the losing tab of a concurrent init
     // must not double either.
     expect(projects.match(/^\s*-\s+id:/gm)?.length ?? 0).toBe(1);
-    expect(projects).not.toContain("OTHER-");
+    expect(projects).not.toContain("OTHER");
   });
 
   // @verifies ONB-5

@@ -45,7 +45,7 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
   const queryClient = useQueryClient();
 
   const [name, setName] = useState("Tasks");
-  const [prefix, setPrefix] = useState("T-");
+  const [prefix, setPrefix] = useState("T"); // K88: bare; "-" auto-added at render
   // ONB-3: typing a name must not overwrite a hand-edited prefix. The
   // flag records that the user has taken the field over; nothing
   // auto-derives the prefix from the name at all, which is the

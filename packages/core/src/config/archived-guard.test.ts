@@ -160,7 +160,7 @@ describe("archived-reference guard: createTask", () => {
   });
 
   it("rejects createTask with an archived project", async () => {
-    const alt = await createProject(locttDir, { name: "Alt", prefix: "A-" });
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "A" });
     await archiveProject(locttDir, alt.id);
     const archivedGuard = await loadArchivedGuardConfigs(locttDir);
 

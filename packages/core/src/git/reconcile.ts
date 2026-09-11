@@ -98,7 +98,8 @@ export function rekeyCollisions(
         continue;
       }
 
-      const newKey = `${projectEntry.prefix}${projectEntry.next_number}`;
+      // K88: prefix is stored bare; the "-" is inserted at render.
+      const newKey = `${projectEntry.prefix}-${projectEntry.next_number}`;
       state.keys[projectId] = {
         prefix: projectEntry.prefix,
         next_number: projectEntry.next_number + 1,

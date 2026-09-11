@@ -412,7 +412,7 @@ describe("parent alias reads the configured hierarchy kind", () => {
   }
 
   const wfWith = (key: string, graph: "tree" | "none") => ({
-    key: { prefix: "T-" },
+    key: { prefix: "T" },
     statuses: [], priorities: [], task_types: [],
     relationships: [{ key, label: key, inverse: `${key}_of`, inverse_label: "x", graph }],
     custom_fields: [],
@@ -437,7 +437,7 @@ describe("parent alias reads the configured hierarchy kind", () => {
 describe("text ~ honours `searchable`", () => {
   function wf(searchable: boolean): NonNullable<EvalContext["workflow"]> {
     return {
-      key: { prefix: "T-" },
+      key: { prefix: "T" },
       statuses: [], priorities: [], task_types: [], relationships: [],
       custom_fields: [
         { key: "notes", label: "Notes", type: "string", multi: false, searchable },

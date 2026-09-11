@@ -330,8 +330,8 @@ describe("deriveKeyState", () => {
     ({ keys }) as unknown as import("@loctt/contracts").LocttState;
 
   it("derives the counter from the keys that exist, not by arithmetic", () => {
-    const local = st({ p1: { prefix: "T-", next_number: 6 } });
-    const incoming = st({ p1: { prefix: "T-", next_number: 9 } });
+    const local = st({ p1: { prefix: "T", next_number: 6 } });
+    const incoming = st({ p1: { prefix: "T", next_number: 9 } });
     const tasks = [1, 2, 3].map(n => task({ key: `T-${String(n)}`, project: "p1" }));
 
     // max(6, 9) = 9 would reserve numbers no task uses; summing needs a
@@ -342,8 +342,8 @@ describe("deriveKeyState", () => {
   });
 
   it("never issues a number a task already holds", () => {
-    const local = st({ p1: { prefix: "T-", next_number: 2 } });
-    const incoming = st({ p1: { prefix: "T-", next_number: 2 } });
+    const local = st({ p1: { prefix: "T", next_number: 2 } });
+    const incoming = st({ p1: { prefix: "T", next_number: 2 } });
     const tasks = [1, 2, 3, 4].map(n => task({ key: `T-${String(n)}`, project: "p1" }));
 
     // Both counters say 2, but T-4 exists: honouring the counters would
@@ -352,8 +352,8 @@ describe("deriveKeyState", () => {
   });
 
   it("keeps projects that exist on only one side", () => {
-    const local = st({ p1: { prefix: "T-", next_number: 2 } });
-    const incoming = st({ p2: { prefix: "API-", next_number: 4 } });
+    const local = st({ p1: { prefix: "T", next_number: 2 } });
+    const incoming = st({ p2: { prefix: "API", next_number: 4 } });
 
     // A project created on one side must not vanish in the merge.
     const out = deriveKeyState(local, incoming, []);
@@ -361,9 +361,9 @@ describe("deriveKeyState", () => {
   });
 
   it("takes the incoming prefix, since a prefix change is deliberate", () => {
-    const local = st({ p1: { prefix: "T-", next_number: 2 } });
-    const incoming = st({ p1: { prefix: "WEB-", next_number: 2 } });
-    expect(deriveKeyState(local, incoming, []).keys["p1"]?.prefix).toBe("WEB-");
+    const local = st({ p1: { prefix: "T", next_number: 2 } });
+    const incoming = st({ p1: { prefix: "WEB", next_number: 2 } });
+    expect(deriveKeyState(local, incoming, []).keys["p1"]?.prefix).toBe("WEB");
   });
 });
 
@@ -385,12 +385,12 @@ describe("assignProvisionalPrefixes — ordering", () => {
     const later = "01JZ9999999999999999999999";
 
     const out = assignProvisionalPrefixes([
-      { id: later, prefix: "T-" },
-      { id: earlier, prefix: "T-" },
+      { id: later, prefix: "T" },
+      { id: earlier, prefix: "T" },
     ]);
 
-    expect(out.get(earlier)).toBe("T-");
-    expect(out.get(later)).toBe("T2-");
+    expect(out.get(earlier)).toBe("T");
+    expect(out.get(later)).toBe("T2");
   });
 
   it("ignores a `created_at` that disagrees with the id order", () => {
@@ -399,23 +399,23 @@ describe("assignProvisionalPrefixes — ordering", () => {
 
     const out = assignProvisionalPrefixes([
       // Cast: the field is not on the parameter type, which is the fix.
-      { id: b, prefix: "T-", created_at: "2000-01-01T00:00:00Z" } as unknown as { id: string; prefix: string },
-      { id: a, prefix: "T-", created_at: "2099-01-01T00:00:00Z" } as unknown as { id: string; prefix: string },
+      { id: b, prefix: "T", created_at: "2000-01-01T00:00:00Z" } as unknown as { id: string; prefix: string },
+      { id: a, prefix: "T", created_at: "2099-01-01T00:00:00Z" } as unknown as { id: string; prefix: string },
     ]);
 
-    expect(out.get(a)).toBe("T-");
-    expect(out.get(b)).toBe("T2-");
+    expect(out.get(a)).toBe("T");
+    expect(out.get(b)).toBe("T2");
   });
 });
 
 describe("assignProvisionalPrefixes", () => {
   it("leaves distinct prefixes alone", () => {
     const out = assignProvisionalPrefixes([
-      { id: "a", prefix: "T-" },
-      { id: "b", prefix: "API-" },
+      { id: "a", prefix: "T" },
+      { id: "b", prefix: "API" },
     ]);
-    expect(out.get("a")).toBe("T-");
-    expect(out.get("b")).toBe("API-");
+    expect(out.get("a")).toBe("T");
+    expect(out.get("b")).toBe("API");
   });
 
   it("gives the later project a provisional prefix when two collide", () => {
@@ -429,17 +429,17 @@ describe("assignProvisionalPrefixes", () => {
     const older = "01JZ0000000000000000000000";
     const newer = "01JZ9999999999999999999999";
     const out = assignProvisionalPrefixes([
-      { id: older, prefix: "T-" },
-      { id: newer, prefix: "T-" },
+      { id: older, prefix: "T" },
+      { id: newer, prefix: "T" },
     ]);
-    expect(out.get(older)).toBe("T-");
-    expect(out.get(newer)).toBe("T2-");
+    expect(out.get(older)).toBe("T");
+    expect(out.get(newer)).toBe("T2");
   });
 
   it("is order-independent, so both clones agree", () => {
     const projects = [
-      { id: "01JZ9999999999999999999999", prefix: "T-" },
-      { id: "01JZ0000000000000000000000", prefix: "T-" },
+      { id: "01JZ9999999999999999999999", prefix: "T" },
+      { id: "01JZ0000000000000000000000", prefix: "T" },
     ];
     // Same inputs in the other order must give the same answer, or the
     // two clones diverge permanently.
@@ -451,12 +451,12 @@ describe("assignProvisionalPrefixes", () => {
 
   it("skips a provisional prefix that is itself taken", () => {
     const out = assignProvisionalPrefixes([
-      { id: "a", prefix: "T-" },
-      { id: "b", prefix: "T2-" },
-      { id: "c", prefix: "T-" },
+      { id: "a", prefix: "T" },
+      { id: "b", prefix: "T2" },
+      { id: "c", prefix: "T" },
     ]);
     // `c` cannot take T2-, which `b` already holds.
-    expect(out.get("c")).toBe("T3-");
+    expect(out.get("c")).toBe("T3");
   });
 });
 

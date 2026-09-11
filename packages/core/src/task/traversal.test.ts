@@ -9,7 +9,7 @@ import { writeTask } from "./io.js";
 import { buildTree, findStructuralCycles, getChildren, getParents,getRelatedTasks, validateRelationships } from "./traversal.js";
 
 const config: WorkflowConfig = {
-  key: { prefix: "T-" },
+  key: { prefix: "T" },
   statuses: [{ key: "open", label: "Open", category: "pending" }],
   priorities: [],
   task_types: [{ key: "task", label: "Task" }],

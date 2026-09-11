@@ -6,7 +6,7 @@ import { tokenize } from "./tokenizer.js";
 import { QueryValidationError, validateQuery } from "./validate.js";
 
 const workflow: WorkflowConfig = {
-  key: { prefix: "T-" },
+  key: { prefix: "T" },
   statuses: [
     { key: "backlog", label: "Backlog", category: "pending" },
     { key: "in_progress", label: "In progress", category: "active" },

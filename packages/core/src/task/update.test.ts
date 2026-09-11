@@ -124,7 +124,7 @@ describe("setField / unsetField", () => {
 
   describe("completed_date auto-management", () => {
     const workflowConfig = {
-      key: { prefix: "T-" },
+      key: { prefix: "T" },
       statuses: [
         { key: "not_started", label: "Not started", category: "pending" as const },
         { key: "in_progress", label: "In progress", category: "active" as const },
@@ -426,7 +426,7 @@ describe("setField / unsetField", () => {
     // `in_progress` is deliberately absent: the seeded task references
     // it, so it stands for a status deleted from workflow.yaml.
     const driftedConfig = {
-      key: { prefix: "T-" },
+      key: { prefix: "T" },
       statuses: [
         { key: "backlog", label: "Backlog", category: "pending" as const },
         { key: "done", label: "Done", category: "completed" as const },

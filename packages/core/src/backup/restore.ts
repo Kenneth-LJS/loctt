@@ -526,8 +526,8 @@ export async function restoreBackup(
           incomingState.keys[proj.id]?.next_number ?? 1,
         );
         let n = counter;
-        let candidate = `${proj.prefix}${String(n)}`;
-        while (usedKeys.has(candidate)) { n += 1; candidate = `${proj.prefix}${String(n)}`; }
+        let candidate = `${proj.prefix}-${String(n)}`;
+        while (usedKeys.has(candidate)) { n += 1; candidate = `${proj.prefix}-${String(n)}`; }
         report.reallocatedKeys.push({ from: fm.key, to: candidate });
         task = {
           ...task,
@@ -547,10 +547,10 @@ export async function restoreBackup(
           // `T2-` would otherwise reissue the same key, which is the
           // collision the prefix reassignment exists to prevent.
           let n = Number(suffix);
-          let candidate = `${proj.prefix}${String(n)}`;
+          let candidate = `${proj.prefix}-${String(n)}`;
           while (usedKeys.has(candidate)) {
             n += 1;
-            candidate = `${proj.prefix}${String(n)}`;
+            candidate = `${proj.prefix}-${String(n)}`;
           }
           if (candidate !== fm.key) {
             report.reallocatedKeys.push({ from: fm.key, to: candidate });

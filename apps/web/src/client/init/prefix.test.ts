@@ -3,43 +3,42 @@ import { describe, expect, it } from "vitest";
 import { firstKeyPreview, PREFIX_RULE, prefixProblem } from "./prefix.ts";
 
 /**
- * ONB-19's rule, as a unit: the browser spec asserts the message
- * reaches the user, this asserts *which* prefixes it fires on.
+ * K88/A80's prefix rule, as a unit: a prefix is 1–10 uppercase letters,
+ * the `-` separator is auto-added at render, and anything else is
+ * rejected with the rule stated (not "invalid input"). This supersedes
+ * the pre-K88 ONB-19 wording that accepted dashes/lowercase/unicode
+ * (matching the old permissive CLI); the CLI is now strict too.
  */
 describe("prefixProblem", () => {
   // @verifies ONB-19
-  it("rejects characters that would break the task's own URL, naming the character", () => {
-    // A slash is the load-bearing one: `--prefix web/x` allocates
-    // `web/x1`, and the app routes tasks at `/tasks/$key`.
-    expect(prefixProblem("web/x")).toMatch(/cannot contain/i);
-    expect(prefixProblem("web/x")).toContain("/");
-    // A space is named in words rather than shown as an invisible
-    // character between quotes.
-    expect(prefixProblem("a b")).toContain("a space");
-    expect(prefixProblem("a?b")).toMatch(/cannot contain/i);
-    expect(prefixProblem("a#b")).toMatch(/cannot contain/i);
+  it("rejects a prefix that isn't 1–10 uppercase letters, stating the rule", () => {
+    // The load-bearing rejections: a slash (would break `/tasks/$key`),
+    // a space, and — new under K88 — a trailing dash (the separator is
+    // added automatically, so the user must not type it), lowercase, and
+    // digits.
+    for (const bad of ["web/x", "a b", "a?b", "WEB-", "web", "T2", "ABCDEFGHIJK"]) {
+      expect(prefixProblem(bad), bad).not.toBeNull();
+    }
   });
 
   // @verifies ONB-19
   it("states the rule rather than 'invalid input'", () => {
     const msg = prefixProblem("web/x") ?? "";
     expect(msg).not.toMatch(/invalid input/i);
-    // The allowed set and the trailing-dash convention are both said.
     expect(msg).toContain(PREFIX_RULE);
-    expect(PREFIX_RULE).toMatch(/trailing - is conventional/i);
+    // The rule names the uppercase-letters constraint and the auto-dash.
+    expect(PREFIX_RULE).toMatch(/uppercase letters/i);
+    expect(PREFIX_RULE).toMatch(/added automatically/i);
   });
 
   // @verifies ONB-19
-  it("accepts what the CLI accepts, including forms a stricter rule would reject", () => {
-    // Measured against the built CLI: `loctt init --prefix` takes all
-    // of these. Rejecting them here would break ONB-19's "a value the
-    // CLI would take is not rejected here".
-    expect(prefixProblem("T-")).toBeNull();
-    expect(prefixProblem("WEB-")).toBeNull();
-    expect(prefixProblem("NODASH")).toBeNull();
-    expect(prefixProblem("lowercase-")).toBeNull();
-    expect(prefixProblem("Ünicode-")).toBeNull();
-    expect(prefixProblem("a.b_c-")).toBeNull();
+  it("accepts a bare uppercase-letters prefix (K88)", () => {
+    // The `-` is NOT typed — it is inserted at render. So the accepted
+    // forms are bare letters only.
+    expect(prefixProblem("T")).toBeNull();
+    expect(prefixProblem("WEB")).toBeNull();
+    expect(prefixProblem("PROJ")).toBeNull();
+    expect(prefixProblem("ABCDEFGHIJ")).toBeNull(); // exactly 10
   });
 
   // @verifies ONB-20
@@ -51,11 +50,10 @@ describe("prefixProblem", () => {
 
 describe("firstKeyPreview", () => {
   // @verifies ONB-3
-  it("previews the key init will actually allocate first", () => {
-    // `defaultStateYaml` writes `next_number: 1`, so the first key is
-    // `<prefix>1`. A preview of `<prefix>0` would be a promise the
-    // tracker does not keep.
-    expect(firstKeyPreview("T-")).toBe("T-1");
-    expect(firstKeyPreview("WEB-")).toBe("WEB-1");
+  it("previews the key init will actually allocate first, with the auto-dash", () => {
+    // `defaultStateYaml` writes `next_number: 1`, and the `-` is inserted
+    // at render (K88), so a bare prefix `WEB` previews as `WEB-1`.
+    expect(firstKeyPreview("T")).toBe("T-1");
+    expect(firstKeyPreview("WEB")).toBe("WEB-1");
   });
 });

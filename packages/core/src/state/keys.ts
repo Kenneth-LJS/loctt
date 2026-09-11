@@ -21,7 +21,9 @@ export function allocateKey(state: LocttState, entityType: string): string {
     );
   }
 
-  const key = `${entry.prefix}${entry.next_number}`;
+  // K88: the prefix is stored bare (e.g. `T`); the `-` separator is
+  // inserted here at render, so a key is `T-1`, `WEB-42`.
+  const key = `${entry.prefix}-${entry.next_number}`;
 
   // Mutate in place — state is mutable during operations.
   state.keys[entityType] = {

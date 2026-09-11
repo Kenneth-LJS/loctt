@@ -527,7 +527,7 @@ describe("state-lock contention", () => {
       res = await fetch(`${base}/api/projects`, {
         method: "POST",
         headers: csrf,
-        body: JSON.stringify({ name: "Docs", prefix: "DOCS-" }),
+        body: JSON.stringify({ name: "Docs", prefix: "DOCS" }),
       });
     });
 

@@ -59,7 +59,7 @@ describe("setProjectPrefix", () => {
     const project = await resolveProjectIdForUser(locttDir);
     await seed(3, project);
 
-    const result = await setProjectPrefix(locttDir, project, "WEB-");
+    const result = await setProjectPrefix(locttDir, project, "WEB");
 
     expect(result.renamed).toBe(3);
     const tasks = await loadAllTasks(locttDir);
@@ -73,7 +73,7 @@ describe("setProjectPrefix", () => {
     const project = await resolveProjectIdForUser(locttDir);
     await seed(1, project);
 
-    await setProjectPrefix(locttDir, project, "WEB-");
+    await setProjectPrefix(locttDir, project, "WEB");
 
     const byOldKey = await lookupByKey(locttDir, "T-1");
     expect(byOldKey.frontmatter.key).toBe("WEB-1");
@@ -84,10 +84,10 @@ describe("setProjectPrefix", () => {
     const project = await resolveProjectIdForUser(locttDir);
     await seed(3, project);
 
-    await setProjectPrefix(locttDir, project, "WEB-");
+    await setProjectPrefix(locttDir, project, "WEB");
 
     const state = await loadState(locttDir);
-    expect(state.keys[project]?.prefix).toBe("WEB-");
+    expect(state.keys[project]?.prefix).toBe("WEB");
     // Three keys handed out, so the next is 4 — resetting the counter
     // would reissue WEB-1 over a task that already exists.
     expect(state.keys[project]?.next_number).toBe(4);
@@ -95,19 +95,19 @@ describe("setProjectPrefix", () => {
 
   it("updates the declared prefix in projects.yaml", async () => {
     const project = await resolveProjectIdForUser(locttDir);
-    await setProjectPrefix(locttDir, project, "WEB-");
+    await setProjectPrefix(locttDir, project, "WEB");
 
     const config = await loadProjectsConfig(locttDir);
-    expect(config.projects.find(p => p.id === project)?.prefix).toBe("WEB-");
+    expect(config.projects.find(p => p.id === project)?.prefix).toBe("WEB");
   });
 
   it("leaves other projects' tasks untouched", async () => {
     const first = await resolveProjectIdForUser(locttDir);
-    const other = await createProject(locttDir, { name: "API", prefix: "API-" });
+    const other = await createProject(locttDir, { name: "API", prefix: "API" });
     await seed(1, first);
     await seed(1, other.id);
 
-    await setProjectPrefix(locttDir, first, "WEB-");
+    await setProjectPrefix(locttDir, first, "WEB");
 
     const tasks = await loadAllTasks(locttDir);
     const apiTask = tasks.find(t => t.frontmatter.project === other.id);
@@ -117,17 +117,17 @@ describe("setProjectPrefix", () => {
 
   it("refuses a prefix another project already holds, writing nothing", async () => {
     const first = await resolveProjectIdForUser(locttDir);
-    await createProject(locttDir, { name: "API", prefix: "API-" });
+    await createProject(locttDir, { name: "API", prefix: "API" });
     await seed(2, first);
 
-    await expect(setProjectPrefix(locttDir, first, "API-")).rejects.toThrow(
+    await expect(setProjectPrefix(locttDir, first, "API")).rejects.toThrow(
       ProjectError,
     );
 
     // Refused before any write: prefixes partition the key space, so a
     // duplicate makes keys ambiguous.
     const config = await loadProjectsConfig(locttDir);
-    expect(config.projects.find(p => p.id === first)?.prefix).toBe("T-");
+    expect(config.projects.find(p => p.id === first)?.prefix).toBe("T");
     const tasks = await loadAllTasks(locttDir);
     expect(tasks.every(t => !t.frontmatter.key.startsWith("API-1"))).toBe(true);
   });
@@ -136,7 +136,7 @@ describe("setProjectPrefix", () => {
     const project = await resolveProjectIdForUser(locttDir);
     await seed(2, project);
 
-    const result = await setProjectPrefix(locttDir, project, "T-");
+    const result = await setProjectPrefix(locttDir, project, "T");
 
     expect(result.renamed).toBe(0);
     const tasks = await loadAllTasks(locttDir);
@@ -145,7 +145,7 @@ describe("setProjectPrefix", () => {
   });
 
   it("rejects an unknown project", async () => {
-    await expect(setProjectPrefix(locttDir, "nope", "WEB-")).rejects.toThrow(
+    await expect(setProjectPrefix(locttDir, "nope", "WEB")).rejects.toThrow(
       ProjectError,
     );
   });
@@ -153,7 +153,7 @@ describe("setProjectPrefix", () => {
   it("clears the sentinel when it finishes", async () => {
     const project = await resolveProjectIdForUser(locttDir);
     await seed(1, project);
-    await setProjectPrefix(locttDir, project, "WEB-");
+    await setProjectPrefix(locttDir, project, "WEB");
 
     // A leftover sentinel would make every later command try to "finish"
     // a rename that already completed.
@@ -171,8 +171,8 @@ describe("completeInterruptedPrefixRename", () => {
     // only the sentinel survives to say a rename was in flight.
     await writeYamlAtomically(getPrefixRenameStatePath(locttDir), {
       project_id: project,
-      from: "T-",
-      to: "WEB-",
+      from: "T",
+      to: "WEB",
       started_at: new Date().toISOString(),
     });
 
@@ -183,7 +183,7 @@ describe("completeInterruptedPrefixRename", () => {
     expect(tasks.every(t => t.frontmatter.key.startsWith("WEB-"))).toBe(true);
     // Config and state are reapplied, not assumed to have landed.
     const config = await loadProjectsConfig(locttDir);
-    expect(config.projects.find(p => p.id === project)?.prefix).toBe("WEB-");
+    expect(config.projects.find(p => p.id === project)?.prefix).toBe("WEB");
     expect(await readPrefixRenameState(locttDir)).toBeUndefined();
   });
 
@@ -193,8 +193,8 @@ describe("completeInterruptedPrefixRename", () => {
     await seed(3, project);
     await writeYamlAtomically(getPrefixRenameStatePath(locttDir), {
       project_id: project,
-      from: "T-",
-      to: "WEB-",
+      from: "T",
+      to: "WEB",
       started_at: new Date().toISOString(),
     });
 
@@ -227,14 +227,14 @@ describe("completeInterruptedPrefixRename", () => {
   it("is idempotent — a task already renamed is not renamed twice", async () => {
     const project = await resolveProjectIdForUser(locttDir);
     await seed(2, project);
-    await setProjectPrefix(locttDir, project, "WEB-");
+    await setProjectPrefix(locttDir, project, "WEB");
 
     // Re-plant the sentinel as though the previous run died just before
     // clearing it. Everything is already done.
     await writeYamlAtomically(getPrefixRenameStatePath(locttDir), {
       project_id: project,
-      from: "T-",
-      to: "WEB-",
+      from: "T",
+      to: "WEB",
       started_at: new Date().toISOString(),
     });
 
@@ -261,8 +261,8 @@ describe("completeInterruptedPrefixRename", () => {
     await seed(1, project);
     await writeYamlAtomically(getPrefixRenameStatePath(locttDir), {
       project_id: project,
-      from: "T-",
-      to: "WEB-",
+      from: "T",
+      to: "WEB",
       started_at: new Date().toISOString(),
     });
     // Corrupt projects.yaml so recovery cannot complete. Every surface
@@ -278,7 +278,7 @@ describe("completeInterruptedPrefixRename", () => {
     // the half-finished rename was trying to do.
     expect(
       await readFile(getPrefixRenameStatePath(locttDir), "utf-8"),
-    ).toContain("WEB-");
+    ).toContain("WEB");
   });
 
   it("reports the rename it finished so a surface can say so", async () => {
@@ -286,8 +286,8 @@ describe("completeInterruptedPrefixRename", () => {
     await seed(2, project);
     await writeYamlAtomically(getPrefixRenameStatePath(locttDir), {
       project_id: project,
-      from: "T-",
-      to: "WEB-",
+      from: "T",
+      to: "WEB",
       started_at: new Date().toISOString(),
     });
 
@@ -295,7 +295,7 @@ describe("completeInterruptedPrefixRename", () => {
 
     expect(error).toBeUndefined();
     expect(recovered?.renamed).toBe(2);
-    expect(recovered?.to).toBe("WEB-");
+    expect(recovered?.to).toBe("WEB");
   });
 
   it("stays quiet when there is nothing to recover", async () => {
@@ -309,8 +309,8 @@ describe("completeInterruptedPrefixRename", () => {
   it("clears a sentinel whose project no longer exists", async () => {
     await writeYamlAtomically(getPrefixRenameStatePath(locttDir), {
       project_id: "deleted-project",
-      from: "T-",
-      to: "WEB-",
+      from: "T",
+      to: "WEB",
       started_at: new Date().toISOString(),
     });
 

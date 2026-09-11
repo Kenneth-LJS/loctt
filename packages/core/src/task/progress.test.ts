@@ -10,7 +10,7 @@ import { computeProgress } from "./progress.js";
  *  - discarded tasks are EXCLUDED from the denominator
  */
 const workflow = {
-  key: { prefix: "T-" },
+  key: { prefix: "T" },
   statuses: [
     { key: "backlog", label: "Backlog", category: "pending", default: true },
     { key: "doing", label: "Doing", category: "active" },

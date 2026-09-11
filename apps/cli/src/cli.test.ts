@@ -588,7 +588,7 @@ describe("CLI commands", () => {
     await initLoctt(root);
     const locttDir = resolveLocttDir(root);
     const { createProject, getCurrentUser, saveUserSettings } = await import("@loctt/core");
-    const alpha = await createProject(locttDir, { name: "Alpha", prefix: "A-" });
+    const alpha = await createProject(locttDir, { name: "Alpha", prefix: "A" });
     const current = await getCurrentUser(locttDir);
     if (!current) throw new Error("test setup: no current user");
     await saveUserSettings(locttDir, current.id, { default_project: alpha.id });
@@ -606,7 +606,7 @@ describe("CLI commands", () => {
     await initLoctt(root);
     const locttDir = resolveLocttDir(root);
     const { createProject, getCurrentUser, saveUserSettings } = await import("@loctt/core");
-    const alpha = await createProject(locttDir, { name: "Alpha", prefix: "A-" });
+    const alpha = await createProject(locttDir, { name: "Alpha", prefix: "A" });
     const current = await getCurrentUser(locttDir);
     if (!current) throw new Error("test setup: no current user");
     await saveUserSettings(locttDir, current.id, { default_project: alpha.id });
@@ -936,7 +936,7 @@ describe("CLI commands", () => {
       process.exitCode = undefined;
       process.argv = [
         "node", "loctt", "init",
-        "--prefix", "BUG-",
+        "--prefix", "BUG",
         "--project-label", "Bug tracker",
         "--timezone", "UTC",
         "--no-docs",
@@ -1460,7 +1460,7 @@ describe("project set-prefix", () => {
 
   it("renames every task, preserving numbers", async () => {
     await seed(3);
-    process.argv = ["node", "loctt", "project", "set-prefix", "Tasks", "WEB-", "--yes"];
+    process.argv = ["node", "loctt", "project", "set-prefix", "Tasks", "WEB", "--yes"];
     await main();
 
     const locttDir = resolveLocttDir(root);
@@ -1480,13 +1480,13 @@ describe("project set-prefix", () => {
     // untouched.
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
     promptAnswer = "n";
-    process.argv = ["node", "loctt", "project", "set-prefix", "Tasks", "WEB-"];
+    process.argv = ["node", "loctt", "project", "set-prefix", "Tasks", "WEB"];
     await main();
 
     // The count, both prefixes, and the promise that old keys survive.
     expect(promptQuestion).toContain("3 task(s)");
-    expect(promptQuestion).toContain("T-");
-    expect(promptQuestion).toContain("WEB-");
+    expect(promptQuestion).toContain("T");
+    expect(promptQuestion).toContain("WEB");
     expect(promptQuestion).toContain("key_history");
 
     // Declining is a clean exit, and nothing was renamed.
@@ -1499,7 +1499,7 @@ describe("project set-prefix", () => {
   it("refuses without --yes when not a TTY, rather than renaming unasked", async () => {
     await seed(2);
     Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
-    process.argv = ["node", "loctt", "project", "set-prefix", "Tasks", "WEB-"];
+    process.argv = ["node", "loctt", "project", "set-prefix", "Tasks", "WEB"];
     await main();
 
     // USAGE, not SUCCESS: the script forgot the flag. A script that
@@ -1512,14 +1512,14 @@ describe("project set-prefix", () => {
 
   it("rejects a prefix another project holds, and renames nothing", async () => {
     await seed(2);
-    process.argv = ["node", "loctt", "project", "create", "API", "--prefix", "API-"];
+    process.argv = ["node", "loctt", "project", "create", "API", "--prefix", "API"];
     await main();
 
-    process.argv = ["node", "loctt", "project", "set-prefix", "Tasks", "API-", "--yes"];
+    process.argv = ["node", "loctt", "project", "set-prefix", "Tasks", "API", "--yes"];
     await main();
 
     expect(process.exitCode).toBe(1);
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("API-"));
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("API"));
     const locttDir = resolveLocttDir(root);
     const t1 = await lookupByKey(locttDir, "T-1");
     expect(t1.frontmatter.key).toBe("T-1");
@@ -1527,7 +1527,7 @@ describe("project set-prefix", () => {
 
   it("treats a project's own prefix as a no-op, not a collision", async () => {
     await seed(1);
-    process.argv = ["node", "loctt", "project", "set-prefix", "Tasks", "T-", "--yes"];
+    process.argv = ["node", "loctt", "project", "set-prefix", "Tasks", "T", "--yes"];
     await main();
 
     // Succeeds. Reporting this as a collision would be wrong — the

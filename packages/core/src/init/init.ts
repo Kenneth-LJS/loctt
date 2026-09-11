@@ -18,6 +18,7 @@ import {
   getWorkflowConfigPath,
   resolveLocttDir,
 } from "../paths/index.js";
+import { assertValidPrefix } from "../projects/prefix.js";
 import { CURRENT_SCHEMA_VERSION } from "../schema/index.js";
 import { ensureDefaultUser } from "../users/index.js";
 import { fileExists } from "../utils/fs.js";
@@ -37,7 +38,7 @@ export interface InitOptions {
    * tasks.
    */
   readonly repair?: boolean;
-  /** Key prefix, defaults to "T-". */
+  /** Key prefix (bare letters; "-" added at render). Defaults to "T". */
   readonly prefix?: string;
   /**
    * Starting project name (display). Defaults to "Tasks".
@@ -165,7 +166,7 @@ async function repairLoctt(
  */
 export async function initLoctt(root: string, options: InitOptions = {}): Promise<InitResult> {
   const locttDir = resolveLocttDir(root);
-  const prefix = options.prefix ?? "T-";
+  const prefix = options.prefix ?? "T";
   const projectName = options.projectName ?? "Tasks";
   const genDocs = options.docs ?? true;
   // Validate before staging anything: serializeCalendarConfig doesn't
@@ -179,9 +180,10 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
     );
   }
 
-  if (prefix.length === 0) {
-    throw new Error(`prefix must be non-empty`);
-  }
+  // K88/A80: prefixes are bare uppercase letters (the `-` is inserted at
+  // key render). Strict: a dash or lowercase/digit/punctuation is
+  // rejected, not normalised.
+  assertValidPrefix(prefix);
   if (projectName.length === 0) {
     throw new Error(`project name must be non-empty`);
   }

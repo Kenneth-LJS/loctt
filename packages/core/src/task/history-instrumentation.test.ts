@@ -276,7 +276,7 @@ describe("history instrumentation", () => {
   describe("createTask", () => {
     it("records created entry", async () => {
       const state: LocttState = {
-        keys: { task: { prefix: "T-", next_number: 1 } },
+        keys: { task: { prefix: "T", next_number: 1 } },
       };
 
       const task = await createTask({

@@ -22,9 +22,9 @@ import { NO_PROJECT_MESSAGE, resolveProjectChoice } from "./projectChoice.ts";
  * ask. Re-deriving the order client-side is the thing the module
  * deliberately does not do.
  */
-const web: ProjectDef = { id: "id-web", name: "Web", prefix: "WEB-" };
-const backend: ProjectDef = { id: "id-be", name: "Backend", prefix: "BE-" };
-const archived: ProjectDef = { id: "id-old", name: "Old", prefix: "OLD-", archived: true };
+const web: ProjectDef = { id: "id-web", name: "Web", prefix: "WEB" };
+const backend: ProjectDef = { id: "id-be", name: "Backend", prefix: "BE" };
+const archived: ProjectDef = { id: "id-old", name: "Old", prefix: "OLD", archived: true };
 
 describe("resolveProjectChoice", () => {
   it("pre-fills whatever the server resolved (NEW-15)", () => {

@@ -47,7 +47,7 @@ export const TOOLS: readonly ToolDef[] = [
         if (entries.length > 0) {
           lines.push(`Next keys:`);
           for (const [key, val] of entries) {
-            lines.push(`  ${key}: ${val.prefix}${val.next_number}`);
+            lines.push(`  ${key}: ${val.prefix}-${val.next_number}`);
           }
         }
       }

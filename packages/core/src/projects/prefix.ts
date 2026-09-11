@@ -18,6 +18,26 @@ import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { ProjectError } from "./manage.js";
 
 /**
+ * The task-key prefix format (K88 / A80). Bare uppercase letters, 1–10 —
+ * the `-` separator is inserted at key render (`T` → `T-1`), so it is NOT
+ * part of the stored prefix. Strict: a dash, lowercase, digit, or
+ * punctuation is rejected, never normalised, so a caller cannot smuggle a
+ * URL-breaking or ambiguous prefix past this.
+ */
+export const PREFIX_RE = /^[A-Z]{1,10}$/;
+
+/** Throws `ProjectError` if `prefix` is not a valid bare key prefix. */
+export function assertValidPrefix(prefix: string): void {
+  if (!PREFIX_RE.test(prefix)) {
+    throw new ProjectError(
+      `invalid key prefix "${prefix}": use 1–10 uppercase letters (A–Z) `
+      + `with no dash — the "-" separator is added automatically, so "WEB" `
+      + `produces keys like "WEB-1".`,
+    );
+  }
+}
+
+/**
  * Changing a project's key prefix.
  *
  * The prefix is stored in four places that must agree: `projects.yaml`,
@@ -124,9 +144,8 @@ export async function setProjectPrefix(
   projectId: string,
   newPrefix: string,
 ): Promise<SetPrefixResult> {
-  if (newPrefix.length === 0) {
-    throw new ProjectError("prefix must not be empty");
-  }
+  // K88/A80: strict bare-letters validation (the "-" is added at render).
+  assertValidPrefix(newPrefix);
 
   return withStateLock(locttDir, async () => {
     const config = await loadProjectsConfig(locttDir);

@@ -69,7 +69,7 @@ describe("calendar working days", () => {
 
 describe("projects default", () => {
   const project = (over: Record<string, unknown> = {}) => ({
-    id: ID_A, name: "Tasks", prefix: "T-", ...over,
+    id: ID_A, name: "Tasks", prefix: "T", ...over,
   });
 
   it("accepts a live default", () => {
@@ -109,7 +109,7 @@ describe("projects default", () => {
     // Archiving a project must stay possible — the rule is about the
     // default pointer, not about archiving.
     expect(() => ProjectsConfigSchema.parse({
-      projects: [project(), project({ id: ID_B, name: "Old", prefix: "O-", archived: true })],
+      projects: [project(), project({ id: ID_B, name: "Old", prefix: "O", archived: true })],
       default: ID_A,
     })).not.toThrow();
   });

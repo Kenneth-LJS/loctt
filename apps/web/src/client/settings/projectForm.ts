@@ -77,12 +77,13 @@ export function validateNewProject(
       problems.prefix = `Prefix ${prefix} differs only in case from `
         + `${caseless.prefix}, used by "${caseless.name}". Task keys from the `
         + `two would be hard to tell apart.`;
-    } else if (!/[^a-zA-Z0-9]$/.test(prefix)) {
-      // PRU-36: explain what a prefix looks like using the tracker's own.
-      const example = existing[0]?.prefix;
-      problems.prefix = `A prefix ends with a separator so the key reads `
-        + `clearly${example !== undefined ? ` — like ${example}` : ""}. `
-        + `Try ${prefix}-.`;
+    } else if (!/^[A-Z]{1,10}$/.test(prefix)) {
+      // K88/A80: a prefix is 1–10 uppercase letters; the "-" is added at
+      // render, so the user does not type it. Reject anything else with
+      // the rule stated (PRU-36: explain what a prefix looks like).
+      problems.prefix = `A prefix is 1–10 uppercase letters (A–Z). `
+        + `The "-" separator is added automatically, so "WEB" produces `
+        + `keys like "WEB-1".`;
     }
   }
 

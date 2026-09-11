@@ -36,7 +36,7 @@ describe("initLoctt", () => {
     const result = await initLoctt(root);
     const content = await readFile(join(result.locttDir, "config", "workflow.yaml"), "utf-8");
     const config = parseWorkflowConfig(content);
-    expect(config.key.prefix).toBe("T-");
+    expect(config.key.prefix).toBe("T");
     expect(config.statuses).toHaveLength(4);
     expect(config.priorities).toHaveLength(4);
     expect(config.task_types).toHaveLength(5);
@@ -62,31 +62,31 @@ describe("initLoctt", () => {
     const idMatch = projectsRaw.match(/\bid:\s+([A-Z0-9]+)/);
     expect(idMatch).not.toBeNull();
     const projectId = idMatch?.[1] ?? "";
-    expect(state.keys[projectId]).toEqual({ prefix: "T-", next_number: 1 });
+    expect(state.keys[projectId]).toEqual({ prefix: "T", next_number: 1 });
   });
 
   it("uses custom prefix", async () => {
-    const result = await initLoctt(root, { prefix: "BUG-" });
+    const result = await initLoctt(root, { prefix: "BUG" });
     const content = await readFile(join(result.locttDir, "config", "workflow.yaml"), "utf-8");
     const config = parseWorkflowConfig(content);
-    expect(config.key.prefix).toBe("BUG-");
+    expect(config.key.prefix).toBe("BUG");
 
     const stateContent = await readFile(join(result.locttDir, "state.yaml"), "utf-8");
     const state = parseState(stateContent);
     const ids = Object.keys(state.keys);
     expect(ids).toHaveLength(1);
-    expect(state.keys[ids[0] as string]?.prefix).toBe("BUG-");
+    expect(state.keys[ids[0] as string]?.prefix).toBe("BUG");
   });
 
   it("uses custom project name", async () => {
-    const result = await initLoctt(root, { projectName: "Backend", prefix: "BACKEND-" });
+    const result = await initLoctt(root, { projectName: "Backend", prefix: "BACKEND" });
     const projectsRaw = await readFile(join(result.locttDir, "config", "projects.yaml"), "utf-8");
     const stateContent = await readFile(join(result.locttDir, "state.yaml"), "utf-8");
     const state = parseState(stateContent);
     expect(projectsRaw).toMatch(/name:\s+"Backend"/);
     const ids = Object.keys(state.keys);
     expect(ids).toHaveLength(1);
-    expect(state.keys[ids[0] as string]).toEqual({ prefix: "BACKEND-", next_number: 1 });
+    expect(state.keys[ids[0] as string]).toEqual({ prefix: "BACKEND", next_number: 1 });
   });
 
   it("creates projects.yaml", async () => {
@@ -96,7 +96,7 @@ describe("initLoctt", () => {
     // id is a generated ULID; check shape, plus name + prefix.
     expect(content).toMatch(/id: [0-9A-Z]{26}/);
     expect(content).toMatch(/name: "Tasks"/);
-    expect(content).toContain('prefix: "T-"');
+    expect(content).toContain('prefix: "T"');
     // default references the same id; cross-check by extracting it.
     const idMatch = content.match(/\bid: ([0-9A-Z]{26})/);
     expect(idMatch).not.toBeNull();

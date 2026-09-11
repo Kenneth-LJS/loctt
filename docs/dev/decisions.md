@@ -11360,7 +11360,9 @@ supersedes the K79 assumption that the stored prefix carried its own dash.
 
 - **Validator:** `^[A-Z]{1,10}$` (uppercase letters only, 1–10) — now
   correct against the bare stored form. Validated at creation
-  (`init`/`setProjectPrefix`).
+  (`init`/`setProjectPrefix`). **Input is STRICT (Ken): a dash is
+  rejected, not stripped** — every caller/fixture passing a dashed
+  prefix (`WEB-`) must change to bare (`WEB`).
 - **Render:** every key-forming site inserts the dash:
   `state/keys.ts` and `backup/restore.ts` (`${prefix}${n}` →
   `${prefix}-${n}`). Default prefix changes from `"T-"` to `"T"`.
@@ -11418,3 +11420,32 @@ name the two-different-measures reality. No global "exclude everywhere"
 change — that idea is dropped (it conflated discarded with archived).
 
 **This is Ken's, not an agent's — not revertible by an agent.**
+
+### A-K88 · A80/K88 built — prefix stored bare, dash inserted at render
+
+**Built (agent-level) implementing K88.** Prefix is stored bare uppercase
+letters; the `-` is inserted at key render. Changes:
+- **Render sites** (insert `-`): `state/keys.ts`, `git/reconcile.ts`,
+  `git/publish-sync.ts`, `backup/restore.ts` (×4), plus display previews
+  in `server.ts` (nextKey), `mcp/tools/tracker.ts`, `cli/commands/info.ts`,
+  `cli/commands/project.ts`.
+- **Validator:** `assertValidPrefix`/`PREFIX_RE = /^[A-Z]{1,10}$/` in
+  `projects/prefix.ts` (exported), wired into `initLoctt` and
+  `setProjectPrefix`. Strict — a dash/lowercase/digit is rejected.
+- **Defaults:** `"T-"`→`"T"` in `init.ts`, `cli/commands/init.ts`,
+  `InitWizard.tsx`.
+- **Client validators** (were the stale-source finding): `init/prefix.ts`
+  (`prefixProblem`/`firstKeyPreview`/`PREFIX_RULE`) and
+  `settings/projectForm.ts` rewritten to the strict rule + auto-dash preview.
+- **Fixtures:** ~49 test files swept (a stalled sub-agent did the bulk;
+  finished + corrected by hand) — stored/input prefixes bare-ified,
+  rendered keys (`T-1`) left unchanged.
+
+**No migration** — unpublished, no on-disk trackers (K88). Updated ONB-19
+to the strict rule; removed the stale A80 known-gaps entry. New
+`prefix-validate.test.ts` (`@verifies A80`). All 4 workspace unit suites
+green. **To revert:** the change is broad; `git revert` the commit.
+
+**Lesson:** key-render sites were scattered (found 3 beyond the first 2
+only via failing tests) — a single `renderKey(prefix, n)` helper would
+have localized this; noted as a possible follow-up refactor.

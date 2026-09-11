@@ -53,7 +53,7 @@ afterEach(async () => {
 
 /** Helper: create a second project and return its id. */
 async function makeP2(): Promise<string> {
-  const def = await createProject(locttDir, { name: "Two", prefix: "P-" });
+  const def = await createProject(locttDir, { name: "Two", prefix: "P" });
   return def.id;
 }
 
