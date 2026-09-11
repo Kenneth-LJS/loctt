@@ -11571,3 +11571,26 @@ references were repointed instead: the doc bullet now cross-refs the
 sibling cases, the code comment drops the dead ref. **To revert:** if a
 standalone duplicate-key case is later wanted, author SET-44 and restore
 the `cf.` pointers.
+
+### A-USRLOCK · `PUT /api/user-settings` deliberately takes no state lock
+
+**Decided (agent-level).** `handlePutUserSettings` does not wrap its write
+in `withStateLock`, and this is correct, not an oversight. The state lock
+exists to serialize *read-modify-write* against `state.yaml` — the key
+counters and `retired_keys`, where two interleaved allocations would hand
+out the same key. The user-settings write touches none of that: it is a
+per-user settings file, and `saveUserSettings` is a blind whole-document
+write (parse the client's full object, then `writeYamlAtomically`), never
+a read-modify-write. The temp-file + rename is atomic, so concurrent
+writers cannot produce a half-written or corrupted file; the only race is
+last-write-wins between two tabs of the *same* user editing *their own*
+settings — rare, self-inflicted, non-corrupting. The client owns the
+merge (it PUTs the whole document, preserving keys it did not change,
+asserted by the SidebarPinsPanel "unrelated preferences survive" test),
+so there is no cross-user or cross-key update to lose. Taking the lock
+would serialize settings writes against unrelated task writes for no
+benefit and would order two same-file writes no better than the atomic
+rename already does. Documented in a comment on the handler rather than
+changing behavior. **To revert:** if a future settings write becomes a
+read-modify-write (e.g. server-side merge instead of whole-document
+replace), wrap it in `withStateLock` and delete the comment.
