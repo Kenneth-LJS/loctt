@@ -10587,3 +10587,41 @@ installable: it needs a `bin` launcher and a server build (today only
 gap. CLI and MCP already bundle core and are installable as-is.
 
 **This is Ken's, not an agent's — not revertible by an agent.**
+
+### K73 · The whole TEMP-TODO backlog is pre-publish work, not "build later"
+
+**The situation.** `TEMP-TODO.md` was written 2026-09-09 as a "track now,
+build later" list — gaps deferred from v1 with recorded reasons. On
+review (2026-09-11) Ken judged that framing wrong for publishing: the
+list contains silent correctness defects (`field != null` returns
+everything; MSL-C1 burndown ignores name-assigned tasks), a P1 data-loss
+(broken-view write drops a concurrent broken view), the malformed-on-disk
+robustness gap (BLK-44), the core-parity embarrassment the docs
+themselves cite (`unarchiveView`), and WCAG AA failures — alongside the
+genuinely-large features.
+
+**Ruling (Ken, 2026-09-11): treat the entire backlog as required before
+publishing.** Not a post-launch queue. `TEMP-TODO.md` is reframed as the
+pre-publish work list.
+
+**Consequence.** This is weeks-scale, and the ~13 open rulings in the
+backlog are now the **critical path** — items blocked on a ruling cannot
+close no matter how much building happens, so the rulings should be
+cleared first. Each item still closes only as a case + `@verifies` test +
+a `decisions.md` entry, per the standing bar.
+
+**This is Ken's, not an agent's — not revertible by an agent.**
+
+### K74 · Every WCAG AA failure is a publish blocker
+
+**The situation.** Beyond K71 (dialog focus traps), the backlog and design
+review list more AA failures: `--text-tertiary` at 3.67:1 (A11Y-40),
+checkbox/radio and `--border-subtle` borders below 3:1 (DS-A11Y40,
+DS-BORDER-SUBTLE), and Menu arrow-key navigation (A11Y-9, design-review
+§A2). The README claims strong accessibility.
+
+**Ruling (Ken, 2026-09-11): all WCAG AA failures block publishing.** The
+README's a11y claims must be true at launch, not aspirational. Each of
+these is bounded; they ship before the UI package does.
+
+**This is Ken's, not an agent's — not revertible by an agent.**
