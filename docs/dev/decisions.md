@@ -11162,3 +11162,32 @@ display reference counts, so no surface parity owed.
 Verified: `counts.test.ts` discarded-exclusion case, red-proven; 7 counts
 tests green. **To revert:** drop `discardedStatusKeys` from the option and
 the `withCounts` derivation (count includes discarded again).
+
+### A-A80-BLOCKED · K79's `^[A-Z]{1,10}$` conflicts with the stored prefix form — needs Ken
+
+**Parked (agent-level), needs Ken.** Building A80/K79 surfaced that K79 as
+recorded is unimplementable against the data model:
+- The **stored prefix includes its trailing `-`**: a key is
+  `${prefix}${number}` (`state/keys.ts:24`), so `T-` → `T-1`, `WEB-` →
+  `WEB-1`. There is no separator added at render time. Every existing
+  prefix ends in `-`.
+- **K79's `^[A-Z]{1,10}$` would reject every existing prefix** (they
+  contain `-`, and the regex allows only A–Z). Applied at
+  `setProjectPrefix` it would reject `WEB-`; even "creation-only" it would
+  reject the default `T-`.
+- The existing web-wizard rule (A80, `client/init/prefix.ts`) is far more
+  permissive: "letters, digits, . _ - allowed; trailing - conventional."
+
+So K79 and the shipped model disagree. Ken's intent was "uppercase
+letters only, max 10", but that was almost certainly about the *display*
+part (`WEB`), not the stored string that carries the `-`.
+
+**Needs Ken to clarify one of:**
+(a) the rule is `^[A-Z]{1,10}-$` (1–10 uppercase letters THEN a required
+    trailing dash) — matches intent, keeps the dash, but forbids the
+    digits the old wizard rule allowed;
+(b) `^[A-Z][A-Z0-9]{0,9}-?$` (letters+digits, optional dash) — closer to
+    the wizard's permissiveness;
+(c) the rule targets the alphabetic core only and the `-` is handled
+    separately.
+Parked per park-don't-halt; continuing other items.
