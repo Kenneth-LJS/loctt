@@ -36,6 +36,22 @@ Do not re-ask them. The whole backlog is ruling-clear.
   one squashed commit.
 - One implementer + one **fresh** reviewer per item (the reviewer never
   wrote the code) — per `lessons.md`.
+
+**E2e cadence (Ken, 2026-09-11 — amends build-loop.md's per-item `test:ui`
+gate for throughput; the browser run is slow, ~4-6 min/rebuild):**
+- **Small fixes** (correctness, a11y token tweaks, wire-ups): write the
+  e2e spec *per item* and **red-prove at the unit level** per item, but
+  **defer the Playwright run to the wave/cluster gate**. Per-item gates
+  stay: unit (red-proven) + typecheck + lint + fresh review.
+- **Large features** (query builder, deep-linking, Duplicate/Move UI):
+  keep the **per-item e2e run** — high-risk, self-contained, worth the
+  minutes.
+- **Always:** specs are authored per item (coupled to the motivating
+  change, keeping case-precedes-test intact), and **every new test is
+  shown to fail** — unit-level per item, e2e confirmed green at its gate.
+  A batched e2e failure is bisected by the per-item commits.
+- Each item stays on its **own commit** so a batched-gate failure is
+  attributable without re-running everything.
 - New cases: the implementer writes them; a **second PM agent** reviews
   them against `CLAUDE.md` + `north-star.md`/`invariants.md` before build.
 - Gates are the "done" authority, not agent judgment. Keep typecheck /
