@@ -11191,3 +11191,21 @@ part (`WEB`), not the stored string that carries the `-`.
 (c) the rule targets the alphabetic core only and the `-` is handled
     separately.
 Parked per park-don't-halt; continuing other items.
+
+### A-MSL-C1 · History records the stored (resolved) value, not the raw name
+
+**Built (agent-level).** `buildSetFieldHistory` now takes the new
+frontmatter (`newFm`) and reads the stored value for `field` the same way
+it reads `before` from `oldFm` — labels/custom/built-in symmetric — so a
+history entry records the resolved id, not the raw name the user typed.
+Fixes MSL-C1: name-assigned tasks were invisible to milestone progress /
+sprint burndown (which count by id from history). Both call sites
+(single + bulk) pass `updated`. DEG-4-PROV provenance preserved (538 core
+tests green, incl. all provenance tests). @verifies MSL-C1 unit tests
+(history-records-id) red-proven; CLI integration test green.
+
+**Legacy caveat (parked, needs Ken):** trackers written before this fix
+hold name-valued history entries a replay still mis-reads. Options in
+known-gaps (tolerant replay / doctor repair / forward-only). The write
+fix stands alone. **To revert:** restore the `value` parameter and the
+raw-value reads.
