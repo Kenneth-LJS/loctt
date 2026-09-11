@@ -1,10 +1,11 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Task } from "@loctt/contracts";
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
+import { getTaskDir, getTaskFilePath } from "../paths/index.js";
 import { readHistory } from "./history.js";
 import { readTask,writeTask } from "./io.js";
 import { attributableErrors,setField, setFields, TaskUpdateError,unsetField } from "./update.js";
@@ -693,6 +694,88 @@ describe("setField / unsetField", () => {
         base, base, new Set(["priority"]), driftedConfig, undefined,
       );
       expect(errors).toEqual([]);
+    });
+  });
+
+  /**
+   * DEG-4-PROV: a valid write over a corrupt field repairs it AND records
+   * the repair honestly — the history entry's `before` is the raw corrupt
+   * value (lifted into health, absent from frontmatter) and `meta` marks
+   * it as a corruption repair. Before this was built, `before` was null
+   * (buildSetFieldHistory read only frontmatter) and the provenance was
+   * silently lost.
+   *
+   * @verifies DEG-4
+   */
+  describe("repair provenance (DEG-4-PROV)", () => {
+    /** Write a task.md with a corrupt `due_date: 42` so readTask lifts it into health. */
+    async function seedCorrupt(): Promise<void> {
+      await mkdir(getTaskDir(locttDir, "abc"), { recursive: true });
+      await writeFile(
+        getTaskFilePath(locttDir, "abc"),
+        "---\n"
+        + "id: abc\nkey: T-1\ntitle: Original\n"
+        + "created_at: 2026-01-01T00:00:00Z\nupdated_at: 2026-01-01T00:00:00Z\n"
+        + "status: not_started\ndue_date: 42\n"
+        + "---\nBody.\n",
+        "utf-8",
+      );
+    }
+
+    it("records the raw corrupt value as `before` and stamps meta.was_corrupt", async () => {
+      await seedCorrupt();
+      // Precondition: the corrupt field is in health, not frontmatter.
+      const loaded = await readTask(locttDir, "abc");
+      expect((loaded.health ?? []).some(h => h.field === "due_date")).toBe(true);
+      expect(loaded.frontmatter.due_date).toBeUndefined();
+
+      await setField({ locttDir, taskId: "abc", field: "due_date", value: "2026-06-01" });
+
+      const history = await readHistory(locttDir, "abc");
+      const repair = history.find(e => e.field === "due_date");
+      expect(repair).toBeDefined();
+      // The honest before is the raw corrupt value (42), not null.
+      expect(repair?.before).toBe(42);
+      expect(repair?.after).toBe("2026-06-01");
+      expect(repair?.meta?.was_corrupt).toBe(true);
+    });
+
+    it("a normal (non-repair) write carries no was_corrupt marker", async () => {
+      await seedTask(); // healthy task, no health findings
+      await setField({ locttDir, taskId: "abc", field: "priority", value: "high" });
+      const history = await readHistory(locttDir, "abc");
+      const entry = history.find(e => e.field === "priority");
+      expect(entry?.meta?.was_corrupt).toBeUndefined();
+    });
+
+    it("repairing a corrupt LABELS array records provenance (not silently lost)", async () => {
+      // The reviewer-flagged gap: the labels branch returned before the
+      // repair-provenance wrapper, so repairing a corrupt labels array lost
+      // its was_corrupt marker. A non-array labels value is corrupt and is
+      // lifted into health as "labels".
+      const { createLabel } = await import("../labels/manage.js");
+      await mkdir(getTaskDir(locttDir, "abc"), { recursive: true });
+      await writeFile(
+        getTaskFilePath(locttDir, "abc"),
+        "---\n"
+        + "id: abc\nkey: T-1\ntitle: Original\n"
+        + "created_at: 2026-01-01T00:00:00Z\nupdated_at: 2026-01-01T00:00:00Z\n"
+        + "status: not_started\nlabels: notanarray\n"
+        + "---\nBody.\n",
+        "utf-8",
+      );
+      const loaded = await readTask(locttDir, "abc");
+      expect((loaded.health ?? []).some(h => h.field === "labels")).toBe(true);
+
+      // The label must exist for the write to resolve (entity resolution).
+      const label = await createLabel(locttDir, { name: "urgent" });
+
+      await setField({ locttDir, taskId: "abc", field: "labels", value: [label.id] });
+      const history = await readHistory(locttDir, "abc");
+      // The repair is marked: a labels entry carries the was_corrupt
+      // provenance (the field_change carrying the raw corrupt value).
+      const marked = history.some(e => e.field === "labels" && e.meta?.was_corrupt === true);
+      expect(marked).toBe(true);
     });
   });
 });

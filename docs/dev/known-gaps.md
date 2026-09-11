@@ -30,25 +30,6 @@ result. Fixing it needs a return-shape change (`duplicateTask` →
 for the framework build. The safety property (no corrupt value copied,
 refuse on corrupt project) holds today; only the *notice* is missing.
 
-### DEG-4-PROV — repair provenance (`meta.was_corrupt`) is decided but not built
-
-**Found 2026-09-06 while authoring the DEG degradation cases.** The
-decided behaviour (decisions.md § 9) is that repairing a corrupt field
-records a history entry whose `before` is the raw corrupt value and
-whose `meta.was_corrupt` marks it as a corruption repair. Neither exists:
-`grep -rn was_corrupt` over `packages/` and `apps/` returns zero hits,
-source included. `buildSetFieldHistory` (called from
-`packages/core/src/task/update.ts`) reads only the task's
-**frontmatter** — but a corrupt field has been lifted *off* the
-frontmatter into `health`, so at repair time the field is already absent
-and `before` is null. The provenance is silently dropped.
-
-DEG-4's third bullet is marked cannot-be-satisfied-yet for this reason;
-no test asserts it. Fixing it needs `buildSetFieldHistory` to consult
-`health` for the pre-repair raw value and to stamp `meta.was_corrupt` —
-a small core change, but out of scope for the DEG doc/tag work, and it
-must land before a `@verifies DEG-4`-provenance test can be green.
-
 ### DS-A11Y40 — the checkbox/radio resting border does not clear 3:1 vs bg-surface
 
 **Found 2026-09-06 building the B1 design-system primitives.** The

@@ -540,8 +540,11 @@ async function setFieldLocked(opts: SetFieldOptions): Promise<Task> {
   };
   await writeTask(locttDir, taskId, updatedTask, touchedFor(field));
 
-  // Emit history entries
-  const historyEntries = buildSetFieldHistory(task.frontmatter, field, value, now);
+  // Emit history entries. Pass the pre-write health so a write that
+  // REPAIRS a corrupt field (DEG-4-PROV) records the raw corrupt value
+  // as `before` (it has been lifted off the frontmatter into health, so
+  // the frontmatter shows null there) and stamps `meta.was_corrupt`.
+  const historyEntries = buildSetFieldHistory(task.frontmatter, field, value, now, task.health);
   if (historyEntries.length > 0) {
     await appendHistory(locttDir, taskId, historyEntries);
   }
@@ -554,7 +557,22 @@ function buildSetFieldHistory(
   field: string,
   value: unknown,
   timestamp: string,
+  // Pre-write health (DEG-4-PROV). When `field` had a health finding, the
+  // write repairs it: the raw corrupt value lives here, not in oldFm
+  // (which shows null for a lifted field), so a repair entry can record
+  // the true `before` and stamp `meta.was_corrupt`.
+  health?: readonly FieldHealth[],
 ): HistoryEntry[] {
+  // DEG-4-PROV: is this write repairing a corrupt field? If a health
+  // finding names `field`, its `raw` is the pre-repair value. This is the
+  // honest `before` (the frontmatter has already dropped it to null) and
+  // the entry is marked as a corruption repair.
+  const repaired = health?.find(h => healthEntryMatches(h.field, field));
+  const withRepairProvenance = (entry: HistoryEntry): HistoryEntry =>
+    repaired === undefined
+      ? entry
+      : { ...entry, before: repaired.raw, meta: { ...entry.meta, was_corrupt: true } };
+
   // Labels: diff old vs new array
   if (field === "labels") {
     const oldLabels = new Set(oldFm.labels ?? []);
@@ -569,6 +587,20 @@ function buildSetFieldHistory(
       if (!newLabels.has(label)) {
         entries.push({ timestamp, kind: "label_removed", before: label });
       }
+    }
+    // DEG-4-PROV for a corrupt `labels` array: when the field was lifted
+    // into health, `oldFm.labels` is absent, so the per-element diff above
+    // cannot see (nor represent, across N entries) the raw corrupt value.
+    // Two things are needed and neither maps onto a label_added/removed
+    // entry: the raw value must be preserved, and the write must be marked
+    // a repair. So emit ONE `field_change` on `labels` carrying the raw
+    // corrupt value as `before` and `meta.was_corrupt`, alongside the
+    // element diffs — the diffs record what the new array is; this records
+    // that a corruption was repaired and what it held. (A2-labels below.)
+    if (repaired !== undefined) {
+      entries.push(withRepairProvenance(
+        { timestamp, kind: "field_change", field: "labels", before: null, after: value },
+      ));
     }
     return entries;
   }
@@ -585,13 +617,17 @@ function buildSetFieldHistory(
   ) {
     const before = oldFm.fields?.[field];
     if (before === value) return [];
-    return [{ timestamp, kind: "custom_field_change", field, before: before ?? null, after: value }];
+    return [withRepairProvenance(
+      { timestamp, kind: "custom_field_change", field, before: before ?? null, after: value },
+    )];
   }
 
   // Built-in field
   const before = readField(oldFm, field);
   if (before === value) return [];
-  return [{ timestamp, kind: "field_change", field, before: before ?? null, after: value }];
+  return [withRepairProvenance(
+    { timestamp, kind: "field_change", field, before: before ?? null, after: value },
+  )];
 }
 
 /**
@@ -981,7 +1017,7 @@ export async function setFieldsLocked(
   for (const { field, value } of changes) {
     const entries = value === undefined
       ? buildUnsetFieldHistory(task.frontmatter, field, now)
-      : buildSetFieldHistory(task.frontmatter, field, value, now);
+      : buildSetFieldHistory(task.frontmatter, field, value, now, task.health);
     historyEntries.push(...entries);
   }
   const bulkOpId = opts.bulkOpId;
