@@ -15,6 +15,7 @@ import {
 import { Button } from "../ui/Button.tsx";
 import { Dialog, DialogActions } from "../ui/Dialog.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { Modal } from "../ui/Modal.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { DeleteProjectDialog } from "./DeleteProjectDialog.tsx";
@@ -582,7 +583,7 @@ export function ProjectsPanel() {
     );
   }
   if (projects.isLoading) {
-    return <div className="p-8 text-[13px] text-text-tertiary">Loading projects…</div>;
+    return <LoadingState>Loading projects…</LoadingState>;
   }
 
   const items = projects.data?.items ?? [];

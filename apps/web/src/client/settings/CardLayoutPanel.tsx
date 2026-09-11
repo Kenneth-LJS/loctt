@@ -5,6 +5,7 @@ import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
 import { DEFAULT_CARD_LAYOUT, resolveCardLayout } from "../board/cardLayout.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { ReorderableRows } from "./ReorderableRows.tsx";
 
 /**
@@ -78,7 +79,7 @@ export function CardLayoutPanel() {
     );
   }
   if (settings.isLoading || settings.data === undefined) {
-    return <div className="p-8 text-[13px] text-text-tertiary">Loading card layout…</div>;
+    return <LoadingState>Loading card layout…</LoadingState>;
   }
   return <CardLayoutEditor stored={settings.data.settings} />;
 }

@@ -10,6 +10,7 @@ import {
   useUpdateMilestone,
 } from "../api/hooks/useDataMutations.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 
 /**
@@ -266,7 +267,7 @@ export function MilestonesPanel() {
   }
 
   if (milestones.isLoading || milestones.data === undefined) {
-    return <div className="p-8 text-[13px] text-text-tertiary">Loading milestones…</div>;
+    return <LoadingState>Loading milestones…</LoadingState>;
   }
 
   const items = milestones.data.items;

@@ -11093,3 +11093,21 @@ Verified: `ui/Menu.test.tsx` (ArrowDown/Up wrap, Home/End, type-ahead),
 red-proven by removing the panel's onKeyDown. **To revert:** drop
 `onPanelKeyDown` + the initial-focus effect. No surface impact (web-only
 interaction).
+
+### A-LOADINGSTATE · Shared LoadingState (role=status) replaces ~15 silent loading spellings (§A3)
+
+**Built (agent-level).** ~15 features re-spelled
+`<div className="p-8 text-[13px] text-text-tertiary">Loading X…</div>`
+with no live region, so a screen reader was never told the region was
+loading (design-review §A3). Added `ui/LoadingState.tsx` — a polite live
+region (`role="status"` + `aria-busy`) with the padded settings treatment
+as default and a `className` override for in-view use. Migrated all 11
+settings panels + SprintDetail, MilestonesView, MilestoneDetail,
+WorkflowPanelFrame.
+
+Verified: `LoadingState.test.tsx` (role=status + aria-busy + message),
+red-proven; 244 settings/milestones/sprints tests green. **Gate caught a
+real bug:** the first migration pass failed to add the import to any file
+(a buggy already-imported check) — 89 tests went red with "LoadingState
+is not defined", fixed before commit. **To revert:** the panels' prior
+inline spellings are in git. Web-only.

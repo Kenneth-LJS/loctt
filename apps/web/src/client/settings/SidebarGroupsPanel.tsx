@@ -4,6 +4,7 @@ import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS } from "@loctt/contracts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { ReorderableRows } from "./ReorderableRows.tsx";
 import { readSidebarGroups, resolveSidebarOrder } from "./sidebarGroups.ts";
 
@@ -63,7 +64,7 @@ export function SidebarGroupsPanel() {
     );
   }
   if (settings.data === undefined) {
-    return <div className="p-8 text-[13px] text-text-tertiary">Loading…</div>;
+    return <LoadingState>Loading…</LoadingState>;
   }
   return <GroupsEditor stored={settings.data.settings} />;
 }

@@ -7,6 +7,7 @@ import { useViews } from "../api/hooks/sidebarData.ts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { DeleteViewDialog } from "./DeleteViewDialog.tsx";
 import { ReorderableRows } from "./ReorderableRows.tsx";
 import { readSidebarPins, sweepSidebarPins } from "./sidebarPins.ts";
@@ -63,7 +64,7 @@ export function SidebarPinsPanel() {
   // that has not arrived is not an empty one, and sweeping against it
   // would delete every pin the user has.
   if (settings.data === undefined || !views.isSuccess) {
-    return <div className="p-8 text-[13px] text-text-tertiary">Loading pins…</div>;
+    return <LoadingState>Loading pins…</LoadingState>;
   }
   return <PinsEditor stored={settings.data.settings} views={views.data.queries} />;
 }

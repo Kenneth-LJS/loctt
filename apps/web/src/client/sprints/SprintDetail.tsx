@@ -11,6 +11,7 @@ import { Dash,PriorityCell, StatusBadge, TypeBadge } from "../list/cells.tsx";
 import { FilterBar } from "../list/FilterBar.tsx";
 import { progressState } from "../milestones/model.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { BurndownChart } from "./BurndownChart.tsx";
 import { SprintMetaHeader } from "./SprintMetaHeader.tsx";
 
@@ -69,7 +70,7 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
   if (sprints.isLoading) {
     return (
       <div data-testid="sprint-detail" aria-busy="true" className="p-4">
-        <p className="text-[13px] text-text-tertiary">Loading the sprint…</p>
+        <LoadingState className="text-[13px] text-text-tertiary">Loading the sprint…</LoadingState>
       </div>
     );
   }

@@ -6,6 +6,7 @@ import { apiClient,ApiError } from "../api/client.ts";
 import { useViews } from "../api/hooks/sidebarData.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { ViewFormDialog } from "./ViewFormDialog.tsx";
 
 /**
@@ -208,7 +209,7 @@ export function SavedViewsPanel() {
   }
 
   if (views.isLoading || views.data === undefined) {
-    return <div className="p-8 text-[13px] text-text-tertiary">Loading saved views…</div>;
+    return <LoadingState>Loading saved views…</LoadingState>;
   }
 
   const all = views.data.queries;

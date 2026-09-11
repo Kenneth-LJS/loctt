@@ -16,6 +16,7 @@ import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Dialog, DialogActions } from "../ui/Dialog.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { Modal } from "../ui/Modal.tsx";
 import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
@@ -472,7 +473,7 @@ export function UsersPanel() {
     );
   }
   if (users.isLoading) {
-    return <div className="p-8 text-[13px] text-text-tertiary">Loading users…</div>;
+    return <LoadingState>Loading users…</LoadingState>;
   }
 
   const items = users.data?.items ?? [];

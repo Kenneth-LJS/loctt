@@ -6,6 +6,7 @@ import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
 import { adoptStoredTheme, useTheme } from "../theme/useTheme.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { Select } from "../ui/Select.tsx";
 import { ToolbarButton } from "../ui/ToolbarButton.tsx";
 
@@ -75,7 +76,7 @@ export function PreferencesPanel() {
     );
   }
   if (settings.isLoading || settings.data === undefined) {
-    return <div className="p-8 text-[13px] text-text-tertiary">Loading preferences…</div>;
+    return <LoadingState>Loading preferences…</LoadingState>;
   }
 
   const stored = settings.data.settings;

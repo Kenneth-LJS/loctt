@@ -10,6 +10,7 @@ import {
   useUpdateLabel,
 } from "../api/hooks/useDataMutations.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 
 /**
@@ -355,7 +356,7 @@ export function LabelsPanel() {
   }
 
   if (labels.isLoading || labels.data === undefined) {
-    return <div className="p-8 text-[13px] text-text-tertiary">Loading labels…</div>;
+    return <LoadingState>Loading labels…</LoadingState>;
   }
 
   const items = labels.data.items;
