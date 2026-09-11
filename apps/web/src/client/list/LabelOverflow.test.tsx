@@ -98,4 +98,32 @@ describe("LabelsCell overflow reveal", () => {
     expect(screen.queryByTestId("label-overflow-trigger")).toBeNull();
     expect(screen.getByText("charlie")).toBeTruthy();
   });
+
+  // @verifies MSL-20
+  // The boundary the other cases skip. Every MSL fixture uses many labels
+  // (the reveal shows `+2`, `+17`, …), and the "at or below the cap" case
+  // uses exactly three — so the *first* value at which the trigger fires,
+  // four labels → `+1`, was never exercised. An off-by-one in the cap
+  // (`slice(0, MAX+1)`, `length > MAX+1`) would show four pills and no
+  // trigger, or a `+0`, and every existing case would still pass. This
+  // pins it: at four, exactly three pills show, the trigger reads `+1`,
+  // and its label is the singular "1 more label".
+  it("fires the trigger at exactly one over the cap, reading +1 (singular)", () => {
+    render(<LabelsCell labels={LABELS.slice(0, 4)} onFilter={() => undefined} />);
+
+    // Three pills shown, the fourth hidden.
+    expect(screen.getByText("alpha")).toBeTruthy();
+    expect(screen.getByText("bravo")).toBeTruthy();
+    expect(screen.getByText("charlie")).toBeTruthy();
+    expect(screen.queryByText("delta")).toBeNull();
+
+    const trigger = screen.getByTestId("label-overflow-trigger");
+    expect(trigger.textContent).toBe("+1");
+    // Singular copy at one, not "1 more labels".
+    expect(trigger.getAttribute("aria-label")).toBe("Show 1 more label");
+
+    // And the one hidden label is revealed and filterable, same as the many-label case.
+    fireEvent.click(trigger);
+    expect(screen.getByText("delta")).toBeTruthy();
+  });
 });
