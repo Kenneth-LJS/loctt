@@ -16,6 +16,12 @@ landed (or once it is decided the item needs no code).
 ## 1. `PROPOSED-UI-CASES.md` — flow-doc contradictions and proposed cases
 
 **Status:** OPEN — awaiting Ken's accept / reject / reword per item.
+The specification proper is `docs/dev/ui-test-cases/*.md` + `case-index.json`
+(1039 cases), which the tests tag `@verifies` against; `PROPOSED-UI-CASES.md`
+is the pending-changes queue against that spec, part applied, part open.
+**In progress (2026-09-11):** an audit is classifying each item as
+already-applied / decided-not-applied / genuinely-open so the still-open
+set can be put in front of Ken rather than the whole 30-item file.
 
 The repo-root file `PROPOSED-UI-CASES.md` collects, from the v1 audit,
 three kinds of item against the 18 UI flow docs: (1) contradictions
@@ -36,33 +42,24 @@ are kept only for their reasoning.
 
 ## 2. `CASE-AUDIT.md` (repo root)
 
-**Status:** OPEN — needs a read to decide if anything is unactioned.
+**Ken's ruling (2026-09-11):** action the audit — anything unresolved goes
+to `TEMP-TODO.md`, then delete the file. **In progress:** each finding is
+being checked for resolved-vs-open against current code / known-gaps /
+decisions; the open ones land in TEMP-TODO and the file is then removed.
 
-A point-in-time case audit. Most such artifacts from the v1 run have been
-deleted; this one sits at the root. **To resolve:** confirm every finding
-in it is either already reflected in the flow docs / known-gaps or is
-genuinely spent, migrate anything still live, then delete it.
+## 3. `QUERY-BUILDER-PROPOSAL.md` (repo root) — ✅ RESOLVED 2026-09-11
 
-## 3. `QUERY-BUILDER-PROPOSAL.md` (repo root)
+Ken's ruling: a live feature idea, not yet built → tracked in
+`TEMP-TODO.md` (the visual nested query builder under Features, with its
+three open rulings under "Needs a ruling"). The root proposal file was
+deleted; its substance is preserved in TEMP-TODO.
 
-**Status:** OPEN — is this a live feature idea or a spent proposal?
+## 4. `temp-ui-mockups/` (repo root) — ✅ RESOLVED 2026-09-11
 
-A proposal for a query-builder. **To resolve:** decide whether it is a
-real future feature (if so, move it to `docs/dev/` as a proposal and,
-when built, back it with query-DSL cases + tests) or already
-landed/abandoned (delete it).
-
-## 4. `temp-ui-mockups/` (repo root)
-
-**Status:** OPEN — keep as a visual reference, or delete as superseded?
-
-Pre-build static HTML mockups. The real web UI now exists in `apps/web`,
-and the design system lives as code in `apps/web/src/client/ui/`. The
-mockups' own README frames them as a visual reference where "the spec
-wins on conflict". Referenced only by one comment in
-`apps/web/src/client/styles/tokens.css`. **To resolve:** keep them as a
-cheap layout/vocabulary reference, or delete them (and fix that one
-tokens.css comment).
+Ken's ruling: delete. The real web UI and its design-system primitives
+(`apps/web/src/client/ui/`) supersede the pre-build mockups. Deleted, and
+the two stale references fixed (the `tokens.css` header comment and the
+`tools/coverage/scan.ts` skip-dir entry).
 
 ---
 

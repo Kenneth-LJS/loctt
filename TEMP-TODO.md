@@ -56,6 +56,7 @@ its own · **[ruling]** blocked on Ken.
 - [ ] **The git-sync engine cases (GIT-8, 9, 16, 19, 21, 22, 23, 25, 29, 30, 33, 34, 35, 36)** — reconcile model, rekey summary/confirm, force-push detection, fstype detection, progress channel, error-class distinction, schema/worktree guards. No engine exists; a build, not a wire-up. (See the git-reconcile entries in known-gaps.)
 - [ ] **K31 item 2 — backup restore upload capped at ~50 MB/attachment** — raise/limit with a clear over-limit message.
 - [ ] **A11Y feature-gaps (A11Y-9, 10, 12, 17, 39, 40, 51)** — Menu arrow-nav/type-ahead, focusable rows, per-group collapse, focusable bulk-failure items, relative type scale, contrast harness.
+- [ ] **Visual nested query builder (MSL-7, LST-40/44/45)** — ~week-scale. Ken asked for a "visual nested builder with intuitive UI". Core's DSL is complete and `validateQuery` (`packages/core/src/query/validate.ts`) is built-but-unwired — the builder is its missing caller. Serialize to the existing `q` DSL param (no second source of truth; P2 URL round-trip). Renders `(X and Y) or Z` as nested All-of/Any-of boxes. Scope: builder + wire `validateQuery` + live count + editable DSL text + parse errors with position (LST-44/45 currently get a generic 500). **Carries three open rulings — see "Needs a ruling" below.** Its own ticket after M4 (as ruled for CSV export). *Note: the reported bug ("a second label widens results") is fixed in ~a day by a per-field All/Any toggle; the builder is the larger capability that also fixes it.*
 
 ## Contract changes — schema / core signature / on-disk shape (multi-surface)
 
@@ -80,6 +81,9 @@ its own · **[ruling]** blocked on Ken.
 - [ ] **Broken-view write: refuse vs. preserve** — the ruling behind the VUE-22-area contract change above.
 - [ ] **DS-A11Y40 checkbox/radio border below 3:1** — deepen `--border-strong` (a global semantics call) or add a `--border-control` token.
 - [ ] **DS-BORDER-SUBTLE below 3:1** — strengthen `--border-subtle`, or migrate real-divider call sites to `--border-default`.
+- [ ] **Query builder — DSL it can't render** — if a user types something exotic, does the builder (a) refuse to open and show only the text box, (b) render best-effort and warn, or (c) offer to rewrite? *Recommendation (a): honest, never silently changes a user's query — but least "intuitive".*
+- [ ] **Query builder — replace chips or coexist?** — (a) builder replaces the chip bar (one mental model, but LST-40/41 rewritten and two-click filtering gets slower) vs (b) an "Advanced" affordance beside the chips (common case stays fast, but two constraint sources — the confusion LST-40 polices). *Recommendation (b).*
+- [ ] **Query builder — scope of `NOT` in v1** — DSL has it, but nested negation is where these UIs get confusing. *Recommendation: defer `NOT` to v2.*
 
 ## Tooling / flake — infra, not product (fix opportunistically)
 
