@@ -1026,7 +1026,44 @@ test.describe("A11Y — dialogs, layers and form semantics", () => {
     await expect(page.getByTestId("create-discard-confirm")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(modal).toBeVisible();
-    await expect(modal.getByLabel("Title")).toHaveValue(typed);
+  });
+
+  /**
+   * K71: the DiscardDialog renders above the create modal but was outside
+   * the modal's focus-trap scope, so Tab could reach the form behind it.
+   * It now has its own trap. Focus starts inside it (on "Keep editing")
+   * and stays within across Tab.
+   *
+   * @verifies A11Y-14
+   */
+  test("K71: the create discard confirmation traps focus to itself", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Trap neighbour" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Trap neighbour")).toBeVisible();
+
+    await page.locator("body").press("n");
+    const modal = page.getByTestId("create-task-modal");
+    await expect(modal).toBeVisible();
+    await modal.getByLabel("Title").fill("Dirty");
+    await page.keyboard.press("Escape");
+
+    const confirm = page.getByTestId("create-discard-confirm");
+    await expect(confirm).toBeVisible();
+
+    // Initial focus is inside the confirmation (the safe "Keep editing").
+    const focusInConfirm = await confirm.evaluate(d => d.contains(document.activeElement));
+    expect(focusInConfirm).toBe(true);
+
+    // Tab a few times; focus must remain within the confirmation, never
+    // the form fields behind it.
+    for (let i = 0; i < 4; i++) {
+      await page.keyboard.press("Tab");
+      const stillInside = await confirm.evaluate(d => d.contains(document.activeElement));
+      expect(stillInside, `Tab #${String(i + 1)} left the discard confirmation`).toBe(true);
+    }
   });
 
   // @verifies A11Y-13

@@ -11050,3 +11050,29 @@ Verified: real-browser focus-trap+restore e2e (K71 test) + behavior specs
 BLK-11/CMT-6/XS-12/XS-65/TSK-44/VUE-38, all green. **Remaining (K71 not
 closed):** AdvancedQueryEditor and CreateTaskModal + its DiscardDialog.
 **To revert:** the dialogs' pre-migration hand-rolled overlays are in git.
+
+### A-K71-COMPLETE · K71 closed — DiscardDialog trap + parent stand-down; the other §A1 items were miscounted
+
+**K71 complete (agent-level).** Finishing the §A1 dialog-focus work:
+- **CreateTaskModal** already had a complete hand-rolled focus trap (both
+  Tab directions + escape-recovery, deliberately hand-rolled for the
+  A11Y-5 layered-Escape interaction), inert background, Escape, and focus
+  restoration (`returnFocusTo`). The §A1 claim it "lacks useFocusTrap" was
+  inaccurate. The one real gap: its nested `DiscardDialog` renders as a
+  SIBLING of the modal panel (outside `panelRef`), so it was outside the
+  trap. Fixed by giving `DiscardDialog` its own `useFocusTrap` AND making
+  the parent's capture-phase Tab handler stand down while `confirmDiscard`
+  is open (`if (confirmDiscard) return`) — without that guard the parent's
+  trap pulls focus back into the form and defeats the child trap
+  (red-proven). Mirrors the parent's existing Escape stand-down.
+- **AdvancedQueryEditor** — §A1 was wrong: neither flagged element is a
+  modal overlay. `:226` is an inline confirmation strip (no backdrop,
+  in-flow) and `:280` is a help popover with Escape + focus-return.
+  Trapping focus in non-modal inline content would be a regression.
+  Correctly left as-is.
+
+Verified: real-browser trap tests (`K71: a migrated confirm dialog…`,
+`K71: the create discard confirmation traps focus to itself`, both
+red-proven) + A11Y-14/15/33, A11Y-5, NEW-28/31 all green. K71 closed.
+**To revert:** drop `DiscardDialog`'s `useFocusTrap` + the parent's
+`confirmDiscard` Tab-guard.
