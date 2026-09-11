@@ -32,13 +32,15 @@ redesign. It asks for the migrations the v1 build deferred and never ran.
 
 ## Is any of this a publish blocker?
 
-Recommendation, for Ken's call:
+**Ken ruled (2026-09-11): §A1 is a publish blocker — fix before
+publishing.** The rest is fast-follow.
 
-- **P0 — fix before publish:** the dialog focus-trap / inert / focus-
+- **P0 — BLOCKER (Ken's ruling):** the dialog focus-trap / inert / focus-
   restore gap (§A1). It is a real keyboard/screen-reader regression, not
   cosmetic — a user can Tab out of a modal into the frozen page behind
   it, and focus is not returned to the trigger on close. Cross-confirmed
-  by two audits. Bounded fix (one primitive).
+  by two audits. Bounded fix (one primitive). The README's a11y claims
+  are partly untrue until this ships, which is part of why it blocks.
 - **P1 — strong fast-follow:** primitive adoption (Button, Callout, form
   controls, the `ConfirmDialog` collapse). Mechanical, low-risk, large in
   aggregate. Improves consistency; the app is not broken without it.
