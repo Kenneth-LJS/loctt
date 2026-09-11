@@ -43,6 +43,7 @@ export function Menu({
 }: MenuProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const triggerId = useId();
 
   useEffect(() => {
@@ -63,6 +64,59 @@ export function Menu({
     };
   }, [open]);
 
+  // A11Y-9/§A2: a `role="menu"` promises roving arrow-key navigation, not
+  // just Tab. On open, move focus to the first item; ArrowDown/Up cycle,
+  // Home/End jump, and a printable key type-aheads to the next item whose
+  // text starts with it. Operates on `[role="menuitem"]` in the panel, so
+  // panels that render non-menuitem content (a filter checkbox list) are
+  // unaffected and keep their own model.
+  const menuItems = (): HTMLElement[] =>
+    panelRef.current
+      ? Array.from(panelRef.current.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])'))
+      : [];
+
+  useEffect(() => {
+    if (!open) return;
+    // Defer to after the panel paints its children.
+    const id = requestAnimationFrame(() => { menuItems()[0]?.focus(); });
+    return () => { cancelAnimationFrame(id); };
+  }, [open]);
+
+  const typeahead = useRef<{ buffer: string; at: number }>({ buffer: "", at: 0 });
+
+  const onPanelKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    const items = menuItems();
+    if (items.length === 0) return;
+    const current = items.findIndex(el => el === document.activeElement);
+    const focusAt = (i: number): void => {
+      e.preventDefault();
+      const n = items.length;
+      items[((i % n) + n) % n]?.focus();
+    };
+    switch (e.key) {
+      case "ArrowDown": focusAt(current + 1); return;
+      case "ArrowUp": focusAt(current === -1 ? items.length - 1 : current - 1); return;
+      case "Home": focusAt(0); return;
+      case "End": focusAt(items.length - 1); return;
+      default: break;
+    }
+    // Type-ahead: a single printable character jumps to the next item
+    // whose visible text starts with the typed run.
+    if (e.key.length === 1 && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      const now = Date.now();
+      const ta = typeahead.current;
+      ta.buffer = now - ta.at > 700 ? e.key : ta.buffer + e.key;
+      ta.at = now;
+      const q = ta.buffer.toLowerCase();
+      const start = current + 1;
+      const match = items
+        .map((el, i) => ({ el, i }))
+        .sort((a, b) => ((a.i + items.length - start) % items.length) - ((b.i + items.length - start) % items.length))
+        .find(({ el }) => (el.textContent ?? "").trim().toLowerCase().startsWith(q));
+      if (match) { e.preventDefault(); match.el.focus(); }
+    }
+  };
+
   const close = (): void => setOpen(false);
   const toggle = (): void => setOpen(o => !o);
 
@@ -77,9 +131,11 @@ export function Menu({
       })}
       {open ? (
         <div
+          ref={panelRef}
           role="menu"
           aria-label={ariaLabel}
           aria-labelledby={ariaLabel ? undefined : triggerId}
+          onKeyDown={onPanelKeyDown}
           className={[
             "absolute top-full z-20 mt-1 min-w-[200px] rounded-lg border border-border-default",
             "bg-bg-surface-raised p-1 shadow-overlay",
