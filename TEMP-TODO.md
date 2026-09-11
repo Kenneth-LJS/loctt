@@ -27,24 +27,27 @@ which this list cross-references but does not duplicate.
 Nothing behind these can close until decided.
 
 - [x] **NEW-20** — ~~hard error vs tolerated drift~~ **RULED (K75):** hard error on config; CLI/MCP force project-select + warn; GUI requires manual select + a deep-link nudge to settings. Non-GUI half buildable now; GUI nudge lands with deep-linking (K76). **[now, partial]**
-- [ ] **A80 — `loctt init --prefix` accepts prefixes that break their own task URLs** — a core validator would break existing trackers → migration decision. Also: where a prefix-format rule lives is unsettled.
+**RESOLVED this session:**
+- [x] **A80 prefix rule** — **RULED (K79):** `^[A-Z]{1,10}$`, validated at creation only (no migration of existing trackers); `doctor` reports legacy. Reconcile the web wizard to this stricter rule.
+- [x] **BAK-C18** — **already ruled 2026-09-02** (report/keep, matches P-11/P-12); Part A verify-close, delete stale known-gaps note.
+- [x] **TSK-32 vs DEG-29** — **doc already reconciled (A179)**; Part A → update the stale spec test only.
+- [x] **Broken-view write** — **already fixed under K28** (serializer preserves broken views); Part A verify-close.
+- [x] **Query builder ×3** — **RULED (K83):** refuse-on-unrenderable / coexist as "Advanced" / defer NOT to v2. Plus K77 (`is empty`) + K80 (JQL-like function set).
+
+**STILL OPEN — to batch with the pre-scan's NEEDS-OWNER list:**
 - [ ] **PRU-46's pending-rename banner is unreachable dead code** — keep auto-recovery (retag + delete dead code) vs. make recovery boot-only.
-- [ ] **BAK-C18 — dangling-reference handling reports rather than refuses** — case says refuse; P-11/P-12 say report. Case-vs-invariant contradiction.
 - [ ] **BAK-C13 — a displaced body is not carried by a later backup** — clean fix is a new backup record kind (no case describes it).
 - [ ] **Read-only views + degraded entries (ERR-10, LST-51, TML-48)** — should a degraded-but-loadable config alert on a read-only view, or only in settings?
-- [ ] **TSK-32 contradicts the DEG-29 "Not recognised" group** — two-case contradiction.
-- [ ] **Broken-view write: refuse vs. preserve** — the ruling behind the VUE-22-area data-loss fix in §2.
 - [ ] **SET-43 — is config read-back required?** — a settings panel cannot read what it wrote; `GET /api/config/:key` 404s. Decide, then add the case.
 - [ ] **TSK-58 — are Duplicate and Move reachable from the UI, or scoped out?** — Duplicate/TSK-20 shipped; this is the UI affordance + scoping case.
 - [ ] **MSL-11 vs MSL-3 denominator** — Settings label count (`counts.ts:62`, archived-only) vs progress (`computeProgress`, also excludes discarded) disagree: `10` in Settings, `4/8` as progress. Rule which denominator Settings shows, then align function + case.
-- [ ] **Query builder — 3 rulings** (gates the §3 build): (a) DSL it can't render — refuse/best-effort/rewrite? *rec: refuse, honest*; (b) replace chips or coexist? *rec: coexist as "Advanced"*; (c) scope of `NOT` in v1? *rec: defer NOT to v2*.
 
 ## 1. A11y — all WCAG AA failures block (Ken, decisions.md K74)
 
 - [ ] **K71 — dialog focus-trap / inert / restore** — the design-review §A1 blocker; fix via a shared `ConfirmDialog`/`TypedConfirmDialog`. See design-review.md. **[now]**
 - [ ] **A11Y-40 — `--text-tertiary` is 3.67:1 on white** — three body-text elements below AA; one root token in `styles/tokens.css`. **[now]**
-- [ ] **DS-A11Y40 — checkbox/radio border below 3:1** — deepen `--border-strong` (global semantics) or add a `--border-control` token. **[ruling-ish: token semantics]**
-- [ ] **DS-BORDER-SUBTLE below 3:1** — strengthen `--border-subtle`, or migrate real-divider call sites to `--border-default`. **[ruling-ish: token semantics]**
+- [ ] **DS-A11Y40 — checkbox/radio border below 3:1** — **RULED (K81):** add a `--border-control` token at ≥3:1 for checkbox/radio only. **[now]**
+- [ ] **DS-BORDER-SUBTLE below 3:1** — **RULED (K82):** keep `--border-subtle` decorative; migrate real dividers (`ListView.tsx:778`, `BulkBar.tsx:110`, section separators) to `--border-default`. **[now]**
 - [ ] **Menu arrow-nav / type-ahead (A11Y-9, design-review §A2)** — `role="menu"` promises roving arrow keys it doesn't implement. **[now]**
 - [ ] **A11Y feature-gaps (A11Y-10, 12, 17, 39, 51)** — focusable rows, per-group collapse, focusable bulk-failure items, relative type scale, contrast harness. **[build]**
 - [ ] **Loading states silent to screen readers (design-review §A3)** — shared `LoadingState` with `role="status"`; ~14 features re-spell it. **[now]**
@@ -52,7 +55,7 @@ Nothing behind these can close until decided.
 
 ## 2. Correctness & data-loss defects — the app is silently wrong
 
-- [ ] **`field != null` does not filter — it returns everything** — shared-core query-evaluator defect; silent + permissive. Needs a `!= null` semantics call, then a core fix.
+- [ ] **`field != null` does not filter — it returns everything** — **RULED (K77):** add `is empty`/`is not empty` operators; `= null`/`!= null` become parse errors. Ships with the query builder. **[with builder]**
 - [ ] **MSL-C1 — `setField` records the unresolved name in history, so burndown ignores name-assigned tasks** — fix both `buildSetFieldHistory` call sites; raises a migration question for existing history.
 - [ ] **VUE-22 area — a UI view write drops a concurrently-present broken view** — P1 data-loss; `saveQueriesConfig`/`serializeQueriesConfig` never emit `broken`. (Refuse-vs-preserve ruling in §0.)
 - [ ] **BLK-44 — one malformed `task.md` breaks the whole list** — `loadAllTasks` must become partial-tolerant (data-shape change all three surfaces read); write the BLK-44 indicator case. `task/load-all.ts:61`.
@@ -61,7 +64,7 @@ Nothing behind these can close until decided.
 - [ ] **K29 / DEG-24 — flat config writers can append a broken/valid ID collision** — six flat writers lack the `mergeBrokenIntoPlain` guard added for workflow.
 - [ ] **DEG-4-PROV — repair provenance (`meta.was_corrupt`) decided but not built** — `buildSetFieldHistory` must consult `health`. `task/update.ts`. **[now, small]**
 - [ ] **DUP-H1 — `duplicateTask` does not report dropped corrupt fields** — return-shape change threaded through CLI/MCP/web.
-- [ ] **SET-45 — I/O failure vs validation failure on workflow write** — distinguish EACCES from a validation error. (Needs the small §0-style ruling on whether it matters; then case + test.)
+- [ ] **SET-45 — I/O failure vs validation failure on workflow write** — **RULED (K78):** add `FsAccessError` branch → 500 `io_failed` in `handlePutWorkflow`; write the SET-45 case. **[now]**
 
 ## 3. Core-parity & the standing embarrassment
 
@@ -98,7 +101,7 @@ Nothing behind these can close until decided.
 ## 7. Features — each a build of its own
 
 - [ ] **Deep-linking (NEW workstream, K76)** — AUDIT + PLAN, then build. Enumerate where deep links should exist across all pages: settings sections + scroll-to-field (unblocks K75's GUI nudge); task comments section + scroll-to-comment + copy-link-to-comment (Jira-style); any other page sections worth targeting. Then sequence the build (routing/anchor scheme, scroll-into-view, copy-link affordances) with cases + tests. **Starts with its own audit doc.**
-- [ ] **Visual nested query builder (MSL-7, LST-40/44/45)** — ~week. Core DSL complete; `validateQuery` (`query/validate.ts`) built-but-unwired is its missing caller. Serialize to the `q` DSL. **Gated on the 3 §0 query-builder rulings.** *(The reported "second label widens results" bug is separately fixable in ~a day via a per-field All/Any toggle.)*
+- [ ] **Visual nested query builder + JQL-like DSL (MSL-7, LST-40/44/45; K77/K80/K83)** — **RE-SCOPED, larger than the original ~week.** Now bundles: (1) the visual builder over the existing DSL (`validateQuery` in `query/validate.ts` is its missing caller); (2) K77 `is empty`/`is not empty` operators; (3) K80 JQL-like functions — date fns (`now`, `startOf/endOf Day/Week/Month` + offsets, **needs a stubbable clock**), `currentUser()`, `IN (…)`, `contains`/`~` (reconcile with header search — one core matcher, not two); (4) K83 design: refuse-on-unrenderable, coexist as "Advanced" beside chips, defer NOT to v2. Serialize to the `q` DSL (one source of truth). Owes CLI/MCP/web. *(The reported "second label widens results" bug is separately fixable in ~a day via a per-field All/Any toggle — do that early so it's not blocked behind the whole builder.)*
 - [ ] **Timeline virtualization (TML-21, TML-26, TML-32)** — windowing + sticky band header + arrow-hover highlight.
 - [ ] **The git-sync engine (GIT-8,9,16,19,21,22,23,25,29,30,33,34,35,36)** — reconcile model, rekey summary/confirm, force-push detection, fstype detection, progress channel, error-class distinction, guards. No engine exists — a build. Ties to H2 in release-readiness.md.
 - [ ] **git-sync UI cases** — lift sync-reporting/failed-push/status-drift into `flow-git-sync.md` once the git UI exists. Depends on the engine above.
