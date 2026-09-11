@@ -34,7 +34,7 @@ open, config rewritten underneath a live session, and so on.
 
 | Flow | Covers | Milestones |
 |---|---|---|
-| [flow-onboarding.md](flow-onboarding.md) | First run, init wizard, empty tracker, uninitialized directory | M1, M4 |
+| [flow-onboarding.md](flow-onboarding.md) | First run, init wizard, empty tracker, uninitialized directory | M1, M3, M4 |
 | [flow-list.md](flow-list.md) | List view: columns, sort, filter, URL state, pagination | M1 |
 | [flow-tasks.md](flow-tasks.md) | Task detail: read, inline edits, body editor, duplicate, move, archive, delete | M2 |
 | [flow-task-create.md](flow-task-create.md) | Create modal from every entry point, project resolution | M3 |

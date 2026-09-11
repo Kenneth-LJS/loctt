@@ -99,11 +99,17 @@ it from a query that legitimately matches nothing (P4).
 - Saving it creates a **new** user view rather than mutating the built-in, or, if built-ins are overridable, states clearly which is happening.
 
 ### VUE-13 · M1 · major · P1 P10
-**Saved view sort entries persist as `field` + `direction` and apply in order.**
-- Saving a view with sort `priority desc` then `updated_at desc` writes both entries in that order to `queries.yaml`.
-- Applying the view sorts by priority first, using the priority `value` ordering from `workflow.yaml` (not alphabetical by key).
-- Ties within a priority are broken by `updated_at` descending.
-- `loctt list --view <name>` produces the same row order.
+**A saved view's sort persists as `field` + `direction` and applies.**
+- Saving a view with sort `priority desc` writes a `field: priority` /
+  `direction: desc` entry to `queries.yaml` — not a URL fragment.
+- Applying the view sorts by the priority `value` ordering from
+  `workflow.yaml` (not alphabetical by key).
+- `loctt list --view <name>` produces the same row order the UI showed.
+
+*Multi-field sort — several `field`/`direction` entries applied in order,
+with ties broken by the next entry — is [VUE-17](#vue-17--m4--major--p9)
+(M4). VUE-13 covers the single-field persist-and-apply contract that M1
+ships; do not fold the multi-sort bullets back here.*
 
 ### VUE-14 · M1 · major · P1
 **A view applied from the sidebar sets URL state matching its saved query.**

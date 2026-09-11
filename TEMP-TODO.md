@@ -150,9 +150,9 @@ Nothing behind these can close until decided.
 - [ ] **SET-13's third bullet reads opposite to SET-27** — flow-doc bullet text (README already resolves it).
 - [ ] **TML-48's unreadable notice names neither task nor bad value** — server change + doc correction of A41.
 - [ ] **SET-44 — duplicate-status-key case is a dangling cross-ref** at `flow-settings.md:356` — add SET-44 or repoint SET-46/47/48.
-- [ ] **Surface README case counts stale** — `surface-test-cases/README.md` says 65 / 9; `case-index.json` has 100 / 12. Correct the table.
-- [ ] **ONB-11 milestone-header inconsistency** — `ui-test-cases/README.md:37` lists flow-onboarding "M1, M4" but ONB-11 is M3.
-- [ ] **VUE-13 milestone/scope mismatch** — retag to M4 (needs VUE-17 multi-sort) or split its bullets.
+- [x] **Surface README case counts stale** — `surface-test-cases/README.md` said 65 cases over 10 rows; `case-index.json` has 100 over 12. Added the two missing rows (flow-backup-restore 24, flow-degradation 8), corrected flow-projects-users 9→12, and the total to 100. Verified against the index breakdown.
+- [x] **ONB-11 milestone-header inconsistency** — `ui-test-cases/README.md` flow-onboarding row listed "M1, M4" but the flow also holds ONB-11 (M3). Changed to "M1, M3, M4" (verified: onboarding UI cases span M1×12, M3×1, M4×22).
+- [x] **VUE-13 milestone/scope mismatch** — VUE-13's bullets described *multi-field* sort (two entries, apply-in-order, tie-breaking) at M1, but its test only exercises single-field persist-and-apply and multi-field sort is VUE-17 (M4). Trimmed VUE-13's bullets to the single-field contract it actually asserts, added a cross-ref to VUE-17 for multi-sort. No retag (VUE-13 stays M1, matching its test); no coverage change.
 - [ ] **BRD-21 / SET-23 "smoothness" perf bullets** — note in the cases they're non-assertions.
 - [ ] **BRD-45 / SPR-35 flow-doc wording** — reconcile prose with decision A36 if touching those files.
 
