@@ -114,6 +114,37 @@ timers past teardown, `caffeinate` for long runs.
 
 ---
 
+## From the v1 case-audit + proposed-cases queue (2026-09-11)
+
+The last two root working files — `CASE-AUDIT.md` and
+`PROPOSED-UI-CASES.md` — were audited against current code/tests/flow
+docs and deleted; ~90% of each was already applied or decided. These are
+the genuinely-open remainders. Most are small test/doc/spec items.
+
+**Need a small ruling, then a case + test:**
+- [ ] **SET-43 — config read parity** — a settings panel cannot read back what it wrote; `GET /api/config/:key` 404s today. Proposed as a blocker; no case, no decision. Decide whether read-back is required, then add the case.
+- [ ] **SET-45 — I/O failure vs validation failure on workflow write** — distinguish EACCES from a validation error. Proposed minor; no case, no decision.
+- [ ] **SET-44 — duplicate-status-key rejection as a standalone case** — its substance is folded into SET-46/47/48 which say "cf. SET-44", but no SET-44 case exists (**dangling cross-ref** at `flow-settings.md:356`). Either add SET-44 or repoint those refs.
+- [ ] **TSK-58 — are Duplicate and Move reachable from the UI, or scoped out?** — no case, no decision (Duplicate/TSK-20 itself shipped; this is about the UI affordance + a scoping case).
+- [ ] **MSL-11 vs MSL-3 denominator** — `countTasksByReferences` (`core/src/task/counts.ts:62`) excludes archived only; `computeProgress` also excludes discarded, so a label can read `10` in Settings but `4/8` as progress. MSL-11 says "consistently with MSL-3" without naming the axis. Rule which denominator Settings shows, then align function + case wording. (A90 fixed only the milestone drill-in.)
+
+**Test/doc hygiene — no ruling needed, just do:**
+- [ ] **CMT-C4 — MCP `get_task_history` lacks `offset`/`total`** (contract change, agent-facing). Schema (`apps/mcp/src/tools/task-crud.ts:568-571`) takes only `ref`+`limit`; core's paginating `readHistory` overload exists. Extend the tool schema + handler, then a `@verifies CMT-C4` test.
+- [ ] **CMT-C8 — the history-order test is vacuous** — `tests/integration/mcp/history-order.test.ts` asserts only "repeated calls agree", which passes with the `[...entries]` copy removed (readHistory re-reads from disk; the stdio boundary hides identity). Assert non-identity at the unit level, or close the case as resolved-and-unobservable.
+- [ ] **4-label overflow boundary uncovered** — `MAX_LABEL_PILLS = 3` (`list/cells.tsx:280`), so `+N` first fires at 4 labels, but every MSL case uses 20. Add a case at the real threshold. (The interactive-reveal half is resolved by K12/A54.)
+- [ ] **VUE-13 milestone/scope mismatch** — tagged M1 but its two-entry multi-sort bullets need M4's multi-sort editor (VUE-17); M1 single-field URL sort makes `SaveViewDialog` write a one-element array. Retag VUE-13 to M4, or split its bullets.
+- [ ] **Surface README case counts stale** — `docs/dev/surface-test-cases/README.md` says "65 cases" / projects-users "9"; `case-index.json` now has 100 surface cases / projects-users 12. Correct the table.
+- [ ] **ONB-11 milestone-header inconsistency** — `ui-test-cases/README.md:37` lists flow-onboarding as "M1, M4" but ONB-11 is tagged M3. Fix the header row.
+- [ ] **BRD-21 / SET-23 "smoothness" perf bullets** (minor) — note in the cases that the smoothness clauses are non-assertions (their falsifiable companion bullets are what a test covers). TML-21 already tracked under timeline virtualization.
+
+**git-sync UI cases (conditional):**
+- [ ] **Sync-reporting / failed-push / status-drift cases** — proposed to be lifted into `flow-git-sync.md` (still ends at GIT-38) *once a git UI exists*. Tie to the git-sync engine features already listed above.
+
+**Optional (direction settled, only prose to reconcile):**
+- [ ] **BRD-45 / SPR-35 flow-doc wording** — the "config-invalid banner is the answer" reading is settled (decision A36); the case prose still describes a per-column/per-chart notice. Reconcile if touching those files.
+
+---
+
 *Created 2026-09-09 during the repo sweep. Roughly 20 features, 8
 contract changes, 10 rulings, plus quick fixes and doc holes. When one is
 built, close it here and delete the corresponding known-gaps entry.*

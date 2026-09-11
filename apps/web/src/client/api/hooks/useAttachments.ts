@@ -21,7 +21,7 @@ import { apiClient } from "../client.ts";
  * neighbours need: REL-35's size cap, REL-36's basename sanitisation,
  * REL-39's collision refusal. A batch endpoint would have to invent a
  * partial-failure shape and re-derive errors this route already
- * returns. Recorded in `PROPOSED-UI-CASES.md`.
+ * returns.
  *
  * Sequential rather than parallel because each upload takes the
  * tracker lock and appends a history entry; twenty concurrent writers
