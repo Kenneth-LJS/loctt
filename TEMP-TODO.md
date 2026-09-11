@@ -117,7 +117,7 @@ Nothing behind these can close until decided.
 
 ## 3. Core-parity & the standing embarrassment
 
-- [ ] **`unarchiveView` exported from core with no caller** — wire it (CLI/MCP/web) or remove it. This is the exact failure `CLAUDE.md`/`lessons.md` cite; shipping it ships the named mistake. **[now]**
+- [x] **`unarchiveView` exported from core with no caller** — **STALE / already fixed.** Verified 2026-09-11: called by all three surfaces (`server.ts:1461`, `mcp/tools/views.ts:174`, `cli/commands/views.ts:148`) and covered (web `server.views-invalid.test.ts:171` VUE-25; MCP `tests/integration/mcp/unarchive-task.test.ts`; CLI `tests/integration/cli/unarchive.test.ts`; core `views/manage.test.ts` green). Removed the stale known-gaps entry. Verify-and-close, no build.
 
 ## 4. Quick fixes — small, bounded, actionable now
 

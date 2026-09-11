@@ -1873,27 +1873,6 @@ suite does not currently set up.
 **To reproduce.** Set `theme: system` in `settings.yaml`, load the app,
 and toggle the OS appearance.
 
-## `unarchiveView` is still exported from core with no caller
-
-**Confirmed in M4.4, 2026-09-01.**
-
-The v1 wire-up list paired VUE-38 with "`unarchiveView` exists with no
-caller". VUE-38's text does not mention
-unarchiving: its three bullets are the confirmation naming the view,
-stale pins being swept, and the entry being removed from
-`queries.yaml` so `loctt list --view <name>` reports an unknown view.
-M4.4 satisfied all three by making `DELETE /api/views/:ref` hard-delete
-(A70), which is a different fix from wiring `unarchiveView`.
-
-So VUE-38 is covered, and `unarchiveView` is **still uncalled** —
-verified by grep across `apps/cli/src`, `apps/mcp/src` and
-`apps/web/src/server`. It remains on the dead-capability list, and the
-wire-up list's association of it with VUE-38 should not be read as
-"VUE-38 will wire it".
-
-**To reproduce.** `grep -rn unarchiveView apps/ packages/core/src` —
-only the two export lines in core.
-
 ## SET-2's "no unimplemented placeholder" is only verified for the Personal group
 
 **Found in M4.4, 2026-09-01. Not a defect — a case that spans tickets.**
