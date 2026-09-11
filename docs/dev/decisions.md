@@ -2316,8 +2316,8 @@ view change.
 
 **These are Ken's, not an agent's.** Unlike § 8, they carry the
 authority of sections 1–7 and are not revertible on an agent's
-judgment. Recorded here because several were open in
-`PROPOSED-UI-CASES.md` and were blocking M2.
+judgment. Recorded here because several were open in the v1
+proposed-cases queue and were blocking M2.
 
 ### K1 · SET-3 is dropped; workflow panels are editable
 
@@ -2349,8 +2349,8 @@ So M2's body-editor ticket owes: the editor sends the `updated_at` it
 loaded, the server refuses a stale write with 412, and the UI reports
 that the task changed underneath the user.
 
-Note: `PROPOSED-UI-CASES.md` attributes this gap to "B5". **That is
-the wrong ID** — B5 is the lossy-content guardrail. The concurrency
+Note: the v1 proposed-cases queue attributed this gap to "B5". **That
+is the wrong ID** — B5 is the lossy-content guardrail. The concurrency
 gap has no B-number.
 
 ### K3 · Project URLs carry a slug
@@ -2399,8 +2399,8 @@ tasks.
 earlier argument for keeping raw ULIDs was that "an id round-trips and
 a name does not". **There is no CSV import anywhere in the codebase** —
 nothing parses CSV back in — so that defended a round-trip that does
-not exist. The four options in `PROPOSED-UI-CASES.md` are closed by
-this entry.
+not exist. The four options the proposed-cases queue raised are closed
+by this entry.
 
 ### K5 · Robustness is a standing rule, not a one-off
 
@@ -3352,8 +3352,7 @@ so concurrency would serialise regardless. The batch endpoint is the
 harder path wearing the simpler path's clothes.
 
 **Recorded rather than stopping the run** because it changes no
-server code and no documented contract. Also recorded in
-`PROPOSED-UI-CASES.md`.
+server code and no documented contract.
 
 **To revert.** Replace the loop in `send` in
 `AttachmentsPanel.tsx` with a single multi-file request, and give
@@ -5550,7 +5549,8 @@ instead of at nothing.
 **Date:** 2026-09-01 · **Ken's ruling — an agent may not revert this.**
 
 **The situation.** Ken first ruled "archive by default, hard-delete
-with a flag" for label deletion, answering `CASE-AUDIT.md` § 1.4. That
+with a flag" for label deletion, answering the v1 case audit's
+label-delete contradiction. That
 answer was never written into `decisions.md` — measured: `grep
 MSL-12|MSL-32 docs/dev/decisions.md` returned **0**, against a positive
 control of 15 for `K10` in the same file. My M4.3 brief then cited it
@@ -5620,7 +5620,7 @@ the query (wrong side effects, wrong cost per keystroke) and `POST
 /api/views` **writes** it. Both also flatten the error into a message
 string via `error(res, err.message, …)`, discarding the `position` and
 `suggestions` that `validate.ts` builds deliberately — which is
-exactly LST-44/LST-45 in `PROPOSED-UI-CASES.md`.
+exactly LST-44/LST-45.
 
 **What had to be decided.** Where validation-without-execution lives.
 

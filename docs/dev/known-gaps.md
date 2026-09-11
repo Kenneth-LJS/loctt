@@ -3464,8 +3464,8 @@ remains uncovered is exactly the 41 cases enumerated by
 degradation case, a **Phase Z** git-engine or a11y slice, or a
 **schema-bump** unblock — none is orphaned (each is named somewhere in
 this file). The only open spec *decisions* are the residual
-`PROPOSED-UI-CASES.md` items — see that file; its Section 2 is now
-resolved-by-build.
+case-audit items now tracked in `TEMP-TODO.md` (§ "From the v1
+case-audit + proposed-cases queue").
 ## Reconcile batch declines: GIT-8 (rekey summary) and GIT-21 (force-push)
 
 Recorded 2026-09-04 by the git-reconcile batch. The 18 conflict cases
