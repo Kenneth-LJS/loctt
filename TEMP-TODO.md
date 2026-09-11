@@ -89,7 +89,10 @@ report a publish-readiness summary and stop for Ken to publish.
 
 ## 0. Rulings needed from Ken — CRITICAL PATH, unblock first
 
-Nothing behind these can close until decided.
+**All rulings in this section are now made** (Ken's K-series + the
+agent-level A-PRESCAN rulings under "decide where one option is clearly
+best"). Nothing here is waiting on Ken any longer; the three still-open
+lines are implementation work, not decisions.
 
 - [x] **NEW-20 (K75)** — **CLI/MCP half DONE.** Resolver names the ghost default in the ask-state error (core, inherited by CLI+MCP); @verifies NEW-20 red-proven. GUI deep-link-nudge half stays with deep-linking (K76). A-NEW20-CLIMCP.
 **RESOLVED this session:**
@@ -99,10 +102,10 @@ Nothing behind these can close until decided.
 - [x] **Broken-view write** — **DONE (verify-close).** manage.ts writers + serializer preserve broken; regression test red-proven; stale known-gaps entry removed. A-PARTA-CLOSE.
 - [x] **Query builder ×3** — **RULED (K83):** refuse-on-unrenderable / coexist as "Advanced" / defer NOT to v2. Plus K77 (`is empty`) + K80 (JQL-like function set).
 
-**STILL OPEN — to batch with the pre-scan's NEEDS-OWNER list:**
-- [ ] **PRU-46's pending-rename banner is unreachable dead code** — keep auto-recovery (retag + delete dead code) vs. make recovery boot-only.
-- [ ] **BAK-C13 — a displaced body is not carried by a later backup** — clean fix is a new backup record kind (no case describes it).
-- [ ] **Read-only views + degraded entries (ERR-10, LST-51, TML-48)** — should a degraded-but-loadable config alert on a read-only view, or only in settings?
+**STILL OPEN — RULED already (no Ken call outstanding); these are now implementation, tracked in §7-adjacent build work:**
+- [ ] **PRU-46's pending-rename banner is unreachable dead code** — RULED A-PRESCAN-1: keep auto-recovery, delete the dead banner component, retag PRU-46, add a case+test that the mid-rename state is unreachable. Build only.
+- [ ] **BAK-C13 — a displaced body is not carried by a later backup** — RULED K87: use `mergeTask`'s existing `displaced` return (no new record kind). Wire-up + case + test. Build only.
+- [ ] **Read-only views + degraded entries (ERR-10, LST-51, TML-48)** — RULED A-PRESCAN-2: alert at point-of-use (the view), not only Settings. Cases exist; wire the alert + tests. Build only.
 - [x] **SET-43 — config read-back (K86)** — **DONE.** GET /api/config/:key → getConfigValue; unknown key 404s listing valid keys (CFG-C3 parity). SET-43 case authored + PM-reviewed (2 wording fixes applied); @verifies SET-43 red-proven. A-SET43.
 - [x] **TSK-58 — Duplicate/Move reachable from the UI (K84)** — **DONE (verify-and-case).** The More-menu affordances already existed + tested (TSK-20/44); authored the TSK-58 scoping case + a dedicated reachability test, PM-reviewed. A-TSK58.
 - [x] **MSL-11 vs MSL-3 denominator (K90, supersedes K85)** — **DONE.** discarded is SHOWN in counts/queries, EXCLUDED only from burndown/progress; the count (incl. discarded) and progress fraction measure different things by design. Reverted the K85 exclusion; MSL-11 reconciled. Counts tests green. K90.
