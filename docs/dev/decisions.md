@@ -11514,3 +11514,25 @@ pointer). @verifies A80 (evaluator tests, red-proven); 256 query tests
 green; user docs updated. This is sub-item 1 of the query builder
 (K77/K80/K83); K80 functions + the visual builder UI remain. **To revert:**
 remove the `is`/OP_IS_EMPTY handling from tokenizer/parser/evaluator.
+
+### A-DEFDEF · Rewrote the archived-default error so the formatter's path prefix stops reading "default default"
+
+**Fixed (agent-level).** A `projects.yaml` whose `default:` names an
+*archived* project produced "default default project '…' is …": the
+config-error formatter (`zod-error.ts`) prepends the failing key's path
+(`default`) to the issue message, and the message itself already began
+with "default project". K23 had already made a *ghost* default (naming a
+project that does not exist) a tolerated drift rather than a hard error,
+so the only surviving hard error on `default` is the archived case — the
+one this fixes. Reworded the superRefine message to lead with "names the
+archived project '…' — new tasks would land in a project hidden from every
+picker. Unarchive it or pick another default." The formatter now renders
+"default names the archived project …", which reads cleanly. A comment on
+the superRefine records the constraint (message must not lead with
+"default"). Regression test in `packages/core/src/config/projects.test.ts`
+asserts the parse error matches `/archived/` and NOT `/default default/`;
+red-proven (reverting the message to start with "default project" makes it
+fail). Note the cross-package build trap: core tests parse through the
+built `@loctt/contracts` dist, so `npx tsc -b packages/contracts` must run
+after editing the contract before the core test sees the new message.
+**To revert:** restore the prior message wording and drop the test.

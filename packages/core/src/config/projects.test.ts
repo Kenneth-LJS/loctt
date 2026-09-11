@@ -216,6 +216,25 @@ default: 01HX0000NONEXISTENT00000000
     expect(cfg.default).toBe("01HX0000NONEXISTENT00000000");
   });
 
+  it("an archived default is rejected with a message that does not say 'default default'", () => {
+    // The error formatter prepends the failing key path ("default"); the
+    // schema message must not also begin with "default project", or the
+    // two combine into "default default project …". Regression for that
+    // doubling.
+    const yaml = `
+projects:
+  - id: 01HX0000000000000000000888
+    name: Archived
+    prefix: "AR"
+    archived: true
+default: 01HX0000000000000000000888
+`;
+    let msg = "";
+    try { parseProjectsConfig(yaml); } catch (e) { msg = (e as Error).message; }
+    expect(msg).toMatch(/archived/);
+    expect(msg).not.toMatch(/default default/);
+  });
+
   // @verifies DEG-10
   it("throws YamlSyntaxError on malformed YAML (tagged with file label)", () => {
     expect(() => parseProjectsConfig("{ projects: [")).toThrow(YamlSyntaxError);
