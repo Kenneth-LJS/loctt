@@ -11004,3 +11004,22 @@ to indicators *required* to understand content, not to decoration. So:
 `--border-subtle`/`--border-default` (decorative). The subtle→default
 migration from the K81/K82 commit stays (a visual improvement), reframed
 as decorative-not-accessibility. This is Ken's, not agent-revertible.
+
+### A-A11Y40-CONTRAST · Palette brought to zero color-contrast violations (A11Y-40 in situ)
+
+**Built (agent-level, 2026-09-11).** The axe `color-contrast` sweep + the
+static harness found three AA text failures in the light palette (all 12px
+chip text): `--status-active-fg` #1E6FCB (4.35:1), `--status-completed-fg`
+and `--feedback-success-fg` #1F8A4C (3.88:1). Per K74 (all AA blocks) +
+Ken's "fix all it finds": darkened to `--status-active-fg` #175FB4
+(5.47:1) and the two greens to #18743F (5.16:1). `--priority-medium` keeps
+#1E6FCB — it sits on canvas (not the chip bg) and axe did not flag it.
+
+The in-situ A11Y-40 gate is a whole-page axe `color-contrast` scan across
+/list, /board, /milestones, /sprints, /settings/workflow in both themes
+(`@verifies A11Y-40`), now at zero violations. The static harness
+(`contrast.test.ts`) additionally asserts every text token, chip pair,
+control border and region divider — it caught the two green failures axe
+missed (the completed/success chips weren't rendered on the scanned
+pages), which is why both layers exist. **To revert:** restore the
+original fg hexes (reintroduces the AA failures).

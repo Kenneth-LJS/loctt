@@ -101,9 +101,17 @@
 
   --status-pending-fg: #475569;
   --status-pending-bg: #EEF2F8;
-  --status-active-fg: #1E6FCB;
+  /* --status-active-fg: was #1E6FCB (4.35:1 on -bg — failed AA for the
+   * 12px chip text, A11Y-40, found by the axe sweep). Darkened one step
+   * to clear 4.5:1 (5.47:1 vs #E6F0FC). Distinct from --priority-medium,
+   * which keeps #1E6FCB — it sits on canvas, not the active-bg, and axe
+   * did not flag it. */
+  --status-active-fg: #175FB4;
   --status-active-bg: #E6F0FC;
-  --status-completed-fg: #1F8A4C;
+  /* --status-completed-fg: was #1F8A4C (3.88:1 on -bg — failed AA for
+   * 12px chip text, A11Y-40, found by the contrast harness). Darkened to
+   * clear 4.5:1 (5.16:1 vs #E6F5EC). */
+  --status-completed-fg: #18743F;
   --status-completed-bg: #E6F5EC;
   /* --status-discarded-fg: was #7B8699 (3.04:1 vs its -bg, failed AA,
    * T2). Raised to AA (4.96:1 vs #E4EAF2). The review called "muted"
@@ -116,7 +124,8 @@
   --feedback-danger-bg: #FDECE8;
   --feedback-warn-fg: #A15C00;
   --feedback-warn-bg: #FBF1DE;
-  --feedback-success-fg: #1F8A4C;
+  /* --feedback-success-fg: was #1F8A4C (3.88:1 — failed AA, harness). */
+  --feedback-success-fg: #18743F;
   --feedback-success-bg: #E6F5EC;
 
   /* --priority-low: was #7B8699 (3.46:1 vs canvas, failed AA, T2).

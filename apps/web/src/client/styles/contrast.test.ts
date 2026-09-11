@@ -85,6 +85,22 @@ const TEXT_TOKENS = ["--text-primary", "--text-secondary", "--text-tertiary"];
 const TEXT_BACKGROUNDS = ["--bg-surface", "--bg-canvas", "--bg-muted"];
 
 /**
+ * Status / feedback chip fg-on-its-own-bg pairs. These carry small (12px)
+ * text, so they owe 4.5:1. The axe sweep (A11Y-40) found `--status-active`
+ * at 4.35:1; asserting the pairs here catches the next such regression in
+ * ms. Each entry is [fg-token, bg-token].
+ */
+const CHIP_PAIRS: readonly [string, string][] = [
+  ["--status-pending-fg", "--status-pending-bg"],
+  ["--status-active-fg", "--status-active-bg"],
+  ["--status-completed-fg", "--status-completed-bg"],
+  ["--status-discarded-fg", "--status-discarded-bg"],
+  ["--feedback-danger-fg", "--feedback-danger-bg"],
+  ["--feedback-warn-fg", "--feedback-warn-bg"],
+  ["--feedback-success-fg", "--feedback-success-bg"],
+];
+
+/**
  * Non-text UI indicators that carry meaning and must clear 3:1 (A11Y-40
  * bullet 2). `--border-control` is the checkbox/radio boundary (K81);
  * `--border-default` is the structural-divider token (K82). Decorative
@@ -115,6 +131,13 @@ describe.each([
         expect(r, `${tokens[fg]} on ${tokens[bg]} = ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
       });
     }
+  }
+
+  for (const [fg, bg] of CHIP_PAIRS) {
+    it(`${fg} on ${bg} meets 4.5:1 (chip text)`, () => {
+      const r = ratio(tokens[fg] as string, tokens[bg] as string);
+      expect(r, `${tokens[fg]} on ${tokens[bg]} = ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+    });
   }
 
   // Control borders (K81): 3:1 against surface AND muted (a checkbox can
