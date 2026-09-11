@@ -19,6 +19,17 @@ export type TaskReferenceKind =
 
 export interface CountTasksByReferenceOptions {
   readonly includeArchived?: boolean;
+  /**
+   * Status keys in a `discarded`-category status. When given, tasks in
+   * those statuses are excluded from the count (MSL-11 / K85), so a
+   * label/milestone's Settings `taskCount` uses the SAME denominator as
+   * `computeProgress` — which excludes discarded — rather than showing a
+   * larger number that reads as a discrepancy against the progress
+   * fraction. The caller derives this from the workflow config (the
+   * status→category map lives there, not in core's task layer); omitting
+   * it keeps the old behaviour (discarded included).
+   */
+  readonly discardedStatusKeys?: ReadonlySet<string>;
 }
 
 /**
@@ -56,10 +67,18 @@ export async function countTasksByReferences(
 
   const idSet = new Set(ids);
   const includeArchived = options?.includeArchived ?? false;
+  const discarded = options?.discardedStatusKeys;
   const tasks = await loadAllTasks(locttDir);
 
   for (const t of tasks) {
     if (!includeArchived && t.frontmatter.archived) continue;
+    // MSL-11/K85: exclude discarded-category tasks so this count matches
+    // computeProgress's denominator. `status` may be undefined/unknown —
+    // only a status explicitly in the discarded set is dropped.
+    if (discarded !== undefined) {
+      const status = t.frontmatter.status;
+      if (typeof status === "string" && discarded.has(status)) continue;
+    }
     if (kind === "label") {
       for (const lid of t.frontmatter.labels ?? []) {
         if (idSet.has(lid)) result[lid] = (result[lid] ?? 0) + 1;

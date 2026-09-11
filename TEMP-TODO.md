@@ -105,7 +105,7 @@ Nothing behind these can close until decided.
 - [ ] **Read-only views + degraded entries (ERR-10, LST-51, TML-48)** — should a degraded-but-loadable config alert on a read-only view, or only in settings?
 - [ ] **SET-43 — is config read-back required?** — a settings panel cannot read what it wrote; `GET /api/config/:key` 404s. Decide, then add the case.
 - [ ] **TSK-58 — are Duplicate and Move reachable from the UI, or scoped out?** — Duplicate/TSK-20 shipped; this is the UI affordance + scoping case.
-- [ ] **MSL-11 vs MSL-3 denominator** — Settings label count (`counts.ts:62`, archived-only) vs progress (`computeProgress`, also excludes discarded) disagree: `10` in Settings, `4/8` as progress. Rule which denominator Settings shows, then align function + case.
+- [x] **MSL-11 vs MSL-3 denominator (K85)** — **DONE.** countTasksByReferences excludes discarded via discardedStatusKeys (derived from workflow in withCounts); Settings count now matches progress. MSL-11 bullet 2 rewritten (row-match vs progress conflict) + flagged for Ken. Test red-proven. A-MSL11-K85.
 
 ## 1. A11y — all WCAG AA failures block (Ken, decisions.md K74)
 
