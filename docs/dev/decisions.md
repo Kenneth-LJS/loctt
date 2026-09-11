@@ -11476,3 +11476,22 @@ green; the `cli.js` bin smoke-runs (serves + resolves bundled client);
 web unit suite 1534 green. **Note:** tsup's dts plugin trips on the
 tsconfig `baseUrl` deprecation, so types come from `tsc -b`, not tsup.
 **To revert:** re-`private` and drop the bin/tsup/files.
+
+### A-TSK58 · Duplicate/Move UI already built; TSK-58 scoping case authored + PM-reviewed
+
+**Verify-and-case (agent-level), closing K84.** The Duplicate and
+"Move to project…" affordances already exist in the task-detail "More"
+menu (`TaskDetail.tsx`), wired to `useDuplicateTask` and `MoveTaskDialog`,
+and are exercised by the TSK-20/TSK-44 UI specs. So K84's "build the
+affordance" was already satisfied. Authored the TSK-58 scoping case
+(reachability of both verbs from the UI) + a dedicated reachability test
+(opens the More menu, asserts both menuitems present) rather than
+piggybacking on TSK-20/44 — per the PM review's nit that a side-effect
+tag would silently lose coverage if those specs were rewritten.
+
+PM review approved: TSK-58 distinct from TSK-20/44 (reachability vs
+behavior), `minor`/P8 correct, and the scope-note ("only Duplicate/Move
+lacked a UI affordance") verified against all six other verbs
+(create/edit/archive/delete/link/attach all have affordances). @verifies
+TSK-58; spec green; cases:index 1042, check clean. **To revert:** drop the
+TSK-58 test + case (the affordance itself predates this).

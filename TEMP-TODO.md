@@ -104,7 +104,7 @@ Nothing behind these can close until decided.
 - [ ] **BAK-C13 — a displaced body is not carried by a later backup** — clean fix is a new backup record kind (no case describes it).
 - [ ] **Read-only views + degraded entries (ERR-10, LST-51, TML-48)** — should a degraded-but-loadable config alert on a read-only view, or only in settings?
 - [x] **SET-43 — config read-back (K86)** — **DONE.** GET /api/config/:key → getConfigValue; unknown key 404s listing valid keys (CFG-C3 parity). SET-43 case authored + PM-reviewed (2 wording fixes applied); @verifies SET-43 red-proven. A-SET43.
-- [ ] **TSK-58 — are Duplicate and Move reachable from the UI, or scoped out?** — Duplicate/TSK-20 shipped; this is the UI affordance + scoping case.
+- [x] **TSK-58 — Duplicate/Move reachable from the UI (K84)** — **DONE (verify-and-case).** The More-menu affordances already existed + tested (TSK-20/44); authored the TSK-58 scoping case + a dedicated reachability test, PM-reviewed. A-TSK58.
 - [x] **MSL-11 vs MSL-3 denominator (K90, supersedes K85)** — **DONE.** discarded is SHOWN in counts/queries, EXCLUDED only from burndown/progress; the count (incl. discarded) and progress fraction measure different things by design. Reverted the K85 exclusion; MSL-11 reconciled. Counts tests green. K90.
 
 ## 1. A11y — all WCAG AA failures block (Ken, decisions.md K74)
