@@ -153,7 +153,7 @@ but they are in-scope for launch, not a post-launch roadmap. The rulings
 
 | Item | Target | Kind | State |
 |---|---|---|---|
-| B1 license/version metadata | both | metadata | not started |
+| B1 license/version metadata | both | metadata | DONE |
 | B2 document security model | both | docs | not started |
 | B3 relocate TEMP-TODO | both | hygiene | not started |
 | B4 versioning + npm publishability | npm | packaging | needs decisions |

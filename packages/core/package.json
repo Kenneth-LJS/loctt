@@ -47,5 +47,6 @@
   },
   "devDependencies": {
     "@types/proper-lockfile": "^4.1.4"
-  }
+  },
+  "license": "MIT"
 }
