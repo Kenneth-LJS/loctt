@@ -1,4 +1,4 @@
-/* Design tokens — carried over from temp-ui-mockups/tokens.css.
+/* Design tokens for the web UI.
  * Two scopes: :root (light) and .dark (dark). The theme is switched
  * by toggling the `dark` class on <html>.
  *

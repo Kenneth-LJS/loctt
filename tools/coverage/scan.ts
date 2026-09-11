@@ -35,7 +35,7 @@ const TEST_FILE = /\.(test|spec)\.tsx?$/;
 // coverage the main tree does not have. Same shape as the six sweep
 // worktrees that made `npm run lint` exhaust the V8 heap.
 const SKIP_DIRS = new Set([
-  "node_modules", "dist", ".git", "workspace", "temp-ui-mockups", ".claude",
+  "node_modules", "dist", ".git", "workspace", ".claude",
 ]);
 
 export interface Tag {
