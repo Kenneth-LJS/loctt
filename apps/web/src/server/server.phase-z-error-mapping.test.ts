@@ -190,6 +190,55 @@ describe("WS1: an unreadable config/state file is attributed, not flattened to 5
     // written; io_failed here carries no such claim.
     expect(body.data_state).not.toBe("unknown");
   });
+
+  /**
+   * SET-45 (K78): a workflow-config WRITE that fails on the filesystem
+   * (the config dir is read-only → EACCES on the atomic rename) must be
+   * reported as io_failed/500, NOT config_invalid/400. Blaming the user's
+   * config for a permission fault is the ERR-1 misattribution the fix
+   * removes. Skipped where the process can write regardless (root).
+   *
+   * @verifies SET-45
+   */
+  it("PUT /api/workflow: a filesystem write failure is io_failed/500, not config_invalid", async () => {
+    const { root, base } = await serve(async r => { await initLoctt(r); });
+
+    // A valid, unchanged config — so any failure is the write, not the
+    // document. Read it back first, then PUT it verbatim.
+    const wf = await (await fetch(`${base}/api/workflow`)).json();
+
+    // Make the config dir read-only so the atomic write (temp + rename)
+    // fails with EACCES.
+    const cfgDir = join(root, ".loctt/config");
+    await chmod(cfgDir, 0o555);
+    // If we can still write regardless (root), the assertion is vacuous.
+    let writable = false;
+    try {
+      const { writeFile, unlink } = await import("node:fs/promises");
+      const probe = join(cfgDir, ".probe");
+      await writeFile(probe, "x");
+      await unlink(probe);
+      writable = true;
+    } catch { /* good — genuinely read-only */ }
+    if (writable) { await chmod(cfgDir, 0o755).catch(() => {}); return; }
+
+    const res = await fetch(`${base}/api/workflow`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-Loctt-Client": "test" },
+      body: JSON.stringify({ workflow: wf }),
+    });
+    const body = (await res.json()) as Envelope;
+
+    // Restore perms so cleanup can recurse.
+    await chmod(cfgDir, 0o755).catch(() => {});
+
+    // The bug: config_invalid/400, blaming the user's config for a disk
+    // fault. The fix: io_failed/500, the write did not land.
+    expect(body.code).not.toBe("config_invalid");
+    expect(body.code).toBe("io_failed");
+    expect(res.status).toBe(500);
+    expect(body.data_state).toBe("not_saved");
+  });
 });
 
 // ---- WS2: init failure attribution ------------------------------------

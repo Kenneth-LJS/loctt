@@ -1506,6 +1506,20 @@ export function createWebApp(options: WebAppOptions) {
         error(res, env.message, statusForCode(err.code), env);
         return;
       }
+      // SET-45 (K78): a filesystem failure (EACCES, ENOSPC, …) is NOT a
+      // config error — blaming the user's config for a disk/permission
+      // fault is exactly the misattribution ERR-1 forbids. `FsAccessError`
+      // extends Error (not LocttError), so without this branch it fell
+      // through to `config_invalid` below. Map it to io_failed/500, the
+      // same class the read path and the top-level handler already use.
+      if (err instanceof FsAccessError) {
+        error(res, err.message, 500, {
+          code: "io_failed",
+          data_state: "not_saved",
+          recovery: { kind: "retry" },
+        });
+        return;
+      }
       // applyWorkflowEdit validates the whole document and rewrites task
       // frontmatter; it either commits or rejects, so the write did not
       // land. `config_invalid` rather than a generic validation failure —

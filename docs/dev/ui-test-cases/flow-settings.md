@@ -348,6 +348,14 @@ This case previously asserted the panels were read-only. That was an early draft
 - No panel renders an empty list that would read as "you have no statuses configured".
 - A retry action re-fetches, and recovering the server clears every panel's error without a reload.
 
+### SET-45 · M4 · major · P3 P4 P6
+**A filesystem failure writing workflow config is reported as a write/IO failure, not as an invalid config.** Make `.loctt/config/` read-only, then save a *valid* workflow edit.
+
+- The response is a 5xx `io_failed`, not a 400 `config_invalid`: the user's configuration is valid; the machine could not persist it. Naming a permission/disk fault as invalid input is the fault-misattribution P4/P6 (and K78) guard against — errors name the real reason.
+- The envelope states the write did not land (`data_state: "not_saved"`) so nothing is presented as saved.
+- A genuinely invalid document (a duplicate key, a bad shape) is still `config_invalid`/4xx — this case is only about the IO fault, which previously masqueraded as the validation fault (both came back `config_invalid`/400 though the validation path was correct and only the IO path was mis-mapped).
+- Complementary to ERR-11 (the user-facing "not writable" copy) and SET-34 (the drag-reorder client behavior): those assert the message and the UI recovery; SET-45 pins the API contract — the status/code/`data_state` distinction between an IO fault and a validation fault.
+
 ### SET-46 · M4 · major · P3 P4
 **A status can be created from the panel.** Statuses panel, Create dialog.
 
