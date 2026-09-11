@@ -11594,3 +11594,29 @@ rename already does. Documented in a comment on the handler rather than
 changing behavior. **To revert:** if a future settings write becomes a
 read-modify-write (e.g. server-side merge instead of whole-document
 replace), wrap it in `withStateLock` and delete the comment.
+
+### A-NWD · Non-working-day predicate extracted to one shared classifier
+
+**Refactor (agent-level).** The working-day test lived as two byte-for-byte
+copies — `nonWorkingReason` in `timeline/geometry.ts` (TML-13, returns a
+holiday label / `""` / undefined for shading) and `nonWorkingNote` in
+`DateField.tsx` (TSK-8, returns an English sentence, reused by
+`CreateTaskModal` for NEW-8). The geometry.ts copy carried a comment
+naming the duplication and saying "if a third caller appears, extract
+then" — the create modal (via `nonWorkingNote`) was that third caller.
+Extracted `classifyNonWorkingDay(date, calendar): {holiday} | {weekday} |
+undefined` into `apps/web/src/client/dates/workingDays.ts`; both callers
+now format its result, so *what counts as non-working* has one home and
+the two surfaces cannot drift. Home is `dates/` (a general client date
+util already holding `workspaceDate`), not `timeline/`, so the editor does
+not import a view module.
+
+**Behavior note.** The shared classifier uses the strict round-trip parse
+(the same guard `parseDay` uses): a value some engines roll forward, e.g.
+`2026-02-31`, is treated as "no date". `nonWorkingReason` already parsed
+this way; `DateField.nonWorkingNote` did not, so the editor now shows no
+note for such an invalid string instead of a weekday derived from the
+rolled-forward date. This is an improvement, not a regression, and no test
+asserted the old behavior (all 1206 web-client unit tests pass). **To
+revert:** inline the predicate back into each caller and delete
+`workingDays.ts` + its test.
