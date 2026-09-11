@@ -4325,6 +4325,23 @@ renders the reason. Only the UI test's expectation would move from
 `timeline-unreadable` back to
 `timeline-unscheduled-reason-<key>`.
 
+**RESOLVED, 2026-09-12 (A-TML48-RESOLVE).** The premise above no longer
+holds: the tolerant loader now degrades a wrong-typed date **field-locally**
+(K26 field-local rule — see corruption-handling-guide.md, whose own example
+is `due_date: "not-a-date"`), lifting `start_date` into the task's `health`
+and leaving the field absent, so the task loads into `items` (not
+`unreadable`) and `/api/tasks` forwards its `health` via `wireHealth`.
+Measured: `parseFrontmatter` on `start_date: "next tuesday"` returns the
+task with `health: [{field:"start_date", kind:"wrong_type", raw:"next
+tuesday", …}]`. So TML-48 now reaches its **primary** branch — the
+Unscheduled lane flags the row (`timeline-unscheduled-reason-<key>`) with
+`dateProblemNote` naming the field and showing the value verbatim ("start_date
+is corrupt: next tuesday"), no `Invalid Date` anywhere. Bullet 3 (name the
+task + offending value) is met, on both halves. The UI spec was un-quarantined
+(was `test.fixme` asserting the stale `timeline-unreadable` path) and rewritten
+to assert the lane path; red-proven by hiding the value and rebuilding
+web+cli. The A41 correction's "unmet" verdict is superseded.
+
 
 ### A42 · `createTask` throws a typed error, so a rejected value is a 400 and not a 500
 

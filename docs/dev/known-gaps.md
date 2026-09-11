@@ -1484,36 +1484,6 @@ defects: the features may work. What is recorded is that nobody has
 checked, which is the honest state — and it is now written down rather
 than implied by a number.
 
-## TML-48's unreadable notice names neither the task nor the bad value
-
-**Measured 2026-09-01 during the M3 gate, against a live server.**
-
-TML-48's third bullet: "The message names the task and the offending
-field value." A hand-edited `start_date: "next tuesday"` produces:
-
-    {"id": "01M1CJZ…", "path": "/…/tasks/01M1CJZ…/task.md",
-     "reason": "start_date must be YYYY-MM-DD or full ISO-8601 timestamp"}
-
-`TimelineView.tsx:546` renders exactly `{u.path}: {u.reason}` — a ULID
-file path and a generic schema constraint. **No title, no key, and the
-offending value `"next tuesday"` appears nowhere.** So bullet 3 is unmet
-on both halves. Bullet 2 holds (no `Invalid Date` leaks) and bullet 1
-holds under the case's "or flagged in place" reading.
-
-**A41 asserted the opposite** — "the task is named, the offending field
-is named" — which made a partial case read as met. That sentence has
-been corrected in place rather than deleted, with this measurement.
-It is the same failure as REL-16's forward reference to a known-gaps
-entry that was never written: a claim in a document standing in for a
-check.
-
-**Why it is not fixed here.** Naming the task means the server must
-carry a display name for a file it could not parse — the title may
-itself be unreadable — and naming the value means the ZodError's
-received input has to survive into the envelope. Neither is hard, but
-both are server work on a payload the CLI and MCP share, found during a
-gate rather than a build.
-
 ## NEW-3's status pre-fill is unenactable, and `initialStatus` is dead plumbing
 
 **Found by the M3 gate round 2, 2026-09-01.**
@@ -3376,16 +3346,22 @@ never showing the notice the case asserts:
 - `ERR-10` / `LST-51` (flow-list): break `workflow.yaml` (drop a status
   `category`) → expect a `role="alert"` on `/list`. `loadWorkflowConfig`
   is tolerant (workflow.ts, "north-star principle 5"): the bad status
-  becomes a `broken` entry, no `config_invalid`, no alert.
-- `TML-48` (flow-timeline): a task with an invalid `start_date` → expect a
-  `timeline-unreadable` notice. The timeline view does not render it.
+  becomes a `broken` entry, no `config_invalid`, no alert. **STILL OPEN** —
+  the remaining member of this family; the point-of-use alert on `/list`
+  is unbuilt.
+- `TML-48` (flow-timeline): a task with an invalid `start_date`.
+  **RESOLVED 2026-09-12 (A-TML48-RESOLVE).** The loader now degrades the
+  date field-locally (health), so the task loads into the Unscheduled lane
+  and is flagged in place with the value verbatim
+  (`timeline-unscheduled-reason-<key>`, "start_date is corrupt: next
+  tuesday") — the case's "flagged in place" branch, met. The UI spec was
+  un-quarantined and rewritten; A41 superseded. It was never the same
+  shape as ERR-10/LST-51 (a task-health degrade, not a workflow-config one).
 - `SPR-31` (flow-sprints, entry above): **RESOLVED** (B4, A167). Not a
   silent degrade — a per-entry `superRefine` fault is reported as a
   `BrokenEntry` and `SprintsView` surfaces it as `sprints-broken-config`;
-  the fixme asserted the wrong (`sprints-config-error`) testid. The
-  ERR-10/LST-51/TML-48 members below remain open — those are genuinely
-  the tolerant-loader-degrades-silently shape, distinct from SPR-31's
-  wrong-testid diagnosis.
+  the fixme asserted the wrong (`sprints-config-error`) testid. Only the
+  ERR-10/LST-51 member remains open.
 
 **Proven pre-existing, not a B2 change.** Each fails identically on a
 clean `HEAD` worktree (verified during the B2 merge gate). No B2-staged
@@ -3396,14 +3372,14 @@ view/health path, or `SprintsView.tsx`.
 (SET-33 / K32): `WorkflowPanelFrame` now surfaces `broken` entries. The
 read-only views have no equivalent surfacing — that is the gap.
 
-All four are **quarantined `test.fixme`** so the B2 gate is honestly
-green rather than shipping known-red tests. Un-fixme when the read-only
-views surface degraded entries. **A product question to settle first:**
-should a degraded-but-loadable config alert on a read-only view, or only
-in settings? The case texts assume the former; the tolerant loaders imply
-the latter. That contradiction is the overview lane's to resolve — it may
-mean building the surfacing OR revising these four cases, not automatically
-the former.
+The remaining ERR-10/LST-51 tests are **quarantined `test.fixme`** so the
+gate is honestly green rather than shipping known-red tests. Un-fixme when
+`/list` surfaces the degraded workflow-config entry. **The product question
+is settled** (A-PRESCAN-2): a degraded-but-loadable entry alerts **at the
+point of use** (the view naming the file/field), not only in Settings — so
+this is a build, not a case revision: wire a `role="alert"` on `/list` off
+the workflow config's `broken` entries, the way the settings panels already
+do (SET-33 / K32's `WorkflowPanelFrame`).
 
 ## Demo/seed data can store parent/child edges in the reverse direction (UX-8 root cause)
 
