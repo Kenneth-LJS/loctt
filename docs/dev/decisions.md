@@ -11141,7 +11141,7 @@ code) and cross-referenced the complementary ERR-11/SET-34. **To revert:**
 drop the FsAccessError branch (reinstates config_invalid/400 for disk
 faults).
 
-### A-MSL11-K85 · Settings reference count excludes discarded (matches progress); MSL-11 bullet 2 rewritten
+### A-MSL11-K85 · [SUPERSEDED by K90] Settings reference count excludes discarded — REVERTED
 
 **Built (agent-level) implementing K85.** `countTasksByReferences` gains an
 optional `discardedStatusKeys`; `withCounts` (server) derives it from the
@@ -11350,3 +11350,71 @@ behavior). @verifies NEW-20; red-proven; 88 project/create tests green.
 The GUI half (no default + a deep-link nudge to settings) stays with the
 deep-linking workstream (K76). **To revert:** drop the
 `projectDefaultIsGhost` branch (reverts to the generic message).
+
+### K88 · Prefix is stored WITHOUT the dash; the dash is inserted at key render (supersedes K79)
+
+**Ruling (Ken, 2026-09-11).** The task-key prefix is stored as bare
+uppercase letters (e.g. `ABC`), and the `-` separator is **auto-inserted
+at key-render time** — a key is `${prefix}-${number}` → `ABC-123`. This
+supersedes the K79 assumption that the stored prefix carried its own dash.
+
+- **Validator:** `^[A-Z]{1,10}$` (uppercase letters only, 1–10) — now
+  correct against the bare stored form. Validated at creation
+  (`init`/`setProjectPrefix`).
+- **Render:** every key-forming site inserts the dash:
+  `state/keys.ts` and `backup/restore.ts` (`${prefix}${n}` →
+  `${prefix}-${n}`). Default prefix changes from `"T-"` to `"T"`.
+- **No migration** — LocTT is not published and no trackers exist on disk
+  (Ken, 2026-09-11), so there is no stored `"T-"`-style prefix to convert.
+
+**This is Ken's, not an agent's — not revertible by an agent.**
+
+### K89 · Packaging: mcp / cli / ui each independently installable, core bundled into each
+
+**Ruling (Ken, 2026-09-11), resolving B4/K72.** Three installable
+packages — `@loctt/mcp`, `@loctt/cli`, and the UI — each installable on
+its own. **Core is bundled into each** (no separate `@loctt/core` install;
+`noExternal` in tsup, already proven for cli/mcp — the way to "package
+core for free"). CLI and MCP work independently (they do today). The UI
+package ships with a **command to start the UI** (its own bin over
+`main.ts` serving `dist/client` + `dist/server`). So B4's real work is:
+give the UI package a bin + a server build + bundle core into it, and
+ship its built client. `loctt ui` may remain as a CLI convenience or be
+the UI package's own command — implementer's call, recorded in §8.
+
+**This is Ken's, not an agent's — not revertible by an agent.**
+
+### A-MSL-C1-MOOT · MSL-C1 legacy-replay caveat is moot (nothing published)
+
+**Decision (agent-level, per Ken).** The MSL-C1 legacy caveat (pre-fix
+name-valued history mis-read by replay) is moot: LocTT is not published
+and no trackers exist on disk, so there is no legacy history to migrate.
+The forward-only write fix (A-MSL-C1) is complete and sufficient. Removing
+the parked-caveat note from known-gaps.
+
+### K90 · Discarded is SHOWN in queries/lists, EXCLUDED from burndown/progress (supersedes K85)
+
+**Ruling (Ken, 2026-09-11).** `discarded` (a status category, e.g.
+`wont_do`) is distinct from `archived` (a hide-flag) — they are
+orthogonal. The rule:
+- **Queries and lists SHOW discarded tasks** — a won't-do task is a
+  legitimate thing to see when browsing/filtering; do not hide it by
+  default. (So the Settings reference count INCLUDES discarded.)
+- **Burndown and progress EXCLUDE discarded** — abandoned work must not
+  count toward a milestone/sprint denominator (this is MSL-3 /
+  `computeProgress`, unchanged).
+
+**This supersedes K85.** K85 made the Settings *count* exclude discarded
+to match progress; that was wrong under this ruling — the count is a
+list/query context and should INCLUDE discarded. The 10-vs-4/8 difference
+is not a bug: the count answers "how many tasks carry this label"
+(discarded included) and progress answers "how much work toward the goal"
+(discarded excluded). MSL-11 is reconciled to state that the two measure
+different things, rather than forcing them equal.
+
+**Action:** revert the `discardedStatusKeys` exclusion added to
+`countTasksByReferences`/`withCounts` (A-MSL11-K85); rewrite MSL-11 to
+name the two-different-measures reality. No global "exclude everywhere"
+change — that idea is dropped (it conflated discarded with archived).
+
+**This is Ken's, not an agent's — not revertible by an agent.**
