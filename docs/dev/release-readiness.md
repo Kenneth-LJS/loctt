@@ -156,7 +156,7 @@ but they are in-scope for launch, not a post-launch roadmap. The rulings
 | B1 license/version metadata | both | metadata | DONE |
 | B2 document security model | both | docs | DONE |
 | B3 relocate TEMP-TODO | both | hygiene | DEFERRED to end-of-run (A-B3-DEFER) |
-| B4 versioning + npm publishability | npm | packaging | needs decisions |
+| B4 web packaging | npm | packaging | BLOCKED — K72 conflict (A-B4-BLOCKED) |
 | H1 corruption coverage audit | both | robustness | not started |
 | H2 git-sync stability/labelling | both | robustness | partial (tests exist) |
 | H3 community files | public repo | hygiene | not started |
