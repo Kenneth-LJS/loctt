@@ -11272,3 +11272,40 @@ backlog is worked down, rename `TEMP-TODO.md` → `docs/dev/backlog.md` (or
 `.gitignore` it), repoint `CLAUDE.md`, and update the goal. Not a blocker
 deferral — a sequencing choice so the rename lands once, cleanly, at the
 end. **To revert:** none needed; this only defers a rename.
+
+### A-B4-BLOCKED · B4 web-packaging collides with K72 — needs Ken
+
+**Parked (agent-level), needs Ken.** Building B4 (make the UI installable)
+surfaced that the current code and K72 describe two DIFFERENT
+architectures, and reconciling them is a real design call:
+
+- **What exists today:** `loctt ui` (a CLI command, `apps/cli/src/commands/
+  ui.ts`) IS the web launcher — it imports `createWebApp` from `@loctt/web`
+  (which the CLI **bundles**, `noExternal`), starts the loopback server,
+  serves the client SPA, and auto-opens the browser. So the UI ships
+  *inside the CLI*, not as its own package.
+- **The real gap on THAT path:** nothing copies the built web client into
+  `apps/cli/dist/client`. `resolveClientDir` (`cli/runtime/schema-guard.ts`)
+  looks for `<cli-dist>/client` or the monorepo `../../web/dist/client`;
+  the latter doesn't exist in a published `@loctt/cli`, so a published CLI
+  would serve an API with no UI. Fix = a build step copying
+  `apps/web/dist/client` into the CLI bundle.
+- **What K72 ruled:** CLI / MCP / UI are **independently installable** and
+  the CLI does **not** serve the UI — i.e. `@loctt/web` is its own package
+  with its own `bin`, and `loctt ui` would move out of the CLL.
+
+These conflict. The readiness-doc B4 (a `@loctt/web` bin + server build)
+implements K72; the existing `loctt ui` implements the opposite.
+
+**Needs Ken to choose:**
+(a) **CLI-launches-UI (match existing code):** keep `loctt ui`, add the
+    client-copy build step so a published CLI ships the SPA. Smallest;
+    UI is not separately installable (contradicts K72 as written).
+(b) **Separate @loctt/web package (match K72):** give web its own `bin`
+    + server build (tsup, mirroring CLI), publish `dist/client` +
+    `dist/server`; decide whether `loctt ui` stays as a convenience that
+    delegates or is removed. Larger; true independence.
+(c) **Both:** web is independently installable AND the CLI keeps `loctt ui`
+    as a bundled convenience. Most work; most flexible.
+
+Parked per park-don't-halt. B1/B2 are done; B3 deferred to end-of-run.
