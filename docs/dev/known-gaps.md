@@ -3055,36 +3055,6 @@ data-shape change, not a UI test.
 — one spinner, then all checks appear together; the Network panel shows
 a single `/api/doctor` request, not a stream.
 
-## A UI view write drops a concurrently-present *broken* view from queries.yaml
-
-**Found 2026-09-04 while building VUE-22 (decision A118). Not fixed —
-out of VUE-22/26/27 scope; those cases use valid entries.**
-
-After VUE-22, `parseQueriesConfig` sorts a hand-broken entry into
-`QueriesConfig.broken`, not `queries`. Every view *write* in
-`packages/core/src/views/manage.ts` (`createView`, `editView`,
-`archiveView`, `unarchiveView`, delete) re-reads the config inside the
-state lock and calls `saveQueriesConfig(locttDir, { queries: next })` —
-where `next` is derived from `config.queries` only. `serializeQueriesConfig`
-never emits `broken`. So if the file holds a broken entry at the moment
-of a UI save, that entry is **silently dropped** from the written file.
-
-This is a principle-1 violation (never silently corrupt/lose data) that
-the pre-VUE-22 throw-on-load masked: before, a broken file could not be
-loaded at all, so no write proceeded over it. VUE-27 does not catch it
-because its concurrent entry is valid.
-
-**Why not fixed here.** The safe fix is to carry the broken entries
-through a view write — either re-serialize them verbatim alongside the
-good ones, or refuse the write and surface the broken file — which is a
-write-path design decision touching `saveQueriesConfig`/`serializeQueriesConfig`
-and every `manage.ts` writer, beyond VUE-22's read-path scope and worth
-its own ticket + Ken's call on refuse-vs-preserve.
-
-**To reproduce.** In a tracker, append a view with `query: "status =="`
-to `queries.yaml`, then create/rename/archive any *other* view through
-the UI or `createView`. Re-read the file: the broken entry is gone.
-
 ## A11Y remainder assessment (2026-09-04): 2 buildable, 8 feature-gaps
 
 Of the 10 uncovered A11Y cases, only two are cleanly buildable now:
