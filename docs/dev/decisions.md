@@ -10807,3 +10807,79 @@ Case + test. **Ken's, not agent-revertible.**
 
 Part of the query-builder feature alongside K77 (`is empty`) and K80 (the
 JQL-like function set). **Ken's, not agent-revertible.**
+
+### K84 · TSK-58 — build the Duplicate & Move UI affordances (parity, no defer)
+
+**Ruling (Ken, 2026-09-11).** Duplicate (TSK-20) and Move exist in
+core/CLI/MCP but have no web-UI affordance. Build them into the task-detail
+UI: Duplicate with a confirm, Move with a target/project picker. Full
+surface parity; not scoped out. Cases + `@verifies` tests; the UI cases
+join `flow-tasks.md`. **Ken's, not agent-revertible.**
+
+### K85 · MSL-11 — the Settings label count uses the same denominator as progress
+
+**Ruling (Ken, 2026-09-11).** A label's Settings count and its milestone
+progress fraction must agree. Settings excludes **archived and discarded**
+(the same rule `computeProgress` uses), rather than showing an
+archived-inclusive total. This finally states the archived rule MSL-C1
+left unstated: **archived tasks are excluded from label/milestone
+reference counts.** Align `countTasksByReferences` (`core/src/task/
+counts.ts:62`) to exclude archived, and reconcile MSL-11's case wording to
+name the axis. Cases + tests; owes CLI/MCP/web. **Ken's, not
+agent-revertible.**
+
+### K86 · SET-43 — add the config read-back endpoint
+
+**Ruling (Ken, 2026-09-11).** `GET /api/config/:key` currently 404s, so a
+settings panel cannot confirm what it wrote. Add the read-back endpoint so
+the panel renders from the source of truth and cannot drift from disk.
+Write the SET-43 case (none exists). Small new API surface; owes the
+read-side of the config contract. **Ken's, not agent-revertible.**
+
+### K87 · BAK-C13 — use `mergeTask`'s existing `displaced` return, NOT a new record kind
+
+**The situation.** TEMP-TODO proposed a "new backup record kind" for
+carrying a displaced body — a load-bearing storage-format change. On
+inspection the BAK-C13 case itself (`flow-backup-restore.md:187-201`) says
+`mergeTask` (`git/merge.ts`) **already** returns the displaced body
+(`displaced: { label, content }`) and `merge.test.ts:186` already asserts
+the mechanism.
+
+**Decision (agent-level, flagged — no new format).** The restore/overwrite
+path **uses the existing `displaced` return**: preserve the losing body and
+name it in the report. No new on-disk record kind. This is a wire-up +
+case + test, not a storage change. **To revert:** if a case later needs a
+displaced body carried across a *chain* of backups (not just one
+overwrite), revisit — but BAK-C13 as written does not. Recorded in §8
+because it reverses a load-bearing proposal down to a wire-up.
+
+### A-PRESCAN-1 · PRU-46 — keep auto-recovery, retag + delete the dead banner code
+
+**Decision (agent-level, per Ken's "decide where one option is clearly
+best").** PRU-46's pending-rename banner is unreachable: recovery runs as
+middleware before any handler, so the mid-rename state the banner would
+show cannot occur. "Boot-only recovery" would reintroduce an observable
+stale-key state the case (K16) forbids. So: keep the auto-recovery,
+delete the dead banner component, retag PRU-46. **To revert:** if
+recovery is ever moved out of the pre-handler path, the banner's state
+becomes reachable and must come back. Case + test that the mid-rename
+state is unreachable.
+
+### A-PRESCAN-2 · Read-only degraded entries (ERR-10/LST-51/TML-48) — alert in place, where the user is
+
+**Decision (agent-level).** A degraded-but-loadable config entry on a
+read-only view alerts **at the point of use** (the view naming the
+file/field and degrading in place), not only in Settings. ERR-10, LST-51,
+TML-48 already require naming the file/field and in-place degradation;
+surfacing at point-of-use is the more discoverable, robust reading
+consistent with all three. **To revert:** if it proves too noisy on
+read-only surfaces, fall back to a single settings-level alert with a
+count. Cases already exist; wire the alert + tests.
+
+### A-PRESCAN-3 · MSL-C1 "referenceCount exists nowhere" — stale claim, verify not rebuild
+
+**Decision (agent-level).** The backlog/known-gaps note that milestone
+reference counting "exists nowhere" is a false positive of the kind
+lessons.md warns about — `countTasksByReferences` (`counts.ts:62`) and
+`computeProgress` exist. Verify + strike the stale note; do not rebuild.
+Folds into K85 (the denominator alignment). No new code beyond K85.
