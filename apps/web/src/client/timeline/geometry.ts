@@ -1,5 +1,7 @@
 import type { CalendarConfig, TimelineZoom } from "@loctt/contracts";
 
+import { classifyNonWorkingDay } from "../dates/workingDays.ts";
+
 /**
  * Timeline date/pixel arithmetic (M3.3a).
  *
@@ -203,27 +205,12 @@ export function eachDay(range: DateRange): readonly string[] {
 }
 
 /**
- * Why `date` is not a working day, or `undefined` when it is.
- *
- * **This duplicates the predicate inside
- * `DateField.nonWorkingNote` — deliberately, and it is a known
- * duplication rather than an oversight.** The two answer the same
- * question (TML-13's "shading is not hardcoded to Sat/Sun" and TSK-8's
- * date-editor marker) but return different things: `nonWorkingNote`
- * returns an English sentence ("Saturday is not a working day"), while
- * a shaded column's tooltip wants the bare holiday label
- * ("Christmas Day", TML-13's second bullet) and a sentinel for "shade
- * this, no tooltip".
- *
- * Extracting a shared core would mean editing `DateField`, and TSK-8's
- * behaviour is pinned by `flow-task-meta.spec.ts`; M3.3a had no reason
- * to touch it, so `DateField` is byte-for-byte unchanged. The risk
- * this leaves is real and worth naming: the two can drift, and only
- * the calendar-driven tests on either side would catch it.
- *
- * **If a third caller appears, extract then** — one shared
- * `isNonWorkingDay(date, calendar): {holiday?: string} | undefined`
- * with `nonWorkingNote` and this both formatting its result.
+ * Why `date` is not a working day, formatted for a shaded timeline
+ * column's tooltip. The classification lives in
+ * `dates/workingDays.classifyNonWorkingDay` — the one predicate both
+ * this and `DateField.nonWorkingNote` share (TML-13 and TSK-8), so the
+ * two can no longer drift. This formats the shared result the way the
+ * timeline wants it.
  *
  * Returns:
  *  - `undefined` — a working day, draw nothing.
@@ -234,19 +221,9 @@ export function nonWorkingReason(
   date: string,
   calendar: CalendarConfig | undefined,
 ): string | undefined {
-  if (calendar === undefined) return undefined;
-  const day = date.slice(0, 10);
-  // A holiday wins over the weekday: on a date that is both, the
-  // label is the more useful of the two answers.
-  const holiday = calendar.holidays.find(h => h.date === day);
-  if (holiday !== undefined) return holiday.label;
-  const ms = parseDay(day);
-  if (ms === undefined) return undefined;
-  // UTC, so the shaded column is the same one in every browser
-  // timezone. `getDay()` here would shift the weekend by a day for
-  // users east or west of the server.
-  const weekday = new Date(ms).getUTCDay();
-  return calendar.working_days.includes(weekday) ? undefined : "";
+  const kind = classifyNonWorkingDay(date, calendar);
+  if (kind === undefined) return undefined;
+  return "holiday" in kind ? kind.holiday : "";
 }
 
 /** A labelled header cell spanning one or more day columns. */

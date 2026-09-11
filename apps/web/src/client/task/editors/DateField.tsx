@@ -1,6 +1,7 @@
 import type { CalendarConfig } from "@loctt/contracts";
 import { useEffect, useId, useRef, useState } from "react";
 
+import { classifyNonWorkingDay } from "../../dates/workingDays.ts";
 import { shortDate } from "../../list/format.ts";
 import { fieldSlug } from "./OptionPicker.tsx";
 
@@ -205,27 +206,21 @@ const DAY_NAMES = [
 ];
 
 /**
- * Why `date` is not a working day, or undefined when it is.
- *
- * A holiday's own label wins over the weekday, because "Christmas Day"
- * is more use than "Thursday is not a working day" on a date that is
- * both.
- *
- * The weekday is derived by parsing the `YYYY-MM-DD` as UTC, which is
- * the only reading that gives the same answer in every browser
- * timezone — the guarantee TSK-8's second bullet asks for.
+ * Why `date` is not a working day as an English sentence, or undefined
+ * when it is. The classification is shared with the timeline via
+ * `dates/workingDays.classifyNonWorkingDay` (so the two surfaces cannot
+ * drift on *what* counts as non-working); this function owns only the
+ * date-editor wording. A holiday's own label wins over the weekday,
+ * because "Christmas Day" is more use than "Thursday is not a working
+ * day" on a date that is both — TSK-8, reused by the create modal
+ * (NEW-8).
  */
 export function nonWorkingNote(
   date: string,
   calendar: CalendarConfig | undefined,
 ): string | undefined {
-  if (calendar === undefined) return undefined;
-  const day = date.slice(0, 10);
-  const holiday = calendar.holidays.find(h => h.date === day);
-  if (holiday !== undefined) return `${holiday.label} — not a working day`;
-  const parsed = new Date(`${day}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) return undefined;
-  const weekday = parsed.getUTCDay();
-  if (calendar.working_days.includes(weekday)) return undefined;
-  return `${DAY_NAMES[weekday] ?? "That day"} is not a working day`;
+  const kind = classifyNonWorkingDay(date, calendar);
+  if (kind === undefined) return undefined;
+  if ("holiday" in kind) return `${kind.holiday} — not a working day`;
+  return `${DAY_NAMES[kind.weekday] ?? "That day"} is not a working day`;
 }
