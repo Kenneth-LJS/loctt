@@ -125,6 +125,17 @@ with the guard disabled; the coordinator's own mutation caught it. In
 M4.1, reverting a "fixed" delete left all 232 server tests green —
 nothing had ever covered it.*
 
+**UI specs run against `apps/cli/dist` — rebuild web+cli before you
+red-proof one, or you are mutating source the test never loads.** The
+Playwright fixture (`tests/ui/fixtures/server-harness.ts`) boots the
+*built* `loctt ui`, which serves the *built* client. Editing a client
+`.ts` and re-running a spec tests the stale bundle: the red-proof passes
+(no failure) and reads as "the test is vacuous" when in fact the mutation
+never reached the browser. *A TML-48 red-proof "passed" with the value-
+rendering line deleted — until the bundle was rebuilt, when it failed as
+it should. `npm run build --workspace @loctt/web && --workspace
+@loctt/cli` between the break and the run.*
+
 **Probe the built binary before writing anything — roughly a third of
 "defects" aren't.** Case titles and briefs go stale as code moves under
 them. *An audit claimed milestone progress "does not exist anywhere"; it

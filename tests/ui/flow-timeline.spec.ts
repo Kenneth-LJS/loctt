@@ -1649,14 +1649,7 @@ test.describe("TML — timeline error cases (section C)", () => {
   });
 
   // @verifies TML-48
-  // QUARANTINED (pre-existing, not a B2 regression — fails identically on a
-  // clean HEAD worktree). Expects a `timeline-unreadable` notice for a task
-  // with an invalid start_date; the timeline view does not render it. B2
-  // touches no task-load / health / TimelineView path. Same error-surface
-  // gap family as ERR-10/LST-51/SPR-31 — a tolerant loader degrades silently
-  // where a read-only view is expected to surface a notice. See
-  // known-gaps.md "read-only views do not surface degraded entries".
-  test.fixme("TML-48: an invalid start_date does not crash the view and is shown verbatim", async ({ page, tracker }) => {
+  test("TML-48: an invalid start_date does not crash the view and is shown verbatim", async ({ page, tracker }) => {
     const keys = await tracker.seed([{ title: "Bad date" }, { title: "Fine" }]);
     const [bad, fine] = keys as [string, string];
     await tracker.run(["set", fine, "start_date", "2026-03-02"]);
@@ -1684,30 +1677,28 @@ test.describe("TML — timeline error cases (section C)", () => {
     await expect(page.getByTestId(`timeline-bar-${fine}`)).toBeVisible();
 
     /**
-     * Where the invalid task surfaces, and why it is here rather than
-     * in the Unscheduled lane.
+     * Where the invalid task surfaces — the case's "flagged in place"
+     * branch, now reached the primary way.
      *
-     * The case's first bullet offers "Unscheduled (**or flagged in
-     * place**)". Measured against the real server: a `start_date` of
-     * "next tuesday" fails the task schema on read, so `/api/tasks`
-     * returns the task not in `items` at all but in `unreadable`, with
-     * `reason: "start_date must be YYYY-MM-DD or full ISO-8601
-     * timestamp"`. The client is never handed a task carrying the bad
-     * value, so it cannot place one in the lane — the flag is the
-     * unreadable notice, which is the "flagged" branch.
-     *
-     * The client-side lane path still exists and is unit-tested
-     * (`dateProblem.test.ts`, kind `invalid`); it is what renders this
-     * if the API ever starts passing such tasks through. What the case
-     * actually requires either way is met here: the task is named, the
-     * offending field is named, and no `Invalid Date` leaks anywhere.
+     * The tolerant loader (K26 field-local degrade) lifts a wrong-typed
+     * `start_date` into the task's `health` list and leaves the field
+     * *absent* from frontmatter, rather than failing the whole task on
+     * read. So `/api/tasks` returns the task in `items` (with `health`
+     * forwarded via `wireHealth`), not in `unreadable`. The client's
+     * `dateProblem` reads the health entry, classifies it `corrupt`, and
+     * the Unscheduled lane flags the row with the offending value shown
+     * verbatim. (This supersedes the earlier A41 measurement, where a bad
+     * date was object-fatal and surfaced only through the unreadable
+     * notice — that is no longer how the loader behaves.)
      */
-    const notice = page.getByTestId("timeline-unreadable");
-    await expect(notice).toBeVisible();
-    await expect(notice).toContainText("start_date");
-    await expect(notice).toContainText("YYYY-MM-DD");
+    const row = page.getByTestId(`timeline-unscheduled-row-${bad}`);
+    await expect(row).toBeVisible();
+    const reason = page.getByTestId(`timeline-unscheduled-reason-${bad}`);
+    // Bullet 3: names the field and shows the offending value verbatim.
+    await expect(reason).toContainText("start_date");
+    await expect(reason).toContainText("next tuesday");
 
-    // No `Invalid Date` leaks into a header, tooltip, or bar label.
+    // Bullet 2: no `Invalid Date` leaks into a header, tooltip, or label.
     expect(await page.locator("body").innerText()).not.toContain("Invalid Date");
     const titles = await page.locator("[title]").evaluateAll(ns =>
       ns.map(n => n.getAttribute("title") ?? ""),
