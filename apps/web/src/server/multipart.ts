@@ -78,9 +78,14 @@ export async function parseMultipartFile(
         return;
       }
 
-      // Take basename of declared filename to defeat any directory components
-      // a malicious client might inject; further validation is the core's
-      // responsibility (assertSafeBasename).
+      // Take basename of the client-declared filename to strip any directory
+      // components it might carry (`../`, absolute paths). This is the guard
+      // on the name we write to disk — core does NOT re-validate this declared
+      // string. What core validates (`assertSafeBasename` in addAttachment) is
+      // the basename of the *temp file's own path*, which is this already-safe
+      // value, so that check is defense-in-depth over the same name rather than
+      // an independent gate. The one substantive check core adds beyond
+      // `basename()` is the empty-name rejection, which we also do below.
       const safeName = basename(filename);
       if (safeName.length === 0) {
         fileStream.resume();
