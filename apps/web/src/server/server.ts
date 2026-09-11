@@ -1944,18 +1944,11 @@ export function createWebApp(options: WebAppOptions) {
     items: readonly T[],
   ): Promise<readonly (T | (T & { taskCount: number }))[]> {
     if (url.searchParams.get("counts") !== "true") return items;
-    // MSL-11/K85: the Settings taskCount must use the same denominator as
-    // milestone/sprint progress (computeProgress), which excludes
-    // discarded-category tasks. Derive the discarded status keys from the
-    // workflow so a label reading "10 tasks" in Settings and "4/8" as
-    // progress can't disagree by counting discarded on one side only.
-    const workflow = await loadWorkflowConfig(locttDir);
-    const discardedStatusKeys = new Set(
-      workflow.statuses.filter(s => s.category === "discarded").map(s => s.key),
-    );
-    const counts = await countTasksByReferences(locttDir, kind, items.map(i => i.id), {
-      discardedStatusKeys,
-    });
+    // K90: the reference count INCLUDES discarded-category tasks — it is a
+    // list/query context (a discarded task still carries its label), unlike
+    // milestone/sprint progress which excludes discarded. The two numbers
+    // measure different things by design (MSL-11); see decisions.md K90.
+    const counts = await countTasksByReferences(locttDir, kind, items.map(i => i.id));
     return items.map(i => ({ ...i, taskCount: counts[i.id] ?? 0 }));
   }
 

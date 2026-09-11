@@ -1859,28 +1859,6 @@ about migration, not just a regex.
 "web/x" && loctt create hello` → `Created web/x1`. Positive control:
 the same commands with `--prefix "WEB-"` give `WEB-1`, which routes.
 
-## MSL-C1 legacy caveat — history entries written by NAME before the 2026-09-11 fix
-
-**The write-path defect is FIXED** (MSL-C1 / A-MSL-C1, 2026-09-11):
-`buildSetFieldHistory` now reads the stored (resolved) value out of the
-new frontmatter, so new history entries carry the id, not the name.
-Verified: `entity-resolution-parity.test.ts` (`@verifies MSL-C1`) + the
-CLI integration test.
-
-**What remains (a data-migration question, not a code defect):** a
-tracker created *before* the fix may hold `_history.yaml` entries whose
-`after` is a sprint/milestone **name**. A burndown/progress replay of
-that old history still mis-reads those entries (a name never equals the
-id it compares against), so a legacy sprint can still under-report until
-its history is rewritten.
-
-**Options (needs Ken):** (a) make the replay tolerant — resolve a
-name-valued history `after` to its id before comparing (closes legacy
-data, adds resolver coupling to the reader); (b) a `doctor` repair that
-rewrites name-valued history entries to ids; (c) accept forward-only and
-document it (new writes correct; legacy trackers re-save to fix).
-Parked; the write fix stands on its own.
-
 ## `PUT /api/user-settings` takes no state lock
 
 **Found:** M4.8 · 2026-09-01 · **Severity:** low

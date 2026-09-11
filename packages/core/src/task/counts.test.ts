@@ -97,25 +97,18 @@ describe("countTasksByReferences (batch)", () => {
   });
 
   /**
-   * MSL-11 / K85: with `discardedStatusKeys`, a task in a
-   * discarded-category status is excluded — so the Settings count uses
-   * the same denominator as computeProgress. Default init has `wont_do`
-   * as the discarded-category status.
+   * K90: the reference count INCLUDES discarded-category tasks (it is a
+   * list/query context; discarded is shown here, unlike burndown/progress
+   * which exclude it). A wont_do task still carries its label and counts.
    */
-  it("excludes discarded-category tasks when discardedStatusKeys is given", async () => {
+  it("includes discarded-category tasks (K90 — count is a query context)", async () => {
     const [l1] = await seedLabels(locttDir, "l1");
     await seed({ project: projectId, title: "Active", labels: [l1] });
     await seed({ project: projectId, title: "Done", labels: [l1], status: "done" });
     await seed({ project: projectId, title: "Dropped", labels: [l1], status: "wont_do" });
 
-    // Without the option: all three count (the pre-K85 behaviour).
+    // All three count — discarded is not hidden from a reference count.
     const all = await countTasksByReferences(locttDir, "label", [l1]);
     expect(all[l1]).toBe(3);
-
-    // With it: the wont_do task is excluded, matching progress's denominator.
-    const scoped = await countTasksByReferences(locttDir, "label", [l1], {
-      discardedStatusKeys: new Set(["wont_do"]),
-    });
-    expect(scoped[l1]).toBe(2);
   });
 });
