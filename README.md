@@ -294,6 +294,37 @@ file per flow. They are the specification the web UI is built against:
 - [CLI & MCP test cases](docs/dev/surface-test-cases/) — 10 flow docs, gaps only
 - [`case-index.json`](docs/dev/case-index.json) — the machine-readable index; see [tools/README.md](tools/README.md) for the coverage gate
 
+## Security & data model
+
+LocTT is **single-user and local-first by design.** Its security posture
+is a deliberate choice, not an omission:
+
+- **The web server listens on loopback only** (`127.0.0.1`). It is not
+  reachable from other machines, and it sets no CORS headers.
+- **There is no authentication and no multi-user model** — because
+  nothing is exposed. The tracker is your local files; the UI is a local
+  view of them. This is the "no accounts, no API keys" benefit above, and
+  it is why there is no login to secure.
+- **Your data never leaves your machine** unless *you* enable optional
+  [Git Sync](#git-sync), which publishes to a git branch you control.
+
+**Do not put LocTT on a network.** Because it assumes it is alone on a
+trusted machine, do **not** bind it to `0.0.0.0`, place it behind a
+reverse proxy, or otherwise expose it to other users or the internet —
+there is no auth layer to protect it if you do. (`npm run dev:host`
+exposes only the Vite *dev* client for local device testing; the API
+server still binds loopback.) If you need multi-user, hosted task
+tracking, LocTT is the wrong tool — that is the trade it makes for
+zero-setup simplicity.
+
+The realistic risk to guard against is **malformed data on disk** (a
+hand-edit or another tool corrupting a `.loctt/` file), not attackers.
+LocTT degrades around a corrupt field rather than crashing, and
+[`loctt doctor`](docs/user/cli/reference.md) reports what it finds — run
+it if something looks off.
+
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
