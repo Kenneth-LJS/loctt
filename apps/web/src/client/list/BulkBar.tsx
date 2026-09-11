@@ -110,7 +110,7 @@ export function BulkBar({
   return (
     <div
       // Sticky so scrolling to row 50 keeps it visible (BLK-2).
-      className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 border-t border-border-default bg-bg-surface px-4 py-2.5 shadow-[0_-1px_3px_rgba(0,0,0,0.06)]"
+      className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 border-t border-border-divider bg-bg-surface px-4 py-2.5 shadow-[0_-1px_3px_rgba(0,0,0,0.06)]"
       role="region"
       aria-label="Bulk actions"
       onKeyDown={e => {

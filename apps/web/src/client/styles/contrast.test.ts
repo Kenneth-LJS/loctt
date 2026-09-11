@@ -91,7 +91,12 @@ const TEXT_BACKGROUNDS = ["--bg-surface", "--bg-canvas", "--bg-muted"];
  * hairlines (`--border-subtle`) are intentionally NOT held to 3:1.
  */
 const CONTROL_BORDER = "--border-control";
-const DIVIDER_BORDER = "--border-default";
+// The ≥3:1 region-separator token (K82-REV) — for borders that are the
+// sole signal between semantically distinct regions (sticky action bars).
+// `--border-default`/`--border-subtle` are decorative and NOT asserted at
+// 3:1, per K82-REV (WCAG 3:1 is for indicators required to understand
+// content; row separators/hairlines are decoration).
+const DIVIDER_BORDER = "--border-divider";
 
 describe.each([
   ["light", light],
@@ -122,14 +127,14 @@ describe.each([
     });
   }
 
-  // Divider borders (K82): PARKED. Building the harness proved K82's
-  // stated fix insufficient — `--border-default` is only ~1.4:1 (light)
-  // / ~1.36:1 (dark), nowhere near 3:1. A divider that genuinely clears
-  // 3:1 must be ~#7C8598-dark, a prominent gridline — a real visual
-  // change K82 did not anticipate. Surfaced to Ken as a NEEDS-OWNER
-  // decision (see TEMP-TODO §0 / known-gaps). Marked `.todo` rather than
-  // asserted, so the harness does not encode an unmet, undecided target.
+  // Region-separator borders (K82-REV): the ≥3:1 token used where a
+  // border is the sole signal between semantically distinct regions
+  // (sticky action bars). Decorative dividers (--border-subtle,
+  // --border-default) are intentionally NOT asserted here.
   for (const bg of ["--bg-surface", "--bg-muted"]) {
-    it.todo(`${DIVIDER_BORDER} on ${bg} meets 3:1 — pending K82 clarification`);
+    it(`${DIVIDER_BORDER} on ${bg} meets 3:1`, () => {
+      const r = ratio(tokens[DIVIDER_BORDER] as string, tokens[bg] as string);
+      expect(r, `${tokens[DIVIDER_BORDER]} on ${tokens[bg]} = ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(3);
+    });
   }
 });
