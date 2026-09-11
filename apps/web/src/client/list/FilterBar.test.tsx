@@ -305,7 +305,10 @@ describe("buildChips — LST-33 dangling detection", () => {
   });
 
   it("a custom-field value is only dangling once the workflow config loaded", () => {
-    const cf = [{ key: "team", label: "Team", values: [{ key: "core", label: "Core" }] }];
+    const cf = [{
+      key: "team", label: "Team", type: "enum" as const, multi: false, searchable: false,
+      values: [{ key: "core", label: "Core" }],
+    }];
     const search = { "field.team": ["ghost"] } as Record<string, string[]>;
     // Workflow not loaded → not dangling.
     expect(buildChips(search, emptyOpts, cf, allLoaded, false)[0]?.dangling).toBe(false);
