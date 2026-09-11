@@ -24,15 +24,19 @@ User-facing documentation lives in `docs/`. Developer documentation lives in `do
 - `docs/user/cli/reference.md` — CLI commands
 - `docs/user/mcp/reference.md` — MCP tools and agent guidelines
 
-**Still-open working state.** `TEMP-TODO.md` (repo root) is the backlog
-of outstanding gaps and unresolved spec items — features deferred from
-v1, contract changes, and the handful of small case/doc items left after
-the v1 case-audit and proposed-cases queue were resolved. Each closes
-only once its resolution is codified as a case + test, not on a decision
-alone. (The v1 build's run-scaffolding files — the build plan, run
-workflow, ticket roster, case audit, and proposed-cases queue — were
-deleted once resolved; their durable lessons are in `docs/dev/lessons.md`
-and the unsatisfiable-case roster is in `docs/dev/known-gaps.md`.)
+**Pre-publish work.** `TEMP-TODO.md` (repo root) is the pre-publish
+backlog: outstanding gaps and unresolved spec items — correctness
+defects, a11y (WCAG AA) failures, contract changes, deferred features,
+and the case/doc remainders. **Ken ruled (decisions.md K73) the whole
+list is required before publishing** — not a "build later" queue; its
+~13 open rulings (TEMP-TODO § 0) are the critical path. The
+packaging/security blockers live in `docs/dev/release-readiness.md` and
+the UI-adoption blockers in `docs/dev/design-review.md`; the three
+together are the release gate. Each item closes only once codified as a
+case + `@verifies` test + a `decisions.md` entry, not on a decision
+alone. (The v1 build's run-scaffolding files were deleted once resolved;
+their durable lessons are in `docs/dev/lessons.md` and the
+unsatisfiable-case roster is in `docs/dev/known-gaps.md`.)
 
 **Recording decisions is part of the work, not paperwork.** A decision
 that lives only in a session's context is lost at the next compaction,

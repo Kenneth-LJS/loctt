@@ -7,12 +7,18 @@ What stands between the current tree and publishing LocTT. Scoped on
 npm packages (`npx loctt`, the MCP server). Blockers are tagged by which
 target they apply to.
 
-This is the packaging / security / metadata axis. It is **separate from**:
-- `TEMP-TODO.md` — deferred features and rulings (none are launch
-  blockers by our own bar: a gap closes as case + test, and those are
-  deferred features, not defects).
-- The UI design review (consistency / tokens / a11y) — tracked
-  separately; see `docs/dev/design-review.md` when it lands.
+This doc is the **packaging / security / metadata** axis (B1–B4). The
+full pre-publish blocker set spans three docs — treat all three as the
+release gate together:
+- **`TEMP-TODO.md`** — the product/correctness/a11y backlog. Ken ruled
+  (decisions.md **K73**) the **whole** list is required before publishing
+  — it is not a "build later" queue. It holds silent correctness defects,
+  a P1 data-loss, the BLK-44 robustness gap, the `unarchiveView` parity
+  failure, and every WCAG AA failure (K74). The ~13 rulings in it are the
+  critical path.
+- **`docs/dev/design-review.md`** — UI adoption blockers; §A1 (dialog
+  focus traps) is a ruled blocker (**K71**).
+- this doc — packaging/security below.
 
 Each item says what's true now, what "done" looks like, and — where it
 matters — the evidence it was checked against, so the next agent doesn't
@@ -133,10 +139,13 @@ production.
 
 ---
 
-## Consciously deferred — name in the roadmap, don't gate on
+## Nothing in TEMP-TODO is consciously deferred any more
 
-- The ~55 `TEMP-TODO` features/rulings. Deferred features, not defects.
-- The 13 open rulings. Nice to clear; not required to ship.
+Superseded by Ken's ruling **K73 (2026-09-11)**: the whole `TEMP-TODO.md`
+backlog is pre-publish. What was framed here as "deferred features" is now
+required. The features are still each their own build (see TEMP-TODO §7),
+but they are in-scope for launch, not a post-launch roadmap. The rulings
+(TEMP-TODO §0) gate the rest and come first.
 
 ---
 
