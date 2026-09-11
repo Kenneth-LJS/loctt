@@ -22,7 +22,7 @@ export interface RadioProps
 }
 
 const RADIO_BASE =
-  "appearance-none shrink-0 h-4 w-4 rounded-full border border-border-strong " +
+  "appearance-none shrink-0 h-4 w-4 rounded-full border border-border-control " +
   "bg-bg-surface cursor-pointer transition-colors " +
   "hover:bg-bg-muted-hover " +
   "checked:border-[5px] checked:border-accent checked:bg-bg-surface checked:hover:bg-bg-surface " +

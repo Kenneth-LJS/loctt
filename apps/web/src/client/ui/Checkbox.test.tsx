@@ -100,10 +100,13 @@ describe("Checkbox", () => {
     expect(cls).toContain("focus-visible:outline-2");
   });
 
-  it("uses border-strong as the resting boundary (A11Y-40 3:1 token)", () => {
+  it("uses border-control as the resting boundary (K81 / A11Y-40 3:1 token)", () => {
+    // Was `border-border-strong` — but --border-strong is only 2.16:1 on
+    // surface, so that assertion was encoding the sub-3:1 bug (DS-A11Y40).
+    // K81 introduced --border-control (≥3:1) for exactly this boundary.
     render(<Checkbox aria-label="P" />);
     expect(screen.getByRole("checkbox").className).toContain(
-      "border-border-strong",
+      "border-border-control",
     );
   });
 

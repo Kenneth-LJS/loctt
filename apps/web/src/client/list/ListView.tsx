@@ -612,7 +612,7 @@ export function ListView() {
         >
           <thead>
             <tr>
-              <th scope="col" className="sticky top-0 w-9 border-b border-border-subtle bg-bg-canvas px-3 py-2 dark:bg-bg-surface">
+              <th scope="col" className="sticky top-0 w-9 border-b border-border-default bg-bg-canvas px-3 py-2 dark:bg-bg-surface">
                 <input
                   type="checkbox"
                   aria-label="Select all on this page"
@@ -644,7 +644,7 @@ export function ListView() {
                     // disagree about the guess.
                     scope="col"
                     aria-sort={isSorted ? (sortDir === "asc" ? "ascending" : "descending") : undefined}
-                    className="sticky top-0 whitespace-nowrap border-b border-border-subtle bg-bg-canvas px-3 py-2 text-left text-[12px] font-semibold text-text-secondary dark:bg-bg-surface"
+                    className="sticky top-0 whitespace-nowrap border-b border-border-default bg-bg-canvas px-3 py-2 text-left text-[12px] font-semibold text-text-secondary dark:bg-bg-surface"
                   >
                     {col.sortable ? (
                       <button
@@ -775,7 +775,7 @@ export function ListView() {
                     // paint themselves — so on hover the whole row lifts,
                     // the ID/label cells included, and each chip stays
                     // legible instead of dissolving into the hover.
-                    "cursor-pointer [&>td]:border-b [&>td]:border-border-subtle [&>td]:px-3 [&>td]:py-2.5",
+                    "cursor-pointer [&>td]:border-b [&>td]:border-border-default [&>td]:px-3 [&>td]:py-2.5",
                     "hover:[&>*]:bg-bg-row-hover last:[&>td]:border-b-0",
                     task.archived ? "opacity-50" : "",
                     // Background *and* a left border, not colour alone
@@ -834,7 +834,7 @@ export function ListView() {
         // has no confirmation dialog. An undo the user has to scroll to
         // find is not an undo.
         <div
-          className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border-subtle bg-bg-surface px-4 py-2 shadow-[0_-1px_3px_rgba(0,0,0,0.06)]"
+          className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border-default bg-bg-surface px-4 py-2 shadow-[0_-1px_3px_rgba(0,0,0,0.06)]"
         >
           <BulkResult result={bulkResult} action={undoControl} />
           <button
@@ -1055,7 +1055,7 @@ function SkeletonRows({ columns, rows }: { columns: number; rows: number }) {
   return (
     <>
       {Array.from({ length: rows }).map((_, r) => (
-        <tr key={r} aria-hidden className="[&>td]:border-b [&>td]:border-border-subtle [&>td]:px-3 [&>td]:py-2.5">
+        <tr key={r} aria-hidden className="[&>td]:border-b [&>td]:border-border-default [&>td]:px-3 [&>td]:py-2.5">
           {Array.from({ length: columns }).map((__, c) => (
             <td key={c}>
               <span className="block h-3.5 w-full max-w-[120px] animate-pulse rounded bg-bg-muted" />

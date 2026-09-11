@@ -70,6 +70,14 @@
   --border-subtle: #DCE2EC;
   --border-default: #D4DBE6;
   --border-strong: #A7B1C2;
+  /* --border-control (K81, DS-A11Y40): the resting boundary of a
+   * checkbox/radio must clear WCAG 3:1 as a meaningful non-text UI
+   * indicator. --border-strong is only 2.16:1 on surface; a dedicated
+   * control token is used so the fix does not darken every strong border
+   * (K81 chose a separate token over deepening --border-strong globally).
+   * 4.02:1 vs surface (#FFFFFF), 3.58:1 vs muted (#EEF2F8) — clears 3:1
+   * wherever a control sits. */
+  --border-control: #767F93;
   --text-primary: #0F172A;
   --text-secondary: #475569;
   /* --text-tertiary: was #7B8699 (3.46–3.68:1 — failed AA for normal
@@ -139,6 +147,10 @@
   --border-subtle: #2A2A30;
   --border-default: #2E2E34;
   --border-strong: #43434A;
+  /* --border-control dark (K81): checkbox/radio resting boundary at ≥3:1.
+   * --border-strong is 1.88:1 on surface; this clears it — 3.66:1 vs
+   * surface (#141416), 3.27:1 vs muted (#1F1F22). */
+  --border-control: #6E6E7A;
   --text-primary: #F4F4F3;
   --text-secondary: #A8A8AE;
   /* --text-tertiary dark: was #6E6E75 (3.64–3.89:1 — failed AA, T1).
