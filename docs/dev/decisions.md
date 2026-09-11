@@ -11076,3 +11076,20 @@ Verified: real-browser trap tests (`K71: a migrated confirm dialog…`,
 red-proven) + A11Y-14/15/33, A11Y-5, NEW-28/31 all green. K71 closed.
 **To revert:** drop `DiscardDialog`'s `useFocusTrap` + the parent's
 `confirmDiscard` Tab-guard.
+
+### A-MENU-ARROWNAV · ui/Menu gets roving arrow-key navigation (A11Y-9 / §A2)
+
+**Built (agent-level).** `ui/Menu` rendered `role="menu"` /
+`role="menuitem"` but had no arrow-key navigation — a `role="menu"`
+contract requires roving movement, not just Tab (design-review §A2). Added
+to the panel: initial focus to the first item on open (via rAF, after the
+panel paints), ArrowDown/Up cycling (wrapping), Home/End, and printable-
+key type-ahead (700ms buffer). Operates only on `[role="menuitem"]:not
+([disabled])` within the panel, so consumers that render non-menuitem
+content (FilterDropdown's checkbox list, which has its own model) are
+unaffected — verified: 98 UI/Header/FilterBar tests still green.
+
+Verified: `ui/Menu.test.tsx` (ArrowDown/Up wrap, Home/End, type-ahead),
+red-proven by removing the panel's onKeyDown. **To revert:** drop
+`onPanelKeyDown` + the initial-focus effect. No surface impact (web-only
+interaction).
