@@ -3332,55 +3332,6 @@ tracked in TEMP-TODO under tooling flakes.
 B4, decisions.md §8 A167 — by rewriting its spec to assert the
 `sprints-broken-config` alert. It is no longer a gap.)*
 
-## read-only views do not surface degraded entries (ERR-10, LST-51, TML-48)
-
-**Found:** 2026-09-06 (B2 merge gate) · **Status:** open, pre-existing, quarantined.
-
-A family of error-surface acceptance cases expect a **read-only view**
-(list, timeline, sprints overview) to render a notice when the underlying
-config/data is degraded. They don't — the tolerant read paths
-(`loadWorkflowConfig`, the sprints loader, the task-health/`unreadable`
-path) degrade a bad entry silently and the view renders the healthy rest,
-never showing the notice the case asserts:
-
-- `ERR-10` / `LST-51` (flow-list): break `workflow.yaml` (drop a status
-  `category`) → expect a `role="alert"` on `/list`. `loadWorkflowConfig`
-  is tolerant (workflow.ts, "north-star principle 5"): the bad status
-  becomes a `broken` entry, no `config_invalid`, no alert. **STILL OPEN** —
-  the remaining member of this family; the point-of-use alert on `/list`
-  is unbuilt.
-- `TML-48` (flow-timeline): a task with an invalid `start_date`.
-  **RESOLVED 2026-09-12 (A-TML48-RESOLVE).** The loader now degrades the
-  date field-locally (health), so the task loads into the Unscheduled lane
-  and is flagged in place with the value verbatim
-  (`timeline-unscheduled-reason-<key>`, "start_date is corrupt: next
-  tuesday") — the case's "flagged in place" branch, met. The UI spec was
-  un-quarantined and rewritten; A41 superseded. It was never the same
-  shape as ERR-10/LST-51 (a task-health degrade, not a workflow-config one).
-- `SPR-31` (flow-sprints, entry above): **RESOLVED** (B4, A167). Not a
-  silent degrade — a per-entry `superRefine` fault is reported as a
-  `BrokenEntry` and `SprintsView` surfaces it as `sprints-broken-config`;
-  the fixme asserted the wrong (`sprints-config-error`) testid. Only the
-  ERR-10/LST-51 member remains open.
-
-**Proven pre-existing, not a B2 change.** Each fails identically on a
-clean `HEAD` worktree (verified during the B2 merge gate). No B2-staged
-file touches `loadWorkflowConfig`, `ListView.tsx`, the timeline
-view/health path, or `SprintsView.tsx`.
-
-**Contrast the settings panels**, which B2's Lane B *did* fix
-(SET-33 / K32): `WorkflowPanelFrame` now surfaces `broken` entries. The
-read-only views have no equivalent surfacing — that is the gap.
-
-The remaining ERR-10/LST-51 tests are **quarantined `test.fixme`** so the
-gate is honestly green rather than shipping known-red tests. Un-fixme when
-`/list` surfaces the degraded workflow-config entry. **The product question
-is settled** (A-PRESCAN-2): a degraded-but-loadable entry alerts **at the
-point of use** (the view naming the file/field), not only in Settings — so
-this is a build, not a case revision: wire a `role="alert"` on `/list` off
-the workflow config's `broken` entries, the way the settings panels already
-do (SET-33 / K32's `WorkflowPanelFrame`).
-
 ## Demo/seed data can store parent/child edges in the reverse direction (UX-8 root cause)
 
 **Found:** 2026-09-08 (B3 Relationships) · **Status:** OPEN (data-side, not a code bug)

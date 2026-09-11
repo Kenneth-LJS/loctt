@@ -67,6 +67,28 @@ const TASK_CREATE_FLAGS: readonly string[] = [
 ];
 const TASK_LIST_FLAGS: readonly string[] = ["--limit", "--project", "--archived", "--query", "--view", "--sort", "--dir", "--offset"];
 const TASK_SHOW_FLAGS: readonly string[] = [];
+
+/**
+ * Warn on stderr about hand-broken `workflow.yaml` entries the tolerant
+ * loader degraded past (ERR-10 / LST-51). Prints nothing when the config
+ * is clean or absent, so a healthy `list` is unchanged and stdout stays
+ * pipeable. Names the file and each entry's sub-list, index and error —
+ * the same facts the web list's banner shows, for P10 parity.
+ */
+function warnBrokenWorkflow(workflowConfig: WorkflowConfig | undefined): void {
+  const broken = workflowConfig?.broken;
+  if (broken === undefined) return;
+  const entries = (["statuses", "priorities", "task_types", "relationships", "custom_fields"] as const)
+    .flatMap(sub => (broken[sub] ?? []).map(e => ({ sub, index: e.index, error: e.error })));
+  if (entries.length === 0) return;
+  console.error(
+    "Warning: .loctt/config/workflow.yaml has entries that do not parse; "
+    + "they were skipped (run 'loctt doctor' to inspect):",
+  );
+  for (const e of entries) {
+    console.error(`  ${e.sub}[${e.index}].${e.error}`);
+  }
+}
 const TASK_DUPLICATE_FLAGS: readonly string[] = ["--title", "--project"];
 const TASK_MOVE_FLAGS: readonly string[] = [];
 const TASK_SET_FLAGS: readonly string[] = [];
@@ -145,6 +167,14 @@ export async function list(args: string[], root: string): Promise<void> {
   const locttDir = resolveLocttDir(root);
   const tasks = await loadAllTasks(locttDir);
   const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
+
+  // ERR-10 / LST-51 (A-PRESCAN-2, P10 parity with the web list's banner):
+  // a hand-broken `workflow.yaml` entry degrades tolerantly rather than
+  // crashing, so `list` still runs — but a silent degrade reads as "that
+  // status just isn't configured". Name the file and each offending entry
+  // on stderr (the list itself stays on stdout, pipeable, exit 0), so the
+  // fix is discoverable rather than invisible.
+  warnBrokenWorkflow(workflowConfig);
 
   const limit = getNonNegativeIntArg(args, "--limit");
 

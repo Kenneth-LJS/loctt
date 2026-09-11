@@ -10906,6 +10906,21 @@ consistent with all three. **To revert:** if it proves too noisy on
 read-only surfaces, fall back to a single settings-level alert with a
 count. Cases already exist; wire the alert + tests.
 
+**Completed 2026-09-12.** TML-48 resolved separately (A-TML48-RESOLVE:
+field-local date degrade → flagged in the timeline lane). ERR-10/LST-51
+built: `/list` now renders a non-blocking `role="alert"`
+(`workflow-config-broken`) off `useWorkflow().data.broken`, naming the
+file, each `sub[index].` and the Zod message (which carries the expected
+values); the healthy rest of the config still drives the view. For P10
+parity the CLI `list` prints the same facts to stderr at exit 0
+(`warnBrokenWorkflow`), so a piped stdout is unaffected. Both UI specs
+un-quarantined and passing, red-proven (remove the banner → ERR-10 fails;
+neuter the CLI warning → LST-51 fails). A `runRaw` helper was added to the
+UI tracker fixture to assert a stderr warning on a zero-exit run. The
+read-only-degrade known-gaps entry is removed. **To revert:** drop the
+`brokenWorkflowEntries` banner in `ListView.tsx` and the
+`warnBrokenWorkflow` call in `apps/cli/src/commands/task-crud.ts`.
+
 ### A-PRESCAN-3 · MSL-C1 "referenceCount exists nowhere" — stale claim, verify not rebuild
 
 **Decision (agent-level).** The backlog/known-gaps note that milestone
