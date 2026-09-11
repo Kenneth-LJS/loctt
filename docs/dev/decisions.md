@@ -11243,3 +11243,17 @@ date-keyed (holidays), not id-keyed, so it's out of scope.
 Verified: `health.test.ts` (excludeIds drop/keep/back-compat) +
 `projects.test.ts` collision round-trip, both red-proven; 366 config
 tests green. **To revert:** drop the `excludeIds` arg from the 4 writers.
+
+### A-DUP-H1 · duplicateTask returns { task, dropped }; the notice is threaded to all three surfaces
+
+**Built (agent-level) closing DUP-H1.** `duplicateTask` now returns
+`{ task, dropped }` where `dropped` names the corrupt source fields that
+were not carried into the copy (health findings not covered by an
+override; top-level field names). Threaded to: CLI (`Note: N corrupt
+source field(s) were not copied: …`), MCP (appended to the created-task
+text), web (`dropped` in the JSON response). The safety property is
+unchanged — a raw corrupt value is still never copied; only the notice is
+new. `@verifies DUP-H1` (`duplicate.test.ts`, corrupt-field-dropped +
+healthy-source-empty, red-proven); CLI integration green; 4 workspaces
+typecheck. Updated DEG-27 (was "cannot be satisfied yet"). **To revert:**
+return the bare Task and drop the per-surface notice.

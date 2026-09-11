@@ -484,9 +484,9 @@ export const TOOLS: readonly ToolDef[] = [
         project = resolveProjectIdFromInput(projectsConfig, projectArg);
       }
       try {
-        const created = await withStateLock(locttDir, async () => {
+        const { task: created, dropped } = await withStateLock(locttDir, async () => {
           const state = await loadState(locttDir);
-          const task = await duplicateTask({
+          const result = await duplicateTask({
             locttDir,
             state,
             sourceRef: args["ref"] as string,
@@ -498,9 +498,14 @@ export const TOOLS: readonly ToolDef[] = [
             },
           });
           await saveState(locttDir, state);
-          return task;
+          return result;
         });
-        return text(`Created ${created.frontmatter.key}: ${created.frontmatter.title}`);
+        // DUP-H1: tell the agent which corrupt source fields were not
+        // copied, so it does not assume the copy is a faithful clone.
+        const note = dropped.length > 0
+          ? ` (${String(dropped.length)} corrupt source field(s) not copied: ${dropped.join(", ")})`
+          : "";
+        return text(`Created ${created.frontmatter.key}: ${created.frontmatter.title}${note}`);
       } catch (err) {
         return errorResult((err as Error).message);
       }
