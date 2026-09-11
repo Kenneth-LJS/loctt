@@ -11495,3 +11495,22 @@ lacked a UI affordance") verified against all six other verbs
 (create/edit/archive/delete/link/attach all have affordances). @verifies
 TSK-58; spec green; cases:index 1042, check clean. **To revert:** drop the
 TSK-58 test + case (the affordance itself predates this).
+
+### A-K77 · `is empty` / `is not empty` operators built (query builder sub-item 1)
+
+**Built (agent-level) implementing K77.** The DSL gains postfix presence
+operators: `is empty` (unset / empty array / blank string) and
+`is not empty`. Tokenizer recognises the multi-word ops (a `peekWord`
+helper, mirroring `not in`); the parser emits a `comparison` node with a
+`{type:"empty"}` value sentinel; the evaluator does the presence test
+before value comparison; validate/assertSatisfiable pass them through
+(field-queryable check still applies). `field = null` / `!= null` / `= none`
+are now REJECTED at parse with a pointer to `is empty`/`is not empty` —
+closing the original silent-filter bug where `!= null` matched everything.
+
+Shared core → CLI/MCP/web inherit it (verified: `loctt list --query
+"milestone is empty"` filters correctly, `= null` is rejected with the
+pointer). @verifies A80 (evaluator tests, red-proven); 256 query tests
+green; user docs updated. This is sub-item 1 of the query builder
+(K77/K80/K83); K80 functions + the visual builder UI remain. **To revert:**
+remove the `is`/OP_IS_EMPTY handling from tokenizer/parser/evaluator.

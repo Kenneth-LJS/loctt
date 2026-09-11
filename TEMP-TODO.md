@@ -120,7 +120,7 @@ Nothing behind these can close until decided.
 
 ## 2. Correctness & data-loss defects — the app is silently wrong
 
-- [ ] **`field != null` does not filter — it returns everything** — **RULED (K77):** add `is empty`/`is not empty` operators; `= null`/`!= null` become parse errors. Ships with the query builder. **[with builder]**
+- [x] **`field != null` does not filter — it returns everything** — **DONE (K77).** Added `is empty`/`is not empty` DSL operators (tokenizer/parser/evaluator/validate); `= null`/`!= null` now rejected with a pointer. Shared core → CLI/MCP/web; CLI-verified. @verifies A80; 256 query tests green. A-K77. (Query-builder UI + K80 functions still open.)
 - [x] **MSL-C1 — setField records the unresolved name in history** — **DONE (write fix).** buildSetFieldHistory now records the stored/resolved id (reads from newFm symmetrically); both call sites fixed. @verifies MSL-C1 red-proven; 538 core tests green; CLI integration green. Legacy history-migration question PARKED (needs Ken — see known-gaps + A-MSL-C1).
 - [ ] **VUE-22 area — a UI view write drops a concurrently-present broken view** — P1 data-loss; `saveQueriesConfig`/`serializeQueriesConfig` never emit `broken`. (Refuse-vs-preserve ruling in §0.)
 - [x] **BLK-44 — one malformed `task.md` breaks the whole list** — **STALE / already done.** Verified 2026-09-11: `loadAllTasksDetailed` (partial-tolerant, returns `unreadable`) is wired into the list endpoint (`server.ts:3356`), export (`task-export.ts:60`), progress; list UI renders the indicator (`ListView.tsx:584`), export names skipped files (`ExportMenu.tsx:84`). `@verifies BLK-44` on `server.export-unreadable.test.ts` (4 green) + `flow-app-shell.spec.ts`. Verify-and-close.

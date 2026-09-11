@@ -1,7 +1,12 @@
 import { LocttError } from "../errors.js";
 import type { Token, TokenType } from "./tokenizer.js";
 
-export type ComparisonOp = "=" | "!=" | "<" | "<=" | ">" | ">=" | "~" | "in" | "not in";
+export type ComparisonOp =
+  | "=" | "!=" | "<" | "<=" | ">" | ">=" | "~" | "in" | "not in"
+  // K77: presence tests. Postfix — no right-hand value; the value slot
+  // carries the `{ type: "empty" }` sentinel so the comparison node shape
+  // is uniform.
+  | "is empty" | "is not empty";
 
 export type QueryNode =
   // `position` is the offset of the field token, carried so semantic
@@ -47,7 +52,10 @@ export type QueryValue =
   | { type: "boolean"; value: boolean }
   | { type: "date"; value: string }
   | { type: "today" }
-  | { type: "list"; values: readonly QueryValue[] };
+  | { type: "list"; values: readonly QueryValue[] }
+  // K77: the RHS placeholder for `is empty` / `is not empty`, which take
+  // no value. Kept in the value union so a comparison node is uniform.
+  | { type: "empty" };
 
 export class ParseError extends LocttError {
   constructor(message: string, public readonly position: number) {
@@ -279,12 +287,39 @@ class Parser {
     const fieldTok = this.advance();
     const opTok = this.advance();
 
+    // K77: `is empty` / `is not empty` are postfix — no right-hand value.
+    if (opTok.type === "OP_IS_EMPTY" || opTok.type === "OP_IS_NOT_EMPTY") {
+      const op: ComparisonOp = opTok.type === "OP_IS_EMPTY" ? "is empty" : "is not empty";
+      return {
+        type: "comparison",
+        field: fieldTok.value,
+        op,
+        value: { type: "empty" },
+        position: fieldTok.position,
+      };
+    }
+
     const op = OP_TOKEN_MAP[opTok.type];
     if (op === undefined) {
       throw new ParseError(`expected operator but got "${opTok.value}"`, opTok.position);
     }
 
     const value = this.parseValue(op);
+    // K77: `field = null` / `field != null` (and `= none`) are the presence
+    // test people reach for, but `null` here is just a string value, so the
+    // filter silently matched everything (the original bug). Reject with a
+    // pointer to the real operator.
+    if ((op === "=" || op === "!=") && value.type === "string") {
+      const v = value.value.toLowerCase();
+      if (v === "null" || v === "none") {
+        const suggestion = op === "=" ? "is empty" : "is not empty";
+        throw new ParseError(
+          `use "${fieldTok.value} ${suggestion}" to test for an ${op === "=" ? "unset" : "set"} field — `
+          + `"${op} ${value.value}" compares against the literal text "${value.value}"`,
+          opTok.position,
+        );
+      }
+    }
     return { type: "comparison", field: fieldTok.value, op, value, position: fieldTok.position };
   }
 

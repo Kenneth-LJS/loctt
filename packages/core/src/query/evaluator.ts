@@ -524,6 +524,17 @@ export function evaluateQuery(
         ? getNestedFieldValue(fm, node.field.split("."), ctx)
         : getFieldValue(fm, node.field);
 
+      // K77: presence test. A field is "empty" when it is unset (undefined
+      // /null), an empty array, or an empty/whitespace string. `is empty`
+      // matches those; `is not empty` matches the complement. No RHS.
+      if (node.op === "is empty" || node.op === "is not empty") {
+        const arr = toComparableArray(fieldVal);
+        const empty = fieldVal === undefined || fieldVal === null
+          || (arr !== undefined && arr.length === 0)
+          || (typeof fieldVal === "string" && fieldVal.trim() === "");
+        return node.op === "is empty" ? empty : !empty;
+      }
+
       // A date-typed field compared against a date/today operand is judged
       // by calendar day rather than raw-string order (see compareValues).
       // Gate on the operand being a date/today value so that a date field

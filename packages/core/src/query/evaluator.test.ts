@@ -525,3 +525,40 @@ describe("evaluateQuery — date fields compare by calendar day (Q1)", () => {
     expect(evaluateQuery(query("due_date < 2026-06-02"), dateOnly, ctx)).toBe(true);
   });
 });
+
+/**
+ * K77: `is empty` / `is not empty` — the presence test that replaces the
+ * broken `field != null` (which matched everything). The fixture `task`
+ * has `status`/`priority` set and no `milestone`/`assignee`/`labels`.
+ *
+ * @verifies A80
+ */
+describe("is empty / is not empty (K77)", () => {
+  it("`is empty` matches an unset field, `is not empty` a set one", () => {
+    expect(evaluateQuery(query("milestone is empty"), task)).toBe(true);
+    expect(evaluateQuery(query("milestone is not empty"), task)).toBe(false);
+    expect(evaluateQuery(query("status is not empty"), task)).toBe(true);
+    expect(evaluateQuery(query("status is empty"), task)).toBe(false);
+  });
+
+  it("treats an empty array (no labels) as empty", () => {
+    expect(evaluateQuery(query("labels is empty"), task)).toBe(true);
+    expect(evaluateQuery(query("labels is not empty"), { ...task, labels: ["bug"] })).toBe(true);
+    expect(evaluateQuery(query("labels is empty"), { ...task, labels: ["bug"] })).toBe(false);
+  });
+
+  it("composes with and/or like any other comparison", () => {
+    expect(evaluateQuery(query("status is not empty and milestone is empty"), task)).toBe(true);
+    expect(evaluateQuery(query("milestone is not empty or status is not empty"), task)).toBe(true);
+  });
+
+  it("rejects `= null` / `!= null` with a pointer to `is empty` (the old silent-match bug)", () => {
+    expect(() => query("milestone = null")).toThrow(/is empty/);
+    expect(() => query("milestone != null")).toThrow(/is not empty/);
+    expect(() => query("milestone = none")).toThrow(/is empty/);
+  });
+
+  it("rejects a bare `is` that isn't followed by empty/not empty", () => {
+    expect(() => query("milestone is something")).toThrow(/empty/);
+  });
+});

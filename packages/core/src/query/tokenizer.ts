@@ -15,6 +15,8 @@ export type TokenType =
   | "OP_CONTAINS"
   | "OP_IN"
   | "OP_NOT_IN"
+  | "OP_IS_EMPTY"
+  | "OP_IS_NOT_EMPTY"
   | "AND"
   | "OR"
   | "NOT"
@@ -65,6 +67,20 @@ const ONE_CHAR_OPS: Record<string, TokenType> = {
   ")": "RPAREN",
   ",": "COMMA",
 };
+
+/**
+ * Reads the next word after `from`, skipping leading whitespace. Returns
+ * its text and the index just past it, or null if there is no word.
+ * Used to recognise the multi-word operators "is empty" / "is not empty".
+ */
+function peekWord(input: string, from: number): { text: string; end: number } | null {
+  let j = from;
+  while (j < input.length && (input.charAt(j) === " " || input.charAt(j) === "\t")) j++;
+  if (j >= input.length || !isWordChar(input.charAt(j))) return null;
+  const start = j;
+  while (j < input.length && isWordChar(input.charAt(j))) j++;
+  return { text: input.slice(start, j), end: j };
+}
 
 function isWordChar(ch: string): boolean {
   return /[a-zA-Z0-9_.\-]/.test(ch);
@@ -182,6 +198,33 @@ export function tokenize(input: string): Token[] {
             continue;
           }
         }
+      }
+
+      // K77: "is empty" / "is not empty" — the presence test. A word
+      // helper reads the run of words after "is" so we can distinguish
+      // "is empty" (2 words) from "is not empty" (3). `= null` / `!= null`
+      // are handled at the parser (rejected with a pointer to `is empty`),
+      // not here — a bare `null` is still a normal FIELD/value token.
+      if (lower === "is") {
+        const w1 = peekWord(input, i);
+        if (w1 && w1.text.toLowerCase() === "empty") {
+          tokens.push({ type: "OP_IS_EMPTY", value: "is empty", position: start });
+          i = w1.end;
+          continue;
+        }
+        if (w1 && w1.text.toLowerCase() === "not") {
+          const w2 = peekWord(input, w1.end);
+          if (w2 && w2.text.toLowerCase() === "empty") {
+            tokens.push({ type: "OP_IS_NOT_EMPTY", value: "is not empty", position: start });
+            i = w2.end;
+            continue;
+          }
+        }
+        // "is" not followed by empty/"not empty" is a mistake worth naming.
+        throw new TokenizeError(
+          `"is" must be followed by "empty" or "not empty" (e.g. milestone is empty)`,
+          start,
+        );
       }
 
       const keywordType = KEYWORD_MAP[lower];

@@ -30,6 +30,15 @@ text ~ "init"
 | `in` | Value in list |
 | `not in` | Value not in list |
 | `~` | Contains (text search) |
+| `is empty` | The field has no value (unset, empty list, or blank) |
+| `is not empty` | The field has a value |
+
+To filter by whether a field is set, use `is empty` / `is not empty` —
+for example `milestone is empty` (tasks with no milestone) or
+`assignee is not empty` (assigned tasks). These take no value on the
+right. Writing `field = null` is rejected with a pointer to `is empty`,
+because a bare `null` would be compared as ordinary text and match
+nothing useful.
 
 ## Logical Operators
 
