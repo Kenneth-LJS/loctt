@@ -129,8 +129,11 @@ export const ProjectsConfigSchema = z.object({
   if (defaultProject?.archived === true) {
     ctx.addIssue({
       code: "custom",
+      // The error formatter prepends the failing key's path ("default"),
+      // so the message must NOT begin with "default project" or it reads
+      // "default default project …" (the doubling this wording avoids).
       message:
-        `default project '${defaultProject.name}' is archived — new tasks would `
+        `names the archived project '${defaultProject.name}' — new tasks would `
         + `land in a project hidden from every picker. Unarchive it or pick another default.`,
       path: ["default"],
     });

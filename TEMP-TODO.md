@@ -138,7 +138,7 @@ Nothing behind these can close until decided.
 ## 4. Quick fixes — small, bounded, actionable now
 
 - [ ] **`loctt link` rejects the inverse side of a relationship** — CLI should build its valid-type set from `relationshipTypeKeys` like core/web.
-- [ ] **`projects.yaml` ghost-default message says "default default"** — cosmetic; `packages/contracts/src/projects.ts` superRefine.
+- [x] **`projects.yaml` "default default" message** — the doubling now only occurs on the *archived*-default hard error (K23 made a ghost default non-fatal). Reworded the superRefine message so it no longer leads with "default"; the formatter's "default" path prefix reads cleanly. Regression test in `projects.test.ts` asserts the message contains "archived" and not "default default". (A-DEFDEF)
 - [ ] **`multipart.ts` basename-guard comment overstates the web guard** — comment-only.
 - [ ] **K33-1 — `flow-task-body.spec.ts` needs the enter-edit gesture** — add an `enterEdit(page)` helper. (Test repair.)
 - [ ] **`PUT /api/user-settings` takes no state lock** — add the lock or document the deliberate asymmetry.
