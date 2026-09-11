@@ -149,7 +149,7 @@ function buildLabelsPlainObject(config: LabelsConfig): { labels: Record<string, 
   return {
     labels: [
       ...config.labels.map(serializeLabel),
-      ...brokenEntriesToPlain(config.broken),
+      ...brokenEntriesToPlain(config.broken, new Set(config.labels.map(l => l.id))),
     ],
   };
 }

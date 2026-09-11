@@ -175,7 +175,7 @@ function buildPlainObject(config: ProjectsConfig): Record<string, unknown> {
   const out: Record<string, unknown> = {
     projects: [
       ...config.projects.map(serializeProject),
-      ...brokenEntriesToPlain(config.broken),
+      ...brokenEntriesToPlain(config.broken, new Set(config.projects.map(p => p.id))),
     ],
   };
   if (config.default !== undefined) {

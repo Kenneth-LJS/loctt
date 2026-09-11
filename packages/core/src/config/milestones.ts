@@ -116,7 +116,7 @@ function buildMilestonesPlainObject(config: MilestonesConfig): { milestones: Rec
   return {
     milestones: [
       ...config.milestones.map(serializeMilestone),
-      ...brokenEntriesToPlain(config.broken),
+      ...brokenEntriesToPlain(config.broken, new Set(config.milestones.map(m => m.id))),
     ],
   };
 }

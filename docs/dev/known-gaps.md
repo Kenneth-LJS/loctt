@@ -3469,49 +3469,6 @@ relationships/custom_fields). One preserve test per sub-section,
 mutation-verified. Canonicalized under DEG-24 (config preserve-others);
 this is the workflow slice of that case.
 
-## K29 · flat config writers can still append a broken/valid ID collision
-
-**Found:** 2026-09-06 (Phase Z config/state fix, C3) · **Status:** OPEN
-
-C3 (broken/valid **key** collision writing a duplicate past the write
-gate) is fixed for `workflow.yaml`: `mergeBrokenIntoPlain`
-(`config/workflow-write.ts`) now drops a broken sub-entry whose `key`
-matches a valid entry already being written, so no duplicate key reaches
-disk. The six flat writers
-(projects/labels/sprints/milestones/calendar/list-view) share the same
-append shape — `[...valid.map(serialize), ...brokenEntriesToPlain(config.broken)]`
-in each `buildPlainObject` — with **no** collision guard. So a valid
-entry whose `id` equals a hidden broken entry's `id` produces two
-members with one `id` on disk.
-
-**Why not fixed here.** It is not trivially the same shape as the
-workflow fix: those configs key on `id` (not `key`), and they are
-load-mutate-save (the caller carries `config.broken` from the same load)
-rather than the workflow writer's re-read-and-merge, so the collision
-path is narrower — it needs a surface that adds a valid entry with an id
-equal to a hidden broken id. Scope was config/state correctness for the
-two confirmed workflow findings; widening to the flat writers is a
-separate change with its own per-writer preserve/collision tests.
-
-**Reachability / severity caveat.** The Phase Z findings called this
-"doctor-flagged and lossless" for the id-keyed configs and deferred it on
-that basis. The adversarial verifier showed the analogous claim for
-*workflow* was false — the duplicate is
-invisible to doctor until the broken twin is repaired, at which point
-every write is refused. Whether the id-keyed configs' duplicate-id check
-consults `config.broken` (and so whether doctor actually flags this)
-was **not** tested and should not be trusted without a test before
-fixing.
-
-**To fix.** In each flat `buildPlainObject`, filter
-`brokenEntriesToPlain(config.broken)` to drop any entry whose `id`
-already appears among the serialized valid entries (mirroring
-`keyOfPlainEntry`'s role in the workflow fix, but on `id`). One
-collision test per writer, plus a test that a non-colliding broken
-sibling is preserved, mutation-verified. Confirm first whether the
-per-config validator sees `broken` (it likely does not, same blind spot
-as `validateWorkflowConfig`).
-
 ## K31 · Web task export ignores `archived=true`; backup upload capped at 50 MB/attachment
 
 **Found:** 2026-09-06 (Phase Z Batch-2 fix-review) · **Status:** open, out of scope of the Batch-2 commit.

@@ -123,7 +123,7 @@ function buildSprintsPlainObject(config: SprintsConfig): { sprints: Record<strin
   return {
     sprints: [
       ...config.sprints.map(serializeSprint),
-      ...brokenEntriesToPlain(config.broken),
+      ...brokenEntriesToPlain(config.broken, new Set(config.sprints.map(s => s.id))),
     ],
   };
 }

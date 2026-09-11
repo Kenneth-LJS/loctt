@@ -126,6 +126,35 @@ extra: nope
     expect(cfg.broken?.[0]?.error).toMatch(/unrecognized key/);
   });
 
+  // K29 / DEG-24: a broken entry whose id collides with a valid one must
+  // not be written back, or the file gains two members with one id
+  // (invisible to doctor until the broken twin is repaired, then every
+  // write is refused).
+  it("does not write a broken twin whose id collides with a valid project", () => {
+    // The second entry shares id …440 with the first but carries an
+    // unknown key, so it degrades to `broken` while the valid …440 loads.
+    const yaml = `projects:
+  - id: 01HX0000000000000000000440
+    name: Fine
+    prefix: "F-"
+  - id: 01HX0000000000000000000440
+    name: Twin
+    prefix: "T-"
+    description: nope
+`;
+    const cfg = parseProjectsConfig(yaml);
+    expect(cfg.projects).toHaveLength(1);
+    expect(cfg.broken).toHaveLength(1);
+
+    // Round-trip: serialize then reparse. The broken twin (same id) is
+    // dropped, so the reparsed file has exactly the one valid project and
+    // no duplicate-id fault.
+    const reparsed = parseProjectsConfig(serializeProjectsConfig(cfg));
+    const ids = reparsed.projects.map(p => p.id);
+    expect(ids).toEqual(["01HX0000000000000000000440"]);
+    expect(reparsed.broken ?? []).toHaveLength(0);
+  });
+
   // @verifies DEG-9
   it("degrades a project with an empty prefix to a broken entry", () => {
     const yaml = `

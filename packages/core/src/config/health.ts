@@ -76,13 +76,28 @@ function defaultIdOf(raw: unknown): string | undefined {
  */
 export function brokenEntriesToPlain(
   broken: readonly BrokenEntry[] | undefined,
+  // K29 / DEG-24: ids already present among the serialized VALID entries.
+  // A broken entry whose `id` collides with a valid one is DROPPED rather
+  // than written, so a save never puts two members with one `id` on disk.
+  // Without this, the collision is invisible to `doctor` until the broken
+  // twin is repaired — at which point the duplicate surfaces and every
+  // write is refused (the same trap the workflow writer's
+  // `mergeBrokenIntoPlain` closes, here generalized to the id-keyed flat
+  // configs). Omitting `excludeIds` keeps the old behaviour.
+  excludeIds?: ReadonlySet<string>,
 ): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
   for (const b of broken ?? []) {
     try {
       const parsed: unknown = parseYaml(b.rawText);
       if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
-        out.push(parsed as Record<string, unknown>);
+        const obj = parsed as Record<string, unknown>;
+        const id = obj["id"];
+        if (excludeIds !== undefined && typeof id === "string" && excludeIds.has(id)) {
+          // Collision with a valid entry's id — drop the broken twin.
+          continue;
+        }
+        out.push(obj);
       }
     } catch {
       // Unparseable rawText — cannot re-emit faithfully; skip rather than
