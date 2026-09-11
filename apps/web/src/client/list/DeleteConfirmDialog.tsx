@@ -1,7 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-
-import { Button } from "../ui/Button.tsx";
-import { TextField } from "../ui/TextField.tsx";
+import { TypedConfirmDialog } from "../ui/ConfirmDialog.tsx";
 
 /**
  * Typed confirmation for permanent deletion (BLK-11).
@@ -11,6 +8,11 @@ import { TextField } from "../ui/TextField.tsx";
  * exact word is typed, initial focus is the input rather than the
  * destructive control, and the dialog names archive as the alternative
  * so the reversible path is visible at the moment of the decision.
+ *
+ * K71: the overlay/panel/focus handling now come from
+ * `TypedConfirmDialog` (over `Modal`) — this dialog previously
+ * hand-rolled its overlay and set only `inputRef.focus()`, with no focus
+ * trap and no focus restoration.
  */
 export const DELETE_CONFIRM_WORD = "DELETE";
 
@@ -24,10 +26,6 @@ export const DELETE_CONFIRM_WORD = "DELETE";
  * muscle memory is exactly what should not carry a user through
  * deleting a thousand tasks. Typing the number cannot be done without
  * reading it.
- *
- * Ten is chosen as the point where a selection stops being something
- * the user can see and verify at a glance. No case names a threshold;
- * this is recorded as a proposed case rather than treated as settled.
  */
 export const LARGE_DELETE_THRESHOLD = 10;
 
@@ -50,80 +48,30 @@ export function DeleteConfirmDialog({
   readonly onCancel: () => void;
   readonly onConfirm: () => void;
 }) {
-  const [typed, setTyped] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    // Focus the input, never the delete button — a stray Enter on an
-    // autofocused destructive control is exactly what this dialog
-    // exists to prevent.
-    inputRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onCancel();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("keydown", onKey); };
-  }, [onCancel]);
-
   const required = deleteConfirmWord(count);
-  const matches = typed === required;
+  const noun = count === 1 ? "task" : "tasks";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="delete-confirm-title"
-        className="w-full max-w-md rounded-lg border border-border-subtle bg-bg-surface p-5 shadow-lg"
-      >
-        <h2 id="delete-confirm-title" className="text-[15px] font-semibold text-text-primary">
-          Permanently delete {count} {count === 1 ? "task" : "tasks"}?
-        </h2>
-
-        <p className="mt-2 text-[13px] text-text-secondary">
-          This cannot be undone. The {count === 1 ? "task" : "tasks"} and all
-          history, comments, and attachments will be removed from disk.
-        </p>
-        <p className="mt-2 text-[13px] text-text-secondary">
-          If you only want {count === 1 ? "it" : "them"} out of the way,
-          <strong className="font-medium text-text-primary"> archive </strong>
-          instead — archiving is reversible.
-        </p>
-
-        <label className="mt-4 block text-[12px] font-medium text-text-secondary">
-          Type <code className="font-mono text-text-primary">{required}</code> to confirm
-          {required !== DELETE_CONFIRM_WORD ? (
-            <span className="ml-1 font-normal text-text-tertiary">
-              — the count, because this is a large batch
-            </span>
-          ) : null}
-          <TextField
-            ref={inputRef}
-            type="text"
-            value={typed}
-            onChange={e => setTyped(e.target.value)}
-            aria-label={`Type ${required} to confirm`}
-            className="mt-1 font-mono"
-          />
-        </label>
-
-        <div className="mt-5 flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="danger"
-            onClick={onConfirm}
-            disabled={!matches}
-          >
-            Delete {count} {count === 1 ? "task" : "tasks"}
-          </Button>
-        </div>
-      </div>
-    </div>
+    <TypedConfirmDialog
+      title={`Permanently delete ${String(count)} ${noun}?`}
+      requiredWord={required}
+      confirmLabel={`Delete ${String(count)} ${noun}`}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+      typeHint={required !== DELETE_CONFIRM_WORD ? "— the count, because this is a large batch" : undefined}
+      body={
+        <>
+          <p>
+            This cannot be undone. The {noun} and all history, comments, and
+            attachments will be removed from disk.
+          </p>
+          <p className="mt-2">
+            If you only want {count === 1 ? "it" : "them"} out of the way,
+            <strong className="font-medium text-text-primary"> archive </strong>
+            instead — archiving is reversible.
+          </p>
+        </>
+      }
+    />
   );
 }

@@ -56,24 +56,28 @@ So: one true blocker (§A1), the rest fast-follow.
 
 ## A. Accessibility & interaction — do first (real user harm)
 
-### A1. Dialogs bypass the focus-trap / inert / focus-restore primitive — **P0, cross-confirmed**
-`Modal.tsx` + `useFocusTrap.ts` provide focus trapping, background
-`inert`, and focus restore. `useFocusTrap()` is invoked in only **3**
-places: `ui/Modal.tsx:29`, `shell/ShortcutHelpDialog.tsx:38`,
-`task/DeleteTaskDialog.tsx:58`. These dialogs set `role`/`aria-modal`
-and handle Escape by hand but call **neither** `useFocusTrap` **nor**
-`useInertBackground` — Tab escapes to the page behind, focus is not
-restored on close:
-- `settings/DeleteViewDialog.tsx:45`
-- `comments/DeleteCommentDialog.tsx:56`
-- `list/DeleteConfirmDialog.tsx:77`
-- `task/MoveTaskDialog.tsx:48`
-- `editor/BodyConflictDialog.tsx:58`
-- `list/AdvancedQueryEditor.tsx:226` (alertdialog) and `:280`
-- `create/CreateTaskModal.tsx:409` — the app's **primary create flow**:
-  has `useInertBackground` (:232) + Escape (:243) but **no**
-  `useFocusTrap`; its nested `DiscardDialog` (:1283, `role="alertdialog"`)
-  has no trap, no Escape, no restore — only `autoFocus` on Keep.
+### A1. Dialogs bypass the focus-trap / inert / focus-restore primitive — **P0, cross-confirmed — PARTIALLY FIXED (K71)**
+
+**Fixed 2026-09-11** via a shared `ui/ConfirmDialog.tsx`
+(`ConfirmDialog` + `TypedConfirmDialog`, over `Dialog`/`Modal`). These
+five now inherit focus-trap / inert / focus-restore:
+- ✅ `settings/DeleteViewDialog.tsx` → `ConfirmDialog`
+- ✅ `comments/DeleteCommentDialog.tsx` → `ConfirmDialog`
+- ✅ `list/DeleteConfirmDialog.tsx` → `TypedConfirmDialog`
+- ✅ `task/MoveTaskDialog.tsx` → `Dialog` (has a picker, not confirm-shaped)
+- ✅ `editor/BodyConflictDialog.tsx` → `useFocusTrap`+`useInertBackground`
+  directly (too wide — `max-w-4xl` — for Modal's panel)
+
+Verified by a real-browser focus-trap+restore e2e (`flow-accessibility`
+"K71: a migrated confirm dialog traps focus and restores it") plus the
+preserved behavior specs (BLK-11, CMT-6, XS-12/65, TSK-44, VUE-38).
+
+**STILL TO FIX (K71 remainder):**
+- `list/AdvancedQueryEditor.tsx` (:226 alertdialog, :280 dialog)
+- `create/CreateTaskModal.tsx` — the **primary create flow**: has
+  `useInertBackground` + Escape but **no** `useFocusTrap`; its nested
+  `DiscardDialog` (`role="alertdialog"`) has no trap, no Escape, no
+  restore — only `autoFocus` on Keep.
 
 **Fix:** route every one through `Modal`/`Dialog` (which already provide
 the apparatus), or call `useFocusTrap` + `useInertBackground`. This

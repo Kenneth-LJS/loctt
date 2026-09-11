@@ -11023,3 +11023,30 @@ control border and region divider — it caught the two green failures axe
 missed (the completed/success chips weren't rendered on the scanned
 pages), which is why both layers exist. **To revert:** restore the
 original fg hexes (reintroduces the AA failures).
+
+### A-K71 · Shared ConfirmDialog/TypedConfirmDialog; 5 of 7 §A1 dialogs migrated
+
+**K71 (P0 a11y blocker) — partial, agent-level build.** Added
+`ui/ConfirmDialog.tsx`: `ConfirmDialog` (title/body/confirmLabel/variant/
+confirmDisabled + children slot + optional testIds) and
+`TypedConfirmDialog` (adds type-to-confirm friction), both over
+`Dialog`→`Modal`, so every consumer inherits focus-trap (A11Y-14), inert
+background, Escape/backdrop close, and focus restoration (A11Y-15).
+
+Migrated: DeleteViewDialog, DeleteCommentDialog (→ConfirmDialog),
+DeleteConfirmDialog (→TypedConfirmDialog), MoveTaskDialog (→Dialog, has a
+picker), BodyConflictDialog (→useFocusTrap+useInertBackground directly —
+its two-column diff is too wide for Modal's max-w-md).
+
+**Note on a Dialog structure gotcha found in test:** Modal renders the
+`<h2>` title as a sibling ABOVE the `testId`-wrapped body, so a spec
+doing `getByTestId(dialog).toContainText(name)` misses a name that lives
+only in the title. DeleteViewDialog now also names the view in its body
+(natural copy). A cleaner fix — scoping Dialog's testId to the whole
+panel — is deferred; noted for the AdvancedQueryEditor/CreateTaskModal
+remainder.
+
+Verified: real-browser focus-trap+restore e2e (K71 test) + behavior specs
+BLK-11/CMT-6/XS-12/XS-65/TSK-44/VUE-38, all green. **Remaining (K71 not
+closed):** AdvancedQueryEditor and CreateTaskModal + its DiscardDialog.
+**To revert:** the dialogs' pre-migration hand-rolled overlays are in git.

@@ -23,8 +23,10 @@
  * outcome with the user told a merge happened.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { useInertBackground } from "../ui/Modal.tsx";
+import { useFocusTrap } from "../ui/useFocusTrap.ts";
 import type { BodyConflict } from "./useBodyAutosave.ts";
 
 export function BodyConflictDialog({
@@ -36,6 +38,23 @@ export function BodyConflictDialog({
   readonly onDismiss: () => void;
 }): React.JSX.Element {
   const [choice, setChoice] = useState<"mine" | "theirs" | "both" | null>(null);
+
+  // K71: this dialog is wider than Modal's max-w-md panel (a two-column
+  // diff needs max-w-4xl), so it cannot drop into Dialog/Modal without
+  // breaking its layout. Instead it uses the SAME apparatus Modal uses,
+  // directly on its own panel: focus trap + focus restore (A11Y-14/15),
+  // inert background, and Escape-to-dismiss. Previously it had none of
+  // these — Tab leaked to the editor behind it.
+  const panelRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(panelRef);
+  useInertBackground(panelRef);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onDismiss();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); };
+  }, [onDismiss]);
 
   /**
    * The merged text for "keep both". Concatenation with a separating
@@ -55,13 +74,18 @@ export function BodyConflictDialog({
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${taskRef} changed while you were editing`}
-      data-testid="body-conflict"
       className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-6"
+      onMouseDown={e => { if (e.target === e.currentTarget) onDismiss(); }}
     >
-      <div className="flex max-h-full w-full max-w-4xl flex-col gap-3 overflow-hidden rounded border border-border-subtle bg-bg-surface p-4">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${taskRef} changed while you were editing`}
+        data-testid="body-conflict"
+        tabIndex={-1}
+        className="flex max-h-full w-full max-w-4xl flex-col gap-3 overflow-hidden rounded border border-border-default bg-bg-surface p-4 shadow-overlay"
+      >
         <div>
           <h2 className="text-[14px] font-medium text-text-primary">
             {taskRef} changed while you were editing

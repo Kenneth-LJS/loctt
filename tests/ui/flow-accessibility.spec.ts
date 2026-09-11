@@ -415,6 +415,48 @@ test.describe("A11Y — focus management", () => {
     await page.keyboard.press("Tab");
     await expect(page.getByTestId("skip-link")).not.toBeFocused();
   });
+
+  /**
+   * K71: the confirm/delete dialogs that used to hand-roll their overlay
+   * (and skip the focus trap + inert + focus restoration) now route
+   * through the shared `ConfirmDialog` (over `Modal`), so they inherit
+   * the same apparatus A11Y-14/15 prove for the create modal. This
+   * exercises a *migrated* dialog end-to-end: the bulk-delete
+   * confirmation. Before K71 this dialog leaked Tab to the page behind
+   * and did not restore focus on close.
+   *
+   * @verifies A11Y-15
+   */
+  test("K71: a migrated confirm dialog traps focus and restores it on close", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "K71 task one" }, { title: "K71 task two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("K71 task one")).toBeVisible();
+
+    const rows = page.getByRole("row");
+    await rows.filter({ hasText: "K71 task one" }).getByRole("checkbox").check();
+
+    const trigger = page.getByRole("button", { name: "Delete", exact: true });
+    await trigger.focus();
+    await trigger.press("Enter");
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    // aria-modal is set (it comes from Modal) — the apparatus is present.
+    await expect(dialog).toHaveAttribute("aria-modal", "true");
+
+    // Focus is inside the dialog (the typed-confirm input), never on the
+    // page behind it.
+    const inside = await dialog.evaluate(d => d.contains(document.activeElement));
+    expect(inside).toBe(true);
+
+    // Escape closes it and focus returns to the trigger (not to body).
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+  });
 });
 
 test.describe("A11Y — semantics", () => {
