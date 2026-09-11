@@ -10984,3 +10984,23 @@ indicators *required* to understand content; row separators arguably
 aren't when the grid layout already reads); or (b) add a real ≥3:1
 `--border-divider` and accept darker gridlines app-wide. Recorded so the
 run continues on everything else per park-don't-halt.
+
+### K82-REV · Divider 3:1 applies only where a border carries required meaning (hybrid)
+
+**Ruling (Ken, 2026-09-11 — re-ruling K82 after A-K82-REOPEN showed
+`--border-default` doesn't reach 3:1).** WCAG's 3:1 for non-text applies
+to indicators *required* to understand content, not to decoration. So:
+- **Decorative dividers stay decorative** — table/list row separators,
+  hairlines between rows, card outlines. The tabular alignment (columns,
+  spacing, zebra) already conveys row structure; the hairline is polish
+  and is NOT held to 3:1. (`--border-subtle`/`--border-default` fine.)
+- **A ≥3:1 `--border-divider` is added and used ONLY where a border is
+  the sole signal separating two semantically distinct regions** — e.g. a
+  region boundary that, without the line, would read as one region. These
+  are few and identified case-by-case.
+
+**Consequence.** The contrast harness asserts 3:1 for `--border-control`
+(K81) and for `--border-divider` where used; it does NOT assert 3:1 for
+`--border-subtle`/`--border-default` (decorative). The subtle→default
+migration from the K81/K82 commit stays (a visual improvement), reframed
+as decorative-not-accessibility. This is Ken's, not agent-revertible.

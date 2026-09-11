@@ -834,7 +834,7 @@ export function ListView() {
         // has no confirmation dialog. An undo the user has to scroll to
         // find is not an undo.
         <div
-          className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border-default bg-bg-surface px-4 py-2 shadow-[0_-1px_3px_rgba(0,0,0,0.06)]"
+          className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border-divider bg-bg-surface px-4 py-2 shadow-[0_-1px_3px_rgba(0,0,0,0.06)]"
         >
           <BulkResult result={bulkResult} action={undoControl} />
           <button

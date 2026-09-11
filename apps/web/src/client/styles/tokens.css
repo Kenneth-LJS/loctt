@@ -78,6 +78,13 @@
    * 4.02:1 vs surface (#FFFFFF), 3.58:1 vs muted (#EEF2F8) — clears 3:1
    * wherever a control sits. */
   --border-control: #767F93;
+  /* --border-divider (K82-REV): a ≥3:1 divider for the FEW borders that
+   * are the sole signal separating two semantically distinct regions
+   * (e.g. a sticky action bar from the content it floats over). NOT for
+   * decorative hairlines/row separators — those stay subtle/default, as
+   * WCAG's 3:1 for non-text is only for indicators required to understand
+   * content. 3.71:1 vs surface, 3.30:1 vs muted. */
+  --border-divider: #7C8598;
   --text-primary: #0F172A;
   --text-secondary: #475569;
   /* --text-tertiary: was #7B8699 (3.46–3.68:1 — failed AA for normal
@@ -151,6 +158,9 @@
    * --border-strong is 1.88:1 on surface; this clears it — 3.66:1 vs
    * surface (#141416), 3.27:1 vs muted (#1F1F22). */
   --border-control: #6E6E7A;
+  /* --border-divider dark (K82-REV): ≥3:1 region separator. 3.66:1 vs
+   * surface, 3.27:1 vs muted. */
+  --border-divider: #6E6E7A;
   --text-primary: #F4F4F3;
   --text-secondary: #A8A8AE;
   /* --text-tertiary dark: was #6E6E75 (3.64–3.89:1 — failed AA, T1).
