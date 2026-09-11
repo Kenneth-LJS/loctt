@@ -1,6 +1,4 @@
-import { useEffect } from "react";
-
-import { Button } from "../ui/Button.tsx";
+import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
 
 /**
  * Confirmation for deleting a saved view (VUE-38).
@@ -18,7 +16,10 @@ import { Button } from "../ui/Button.tsx";
  *
  * No typed-word friction here, unlike `DeleteConfirmDialog`: a saved
  * view is a query definition, not task data, and it can be recreated.
- * The friction in BLK-11 is calibrated to irreversible data loss.
+ *
+ * K71: routed through `ConfirmDialog` (over `Modal`) so it gets the
+ * focus trap, inert background and focus restoration it previously
+ * hand-rolled its overlay without.
  */
 export function DeleteViewDialog({
   name,
@@ -32,53 +33,30 @@ export function DeleteViewDialog({
   readonly onCancel: () => void;
   readonly onConfirm: () => void;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onCancel();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("keydown", onKey); };
-  }, [onCancel]);
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Delete saved view ${name}`}
-      data-testid="delete-view-dialog"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+    <ConfirmDialog
+      title={`Delete “${name}”?`}
+      testId="delete-view-dialog"
+      body={
+        <>
+          The view <span className="font-medium text-text-primary">{name}</span>{" "}
+          is removed from <code className="font-mono">queries.yaml</code>.
+          Tasks are not affected.
+        </>
+      }
+      confirmLabel="Delete view"
+      confirmTestId="delete-view-confirm"
+      onConfirm={onConfirm}
+      onCancel={onCancel}
     >
-      <div className="w-full max-w-md rounded-lg border border-border-subtle bg-bg-surface p-5">
-        <h2 className="mb-2 text-[15px] font-semibold text-text-primary">
-          Delete &ldquo;{name}&rdquo;?
-        </h2>
-        <p className="mb-2 text-[13px] text-text-secondary">
-          The view is removed from{" "}
-          <code className="font-mono">queries.yaml</code>. Tasks are not
-          affected.
+      {pinned ? (
+        <p
+          data-testid="delete-view-pin-warning"
+          className="mt-3 rounded-md border border-border-subtle bg-warn-bg px-2 py-1 text-[12px] text-warn-fg"
+        >
+          This view is pinned to your sidebar. The pin will be dropped.
         </p>
-        {pinned ? (
-          <p
-            data-testid="delete-view-pin-warning"
-            className="mb-3 rounded-md border border-border-subtle bg-warn-bg px-2 py-1 text-[12px] text-warn-fg"
-          >
-            This view is pinned to your sidebar. The pin will be dropped.
-          </p>
-        ) : null}
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="danger"
-            testId="delete-view-confirm"
-            onClick={onConfirm}
-          >
-            Delete view
-          </Button>
-        </div>
-      </div>
-    </div>
+      ) : null}
+    </ConfirmDialog>
   );
 }
