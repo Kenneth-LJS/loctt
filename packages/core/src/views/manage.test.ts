@@ -187,4 +187,53 @@ describe("view writes preserve a concurrent broken view (K28)", () => {
     expect(after.broken).toHaveLength(1);
     expect(after.queries.find(q => q.name === "renamed")).toBeDefined();
   });
+
+  // The three writers below also carry `config.broken` (manage.ts), but
+  // the coverage above stopped at create/edit. Per the repo rule — code
+  // that grew past its tests — each writer gets its own assertion so a
+  // future edit that forgets the spread on any one of them goes red.
+  it("archiveView keeps the broken entry", async () => {
+    await seedWithBroken();
+    const cfg = await loadQueriesConfig(locttDir);
+    const keep = cfg.queries.find(q => q.name === "keep");
+    if (keep === undefined) throw new Error("seed missing 'keep'");
+
+    await archiveView(locttDir, keep.id);
+
+    const after = await loadQueriesConfig(locttDir);
+    expect(after.broken).toHaveLength(1);
+    expect(after.broken?.[0]?.name).toBe("broken-one");
+    expect(after.queries.find(q => q.name === "keep")?.archived).toBe(true);
+  });
+
+  it("unarchiveView keeps the broken entry", async () => {
+    await seedWithBroken();
+    const cfg = await loadQueriesConfig(locttDir);
+    const keep = cfg.queries.find(q => q.name === "keep");
+    if (keep === undefined) throw new Error("seed missing 'keep'");
+    await archiveView(locttDir, keep.id);
+
+    await unarchiveView(locttDir, keep.id);
+
+    const after = await loadQueriesConfig(locttDir);
+    expect(after.broken).toHaveLength(1);
+    expect(after.broken?.[0]?.name).toBe("broken-one");
+    expect(after.queries.find(q => q.name === "keep")?.archived).toBeUndefined();
+  });
+
+  it("hard deleteView keeps the broken entry", async () => {
+    await seedWithBroken();
+    const cfg = await loadQueriesConfig(locttDir);
+    const keep = cfg.queries.find(q => q.name === "keep");
+    if (keep === undefined) throw new Error("seed missing 'keep'");
+
+    await deleteView(locttDir, keep.id, { hard: true });
+
+    const after = await loadQueriesConfig(locttDir);
+    // The valid view is gone, but the broken sibling — which the delete
+    // never touched — must not be collateral damage.
+    expect(after.queries.find(q => q.name === "keep")).toBeUndefined();
+    expect(after.broken).toHaveLength(1);
+    expect(after.broken?.[0]?.name).toBe("broken-one");
+  });
 });
