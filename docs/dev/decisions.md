@@ -11449,3 +11449,30 @@ green. **To revert:** the change is broad; `git revert` the commit.
 **Lesson:** key-render sites were scattered (found 3 beyond the first 2
 only via failing tests) — a single `renderKey(prefix, n)` helper would
 have localized this; noted as a possible follow-up refactor.
+
+### A-B4 · @loctt/web is independently installable with a loctt-ui bin (K89)
+
+**Built (agent-level) implementing K89/B4.** `@loctt/web` is now a
+publishable, independently-installable package:
+- **Library entry** `dist/server/index.js` (+ `index.d.ts`) exports
+  `createWebApp` — consumed by `@loctt/cli`'s `loctt ui`.
+- **Bin** `loctt-ui` → `dist/server/cli.js`: the standalone launcher
+  (`main.ts`) — resolves the bundled client (`../client`, sibling of the
+  bundle) when no `--client-dir` is given, starts the loopback server,
+  serves the client, and opens the browser (`--no-open` to suppress).
+- **Core bundled in** via tsup `noExternal` (like CLI/MCP); externals are
+  the native/CJS deps (`yaml`, `ulid`, `busboy`, `proper-lockfile`,
+  `sharp`). No separate `@loctt/core` install needed.
+- **Build:** `vite build` (client → dist/client) + `tsc -b` (types) +
+  `tsup` (two bundles: library + bin). `clean` also clears
+  `*.tsbuildinfo` (stale buildinfo was skipping the `.d.ts` emit after an
+  `rm dist`). `files` is an explicit allowlist (index.js/.d.ts, cli.js,
+  client) so tsc's per-file/test `.js` intermediates never ship;
+  `prepublishOnly` rebuilds. Un-`private`, version 0.1.0.
+
+Verified: clean build produces exactly the 3 server artifacts + client;
+`npm pack --dry-run` ships only those (no tests/source); full typecheck
+green; the `cli.js` bin smoke-runs (serves + resolves bundled client);
+web unit suite 1534 green. **Note:** tsup's dts plugin trips on the
+tsconfig `baseUrl` deprecation, so types come from `tsc -b`, not tsup.
+**To revert:** re-`private` and drop the bin/tsup/files.
