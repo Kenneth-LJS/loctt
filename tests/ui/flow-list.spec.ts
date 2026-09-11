@@ -4290,12 +4290,60 @@ test.describe("LST — filters that fail honestly (M1.3)", () => {
     await page.goto(`${tracker.baseURL}/list?milestone=${gone}`);
     await expect(page.getByText(/No tasks match these filters/i)).toBeVisible();
 
-    // The chip is present and removable, so the user can recover —
-    // a chip with a blank label would read as a normal empty result.
+    // LST-33's first bullet: the chip must SAY the milestone no longer
+    // exists — a chip that just renders the raw ULID (or a blank label)
+    // reads as a normal filter that happens to match nothing, which is
+    // indistinguishable from a valid milestone with no tasks.
+    //
+    // Before the fix, buildChips fell back to `?? value`, so the chip
+    // showed the bare ULID and this test — which only checked the
+    // chip's presence and removability — passed green while asserting
+    // the bug. The two assertions below are what actually pin LST-33.
+    await expect(page.getByText(/no longer exists/i)).toBeVisible();
+    // The raw full ULID must NOT be shown as a normal-looking label
+    // (only the truncated diagnostic tail is acceptable).
+    await expect(page.getByText(gone, { exact: true })).toHaveCount(0);
+
+    // Present and removable, so the user can recover.
     const chip = page.getByRole("button", { name: /Remove Milestone/ });
     await expect(chip).toBeVisible();
     await chip.click();
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+  });
+
+  // @verifies LST-33
+  test("LST-33: a VALID milestone with no tasks is a normal chip, not 'no longer exists'", async ({
+    page,
+    tracker,
+  }) => {
+    // LST-33 bullet 3: a dangling reference must be distinguishable from
+    // a valid milestone that simply has no tasks. This is the contrast
+    // case, and the one that catches the loading-race regression where a
+    // valid chip flashes/sticks as "no longer exists" before (or if) its
+    // option source loads. The milestone here EXISTS but matches nothing.
+    await tracker.run(["milestone", "create", "v2"]);
+    await tracker.seed([{ title: "One" }]); // not on v2
+
+    // The filter param is the milestone id (a ULID), not its name —
+    // read it from config the way flow-milestones.spec does.
+    const yaml = await readFile(
+      path.join(tracker.root, ".loctt", "config", "milestones.yaml"),
+      "utf8",
+    );
+    const id = /- id:\s*(\S+)/.exec(yaml)?.[1];
+    expect(id, "expected a milestone id in milestones.yaml").toBeTruthy();
+
+    await page.goto(`${tracker.baseURL}/list?milestone=${id ?? ""}`);
+    // Empty result, but the chip must read as a normal, named filter
+    // (the milestone's name "v2") — never the dangling warning form.
+    await expect(page.getByText(/No tasks match these filters/i)).toBeVisible();
+    await expect(page.getByText(/no longer exists/i)).toHaveCount(0);
+    // The chip itself resolves to the name and is removable by name —
+    // if it were dangling, the remove control would name the raw id and
+    // the chip would show "(no longer exists)" instead.
+    await expect(
+      page.getByRole("button", { name: /Remove Milestone v2/ }),
+    ).toBeVisible();
   });
 
   // @verifies LST-41

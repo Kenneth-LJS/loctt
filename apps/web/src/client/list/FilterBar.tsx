@@ -32,7 +32,7 @@ import { SaveViewDialog } from "./SaveViewDialog.tsx";
  */
 
 /** Filter facets backed by a fixed URL param + a data source. */
-type FacetKey =
+export type FacetKey =
   | "project" | "status" | "priority" | "type"
   | "assignee" | "reporter" | "labels" | "milestone" | "sprint";
 
@@ -145,6 +145,22 @@ export function FilterBar({
     ...(workflow.isError ? (["status", "priority", "type"] as const) : []),
   ]);
 
+  // LST-33: which facets have SUCCESSFULLY loaded their options. A chip
+  // may only be judged "dangling" (its value names a since-deleted
+  // entity) once its source has actually loaded — otherwise a valid chip
+  // renders as "no longer exists" during the load window, and stays that
+  // way forever if the source errors. This mirrors `failedFacets` above:
+  // "option not found" must not conflate loading, network failure, and
+  // true deletion. Only `isSuccess` proves the option set is authoritative.
+  const loadedFacets = new Set<FacetKey>([
+    ...(projects.isSuccess ? (["project"] as const) : []),
+    ...(users.isSuccess ? (["assignee", "reporter"] as const) : []),
+    ...(labels.isSuccess ? (["labels"] as const) : []),
+    ...(milestones.isSuccess ? (["milestone"] as const) : []),
+    ...(sprints.isSuccess ? (["sprint"] as const) : []),
+    ...(workflow.isSuccess ? (["status", "priority", "type"] as const) : []),
+  ]);
+
   const setFilter = (key: string, next: string[]): void => {
     void navigate({
       search: prev => ({ ...prev, [key]: next.length > 0 ? next : undefined, page: undefined }),
@@ -156,7 +172,7 @@ export function FilterBar({
 
   const customFilters = readCustomFilters(search);
 
-  const activeChips = buildChips(search, options, customFields)
+  const activeChips = buildChips(search, options, customFields, loadedFacets, workflow.isSuccess)
     // A chip for a hidden facet would carry a ✕ that removes the very
     // scope the route is defined by.
     .filter(chip => !hiddenFacets.includes(chip.key as FacetKey));
@@ -298,16 +314,13 @@ export function FilterBar({
               </button>
             </span>
           ) : null}
-          {activeChips.map(chip => (
-            <span
-              key={`${chip.key}:${chip.value}`}
-              className="inline-flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-[12px] text-accent"
-            >
-              <span className="text-accent/70">{chip.facetLabel}:</span>
-              {chip.label}
+          {activeChips.map(chip => {
+            const removeButton = (extraClass: string) => (
               <button
                 type="button"
-                aria-label={`Remove ${chip.facetLabel} ${chip.label}`}
+                aria-label={`Remove ${chip.facetLabel} ${
+                  chip.dangling === true ? chip.value : chip.label
+                }`}
                 onClick={() => {
                   const current = chipValues(search, chip.key);
                   const next = current.filter(v => v !== chip.value);
@@ -319,12 +332,41 @@ export function FilterBar({
                     }),
                   });
                 }}
-                className="ml-0.5 cursor-pointer text-accent/70 hover:text-accent"
+                className={`ml-0.5 cursor-pointer ${extraClass}`}
               >
                 {ICON.close}
               </button>
-            </span>
-          ))}
+            );
+            // LST-33: a dangling reference reads as "gone", not as a
+            // normal filter. Warning-toned, the id truncated as a
+            // diagnostic tail (matching cells.tsx's deleted-user form),
+            // and it says "no longer exists" so an empty result is not
+            // mistaken for a valid-but-empty filter. Still removable.
+            if (chip.dangling === true) {
+              return (
+                <span
+                  key={`${chip.key}:${chip.value}`}
+                  title={`No ${chip.facetLabel.toLowerCase()} matches ${chip.value}`}
+                  className="inline-flex items-center gap-1 rounded bg-warn-bg px-2 py-0.5 text-[12px] text-warn-fg"
+                >
+                  <span className="opacity-80">{chip.facetLabel}:</span>
+                  <code className="font-mono">{chip.value.slice(-6)}</code>
+                  <span className="italic">(no longer exists)</span>
+                  {removeButton("text-warn-fg/70 hover:text-warn-fg")}
+                </span>
+              );
+            }
+            return (
+              <span
+                key={`${chip.key}:${chip.value}`}
+                className="inline-flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-[12px] text-accent"
+              >
+                <span className="text-accent/70">{chip.facetLabel}:</span>
+                {chip.label}
+                {removeButton("text-accent/70 hover:text-accent")}
+              </span>
+            );
+          })}
           <button
             type="button"
             onClick={clearAll}
@@ -359,7 +401,7 @@ const FACET_KEYS: readonly FacetKey[] = [
   "project", "status", "priority", "type", "assignee", "reporter", "labels", "milestone", "sprint",
 ];
 
-interface FacetOptions {
+export interface FacetOptions {
   project: FilterOption[];
   status: FilterOption[];
   priority: FilterOption[];
@@ -442,27 +484,71 @@ interface Chip {
   facetLabel: string;
   value: string;
   label: string;
+  /**
+   * LST-33: the filter value names an entity the tracker no longer has
+   * (a since-deleted milestone/user/label). The chip must SAY so rather
+   * than render the raw ULID as a normal-looking label — a bare id reads
+   * as an ordinary filter that just happens to match nothing, which is
+   * indistinguishable from a valid entity with no tasks. Mirrors the
+   * "(deleted user)" treatment in cells.tsx (K21/K22): the id is the only
+   * remaining handle on the broken referent, so we keep a truncated form
+   * as diagnostic, not as vocabulary.
+   */
+  dangling?: boolean;
 }
 
-function buildChips(
+// Exported for unit test: the dangling-vs-loading logic (LST-33) is a
+// pure function of (value, options, load-state) and is the exact place
+// the loading-race regression lives — asserting it directly is more
+// robust than waiting one out through the rendered page.
+export function buildChips(
   search: Partial<ListSearch>,
   options: FacetOptions,
   customFields: WorkflowConfig["custom_fields"],
+  // LST-33: the facets whose option source has SUCCESSFULLY loaded. A
+  // value is only judged dangling for a facet in this set (see `resolve`).
+  loadedFacets: ReadonlySet<FacetKey>,
+  // Custom-field options come from the workflow config; this is its
+  // successful-load flag, gating dangling detection for `field.*` chips.
+  customFieldsLoaded: boolean,
 ): Chip[] {
   const chips: Chip[] = [];
-  const labelOf = (opts: readonly FilterOption[], value: string): string =>
-    opts.find(o => o.value === value)?.label ?? value;
+  // Resolve a value to its human label; when nothing matches AND the
+  // facet's source has successfully loaded, the value is a dangling
+  // reference (LST-33) — the caller marks the chip so the UI can say
+  // "no longer exists" instead of showing the raw id. When the source
+  // has NOT loaded (still fetching, or errored), a miss means "unknown
+  // yet", not "deleted": fall back to the raw value with no dangling
+  // marker so a valid chip never flashes as gone.
+  const resolve = (
+    opts: readonly FilterOption[],
+    value: string,
+    loaded: boolean,
+  ): { label: string; dangling: boolean } => {
+    const hit = opts.find(o => o.value === value);
+    if (hit) return { label: hit.label, dangling: false };
+    return { label: value, dangling: loaded };
+  };
 
   for (const key of FACET_KEYS) {
     for (const value of search[key] ?? []) {
-      chips.push({ key, facetLabel: FACET_LABELS[key], value, label: labelOf(options[key], value) });
+      const { label, dangling } = resolve(options[key], value, loadedFacets.has(key));
+      chips.push({ key, facetLabel: FACET_LABELS[key], value, label, dangling });
     }
   }
   const custom = readCustomFilters(search);
   for (const cf of customFields) {
     for (const value of custom[cf.key] ?? []) {
-      const label = cf.values?.find(v => v.key === value)?.label ?? value;
-      chips.push({ key: `field.${cf.key}`, facetLabel: cf.label, value, label });
+      const hit = cf.values?.find(v => v.key === value);
+      chips.push({
+        key: `field.${cf.key}`,
+        facetLabel: cf.label,
+        value,
+        label: hit?.label ?? value,
+        // Custom-field options ride the workflow config; only judge a
+        // custom-field value dangling once that config has loaded.
+        dangling: customFieldsLoaded && hit === undefined,
+      });
     }
   }
   return chips;
