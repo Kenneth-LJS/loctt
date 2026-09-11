@@ -608,9 +608,9 @@ export function ProjectsPanel() {
           What the user needs is to be told their keys changed, once.
           `role="status"`, not `alert`: nothing is wrong and there is
           nothing to do. The panel previously rendered a "did not
-          finish" warning off `pending_prefix_rename`, a field the
-          middleware guarantees is never populated — dead code that
-          read as a working feature. */}
+          finish" warning off a `pending_prefix_rename` field the
+          middleware could never populate — that field and its banner
+          were both removed as dead code (A-PRESCAN-1). */}
       {completed !== undefined && (
         <div
           role="status"

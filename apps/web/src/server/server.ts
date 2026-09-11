@@ -19,7 +19,6 @@ import type {
   ListTasksRequest,
   MigrateResponse,
   MigrationPlanResponse,
-  PrefixRenameState,
   RecentTaskResponse,
   TaskResponse,
   TrackerInfoResponse,
@@ -168,7 +167,6 @@ import {
   QueryValidationError,
   readBurndownSeries,
   readHistoryRows,
-  readPrefixRenameState,
   readRecents,
   recoverInterruptedPrefixRename,
   reorderBoardRank,
@@ -1589,17 +1587,15 @@ export function createWebApp(options: WebAppOptions) {
     const page = parsePagination(url, res);
     if (!page) return;
     const cfg = await loadProjectsConfig(locttDir);
-    // A sentinel surviving to here means boot recovery could not finish
-    // it. The panel has to say so rather than render a healthy tracker
-    // whose task keys may be half-migrated (PRU-46).
-    let pendingPrefixRename: PrefixRenameState | undefined;
-    try {
-      pendingPrefixRename = await readPrefixRenameState(locttDir);
-    } catch {
-      // An unreadable sentinel is itself reported by doctor; it must not
-      // take down the projects list, which is where the user would go
-      // to understand the problem.
-    }
+    // No pending-prefix-rename read here, deliberately (PRU-46 /
+    // A-PRESCAN-1). The recovery middleware finishes any interrupted
+    // rename *before* this handler runs, and 500s the request if it
+    // cannot — so a sentinel can never survive to this point. The panel
+    // learns a rename completed from `/api/info`'s one-time notice, not
+    // from a mid-rename field here; the field this used to emit
+    // (`pending_prefix_rename`) fed a banner that was deleted as
+    // unreachable, and reading the sentinel on every list request was
+    // dead work that could never be non-undefined.
     // SHL-5 marks the *active* project, which is where a new task
     // actually lands — and that is the per-user default when one is
     // set, not the workspace default. Reporting only `cfg.default`
@@ -1651,9 +1647,6 @@ export function createWebApp(options: WebAppOptions) {
       // somewhere actionable rather than silently swallowing it.
       ...(projectDefaultIsGhost(cfg)
         ? { default_drift: { kind: "missing" as const, default: cfg.default } }
-        : {}),
-      ...(pendingPrefixRename !== undefined
-        ? { pending_prefix_rename: pendingPrefixRename }
         : {}),
       // Phase-7B: a project entry that would not parse (e.g. a hand-edit
       // dropped its `prefix`) no longer 400s the whole surface — the good

@@ -990,11 +990,14 @@ describe("interrupted prefix rename API", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it("surfaces the pending rename and completes it on request", async () => {
+  it("recovers a planted sentinel before the handler and exposes no mid-rename field", async () => {
     const { getPrefixRenameStatePath } = await import("@loctt/core");
-    // Plant a sentinel directly: recovery runs on the way in to every
-    // API request, so the only way to observe the pending state is to
-    // write it and read it in the same request the panel would.
+    // Plant a sentinel directly. The recovery middleware runs on the way
+    // in to every API request and finishes the rename before any handler
+    // reads a key, so there is no observable mid-rename state — the
+    // projects response carries no `pending_prefix_rename` field at all
+    // (A-PRESCAN-1: the field and the banner it fed are gone; the panel
+    // learns of a completed rename from /api/info's one-time notice).
     await writeFile(
       getPrefixRenameStatePath(locttDir),
       `project_id: ${id}\nfrom: T\nto: WEB\nstarted_at: 2026-08-15T00:00:00.000Z\n`,
