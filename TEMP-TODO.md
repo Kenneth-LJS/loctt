@@ -137,9 +137,9 @@ Nothing behind these can close until decided.
 
 ## 4. Quick fixes — small, bounded, actionable now
 
-- [ ] **`loctt link` rejects the inverse side of a relationship** — CLI should build its valid-type set from `relationshipTypeKeys` like core/web.
+- [x] **`loctt link` rejects the inverse side of a relationship** — CLI's `assertWorkflowRelationshipKey` built its valid-type set from `.map(r => r.key)` (forward only), so `loctt link A blocked_by B` failed at the boundary even though core's `linkTask` accepts the inverse. Switched to `flatMap(relationshipTypeKeys)` to match core/web; the "Known:" hint now lists inverse keys too. New unit test `apps/cli/src/runtime/workflow-assert.test.ts`, red-proven. (A-LINKINV)
 - [x] **`projects.yaml` "default default" message** — the doubling now only occurs on the *archived*-default hard error (K23 made a ghost default non-fatal). Reworded the superRefine message so it no longer leads with "default"; the formatter's "default" path prefix reads cleanly. Regression test in `projects.test.ts` asserts the message contains "archived" and not "default default". (A-DEFDEF)
-- [ ] **`multipart.ts` basename-guard comment overstates the web guard** — comment-only.
+- [x] **`multipart.ts` basename-guard comment overstates the web guard** — the comment claimed "further validation is the core's responsibility (assertSafeBasename)", implying core re-checks the client-declared filename. It doesn't: core validates the basename of the temp file's own path (already this safe value), so it's defense-in-depth over the same name, not an independent gate. Comment corrected to say so. Comment-only, no behavior change.
 - [ ] **K33-1 — `flow-task-body.spec.ts` needs the enter-edit gesture** — add an `enterEdit(page)` helper. (Test repair.)
 - [ ] **`PUT /api/user-settings` takes no state lock** — add the lock or document the deliberate asymmetry.
 - [ ] **The non-working-day predicate exists twice** — extract `isNonWorkingDay(date, calendar)`; `timeline/geometry.ts` + `task/editors/DateField.tsx`. (Refactor.)
