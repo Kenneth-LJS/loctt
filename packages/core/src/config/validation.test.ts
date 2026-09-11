@@ -4,7 +4,7 @@ import { describe, expect,it } from "vitest";
 import { validateTaskAgainstWorkflow, validateWorkflowConfig } from "./validation.js";
 
 const config: WorkflowConfig = {
-  key: { prefix: "T-" },
+  key: { prefix: "T" },
   statuses: [
     { key: "not_started", label: "Not started", category: "pending" },
     { key: "done", label: "Done", category: "completed" },
@@ -272,7 +272,7 @@ describe("cross-referenced workflow config", () => {
   async function defaultConfig() {
     const { parseWorkflowConfig } = await import("./workflow.js");
     const { defaultWorkflowYaml } = await import("../init/defaults.js");
-    return parseWorkflowConfig(defaultWorkflowYaml("T-"));
+    return parseWorkflowConfig(defaultWorkflowYaml("T"));
   }
 
   it("accepts the shipped default", async () => {

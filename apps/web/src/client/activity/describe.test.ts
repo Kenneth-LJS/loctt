@@ -39,7 +39,7 @@ const ANA: UserProfile = { id: "01ANA00000000000000000000A", name: "Ana Lopez", 
 const KEN: UserProfile = { id: "01KEN00000000000000000000K", name: "Ken", timezone: "UTC" };
 
 const workflow = {
-  key: { prefix: "T-" },
+  key: { prefix: "T" },
   statuses: [
     { key: "backlog", label: "Icebox", category: "pending", default: true },
     { key: "in_progress", label: "Cooking", category: "active" },

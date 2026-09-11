@@ -525,7 +525,7 @@ describe("multi-user switching: state is global, settings are per-user", () => {
     // real.
     const { createProject } = await import("../projects/manage.js");
     const taskId = await seededProjectId();
-    const alt = await createProject(locttDir, { name: "Alt", prefix: "A-" });
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "A" });
 
     const aliceId = await makeUserWithDefault("Alice", taskId);
     const bobId = await makeUserWithDefault("Bob", alt.id);
@@ -567,8 +567,8 @@ describe("multi-user switching: state is global, settings are per-user", () => {
   it("rapid switching across three users picks up each user's settings in turn", async () => {
     const { createProject } = await import("../projects/manage.js");
     const taskId = await seededProjectId();
-    const alt = await createProject(locttDir, { name: "Alt", prefix: "A-" });
-    const third = await createProject(locttDir, { name: "Third", prefix: "X-" });
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "A" });
+    const third = await createProject(locttDir, { name: "Third", prefix: "X" });
 
     const a = await makeUserWithDefault("A", taskId);
     const b = await makeUserWithDefault("B", alt.id);
@@ -587,7 +587,7 @@ describe("multi-user switching: state is global, settings are per-user", () => {
   it("a per-user default_project pointing at a hard-deleted project falls through to workspace default", async () => {
     const { createProject, deleteProject } = await import("../projects/manage.js");
     const taskId = await seededProjectId();
-    const alt = await createProject(locttDir, { name: "Alt", prefix: "A-" });
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "A" });
 
     const aliceId = await makeUserWithDefault("Alice", alt.id);
     await switchCurrentUser(locttDir, aliceId);
@@ -617,7 +617,7 @@ describe("multi-user switching: state is global, settings are per-user", () => {
     // resolveProjectIdFromInput.)
     const taskId = await seededProjectId();
     const { createProject, archiveProject } = await import("../projects/manage.js");
-    const alt = await createProject(locttDir, { name: "Alt", prefix: "A-" });
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "A" });
     const aliceId = await makeUserWithDefault("Alice", alt.id);
     await switchCurrentUser(locttDir, aliceId);
     await archiveProject(locttDir, alt.id);

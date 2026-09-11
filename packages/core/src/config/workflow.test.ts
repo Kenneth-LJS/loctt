@@ -5,7 +5,7 @@ import { YamlSyntaxError } from "./yaml-coerce.js";
 
 const CANONICAL_YAML = `
 key:
-  prefix: T-
+  prefix: T
 
 statuses:
   - key: not_started
@@ -75,7 +75,7 @@ describe("parseWorkflowConfig", () => {
   it("parses the canonical workflow.yaml from the design doc", () => {
     const config = parseWorkflowConfig(CANONICAL_YAML);
 
-    expect(config.key.prefix).toBe("T-");
+    expect(config.key.prefix).toBe("T");
     expect(config.statuses).toHaveLength(4);
     expect(config.statuses[0]).toEqual({ key: "not_started", label: "Not started", category: "pending", default: true });
     expect(config.priorities).toHaveLength(3);
@@ -106,7 +106,7 @@ describe("parseWorkflowConfig", () => {
   it("rejects files missing custom_fields", () => {
     const yaml = `
 key:
-  prefix: X-
+  prefix: X
 statuses:
   - key: open
     label: Open
@@ -130,7 +130,7 @@ relationships:
   it("allows priorities without numeric value", () => {
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses:
   - key: open
     label: Open
@@ -168,7 +168,7 @@ custom_fields: []
   it("throws on an invalid status category in strict mode (the write gate)", () => {
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses:
   - key: open
     label: Open
@@ -188,7 +188,7 @@ custom_fields: []
   it("degrades an invalid status category to a broken entry in tolerant mode", () => {
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses:
   - key: real
     label: Real
@@ -215,7 +215,7 @@ custom_fields: []
   it("throws on an invalid custom field type in strict mode", () => {
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses: []
 priorities: []
 task_types: []
@@ -236,7 +236,7 @@ custom_fields:
   it("degrades an invalid custom field type to a broken entry in tolerant mode", () => {
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses: []
 priorities: []
 task_types: []
@@ -261,14 +261,14 @@ custom_fields:
   });
 
   it("throws on missing statuses array", () => {
-    expect(() => parseWorkflowConfig(`key:\n  prefix: T-\npriorities: []\ntask_types: []\nrelationships: []`))
+    expect(() => parseWorkflowConfig(`key:\n  prefix: T\npriorities: []\ntask_types: []\nrelationships: []`))
       .toThrow("statuses is required (expected array)");
   });
 
   it("parses estimation config (numeric)", () => {
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses: []
 priorities: []
 task_types: []
@@ -292,7 +292,7 @@ estimation:
   it("parses estimation config (custom_enum requires preset_values)", () => {
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses: []
 priorities: []
 task_types: []
@@ -312,7 +312,7 @@ estimation:
   it("rejects custom_enum without preset_values", () => {
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses: []
 priorities: []
 task_types: []
@@ -329,7 +329,7 @@ estimation:
   it("rejects custom_numeric without unit_label", () => {
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses: []
 priorities: []
 task_types: []
@@ -357,7 +357,7 @@ describe("parseWorkflowConfig — per-entry corruption tolerance (O6)", () => {
     // statuses load and the bad one is set aside.
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses:
   - key: not_started
     label: Not started
@@ -387,7 +387,7 @@ custom_fields: []
   it("preserves the corrupt entry's raw text rather than dropping it", () => {
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses:
   - key: open
     label: Open
@@ -409,7 +409,7 @@ custom_fields: []
   it("groups corruption by sub-list, keeping per-list indices", () => {
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses:
   - key: open
     label: Open
@@ -451,7 +451,7 @@ custom_fields: []
     // bad-category edits persist silently.
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses:
   - key: open
     label: Open
@@ -478,7 +478,7 @@ custom_fields: []
     // workflow must still load rather than throw over a lone bad entry.
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses:
   - key: broken_default
     label: Broken default
@@ -502,7 +502,7 @@ custom_fields: []
     // exactly as before — this is a real config error, not degradable.
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses:
   - key: open
     label: Open
@@ -519,7 +519,7 @@ custom_fields: []
   it("still throws when statuses are ALL valid but have two defaults", () => {
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses:
   - key: a
     label: A
@@ -540,7 +540,7 @@ custom_fields: []
   it("keeps a non-array sub-list object-fatal (no collection to degrade)", () => {
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses: not_a_list
 priorities: []
 task_types: []
@@ -553,7 +553,7 @@ custom_fields: []
   it("keeps a malformed scalar `estimation` object-fatal (single record, not a list)", () => {
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses: []
 priorities: []
 task_types: []
@@ -569,7 +569,7 @@ estimation:
   it("keeps an unknown top-level key object-fatal", () => {
     const yaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses: []
 priorities: []
 task_types: []

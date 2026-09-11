@@ -90,11 +90,11 @@ describe("deriveKeyState", () => {
 
   it("derives a prefix recorded on either side", () => {
     const out = deriveKeyState(
-      state({ p1: { prefix: "T-", next_number: 3 } }),
-      state({ p1: { prefix: "T-", next_number: 5 } }),
+      state({ p1: { prefix: "T", next_number: 3 } }),
+      state({ p1: { prefix: "T", next_number: 5 } }),
       [],
     );
-    expect(out.keys["p1"]?.prefix).toBe("T-");
+    expect(out.keys["p1"]?.prefix).toBe("T");
   });
 
   it("refuses to derive an empty prefix", () => {

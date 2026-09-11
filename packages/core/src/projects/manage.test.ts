@@ -62,28 +62,28 @@ async function defaultProjectId(): Promise<string> {
 
 describe("createProject", () => {
   it("appends to projects.yaml and adds a counter to state.yaml keyed by id", async () => {
-    const def = await createProject(locttDir, { name: "Backend", prefix: "BACKEND-" });
+    const def = await createProject(locttDir, { name: "Backend", prefix: "BACKEND" });
     const cfg = await loadProjectsConfig(locttDir);
     expect(cfg.projects.some(p => p.id === def.id && p.name === "Backend")).toBe(true);
     const state = await loadState(locttDir);
-    expect(state.keys[def.id]).toEqual({ prefix: "BACKEND-", next_number: 1 });
+    expect(state.keys[def.id]).toEqual({ prefix: "BACKEND", next_number: 1 });
   });
 
   it("generates a fresh ULID for each project", async () => {
-    const a = await createProject(locttDir, { name: "A", prefix: "A-" });
-    const b = await createProject(locttDir, { name: "B", prefix: "B-" });
+    const a = await createProject(locttDir, { name: "A", prefix: "A" });
+    const b = await createProject(locttDir, { name: "B", prefix: "B" });
     expect(a.id).not.toBe(b.id);
   });
 
   it("rejects duplicate prefixes", async () => {
     await expect(
-      createProject(locttDir, { name: "Other", prefix: "T-" }),
+      createProject(locttDir, { name: "Other", prefix: "T" }),
     ).rejects.toThrow(/already exists/);
   });
 
   it("allows duplicate names (disambiguated by id)", async () => {
-    await createProject(locttDir, { name: "Web", prefix: "WEB-" });
-    await createProject(locttDir, { name: "Web", prefix: "WEB2-" });
+    await createProject(locttDir, { name: "Web", prefix: "WEB" });
+    await createProject(locttDir, { name: "Web", prefix: "WEB2" });
     const cfg = await loadProjectsConfig(locttDir);
     const matches = cfg.projects.filter(p => p.name === "Web");
     expect(matches).toHaveLength(2);
@@ -108,14 +108,14 @@ describe("editProject", () => {
 
 describe("setDefaultProject", () => {
   it("changes the default by id", async () => {
-    const def = await createProject(locttDir, { name: "Backend", prefix: "BACKEND-" });
+    const def = await createProject(locttDir, { name: "Backend", prefix: "BACKEND" });
     await setDefaultProject(locttDir, def.id);
     const cfg = await loadProjectsConfig(locttDir);
     expect(cfg.default).toBe(def.id);
   });
 
   it("changes the default by name when unambiguous", async () => {
-    const def = await createProject(locttDir, { name: "Backend", prefix: "BACKEND-" });
+    const def = await createProject(locttDir, { name: "Backend", prefix: "BACKEND" });
     await setDefaultProject(locttDir, "Backend");
     const cfg = await loadProjectsConfig(locttDir);
     expect(cfg.default).toBe(def.id);
@@ -134,7 +134,7 @@ describe("setDefaultProject", () => {
 
 describe("deleteProject (soft, default)", () => {
   it("sets archived: true and leaves task references intact", async () => {
-    const extra = await createProject(locttDir, { name: "Extra", prefix: "X-" });
+    const extra = await createProject(locttDir, { name: "Extra", prefix: "X" });
     await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);
       await createTask({ locttDir, state, options: { project: extra.id, title: "t" } });
@@ -153,7 +153,7 @@ describe("deleteProject (soft, default)", () => {
   });
 
   it("rejects --remap-to without --hard", async () => {
-    const extra = await createProject(locttDir, { name: "Extra", prefix: "X-" });
+    const extra = await createProject(locttDir, { name: "Extra", prefix: "X" });
     const main = await defaultProjectId();
     await expect(
       deleteProject(locttDir, extra.id, { remapTo: main }),
@@ -168,14 +168,14 @@ describe("deleteProject (hard)", () => {
   });
 
   it("hard-deletes a project that has no tasks and retires its counter", async () => {
-    const extra = await createProject(locttDir, { name: "Extra", prefix: "X-" });
+    const extra = await createProject(locttDir, { name: "Extra", prefix: "X" });
     const result = await deleteProject(locttDir, extra.id, { hard: true });
     expect(result.remappedTaskCount).toBe(0);
     const cfg = await loadProjectsConfig(locttDir);
     expect(cfg.projects.some(p => p.id === extra.id)).toBe(false);
     const state = await loadState(locttDir);
     expect(state.keys[extra.id]).toBeUndefined();
-    expect(state.retired_keys?.[extra.id]).toEqual({ prefix: "X-", next_number: 1 });
+    expect(state.retired_keys?.[extra.id]).toEqual({ prefix: "X", next_number: 1 });
   });
 
   /**
@@ -192,7 +192,7 @@ describe("deleteProject (hard)", () => {
   // @verifies PRU-18
   it("PRU-18: re-creating a project on a retired prefix resumes its counter", async () => {
     const main = await defaultProjectId();
-    const extra = await createProject(locttDir, { name: "Extra", prefix: "X-" });
+    const extra = await createProject(locttDir, { name: "Extra", prefix: "X" });
 
     // Allocate X-1, X-2, X-3 in the doomed project.
     const keys: string[] = [];
@@ -214,15 +214,15 @@ describe("deleteProject (hard)", () => {
 
     // The counter is retired at its high-water mark, not lost.
     const retired = await loadState(locttDir);
-    expect(retired.retired_keys?.[extra.id]).toEqual({ prefix: "X-", next_number: 4 });
+    expect(retired.retired_keys?.[extra.id]).toEqual({ prefix: "X", next_number: 4 });
 
     // Re-create on the same prefix.
-    const reborn = await createProject(locttDir, { name: "Extra Again", prefix: "X-" });
+    const reborn = await createProject(locttDir, { name: "Extra Again", prefix: "X" });
 
     // The far end, read off state.yaml: the counter is back under
     // `keys` at the retired high-water mark, and no longer retired.
     const after = await loadState(locttDir);
-    expect(after.keys[reborn.id]).toEqual({ prefix: "X-", next_number: 4 });
+    expect(after.keys[reborn.id]).toEqual({ prefix: "X", next_number: 4 });
     expect(after.retired_keys?.[extra.id]).toBeUndefined();
 
     // And the observable consequence: the first task minted in the
@@ -264,7 +264,7 @@ describe("deleteProject (hard)", () => {
   // @verifies PRU-34
   it("PRU-34: a partial remap reports the split and does not delete the project", async () => {
     const main = await defaultProjectId();
-    const extra = await createProject(locttDir, { name: "Extra", prefix: "X-" });
+    const extra = await createProject(locttDir, { name: "Extra", prefix: "X" });
 
     const made: { key: string; id: string }[] = [];
     await withStateLock(locttDir, async () => {
@@ -333,7 +333,7 @@ describe("deleteProject (hard)", () => {
   });
 
   it("requires remapTo when project has tasks", async () => {
-    const extra = await createProject(locttDir, { name: "Extra", prefix: "X-" });
+    const extra = await createProject(locttDir, { name: "Extra", prefix: "X" });
     await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);
       await createTask({ locttDir, state, options: { project: extra.id, title: "doomed" } });
@@ -343,7 +343,7 @@ describe("deleteProject (hard)", () => {
   });
 
   it("remaps affected tasks when remapTo is supplied", async () => {
-    const extra = await createProject(locttDir, { name: "Extra", prefix: "X-" });
+    const extra = await createProject(locttDir, { name: "Extra", prefix: "X" });
     const main = await defaultProjectId();
     await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);
@@ -361,7 +361,7 @@ describe("deleteProject (hard)", () => {
   });
 
   it("rejects remap to self", async () => {
-    const extra = await createProject(locttDir, { name: "Extra", prefix: "X-" });
+    const extra = await createProject(locttDir, { name: "Extra", prefix: "X" });
     await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);
       await createTask({ locttDir, state, options: { project: extra.id, title: "x" } });
@@ -387,8 +387,8 @@ describe("resolveProjectByName", () => {
   });
 
   it("returns ambiguous when multiple projects share a name", async () => {
-    await createProject(locttDir, { name: "Twin", prefix: "T1-" });
-    await createProject(locttDir, { name: "Twin", prefix: "T2-" });
+    await createProject(locttDir, { name: "Twin", prefix: "T1" });
+    await createProject(locttDir, { name: "Twin", prefix: "T2" });
     const cfg = await loadProjectsConfig(locttDir);
     const result = resolveProjectByName(cfg, "Twin");
     expect(result.kind).toBe("ambiguous");
@@ -396,7 +396,7 @@ describe("resolveProjectByName", () => {
   });
 
   it("excludes archived projects by default", async () => {
-    const extra = await createProject(locttDir, { name: "Extra", prefix: "X-" });
+    const extra = await createProject(locttDir, { name: "Extra", prefix: "X" });
     await deleteProject(locttDir, extra.id); // soft = archive
     const cfg = await loadProjectsConfig(locttDir);
     expect(resolveProjectByName(cfg, "Extra").kind).toBe("not_found");
@@ -423,8 +423,8 @@ describe("resolveProjectIdForUser (PRU-15)", () => {
   // @verifies PRU-15
   it("PRU-15: explicit > user default > workspace default > sole project", async () => {
     const tasks = await defaultProjectId();
-    const web = await createProject(locttDir, { name: "Web", prefix: "WEB-" });
-    const backend = await createProject(locttDir, { name: "Backend", prefix: "BE-" });
+    const web = await createProject(locttDir, { name: "Web", prefix: "WEB" });
+    const backend = await createProject(locttDir, { name: "Backend", prefix: "BE" });
 
     const user = await createUser(locttDir, { name: "Alice" });
     await switchCurrentUser(locttDir, user.id);
@@ -508,7 +508,7 @@ describe("ghost workspace default (NEW-20 / K23)", () => {
 
   // @verifies NEW-20
   it("NEW-20: resolution ignores a ghost default and falls to the ask state when several projects exist", async () => {
-    await createProject(locttDir, { name: "Web", prefix: "WEB-" });
+    await createProject(locttDir, { name: "Web", prefix: "WEB" });
     await writeGhostDefault();
     // Two projects + a default that resolves to nothing = no defensible
     // answer. The resolver must throw (the ask state), NOT return the
@@ -523,7 +523,7 @@ describe("ghost workspace default (NEW-20 / K23)", () => {
 
   // @verifies NEW-20
   it("NEW-20 (K75): the ask-state error names the ghost default and points at projects.yaml", async () => {
-    await createProject(locttDir, { name: "Web", prefix: "WEB-" });
+    await createProject(locttDir, { name: "Web", prefix: "WEB" });
     await writeGhostDefault();
     await expect(resolveProjectIdForUser(locttDir)).rejects.toThrow(/projects\.yaml/);
   });
@@ -558,8 +558,8 @@ describe("resolveProjectIdFromInput", () => {
   });
 
   it("throws on ambiguous name", async () => {
-    await createProject(locttDir, { name: "Twin", prefix: "T1-" });
-    await createProject(locttDir, { name: "Twin", prefix: "T2-" });
+    await createProject(locttDir, { name: "Twin", prefix: "T1" });
+    await createProject(locttDir, { name: "Twin", prefix: "T2" });
     const cfg = await loadProjectsConfig(locttDir);
     expect(() => resolveProjectIdFromInput(cfg, "Twin")).toThrow(/ambiguous/);
   });
@@ -589,7 +589,7 @@ describe("resolveProjectId", () => {
   });
 
   it("falls back to user default when no explicit", async () => {
-    const extra = await createProject(locttDir, { name: "Extra", prefix: "X-" });
+    const extra = await createProject(locttDir, { name: "Extra", prefix: "X" });
     const cfg = await loadProjectsConfig(locttDir);
     expect(resolveProjectId(cfg, { userDefault: extra.id })).toBe(extra.id);
   });
@@ -607,7 +607,7 @@ describe("resolveProjectId", () => {
   });
 
   it("throws when ambiguous (multiple projects, no defaults)", async () => {
-    await createProject(locttDir, { name: "Extra", prefix: "X-" });
+    await createProject(locttDir, { name: "Extra", prefix: "X" });
     await setDefaultProject(locttDir, null);
     const cfg = await loadProjectsConfig(locttDir);
     expect(() => resolveProjectId(cfg)).toThrow(/no default project/);

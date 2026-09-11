@@ -149,7 +149,7 @@ describe("preserves a hand-broken sub-entry across an unrelated write (K28-WF)",
   it("keeps a broken status on disk after an unrelated valid edit", async () => {
     const brokenYaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses:
   - key: not_started
     label: Not started
@@ -206,7 +206,7 @@ custom_fields: []
     // workflow write once the user repairs the broken twin.
     const brokenYaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses:
   - key: not_started
     label: Not started
@@ -261,7 +261,7 @@ custom_fields: []
     // broken twin is superseded and dropped, `rotten` survives.
     const brokenYaml = `
 key:
-  prefix: T-
+  prefix: T
 statuses:
   - key: not_started
     label: Not started

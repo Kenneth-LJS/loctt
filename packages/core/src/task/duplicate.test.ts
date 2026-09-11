@@ -168,7 +168,7 @@ describe("duplicateTask — overrides", () => {
 
   it("override project allocates from the target project's prefix", async () => {
     const { createProject } = await import("../projects/manage.js");
-    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT-" });
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT" });
     const srcId = await seed({ project: projectId, title: "T" });
     const copyId = await dup(srcId, { project: alt.id });
     const copy = await lookupTask(locttDir, copyId);

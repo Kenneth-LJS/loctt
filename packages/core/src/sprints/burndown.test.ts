@@ -10,7 +10,7 @@ import { computeBurndown } from "./burndown.js";
 
 function mkWorkflow(estimation?: WorkflowConfig["estimation"]): WorkflowConfig {
   return {
-    key: { prefix: "T-" },
+    key: { prefix: "T" },
     statuses: [
       { key: "todo", label: "To Do", category: "pending" },
       { key: "doing", label: "Doing", category: "active" },

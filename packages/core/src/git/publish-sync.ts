@@ -280,7 +280,7 @@ async function normaliseAfterMerge(
         ...t,
         frontmatter: {
           ...t.frontmatter,
-          key: `${p.prefix}${suffix}`,
+          key: `${p.prefix}-${suffix}`,
           key_history: [...appendKeyHistory(t.frontmatter.key_history, t.frontmatter.key)],
         },
       });

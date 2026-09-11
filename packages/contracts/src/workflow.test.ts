@@ -420,7 +420,7 @@ describe("WorkflowConfig integration", () => {
   describe("default status (0b)", () => {
     function cfg(statuses: unknown[]) {
       return {
-        key: { prefix: "T-" },
+        key: { prefix: "T" },
         statuses,
         priorities: [],
         task_types: [],
@@ -470,7 +470,7 @@ describe("WorkflowConfig integration", () => {
 
   it("accepts boards + timeline + estimation weights together", () => {
     const parsed = WorkflowConfigSchema.parse({
-      key: { prefix: "T-" },
+      key: { prefix: "T" },
       statuses: [{ key: "doing", label: "Doing", category: "active", default: true }],
       priorities: [{ key: "high", label: "High" }],
       task_types: [{ key: "bug", label: "Bug" }],

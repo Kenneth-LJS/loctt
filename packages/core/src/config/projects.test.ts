@@ -18,11 +18,11 @@ describe("parseProjectsConfig", () => {
 projects:
   - id: 01HX0000000000000000000001
     name: Tasks
-    prefix: "T-"
+    prefix: "T"
 `;
     const cfg = parseProjectsConfig(yaml);
     expect(cfg.projects).toHaveLength(1);
-    expect(cfg.projects[0]).toEqual({ id: "01HX0000000000000000000001", name: "Tasks", prefix: "T-" });
+    expect(cfg.projects[0]).toEqual({ id: "01HX0000000000000000000001", name: "Tasks", prefix: "T" });
     expect(cfg.default).toBeUndefined();
   });
 
@@ -31,10 +31,10 @@ projects:
 projects:
   - id: 01HX0000000000000000000010
     name: Backend
-    prefix: "BACKEND-"
+    prefix: "BACKEND"
   - id: 01HX0000000000000000000020
     name: Web
-    prefix: "WEB-"
+    prefix: "WEB"
 default: 01HX0000000000000000000010
 `;
     const cfg = parseProjectsConfig(yaml);
@@ -51,10 +51,10 @@ default: 01HX0000000000000000000010
 projects:
   - id: 01HX0000000000000000000099
     name: X
-    prefix: "X-"
+    prefix: "X"
   - id: 01HX0000000000000000000099
     name: Y
-    prefix: "Y-"
+    prefix: "Y"
 `;
     expect(() => parseProjectsConfig(yaml)).toThrow(/duplicate project id/);
   });
@@ -64,10 +64,10 @@ projects:
 projects:
   - id: 01HX00000000000000000000A1
     name: A
-    prefix: "T-"
+    prefix: "T"
   - id: 01HX00000000000000000000A2
     name: B
-    prefix: "T-"
+    prefix: "T"
 `;
     expect(() => parseProjectsConfig(yaml)).toThrow(/duplicate project prefix/);
   });
@@ -77,10 +77,10 @@ projects:
 projects:
   - id: 01HX0000000000000000000111
     name: Twin
-    prefix: "T1-"
+    prefix: "T1"
   - id: 01HX0000000000000000000222
     name: Twin
-    prefix: "T2-"
+    prefix: "T2"
 `;
     const cfg = parseProjectsConfig(yaml);
     expect(cfg.projects).toHaveLength(2);
@@ -95,7 +95,7 @@ projects:
     const yaml = `projects:
   - id: 01HX0000000000000000000333
     name: X
-    prefix: "X-"
+    prefix: "X"
 extra: nope
 `;
     expect(() => parseProjectsConfig(yaml)).toThrow(/unrecognized key/);
@@ -112,10 +112,10 @@ extra: nope
     const yaml = `projects:
   - id: 01HX0000000000000000000440
     name: Fine
-    prefix: "F-"
+    prefix: "F"
   - id: 01HX0000000000000000000444
     name: X
-    prefix: "X-"
+    prefix: "X"
     description: nope
 `;
     const cfg = parseProjectsConfig(yaml);
@@ -136,10 +136,10 @@ extra: nope
     const yaml = `projects:
   - id: 01HX0000000000000000000440
     name: Fine
-    prefix: "F-"
+    prefix: "F"
   - id: 01HX0000000000000000000440
     name: Twin
-    prefix: "T-"
+    prefix: "T"
     description: nope
 `;
     const cfg = parseProjectsConfig(yaml);
@@ -180,7 +180,7 @@ projects:
 projects:
   - id: ""
     name: X
-    prefix: "X-"
+    prefix: "X"
 `;
     const cfg = parseProjectsConfig(yaml);
     expect(cfg.projects).toHaveLength(0);
@@ -192,7 +192,7 @@ projects:
 projects:
   - id: 01HX0000000000000000000666
     name: ""
-    prefix: "X-"
+    prefix: "X"
 `;
     const cfg = parseProjectsConfig(yaml);
     expect(cfg.projects).toHaveLength(0);
@@ -209,7 +209,7 @@ projects:
 projects:
   - id: 01HX0000000000000000000777
     name: X
-    prefix: "X-"
+    prefix: "X"
 default: 01HX0000NONEXISTENT00000000
 `;
     const cfg = parseProjectsConfig(yaml);
@@ -232,13 +232,13 @@ default: 01HX0000NONEXISTENT00000000
 projects:
   - id: 01HX0000000000000000000001
     name: Good
-    prefix: "G-"
+    prefix: "G"
   - id: 01HX0000000000000000000002
     name: 123
     prefix: []
   - id: 01HX0000000000000000000003
     name: AlsoGood
-    prefix: "A-"
+    prefix: "A"
 `;
       const cfg = parseProjectsConfig(yaml);
       // The two good projects load; the bad one does not blank them.
@@ -263,7 +263,7 @@ projects:
 projects:
   - id: 01HX0000000000000000000001
     name: Good
-    prefix: "G-"
+    prefix: "G"
 `;
       const cfg = parseProjectsConfig(yaml);
       // Omitted (not []) so "none broken" stays distinct from "not
@@ -277,9 +277,9 @@ projects:
 projects:
   - id: 01HX0000000000000000000001
     name: Good
-    prefix: "G-"
+    prefix: "G"
   - name: NoId
-    prefix: "N-"
+    prefix: "N"
 `;
       const cfg = parseProjectsConfig(yaml);
       expect(cfg.projects).toHaveLength(1);
@@ -324,10 +324,10 @@ projects:
 projects:
   - id: 01HX00000000000000000000A1
     name: A
-    prefix: "DUP-"
+    prefix: "DUP"
   - id: 01HX00000000000000000000A2
     name: B
-    prefix: "DUP-"
+    prefix: "DUP"
 `;
       expect(() => parseProjectsConfig(yaml)).toThrow(/duplicate project prefix/);
     });
@@ -337,7 +337,7 @@ projects:
 projects:
   - id: 01HX0000000000000000000001
     name: Good
-    prefix: "G-"
+    prefix: "G"
 broken: []
 `;
       expect(() => parseProjectsConfig(yaml)).toThrow(/unrecognized key/);
@@ -349,8 +349,8 @@ describe("serializeProjectsConfig", () => {
   it("round-trips through parse", () => {
     const cfg = {
       projects: [
-        { id: "01HX0000000000000000000001", name: "Tasks", prefix: "T-" },
-        { id: "01HX0000000000000000000002", name: "Bugs", prefix: "B-" },
+        { id: "01HX0000000000000000000001", name: "Tasks", prefix: "T" },
+        { id: "01HX0000000000000000000002", name: "Bugs", prefix: "B" },
       ],
       default: "01HX0000000000000000000001",
     };
@@ -361,7 +361,7 @@ describe("serializeProjectsConfig", () => {
 
   it("omits default when not set", () => {
     const cfg = {
-      projects: [{ id: "01HX0000000000000000000001", name: "Tasks", prefix: "T-" }],
+      projects: [{ id: "01HX0000000000000000000001", name: "Tasks", prefix: "T" }],
     };
     const yaml = serializeProjectsConfig(cfg);
     expect(yaml).not.toContain("default:");
@@ -375,10 +375,10 @@ describe("serializeProjectsConfig", () => {
     const cfg = parseProjectsConfig(`projects:
   - id: 01HX0000000000000000000001
     name: Tasks
-    prefix: T-
+    prefix: T
   - id: 01HX0000000000000000000002
     name: Bugs
-    prefix: B-
+    prefix: B
     bogus_key: 1
 `);
     expect(cfg.projects).toHaveLength(1);
@@ -408,11 +408,11 @@ projects:
   - id: 01HX0000000000000000000001
     name: Alpha
     slug: alpha
-    prefix: A-
+    prefix: A
     archived: true
   - id: 01HX0000000000000000000002
     name: Beta
-    prefix: B-
+    prefix: B
 default: 01HX0000000000000000000002
 `);
     await saveProjectsConfig(root, config);

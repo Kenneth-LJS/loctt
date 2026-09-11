@@ -19,7 +19,7 @@ import {
 
 function workflow(partial: Partial<WorkflowConfig>): WorkflowConfig {
   return {
-    key: { prefix: "T-" },
+    key: { prefix: "T" },
     statuses: [],
     priorities: [],
     task_types: [],

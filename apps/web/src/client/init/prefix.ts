@@ -29,13 +29,17 @@
  * ONB-19 that would then fail.
  */
 
-/** Characters that cannot appear in a key and still round-trip. */
-const INVALID_PREFIX_CHARS = /[\s/\\?#%:[\]@!$&'()*+,;="<>|^`{}~]/;
+/**
+ * K88/A80: a prefix is bare uppercase letters, 1–10. The `-` separator is
+ * added automatically at key render, so it is NOT typed by the user.
+ * Strict: anything else (dash, lowercase, digit, space, punctuation) is
+ * rejected — the rule is stated, not silently normalised.
+ */
+const PREFIX_RE = /^[A-Z]{1,10}$/;
 
 export const PREFIX_RULE =
-  "Letters, digits, . _ - are allowed; a trailing - is conventional. "
-  + "Spaces, slashes and other punctuation are not, because they would "
-  + "break the task's own URL.";
+  "Use 1–10 uppercase letters (A–Z). The \"-\" separator is added "
+  + "automatically, so \"WEB\" produces keys like \"WEB-1\".";
 
 /**
  * Returns a user-facing problem with `prefix`, or `null` when it is
@@ -44,18 +48,17 @@ export const PREFIX_RULE =
  */
 export function prefixProblem(prefix: string): string | null {
   if (prefix.trim().length === 0) return "Enter a key prefix.";
-  if (INVALID_PREFIX_CHARS.test(prefix)) {
-    const bad = INVALID_PREFIX_CHARS.exec(prefix)?.[0] ?? "";
-    const named = bad === " " ? "a space" : `"${bad}"`;
-    return `A key prefix cannot contain ${named}. ${PREFIX_RULE}`;
+  if (!PREFIX_RE.test(prefix)) {
+    return `That key prefix isn't allowed. ${PREFIX_RULE}`;
   }
   return null;
 }
 
 /**
  * The first key this prefix will allocate — the wizard's live preview
- * (ONB-3). Key numbering starts at 1, matching `defaultStateYaml`.
+ * (ONB-3). Key numbering starts at 1, matching `defaultStateYaml`; the
+ * dash is inserted at render (K88), so "WEB" previews as "WEB-1".
  */
 export function firstKeyPreview(prefix: string): string {
-  return `${prefix}1`;
+  return `${prefix}-1`;
 }

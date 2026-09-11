@@ -888,12 +888,12 @@ describe("project prefix API", () => {
     const id = await projectId();
 
     const res = await fetch(`${base}/api/projects/${id}/prefix`, {
-      method: "PUT", headers: WRITE, body: JSON.stringify({ prefix: "WEB-" }),
+      method: "PUT", headers: WRITE, body: JSON.stringify({ prefix: "WEB" }),
     });
 
     expect(res.status).toBe(200);
     const body = await res.json() as { from: string; to: string; renamed: number };
-    expect(body).toMatchObject({ from: "T-", to: "WEB-", renamed: 3 });
+    expect(body).toMatchObject({ from: "T", to: "WEB", renamed: 3 });
 
     // On disk, not merely in the response (PRU-44).
     const list = await fetch(`${base}/api/tasks`);
@@ -904,12 +904,12 @@ describe("project prefix API", () => {
   it("refuses a prefix in use and points the error at the field", async () => {
     await fetch(`${base}/api/projects`, {
       method: "POST", headers: WRITE,
-      body: JSON.stringify({ name: "API", prefix: "API-" }),
+      body: JSON.stringify({ name: "API", prefix: "API" }),
     });
     const id = await projectId();
 
     const res = await fetch(`${base}/api/projects/${id}/prefix`, {
-      method: "PUT", headers: WRITE, body: JSON.stringify({ prefix: "API-" }),
+      method: "PUT", headers: WRITE, body: JSON.stringify({ prefix: "API" }),
     });
 
     expect(res.status).toBe(400);
@@ -917,7 +917,7 @@ describe("project prefix API", () => {
     // field drives rendering at the input rather than only a toast
     // (PRU-45, ERR-14).
     expect(body.field).toBe("prefix");
-    expect(body.error).toContain("API-");
+    expect(body.error).toContain("API");
     expect(body.data_state).toBe("not_saved");
   });
 
@@ -997,7 +997,7 @@ describe("interrupted prefix rename API", () => {
     // write it and read it in the same request the panel would.
     await writeFile(
       getPrefixRenameStatePath(locttDir),
-      `project_id: ${id}\nfrom: T-\nto: WEB-\nstarted_at: 2026-08-15T00:00:00.000Z\n`,
+      `project_id: ${id}\nfrom: T\nto: WEB\nstarted_at: 2026-08-15T00:00:00.000Z\n`,
       "utf-8",
     );
 

@@ -33,7 +33,7 @@ describe("getTrackerInfo", () => {
     const info = await getTrackerInfo(root);
     expect(info.exists).toBe(true);
     expect(info.workflowConfig).not.toBeNull();
-    expect(info.workflowConfig?.key.prefix).toBe("T-");
+    expect(info.workflowConfig?.key.prefix).toBe("T");
     expect(info.queriesConfig).not.toBeNull();
     expect(info.state).not.toBeNull();
     expect(info.taskCount).toBe(0);
@@ -247,8 +247,8 @@ describe("runDoctor", () => {
     const locttDir = resolveLocttDir(root);
     await writeYamlAtomically(getPrefixRenameStatePath(locttDir), {
       project_id: "some-project",
-      from: "T-",
-      to: "WEB-",
+      from: "T",
+      to: "WEB",
       started_at: "2026-08-15T00:00:00.000Z",
     });
 
@@ -259,8 +259,8 @@ describe("runDoctor", () => {
     // unexplained half-renamed tracker.
     const check = checks.find(c => c.name === "prefix rename");
     expect(check?.status).toBe("warn");
-    expect(check?.message).toContain("T-");
-    expect(check?.message).toContain("WEB-");
+    expect(check?.message).toContain("T");
+    expect(check?.message).toContain("WEB");
   });
 
   it("says nothing about prefix rename when none is pending", async () => {

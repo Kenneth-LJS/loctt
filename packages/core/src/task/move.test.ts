@@ -41,7 +41,7 @@ async function seed(title: string, project = projectId): Promise<string> {
 
 describe("moveTaskToProject", () => {
   it("changes project, allocates a new key, and appends to key_history", async () => {
-    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT-" });
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT" });
     const id = await seed("A");
     const before = await lookupTask(locttDir, id);
     const result = await moveTaskToProject({ locttDir, taskRef: id, targetProjectId: alt.id });
@@ -54,7 +54,7 @@ describe("moveTaskToProject", () => {
   });
 
   it("old key still resolves through key_history", async () => {
-    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT-" });
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT" });
     const id = await seed("A");
     const before = await lookupTask(locttDir, id);
     await moveTaskToProject({ locttDir, taskRef: id, targetProjectId: alt.id });
@@ -63,7 +63,7 @@ describe("moveTaskToProject", () => {
   });
 
   it("emits history entries for project and key", async () => {
-    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT-" });
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT" });
     const id = await seed("A");
     const before = (await readHistory(locttDir, id)).length;
     await moveTaskToProject({ locttDir, taskRef: id, targetProjectId: alt.id });
@@ -91,7 +91,7 @@ describe("moveTaskToProject", () => {
   });
 
   it("rejects archived target project", async () => {
-    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT-" });
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT" });
     await archiveProject(locttDir, alt.id);
     const id = await seed("A");
     await expect(
@@ -102,7 +102,7 @@ describe("moveTaskToProject", () => {
 
 describe("bulkMoveTasksToProject", () => {
   it("moves a batch under one bulk_op_id", async () => {
-    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT-" });
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT" });
     const a = await seed("A");
     const b = await seed("B");
     const result = await bulkMoveTasksToProject({
@@ -128,7 +128,7 @@ describe("bulkMoveTasksToProject", () => {
     // Reissuing a consumed number is the dangerous direction: it
     // collides with a key the user may still hold in key_history (P-7).
     // A gap in the sequence is not.
-    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT-" });
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT" });
     const a = await seed("A");
 
     // Make the task directory unwritable so the write fails after the
@@ -160,7 +160,7 @@ describe("bulkMoveTasksToProject", () => {
   });
 
   it("captures per-task failures", async () => {
-    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT-" });
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT" });
     const a = await seed("A");
     const result = await bulkMoveTasksToProject({
       locttDir, taskRefs: [a, "NOPE-9999"], targetProjectId: alt.id,
@@ -193,7 +193,7 @@ describe("move preserves a health-only corrupt field (write guard not bypassed)"
   // silently. The fix carries source.health and passes an explicit
   // touched set. Preserve-others / P-11.
   it("moveTaskToProject keeps an unrecognised top-level key on disk", async () => {
-    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT-" });
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT" });
     const id = await seed("A");
     await injectFrontmatterLine(id, "jira_id: ABC-1");
     // Sanity: the hand-edited value is lifted into health, not frontmatter.
@@ -210,7 +210,7 @@ describe("move preserves a health-only corrupt field (write guard not bypassed)"
   });
 
   it("bulkMoveTasksToProject keeps an unrecognised top-level key on disk", async () => {
-    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT-" });
+    const alt = await createProject(locttDir, { name: "Alt", prefix: "ALT" });
     const id = await seed("A");
     await injectFrontmatterLine(id, "jira_id: ABC-1");
 

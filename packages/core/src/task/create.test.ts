@@ -23,7 +23,7 @@ describe("createTask", () => {
   });
 
   function makeState(): LocttState {
-    return { keys: { task: { prefix: "T-", next_number: 1 } } };
+    return { keys: { task: { prefix: "T", next_number: 1 } } };
   }
 
   it("creates a task with only required fields", async () => {
@@ -53,7 +53,7 @@ describe("createTask", () => {
     async function wf() {
       const { parseWorkflowConfig } = await import("../config/workflow.js");
       const { defaultWorkflowYaml } = await import("../init/defaults.js");
-      return parseWorkflowConfig(defaultWorkflowYaml("T-"));
+      return parseWorkflowConfig(defaultWorkflowYaml("T"));
     }
 
     it("assigns the default status when none is given", async () => {
@@ -191,7 +191,7 @@ describe("createTask", () => {
   it("auto-stamps completed_date when created directly into a completed-category status", async () => {
     const state = makeState();
     const workflowConfig = {
-      key: { prefix: "T-" },
+      key: { prefix: "T" },
       statuses: [
         { key: "todo", label: "Todo", category: "pending" as const },
         { key: "done", label: "Done", category: "completed" as const },
@@ -237,7 +237,7 @@ describe("createTask", () => {
 
       const { parseWorkflowConfig } = await import("../config/workflow.js");
       const { defaultWorkflowYaml } = await import("../init/defaults.js");
-      const config = parseWorkflowConfig(defaultWorkflowYaml("T-"));
+      const config = parseWorkflowConfig(defaultWorkflowYaml("T"));
       const doneStatus = config.statuses.find(st => st.category === "completed");
       if (doneStatus === undefined) {
         throw new Error("fixture needs a completed-category status");

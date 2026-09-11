@@ -6,7 +6,7 @@ import { allocateKey, appendKeyHistory, initKeyAllocation, KeyAllocationError } 
 function makeState(): LocttState {
   return {
     keys: {
-      task: { prefix: "T-", next_number: 10 },
+      task: { prefix: "T", next_number: 10 },
     },
   };
 }
@@ -32,19 +32,19 @@ describe("allocateKey", () => {
 describe("initKeyAllocation", () => {
   it("creates a new entity type allocation", () => {
     const state = makeState();
-    initKeyAllocation(state, "epic", "E-", 1);
-    expect(state.keys["epic"]).toEqual({ prefix: "E-", next_number: 1 });
+    initKeyAllocation(state, "epic", "E", 1);
+    expect(state.keys["epic"]).toEqual({ prefix: "E", next_number: 1 });
   });
 
   it("defaults start number to 1", () => {
     const state = makeState();
-    initKeyAllocation(state, "bug", "B-");
+    initKeyAllocation(state, "bug", "B");
     expect(state.keys["bug"]?.next_number).toBe(1);
   });
 
   it("throws if entity type already exists", () => {
     const state = makeState();
-    expect(() => initKeyAllocation(state, "task", "T-")).toThrow(KeyAllocationError);
+    expect(() => initKeyAllocation(state, "task", "T")).toThrow(KeyAllocationError);
   });
 });
 

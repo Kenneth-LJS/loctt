@@ -42,7 +42,7 @@ describe("GET /api/tasks?project=", () => {
     const created = await fetch(`${base}/api/projects`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ name: "Second", prefix: "SEC-" }),
+      body: JSON.stringify({ name: "Second", prefix: "SEC" }),
     });
     apiId = ((await created.json()) as { id: string }).id;
 

@@ -54,7 +54,7 @@ export async function run(args: string[], root: string): Promise<void> {
         const star = cfg.default === p.id ? " *" : "";
         const arch = p.archived === true ? " (archived)" : "";
         const idCol = showIds ? `\t${p.id}` : "";
-        console.log(`${p.name}${star}\t${p.prefix}${idCol}${arch}`);
+        console.log(`${p.name}${star}\t${p.prefix}-${idCol}${arch}`);
       }
       if (cfg.default !== undefined) {
         console.log(``);

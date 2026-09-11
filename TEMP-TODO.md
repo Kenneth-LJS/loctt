@@ -93,7 +93,7 @@ Nothing behind these can close until decided.
 
 - [x] **NEW-20 (K75)** — **CLI/MCP half DONE.** Resolver names the ghost default in the ask-state error (core, inherited by CLI+MCP); @verifies NEW-20 red-proven. GUI deep-link-nudge half stays with deep-linking (K76). A-NEW20-CLIMCP.
 **RESOLVED this session:**
-- [~] **A80 prefix rule (K79) — BLOCKED, needs Ken.** K79's `^[A-Z]{1,10}$` rejects the trailing `-` that is part of every stored prefix (keys are `${prefix}${n}`, e.g. `T-`→`T-1`, `keys.ts:24`). The regex must account for the dash (and maybe digits, which the old wizard rule allowed). See A-A80-BLOCKED for the options (a/b/c). Parked per park-don't-halt.
+- [x] **A80 prefix rule (K88, supersedes K79)** — **DONE.** Prefix stored bare (uppercase letters, ^[A-Z]{1,10}$); the "-" is inserted at key render (T -> T-1). Strict input (dash rejected). Fixed all key-render sites (keys.ts, reconcile.ts, publish-sync.ts, restore.ts, server/cli/mcp previews) + both client validators + defaults; ~49 fixture files swept. @verifies A80/ONB-19; all 4 workspace suites green. K88.
 - [x] **BAK-C18** — **DONE (verify-close).** Case+impl agree (report/keep); @verifies in backup/format.test.ts; stale known-gaps note removed. A-PARTA-CLOSE.
 - [x] **TSK-32 vs DEG-29** — **DONE (verify-close).** Spec already asserts DEG-7/DEG-29 behavior and passes; stale known-gaps entry removed. A-PARTA-CLOSE.
 - [x] **Broken-view write** — **DONE (verify-close).** manage.ts writers + serializer preserve broken; regression test red-proven; stale known-gaps entry removed. A-PARTA-CLOSE.

@@ -17,7 +17,9 @@ const INIT_FLAGS = ["prefix", "project-label", "timezone", "no-docs", "repair"] 
  */
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, INIT_FLAGS);
-  const prefix = getArg(args, "--prefix") ?? "T-";
+  // K88: the prefix is bare uppercase letters; the "-" is inserted at key
+  // render. Default is "T" (was "T-"), producing keys like "T-1".
+  const prefix = getArg(args, "--prefix") ?? "T";
   // Names the starting project. Core calls this `projectName`; the flag
   // stays `--project-label` because that is what is documented.
   const projectLabel = getArg(args, "--project-label");

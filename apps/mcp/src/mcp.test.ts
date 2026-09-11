@@ -356,7 +356,7 @@ describe("MCP executeTool", () => {
     it("delete_project without confirm is rejected", async () => {
       // Need two projects so the lone-project guard doesn't fire
       // first.
-      await executeTool(root, "create_project", { name: "Alt", prefix: "ALT-" });
+      await executeTool(root, "create_project", { name: "Alt", prefix: "ALT" });
       const result = await executeTool(root, "delete_project", { project: "Alt" });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toMatch(/confirm/i);
@@ -367,7 +367,7 @@ describe("MCP executeTool", () => {
       // same class of blast radius the gate exists for.
       const result = await executeTool(root, "set_project_prefix", {
         project: "Tasks",
-        prefix: "WEB-",
+        prefix: "WEB",
       });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toMatch(/confirm/i);
@@ -423,7 +423,7 @@ describe("MCP executeTool", () => {
 
       const result = await executeTool(root, "set_project_prefix", {
         project: "Tasks",
-        prefix: "WEB-",
+        prefix: "WEB",
         confirm: true,
       });
 
@@ -431,7 +431,7 @@ describe("MCP executeTool", () => {
       const payload = JSON.parse(result.content[0]?.text ?? "{}") as {
         from: string; to: string; renamed: number;
       };
-      expect(payload).toMatchObject({ from: "T-", to: "WEB-", renamed: 2 });
+      expect(payload).toMatchObject({ from: "T", to: "WEB", renamed: 2 });
 
       // The agent must be able to act on the new keys immediately.
       const list = await executeTool(root, "list_tasks", {});
@@ -442,7 +442,7 @@ describe("MCP executeTool", () => {
     it("keeps the old key resolvable so an agent's stale reference works", async () => {
       await executeTool(root, "create_task", { title: "one" });
       await executeTool(root, "set_project_prefix", {
-        project: "Tasks", prefix: "WEB-", confirm: true,
+        project: "Tasks", prefix: "WEB", confirm: true,
       });
 
       // An agent holding T-1 from earlier in its context must not get a
@@ -454,14 +454,14 @@ describe("MCP executeTool", () => {
 
     it("refuses a prefix another project holds, renaming nothing", async () => {
       await executeTool(root, "create_task", { title: "one" });
-      await executeTool(root, "create_project", { name: "API", prefix: "API-" });
+      await executeTool(root, "create_project", { name: "API", prefix: "API" });
 
       const result = await executeTool(root, "set_project_prefix", {
-        project: "Tasks", prefix: "API-", confirm: true,
+        project: "Tasks", prefix: "API", confirm: true,
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain("API-");
+      expect(result.content[0]?.text).toContain("API");
       const list = await executeTool(root, "list_tasks", {});
       expect(list.content[0]?.text).toContain("T-1");
     });

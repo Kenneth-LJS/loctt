@@ -1818,47 +1818,6 @@ need the same channel, so the response shape should be settled once.
 `workflow.yaml`, then `GET /api/tasks?view=<name>` → 200, `items: []`,
 no warning anywhere in the body.
 
-## `loctt init --prefix` accepts prefixes that break their own task URLs
-
-**Found:** M4.6, 2026-09-01. **Not fixed** — tightening it changes what
-a shipped command accepts, which is Ken's call (see decision A80).
-
-Core validates a key prefix for non-emptiness and nothing else
-(`packages/core/src/init/init.ts:199`; `setProjectPrefix` in
-`packages/core/src/projects/prefix.ts:127` adds only a uniqueness
-check). So every one of these initializes successfully:
-
-    loctt init --prefix "a b"        # exit 0
-    loctt init --prefix "web/x"      # exit 0
-    loctt init --prefix "Ünicode-"   # exit 0
-    loctt init --prefix "NODASH"     # exit 0
-
-The slash is the damaging one. It reaches the key:
-
-    $ loctt init --prefix "web/x" && loctt create "hello"
-    Created web/x1: hello
-    $ loctt info
-      Tasks *  next: web/x2
-
-The web UI routes tasks at `/tasks/$key`, so a task keyed `web/x1`
-produces a URL with an extra path segment and cannot be linked to.
-Whitespace in a key is similarly hostile to every surface that splits
-on it.
-
-The init wizard (`apps/web/src/client/init/prefix.ts`) rejects these
-at the form, so the web path is protected. The CLI and MCP paths are
-not, and a tracker created through them can reach the UI already
-holding unroutable keys.
-
-**Why it was not fixed here.** A validator in core would reject
-prefixes that existing trackers may already be using, turning a
-working tracker into one that fails to load. That needs a decision
-about migration, not just a regex.
-
-**To reproduce.** `mkdir /tmp/p && cd /tmp/p && loctt init --prefix
-"web/x" && loctt create hello` → `Created web/x1`. Positive control:
-the same commands with `--prefix "WEB-"` give `WEB-1`, which routes.
-
 ## `PUT /api/user-settings` takes no state lock
 
 **Found:** M4.8 · 2026-09-01 · **Severity:** low

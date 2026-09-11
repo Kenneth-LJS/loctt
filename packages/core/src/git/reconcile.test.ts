@@ -55,7 +55,7 @@ describe("rekeyCollisions — skipped collisions are reported (GIT-C2)", () => {
       // No project: there is no counter to allocate a replacement from.
       { ...noProject, frontmatter: { ...noProject.frontmatter, project: undefined } },
     ];
-    const state = stateFor({ [WEB]: { prefix: "T-", next: 5 } });
+    const state = stateFor({ [WEB]: { prefix: "T", next: 5 } });
 
     const outcome = rekeyCollisions(tasks, state);
 
@@ -71,7 +71,7 @@ describe("rekeyCollisions — skipped collisions are reported (GIT-C2)", () => {
       makeTask("01B", "T-1", "2026-01-02T00:00:00.000Z", API),
     ];
     // Only WEB has a counter, so the API-side collision cannot allocate.
-    const state = stateFor({ [WEB]: { prefix: "T-", next: 5 } });
+    const state = stateFor({ [WEB]: { prefix: "T", next: 5 } });
 
     const outcome = rekeyCollisions(tasks, state);
 
@@ -83,7 +83,7 @@ describe("rekeyCollisions — skipped collisions are reported (GIT-C2)", () => {
 describe("rekeyCollisions", () => {
   it("does nothing when no collisions", () => {
     const tasks = [makeTask("a", "T-1", "2026-01-01"), makeTask("b", "T-2", "2026-01-02")];
-    const state = stateFor({ [WEB]: { prefix: "T-", next: 3 } });
+    const state = stateFor({ [WEB]: { prefix: "T", next: 3 } });
     const outcome = rekeyCollisions(tasks, state);
     expect(outcome.rekeyed).toEqual([]);
     expect(outcome.skipped).toEqual([]);
@@ -94,7 +94,7 @@ describe("rekeyCollisions", () => {
       makeTask("a", "T-1", "2026-01-01T00:00:00Z"),
       makeTask("b", "T-1", "2026-01-02T00:00:00Z"),
     ];
-    const state = stateFor({ [WEB]: { prefix: "T-", next: 5 } });
+    const state = stateFor({ [WEB]: { prefix: "T", next: 5 } });
     const { rekeyed } = rekeyCollisions(tasks, state);
 
     expect(rekeyed).toHaveLength(1);
@@ -109,7 +109,7 @@ describe("rekeyCollisions", () => {
       makeTask("a", "T-1", "2026-01-01T00:00:00Z"),
       makeTask("b", "T-1", "2026-01-02T00:00:00Z"),
     ];
-    const state = stateFor({ [WEB]: { prefix: "T-", next: 5 } });
+    const state = stateFor({ [WEB]: { prefix: "T", next: 5 } });
     const { rekeyed } = rekeyCollisions(tasks, state);
 
     expect(rekeyed[0]?.newKey).toBe("T-5");
@@ -121,7 +121,7 @@ describe("rekeyCollisions", () => {
       makeTask("a", "T-1", "2026-01-01T00:00:00Z"),
       makeTask("b", "T-1", "2026-01-02T00:00:00Z"),
     ];
-    const state = stateFor({ [WEB]: { prefix: "T-", next: 5 } });
+    const state = stateFor({ [WEB]: { prefix: "T", next: 5 } });
     rekeyCollisions(tasks, state);
 
     // Input tasks should remain unchanged
@@ -138,8 +138,8 @@ describe("rekeyCollisions", () => {
       makeTask("b", "T-1", "2026-01-02T00:00:00Z", API),
     ];
     const state = stateFor({
-      [WEB]: { prefix: "T-", next: 5 },
-      [API]: { prefix: "API-", next: 9 },
+      [WEB]: { prefix: "T", next: 5 },
+      [API]: { prefix: "API", next: 9 },
     });
 
     const { rekeyed } = rekeyCollisions(tasks, state);
@@ -160,7 +160,7 @@ describe("rekeyCollisions", () => {
       makeTask("a", "T-1", "2026-01-01T00:00:00Z", WEB),
       makeTask("b", "T-1", "2026-01-02T00:00:00Z", API),
     ];
-    const state = stateFor({ [WEB]: { prefix: "T-", next: 5 } });
+    const state = stateFor({ [WEB]: { prefix: "T", next: 5 } });
 
     const { rekeyed, skipped } = rekeyCollisions(tasks, state);
 
@@ -176,7 +176,7 @@ describe("rekeyCollisions", () => {
       makeTask("b", "T-1", "2026-01-01T00:00:00Z"),
       makeTask("a", "T-1", "2026-01-01T00:00:00Z"),
     ];
-    const state = stateFor({ [WEB]: { prefix: "T-", next: 5 } });
+    const state = stateFor({ [WEB]: { prefix: "T", next: 5 } });
     const { rekeyed } = rekeyCollisions(tasks, state);
 
     expect(rekeyed).toHaveLength(1);

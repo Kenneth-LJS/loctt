@@ -17,7 +17,9 @@ export {
 } from "./manage.js";
 export type { SetPrefixResult } from "./prefix.js";
 export {
+  assertValidPrefix,
   completeInterruptedPrefixRename,
+  PREFIX_RE,
   readPrefixRenameState,
   recoverInterruptedPrefixRename,
   setProjectPrefix,

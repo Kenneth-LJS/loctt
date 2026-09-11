@@ -311,7 +311,7 @@ describe.skipIf(SKIP_REASON !== "")("cross-process crash recovery", () => {
 
     // Seed: create the destination project + four tasks under the
     // default ("Tasks") project.
-    const p2 = await createProject(locttDir, { name: "Two", prefix: "P-" });
+    const p2 = await createProject(locttDir, { name: "Two", prefix: "P" });
     p2Id = p2.id;
     await withStateLock(locttDir, async () => {
       const state = await loadState(locttDir);

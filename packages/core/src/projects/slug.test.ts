@@ -60,7 +60,7 @@ describe("isValidSlug", () => {
 
 describe("allocateSlug", () => {
   const proj = (slug: string) =>
-    ({ id: `id-${slug}`, name: slug, prefix: `${slug.toUpperCase()}-`, slug });
+    ({ id: `id-${slug}`, name: slug, prefix: `${slug.toUpperCase()}`, slug });
 
   it("suffixes on collision rather than returning a duplicate", () => {
     expect(allocateSlug([proj("web")], "Web")).toBe("web-2");
@@ -77,7 +77,7 @@ describe("allocateSlug", () => {
 
 describe("projectSlug", () => {
   it("falls back to the ULID for a pre-K3 project with no slug", () => {
-    const legacy = { id: "01JABCDEF", name: "Legacy", prefix: "LEG-" };
+    const legacy = { id: "01JABCDEF", name: "Legacy", prefix: "LEG" };
     expect(projectSlug(legacy)).toBe("01JABCDEF");
   });
 });
@@ -87,7 +87,7 @@ describe("createProject slug allocation", () => {
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "loctt-slug-"));
-    await initLoctt(dir, { projectName: "Backend", prefix: "BACKEND-" });
+    await initLoctt(dir, { projectName: "Backend", prefix: "BACKEND" });
   });
 
   afterEach(async () => {
@@ -99,7 +99,7 @@ describe("createProject slug allocation", () => {
   it("generates a slug from the name and writes it to projects.yaml", async () => {
     const created = await createProject(locttDir(), {
       name: "Web App",
-      prefix: "WEB-",
+      prefix: "WEB",
     });
     expect(created.slug).toBe("web-app");
 
@@ -114,28 +114,28 @@ describe("createProject slug allocation", () => {
   it("rejects an explicit slug already held, naming the holder", async () => {
     await createProject(locttDir(), {
       name: "Web App",
-      prefix: "WEB-",
+      prefix: "WEB",
       slug: "web",
     });
     await expect(
-      createProject(locttDir(), { name: "Website", prefix: "SITE-", slug: "web" }),
+      createProject(locttDir(), { name: "Website", prefix: "SITE", slug: "web" }),
     ).rejects.toThrow(/already used by project "Web App"/);
   });
 
   it("rejects a malformed explicit slug before writing", async () => {
     await expect(
-      createProject(locttDir(), { name: "Web", prefix: "WEB-", slug: "Web App" }),
+      createProject(locttDir(), { name: "Web", prefix: "WEB", slug: "Web App" }),
     ).rejects.toThrow(ProjectError);
 
     // Nothing was written: the project list is unchanged.
     const config = await loadProjectsConfig(locttDir());
-    expect(config.projects.map(p => p.prefix)).not.toContain("WEB-");
+    expect(config.projects.map(p => p.prefix)).not.toContain("WEB");
   });
 
   it("resolves a project by its slug, and the ULID still resolves", async () => {
     const created = await createProject(locttDir(), {
       name: "Web App",
-      prefix: "WEB-",
+      prefix: "WEB",
     });
     const config = await loadProjectsConfig(locttDir());
 
@@ -147,7 +147,7 @@ describe("createProject slug allocation", () => {
   it("keeps the slug fixed across a rename, so old URLs keep resolving (A60)", async () => {
     const created = await createProject(locttDir(), {
       name: "Web",
-      prefix: "WEB-",
+      prefix: "WEB",
     });
     expect(created.slug).toBe("web");
 
@@ -187,13 +187,13 @@ describe("initLoctt seeds a slug (K3 migration floor)", () => {
   });
 
   it("writes a slug derived from the project name at init", async () => {
-    await initLoctt(dir, { projectName: "My Backend", prefix: "BE-" });
+    await initLoctt(dir, { projectName: "My Backend", prefix: "BE" });
     const config = await loadProjectsConfig(join(dir, ".loctt"));
     expect(config.projects[0]?.slug).toBe("my-backend");
   });
 
   it("omits the slug when the name yields none, leaving the ULID to resolve", async () => {
-    await initLoctt(dir, { projectName: "日本語", prefix: "JP-" });
+    await initLoctt(dir, { projectName: "日本語", prefix: "JP" });
     const config = await loadProjectsConfig(join(dir, ".loctt"));
     const only = config.projects[0];
     expect(only?.slug).toBeUndefined();

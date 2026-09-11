@@ -291,7 +291,7 @@ describe("key, prefix and slug collisions", () => {
     ) as Record<string, unknown>;
     // retired_keys is .optional(), so absent-on-one-side is a real
     // input: the destination has none.
-    state["retired_keys"] = { GONE: { prefix: "GONE-", next_number: 99 } };
+    state["retired_keys"] = { GONE: { prefix: "GONE", next_number: 99 } };
     await writeFile(getStateFilePath(srcDir), stringifyYaml(state), "utf-8");
     await exportBackup(srcDir, { outputPath: out });
 

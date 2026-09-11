@@ -1264,7 +1264,7 @@ export function createWebApp(options: WebAppOptions) {
       taskCount: info.taskCount,
       keyPrefix: primaryEntry?.prefix ?? info.workflowConfig?.key.prefix ?? null,
       nextKey: primaryEntry
-        ? `${primaryEntry.prefix}${primaryEntry.next_number}`
+        ? `${primaryEntry.prefix}-${primaryEntry.next_number}`
         : null,
       schemaStatus: info.schemaStatus,
       // K16: reported once, then cleared. Read-and-clear rather than

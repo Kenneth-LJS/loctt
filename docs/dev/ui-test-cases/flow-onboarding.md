@@ -145,12 +145,12 @@ the list view's own empty/loading behaviour beyond first load is
 - The submit control is blocked while the field is invalid; submitting anyway does not send the request.
 
 ### ONB-19 · M4 · major · P4 P10
-**A prefix containing invalid characters is rejected with the rule stated.** Enter a prefix with a space, a slash, or a lowercase/unicode character the CLI would reject.
+**A prefix that isn't 1–10 uppercase letters is rejected with the rule stated.** Enter a prefix with a space, slash, lowercase, digit, or a trailing dash (K88/A80).
 
 - Validation fires on blur or as the user types, not only on submit.
-- The message states the actual rule (allowed character set, and that a trailing `-` is conventional), not "invalid input".
-- The rule matches what `loctt init --prefix` accepts — a value the CLI would take is not rejected here, and vice versa.
-- The key preview updates to reflect the rejected state rather than showing a preview of a key that cannot be allocated.
+- The message states the actual rule — 1–10 uppercase letters (A–Z), and that the `-` separator is added automatically so the user does not type it — not "invalid input".
+- The rule matches core exactly: `loctt init --prefix` and `setProjectPrefix` validate the same `^[A-Z]{1,10}$` (K88), so a value the CLI would take is not rejected here, and vice versa — a dash, lowercase, or digit is rejected on every surface.
+- The key preview shows the auto-dash form (a prefix `WEB` previews `WEB-1`) and updates to reflect the rejected state rather than previewing a key that cannot be allocated.
 
 ### ONB-20 · M4 · minor · P4
 **An empty project name is rejected with a usable message.** Clear the project name and submit.

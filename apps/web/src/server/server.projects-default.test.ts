@@ -67,7 +67,7 @@ describe("GET /api/projects default resolution", () => {
     const created = await fetch(`${base}/api/projects`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ name: "Second", prefix: "SEC-" }),
+      body: JSON.stringify({ name: "Second", prefix: "SEC" }),
     });
     expect(created.status).toBeLessThan(300);
     const second = (await created.json()) as { id: string };
@@ -123,7 +123,7 @@ describe("GET /api/projects with a ghost workspace default (NEW-20)", () => {
     await fetch(`${base}/api/projects`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Loctt-Client": "test" },
-      body: JSON.stringify({ name: "Second", prefix: "SEC-" }),
+      body: JSON.stringify({ name: "Second", prefix: "SEC" }),
     });
     const raw = await readFile(cfgPath, "utf8");
     // init writes a `default:` line already; replace it (appending a

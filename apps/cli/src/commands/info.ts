@@ -85,7 +85,7 @@ export async function run(args: string[], root: string): Promise<void> {
       for (const p of projects.projects) {
         const counter = info.state?.keys[p.id];
         const star = projects.default === p.id ? " *" : "";
-        const next = counter ? `${counter.prefix}${counter.next_number}` : `(no counter)`;
+        const next = counter ? `${counter.prefix}-${counter.next_number}` : `(no counter)`;
         console.log(`  ${p.name}${star}  next: ${next}`);
       }
     }

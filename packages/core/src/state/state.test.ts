@@ -5,29 +5,29 @@ import { parseState, serializeState, StateError } from "./state.js";
 const CANONICAL_YAML = `
 keys:
   task:
-    prefix: T-
+    prefix: T
     next_number: 124
 `;
 
 describe("parseState", () => {
   it("parses the canonical state.yaml from the design doc", () => {
     const state = parseState(CANONICAL_YAML);
-    expect(state.keys["task"]).toEqual({ prefix: "T-", next_number: 124 });
+    expect(state.keys["task"]).toEqual({ prefix: "T", next_number: 124 });
   });
 
   it("supports multiple entity types", () => {
     const yaml = `
 keys:
   task:
-    prefix: T-
+    prefix: T
     next_number: 10
   epic:
-    prefix: E-
+    prefix: E
     next_number: 3
 `;
     const state = parseState(yaml);
     expect(Object.keys(state.keys)).toEqual(["task", "epic"]);
-    expect(state.keys["epic"]).toEqual({ prefix: "E-", next_number: 3 });
+    expect(state.keys["epic"]).toEqual({ prefix: "E", next_number: 3 });
   });
 
   // @verifies DEG-12
@@ -37,7 +37,7 @@ keys:
   });
 
   it("throws on non-positive next_number", () => {
-    const yaml = `keys:\n  task:\n    prefix: T-\n    next_number: 0`;
+    const yaml = `keys:\n  task:\n    prefix: T\n    next_number: 0`;
     expect(() => parseState(yaml)).toThrow(StateError);
     expect(() => parseState(yaml)).toThrow("keys.task.next_number must be >= 1");
   });
@@ -58,7 +58,7 @@ keys:
   // silent load. These lock that attribution.
 
   it("names the file in the message so the user knows what to fix", () => {
-    const yaml = `keys:\n  task:\n    prefix: T-\n    next_number: 0`;
+    const yaml = `keys:\n  task:\n    prefix: T\n    next_number: 0`;
     expect(() => parseState(yaml)).toThrow("state.yaml is not valid:");
   });
 
@@ -101,9 +101,9 @@ describe("serializeState", () => {
   });
 
   it("produces valid YAML", () => {
-    const state = { keys: { task: { prefix: "X-", next_number: 42 } } };
+    const state = { keys: { task: { prefix: "X", next_number: 42 } } };
     const yaml = serializeState(state);
-    expect(yaml).toContain("prefix: X-");
+    expect(yaml).toContain("prefix: X");
     expect(yaml).toContain("next_number: 42");
   });
 });

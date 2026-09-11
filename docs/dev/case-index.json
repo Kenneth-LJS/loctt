@@ -8592,7 +8592,7 @@
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-onboarding.md",
       "line": 147,
-      "title": "A prefix containing invalid characters is rejected with the rule stated.",
+      "title": "A prefix that isn't 1–10 uppercase letters is rejected with the rule stated.",
       "milestone": "M4",
       "severity": "major",
       "principles": [

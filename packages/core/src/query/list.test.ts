@@ -6,7 +6,7 @@ import { buildListContext, listTasks, listTasksPaginated, resolveView } from "./
 import { QueryValidationError } from "./validate.js";
 
 const config: WorkflowConfig = {
-  key: { prefix: "T-" },
+  key: { prefix: "T" },
   statuses: [
     { key: "not_started", label: "Not started", category: "pending" },
     { key: "done", label: "Done", category: "completed" },
