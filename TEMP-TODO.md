@@ -22,6 +22,55 @@ which this list cross-references but does not duplicate.
 
 ---
 
+## Run contract (how the autonomous build executes)
+
+The goal that drives this run is deliberately short; the operating rules
+live here so they survive compaction and travel with the work.
+
+**All rulings are made** — `decisions.md` K71–K87 + the A-PRESCAN entries.
+Do not re-ask them. The whole backlog is ruling-clear.
+
+**Method (non-negotiable):**
+- Per item, follow `docs/dev/build-loop.md`: case → implement → unit (each
+  shown to fail) → review-1 → e2e → review-2 → verify gates → surface →
+  one squashed commit.
+- One implementer + one **fresh** reviewer per item (the reviewer never
+  wrote the code) — per `lessons.md`.
+- New cases: the implementer writes them; a **second PM agent** reviews
+  them against `CLAUDE.md` + `north-star.md`/`invariants.md` before build.
+- Gates are the "done" authority, not agent judgment. Keep typecheck /
+  tests green. Commit incrementally so everything is revertible.
+- Quality bar: most robust, most UX-friendly method. **No shortcuts.**
+
+**Decisions:** if a *new* decision has one clearly-good option, decide it
+(record in `decisions.md` §8 with a revert path) and continue. If it's
+genuinely ambiguous, **park the item, keep building everything independent
+of it**, and surface the parked decisions as a batch — do **not** halt the
+run.
+
+**Pacing:** run continuously, item to item; commit each; post a short
+progress note as items land. Never block on Ken except for (a) batched new
+decisions and (b) push/publish.
+
+**Authorized without asking:** adding `eslint-plugin-react-hooks`; all
+code/case/doc/test changes; work on branch `chore/repo-sweep-cleanup`.
+**Never without Ken:** `git push`, opening a PR, merging, publishing.
+**No milestone gates** — milestones no longer exist; nothing is
+human-gated on that basis.
+
+**Suggested wave order:** Wave 1 = the no-ruling correctness/a11y blockers
+that need cases least and validate the loop end-to-end (K71 ConfirmDialog,
+`unarchiveView`, TSK-54, LST-33, contrast tokens K81/K82/A11Y-40,
+SET-45/K78, DEG-4-PROV, BLK-44). Then ruling-unblocked items, then the
+features (query builder, deep-linking, Duplicate/Move UI) and packaging
+(B1–B4).
+
+**Done =** every backlog item closed (case + `@verifies` test +
+`decisions.md` entry), all gates green, working tree committed — then
+report a publish-readiness summary and stop for Ken to publish.
+
+---
+
 ## 0. Rulings needed from Ken — CRITICAL PATH, unblock first
 
 Nothing behind these can close until decided.
