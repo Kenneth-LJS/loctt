@@ -10666,3 +10666,144 @@ the plan sequences the build. Implementation follows the normal build
 loop with cases + tests.
 
 **This is Ken's, not an agent's — not revertible by an agent.**
+
+### K77 · Query DSL gains `is empty` / `is not empty`; `= null`/`!= null` become errors (B-1)
+
+**The situation.** `field != null` returned every task — a silent filter
+failure (`evaluator.ts:244`: unset fields match `!=` anything; and `null`
+was tokenized as the string `"null"`). The fix requires defining how the
+DSL expresses a presence test.
+
+**Ruling (Ken, 2026-09-11): add `is empty` / `is not empty` operators,
+one canonical keyword.** Modelled on JQL's `IS [NOT] EMPTY`. `field is
+not empty` = the field has a value; `field is empty` = unset. `= null`,
+`!= null`, `= none` become **parse errors** with a message pointing at
+`is empty` (did-you-mean). **No `is null` SQL synonym** — one keyword to
+document. The query builder (K-tbd/B-6) exposes this as a per-field
+has-value / is-empty toggle.
+
+**Scope.** Tokenizer (recognise `empty` keyword), parser (the operator),
+evaluator (presence semantics), user docs (query-language.md), and a
+case + `@verifies` test. Shared core → owes CLI, MCP, web.
+
+**This is Ken's, not an agent's — not revertible by an agent.**
+
+### K78 · SET-45 — a filesystem write error is io_failed/500, not config_invalid/400 (B-2)
+
+**The situation.** On a workflow-config write, an EACCES/disk error
+(`FsAccessError`, which extends `Error` not `LocttError`) was swallowed by
+`handlePutWorkflow`'s inner catch (`server.ts:1513`) and reported as
+`400 config_invalid` — blaming the user's input for a machine fault. The
+correct mapping exists at the top-level handler but the inner catch
+intercepts first.
+
+**Ruling (Ken, 2026-09-11): fix it and write the case.** Add an
+`FsAccessError` branch → `500 io_failed` in the workflow-write handler.
+Write a SET-45 case (none exists yet). Rationale: ERR-1 forbids
+misattributing a fault to the user. Small — `statusForCode` already maps
+`io_failed`→500.
+
+**This is Ken's, not an agent's — not revertible by an agent.**
+
+### K79 · Task-key prefix rule: `^[A-Z]{1,10}$`, validated at creation only (B-3)
+
+**The situation.** The CLI accepted any non-empty prefix, so
+`--prefix "web/x"` created keys like `web/x1` that break the task's own
+URL (`/tasks/web/x1`). The web wizard validated format; core did not —
+a core-parity violation. Tightening core risked rejecting prefixes in
+trackers already on disk.
+
+**Ruling (Ken, 2026-09-11):**
+- **Format: uppercase letters only, length 1–10 — `^[A-Z]{1,10}$`.** No
+  lowercase, no digits, no punctuation. (Stricter than Jira, which allows
+  trailing digits; Ken chose pure uppercase letters. Max 10 matches
+  Jira's project-key cap.)
+- **Applied at creation only** — `init` and `setProjectPrefix`. Existing
+  trackers are **not** migrated or retro-validated (no key rewrite; keys
+  are identity). `doctor` surfaces a legacy non-conforming prefix as a
+  report, not a block.
+
+**Scope.** A core validator in `packages/core/src/init/init.ts` +
+`setProjectPrefix`, matching the existing web-wizard intent (which can be
+tightened to the same rule so the surfaces agree). Case + `@verifies`
+test. Note: reconcile the web wizard's current narrow rule (A80) to this
+stricter one.
+
+**This is Ken's, not an agent's — not revertible by an agent.**
+
+### K80 · The query DSL adopts a JQL-like function/operator set, shipped with the query builder (B-1 extension)
+
+**The situation.** Ken asked whether to copy JQL. The DSL is already
+~JQL-shaped (field=value clauses, AND/OR/NOT, nesting; `is empty` added in
+K77). The open question was which JQL functions fit a single-machine,
+markdown-backed tracker with no org/groups/workflow-history model.
+
+**Ruling (Ken, 2026-09-11): adopt the JQL-like set below, all pre-publish
+(nothing deferred), shipped WITH the visual query builder as one feature.**
+The text DSL is the power-user layer; the builder is the non-developer
+layer over the same DSL.
+
+**In scope (all four):**
+- **Date functions** — `now()`, `startOfDay/Week/Month`, `endOfDay/Week/
+  Month`, with offset args (e.g. `endOfWeek("+1w")`). Enables Overdue /
+  due-this-week / this-month views. Needs a **stubbable clock** so tests
+  are deterministic.
+- **`currentUser()`** — `assignee = currentUser()` = "my tasks". Uses the
+  existing user/assignee model.
+- **`IN (a, b, c)`** operator — multi-value match, e.g. `status IN
+  (active, blocked)`.
+- **`contains` / `~`** — substring match on text fields (title/body).
+
+**Explicitly NOT built** (org/history-shaped, no concept to map onto):
+`membersOf`, `watchedIssues`, `votedIssues`, `currentLogin/lastLogin`,
+`projectsLeadByUser`, `WAS`/`CHANGED` history queries, ScriptRunner
+`issueFunction`. `linkedIssues()` and sprint functions deferred (not
+"never" — just not this scope; recorded so a later agent doesn't read the
+omission as a rejection).
+
+**Reconciliation the implementer MUST handle:** `contains`/`~` overlaps
+the existing header search. Do NOT build a second text-match path — route
+both through one core matcher so DSL search and header search agree
+(core-parity). Same for `currentUser()` and the "switch user" concept.
+
+**Scope.** Tokenizer + parser + evaluator + `validateQuery` wiring + user
+docs (query-language.md) + the builder UI exposing each; cases +
+`@verifies` tests; owes CLI/MCP/web. Part of the query-builder feature
+(K-tbd/B-6).
+
+**This is Ken's, not an agent's — not revertible by an agent.**
+
+### K81 · Checkbox/radio get a dedicated `--border-control` token at ≥3:1 (B-4)
+
+**Ruling (Ken, 2026-09-11).** The unchecked/resting checkbox and radio
+border fails WCAG 3:1 (`--border-strong` is 2.16:1 light / 1.88:1 dark).
+Add a dedicated **`--border-control`** token at ≥3:1 (both themes), used
+only by `ui/Checkbox.tsx` and `ui/Radio.tsx`, rather than darkening the
+shared `--border-strong` (which would shift every strong border). Case +
+`@verifies` contrast test. **Ken's, not agent-revertible.**
+
+### K82 · Real dividers move to `--border-default`; `--border-subtle` stays decorative (B-5)
+
+**Ruling (Ken, 2026-09-11).** `--border-subtle` (~1.30:1) is correct for
+decorative hairlines but is used at some real structural dividers that owe
+3:1. Keep `--border-subtle` decorative; migrate the meaningful dividers
+(`ListView.tsx:778`, `BulkBar.tsx:110`, section separators) to
+`--border-default`. Split by role rather than darkening the shared token.
+Case + test. **Ken's, not agent-revertible.**
+
+### K83 · Query-builder design: refuse-on-unrenderable, coexist with chips, defer NOT to v2 (B-6)
+
+**Ruling (Ken, 2026-09-11), the three query-builder design calls:**
+- **(i)** When a DSL query is too complex for the visual builder to
+  represent, the builder **refuses to open the visual view and shows only
+  the text box** — it never silently renders a query that isn't what the
+  user wrote.
+- **(ii)** The builder **coexists** with the chip-bar filters as an
+  "Advanced" affordance beside them — the common two-click filter stays
+  fast; the builder is the power path.
+- **(iii)** **`NOT` / negation is deferred to v2.** v1 ships and/or +
+  nesting; nested negation (where these UIs get confusing) comes later.
+  Recorded as deferred-not-rejected.
+
+Part of the query-builder feature alongside K77 (`is empty`) and K80 (the
+JQL-like function set). **Ken's, not agent-revertible.**
