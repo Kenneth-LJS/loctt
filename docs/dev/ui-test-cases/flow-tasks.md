@@ -632,6 +632,13 @@ Attempt a field edit while the migration lock is held.
 - The user is told to wait for the migration to finish rather than
   being shown a generic error.
 
+### TSK-58 · M2 · minor · P8
+**Duplicate and Move are reachable from the task-detail UI, not CLI/MCP-only.** Open a task's "More" menu on `/tasks/<key>`.
+
+- The menu offers both **Duplicate** and **Move to project…**, so a mouse/keyboard user can reach the core Duplicate (TSK-20) and Move (TSK-44) capabilities without dropping to the CLI. A capability that exists in core/CLI/MCP but has no UI entry point is the reachability gap this case exists to close.
+- Duplicate takes archive-level friction (no typed confirmation — it destroys nothing), and Move opens the destination picker; the detailed behavior of each is TSK-20 and TSK-44 respectively, which this case does not restate.
+- Scope note: these are the *only* two core task verbs that were UI-unreachable; everything else (create, edit, archive, delete, link, attach) already has an affordance.
+
 ### TSK-59 · M2 · major · P3 P8
 **The heading control offers every level, not just H2.** The
 description/comment toolbar exposes a level picker (Paragraph, H1…H6).

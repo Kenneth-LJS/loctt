@@ -302,6 +302,24 @@ test.describe("TSK — task detail read shell", () => {
     await fresh.close();
   });
 
+  // @verifies TSK-58
+  test("TSK-58: the task-detail More menu offers both Duplicate and Move (reachability)", async ({
+    page,
+    tracker,
+  }) => {
+    // Pins the reachability claim INDEPENDENTLY of TSK-20/TSK-44's
+    // behavior tests: if those were ever rewritten to reach the verbs by
+    // some other route, this would still fail if the menu entries went
+    // missing. Asserts only that both entry points are present in the
+    // open menu — the behavior is TSK-20/TSK-44's subject.
+    const [key] = await tracker.seed([{ title: "Reachable task" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await page.getByRole("button", { name: "More" }).click();
+    await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: /Move to project/ })).toBeVisible();
+  });
+
   // @verifies TSK-20
   test("TSK-20: Duplicate creates a copy under a fresh key and navigates to it", async ({
     page,
