@@ -10934,3 +10934,31 @@ Verified: `update.test.ts` "repair provenance (DEG-4-PROV)" (scalar +
 labels red-proven; healthy-task negative). No new surface code — history
 `meta` flows to CLI/MCP/web generically. Closed the known-gaps entry and
 updated DEG-4 in flow-degradation.md.
+
+### A-CONTRAST · axe-core is the contrast gate for A11Y-40; a static token test is the fast supplement
+
+**Approach (Ken, 2026-09-11 — asked "which is industry standard?").**
+`@axe-core/playwright` (already a dependency, already used in
+`flow-accessibility.spec.ts`) is the primary contrast gate — axe-core is
+the industry standard (it underlies Lighthouse, DevTools, Storybook a11y).
+A11Y-40 gets its own scoped `color-contrast` scans across the surfaces the
+case names (header, sidebar active/inactive, rows/zebra/hover, chips,
+pills, disabled, placeholder, schema banner), both themes, following the
+existing scoped-scan discipline (never whole-page "zero violations").
+
+A **static WCAG-ratio unit test** on the token values is added as a fast,
+deterministic supplement — it makes K81/K82/text-token regressions fail in
+ms without a browser. Supplement, not the gate.
+
+**Ken ruled: fix ALL contrast violations axe finds**, not only the ruled
+tokens (consistent with K74 — all WCAG AA failures block). Given the
+design review's token-adoption debt, this may be a real batch; each fixed
+properly, no shortcuts.
+
+**Stale note to clear:** known-gaps/flow-accessibility cite
+`--text-tertiary` at 3.67:1 (#7b8699) as A11Y-40's subject — but the token
+is now #5C6675 (5.81:1 light / 5.81:1 dark, verified), so that specific
+finding is already resolved. A11Y-40's remaining substance is the in-situ
+axe scan + K81/K82 (checkbox/divider borders).
+
+**This records the approach; K81/K82 keep their own rulings.**
