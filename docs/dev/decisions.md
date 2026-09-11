@@ -11226,3 +11226,20 @@ raw-value reads.
   DEG-7/DEG-29 behavior (unrecognised key shown in "Not recognised"),
   per A179; it passes. The known-gaps "spec still asserts old behavior /
   fails on HEAD" entry was doubly stale — removed.
+
+### A-K29 · id-collision guard generalized to the 4 id-keyed flat config writers
+
+**Built (agent-level) closing K29/DEG-24.** `brokenEntriesToPlain` gains
+an optional `excludeIds` set; the four id-keyed flat writers
+(projects/labels/sprints/milestones) pass `new Set(config.<entries>.map(e
+=> e.id))`, so a broken entry whose `id` collides with a valid one is
+dropped rather than written — generalizing the workflow writer's
+`mergeBrokenIntoPlain` guard to the id-keyed configs. Verified the
+reachability caveat: the schema dup-id check runs over the valid array
+only (broken lifted into `config.broken`), so the collision IS invisible
+until the twin is repaired — the fix is needed, not moot. Calendar is
+date-keyed (holidays), not id-keyed, so it's out of scope.
+
+Verified: `health.test.ts` (excludeIds drop/keep/back-compat) +
+`projects.test.ts` collision round-trip, both red-proven; 366 config
+tests green. **To revert:** drop the `excludeIds` arg from the 4 writers.

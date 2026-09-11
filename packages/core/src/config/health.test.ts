@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { collectValidEntries } from "./health.js";
+import { brokenEntriesToPlain, collectValidEntries } from "./health.js";
 
 /**
  * Phase-7B foundation: the generalized per-entry tolerant collect that
@@ -54,5 +54,43 @@ describe("collectValidEntries", () => {
     );
     expect(valid).toHaveLength(2);
     expect(broken).toHaveLength(0);
+  });
+});
+
+/**
+ * K29 / DEG-24: `brokenEntriesToPlain` must drop a broken entry whose
+ * `id` collides with a valid entry already being written, so a save never
+ * puts two members with one `id` on disk. The four id-keyed flat configs
+ * (projects/labels/sprints/milestones) pass their valid ids as
+ * `excludeIds`. Without the guard the duplicate is invisible to `doctor`
+ * until the broken twin is repaired, then every write is refused.
+ */
+describe("brokenEntriesToPlain — id-collision guard (K29)", () => {
+  // Build a BrokenEntry with a known id + rawText via collectValidEntries.
+  function brokenWithId(id: string) {
+    const { broken } = collectValidEntries(
+      [{ id, n: "bad" }], // wrong type → corrupt, but its id/rawText survive
+      EntrySchema,
+      "test entry",
+    );
+    return broken;
+  }
+
+  it("drops a broken entry whose id is already among the valid ids", () => {
+    const broken = brokenWithId("dup");
+    const out = brokenEntriesToPlain(broken, new Set(["dup"]));
+    expect(out).toHaveLength(0);
+  });
+
+  it("keeps a broken entry whose id does NOT collide", () => {
+    const broken = brokenWithId("solo");
+    const out = brokenEntriesToPlain(broken, new Set(["other"]));
+    expect(out).toHaveLength(1);
+    expect(out[0]?.["id"]).toBe("solo");
+  });
+
+  it("without excludeIds, keeps everything (back-compat)", () => {
+    const broken = brokenWithId("x");
+    expect(brokenEntriesToPlain(broken)).toHaveLength(1);
   });
 });
