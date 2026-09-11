@@ -11,7 +11,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { listSearchSchema } from "../router/listSearch.ts";
-import { FilterBar } from "./FilterBar.tsx";
+import { buildChips, type FacetKey, type FacetOptions, FilterBar } from "./FilterBar.tsx";
 
 /**
  * FilterBar tests. Selecting a dropdown option writes the filter to URL
@@ -256,5 +256,60 @@ describe("FilterBar", () => {
     fireEvent.click(option);
     const checked = await screen.findByRole("menuitemcheckbox", { name: "In progress" });
     await vi.waitFor(() => expect(checked.getAttribute("aria-checked")).toBe("true"));
+  });
+});
+
+/**
+ * buildChips — LST-33 dangling-reference detection (unit).
+ *
+ * The pure function behind the filter chips. A chip is "dangling" when
+ * its value names an entity the tracker no longer has — but ONLY once
+ * that facet's option source has successfully loaded. The load-state
+ * gate is the whole point: without it, a valid chip renders as
+ * "(no longer exists)" during the fetch window (or forever, if the
+ * source errors). This asserts that gate directly rather than waiting a
+ * timing window out through the rendered page.
+ */
+describe("buildChips — LST-33 dangling detection", () => {
+  const emptyOpts: FacetOptions = {
+    project: [], status: [], priority: [], type: [],
+    assignee: [], reporter: [], labels: [],
+    milestone: [], sprint: [],
+  };
+  const allLoaded = new Set<FacetKey>([
+    "project", "status", "priority", "type",
+    "assignee", "reporter", "labels", "milestone", "sprint",
+  ]);
+
+  it("a value that resolves to an option is not dangling", () => {
+    const opts: FacetOptions = { ...emptyOpts, milestone: [{ value: "m1", label: "v2" }] };
+    const chips = buildChips({ milestone: ["m1"] }, opts, [], allLoaded, true);
+    expect(chips).toHaveLength(1);
+    expect(chips[0]?.dangling).toBe(false);
+    expect(chips[0]?.label).toBe("v2");
+  });
+
+  it("a value with no matching option, once the facet loaded, IS dangling", () => {
+    const chips = buildChips({ milestone: ["gone"] }, emptyOpts, [], allLoaded, true);
+    expect(chips[0]?.dangling).toBe(true);
+    expect(chips[0]?.label).toBe("gone");
+  });
+
+  it("a value with no matching option, while the facet is NOT loaded, is NOT dangling", () => {
+    // The loading-race guard: milestones not yet in `loadedFacets` (still
+    // fetching, or errored) must never be judged dangling — a valid chip
+    // would otherwise flash/stick as "no longer exists".
+    const notLoaded = new Set<FacetKey>(); // nothing loaded yet
+    const chips = buildChips({ milestone: ["m1"] }, emptyOpts, [], notLoaded, true);
+    expect(chips[0]?.dangling).toBe(false);
+  });
+
+  it("a custom-field value is only dangling once the workflow config loaded", () => {
+    const cf = [{ key: "team", label: "Team", values: [{ key: "core", label: "Core" }] }];
+    const search = { "field.team": ["ghost"] } as Record<string, string[]>;
+    // Workflow not loaded → not dangling.
+    expect(buildChips(search, emptyOpts, cf, allLoaded, false)[0]?.dangling).toBe(false);
+    // Workflow loaded, value missing → dangling.
+    expect(buildChips(search, emptyOpts, cf, allLoaded, true)[0]?.dangling).toBe(true);
   });
 });

@@ -10883,3 +10883,29 @@ reference counting "exists nowhere" is a false positive of the kind
 lessons.md warns about — `countTasksByReferences` (`counts.ts:62`) and
 `computeProgress` exist. Verify + strike the stale note; do not rebuild.
 Folds into K85 (the denominator alignment). No new code beyond K85.
+
+### A-LST33 · Dangling filter-chip detection is gated on the facet's successful load
+
+**LST-33 fix (agent-level, decided during the build).** A filter chip is
+marked "dangling" (value names a since-deleted entity) only when the
+value fails to resolve **and** its facet's option source has successfully
+loaded (`isSuccess`). Gating on load-state, not merely "option not found",
+is required: `buildChips` runs on every render including before the
+`useMilestones`/`useUsers`/… queries resolve, and on query error — so an
+ungated "not found → dangling" would render valid chips as
+"(no longer exists)" during the fetch window, and permanently if the
+source errored. This mirrors the existing `failedFacets`/`isError`
+pattern in the same component. Custom-field chips gate on
+`workflow.isSuccess`.
+
+`buildChips` (+ `FacetKey`, `FacetOptions`) is now exported so the
+dangling logic is unit-tested directly — the loading-race is a pure-
+function property, more robustly asserted there than waited-out through
+Playwright. The dangling chip reuses cells.tsx's deleted-reference
+vocabulary (truncated 6-char id + a parenthetical + a `title`), warn-toned.
+
+**To revert:** drop the `loadedFacets`/`customFieldsLoaded` params and the
+`isSuccess` sets; chips fall back to raw-value rendering (the pre-fix
+bug). **Found in review:** the first cut used non-existent
+`feedback-warn-*` Tailwind classes (correct names are `warn-*`) and
+lacked the load-gate — both fixed before commit.
