@@ -15,6 +15,7 @@ import { loadState, saveState } from "../state/state.js";
 import { createUser } from "../users/lifecycle.js";
 import { bulkSetFields } from "./bulk.js";
 import { createTask } from "./create.js";
+import { readHistory } from "./history.js";
 import { readTask } from "./io.js";
 import { setField, setFields } from "./update.js";
 
@@ -205,5 +206,40 @@ describe("a write refuses a reference to an entity that does not exist", () => {
     await expect(
       setFields({ locttDir, taskId: a, changes: [{ field: "milestone", value: ms.id }] }),
     ).resolves.toBeDefined();
+  });
+});
+
+/**
+ * MSL-C1: the HISTORY entry records the resolved id, not the raw name.
+ * Before the fix, assigning `milestone v1` by name stored the id in the
+ * frontmatter but wrote "v1" into history — so the sprint burndown and
+ * milestone progress, which read history and count by id, skipped the
+ * task entirely (reported zero).
+ *
+ * @verifies MSL-C1
+ */
+describe("history records the resolved id, not the raw name (MSL-C1)", () => {
+  it("setField milestone-by-name writes the id into history's after", async () => {
+    const ms = await createMilestone(locttDir, { name: "v1" });
+    const a = await seed("a");
+    await setField({ locttDir, taskId: a, field: "milestone", value: "v1" });
+
+    const hist = await readHistory(locttDir, a);
+    const entry = hist.find(e => e.field === "milestone");
+    expect(entry).toBeDefined();
+    // The load-bearing assertion: the id, not "v1".
+    expect(entry?.after).toBe(ms.id);
+    expect(entry?.after).not.toBe("v1");
+  });
+
+  it("bulkSetFields milestone-by-name also records the id in history", async () => {
+    const ms = await createMilestone(locttDir, { name: "v1" });
+    const a = await seed("a");
+    await bulkSetFields({
+      locttDir, taskRefs: [a], changes: [{ field: "milestone", value: "v1" }],
+    });
+    const hist = await readHistory(locttDir, a);
+    const entry = hist.find(e => e.field === "milestone");
+    expect(entry?.after).toBe(ms.id);
   });
 });

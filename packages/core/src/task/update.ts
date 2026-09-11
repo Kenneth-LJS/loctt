@@ -540,11 +540,14 @@ async function setFieldLocked(opts: SetFieldOptions): Promise<Task> {
   };
   await writeTask(locttDir, taskId, updatedTask, touchedFor(field));
 
-  // Emit history entries. Pass the pre-write health so a write that
-  // REPAIRS a corrupt field (DEG-4-PROV) records the raw corrupt value
-  // as `before` (it has been lifted off the frontmatter into health, so
-  // the frontmatter shows null there) and stamps `meta.was_corrupt`.
-  const historyEntries = buildSetFieldHistory(task.frontmatter, field, value, now, task.health);
+  // Emit history entries. History records the value actually STORED, not
+  // the raw input: an entity ref written by NAME is resolved to its id in
+  // the frontmatter (`resolveEntityRef` above), and a history entry that
+  // kept the name made every consumer that counts by id (milestone
+  // progress, sprint burndown) skip the task (MSL-C1). `buildSetFieldHistory`
+  // reads the stored value out of the new frontmatter (`updated`) using the
+  // same field categorization it uses for `before`, so the two can't drift.
+  const historyEntries = buildSetFieldHistory(task.frontmatter, updated, field, now, task.health);
   if (historyEntries.length > 0) {
     await appendHistory(locttDir, taskId, historyEntries);
   }
@@ -554,8 +557,12 @@ async function setFieldLocked(opts: SetFieldOptions): Promise<Task> {
 
 function buildSetFieldHistory(
   oldFm: TaskFrontmatter,
+  // The NEW frontmatter (post-write). The stored value for `field` is read
+  // out of it the same way `before` is read out of `oldFm`, so history
+  // always records what actually landed on disk — the resolved id for an
+  // entity ref, not the raw name the user typed (MSL-C1).
+  newFm: TaskFrontmatter,
   field: string,
-  value: unknown,
   timestamp: string,
   // Pre-write health (DEG-4-PROV). When `field` had a health finding, the
   // write repairs it: the raw corrupt value lives here, not in oldFm
@@ -573,10 +580,11 @@ function buildSetFieldHistory(
       ? entry
       : { ...entry, before: repaired.raw, meta: { ...entry.meta, was_corrupt: true } };
 
-  // Labels: diff old vs new array
+  // Labels: diff old vs new array (both from frontmatter — the stored,
+  // resolved ids).
   if (field === "labels") {
     const oldLabels = new Set(oldFm.labels ?? []);
-    const newLabels = new Set(value as readonly string[]);
+    const newLabels = new Set(newFm.labels ?? []);
     const entries: HistoryEntry[] = [];
     for (const label of newLabels) {
       if (!oldLabels.has(label)) {
@@ -599,7 +607,7 @@ function buildSetFieldHistory(
     // that a corruption was repaired and what it held. (A2-labels below.)
     if (repaired !== undefined) {
       entries.push(withRepairProvenance(
-        { timestamp, kind: "field_change", field: "labels", before: null, after: value },
+        { timestamp, kind: "field_change", field: "labels", before: null, after: newFm.labels ?? [] },
       ));
     }
     return entries;
@@ -616,17 +624,21 @@ function buildSetFieldHistory(
     && field !== "updated_at"
   ) {
     const before = oldFm.fields?.[field];
-    if (before === value) return [];
+    const after = newFm.fields?.[field];
+    if (before === after) return [];
     return [withRepairProvenance(
-      { timestamp, kind: "custom_field_change", field, before: before ?? null, after: value },
+      { timestamp, kind: "custom_field_change", field, before: before ?? null, after: after ?? null },
     )];
   }
 
-  // Built-in field
+  // Built-in field — `after` is the STORED value (resolved id for an
+  // entity ref), read from the new frontmatter the same way `before` is
+  // read from the old (MSL-C1).
   const before = readField(oldFm, field);
-  if (before === value) return [];
+  const after = readField(newFm, field);
+  if (before === after) return [];
   return [withRepairProvenance(
-    { timestamp, kind: "field_change", field, before: before ?? null, after: value },
+    { timestamp, kind: "field_change", field, before: before ?? null, after: after ?? null },
   )];
 }
 
@@ -1017,7 +1029,9 @@ export async function setFieldsLocked(
   for (const { field, value } of changes) {
     const entries = value === undefined
       ? buildUnsetFieldHistory(task.frontmatter, field, now)
-      : buildSetFieldHistory(task.frontmatter, field, value, now, task.health);
+      // MSL-C1: pass the new frontmatter so history records the stored
+      // (resolved) value, not the raw name.
+      : buildSetFieldHistory(task.frontmatter, updated, field, now, task.health);
     historyEntries.push(...entries);
   }
   const bulkOpId = opts.bulkOpId;
