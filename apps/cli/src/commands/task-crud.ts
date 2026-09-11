@@ -741,19 +741,29 @@ export async function log(args: string[], root: string): Promise<void> {
   const locttDir = resolveLocttDir(root);
   const task = await lookupTask(locttDir, ref);
 
-  const entries = await readHistory(locttDir, task.frontmatter.id);
-  // Reverse first: offset counts from the newest entry, which is what
-  // the display order is and therefore what a pager means by "skip 2".
-  const reversed = [...entries].reverse();
-  const fromOffset = offset !== undefined ? reversed.slice(offset) : reversed;
-  const display = limit !== undefined ? fromOffset.slice(0, limit) : fromOffset;
+  // Core's paginating overload, not a local read-all → reverse → slice:
+  // it applies newest-first order, offset and limit in one place (the
+  // source of truth MCP and web share) and returns `total` so a paged
+  // view can say how much history remains (CMT-C4).
+  const { entries: display, total } = await readHistory(locttDir, task.frontmatter.id, {
+    order: "desc",
+    ...(limit !== undefined ? { limit } : {}),
+    ...(offset !== undefined ? { offset } : {}),
+  });
 
   if (display.length === 0) {
     console.log("No history entries.");
-  } else {
-    const ctx = await buildHistoryDisplayContext(locttDir);
-    for (const entry of display) {
-      console.log(formatHistoryEntry(entry, ctx));
-    }
+    return;
+  }
+  const ctx = await buildHistoryDisplayContext(locttDir);
+  for (const entry of display) {
+    console.log(formatHistoryEntry(entry, ctx));
+  }
+  // Say how much was not shown, so a `--limit`/`--offset` page does not
+  // read as the whole history. Silent when the page is the whole thing.
+  const shownFrom = offset ?? 0;
+  if (shownFrom > 0 || display.length < total) {
+    const end = shownFrom + display.length;
+    console.log(`\nShowing ${shownFrom + 1}–${end} of ${total}.`);
   }
 }

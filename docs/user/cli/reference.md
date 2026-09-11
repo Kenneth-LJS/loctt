@@ -852,14 +852,16 @@ token, and MCP enforces one whenever an agent supplies it.
 Print a task's history (most recent first).
 
 ```
-loctt log <task> [--limit <n>]
+loctt log <task> [--limit <n>] [--offset <n>]
 ```
 
 Example: `loctt log T-12 --limit 20`
 
 `--offset <n>` skips the newest `n` entries, so a long history is
 reachable past its first page — `--limit` alone can only ever show the
-most recent.
+most recent. When a `--limit`/`--offset` page is not the whole history,
+a `Showing X–Y of N.` footer names the total so the page is not mistaken
+for everything.
 
 ### `loctt attach`
 

@@ -569,23 +569,37 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "get_task_history",
-    description: "Get the activity/history log for a task. Returns structured entries (newest first).",
+    description:
+      "Get the activity/history log for a task. Returns structured entries (newest first), " +
+      "paginated: `{ entries, total, offset, limit }`. `total` is the full count so an agent " +
+      "knows how much history remains beyond the page; `offset` skips that many entries from " +
+      "the newest end, so `offset` + `limit` walk a long history without gaps or repeats.",
     inputSchema: {
       ref: z.string().describe("Task key (e.g. T-1) or ID"),
-      limit: z.number().optional().describe("Max entries to return (default: all)"),
+      limit: z.number().int().nonnegative().optional().describe("Max entries to return (default: all)"),
+      offset: z.number().int().nonnegative().optional().describe("Entries to skip from the newest end (default: 0)"),
     },
     handler: async ({ locttDir }, args) => {
       const task = await lookupTask(locttDir, args["ref"] as string);
-      const entries = await readHistory(locttDir, task.frontmatter.id);
-      // Copy before reversing (CMT-C8). `readHistory` re-reads and
-      // re-parses the file on every call today, so mutating its result
-      // in place currently harms nothing — but that is a property of
-      // the callee, not a guarantee to this one. The day it memoises,
-      // every second caller would silently see the wrong order.
-      const newestFirst = [...entries].reverse();
       const limit = args["limit"] as number | undefined;
-      const display = limit !== undefined ? newestFirst.slice(0, limit) : newestFirst;
-      return text(JSON.stringify(display, null, 2));
+      const offset = args["offset"] as number | undefined;
+      // Use core's paginating overload rather than read-all → reverse →
+      // slice: it applies newest-first order, offset and limit in one
+      // place (the single source of truth CLI and web share), and returns
+      // `total` so the caller can tell "the newest N" from "all there is"
+      // (CMT-C4). Without offset here an agent could read the newest page
+      // and never reach anything older.
+      const page = await readHistory(locttDir, task.frontmatter.id, {
+        order: "desc",
+        ...(limit !== undefined ? { limit } : {}),
+        ...(offset !== undefined ? { offset } : {}),
+      });
+      return text(JSON.stringify({
+        entries: page.entries,
+        total: page.total,
+        offset: offset ?? 0,
+        ...(limit !== undefined ? { limit } : {}),
+      }, null, 2));
     },
   },
 ];

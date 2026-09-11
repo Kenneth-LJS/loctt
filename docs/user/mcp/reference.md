@@ -466,14 +466,26 @@ response.
 
 ### `get_task_history`
 
-Get the activity/history log for a task. Returns structured entries (newest first).
+Get the activity/history log for a task. Returns a paginated page of structured entries, newest first.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `ref` | string | yes | Task key or ID |
 | `limit` | number | no | Max entries to return (default: all) |
+| `offset` | number | no | Entries to skip from the newest end (default: 0) |
 
-Returns JSON array of history entries.
+Returns a JSON object `{ entries, total, offset, limit? }`:
+
+- `entries` — the requested page, newest first.
+- `total` — the full count of readable entries, so a caller can tell "the
+  newest N" from "all there is".
+- `offset` — the offset applied (echoes the argument, `0` when omitted).
+- `limit` — present only when a `limit` was supplied.
+
+`offset` and `limit` compose into a partition — `offset` skips that many
+entries from the newest end, so paging with `offset += limit` walks a long
+history without repeats or gaps. Without `offset` a caller can read only
+the newest page and never reach older entries.
 
 ### `attach_file`
 

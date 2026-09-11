@@ -136,6 +136,15 @@ rendering line deleted — until the bundle was rebuilt, when it failed as
 it should. `npm run build --workspace @loctt/web && --workspace
 @loctt/cli` between the break and the run.*
 
+**MCP integration tests spawn `apps/cli/dist/index.js mcp`, not
+`apps/mcp/dist` — rebuild the CLI for an MCP change to take effect.** The
+stdio adapter (`tests/integration/adapters/mcp-stdio.ts`) launches the CLI
+binary, which embeds the MCP tools; and MCP bundles to a single
+`dist/index.js` (tsup), so a per-file `dist/tools/*.js` you `sed` does not
+exist. *A CMT-C4 red-proof passed against a broken `readHistory` call
+because only `@loctt/mcp` was rebuilt; rebuilding `@loctt/cli` made it fail
+as it should.*
+
 **Probe the built binary before writing anything — roughly a third of
 "defects" aren't.** Case titles and briefs go stale as code moves under
 them. *An audit claimed milestone progress "does not exist anywhere"; it
