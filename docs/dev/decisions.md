@@ -11140,3 +11140,25 @@ fault "masqueraded as" the validation code rather than a shared third
 code) and cross-referenced the complementary ERR-11/SET-34. **To revert:**
 drop the FsAccessError branch (reinstates config_invalid/400 for disk
 faults).
+
+### A-MSL11-K85 · Settings reference count excludes discarded (matches progress); MSL-11 bullet 2 rewritten
+
+**Built (agent-level) implementing K85.** `countTasksByReferences` gains an
+optional `discardedStatusKeys`; `withCounts` (server) derives it from the
+workflow (`category === "discarded"`) and passes it, so the Settings
+`taskCount` excludes discarded-category tasks — the same denominator
+`computeProgress` uses (MSL-3). A label reading `4/8` as progress now
+shows `8` in Settings, not `10`.
+
+**Conflict found + how resolved.** MSL-11's original bullet 2 said the
+count "matches the number of rows returned when filtering the list by
+that entry." The list filter includes discarded rows, so a row-match
+count would include discarded — contradicting MSL-3/K85 which exclude
+them. The two cannot both hold. K85 (Ken) chose count = progress
+denominator, so MSL-11 bullet 2 is rewritten to that and the change is
+flagged for Ken (a blocker-case semantic change). CLI/MCP do not compute
+display reference counts, so no surface parity owed.
+
+Verified: `counts.test.ts` discarded-exclusion case, red-proven; 7 counts
+tests green. **To revert:** drop `discardedStatusKeys` from the option and
+the `withCounts` derivation (count includes discarded again).

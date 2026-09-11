@@ -113,9 +113,17 @@ is testing the wrong thing.
 
 ### MSL-11 · M4 · blocker · P5 P9
 **Label and milestone management shows an accurate reference count.**
-- Each entry shows the number of tasks referencing it; the count matches the number of rows returned when filtering the list by that entry.
-- The count includes archived tasks or excludes them per a stated rule, consistently with the progress rule in MSL-3.
+- Each entry shows the number of tasks referencing it.
+- **The count uses the same denominator as progress (MSL-3): archived AND discarded-category tasks are excluded** (K85). So a milestone reading `4 / 8` as progress shows `8` here, not `10` — the count and the progress fraction can never disagree by counting discarded on one side only. (This deliberately means the count does NOT equal the raw number of list rows when the list filter includes discarded rows; the count answers "how much work references this", which is the progress denominator, not "how many rows match".)
 - An entry with zero references shows `0`, not a blank.
+
+> **Wording changed 2026-09-11 per K85.** The original second bullet said
+> the count "matches the number of rows returned when filtering the list
+> by that entry." That conflicts with MSL-3/K85: the list filter includes
+> discarded rows, so a row-match count would include discarded, but the
+> progress denominator excludes them — the two could not both hold. Ken
+> ruled (K85) the count follows the progress denominator; the bullet is
+> rewritten to that. Flagged for Ken as a blocker-case semantic change.
 
 ### MSL-12 · M4 · blocker · P5 P1
 **Deleting a referenced label requires a remap choice and applies it.**
