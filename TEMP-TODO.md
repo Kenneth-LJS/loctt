@@ -153,8 +153,8 @@ Nothing behind these can close until decided.
 - [x] **Surface README case counts stale** — `surface-test-cases/README.md` said 65 cases over 10 rows; `case-index.json` has 100 over 12. Added the two missing rows (flow-backup-restore 24, flow-degradation 8), corrected flow-projects-users 9→12, and the total to 100. Verified against the index breakdown.
 - [x] **ONB-11 milestone-header inconsistency** — `ui-test-cases/README.md` flow-onboarding row listed "M1, M4" but the flow also holds ONB-11 (M3). Changed to "M1, M3, M4" (verified: onboarding UI cases span M1×12, M3×1, M4×22).
 - [x] **VUE-13 milestone/scope mismatch** — VUE-13's bullets described *multi-field* sort (two entries, apply-in-order, tie-breaking) at M1, but its test only exercises single-field persist-and-apply and multi-field sort is VUE-17 (M4). Trimmed VUE-13's bullets to the single-field contract it actually asserts, added a cross-ref to VUE-17 for multi-sort. No retag (VUE-13 stays M1, matching its test); no coverage change.
-- [ ] **BRD-21 / SET-23 "smoothness" perf bullets** — note in the cases they're non-assertions.
-- [ ] **BRD-45 / SPR-35 flow-doc wording** — reconcile prose with decision A36 if touching those files.
+- [x] **BRD-21 / SET-23 "smoothness" perf bullets** — annotated both: "Scrolling is smooth" (BRD-21) and "stays responsive / not visibly slowed" (SET-23) are observational, not automated assertions, and each note names the checkable half a test *can* pin (correct-render-at-range + honest scrollbar; correct round-trip + right days) so no one writes a flaky perf test or assumes coverage exists.
+- [x] **BRD-45 / SPR-35 flow-doc wording** — checked against A36: BRD-45's prose ("surfaced, not silently falling back to 1:1") already agrees with A36's K8 ruling (CLI `board-rerank` throws on a malformed `boards` block), and SPR-35 ("invalid weights reported, not silently ignored") is the same P4 spirit, out of A36's scope. No contradiction to reconcile; added a BRD-45→A36 cross-reference making the cross-surface agreement explicit (A36 already pointed at BRD-45).
 
 ## 6. Test/coverage hygiene — no ruling, just do
 

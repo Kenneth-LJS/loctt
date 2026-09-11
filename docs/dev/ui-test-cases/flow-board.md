@@ -175,7 +175,7 @@ header opens the modal specified in
 
 - The column header count reads the true total (`900`), not a page size.
 - The column scrolls independently of the board; scrolling it does not scroll neighbouring columns.
-- Scrolling is smooth — if virtualization is used, cards render correctly at the top, middle, and bottom of the range, and the scrollbar length is honest.
+- Scrolling is smooth — if virtualization is used, cards render correctly at the top, middle, and bottom of the range, and the scrollbar length is honest. *("Smooth" is observational, not an automated assertion — no test measures frame timing. What a test **can** pin is the checkable half: the correct-render-at-top/middle/bottom and the honest scrollbar length. Treat the smoothness itself as a manual-QA note, not covered by `@verifies BRD-21`.)*
 - Dragging a card from the 900-card column to another column works, including when the drag starts from a virtualized row far down the list.
 - Auto-scroll: dragging a card to the top or bottom edge of a tall column scrolls it, and releasing drops at the position under the cursor, not at the position where the scroll started.
 
@@ -350,6 +350,8 @@ header opens the modal specified in
 - The board shows an explicit configuration-error state naming the file, the offending column keys, and the duplicated status key.
 - It tells the user how to fix it (edit `workflow.yaml`, or remove the `boards` block to fall back to 1:1 columns).
 - It does not render a white pane, and it does not silently fall back to 1:1 columns without saying so.
+
+*The CLI agrees with the board here: `board-rerank` against a malformed `boards` block **throws** rather than silently ranking under a 1:1 model the user did not configure (decision A36, K8). "Surface, don't work around" holds across both surfaces.*
 
 ### BRD-46 · M3 · major · P4 P6
 **One corrupt `task.md` does not take down the board.** Corrupt the frontmatter of a single task file.
