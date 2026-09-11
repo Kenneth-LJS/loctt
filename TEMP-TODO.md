@@ -129,7 +129,7 @@ Nothing behind these can close until decided.
 - [ ] **K29 / DEG-24 — flat config writers can append a broken/valid ID collision** — six flat writers lack the `mergeBrokenIntoPlain` guard added for workflow.
 - [x] **DEG-4-PROV — repair provenance (`meta.was_corrupt`)** — **DONE** (2026-09-11). `buildSetFieldHistory` consults `task.health`: a repair records `before`=raw corrupt value + `meta.was_corrupt`. Labels gap (found in review) closed via an extra `field_change` entry. `@verifies DEG-4`; scalar+labels red-proven, 91 core tests green. Known-gaps + flow-degradation case updated. A-DEG4PROV.
 - [ ] **DUP-H1 — `duplicateTask` does not report dropped corrupt fields** — return-shape change threaded through CLI/MCP/web.
-- [ ] **SET-45 — I/O failure vs validation failure on workflow write** — **RULED (K78):** add `FsAccessError` branch → 500 `io_failed` in `handlePutWorkflow`; write the SET-45 case. **[now]**
+- [x] **SET-45 — I/O failure vs validation failure on workflow write** — **DONE (K78).** FsAccessError→io_failed/500 branch in handlePutWorkflow; SET-45 case authored + PM-reviewed; @verifies SET-45 test red-proven. cases:index/check green. A-SET45-CASE.
 
 ## 3. Core-parity & the standing embarrassment
 

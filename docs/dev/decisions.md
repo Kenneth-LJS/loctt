@@ -11125,3 +11125,18 @@ border-color cue on the input, distinct from the ring) is kept.
 
 Verified: A11Y-16 focus-ring visibility e2e (both themes) green; colorless-
 utility guard green. **To revert:** re-add `focus:outline-accent`. Web-only.
+
+### A-SET45-CASE · SET-45 case authored + PM-reviewed
+
+**Built (agent-level) implementing K78.** Added the `FsAccessError`→
+`io_failed`/500 branch to `handlePutWorkflow` (`server.ts`), authored the
+SET-45 case (`flow-settings.md`, a previously-empty number), and a
+`@verifies SET-45` test (`server.phase-z-error-mapping.test.ts`,
+chmod-read-only-config → PUT valid workflow → io_failed/500), red-proven.
+A second PM agent reviewed the case against invariants/north-star/CLAUDE.md
+and approved it as sound; applied its two wording fixes (the fault-
+misattribution principle is P4/P6, not literally the ERR-1 case; the IO
+fault "masqueraded as" the validation code rather than a shared third
+code) and cross-referenced the complementary ERR-11/SET-34. **To revert:**
+drop the FsAccessError branch (reinstates config_invalid/400 for disk
+faults).

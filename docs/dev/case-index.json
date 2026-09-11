@@ -1,8 +1,8 @@
 {
   "generated_from": "docs/dev/ui-test-cases/, docs/dev/surface-test-cases/",
   "counts": {
-    "total": 1039,
-    "ui": 939,
+    "total": 1040,
+    "ui": 940,
     "surface": 100,
     "resolved": 3
   },
@@ -11679,10 +11679,28 @@
       "resolved": false
     },
     {
-      "id": "SET-46",
+      "id": "SET-45",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
       "line": 351,
+      "title": "A filesystem failure writing workflow config is reported as a write/IO failure, not as an invalid config.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P3",
+        "P4",
+        "P6"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "SET-46",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-settings.md",
+      "line": 359,
       "title": "A status can be created from the panel.",
       "milestone": "M4",
       "severity": "major",
@@ -11699,7 +11717,7 @@
       "id": "SET-47",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 358,
+      "line": 366,
       "title": "A priority / task-type can be created.",
       "milestone": "M4",
       "severity": "major",
@@ -11716,7 +11734,7 @@
       "id": "SET-48",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 365,
+      "line": 373,
       "title": "A relationship type can be created.",
       "milestone": "M4",
       "severity": "major",
@@ -11733,7 +11751,7 @@
       "id": "SET-49",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 372,
+      "line": 380,
       "title": "Custom fields have full CRUD in the UI.",
       "milestone": "M4",
       "severity": "major",
@@ -11750,7 +11768,7 @@
       "id": "SET-51",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 379,
+      "line": 387,
       "title": "A failed Edit-dialog Save stays open with an anchored error.",
       "milestone": "M4",
       "severity": "major",
