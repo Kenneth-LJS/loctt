@@ -10625,3 +10625,44 @@ README's a11y claims must be true at launch, not aspirational. Each of
 these is bounded; they ship before the UI package does.
 
 **This is Ken's, not an agent's — not revertible by an agent.**
+
+### K75 · NEW-20 — a `default:` project that doesn't exist is a hard error, handled per surface
+
+**The situation.** A project config `default:` can name a project that no
+longer exists. Today that is a hard config-load error everywhere. NEW-20
+asked whether to keep that or tolerate it as drift the resolver skips.
+
+**Ruling (Ken, 2026-09-11): keep it a hard error on the config, but
+handle the *consequence* per surface rather than dead-ending the user.**
+- **CLI / MCP:** do not silently proceed. Force a project to be specified
+  on task creation, and emit a warning that the default config is broken.
+- **GUI:** do not default to any project; the user MUST select one to
+  create a task. Show a UI warning nudging them to fix the config, with a
+  **deep link** to the exact settings section where the default is
+  configured.
+
+**Consequence.** The GUI half depends on deep-linking, which does not yet
+exist — see K76 and the new deep-linking workstream in TEMP-TODO. NEW-20's
+non-GUI half (force-select + warning on CLI/MCP) is buildable now; the
+deep-link nudge lands with the deep-linking work.
+
+**This is Ken's, not an agent's — not revertible by an agent.**
+
+### K76 · Deep-linking is an in-scope pre-publish workstream (needs its own audit + plan)
+
+**The situation.** K75's GUI nudge wants a link straight to a specific
+settings section. Ken generalised this: the app should support **deep
+linking to locations within pages** — scroll to a settings section, and
+further to a particular field; and by analogy to Jira, scroll to the
+comments section of a task, or to a particular comment (with copy-link-to-
+comment). None of this exists as a surveyed capability today.
+
+**Ruling (Ken, 2026-09-11): treat deep-linking as an in-scope pre-publish
+workstream, starting with an AUDIT + PLAN step, then implementation.**
+The audit enumerates *where* deep links should exist across all pages
+(settings sections + scroll-to-field; task comments section + scroll-to-
+comment + copy-link; and any other page sections worth targeting), and
+the plan sequences the build. Implementation follows the normal build
+loop with cases + tests.
+
+**This is Ken's, not an agent's — not revertible by an agent.**

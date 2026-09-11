@@ -26,7 +26,7 @@ which this list cross-references but does not duplicate.
 
 Nothing behind these can close until decided.
 
-- [ ] **NEW-20** — should a `default:` naming a nonexistent project be a hard config error (current) or tolerated drift the resolver skips?
+- [x] **NEW-20** — ~~hard error vs tolerated drift~~ **RULED (K75):** hard error on config; CLI/MCP force project-select + warn; GUI requires manual select + a deep-link nudge to settings. Non-GUI half buildable now; GUI nudge lands with deep-linking (K76). **[now, partial]**
 - [ ] **A80 — `loctt init --prefix` accepts prefixes that break their own task URLs** — a core validator would break existing trackers → migration decision. Also: where a prefix-format rule lives is unsettled.
 - [ ] **PRU-46's pending-rename banner is unreachable dead code** — keep auto-recovery (retag + delete dead code) vs. make recovery boot-only.
 - [ ] **BAK-C18 — dangling-reference handling reports rather than refuses** — case says refuse; P-11/P-12 say report. Case-vs-invariant contradiction.
@@ -97,6 +97,7 @@ Nothing behind these can close until decided.
 
 ## 7. Features — each a build of its own
 
+- [ ] **Deep-linking (NEW workstream, K76)** — AUDIT + PLAN, then build. Enumerate where deep links should exist across all pages: settings sections + scroll-to-field (unblocks K75's GUI nudge); task comments section + scroll-to-comment + copy-link-to-comment (Jira-style); any other page sections worth targeting. Then sequence the build (routing/anchor scheme, scroll-into-view, copy-link affordances) with cases + tests. **Starts with its own audit doc.**
 - [ ] **Visual nested query builder (MSL-7, LST-40/44/45)** — ~week. Core DSL complete; `validateQuery` (`query/validate.ts`) built-but-unwired is its missing caller. Serialize to the `q` DSL. **Gated on the 3 §0 query-builder rulings.** *(The reported "second label widens results" bug is separately fixable in ~a day via a per-field All/Any toggle.)*
 - [ ] **Timeline virtualization (TML-21, TML-26, TML-32)** — windowing + sticky band header + arrow-hover highlight.
 - [ ] **The git-sync engine (GIT-8,9,16,19,21,22,23,25,29,30,33,34,35,36)** — reconcile model, rekey summary/confirm, force-push detection, fstype detection, progress channel, error-class distinction, guards. No engine exists — a build. Ties to H2 in release-readiness.md.
