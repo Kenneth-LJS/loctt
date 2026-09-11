@@ -116,7 +116,7 @@ Nothing behind these can close until decided.
 - [x] **Menu arrow-nav / type-ahead (A11Y-9, design-review §A2)** — **DONE.** `ui/Menu` now does roving ArrowUp/Down (wrapping) + Home/End + type-ahead + focus-first-on-open, scoped to `[role=menuitem]` so FilterDropdown's checkbox list is unaffected. Unit test red-proven; 98 UI/Header/FilterBar tests green. A-MENU-ARROWNAV.
 - [ ] **A11Y feature-gaps (A11Y-10, 12, 17, 39, 51)** — focusable rows, per-group collapse, focusable bulk-failure items, relative type scale, contrast harness. **[build]**
 - [x] **Loading states silent to screen readers (design-review §A3)** — **DONE.** Added `ui/LoadingState` (role=status + aria-busy); migrated 15 features (11 settings panels + Sprint/Milestone views). Unit test red-proven; 244 tests green. A-LOADINGSTATE.
-- [ ] **Ad-hoc accent focus rings (design-review §A4)** — override the token ring; low-contrast risk. **[now]**
+- [x] **Ad-hoc accent focus rings (design-review §A4)** — **DONE.** Removed accent-ring overrides from Header/SaveViewDialog/AdvancedQueryEditor/SkipLink; they use the token ring now. A11Y-16 e2e green (both themes). A-FOCUSRING.
 
 ## 2. Correctness & data-loss defects — the app is silently wrong
 
