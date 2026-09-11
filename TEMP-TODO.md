@@ -91,7 +91,7 @@ report a publish-readiness summary and stop for Ken to publish.
 
 Nothing behind these can close until decided.
 
-- [x] **NEW-20** — ~~hard error vs tolerated drift~~ **RULED (K75):** hard error on config; CLI/MCP force project-select + warn; GUI requires manual select + a deep-link nudge to settings. Non-GUI half buildable now; GUI nudge lands with deep-linking (K76). **[now, partial]**
+- [x] **NEW-20 (K75)** — **CLI/MCP half DONE.** Resolver names the ghost default in the ask-state error (core, inherited by CLI+MCP); @verifies NEW-20 red-proven. GUI deep-link-nudge half stays with deep-linking (K76). A-NEW20-CLIMCP.
 **RESOLVED this session:**
 - [~] **A80 prefix rule (K79) — BLOCKED, needs Ken.** K79's `^[A-Z]{1,10}$` rejects the trailing `-` that is part of every stored prefix (keys are `${prefix}${n}`, e.g. `T-`→`T-1`, `keys.ts:24`). The regex must account for the dash (and maybe digits, which the old wizard rule allowed). See A-A80-BLOCKED for the options (a/b/c). Parked per park-don't-halt.
 - [x] **BAK-C18** — **DONE (verify-close).** Case+impl agree (report/keep); @verifies in backup/format.test.ts; stale known-gaps note removed. A-PARTA-CLOSE.

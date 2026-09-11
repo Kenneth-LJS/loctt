@@ -11332,3 +11332,21 @@ reconcile against"; re-read-on-demand is SET-28's subject), and bullet 3
 aligned to CFG-C3's "lists the valid keys" (the blocker governs). @verifies
 SET-43; test asserts the valid-key list in the 404. **To revert:** drop
 the GET route + handler.
+
+### A-NEW20-CLIMCP · NEW-20 CLI/MCP half — resolver names the ghost default
+
+**Built (agent-level) implementing K75's non-GUI half.** The core resolver
+(`resolveProjectId`, shared by CLI/MCP/web via `resolveProjectIdForUser`)
+already ignored a ghost default and fell through to the ask state (K23);
+K75 adds that the ask-state error must NAME the ghost default as the
+cause, not just say "no default configured." When `projectDefaultIsGhost`,
+it now throws `the configured default project "<id>" no longer exists …
+Pass --project explicitly, and repair the default in projects.yaml.` This
+is core, so CLI and MCP both inherit the diagnostic — the "force a project
++ warn" first bullet. Updated the existing NEW-20 test that asserted the
+weaker `/no default project/` message (it encoded the less-diagnostic
+behavior). @verifies NEW-20; red-proven; 88 project/create tests green.
+
+The GUI half (no default + a deep-link nudge to settings) stays with the
+deep-linking workstream (K76). **To revert:** drop the
+`projectDefaultIsGhost` branch (reverts to the generic message).

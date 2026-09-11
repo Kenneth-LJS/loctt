@@ -213,6 +213,17 @@ export function resolveProjectId(
     const only = active[0];
     if (only) return only.id;
   }
+  // NEW-20 (K75): when the reason we fell through is a GHOST default (it
+  // names a project that no longer exists), say so — don't blame the user
+  // for "no default configured" when a broken default is the real cause.
+  // The message forces an explicit choice AND names the config to repair.
+  if (projectDefaultIsGhost(config)) {
+    throw new ProjectError(
+      `the configured default project "${config.default ?? ""}" no longer exists `
+      + `(a rename or hand-edit left projects.yaml pointing at nothing). `
+      + `Pass --project explicitly, and repair the default in projects.yaml.`,
+    );
+  }
   throw new ProjectError(
     `no default project configured and multiple projects exist; pass --project explicitly`,
   );

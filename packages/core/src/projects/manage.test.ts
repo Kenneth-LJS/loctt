@@ -514,7 +514,18 @@ describe("ghost workspace default (NEW-20 / K23)", () => {
     // answer. The resolver must throw (the ask state), NOT return the
     // ghost id. A resolver that returned `config.default` blindly would
     // resolve to "PROJ-does-not-exist" and file the task there.
-    await expect(resolveProjectIdForUser(locttDir)).rejects.toThrow(/no default project/);
+    //
+    // K75: the message must NAME the ghost default as the cause, not just
+    // say "no default configured" — the previous assertion (/no default
+    // project/) encoded the less-diagnostic message this fix improves.
+    await expect(resolveProjectIdForUser(locttDir)).rejects.toThrow(/no longer exists/);
+  });
+
+  // @verifies NEW-20
+  it("NEW-20 (K75): the ask-state error names the ghost default and points at projects.yaml", async () => {
+    await createProject(locttDir, { name: "Web", prefix: "WEB-" });
+    await writeGhostDefault();
+    await expect(resolveProjectIdForUser(locttDir)).rejects.toThrow(/projects\.yaml/);
   });
 
   // @verifies NEW-20
