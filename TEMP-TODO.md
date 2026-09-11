@@ -161,10 +161,10 @@ lines are implementation work, not decisions.
 
 ## 6. Test/coverage hygiene — no ruling, just do
 
-- [ ] **CMT-C4 — MCP `get_task_history` lacks `offset`/`total`** — extend the tool schema (`apps/mcp/src/tools/task-crud.ts:568`) + handler (core's paginating `readHistory` exists), then a `@verifies CMT-C4` test.
-- [ ] **CMT-C8 — the history-order test is vacuous** — `tests/integration/mcp/history-order.test.ts` passes with the copy removed. Assert non-identity at unit level, or close as resolved-and-unobservable.
+- [x] **CMT-C4 — MCP `get_task_history` lacks `offset`/`total`** — DONE. MCP tool now takes `offset` and returns `{entries, total, offset, limit?}` via core's paginating `readHistory({order:"desc",...})` (the single source of truth). The CLI `log` command was doing the same read-all→reverse→slice with no total — switched it to the overload and added a `Showing X–Y of N.` footer on a partial page. `@verifies CMT-C4` integration test (offset+limit partition, no gaps/repeats, constant total), red-proven. MCP + CLI reference docs updated. Note two packaging facts learned: MCP integration tests spawn `apps/cli/dist` (rebuild CLI for MCP changes), and MCP bundles to `dist/index.js`.
+- [x] **CMT-C8 — the history-order test is vacuous** — resolved-by-construction. The hazard (in-place `reverse()` of `readHistory`'s array, unsafe if the callee ever cached) is gone: the handler now uses core's paginating overload, which builds its result with `[...filtered].sort()` — a fresh array, never mutated in place, so there is nothing for a cache to corrupt. Updated the MCP test to the new response shape and documented why the concern is now structural; the ordering/non-mutation guarantee is unit-covered in core `history.test.ts` (`pagination (CW-7)`).
 - [ ] **4-label overflow boundary uncovered** — `MAX_LABEL_PILLS = 3` (`list/cells.tsx:280`); `+N` first fires at 4 but every MSL case uses 20. Add a case at the threshold.
-- [ ] **SHL-33 — verify status** — entry reads open but a 2026-09-05 batch says built + covered; confirm and strike if resolved.
+- [x] **SHL-33 — verify status** — DONE (verify-close). Case is covered by a thorough `@verifies SHL-33` UI spec (positive control: default vs ten-status shell, asserts identical sidebar groups/width + no overflow, documented mutation-to-fail). Ran it green. Resolved.
 
 ## 7. Features — each a build of its own
 

@@ -23,7 +23,12 @@ describe("long histories are reachable past the newest page", () => {
   const lines = (s: string): string[] =>
     s.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 
-  it("skips entries with --offset", async () => {
+  // The entry lines only — dropping the "Showing X–Y of N." footer a
+  // paged view now prints (CMT-C4: "Both report the total").
+  const entryLines = (s: string): string[] =>
+    lines(s).filter(l => !/^Showing \d+–\d+ of \d+\.$/.test(l));
+
+  it("skips entries with --offset and reports the total", async () => {
     await withTmpLoctt(async ({ root }) => {
       await seed(root);
 
@@ -31,7 +36,12 @@ describe("long histories are reachable past the newest page", () => {
       const skipped = await runCli(["log", "T-1", "--offset", "2"], { cwd: root });
       expect(skipped.exitCode, `${skipped.stdout}${skipped.stderr}`).toBe(0);
 
-      expect(lines(skipped.stdout)).toEqual(lines(all.stdout).slice(2));
+      // The entries are the full list minus the two newest.
+      expect(entryLines(skipped.stdout)).toEqual(entryLines(all.stdout).slice(2));
+      // And the footer names the total, so the page does not read as the
+      // whole history (CMT-C4).
+      const total = entryLines(all.stdout).length;
+      expect(skipped.stdout).toContain(`of ${total}.`);
     });
   });
 
@@ -39,7 +49,7 @@ describe("long histories are reachable past the newest page", () => {
     await withTmpLoctt(async ({ root }) => {
       await seed(root);
 
-      const all = lines((await runCli(["log", "T-1"], { cwd: root })).stdout);
+      const all = entryLines((await runCli(["log", "T-1"], { cwd: root })).stdout);
       expect(all.length).toBeGreaterThan(3);
 
       const lastPage = await runCli(
@@ -48,7 +58,7 @@ describe("long histories are reachable past the newest page", () => {
       );
       // The oldest entry is `created`, and without offset there is no
       // way to display it on a busy task.
-      expect(lines(lastPage.stdout)).toEqual([all[all.length - 1]]);
+      expect(entryLines(lastPage.stdout)).toEqual([all[all.length - 1]]);
       expect(lastPage.stdout).toMatch(/created/);
     });
   });
