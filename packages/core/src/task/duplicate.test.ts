@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { loadProjectsConfig } from "../config/projects.js";
 import { initLoctt } from "../init/init.js";
-import { resolveLocttDir } from "../paths/index.js";
+import { getTaskFilePath, resolveLocttDir } from "../paths/index.js";
 import { loadState, saveState, withStateLock } from "../state/index.js";
 import { seedLabels, seedMilestone, seedSprint, seedUser } from "../test-support/entities.js";
 import { createTask } from "./create.js";
@@ -43,9 +43,9 @@ async function seed(opts: Parameters<typeof createTask>[0]["options"]): Promise<
 async function dup(srcRef: string, overrides?: Parameters<typeof duplicateTask>[0]["overrides"]): Promise<string> {
   return withStateLock(locttDir, async () => {
     const state = await loadState(locttDir);
-    const t = await duplicateTask({ locttDir, state, sourceRef: srcRef, ...(overrides !== undefined ? { overrides } : {}) });
+    const { task } = await duplicateTask({ locttDir, state, sourceRef: srcRef, ...(overrides !== undefined ? { overrides } : {}) });
     await saveState(locttDir, state);
-    return t.frontmatter.id;
+    return task.frontmatter.id;
   });
 }
 
@@ -205,5 +205,54 @@ describe("duplicateTask — sourceRef resolution", () => {
     await expect(
       duplicateTask({ locttDir, state, sourceRef: "NONEXISTENT-9999" }),
     ).rejects.toThrow();
+  });
+});
+
+/**
+ * DUP-H1: a duplicate never copies a raw corrupt value (the field is
+ * lifted into health and reads undefined), but it now REPORTS which
+ * fields it dropped, so the copy's missing values are explained rather
+ * than silently absent.
+ *
+ * @verifies DUP-H1
+ */
+describe("duplicateTask — reports dropped corrupt fields (DUP-H1)", () => {
+  it("names a corrupt source field in `dropped` and does not copy it", async () => {
+    // Create a healthy source, then corrupt its due_date on disk so it
+    // loads as a health finding, not frontmatter.
+    const src = await createTask({
+      locttDir,
+      state: await loadState(locttDir),
+      options: { title: "Src", project: projectId, due_date: "2026-05-01" },
+    });
+    const file = getTaskFilePath(locttDir, src.frontmatter.id);
+    const { readFile } = await import("node:fs/promises");
+    const raw = await readFile(file, "utf-8");
+    await writeFile(file, raw.replace(/due_date:.*/, "due_date: 42"), "utf-8");
+
+    const state = await loadState(locttDir);
+    const { task, dropped } = await duplicateTask({
+      locttDir, state, sourceRef: src.frontmatter.id,
+    });
+    await saveState(locttDir, state);
+
+    // The corrupt field did not come across...
+    expect(task.frontmatter.due_date).toBeUndefined();
+    // ...and it is named in the report.
+    expect(dropped).toContain("due_date");
+  });
+
+  it("reports nothing dropped for a fully-healthy source", async () => {
+    const src = await createTask({
+      locttDir,
+      state: await loadState(locttDir),
+      options: { title: "Clean", project: projectId, due_date: "2026-05-01" },
+    });
+    const state = await loadState(locttDir);
+    const { dropped } = await duplicateTask({
+      locttDir, state, sourceRef: src.frontmatter.id,
+    });
+    await saveState(locttDir, state);
+    expect(dropped).toEqual([]);
   });
 });

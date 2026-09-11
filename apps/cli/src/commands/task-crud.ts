@@ -432,9 +432,9 @@ export async function duplicate(args: string[], root: string): Promise<void> {
       ? undefined
       : resolveProjectIdFromInput(await loadProjectsConfig(locttDir), projectArg);
 
-  const created = await withStateLock(locttDir, async () => {
+  const { task: created, dropped } = await withStateLock(locttDir, async () => {
     const state = await loadState(locttDir);
-    const task = await duplicateTask({
+    const result = await duplicateTask({
       locttDir,
       state,
       sourceRef: ref,
@@ -446,9 +446,16 @@ export async function duplicate(args: string[], root: string): Promise<void> {
       },
     });
     await saveState(locttDir, state);
-    return task;
+    return result;
   });
   console.log(`Created ${created.frontmatter.key}: ${created.frontmatter.title}`);
+  // DUP-H1: name the corrupt source fields that did not come across, so the
+  // copy's missing values are explained rather than silently absent.
+  if (dropped.length > 0) {
+    console.log(
+      `Note: ${String(dropped.length)} corrupt source field(s) were not copied: ${dropped.join(", ")}.`,
+    );
+  }
 }
 
 /**

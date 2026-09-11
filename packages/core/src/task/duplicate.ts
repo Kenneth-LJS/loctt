@@ -69,7 +69,20 @@ export interface DuplicateTaskParams {
  * History on the new task: one `created` entry, same as a regular
  * createTask. Source task is untouched.
  */
-export async function duplicateTask(params: DuplicateTaskParams): Promise<Task> {
+/**
+ * The result of a duplicate (DUP-H1). `dropped` names the source fields
+ * that were corrupt (lifted into `src.health`) and so were NOT carried
+ * into the copy — never a raw corrupt value copied in (§ 13.3), but the
+ * caller can now tell the user which fields did not come across, instead
+ * of handing back a silently-cleaner copy.
+ */
+export interface DuplicateResult {
+  readonly task: Task;
+  /** Source field names that were corrupt and not copied. Empty if none. */
+  readonly dropped: readonly string[];
+}
+
+export async function duplicateTask(params: DuplicateTaskParams): Promise<DuplicateResult> {
   const { locttDir, state, sourceRef, overrides = {}, workflowConfig, archivedGuard } = params;
   const src = await lookupTask(locttDir, sourceRef);
   const fm = src.frontmatter;
@@ -123,11 +136,31 @@ export async function duplicateTask(params: DuplicateTaskParams): Promise<Task> 
     );
   }
 
-  return createTask({
+  const task = await createTask({
     locttDir,
     state,
     options: createOptions,
     ...(workflowConfig !== undefined ? { workflowConfig } : {}),
     ...(archivedGuard !== undefined ? { archivedGuard } : {}),
   });
+
+  // DUP-H1: the corrupt source fields that were not carried into the copy.
+  // A health finding names a dropped field UNLESS the caller supplied it as
+  // an override (then it was set from the override, not dropped). The
+  // health field path may be `due_date` or `fields.points` or `labels[2]`;
+  // report the top-level field the user would recognise.
+  const overridden = new Set(
+    Object.entries(overrides)
+      .filter(([, v]) => v !== undefined)
+      .map(([k]) => k),
+  );
+  const dropped = [
+    ...new Set(
+      (src.health ?? [])
+        .map(h => h.field.replace(/\[.*$/, "").replace(/^fields\./, ""))
+        .filter(f => !overridden.has(f) && !overridden.has(`fields.${f}`)),
+    ),
+  ];
+
+  return { task, dropped };
 }

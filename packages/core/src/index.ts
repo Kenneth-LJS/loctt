@@ -397,7 +397,7 @@ export { assembleTaskFile, parseFrontmatter, renderRawText, serializeFrontmatter
 export { ALL_FIELDS_TOUCHED, appendTaskBody, assertWriteSafe, CorruptWriteError, readTask, readTaskBody, writeTask, writeTaskBody } from "./task/index.js";
 export { listTaskIds, loadAllTasks, loadAllTasksDetailed, lookupById, lookupByKey, lookupTask, TaskNotFoundError, type UnreadableTask, UnreadableTaskError } from "./task/index.js";
 export { createTask } from "./task/index.js";
-export { duplicateTask } from "./task/index.js";
+export { duplicateTask, type DuplicateResult } from "./task/index.js";
 export { buildShowModel,discoverAttachments } from "./task/index.js";
 export { mimeForFilename } from "./task/index.js";
 export {

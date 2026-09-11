@@ -35,7 +35,7 @@ export { countTasksByReference, countTasksByReferences } from "./counts.js";
 export type { CreateTaskOptions, CreateTaskParams } from "./create.js";
 export { createTask } from "./create.js";
 export type { DuplicateTaskOverrides, DuplicateTaskParams } from "./duplicate.js";
-export { duplicateTask } from "./duplicate.js";
+export { duplicateTask, type DuplicateResult } from "./duplicate.js";
 export type { ExportOptions } from "./export.js";
 export {
   DEFAULT_EXPORT_COLUMNS,

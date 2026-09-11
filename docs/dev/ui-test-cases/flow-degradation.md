@@ -226,7 +226,7 @@ data-integrity concern, not an eleventh principle.
 ### DEG-27 · M4 · major · P5
 **Duplicate and merge over a corrupt task carry health correctly, not a raw corrupt value.** Duplicate a task with a corrupt field; separately, merge two sides where one carries health.
 
-- Cannot be satisfied yet (duplicate): `duplicateTask` copies only healthy frontmatter and refuses when `project` itself is corrupt — but it does not report which fields it dropped ([known-gaps.md DUP-H1](../known-gaps.md)). Two bullets (healthy-only copy; refuse on corrupt project) are satisfiable today but uncased; the dropped-fields notice cannot be.
+- Duplicate: `duplicateTask` copies only healthy frontmatter (a corrupt field is lifted into health and never carried in) and refuses when `project` itself is corrupt. **It also reports the dropped corrupt fields** (DUP-H1, built 2026-09-11): the return is `{ task, dropped }`, threaded to the CLI (`Note: N corrupt source field(s) were not copied: …`), MCP (appended to the created-task text), and the web route (`dropped` in the JSON). Verified by `duplicate.test.ts` (`@verifies DUP-H1`).
 - Cannot be satisfied yet (merge): what the merged file contains when a side carries health — a union of raws, with the winning side's healthy value overriding — is a write path with no test (cross-ref DEG-21).
 
 ### DEG-29 · M2 · major · P7

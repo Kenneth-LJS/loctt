@@ -4526,9 +4526,9 @@ export function createWebApp(options: WebAppOptions) {
     const { workflowConfig } = await loadOptionalConfigs(locttDir);
     const archivedGuard = await loadArchivedGuardConfigs(locttDir);
     try {
-      const created = await withStateLock(locttDir, async () => {
+      const { task: created, dropped } = await withStateLock(locttDir, async () => {
         const state = await loadState(locttDir);
-        const task = await duplicateTask({
+        const result = await duplicateTask({
           locttDir,
           state,
           sourceRef: ref,
@@ -4536,9 +4536,11 @@ export function createWebApp(options: WebAppOptions) {
           archivedGuard,
         });
         await saveState(locttDir, state);
-        return task;
+        return result;
       });
-      json(res, projectTaskFrontmatter(created.frontmatter));
+      // DUP-H1: surface the corrupt source fields that were not copied, so
+      // the UI can tell the user the copy is missing them by design.
+      json(res, { ...projectTaskFrontmatter(created.frontmatter), dropped });
     } catch (err) {
       // A source whose assignee or milestone has since been archived
       // cannot be copied forward wholesale. Same shape as create's

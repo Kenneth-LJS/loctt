@@ -9,27 +9,6 @@ merely might be wrong. Delete an entry when it is fixed.
 
 ## Code
 
-### DUP-H1 — `duplicateTask` does not report the corrupt source fields it dropped
-
-**Found 2026-09-05 during the Phase-7 corruption audit.**
-`duplicateTask` (`packages/core/src/task/duplicate.ts`) copies only the
-source's **healthy** frontmatter into the new task — a wrong-typed or
-unrecognised source field is lifted into `src.health` and so reads as
-`undefined`, meaning it is silently *not* carried into the copy. That is
-the correct behaviour (§ 13.3: never copy a raw corrupt value into a new
-task), and it refuses when `project` itself is corrupt (it must read it
-to allocate a key). What it does **not** do is tell the caller which
-fields it dropped: it returns a bare `Task` from `createTask`, so a user
-duplicating a task with a corrupt `due_date` gets a clean copy with no
-notice that the due date did not come across.
-
-The proposal (§ 3.2 duplicate row) wants the dropped fields listed in the
-result. Fixing it needs a return-shape change (`duplicateTask` →
-`{ task, dropped: string[] }`) threaded through the CLI `duplicate`, MCP
-`duplicate_task` and the web duplicate route — an API change out of scope
-for the framework build. The safety property (no corrupt value copied,
-refuse on corrupt project) holds today; only the *notice* is missing.
-
 ### DS-A11Y40 — the checkbox/radio resting border does not clear 3:1 vs bg-surface
 
 **Found 2026-09-06 building the B1 design-system primitives.** The
