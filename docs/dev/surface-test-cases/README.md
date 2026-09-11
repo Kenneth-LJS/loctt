@@ -45,14 +45,16 @@ at the same filename in both trees.
 | [flow-list.md](flow-list.md) | Query DSL, list, sort, pagination, saved views | 6 |
 | [flow-relationships.md](flow-relationships.md) | Links, inverse edges, cycle guards, attachments | 5 |
 | [flow-comments-activity.md](flow-comments-activity.md) | Comments, body edits, history/activity | 8 |
-| [flow-projects-users.md](flow-projects-users.md) | Project & user CRUD, current user, avatars, recents | 9 |
+| [flow-projects-users.md](flow-projects-users.md) | Project & user CRUD, current user, avatars, recents | 12 |
 | [flow-sprints.md](flow-sprints.md) | Sprints, burndown, board reorder | 3 |
 | [flow-milestones-labels.md](flow-milestones-labels.md) | Milestones, progress, labels | 3 |
 | [flow-settings.md](flow-settings.md) | Workflow config, config get/set, calendar, drift | 5 |
 | [flow-onboarding.md](flow-onboarding.md) | Init, schema version, migrate, doctor, info | 7 |
 | [flow-git-sync.md](flow-git-sync.md) | Enable/disable, publish, sync, reconciliation, branch config | 10 |
+| [flow-backup-restore.md](flow-backup-restore.md) | Backup export/import, restore, dry-run, integrity | 24 |
+| [flow-degradation.md](flow-degradation.md) | Corrupt-data degradation, CLI & MCP halves | 8 |
 
-**65 cases.**
+**100 cases.**
 
 ## Why one tree, not one per surface
 
