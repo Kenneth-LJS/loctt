@@ -1,12 +1,22 @@
 {
   "name": "@loctt/web",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
   "main": "dist/server/index.js",
+  "types": "dist/server/index.d.ts",
+  "bin": {
+    "loctt-ui": "dist/server/cli.js"
+  },
+  "files": [
+    "dist/server/index.js",
+    "dist/server/index.d.ts",
+    "dist/server/cli.js",
+    "dist/client"
+  ],
   "scripts": {
-    "build": "vite build",
-    "clean": "rm -rf dist",
+    "build": "vite build && tsc -b tsconfig.server.json && tsup",
+    "prepublishOnly": "npm run build",
+    "clean": "rm -rf dist *.tsbuildinfo",
     "dev": "concurrently -k -n api,web -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
     "dev:host": "concurrently -k -n api,web -c blue,green \"npm:dev:server\" \"npm:dev:client -- --host\"",
     "dev:server": "tsx watch src/server/main.ts",
@@ -52,7 +62,8 @@
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.3.0",
     "tsx": "^4.20.0",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "tsup": "^8.5.1"
   },
   "license": "MIT"
 }
