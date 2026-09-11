@@ -146,7 +146,7 @@ Nothing behind these can close until decided.
 
 ## 5. Doc holes
 
-- [ ] **`workflow.boards` undocumented in schema-reference.md** — add a `### boards` section from `BoardsConfigSchema`.
+- [x] **`workflow.boards` undocumented in schema-reference.md** — added a `### boards` section (between `custom_fields[]` and `timeline`) from `BoardColumnDefSchema`/`BoardsConfigSchema`: the four column fields, the board-wide uniqueness rules, and the degradation behavior (BRD-24 "Not on this board", BRD-17 `missingStatuses`, BRD-18 "Unknown status", and the 1:1 fallback when absent) — all verified against `core/src/board/columns.ts`.
 - [ ] **SET-13's third bullet reads opposite to SET-27** — flow-doc bullet text (README already resolves it).
 - [ ] **TML-48's unreadable notice names neither task nor bad value** — server change + doc correction of A41.
 - [ ] **SET-44 — duplicate-status-key case is a dangling cross-ref** at `flow-settings.md:356` — add SET-44 or repoint SET-46/47/48.

@@ -381,6 +381,55 @@ Two modes:
 | `scale` | enum | no | One of `free`, `linear`, `fibonacci` |
 | `preset_values` | (number\|string)[] | conditional | Suggested values. Required and non-empty when `unit` is `custom_enum` |
 
+### `boards`
+
+Board (kanban) column layout. Optional — a workflow without a `boards`
+block falls back to one column per status in `statuses` order. When
+present it defines the columns explicitly and maps statuses onto them.
+
+```yaml
+boards:
+  columns:
+    - key: todo
+      label: To Do
+      statuses: [backlog, ready]
+    - key: doing
+      label: In Progress
+      statuses: [in_progress]
+      wip: 3
+    - key: done
+      label: Done
+      statuses: [done, discarded]
+```
+
+`columns` is an array of at least one column; an empty `columns: []` is
+rejected (pick one column or omit the whole block).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Stable column identifier. Unique across the board — the UI uses it as the React key and drag-drop target id |
+| `label` | string | yes | Human column heading shown above the cards |
+| `statuses` | array of status keys | yes | Which task statuses land in this column. At least one. Each status may appear in **exactly one** column across the whole board — a status in two columns makes a drag-drop target ambiguous and is rejected |
+| `wip` | integer | no | Work-in-progress limit for the column; must be a positive integer. Absent means no limit |
+
+**Validation is board-wide, not per-column.** Two constraints span
+columns and so are checked on the whole `boards` object: duplicate column
+`key`s are rejected (naming the offending column index), and a status
+that appears in more than one column's `statuses` is rejected (naming the
+column index that already claimed it).
+
+**A configured board does not have to be exhaustive, and stale references
+degrade rather than fail.** Statuses no column lists still appear, in a
+synthesized "Not on this board" column, so the board's task total agrees
+with the list view for the same filter (BRD-24). A column that names a
+status since deleted from `statuses[]` still renders its remaining
+statuses and reports the gap as `missingStatuses` rather than erroring
+(BRD-17). A task carrying a status the config no longer defines at all is
+gathered into an "Unknown status" column (BRD-18). None of these is a
+parse-time rejection — keep `statuses` in sync with the `statuses[]`
+block to avoid the synthesized columns, but a drifted board is legible,
+not broken.
+
 ### `timeline`
 
 Workspace-level defaults for the timeline (Gantt) view. Every field is optional; a saved view's `display` overrides these, and the URL overrides both. UI consumers fall back to the built-ins in the last column.
