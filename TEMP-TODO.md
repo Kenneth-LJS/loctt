@@ -93,7 +93,7 @@ Nothing behind these can close until decided.
 
 - [x] **NEW-20** — ~~hard error vs tolerated drift~~ **RULED (K75):** hard error on config; CLI/MCP force project-select + warn; GUI requires manual select + a deep-link nudge to settings. Non-GUI half buildable now; GUI nudge lands with deep-linking (K76). **[now, partial]**
 **RESOLVED this session:**
-- [x] **A80 prefix rule** — **RULED (K79):** `^[A-Z]{1,10}$`, validated at creation only (no migration of existing trackers); `doctor` reports legacy. Reconcile the web wizard to this stricter rule.
+- [~] **A80 prefix rule (K79) — BLOCKED, needs Ken.** K79's `^[A-Z]{1,10}$` rejects the trailing `-` that is part of every stored prefix (keys are `${prefix}${n}`, e.g. `T-`→`T-1`, `keys.ts:24`). The regex must account for the dash (and maybe digits, which the old wizard rule allowed). See A-A80-BLOCKED for the options (a/b/c). Parked per park-don't-halt.
 - [x] **BAK-C18** — **already ruled 2026-09-02** (report/keep, matches P-11/P-12); Part A verify-close, delete stale known-gaps note.
 - [x] **TSK-32 vs DEG-29** — **doc already reconciled (A179)**; Part A → update the stale spec test only.
 - [x] **Broken-view write** — **already fixed under K28** (serializer preserves broken views); Part A verify-close.
