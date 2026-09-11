@@ -62,7 +62,7 @@ data-integrity concern, not an eleventh principle.
 
 - A valid write clears the finding — even a strict re-read then succeeds.
 - Unset drops the field from health and from disk; an unrecognised key is removable the same way.
-- Cannot be satisfied yet: the repair is *not* recorded in history as repairing corruption. The decided provenance (`before` = the raw corrupt value, `meta.was_corrupt`) is unbuilt — `buildSetFieldHistory` reads only the frontmatter, where the lifted field is already absent, so `before` is null for a repaired field. See [known-gaps.md](../known-gaps.md). Do not author a test for provenance until it is built.
+- The repair is recorded in history as repairing corruption: the entry's `before` is the raw corrupt value (read from `health`, since the corrupt field was lifted off the frontmatter) and `meta.was_corrupt` marks it a repair. Built 2026-09-11 (`buildSetFieldHistory` consults `task.health`); a corrupt `labels` array records the same provenance via an accompanying `field_change` entry, since its per-element diff cannot carry a single `before`. Verified by `packages/core/src/task/update.test.ts` "repair provenance (DEG-4-PROV)".
 
 ### DEG-5 · M4 · blocker · P1 P7
 **The write guard never introduces corruption and never silently drops it.** Attempt a write that would make a field newly corrupt; separately, attempt a merge-style write that omits an existing corrupt field.

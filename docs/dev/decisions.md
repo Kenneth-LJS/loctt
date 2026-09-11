@@ -10909,3 +10909,28 @@ vocabulary (truncated 6-char id + a parenthetical + a `title`), warn-toned.
 bug). **Found in review:** the first cut used non-existent
 `feedback-warn-*` Tailwind classes (correct names are `warn-*`) and
 lacked the load-gate — both fixed before commit.
+
+### A-DEG4PROV · Repair provenance stamps history from `health`; corrupt labels get an extra field_change entry
+
+**DEG-4-PROV built (agent-level).** `buildSetFieldHistory` now takes the
+pre-write `task.health`. When the written field has a health finding (the
+write repairs a corrupt field), the emitted entry carries `before` = the
+finding's `raw` (the corrupt value, absent from frontmatter) and
+`meta.was_corrupt: true`. Scalar built-in and custom fields wrap their
+single entry via `withRepairProvenance`.
+
+**Labels (found in review).** The `labels` branch emits N per-element
+`label_added`/`label_removed` entries, onto which a single raw `before`
+does not map. Rather than lose the provenance (the reviewer's HIGH
+finding) or invent a dubious per-element before, a **corrupt labels
+repair also emits one `field_change` entry on `labels`** carrying the raw
+corrupt value as `before` and `meta.was_corrupt` — the element diffs say
+what the array became; this entry records that a corruption was repaired
+and what it held. **To revert:** drop the `if (repaired !== undefined)`
+push in the labels branch; provenance for corrupt-labels repair is then
+lost again (the pre-fix state). Non-labels behaviour is unaffected.
+
+Verified: `update.test.ts` "repair provenance (DEG-4-PROV)" (scalar +
+labels red-proven; healthy-task negative). No new surface code — history
+`meta` flows to CLI/MCP/web generically. Closed the known-gaps entry and
+updated DEG-4 in flow-degradation.md.
