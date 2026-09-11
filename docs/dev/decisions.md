@@ -11257,3 +11257,18 @@ new. `@verifies DUP-H1` (`duplicate.test.ts`, corrupt-field-dropped +
 healthy-source-empty, red-proven); CLI integration green; 4 workspaces
 typecheck. Updated DEG-27 (was "cannot be satisfied yet"). **To revert:**
 return the bare Task and drop the per-surface notice.
+
+### A-B3-DEFER · TEMP-TODO relocation happens at end-of-run, not mid-run
+
+**Decision (agent-level).** B3 (move `TEMP-TODO.md` out of the published
+root so it doesn't read as "unfinished") is correct for publish, but the
+file is the **active run's work list** — it carries the Run contract, the
+goal references it by name (`TEMP-TODO.md`), and every in-flight commit
+touches it. Renaming it now would break the goal's file reference and
+churn the path on every remaining item.
+
+So B3 is sequenced as the **last packaging step before publish**: once the
+backlog is worked down, rename `TEMP-TODO.md` → `docs/dev/backlog.md` (or
+`.gitignore` it), repoint `CLAUDE.md`, and update the goal. Not a blocker
+deferral — a sequencing choice so the rename lands once, cleanly, at the
+end. **To revert:** none needed; this only defers a rename.
