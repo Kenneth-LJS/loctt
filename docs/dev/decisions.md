@@ -11209,3 +11209,20 @@ hold name-valued history entries a replay still mis-reads. Options in
 known-gaps (tolerant replay / doctor repair / forward-only). The write
 fix stands alone. **To revert:** restore the `value` parameter and the
 raw-value reads.
+
+### A-PARTA-CLOSE · Part A verify-and-close: broken-view write, BAK-C18, TSK-32
+
+**All three confirmed already-resolved (agent-level verify + close).**
+- **Broken-view write (K28):** all 5 `saveQueriesConfig` calls in
+  `views/manage.ts` carry `config.broken` through, and
+  `serializeQueriesConfig` re-emits it (`serializeBrokenQuery`). Added a
+  regression test (`manage.test.ts`: createView/editView over a
+  pre-existing broken entry preserve it), red-proven. Removed the stale
+  known-gaps entry.
+- **BAK-C18:** the case was rewritten 2026-09-02 to "report/keep" and
+  matches the implementation; `@verifies BAK-C18` in `backup/format.test.ts`.
+  The known-gaps "contradiction needs Ken" entry was stale — removed.
+- **TSK-32:** the spec (`flow-task-meta.spec.ts`) already asserts the
+  DEG-7/DEG-29 behavior (unrecognised key shown in "Not recognised"),
+  per A179; it passes. The known-gaps "spec still asserts old behavior /
+  fails on HEAD" entry was doubly stale — removed.

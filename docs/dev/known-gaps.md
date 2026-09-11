@@ -243,35 +243,6 @@ before anything is staged.
 
 ## Tests
 
-### TSK-32 contradicts the DEG-29 "Not recognised" group (MetaPanel)
-
-**Observed 2026-09-09 (B4 primitive-migration lane, found while running
-the surface specs — NOT introduced by that lane).** `flow-task-meta.spec.ts`
-TSK-32 ("an unknown top-level frontmatter key survives an edit from the
-UI") asserts `getByTestId("meta-panel")` does **not** contain
-`x_experiment` / `cohort-b`. But B3's DEG-29 work made `MetaPanel.tsx`'s
-`UnrecognisedGroup` render exactly those keys in the "Not recognised"
-group. So TSK-32 now fails: the panel *does* show `x_experiment: cohort-b`.
-
-**Proven pre-existing.** The test fails on a clean `HEAD` checkout
-(before any B4 staged work and before this lane's changes) — it is a
-consequence of B3's already-shipped DEG-29 "Not recognised" surface, not
-of the B4 primitive migration. The migration touched neither
-`MetaPanel.tsx` (B3-owned) nor the spec.
-
-**Reproduce.** `npx playwright test --config tests/ui/playwright.config.ts
-flow-task-meta.spec.ts -g "TSK-32"`.
-
-**Where the fix belongs.** This is a case contradiction between the old
-TSK-32 (unrecognised key is *ignored*, no row) and DEG-29 (unrecognised
-key is *surfaced* in a read-only "Not recognised" group). Per
-`build-loop.md` § "What blocks the loop", a two-case contradiction is
-escalated, not adjudicated by an agent: TSK-32's "does not invent a row
-for it" assertion needs revising to permit the DEG-29 group, or DEG-29's
-scope needs narrowing. Owner: B3 Task-meta / MetaPanel. The task's
-frontmatter round-trip (the load-bearing half of TSK-32 — `x_experiment`
-survives the status edit) is unaffected either way.
-
 ### The integration suite is flaky under parallel load
 
 **Observed 2026-08-17.** A full `npm run test:integration` reported
@@ -2461,48 +2432,6 @@ the orphan is created, which is also exactly when nobody is watching.
 
 **Related**: `git worktree remove --force` on a tree whose suite is still
 running will orphan the server every time. Stop the run first.
-
-## The backup's dangling-reference handling reports rather than refuses (M5.1)
-
-**Found:** 2026-09-02, building M5.1 · **Case:** BAK-C18
-
-BAK-C18's second bullet asks that "a relationship whose target is in
-neither backup nor destination" fail with the target named and nothing
-partial written. What is built **restores the task and leaves the
-dangling relationship in place**, where `doctor` and the sync pre-flight
-report it as `inconsistent` — the P-12 path that already exists
-(`17fae3f`).
-
-**Why it was built that way, and why this is a gap and not a decision
-to close the case.** P-11 is the governing rule for data already on
-disk: "leniency means keeping, never destroying." A backup is the last
-copy of a tracker someone may have. Refusing the whole restore because
-one relationship points at a task the user deleted years ago would
-leave them with no tracker at all, and the failure is recoverable —
-`doctor` names it, and P-12 already classifies a dangling relationship
-as reportable rather than blocking.
-
-So the two halves of BAK-C18 are met differently:
-
-- **The missing-project half holds.** A restore never writes a
-  `projects.yaml` naming a project absent from its own list —
-  `ProjectsConfigSchema` refuses that file, so the merged config would
-  not load. Covered and mutation-proven.
-- **The dangling-relationship half does not refuse.** It restores and
-  the reference is reported downstream.
-
-**To reproduce:** export a tracker, hand-edit one task's line in the
-JSONL to point a relationship at a ULID that exists nowhere, restore
-into an empty tracker. The task appears; `loctt doctor` reports the
-dangling target.
-
-**The real question this leaves open**, and it needs Ken rather than an
-agent: whether a restore should refuse a backup carrying references it
-cannot satisfy, when refusing means the user cannot restore at all. The
-case says refuse; P-11 and the existing P-12 treatment say report. That
-is a contradiction between a case and an invariant, which is an
-escalation, not an agent call — so the tag on BAK-C18 covers the
-missing-project half honestly and this entry records the rest.
 
 ## A displaced body is not carried by a later backup (M5.1)
 
