@@ -11309,3 +11309,26 @@ implements K72; the existing `loctt ui` implements the opposite.
     as a bundled convenience. Most work; most flexible.
 
 Parked per park-don't-halt. B1/B2 are done; B3 deferred to end-of-run.
+
+### A-SET43 · GET /api/config/:key (read-back) + case, PM-reviewed
+
+**Built (agent-level) implementing K86.** Added `GET /api/config/:key` →
+core's `getConfigValue` (the read counterpart of the existing
+`POST`/`DELETE /api/config/:key` = `setConfigValue`/`unsetConfigValue`),
+returning `{ key, value }`; an unknown key → 404 whose message lists the
+valid keys (from core's `findKeyDef`, the same list MCP's
+`get_config_value` gives — CFG-C3 cross-surface parity). Verified against
+`getConfigValue` for every routed key + a default-read + the 404.
+
+**Note:** initial attempt wrongly wired domain-config loaders
+(workflow/queries/…) before finding the existing `CONFIG_KEY_RE` +
+`setConfigValue`/`getConfigValue` router — corrected to the router the
+write side already uses.
+
+**PM review** approved scope (correctly limited to routed keys, not
+overclaiming all keys) and fixed two wordings: bullet 1's "cannot drift"
+overclaimed what a GET provides (softened to "has a source of truth to
+reconcile against"; re-read-on-demand is SET-28's subject), and bullet 3
+aligned to CFG-C3's "lists the valid keys" (the blocker governs). @verifies
+SET-43; test asserts the valid-key list in the 404. **To revert:** drop
+the GET route + handler.

@@ -1,8 +1,8 @@
 {
   "generated_from": "docs/dev/ui-test-cases/, docs/dev/surface-test-cases/",
   "counts": {
-    "total": 1040,
-    "ui": 940,
+    "total": 1041,
+    "ui": 941,
     "surface": 100,
     "resolved": 3
   },
@@ -11679,10 +11679,26 @@
       "resolved": false
     },
     {
-      "id": "SET-45",
+      "id": "SET-43",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
       "line": 351,
+      "title": "A settings panel can read a config value back from the source of truth.",
+      "milestone": "M4",
+      "severity": "minor",
+      "principles": [
+        "P4"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "SET-45",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-settings.md",
+      "line": 359,
       "title": "A filesystem failure writing workflow config is reported as a write/IO failure, not as an invalid config.",
       "milestone": "M4",
       "severity": "major",
@@ -11700,7 +11716,7 @@
       "id": "SET-46",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 359,
+      "line": 367,
       "title": "A status can be created from the panel.",
       "milestone": "M4",
       "severity": "major",
@@ -11717,7 +11733,7 @@
       "id": "SET-47",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 366,
+      "line": 374,
       "title": "A priority / task-type can be created.",
       "milestone": "M4",
       "severity": "major",
@@ -11734,7 +11750,7 @@
       "id": "SET-48",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 373,
+      "line": 381,
       "title": "A relationship type can be created.",
       "milestone": "M4",
       "severity": "major",
@@ -11751,7 +11767,7 @@
       "id": "SET-49",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 380,
+      "line": 388,
       "title": "Custom fields have full CRUD in the UI.",
       "milestone": "M4",
       "severity": "major",
@@ -11768,7 +11784,7 @@
       "id": "SET-51",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-settings.md",
-      "line": 387,
+      "line": 395,
       "title": "A failed Edit-dialog Save stays open with an anchored error.",
       "milestone": "M4",
       "severity": "major",

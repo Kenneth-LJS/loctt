@@ -113,6 +113,7 @@ import {
   findProjectBySlug,
   FsAccessError,
   getAttachmentPath,
+  getConfigValue,
   getCurrentUser,
   getGitStatus,
   getTrackerInfo,
@@ -1559,6 +1560,29 @@ export function createWebApp(options: WebAppOptions) {
     try { queries = await loadQueriesConfig(locttDir); } catch { /* ok */ }
     const response: ConfigResponse = { workflow, queries };
     json(res, response);
+  };
+
+  /**
+   * SET-43 (K86): read back a single routed config value from the source
+   * of truth, so a settings panel can confirm what it wrote (via
+   * `POST /api/config/:key`, `setConfigValue`) and never drift from disk.
+   * `GET /api/config/:key` used to 404 for every key. This is the read
+   * counterpart of the existing write/unset routes below — it calls
+   * core's `getConfigValue`, which routes the same key set. An unrouted
+   * key throws `ConfigRouterError`, mapped to 404 naming the field.
+   */
+  const handleGetConfigKey: RouteHandler = async ({ res, locttDir, captures }) => {
+    const key = captures[0] ?? "";
+    try {
+      const value = await getConfigValue(locttDir, key);
+      json(res, { key, value });
+    } catch (err) {
+      if (err instanceof ConfigRouterError) {
+        error(res, err.message, 404, { code: "not_found", field: key, recovery: { kind: "none" } });
+        return;
+      }
+      throw err;
+    }
   };
 
   const handleListProjects: RouteHandler = async ({ res, url, locttDir }) => {
@@ -4910,6 +4934,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "POST", pattern: "/api/migrate", handler: handleMigrate },
     { method: "GET", pattern: "/api/doctor", handler: handleDoctor },
     { method: "GET", pattern: "/api/config", handler: handleConfig },
+    { method: "GET", pattern: CONFIG_KEY_RE, handler: handleGetConfigKey },
     { method: "GET", pattern: "/api/projects", handler: handleListProjects },
     { method: "POST", pattern: "/api/tasks/bulk/set", handler: handleBulkSet },
     { method: "POST", pattern: "/api/tasks/bulk/archive", handler: handleBulkArchive },
