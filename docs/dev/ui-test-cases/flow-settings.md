@@ -348,6 +348,14 @@ This case previously asserted the panels were read-only. That was an early draft
 - No panel renders an empty list that would read as "you have no statuses configured".
 - A retry action re-fetches, and recovering the server clears every panel's error without a reload.
 
+### SET-43 · M4 · minor · P4
+**A settings panel can read a config value back from the source of truth.** `GET /api/config/:key` for a routed key (e.g. `git.branch`, `git.auto_push`).
+
+- The response reports the value the server would use — the same value core's own reader (`getConfigValue`) returns — so the panel *can* render from disk rather than only from its own optimistic state, and has a source of truth to reconcile against after an external edit. (Whether the panel re-reads on demand is SET-28's subject, not this one.)
+- A key with nothing written yet reads back its default rather than erroring: `get` is never an error path for a valid key.
+- An unknown key is a 404 whose message **lists the valid keys** (the same list core gives the CLI and MCP — cf. the cross-surface parent CFG-C3), so a typo is diagnosable rather than a bare not-found.
+- This is the read counterpart of the existing `POST`/`DELETE /api/config/:key` write routes; it does not add a second source of truth.
+
 ### SET-45 · M4 · major · P3 P4 P6
 **A filesystem failure writing workflow config is reported as a write/IO failure, not as an invalid config.** Make `.loctt/config/` read-only, then save a *valid* workflow edit.
 

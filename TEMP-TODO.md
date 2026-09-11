@@ -103,7 +103,7 @@ Nothing behind these can close until decided.
 - [ ] **PRU-46's pending-rename banner is unreachable dead code** — keep auto-recovery (retag + delete dead code) vs. make recovery boot-only.
 - [ ] **BAK-C13 — a displaced body is not carried by a later backup** — clean fix is a new backup record kind (no case describes it).
 - [ ] **Read-only views + degraded entries (ERR-10, LST-51, TML-48)** — should a degraded-but-loadable config alert on a read-only view, or only in settings?
-- [ ] **SET-43 — is config read-back required?** — a settings panel cannot read what it wrote; `GET /api/config/:key` 404s. Decide, then add the case.
+- [x] **SET-43 — config read-back (K86)** — **DONE.** GET /api/config/:key → getConfigValue; unknown key 404s listing valid keys (CFG-C3 parity). SET-43 case authored + PM-reviewed (2 wording fixes applied); @verifies SET-43 red-proven. A-SET43.
 - [ ] **TSK-58 — are Duplicate and Move reachable from the UI, or scoped out?** — Duplicate/TSK-20 shipped; this is the UI affordance + scoping case.
 - [x] **MSL-11 vs MSL-3 denominator (K85)** — **DONE.** countTasksByReferences excludes discarded via discardedStatusKeys (derived from workflow in withCounts); Settings count now matches progress. MSL-11 bullet 2 rewritten (row-match vs progress conflict) + flagged for Ken. Test red-proven. A-MSL11-K85.
 
