@@ -205,6 +205,21 @@ export function ListView() {
   // 200 with zero rows — an empty result the user reads as "nothing
   // matches" rather than "this view is broken".
   const queryWarnings = pages[pages.length - 1]?.warnings ?? [];
+  // ERR-10 / LST-51 (A-PRESCAN-2): a hand-broken `workflow.yaml` entry
+  // (a status with no `category`, a bad colour) does not throw — the
+  // tolerant loader degrades it into `workflow.broken` and the list still
+  // renders. But a silent degrade reads as "this status simply isn't
+  // configured": the filter dropdowns come up short with no explanation.
+  // So surface the fault at the point of use, the way the settings panel
+  // does (SET-33/K32) — name the file and each offending entry, and point
+  // at the fix. This is a non-blocking banner above the list, not a
+  // takeover: the healthy rest of the config still drives the view.
+  const workflowBroken = workflow.data?.broken;
+  const brokenWorkflowEntries = workflowBroken === undefined
+    ? []
+    : (["statuses", "priorities", "task_types", "relationships", "custom_fields"] as const)
+      .flatMap(sub =>
+        (workflowBroken[sub] ?? []).map(e => ({ sub, index: e.index, error: e.error })));
   // Newest page's total. A filter change cannot be what makes these
   // differ — it builds a new query key, so the feed restarts with one
   // page — but a task created or deleted between page 1 and page 3
@@ -525,6 +540,41 @@ export function ListView() {
           {queryWarnings.map(w => (
             <p key={`${w.field}:${w.message}`}>{w.message}</p>
           ))}
+        </div>
+      )}
+      {brokenWorkflowEntries.length > 0 && (
+        <div
+          role="alert"
+          data-testid="workflow-config-broken"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[12px] text-danger-fg"
+        >
+          <p className="font-medium">
+            <code className="font-mono">.loctt/config/workflow.yaml</code> has an
+            entry that does not parse, so some statuses or fields may be missing
+            from the filters below.
+          </p>
+          <p className="mt-1">
+            Fix the file (or run <code className="font-mono">loctt doctor</code>),
+            then refresh. The rest of the list loaded normally.
+          </p>
+          <ul className="mt-1 list-none space-y-0.5 p-0" data-testid="workflow-config-broken-list">
+            {brokenWorkflowEntries.map(e => (
+              <li
+                key={`${e.sub}-${String(e.index)}`}
+                data-testid={`workflow-config-broken-${e.sub}-${String(e.index)}`}
+                className="text-[11px] text-text-secondary"
+              >
+                {/* `statuses[0].` then the Zod message, which itself
+                    begins with the field ("category must be one of …").
+                    Joined with a dot so the path reads `statuses[0].category`
+                    — the field with enough path to find it (ERR-10 bullet 2)
+                    and the expected values Zod carries (bullet 3). */}
+                <code className="rounded bg-bg-surface px-1 py-0.5 font-mono">
+                  {e.sub}[{e.index}].
+                </code>{e.error}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       {brokenView !== undefined && (

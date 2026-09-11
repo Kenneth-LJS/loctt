@@ -3693,12 +3693,11 @@ test.describe("ERR/LST — a broken config file (M1.2)", () => {
   }
 
   // @verifies ERR-10
-  // QUARANTINED (pre-existing, not a B2 regression — fails identically on a
-  // clean HEAD worktree). The tolerant `loadWorkflowConfig` degrades a bad
-  // status `category` into `broken` and still loads, so the list page emits
-  // no `config_invalid` alert. See known-gaps.md "flow-list.spec.ts — ERR-10
-  // and LST-51". Un-fixme when the list surface renders degraded entries.
-  test.fixme("ERR-10: a schema failure names the file, the field, and what was expected", async ({
+  // The tolerant `loadWorkflowConfig` degrades a bad status `category` into
+  // `broken` and still loads; the list now surfaces those broken entries in
+  // a point-of-use `role="alert"` (A-PRESCAN-2), naming the file, the
+  // field path, and the expected values.
+  test("ERR-10: a schema failure names the file, the field, and what was expected", async ({
     page,
     tracker,
   }) => {
@@ -3723,11 +3722,10 @@ test.describe("ERR/LST — a broken config file (M1.2)", () => {
   });
 
   // @verifies LST-51
-  // QUARANTINED (pre-existing, not a B2 regression — fails identically on a
-  // clean HEAD worktree). Same cause as ERR-10 above: the tolerant workflow
-  // read path degrades a bad entry rather than surfacing a list-page alert.
-  // See known-gaps.md "flow-list.spec.ts — ERR-10 and LST-51".
-  test.fixme("LST-51: a broken workflow is explained rather than crashed on", async ({
+  // The list now surfaces a broken workflow entry in place (A-PRESCAN-2)
+  // rather than degrading silently; the shell stays usable and the CLI
+  // says the same thing.
+  test("LST-51: a broken workflow is explained rather than crashed on", async ({
     page,
     tracker,
   }) => {
@@ -3741,11 +3739,12 @@ test.describe("ERR/LST — a broken config file (M1.2)", () => {
     await expect(page.getByRole("alert")).toContainText("workflow.yaml");
     // The shell still works, so the user can go and fix it.
     await expect(page.getByRole("link", { name: "List" })).toBeVisible();
-    // And the CLI says the same thing, so the fix is discoverable.
-    // `list` exits non-zero here and the fixture throws with stderr
-    // attached, which is where the message lives.
-    const cli = await tracker.run(["list"]).catch((e: Error) => e.message);
-    expect(cli).toContain("workflow.yaml");
+    // And the CLI says the same thing, so the fix is discoverable across
+    // surfaces (P10). It degrades like the web — exit 0 with the list on
+    // stdout — and names the broken file on stderr, not a crash.
+    const cli = await tracker.runRaw(["list"]);
+    expect(cli.exitCode).toBe(0);
+    expect(cli.stderr).toContain("workflow.yaml");
   });
 });
 

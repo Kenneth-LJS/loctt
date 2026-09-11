@@ -32,6 +32,13 @@ export interface TrackerFixture {
   readonly baseURL: string;
   /** Runs a `loctt` subcommand against this tracker; returns stdout. */
   run(args: readonly string[]): Promise<string>;
+  /**
+   * Like `run`, but never throws and returns all three streams — so a
+   * spec can assert on a warning printed to **stderr while the command
+   * still exits 0** (e.g. the ERR-10/LST-51 broken-workflow notice, which
+   * degrades rather than failing). `run` discards stderr on success.
+   */
+  runRaw(args: readonly string[]): Promise<{ stdout: string; stderr: string; exitCode: number }>;
   /** Creates tasks in order, returning the assigned keys (`T-1`, `T-2`, …). */
   seed(tasks: readonly SeedTask[]): Promise<string[]>;
   /**
@@ -123,6 +130,21 @@ export const test = base.extend<{ tracker: TrackerFixture }>({
         );
       }
       return result.stdout;
+    };
+
+    const runRaw = async (
+      args: readonly string[],
+    ): Promise<{ stdout: string; stderr: string; exitCode: number }> => {
+      const result = await execa(process.execPath, [cliEntry, ...args], {
+        cwd: root,
+        env: process.env,
+        reject: false,
+      });
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode ?? 0,
+      };
     };
 
     await run(["init"]);
@@ -237,7 +259,7 @@ export const test = base.extend<{ tracker: TrackerFixture }>({
         );
       };
 
-      await use({ root, baseURL, run, seed, seedBulk });
+      await use({ root, baseURL, run, runRaw, seed, seedBulk });
     } finally {
       await killAndWait(child);
       await rm(root, { recursive: true, force: true }).catch((err: unknown) => {
