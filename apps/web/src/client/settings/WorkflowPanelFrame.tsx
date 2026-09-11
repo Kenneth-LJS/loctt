@@ -5,6 +5,7 @@ import { ApiError } from "../api/client.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { useWorkflowUsage } from "../api/hooks/useWorkflowMutations.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 
 /**
  * The shell every Workflow panel sits in (SET-3, SET-33, SET-42).
@@ -95,7 +96,7 @@ export function WorkflowPanelFrame({
     return (
       <div className="p-8">
         {header}
-        <p className="text-[13px] text-text-tertiary">Loading workflow…</p>
+        <LoadingState className="text-[13px] text-text-tertiary">Loading workflow…</LoadingState>
       </div>
     );
   }

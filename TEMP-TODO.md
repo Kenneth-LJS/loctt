@@ -115,7 +115,7 @@ Nothing behind these can close until decided.
 - [x] **DS-BORDER-SUBTLE below 3:1** — **DONE (K82-REV, hybrid).** Building the harness proved `--border-default` isn't 3:1; Ken re-ruled: 3:1 applies only where a border is the sole signal between distinct regions. Added `--border-divider` (≥3:1) for sticky action-bar separators (ListView/BulkBar footers); decorative row separators stay subtle/default (WCAG-correct). Harness asserts control+divider 3:1. Both utilities resolve in built CSS.
 - [x] **Menu arrow-nav / type-ahead (A11Y-9, design-review §A2)** — **DONE.** `ui/Menu` now does roving ArrowUp/Down (wrapping) + Home/End + type-ahead + focus-first-on-open, scoped to `[role=menuitem]` so FilterDropdown's checkbox list is unaffected. Unit test red-proven; 98 UI/Header/FilterBar tests green. A-MENU-ARROWNAV.
 - [ ] **A11Y feature-gaps (A11Y-10, 12, 17, 39, 51)** — focusable rows, per-group collapse, focusable bulk-failure items, relative type scale, contrast harness. **[build]**
-- [ ] **Loading states silent to screen readers (design-review §A3)** — shared `LoadingState` with `role="status"`; ~14 features re-spell it. **[now]**
+- [x] **Loading states silent to screen readers (design-review §A3)** — **DONE.** Added `ui/LoadingState` (role=status + aria-busy); migrated 15 features (11 settings panels + Sprint/Milestone views). Unit test red-proven; 244 tests green. A-LOADINGSTATE.
 - [ ] **Ad-hoc accent focus rings (design-review §A4)** — override the token ring; low-contrast risk. **[now]**
 
 ## 2. Correctness & data-loss defects — the app is silently wrong

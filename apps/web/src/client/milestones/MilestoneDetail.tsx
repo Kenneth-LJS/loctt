@@ -10,6 +10,7 @@ import { formatWorkspaceDate } from "../dates/workspaceDate.ts";
 import { PriorityCell, StatusBadge, TypeBadge } from "../list/cells.tsx";
 import { buildLookups } from "../list/lookups.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import type { MilestoneWithProgress } from "./model.ts";
 import { EXCLUDE_DISCARDED_QUERY, isOverdue, progressState } from "./model.ts";
 import { ProgressReadout } from "./ProgressReadout.tsx";
@@ -86,7 +87,7 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
   if (milestones.isLoading) {
     return (
       <div data-testid="milestone-detail" aria-busy="true" className="p-4">
-        <p className="text-[13px] text-text-tertiary">Loading the milestone…</p>
+        <LoadingState className="text-[13px] text-text-tertiary">Loading the milestone…</LoadingState>
       </div>
     );
   }
@@ -245,7 +246,7 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
             onRetry={() => void tasks.refetch()}
           />
         ) : tasks.isLoading ? (
-          <p className="text-[13px] text-text-tertiary">Loading tasks…</p>
+          <LoadingState className="text-[13px] text-text-tertiary">Loading tasks…</LoadingState>
         ) : items.length === 0 ? (
           // MSL-15/MSL-38: a real milestone with no tasks renders the
           // whole page and says so here. Nothing like the not-found

@@ -11,6 +11,7 @@ import { formatWorkspaceDate, NO_TARGET_DATE } from "../dates/workspaceDate.ts";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Chip } from "../ui/Chip.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import type { MilestoneWithProgress, Readout } from "./model.ts";
 import {
   EXCLUDE_DISCARDED_QUERY,
@@ -143,7 +144,7 @@ export function MilestonesView() {
   if (milestones.isLoading) {
     return (
       <div data-testid="milestones" aria-busy="true" className="p-4">
-        <p className="text-[13px] text-text-tertiary">Loading milestones…</p>
+        <LoadingState className="text-[13px] text-text-tertiary">Loading milestones…</LoadingState>
       </div>
     );
   }

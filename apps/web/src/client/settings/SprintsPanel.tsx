@@ -7,6 +7,7 @@ import { useArchiveSprint, useCountedSprints, useCreateSprint, useDeleteSprint }
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
@@ -179,7 +180,7 @@ export function SprintsPanel() {
   }
 
   if (sprints.isLoading || sprints.data === undefined) {
-    return <div className="p-8 text-[13px] text-text-tertiary">Loading sprints…</div>;
+    return <LoadingState>Loading sprints…</LoadingState>;
   }
 
   const items = sprints.data.items as readonly CountedSprint[];

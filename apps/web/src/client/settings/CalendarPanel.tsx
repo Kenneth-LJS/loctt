@@ -7,6 +7,7 @@ import { useSaveCalendar } from "../api/hooks/useWorkflowMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import {
@@ -53,7 +54,7 @@ export function CalendarPanel() {
     );
   }
   if (calendar.isLoading || calendar.data === undefined) {
-    return <div className="p-8 text-[13px] text-text-tertiary">Loading calendar…</div>;
+    return <LoadingState>Loading calendar…</LoadingState>;
   }
   return <CalendarEditor stored={calendar.data} />;
 }
