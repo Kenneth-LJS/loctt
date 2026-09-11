@@ -72,12 +72,23 @@ Verified by a real-browser focus-trap+restore e2e (`flow-accessibility`
 "K71: a migrated confirm dialog traps focus and restores it") plus the
 preserved behavior specs (BLK-11, CMT-6, XS-12/65, TSK-44, VUE-38).
 
-**STILL TO FIX (K71 remainder):**
-- `list/AdvancedQueryEditor.tsx` (:226 alertdialog, :280 dialog)
-- `create/CreateTaskModal.tsx` — the **primary create flow**: has
-  `useInertBackground` + Escape but **no** `useFocusTrap`; its nested
-  `DiscardDialog` (`role="alertdialog"`) has no trap, no Escape, no
-  restore — only `autoFocus` on Keep.
+**Remainder — resolved on inspection (2026-09-11), K71 COMPLETE:**
+- `create/CreateTaskModal.tsx` — the §A1 claim was **inaccurate**: the
+  modal already has a complete hand-rolled focus trap (both Tab
+  directions + escape-recovery, deliberately hand-rolled for the A11Y-5
+  layered-Escape interaction with inner dropdowns), `useInertBackground`,
+  Escape, AND focus restoration (`returnFocusTo`). The one real gap was
+  its nested `DiscardDialog`, which rendered above the modal but outside
+  the trap's `panelRef` scope — now given its own `useFocusTrap`.
+- `list/AdvancedQueryEditor.tsx` — the §A1 claim was **wrong**: neither
+  element is a modal overlay. The `:226` "alertdialog" is an inline
+  confirmation strip (no backdrop, in page flow) and `:280` is a help
+  popover with Escape + focus-return-to-button. Trapping focus in
+  non-modal inline content would be an a11y *regression*, not a fix.
+  Correctly left as-is.
+
+So K71 is complete: every genuinely-modal dialog now traps focus and
+restores it; non-modal popovers/strips correctly do not.
 
 **Fix:** route every one through `Modal`/`Dialog` (which already provide
 the apparatus), or call `useFocusTrap` + `useInertBackground`. This

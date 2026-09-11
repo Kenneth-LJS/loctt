@@ -23,6 +23,7 @@ import { OptionPicker } from "../task/editors/OptionPicker.tsx";
 import { Button } from "../ui/Button.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
 import { useToasts } from "../ui/Toast.tsx";
+import { useFocusTrap } from "../ui/useFocusTrap.ts";
 import {
   afterCreateAnother,
   type CreateFormState,
@@ -266,6 +267,12 @@ export function CreateTaskModal({
         return;
       }
       if (e.key !== "Tab") return;
+      // K71: when the discard confirmation is open it renders as a sibling
+      // of this panel with its own focus trap. This panel's trap must
+      // stand down for Tab (as it already does for Escape above), or it
+      // would pull focus back into the form behind the confirmation and
+      // defeat the confirmation's trap.
+      if (confirmDiscard) return;
       const panel = panelRef.current;
       if (panel === null) return;
       const focusables = panel.querySelectorAll<HTMLElement>(
@@ -1279,13 +1286,24 @@ function DiscardDialog({
   readonly onKeep: () => void;
   readonly onDiscard: () => void;
 }) {
+  // K71: the discard confirmation renders ABOVE the create modal but was
+  // not itself in the modal's focus-trap scope (that trap keys off the
+  // modal's own panelRef), so Tab could walk into the form behind it.
+  // It gets its own trap here. Escape is already handled by the parent's
+  // capture-phase listener (which closes the discard layer first);
+  // initial focus stays on "Keep editing" (the safe choice) via the
+  // trap's first-focusable default, matching the prior `autoFocus`.
+  const panelRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(panelRef);
   return (
     <div className="fixed inset-0 z-[55] grid place-items-center bg-black/30 p-4">
       <div
+        ref={panelRef}
         role="alertdialog"
         aria-modal="true"
         aria-label="Discard this task?"
         data-testid="create-discard-confirm"
+        tabIndex={-1}
         className="w-full max-w-sm rounded-lg border border-border-default bg-bg-surface-raised p-4 shadow-overlay"
       >
         <h3 className="mb-2 text-[14px] font-semibold text-text-primary">Discard this task?</h3>
