@@ -11536,3 +11536,22 @@ fail). Note the cross-package build trap: core tests parse through the
 built `@loctt/contracts` dist, so `npx tsc -b packages/contracts` must run
 after editing the contract before the core test sees the new message.
 **To revert:** restore the prior message wording and drop the test.
+
+### A-LINKINV · `loctt link` accepts the inverse relationship key, matching core
+
+**Fixed (agent-level).** The CLI boundary guard
+`assertWorkflowRelationshipKey` built its accepted-type set from
+`relationships.map(r => r.key)` — forward keys only. Core's `linkTask`
+(and the web link route) build theirs from `relationshipTypeKeys`, which
+also yields the inverse key of every directional rel. So a workflow that
+declares only `blocks` (`inverse: blocked_by`) let core accept
+`link A blocked_by B`, but the CLI rejected it at the boundary with a
+bogus "unknown relationship 'blocked_by'. Known: blocks". A guard stricter
+than the operation it fronts is a defect, not a courtesy. Switched to
+`flatMap(relationshipTypeKeys)`; the "Known:" hint now advertises inverse
+keys as well. New unit test `apps/cli/src/runtime/workflow-assert.test.ts`
+covers forward key, inverse key, symmetric key, a genuine unknown (asserts
+the inverse appears in the Known list), and the no-config no-op —
+red-proven (reverting to `.map(r => r.key)` fails the inverse-acceptance
+and Known-list assertions). **To revert:** restore `.map(r => r.key)` and
+drop the test.

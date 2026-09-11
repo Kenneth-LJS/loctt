@@ -11,7 +11,7 @@
  * or pre-init state).
  */
 
-import type { WorkflowConfig } from "@loctt/contracts";
+import { relationshipTypeKeys, type WorkflowConfig } from "@loctt/contracts";
 
 import { UsageError } from "./errors.js";
 
@@ -40,13 +40,21 @@ export function assertWorkflowEnumKey(
  * Pre-flight check for relationship-type CLI args. Same rationale
  * as {@link assertWorkflowEnumKey}: surface a "known values" hint
  * at the CLI boundary instead of letting the core throw.
+ *
+ * Accepts **both directions** of a directional relationship, via
+ * `relationshipTypeKeys` — `linkTask` in core (and the web route)
+ * take the inverse key too, so `loctt link A blocked_by B` must not
+ * be rejected here when core would accept it. A boundary guard that
+ * is stricter than the operation it guards is a bug, not a nicety:
+ * it turns a valid command into a "Known: ..." error. The listed
+ * "Known" set therefore includes the inverse keys.
  */
 export function assertWorkflowRelationshipKey(
   workflowConfig: WorkflowConfig | undefined,
   value: string,
 ): void {
   if (workflowConfig === undefined) return;
-  const keys = workflowConfig.relationships.map(r => r.key);
+  const keys = workflowConfig.relationships.flatMap(relationshipTypeKeys);
   if (!keys.includes(value)) {
     const known = keys.length > 0 ? keys.join(", ") : "(none configured)";
     throw new UsageError(`unknown relationship '${value}'. Known: ${known}`);
