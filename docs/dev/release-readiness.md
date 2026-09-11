@@ -69,22 +69,43 @@ roster).
   `docs/dev/backlog.md`, or `.gitignore` it — and repoint `CLAUDE.md`.
   Keep the content; only the name/location is the problem.
 
-### B4. Decide and apply the versioning / publish story — **npm target**
-- Workspace versions are ad hoc: cli/mcp `0.1.0`, core/contracts/web
-  `0.0.1`. `apps/web` is `private: true` with no `bin` — as-is it is
-  **not** installable; the web UI ships *inside* the CLI or not at all.
-- **Not a blocker that was feared:** the CLI and MCP **bundle**
-  `@loctt/core` and `@loctt/contracts` (`noExternal` in their
-  `tsup.config.ts`), so `core` being `private`/unpublished does **not**
-  break `npx loctt`. Runtime deps are all real npm packages (yaml, ulid,
-  sharp, busboy, proper-lockfile). Verified in both tsup configs.
-- **Open decisions =** (a) is `@loctt/web` reachable when installed via
-  npm — does the CLI serve the built client, and is `apps/web/dist`
-  included in what ships? (b) unify versions and pick a scheme; (c) add
-  `prepublishOnly`/`prepack` so a publish can't ship stale `dist`;
-  (d) `.npmignore` or `files` so only `dist` + docs ship, not source/tests.
-- **Done =** `npx loctt` and the MCP server install and run from a clean
-  registry checkout, web UI included, on Node ≥ 20 (the declared engine).
+### B4. Package each of CLI / MCP / UI as independently installable — **npm target**
+**Intended model (Ken, 2026-09-11):** the three are installed
+**separately** — `@loctt/cli`, `@loctt/mcp`, and the UI as their own
+packages. They are not one bundle and the CLI does **not** serve the web
+UI. They share the on-disk data model, so CLI/MCP can CRUD things
+(labels, custom fields, milestones, relationships…) that only *render* in
+the UI — that's expected, not drift. The code already anticipates this:
+`apps/web/src/server/main.ts` is written as the `loctt serve` entry, uses
+the shared `--root`/`LOCTT_ROOT` vocabulary "across CLI/ui/mcp/web," and
+serves the built client from `dist/client/` via `--client-dir` in
+production.
+
+- **CLI + MCP: already installable.** Both **bundle** `@loctt/core` and
+  `@loctt/contracts` (`noExternal` in their `tsup.config.ts`), so those
+  being `private`/unpublished does **not** break `npx loctt` / the MCP
+  server. Runtime deps are all real npm packages (yaml, ulid, sharp,
+  busboy, proper-lockfile). Verified in both tsup configs.
+- **UI: NOT installable yet — the real B4 work.**
+  - `apps/web` is `private: true` with **no `bin`** — nothing launches it
+    from an install. It needs a `bin` (the `loctt serve` / `loctt-ui`
+    entry over `main.ts`) that starts the loopback server and opens the
+    browser.
+  - **The server is never built.** `apps/web` declares
+    `"main": "dist/server/index.js"`, but `build` is just `vite build`,
+    which only emits `dist/client` (`vite.config.ts:23`
+    `outDir: "dist/client"`). There is **no** step that compiles the
+    server to `dist/server`. So a published `@loctt/web` would ship a
+    client with no server to serve it. Add a server build (tsc or a
+    second bundler pass) that also bundles/handles `@loctt/core` the way
+    CLI/MCP do — or publish `core`.
+- **Also for all three:** (a) unify versions (cli/mcp `0.1.0`,
+  core/contracts/web `0.0.1`) and pick a scheme; (b) `prepublishOnly`/
+  `prepack` so no publish ships stale `dist`; (c) `files`/`.npmignore` so
+  only `dist` + docs ship, not source/tests.
+- **Done =** each of the three installs and runs from a clean registry
+  checkout on Node ≥ 20 — `npx @loctt/cli`, the MCP server, and the UI
+  (server + client) launching on loopback — independently.
 
 ---
 

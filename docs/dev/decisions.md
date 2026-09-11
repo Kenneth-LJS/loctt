@@ -10548,3 +10548,42 @@ companion note.)
 the `loctt mcp` entry documents `--root`; `docs/user/mcp/reference.md`
 Agent Guidelines explain how the server resolves its root; `usage.ts`
 help now shows `--root` canonical with `--cwd` as alias.
+
+### K71 · The dialog focus-trap a11y gap is a publish blocker
+
+**The situation.** The 2026-09-11 design review found that ~7 dialogs
+(including the primary create flow) set `role`/`aria-modal` and handle
+Escape by hand but call neither `useFocusTrap` nor `useInertBackground` —
+so keyboard focus escapes the modal into the page behind, and is not
+restored to the trigger on close. Cross-confirmed by the primitive-
+consistency and a11y audits independently. Full roster and fix:
+`docs/dev/design-review.md` §A1.
+
+**Ruling (Ken, 2026-09-11): this blocks publishing — fix before ship.**
+Not a fast-follow. It is a real keyboard/screen-reader regression, and
+the README's a11y claims are partly untrue until it is fixed. The
+sanctioned fix is a shared `ConfirmDialog`/`TypedConfirmDialog` primitive
+over `Dialog`/`Modal`, which closes the delete-dialog divergence (§B1) at
+the same time. Closes only when codified as a case + `@verifies` test.
+
+**This is Ken's, not an agent's — not revertible by an agent.**
+
+### K72 · CLI, MCP and UI are three independently-installable packages
+
+**The situation.** Publish packaging was open (release-readiness B4). The
+question was whether the installed CLI serves the web UI or the surfaces
+ship separately.
+
+**Ruling (Ken, 2026-09-11): all three are meant to be separate — the
+user can install CLI, MCP, and UI independently.** The CLI does not serve
+the UI. They share the on-disk data model, so CLI/MCP can CRUD things
+(labels, custom fields, milestones, relationships) that only *render* in
+the UI — that is expected and correct, not drift.
+
+**Consequence for packaging.** `@loctt/web` must become independently
+installable: it needs a `bin` launcher and a server build (today only
+`dist/client` is built by `vite build`; `dist/server` is declared as
+`main` but never produced). See release-readiness.md B4 for the full
+gap. CLI and MCP already bundle core and are installable as-is.
+
+**This is Ken's, not an agent's — not revertible by an agent.**
