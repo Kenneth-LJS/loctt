@@ -201,7 +201,7 @@ This case previously asserted the panels were read-only. That was an early draft
 **A holiday list of 500 entries.**
 
 - The panel paginates or virtualises the list; it does not render 500 rows into a single unscrollable block.
-- Adding a 501st holiday and saving stays responsive, and the date picker's month render is not visibly slowed.
+- Adding a 501st holiday and saving stays responsive, and the date picker's month render is not visibly slowed. *("Stays responsive" / "not visibly slowed" are observational, not automated assertions — no test measures render latency. The checkable half is that the add-and-save round-trips correctly at that size and the picker still renders the right days; treat responsiveness as a manual-QA note, not covered by `@verifies SET-23`.)*
 - Duplicate dates in the list are shown as duplicates with a warning rather than silently deduplicated.
 
 ### SET-24 · M4 · major · P4 P7
