@@ -39,7 +39,7 @@ export interface CheckboxProps
 }
 
 const BOX_BASE =
-  "peer appearance-none shrink-0 h-4 w-4 rounded-sm border border-border-strong " +
+  "peer appearance-none shrink-0 h-4 w-4 rounded-sm border border-border-control " +
   "bg-bg-surface cursor-pointer transition-colors " +
   "hover:bg-bg-muted-hover " +
   "checked:bg-accent checked:border-accent checked:hover:bg-accent " +

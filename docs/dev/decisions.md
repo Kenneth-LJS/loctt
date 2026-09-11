@@ -10962,3 +10962,25 @@ finding is already resolved. A11Y-40's remaining substance is the in-situ
 axe scan + K81/K82 (checkbox/divider borders).
 
 **This records the approach; K81/K82 keep their own rulings.**
+
+### A-K82-REOPEN · K82's `--border-default` fix is insufficient for 3:1 — re-ruling needed
+
+**Found while building the contrast harness (2026-09-11).** K82 ruled
+that real dividers move from `--border-subtle` to `--border-default` to
+meet 3:1. The harness proved `--border-default` is only ~1.39:1 (light) /
+~1.36:1 (dark) vs surface — it does NOT meet 3:1. So K82 as stated cannot
+achieve its goal. A true 3:1 divider needs ~#7C8598 (a prominent
+gridline), which is a real visual change K82 did not contemplate.
+
+**State:** structural dividers (row separators, footers, header cells in
+ListView/BulkBar) were migrated subtle→default — a genuine visibility
+improvement and harmless, so kept — but the 3:1 target is unmet. The
+contrast harness marks the divider assertions `.todo`. K81 (control
+border) is unaffected and passes.
+
+**Parked for Ken (NEEDS-OWNER):** (a) accept table row separators as
+decorative and drop the 3:1 divider target (WCAG 3:1 for non-text is for
+indicators *required* to understand content; row separators arguably
+aren't when the grid layout already reads); or (b) add a real ≥3:1
+`--border-divider` and accept darker gridlines app-wide. Recorded so the
+run continues on everything else per park-don't-halt.
