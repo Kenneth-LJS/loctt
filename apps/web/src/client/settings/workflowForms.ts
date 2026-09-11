@@ -80,7 +80,7 @@ export function validateNewEntry(
       + "with a letter."
       + (suggested.length > 0 && suggested !== key ? ` Try ${suggested}.` : "");
   } else if (existingKeys.includes(key)) {
-    // The collision, named — SET-46's third bullet (cf. SET-44).
+    // The collision, named — SET-46's third bullet.
     problems.key = `The key ${key} is already in use. Keys must be unique.`;
   }
 

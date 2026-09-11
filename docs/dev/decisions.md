@@ -11555,3 +11555,19 @@ the inverse appears in the Known list), and the no-config no-op —
 red-proven (reverting to `.map(r => r.key)` fails the inverse-acceptance
 and Known-list assertions). **To revert:** restore `.map(r => r.key)` and
 drop the test.
+
+### A-SET44 · Dangling `cf. SET-44` repointed, not authored into a new case
+
+**Decided (agent-level).** Two `cf. SET-44` cross-references
+(`flow-settings.md` SET-46 bullet, `workflowForms.ts:83`) pointed at a
+case that was never authored — the index skips from SET-43 to SET-45.
+SET-44 was evidently intended as a dedicated "duplicate config key is
+rejected" case, but that assertion is already stated directly in SET-46,
+SET-47, and SET-48 (each: "Creating a duplicate key is rejected before
+`PUT` with a message naming the collision"). Authoring a new SET-44 would
+duplicate coverage and, per the run contract, require a second-PM review
+for a case that asserts nothing the three sibling cases don't. So the
+references were repointed instead: the doc bullet now cross-refs the
+sibling cases, the code comment drops the dead ref. **To revert:** if a
+standalone duplicate-key case is later wanted, author SET-44 and restore
+the `cf.` pointers.

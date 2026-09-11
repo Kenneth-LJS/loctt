@@ -115,7 +115,7 @@ This case previously asserted the panels were read-only. That was an early draft
 
 - The pins panel lists the currently pinned saved views in sidebar order with drag handles.
 - Reordering the list reorders the sidebar group immediately and persists per user.
-- A pin referencing a view since deleted from `queries.yaml` is dropped silently from both the panel and the sidebar — the sidebar does not render a broken entry or crash.
+- A pin referencing a view since deleted from `queries.yaml` is removed from both the panel and the sidebar — the sidebar does not render a broken entry or crash — and the removal is **explained, not silent**: the panel says the pin was dropped because its view no longer exists (per P5, resolving the earlier SET-13/SET-27 disagreement in favour of the explaining behaviour; see [README](README.md#p5--destructive-actions-are-proportionate-to-their-blast-radius) and SET-27). It does not simply vanish.
 - The sweep does not remove pins whose views merely have zero matching tasks; those still render with a `0` badge.
 
 ### SET-14 · M4 · blocker · P4 P10
@@ -369,7 +369,7 @@ This case previously asserted the panels were read-only. That was an early draft
 
 - The Create dialog takes key + label + category + default; the key is validated for uniqueness and the "key is permanent" copy is shown.
 - On Save the new status is written to `workflow.yaml` and renders in file order.
-- Creating a duplicate key is rejected before `PUT` with a message naming the collision (cf. SET-44).
+- Creating a duplicate key is rejected before `PUT` with a message naming the collision (the same duplicate-key guard SET-47 and SET-48 assert for priorities/task-types and relationship types).
 
 ### SET-47 · M4 · major · P3 P4
 **A priority / task-type can be created.** Priorities / task-types panels, Create dialog.
