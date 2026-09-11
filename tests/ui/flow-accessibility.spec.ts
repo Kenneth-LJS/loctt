@@ -35,6 +35,8 @@
 import { chmod, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { AxeBuilder } from "@axe-core/playwright";
+
 import { expect, test } from "./fixtures/tracker.ts";
 
 /**
@@ -2737,6 +2739,55 @@ test.describe("A11Y — colour and focus visibility", () => {
     await expect(warning).toBeVisible();
     await expect(warning).toHaveAccessibleName(/over wip limit/i);
   });
+});
+
+/**
+ * A11Y-40: contrast holds across the app in both themes. The primary
+ * gate is an axe-core `color-contrast` scan on the real rendered pages —
+ * axe measures the computed foreground against the actual background
+ * (opacity, layering, the lot), which a static palette check cannot. The
+ * static token harness (`apps/web/src/client/styles/contrast.test.ts`) is
+ * the fast supplement that pins the palette; this is the in-situ proof.
+ *
+ * The scan is deliberately whole-page here (not scoped) BECAUSE the case
+ * asks for exactly that — contrast across header, sidebar, rows, chips,
+ * pills, disabled, placeholder, banner. A whole-page color-contrast scan
+ * that passes is the honest form of "contrast holds across the page".
+ * The palette was brought to zero color-contrast violations 2026-09-11
+ * (status-active/completed/success fg darkened to clear 4.5:1); this
+ * keeps it there. See decisions.md A-CONTRAST.
+ *
+ * @verifies A11Y-40
+ */
+test.describe("A11Y — contrast in situ (A11Y-40)", () => {
+  for (const theme of ["light", "dark"] as const) {
+    for (const path of ["/list", "/board", "/milestones", "/sprints", "/settings/workflow"]) {
+      test(`A11Y-40: no color-contrast violations on ${path} (${theme})`, async ({
+        page,
+        tracker,
+      }) => {
+        await tracker.seed([
+          { title: "Contrast A", fields: { status: "in_progress", priority: "high" } },
+          { title: "Contrast B", fields: { status: "done", priority: "low" } },
+        ]);
+        await page.addInitScript(t => {
+          try { window.localStorage.setItem("tt-theme", t); } catch { /* ignore */ }
+        }, theme);
+        await page.goto(`${tracker.baseURL}${path}`);
+        // Let data-driven chips/rows render before scanning.
+        await page.waitForTimeout(500);
+
+        const results = await new AxeBuilder({ page })
+          .withRules(["color-contrast"])
+          .analyze();
+
+        const summary = results.violations
+          .flatMap(v => v.nodes.map(n => `${n.target.join(" ")}: ${n.failureSummary ?? ""}`))
+          .join("\n");
+        expect(results.violations, summary).toHaveLength(0);
+      });
+    }
+  }
 });
 
 test.describe("A11Y — focus through change", () => {
