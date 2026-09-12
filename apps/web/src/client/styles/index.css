@@ -175,6 +175,24 @@
 }
 
 /**
+ * Deep-link highlight (K76). `useScrollToHash` stamps `data-hash-target`
+ * on the element a hash points at (a comment, a settings field) for one
+ * cycle. A brief background flash draws the eye to it after the scroll.
+ * It is an *animation*, so the reduced-motion rule below suppresses it
+ * automatically (SHL-28) — the scroll still lands, only the flash is
+ * dropped. `scroll-margin-top` keeps a targeted element clear of any
+ * sticky header it would otherwise hide behind.
+ */
+[data-hash-target] {
+  animation: hash-target-flash 1.6s ease-out;
+  scroll-margin-top: 1rem;
+}
+@keyframes hash-target-flash {
+  0%, 30% { background-color: var(--accent-muted); }
+  100% { background-color: transparent; }
+}
+
+/**
  * Reduced motion (SHL-28).
  *
  * A global rule rather than per-component `motion-reduce:` variants:
