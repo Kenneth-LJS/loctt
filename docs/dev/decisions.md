@@ -11679,3 +11679,31 @@ rolled-forward date. This is an improvement, not a regression, and no test
 asserted the old behavior (all 1206 web-client unit tests pass). **To
 revert:** inline the predicate back into each caller and delete
 `workingDays.ts` + its test.
+
+### A-A11Y39-HOLD · A11Y-39 (text-zoom 200%) stays deferred per A95 — the one AA item needing an owner call
+
+**Decided (agent-level, park-don't-halt).** With A11Y-10/12/17/51 now
+built, A11Y-39 is the sole remaining WCAG-AA case (K74 makes AA a publish
+blocker). Satisfying it means converting the whole type scale from absolute
+px to relative units: 858 `text-[Npx]` sites onto the named `--text-*`
+scale (whose values must move px→rem), a rem/percentage root font-size, and
+turning the ~70 text-bearing fixed-height utilities (`h-8`/`h-7` on
+buttons/inputs, of 128 `h-N` total) into min-heights so growing text is not
+clipped.
+
+A95 already weighed this and deferred it as a global visual-regression
+surface owned by no ticket. That reasoning stands, and this run does not
+override it: an 858-site restyle that changes visual density across every
+view is load-bearing and wants the user's eye on the result, not an
+autonomous single-pass change near a context boundary. The named type
+scale (B1) is the lever and the migration is mechanical (13→body, 12→label,
+11/10→meta, 15→heading), so it is *ready* to do — but it is a deliberate
+decision, not a transcription.
+
+**Flagged to Ken** as the one AA gap between here and a fully-green publish
+gate. Note A95's finding that A11Y-39's bullets are *vacuously* satisfied
+today (no text clips because none grows), so this is missing true
+text-zoom support, not a visible clipping defect. **To revert/do:** run the
+px→rem migration on the named scale, min-height the fixed controls, then
+write the real `@verifies A11Y-39` transcription (assert reflow + no
+clipping at 200%) replacing A95's untagged partial.
