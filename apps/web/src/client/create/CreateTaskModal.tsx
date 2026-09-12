@@ -5,6 +5,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { apiClient,ApiError, UnparseableBodyError } from "../api/client.ts";
 import {
+  searchLabels,
   useLabels,
   useMilestones,
   useProjects,
@@ -571,6 +572,7 @@ export function CreateTaskModal({
               <LabelsField
                 attached={form.labels}
                 all={labels.data?.items ?? []}
+                searchLabels={searchLabels}
                 onChange={ids => { setForm(f => ({ ...f, labels: [...ids] })); }}
                 onCreate={async name => {
                   try {

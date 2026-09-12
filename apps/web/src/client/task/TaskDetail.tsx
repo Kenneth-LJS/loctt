@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { ActivityPanel } from "../activity/ActivityPanel.tsx";
 import { ApiError } from "../api/client.ts";
 import {
+  searchLabels,
   useLabels,
   useMilestones,
   useProjects,
@@ -626,6 +627,7 @@ export function TaskDetail({
             onSet={onSet}
             onUnset={onUnset}
             onCreateLabel={onCreateLabel}
+            searchLabels={searchLabels}
             {...(labelError !== null ? { labelError } : {})}
             onDismissLabelError={() => { setLabelError(null); }}
             {...(fieldError !== null ? { fieldError } : {})}
