@@ -2,14 +2,28 @@
 
 Status of the autonomous pre-publish build, 2026-09-12. Branch
 `chore/repo-sweep-cleanup`, **working tree clean, full build-mode
-typecheck green, unit suite green (core 1543 + workspace suites), lint 0
-errors.** ~38 commits this run session (on top of the earlier ~61).
+typecheck green, unit suite green (core 1543 + contracts 1996 + workspace
+suites), lint 0 errors, 1042 cases indexed.** ~42 commits this run session
+(on top of the earlier ~61).
+
+## What's done now (update)
+
+Beyond the AA gate, this session also closed: **all §8 tooling/flake**
+(react-hooks lint rule, coverage-tag anchoring, $TMPDIR sweep, ui-server
+signal teardown, maxWorkers verify), and a run of **§7 features** —
+`currentUser()` query function, PRU-17 (clear-project-field on delete,
+all 3 surfaces), CMT-20 (comments scroll box + scroll-to-new + long-comment
+clamp), the MSL-7 label All/Any toggle, `is null`, CMT-C4 history
+pagination, SET-8/SET-24/K31, and verify-closes of MSL-29 and MSL-35.
+**Everything outside §7 is now closed;** 13 §7 feature builds remain
+(+ MSL-35 documented-partial at its architectural ceiling).
 
 ## Honest summary
 
 The run cleared the **entire bounded / ruling-clear / verify-closeable
-tier and every WCAG-AA accessibility item** (A11Y-39, the last one, is now
-done). What remains is uniformly **feature-scale** — the visual query
+tier, every WCAG-AA accessibility item, every §8 tooling item, and the
+tractable slice of §7**. What remains is uniformly **feature-scale** — the
+visual query
 builder + JQL functions, deep-linking, the git-sync engine, timeline
 virtualization, comments-scale pagination, and the estimate-config
 feature — plus 5 tooling/flake items. Nothing is left half-built: every
