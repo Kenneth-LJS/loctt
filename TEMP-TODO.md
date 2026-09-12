@@ -179,7 +179,7 @@ lines are implementation work, not decisions.
 - [ ] **The git-sync engine (GIT-8,9,16,19,21,22,23,25,29,30,33,34,35,36)** — reconcile model, rekey summary/confirm, force-push detection, fstype detection, progress channel, error-class distinction, guards. No engine exists — a build. Ties to H2 in release-readiness.md.
 - [ ] **git-sync UI cases** — lift sync-reporting/failed-push/status-drift into `flow-git-sync.md` once the git UI exists. Depends on the engine above.
 - [ ] **Config pickers break past 1000 entries** — server-side `?q=` search + incremental picker (ties NEW-25).
-- [ ] **Query language `is null` / `is not null`** — add to the parser.
+- [x] **Query language `is null` / `is not null`** — DONE. Added as synonyms for `is empty`/`is not empty` in the tokenizer (the `is` handler now accepts "null" wherever it accepts "empty", emitting the same operator tokens), so parser/evaluator are unchanged and CLI/MCP/web inherit it via core. Evaluator tests + doc updated; red-proven.
 - [ ] **CMT-10 — query on comment mentions** — needs a `mentions` field + comment-scan endpoint.
 - [ ] **CMT-20 — comments list scale affordances** — scroll/paginate/clamp; copy the activity-feed `useInfiniteQuery`.
 - [ ] **TSK-12 — custom fields have no task-type scope** — scope field on `CustomFieldDef` (contract change).

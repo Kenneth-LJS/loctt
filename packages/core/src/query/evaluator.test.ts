@@ -561,4 +561,15 @@ describe("is empty / is not empty (K77)", () => {
   it("rejects a bare `is` that isn't followed by empty/not empty", () => {
     expect(() => query("milestone is something")).toThrow(/empty/);
   });
+
+  it("accepts `is null` / `is not null` as synonyms for the presence test", () => {
+    // Same result as `is empty` / `is not empty` — SQL/JQL users reach
+    // for null, and it means the identical presence test.
+    expect(evaluateQuery(query("milestone is null"), task)).toBe(true);
+    expect(evaluateQuery(query("milestone is not null"), task)).toBe(false);
+    expect(evaluateQuery(query("status is not null"), task)).toBe(true);
+    expect(evaluateQuery(query("status is null"), task)).toBe(false);
+    // Composes and mixes with the `empty` spelling.
+    expect(evaluateQuery(query("status is not null and milestone is empty"), task)).toBe(true);
+  });
 });

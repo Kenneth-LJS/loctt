@@ -202,27 +202,32 @@ export function tokenize(input: string): Token[] {
 
       // K77: "is empty" / "is not empty" — the presence test. A word
       // helper reads the run of words after "is" so we can distinguish
-      // "is empty" (2 words) from "is not empty" (3). `= null` / `!= null`
-      // are handled at the parser (rejected with a pointer to `is empty`),
-      // not here — a bare `null` is still a normal FIELD/value token.
+      // "is empty" (2 words) from "is not empty" (3). `is null` / `is not
+      // null` are accepted as synonyms — SQL/JQL users reach for "null"
+      // and it means exactly the same presence test, so aliasing it is
+      // kinder than rejecting it. `= null` / `!= null` are still handled
+      // at the parser (rejected with a pointer to `is empty`), not here —
+      // a bare `null` after `=` is still a normal FIELD/value token.
+      const isEmptyWord = (w: string): boolean => w === "empty" || w === "null";
       if (lower === "is") {
         const w1 = peekWord(input, i);
-        if (w1 && w1.text.toLowerCase() === "empty") {
+        if (w1 && isEmptyWord(w1.text.toLowerCase())) {
           tokens.push({ type: "OP_IS_EMPTY", value: "is empty", position: start });
           i = w1.end;
           continue;
         }
         if (w1 && w1.text.toLowerCase() === "not") {
           const w2 = peekWord(input, w1.end);
-          if (w2 && w2.text.toLowerCase() === "empty") {
+          if (w2 && isEmptyWord(w2.text.toLowerCase())) {
             tokens.push({ type: "OP_IS_NOT_EMPTY", value: "is not empty", position: start });
             i = w2.end;
             continue;
           }
         }
-        // "is" not followed by empty/"not empty" is a mistake worth naming.
+        // "is" not followed by empty/null/"not empty"/"not null" is a
+        // mistake worth naming.
         throw new TokenizeError(
-          `"is" must be followed by "empty" or "not empty" (e.g. milestone is empty)`,
+          `"is" must be followed by "empty", "null", "not empty", or "not null" (e.g. milestone is empty)`,
           start,
         );
       }

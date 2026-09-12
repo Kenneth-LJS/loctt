@@ -32,13 +32,16 @@ text ~ "init"
 | `~` | Contains (text search) |
 | `is empty` | The field has no value (unset, empty list, or blank) |
 | `is not empty` | The field has a value |
+| `is null` | Synonym for `is empty` |
+| `is not null` | Synonym for `is not empty` |
 
 To filter by whether a field is set, use `is empty` / `is not empty` —
 for example `milestone is empty` (tasks with no milestone) or
-`assignee is not empty` (assigned tasks). These take no value on the
-right. Writing `field = null` is rejected with a pointer to `is empty`,
-because a bare `null` would be compared as ordinary text and match
-nothing useful.
+`assignee is not empty` (assigned tasks). `is null` / `is not null` are
+accepted as synonyms, for anyone who reaches for the SQL/JQL spelling.
+These take no value on the right. Writing `field = null` is rejected with
+a pointer to `is empty`, because a bare `null` compared with `=` would be
+treated as ordinary text and match nothing useful.
 
 ## Logical Operators
 
