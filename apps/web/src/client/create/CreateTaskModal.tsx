@@ -1,4 +1,4 @@
-import type { CalendarConfig, CustomFieldDef, ProjectDef } from "@loctt/contracts";
+import type { CalendarConfig, CustomFieldDef, ProjectDef, WorkflowConfig } from "@loctt/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -20,6 +20,7 @@ import { RichEditor } from "../editor/RichEditor.tsx";
 import { nonWorkingNote } from "../task/editors/DateField.tsx";
 import { LabelsField } from "../task/editors/LabelsField.tsx";
 import { OptionPicker } from "../task/editors/OptionPicker.tsx";
+import { estimationShape } from "../task/estimation.ts";
 import { Button } from "../ui/Button.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
 import { useToasts } from "../ui/Toast.tsx";
@@ -624,6 +625,16 @@ export function CreateTaskModal({
             </p>
           )}
 
+          {/* SET-9: an Estimate field, shaped by the workflow's
+              estimation config and absent entirely when estimation is
+              disabled. The shape is the same `estimationShape` the task
+              detail panel uses, so the two cannot disagree. */}
+          <EstimateField
+            workflow={wf}
+            value={form.estimate}
+            onChange={v => { setForm(f => ({ ...f, estimate: v })); }}
+          />
+
           {wfReady && wf.custom_fields.length > 0 && (
             <fieldset className="space-y-2 rounded border border-border-subtle p-3">
               {/* NEW-10's fourth bullet: this header exists only when
@@ -970,6 +981,65 @@ function EnumField({
           onClear={onClear}
           clearLabel="None"
         />
+      </div>
+    </Field>
+  );
+}
+
+/**
+ * The Estimate field (SET-9).
+ *
+ * Renders nothing when estimation is disabled or absent — SET-9's first
+ * bullet: no Estimate field appears in the create modal at all. When
+ * enabled, `estimationShape` decides the control: a select over
+ * `preset_values` for `custom_enum`, or a number input suffixed with the
+ * unit label for the numeric units. It is the same shape helper the task
+ * detail panel uses, so the create modal and the detail view cannot show
+ * two different controls for the same config.
+ */
+function EstimateField({
+  workflow,
+  value,
+  onChange,
+}: {
+  readonly workflow: WorkflowConfig | undefined;
+  readonly value: string | undefined;
+  readonly onChange: (value: string | undefined) => void;
+}) {
+  const shape = estimationShape(workflow);
+  if (shape === null) return null;
+
+  if (shape.kind === "enum") {
+    return (
+      <Field label="Estimate">
+        <div data-testid="create-estimate">
+          <OptionPicker
+            label="Estimate"
+            value={value}
+            options={shape.options.map(v => ({ key: v, label: v }))}
+            onSelect={v => { onChange(v); }}
+            onClear={() => { onChange(undefined); }}
+            clearLabel="None"
+          />
+        </div>
+      </Field>
+    );
+  }
+
+  return (
+    <Field label="Estimate" htmlFor="create-estimate">
+      <div className="flex items-center gap-2">
+        <input
+          id="create-estimate"
+          data-testid="create-estimate"
+          type="number"
+          min="0"
+          inputMode="decimal"
+          value={value ?? ""}
+          onChange={e => { onChange(e.target.value === "" ? undefined : e.target.value); }}
+          className="w-32 rounded border border-border-default bg-bg-surface px-2 py-1.5 text-[0.9286rem] text-text-primary"
+        />
+        <span className="text-[0.8571rem] text-text-tertiary">{shape.suffix}</span>
       </div>
     </Field>
   );

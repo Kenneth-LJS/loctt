@@ -22,6 +22,13 @@ export interface CreateFormState {
   readonly labels: readonly string[];
   readonly start_date: string | undefined;
   readonly due_date: string | undefined;
+  /**
+   * SET-9: the planning estimate, present only when estimation is
+   * enabled. Held as a string like every other single-valued field —
+   * the request omits it when unset, so a task with no estimate has no
+   * `estimate` key (the same omission rule the rest of the form uses).
+   */
+  readonly estimate: string | undefined;
   readonly body: string;
   readonly fields: Readonly<Record<string, unknown>>;
 }
@@ -73,6 +80,7 @@ export function emptyForm(overrides: Partial<CreateFormState> = {}): CreateFormS
     labels: [],
     start_date: undefined,
     due_date: undefined,
+    estimate: undefined,
     body: "",
     fields: {},
     ...overrides,
@@ -127,6 +135,7 @@ export function toCreateRequest(form: CreateFormState): CreateTaskRequest {
     ...(form.labels.length > 0 ? { labels: [...form.labels] } : {}),
     ...(form.start_date !== undefined ? { start_date: form.start_date } : {}),
     ...(form.due_date !== undefined ? { due_date: form.due_date } : {}),
+    ...(form.estimate !== undefined && form.estimate !== "" ? { estimate: form.estimate } : {}),
     ...(form.body.trim() !== "" ? { body: form.body } : {}),
     ...(Object.keys(form.fields).length > 0 ? { fields: form.fields } : {}),
   };
@@ -157,6 +166,7 @@ export function hasUserContent(form: CreateFormState, initial: CreateFormState):
     || form.reporter !== initial.reporter
     || form.start_date !== initial.start_date
     || form.due_date !== initial.due_date
+    || form.estimate !== initial.estimate
     || form.status !== initial.status
     || form.project !== initial.project
   );

@@ -1993,45 +1993,6 @@ is `PrefixRenameStateSchema` (`contracts/src/state.ts:64`) — snake_case,
 not fail silently: `readPrefixRenameState` throws, and **every** `/api/*`
 request then 500s.
 
-## SET-9's estimate field exists on task detail but not in the create modal or the list
-
-**Found:** M4 gate round 3 · 2026-09-02 · **Status:** open, partially
-built.
-
-SET-9 names three surfaces: "no Estimate field appears on task detail,
-**in the create modal, or as a list column**" (bullet 1, the disabled
-case), and bullets 2 and 4 require the control to appear "everywhere it
-appears" in numeric and enum modes.
-
-**Measured:**
-
-- **Task detail: built.** `MetaPanel.tsx:131` calls `estimateControl`
-  and renders it at `:293`.
-- **Create modal: absent.** `grep -c estimate CreateTaskModal.tsx` → 0,
-  against a positive control of 28 `data-testid`s in the same file.
-- **List column: absent.** `grep -c estimate list/columns.ts` → 0;
-  `ALL_COLUMNS` has no estimate entry in any mode.
-
-**Why the test does not catch it.** Bullet 1 is an absence assertion,
-and it passes **vacuously on two of its three surfaces** — nothing is
-there to hide, in any estimation mode. Shape (c): an absence assertion
-that is trivially true when the app says nothing at all. The tagged
-test reads the settings panel's own note text, which is the wrong layer
-for a bullet about the create modal and the list.
-
-**Not fixed here.** Adding the field to the create modal and a column
-to the list is a feature spanning two surfaces, and it must respect the
-mode switch (number input with unit suffix in `points`, select over
-preset values in `custom_enum`, absent when disabled). Building it
-inside a section gate is inventing scope.
-
-**To satisfy later:** add the control to `CreateTaskModal` and an
-entry to `ALL_COLUMNS`, both driven by the same `estimateControl`
-resolution `MetaPanel` already uses, so the three surfaces cannot
-drift. The test must **switch modes and assert each surface in each
-mode** — an absence assertion alone cannot distinguish "correctly
-hidden" from "never built", which is exactly how this survived.
-
 ## The coverage gate's truncation notice is easy to grep away (not a defect)
 
 **Recorded because I got this wrong and the wrong version was committed

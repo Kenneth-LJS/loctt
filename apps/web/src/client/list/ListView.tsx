@@ -22,6 +22,8 @@ import type { TaskListRow } from "../api/hooks/useTasks.ts";
 import { buildQueryString, DEFAULT_LIST_LIMIT, tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { fieldView } from "../health/fieldHealth.ts";
+import type { EstimationShape } from "../task/estimation.ts";
+import { estimationShape } from "../task/estimation.ts";
 import { useAnnouncer } from "../ui/Announcer.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { ICON } from "../ui/icons.ts";
@@ -93,9 +95,18 @@ export function ListView() {
   // it (so same-titled rows in different projects stay distinguishable).
   // Derived here, never written back to `list_columns`.
   const activeProjectCount = search.project?.length ?? 0;
+  // SET-9: the Estimate column exists only when estimation is enabled,
+  // and its cells render with the unit suffix (numeric) or the enum
+  // value as-is — the same shape the create modal and task detail use.
+  const estimation = estimationShape(workflow.data);
+  const estimationEnabled = estimation !== null;
   const columns = useMemo(
-    () => resolveColumns(userSettings.data?.settings, { activeProjectCount }),
-    [userSettings.data?.settings, activeProjectCount],
+    () => resolveColumns(
+      userSettings.data?.settings,
+      { activeProjectCount },
+      estimationEnabled,
+    ),
+    [userSettings.data?.settings, activeProjectCount, estimationEnabled],
   );
 
   const lookups = useMemo(
@@ -921,7 +932,7 @@ export function ListView() {
                   </td>
                   {columns.map(col => {
                     const cell = (
-                      <Cell colId={col.id} task={task} lookups={lookups} now={now} today={today} onFilterLabel={onFilterLabel} />
+                      <Cell colId={col.id} task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
                     );
                     // A11Y-26's second bullet: the key column is the
                     // row header, so navigating rows announces *which
@@ -1050,11 +1061,14 @@ function Cell({
   lookups,
   now,
   today,
+  estimation,
   onFilterLabel,
 }: {
   colId: string;
   task: TaskListRow;
   lookups: ReturnType<typeof buildLookups>;
+  /** SET-9: the estimate control's shape, or null when estimation is off. */
+  estimation: EstimationShape | null;
   /** Clicking a label pill filters to it (MSL-6). */
   onFilterLabel: (id: string) => void;
   now: number;
@@ -1159,6 +1173,22 @@ function Cell({
           ].join(" ")}
         >
           {shortDate(task.due_date, today)}
+        </span>
+      );
+    case "estimate":
+      // SET-9: numeric modes show the value with the unit suffix ("5
+      // points"); enum mode shows the categorical value as-is. A task
+      // with no estimate — or a column left over from when estimation
+      // was enabled — degrades to a dash. `estimation` is null only when
+      // the column should not exist at all (resolveColumns drops it),
+      // so a null here is defensive, not an expected state.
+      return task.estimate === undefined || task.estimate === "" || estimation === null ? (
+        <Dash />
+      ) : (
+        <span className="whitespace-nowrap text-text-secondary">
+          {estimation.kind === "numeric"
+            ? `${task.estimate} ${estimation.suffix}`
+            : task.estimate}
         </span>
       );
     case "updated_at":

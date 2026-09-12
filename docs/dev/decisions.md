@@ -11777,6 +11777,44 @@ px→rem migration on the named scale, min-height the fixed controls, then
 write the real `@verifies A11Y-39` transcription (assert reflow + no
 clipping at 200%) replacing A95's untagged partial.
 
+### A-SET9-ESTIMATE-UI · Estimate field in the create modal + as an opt-in list column, config-shaped by one shared helper
+
+**Built (agent-level), completing SET-9's UI half.** SET-9 requires the
+Estimate field to appear — shaped by `workflow.estimation` — on task
+detail, in the create modal, and as a list column, and to vanish
+entirely when estimation is disabled. Task detail (`MetaPanel`) and the
+aggregates (sprint burndown sum / enum-weight) already existed; the create
+modal and the list column did not. Both the API and core `createTask`
+already accept `estimate` (a string), so this was purely a UI gap.
+
+- **Shared shape.** New `apps/web/src/client/task/estimation.ts` exports
+  `estimationShape(workflow)` → `null` (disabled/absent) | `{kind:"enum",
+  options}` | `{kind:"numeric", suffix}`. `MetaPanel.estimateControl` was
+  refactored to consume it, so the three surfaces cannot disagree about
+  what one config means (SET-9's "everywhere it appears").
+- **Create modal.** `CreateFormState` gains `estimate`; `toCreateRequest`
+  omits it when unset (same rule as every other field); a new
+  `EstimateField` renders nothing when disabled, an `OptionPicker` over
+  `preset_values` for enum, or a suffixed number input for numeric.
+- **List column.** `estimate` added to `ALL_COLUMNS` (sortable — it is a
+  real frontmatter field, so the server sorts it), excluded from
+  `DEFAULT_COLUMNS` (opt-in like `reporter`; an 11th default is the LST-20
+  overflow), and `resolveColumns` gained an `estimationEnabled` param
+  (default true) that drops the column when estimation is off, even if a
+  saved `list_columns` names it. The cell renders `"<n> <suffix>"` for
+  numeric, the value as-is for enum, a dash when unset.
+
+**Note (pre-existing, not introduced here):** the create path types
+`estimate` as a string end-to-end (`CreateTaskRequest`, core `createTask`),
+so a created estimate is YAML-quoted on disk (`estimate: "5"`), whereas
+MetaPanel's numeric edit goes through the `unknown`-typed field-set path
+and writes it unquoted (`5`). Both parse identically (the schema is
+`z.union([string, number])`) and burndown coerces with `Number`, so this
+is cosmetic; unifying it would be a `CreateTaskRequest` contract change
+touching CLI/MCP, out of SET-9's scope. **To revert:** delete
+`estimation.ts` + `EstimateField`, restore MetaPanel's inline logic, drop
+the `estimate` catalog column and the `estimationEnabled` param.
+
 ### A-SET24-TZ · A calendar `timezone` that no longer resolves degrades on read, strict on write
 
 **Decided (agent-level).** SET-24 requires an unresolvable stored

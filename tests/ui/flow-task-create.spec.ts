@@ -81,6 +81,43 @@ async function openModal(page: import("@playwright/test").Page): Promise<void> {
   await expect(page.getByTestId("create-task-modal")).toBeVisible();
 }
 
+/**
+ * Rewrites workflow.yaml's `estimation:` block (SET-9). A fresh `init`
+ * already writes an `estimation:` block (enabled, points), so this
+ * REPLACES it rather than appending — a second top-level key would be a
+ * duplicate. The config is `.strict()`, so the block must be complete
+ * for its unit: `points` needs only `enabled`+`unit`; `custom_enum`
+ * needs `unit_label` and `preset_values` too. `estimation:` is the last
+ * top-level key in the default file, so replacing from it to EOF is safe.
+ */
+async function setEstimation(
+  root: string,
+  spec:
+    | { enabled: false }
+    | { enabled?: true; unit: string; unit_label?: string; preset_values?: readonly string[] },
+): Promise<void> {
+  const wfPath = path.join(root, ".loctt", "config", "workflow.yaml");
+  const text = await readFile(wfPath, "utf8");
+  const block = spec.enabled === false
+    ? ["estimation:", "  enabled: false", "  unit: points", ""]
+    : [
+        "estimation:",
+        "  enabled: true",
+        `  unit: ${spec.unit}`,
+        ...(spec.unit_label !== undefined ? [`  unit_label: ${spec.unit_label}`] : []),
+        ...(spec.preset_values !== undefined
+          ? ["  preset_values:", ...spec.preset_values.map(v => `    - ${v}`)]
+          : []),
+        "",
+      ];
+  // Replace an existing estimation block (to EOF, since it is the last
+  // top-level key), or append one if somehow absent.
+  const next = /^estimation:\n(?:[ \t]+.*\n?)*/m.test(text)
+    ? text.replace(/^estimation:\n(?:[ \t]+.*\n?)*/m, `${block.join("\n")}\n`)
+    : `${text.trimEnd()}\n${block.join("\n")}`;
+  await writeFile(wfPath, next);
+}
+
 test.describe("NEW — create task modal", () => {
   // @verifies NEW-1
   // @verifies NEW-1
@@ -1005,6 +1042,77 @@ test.describe("NEW — create task modal", () => {
     await link.click();
     await expect(page).toHaveURL(/\/settings\/projects$/);
     await expect(page.getByTestId("create-task-modal")).toBeHidden();
+  });
+
+  // @verifies SET-9
+  test("SET-9: a numeric estimate field appears in the create modal with its unit suffix and is written", async ({
+    page,
+    tracker,
+  }) => {
+    await setEstimation(tracker.root, { unit: "points" });
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await openModal(page);
+    await page.getByTestId("create-title").fill("Estimated task");
+
+    // The field is present, numeric, and suffixed with the unit.
+    const estimate = page.getByTestId("create-estimate");
+    await expect(estimate).toBeVisible();
+    await expect(estimate).toHaveAttribute("type", "number");
+    await expect(page.getByTestId("create-task-modal")).toContainText("points");
+
+    await estimate.fill("5");
+    await page.getByTestId("create-submit").click();
+    await expect(page.getByTestId("create-task-modal")).toBeHidden();
+
+    // The estimate is written to the task's frontmatter. (The create
+    // path types `estimate` as a string, so YAML quotes it — `"5"`; the
+    // schema reads string or number alike, so this is a valid stored
+    // form. Strip the quotes to assert the value, not the quoting.)
+    const stored = fmValue(await fileByTitle(tracker.root, "Estimated task"), "estimate");
+    expect(stored?.replace(/^"|"$/g, "")).toBe("5");
+  });
+
+  // @verifies SET-9
+  test("SET-9: an enum estimate field is a select over the preset values", async ({
+    page,
+    tracker,
+  }) => {
+    await setEstimation(tracker.root, {
+      unit: "custom_enum",
+      unit_label: "size",
+      preset_values: ["XS", "S", "M", "L"],
+    });
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await openModal(page);
+    await page.getByTestId("create-title").fill("Sized task");
+
+    // The enum control is the OptionPicker (a button trigger), not a
+    // number input — SET-9's fourth bullet.
+    const estimate = page.getByTestId("create-estimate");
+    await expect(estimate).toBeVisible();
+    await expect(estimate.locator("input[type=number]")).toHaveCount(0);
+    await estimate.getByRole("button").first().click();
+    await page.getByRole("option", { name: "M", exact: true }).click();
+
+    await page.getByTestId("create-submit").click();
+    await expect(page.getByTestId("create-task-modal")).toBeHidden();
+    const sized = fmValue(await fileByTitle(tracker.root, "Sized task"), "estimate");
+    expect(sized?.replace(/^"|"$/g, "")).toBe("M");
+  });
+
+  // @verifies SET-9
+  test("SET-9: with estimation disabled, the create modal shows no estimate field", async ({
+    page,
+    tracker,
+  }) => {
+    // `init` enables estimation by default (points), so disable it
+    // explicitly — SET-9's first bullet is about the disabled case.
+    await setEstimation(tracker.root, { enabled: false });
+    await page.goto(`${tracker.baseURL}/list`);
+    await openModal(page);
+    await expect(page.getByTestId("create-estimate")).toHaveCount(0);
   });
 
   // @verifies ERR-44

@@ -35,18 +35,21 @@ export const ALL_COLUMNS: readonly ColumnDef[] = [
   { id: "reporter", label: "Reporter", sortable: true },
   { id: "labels", label: "Labels", sortable: false },
   { id: "due_date", label: "Due", sortable: true },
+  { id: "estimate", label: "Estimate", sortable: true },
   { id: "updated_at", label: "Updated", sortable: true },
 ];
 
 /**
  * The columns shown when the user has no saved `list_columns`. These
  * are LST-2's exact ten, in order — every catalog column except
- * `reporter` (K24). Kept as its own list, not derived from
- * `ALL_COLUMNS`, so adding a future catalog column does not silently
- * change the default view.
+ * `reporter` (K24) and `estimate` (SET-9: estimate is opt-in like
+ * reporter, and would otherwise be an eleventh default column, the
+ * overflow LST-20 forbids). Kept as its own list, not derived by a bare
+ * `ALL_COLUMNS` filter beyond these two exclusions, so adding a future
+ * catalog column does not silently change the default view.
  */
 export const DEFAULT_COLUMNS: readonly ColumnDef[] = ALL_COLUMNS.filter(
-  c => c.id !== "reporter",
+  c => c.id !== "reporter" && c.id !== "estimate",
 );
 
 /**
@@ -88,6 +91,16 @@ export interface ColumnScope {
 export function resolveColumns(
   settings: UserSettings | undefined,
   scope?: ColumnScope,
+  /**
+   * SET-9: whether estimation is enabled in the workflow. When it is
+   * not, the `estimate` column is dropped from whatever this resolves —
+   * default set, or a saved `list_columns` that names it — so a
+   * workspace with estimation off never shows an Estimate column (the
+   * same "nothing appears anywhere" rule the create modal and task
+   * detail follow). Defaults to `true` so callers that do not thread the
+   * workflow (and the estimation-on case) are unaffected.
+   */
+  estimationEnabled = true,
 ): readonly ColumnDef[] {
   // Resolve ids against the full catalog so an explicit list_columns
   // may name `reporter` (opt-in, K24); the *default* base is the ten
@@ -108,6 +121,9 @@ export function resolveColumns(
       .filter((c): c is ColumnDef => c !== undefined);
     if (resolved.length > 0) { base = resolved; explicitColumns = true; }
   }
+  // SET-9: estimation off ⇒ no Estimate column, even if list_columns
+  // names it (it may have been added while estimation was on).
+  if (!estimationEnabled) base = base.filter(c => c.id !== "estimate");
   return applyProjectScope(base, scope, explicitColumns);
 }
 
