@@ -183,7 +183,7 @@ lines are implementation work, not decisions.
 - [ ] **CMT-10 — query on comment mentions** — needs a `mentions` field + comment-scan endpoint.
 - [ ] **CMT-20 — comments list scale affordances** — scroll/paginate/clamp; copy the activity-feed `useInfiniteQuery`.
 - [ ] **TSK-12 — custom fields have no task-type scope** — scope field on `CustomFieldDef` (contract change).
-- [ ] **SET-8 — enum-value weight sorting** — numeric `weight` + `compareTasks` weight map.
+- [x] **SET-8 — enum-value weight sorting** — DONE (completes the case). The weights sub-table + "which fallback applies" note (bullets 1 & 3) were already built in `CustomFieldsPanel`; the missing half was bullet 2 — `compareTasks` sorted custom enum fields alphabetically. Added `buildCustomFieldWeightMaps` (value→weight per `fields.<key>`, only when at least one value carries a weight) and used it in `compareTasks` exactly as priority is, with alphabetical fallback when no weights. Core change → CLI/web inherit. list.test.ts SET-8 block (asc/desc by weight, no-weights fallback), red-proven.
 - [ ] **SET-9 — estimate field missing from create modal + list** — add to `CreateTaskModal` and `ALL_COLUMNS`.
 - [ ] **SET-29 — diagnostics do not stream** — chunked/SSE `/api/doctor`.
 - [ ] **MSL-35 — milestone progress cannot fail per row** — per-milestone endpoint or partial-success shape.

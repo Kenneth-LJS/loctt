@@ -294,10 +294,15 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
   // Sort
   if (sortSpec && sortSpec.length > 0) {
     const priorityMap = buildPriorityMap(workflowConfig);
+    // SET-8: custom enum fields sort by their configured value weights
+    // (XS=1, S=2, M=3, L=5), not alphabetically. Keyed by the sort field
+    // token as it arrives (`fields.<key>`), so `compareTasks` can look up
+    // the right weight map without re-deriving the field name.
+    const enumWeightMaps = buildCustomFieldWeightMaps(workflowConfig);
 
     filtered.sort((a, b) => {
       for (const spec of sortSpec) {
-        const cmp = compareTasks(a, b, spec.field, spec.direction, priorityMap);
+        const cmp = compareTasks(a, b, spec.field, spec.direction, priorityMap, enumWeightMaps);
         if (cmp !== 0) return cmp;
       }
       return 0;
@@ -341,6 +346,32 @@ function buildPriorityMap(
     }
   }
   return map;
+}
+
+/**
+ * Per-custom-enum-field value→weight maps, keyed by the sort field token
+ * `fields.<key>` (SET-8). A field appears here only when it is an enum
+ * **and at least one** of its values carries a numeric `value` weight —
+ * so a field with no weights set is absent, and `compareTasks` falls
+ * back to its ordinary (alphabetical) comparison, which is SET-8's
+ * "clearing all weights falls back" branch. A value with no weight is
+ * simply not in its field's map, so it sorts to the end like any unset
+ * value.
+ */
+function buildCustomFieldWeightMaps(
+  config: WorkflowConfig | undefined,
+): Map<string, Map<string, number>> {
+  const maps = new Map<string, Map<string, number>>();
+  if (!config) return maps;
+  for (const def of config.custom_fields) {
+    if (def.type !== "enum" || def.values === undefined) continue;
+    const weights = new Map<string, number>();
+    for (const v of def.values) {
+      if (v.value !== undefined) weights.set(v.key, v.value);
+    }
+    if (weights.size > 0) maps.set(`fields.${def.key}`, weights);
+  }
+  return maps;
 }
 
 function getTaskFieldValue(task: Task, field: string): unknown {
@@ -390,6 +421,7 @@ function compareTasks(
   field: string,
   direction: "asc" | "desc",
   priorityMap: Map<string, number>,
+  enumWeightMaps?: Map<string, Map<string, number>>,
 ): number {
   let aVal = getTaskFieldValue(a, field);
   let bVal = getTaskFieldValue(b, field);
@@ -400,6 +432,20 @@ function compareTasks(
     const bNum = priorityMap.get(String(bVal));
     if (aNum !== undefined) aVal = aNum;
     if (bNum !== undefined) bVal = bNum;
+  }
+
+  // SET-8: a custom enum field with configured weights sorts by weight,
+  // exactly as priority does above. Only when this field has a weight map
+  // (at least one value carried a `value`); otherwise the map is absent
+  // and the value falls through to the string comparison below —
+  // SET-8's "clear all weights → alphabetical fallback". A value with no
+  // weight is not in the map and stays a string, so it sorts to the end.
+  const weights = enumWeightMaps?.get(field);
+  if (weights !== undefined) {
+    const aW = weights.get(String(aVal));
+    const bW = weights.get(String(bVal));
+    if (aW !== undefined) aVal = aW;
+    if (bW !== undefined) bVal = bW;
   }
 
   // Handle undefined — push to end regardless of direction
