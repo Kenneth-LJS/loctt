@@ -32,7 +32,7 @@ export function SkipLink() {
         main.focus();
         main.scrollIntoView();
       }}
-      className="sr-only rounded-md border border-border-default bg-bg-surface-raised px-3 py-2 text-[13px] font-medium text-text-primary shadow-overlay focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-[80] focus:outline-2 focus:outline-offset-2 focus:outline-[color:var(--text-primary)]"
+      className="sr-only rounded-md border border-border-default bg-bg-surface-raised px-3 py-2 text-[0.9286rem] font-medium text-text-primary shadow-overlay focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-[80] focus:outline-2 focus:outline-offset-2 focus:outline-[color:var(--text-primary)]"
     >
       Skip to main content
     </a>

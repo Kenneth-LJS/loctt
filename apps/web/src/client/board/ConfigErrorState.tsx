@@ -42,17 +42,17 @@ export function ConfigErrorState({
         role="alert"
         className="mx-auto max-w-2xl rounded-md border border-danger-fg/30 bg-danger-fg/5 p-4"
       >
-        <h2 className="text-[15px] font-semibold text-text-primary">
+        <h2 className="text-[1.0714rem] font-semibold text-text-primary">
           The board configuration could not be read
         </h2>
 
         {/* Names the file and the offending keys — the whole point of
             the case. This is core's message, unedited. */}
-        <p className="mt-2 font-mono text-[12px] text-danger-fg" data-testid="board-config-error-message">
+        <p className="mt-2 font-mono text-[0.8571rem] text-danger-fg" data-testid="board-config-error-message">
           {message}
         </p>
 
-        <p className="mt-3 text-[13px] text-text-secondary">
+        <p className="mt-3 text-[0.9286rem] text-text-secondary">
           Every column on a board must claim a status no other column
           claims, so a card has exactly one place to be. While{" "}
           <code className="font-mono">.loctt/config/workflow.yaml</code>{" "}
@@ -60,7 +60,7 @@ export function ConfigErrorState({
           list and the CLI all refuse it alike.
         </p>
 
-        <div className="mt-3 text-[13px] text-text-secondary">
+        <div className="mt-3 text-[0.9286rem] text-text-secondary">
           To fix it, edit{" "}
           <code className="font-mono">.loctt/config/workflow.yaml</code> and
           either:
@@ -79,7 +79,7 @@ export function ConfigErrorState({
         <button
           type="button"
           onClick={onRetry}
-          className="mt-4 rounded border border-border-default px-3 py-1.5 text-[13px] text-text-primary hover:bg-bg-muted"
+          className="mt-4 rounded border border-border-default px-3 py-1.5 text-[0.9286rem] text-text-primary hover:bg-bg-muted"
         >
           Reload the configuration
         </button>

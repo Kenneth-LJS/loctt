@@ -144,7 +144,7 @@ function RelationshipsEditor({
         <div
           role="alert"
           data-testid="workflow-save-error"
-          className="mb-3 rounded-md border border-danger-fg/40 bg-bg-muted p-3 text-[13px]"
+          className="mb-3 rounded-md border border-danger-fg/40 bg-bg-muted p-3 text-[0.9286rem]"
         >
           <p className="font-medium text-danger-fg">
             The change was not saved to .loctt/config/workflow.yaml.
@@ -243,7 +243,7 @@ function RelationshipRow({
 
   return (
     <div
-      className="grid gap-1 text-[13px]"
+      className="grid gap-1 text-[0.9286rem]"
       // SET-5: a test (and a screen reader) can tell a folded symmetric
       // row from a directional one without reading a Tailwind class.
       data-relationship-kind={symmetric ? "symmetric" : "directional"}
@@ -251,21 +251,21 @@ function RelationshipRow({
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{rel.label}</span>
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px] text-text-secondary">
+        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary">
           {rel.key}
         </code>
 
         <span
           data-testid={`relationship-symmetric-${rel.key}`}
           data-symmetric={symmetric ? "true" : "false"}
-          className="rounded bg-bg-muted px-1.5 py-0.5 text-[12px] text-text-secondary"
+          className="rounded bg-bg-muted px-1.5 py-0.5 text-[0.8571rem] text-text-secondary"
         >
           {symmetric ? "symmetric" : "directional"}
         </span>
 
         <span
           data-testid={`relationship-graph-${rel.key}`}
-          className="text-[12px] text-text-tertiary"
+          className="text-[0.8571rem] text-text-tertiary"
         >
           graph: {rel.graph ?? "none"}
         </span>
@@ -273,7 +273,7 @@ function RelationshipRow({
         {rel.ranked === true && (
           <span
             data-testid={`relationship-ranked-${rel.key}`}
-            className="text-[12px] text-text-tertiary"
+            className="text-[0.8571rem] text-text-tertiary"
           >
             ranked
           </span>
@@ -281,7 +281,7 @@ function RelationshipRow({
 
         <span
           data-testid={`relationships-refcount-${rel.key}`}
-          className="ml-auto text-[12px] text-text-tertiary"
+          className="ml-auto text-[0.8571rem] text-text-tertiary"
         >
           {String(count)} task{count === 1 ? "" : "s"}
         </span>
@@ -291,7 +291,7 @@ function RelationshipRow({
           data-testid={`relationships-edit-${rel.key}`}
           disabled={disabled}
           onClick={onEdit}
-          className="h-7 rounded-md border border-border-default px-2 text-[12px] disabled:opacity-40"
+          className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] disabled:opacity-40"
         >
           Edit
         </button>
@@ -301,7 +301,7 @@ function RelationshipRow({
           data-testid={`relationships-delete-${rel.key}`}
           disabled={disabled}
           onClick={onDelete}
-          className="h-7 rounded-md border border-border-default px-2 text-[12px] text-danger-fg disabled:opacity-40"
+          className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] text-danger-fg disabled:opacity-40"
         >
           Delete
         </button>
@@ -310,12 +310,12 @@ function RelationshipRow({
       {/* SET-5: the inverse read-out — "same as forward" when symmetric,
           the forward/inverse pair otherwise. */}
       {symmetric ? (
-        <p data-testid={`relationship-inverse-note-${rel.key}`} className="text-[12px] text-text-tertiary">
+        <p data-testid={`relationship-inverse-note-${rel.key}`} className="text-[0.8571rem] text-text-tertiary">
           Inverse: same as forward — a symmetric relationship reads
           identically from both sides.
         </p>
       ) : (
-        <p data-testid={`relationship-inverse-note-${rel.key}`} className="text-[12px] text-text-tertiary">
+        <p data-testid={`relationship-inverse-note-${rel.key}`} className="text-[0.8571rem] text-text-tertiary">
           Inverse:{" "}
           <code className="font-mono">{rel.inverse ?? "—"}</code>
           {rel.inverse_label !== undefined && <> ({rel.inverse_label})</>}

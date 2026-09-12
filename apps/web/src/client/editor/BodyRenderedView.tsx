@@ -99,7 +99,7 @@ export function BodyRenderedView({
           e.preventDefault();
           onEnterEdit();
         }}
-        className="prose-body min-h-[8rem] cursor-text rounded border border-transparent px-3 py-2 text-[13px] text-text-primary hover:border-border-subtle"
+        className="prose-body min-h-[8rem] cursor-text rounded border border-transparent px-3 py-2 text-[0.9286rem] text-text-primary hover:border-border-subtle"
       >
         {isEmpty
           ? (
@@ -168,7 +168,7 @@ function renderNode(
 
     case "codeBlock":
       return (
-        <pre className="my-1.5 overflow-x-auto rounded bg-bg-muted p-2 font-mono text-[12px]">
+        <pre className="my-1.5 overflow-x-auto rounded bg-bg-muted p-2 font-mono text-[0.8571rem]">
           <code>{(node.content ?? []).map(c => c.text ?? "").join("")}</code>
         </pre>
       );
@@ -228,7 +228,7 @@ function renderNode(
         ? <span>@user:{id}</span>
         : (
             <span
-              className="mx-px inline-flex items-baseline rounded border border-accent/30 bg-accent-muted px-1 align-baseline text-[12px] font-medium text-accent"
+              className="mx-px inline-flex items-baseline rounded border border-accent/30 bg-accent-muted px-1 align-baseline text-[0.8571rem] font-medium text-accent"
             >
               @{name}
             </span>
@@ -238,7 +238,7 @@ function renderNode(
     case "inlineMath":
     case "blockMath":
       return (
-        <code className="rounded bg-bg-muted px-1 font-mono text-[12px]">
+        <code className="rounded bg-bg-muted px-1 font-mono text-[0.8571rem]">
           {String(node.attrs?.["expr"] ?? "")}
         </code>
       );
@@ -270,7 +270,7 @@ function renderText(node: JSONContent): React.ReactNode {
         out = <s>{out}</s>;
         break;
       case "code":
-        out = <code className="rounded bg-bg-muted px-1 font-mono text-[12px]">{out}</code>;
+        out = <code className="rounded bg-bg-muted px-1 font-mono text-[0.8571rem]">{out}</code>;
         break;
       case "superscript":
         out = <sup>{out}</sup>;
@@ -299,7 +299,7 @@ function renderText(node: JSONContent): React.ReactNode {
               <span className="text-text-secondary">
                 {out}
                 {" ("}
-                <span className="font-mono text-[12px]">{href}</span>
+                <span className="font-mono text-[0.8571rem]">{href}</span>
                 {" — link not followed)"}
               </span>
             );

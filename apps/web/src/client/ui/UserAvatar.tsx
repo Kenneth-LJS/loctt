@@ -25,7 +25,7 @@ export interface UserAvatarLike {
 
 export interface UserAvatarProps {
   readonly user: UserAvatarLike;
-  /** Tailwind size + text classes, e.g. "h-5 w-5 text-[10px]". */
+  /** Tailwind size + text classes, e.g. "h-5 w-5 text-[0.7143rem]". */
   readonly sizeClass: string;
   /** Extra classes applied to both the img and the initials chip. */
   readonly className?: string;

@@ -110,8 +110,8 @@ export function PreferencesPanel() {
       <h1 className="mb-6 text-lg font-semibold text-text-primary">My preferences</h1>
 
       <section className="mb-8">
-        <h2 className="mb-1 text-[13px] font-semibold text-text-primary">Theme</h2>
-        <p className="mb-2 text-[12px] text-text-secondary">
+        <h2 className="mb-1 text-[0.9286rem] font-semibold text-text-primary">Theme</h2>
+        <p className="mb-2 text-[0.8571rem] text-text-secondary">
           Stored against your user, so it follows you between browsers.
           <span className="ml-1 font-mono">system</span> tracks your OS setting.
         </p>
@@ -133,10 +133,10 @@ export function PreferencesPanel() {
       </section>
 
       <section>
-        <h2 className="mb-1 text-[13px] font-semibold text-text-primary">
+        <h2 className="mb-1 text-[0.9286rem] font-semibold text-text-primary">
           Default project
         </h2>
-        <p className="mb-2 text-[12px] text-text-secondary">
+        <p className="mb-2 text-[0.8571rem] text-text-secondary">
           Where new tasks land when you do not pick a project. An explicit
           choice in the create form always wins.
         </p>
@@ -148,7 +148,7 @@ export function PreferencesPanel() {
           <p
             role="status"
             data-testid="default-project-unresolvable"
-            className="mb-2 rounded-md border border-border-subtle bg-warn-bg px-2 py-1 text-[12px] text-warn-fg"
+            className="mb-2 rounded-md border border-border-subtle bg-warn-bg px-2 py-1 text-[0.8571rem] text-warn-fg"
           >
             Your default project{" "}
             <code className="font-mono">{personalDefault}</code> no longer
@@ -182,7 +182,7 @@ export function PreferencesPanel() {
       </section>
 
       {save.isError ? (
-        <p role="alert" className="mt-4 text-[12px] text-danger-fg">
+        <p role="alert" className="mt-4 text-[0.8571rem] text-danger-fg">
           Your preferences were not saved. The last saved values are shown.
         </p>
       ) : null}

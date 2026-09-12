@@ -52,7 +52,7 @@ export function DeleteViewDialog({
       {pinned ? (
         <p
           data-testid="delete-view-pin-warning"
-          className="mt-3 rounded-md border border-border-subtle bg-warn-bg px-2 py-1 text-[12px] text-warn-fg"
+          className="mt-3 rounded-md border border-border-subtle bg-warn-bg px-2 py-1 text-[0.8571rem] text-warn-fg"
         >
           This view is pinned to your sidebar. The pin will be dropped.
         </p>

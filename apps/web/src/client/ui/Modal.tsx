@@ -53,7 +53,7 @@ export function Modal({
         tabIndex={-1}
         className="w-full max-w-md rounded-lg border border-border-default bg-bg-surface-raised p-4 shadow-overlay"
       >
-        <h2 className="mb-3 text-[15px] font-semibold text-text-primary">{title}</h2>
+        <h2 className="mb-3 text-[1.0714rem] font-semibold text-text-primary">{title}</h2>
         {children}
       </div>
     </div>

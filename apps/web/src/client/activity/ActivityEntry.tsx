@@ -47,18 +47,18 @@ export function ActivityEntry({
       <span
         aria-hidden="true"
         data-testid="activity-icon"
-        className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-bg-muted text-[11px]"
+        className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-bg-muted text-[0.7857rem]"
       >
         {KIND_ICONS[entry.kind]}
       </span>
 
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] leading-snug text-text-secondary">
+        <p className="text-[0.9286rem] leading-snug text-text-secondary">
           {/* The kind, in words. CMT-15's second bullet: the icon above
               is never the only thing carrying the meaning. */}
           <span
             data-testid="activity-kind"
-            className="mr-1.5 rounded bg-bg-muted px-1 py-0.5 text-[11px] font-medium uppercase tracking-wide text-text-tertiary"
+            className="mr-1.5 rounded bg-bg-muted px-1 py-0.5 text-[0.7857rem] font-medium uppercase tracking-wide text-text-tertiary"
           >
             {KIND_LABELS[entry.kind]}
           </span>
@@ -72,7 +72,7 @@ export function ActivityEntry({
         {described.change !== undefined && (
           <p
             data-testid="activity-change"
-            className="mt-0.5 text-[13px] text-text-primary"
+            className="mt-0.5 text-[0.9286rem] text-text-primary"
           >
             <span className="text-text-tertiary">{described.change.field}: </span>
             <Value value={described.change.before} testId="activity-before" />
@@ -150,7 +150,7 @@ export function ActivityTime({
       data-testid="activity-time"
       dateTime={timestamp}
       title={timestamp}
-      className="text-[12px] text-text-tertiary"
+      className="text-[0.8571rem] text-text-tertiary"
     >
       {timeIn(timestamp, timezone)}
     </time>
@@ -180,7 +180,7 @@ function Value({
     >
       {value.text}
       {value.drifted && (
-        <span className="ml-1 text-[12px] italic text-text-tertiary">
+        <span className="ml-1 text-[0.8571rem] italic text-text-tertiary">
           {DRIFT_SUFFIX}
         </span>
       )}

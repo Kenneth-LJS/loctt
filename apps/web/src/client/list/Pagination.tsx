@@ -34,13 +34,13 @@ export function Pagination({
         // Polite so the count reaches a screen reader after rows append
         // without interrupting what the user is reading.
         aria-live="polite"
-        className="text-[12px] text-text-tertiary"
+        className="text-[0.8571rem] text-text-tertiary"
       >
         Showing 1–{loaded} of {total}
       </p>
 
       {error !== undefined && (
-        <p role="alert" className="text-[12px] text-danger-fg">
+        <p role="alert" className="text-[0.8571rem] text-danger-fg">
           {error}
         </p>
       )}
@@ -55,7 +55,7 @@ export function Pagination({
           type="button"
           onClick={onLoadMore}
           disabled={isLoadingMore}
-          className="rounded-md border border-border-subtle bg-bg-surface px-3 py-1.5 text-[12px] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
+          className="rounded-md border border-border-subtle bg-bg-surface px-3 py-1.5 text-[0.8571rem] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
         >
           {isLoadingMore ? "Loading…" : error !== undefined ? "Retry" : "Load more"}
         </button>

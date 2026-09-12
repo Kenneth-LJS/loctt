@@ -106,8 +106,8 @@ export function Header({
         <HamburgerIcon />
       </button>
 
-      <div className="flex shrink-0 items-center gap-2 pr-1 text-[14px] font-semibold text-text-primary sm:pr-2">
-        <span className="grid h-[22px] w-[22px] place-items-center rounded-sm bg-accent text-[12px] font-bold text-accent-contrast">
+      <div className="flex shrink-0 items-center gap-2 pr-1 text-[1rem] font-semibold text-text-primary sm:pr-2">
+        <span className="grid h-[22px] w-[22px] place-items-center rounded-sm bg-accent text-[0.8571rem] font-bold text-accent-contrast">
           T
         </span>
         {/* The wordmark is the first thing to go: the logo already
@@ -132,7 +132,7 @@ export function Header({
         onClick={() => { createTask.open(); }}
         aria-label="New task"
         data-testid="header-new-task"
-        className="flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-accent px-2.5 text-[13px] font-medium text-accent-contrast hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 sm:px-3"
+        className="flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-accent px-2.5 text-[0.9286rem] font-medium text-accent-contrast hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 sm:px-3"
       >
         <PlusIcon />
         {/* The icon carries the meaning at narrow widths; the button
@@ -245,7 +245,7 @@ function HeaderSearch() {
           if (e.key === "Enter") { e.preventDefault(); goToList(); }
           else if (e.key === "Escape") { setOpen(false); }
         }}
-        className="h-8 w-full rounded-md border border-border-default bg-bg-surface px-3 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-accent"
+        className="h-8 w-full rounded-md border border-border-default bg-bg-surface px-3 text-[0.9286rem] text-text-primary placeholder:text-text-tertiary focus:border-accent"
       />
 
       {showDropdown ? (
@@ -257,11 +257,11 @@ function HeaderSearch() {
           className="absolute left-0 right-0 top-9 z-30 max-h-80 overflow-y-auto rounded-md border border-border-default bg-bg-surface py-1 shadow-raised"
         >
           {search.isError ? (
-            <div role="alert" className="px-3 py-2 text-[12px] text-danger-fg">
+            <div role="alert" className="px-3 py-2 text-[0.8571rem] text-danger-fg">
               Search failed. Try again.
             </div>
           ) : hits.length === 0 && !search.isFetching ? (
-            <div className="px-3 py-2 text-[12px] text-text-tertiary">
+            <div className="px-3 py-2 text-[0.8571rem] text-text-tertiary">
               No tasks match “{value.trim()}”
             </div>
           ) : (
@@ -274,9 +274,9 @@ function HeaderSearch() {
                   aria-selected={false}
                   data-testid={`header-search-hit-${h.key}`}
                   onClick={() => { goToTask(h.key); }}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-text-secondary hover:bg-bg-muted hover:text-text-primary"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary hover:bg-bg-muted hover:text-text-primary"
                 >
-                  <span className="shrink-0 font-mono text-[10px] text-text-tertiary">{h.key}</span>
+                  <span className="shrink-0 font-mono text-[0.7143rem] text-text-tertiary">{h.key}</span>
                   <span className="truncate">{h.title}</span>
                 </button>
               ))}
@@ -284,7 +284,7 @@ function HeaderSearch() {
                 type="button"
                 data-testid="header-search-all"
                 onClick={goToList}
-                className="flex w-full items-center gap-2 border-t border-border-subtle px-3 py-1.5 text-left text-[12px] font-medium text-accent hover:bg-bg-muted"
+                className="flex w-full items-center gap-2 border-t border-border-subtle px-3 py-1.5 text-left text-[0.8571rem] font-medium text-accent hover:bg-bg-muted"
               >
                 See all results for “{value.trim()}”
               </button>
@@ -324,7 +324,7 @@ function ThemeToggle() {
           aria-label={o.label}
           onClick={() => setPreference(o.value)}
           className={[
-            "h-7 rounded-[4px] px-2.5 text-[13px]",
+            "h-7 rounded-[4px] px-2.5 text-[0.9286rem]",
             preference === o.value
               ? "bg-bg-surface text-text-primary shadow-raised"
               : "text-text-secondary",
@@ -383,7 +383,7 @@ function UserMenu({
                 : undefined
           }
           className={[
-            "grid h-[22px] w-[22px] place-items-center rounded-full text-[11px] font-semibold",
+            "grid h-[22px] w-[22px] place-items-center rounded-full text-[0.7857rem] font-semibold",
             // An explicit unknown mark, not a blank circle and not a
             // palette slot borrowed from an id we do not have. An
             // archived actor keeps their palette colour but gains a
@@ -408,7 +408,7 @@ function UserMenu({
             // write later, with no explanation attached to it.
             <div
               role="alert"
-              className="border-b border-border-subtle px-3 py-2.5 text-[12px] text-text-secondary"
+              className="border-b border-border-subtle px-3 py-2.5 text-[0.8571rem] text-text-secondary"
             >
               <div className="font-medium text-danger-fg">Signed-in user unknown</div>
               <div className="mt-0.5">{UNKNOWN_IDENTITY_REASON}</div>
@@ -422,11 +422,11 @@ function UserMenu({
                   reverting to initials on removal (PRU-31). */}
               <UserAvatar
                 user={currentUser}
-                sizeClass="h-[22px] w-[22px] text-[11px]"
+                sizeClass="h-[22px] w-[22px] text-[0.7857rem]"
                 testId="user-menu-current-avatar"
               />
               <div className="min-w-0">
-                <div className="truncate text-[13px] font-medium text-text-primary">
+                <div className="truncate text-[0.9286rem] font-medium text-text-primary">
                   {currentUser.name ?? currentUser.id}
                   {currentArchived ? (
                     <span
@@ -438,7 +438,7 @@ function UserMenu({
                   ) : null}
                 </div>
                 {currentUser.email ? (
-                  <div className="truncate text-[11px] text-text-tertiary">
+                  <div className="truncate text-[0.7857rem] text-text-tertiary">
                     {currentUser.email}
                   </div>
                 ) : null}
@@ -454,7 +454,7 @@ function UserMenu({
             <div
               role="alert"
               data-testid="user-menu-archived-prompt"
-              className="border-b border-border-subtle px-3 py-2.5 text-[12px] text-text-secondary"
+              className="border-b border-border-subtle px-3 py-2.5 text-[0.8571rem] text-text-secondary"
             >
               <div className="font-medium text-warn-fg">You are acting as an archived user</div>
               <div className="mt-0.5">
@@ -465,7 +465,7 @@ function UserMenu({
 
           {others.length > 0 ? (
             <div className="py-1">
-              <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
+              <div className="px-3 py-1 text-[0.7857rem] font-semibold uppercase tracking-wide text-text-tertiary">
                 Switch user
               </div>
               {others.map(u => (
@@ -479,7 +479,7 @@ function UserMenu({
                 >
                   <span
                     className={[
-                      "grid h-5 w-5 place-items-center rounded-full text-[10px] font-semibold",
+                      "grid h-5 w-5 place-items-center rounded-full text-[0.7143rem] font-semibold",
                       avatarPalette(u.id),
                     ].join(" ")}
                   >
@@ -496,7 +496,7 @@ function UserMenu({
               to="/settings/$section"
               params={{ section: "users" }}
               onClick={close}
-              className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[13px] text-text-secondary no-underline hover:bg-bg-muted hover:text-text-primary"
+              className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary no-underline hover:bg-bg-muted hover:text-text-primary"
             >
               Settings
             </Link>

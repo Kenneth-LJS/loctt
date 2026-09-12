@@ -149,7 +149,7 @@ export function BoardCard({
         <span
           title={titleHealth?.error ?? task.title ?? task.key}
           className={[
-            "flex items-start gap-1 text-[13px]",
+            "flex items-start gap-1 text-[0.9286rem]",
             task.title === undefined ? "italic text-text-tertiary" : "text-text-primary",
           ].join(" ")}
         >
@@ -216,7 +216,7 @@ export function BoardCard({
           });
           if (rendered === null) return null;
           return (
-            <div key={field} data-testid={`board-card-field-${field}`} className="text-[12px]">
+            <div key={field} data-testid={`board-card-field-${field}`} className="text-[0.8571rem]">
               {rendered}
             </div>
           );
@@ -264,7 +264,7 @@ function renderField({
           {task.project !== undefined && (
             <ProjectChip def={lookups.project(task.project)} raw={task.project} />
           )}
-          <span className="font-mono text-[11px] text-text-tertiary">{task.key}</span>
+          <span className="font-mono text-[0.7857rem] text-text-tertiary">{task.key}</span>
         </span>
       );
     // A field's value can be absent because the task simply has none

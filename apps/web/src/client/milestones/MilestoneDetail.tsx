@@ -87,7 +87,7 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
   if (milestones.isLoading) {
     return (
       <div data-testid="milestone-detail" aria-busy="true" className="p-4">
-        <LoadingState className="text-[13px] text-text-tertiary">Loading the milestone…</LoadingState>
+        <LoadingState className="text-[0.9286rem] text-text-tertiary">Loading the milestone…</LoadingState>
       </div>
     );
   }
@@ -117,27 +117,27 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
           <h1 className="mb-2 text-lg font-semibold text-text-primary">
             No milestone matches this link
           </h1>
-          <p className="mb-1 text-[13px] text-text-secondary">
+          <p className="mb-1 text-[0.9286rem] text-text-secondary">
             Nothing in{" "}
-            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
               milestones.yaml
             </code>{" "}
             has the id{" "}
             <code
               data-testid="milestone-not-found-id"
-              className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]"
+              className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]"
             >
               {milestoneId}
             </code>
             .
           </p>
-          <p className="mb-4 text-[13px] text-text-tertiary">
+          <p className="mb-4 text-[0.9286rem] text-text-tertiary">
             It may have been deleted, or the link may have a typo.
           </p>
           <Link
             to="/milestones"
             data-testid="milestone-not-found-back"
-            className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast no-underline hover:bg-accent-hover"
+            className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast no-underline hover:bg-accent-hover"
           >
             Back to milestones
           </Link>
@@ -161,7 +161,7 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
         <Link
           to="/milestones"
           data-testid="milestone-detail-back"
-          className="text-[12px] text-text-tertiary no-underline hover:underline"
+          className="text-[0.8571rem] text-text-tertiary no-underline hover:underline"
         >
           ← All milestones
         </Link>
@@ -173,7 +173,7 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
               which is in the address bar, where P-4 does not reach. */}
           <h1
             data-testid="milestone-detail-name"
-            className="text-[15px] font-semibold text-text-primary"
+            className="text-[1.0714rem] font-semibold text-text-primary"
           >
             {milestone.name}
           </h1>
@@ -184,7 +184,7 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
               // the user knows why it is not in the default view.
               <span
                 data-testid="milestone-detail-archived"
-                className="rounded-full bg-bg-muted px-1.5 py-0.5 text-[10px] uppercase text-text-tertiary"
+                className="rounded-full bg-bg-muted px-1.5 py-0.5 text-[0.7143rem] uppercase text-text-tertiary"
               >
                 Archived
               </span>
@@ -192,7 +192,7 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
             {overdue && (
               <span
                 data-testid="milestone-detail-overdue"
-                className="rounded-full border border-danger-fg/40 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-danger-fg"
+                className="rounded-full border border-danger-fg/40 px-1.5 py-0.5 text-[0.7143rem] font-semibold uppercase text-danger-fg"
               >
                 Overdue
               </span>
@@ -200,14 +200,14 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
             {readout.complete && (
               <span
                 data-testid="milestone-detail-complete"
-                className="rounded-full border border-success-fg/40 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-success-fg"
+                className="rounded-full border border-success-fg/40 px-1.5 py-0.5 text-[0.7143rem] font-semibold uppercase text-success-fg"
               >
                 Completed
               </span>
             )}
             <span
               data-testid="milestone-detail-date"
-              className="text-[12px] tabular-nums text-text-secondary"
+              className="text-[0.8571rem] tabular-nums text-text-secondary"
             >
               {formatWorkspaceDate(milestone.target_date, calendar.data)}
             </span>
@@ -227,13 +227,13 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
 
       <section aria-label="Tasks in this milestone" className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-[13px] font-semibold text-text-primary">Tasks</h2>
+          <h2 className="text-[0.9286rem] font-semibold text-text-primary">Tasks</h2>
           {/* MSL-4: this equals the readout's `total`, because the
               query carries the same discarded exclusion the
               denominator uses. */}
           <span
             data-testid="milestone-task-count"
-            className="text-[12px] tabular-nums text-text-tertiary"
+            className="text-[0.8571rem] tabular-nums text-text-tertiary"
           >
             {String(total)}
           </span>
@@ -246,21 +246,21 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
             onRetry={() => void tasks.refetch()}
           />
         ) : tasks.isLoading ? (
-          <LoadingState className="text-[13px] text-text-tertiary">Loading tasks…</LoadingState>
+          <LoadingState className="text-[0.9286rem] text-text-tertiary">Loading tasks…</LoadingState>
         ) : items.length === 0 ? (
           // MSL-15/MSL-38: a real milestone with no tasks renders the
           // whole page and says so here. Nothing like the not-found
           // screen above, which is the distinction MSL-38 asks for.
           <p
             data-testid="milestone-tasks-empty"
-            className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[13px] text-text-tertiary"
+            className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[0.9286rem] text-text-tertiary"
           >
             No tasks are assigned to this milestone.
           </p>
         ) : (
-          <table className="w-full border-collapse text-[13px]">
+          <table className="w-full border-collapse text-[0.9286rem]">
             <thead>
-              <tr className="border-b border-border-subtle text-left text-[11px] uppercase text-text-tertiary">
+              <tr className="border-b border-border-subtle text-left text-[0.7857rem] uppercase text-text-tertiary">
                 <th className="py-1 pr-2 font-medium">Key</th>
                 <th className="py-1 pr-2 font-medium">Title</th>
                 <th className="py-1 pr-2 font-medium">Status</th>
@@ -275,7 +275,7 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
                   data-testid="milestone-task-row"
                   className="border-b border-border-subtle/60"
                 >
-                  <td className="py-1.5 pr-2 font-mono text-[12px]">
+                  <td className="py-1.5 pr-2 font-mono text-[0.8571rem]">
                     <Link
                       to="/tasks/$key"
                       params={{ key: t.key }}

@@ -82,7 +82,7 @@ function LabelRow({ label, count, allLabels }: {
                   data-testid="label-name-input"
                   value={name}
                   onChange={e => { setName(e.target.value); }}
-                  className="min-w-0 flex-1 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[13px]"
+                  className="min-w-0 flex-1 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
                 />
                 <input
                   aria-label="Label colour"
@@ -90,7 +90,7 @@ function LabelRow({ label, count, allLabels }: {
                   value={color}
                   placeholder="#aabbcc"
                   onChange={e => { setColor(e.target.value); }}
-                  className="w-28 rounded border border-border-subtle bg-bg-surface px-2 py-1 font-mono text-[13px]"
+                  className="w-28 rounded border border-border-subtle bg-bg-surface px-2 py-1 font-mono text-[0.9286rem]"
                 />
               </div>
               {/*
@@ -99,13 +99,13 @@ function LabelRow({ label, count, allLabels }: {
                 reaches labels.yaml.
               */}
               {!colorOk && (
-                <p role="alert" data-testid="label-color-invalid" className="text-[12px] text-danger-fg">
+                <p role="alert" data-testid="label-color-invalid" className="text-[0.8571rem] text-danger-fg">
                   Colour must be a 6-digit hex value like{" "}
                   <code className="font-mono">#aabbcc</code>. Leave it empty for no colour.
                 </p>
               )}
               {update.isError && (
-                <p role="alert" className="text-[12px] text-danger-fg">
+                <p role="alert" className="text-[0.8571rem] text-danger-fg">
                   {update.error instanceof ApiError ? update.error.message : "Could not save."}
                 </p>
               )}
@@ -120,7 +120,7 @@ function LabelRow({ label, count, allLabels }: {
                       { onSuccess: () => { setEditing(false); } },
                     );
                   }}
-                  className="rounded border border-border-subtle px-2 py-1 text-[12px] disabled:opacity-50"
+                  className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
                 >
                   Save
                 </button>
@@ -131,7 +131,7 @@ function LabelRow({ label, count, allLabels }: {
                     setColor(label.color ?? "");
                     setEditing(false);
                   }}
-                  className="rounded border border-border-subtle px-2 py-1 text-[12px]"
+                  className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
                 >
                   Cancel
                 </button>
@@ -140,7 +140,7 @@ function LabelRow({ label, count, allLabels }: {
           )
         : (
             <>
-              <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">
+              <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
                 {label.name}
                 {/*
                   MSL-10: an archived label is still shown wherever it is
@@ -160,7 +160,7 @@ function LabelRow({ label, count, allLabels }: {
               <span
                 data-testid="label-refcount"
                 data-label-refcount={String(count)}
-                className="w-24 shrink-0 text-right text-[12px] text-text-secondary"
+                className="w-24 shrink-0 text-right text-[0.8571rem] text-text-secondary"
               >
                 {String(count)} task{count === 1 ? "" : "s"}
               </span>
@@ -169,7 +169,7 @@ function LabelRow({ label, count, allLabels }: {
                 type="button"
                 data-testid="label-edit"
                 onClick={() => { setEditing(true); }}
-                className="rounded border border-border-subtle px-2 py-1 text-[12px]"
+                className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
               >
                 Edit
               </button>
@@ -178,7 +178,7 @@ function LabelRow({ label, count, allLabels }: {
                 data-testid="label-archive-toggle"
                 disabled={archive.isPending}
                 onClick={() => { archive.mutate({ id: label.id, archived: !archived }); }}
-                className="rounded border border-border-subtle px-2 py-1 text-[12px] disabled:opacity-50"
+                className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
               >
                 {archived ? "Unarchive" : "Archive"}
               </button>
@@ -186,7 +186,7 @@ function LabelRow({ label, count, allLabels }: {
                 type="button"
                 data-testid="label-delete"
                 onClick={() => { setConfirmingDelete(true); }}
-                className="rounded border border-border-subtle px-2 py-1 text-[12px]"
+                className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
               >
                 Delete
               </button>
@@ -271,7 +271,7 @@ function CreateLabelForm({ existing }: { readonly existing: readonly LabelDef[] 
           value={name}
           placeholder="New label"
           onChange={(e) => { setName(e.target.value); setAcknowledgedDuplicate(false); }}
-          className="min-w-0 flex-1 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[13px]"
+          className="min-w-0 flex-1 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
         />
         <input
           aria-label="New label colour"
@@ -279,20 +279,20 @@ function CreateLabelForm({ existing }: { readonly existing: readonly LabelDef[] 
           value={color}
           placeholder="#aabbcc"
           onChange={e => { setColor(e.target.value); }}
-          className="w-28 rounded border border-border-subtle bg-bg-surface px-2 py-1 font-mono text-[13px]"
+          className="w-28 rounded border border-border-subtle bg-bg-surface px-2 py-1 font-mono text-[0.9286rem]"
         />
         <button
           type="submit"
           data-testid="label-create-submit"
           disabled={trimmed === "" || !colorOk || create.isPending}
-          className="rounded-md border border-border-subtle bg-bg-surface px-3 py-1 text-[13px] disabled:opacity-50"
+          className="rounded-md border border-border-subtle bg-bg-surface px-3 py-1 text-[0.9286rem] disabled:opacity-50"
         >
           {needsAck ? "Create anyway" : "Create"}
         </button>
       </div>
 
       {!colorOk && (
-        <p role="alert" data-testid="label-create-color-invalid" className="text-[12px] text-danger-fg">
+        <p role="alert" data-testid="label-create-color-invalid" className="text-[0.8571rem] text-danger-fg">
           Colour must be a 6-digit hex value like <code className="font-mono">#aabbcc</code>.
         </p>
       )}
@@ -301,7 +301,7 @@ function CreateLabelForm({ existing }: { readonly existing: readonly LabelDef[] 
         <p
           data-testid="label-duplicate-warning"
           data-label-duplicate="warning"
-          className="text-[12px] text-warn-fg"
+          className="text-[0.8571rem] text-warn-fg"
         >
           A label with this name already exists. Label names do not have to be
           unique — you can create it anyway, and both will be shown with their
@@ -310,7 +310,7 @@ function CreateLabelForm({ existing }: { readonly existing: readonly LabelDef[] 
       )}
 
       {create.isError && (
-        <p role="alert" className="text-[12px] text-danger-fg">
+        <p role="alert" className="text-[0.8571rem] text-danger-fg">
           {create.error instanceof ApiError ? create.error.message : "Could not create the label."}
         </p>
       )}
@@ -340,9 +340,9 @@ export function LabelsPanel() {
             onRetry={() => { void labels.refetch(); }}
             context="reading .loctt/config/labels.yaml"
           />
-          <p className="mt-2 text-[13px] text-text-secondary">
+          <p className="mt-2 text-[0.9286rem] text-text-secondary">
             This is a failure to read the file, not an empty label list. Fix{" "}
-            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
               .loctt/config/labels.yaml
             </code>{" "}
             and reload.
@@ -366,9 +366,9 @@ export function LabelsPanel() {
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Labels
       </h1>
-      <p className="mb-4 text-[13px] text-text-secondary">
+      <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Stored in{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
           .loctt/config/labels.yaml
         </code>. Task counts exclude archived tasks.
       </p>
@@ -379,7 +379,7 @@ export function LabelsPanel() {
         ? (
             // Distinct from the load failure above: this one really is
             // an empty file (MSL-31's "visually distinct").
-            <p data-testid="labels-empty" data-labels-state="empty" className="text-[13px] text-text-tertiary">
+            <p data-testid="labels-empty" data-labels-state="empty" className="text-[0.9286rem] text-text-tertiary">
               No labels yet. Create one above.
             </p>
           )

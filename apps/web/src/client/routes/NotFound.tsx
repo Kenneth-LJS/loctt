@@ -22,19 +22,19 @@ export function NotFound() {
         <h1 className="mb-2 text-lg font-semibold text-text-primary">
           That page doesn&rsquo;t exist
         </h1>
-        <p className="mb-1 text-[13px] text-text-secondary">
+        <p className="mb-1 text-[0.9286rem] text-text-secondary">
           Nothing is routed at{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
             {pathname}
           </code>
           .
         </p>
-        <p className="mb-4 text-[13px] text-text-tertiary">
+        <p className="mb-4 text-[0.9286rem] text-text-tertiary">
           The link may be out of date, or the path may have a typo.
         </p>
         <Link
           to="/list"
-          className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast no-underline hover:bg-accent-hover"
+          className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast no-underline hover:bg-accent-hover"
         >
           Go to the task list
         </Link>

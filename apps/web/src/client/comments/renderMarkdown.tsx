@@ -62,7 +62,7 @@ export function renderCommentBody(
 ): JSX.Element {
   const doc = fromMarkdown(markdown);
   return (
-    <div data-testid="comment-body" className="prose-body text-[13px] text-text-primary">
+    <div data-testid="comment-body" className="prose-body text-[0.9286rem] text-text-primary">
       {renderNodes(doc.content ?? [], options, "b")}
     </div>
   );
@@ -123,7 +123,7 @@ function renderNode(
       return (
         <pre
           data-testid="comment-code-block"
-          className="my-1.5 overflow-x-auto rounded bg-bg-muted p-2 font-mono text-[12px]"
+          className="my-1.5 overflow-x-auto rounded bg-bg-muted p-2 font-mono text-[0.8571rem]"
         >
           <code>{(node.content ?? []).map(c => c.text ?? "").join("")}</code>
         </pre>
@@ -141,7 +141,7 @@ function renderNode(
       // rather than dropped, which is the same failure mode
       // `fromMarkdown` chose for anything it cannot represent.
       return (
-        <code className="rounded bg-bg-muted px-1 font-mono text-[12px]">
+        <code className="rounded bg-bg-muted px-1 font-mono text-[0.8571rem]">
           {String(node.attrs?.["expr"] ?? "")}
         </code>
       );
@@ -192,7 +192,7 @@ function renderText(node: JSONContent): React.ReactNode {
         out = (
           <code
             data-testid="comment-code"
-            className="rounded bg-bg-muted px-1 font-mono text-[12px]"
+            className="rounded bg-bg-muted px-1 font-mono text-[0.8571rem]"
           >
             {out}
           </code>
@@ -232,7 +232,7 @@ function renderText(node: JSONContent): React.ReactNode {
               <span data-testid="comment-unsafe-link" className="text-text-secondary">
                 {out}
                 {" ("}
-                <span className="font-mono text-[12px]">{href}</span>
+                <span className="font-mono text-[0.8571rem]">{href}</span>
                 {" — link not followed)"}
               </span>
             );
@@ -307,7 +307,7 @@ function MentionChip({
   const label = `@${target.name}`;
 
   const className =
-    "mx-px inline-flex items-baseline rounded border px-1 align-baseline text-[12px] font-medium "
+    "mx-px inline-flex items-baseline rounded border px-1 align-baseline text-[0.8571rem] font-medium "
     + (target.archived
       ? "border-border-subtle bg-bg-muted text-text-tertiary line-through decoration-1"
       : "border-accent/30 bg-accent-muted text-accent");

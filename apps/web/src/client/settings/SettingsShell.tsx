@@ -53,7 +53,7 @@ function SectionNav({ active }: { readonly active: string }) {
         <div key={group} className="mb-4 last:mb-0 md:last:mb-0">
           {/* Non-interactive heading (SET-2): it neither navigates nor
               collapses, so it cannot navigate away by accident. */}
-          <h2 className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
+          <h2 className="mb-1 px-2 text-[0.7857rem] font-semibold uppercase tracking-wide text-text-tertiary">
             {group}
           </h2>
           <ul className="list-none p-0 m-0">
@@ -65,7 +65,7 @@ function SectionNav({ active }: { readonly active: string }) {
                   data-testid={`settings-nav-${section.id}`}
                   aria-current={section.id === active ? "page" : undefined}
                   className={
-                    "block rounded-md px-2 py-1 text-[13px] no-underline "
+                    "block rounded-md px-2 py-1 text-[0.9286rem] no-underline "
                     + (section.id === active
                       ? "bg-bg-muted font-medium text-text-primary"
                       : "text-text-secondary hover:bg-bg-muted")
@@ -93,11 +93,11 @@ function UnknownSection({ requested }: { readonly requested: string }) {
     <div role="alert" data-testid="settings-unknown-section" className="p-8">
       <h1 className="mb-2 text-lg font-semibold text-text-primary">
         No settings section called{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[15px]">
+        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[1.0714rem]">
           {requested}
         </code>
       </h1>
-      <p className="mb-4 text-[13px] text-text-secondary">
+      <p className="mb-4 text-[0.9286rem] text-text-secondary">
         The link may have a typo, or the section may have been renamed.
         These are the sections this tracker has:
       </p>
@@ -107,7 +107,7 @@ function UnknownSection({ requested }: { readonly requested: string }) {
             <Link
               to="/settings/$section"
               params={{ section: s.id }}
-              className="text-[13px] text-accent hover:underline"
+              className="text-[0.9286rem] text-accent hover:underline"
             >
               {s.label}
             </Link>
@@ -125,7 +125,7 @@ function NotBuiltYet({ section }: { readonly section: SettingsSection }) {
       <h1 className="mb-2 text-lg font-semibold text-text-primary">
         {section.label}
       </h1>
-      <p className="text-[13px] text-text-secondary">
+      <p className="text-[0.9286rem] text-text-secondary">
         This panel is not built yet. Its settings can be changed by
         editing the files under{" "}
         <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">

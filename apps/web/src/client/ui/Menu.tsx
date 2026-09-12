@@ -194,7 +194,7 @@ export function MenuItem({
       onClick={onSelect}
       {...(testId !== undefined ? { "data-testid": testId } : {})}
       className={[
-        "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[13px]",
+        "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem]",
         "text-text-secondary hover:bg-bg-muted hover:text-text-primary",
         className ?? "",
       ].join(" ")}

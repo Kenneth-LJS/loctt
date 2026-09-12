@@ -209,7 +209,7 @@ export function RelationshipsPanel({
   return (
     <div data-testid="relationships-panel">
       {groups.length === 0 && !adding && (
-        <p className="text-[13px] text-text-tertiary">No linked tasks.</p>
+        <p className="text-[0.9286rem] text-text-tertiary">No linked tasks.</p>
       )}
 
       <div className="space-y-3">
@@ -236,7 +236,7 @@ export function RelationshipsPanel({
                       return next;
                     });
                   }}
-                  className="flex items-center gap-1.5 rounded px-1 py-0.5 text-[12px] font-semibold uppercase tracking-wide text-text-tertiary hover:bg-bg-muted"
+                  className="flex items-center gap-1.5 rounded px-1 py-0.5 text-[0.8571rem] font-semibold uppercase tracking-wide text-text-tertiary hover:bg-bg-muted"
                 >
                   <span aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
                   {/* REL-1: the configured label, never the raw key —
@@ -253,7 +253,7 @@ export function RelationshipsPanel({
                 {group.unknown && (
                   <span
                     data-testid="relationship-unknown"
-                    className="rounded border border-dashed border-warn-fg/60 px-1 py-0.5 text-[11px] font-normal normal-case text-warn-fg"
+                    className="rounded border border-dashed border-warn-fg/60 px-1 py-0.5 text-[0.7857rem] font-normal normal-case text-warn-fg"
                   >
                     Unknown relationship type
                   </span>
@@ -261,10 +261,10 @@ export function RelationshipsPanel({
               </h3>
 
               {group.unknown && !isCollapsed && (
-                <p className="mb-1 px-1 text-[12px] text-text-tertiary">
+                <p className="mb-1 px-1 text-[0.8571rem] text-text-tertiary">
                   No relationship named{" "}
-                  <code className="font-mono text-[11px]">{group.key}</code> is
-                  declared in <code className="font-mono text-[11px]">workflow.yaml</code>.
+                  <code className="font-mono text-[0.7857rem]">{group.key}</code> is
+                  declared in <code className="font-mono text-[0.7857rem]">workflow.yaml</code>.
                   Add it there, correct the type on the task, or remove the
                   link below.
                 </p>
@@ -297,7 +297,7 @@ export function RelationshipsPanel({
                 <p
                   role="alert"
                   data-testid="relationship-group-error"
-                  className="mt-1 px-1 text-[13px] text-danger-fg"
+                  className="mt-1 px-1 text-[0.9286rem] text-danger-fg"
                 >
                   {err}{" "}
                   <button
@@ -335,7 +335,7 @@ export function RelationshipsPanel({
               role="alert"
               data-testid="relationship-group-error"
               data-group-error={key}
-              className="text-[13px] text-danger-fg"
+              className="text-[0.9286rem] text-danger-fg"
             >
               {message}{" "}
               <button
@@ -354,7 +354,7 @@ export function RelationshipsPanel({
         <p
           role="status"
           data-testid="relationship-undo"
-          className="mt-2 text-[13px] text-text-tertiary"
+          className="mt-2 text-[0.9286rem] text-text-tertiary"
         >
           Link to {undoable.label} removed.{" "}
           <button
@@ -400,7 +400,7 @@ export function RelationshipsPanel({
                   setAddError(undefined);
                   setUndoable(null);
                 }}
-                className="rounded-md border border-border-subtle px-2.5 py-1 text-[13px] text-text-secondary hover:bg-bg-muted"
+                className="rounded-md border border-border-subtle px-2.5 py-1 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
               >
                 + Add link
               </button>
@@ -412,7 +412,7 @@ export function RelationshipsPanel({
           is more than one group; with one group the two numbers are the
           same and repeating it would be noise. */}
       {groups.length > 1 && (
-        <p data-testid="relationships-total" className="mt-2 text-[12px] text-text-tertiary">
+        <p data-testid="relationships-total" className="mt-2 text-[0.8571rem] text-text-tertiary">
           {total} linked tasks across {groups.length} kinds
         </p>
       )}
@@ -517,7 +517,7 @@ function FlatGroup({
                       setAnnouncement("Move cancelled");
                     }
                   }}
-                  className="shrink-0 cursor-grab px-1 text-[12px] text-text-tertiary"
+                  className="shrink-0 cursor-grab px-1 text-[0.8571rem] text-text-tertiary"
                 >
                   ⠿
                 </button>
@@ -561,7 +561,7 @@ function TreeGroup({
         <p
           role="alert"
           data-testid="relationship-cycle"
-          className="mb-1 px-1 text-[12px] text-danger-fg"
+          className="mb-1 px-1 text-[0.8571rem] text-danger-fg"
         >
           This “{group.label}” hierarchy contains a cycle. The rows marked
           below repeat a task that already appears above them; remove one of

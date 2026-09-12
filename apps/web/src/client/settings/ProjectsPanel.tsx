@@ -100,22 +100,22 @@ function CreateProjectForm({
 
   return (
     <div className="grid gap-3">
-      <label className="grid gap-1 text-[13px]">
+      <label className="grid gap-1 text-[0.9286rem]">
         <span className="text-text-secondary">Name</span>
         <input
           data-testid="project-create-name"
           value={name}
           onChange={e => { setName(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[13px]"
+          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
         />
         {problems.name !== undefined && (
-          <p role="alert" data-testid="project-create-name-problem" className="text-[11px] text-danger-fg">
+          <p role="alert" data-testid="project-create-name-problem" className="text-[0.7857rem] text-danger-fg">
             {problems.name}
           </p>
         )}
       </label>
 
-      <label className="grid gap-1 text-[13px]">
+      <label className="grid gap-1 text-[0.9286rem]">
         <span className="text-text-secondary">
           Prefix
           {/* PRU-5: not "permanent" (no longer true) and not silent —
@@ -128,16 +128,16 @@ function CreateProjectForm({
           data-testid="project-create-prefix"
           value={prefix}
           onChange={e => { setPrefix(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 font-mono text-[13px]"
+          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 font-mono text-[0.9286rem]"
         />
         {problems.prefix !== undefined && (
-          <p role="alert" data-testid="project-create-prefix-problem" className="text-[11px] text-danger-fg">
+          <p role="alert" data-testid="project-create-prefix-problem" className="text-[0.7857rem] text-danger-fg">
             {problems.prefix}
           </p>
         )}
       </label>
 
-      <label className="grid gap-1 text-[13px]">
+      <label className="grid gap-1 text-[0.9286rem]">
         <span className="text-text-secondary">
           Slug <span className="text-text-tertiary">— used in links; fixed once created</span>
         </span>
@@ -145,10 +145,10 @@ function CreateProjectForm({
           data-testid="project-create-slug"
           value={effectiveSlug}
           onChange={e => { setSlugTouched(true); setSlug(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 font-mono text-[13px]"
+          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 font-mono text-[0.9286rem]"
         />
         {problems.slug !== undefined && (
-          <p role="alert" data-testid="project-create-slug-problem" className="text-[11px] text-danger-fg">
+          <p role="alert" data-testid="project-create-slug-problem" className="text-[0.7857rem] text-danger-fg">
             {problems.slug}
           </p>
         )}
@@ -158,14 +158,14 @@ function CreateProjectForm({
         <p
           role="alert"
           data-testid={`project-create-error${serverField !== undefined ? `-${serverField}` : ""}`}
-          className="text-[12px] text-danger-fg"
+          className="text-[0.8571rem] text-danger-fg"
         >
           {serverMessage}
         </p>
       )}
 
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onDone} className="h-8 rounded-md px-3 text-[13px] text-text-secondary">
+        <button type="button" onClick={onDone} className="h-8 rounded-md px-3 text-[0.9286rem] text-text-secondary">
           Cancel
         </button>
         <button
@@ -173,7 +173,7 @@ function CreateProjectForm({
           data-testid="project-create-submit"
           disabled={blocked || create.isPending}
           onClick={submit}
-          className="h-8 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast disabled:opacity-50"
+          className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast disabled:opacity-50"
         >
           {create.isPending ? "Creating…" : "Create project"}
         </button>
@@ -269,7 +269,7 @@ function PrefixEdit({
         <p
           role="alert"
           data-testid={`project-prefix-error-${project.id}`}
-          className="mt-1 text-[12px] text-danger-fg"
+          className="mt-1 text-[0.8571rem] text-danger-fg"
         >
           {problem}
         </p>
@@ -305,7 +305,7 @@ function PrefixEdit({
             </DialogActions>
           )}
         >
-          <p className="text-[13px] text-text-secondary">
+          <p className="text-[0.9286rem] text-text-secondary">
             Changing the prefix to{" "}
             <code className="font-mono">{trimmed}</code> renames{" "}
             {taskCount} {taskCount === 1 ? "task" : "tasks"} in this
@@ -314,7 +314,7 @@ function PrefixEdit({
           </p>
 
           {setPrefix.isError && serverError !== undefined && (
-            <p role="alert" data-testid={`project-prefix-confirm-error-${project.id}`} className="mt-3 text-[12px] text-danger-fg">
+            <p role="alert" data-testid={`project-prefix-confirm-error-${project.id}`} className="mt-3 text-[0.8571rem] text-danger-fg">
               {serverError} Nothing was renamed.
             </p>
           )}
@@ -384,7 +384,7 @@ function ProjectRow({
                   onChange={e => { setName(e.target.value); }}
                 />
                 {update.isError && (
-                  <p role="alert" data-testid={`project-name-error-${project.id}`} className="text-[12px] text-danger-fg">
+                  <p role="alert" data-testid={`project-name-error-${project.id}`} className="text-[0.8571rem] text-danger-fg">
                     {update.error instanceof ApiError ? update.error.message : "Could not save."}
                   </p>
                 )}
@@ -411,19 +411,19 @@ function ProjectRow({
             )
           : (
               <div className="flex items-center gap-2">
-                <span data-testid={`project-name-${project.id}`} className="text-[13px] text-text-primary">
+                <span data-testid={`project-name-${project.id}`} className="text-[0.9286rem] text-text-primary">
                   {project.name}
                 </span>
                 {isDefault && (
                   <span
                     data-testid={`project-default-marker-${project.id}`}
-                    className="rounded bg-bg-muted px-1.5 py-0.5 text-[11px] font-medium text-text-secondary"
+                    className="rounded bg-bg-muted px-1.5 py-0.5 text-[0.7857rem] font-medium text-text-secondary"
                   >
                     Default
                   </span>
                 )}
                 {archived && (
-                  <span data-testid={`project-archived-marker-${project.id}`} className="text-[11px] text-text-tertiary">
+                  <span data-testid={`project-archived-marker-${project.id}`} className="text-[0.7857rem] text-text-tertiary">
                     (archived)
                   </span>
                 )}
@@ -450,7 +450,7 @@ function ProjectRow({
               />
             )
           : (
-              <span data-testid={`project-slug-${project.id}`} className="font-mono text-[13px] text-text-secondary">
+              <span data-testid={`project-slug-${project.id}`} className="font-mono text-[0.9286rem] text-text-secondary">
                 {project.slug ?? ""}
               </span>
             )}
@@ -459,12 +459,12 @@ function ProjectRow({
         {editing
           ? <PrefixEdit project={project} taskCount={taskCount} others={others} />
           : (
-              <span data-testid={`project-prefix-display-${project.id}`} className="font-mono text-[13px] text-text-secondary">
+              <span data-testid={`project-prefix-display-${project.id}`} className="font-mono text-[0.9286rem] text-text-secondary">
                 {project.prefix}
               </span>
             )}
       </td>
-      <td className="py-2 pr-3 align-top text-[13px] text-text-secondary">
+      <td className="py-2 pr-3 align-top text-[0.9286rem] text-text-secondary">
         {/* PRU-17: the count is visible before any dialog opens. */}
         <span data-testid={`project-refcount-${project.id}`}>{taskCount}</span>
       </td>
@@ -534,7 +534,7 @@ function ProjectRow({
           <p
             role="alert"
             data-testid={`project-set-default-error-${project.id}`}
-            className="mt-1 text-[12px] text-danger-fg"
+            className="mt-1 text-[0.8571rem] text-danger-fg"
           >
             {setDefault.error instanceof ApiError ? setDefault.error.message : "Could not set the default project."}
           </p>
@@ -543,7 +543,7 @@ function ProjectRow({
           <p
             role="alert"
             data-testid={`project-archive-error-${project.id}`}
-            className="mt-1 text-[12px] text-danger-fg"
+            className="mt-1 text-[0.8571rem] text-danger-fg"
           >
             {archive.error instanceof ApiError ? archive.error.message : "Could not change the archived state."}
           </p>
@@ -594,7 +594,7 @@ export function ProjectsPanel() {
   return (
     <div className="p-8" data-testid="settings-projects">
       <h1 className="mb-1 text-lg font-semibold">Projects</h1>
-      <p className="mb-4 text-[13px] text-text-secondary">
+      <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Each project has its own key prefix and counter. Defined in{" "}
         <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">
           .loctt/config/projects.yaml
@@ -615,7 +615,7 @@ export function ProjectsPanel() {
         <div
           role="status"
           data-testid="project-prefix-rename-completed"
-          className="mb-4 rounded-md border border-border-default bg-bg-muted p-3 text-[13px]"
+          className="mb-4 rounded-md border border-border-default bg-bg-muted p-3 text-[0.9286rem]"
         >
           <p className="mb-1 font-medium">
             A prefix rename that was interrupted has been completed
@@ -641,7 +641,7 @@ export function ProjectsPanel() {
         <div
           role="alert"
           data-testid="project-default-drift"
-          className="mb-4 rounded-md border border-border-subtle bg-warn-bg p-3 text-[13px] text-warn-fg"
+          className="mb-4 rounded-md border border-border-subtle bg-warn-bg p-3 text-[0.9286rem] text-warn-fg"
         >
           <p className="mb-1 font-medium">Your workspace default no longer exists</p>
           <p>
@@ -657,7 +657,7 @@ export function ProjectsPanel() {
 
       <table className="w-full border-collapse text-left">
         <thead>
-          <tr className="text-[11px] uppercase tracking-wide text-text-tertiary">
+          <tr className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
             <th className="py-1 pr-3 font-medium">Name</th>
             <th className="py-1 pr-3 font-medium">Slug</th>
             <th className="py-1 pr-3 font-medium">Prefix</th>
@@ -685,7 +685,7 @@ export function ProjectsPanel() {
           type="button"
           data-testid="project-create-open"
           onClick={() => { setCreating(true); }}
-          className="h-8 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast"
+          className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast"
         >
           New project
         </button>

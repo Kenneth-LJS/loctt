@@ -96,7 +96,7 @@ export function BackupPanel() {
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Backup &amp; restore
       </h1>
-      <p className="mb-6 max-w-2xl text-[13px] text-text-secondary">
+      <p className="mb-6 max-w-2xl text-[0.9286rem] text-text-secondary">
         The JSONL backup is the whole tracker — task bodies, comments,
         attachments, history, config, users and key state — and is what
         can rebuild a tracker from nothing. The CSV/JSON task export is a
@@ -106,8 +106,8 @@ export function BackupPanel() {
 
       {/* ---- Export ---- */}
       <section className="mb-8" data-testid="backup-export">
-        <h2 className="mb-1 text-[14px] font-semibold text-text-primary">Export</h2>
-        <p className="mb-3 text-[13px] text-text-secondary">
+        <h2 className="mb-1 text-[1rem] font-semibold text-text-primary">Export</h2>
+        <p className="mb-3 text-[0.9286rem] text-text-secondary">
           Downloads the whole-tracker backup as a single{" "}
           <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">.jsonl</code> file.
           History is included. Machine-local files (user settings and
@@ -119,7 +119,7 @@ export function BackupPanel() {
           data-testid="backup-export-link"
           href="/api/backup/export"
           download
-          className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast no-underline"
+          className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast no-underline"
         >
           Download backup
         </a>
@@ -127,15 +127,15 @@ export function BackupPanel() {
 
       {/* ---- Restore ---- */}
       <section data-testid="backup-restore">
-        <h2 className="mb-1 text-[14px] font-semibold text-text-primary">Restore</h2>
-        <p className="mb-3 max-w-2xl text-[13px] text-text-secondary">
+        <h2 className="mb-1 text-[1rem] font-semibold text-text-primary">Restore</h2>
+        <p className="mb-3 max-w-2xl text-[0.9286rem] text-text-secondary">
           Reads a backup file back into this tracker. A split backup (one
           taken with parts) must be restored with the{" "}
           <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">loctt restore</code>{" "}
           CLI, which takes every part at once.
         </p>
 
-        <label className="mb-3 block text-[13px] text-text-secondary">
+        <label className="mb-3 block text-[0.9286rem] text-text-secondary">
           Backup file
           <input
             data-testid="backup-restore-file"
@@ -146,14 +146,14 @@ export function BackupPanel() {
               setReport(null);
               setErrorMsg(null);
             }}
-            className="mt-1 block text-[13px]"
+            className="mt-1 block text-[0.9286rem]"
           />
         </label>
 
         <fieldset className="mb-3">
-          <legend className="mb-1 text-[13px] font-medium text-text-primary">Mode</legend>
+          <legend className="mb-1 text-[0.9286rem] font-medium text-text-primary">Mode</legend>
           {(["bare", "merge", "overwrite"] as const).map(m => (
-            <label key={m} className="mb-1 flex items-start gap-2 text-[13px] text-text-secondary">
+            <label key={m} className="mb-1 flex items-start gap-2 text-[0.9286rem] text-text-secondary">
               <Radio
                 name="restore-mode"
                 data-testid={`backup-mode-${m}`}
@@ -177,7 +177,7 @@ export function BackupPanel() {
           <div
             role="alert"
             data-testid="backup-overwrite-confirm"
-            className="mb-3 rounded-md border border-danger-fg bg-danger-bg p-3 text-[13px]"
+            className="mb-3 rounded-md border border-danger-fg bg-danger-bg p-3 text-[0.9286rem]"
           >
             <p className="mb-2 text-text-primary">
               Overwrite replaces every task this backup carries and can
@@ -221,14 +221,14 @@ export function BackupPanel() {
           <p
             role="alert"
             data-testid="backup-restore-error"
-            className="mt-3 text-[13px] text-danger-fg"
+            className="mt-3 text-[0.9286rem] text-danger-fg"
           >
             {errorMsg}
           </p>
         )}
 
         {report !== null && (
-          <div data-testid="backup-restore-report" className="mt-3 text-[13px] text-text-secondary">
+          <div data-testid="backup-restore-report" className="mt-3 text-[0.9286rem] text-text-secondary">
             <p className="font-medium text-text-primary">
               {report.dryRun
                 ? `Dry run (${report.mode}) — nothing written`

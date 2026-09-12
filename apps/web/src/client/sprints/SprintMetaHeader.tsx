@@ -272,8 +272,8 @@ export function SprintMetaHeader({ sprint }: Props) {
           <ReadField label="Start" value={serverValue(sprint, "start_date")} testId="sprint-meta-start_date-value" />
           <ReadField label="End" value={serverValue(sprint, "end_date")} testId="sprint-meta-end_date-value" />
           <div className="flex flex-col gap-1">
-            <span className="text-[11px] uppercase tracking-wide text-text-tertiary">State</span>
-            <span data-testid="sprint-meta-state-value" className="text-[13px] text-text-primary">
+            <span className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">State</span>
+            <span data-testid="sprint-meta-state-value" className="text-[0.9286rem] text-text-primary">
               {STATE_LABELS[serverValue(sprint, "state") as SprintState] ?? serverValue(sprint, "state")}
             </span>
           </div>
@@ -282,7 +282,7 @@ export function SprintMetaHeader({ sprint }: Props) {
           {sprint.archived === true && (
             <span
               data-testid="sprint-meta-archived"
-              className="rounded-full bg-bg-muted px-2 py-0.5 text-[11px] font-medium text-text-secondary"
+              className="rounded-full bg-bg-muted px-2 py-0.5 text-[0.7857rem] font-medium text-text-secondary"
             >
               Archived
             </span>
@@ -296,17 +296,17 @@ export function SprintMetaHeader({ sprint }: Props) {
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-wide text-text-tertiary">Goal</span>
+          <span className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">Goal</span>
           {/* SPR-7: an absent goal reads as an explicit "no goal", never
               the string "undefined". */}
           {serverValue(sprint, "goal") === "" ? (
-            <span data-testid="sprint-meta-goal-value" className="text-[13px] italic text-text-tertiary">
+            <span data-testid="sprint-meta-goal-value" className="text-[0.9286rem] italic text-text-tertiary">
               No goal set.
             </span>
           ) : (
             <p
               data-testid="sprint-meta-goal-value"
-              className="max-h-32 overflow-auto whitespace-pre-wrap text-[13px] text-text-primary"
+              className="max-h-32 overflow-auto whitespace-pre-wrap text-[0.9286rem] text-text-primary"
             >
               {serverValue(sprint, "goal")}
             </p>
@@ -355,7 +355,7 @@ export function SprintMetaHeader({ sprint }: Props) {
         />
 
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-wide text-text-tertiary">State</span>
+          <span className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">State</span>
           {/* SPR-7: exactly these three. No blank option, no "archived". */}
           <Select
             data-testid="sprint-meta-state"
@@ -375,7 +375,7 @@ export function SprintMetaHeader({ sprint }: Props) {
               id="sprint-meta-state-problem"
               data-testid="sprint-meta-state-problem"
               role="alert"
-              className="text-[11px] text-danger-fg"
+              className="text-[0.7857rem] text-danger-fg"
             >
               {errorFor("state")}
               {failed?.saved === false && failed.field === "state"
@@ -387,7 +387,7 @@ export function SprintMetaHeader({ sprint }: Props) {
         {sprint.archived === true && (
           <span
             data-testid="sprint-meta-archived"
-            className="rounded-full bg-bg-muted px-2 py-0.5 text-[11px] font-medium text-text-secondary"
+            className="rounded-full bg-bg-muted px-2 py-0.5 text-[0.7857rem] font-medium text-text-secondary"
           >
             Archived
           </span>
@@ -395,7 +395,7 @@ export function SprintMetaHeader({ sprint }: Props) {
       </div>
 
       <label className="flex flex-col gap-1">
-        <span className="text-[11px] uppercase tracking-wide text-text-tertiary">Goal</span>
+        <span className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">Goal</span>
         {/* SPR-25: a multi-paragraph goal scrolls inside a bounded box. */}
         <textarea
           data-testid="sprint-meta-goal"
@@ -403,13 +403,13 @@ export function SprintMetaHeader({ sprint }: Props) {
           rows={2}
           placeholder="No goal set — describe what this sprint is for."
           onChange={e => setField("goal", e.target.value)}
-          className="max-h-32 w-full resize-y overflow-auto rounded-md border border-border-default bg-bg-surface px-2 py-1 text-[13px] text-text-primary"
+          className="max-h-32 w-full resize-y overflow-auto rounded-md border border-border-default bg-bg-surface px-2 py-1 text-[0.9286rem] text-text-primary"
         />
         {errorFor("goal") !== null && (
           <span
             data-testid="sprint-meta-goal-problem"
             role="alert"
-            className="text-[11px] text-danger-fg"
+            className="text-[0.7857rem] text-danger-fg"
           >
             {errorFor("goal")}
           </span>
@@ -453,8 +453,8 @@ export function SprintMetaHeader({ sprint }: Props) {
 function ReadField({ label, value, testId }: { label: string; value: string; testId: string }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <span className="text-[11px] uppercase tracking-wide text-text-tertiary">{label}</span>
-      <span data-testid={testId} className="max-w-[380px] truncate text-[13px] text-text-primary">
+      <span className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">{label}</span>
+      <span data-testid={testId} className="max-w-[380px] truncate text-[0.9286rem] text-text-primary">
         {value}
       </span>
     </div>
@@ -481,7 +481,7 @@ function MetaTextField({
 }) {
   return (
     <label className="flex min-w-0 flex-col gap-1">
-      <span className="text-[11px] uppercase tracking-wide text-text-tertiary">{label}</span>
+      <span className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">{label}</span>
       <TextField
         data-testid={`sprint-meta-${field}`}
         type={type}
@@ -499,7 +499,7 @@ function MetaTextField({
           id={`sprint-meta-${field}-problem`}
           data-testid={`sprint-meta-${field}-problem`}
           role="alert"
-          className="text-[11px] text-danger-fg"
+          className="text-[0.7857rem] text-danger-fg"
         >
           {problem}
           {notSaved && " Your change was not saved; the previous value is still in place."}

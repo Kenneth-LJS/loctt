@@ -45,7 +45,7 @@ export function WorkflowPanelFrame({
         {title}
       </h1>
       {description !== undefined && (
-        <p className="mb-3 text-[13px] text-text-secondary">{description}</p>
+        <p className="mb-3 text-[0.9286rem] text-text-secondary">{description}</p>
       )}
     </>
   );
@@ -83,7 +83,7 @@ export function WorkflowPanelFrame({
             type="button"
             data-testid="workflow-reload"
             onClick={() => { void workflow.refetch(); }}
-            className="mt-3 h-8 rounded-md border border-border-default px-3 text-[13px]"
+            className="mt-3 h-8 rounded-md border border-border-default px-3 text-[0.9286rem]"
           >
             Reload from disk
           </button>
@@ -96,7 +96,7 @@ export function WorkflowPanelFrame({
     return (
       <div className="p-8">
         {header}
-        <LoadingState className="text-[13px] text-text-tertiary">Loading workflow…</LoadingState>
+        <LoadingState className="text-[0.9286rem] text-text-tertiary">Loading workflow…</LoadingState>
       </div>
     );
   }
@@ -123,7 +123,7 @@ export function WorkflowPanelFrame({
       <div className="p-8" data-testid="workflow-panel-error">
         {header}
         <div data-workflow-error="config-invalid">
-          <div className="rounded-md border border-danger-fg/40 bg-bg-muted p-3 text-[13px]">
+          <div className="rounded-md border border-danger-fg/40 bg-bg-muted p-3 text-[0.9286rem]">
             <p className="font-medium text-danger-fg">
               {brokenPath} has an entry that does not parse.
             </p>
@@ -137,7 +137,7 @@ export function WorkflowPanelFrame({
                 <li
                   key={`${e.sub}-${String(e.index)}`}
                   data-testid={`workflow-broken-${e.sub}-${String(e.index)}`}
-                  className="text-[12px] text-text-secondary"
+                  className="text-[0.8571rem] text-text-secondary"
                 >
                   <code className="rounded bg-bg-surface px-1 py-0.5 font-mono">
                     {e.sub}[{e.index}]
@@ -152,7 +152,7 @@ export function WorkflowPanelFrame({
             type="button"
             data-testid="workflow-reload"
             onClick={() => { void workflow.refetch(); }}
-            className="mt-3 h-8 rounded-md border border-border-default px-3 text-[13px]"
+            className="mt-3 h-8 rounded-md border border-border-default px-3 text-[0.9286rem]"
           >
             Reload from disk
           </button>
@@ -173,7 +173,7 @@ export function WorkflowPanelFrame({
         path: usage.data?.path ?? ".loctt/config/workflow.yaml",
         usage: usage.data,
       })}
-      <p data-testid="workflow-config-path" className="mt-6 text-[11px] text-text-tertiary">
+      <p data-testid="workflow-config-path" className="mt-6 text-[0.7857rem] text-text-tertiary">
         Reflects{" "}
         <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">
           {usage.data?.path ?? ".loctt/config/workflow.yaml"}

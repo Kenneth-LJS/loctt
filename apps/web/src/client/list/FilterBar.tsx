@@ -271,7 +271,7 @@ export function FilterBar({
         <div className="flex-1" />
 
         {/* Band 3 — actions. */}
-        <label className="inline-flex cursor-pointer items-center gap-1.5 text-[13px] text-text-secondary">
+        <label className="inline-flex cursor-pointer items-center gap-1.5 text-[0.9286rem] text-text-secondary">
           <Checkbox
             checked={search.archived === true}
             onChange={e =>
@@ -300,7 +300,7 @@ export function FilterBar({
             <span
               data-testid="query-chip"
               title={query}
-              className="inline-flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-[12px] text-accent"
+              className="inline-flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-[0.8571rem] text-accent"
             >
               <span className="text-accent/70">Query:</span>
               <span className="max-w-[24ch] truncate font-mono">{queryPreview}</span>
@@ -347,7 +347,7 @@ export function FilterBar({
                 <span
                   key={`${chip.key}:${chip.value}`}
                   title={`No ${chip.facetLabel.toLowerCase()} matches ${chip.value}`}
-                  className="inline-flex items-center gap-1 rounded bg-warn-bg px-2 py-0.5 text-[12px] text-warn-fg"
+                  className="inline-flex items-center gap-1 rounded bg-warn-bg px-2 py-0.5 text-[0.8571rem] text-warn-fg"
                 >
                   <span className="opacity-80">{chip.facetLabel}:</span>
                   <code className="font-mono">{chip.value.slice(-6)}</code>
@@ -359,7 +359,7 @@ export function FilterBar({
             return (
               <span
                 key={`${chip.key}:${chip.value}`}
-                className="inline-flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-[12px] text-accent"
+                className="inline-flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-[0.8571rem] text-accent"
               >
                 <span className="text-accent/70">{chip.facetLabel}:</span>
                 {chip.label}
@@ -370,7 +370,7 @@ export function FilterBar({
           <button
             type="button"
             onClick={clearAll}
-            className="cursor-pointer rounded px-1.5 py-0.5 text-[12px] text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
+            className="cursor-pointer rounded px-1.5 py-0.5 text-[0.8571rem] text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
           >
             Clear all
           </button>

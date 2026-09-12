@@ -638,6 +638,8 @@ describe("SET-8: custom enum fields sort by configured value weights", () => {
         key: "size",
         label: "Size",
         type: "enum",
+        multi: false,
+        searchable: false,
         // Deliberately NOT in alphabetical order of key, and the weights
         // invert the alphabetical order (xs<s<m<l alphabetically is
         // l,m,s,xs; by weight it is xs,s,m,l) so a passing test cannot be
@@ -654,6 +656,8 @@ describe("SET-8: custom enum fields sort by configured value weights", () => {
         key: "colour",
         label: "Colour",
         type: "enum",
+        multi: false,
+        searchable: false,
         values: [
           { key: "red", label: "Red" },
           { key: "blue", label: "Blue" },

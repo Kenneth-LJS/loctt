@@ -242,7 +242,7 @@ function CollectionEditor({
         <div
           role="alert"
           data-testid="workflow-save-error"
-          className="mb-3 rounded-md border border-danger-fg/40 bg-bg-muted p-3 text-[13px]"
+          className="mb-3 rounded-md border border-danger-fg/40 bg-bg-muted p-3 text-[0.9286rem]"
         >
           <p className="font-medium text-danger-fg">
             The change was not saved to .loctt/config/workflow.yaml.
@@ -363,7 +363,7 @@ function RowFields({
   const isDefault = isStatus && (row as StatusDef).default === true;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 text-[13px]">
+    <div className="flex flex-wrap items-center gap-2 text-[0.9286rem]">
       <span data-testid={`${collection}-label-${row.key}`} className="w-40 font-medium">
         {row.label}
       </span>
@@ -371,7 +371,7 @@ function RowFields({
       {/* The key, shown and never editable — see the header comment. */}
       <code
         data-testid={`${collection}-key-${row.key}`}
-        className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px] text-text-secondary"
+        className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary"
         title="A key is permanent: task files store it, so renaming it in place would orphan them."
       >
         {row.key}
@@ -380,7 +380,7 @@ function RowFields({
       {isStatus && (
         <span
           data-testid={`statuses-category-${row.key}`}
-          className="rounded bg-bg-muted px-1.5 py-0.5 text-[12px] text-text-secondary"
+          className="rounded bg-bg-muted px-1.5 py-0.5 text-[0.8571rem] text-text-secondary"
         >
           {(row as StatusDef).category}
         </span>
@@ -389,7 +389,7 @@ function RowFields({
       {collection === "priorities" && (
         <span
           data-testid={`priorities-value-${row.key}`}
-          className="font-mono text-[12px] text-text-tertiary"
+          className="font-mono text-[0.8571rem] text-text-tertiary"
           title="Recomputed from position — lower sorts first."
         >
           value {String((row as PriorityDef).value ?? "—")}
@@ -401,7 +401,7 @@ function RowFields({
         <span
           data-testid={`statuses-default-${row.key}`}
           data-default-status={isDefault ? "true" : "false"}
-          className="text-[12px] text-text-secondary"
+          className="text-[0.8571rem] text-text-secondary"
         >
           {isDefault ? "default — new tasks land here" : ""}
         </span>
@@ -409,7 +409,7 @@ function RowFields({
 
       <span
         data-testid={`${collection}-refcount-${row.key}`}
-        className="ml-auto text-[12px] text-text-tertiary"
+        className="ml-auto text-[0.8571rem] text-text-tertiary"
       >
         {String(count)} task{count === 1 ? "" : "s"}
       </span>
@@ -419,7 +419,7 @@ function RowFields({
         data-testid={`${collection}-edit-${row.key}`}
         disabled={disabled}
         onClick={onEdit}
-        className="h-7 rounded-md border border-border-default px-2 text-[12px] disabled:opacity-40"
+        className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] disabled:opacity-40"
       >
         Edit
       </button>
@@ -430,7 +430,7 @@ function RowFields({
         disabled={disabled || onlyRow}
         onClick={onDelete}
         title={onlyRow ? `A tracker needs at least one ${NOUN[collection]}.` : undefined}
-        className="h-7 rounded-md border border-border-default px-2 text-[12px] text-danger-fg disabled:opacity-40"
+        className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] text-danger-fg disabled:opacity-40"
       >
         Delete
       </button>

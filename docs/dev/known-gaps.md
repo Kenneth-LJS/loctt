@@ -2215,26 +2215,6 @@ between the README and the code rather than adding a second mechanism.
 **Also note**: each build worktree carries its own `node_modules`
 (~293 MB), because a shared one breaks the vite config resolution.
 Three concurrent worktrees is most of a gigabyte before any test runs.
-## Text-only zoom has no effect: the type scale is absolute (A11Y-39)
-
-**Found:** 2026-09-02. Recorded as decision A95.
-
-`styles/index.css` sets `html, body { font-size: 14px }` and components
-size type in absolute px (`text-[13px]`, …). A user agent's text-only
-zoom scales the root font size, which the body rule then overrides, so
-nothing on the page grows. All 233 elements rendered on `/list` resolve
-to an absolute px font-size.
-
-A11Y-39's bullets are technically satisfied — nothing is clipped —
-but only because nothing scales, which is not what the case is for.
-
-**How to reproduce.** Load `/list`, apply `html { font-size: 200% }`.
-The root computes to 32px; `body` stays 14px.
-
-**Not fixed here.** Converting to relative units touches every type
-utility and the 123 fixed-height utilities sized to their text. See
-A95.
-
 ## Removing a worktree leaves its `loctt ui` server running (tooling)
 
 `git worktree remove` deletes the directory; it does not stop anything
@@ -2984,9 +2964,11 @@ them would be a tag that cannot fail:
   the equivalent row's key-link anchor (`data-task-key`) when a re-render
   dropped it to body. `@verifies A11Y-17` spec, red-proven by a positive
   control (without the effect, detach/reattach leaves focus on body).
-- **A11Y-39, A11Y-40** — text-only zoom (absolute type scale, A95) and
-  full contrast audit (needs the axe-contrast harness across every
-  themed surface; partly built in the token work).
+- **A11Y-39** — RESOLVED 2026-09-12: the type scale moved to rem anchored
+  to the browser root (`html { font-size: 87.5% }`); text-only zoom now
+  scales the text. `@verifies A11Y-39` spec, red-proven. (A95 DONE note.)
+- **A11Y-40** — full contrast audit (needs the axe-contrast harness across
+  every themed surface; partly built in the token work).
 - **A11Y-51** — RESOLVED 2026-09-12: the bulk result now announces through
   the assertive live region (accurate numbers, `aria-atomic` so untruncated)
   and `BulkResult` renders each failure as a focusable `<li tabIndex={0}>`

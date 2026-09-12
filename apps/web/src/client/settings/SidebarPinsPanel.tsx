@@ -128,7 +128,7 @@ function PinsEditor({
   return (
     <div className="p-8" data-testid="sidebar-pins-panel">
       <h1 className="mb-1 text-lg font-semibold text-text-primary">Sidebar pins</h1>
-      <p className="mb-6 max-w-prose text-[12px] text-text-secondary">
+      <p className="mb-6 max-w-prose text-[0.8571rem] text-text-secondary">
         Saved views pinned to the sidebar, in the order they appear there.
         Saved against your user.
       </p>
@@ -140,7 +140,7 @@ function PinsEditor({
         <div
           role="status"
           data-testid="pins-swept-notice"
-          className="mb-4 rounded-md border border-border-subtle bg-warn-bg px-3 py-2 text-[12px] text-warn-fg"
+          className="mb-4 rounded-md border border-border-subtle bg-warn-bg px-3 py-2 text-[0.8571rem] text-warn-fg"
         >
           {explained.length === 1
             ? "A pinned view was removed because it no longer exists in queries.yaml:"
@@ -153,9 +153,9 @@ function PinsEditor({
         </div>
       ) : null}
 
-      <h2 className="mb-2 text-[13px] font-semibold text-text-primary">Pinned</h2>
+      <h2 className="mb-2 text-[0.9286rem] font-semibold text-text-primary">Pinned</h2>
       {pinned.length === 0 ? (
-        <p data-testid="pins-empty" className="mb-6 text-[12px] italic text-text-tertiary">
+        <p data-testid="pins-empty" className="mb-6 text-[0.8571rem] italic text-text-tertiary">
           Nothing pinned. Pin a saved view below to give it a fixed place in
           the sidebar.
         </p>
@@ -170,14 +170,14 @@ function PinsEditor({
           >
             {id => (
               <div className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-surface px-2 py-1">
-                <span className="flex-1 text-[13px] text-text-primary">
+                <span className="flex-1 text-[0.9286rem] text-text-primary">
                   {byId.get(id)?.name ?? id}
                 </span>
                 <button
                   type="button"
                   data-testid={`pin-remove-${id}`}
                   onClick={() => { write(pinned.filter(p => p !== id)); }}
-                  className="text-[12px] text-text-tertiary hover:text-text-primary"
+                  className="text-[0.8571rem] text-text-tertiary hover:text-text-primary"
                 >
                   Unpin
                 </button>
@@ -188,7 +188,7 @@ function PinsEditor({
                     const v = byId.get(id);
                     if (v !== undefined) setDeleting(v);
                   }}
-                  className="text-[12px] text-text-tertiary hover:text-danger-fg"
+                  className="text-[0.8571rem] text-text-tertiary hover:text-danger-fg"
                 >
                   Delete view
                 </button>
@@ -198,11 +198,11 @@ function PinsEditor({
         </div>
       )}
 
-      <h2 className="mb-2 text-[13px] font-semibold text-text-primary">
+      <h2 className="mb-2 text-[0.9286rem] font-semibold text-text-primary">
         Available saved views
       </h2>
       {unpinned.length === 0 ? (
-        <p className="text-[12px] italic text-text-tertiary">
+        <p className="text-[0.8571rem] italic text-text-tertiary">
           Every saved view is pinned.
         </p>
       ) : (
@@ -212,12 +212,12 @@ function PinsEditor({
               key={v.id}
               className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-surface px-2 py-1"
             >
-              <span className="flex-1 text-[13px] text-text-primary">{v.name}</span>
+              <span className="flex-1 text-[0.9286rem] text-text-primary">{v.name}</span>
               <button
                 type="button"
                 data-testid={`pin-add-${v.id}`}
                 onClick={() => { write([...pinned, v.id]); }}
-                className="text-[12px] text-accent hover:underline"
+                className="text-[0.8571rem] text-accent hover:underline"
               >
                 Pin
               </button>
@@ -225,7 +225,7 @@ function PinsEditor({
                 type="button"
                 data-testid={`view-delete-${v.id}`}
                 onClick={() => { setDeleting(v); }}
-                className="text-[12px] text-text-tertiary hover:text-danger-fg"
+                className="text-[0.8571rem] text-text-tertiary hover:text-danger-fg"
               >
                 Delete view
               </button>
@@ -259,13 +259,13 @@ function PinsEditor({
       ) : null}
 
       {deleteView.isError ? (
-        <p role="alert" className="mt-4 text-[12px] text-danger-fg">
+        <p role="alert" className="mt-4 text-[0.8571rem] text-danger-fg">
           The view was not deleted. It is still in queries.yaml.
         </p>
       ) : null}
 
       {save.isError ? (
-        <p role="alert" className="mt-4 text-[12px] text-danger-fg">
+        <p role="alert" className="mt-4 text-[0.8571rem] text-danger-fg">
           Your pins were not saved. The list shows your last saved order.
         </p>
       ) : null}

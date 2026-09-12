@@ -169,7 +169,7 @@ export function MentionMenu({ state }: { readonly state: MentionState }): React.
       role="listbox"
       aria-label="Mention a user"
       data-testid="mention-menu"
-      className="mx-3 mb-2 rounded border border-border-subtle bg-bg-surface text-[13px]"
+      className="mx-3 mb-2 rounded border border-border-subtle bg-bg-surface text-[0.9286rem]"
     >
       {state.matches.map((c, i) => (
         <li key={c.id}>
@@ -188,7 +188,7 @@ export function MentionMenu({ state }: { readonly state: MentionState }): React.
             {c.hint !== undefined && (
               <span
                 data-testid={`mention-hint-${c.id}`}
-                className="block font-mono text-[11px] text-text-tertiary"
+                className="block font-mono text-[0.7857rem] text-text-tertiary"
               >
                 {c.hint}
               </span>

@@ -70,27 +70,28 @@
     "Segoe UI",
     sans-serif;
 
-  /* Named type scale (B1 — replaces the 9 ad-hoc `text-[Npx]` sizes the
-   * consistency review found). Tailwind v4 emits a font-size utility from
-   * each `--text-*` key, so these become `text-body`/`text-label`/
-   * `text-meta`/`text-heading`. 13/12/11 are 829 of 875 uses; 15 is the
-   * de-facto section-heading size. `text-[10px]` (the uppercase micro
-   * labels) folds into `text-meta` per spec §2.1 open decision #3 —
-   * decided here as fold, not a new name (11px vs 10px is imperceptible
-   * at these weights and one fewer name is the win). Values are px, not
-   * rem, matching the existing `text-[Npx]` idiom (A95 stands: the app
-   * already sizes text in px; naming the scale does not regress it).
+  /* Named type scale (B1). Tailwind v4 emits a font-size utility from each
+   * `--text-*` key, so these are `text-body`/`text-label`/`text-meta`/
+   * `text-heading`. 13/12/11 are the overwhelming majority; 15 is the
+   * section-heading size; 10 folds into `text-meta` (11px vs 10px is
+   * imperceptible at these weights).
+   *
+   * A11Y-39: the values are now in **rem** so a user agent's text-only
+   * zoom scales them (WCAG 1.4.4). They are relative to the 14px root
+   * (`html { font-size: 87.5% }`), so `--text-body` = 13/14rem renders the
+   * same 13px at 100% zoom and doubles with the root at 200%. The inline
+   * `text-[…rem]` sizes across the component tree use the same rem = px/14
+   * basis, so nothing re-pins an absolute px size text-zoom cannot move —
+   * which is exactly the regression A95 recorded and this closes.
    *
    * NOTE the spacing scale (--space-*) is intentionally NOT wired into
    * @theme: Tailwind's `--spacing-*` namespace backs the numeric
-   * `p-2`/`gap-3`/… utilities already in use everywhere, so aliasing it
-   * would silently change every existing call site (7px→8px). B1 is
-   * additive; the --space-* px scale lives as raw vars in tokens.css and
-   * B4 migrates call sites onto it deliberately. */
-  --text-meta: 11px;
-  --text-label: 12px;
-  --text-body: 13px;
-  --text-heading: 15px;
+   * `p-2`/`gap-3`/… utilities already in use everywhere (and, being rem,
+   * they already scale with text-zoom too). */
+  --text-meta: 0.7857rem;   /* 11px */
+  --text-label: 0.8571rem;  /* 12px */
+  --text-body: 0.9286rem;   /* 13px */
+  --text-heading: 1.0714rem; /* 15px */
 }
 
 /* Tailwind v4's `dark:` variant defaults to a media query. Override it
@@ -108,6 +109,24 @@
   *::after {
     box-sizing: border-box;
   }
+  /* A11Y-39 (WCAG 1.4.4): the app's 14px base is expressed as a
+   * percentage of the browser's own root, not a fixed pixel size, so a
+   * user agent's *text-only* zoom — which scales the root font size —
+   * flows through to everything sized in `rem`/`em`. 87.5% of the 16px
+   * default is 14px, the design base, at 100% zoom; at 200% text zoom the
+   * root becomes 28px and every rem-based size doubles with it.
+   *
+   * The component tree sizes type in rem (the `--text-*` scale and the
+   * `text-[…rem]` utilities), so nothing re-pins an absolute px size that
+   * would override this — the failure the earlier absolute scale had. */
+  /* The root carries the base size, as a percentage of the browser root
+   * so text-zoom scales it. `body` must NOT re-set an absolute or `1rem`
+   * size here: a `font-size: 1rem` on `<html>, body` would re-resolve on
+   * the root element to the browser's 16px and cancel the 87.5%. So body
+   * simply inherits the root. */
+  html {
+    font-size: 87.5%;
+  }
   html,
   body {
     margin: 0;
@@ -115,7 +134,6 @@
     background: var(--bg-canvas);
     color: var(--text-primary);
     font-family: var(--font-sans);
-    font-size: 14px;
     line-height: 1.43;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

@@ -232,7 +232,7 @@ export function MetaPanel({
         {/* Read-only: a project change rekeys, so it is the Move
             dialog's job and `setField` refuses the field outright. */}
         <Row {...rowShared} label="Project">
-          <span className="text-[13px] text-text-primary">
+          <span className="text-[0.9286rem] text-text-primary">
             {fm.project === undefined
               ? <span className="text-text-tertiary">—</span>
               : project?.name ?? "unresolved — not in the current config"}
@@ -339,10 +339,10 @@ export function MetaPanel({
           <Row {...rowShared} label="Completed">
             <span
               data-testid="meta-completed-date"
-              className="text-[13px] text-text-primary"
+              className="text-[0.9286rem] text-text-primary"
             >
               {shortDate(fm.completed_date, today)}
-              <span className="ml-1 text-[11px] text-text-tertiary">
+              <span className="ml-1 text-[0.7857rem] text-text-tertiary">
                 (set by the status)
               </span>
             </span>
@@ -415,7 +415,7 @@ function Footer({
   // stamp has moved. A ticking clock would be its own case.
   const now = Date.now();
   return (
-    <div className="mt-4 space-y-1 border-t border-border-subtle pt-3 text-[11px] text-text-tertiary">
+    <div className="mt-4 space-y-1 border-t border-border-subtle pt-3 text-[0.7857rem] text-text-tertiary">
       <p data-testid="meta-created">
         {/* K26: `created_at` is field-local — a corrupt/absent stamp
             still loads the task, so the footer shows a dash rather than
@@ -611,7 +611,7 @@ function Row({
   readonly onDismiss?: (() => void) | undefined;
 }) {
   return (
-    <div className="grid grid-cols-[80px_minmax(0,1fr)] gap-2 text-[13px]">
+    <div className="grid grid-cols-[80px_minmax(0,1fr)] gap-2 text-[0.9286rem]">
       <dt className="pt-0.5 text-text-tertiary">{label}</dt>
       <dd className="min-w-0 break-words text-text-primary">
         {corrupt !== undefined && (
@@ -674,7 +674,7 @@ function CorruptFieldNotice({
       tone="warn"
       role="status"
       testId={`meta-corrupt-${slug}`}
-      className="mb-1 flex-col items-stretch gap-1 px-2 py-1.5 text-[12px]"
+      className="mb-1 flex-col items-stretch gap-1 px-2 py-1.5 text-[0.8571rem]"
     >
       <p title={health.error}>
         <span className="font-medium">{label}</span>{" "}
@@ -729,10 +729,10 @@ function UnrecognisedGroup({
       aria-label="Not recognised"
       className="mt-4 border-t border-border-subtle pt-3"
     >
-      <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-text-tertiary">
+      <h3 className="mb-2 text-[0.7857rem] font-medium uppercase tracking-wide text-text-tertiary">
         Not recognised
       </h3>
-      <p className="mb-2 text-[11px] text-text-tertiary">
+      <p className="mb-2 text-[0.7857rem] text-text-tertiary">
         These keys were kept from the file but LocTT does not use them.
       </p>
       <dl className="space-y-2">
@@ -742,7 +742,7 @@ function UnrecognisedGroup({
             <div
               key={h.field}
               data-testid={`meta-unrecognised-${slug}`}
-              className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 text-[13px]"
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 text-[0.9286rem]"
             >
               <div className="min-w-0">
                 <code className="font-mono text-text-secondary">{h.field}</code>

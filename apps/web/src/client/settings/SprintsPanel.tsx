@@ -58,7 +58,7 @@ function SprintRow({ sprint, all }: {
       data-sprint-archived={archived ? "true" : "false"}
       className="flex items-center gap-3 border-b border-border-subtle py-2 last:border-0"
     >
-      <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">
+      <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
         {sprint.name}
         {archived && (
           <span data-testid="sprint-archived-marker" className="ml-2 text-text-tertiary">
@@ -66,16 +66,16 @@ function SprintRow({ sprint, all }: {
           </span>
         )}
       </span>
-      <span className="w-24 shrink-0 text-[12px] text-text-secondary">
+      <span className="w-24 shrink-0 text-[0.8571rem] text-text-secondary">
         {STATE_LABEL[sprint.state] ?? sprint.state}
       </span>
-      <span className="w-48 shrink-0 text-[12px] text-text-secondary">
+      <span className="w-48 shrink-0 text-[0.8571rem] text-text-secondary">
         {sprint.start_date} → {sprint.end_date}
       </span>
       <span
         data-testid="sprint-refcount"
         data-sprint-refcount={String(count)}
-        className="w-24 shrink-0 text-right text-[12px] text-text-secondary"
+        className="w-24 shrink-0 text-right text-[0.8571rem] text-text-secondary"
       >
         {String(count)} task{count === 1 ? "" : "s"}
       </span>
@@ -87,7 +87,7 @@ function SprintRow({ sprint, all }: {
         to="/sprints/$key"
         params={{ key: sprint.id }}
         data-testid="sprint-burndown-link"
-        className="shrink-0 text-[12px] text-accent hover:underline"
+        className="shrink-0 text-[0.8571rem] text-accent hover:underline"
       >
         Burndown
       </Link>
@@ -171,7 +171,7 @@ export function SprintsPanel() {
             onRetry={() => { void sprints.refetch(); }}
             context="reading .loctt/config/sprints.yaml"
           />
-          <p className="mt-2 text-[13px] text-text-secondary">
+          <p className="mt-2 text-[0.9286rem] text-text-secondary">
             This is a failure to read the file, not an empty sprint list.
           </p>
         </div>
@@ -195,9 +195,9 @@ export function SprintsPanel() {
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Sprints
       </h1>
-      <p className="mb-4 text-[13px] text-text-secondary">
+      <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Stored in{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
           .loctt/config/sprints.yaml
         </code>. Open a sprint to edit its dates, goal and state, and see its burndown.
       </p>
@@ -216,7 +216,7 @@ export function SprintsPanel() {
           );
         }}
       >
-        <label className="flex min-w-[180px] flex-1 flex-col gap-1 text-[11px] uppercase tracking-wide text-text-tertiary">
+        <label className="flex min-w-[180px] flex-1 flex-col gap-1 text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
           Name
           <TextField
             data-testid="sprint-create-name"
@@ -226,7 +226,7 @@ export function SprintsPanel() {
             onChange={e => { setName(e.target.value); }}
           />
         </label>
-        <label className="flex flex-col gap-1 text-[11px] uppercase tracking-wide text-text-tertiary">
+        <label className="flex flex-col gap-1 text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
           Start
           <TextField
             data-testid="sprint-create-start"
@@ -236,7 +236,7 @@ export function SprintsPanel() {
             onChange={e => { setStart(e.target.value); }}
           />
         </label>
-        <label className="flex flex-col gap-1 text-[11px] uppercase tracking-wide text-text-tertiary">
+        <label className="flex flex-col gap-1 text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
           End
           <TextField
             data-testid="sprint-create-end"
@@ -246,7 +246,7 @@ export function SprintsPanel() {
             onChange={e => { setEnd(e.target.value); }}
           />
         </label>
-        <label className="flex flex-col gap-1 text-[11px] uppercase tracking-wide text-text-tertiary">
+        <label className="flex flex-col gap-1 text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
           State
           <Select
             data-testid="sprint-create-state"
@@ -274,7 +274,7 @@ export function SprintsPanel() {
 
       {activeItems.length === 0
         ? (
-            <p data-testid="sprints-empty" data-sprints-state="empty" className="text-[13px] text-text-tertiary">
+            <p data-testid="sprints-empty" data-sprints-state="empty" className="text-[0.9286rem] text-text-tertiary">
               No sprints yet.
             </p>
           )
@@ -286,7 +286,7 @@ export function SprintsPanel() {
 
       {archivedItems.length > 0 && (
         <div className="mt-5">
-          <label className="flex items-center gap-2 text-[12px] text-text-secondary">
+          <label className="flex items-center gap-2 text-[0.8571rem] text-text-secondary">
             <input
               type="checkbox"
               data-testid="sprints-show-archived"

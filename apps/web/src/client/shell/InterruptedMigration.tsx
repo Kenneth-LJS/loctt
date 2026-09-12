@@ -34,9 +34,9 @@ export function InterruptedMigration({
         <h1 className="mb-3 text-lg font-semibold text-danger-fg">
           A schema migration did not finish
         </h1>
-        <p className="mb-3 text-[13px] text-text-secondary">
+        <p className="mb-3 text-[0.9286rem] text-text-secondary">
           LocTT found{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
             .schema-migration-in-progress
           </code>{" "}
           in this tracker. A previous migration crashed part-way, so the data
@@ -44,7 +44,7 @@ export function InterruptedMigration({
           opened or changed safely until that is resolved by hand.
         </p>
 
-        <dl className="mb-4 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]">
+        <dl className="mb-4 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[0.8571rem]">
           {from !== undefined && to !== undefined ? (
             <>
               <dt className="text-text-tertiary">Migrating</dt>
@@ -61,20 +61,20 @@ export function InterruptedMigration({
           <dd className="break-all font-mono text-text-primary">{sentinelPath}</dd>
         </dl>
 
-        <h2 className="mb-1 text-[13px] font-semibold text-text-primary">
+        <h2 className="mb-1 text-[0.9286rem] font-semibold text-text-primary">
           To recover
         </h2>
-        <ol className="list-decimal space-y-1 pl-5 text-[13px] text-text-secondary">
+        <ol className="list-decimal space-y-1 pl-5 text-[0.9286rem] text-text-secondary">
           <li>
             Inspect the backup directory above. It holds{" "}
-            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
               .loctt/
             </code>{" "}
             as it was before the migration started.
           </li>
           <li>
             Restore it over the current{" "}
-            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
               .loctt/
             </code>{" "}
             if you want the tracker back the way it was.
@@ -82,18 +82,18 @@ export function InterruptedMigration({
           <li>Delete the sentinel file once you are satisfied with the state on disk.</li>
           <li>
             Run{" "}
-            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
               loctt migrate
             </code>{" "}
             again, or{" "}
-            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
               loctt doctor
             </code>{" "}
             to check what state things are in first.
           </li>
         </ol>
 
-        <p className="mt-4 text-[12px] text-text-tertiary">
+        <p className="mt-4 text-[0.8571rem] text-text-tertiary">
           These steps are deliberately manual. Re-running a migration over a
           half-migrated tracker compounds the damage, so LocTT will not offer
           that as a single click.

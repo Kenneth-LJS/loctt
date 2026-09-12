@@ -483,7 +483,7 @@ export function ListView() {
               true,
             );
           }}
-          className="ml-2 rounded-md border border-border-subtle px-2 py-0.5 text-[12px] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
+          className="ml-2 rounded-md border border-border-subtle px-2 py-0.5 text-[0.8571rem] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
         >
           Undo
         </button>
@@ -604,7 +604,7 @@ export function ListView() {
         <div
           role="status"
           data-testid="query-warnings"
-          className="rounded-md border border-warn-fg/30 bg-warn-bg px-4 py-2 text-[12px] text-warn-fg"
+          className="rounded-md border border-warn-fg/30 bg-warn-bg px-4 py-2 text-[0.8571rem] text-warn-fg"
         >
           {queryWarnings.map(w => (
             <p key={`${w.field}:${w.message}`}>{w.message}</p>
@@ -615,7 +615,7 @@ export function ListView() {
         <div
           role="alert"
           data-testid="workflow-config-broken"
-          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[12px] text-danger-fg"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[0.8571rem] text-danger-fg"
         >
           <p className="font-medium">
             <code className="font-mono">.loctt/config/workflow.yaml</code> has an
@@ -631,7 +631,7 @@ export function ListView() {
               <li
                 key={`${e.sub}-${String(e.index)}`}
                 data-testid={`workflow-config-broken-${e.sub}-${String(e.index)}`}
-                className="text-[11px] text-text-secondary"
+                className="text-[0.7857rem] text-text-secondary"
               >
                 {/* `statuses[0].` then the Zod message, which itself
                     begins with the field ("category must be one of …").
@@ -651,7 +651,7 @@ export function ListView() {
           role="alert"
           data-testid="broken-view"
           data-broken-view-position={brokenView.position ?? ""}
-          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[12px] text-danger-fg"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[0.8571rem] text-danger-fg"
         >
           <p className="font-medium">
             The saved view <code className="font-mono">{brokenView.name}</code> could
@@ -663,7 +663,7 @@ export function ListView() {
               ? <> (at position <span data-testid="broken-view-position">{brokenView.position}</span>)</>
               : null}
           </p>
-          <p className="mt-1 font-mono text-[11px] text-text-secondary">{brokenView.query}</p>
+          <p className="mt-1 font-mono text-[0.7857rem] text-text-secondary">{brokenView.query}</p>
           <button
             type="button"
             data-testid="broken-view-fix"
@@ -686,7 +686,7 @@ export function ListView() {
       {missingView !== undefined && (
         <div
           role="status"
-          className="rounded-md border border-warn-fg/30 bg-warn-bg px-4 py-2 text-[12px] text-warn-fg"
+          className="rounded-md border border-warn-fg/30 bg-warn-bg px-4 py-2 text-[0.8571rem] text-warn-fg"
         >
           The saved view <code className="font-mono">{missingView}</code> no longer
           exists, so this is showing every task instead. It was probably deleted
@@ -701,14 +701,14 @@ export function ListView() {
         </div>
       )}
       {unreadable.length > 0 && (
-        <div role="alert" className="mb-2 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[12px] text-danger-fg">
+        <div role="alert" className="mb-2 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[0.8571rem] text-danger-fg">
           {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
           {" "}could not be read, so {unreadable.length === 1 ? "it is" : "they are"}
           {" "}missing from this list. A hand-edit is the usual cause — LocTT
           {" "}writes atomically, so a half-written file is not.
           <ul className="mt-1 space-y-0.5">
             {unreadable.map(u => (
-              <li key={u.id} className="font-mono text-[11px]">
+              <li key={u.id} className="font-mono text-[0.7857rem]">
                 {u.path}: {u.reason}
               </li>
             ))}
@@ -728,7 +728,7 @@ export function ListView() {
           ref={tableRef}
           aria-label="Tasks"
           aria-busy={tasks.isLoading}
-          className="w-full border-separate border-spacing-0 text-[13px]"
+          className="w-full border-separate border-spacing-0 text-[0.9286rem]"
         >
           <thead>
             <tr>
@@ -764,13 +764,13 @@ export function ListView() {
                     // disagree about the guess.
                     scope="col"
                     aria-sort={isSorted ? (sortDir === "asc" ? "ascending" : "descending") : undefined}
-                    className="sticky top-0 whitespace-nowrap border-b border-border-default bg-bg-canvas px-3 py-2 text-left text-[12px] font-semibold text-text-secondary dark:bg-bg-surface"
+                    className="sticky top-0 whitespace-nowrap border-b border-border-default bg-bg-canvas px-3 py-2 text-left text-[0.8571rem] font-semibold text-text-secondary dark:bg-bg-surface"
                   >
                     {col.sortable ? (
                       <button
                         type="button"
                         onClick={() => onSort(col.id)}
-                        className="inline-flex select-none items-center gap-1 text-[12px] font-semibold text-text-secondary hover:text-text-primary"
+                        className="inline-flex select-none items-center gap-1 text-[0.8571rem] font-semibold text-text-secondary hover:text-text-primary"
                       >
                         {col.label}
                         {/* LST-54: the direction must be legible. When
@@ -784,8 +784,8 @@ export function ListView() {
                         <span
                           className={
                             isSorted
-                              ? "text-[10px] text-text-secondary"
-                              : "text-[10px] text-text-tertiary"
+                              ? "text-[0.7143rem] text-text-secondary"
+                              : "text-[0.7143rem] text-text-tertiary"
                           }
                         >
                           {isSorted
@@ -961,7 +961,7 @@ export function ListView() {
             type="button"
             aria-label="Dismiss"
             onClick={() => { setBulkResult(undefined); }}
-            className="ml-auto rounded-md border border-border-subtle px-2 py-0.5 text-[12px] font-medium text-text-secondary hover:bg-bg-muted"
+            className="ml-auto rounded-md border border-border-subtle px-2 py-0.5 text-[0.8571rem] font-medium text-text-secondary hover:bg-bg-muted"
           >
             ✕
           </button>
@@ -1093,7 +1093,7 @@ function Cell({
               a lone visual signal — unreadable to a screen reader and to
               anyone the contrast drop does not reach. */}
           {task.archived === true && (
-            <span className="rounded border border-border-subtle px-1 py-px text-[10px] font-medium uppercase tracking-wide text-text-tertiary">
+            <span className="rounded border border-border-subtle px-1 py-px text-[0.7143rem] font-medium uppercase tracking-wide text-text-tertiary">
               Archived
             </span>
           )}

@@ -208,7 +208,7 @@ export function AttachmentsPanel({
         }
       >
         {attachmentsError !== undefined ? (
-          <div data-testid="attachments-error" className="mb-2 text-[13px]">
+          <div data-testid="attachments-error" className="mb-2 text-[0.9286rem]">
             <p className="text-danger-fg">
               Attachments could not be read — {attachmentsError}
             </p>
@@ -217,24 +217,24 @@ export function AttachmentsPanel({
                 type="button"
                 data-testid="attachments-retry"
                 onClick={onRetry}
-                className="mt-1 rounded border border-border-subtle px-1.5 py-0.5 text-[12px] text-text-secondary underline hover:bg-bg-muted"
+                className="mt-1 rounded border border-border-subtle px-1.5 py-0.5 text-[0.8571rem] text-text-secondary underline hover:bg-bg-muted"
               >
                 Retry
               </button>
             )}
           </div>
         ) : attachments.length === 0 ? (
-          <p data-testid="attachments-empty" className="mb-2 text-[13px] text-text-secondary">
+          <p data-testid="attachments-empty" className="mb-2 text-[0.9286rem] text-text-secondary">
             No attachments on this task yet.
           </p>
         ) : null}
-        <p className="text-[12px] text-text-tertiary">
+        <p className="text-[0.8571rem] text-text-tertiary">
           Drag files here, or{" "}
           <button
             type="button"
             data-testid="attachment-upload"
             onClick={() => { inputRef.current?.click(); }}
-            className="rounded border border-border-subtle px-1.5 py-0.5 text-[12px] text-text-secondary underline hover:bg-bg-muted"
+            className="rounded border border-border-subtle px-1.5 py-0.5 text-[0.8571rem] text-text-secondary underline hover:bg-bg-muted"
           >
             Upload
           </button>
@@ -303,7 +303,7 @@ export function AttachmentsPanel({
               />
             ))}
           </ul>
-          <p data-testid="attachments-count" className="mt-2 text-[12px] text-text-tertiary">
+          <p data-testid="attachments-count" className="mt-2 text-[0.8571rem] text-text-tertiary">
             {attachments.length} attachment{attachments.length === 1 ? "" : "s"}
           </p>
         </>
@@ -321,7 +321,7 @@ export function AttachmentsPanel({
             data-testid="attachment-summary"
             data-uploaded={String(done)}
             data-failed={String(failed)}
-            className="mb-1 text-[12px] text-text-secondary"
+            className="mb-1 text-[0.8571rem] text-text-secondary"
           >
             {done} uploaded, {failed} failed
             {unresolved > 0 && `, ${String(unresolved)} needing a decision`}
@@ -347,7 +347,7 @@ export function AttachmentsPanel({
                 data-testid="attachment-queue-item"
                 data-name={item.name}
                 data-state={item.state}
-                className="flex flex-wrap items-center gap-2 text-[12px]"
+                className="flex flex-wrap items-center gap-2 text-[0.8571rem]"
               >
                 <span className="font-mono">{item.name}</span>
                 {item.state === "pending" && (
@@ -502,7 +502,7 @@ function AttachmentTile({
         <span
           aria-hidden="true"
           data-testid="attachment-icon"
-          className="shrink-0 text-[16px]"
+          className="shrink-0 text-[1.1429rem]"
         >
           {glyphFor(family)}
         </span>
@@ -512,12 +512,12 @@ function AttachmentTile({
           data-testid="attachment-name"
           title={attachment.name}
           aria-label={`Download ${attachment.name}`}
-          className="min-w-0 flex-1 truncate text-[13px] text-text-primary no-underline hover:underline"
+          className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary no-underline hover:underline"
         >
           {attachment.name}
         </a>
       </div>
-      <p className="text-[11px] text-text-tertiary">
+      <p className="text-[0.7857rem] text-text-tertiary">
         {formatBytes(attachment.size)} · {displayMime(attachment.mime)}
       </p>
       <button
@@ -525,7 +525,7 @@ function AttachmentTile({
         data-testid="attachment-remove"
         disabled={removing}
         onClick={onRemove}
-        className="self-start rounded border border-border-subtle px-1.5 py-0.5 text-[11px] text-text-secondary hover:bg-bg-muted disabled:opacity-50"
+        className="self-start rounded border border-border-subtle px-1.5 py-0.5 text-[0.7857rem] text-text-secondary hover:bg-bg-muted disabled:opacity-50"
       >
         Remove
       </button>
@@ -533,7 +533,7 @@ function AttachmentTile({
         <p
           role="alert"
           data-testid="attachment-remove-error"
-          className="text-[11px] text-danger-fg"
+          className="text-[0.7857rem] text-danger-fg"
         >
           {error}{" "}
           <button type="button" onClick={onDismissError} className="underline">

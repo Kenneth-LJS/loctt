@@ -67,7 +67,7 @@ export function VirtualCards({
           type="button"
           data-testid="sprint-show-more"
           onClick={() => { setLimit(l => l + CARD_WINDOW); }}
-          className="w-full rounded border border-dashed border-border-subtle px-3 py-2 text-[12px] text-text-tertiary hover:text-text-primary"
+          className="w-full rounded border border-dashed border-border-subtle px-3 py-2 text-[0.8571rem] text-text-tertiary hover:text-text-primary"
         >
           {/* Names the number still hidden, so the column never reads
               as though it held only what is drawn. */}

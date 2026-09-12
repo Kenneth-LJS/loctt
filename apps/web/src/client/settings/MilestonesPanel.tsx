@@ -63,7 +63,7 @@ function MilestoneRow({ milestone, count, all }: {
                   data-testid="milestone-name-input"
                   value={name}
                   onChange={e => { setName(e.target.value); }}
-                  className="min-w-0 flex-1 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[13px]"
+                  className="min-w-0 flex-1 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
                 />
                 <input
                   type="date"
@@ -71,16 +71,16 @@ function MilestoneRow({ milestone, count, all }: {
                   data-testid="milestone-date-input"
                   value={date}
                   onChange={e => { setDate(e.target.value); }}
-                  className="w-40 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[13px]"
+                  className="w-40 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
                 />
               </div>
               {!dateOk && (
-                <p role="alert" className="text-[12px] text-danger-fg">
+                <p role="alert" className="text-[0.8571rem] text-danger-fg">
                   Target date must be an ISO date like <code className="font-mono">2026-03-31</code>.
                 </p>
               )}
               {update.isError && (
-                <p role="alert" className="text-[12px] text-danger-fg">
+                <p role="alert" className="text-[0.8571rem] text-danger-fg">
                   {update.error instanceof ApiError ? update.error.message : "Could not save."}
                 </p>
               )}
@@ -102,7 +102,7 @@ function MilestoneRow({ milestone, count, all }: {
                       { onSuccess: () => { setEditing(false); } },
                     );
                   }}
-                  className="rounded border border-border-subtle px-2 py-1 text-[12px] disabled:opacity-50"
+                  className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
                 >
                   Save
                 </button>
@@ -113,7 +113,7 @@ function MilestoneRow({ milestone, count, all }: {
                     setDate(milestone.target_date ?? "");
                     setEditing(false);
                   }}
-                  className="rounded border border-border-subtle px-2 py-1 text-[12px]"
+                  className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
                 >
                   Cancel
                 </button>
@@ -122,7 +122,7 @@ function MilestoneRow({ milestone, count, all }: {
           )
         : (
             <>
-              <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">
+              <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
                 {milestone.name}
                 {/*
                   MSL-11 (management surface): an archived milestone is
@@ -145,14 +145,14 @@ function MilestoneRow({ milestone, count, all }: {
               <span
                 data-testid="milestone-date"
                 data-milestone-date={milestone.target_date ?? "none"}
-                className="w-40 shrink-0 text-[12px] text-text-secondary"
+                className="w-40 shrink-0 text-[0.8571rem] text-text-secondary"
               >
                 {milestone.target_date ?? "No target date"}
               </span>
               <span
                 data-testid="milestone-refcount"
                 data-milestone-refcount={String(count)}
-                className="w-24 shrink-0 text-right text-[12px] text-text-secondary"
+                className="w-24 shrink-0 text-right text-[0.8571rem] text-text-secondary"
               >
                 {String(count)} task{count === 1 ? "" : "s"}
               </span>
@@ -169,7 +169,7 @@ function MilestoneRow({ milestone, count, all }: {
                   update.reset();
                   setEditing(true);
                 }}
-                className="rounded border border-border-subtle px-2 py-1 text-[12px]"
+                className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
               >
                 Edit
               </button>
@@ -178,7 +178,7 @@ function MilestoneRow({ milestone, count, all }: {
                 data-testid="milestone-archive-toggle"
                 disabled={archive.isPending}
                 onClick={() => { archive.reset(); archive.mutate({ id: milestone.id, archived: !archived }); }}
-                className="rounded border border-border-subtle px-2 py-1 text-[12px] disabled:opacity-50"
+                className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
               >
                 {archived ? "Unarchive" : "Archive"}
               </button>
@@ -186,7 +186,7 @@ function MilestoneRow({ milestone, count, all }: {
                 type="button"
                 data-testid="milestone-delete"
                 onClick={() => { setConfirmingDelete(true); }}
-                className="rounded border border-border-subtle px-2 py-1 text-[12px]"
+                className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
               >
                 Delete
               </button>
@@ -197,7 +197,7 @@ function MilestoneRow({ milestone, count, all }: {
                 <p
                   role="alert"
                   data-testid="milestone-archive-error"
-                  className="basis-full text-[12px] text-danger-fg"
+                  className="basis-full text-[0.8571rem] text-danger-fg"
                 >
                   {archive.error instanceof ApiError ? archive.error.message : "Could not change the archived state."}
                 </p>
@@ -258,7 +258,7 @@ export function MilestonesPanel() {
             onRetry={() => { void milestones.refetch(); }}
             context="reading .loctt/config/milestones.yaml"
           />
-          <p className="mt-2 text-[13px] text-text-secondary">
+          <p className="mt-2 text-[0.9286rem] text-text-secondary">
             This is a failure to read the file, not an empty milestone list.
           </p>
         </div>
@@ -277,9 +277,9 @@ export function MilestonesPanel() {
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Milestones
       </h1>
-      <p className="mb-4 text-[13px] text-text-secondary">
+      <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Stored in{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
           .loctt/config/milestones.yaml
         </code>. Progress is shown on the Milestones view, not here.
       </p>
@@ -301,7 +301,7 @@ export function MilestonesPanel() {
           value={name}
           placeholder="New milestone"
           onChange={e => { setName(e.target.value); }}
-          className="min-w-0 flex-1 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[13px]"
+          className="min-w-0 flex-1 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
         />
         <input
           type="date"
@@ -309,27 +309,27 @@ export function MilestonesPanel() {
           data-testid="milestone-create-date"
           value={date}
           onChange={e => { setDate(e.target.value); }}
-          className="w-40 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[13px]"
+          className="w-40 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
         />
         <button
           type="submit"
           data-testid="milestone-create-submit"
           disabled={name.trim() === "" || create.isPending}
-          className="rounded-md border border-border-subtle bg-bg-surface px-3 py-1 text-[13px] disabled:opacity-50"
+          className="rounded-md border border-border-subtle bg-bg-surface px-3 py-1 text-[0.9286rem] disabled:opacity-50"
         >
           Create
         </button>
       </form>
 
       {create.isError && (
-        <p role="alert" className="mb-3 text-[12px] text-danger-fg">
+        <p role="alert" className="mb-3 text-[0.8571rem] text-danger-fg">
           {create.error instanceof ApiError ? create.error.message : "Could not create."}
         </p>
       )}
 
       {items.length === 0
         ? (
-            <p data-testid="milestones-empty" data-milestones-state="empty" className="text-[13px] text-text-tertiary">
+            <p data-testid="milestones-empty" data-milestones-state="empty" className="text-[0.9286rem] text-text-tertiary">
               No milestones yet.
             </p>
           )

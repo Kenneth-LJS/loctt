@@ -421,7 +421,7 @@ export function CreateTaskModal({
       >
         <div className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
           {/* NEW-1: the same heading in all three entry points. */}
-          <h2 id={headingId} className="text-[15px] font-semibold text-text-primary">
+          <h2 id={headingId} className="text-[1.0714rem] font-semibold text-text-primary">
             New task
           </h2>
           <button
@@ -443,7 +443,7 @@ export function CreateTaskModal({
             <div
               role="alert"
               data-testid="create-error"
-              className="rounded border border-danger-fg/40 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+              className="rounded border border-danger-fg/40 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
             >
               {failure.message}
             </div>
@@ -486,14 +486,14 @@ export function CreateTaskModal({
                 setForm(f => ({ ...f, title: e.target.value }));
                 if (e.target.value.trim() !== "") setShowTitleRequired(false);
               }}
-              className="w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 text-[13px] text-text-primary"
+              className="w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 text-[0.9286rem] text-text-primary"
             />
             {showTitleRequired && (
               <p
                 id="create-title-required"
                 role="alert"
                 data-testid="create-title-required"
-                className="mt-1 text-[11px] text-danger-fg"
+                className="mt-1 text-[0.7857rem] text-danger-fg"
               >
                 A title is required.
               </p>
@@ -617,7 +617,7 @@ export function CreateTaskModal({
               id="create-date-problem"
               role="alert"
               data-testid="create-date-problem"
-              className="text-[11px] text-danger-fg"
+              className="text-[0.7857rem] text-danger-fg"
             >
               {dateProblem}
             </p>
@@ -627,7 +627,7 @@ export function CreateTaskModal({
             <fieldset className="space-y-2 rounded border border-border-subtle p-3">
               {/* NEW-10's fourth bullet: this header exists only when
                   there is something under it. */}
-              <legend className="px-1 text-[12px] font-medium text-text-secondary">
+              <legend className="px-1 text-[0.8571rem] font-medium text-text-secondary">
                 Custom fields
               </legend>
               {wf.custom_fields.map(def => (
@@ -680,7 +680,7 @@ export function CreateTaskModal({
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-border-subtle px-4 py-3">
-          <label className="flex items-center gap-2 text-[12px] text-text-secondary">
+          <label className="flex items-center gap-2 text-[0.8571rem] text-text-secondary">
             <input
               type="checkbox"
               data-testid="create-another"
@@ -838,7 +838,7 @@ function Field({
 }) {
   return (
     <div>
-      <label htmlFor={htmlFor} className="mb-1 block text-[12px] font-medium text-text-secondary">
+      <label htmlFor={htmlFor} className="mb-1 block text-[0.8571rem] font-medium text-text-secondary">
         {label}
       </label>
       {children}
@@ -878,7 +878,7 @@ function ProjectField({
       <Field label="Project">
         <div
           data-testid="create-project-sole"
-          className="rounded border border-border-subtle bg-bg-muted px-2 py-1.5 text-[13px] text-text-secondary"
+          className="rounded border border-border-subtle bg-bg-muted px-2 py-1.5 text-[0.9286rem] text-text-secondary"
         >
           {only ? `${only.name} (${only.prefix})` : choice.id}
         </div>
@@ -904,7 +904,7 @@ function ProjectField({
           id="create-project-required"
           role="alert"
           data-testid="create-project-required"
-          className="mt-1 text-[11px] text-danger-fg"
+          className="mt-1 text-[0.7857rem] text-danger-fg"
         >
           {NO_PROJECT_MESSAGE}
         </p>
@@ -1101,10 +1101,10 @@ function FormDateField({
         aria-invalid={errorId !== undefined}
         aria-describedby={errorId}
         onChange={e => { onChange(e.target.value === "" ? undefined : e.target.value); }}
-        className="w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 text-[13px] text-text-primary"
+        className="w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 text-[0.9286rem] text-text-primary"
       />
       {note !== undefined && (
-        <span data-testid={`create-nonworking-${testid}`} className="mt-0.5 block text-[11px] text-text-tertiary">
+        <span data-testid={`create-nonworking-${testid}`} className="mt-0.5 block text-[0.7857rem] text-text-tertiary">
           {note}
         </span>
       )}
@@ -1144,7 +1144,7 @@ function CreateCustomField({
 
   if (def.type === "boolean") {
     return (
-      <label className="flex items-center gap-2 text-[12px] text-text-secondary">
+      <label className="flex items-center gap-2 text-[0.8571rem] text-text-secondary">
         <input
           type="checkbox"
           data-testid={testid}
@@ -1176,7 +1176,7 @@ function CreateCustomField({
                     onChange(next.length > 0 ? next : undefined);
                   }}
                   className={[
-                    "rounded-full border px-2 py-0.5 text-[12px]",
+                    "rounded-full border px-2 py-0.5 text-[0.8571rem]",
                     on
                       ? "border-accent bg-accent text-accent-contrast"
                       : "border-border-default text-text-secondary hover:bg-bg-muted",
@@ -1217,7 +1217,7 @@ function CreateCustomField({
           data-testid={testid}
           value={typeof value === "string" ? value : ""}
           onChange={e => { onChange(e.target.value === "" ? undefined : e.target.value); }}
-          className="w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 text-[13px] text-text-primary"
+          className="w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 text-[0.9286rem] text-text-primary"
         />
         <FieldProblem problem={problem} testid={testid} />
       </Field>
@@ -1251,7 +1251,7 @@ function CreateCustomField({
           // `null` and produce a different, less honest error.
           onChange(Number.isFinite(n) && raw.trim() !== "" ? n : raw);
         }}
-        className="w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 text-[13px] text-text-primary"
+        className="w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 text-[0.9286rem] text-text-primary"
       />
       <FieldProblem problem={problem} testid={testid} />
     </Field>
@@ -1267,7 +1267,7 @@ function FieldProblem({
 }) {
   if (problem === undefined) return null;
   return (
-    <p role="alert" data-testid={`${testid}-problem`} className="mt-1 text-[11px] text-danger-fg">
+    <p role="alert" data-testid={`${testid}-problem`} className="mt-1 text-[0.7857rem] text-danger-fg">
       {problem}
     </p>
   );
@@ -1306,8 +1306,8 @@ function DiscardDialog({
         tabIndex={-1}
         className="w-full max-w-sm rounded-lg border border-border-default bg-bg-surface-raised p-4 shadow-overlay"
       >
-        <h3 className="mb-2 text-[14px] font-semibold text-text-primary">Discard this task?</h3>
-        <p className="mb-3 text-[12px] text-text-secondary">
+        <h3 className="mb-2 text-[1rem] font-semibold text-text-primary">Discard this task?</h3>
+        <p className="mb-3 text-[0.8571rem] text-text-secondary">
           What you have typed will be lost.
         </p>
         <div className="flex justify-end gap-2">

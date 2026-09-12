@@ -72,14 +72,14 @@ export function BulkRow({
       <div className="flex gap-2.5">
         <span
           aria-hidden="true"
-          className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-bg-muted text-[11px]"
+          className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-bg-muted text-[0.7857rem]"
         >
           {icon}
         </span>
 
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] leading-snug text-text-secondary">
-            <span className="mr-1.5 rounded bg-bg-muted px-1 py-0.5 text-[11px] font-medium uppercase tracking-wide text-text-tertiary">
+          <p className="text-[0.9286rem] leading-snug text-text-secondary">
+            <span className="mr-1.5 rounded bg-bg-muted px-1 py-0.5 text-[0.7857rem] font-medium uppercase tracking-wide text-text-tertiary">
               {kindLabel}
             </span>
             <Actor entry={first} users={users} />
@@ -96,7 +96,7 @@ export function BulkRow({
             data-testid="activity-bulk-toggle"
             aria-expanded={open}
             onClick={() => { setOpen(o => !o); }}
-            className="mt-0.5 rounded text-[12px] text-text-tertiary underline hover:text-text-primary"
+            className="mt-0.5 rounded text-[0.8571rem] text-text-tertiary underline hover:text-text-primary"
           >
             {open
               ? "Hide the individual changes"

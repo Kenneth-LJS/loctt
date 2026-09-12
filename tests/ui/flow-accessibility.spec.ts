@@ -1891,71 +1891,68 @@ test.describe("A11Y — drag affordances have keyboard alternatives", () => {
 });
 
 test.describe("A11Y — text-only zoom", () => {
-  /**
-   * A11Y-39 is **not** claimed by this test, deliberately. See
-   * decision A95.
-   *
-   * Text-only zoom is the user agent scaling text while leaving page
-   * zoom alone — Firefox's "Zoom text only", or a browser minimum /
-   * default font-size preference. What it scales is the *root* font
-   * size; a layout expressed in `rem`/`em` grows with it, one
-   * expressed in absolute `px` does not move at all.
-   *
-   * Measured against the built app: `styles/index.css` sets
-   * `html, body { font-size: 14px }`, and every one of the 233
-   * elements rendered on `/list` resolves to an absolute px
-   * font-size. Doubling the root font size moves `html` to 32px and
-   * leaves `body` at 14px, because body's own absolute rule overrides
-   * the inherited value. Nothing downstream responds.
-   *
-   * That makes the case's three bullets *vacuously* true: text cannot
-   * be clipped by a fixed-height box when the text never grows. A test
-   * asserting "no text is clipped at 200% text zoom" would pass
-   * against an app with no text-zoom support whatsoever, which is
-   * precisely the tag-that-cannot-fail this run keeps finding. The
-   * case is therefore left uncovered rather than claimed.
-   *
-   * What is asserted instead is the *cause*, so the gap is visible and
-   * regression-guarded: the app opts out of text scaling. This test
-   * fails the day the type scale moves to relative units, which is the
-   * signal to write the real transcription and add the tag.
-   */
-  test("A11Y-39 (partial): the type scale is absolute, so text-only zoom has nothing to act on", async ({
+  // @verifies A11Y-39
+  //
+  // Text-only zoom is the user agent scaling text while leaving page zoom
+  // alone (Firefox's "Zoom text only", a browser minimum/default
+  // font-size). What it scales is the *root* font size, so a layout in
+  // rem/em grows with it. The app now anchors its base to the root
+  // (`html { font-size: 87.5% }`, body `1rem`) and sizes type in rem
+  // (`--text-*` + `text-[…rem]`), so doubling the root doubles the text —
+  // the point of the case. (This supersedes A95's "absolute scale, nothing
+  // to act on" partial.)
+  test("A11Y-39: text-only zoom to 200% scales the text and clips nothing", async ({
     page,
     tracker,
   }) => {
-    await tracker.seed([{ title: "Text zoom subject" }]);
+    await tracker.seed([
+      { title: "Text zoom subject with a reasonably long title to wrap" },
+    ]);
     await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByText("Text zoom subject")).toBeVisible();
+    const cell = page.getByText("Text zoom subject with a reasonably long title to wrap");
+    await expect(cell).toBeVisible();
 
-    const rootBefore = await page.evaluate(
-      () => getComputedStyle(document.documentElement).fontSize,
-    );
     const bodyBefore = await page.evaluate(
-      () => getComputedStyle(document.body).fontSize,
+      () => parseFloat(getComputedStyle(document.body).fontSize),
     );
-    expect(bodyBefore).toBe("14px");
+    // Body resolves to the 14px design base at 100% zoom.
+    expect(bodyBefore).toBeGreaterThan(13);
+    expect(bodyBefore).toBeLessThan(15);
 
-    // Simulate what a user agent's text-only zoom does: scale the root
-    // font size, leaving page zoom untouched.
-    await page.addStyleTag({ content: "html { font-size: 200% !important; }" });
+    // Simulate a user agent's text-only zoom: scale the root font size,
+    // leaving page zoom untouched.
+    await page.addStyleTag({ content: "html { font-size: 175% !important; }" });
 
-    const rootAfter = await page.evaluate(
-      () => getComputedStyle(document.documentElement).fontSize,
-    );
     const bodyAfter = await page.evaluate(
-      () => getComputedStyle(document.body).fontSize,
+      () => parseFloat(getComputedStyle(document.body).fontSize),
     );
+    // The text actually grew — the bullet the old absolute scale failed.
+    // 175% of the 87.5%-of-16px base is 2× the 14px body (≈28px); assert a
+    // clear increase rather than an exact number (rounding, sub-pixel).
+    expect(bodyAfter).toBeGreaterThan(bodyBefore * 1.5);
 
-    // The root did scale — proving the simulation itself works. This
-    // is the positive control: without it, "body did not change" would
-    // also pass if the style tag had silently failed to apply.
-    expect(parseFloat(rootAfter)).toBeGreaterThan(parseFloat(rootBefore));
+    // A concrete text element grew too, not just <body> — a real cell,
+    // reading its own computed size.
+    const cellPx = await cell.evaluate(el => parseFloat(getComputedStyle(el).fontSize));
+    expect(cellPx).toBeGreaterThan(bodyBefore * 1.3);
 
-    // ...and the body did not follow, because its own rule is absolute.
-    // This is the gap. It inverts the day the type scale becomes
-    // relative.
-    expect(bodyAfter).toBe("14px");
+    // Nothing is clipped: the title cell's full text height fits within
+    // its rendered box (a fixed-height overflow:hidden container would
+    // make scrollHeight exceed clientHeight once the text grew). Checked
+    // on the row-header cell that carries the title.
+    const clipped = await cell.evaluate(el => {
+      const box = el.closest("td, th") ?? el;
+      return box.scrollHeight > box.clientHeight + 1;
+    });
+    expect(clipped, "the title text is clipped by a fixed-height box at 175% text zoom").toBe(false);
+
+    // And the document did not gain a horizontal scrollbar from text that
+    // could not reflow (WCAG 1.4.10-adjacent, and A11Y-39's "containers
+    // grow / text reflows").
+    const hScroll = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+    );
+    expect(hScroll, "the page scrolls horizontally at 175% text zoom").toBe(false);
   });
 });
 

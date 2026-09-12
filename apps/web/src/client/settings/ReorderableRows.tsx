@@ -108,7 +108,7 @@ export function ReorderableRows<T>({
                 if (e.key === "ArrowUp") { e.preventDefault(); move(i, i - 1, "keyboard"); }
                 if (e.key === "ArrowDown") { e.preventDefault(); move(i, i + 1, "keyboard"); }
               }}
-              className="shrink-0 cursor-grab px-1 text-[12px] text-text-tertiary disabled:cursor-not-allowed"
+              className="shrink-0 cursor-grab px-1 text-[0.8571rem] text-text-tertiary disabled:cursor-not-allowed"
             >
               ⠿
             </button>

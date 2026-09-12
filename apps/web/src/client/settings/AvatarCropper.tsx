@@ -126,7 +126,7 @@ export function AvatarCropper({
           <p
             role="status"
             data-testid={`avatar-animated-note-${testIdSuffix}`}
-            className="text-[12px] text-text-secondary"
+            className="text-[0.8571rem] text-text-secondary"
           >
             Animated images are stored as a single frame — the frame shown
             below is what will be saved.
@@ -163,7 +163,7 @@ export function AvatarCropper({
           </div>
 
           <div className="grid content-start gap-2">
-            <span className="text-[11px] uppercase tracking-wide text-text-tertiary">
+            <span className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
               Preview
             </span>
             {/* PRU-13: the preview renders from the crop, not the raw
@@ -178,7 +178,7 @@ export function AvatarCropper({
           </div>
         </div>
 
-        <label className="grid gap-1 text-[12px] text-text-secondary">
+        <label className="grid gap-1 text-[0.8571rem] text-text-secondary">
           <span>Zoom</span>
           <input
             type="range"
@@ -195,7 +195,7 @@ export function AvatarCropper({
             type="button"
             data-testid={`avatar-crop-cancel-${testIdSuffix}`}
             onClick={onCancel}
-            className="h-8 rounded-md px-3 text-[13px] text-text-secondary"
+            className="h-8 rounded-md px-3 text-[0.9286rem] text-text-secondary"
           >
             Cancel
           </button>
@@ -204,7 +204,7 @@ export function AvatarCropper({
             data-testid={`avatar-crop-confirm-${testIdSuffix}`}
             disabled={busy}
             onClick={confirm}
-            className="h-8 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast disabled:opacity-50"
+            className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast disabled:opacity-50"
           >
             {busy ? "Preparing…" : "Use this crop"}
           </button>

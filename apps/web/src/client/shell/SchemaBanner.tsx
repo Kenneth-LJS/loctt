@@ -39,7 +39,7 @@ export function SchemaBanner({ status }: { status: SchemaStatusResponse }) {
       role="alert"
       data-kind={status.kind}
       className={[
-        "flex flex-wrap items-center gap-x-2 gap-y-1 border-b px-4 py-2 text-[13px]",
+        "flex flex-wrap items-center gap-x-2 gap-y-1 border-b px-4 py-2 text-[0.9286rem]",
         tone === "warn"
           ? "border-warn-fg/20 bg-warn-bg text-warn-fg"
           : "border-danger-fg/20 bg-danger-bg text-danger-fg",
@@ -108,7 +108,7 @@ function MigrateNow({ from, to }: { readonly from: number; readonly to: number }
         The migration did not complete: {migrate.error.message} The tracker may
         be part-migrated — check the backup directory before retrying, and
         recover with{" "}
-        <code className="rounded bg-black/10 px-1 py-0.5 font-mono text-[12px] select-all">
+        <code className="rounded bg-black/10 px-1 py-0.5 font-mono text-[0.8571rem] select-all">
           {envelope?.recovery?.kind === "command" && envelope.recovery.command !== undefined
             ? envelope.recovery.command
             : "loctt migrate"}
@@ -124,7 +124,7 @@ function MigrateNow({ from, to }: { readonly from: number; readonly to: number }
         type="button"
         data-testid="schema-migrate-now"
         onClick={() => { setConfirming(true); }}
-        className="rounded border border-current/30 px-2 py-0.5 text-[12px] font-medium"
+        className="rounded border border-current/30 px-2 py-0.5 text-[0.8571rem] font-medium"
       >
         Migrate now
       </button>
@@ -142,14 +142,14 @@ function MigrateNow({ from, to }: { readonly from: number; readonly to: number }
         data-testid="schema-migrate-confirm-button"
         disabled={migrate.isPending}
         onClick={() => { migrate.mutate(); }}
-        className="rounded border border-current/30 px-2 py-0.5 text-[12px] font-medium disabled:opacity-50"
+        className="rounded border border-current/30 px-2 py-0.5 text-[0.8571rem] font-medium disabled:opacity-50"
       >
         {migrate.isPending ? "Migrating…" : "Run migration"}
       </button>
       <button
         type="button"
         onClick={() => { setConfirming(false); }}
-        className="rounded border border-current/30 px-2 py-0.5 text-[12px]"
+        className="rounded border border-current/30 px-2 py-0.5 text-[0.8571rem]"
       >
         Cancel
       </button>

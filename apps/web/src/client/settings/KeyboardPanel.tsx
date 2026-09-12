@@ -132,14 +132,14 @@ export function KeyboardPanel() {
   return (
     <div className="p-8" data-testid="keyboard-panel">
       <h1 className="mb-1 text-lg font-semibold text-text-primary">Keyboard</h1>
-      <p className="mb-6 max-w-prose text-[12px] text-text-secondary">
+      <p className="mb-6 max-w-prose text-[0.8571rem] text-text-secondary">
         The shortcuts this build actually has. Shortcuts are not
         rebindable.
       </p>
 
       {SHORTCUTS.map(group => (
         <section key={group.group} className="mb-6">
-          <h2 className="mb-2 text-[13px] font-semibold text-text-primary">
+          <h2 className="mb-2 text-[0.9286rem] font-semibold text-text-primary">
             {group.group}
           </h2>
           <table className="w-full max-w-2xl border-collapse text-left">
@@ -158,15 +158,15 @@ export function KeyboardPanel() {
                         {k === "/" ? (
                           <span className="mx-0.5 text-text-tertiary">or</span>
                         ) : (
-                          <kbd className="rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 font-mono text-[11px] text-text-primary">
+                          <kbd className="rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 font-mono text-[0.7857rem] text-text-primary">
                             {k === "Ctrl" ? mod : k}
                           </kbd>
                         )}
                       </span>
                     ))}
                   </td>
-                  <td className="py-1.5 text-[13px] text-text-primary">{s.action}</td>
-                  <td className="py-1.5 text-right text-[12px] text-text-tertiary">
+                  <td className="py-1.5 text-[0.9286rem] text-text-primary">{s.action}</td>
+                  <td className="py-1.5 text-right text-[0.8571rem] text-text-tertiary">
                     {s.scope}
                   </td>
                 </tr>

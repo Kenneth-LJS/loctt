@@ -144,7 +144,7 @@ export function MilestonesView() {
   if (milestones.isLoading) {
     return (
       <div data-testid="milestones" aria-busy="true" className="p-4">
-        <LoadingState className="text-[13px] text-text-tertiary">Loading milestones…</LoadingState>
+        <LoadingState className="text-[0.9286rem] text-text-tertiary">Loading milestones…</LoadingState>
       </div>
     );
   }
@@ -168,13 +168,13 @@ export function MilestonesView() {
     <div data-testid="milestones" className="flex h-full flex-col gap-4 overflow-auto p-4">
       <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div className="flex flex-col gap-0.5">
-          <h1 className="text-[15px] font-semibold text-text-primary">Milestones</h1>
+          <h1 className="text-[1.0714rem] font-semibold text-text-primary">Milestones</h1>
           {/* MSL-42 (UX-15): the discoverability copy. This *is* where
               milestone progress renders, so the subhead says so plainly
               and points at where milestones are created — closing the
               "a view the user cannot find" gap the case is written
               against. */}
-          <p data-testid="milestones-subhead" className="text-[12px] text-text-tertiary">
+          <p data-testid="milestones-subhead" className="text-[0.8571rem] text-text-tertiary">
             Progress toward every milestone. Manage them in{" "}
             <Link
               to="/settings/$section"
@@ -191,7 +191,7 @@ export function MilestonesView() {
           // unarchiving them. A checkbox rather than a button so its
           // state is announced, and nothing here writes to
           // `milestones.yaml`. Migrated to the B1 `Checkbox` primitive.
-          <label className="flex items-center gap-1.5 text-[12px] text-text-secondary">
+          <label className="flex items-center gap-1.5 text-[0.8571rem] text-text-secondary">
             <Checkbox
               data-testid="milestones-show-archived"
               checked={showArchived}
@@ -211,7 +211,7 @@ export function MilestonesView() {
         <div
           role="alert"
           data-testid="milestones-unreadable"
-          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
           {" "}could not be read, so the totals below are short by
@@ -228,7 +228,7 @@ export function MilestonesView() {
         <div
           role="alert"
           data-testid="milestones-orphans"
-          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           <p>
             <strong data-testid="milestones-orphan-count">
@@ -258,7 +258,7 @@ export function MilestonesView() {
       {visible.length === 0 ? (
         <p
           data-testid="milestones-empty"
-          className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[13px] text-text-tertiary"
+          className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[0.9286rem] text-text-tertiary"
         >
           No milestones yet. Create one in{" "}
           <Link
@@ -364,7 +364,7 @@ function MilestoneRow({
           to="/milestones/$id"
           params={{ id: milestone.id }}
           data-testid="milestone-open"
-          className="text-[14px] font-medium text-text-primary no-underline hover:underline"
+          className="text-[1rem] font-medium text-text-primary no-underline hover:underline"
         >
           <span data-testid="milestone-name">{milestone.name}</span>
         </Link>
@@ -376,7 +376,7 @@ function MilestoneRow({
               shape="pill"
               testId="milestone-archived-badge"
             >
-              <span className="text-[10px] uppercase text-text-tertiary">Archived</span>
+              <span className="text-[0.7143rem] uppercase text-text-tertiary">Archived</span>
             </Chip>
           )}
 
@@ -388,7 +388,7 @@ function MilestoneRow({
           {overdue && (
             <span
               data-testid="milestone-overdue"
-              className="rounded-full border border-danger-fg/40 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-danger-fg"
+              className="rounded-full border border-danger-fg/40 px-1.5 py-0.5 text-[0.7143rem] font-semibold uppercase text-danger-fg"
             >
               Overdue
             </span>
@@ -396,7 +396,7 @@ function MilestoneRow({
           {readout.complete && (
             <span
               data-testid="milestone-complete"
-              className="rounded-full border border-success-fg/40 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-success-fg"
+              className="rounded-full border border-success-fg/40 px-1.5 py-0.5 text-[0.7143rem] font-semibold uppercase text-success-fg"
             >
               Completed
             </span>
@@ -412,7 +412,7 @@ function MilestoneRow({
             data-testid="milestone-date"
             data-dated={dated ? "true" : "false"}
             className={[
-              "text-[12px] tabular-nums",
+              "text-[0.8571rem] tabular-nums",
               dated ? "text-text-secondary" : "text-text-tertiary italic",
             ].join(" ")}
           >
@@ -422,7 +422,7 @@ function MilestoneRow({
             <span
               data-testid={`milestone-${milestone.id}-countdown`}
               className={[
-                "text-[11px] tabular-nums",
+                "text-[0.7857rem] tabular-nums",
                 overdue ? "font-semibold text-danger-fg" : "text-text-tertiary",
               ].join(" ")}
             >

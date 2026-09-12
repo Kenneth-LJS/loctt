@@ -115,7 +115,7 @@ export function AdvancedQueryEditor({
       <div className="flex items-center justify-between">
         <label
           htmlFor={`${errorId}-input`}
-          className="text-[13px] font-medium text-text-secondary"
+          className="text-[0.9286rem] font-medium text-text-secondary"
         >
           Query (DSL)
         </label>
@@ -125,7 +125,7 @@ export function AdvancedQueryEditor({
           data-testid="dsl-help-toggle"
           aria-expanded={helpOpen}
           onClick={() => { setHelpOpen(o => !o); }}
-          className="rounded border border-border-subtle px-2 py-1 text-[12px] text-text-secondary"
+          className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] text-text-secondary"
         >
           Syntax help
         </button>
@@ -144,7 +144,7 @@ export function AdvancedQueryEditor({
         aria-describedby={invalid ? `${errorId}-error` : undefined}
         // VUE-23: the box scrolls rather than clipping; no maxLength,
         // so a long query cannot be truncated on the way in.
-        className="w-full resize-y overflow-auto whitespace-pre-wrap break-all rounded-md border border-border-default bg-bg-surface px-2.5 py-2 font-mono text-[12px] text-text-primary focus:border-accent"
+        className="w-full resize-y overflow-auto whitespace-pre-wrap break-all rounded-md border border-border-default bg-bg-surface px-2.5 py-2 font-mono text-[0.8571rem] text-text-primary focus:border-accent"
       />
 
       {/*
@@ -162,7 +162,7 @@ export function AdvancedQueryEditor({
       >
         {invalid && settled && (
           <div className="flex flex-col gap-1">
-            <p className="m-0 text-[12px] text-danger-fg">
+            <p className="m-0 text-[0.8571rem] text-danger-fg">
               <strong>{KIND_LABEL[result.kind ?? "syntax"] ?? "Query error"}:</strong>{" "}
               {result.message}
               {result.position !== undefined && (
@@ -180,14 +180,14 @@ export function AdvancedQueryEditor({
               <pre
                 data-testid="dsl-error-caret"
                 aria-hidden="true"
-                className="m-0 overflow-x-auto whitespace-pre font-mono text-[12px] leading-none text-danger-fg"
+                className="m-0 overflow-x-auto whitespace-pre font-mono text-[0.8571rem] leading-none text-danger-fg"
               >
                 {caretLine(value, result.position)}
               </pre>
             )}
 
             {result.suggestions !== undefined && result.suggestions.length > 0 && (
-              <p data-testid="dsl-error-suggestions" className="m-0 text-[12px] text-text-secondary">
+              <p data-testid="dsl-error-suggestions" className="m-0 text-[0.8571rem] text-text-secondary">
                 Did you mean {result.suggestions.map(s => `“${s}”`).join(" or ")}?
               </p>
             )}
@@ -206,11 +206,11 @@ export function AdvancedQueryEditor({
             type="button"
             data-testid="dsl-run"
             onClick={() => { onRun(); }}
-            className="rounded border border-border-subtle px-2 py-1 text-[12px] text-text-primary"
+            className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] text-text-primary"
           >
             Run
           </button>
-          <span className="text-[11px] text-text-tertiary">
+          <span className="text-[0.7857rem] text-text-tertiary">
             or press <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd>
           </span>
         </div>
@@ -225,7 +225,7 @@ export function AdvancedQueryEditor({
           data-testid="dsl-close-confirm"
           role="alertdialog"
           aria-label="Discard unsaved query?"
-          className="flex items-center gap-2 rounded border border-border-default bg-bg-surface-raised p-2 text-[12px]"
+          className="flex items-center gap-2 rounded border border-border-default bg-bg-surface-raised p-2 text-[0.8571rem]"
         >
           <span className="text-text-primary">
             You have unsaved changes to this query. Close anyway?
@@ -263,12 +263,12 @@ export function AdvancedQueryEditor({
             onClick={() => {
               if (basic.expressible) onSwitchToBasic(basic.search as Record<string, unknown>);
             }}
-            className="rounded border border-border-subtle px-2 py-1 text-[12px] disabled:opacity-50"
+            className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
           >
             Switch to basic
           </button>
           {!basic.expressible && (
-            <span data-testid="switch-to-basic-reason" className="text-[12px] text-text-tertiary">
+            <span data-testid="switch-to-basic-reason" className="text-[0.8571rem] text-text-tertiary">
               Basic mode cannot show this query: {basic.reason}.
             </span>
           )}
@@ -296,15 +296,15 @@ export function AdvancedQueryEditor({
         >
           {QUERY_SYNTAX_HELP.map(section => (
             <section key={section.title} className="mb-3 last:mb-0">
-              <h3 className="mb-1 text-[12px] font-semibold text-text-primary">
+              <h3 className="mb-1 text-[0.8571rem] font-semibold text-text-primary">
                 {section.title}
               </h3>
               <ul className="m-0 list-none p-0">
                 {section.entries.map(e => (
                   <li key={e.syntax} className="flex flex-col gap-0.5 border-b border-border-subtle py-1 last:border-0">
-                    <code className="font-mono text-[12px] text-text-primary">{e.syntax}</code>
-                    <span className="text-[12px] text-text-secondary">{e.meaning}</span>
-                    <code className="font-mono text-[11px] text-text-tertiary">{e.example}</code>
+                    <code className="font-mono text-[0.8571rem] text-text-primary">{e.syntax}</code>
+                    <span className="text-[0.8571rem] text-text-secondary">{e.meaning}</span>
+                    <code className="font-mono text-[0.7857rem] text-text-tertiary">{e.example}</code>
                   </li>
                 ))}
               </ul>

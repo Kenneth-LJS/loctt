@@ -86,7 +86,7 @@ export function CommentItem({
         aria-hidden="true"
         data-testid="comment-avatar"
         className={
-          "mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-[11px] font-semibold "
+          "mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-[0.7857rem] font-semibold "
           + avatarPalette(comment.author)
         }
       >
@@ -99,7 +99,7 @@ export function CommentItem({
             data-testid="comment-author"
             {...(title !== undefined ? { title } : {})}
             className={
-              "text-[13px] font-medium "
+              "text-[0.9286rem] font-medium "
               + (users.known(comment.author) ? "text-text-primary" : "text-text-tertiary italic")
             }
           >
@@ -112,7 +112,7 @@ export function CommentItem({
             data-testid="comment-time"
             dateTime={comment.created_at}
             title={comment.created_at}
-            className="text-[12px] text-text-tertiary"
+            className="text-[0.8571rem] text-text-tertiary"
           >
             {relativeTime(comment.created_at, now)}
           </time>
@@ -121,7 +121,7 @@ export function CommentItem({
               data-testid="comment-edited"
               // The edit time, available without occupying the line.
               {...(comment.updated_at !== undefined ? { title: comment.updated_at } : {})}
-              className="text-[12px] text-text-tertiary"
+              className="text-[0.8571rem] text-text-tertiary"
             >
               ({editedMarker})
             </span>
@@ -132,7 +132,7 @@ export function CommentItem({
               type="button"
               data-testid="comment-edit"
               onClick={onStartEdit}
-              className="rounded px-1.5 py-0.5 text-[12px] text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
+              className="rounded px-1.5 py-0.5 text-[0.8571rem] text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
             >
               Edit
             </button>
@@ -140,7 +140,7 @@ export function CommentItem({
               type="button"
               data-testid="comment-delete"
               onClick={onDelete}
-              className="rounded px-1.5 py-0.5 text-[12px] text-text-tertiary hover:bg-bg-muted hover:text-danger-fg"
+              className="rounded px-1.5 py-0.5 text-[0.8571rem] text-text-tertiary hover:bg-bg-muted hover:text-danger-fg"
             >
               Delete
             </button>

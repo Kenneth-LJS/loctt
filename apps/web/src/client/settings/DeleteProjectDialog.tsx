@@ -46,7 +46,7 @@ export function DeleteProjectDialog({
   if (result !== undefined) {
     return (
       <Modal title="Project deleted" onClose={onClose}>
-        <p data-testid="project-delete-result" className="text-[13px] text-text-secondary">
+        <p data-testid="project-delete-result" className="text-[0.9286rem] text-text-secondary">
           {result.remappedTaskCount > 0
             ? `Deleted "${project.name}". ${String(result.remappedTaskCount)} task${result.remappedTaskCount === 1 ? "" : "s"} moved to the project you chose; their existing keys are unchanged.`
             : `Deleted "${project.name}".`}
@@ -55,7 +55,7 @@ export function DeleteProjectDialog({
           <button
             type="button"
             onClick={onClose}
-            className="h-8 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast"
+            className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast"
           >
             Done
           </button>
@@ -67,20 +67,20 @@ export function DeleteProjectDialog({
   return (
     <Modal title={`Delete "${project.name}"?`} onClose={onClose}>
       <div className="grid gap-3" data-testid="project-delete-dialog">
-        <p className="text-[13px] text-text-secondary">
+        <p className="text-[0.9286rem] text-text-secondary">
           {needsRemap
             ? `${String(taskCount)} task${taskCount === 1 ? "" : "s"} reference this project. Choose where they should go — their existing keys will not change.`
             : `No tasks reference this project.`}
         </p>
 
         {needsRemap && (
-          <label className="grid gap-1 text-[13px]">
+          <label className="grid gap-1 text-[0.9286rem]">
             <span className="text-text-secondary">Move those tasks to</span>
             <select
               data-testid="project-delete-remap"
               value={remapTo}
               onChange={e => { setRemapTo(e.target.value); }}
-              className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[13px]"
+              className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
             >
               <option value="">Choose a project…</option>
               {others.map(p => (
@@ -90,13 +90,13 @@ export function DeleteProjectDialog({
           </label>
         )}
 
-        <p className="text-[12px] text-text-tertiary">
+        <p className="text-[0.8571rem] text-text-tertiary">
           Deleting is permanent. Archiving hides the project instead and can
           be undone.
         </p>
 
         {mutation.isError && (
-          <div role="alert" data-testid="project-delete-error" className="text-[12px] text-danger-fg">
+          <div role="alert" data-testid="project-delete-error" className="text-[0.8571rem] text-danger-fg">
             <p>{envelope?.message ?? mutation.error.message}</p>
             <p className="mt-1 text-text-secondary">
               The project has not been removed.
@@ -109,7 +109,7 @@ export function DeleteProjectDialog({
             type="button"
             data-testid="project-delete-cancel"
             onClick={onClose}
-            className="h-8 rounded-md px-3 text-[13px] text-text-secondary"
+            className="h-8 rounded-md px-3 text-[0.9286rem] text-text-secondary"
           >
             Cancel
           </button>
@@ -123,7 +123,7 @@ export function DeleteProjectDialog({
                 ...(remapTo !== "" ? { remapTo } : {}),
               });
             }}
-            className="h-8 rounded-md bg-danger-fg px-3 text-[13px] font-medium text-accent-contrast disabled:opacity-50"
+            className="h-8 rounded-md bg-danger-fg px-3 text-[0.9286rem] font-medium text-accent-contrast disabled:opacity-50"
           >
             {mutation.isPending ? "Deleting…" : "Delete project"}
           </button>
